@@ -1,0 +1,109 @@
+.page {
+  display: flex;
+  justify-content: center;
+  font-family: var(--font-geist-sans);
+  color: #111;
+  background: #fafafa;
+  min-height: 100vh;
+}
+
+.main {
+  width: 100%;
+  max-width: 800px;
+  padding: 48px 24px 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.main h1 {
+  font-size: 28px;
+  margin-bottom: 4px;
+}
+
+.main section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.main h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.main label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.main select,
+.main input {
+  padding: 4px 8px;
+}
+
+.disclaimer {
+  font-size: 13px;
+  color: #a33;
+  border-left: 3px solid #a33;
+  padding-left: 10px;
+}
+
+.note {
+  font-size: 12px;
+  color: #777;
+  margin: 0;
+}
+
+.results {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.results td {
+  padding: 8px 4px;
+  border-bottom: 1px solid #eee;
+  vertical-align: top;
+}
+
+.results td:first-child {
+  font-weight: 600;
+  width: 40%;
+}
+
+.pending {
+  color: #a67c00;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.tool,
+.toolActive {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background: #fff;
+  cursor: pointer;
+}
+
+.toolActive {
+  background: #4a90d9;
+  border-color: #4a90d9;
+  color: #fff;
+}
+
+.fail {
+  color: #a33;
+  font-weight: 600;
+}
