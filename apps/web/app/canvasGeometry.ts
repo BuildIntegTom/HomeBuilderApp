@@ -345,6 +345,93 @@ export function computeSlotRects(
   return rects;
 }
 
+export interface LineSegment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+export const MEASURE_SNAP_TOLERANCE_PX = 20;
+
+function rotatedRectCorners(x: number, y: number, width: number, height: number, rotationDeg: number): DragPoint[] {
+  const rad = (rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const local = [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: height },
+    { x: 0, y: height },
+  ];
+  return local.map((p) => ({ x: x + p.x * cos - p.y * sin, y: y + p.x * sin + p.y * cos }));
+}
+
+function pointsFromFlatArray(flat: number[]): DragPoint[] {
+  const points: DragPoint[] = [];
+  for (let i = 0; i < flat.length; i += 2) points.push({ x: flat[i]!, y: flat[i + 1]! });
+  return points;
+}
+
+/** Every edge of every rendered wall/panel rectangle (or mitered-corner
+ * trapezoid) currently on screen — the full set of "lines" the measure
+ * tool can snap to, covering both each wall's own exterior/interior edges
+ * and every individual panel's boundary (since each panel's rect shares
+ * its edges with its neighbors and the wall's own outline). */
+export function wallAndPanelSnapLines(
+  footprint: Footprint,
+  wallSlots: Record<string, PanelSlot[]>,
+  offsetPx: DragPoint,
+  wallStartOffsetIn: Record<string, number>,
+  wallThicknessPx: number,
+): LineSegment[] {
+  const segments: LineSegment[] = [];
+  for (const wall of footprint.walls) {
+    const rects = computeSlotRects(
+      wall,
+      wallSlots[wall.id] ?? [],
+      footprint,
+      offsetPx,
+      wallStartOffsetIn[wall.id] ?? 0,
+      wallThicknessPx,
+    );
+    for (const r of rects) {
+      const corners = r.trapezoidPoints
+        ? pointsFromFlatArray(r.trapezoidPoints)
+        : rotatedRectCorners(r.x, r.y, r.width, r.height, r.rotationDeg);
+      for (let i = 0; i < corners.length; i++) {
+        const a = corners[i]!;
+        const b = corners[(i + 1) % corners.length]!;
+        segments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+      }
+    }
+  }
+  return segments;
+}
+
+/** The closest point to `point`, projected onto whichever of `segments` is
+ * nearest (clamped to each segment's own length) — null if nothing is
+ * within `MEASURE_SNAP_TOLERANCE_PX`. Same closest-point-on-a-segment math
+ * as `findNearestWall`, generalized to an arbitrary line-segment list
+ * instead of just wall centerlines. */
+export function nearestPointOnSegments(point: DragPoint, segments: LineSegment[]): DragPoint | null {
+  let best: DragPoint | null = null;
+  let bestDist = Infinity;
+  for (const seg of segments) {
+    const dx = seg.x2 - seg.x1;
+    const dy = seg.y2 - seg.y1;
+    const lenSq = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((point.x - seg.x1) * dx + (point.y - seg.y1) * dy) / lenSq));
+    const candidate = { x: seg.x1 + t * dx, y: seg.y1 + t * dy };
+    const dist = Math.hypot(point.x - candidate.x, point.y - candidate.y);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = candidate;
+    }
+  }
+  return best && bestDist <= MEASURE_SNAP_TOLERANCE_PX ? best : null;
+}
+
 /** Nudges a corner marker diagonally outward (away from the rectangle's
  * center) so it doesn't sit on top of the corner panel underneath. */
 export function cornerMarkerPosition(

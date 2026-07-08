@@ -396,12 +396,12 @@ export const priceRates = {
   standardPerSqFt: 28,
   cornerPerSqFt: 36,
   bracedPerSqFt: 32,
-  headerSillPerSqFt: 36,
+  headerSillPerSqFt: 34,
   columnPerSqFt: 36,
   roofPerSqFt: 42,
   totalModifier: 1.3,
   status: "confirmed" as const,
-  note: "Based on biggest face; total = sum(area x rate-by-type) x 1.3 modifier. Corner/braced/header-sill rates (Tommy) price each panel by its own type instead of one user-selected rate for the whole project.",
+  note: "Based on biggest face; total = sum(area x rate-by-type) x 1.3 modifier. Corner/braced/header-sill rates (Tommy) price each panel by its own type instead of one user-selected rate for the whole project. Header/sill rate also covers door heads (a header panel starting at 82.5in off the ground, Tommy).",
 };
 
 // --- Panel type roster --------------------------------------------------------
@@ -633,4 +633,68 @@ export const strawMoistureContent = {
   max: 0.2,
   status: "confirmed" as const,
   note: "Standard target moisture content 15%, sensitivity range 5-20% (Tommy). Convention: wet-basis — the fraction of the panel's total (as-weighed) straw weight that is water, i.e. dryWeight = moistWeight x (1 - moistureContent).",
+};
+
+// --- Suspended floor joist systems -----------------------------------------------
+
+export interface FloorJoistTypeDef {
+  id: "lvl-16" | "lvl-24" | "solid-pine";
+  label: string;
+  material: string;
+  spacingIn: number;
+  joistWidthIn: number;
+  status: CatalogStatus;
+  note: string;
+}
+
+export const floorJoistTypes: FloorJoistTypeDef[] = [
+  {
+    id: "lvl-16",
+    label: "LVL @ 16\" o.c.",
+    material: "LVL (laminated veneer lumber)",
+    spacingIn: 16,
+    joistWidthIn: 1.75,
+    status: "confirmed",
+    note: "Suspended floor joist option (Tommy): LVL, 16in on-center.",
+  },
+  {
+    id: "lvl-24",
+    label: "LVL @ 24\" o.c.",
+    material: "LVL (laminated veneer lumber)",
+    spacingIn: 24,
+    joistWidthIn: 1.75,
+    status: "confirmed",
+    note: "Suspended floor joist option (Tommy): LVL, 24in on-center.",
+  },
+  {
+    id: "solid-pine",
+    label: "Solid Pine",
+    material: "Solid pine dimensional lumber",
+    spacingIn: 16,
+    joistWidthIn: 1.5,
+    status: "pending-BI-confirmation",
+    note: "Spacing defaulted to 16in o.c. (Tommy specified LVL's 2 spacing options but not solid pine's own spacing) — confirm before treating as final.",
+  },
+];
+
+/** How much shallower a field joist is than the wall panel's own thickness
+ * — Tommy: "(panel thickness minus 4.5in) joist". */
+export const FIELD_JOIST_DEPTH_REDUCTION_IN = 4.5;
+
+export const floorRimJoistDetail = {
+  thermalBreakGapIn: 1.5,
+  status: "pending-BI-confirmation" as const,
+  note: "Thermally-broken rim joist detail (Tommy), at each short end (symmetric, confirmed): edge-rim joist -> 1.5in insulated gap -> rim joist, transitioning into field joists (depth = panel thickness - 4.5in) at the selected type's o.c. spacing, running to the matching double-rim at the far end. Field-joist-to-field-joist bay width is shown at the type's actual o.c. spacing minus joist width (ordinary batt insulation) — the 1.5in gap is read here as the rim's own thermal-break detail specifically, not a literal fixed width for every field bay; confirm this reading before treating as final.",
+};
+
+export const perpendicular2x4Addition = {
+  thicknessIn: 1.5,
+  widthIn: 3.5,
+  status: "confirmed" as const,
+  note: "Optional 2x4 strapping run perpendicular to the joists (Tommy) — reduces thermal bridging by breaking the direct conductive path through the joists, creating a separate service/insulation cavity below them.",
+};
+
+export const floorLongSideBlockingNote = {
+  status: "pending-BI-confirmation" as const,
+  note: "Solid blocking shown just under the panel along the long sides — the sides the joists run alongside (parallel to their own span), rather than land on (Tommy). Exact blocking spacing/sizing not yet specified.",
 };

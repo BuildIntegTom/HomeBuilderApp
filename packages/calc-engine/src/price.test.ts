@@ -18,13 +18,13 @@ describe("computePrice", () => {
   });
 
   it("prices corner/braced/opening panels at their own confirmed rates", () => {
-    // 10 sqft corner @ $36 + 10 sqft braced @ $32 + 10 sqft opening @ $36
-    // = 360 + 320 + 360 = 1040, x 1.3 = 1352
+    // 10 sqft corner @ $36 + 10 sqft braced @ $32 + 10 sqft opening @ $34
+    // = 360 + 320 + 340 = 1020, x 1.3 = 1326
     const total = computePrice([
       { type: "corner", areaSqFt: 10 },
       { type: "braced", areaSqFt: 10 },
       { type: "opening", areaSqFt: 10 },
     ]);
-    expect(total).toBeCloseTo(1352, 2);
+    expect(total).toBeCloseTo(1326, 2);
   });
 });

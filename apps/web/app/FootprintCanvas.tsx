@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Stage, Layer, Rect, Circle, Text, Group, Line } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import {
@@ -19,6 +19,7 @@ import {
   findNearestWall,
   findNearestWallCandidates,
   formatFeetInches,
+  nearestPointOnSegments,
   octagonPreviewPoints,
   parseLengthFt,
   pickWallByDragDirection,
@@ -27,10 +28,12 @@ import {
   signedPerpOffsetFt,
   snapOctagonBoxPx,
   snapSpanPointFt,
+  wallAndPanelSnapLines,
   wallLabelPosition,
   wallPointsPx,
   type DragPoint,
 } from "./canvasGeometry";
+import { allPanelInstances, combinedPanelLabel, type PanelInstance } from "./panelInstances";
 
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 480;
@@ -112,6 +115,67 @@ export default function FootprintCanvas({
   const [editingWallId, setEditingWallId] = useState<Wall["id"] | null>(null);
   const [editingValue, setEditingValue] = useState("");
   const [dragCurrent, setDragCurrent] = useState<DragPoint | null>(null);
+
+  // Keyed the same way computeSlotRects identifies a slot (wallId +
+  // slotIndex) so the on-canvas label always matches the name(s) shown for
+  // this same panel on its Shop Drawing page. A window slot maps to 2
+  // instances (header + sill, sharing one slot since they're stacked in
+  // elevation, not sequential in plan) — combinedPanelLabel merges those
+  // into one label (e.g. "N-3+4") for the single rectangle drawn here.
+  const panelNameByKey = useMemo(() => {
+    const grouped = new Map<string, PanelInstance[]>();
+    if (footprint) {
+      for (const inst of allPanelInstances(footprint, wallSlots)) {
+        const key = `${inst.wallId}-${inst.slotIndexInWall}`;
+        const list = grouped.get(key) ?? [];
+        list.push(inst);
+        grouped.set(key, list);
+      }
+    }
+    const map = new Map<string, string>();
+    for (const [key, instances] of grouped) map.set(key, combinedPanelLabel(instances));
+    return map;
+  }, [footprint, wallSlots]);
+
+  const [showPanelLabels, setShowPanelLabels] = useState(true);
+
+  const wallThicknessPx = (wallThicknessIn / 12) * SCALE_PX_PER_FT;
+
+  // Every wall/panel edge the measure tool can snap to, recomputed
+  // whenever the drawing itself changes (not on every mouse move).
+  const snapLines = useMemo(
+    () => (footprint ? wallAndPanelSnapLines(footprint, wallSlots, offsetPx, wallStartOffsetIn, wallThicknessPx) : []),
+    [footprint, wallSlots, offsetPx, wallStartOffsetIn, wallThicknessPx],
+  );
+
+  // Measure tool: mousedown snaps an anchor point and it stays fixed;
+  // mousemove keeps snapping the *other* end and shows the live distance;
+  // mouseup just stops updating it — the last measurement stays visible
+  // (as a reference) until a new one is started or the tool is toggled off.
+  const [isMeasuring, setIsMeasuring] = useState(false);
+  const measureGestureRef = useRef(false); // true while the mouse is down mid-measurement
+  const [measureAnchor, setMeasureAnchor] = useState<DragPoint | null>(null);
+  const [measureEnd, setMeasureEnd] = useState<DragPoint | null>(null);
+
+  const clearMeasurement = () => {
+    measureGestureRef.current = false;
+    setMeasureAnchor(null);
+    setMeasureEnd(null);
+  };
+
+  const toggleMeasuringOff = () => {
+    setIsMeasuring(false);
+    clearMeasurement();
+  };
+
+  const toggleMeasuring = () => {
+    setIsMeasuring((was) => {
+      const next = !was;
+      if (next) setIsPanning(false);
+      clearMeasurement();
+      return next;
+    });
+  };
 
   // Pan/zoom view — a pure rendering concern, entirely local to this
   // component (unlike `offsetPx`, which positions the *footprint* within
@@ -204,6 +268,17 @@ export default function FootprintCanvas({
       return;
     }
 
+    if (isMeasuring) {
+      const pos = e.target.getStage()!.getPointerPosition()!;
+      const snapped = nearestPointOnSegments(pos, snapLines);
+      if (snapped) {
+        measureGestureRef.current = true;
+        setMeasureAnchor(snapped);
+        setMeasureEnd(snapped);
+      }
+      return;
+    }
+
     const pos = e.target.getStage()!.getPointerPosition()!;
 
     if (shapeTool === "bump-out") {
@@ -254,6 +329,15 @@ export default function FootprintCanvas({
       return;
     }
 
+    if (isMeasuring) {
+      if (measureGestureRef.current) {
+        const pos = e.target.getStage()!.getPointerPosition()!;
+        const snapped = nearestPointOnSegments(pos, snapLines);
+        if (snapped) setMeasureEnd(snapped);
+      }
+      return;
+    }
+
     const pos = e.target.getStage()!.getPointerPosition()!;
 
     if (shapeTool === "bump-out") {
@@ -292,6 +376,11 @@ export default function FootprintCanvas({
   const handleMouseUp = (e: KonvaEventObject<MouseEvent>) => {
     if (isPanning) {
       panStartRef.current = null;
+      return;
+    }
+
+    if (isMeasuring) {
+      measureGestureRef.current = false;
       return;
     }
 
@@ -438,8 +527,6 @@ export default function FootprintCanvas({
     c.point.y * SCALE_PX_PER_FT + offsetPx.y,
   ]);
 
-  const wallThicknessPx = (wallThicknessIn / 12) * SCALE_PX_PER_FT;
-
   const startEditingWall = (wall: Wall) => {
     setEditingWallId(wall.id);
     setEditingValue(formatFeetInches(wall.lengthFt));
@@ -467,7 +554,13 @@ export default function FootprintCanvas({
         <button
           type="button"
           aria-pressed={isPanning}
-          onClick={() => setIsPanning((p) => !p)}
+          onClick={() =>
+            setIsPanning((p) => {
+              const next = !p;
+              if (next) toggleMeasuringOff();
+              return next;
+            })
+          }
           style={{ fontWeight: isPanning ? "bold" : "normal" }}
         >
           Pan
@@ -483,6 +576,22 @@ export default function FootprintCanvas({
         </button>
         <button type="button" onClick={resetView}>
           Reset View
+        </button>
+        <button
+          type="button"
+          aria-pressed={showPanelLabels}
+          onClick={() => setShowPanelLabels((v) => !v)}
+          style={{ fontWeight: showPanelLabels ? "bold" : "normal" }}
+        >
+          Panel ID Visibility
+        </button>
+        <button
+          type="button"
+          aria-pressed={isMeasuring}
+          onClick={toggleMeasuring}
+          style={{ fontWeight: isMeasuring ? "bold" : "normal" }}
+        >
+          Measure
         </button>
       </div>
       <div style={{ position: "relative", width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}>
@@ -561,32 +670,69 @@ export default function FootprintCanvas({
                 offsetPx,
                 wallStartOffsetIn[wall.id] ?? 0,
                 wallThicknessPx,
-              ).map((r) =>
-                r.trapezoidPoints ? (
-                  <Line
-                    key={`${r.wallId}-${r.slotIndex}`}
-                    points={r.trapezoidPoints}
-                    closed
-                    fill={SLOT_COLORS[r.slot.type]}
-                    stroke="#555"
-                    strokeWidth={0.5}
-                    onClick={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
-                  />
-                ) : (
-                  <Rect
-                    key={`${r.wallId}-${r.slotIndex}`}
-                    x={r.x}
-                    y={r.y}
-                    width={r.width}
-                    height={r.height}
-                    rotation={r.rotationDeg}
-                    fill={SLOT_COLORS[r.slot.type]}
-                    stroke="#555"
-                    strokeWidth={0.5}
-                    onClick={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
-                  />
-                ),
-              ),
+              ).map((r) => {
+                const panelName = panelNameByKey.get(`${r.wallId}-${r.slotIndex}`);
+                if (r.trapezoidPoints) {
+                  // Point index 3 (x,y at array indices 6,7) is always the
+                  // interior-side corner nearest the slot's start, for both
+                  // the start- and end-corner trapezoid constructions.
+                  const labelX = r.trapezoidPoints[6]!;
+                  const labelY = r.trapezoidPoints[7]!;
+                  return (
+                    <Group key={`${r.wallId}-${r.slotIndex}`}>
+                      <Line
+                        points={r.trapezoidPoints}
+                        closed
+                        fill={SLOT_COLORS[r.slot.type]}
+                        stroke="#555"
+                        strokeWidth={0.5}
+                        onClick={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
+                      />
+                      {showPanelLabels && panelName && (
+                        <Text
+                          x={labelX + 2}
+                          y={labelY - 11}
+                          text={panelName}
+                          fontSize={9}
+                          fill="#fff"
+                          stroke="#333"
+                          strokeWidth={0.6}
+                          listening={false}
+                        />
+                      )}
+                    </Group>
+                  );
+                }
+                // Local (0, height) is the "bottom-left"-equivalent corner
+                // (start-of-slot, interior edge) — rendered inside the same
+                // rotated Group as the Rect so it lands correctly for every
+                // wall angle, not just axis-aligned ones.
+                const labelLocalY = r.height > 0 ? r.height - 11 : r.height;
+                return (
+                  <Group key={`${r.wallId}-${r.slotIndex}`} x={r.x} y={r.y} rotation={r.rotationDeg}>
+                    <Rect
+                      width={r.width}
+                      height={r.height}
+                      fill={SLOT_COLORS[r.slot.type]}
+                      stroke="#555"
+                      strokeWidth={0.5}
+                      onClick={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
+                    />
+                    {showPanelLabels && panelName && (
+                      <Text
+                        x={2}
+                        y={labelLocalY}
+                        text={panelName}
+                        fontSize={9}
+                        fill="#fff"
+                        stroke="#333"
+                        strokeWidth={0.6}
+                        listening={false}
+                      />
+                    )}
+                  </Group>
+                );
+              }),
             )}
           {footprint &&
             footprintIsAllRightAngles(footprint) &&
@@ -633,6 +779,30 @@ export default function FootprintCanvas({
                 </Group>
               );
             })}
+          {measureAnchor && measureEnd && (
+            <>
+              <Line
+                points={[measureAnchor.x, measureAnchor.y, measureEnd.x, measureEnd.y]}
+                stroke="#e0392b"
+                strokeWidth={2}
+                dash={[5, 4]}
+                listening={false}
+              />
+              <Circle x={measureAnchor.x} y={measureAnchor.y} radius={4} fill="#e0392b" listening={false} />
+              <Circle x={measureEnd.x} y={measureEnd.y} radius={4} fill="#e0392b" listening={false} />
+              <Text
+                x={(measureAnchor.x + measureEnd.x) / 2 + 8}
+                y={(measureAnchor.y + measureEnd.y) / 2 - 18}
+                text={formatFeetInches(
+                  Math.hypot(measureEnd.x - measureAnchor.x, measureEnd.y - measureAnchor.y) / SCALE_PX_PER_FT,
+                )}
+                fontSize={13}
+                fontStyle="bold"
+                fill="#e0392b"
+                listening={false}
+              />
+            </>
+          )}
         </Layer>
         </Stage>
         {editingPos && (

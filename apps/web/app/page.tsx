@@ -7,6 +7,8 @@ import {
   applyBracedPlacement,
   buildOctagonFootprint,
   buildRectangleFootprint,
+  computeFloorPanelGrid,
+  computeJoistLayout,
   computePierGrid,
   cornerOwnership as cornerOwnershipPure,
   dragWall,
@@ -46,12 +48,17 @@ import {
   cornerPanelWidthIn,
   fastenerSpacingTable,
   fastenerTableStatus,
+  FIELD_JOIST_DEPTH_REDUCTION_IN,
+  floorJoistTypes,
+  floorLongSideBlockingNote,
+  floorRimJoistDetail,
   foundationFastenerSchedule,
   foundationTypes,
   looseDensePackDefaultThicknessIn,
   looseDensePackThicknessOptionsIn,
   looseDensePackWidthIn,
   panelTypes,
+  perpendicular2x4Addition,
   pierSpacingDefaultFt,
   pierSpacingOptionsFt,
   pierSpacingStatus,
@@ -69,8 +76,10 @@ import {
   type SeismicZone,
 } from "@building-integrity/panel-catalog";
 import DetailGuidePage from "./DetailGuidePage";
+import FloorCanvas from "./FloorCanvas";
+import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
-import { panelInstancesOfTypes } from "./panelInstances";
+import { allPanelInstances, type NamedPanelType } from "./panelInstances";
 import PierFoundationDiagram from "./PierFoundationDiagram";
 import ShopDrawingPage from "./ShopDrawingPage";
 import SlabFoundationDiagram from "./SlabFoundationDiagram";
@@ -106,16 +115,20 @@ type ShapeTool = "rectangle" | "octagon" | "bump-out" | "edit" | "drag-wall";
 // floor/roof panels covered, but floor/roof paneling itself doesn't exist
 // yet — see the "not yet in the layout system" note below). Corner's
 // safety-oct-corner variant shares the "corner" page (same fabrication,
-// priced identically elsewhere already).
+// priced identically elsewhere already). Header and sill are derived from
+// window/door slots (see panelInstances.ts) — a window is a header +
+// sill, a door is a header only, not their own PanelSlot type.
 const SHOP_DRAWING_PANEL_TYPES: {
-  slotTypes: PanelSlot["type"][];
-  panelTypeId: "standard" | "corner" | "braced" | "safety-gap";
+  namedTypes: NamedPanelType[];
+  panelTypeId: "standard" | "corner" | "braced" | "safety-gap" | "header" | "sill";
   hasWoodBom: boolean;
 }[] = [
-  { slotTypes: ["standard"], panelTypeId: "standard", hasWoodBom: true },
-  { slotTypes: ["corner", "safety-oct-corner"], panelTypeId: "corner", hasWoodBom: false },
-  { slotTypes: ["braced"], panelTypeId: "braced", hasWoodBom: true },
-  { slotTypes: ["safety-gap"], panelTypeId: "safety-gap", hasWoodBom: false },
+  { namedTypes: ["standard"], panelTypeId: "standard", hasWoodBom: true },
+  { namedTypes: ["corner", "safety-oct-corner"], panelTypeId: "corner", hasWoodBom: false },
+  { namedTypes: ["braced"], panelTypeId: "braced", hasWoodBom: true },
+  { namedTypes: ["safety-gap"], panelTypeId: "safety-gap", hasWoodBom: false },
+  { namedTypes: ["header"], panelTypeId: "header", hasWoodBom: false },
+  { namedTypes: ["sill"], panelTypeId: "sill", hasWoodBom: false },
 ];
 
 const SHOP_DRAWING_BOM_PARTS = [
@@ -127,12 +140,14 @@ const SHOP_DRAWING_BOM_PARTS = [
   { label: "Girt web (plywood)", qty: standardPanelBom.girts.qty, dimensions: `${standardPanelBom.girts.web.thicknessIn}"x${standardPanelBom.girts.web.widthIn}"x${standardPanelBom.girts.web.lengthIn}"` },
 ];
 
-type EditorTab = "wall" | "foundation" | "roof";
+type EditorTab = "wall" | "foundation" | "floor" | "roof";
 
 export default function LayoutEditor() {
-  // Which building system is being laid out — wall/foundation/roof are all
-  // views onto the same shared footprint/panel state below, so switching
-  // tabs never resets anything (Tommy). Roof has no editor yet (future work).
+  // Which building system is being laid out — wall/foundation/floor/roof
+  // are all views onto the same shared footprint/panel state below, so
+  // switching tabs never resets anything (Tommy). Floor intakes most of
+  // its prompts from Foundation (same footprint + pier spacing, no
+  // independent control of its own). Roof has no editor yet (future work).
   const [editorTab, setEditorTab] = useState<EditorTab>("wall");
   const [viewMode, setViewMode] = useState<"plan" | "3d">("plan");
   const [shapeTool, setShapeTool] = useState<ShapeTool>("rectangle");
@@ -167,6 +182,10 @@ export default function LayoutEditor() {
   const [pierSpacingFt, setPierSpacingFt] = useState<number>(pierSpacingDefaultFt);
   const [zipCode, setZipCode] = useState("");
   const [role, setRole] = useState<ViewerRole>("public");
+  // Null until a floor-type button is clicked - "autogenerate when the
+  // button is clicked" (Tommy), not selected by default.
+  const [floorJoistTypeId, setFloorJoistTypeId] = useState<(typeof floorJoistTypes)[number]["id"] | null>(null);
+  const [perpendicular2x4Enabled, setPerpendicular2x4Enabled] = useState(false);
 
   const interior = interiorLayers.find((l) => l.id === interiorId)!;
   const exterior = exteriorLayers.find((l) => l.id === exteriorId)!;
@@ -177,6 +196,21 @@ export default function LayoutEditor() {
     () => (footprint && foundationType.usesPierGrid ? computePierGrid(footprint, pierSpacingFt) : []),
     [footprint, foundationType, pierSpacingFt],
   );
+
+  // Floor panels tile the same bay grid the piers sit at the corners of —
+  // Floor "intakes most of its prompts from the foundation editor"
+  // (Tommy), so this shares pierSpacingFt rather than having its own control.
+  const floorPanels = useMemo(
+    () => (footprint && foundationType.usesPierGrid ? computeFloorPanelGrid(footprint, pierSpacingFt) : []),
+    [footprint, foundationType, pierSpacingFt],
+  );
+
+  const floorJoistType = floorJoistTypeId ? floorJoistTypes.find((t) => t.id === floorJoistTypeId)! : null;
+  const joistLayout = useMemo(
+    () => (footprint && floorJoistType ? computeJoistLayout(footprint, floorJoistType.spacingIn) : null),
+    [footprint, floorJoistType],
+  );
+  const fieldJoistDepthIn = thicknessIn - FIELD_JOIST_DEPTH_REDUCTION_IN;
 
   // Only concrete piers contribute embodied-carbon emissions here — the
   // helical-screw crawlspace is steel, not concrete, so it nets 0.
@@ -520,25 +554,36 @@ export default function LayoutEditor() {
   const hasClayPlaster = interior.id === "clay-plaster";
   const hasLimePlaster = exterior.id === "lime-plaster";
 
+  // Computed once, across every nameable panel type together, so a panel's
+  // number always reflects its true position in the along-wall sequence —
+  // Shop Drawing pages then just filter this same list, rather than each
+  // recomputing its own independent (and previously mismatched) counter.
+  const allInstances = useMemo(
+    () => (footprint ? allPanelInstances(footprint, overlayWallSlots) : []),
+    [footprint, overlayWallSlots],
+  );
+
   const shopDrawings = useMemo(
     () =>
-      SHOP_DRAWING_PANEL_TYPES.map(({ slotTypes, panelTypeId, hasWoodBom }) => {
+      SHOP_DRAWING_PANEL_TYPES.map(({ namedTypes, panelTypeId, hasWoodBom }) => {
         const panelType = panelTypes.find((p) => p.id === panelTypeId)!;
-        const instances = panelInstancesOfTypes(overlayWallSlots, slotTypes).map((inst) => ({
-          ...inst,
-          weightBreakdown: computePanelWeightBreakdown({
-            widthIn: inst.widthIn,
-            thicknessIn,
-            heightIn: wallHeightFt * 12,
-            densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
-            woodWeightKg: hasWoodBom ? woodPerPanel.weightKg : null,
-            hasClayPlaster,
-            hasLimePlaster,
-          }),
-        }));
+        const instances = allInstances
+          .filter((inst) => namedTypes.includes(inst.panelType))
+          .map((inst) => ({
+            ...inst,
+            weightBreakdown: computePanelWeightBreakdown({
+              widthIn: inst.widthIn,
+              thicknessIn,
+              heightIn: wallHeightFt * 12,
+              densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
+              woodWeightKg: hasWoodBom ? woodPerPanel.weightKg : null,
+              hasClayPlaster,
+              hasLimePlaster,
+            }),
+          }));
         return { panelType, hasWoodBom, instances };
       }),
-    [overlayWallSlots, thicknessIn, wallHeightFt, densityLbFt3, woodPerPanel.weightKg, hasClayPlaster, hasLimePlaster],
+    [allInstances, thicknessIn, wallHeightFt, densityLbFt3, woodPerPanel.weightKg, hasClayPlaster, hasLimePlaster],
   );
 
   // Only surface pages that actually apply to what's currently selected/
@@ -551,6 +596,9 @@ export default function LayoutEditor() {
     if (foundationType.usesPierGrid || foundationType.id === "slab") {
       pages.push({ id: "detail-foundation", label: `Foundation: ${foundationType.label}` });
     }
+    if (floorJoistType) {
+      pages.push({ id: "detail-floor", label: `Floor: ${floorJoistType.label}` });
+    }
     // Shop Drawings are a fabricator/detailer document, not a public-facing one (Tommy).
     if (role !== "public") {
       for (const { panelType, instances } of shopDrawings) {
@@ -560,7 +608,7 @@ export default function LayoutEditor() {
       }
     }
     return pages;
-  }, [foundationType, shopDrawings, role]);
+  }, [foundationType, floorJoistType, shopDrawings, role]);
 
   const price = useMemo(() => {
     const areaSqFtFor = (type: PanelSlot["type"]) =>
@@ -768,12 +816,17 @@ export default function LayoutEditor() {
 
         <section>
           <h2>
-            {editorTab === "wall" ? "Footprint" : editorTab === "foundation" ? "Foundation Layout" : "Roof Layout"}
+            {editorTab === "wall"
+              ? "Footprint"
+              : editorTab === "foundation"
+                ? "Foundation Layout"
+                : editorTab === "floor"
+                  ? "Floor Layout"
+                  : "Roof Layout"}
           </h2>
           <p className={styles.note}>
-            Wall, Foundation, and Roof are all different views onto the same
-            building — switching between them keeps everything you&apos;ve
-            drawn.
+            Wall, Foundation, Floor, and Roof are all different views onto the same building — switching between
+            them keeps everything you&apos;ve drawn.
           </p>
           <div role="group" aria-label="Editor" className={styles.toolbar}>
             <button
@@ -791,6 +844,14 @@ export default function LayoutEditor() {
               onClick={() => setEditorTab("foundation")}
             >
               Foundation
+            </button>
+            <button
+              type="button"
+              aria-pressed={editorTab === "floor"}
+              className={editorTab === "floor" ? styles.toolActive : styles.tool}
+              onClick={() => setEditorTab("floor")}
+            >
+              Floor
             </button>
             <button
               type="button"
@@ -933,7 +994,9 @@ export default function LayoutEditor() {
                 ? "Click a tan panel to cycle it: standard → window → door → standard."
                 : "Switch to Edit mode, then click a tan panel to cycle it: standard → window → door → standard."}{" "}
               Gray = corner, dark brown = safety-oct-corner, purple = braced,
-              orange = safety/gap.{" "}
+              orange = safety/gap. Panel labels are named by compass
+              direction (N/NE/E/SE/S/SW/W/NW) — up is treated as North (no
+              real site orientation set yet).{" "}
               {isBumpedOut ? (
                 <>Red circle = least-accessible corner. Click a wall&apos;s
                   length label to type an exact value — editing one wall moves
@@ -983,6 +1046,60 @@ export default function LayoutEditor() {
                 <p className={styles.note}>
                   {foundationType.label} doesn&apos;t use a pier grid — see the Detail Guide Pages section below for
                   its construction detail.
+                </p>
+              )}
+            </>
+          )}
+          {editorTab === "floor" && (
+            <>
+              {foundationType.usesPierGrid ? (
+                <>
+                  <p className={styles.note}>
+                    {floorPanels.length} floor panels tiled pier-to-pier at max {pierSpacingFt}ft spacing — same
+                    spacing as the Foundation tab (change it there, not here).
+                  </p>
+                  <div role="group" aria-label="Suspended floor joist type" className={styles.toolbar}>
+                    {floorJoistTypes.map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        aria-pressed={floorJoistTypeId === t.id}
+                        className={floorJoistTypeId === t.id ? styles.toolActive : styles.tool}
+                        onClick={() => setFloorJoistTypeId((was) => (was === t.id ? null : t.id))}
+                        disabled={!footprint}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={perpendicular2x4Enabled}
+                        onChange={(e) => setPerpendicular2x4Enabled(e.target.checked)}
+                        disabled={!floorJoistTypeId}
+                      />{" "}
+                      Perpendicular 2x4 addition
+                    </label>
+                  </div>
+                  {joistLayout && (
+                    <p className={styles.note}>
+                      {joistLayout.joists.length} {floorJoistType!.label} joists running perpendicular to the
+                      longest walls (perimeter-to-perimeter, or perimeter-to-beam over the piers). See the Detail
+                      Guide Pages section below for the rim/thermal-break detail.
+                    </p>
+                  )}
+                  <FloorCanvas
+                    footprint={footprint}
+                    offsetPx={offsetPx}
+                    floorPanels={floorPanels}
+                    piers={pierGrid}
+                    joistLayout={joistLayout}
+                  />
+                </>
+              ) : (
+                <p className={styles.note}>
+                  {foundationType.label} doesn&apos;t use a pier grid, so there&apos;s no pier-to-pier floor panel
+                  bay to derive yet — see the Detail Guide Pages section below for its construction detail.
                 </p>
               )}
             </>
@@ -1053,8 +1170,17 @@ export default function LayoutEditor() {
           <table className={styles.results}>
             <tbody>
               <tr>
-                <td>Panels (excl. openings)</td>
-                <td>{strawSlots.length}</td>
+                <td>Panels</td>
+                <td>
+                  {strawSlots.length + openingCounts.windows * 2 + openingCounts.doors}
+                  <br />
+                  <span className={styles.note}>
+                    {strawSlots.length} wall panels + {openingCounts.windows} window header/sill pair
+                    {openingCounts.windows === 1 ? "" : "s"} + {openingCounts.doors} door header
+                    {openingCounts.doors === 1 ? "" : "s"} — a window is a header + sill panel, a door is a header
+                    panel only (no sill), each counted individually.
+                  </span>
+                </td>
               </tr>
               <tr>
                 <td>Openings</td>
@@ -1199,12 +1325,34 @@ export default function LayoutEditor() {
           )}
         </section>
 
+        {floorJoistType && (
+          <section id="detail-floor" className={styles.anchorTarget}>
+            <DetailGuidePage
+              title={`Suspended Floor Joists — ${floorJoistType.label}`}
+              triggerCondition={`Every suspended-floor design using ${floorJoistType.label} — the thermally-broken rim detail at each short end, plus long-side blocking.`}
+              diagram={<FloorJoistDiagram />}
+              fastenerSchedule={[]}
+              notes={[
+                floorJoistType.note,
+                joistLayout
+                  ? `${joistLayout.joists.length} joists at ${floorJoistType.spacingIn}in o.c. (max), running perpendicular to the longest walls, landing on the perimeter (or a beam over the piers). Field joist depth: panel thickness (${thicknessIn}in) − ${FIELD_JOIST_DEPTH_REDUCTION_IN}in = ${fieldJoistDepthIn}in.`
+                  : "Draw a footprint to see the generated joist count.",
+                floorRimJoistDetail.note,
+                floorLongSideBlockingNote.note,
+                ...(perpendicular2x4Enabled ? [perpendicular2x4Addition.note] : []),
+              ]}
+              role={role}
+            />
+          </section>
+        )}
+
         {role !== "public" && (
           <section>
             <h2>Shop Drawings</h2>
             <p className={styles.note}>
               Fabricator/detailer document — one sheet per wall panel type, every individual panel currently in the
-              design, named by wall run (e.g. &quot;AB-1&quot;), with its own straw-only and full weight breakdown.
+              design, named by compass direction (e.g. &quot;N-1&quot; — up is treated as North), with its own
+              straw-only and full weight breakdown.
             </p>
             <p className={styles.pending}>
               Standard-panel reference drawings (the labeled-parts picture) are placeholders — Tommy still needs to
@@ -1228,9 +1376,9 @@ export default function LayoutEditor() {
               </div>
             ))}
             <p className={styles.note}>
-              Column, header, sill, and inclined/gable panel types aren&apos;t placed anywhere in the current layout
-              system yet (no geometry produces them), and floor/roof panels don&apos;t exist as a modeled panel system
-              yet either — all deferred until those systems are built.
+              Column and inclined/gable panel types aren&apos;t placed anywhere in the current layout system yet (no
+              geometry produces them), and floor/roof panels don&apos;t exist as a modeled panel system yet either —
+              all deferred until those systems are built.
             </p>
           </section>
         )}

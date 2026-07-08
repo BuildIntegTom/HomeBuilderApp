@@ -12,7 +12,7 @@ export interface ShopDrawingBomPart {
 
 export interface ShopDrawingInstance {
   name: string;
-  slotType: string;
+  panelType: string;
   widthIn: number;
   weightBreakdown: PanelWeightBreakdown;
 }
@@ -145,9 +145,7 @@ export default function ShopDrawingPage({
                 <tr key={inst.name}>
                   <td>
                     {inst.name}
-                    {inst.slotType !== "standard" && inst.slotType !== "corner" && inst.slotType !== "braced" && inst.slotType !== "safety-gap" ? (
-                      <span className={styles.note}> ({inst.slotType})</span>
-                    ) : null}
+                    {inst.panelType === "safety-oct-corner" && <span className={styles.note}> (safety-oct-corner)</span>}
                   </td>
                   <td>{inst.widthIn}&quot;</td>
                   <td>

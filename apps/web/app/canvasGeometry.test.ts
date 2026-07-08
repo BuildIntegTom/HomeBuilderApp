@@ -7,6 +7,7 @@ import {
   findNearestWall,
   findNearestWallCandidates,
   formatFeetInches,
+  nearestPointOnSegments,
   parseLengthFt,
   pickWallByDragDirection,
   projectOntoWallFt,
@@ -14,6 +15,7 @@ import {
   signedPerpOffsetFt,
   snapOctagonBoxPx,
   snapSpanPointFt,
+  wallAndPanelSnapLines,
   wallLabelPosition,
   wallPointsPx,
 } from "./canvasGeometry";
@@ -221,5 +223,53 @@ describe("wallPointsPx", () => {
     const { startPx, endPx } = wallPointsPx(wallAB, fp.corners, ORIGIN);
     expect(startPx).toEqual({ x: ORIGIN.x, y: ORIGIN.y });
     expect(endPx).toEqual({ x: ORIGIN.x + 30 * SCALE_PX_PER_FT, y: ORIGIN.y });
+  });
+});
+
+describe("nearestPointOnSegments", () => {
+  it("clamps to the segment's own length rather than the infinite line", () => {
+    const segments = [{ x1: 0, y1: 0, x2: 100, y2: 0 }];
+    // (110,5) is past the segment's x2 end - nearest point is the endpoint (100,0), not (110,0).
+    expect(nearestPointOnSegments({ x: 110, y: 5 }, segments)).toEqual({ x: 100, y: 0 });
+  });
+
+  it("picks whichever of several segments is actually closest", () => {
+    const segments = [
+      { x1: 0, y1: 0, x2: 100, y2: 0 }, // horizontal line, y=0
+      { x1: 50, y1: 10, x2: 50, y2: 100 }, // vertical line, x=50, starting at y=10
+    ];
+    // (50,3): distance 3 from the horizontal line, distance 7 from the vertical one.
+    expect(nearestPointOnSegments({ x: 50, y: 3 }, segments)).toEqual({ x: 50, y: 0 });
+  });
+
+  it("returns null when nothing is within MEASURE_SNAP_TOLERANCE_PX", () => {
+    const segments = [{ x1: 0, y1: 0, x2: 100, y2: 0 }];
+    expect(nearestPointOnSegments({ x: 50, y: 100 }, segments)).toBeNull();
+  });
+});
+
+describe("wallAndPanelSnapLines", () => {
+  const fp = buildRectangleFootprint(30, 20); // A(0,0) B(30,0) C(30,20) D(0,20)
+  const wallSlots = {
+    AB: [{ type: "standard" as const, widthIn: 360 }],
+    BC: [{ type: "standard" as const, widthIn: 240 }],
+    CD: [{ type: "standard" as const, widthIn: 360 }],
+    DA: [{ type: "standard" as const, widthIn: 240 }],
+  };
+  const wallStartOffsetIn = { AB: 0, BC: 0, CD: 0, DA: 0 };
+
+  it("includes each wall's own exterior edge as a snappable line", () => {
+    const segments = wallAndPanelSnapLines(fp, wallSlots, ORIGIN, wallStartOffsetIn, 15);
+    expect(segments.length).toBeGreaterThan(0);
+    // A point just off the top wall's exterior edge (60,60)-(420,60) should snap onto that line.
+    const snapped = nearestPointOnSegments({ x: 240, y: 65 }, segments);
+    expect(snapped).not.toBeNull();
+    expect(snapped!.y).toBeCloseTo(60, 0);
+  });
+
+  it("returns null for a point far from every wall/panel edge", () => {
+    const segments = wallAndPanelSnapLines(fp, wallSlots, ORIGIN, wallStartOffsetIn, 15);
+    // Dead center of the 30x20 footprint - well clear of all 4 walls.
+    expect(nearestPointOnSegments({ x: 240, y: 180 }, segments)).toBeNull();
   });
 });

@@ -76,6 +76,32 @@ describe("computePierGrid", () => {
     const piers = computePierGrid(fp, 20); // 1 segment per wall -> exactly the 4 corners
     expect(piers).toHaveLength(4);
   });
+
+  it("keeps the interior grid on the same pitch as the perimeter instead of a fixed spacingFt step (regression: previously drifted further out of alignment the farther from the origin corner, visible as a 'bowing' grid on a large building)", () => {
+    // 50ft doesn't divide evenly by 6ft (50/6 = 8.33) - the real-world case
+    // that exposed the bug. Top wall AB: 9 bays of 50/9 = 5.5556ft each.
+    const fp = buildRectangleFootprint(50, 20);
+    const spacingFt = 6;
+    const piers = computePierGrid(fp, spacingFt);
+    const points = piers.map((p) => p.point);
+
+    const bayX = 50 / 9; // perimeter's own evenly-divided top/bottom wall pitch
+    const bayY = 20 / 4; // perimeter's own evenly-divided left/right wall pitch (20/6 -> ceil 4 bays of 5ft)
+
+    // Old (buggy) behavior would have placed this at (6,5) or (6,6) - a fixed
+    // 6ft step from the origin corner, off-pitch from the perimeter's own 5.5556ft bays.
+    expect(points).toContainEqual({ x: bayX, y: bayY });
+    expect(points.some((p) => Math.abs(p.x - 6) < 1e-6)).toBe(false);
+
+    // Every interior pier's x must land on one of the perimeter's own bay
+    // lines (a multiple of bayX from the origin), not merely "close" to one.
+    const interiorPoints = points.filter((p) => p.x > 1e-6 && p.x < 50 - 1e-6 && p.y > 1e-6 && p.y < 20 - 1e-6);
+    expect(interiorPoints.length).toBeGreaterThan(0);
+    for (const p of interiorPoints) {
+      const bayIndexX = p.x / bayX;
+      expect(bayIndexX).toBeCloseTo(Math.round(bayIndexX), 6);
+    }
+  });
 });
 
 function isOnSegment(pt: { x: number; y: number }, start: { x: number; y: number }, end: { x: number; y: number }): boolean {

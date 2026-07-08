@@ -11,4 +11,7 @@ export * from "./tiling";
 export * from "./bracedPlacement";
 export * from "./retile";
 export * from "./pierGrid";
+export * from "./floorPanelGrid";
+export * from "./joistLayout";
 export * from "./pointInPolygon";
+export * from "./wallCompassDirection";
