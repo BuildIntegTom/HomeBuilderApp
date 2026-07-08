@@ -1,6 +1,8 @@
 import type {
+  CatalogStatus,
   CatalogValue,
   FastenerSpacingRow,
+  FoundationLoadPathStep,
   PanelTypeDef,
   WallAssemblyLayer,
 } from "./types";
@@ -110,39 +112,260 @@ export const standardWindowWidthsIn: CatalogValue<number[]> = {
 
 // --- Foundation type ------------------------------------------------------------
 
+/** Per-pier-product load-bearing capacity — deliberately not a single
+ * shared unit: each pier product is rated the way its own industry
+ * actually rates it (helical piles: direct axial capacity in lb; ground
+ * screws: often rated in kN; concrete piers: soil bearing pressure in psf,
+ * applied over the pier's own base area), so comparing across types means
+ * comparing the *unit* too, not just the number. */
+export interface PierLoadCapacity {
+  value: number;
+  unit: string;
+  status: CatalogStatus;
+  note: string;
+}
+
 export interface FoundationTypeDef {
-  id: "crawlspace" | "slab" | "basement" | "root-cellar";
+  id: "crawlspace" | "concrete-pier" | "ground-screw" | "slab" | "basement" | "root-cellar";
   label: string;
   vaporNote: string;
   status: "confirmed" | "pending-BI-confirmation";
+  /** Full pier/slab-to-wall-plate load path, in order — empty where not
+   * yet defined (mirrors `status`/`vaporNote` for the same foundation). */
+  loadPath: FoundationLoadPathStep[];
+  /** True for foundation types supported on a grid of discrete piers
+   * (spaced per `pierSpacingOptionsFt`, perimeter + interior infill) rather
+   * than a continuous footer — helical pile, ground screw, and cast
+   * concrete piers all qualify. */
+  usesPierGrid: boolean;
+  /** Only present for pier-based foundations — see PierLoadCapacity. */
+  loadCapacity?: PierLoadCapacity;
 }
+
+const crawlspaceLoadPath: FoundationLoadPathStep[] = [
+  {
+    label: "Helical screw pier",
+    description: "Full-clearance vented crawlspace support, driven to depth/torque per site soil report (not modeled here).",
+  },
+  {
+    label: "Pier to beam",
+    description: "Wood beam bears on the pier cap.",
+    fastenerConnection: "Pier to beam",
+  },
+  {
+    label: "Beam to floor panel",
+    description: "Floor panel bears on and fastens to the beam.",
+    fastenerConnection: "Floor panel to beam",
+  },
+  {
+    label: "Floor panel to toe-up",
+    description: "Toe-up (ext./int. 2x4 with 1.5\" wood fiberboard between, for thermal continuity) fastens to the floor panel edge.",
+    fastenerConnection: "Toe-up to floor panel",
+  },
+  {
+    label: "Toe-up to wall panel",
+    description: "Wall panel bottom plate fastens to the toe-up, completing the load path into the wall.",
+    fastenerConnection: "Wall panel to toe-up",
+  },
+];
+
+const concretePierLoadPath: FoundationLoadPathStep[] = [
+  {
+    label: "Concrete pier",
+    description: "Cast-in-place (or precast) concrete pier, spaced per the pier grid, sized/depth per site soil report (not modeled here).",
+  },
+  {
+    label: "Pier to beam",
+    description: "Wood beam bears on the pier cap.",
+    fastenerConnection: "Pier to beam",
+  },
+  {
+    label: "Beam to floor panel",
+    description: "Floor panel bears on and fastens to the beam.",
+    fastenerConnection: "Floor panel to beam",
+  },
+  {
+    label: "Floor panel to toe-up",
+    description: "Toe-up (ext./int. 2x4 with 1.5\" wood fiberboard between, for thermal continuity) fastens to the floor panel edge.",
+    fastenerConnection: "Toe-up to floor panel",
+  },
+  {
+    label: "Toe-up to wall panel",
+    description: "Wall panel bottom plate fastens to the toe-up, completing the load path into the wall.",
+    fastenerConnection: "Wall panel to toe-up",
+  },
+];
+
+const groundScrewLoadPath: FoundationLoadPathStep[] = [
+  {
+    label: "Ground screw",
+    description: "Direct-drive ground screw (single large helix near the tip, no pre-drilling) — lighter-duty than a multi-helix helical pile, spaced per the pier grid, sized/depth per site soil report (not modeled here).",
+  },
+  {
+    label: "Pier to beam",
+    description: "Wood beam bears on the ground screw's bracket/cap.",
+    fastenerConnection: "Pier to beam",
+  },
+  {
+    label: "Beam to floor panel",
+    description: "Floor panel bears on and fastens to the beam.",
+    fastenerConnection: "Floor panel to beam",
+  },
+  {
+    label: "Floor panel to toe-up",
+    description: "Toe-up (ext./int. 2x4 with 1.5\" wood fiberboard between, for thermal continuity) fastens to the floor panel edge.",
+    fastenerConnection: "Toe-up to floor panel",
+  },
+  {
+    label: "Toe-up to wall panel",
+    description: "Wall panel bottom plate fastens to the toe-up, completing the load path into the wall.",
+    fastenerConnection: "Wall panel to toe-up",
+  },
+];
+
+const slabLoadPath: FoundationLoadPathStep[] = [
+  {
+    label: "Footer",
+    description: "9\" deep x 3'-0\" wide continuous concrete footer, bears the stem wall.",
+  },
+  {
+    label: "Stem wall",
+    description: "10\" thick concrete stem wall rises from the footer to grade.",
+  },
+  {
+    label: "Thermal shelf (lip)",
+    description: "6\" down from the top of the stem wall, the wall steps in 4\" horizontally, forming a shelf that carries the slab edge.",
+  },
+  {
+    label: "EPS foam thermal break",
+    description: "2\" EPS foam runs down the stem wall's exposed upper 6\" face, then turns to run horizontally across the shelf — isolating the slab from the stem wall on both the side and the bottom.",
+  },
+  {
+    label: "Slab",
+    description: "Poured on top of the foam. Because the shelf sits only 6\" below the stem wall's top edge while the foam plus slab together are thicker than that, the slab's top surface ends up above the stem wall's top.",
+  },
+];
 
 export const foundationTypes: FoundationTypeDef[] = [
   {
     id: "crawlspace",
-    label: "Vented crawlspace (helical screw piers)",
+    label: "Vented crawlspace (helical pile)",
     vaporNote: "Floor is more vapor-open on the bottom (Mento-type layer) — full load path: helical pier -> wood beam -> floor panel -> toe-up -> wall panel bottom plate.",
     status: "confirmed",
+    loadPath: crawlspaceLoadPath,
+    usesPierGrid: true,
+    loadCapacity: {
+      value: 12000,
+      unit: "lb (axial compression, per pile)",
+      status: "pending-BI-confirmation",
+      note: "Placeholder mid-range figure for a multi-helix residential helical pile (industry range ~4,000-30,000 lb depending on helix count/soil) — needs Building Integrity's own product spec + site soil report.",
+    },
+  },
+  {
+    id: "concrete-pier",
+    label: "Concrete pier",
+    vaporNote: "Same vapor logic as the helical-pier crawlspace (vented, more vapor-open on the bottom) — only the pier material/install method differs.",
+    status: "pending-BI-confirmation",
+    loadPath: concretePierLoadPath,
+    usesPierGrid: true,
+    loadCapacity: {
+      value: 1500,
+      unit: "psf (allowable soil bearing pressure, applied over the pier's own base area)",
+      status: "pending-BI-confirmation",
+      note: "IRC prescriptive default for undocumented/assumed soil (Table R401.4.1) — a real design needs an actual site soil report, not this default.",
+    },
+  },
+  {
+    id: "ground-screw",
+    label: "Ground screw",
+    vaporNote: "Same vapor logic as the helical-pier crawlspace (vented, more vapor-open on the bottom) — only the pier material/install method differs.",
+    status: "pending-BI-confirmation",
+    loadPath: groundScrewLoadPath,
+    usesPierGrid: true,
+    loadCapacity: {
+      value: 6,
+      unit: "kN (ultimate, per screw)",
+      status: "pending-BI-confirmation",
+      note: "Placeholder mid-range figure for a light-duty direct-drive ground screw (industry range ~2-15 kN ultimate depending on product/soil) — needs Building Integrity's own product spec + site soil report.",
+    },
   },
   {
     id: "slab",
     label: "Thermally broken slab",
-    vaporNote: "Vapor logic not yet defined for this foundation type.",
+    vaporNote: "Slab is isolated from the stem wall by a continuous wrap of 2\" EPS foam (side + bottom) — see the Detail Guide Page below for the full detail. Full vapor-perm modeling (like the wall assembly's) is still pending.",
     status: "pending-BI-confirmation",
+    loadPath: slabLoadPath,
+    usesPierGrid: false,
   },
   {
     id: "basement",
     label: "Unvented basement",
     vaporNote: "Vapor logic not yet defined for this foundation type.",
     status: "pending-BI-confirmation",
+    loadPath: [],
+    usesPierGrid: false,
   },
   {
     id: "root-cellar",
     label: "Root cellar",
     vaporNote: "Vapor logic not yet defined for this foundation type.",
     status: "pending-BI-confirmation",
+    loadPath: [],
+    usesPierGrid: false,
   },
 ];
+
+// --- Pier grid spacing ------------------------------------------------------
+
+export const pierSpacingOptionsFt = [6, 8, 10, 12] as const;
+
+export const pierSpacingDefaultFt = 8;
+
+export const pierSpacingStatus = {
+  status: "confirmed" as const,
+  note: "Pier grid spacing choices (Tommy) — applies to any pier-based foundation (helical or concrete).",
+};
+
+// --- Concrete embodied carbon ------------------------------------------------
+
+const KG_M3_TO_KG_FT3 = 1 / 35.3147;
+
+/** Cast concrete pier dimensions used for the embodied-carbon volume calc
+ * — a placeholder until real sizing (depends on site soil report and
+ * load) is available. */
+export const concretePierDimensions = {
+  diameterIn: 12,
+  depthFt: 4,
+  status: "pending-BI-confirmation" as const,
+  note: "Placeholder pier size (12in diameter x 4ft depth) for the embodied-carbon calc — actual sizing depends on site soil report and load, not modeled here.",
+};
+
+export const concreteEmbodiedCarbonKgPerFt3: CatalogValue<number> = {
+  value: 400 * KG_M3_TO_KG_FT3,
+  status: "pending-BI-confirmation",
+  note: "~400 kg CO2e/m3 for standard ready-mix concrete (common LCA literature range 300-450 kg CO2e/m3, e.g. ICE database), converted to kg CO2e/ft3 — needs Building Integrity's own mix design/supplier EPD before treating as final.",
+};
+
+// --- Thermally broken slab detail --------------------------------------------
+
+/** Footer/stem-wall/lip/foam dimensions (Tommy) — slabThicknessIn and
+ * stemWallHeightIn are the two assumed placeholders (not yet given):
+ * slabThicknessIn is chosen so the slab, poured on 2in foam sitting on
+ * the 6in-down shelf, clearly clears the stem wall's top edge, matching
+ * the described detail; stemWallHeightIn is illustrative only (actual
+ * height is site/frost-depth dependent, not modeled). */
+export const slabFoundationDimensions = {
+  footerDepthIn: 9,
+  footerWidthIn: 36,
+  stemWallThicknessIn: 10,
+  stemWallHeightIn: 24,
+  lipDepthFromTopIn: 6,
+  lipShelfWidthIn: 4,
+  epsFoamThicknessIn: 2,
+  slabThicknessIn: 6,
+  status: "pending-BI-confirmation" as const,
+  note: "Footer (9in x 3'-0\"), stem wall thickness (10in), lip (6in down from top, 4in shelf), and EPS foam (2in) are confirmed (Tommy). Slab thickness (6in) and overall stem wall height (24in) are assumed placeholders, not yet given.",
+};
 
 // --- Density ----------------------------------------------------------------
 
@@ -183,29 +406,86 @@ export const priceRates = {
 
 // --- Panel type roster --------------------------------------------------------
 
+const STRUCTURAL_PENDING_NOTE =
+  "Pending Building Integrity's own pre-engineering numbers. Possibly covered by \"For Baleheads Only\" NDS 2018 (ASD) ClearCalcs doc — still unconfirmed whether that's Building Integrity's own engineering.";
+
 export const panelTypes: PanelTypeDef[] = [
-  { id: "standard", label: "Standard", description: "Baseline wall panel." },
-  { id: "corner", label: "Corner", description: "Corner connection panel." },
+  {
+    id: "standard",
+    label: "Standard",
+    description: "Baseline wall panel.",
+    loadBearingCapacity: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+    shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+  },
+  {
+    id: "corner",
+    label: "Corner",
+    description: "Corner connection panel.",
+    loadBearingCapacity: {
+      status: "pending-BI-confirmation",
+      note: `Bears load from 2 intersecting walls at the shared corner, not just 1. ${STRUCTURAL_PENDING_NOTE}`,
+    },
+    shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+  },
   {
     id: "column",
     label: "Column",
     description:
       "Reinforced/plywood-sided, for >12' runs needing beam bearing under roof panels; not needed under trusses.",
+    loadBearingCapacity: {
+      status: "pending-BI-confirmation",
+      note: `This type exists specifically for higher point-load bearing (roof beam reactions on long runs) — expected to rate above standard/corner once modeled. ${STRUCTURAL_PENDING_NOTE}`,
+    },
+    shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
   },
   {
     id: "braced",
     label: "Braced Panel",
     description:
       "Standard-width panel with diagonal bracing carved into the finished compressed panel afterward (formerly called \"carrot panel\", deprecated in Panel Set 1). One braced panel touches each corner panel on every wall; additional braced panels are added along the run per seismic zone (high=8ft/moderate=12ft/low=16ft, Tommy). No longer flanks window openings (Tommy).",
+    loadBearingCapacity: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+    shearValue: {
+      status: "pending-BI-confirmation",
+      note: `This type exists specifically to provide lateral/shear resistance (that's what the diagonal bracing is for) — seismic-zone spacing already governs how many are needed even without a numeric value yet. ${STRUCTURAL_PENDING_NOTE}`,
+    },
   },
-  { id: "header", label: "Header (Lintel)", description: "Above-opening beam-bearing panel." },
-  { id: "sill", label: "Sill", description: "Below-opening panel." },
-  { id: "inclined-gable", label: "Inclined / Gable", description: "Roof-slope panel." },
+  {
+    id: "header",
+    label: "Header (Lintel)",
+    description: "Above-opening beam-bearing panel.",
+    loadBearingCapacity: {
+      status: "pending-BI-confirmation",
+      note: `The header BEAM (double 2x6, or 2x8 for spans to 12ft) carries the actual opening load, not the panel skin itself. ${STRUCTURAL_PENDING_NOTE}`,
+    },
+    shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+  },
+  {
+    id: "sill",
+    label: "Sill",
+    description: "Below-opening panel.",
+    loadBearingCapacity: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+    shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+  },
+  {
+    id: "inclined-gable",
+    label: "Inclined / Gable",
+    description: "Roof-slope panel.",
+    loadBearingCapacity: {
+      status: "pending-BI-confirmation",
+      note: `Load path is roof loads (snow/wind/dead), not wall shear — beam sizing depends on roof angle (not yet modeled). ${STRUCTURAL_PENDING_NOTE}`,
+    },
+    shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+  },
   {
     id: "safety-gap",
     label: "Safety / Gap Panel",
     description:
       "Dimensional-tolerance absorption panel: standard width minus 3/4\", plus 1/2\" plywood on one face, held back 1 1/4\" from top/bottom (full-height); placed farthest from the site's least-accessible side. Applies to roof panels too.",
+    loadBearingCapacity: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+    shearValue: {
+      status: "pending-BI-confirmation",
+      note: `The 1/2" plywood skin gives a genuine strength bonus (confirmed via NFW's own notes) — but that bonus isn't the reason this panel exists (dimensional tolerance is) and isn't quantified yet. ${STRUCTURAL_PENDING_NOTE}`,
+    },
   },
 ];
 

@@ -17,9 +17,11 @@ import {
   computeSlotRects,
   cornerMarkerPosition,
   findNearestWall,
+  findNearestWallCandidates,
   formatFeetInches,
   octagonPreviewPoints,
   parseLengthFt,
+  pickWallByDragDirection,
   projectOntoWallFt,
   signedDepthFt,
   signedPerpOffsetFt,
@@ -48,6 +50,18 @@ interface BumpOutGesture {
   wallId: Wall["id"];
   spanStartFt: number;
   spanEndFt: number;
+}
+
+// Near a corner, a mousedown can land within pick tolerance of 2
+// perpendicular walls at once. Rather than lock in the raw-closest one
+// immediately (which can be the wrong one — see pickWallByDragDirection),
+// we wait for the drag to move this far before committing, so the actual
+// drag direction can break the tie.
+const DRAG_DISAMBIGUATION_DEADZONE_PX = 8;
+
+interface PendingWallPick {
+  downPos: DragPoint;
+  candidates: { wall: Wall; alongFt: number; distPx: number }[];
 }
 
 export interface FootprintCanvasProps {
@@ -129,9 +143,16 @@ export default function FootprintCanvas({
   // to trigger a re-render for the live preview.
   const bumpOutGestureRef = useRef<BumpOutGesture | null>(null);
   const [bumpOutPointerPos, setBumpOutPointerPos] = useState<DragPoint | null>(null);
+  // Set at mousedown when the click is ambiguously close to >1 wall (a
+  // corner); cleared once enough drag movement reveals which wall the user
+  // means (see pickWallByDragDirection), at which point it becomes a real
+  // bumpOutGestureRef. A ref, not state, for the same same-batch-visibility
+  // reason as bumpOutGestureRef above.
+  const pendingWallPickRef = useRef<PendingWallPick | null>(null);
 
   const resetBumpOutGesture = () => {
     bumpOutGestureRef.current = null;
+    pendingWallPickRef.current = null;
     setBumpOutPointerPos(null);
   };
 
@@ -140,9 +161,28 @@ export default function FootprintCanvas({
   useEffect(() => {
     if (shapeTool !== "bump-out") {
       bumpOutGestureRef.current = null;
+      pendingWallPickRef.current = null;
       setBumpOutPointerPos(null);
     }
   }, [shapeTool]);
+
+  /** Resolves a pending (ambiguous) wall pick into a real span gesture,
+   * using the observed drag direction to break the tie once there's been
+   * enough movement to reveal one; a pick with no movement yet (e.g. a
+   * plain click released before any drag) just falls back to the nearest
+   * candidate, matching the old single-candidate behavior. */
+  const resolvePendingWallPick = (currentPos: DragPoint) => {
+    const pending = pendingWallPickRef.current;
+    if (!pending || !footprint) return;
+    const moved = Math.hypot(currentPos.x - pending.downPos.x, currentPos.y - pending.downPos.y);
+    const chosen =
+      moved > 0
+        ? pickWallByDragDirection(pending.downPos, currentPos, pending.candidates, footprint.corners, offsetPx)
+        : pending.candidates[0]!;
+    const spanStartFt = snapSpanPointFt(chosen.alongFt, chosen.wall.lengthFt);
+    bumpOutGestureRef.current = { stage: "span", wallId: chosen.wall.id, spanStartFt, spanEndFt: spanStartFt };
+    pendingWallPickRef.current = null;
+  };
 
   // Single-stage gesture (unlike bump-out's 2-stage span/depth) — just
   // which wall was picked up; the live offset is derived each render from
@@ -167,15 +207,17 @@ export default function FootprintCanvas({
     const pos = e.target.getStage()!.getPointerPosition()!;
 
     if (shapeTool === "bump-out") {
-      if (footprint && !bumpOutGestureRef.current) {
-        const found = findNearestWall(pos, footprint, offsetPx);
-        if (found) {
-          bumpOutGestureRef.current = {
-            stage: "span",
-            wallId: found.wall.id,
-            spanStartFt: found.alongFt,
-            spanEndFt: found.alongFt,
-          };
+      if (footprint && !bumpOutGestureRef.current && !pendingWallPickRef.current) {
+        const candidates = findNearestWallCandidates(pos, footprint, offsetPx);
+        if (candidates.length === 1) {
+          const only = candidates[0]!;
+          const spanStartFt = snapSpanPointFt(only.alongFt, only.wall.lengthFt);
+          bumpOutGestureRef.current = { stage: "span", wallId: only.wall.id, spanStartFt, spanEndFt: spanStartFt };
+          setBumpOutPointerPos(pos);
+        } else if (candidates.length > 1) {
+          // Ambiguous (near a corner) — don't commit yet; wait for the
+          // drag to move enough to reveal which wall is meant.
+          pendingWallPickRef.current = { downPos: pos, candidates };
           setBumpOutPointerPos(pos);
         }
       }
@@ -215,6 +257,15 @@ export default function FootprintCanvas({
     const pos = e.target.getStage()!.getPointerPosition()!;
 
     if (shapeTool === "bump-out") {
+      if (pendingWallPickRef.current && !bumpOutGestureRef.current) {
+        const pending = pendingWallPickRef.current;
+        const dist = Math.hypot(pos.x - pending.downPos.x, pos.y - pending.downPos.y);
+        if (dist < DRAG_DISAMBIGUATION_DEADZONE_PX) {
+          setBumpOutPointerPos(pos);
+          return; // still ambiguous — wait for more movement before committing
+        }
+        resolvePendingWallPick(pos);
+      }
       const gesture = bumpOutGestureRef.current;
       if (!gesture || !footprint) return;
       setBumpOutPointerPos(pos);
@@ -245,6 +296,10 @@ export default function FootprintCanvas({
     }
 
     if (shapeTool === "bump-out") {
+      if (pendingWallPickRef.current && !bumpOutGestureRef.current) {
+        const pos = e.target.getStage()!.getPointerPosition() ?? bumpOutPointerPos;
+        if (pos) resolvePendingWallPick(pos);
+      }
       const gesture = bumpOutGestureRef.current;
       if (!gesture || !footprint) return;
       const pos = e.target.getStage()!.getPointerPosition() ?? bumpOutPointerPos;

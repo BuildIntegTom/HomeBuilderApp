@@ -7,6 +7,7 @@ import {
   applyBracedPlacement,
   buildOctagonFootprint,
   buildRectangleFootprint,
+  computePierGrid,
   cornerOwnership as cornerOwnershipPure,
   dragWall,
   editWallLength,
@@ -27,6 +28,9 @@ import {
 import {
   computeAssemblyPerm,
   computeCarbonRange,
+  computeConcretePierVolume,
+  computeNetEmbodiedCarbonCO2e,
+  computePanelWeightBreakdown,
   computePrice,
   computeStandardPanelWoodWeight,
   computeStrawWeight,
@@ -37,15 +41,25 @@ import {
 import {
   bomWidthMismatchWarning,
   carbonFractionOfDryMass,
+  concreteEmbodiedCarbonKgPerFt3,
+  concretePierDimensions,
   cornerPanelWidthIn,
+  fastenerSpacingTable,
   fastenerTableStatus,
+  foundationFastenerSchedule,
   foundationTypes,
   looseDensePackDefaultThicknessIn,
   looseDensePackThicknessOptionsIn,
   looseDensePackWidthIn,
+  panelTypes,
+  pierSpacingDefaultFt,
+  pierSpacingOptionsFt,
+  pierSpacingStatus,
   referenceDensities,
+  slabFoundationDimensions,
   seismicBracedPanelSpacingFt,
   shearLoadCapacity,
+  standardPanelBom,
   standardPanelBomReferenceWidthIn,
   standardPanelHeightIn,
   standardWindowWidthsIn,
@@ -54,6 +68,13 @@ import {
   wallAssemblyLayers,
   type SeismicZone,
 } from "@building-integrity/panel-catalog";
+import DetailGuidePage from "./DetailGuidePage";
+import FoundationCanvas from "./FoundationCanvas";
+import { panelInstancesOfTypes } from "./panelInstances";
+import PierFoundationDiagram from "./PierFoundationDiagram";
+import ShopDrawingPage from "./ShopDrawingPage";
+import SlabFoundationDiagram from "./SlabFoundationDiagram";
+import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import styles from "./page.module.css";
 
 const FootprintCanvas = dynamic(() => import("./FootprintCanvas"), { ssr: false });
@@ -80,7 +101,39 @@ const PHASE2_ASSUMPTIONS = [
 
 type ShapeTool = "rectangle" | "octagon" | "bump-out" | "edit" | "drag-wall";
 
+// Only the wall panel types that actually have real instances in the
+// current layout system get a Shop Drawing page today (Tommy also wants
+// floor/roof panels covered, but floor/roof paneling itself doesn't exist
+// yet — see the "not yet in the layout system" note below). Corner's
+// safety-oct-corner variant shares the "corner" page (same fabrication,
+// priced identically elsewhere already).
+const SHOP_DRAWING_PANEL_TYPES: {
+  slotTypes: PanelSlot["type"][];
+  panelTypeId: "standard" | "corner" | "braced" | "safety-gap";
+  hasWoodBom: boolean;
+}[] = [
+  { slotTypes: ["standard"], panelTypeId: "standard", hasWoodBom: true },
+  { slotTypes: ["corner", "safety-oct-corner"], panelTypeId: "corner", hasWoodBom: false },
+  { slotTypes: ["braced"], panelTypeId: "braced", hasWoodBom: true },
+  { slotTypes: ["safety-gap"], panelTypeId: "safety-gap", hasWoodBom: false },
+];
+
+const SHOP_DRAWING_BOM_PARTS = [
+  { label: "Bottom plate skin (plywood)", qty: standardPanelBom.bottomPlateSkin.qty, dimensions: `${standardPanelBom.bottomPlateSkin.thicknessIn}"x${standardPanelBom.bottomPlateSkin.widthIn}"x${standardPanelBom.bottomPlateSkin.lengthIn}"` },
+  { label: "Bottom plate 2x4s", qty: standardPanelBom.bottomPlate2x4s.qty, dimensions: `2x4 x ${standardPanelBom.bottomPlate2x4s.lengthIn}"` },
+  { label: "Top plate assembly", qty: standardPanelBom.topPlateAssembly.qty, dimensions: "Mirrors bottom plate (1 skin + 2x 2x4s), inverted" },
+  { label: "Studs", qty: standardPanelBom.studs.qty, dimensions: `2x4 x ${standardPanelBom.studs.lengthIn}"` },
+  { label: "Girt block", qty: standardPanelBom.girts.qty, dimensions: `2x4 x ${standardPanelBom.girts.block.lengthIn}"` },
+  { label: "Girt web (plywood)", qty: standardPanelBom.girts.qty, dimensions: `${standardPanelBom.girts.web.thicknessIn}"x${standardPanelBom.girts.web.widthIn}"x${standardPanelBom.girts.web.lengthIn}"` },
+];
+
+type EditorTab = "wall" | "foundation" | "roof";
+
 export default function LayoutEditor() {
+  // Which building system is being laid out — wall/foundation/roof are all
+  // views onto the same shared footprint/panel state below, so switching
+  // tabs never resets anything (Tommy). Roof has no editor yet (future work).
+  const [editorTab, setEditorTab] = useState<EditorTab>("wall");
   const [viewMode, setViewMode] = useState<"plan" | "3d">("plan");
   const [shapeTool, setShapeTool] = useState<ShapeTool>("rectangle");
   const [footprint, setFootprint] = useState<Footprint | null>(null);
@@ -111,11 +164,27 @@ export default function LayoutEditor() {
 
   const [seismicZone, setSeismicZone] = useState<SeismicZone>("moderate");
   const [foundationTypeId, setFoundationTypeId] = useState(foundationTypes[0]!.id);
+  const [pierSpacingFt, setPierSpacingFt] = useState<number>(pierSpacingDefaultFt);
   const [zipCode, setZipCode] = useState("");
+  const [role, setRole] = useState<ViewerRole>("public");
 
   const interior = interiorLayers.find((l) => l.id === interiorId)!;
   const exterior = exteriorLayers.find((l) => l.id === exteriorId)!;
   const foundationType = foundationTypes.find((f) => f.id === foundationTypeId)!;
+  const foundationFasteners = foundationFastenerSchedule(foundationType, fastenerSpacingTable);
+
+  const pierGrid = useMemo(
+    () => (footprint && foundationType.usesPierGrid ? computePierGrid(footprint, pierSpacingFt) : []),
+    [footprint, foundationType, pierSpacingFt],
+  );
+
+  // Only concrete piers contribute embodied-carbon emissions here — the
+  // helical-screw crawlspace is steel, not concrete, so it nets 0.
+  const concretePierVolumeFt3 =
+    foundationTypeId === "concrete-pier"
+      ? computeConcretePierVolume(pierGrid.length, concretePierDimensions.diameterIn, concretePierDimensions.depthFt)
+          .totalVolumeFt3
+      : 0;
 
   const spacingIn = seismicBracedPanelSpacingFt[seismicZone] * 12;
 
@@ -448,6 +517,51 @@ export default function LayoutEditor() {
   const totalWeightKg = strawWeight.weightKg + totalWoodWeightKg;
   const totalWeightLb = totalWeightKg * KG_TO_LB;
 
+  const hasClayPlaster = interior.id === "clay-plaster";
+  const hasLimePlaster = exterior.id === "lime-plaster";
+
+  const shopDrawings = useMemo(
+    () =>
+      SHOP_DRAWING_PANEL_TYPES.map(({ slotTypes, panelTypeId, hasWoodBom }) => {
+        const panelType = panelTypes.find((p) => p.id === panelTypeId)!;
+        const instances = panelInstancesOfTypes(overlayWallSlots, slotTypes).map((inst) => ({
+          ...inst,
+          weightBreakdown: computePanelWeightBreakdown({
+            widthIn: inst.widthIn,
+            thicknessIn,
+            heightIn: wallHeightFt * 12,
+            densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
+            woodWeightKg: hasWoodBom ? woodPerPanel.weightKg : null,
+            hasClayPlaster,
+            hasLimePlaster,
+          }),
+        }));
+        return { panelType, hasWoodBom, instances };
+      }),
+    [overlayWallSlots, thicknessIn, wallHeightFt, densityLbFt3, woodPerPanel.weightKg, hasClayPlaster, hasLimePlaster],
+  );
+
+  // Only surface pages that actually apply to what's currently selected/
+  // drawn — a foundation detail page only if one exists for this type, a
+  // panel type's Shop Drawing only if the current design actually has any
+  // panels of that type (Tommy: "easily view the detail pages that are
+  // relevant to the options currently selected").
+  const relevantDetailPages = useMemo(() => {
+    const pages: { id: string; label: string }[] = [];
+    if (foundationType.usesPierGrid || foundationType.id === "slab") {
+      pages.push({ id: "detail-foundation", label: `Foundation: ${foundationType.label}` });
+    }
+    // Shop Drawings are a fabricator/detailer document, not a public-facing one (Tommy).
+    if (role !== "public") {
+      for (const { panelType, instances } of shopDrawings) {
+        if (instances.length > 0) {
+          pages.push({ id: `shop-${panelType.id}`, label: `Shop Drawing: ${panelType.label} (${instances.length})` });
+        }
+      }
+    }
+    return pages;
+  }, [foundationType, shopDrawings, role]);
+
   const price = useMemo(() => {
     const areaSqFtFor = (type: PanelSlot["type"]) =>
       (allSlots.filter((s) => s.type === type).reduce((sum, s) => sum + s.widthIn, 0) / 12) *
@@ -468,6 +582,19 @@ export default function LayoutEditor() {
     [strawWeight.weightKg],
   );
 
+  // Net CO2e running total: straw's sequestered carbon is a credit
+  // (positive), concrete's embodied emissions are a debit (negative) —
+  // only concrete-pier foundations contribute a debit today (Tommy).
+  const embodiedCarbon = useMemo(
+    () =>
+      computeNetEmbodiedCarbonCO2e(
+        carbonRange.atStandardMoisture.carbonKg,
+        concretePierVolumeFt3,
+        concreteEmbodiedCarbonKgPerFt3.value,
+      ),
+    [carbonRange.atStandardMoisture.carbonKg, concretePierVolumeFt3],
+  );
+
   const permResult = useMemo(() => computeAssemblyPerm(interior, exterior, season), [interior, exterior, season]);
   const vaporCheck = useMemo(
     () => validateVaporOpenness(interior, exterior, season),
@@ -486,25 +613,68 @@ export default function LayoutEditor() {
       { label: "Framing lumber density", ...referenceDensities.framingLumberLbFt3 },
       { label: "Standard window widths", ...standardWindowWidthsIn },
       { label: "Foundation type: " + foundationType.label, status: foundationType.status, note: foundationType.vaporNote },
+      ...(foundationType.loadCapacity
+        ? [
+            {
+              label: "Pier load-bearing capacity: " + foundationType.label,
+              status: foundationType.loadCapacity.status,
+              note: `${foundationType.loadCapacity.value} ${foundationType.loadCapacity.unit}. ${foundationType.loadCapacity.note}`,
+            },
+          ]
+        : []),
       ...(standardWidthIn !== standardPanelBomReferenceWidthIn
         ? [{ label: "Wood-weight BOM vs. selected panel width", ...bomWidthMismatchWarning }]
         : []),
+      ...(foundationTypeId === "concrete-pier"
+        ? [
+            { label: "Concrete pier dimensions", ...concretePierDimensions },
+            { label: "Concrete embodied carbon factor", ...concreteEmbodiedCarbonKgPerFt3 },
+          ]
+        : []),
+      ...(foundationTypeId === "slab" ? [{ label: "Slab foundation dimensions", ...slabFoundationDimensions }] : []),
       ...PHASE2_ASSUMPTIONS,
     ]);
     return entries.filter((e, i) => entries.findIndex((o) => o.note === e.note) === i);
-  }, [interior, exterior, foundationType, standardWidthIn]);
+  }, [interior, exterior, foundationType, foundationTypeId, standardWidthIn]);
 
   return (
     <div className={styles.page}>
       <main className={styles.main}>
         <h1>Layout Editor</h1>
+        <div className={styles.toolbar} role="group" aria-label="Viewing as">
+          {(Object.keys(roleDisclaimers) as ViewerRole[]).map((r) => (
+            <button
+              key={r}
+              type="button"
+              className={role === r ? styles.toolActive : styles.tool}
+              aria-pressed={role === r}
+              onClick={() => setRole(r)}
+            >
+              Viewing as: {roleDisclaimers[r].label}
+            </button>
+          ))}
+        </div>
         <p className={styles.disclaimer}>
-          Reference-only. Not engineered, not fabricator-produced. Single-story,
-          exterior shell only.
+          {roleDisclaimers[role].text} Single-story, exterior shell only.
         </p>
         <p className={styles.note}>
           <Link href="/sandbox">Simpler single-wall-run calculation sandbox →</Link>
         </p>
+
+        <section className={styles.relevantPages}>
+          <h2>Relevant Detail Pages</h2>
+          {relevantDetailPages.length === 0 ? (
+            <p className={styles.note}>Draw a footprint below to see the detail/shop-drawing pages that apply to your current design.</p>
+          ) : (
+            <ul className={styles.relevantPagesList}>
+              {relevantDetailPages.map((p) => (
+                <li key={p.id}>
+                  <a href={`#${p.id}`}>{p.label} →</a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         <section>
           <h2>Site</h2>
@@ -530,6 +700,18 @@ export default function LayoutEditor() {
               ))}
             </select>
           </label>
+          {foundationType.usesPierGrid && (
+            <label>
+              Pier spacing{" "}
+              <select value={pierSpacingFt} onChange={(e) => setPierSpacingFt(Number(e.target.value))}>
+                {pierSpacingOptionsFt.map((ft) => (
+                  <option key={ft} value={ft}>
+                    {ft} ft o.c.
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <p className={foundationType.status === "pending-BI-confirmation" ? styles.pending : styles.note}>
             {foundationType.vaporNote}
           </p>
@@ -585,16 +767,51 @@ export default function LayoutEditor() {
         </section>
 
         <section>
-          <h2>Footprint</h2>
+          <h2>
+            {editorTab === "wall" ? "Footprint" : editorTab === "foundation" ? "Foundation Layout" : "Roof Layout"}
+          </h2>
           <p className={styles.note}>
-            Choose a shape, then click and drag on the canvas to draw the
-            footprint. Drawing a shape (or adding a bump-out) switches to Edit
-            mode automatically.{" "}
-            {footprint && footprintIsAllRightAngles(footprint)
-              ? "In Edit mode, click a corner marker to mark it least-accessible — safety/gap panels re-place to the far end of each wall (this also clears any openings you've placed, since re-tiling re-derives all slots)."
-              : "Every wall owns its own mitered corner panels — the left-most corner of each run (standing outside the shell) is automatically the safety-oct-corner panel, so there's no corner marker to set here."}
+            Wall, Foundation, and Roof are all different views onto the same
+            building — switching between them keeps everything you&apos;ve
+            drawn.
           </p>
-          <div role="group" aria-label="View mode" className={styles.toolbar}>
+          <div role="group" aria-label="Editor" className={styles.toolbar}>
+            <button
+              type="button"
+              aria-pressed={editorTab === "wall"}
+              className={editorTab === "wall" ? styles.toolActive : styles.tool}
+              onClick={() => setEditorTab("wall")}
+            >
+              Wall
+            </button>
+            <button
+              type="button"
+              aria-pressed={editorTab === "foundation"}
+              className={editorTab === "foundation" ? styles.toolActive : styles.tool}
+              onClick={() => setEditorTab("foundation")}
+            >
+              Foundation
+            </button>
+            <button
+              type="button"
+              aria-pressed={editorTab === "roof"}
+              className={editorTab === "roof" ? styles.toolActive : styles.tool}
+              onClick={() => setEditorTab("roof")}
+            >
+              Roof
+            </button>
+          </div>
+          {editorTab === "wall" && (
+            <>
+              <p className={styles.note}>
+                Choose a shape, then click and drag on the canvas to draw the
+                footprint. Drawing a shape (or adding a bump-out) switches to Edit
+                mode automatically.{" "}
+                {footprint && footprintIsAllRightAngles(footprint)
+                  ? "In Edit mode, click a corner marker to mark it least-accessible — safety/gap panels re-place to the far end of each wall (this also clears any openings you've placed, since re-tiling re-derives all slots)."
+                  : "Every wall owns its own mitered corner panels — the left-most corner of each run (standing outside the shell) is automatically the safety-oct-corner panel, so there's no corner marker to set here."}
+              </p>
+              <div role="group" aria-label="View mode" className={styles.toolbar}>
             <button
               type="button"
               aria-pressed={viewMode === "plan"}
@@ -738,6 +955,44 @@ export default function LayoutEditor() {
               typing a length.
             </p>
           )}
+            </>
+          )}
+          {editorTab === "foundation" && (
+            <>
+              {foundationType.usesPierGrid ? (
+                <>
+                  <div role="group" aria-label="Foundation tool" className={styles.toolbar}>
+                    <label>
+                      Pier spacing{" "}
+                      <select value={pierSpacingFt} onChange={(e) => setPierSpacingFt(Number(e.target.value))}>
+                        {pierSpacingOptionsFt.map((ft) => (
+                          <option key={ft} value={ft}>
+                            {ft} ft o.c.
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <p className={styles.note}>
+                    {pierGrid.length} piers derived from the footprint above at max {pierSpacingFt}ft spacing (
+                    {foundationType.label}). See Detail Guide Pages below for the full load path.
+                  </p>
+                  <FoundationCanvas footprint={footprint} offsetPx={offsetPx} piers={pierGrid} />
+                </>
+              ) : (
+                <p className={styles.note}>
+                  {foundationType.label} doesn&apos;t use a pier grid — see the Detail Guide Pages section below for
+                  its construction detail.
+                </p>
+              )}
+            </>
+          )}
+          {editorTab === "roof" && (
+            <p className={styles.note}>
+              Roof editor — coming soon. Once wall and foundation layout are dialed in, roof geometry will build on
+              this same footprint.
+            </p>
+          )}
         </section>
 
         {windowList.length > 0 && (
@@ -846,6 +1101,22 @@ export default function LayoutEditor() {
                 </td>
               </tr>
               <tr>
+                <td>Net embodied carbon (CO2e)</td>
+                <td>
+                  {embodiedCarbon.netCO2eKg >= 0 ? "+" : ""}
+                  {embodiedCarbon.netCO2eKg.toFixed(1)} kg CO2e
+                  <br />
+                  <span className={styles.note}>
+                    Straw sequestered: +{embodiedCarbon.strawCO2eKg.toFixed(1)} kg CO2e. Concrete embodied: −
+                    {embodiedCarbon.concreteCO2eKg.toFixed(1)} kg CO2e
+                    {foundationTypeId === "concrete-pier"
+                      ? ` (${pierGrid.length} piers @ ${concretePierDimensions.diameterIn}in dia. x ${concretePierDimensions.depthFt}ft deep, see Review Log)`
+                      : " (none for this foundation type)"}
+                    . Wood carbon not included.
+                  </span>
+                </td>
+              </tr>
+              <tr>
                 <td>Shear / load capacity</td>
                 <td className={styles.pending}>not yet modeled — {shearLoadCapacity.note}</td>
               </tr>
@@ -885,6 +1156,84 @@ export default function LayoutEditor() {
             </ul>
           )}
         </section>
+
+        <section id="detail-foundation">
+          <h2>Detail Guide Pages</h2>
+          {foundationType.usesPierGrid ? (
+            <DetailGuidePage
+              title={`Toe-up & Foundation Anchoring — ${foundationType.label}`}
+              triggerCondition={`Every ${foundationType.label.toLowerCase()} design — the full pier-to-wall-plate load path, including the toe-up's thermal-break detail.`}
+              diagram={<PierFoundationDiagram foundationId={foundationTypeId as "crawlspace" | "concrete-pier" | "ground-screw"} />}
+              fastenerSchedule={foundationFasteners}
+              fastenerScheduleNote={fastenerTableStatus.note}
+              notes={[
+                foundationType.vaporNote,
+                `Pier grid: ${pierGrid.length} piers (perimeter + interior infill), max ${pierSpacingFt}ft o.c. (${pierSpacingStatus.note})`,
+                ...(foundationType.loadCapacity
+                  ? [
+                      `Load-bearing capacity: ${foundationType.loadCapacity.value} ${foundationType.loadCapacity.unit} per pier. ${foundationType.loadCapacity.note}`,
+                    ]
+                  : []),
+                "Beam and pier sizing depend on site soil report and span — not modeled here.",
+                ...(foundationTypeId === "concrete-pier"
+                  ? [
+                      `Embodied carbon: ${concretePierVolumeFt3.toFixed(1)} ft3 concrete → ${embodiedCarbon.concreteCO2eKg.toFixed(1)} kg CO2e emitted (debit). Running net for the whole build: ${embodiedCarbon.netCO2eKg >= 0 ? "+" : ""}${embodiedCarbon.netCO2eKg.toFixed(1)} kg CO2e. ${concreteEmbodiedCarbonKgPerFt3.note}`,
+                    ]
+                  : []),
+              ]}
+              role={role}
+            />
+          ) : foundationType.id === "slab" ? (
+            <DetailGuidePage
+              title={`Thermally Broken Slab Foundation — ${foundationType.label}`}
+              triggerCondition="Every thermally-broken-slab design — the footer/stem-wall/lip/foam/slab thermal-break detail."
+              diagram={<SlabFoundationDiagram />}
+              fastenerSchedule={[]}
+              notes={[foundationType.vaporNote, slabFoundationDimensions.note]}
+              role={role}
+            />
+          ) : (
+            <p className={styles.pending}>
+              No Detail Guide page yet for {foundationType.label} — {foundationType.vaporNote}
+            </p>
+          )}
+        </section>
+
+        {role !== "public" && (
+          <section>
+            <h2>Shop Drawings</h2>
+            <p className={styles.note}>
+              Fabricator/detailer document — one sheet per wall panel type, every individual panel currently in the
+              design, named by wall run (e.g. &quot;AB-1&quot;), with its own straw-only and full weight breakdown.
+            </p>
+            <p className={styles.pending}>
+              Standard-panel reference drawings (the labeled-parts picture) are placeholders — Tommy still needs to
+              provide the real shop-drawing reference images.
+            </p>
+            {shopDrawings.map(({ panelType, hasWoodBom, instances }) => (
+              <div key={panelType.id} id={`shop-${panelType.id}`} className={styles.anchorTarget}>
+                <ShopDrawingPage
+                  title={`Shop Drawing — ${panelType.label}${panelType.label.toLowerCase().includes("panel") ? "" : " Panel"}`}
+                  panelDescription={panelType.description}
+                  standardWidthIn={standardWidthIn}
+                  thicknessIn={thicknessIn}
+                  heightIn={wallHeightFt * 12}
+                  loadBearingCapacity={panelType.loadBearingCapacity}
+                  shearValue={panelType.shearValue}
+                  bomParts={hasWoodBom ? SHOP_DRAWING_BOM_PARTS : undefined}
+                  bomNote={hasWoodBom ? standardPanelBom.note : undefined}
+                  instances={instances}
+                  role={role}
+                />
+              </div>
+            ))}
+            <p className={styles.note}>
+              Column, header, sill, and inclined/gable panel types aren&apos;t placed anywhere in the current layout
+              system yet (no geometry produces them), and floor/roof panels don&apos;t exist as a modeled panel system
+              yet either — all deferred until those systems are built.
+            </p>
+          </section>
+        )}
       </main>
     </div>
   );

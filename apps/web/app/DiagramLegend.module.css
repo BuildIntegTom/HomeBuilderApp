@@ -1,0 +1,42 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  width: 100%;
+  max-width: 560px;
+}
+
+.legendRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.legendBadge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #1c3d5a;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.legendText {
+  margin: 0;
+  font-size: 13px;
+  color: #333;
+}

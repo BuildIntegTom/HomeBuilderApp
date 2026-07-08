@@ -70,15 +70,19 @@ export function wallPointsPx(
   };
 }
 
-/** Which wall (if any, within `WALL_PICK_TOLERANCE_PX`) a screen point is
- * nearest to, and how far along that wall (in ft, clamped to the segment)
- * the point projects to — the anchor for starting a bump-out's span drag. */
-export function findNearestWall(
+/** Every wall within `WALL_PICK_TOLERANCE_PX` of a screen point, nearest
+ * first, each with how far along it (in ft, clamped to the segment) the
+ * point projects to. Near a corner, two perpendicular walls can both be
+ * within tolerance — callers that care about picking the wall the user
+ * actually means to drag along (not just the nearest by raw perpendicular
+ * distance) should use `pickWallByDragDirection` to disambiguate once a
+ * drag direction is known, rather than assuming the first entry is right. */
+export function findNearestWallCandidates(
   point: DragPoint,
   footprint: Footprint,
   offsetPx: DragPoint,
-): { wall: Wall; alongFt: number; distPx: number } | null {
-  let best: { wall: Wall; alongFt: number; distPx: number } | null = null;
+): { wall: Wall; alongFt: number; distPx: number }[] {
+  const results: { wall: Wall; alongFt: number; distPx: number }[] = [];
   for (const wall of footprint.walls) {
     const { startPx, endPx } = wallPointsPx(wall, footprint.corners, offsetPx);
     const lengthPx = Math.hypot(endPx.x - startPx.x, endPx.y - startPx.y) || 1;
@@ -87,10 +91,60 @@ export function findNearestWall(
     const alongPxClamped = Math.max(0, Math.min(lengthPx, rel.x * dir.x + rel.y * dir.y));
     const closest = { x: startPx.x + dir.x * alongPxClamped, y: startPx.y + dir.y * alongPxClamped };
     const distPx = Math.hypot(point.x - closest.x, point.y - closest.y);
-    if (!best || distPx < best.distPx) best = { wall, alongFt: alongPxClamped / SCALE_PX_PER_FT, distPx };
+    if (distPx <= WALL_PICK_TOLERANCE_PX) {
+      results.push({ wall, alongFt: alongPxClamped / SCALE_PX_PER_FT, distPx });
+    }
   }
-  if (!best || best.distPx > WALL_PICK_TOLERANCE_PX) return null;
+  results.sort((a, b) => a.distPx - b.distPx);
+  return results;
+}
+
+/** Which wall (if any, within `WALL_PICK_TOLERANCE_PX`) a screen point is
+ * nearest to, and how far along that wall (in ft, clamped to the segment)
+ * the point projects to — the anchor for starting a bump-out's span drag. */
+export function findNearestWall(
+  point: DragPoint,
+  footprint: Footprint,
+  offsetPx: DragPoint,
+): { wall: Wall; alongFt: number; distPx: number } | null {
+  const best = findNearestWallCandidates(point, footprint, offsetPx)[0];
+  if (!best) return null;
   return { ...best, alongFt: snapSpanPointFt(best.alongFt, best.wall.lengthFt) };
+}
+
+/** Disambiguates which of several near-corner wall candidates (from
+ * `findNearestWallCandidates`) the user actually means to drag along, by
+ * picking whichever wall's own direction is most parallel (in either
+ * direction — hence `Math.abs`) to the observed drag vector so far. Fixes
+ * the "bump-out selection follows perpendicular instead of the perimeter"
+ * bug: a mousedown a few px right and several px down from a corner is
+ * geometrically closer to a vertical wall's line than a horizontal one's,
+ * even when the user's very next mousemove is clearly horizontal — raw
+ * closest-point distance alone can't tell those two cases apart, but the
+ * drag direction can. */
+export function pickWallByDragDirection(
+  downPos: DragPoint,
+  currentPos: DragPoint,
+  candidates: { wall: Wall; alongFt: number; distPx: number }[],
+  corners: Footprint["corners"],
+  offsetPx: DragPoint,
+): { wall: Wall; alongFt: number; distPx: number } {
+  const dragVec = { x: currentPos.x - downPos.x, y: currentPos.y - downPos.y };
+  const dragLen = Math.hypot(dragVec.x, dragVec.y) || 1;
+  const dragDir = { x: dragVec.x / dragLen, y: dragVec.y / dragLen };
+  let best = candidates[0]!;
+  let bestAlignment = -Infinity;
+  for (const candidate of candidates) {
+    const { startPx, endPx } = wallPointsPx(candidate.wall, corners, offsetPx);
+    const lengthPx = Math.hypot(endPx.x - startPx.x, endPx.y - startPx.y) || 1;
+    const wallDir = { x: (endPx.x - startPx.x) / lengthPx, y: (endPx.y - startPx.y) / lengthPx };
+    const alignment = Math.abs(dragDir.x * wallDir.x + dragDir.y * wallDir.y);
+    if (alignment > bestAlignment) {
+      bestAlignment = alignment;
+      best = candidate;
+    }
+  }
+  return best;
 }
 
 /** Projects a screen point onto a wall's line, clamped to the segment,

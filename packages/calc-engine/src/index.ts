@@ -2,5 +2,7 @@ export * from "./permeability";
 export * from "./price";
 export * from "./weight";
 export * from "./panelWoodWeight";
+export * from "./panelWeightBreakdown";
 export * from "./carbon";
+export * from "./concreteVolume";
 export * from "./reviewLog";

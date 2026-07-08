@@ -5,8 +5,10 @@ import {
   computeSlotRects,
   cornerMarkerPosition,
   findNearestWall,
+  findNearestWallCandidates,
   formatFeetInches,
   parseLengthFt,
+  pickWallByDragDirection,
   projectOntoWallFt,
   signedDepthFt,
   signedPerpOffsetFt,
@@ -81,6 +83,44 @@ describe("findNearestWall / projectOntoWallFt", () => {
     const wallAB = fp.walls.find((w) => w.id === "AB")!;
     const beyondEnd = { x: 60 + 30 * SCALE_PX_PER_FT + 500, y: 60 };
     expect(projectOntoWallFt(beyondEnd, wallAB, fp.corners, ORIGIN)).toBeCloseTo(30, 6);
+  });
+});
+
+describe("findNearestWallCandidates / pickWallByDragDirection (corner-ambiguity fix)", () => {
+  // Corner A sits at px (60,60): wall AB runs right from it (horizontal),
+  // wall DA runs down to it from D (vertical) — the same 2 walls a real
+  // bump-out drag near this corner has to disambiguate between.
+  const fp = buildRectangleFootprint(30, 20);
+
+  it("near a corner, raw closest-distance can favor the perpendicular wall over the intended one", () => {
+    // 3px right, 8px down from the corner: closer to DA's vertical line
+    // (dist 3) than AB's horizontal line (dist 8) — this is the exact
+    // click that reproduced "selection follows perpendicular, not the
+    // perimeter" (Tommy's bug report).
+    const candidates = findNearestWallCandidates({ x: 63, y: 68 }, fp, ORIGIN);
+    expect(candidates.length).toBeGreaterThan(1);
+    expect(candidates[0]!.wall.id).toBe("DA");
+  });
+
+  it("a horizontal drag from that same ambiguous point resolves to the horizontal wall (AB), not DA", () => {
+    const downPos = { x: 63, y: 68 };
+    const candidates = findNearestWallCandidates(downPos, fp, ORIGIN);
+    const dragged = { x: 250, y: 68 }; // purely horizontal movement
+    const chosen = pickWallByDragDirection(downPos, dragged, candidates, fp.corners, ORIGIN);
+    expect(chosen.wall.id).toBe("AB");
+  });
+
+  it("a vertical drag from the same ambiguous point resolves to the vertical wall (DA)", () => {
+    const downPos = { x: 63, y: 68 };
+    const candidates = findNearestWallCandidates(downPos, fp, ORIGIN);
+    const dragged = { x: 63, y: 200 }; // purely vertical movement
+    const chosen = pickWallByDragDirection(downPos, dragged, candidates, fp.corners, ORIGIN);
+    expect(chosen.wall.id).toBe("DA");
+  });
+
+  it("findNearestWall still returns the single raw-closest wall away from any corner (unchanged behavior)", () => {
+    const found = findNearestWall({ x: 240, y: 65 }, fp, ORIGIN);
+    expect(found?.wall.id).toBe("AB");
   });
 });
 
