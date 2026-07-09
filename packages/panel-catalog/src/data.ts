@@ -126,7 +126,16 @@ export interface PierLoadCapacity {
 }
 
 export interface FoundationTypeDef {
-  id: "crawlspace" | "concrete-pier" | "ground-screw" | "slab" | "basement" | "root-cellar";
+  id:
+    | "crawlspace"
+    | "concrete-pier"
+    | "ground-screw"
+    | "cinderblock-pier"
+    | "rubble-trench-beam"
+    | "concrete-block-stem-wall"
+    | "slab"
+    | "basement"
+    | "root-cellar";
   label: string;
   vaporNote: string;
   status: "confirmed" | "pending-BI-confirmation";
@@ -223,6 +232,89 @@ const groundScrewLoadPath: FoundationLoadPathStep[] = [
   },
 ];
 
+const cinderblockPierLoadPath: FoundationLoadPathStep[] = [
+  {
+    label: "Cinderblock pier",
+    description: "Stacked CMU (concrete masonry unit) blocks, mortared and capped, spaced per the pier grid, sized/depth per site soil report (not modeled here).",
+  },
+  {
+    label: "Pier to beam",
+    description: "Wood beam bears on the pier cap.",
+    fastenerConnection: "Pier to beam",
+  },
+  {
+    label: "Beam to floor panel",
+    description: "Floor panel bears on and fastens to the beam.",
+    fastenerConnection: "Floor panel to beam",
+  },
+  {
+    label: "Floor panel to toe-up",
+    description: "Toe-up (ext./int. 2x4 with 1.5\" wood fiberboard between, for thermal continuity) fastens to the floor panel edge.",
+    fastenerConnection: "Toe-up to floor panel",
+  },
+  {
+    label: "Toe-up to wall panel",
+    description: "Wall panel bottom plate fastens to the toe-up, completing the load path into the wall.",
+    fastenerConnection: "Wall panel to toe-up",
+  },
+];
+
+const rubbleTrenchBeamLoadPath: FoundationLoadPathStep[] = [
+  {
+    label: "Rubble trench",
+    description: "Continuous trench, dug to frost depth, filled with drainage stone/rubble — depth/width per site soil report and frost line (not modeled here).",
+  },
+  {
+    label: "Grade beam",
+    description: "Continuous concrete grade beam poured on top of the trench, spanning its full length.",
+  },
+  {
+    label: "Beam to floor panel",
+    description: "Floor panel bears on and fastens to the grade beam.",
+    fastenerConnection: "Floor panel to beam",
+  },
+  {
+    label: "Floor panel to toe-up",
+    description: "Toe-up (ext./int. 2x4 with 1.5\" wood fiberboard between, for thermal continuity) fastens to the floor panel edge.",
+    fastenerConnection: "Toe-up to floor panel",
+  },
+  {
+    label: "Toe-up to wall panel",
+    description: "Wall panel bottom plate fastens to the toe-up, completing the load path into the wall.",
+    fastenerConnection: "Wall panel to toe-up",
+  },
+];
+
+const concreteBlockStemWallLoadPath: FoundationLoadPathStep[] = [
+  {
+    label: "Footer",
+    description: "Continuous concrete footer, sized per site soil report (not modeled here), bears the stem wall.",
+  },
+  {
+    label: "CMU stem wall",
+    description: "Stacked, mortared CMU (concrete masonry unit) blocks rise from the footer to grade — a masonry alternative to a poured-concrete stem wall.",
+  },
+  {
+    label: "Sill plate",
+    description: "Sill plate anchored to the top of the stem wall.",
+  },
+  {
+    label: "Sill plate to floor panel",
+    description: "Floor panel bears on and fastens to the sill plate.",
+    fastenerConnection: "Floor panel to beam",
+  },
+  {
+    label: "Floor panel to toe-up",
+    description: "Toe-up (ext./int. 2x4 with 1.5\" wood fiberboard between, for thermal continuity) fastens to the floor panel edge.",
+    fastenerConnection: "Toe-up to floor panel",
+  },
+  {
+    label: "Toe-up to wall panel",
+    description: "Wall panel bottom plate fastens to the toe-up, completing the load path into the wall.",
+    fastenerConnection: "Wall panel to toe-up",
+  },
+];
+
 const slabLoadPath: FoundationLoadPathStep[] = [
   {
     label: "Footer",
@@ -263,7 +355,7 @@ export const foundationTypes: FoundationTypeDef[] = [
   },
   {
     id: "concrete-pier",
-    label: "Concrete pier",
+    label: "Concrete Pier (Poured Column)",
     vaporNote: "Same vapor logic as the helical-pier crawlspace (vented, more vapor-open on the bottom) — only the pier material/install method differs.",
     status: "pending-BI-confirmation",
     loadPath: concretePierLoadPath,
@@ -288,6 +380,36 @@ export const foundationTypes: FoundationTypeDef[] = [
       status: "pending-BI-confirmation",
       note: "Placeholder mid-range figure for a light-duty direct-drive ground screw (industry range ~2-15 kN ultimate depending on product/soil) — needs Building Integrity's own product spec + site soil report.",
     },
+  },
+  {
+    id: "cinderblock-pier",
+    label: "Cinderblock Pier",
+    vaporNote: "Same vapor logic as the helical-pier crawlspace (vented, more vapor-open on the bottom) — only the pier material/install method differs.",
+    status: "pending-BI-confirmation",
+    loadPath: cinderblockPierLoadPath,
+    usesPierGrid: true,
+    loadCapacity: {
+      value: 1500,
+      unit: "psf (allowable soil bearing pressure, applied over the pier's own base area)",
+      status: "pending-BI-confirmation",
+      note: "Treated the same as a poured concrete pier's IRC prescriptive default (Table R401.4.1) pending Building Integrity's own product spec — a real design needs an actual site soil report, not this default.",
+    },
+  },
+  {
+    id: "rubble-trench-beam",
+    label: "Rubble Trench w/ Beam",
+    vaporNote: "Vapor logic not yet defined for this foundation type.",
+    status: "pending-BI-confirmation",
+    loadPath: rubbleTrenchBeamLoadPath,
+    usesPierGrid: false,
+  },
+  {
+    id: "concrete-block-stem-wall",
+    label: "Concrete Block Stem Wall",
+    vaporNote: "Vapor logic not yet defined for this foundation type.",
+    status: "pending-BI-confirmation",
+    loadPath: concreteBlockStemWallLoadPath,
+    usesPierGrid: false,
   },
   {
     id: "slab",
@@ -401,7 +523,7 @@ export const priceRates = {
   roofPerSqFt: 42,
   totalModifier: 1.3,
   status: "confirmed" as const,
-  note: "Based on biggest face; total = sum(area x rate-by-type) x 1.3 modifier. Corner/braced/header-sill rates (Tommy) price each panel by its own type instead of one user-selected rate for the whole project. Header/sill rate also covers door heads (a header panel starting at 82.5in off the ground, Tommy).",
+  note: "Based on biggest face; total = sum(area x rate-by-type) x totalModifier. Corner/braced/header-sill rates (Tommy) price each panel by its own type instead of one user-selected rate for the whole project. Header/sill rate also covers door heads (a header panel starting at 82.5in off the ground, Tommy). totalModifier (default 1.3) is a fabricator/admin-only markup, editable in the UI — public viewers see the base material cost with no markup applied (Tommy).",
 };
 
 // --- Panel type roster --------------------------------------------------------
@@ -691,10 +813,134 @@ export const perpendicular2x4Addition = {
   thicknessIn: 1.5,
   widthIn: 3.5,
   status: "confirmed" as const,
-  note: "Optional 2x4 strapping run perpendicular to the joists (Tommy) — reduces thermal bridging by breaking the direct conductive path through the joists, creating a separate service/insulation cavity below them.",
+  note: "Optional 2x4 strapping run perpendicular to the joists (Tommy) — reduces thermal bridging by breaking the direct conductive path through the joists, creating a separate service/insulation cavity below them. Full build-up (cellulose fill, taped sheathing, splash-protection layer): see floorAddOnLayerLayers below.",
 };
 
 export const floorLongSideBlockingNote = {
   status: "pending-BI-confirmation" as const,
   note: "Solid blocking shown just under the panel along the long sides — the sides the joists run alongside (parallel to their own span), rather than land on (Tommy). Exact blocking spacing/sizing not yet specified.",
 };
+
+// --- Floor structure — full assembly ----------------------------------------
+
+export interface FloorAssemblyLayerDef {
+  id: string;
+  label: string;
+  description: string;
+  status: CatalogStatus;
+  note: string;
+}
+
+/** Full suspended-floor assembly, bottom to top (Tommy) — order matters,
+ * used directly to drive the assembly cross-section diagram. */
+export const floorAssemblyLayers: FloorAssemblyLayerDef[] = [
+  {
+    id: "pressure-treated-sill",
+    label: "Pressure-treated boards",
+    description: "Bottom-most framing member (sill/rim), pressure-treated for ground/moisture exposure.",
+    status: "confirmed",
+    note: "Tommy: full floor assembly, bottom to top.",
+  },
+  {
+    id: "wire-mesh",
+    label: "Galvanized welded wire mesh",
+    description: "Stapled to the underside of the joist bays; openings no larger than 10mm x 10mm (rodent/pest barrier).",
+    status: "confirmed",
+    note: "Tommy.",
+  },
+  {
+    id: "wood-fiber-board",
+    label: "Vapor-permeable, water-resistant wood fiber board",
+    description: "Lines the perimeter/rim face.",
+    status: "confirmed",
+    note: "Tommy.",
+  },
+  {
+    id: "cellulose-fill",
+    label: "Cellulose insulation",
+    description: "Fills the joist bays. Substituted for rock wool per Tommy's direction.",
+    status: "confirmed",
+    note: "Tommy: \"Cellulose insulation (substituted for rock wool)\".",
+  },
+  {
+    id: "structural-deck",
+    label: "OSB or other structural boards",
+    description: "Deck/sheathing on top of the joists.",
+    status: "confirmed",
+    note: "Tommy.",
+  },
+  {
+    id: "air-sealing-tape",
+    label: "Air sealing tape",
+    description: "Applied at OSB seams for airtightness. If tongue-and-groove boards are used instead, taping isn't required but is recommended.",
+    status: "confirmed",
+    note: "Tommy.",
+  },
+  {
+    id: "gap-sealing",
+    label: "Gap sealing",
+    description: "Any gaps from imprecise board cuts get sealed with air sealing tape, expanding foam, or a gap sealer.",
+    status: "confirmed",
+    note: "Tommy.",
+  },
+];
+
+export const floorMeshOpeningMaxMm = {
+  value: 10,
+  status: "confirmed" as const,
+  note: "Galvanized welded wire mesh openings no larger than 10mm x 10mm (rodent/pest barrier), Tommy.",
+};
+
+// --- Floor corner & perimeter insulation sequencing -------------------------
+
+export const floorInsulationSequencingRule = {
+  status: "confirmed" as const,
+  note: "Insulate joist bays running parallel to the wall before the plywood deck is installed over them — once covered, that bay can't be packed anymore (Tommy).",
+};
+
+export const floorCornerCavityDetail = {
+  fillMaterial: "Cellulose insulation",
+  status: "confirmed" as const,
+  note: "At the corner, between the doubled rim/perimeter framing members, the cavity is filled with cellulose (substituted for the book's ceramsite/clay pebble fill) rather than batt-style insulation, since the corner geometry doesn't lend itself to batts (Tommy). Plywood decking caps the corner cavity after the cellulose fill is placed.",
+};
+
+export const floorFieldBayDetail = {
+  status: "confirmed" as const,
+  note: "Interior field bays (parallel to the far wall) are packed with cellulose insulation before their plywood cap goes on — same before-decking rule as the corner and perimeter bays (Tommy).",
+};
+
+// --- Perpendicular 2x4 add-on layer ------------------------------------------
+
+/** The optional perpendicular-2x4 layer's own build-up, bottom to top —
+ * reuses FloorAssemblyLayerDef so its diagram/legend follow the same
+ * pattern as the main floor assembly above. */
+export const floorAddOnLayerLayers: FloorAssemblyLayerDef[] = [
+  {
+    id: "addon-2x4-strapping",
+    label: "Perpendicular 2x4 strapping",
+    description: "Secondary 2x joist layer laid perpendicular to the primary floor joists, sitting on top of the primary structure, directly under the wall base plate — reduces thermal bridging.",
+    status: "confirmed",
+    note: "Tommy.",
+  },
+  {
+    id: "addon-cellulose-fill",
+    label: "Cellulose insulation",
+    description: "Packed between the perpendicular 2x4 members.",
+    status: "confirmed",
+    note: "Tommy.",
+  },
+  {
+    id: "addon-sheathing",
+    label: "OSB or plywood sheathing (taped)",
+    description: "Sheathing over the top, seams sealed/taped — this is what the airtightness gain depends on.",
+    status: "confirmed",
+    note: "Tommy.",
+  },
+  {
+    id: "addon-splash-protection",
+    label: "OSB or plywood, taped (splash protection)",
+    description: "Sits under the wall base plate for splash protection from floor water. The straw wall base gets an added insulation layer at this junction, further cutting thermal bridging.",
+    status: "confirmed",
+    note: "Tommy.",
+  },
+];

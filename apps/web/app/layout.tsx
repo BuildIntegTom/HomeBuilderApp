@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Building Integrity — Layout Editor",
+  title: "Building Integrity — Fabricator App",
   description: "Reference-only floor-plan layout editor for prefab straw-panel homes.",
 };
 

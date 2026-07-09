@@ -111,7 +111,13 @@ function buildPlainMiddle(sizing: PlainSizing, standardWidthIn: number, gapEnd: 
 /**
  * Dispatches between the gap-panel middle (walls over 12ft) and the
  * even-standards middle (12ft or under, no safety panel needed at all —
- * Tommy: "safety panels only needed for walls more than 12' long").
+ * Tommy: "safety panels only needed for walls more than 12' long"). A
+ * budget of exactly 0 (both corners fit with nothing left over) returns no
+ * middle slots at all — without this, `buildEvenMiddle`'s `Math.max(1, ...)`
+ * floor (there to still show 1 evenly-sized standard for a small-but-
+ * positive budget) and `buildPlainMiddle`'s "nothing to borrow from"
+ * branch would otherwise both synthesize a phantom zero-width panel, which
+ * renders invisibly but still counts as a real panel instance/price line.
  */
 function buildMiddle(
   budgetLengthIn: number,
@@ -120,11 +126,66 @@ function buildMiddle(
   allowBorrow: boolean,
   needsSafetyPanel: boolean,
 ): PanelSlot[] {
+  if (budgetLengthIn <= 0) return [];
   if (!needsSafetyPanel) {
     return buildEvenMiddle(budgetLengthIn, standardWidthIn);
   }
   const sizing = computePlainSizing(budgetLengthIn, standardWidthIn, allowBorrow);
   return buildPlainMiddle(sizing, standardWidthIn, gapEnd);
+}
+
+interface ResolvedCorners {
+  /** Set only when the wall owns corners at both ends but is too short to
+   * fit them without overlap — see the doc comment below. When set, this
+   * is the wall's *only* content: no middle, no openings. */
+  merged: PanelSlot | null;
+  cornerStart: PanelSlot | null;
+  cornerEnd: PanelSlot | null;
+  fixedEndsIn: number;
+}
+
+/**
+ * Corner panels are normally a fixed `cornerWidthIn` at each end a wall
+ * owns one. A short wall — most commonly a bump-out's perpendicular
+ * remainder segment, whose length is whatever margin was left after
+ * carving out the bump-out's span — can end up shorter than its own
+ * corner(s)' combined width. Left alone, that would make both corners
+ * render at their full nominal width anyway and overlap, protruding into
+ * the structure (and, since the leftover "middle" budget clamps to 0, the
+ * wall's total slot width would no longer add up to its own true length,
+ * throwing off where the *next* wall's panels visually start too — see the
+ * misalignment this caused between adjacent walls at a bump-out's reflex
+ * corner).
+ *
+ * Tommy's fix: when a wall owns corners at BOTH ends but is too short for
+ * both, merge them into a single corner panel spanning the wall's whole
+ * length instead (no middle panel either) — one longer corner panel,
+ * rather than two overlapping ones. This re-evaluates from scratch every
+ * time the wall is tiled, so it "unmerges" back into two separate corners
+ * automatically once the wall is long enough again; there's no separate
+ * merged/unmerged state to track.
+ *
+ * A wall owning only one corner there (the other end butts a longer
+ * neighbor) has nothing to merge with — instead that single corner just
+ * clamps down to the wall's own length in the rarer case where even it
+ * alone doesn't fit, the one-sided version of the same overlap.
+ */
+function resolveCorners(
+  wallLengthIn: number,
+  cornerWidthIn: number,
+  hasCornerStart: boolean,
+  hasCornerEnd: boolean,
+): ResolvedCorners {
+  const fixedEndsIn = (hasCornerStart ? cornerWidthIn : 0) + (hasCornerEnd ? cornerWidthIn : 0);
+  if (hasCornerStart && hasCornerEnd && wallLengthIn < fixedEndsIn) {
+    return { merged: { type: "corner", widthIn: Math.max(0, wallLengthIn) }, cornerStart: null, cornerEnd: null, fixedEndsIn };
+  }
+  return {
+    merged: null,
+    cornerStart: hasCornerStart ? { type: "corner", widthIn: Math.min(cornerWidthIn, wallLengthIn) } : null,
+    cornerEnd: hasCornerEnd ? { type: "corner", widthIn: Math.min(cornerWidthIn, wallLengthIn) } : null,
+    fixedEndsIn,
+  };
 }
 
 /**
@@ -170,6 +231,10 @@ function buildMiddle(
  * Regardless of `allowBorrow`, a wall at or under 12ft skips the gap panel
  * entirely (Tommy: "safety panels only needed for walls more than 12'
  * long") — see `buildMiddle`/`buildEvenMiddle`.
+ *
+ * If the wall owns corners at both ends but is too short to fit them
+ * without overlapping, they're merged into a single corner panel spanning
+ * the wall's whole length instead — see `resolveCorners`.
  */
 export function tileWall(
   wallLengthIn: number,
@@ -180,19 +245,17 @@ export function tileWall(
   hasCornerEnd = true,
   allowBorrow = true,
 ): TileWallResult {
-  const fixedEndsIn = (hasCornerStart ? cornerWidthIn : 0) + (hasCornerEnd ? cornerWidthIn : 0);
-  // Clamped at 0: a wall shorter than its own fixed corner allocations (e.g.
-  // a bump-out's perpendicular jog, whose length is just the bump-out's
-  // depth) would otherwise hand computePlainSizing a negative budget and
-  // produce a negative-width gap panel.
-  const middleLengthIn = Math.max(0, wallLengthIn - fixedEndsIn);
+  const corners = resolveCorners(wallLengthIn, cornerWidthIn, hasCornerStart, hasCornerEnd);
+  if (corners.merged) {
+    return { slots: [corners.merged] };
+  }
+
+  const middleLengthIn = Math.max(0, wallLengthIn - corners.fixedEndsIn);
   const needsSafetyPanel = wallLengthIn > SAFETY_PANEL_MIN_WALL_LENGTH_IN;
   const middle = buildMiddle(middleLengthIn, standardWidthIn, gapEnd, allowBorrow, needsSafetyPanel);
 
-  const cornerStart: PanelSlot = { type: "corner", widthIn: cornerWidthIn };
-  const cornerEnd: PanelSlot = { type: "corner", widthIn: cornerWidthIn };
   return {
-    slots: [...(hasCornerStart ? [cornerStart] : []), ...middle, ...(hasCornerEnd ? [cornerEnd] : [])],
+    slots: [...(corners.cornerStart ? [corners.cornerStart] : []), ...middle, ...(corners.cornerEnd ? [corners.cornerEnd] : [])],
   };
 }
 
@@ -229,6 +292,12 @@ export function getOpeningAnchors(slots: PanelSlot[]): OpeningAnchor[] {
  * around it — the wall's total length never drifts (Tommy: "the rest of the
  * wall protrudes... rather than autosizing the safety/borrowed panel/panel
  * count").
+ *
+ * If the wall owns corners at both ends but is too short to fit them
+ * without overlapping, they're merged into a single corner panel spanning
+ * the wall's whole length instead (dropping any openings — there's no room
+ * for them either at that point) — see `resolveCorners` in `tileWall`'s
+ * doc comment.
  */
 export function retileWithOpenings(
   wallLengthIn: number,
@@ -240,8 +309,12 @@ export function retileWithOpenings(
   openings: OpeningAnchor[],
   allowBorrow = true,
 ): TileWallResult {
-  const fixedEndsIn = (hasCornerStart ? cornerWidthIn : 0) + (hasCornerEnd ? cornerWidthIn : 0);
-  const middleLengthIn = wallLengthIn - fixedEndsIn;
+  const corners = resolveCorners(wallLengthIn, cornerWidthIn, hasCornerStart, hasCornerEnd);
+  if (corners.merged) {
+    return { slots: [corners.merged] };
+  }
+
+  const middleLengthIn = wallLengthIn - corners.fixedEndsIn;
   const openingsTotalWidthIn = openings.reduce((sum, o) => sum + o.widthIn, 0);
   const plainBudgetIn = middleLengthIn - openingsTotalWidthIn;
   const needsSafetyPanel = wallLengthIn > SAFETY_PANEL_MIN_WALL_LENGTH_IN;
@@ -266,10 +339,8 @@ export function retileWithOpenings(
     openingIdx++;
   }
 
-  const cornerStart: PanelSlot = { type: "corner", widthIn: cornerWidthIn };
-  const cornerEnd: PanelSlot = { type: "corner", widthIn: cornerWidthIn };
   return {
-    slots: [...(hasCornerStart ? [cornerStart] : []), ...middle, ...(hasCornerEnd ? [cornerEnd] : [])],
+    slots: [...(corners.cornerStart ? [corners.cornerStart] : []), ...middle, ...(corners.cornerEnd ? [corners.cornerEnd] : [])],
   };
 }
 

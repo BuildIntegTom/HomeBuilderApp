@@ -49,6 +49,11 @@ import {
   fastenerSpacingTable,
   fastenerTableStatus,
   FIELD_JOIST_DEPTH_REDUCTION_IN,
+  floorAddOnLayerLayers,
+  floorAssemblyLayers,
+  floorCornerCavityDetail,
+  floorFieldBayDetail,
+  floorInsulationSequencingRule,
   floorJoistTypes,
   floorLongSideBlockingNote,
   floorRimJoistDetail,
@@ -62,6 +67,7 @@ import {
   pierSpacingDefaultFt,
   pierSpacingOptionsFt,
   pierSpacingStatus,
+  priceRates,
   referenceDensities,
   slabFoundationDimensions,
   seismicBracedPanelSpacingFt,
@@ -75,12 +81,17 @@ import {
   wallAssemblyLayers,
   type SeismicZone,
 } from "@building-integrity/panel-catalog";
+import ConcreteBlockStemWallDiagram from "./ConcreteBlockStemWallDiagram";
 import DetailGuidePage from "./DetailGuidePage";
+import FloorAddOnLayerDiagram from "./FloorAddOnLayerDiagram";
+import FloorAssemblyDiagram from "./FloorAssemblyDiagram";
 import FloorCanvas from "./FloorCanvas";
+import FloorCornerDetailDiagram from "./FloorCornerDetailDiagram";
 import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType } from "./panelInstances";
 import PierFoundationDiagram from "./PierFoundationDiagram";
+import RubbleTrenchDiagram from "./RubbleTrenchDiagram";
 import ShopDrawingPage from "./ShopDrawingPage";
 import SlabFoundationDiagram from "./SlabFoundationDiagram";
 import { roleDisclaimers, type ViewerRole } from "./viewerRole";
@@ -182,9 +193,21 @@ export default function LayoutEditor() {
   const [pierSpacingFt, setPierSpacingFt] = useState<number>(pierSpacingDefaultFt);
   const [zipCode, setZipCode] = useState("");
   const [role, setRole] = useState<ViewerRole>("public");
+  // Governs which dimensional-lumber standard framing members use (e.g.
+  // nominal 2x sizing vs. metric equivalents) — not wired into any
+  // calculation yet, but set at the very top since it'll determine sizing
+  // choices added later in the app (Tommy).
+  const [unitSystem, setUnitSystem] = useState<"imperial" | "metric">("imperial");
+  // Fabricator/admin-only markup (Tommy) — public viewers see the base
+  // material cost with no markup applied, regardless of this value.
+  const [priceModifier, setPriceModifier] = useState(priceRates.totalModifier);
   // Null until a floor-type button is clicked - "autogenerate when the
-  // button is clicked" (Tommy), not selected by default.
-  const [floorJoistTypeId, setFloorJoistTypeId] = useState<(typeof floorJoistTypes)[number]["id"] | null>(null);
+  // button is clicked" (Tommy), not selected by default. Covers both the
+  // suspended-joist options and the Thermally Broken Slab floor option —
+  // mutually exclusive, so one state covers the whole button group.
+  const [floorSystemId, setFloorSystemId] = useState<(typeof floorJoistTypes)[number]["id"] | "thermal-slab" | null>(
+    null,
+  );
   const [perpendicular2x4Enabled, setPerpendicular2x4Enabled] = useState(false);
 
   const interior = interiorLayers.find((l) => l.id === interiorId)!;
@@ -205,7 +228,9 @@ export default function LayoutEditor() {
     [footprint, foundationType, pierSpacingFt],
   );
 
+  const floorJoistTypeId = floorSystemId && floorSystemId !== "thermal-slab" ? floorSystemId : null;
   const floorJoistType = floorJoistTypeId ? floorJoistTypes.find((t) => t.id === floorJoistTypeId)! : null;
+  const isThermalSlabFloor = floorSystemId === "thermal-slab";
   const joistLayout = useMemo(
     () => (footprint && floorJoistType ? computeJoistLayout(footprint, floorJoistType.spacingIn) : null),
     [footprint, floorJoistType],
@@ -593,11 +618,19 @@ export default function LayoutEditor() {
   // relevant to the options currently selected").
   const relevantDetailPages = useMemo(() => {
     const pages: { id: string; label: string }[] = [];
-    if (foundationType.usesPierGrid || foundationType.id === "slab") {
+    if (foundationType.loadPath.length > 0) {
       pages.push({ id: "detail-foundation", label: `Foundation: ${foundationType.label}` });
     }
     if (floorJoistType) {
       pages.push({ id: "detail-floor", label: `Floor: ${floorJoistType.label}` });
+      pages.push({ id: "detail-floor-assembly", label: "Floor: Full Assembly" });
+      pages.push({ id: "detail-floor-corner", label: "Floor: Corner & Perimeter Sequencing" });
+      if (perpendicular2x4Enabled) {
+        pages.push({ id: "detail-floor-addon", label: "Floor: Perpendicular 2x4 Add-On Layer" });
+      }
+    }
+    if (isThermalSlabFloor) {
+      pages.push({ id: "detail-floor-thermal-slab", label: "Floor: Thermally Broken Slab" });
     }
     // Shop Drawings are a fabricator/detailer document, not a public-facing one (Tommy).
     if (role !== "public") {
@@ -608,21 +641,28 @@ export default function LayoutEditor() {
       }
     }
     return pages;
-  }, [foundationType, floorJoistType, shopDrawings, role]);
+  }, [foundationType, floorJoistType, isThermalSlabFloor, perpendicular2x4Enabled, shopDrawings, role]);
+
+  // The markup only applies for fabricator/admin — public viewers always
+  // see the base material cost (Tommy).
+  const effectivePriceModifier = role === "public" ? 1 : priceModifier;
 
   const price = useMemo(() => {
     const areaSqFtFor = (type: PanelSlot["type"]) =>
       (allSlots.filter((s) => s.type === type).reduce((sum, s) => sum + s.widthIn, 0) / 12) *
       wallHeightFt;
-    return computePrice([
-      // No distinct rate given for safety/gap panels — priced at the standard rate (assumption, see Review Log).
-      { type: "standard", areaSqFt: areaSqFtFor("standard") + areaSqFtFor("safety-gap") },
-      // safety-oct-corner is a fabrication-ID variant of the same corner panel, priced identically.
-      { type: "corner", areaSqFt: areaSqFtFor("corner") + areaSqFtFor("safety-oct-corner") },
-      { type: "braced", areaSqFt: areaSqFtFor("braced") },
-      { type: "opening", areaSqFt: areaSqFtFor("window") + areaSqFtFor("door") },
-    ]);
-  }, [allSlots, wallHeightFt]);
+    return computePrice(
+      [
+        // No distinct rate given for safety/gap panels — priced at the standard rate (assumption, see Review Log).
+        { type: "standard", areaSqFt: areaSqFtFor("standard") + areaSqFtFor("safety-gap") },
+        // safety-oct-corner is a fabrication-ID variant of the same corner panel, priced identically.
+        { type: "corner", areaSqFt: areaSqFtFor("corner") + areaSqFtFor("safety-oct-corner") },
+        { type: "braced", areaSqFt: areaSqFtFor("braced") },
+        { type: "opening", areaSqFt: areaSqFtFor("window") + areaSqFtFor("door") },
+      ],
+      effectivePriceModifier,
+    );
+  }, [allSlots, wallHeightFt, effectivePriceModifier]);
 
   const carbonRange = useMemo(
     () =>
@@ -688,7 +728,29 @@ export default function LayoutEditor() {
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <h1>Layout Editor</h1>
+        <div className={styles.toolbar} role="group" aria-label="Unit system">
+          <button
+            type="button"
+            aria-pressed={unitSystem === "imperial"}
+            className={unitSystem === "imperial" ? styles.toolActive : styles.tool}
+            onClick={() => setUnitSystem("imperial")}
+          >
+            Imperial
+          </button>
+          <button
+            type="button"
+            aria-pressed={unitSystem === "metric"}
+            className={unitSystem === "metric" ? styles.toolActive : styles.tool}
+            onClick={() => setUnitSystem("metric")}
+          >
+            Metric
+          </button>
+        </div>
+        <p className={styles.note}>
+          Sets the dimensional lumber standard (e.g. nominal 2x framing vs. metric equivalents) used for framing
+          members added later in the app — not yet wired into any calculation below.
+        </p>
+        <h1>Fabricator App</h1>
         <div className={styles.toolbar} role="group" aria-label="Viewing as">
           {(Object.keys(roleDisclaimers) as ViewerRole[]).map((r) => (
             <button
@@ -1052,35 +1114,44 @@ export default function LayoutEditor() {
           )}
           {editorTab === "floor" && (
             <>
+              <div role="group" aria-label="Floor type" className={styles.toolbar}>
+                {floorJoistTypes.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    aria-pressed={floorSystemId === t.id}
+                    className={floorSystemId === t.id ? styles.toolActive : styles.tool}
+                    onClick={() => setFloorSystemId((was) => (was === t.id ? null : t.id))}
+                    disabled={!footprint}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  aria-pressed={isThermalSlabFloor}
+                  className={isThermalSlabFloor ? styles.toolActive : styles.tool}
+                  onClick={() => setFloorSystemId((was) => (was === "thermal-slab" ? null : "thermal-slab"))}
+                  disabled={!footprint}
+                >
+                  Thermally Broken Slab
+                </button>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={perpendicular2x4Enabled}
+                    onChange={(e) => setPerpendicular2x4Enabled(e.target.checked)}
+                    disabled={!floorJoistTypeId}
+                  />{" "}
+                  Perpendicular 2x4 addition
+                </label>
+              </div>
               {foundationType.usesPierGrid ? (
                 <>
                   <p className={styles.note}>
                     {floorPanels.length} floor panels tiled pier-to-pier at max {pierSpacingFt}ft spacing — same
                     spacing as the Foundation tab (change it there, not here).
                   </p>
-                  <div role="group" aria-label="Suspended floor joist type" className={styles.toolbar}>
-                    {floorJoistTypes.map((t) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        aria-pressed={floorJoistTypeId === t.id}
-                        className={floorJoistTypeId === t.id ? styles.toolActive : styles.tool}
-                        onClick={() => setFloorJoistTypeId((was) => (was === t.id ? null : t.id))}
-                        disabled={!footprint}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={perpendicular2x4Enabled}
-                        onChange={(e) => setPerpendicular2x4Enabled(e.target.checked)}
-                        disabled={!floorJoistTypeId}
-                      />{" "}
-                      Perpendicular 2x4 addition
-                    </label>
-                  </div>
                   {joistLayout && (
                     <p className={styles.note}>
                       {joistLayout.joists.length} {floorJoistType!.label} joists running perpendicular to the
@@ -1096,6 +1167,12 @@ export default function LayoutEditor() {
                     joistLayout={joistLayout}
                   />
                 </>
+              ) : isThermalSlabFloor ? (
+                <p className={styles.note}>
+                  Thermally Broken Slab floor selected — the slab is both the foundation and the floor system, so
+                  there&apos;s no separate floor panel/joist layout to draw. See the Detail Guide Pages section below
+                  for the full thermal-break detail.
+                </p>
               ) : (
                 <p className={styles.note}>
                   {foundationType.label} doesn&apos;t use a pier grid, so there&apos;s no pier-to-pier floor panel
@@ -1209,6 +1286,27 @@ export default function LayoutEditor() {
                     {" "}
                     — priced per panel type (standard/corner/braced/opening rates), see Review Log
                   </span>
+                  {role !== "public" && (
+                    <div>
+                      <label>
+                        Markup{" "}
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="1"
+                          value={priceModifier}
+                          onChange={(e) => setPriceModifier(Number(e.target.value))}
+                          style={{ width: 64 }}
+                        />
+                        x
+                      </label>
+                      <p className={styles.note}>
+                        Fabricator/admin-only markup, already included in the price above (default{" "}
+                        {priceRates.totalModifier}x). Public viewers never see this markup applied — their price is
+                        the base material cost only (as if this were 1x).
+                      </p>
+                    </div>
+                  )}
                 </td>
               </tr>
               <tr>
@@ -1289,7 +1387,7 @@ export default function LayoutEditor() {
             <DetailGuidePage
               title={`Toe-up & Foundation Anchoring — ${foundationType.label}`}
               triggerCondition={`Every ${foundationType.label.toLowerCase()} design — the full pier-to-wall-plate load path, including the toe-up's thermal-break detail.`}
-              diagram={<PierFoundationDiagram foundationId={foundationTypeId as "crawlspace" | "concrete-pier" | "ground-screw"} />}
+              diagram={<PierFoundationDiagram foundationId={foundationTypeId as "crawlspace" | "concrete-pier" | "ground-screw" | "cinderblock-pier"} />}
               fastenerSchedule={foundationFasteners}
               fastenerScheduleNote={fastenerTableStatus.note}
               notes={[
@@ -1318,6 +1416,26 @@ export default function LayoutEditor() {
               notes={[foundationType.vaporNote, slabFoundationDimensions.note]}
               role={role}
             />
+          ) : foundationType.id === "rubble-trench-beam" ? (
+            <DetailGuidePage
+              title={`Rubble Trench Foundation — ${foundationType.label}`}
+              triggerCondition="Every rubble-trench-w/-beam design — the trench/grade-beam-to-wall-plate load path, including the toe-up's thermal-break detail."
+              diagram={<RubbleTrenchDiagram />}
+              fastenerSchedule={foundationFasteners}
+              fastenerScheduleNote={fastenerTableStatus.note}
+              notes={[foundationType.vaporNote, "Trench depth/width and grade beam sizing depend on site soil report and frost depth — not modeled here."]}
+              role={role}
+            />
+          ) : foundationType.id === "concrete-block-stem-wall" ? (
+            <DetailGuidePage
+              title={`Concrete Block Stem Wall Foundation — ${foundationType.label}`}
+              triggerCondition="Every CMU stem-wall design — the footer/stem-wall/sill-to-wall-plate load path, including the toe-up's thermal-break detail."
+              diagram={<ConcreteBlockStemWallDiagram />}
+              fastenerSchedule={foundationFasteners}
+              fastenerScheduleNote={fastenerTableStatus.note}
+              notes={[foundationType.vaporNote, "Footer and stem-wall sizing depend on site soil report and frost depth — not modeled here."]}
+              role={role}
+            />
           ) : (
             <p className={styles.pending}>
               No Detail Guide page yet for {foundationType.label} — {foundationType.vaporNote}
@@ -1330,7 +1448,7 @@ export default function LayoutEditor() {
             <DetailGuidePage
               title={`Suspended Floor Joists — ${floorJoistType.label}`}
               triggerCondition={`Every suspended-floor design using ${floorJoistType.label} — the thermally-broken rim detail at each short end, plus long-side blocking.`}
-              diagram={<FloorJoistDiagram />}
+              diagram={<FloorJoistDiagram floorJoistTypeId={floorJoistTypeId!} />}
               fastenerSchedule={[]}
               notes={[
                 floorJoistType.note,
@@ -1340,6 +1458,68 @@ export default function LayoutEditor() {
                 floorRimJoistDetail.note,
                 floorLongSideBlockingNote.note,
                 ...(perpendicular2x4Enabled ? [perpendicular2x4Addition.note] : []),
+              ]}
+              role={role}
+            />
+          </section>
+        )}
+
+        {floorJoistType && (
+          <section id="detail-floor-assembly" className={styles.anchorTarget}>
+            <DetailGuidePage
+              title="Floor Structure — Full Assembly"
+              triggerCondition="Every suspended-floor design — the full bottom-to-top layer build-up inside and over the joist bays."
+              diagram={<FloorAssemblyDiagram />}
+              fastenerSchedule={[]}
+              notes={floorAssemblyLayers.map((layer) => `${layer.label}: ${layer.description}`)}
+              role={role}
+            />
+          </section>
+        )}
+
+        {floorJoistType && (
+          <section id="detail-floor-corner" className={styles.anchorTarget}>
+            <DetailGuidePage
+              title="Floor Insulation Sequencing — Corner & Perimeter Detail"
+              triggerCondition="Every suspended-floor design — the corner cavity fill and the bay-before-decking sequencing rule."
+              diagram={<FloorCornerDetailDiagram />}
+              fastenerSchedule={[]}
+              notes={[
+                floorInsulationSequencingRule.note,
+                floorCornerCavityDetail.note,
+                floorFieldBayDetail.note,
+              ]}
+              role={role}
+            />
+          </section>
+        )}
+
+        {floorJoistType && perpendicular2x4Enabled && (
+          <section id="detail-floor-addon" className={styles.anchorTarget}>
+            <DetailGuidePage
+              title="Perpendicular 2x4 Add-On Layer — Thermal Break Detail"
+              triggerCondition="Suspended-floor designs with the Perpendicular 2x4 addition enabled — the add-on layer's own build-up, sitting atop the primary joists directly under the wall base plate."
+              diagram={<FloorAddOnLayerDiagram />}
+              fastenerSchedule={[]}
+              notes={[
+                perpendicular2x4Addition.note,
+                ...floorAddOnLayerLayers.map((layer) => `${layer.label}: ${layer.description}`),
+              ]}
+              role={role}
+            />
+          </section>
+        )}
+
+        {isThermalSlabFloor && (
+          <section id="detail-floor-thermal-slab" className={styles.anchorTarget}>
+            <DetailGuidePage
+              title="Floor: Thermally Broken Slab"
+              triggerCondition="Every design using Thermally Broken Slab as its floor system — the slab is the foundation and the floor in one, so this reuses the foundation's own footer/stem-wall/lip/foam/slab detail."
+              diagram={<SlabFoundationDiagram />}
+              fastenerSchedule={[]}
+              notes={[
+                "The slab is both the foundation and the floor system — there's no separate suspended floor build-up (no joists, no corner/rim detail, no add-on layer) when this option is selected.",
+                slabFoundationDimensions.note,
               ]}
               role={role}
             />

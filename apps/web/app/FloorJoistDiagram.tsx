@@ -1,3 +1,4 @@
+import type { floorJoistTypes } from "@building-integrity/panel-catalog";
 import styles from "./DiagramLegend.module.css";
 
 const BADGE_LETTERS = ["A", "B", "C", "D", "E"];
@@ -25,14 +26,29 @@ const STEPS = [
   },
 ];
 
+export interface FloorJoistDiagramProps {
+  floorJoistTypeId: (typeof floorJoistTypes)[number]["id"];
+}
+
+// Wider o.c. spacing (24in) reads as fewer, more widely-spaced field joists
+// than the 16in options — illustrative only, not an exact count.
+const FIELD_JOIST_X: Record<FloorJoistDiagramProps["floorJoistTypeId"], number[]> = {
+  "lvl-16": [400, 460, 520, 580],
+  "lvl-24": [400, 480, 560],
+  "solid-pine": [400, 460, 520, 580],
+};
+
 /** Illustrative (not-to-scale) plan-view schematic of the suspended-floor
  * joist layout's short-end detail: the thermally-broken double-rim
  * assembly, the field joist run, and — mirrored — the same assembly at
- * the far end (confirmed symmetric, Tommy). Shared by every floor joist
- * type (LVL 16/24, Solid Pine); only spacing/material differ, not this
- * detail. */
-export default function FloorJoistDiagram() {
-  const fieldJoistX = [400, 460, 520, 580];
+ * the far end (confirmed symmetric, Tommy). The rim/thermal-break assembly
+ * itself is identical for every floor joist type; only the field joists'
+ * own material texture (LVL's laminate layer lines vs. solid pine's wood
+ * grain) and illustrative spacing differ by `floorJoistTypeId`. */
+export default function FloorJoistDiagram({ floorJoistTypeId }: FloorJoistDiagramProps) {
+  const fieldJoistX = FIELD_JOIST_X[floorJoistTypeId];
+  const isLvl = floorJoistTypeId !== "solid-pine";
+  const jointFill = isLvl ? "#d9c9a3" : "#e0c896";
 
   return (
     <div className={styles.wrap}>
@@ -45,11 +61,23 @@ export default function FloorJoistDiagram() {
         {/* Transition gap into the field */}
         <rect x="72" y="55" width="30" height="110" fill="#cfe8f3" stroke="#8fb8cc" />
 
-        {/* Field joists (shallower depth) with insulation bays between them */}
+        {/* Field joists (shallower depth) with insulation bays between them —
+            material texture varies: LVL shows laminate layer lines, solid
+            pine shows wood grain. */}
         {fieldJoistX.map((x, i) => (
           <g key={i}>
-            {i > 0 && <rect x={x - 40} y={55} width={40} height={110} fill="#cfe8f3" stroke="#8fb8cc" />}
-            <rect x={x} y={55} width={16} height={110} fill="#d9c9a3" stroke="#8a6a3a" />
+            {i > 0 && <rect x={x - (fieldJoistX[1]! - fieldJoistX[0]!)} y={55} width={fieldJoistX[1]! - fieldJoistX[0]! - 16} height={110} fill="#cfe8f3" stroke="#8fb8cc" />}
+            <rect x={x} y={55} width={16} height={110} fill={jointFill} stroke="#8a6a3a" />
+            {isLvl
+              ? [1, 2, 3, 4].map((n) => <line key={n} x1={x} y1={55 + n * 22} x2={x + 16} y2={55 + n * 22} stroke="#b8a678" strokeWidth="1" />)
+              : (
+                  <path
+                    d={`M ${x + 2} ${65} Q ${x + 8} ${90} ${x + 2} ${115} Q ${x + 8} ${140} ${x + 2} ${160}`}
+                    stroke="#b89a68"
+                    strokeWidth="1"
+                    fill="none"
+                  />
+                )}
           </g>
         ))}
 

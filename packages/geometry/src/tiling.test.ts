@@ -156,6 +156,57 @@ describe("tileWall", () => {
       "corner",
     ]);
   });
+
+  it("produces no middle slot at all (not a phantom zero-width one) when both corners fit exactly, 0 leftover", () => {
+    // wallLengthIn=40 == 2*20 (both corners) exactly -> 0 leftover. Previously
+    // this synthesized a phantom 0-width "standard" panel, which rendered
+    // invisibly but still counted as a real panel instance.
+    const result = tileWall(40, 40, 20, "end");
+    expect(result.slots.map((s) => s.type)).toEqual(["corner", "corner"]);
+    expect(result.slots.map((s) => s.widthIn)).toEqual([20, 20]);
+  });
+
+  it("produces no middle slot at all on a wall over 12ft when both corners fit exactly, 0 leftover", () => {
+    // wallLengthIn=150 > 144 (needs a safety panel) but corners (75 each) fill
+    // it exactly -> 0 leftover. Same phantom-zero-width bug on the gap-panel path.
+    const result = tileWall(150, 40, 75, "end");
+    expect(result.slots.map((s) => s.type)).toEqual(["corner", "corner"]);
+    expect(result.slots.map((s) => s.widthIn)).toEqual([75, 75]);
+  });
+
+  it("merges both corners into one when the wall is too short to fit them without overlap", () => {
+    // A bump-out's short remainder segment: wallLengthIn=30 < 2*20=40 (both
+    // corners). Instead of overlapping, they merge into a single corner
+    // panel spanning the whole wall — Tommy: "merge the two corner panels".
+    const result = tileWall(30, 40, 20, "end");
+    expect(result.slots).toEqual([{ type: "corner", widthIn: 30 }]);
+  });
+
+  it("unmerges back into two separate corners once the wall is long enough again", () => {
+    // Same wall, later dragged/edited back out past the 2-corner threshold —
+    // tileWall is pure, so this is just calling it again with a bigger
+    // length; there's no separate merge state to reset.
+    const short = tileWall(30, 40, 20, "end");
+    expect(short.slots).toEqual([{ type: "corner", widthIn: 30 }]);
+    const grown = tileWall(50, 40, 20, "end");
+    expect(grown.slots.map((s) => s.type)).toEqual(["corner", "standard", "corner"]);
+    expect(grown.slots.map((s) => s.widthIn)).toEqual([20, 10, 20]);
+  });
+
+  it("does not merge right at the exact 2-corner boundary (0 leftover is a valid non-overlapping fit)", () => {
+    // wallLengthIn=40 == 2*20 exactly -> corners fit with 0 leftover, no
+    // overlap, so this should NOT trigger the merge (matches the
+    // exact-fit/0-leftover test above).
+    const result = tileWall(40, 40, 20, "end");
+    expect(result.slots.map((s) => s.type)).toEqual(["corner", "corner"]);
+  });
+
+  it("clamps a lone corner (no merge partner) down to the wall's own length if even it alone doesn't fit", () => {
+    // Only owns a corner at the start (butts a longer neighbor at the end) —
+    // wallLengthIn=15 is shorter than the corner's own nominal 20in width.
+    const result = tileWall(15, 40, 20, "end", true, false);
+    expect(result.slots).toEqual([{ type: "corner", widthIn: 15 }]);
+  });
 });
 
 describe("toggleOpening", () => {
@@ -260,6 +311,13 @@ describe("retileWithOpenings", () => {
       "standard",
       "corner",
     ]);
+  });
+
+  it("merges both corners (dropping any opening — no room for it either) when the wall is too short to fit them", () => {
+    const result = retileWithOpenings(30, 40, 20, "end", true, true, [
+      { beforeStandardCount: 0, type: "window", widthIn: 20 },
+    ]);
+    expect(result.slots).toEqual([{ type: "corner", widthIn: 30 }]);
   });
 });
 
