@@ -6,10 +6,12 @@ import { OrbitControls } from "@react-three/drei";
 import { panelSlotBoxes3D, type Footprint, type PanelSlot } from "@building-integrity/geometry";
 import {
   buildBracedPanelMembers,
+  buildBuildingObj,
   buildColumnPanelMembers,
   buildCornerPanelMembers,
   buildStandardPanelMembers,
   type PanelMember,
+  type WorldPlacedPanel,
 } from "@building-integrity/panel-catalog";
 import PanelMembersGroup from "./PanelMembersGroup";
 
@@ -126,6 +128,27 @@ export default function Building3DView({
     [slotBoxes, thicknessIn, heightIn, includeNailer],
   );
 
+  const handleDownloadObj = () => {
+    const panels: WorldPlacedPanel[] = slotRenderData.map(({ box, members }) => ({
+      label: `${box.wallId}_${box.slotIndex}`,
+      worldXIn: box.anchorX * IN_PER_FT,
+      worldZIn: box.anchorZ * IN_PER_FT,
+      rotationRad: box.rotationRad,
+      members,
+      blobSizeIn: members
+        ? undefined
+        : { widthIn: box.widthFt * IN_PER_FT, heightIn: box.heightFt * IN_PER_FT, depthIn: box.depthFt * IN_PER_FT },
+    }));
+    const objText = buildBuildingObj(panels, "Building");
+    const blob = new Blob([objText], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "building.obj";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (!footprint) {
     return (
       <div
@@ -151,32 +174,39 @@ export default function Building3DView({
   const groundSize = bounds.maxDim * 3;
 
   return (
-    <div style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT, border: "1px solid #ccc" }}>
-      <Canvas camera={{ position: cameraPosition, fov: 50, near: 0.1, far: 10000 }}>
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[bounds.maxDim, bounds.maxDim * 2, bounds.maxDim]} intensity={0.8} />
-        <mesh position={[bounds.centerX, -0.05, bounds.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[groundSize, groundSize]} />
-          <meshStandardMaterial color="#e8e6df" />
-        </mesh>
-        {slotRenderData.map(({ box, members }) => (
-          <group
-            key={`${box.wallId}-${box.slotIndex}`}
-            position={[box.anchorX, 0, box.anchorZ]}
-            rotation={[0, -box.rotationRad, 0]}
-          >
-            {members ? (
-              <PanelMembersGroup members={members} />
-            ) : (
-              <mesh position={[box.widthFt / 2, box.heightFt / 2, box.depthFt / 2]}>
-                <boxGeometry args={[box.widthFt, box.heightFt, box.depthFt]} />
-                <meshStandardMaterial color={BLOB_COLOR} transparent opacity={0.6} />
-              </mesh>
-            )}
-          </group>
-        ))}
-        <OrbitControls target={target} makeDefault />
-      </Canvas>
+    <div style={{ width: CANVAS_WIDTH }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+        <button type="button" onClick={handleDownloadObj} style={{ fontSize: 12 }}>
+          Export as OBJ
+        </button>
+      </div>
+      <div style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT, border: "1px solid #ccc" }}>
+        <Canvas camera={{ position: cameraPosition, fov: 50, near: 0.1, far: 10000 }}>
+          <ambientLight intensity={0.6} />
+          <directionalLight position={[bounds.maxDim, bounds.maxDim * 2, bounds.maxDim]} intensity={0.8} />
+          <mesh position={[bounds.centerX, -0.05, bounds.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[groundSize, groundSize]} />
+            <meshStandardMaterial color="#e8e6df" />
+          </mesh>
+          {slotRenderData.map(({ box, members }) => (
+            <group
+              key={`${box.wallId}-${box.slotIndex}`}
+              position={[box.anchorX, 0, box.anchorZ]}
+              rotation={[0, -box.rotationRad, 0]}
+            >
+              {members ? (
+                <PanelMembersGroup members={members} />
+              ) : (
+                <mesh position={[box.widthFt / 2, box.heightFt / 2, box.depthFt / 2]}>
+                  <boxGeometry args={[box.widthFt, box.heightFt, box.depthFt]} />
+                  <meshStandardMaterial color={BLOB_COLOR} transparent opacity={0.6} />
+                </mesh>
+              )}
+            </group>
+          ))}
+          <OrbitControls target={target} makeDefault />
+        </Canvas>
+      </div>
     </div>
   );
 }

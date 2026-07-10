@@ -1,4 +1,4 @@
-import { cornerTurnAngleRad, isConvexCorner, isRightAngleCorner } from "./cornerAngle";
+import { cornerOwnership } from "./retile";
 import type { Footprint, PanelSlot } from "./types";
 
 /**
@@ -34,10 +34,21 @@ export interface PanelSlotBox3D {
 }
 
 /**
- * Reproduces `wallBoxes3D`'s reflex-corner length-extension logic (see its
- * doc comment for the full rationale) rather than importing it, since this
- * needs the pre-extension EXTERIOR-face anchor point that function doesn't
- * expose (it only returns the post-shift, thickness-centered box center).
+ * Uses the exact same `cornerOwnership` computation `retile()` uses to
+ * build the real `PanelSlot[]` arrays this function is placing — critical,
+ * not just consistent-for-its-own-sake: a wall that loses a plain convex
+ * corner is tiled `thicknessIn` SHORTER than its raw exterior-line length
+ * at that end (the other, shorter wall owns the corner panel there
+ * instead), and a wall that wins a reflex (bump-out inside) corner is
+ * tiled `thicknessIn` LONGER. Using the raw wall length instead (as an
+ * earlier version of this function did, duplicating only `wallBoxes3D`'s
+ * reflex-only extension logic) silently drifted the computed length away
+ * from what the slots actually sum to — on a plain rectangle, the two
+ * longer walls lose BOTH corners to the shorter perpendicular walls, so
+ * their raw length overshot the real tiled length by a full 2x
+ * `thicknessIn`, and the defensive rescale below (meant only for tiny
+ * floating-point slop) silently stretched every one of that wall's panels
+ * to compensate — the reported "long wall's panels are spaced out" bug.
  */
 export function panelSlotBoxes3D(
   footprint: Footprint,
@@ -47,35 +58,7 @@ export function panelSlotBoxes3D(
   primaryCornerIds: Set<string>,
 ): PanelSlotBox3D[] {
   const thicknessFt = thicknessIn / 12;
-  const centroid = {
-    x: footprint.corners.reduce((sum, c) => sum + c.point.x, 0) / footprint.corners.length,
-    y: footprint.corners.reduce((sum, c) => sum + c.point.y, 0) / footprint.corners.length,
-  };
-
-  const startExtensionFt: Record<string, number> = {};
-  const endExtensionFt: Record<string, number> = {};
-  for (const wall of footprint.walls) {
-    startExtensionFt[wall.id] = 0;
-    endExtensionFt[wall.id] = 0;
-  }
-  for (const wall of footprint.walls) {
-    const nextWall = footprint.walls.find((w) => w.startCorner === wall.endCorner);
-    if (!nextWall) continue;
-    const angle = cornerTurnAngleRad(wall, nextWall, footprint.corners);
-    if (!isRightAngleCorner(angle)) continue;
-    if (isConvexCorner(wall, nextWall, footprint.corners)) continue;
-
-    const shorterWins = () =>
-      wall.lengthFt !== nextWall.lengthFt ? wall.lengthFt < nextWall.lengthFt : wall.id < nextWall.id;
-    const wallIsOriginal = primaryCornerIds.has(wall.startCorner) || primaryCornerIds.has(wall.endCorner);
-    const nextIsOriginal = primaryCornerIds.has(nextWall.startCorner) || primaryCornerIds.has(nextWall.endCorner);
-    const wallWins = wallIsOriginal !== nextIsOriginal ? wallIsOriginal : shorterWins();
-    if (wallWins) {
-      endExtensionFt[wall.id] = thicknessFt;
-    } else {
-      startExtensionFt[nextWall.id] = thicknessFt;
-    }
-  }
+  const ownership = cornerOwnership(footprint, primaryCornerIds, thicknessIn);
 
   const result: PanelSlotBox3D[] = [];
   for (const wall of footprint.walls) {
@@ -87,23 +70,23 @@ export function panelSlotBoxes3D(
     const dir = { x: dx / length, z: dz / length };
     const rotationRad = Math.atan2(dz, dx);
 
-    const extStart = startExtensionFt[wall.id]!;
-    const extEnd = endExtensionFt[wall.id]!;
-    const exteriorMidX = (start.x + end.x) / 2;
-    const exteriorMidZ = (start.y + end.y) / 2;
-    const alongShift = (extEnd - extStart) / 2;
-    const lengthFt = wall.lengthFt + extStart + extEnd;
-    // Exterior-face midpoint of the (possibly extended) wall, then back up
-    // by half its length to the start (min-corner along the wall).
-    const wallStartX = exteriorMidX + dir.x * alongShift - (dir.x * lengthFt) / 2;
-    const wallStartZ = exteriorMidZ + dir.z * alongShift - (dir.z * lengthFt) / 2;
+    const { start: startOwn, end: endOwn } = ownership[wall.id]!;
+    const lengthIn =
+      wall.lengthFt * 12 - startOwn.insetAmount - endOwn.insetAmount + startOwn.extraLengthIn + endOwn.extraLengthIn;
+    // Inset moves the tiling start INWARD (this wall doesn't own the
+    // corner there); extraLengthIn moves it OUTWARD (this wall's corner
+    // panel reaches past its raw endpoint to close a reflex gap) — same
+    // formula `retile()` uses to derive `lengthIn`, applied per axis here.
+    const wallStartX = start.x + (dir.x * (startOwn.insetAmount - startOwn.extraLengthIn)) / 12;
+    const wallStartZ = start.y + (dir.z * (startOwn.insetAmount - startOwn.extraLengthIn)) / 12;
 
     const slots = wallSlots[wall.id] ?? [];
     const totalWidthIn = slots.reduce((sum, s) => sum + s.widthIn, 0);
-    // Slots should already sum to exactly the wall's tiled length, but
-    // rescale defensively so rendering never drifts off the wall's actual
-    // (possibly reflex-extended) length even if they don't exactly match.
-    const scale = totalWidthIn > 0 ? (lengthFt * 12) / totalWidthIn : 1;
+    // Slots should already sum to exactly lengthIn — rescale defensively
+    // so rendering never drifts off the wall's actual length even if they
+    // don't exactly match, but this should only ever correct tiny
+    // floating-point slop now that lengthIn matches retile()'s own formula.
+    const scale = totalWidthIn > 0 ? lengthIn / totalWidthIn : 1;
 
     let offsetFt = 0;
     for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
