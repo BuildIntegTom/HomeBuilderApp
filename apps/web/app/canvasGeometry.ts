@@ -1,3 +1,4 @@
+import type * as React from "react";
 import {
   cornerTurnAngleRad,
   footprintIsAllRightAngles,
@@ -20,6 +21,26 @@ export const CORNER_MARKER_OFFSET_PX = 16;
 // manually since this is just a screen-space preview outline, not the
 // actual footprint geometry.
 export const OCTAGON_CLIP_RATIO = 1 - 1 / Math.SQRT2;
+
+/**
+ * Extracts client coordinates from either a mouse or touch event (React
+ * synthetic or native) — mobile touch input was silently doing nothing
+ * because every canvas only wired up mouse handlers (Tommy: "input from a
+ * cellphone finger touch"). Touch coordinates live one level deeper
+ * (`touches[0]`) than mouse's direct `clientX`/`clientY`; touchend has an
+ * empty `touches` list (the finger's already lifted), so that falls back
+ * to `changedTouches` instead. Returns null only for a touchend/touchcancel
+ * with no touch data at all (shouldn't normally happen).
+ */
+export function clientPointFromEvent(
+  evt: MouseEvent | TouchEvent | React.MouseEvent | React.TouchEvent,
+): { clientX: number; clientY: number } | null {
+  if ("touches" in evt) {
+    const touch = evt.touches[0] ?? evt.changedTouches[0];
+    return touch ? { clientX: touch.clientX, clientY: touch.clientY } : null;
+  }
+  return { clientX: evt.clientX, clientY: evt.clientY };
+}
 
 export const WALL_PICK_TOLERANCE_PX = 20;
 const SPAN_SNAP_FLUSH_THRESHOLD_FT = 1; // under this distance from a corner, snap flush to it

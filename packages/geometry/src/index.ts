@@ -6,6 +6,7 @@ export * from "./bumpOut";
 export * from "./editWallLength";
 export * from "./dragWall";
 export * from "./wallBoxes3D";
+export * from "./panelSlotBoxes3D";
 export * from "./gapPlacement";
 export * from "./tiling";
 export * from "./bracedPlacement";

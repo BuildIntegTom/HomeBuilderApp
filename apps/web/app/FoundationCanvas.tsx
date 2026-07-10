@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { Footprint, PierPosition } from "@building-integrity/geometry";
 import {
   SCALE_PX_PER_FT,
+  clientPointFromEvent,
   formatFeetInches,
   nearestPointOnSegments,
   wallPointsPx,
@@ -42,9 +43,11 @@ export default function FoundationCanvas({ footprint, offsetPx, piers }: Foundat
     });
   };
 
-  const pointerPos = (e: React.MouseEvent<SVGSVGElement>): DragPoint => {
+  const pointerPos = (e: React.MouseEvent<SVGSVGElement> | React.TouchEvent<SVGSVGElement>): DragPoint | null => {
+    const client = clientPointFromEvent(e);
+    if (!client) return null;
     const rect = svgRef.current!.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    return { x: client.clientX - rect.left, y: client.clientY - rect.top };
   };
 
   if (!footprint) {
@@ -71,9 +74,10 @@ export default function FoundationCanvas({ footprint, offsetPx, piers }: Foundat
     return { x1: startPx.x, y1: startPx.y, x2: endPx.x, y2: endPx.y };
   });
 
-  const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+  const handleMouseDown = (e: React.MouseEvent<SVGSVGElement> | React.TouchEvent<SVGSVGElement>) => {
     if (!isMeasuring) return;
-    const snapped = nearestPointOnSegments(pointerPos(e), wallLines);
+    const pos = pointerPos(e);
+    const snapped = pos && nearestPointOnSegments(pos, wallLines);
     if (snapped) {
       measureGestureRef.current = true;
       setMeasureAnchor(snapped);
@@ -81,9 +85,10 @@ export default function FoundationCanvas({ footprint, offsetPx, piers }: Foundat
     }
   };
 
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement> | React.TouchEvent<SVGSVGElement>) => {
     if (!isMeasuring || !measureGestureRef.current) return;
-    const snapped = nearestPointOnSegments(pointerPos(e), wallLines);
+    const pos = pointerPos(e);
+    const snapped = pos && nearestPointOnSegments(pos, wallLines);
     if (snapped) setMeasureEnd(snapped);
   };
 
@@ -108,10 +113,13 @@ export default function FoundationCanvas({ footprint, offsetPx, piers }: Foundat
         ref={svgRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        style={{ border: "1px solid #ccc", background: "#fff", cursor: isMeasuring ? "crosshair" : "default" }}
+        style={{ border: "1px solid #ccc", background: "#fff", cursor: isMeasuring ? "crosshair" : "default", touchAction: "none" }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onTouchStart={handleMouseDown}
+        onTouchMove={handleMouseMove}
+        onTouchEnd={handleMouseUp}
       >
         {footprint.walls.map((wall) => {
           const { startPx, endPx } = wallPointsPx(wall, footprint.corners, offsetPx);

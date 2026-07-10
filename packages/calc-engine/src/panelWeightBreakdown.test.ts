@@ -10,6 +10,7 @@ describe("computePanelWeightBreakdown", () => {
     const breakdown = computePanelWeightBreakdown({
       ...dims,
       woodWeightKg: null,
+      fastenerWeightKg: null,
       hasClayPlaster: false,
       hasLimePlaster: false,
     });
@@ -20,6 +21,7 @@ describe("computePanelWeightBreakdown", () => {
     const breakdown = computePanelWeightBreakdown({
       ...dims,
       woodWeightKg: 20,
+      fastenerWeightKg: null,
       hasClayPlaster: false,
       hasLimePlaster: false,
     });
@@ -33,6 +35,7 @@ describe("computePanelWeightBreakdown", () => {
     const breakdown = computePanelWeightBreakdown({
       ...dims,
       woodWeightKg: null,
+      fastenerWeightKg: null,
       hasClayPlaster: false,
       hasLimePlaster: false,
     });
@@ -42,10 +45,37 @@ describe("computePanelWeightBreakdown", () => {
     expect(breakdown.totalModeledWeightKg).toBeCloseTo(breakdown.strawOnlyWeightKg, 9);
   });
 
+  it("includes a real fasteners component and sums it into the modeled total when fastener weight is known", () => {
+    const breakdown = computePanelWeightBreakdown({
+      ...dims,
+      woodWeightKg: null,
+      fastenerWeightKg: 2,
+      hasClayPlaster: false,
+      hasLimePlaster: false,
+    });
+    const fasteners = breakdown.components.find((c) => c.label === "Fasteners")!;
+    expect(fasteners.weightKg).toBe(2);
+    expect(breakdown.totalModeledWeightKg).toBeCloseTo(breakdown.strawOnlyWeightKg + 2, 9);
+  });
+
+  it("flags fasteners as not-modeled (null) without treating it as 0 silently", () => {
+    const breakdown = computePanelWeightBreakdown({
+      ...dims,
+      woodWeightKg: null,
+      fastenerWeightKg: null,
+      hasClayPlaster: false,
+      hasLimePlaster: false,
+    });
+    const fasteners = breakdown.components.find((c) => c.label === "Fasteners")!;
+    expect(fasteners.weightKg).toBeNull();
+    expect(fasteners.weightLb).toBeNull();
+  });
+
   it("omits clay/lime components entirely when neither finish is selected", () => {
     const breakdown = computePanelWeightBreakdown({
       ...dims,
       woodWeightKg: null,
+      fastenerWeightKg: null,
       hasClayPlaster: false,
       hasLimePlaster: false,
     });
@@ -56,6 +86,7 @@ describe("computePanelWeightBreakdown", () => {
     const clayOnly = computePanelWeightBreakdown({
       ...dims,
       woodWeightKg: null,
+      fastenerWeightKg: null,
       hasClayPlaster: true,
       hasLimePlaster: false,
     });
@@ -65,6 +96,7 @@ describe("computePanelWeightBreakdown", () => {
     const both = computePanelWeightBreakdown({
       ...dims,
       woodWeightKg: null,
+      fastenerWeightKg: null,
       hasClayPlaster: true,
       hasLimePlaster: true,
     });

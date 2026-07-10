@@ -262,20 +262,22 @@ export function tileWall(
 export interface OpeningAnchor {
   /** How many 'standard'-type slots (including corner-touching ones) precede this opening in the plain sequence. */
   beforeStandardCount: number;
-  type: "window" | "door";
+  type: "window" | "door" | "column";
   widthIn: number;
 }
 
 /**
- * Reads each window/door's position out of an existing (tiled) slots array,
- * as "how many standard slots come before it" — the anchor used to put it
- * back in roughly the same place after a re-tile.
+ * Reads each window/door/column's position out of an existing (tiled)
+ * slots array, as "how many standard slots come before it" — the anchor
+ * used to put it back in roughly the same place after a re-tile. A Column
+ * Panel is a fixed-width structural swap-in (not an opening), but shares
+ * the same "reserve this width at this position" mechanism.
  */
 export function getOpeningAnchors(slots: PanelSlot[]): OpeningAnchor[] {
   const anchors: OpeningAnchor[] = [];
   let standardsSeen = 0;
   for (const slot of slots) {
-    if (slot.type === "window" || slot.type === "door") {
+    if (slot.type === "window" || slot.type === "door" || slot.type === "column") {
       anchors.push({ beforeStandardCount: standardsSeen, type: slot.type, widthIn: slot.widthIn });
     } else if (slot.type === "standard") {
       standardsSeen++;

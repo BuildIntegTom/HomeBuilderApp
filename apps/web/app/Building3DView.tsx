@@ -1,13 +1,24 @@
 "use client";
 
+import { useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { wallBoxes3D, type Footprint } from "@building-integrity/geometry";
+import { panelSlotBoxes3D, type Footprint, type PanelSlot } from "@building-integrity/geometry";
+import {
+  buildBracedPanelMembers,
+  buildColumnPanelMembers,
+  buildCornerPanelMembers,
+  buildStandardPanelMembers,
+  type PanelMember,
+} from "@building-integrity/panel-catalog";
+import PanelMembersGroup from "./PanelMembersGroup";
 
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 480;
 const BIRDS_EYE_ELEVATION_DEG = 50;
 const BIRDS_EYE_AZIMUTH_DEG = 45; // a corner/3-quarter starting view, not straight-on
+const IN_PER_FT = 12;
+const BLOB_COLOR = "#b5b0a8";
 
 interface Bounds {
   centerX: number;
@@ -51,14 +62,70 @@ function birdsEyeCameraPosition(bounds: Bounds): [number, number, number] {
   ];
 }
 
+/** Panel types with real member geometry today — everything else (window,
+ * door, safety-gap, and a safety-gap combined with a corner brace) falls
+ * back to a plain placeholder "blob" box, since there's no member builder
+ * for them yet (Tommy: "unmodeled variants such as headers and sills and
+ * door headers just be blobs so its obvious they arent done yet"). */
+function membersForSlot(slot: PanelSlot, thicknessIn: number, heightIn: number, includeNailer: boolean): PanelMember[] | null {
+  switch (slot.type) {
+    case "standard":
+      return buildStandardPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer);
+    case "braced":
+      return buildBracedPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer);
+    case "column":
+      return buildColumnPanelMembers(thicknessIn, heightIn, includeNailer);
+    case "corner":
+    case "safety-oct-corner":
+      return buildCornerPanelMembers(thicknessIn, heightIn, includeNailer);
+    default:
+      return null;
+  }
+}
+
 interface Building3DViewProps {
   footprint: Footprint | null;
+  wallSlots: Record<string, PanelSlot[]>;
   wallHeightFt: number;
   thicknessIn: number;
+  includeNailer: boolean;
   primaryCornerIds: Set<string>;
 }
 
-export default function Building3DView({ footprint, wallHeightFt, thicknessIn, primaryCornerIds }: Building3DViewProps) {
+/** Whole-building 3D preview, built from the SAME per-panel member geometry
+ * as each Shop Drawing page's 3D view (Tommy: "is there a way that the 3D
+ * Preview button can show these models in their place together on the
+ * floor plan?") — one positioned/rotated group per wall slot, each
+ * containing that slot's own `PanelMembersGroup`. Column/Corner panels
+ * ignore the slot's own tiled width (always fabricated at
+ * `COLUMN_TOTAL_WIDTH_IN`, same simplification as their Shop Drawing
+ * pages) — the group is still sized/positioned to the slot's actual tiled
+ * width so it doesn't visibly overlap its neighbors, just slightly
+ * mismatched from the panel's true 25.5in build width. */
+export default function Building3DView({
+  footprint,
+  wallSlots,
+  wallHeightFt,
+  thicknessIn,
+  includeNailer,
+  primaryCornerIds,
+}: Building3DViewProps) {
+  const heightIn = wallHeightFt * IN_PER_FT;
+
+  const slotBoxes = useMemo(
+    () => (footprint ? panelSlotBoxes3D(footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds) : []),
+    [footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds],
+  );
+
+  const slotRenderData = useMemo(
+    () =>
+      slotBoxes.map((box) => ({
+        box,
+        members: membersForSlot(box.slot, thicknessIn, heightIn, includeNailer),
+      })),
+    [slotBoxes, thicknessIn, heightIn, includeNailer],
+  );
+
   if (!footprint) {
     return (
       <div
@@ -81,7 +148,6 @@ export default function Building3DView({ footprint, wallHeightFt, thicknessIn, p
   const bounds = footprintBounds(footprint);
   const cameraPosition = birdsEyeCameraPosition(bounds);
   const target: [number, number, number] = [bounds.centerX, 0, bounds.centerZ];
-  const boxes = wallBoxes3D(footprint, thicknessIn, wallHeightFt, primaryCornerIds);
   const groundSize = bounds.maxDim * 3;
 
   return (
@@ -93,15 +159,21 @@ export default function Building3DView({ footprint, wallHeightFt, thicknessIn, p
           <planeGeometry args={[groundSize, groundSize]} />
           <meshStandardMaterial color="#e8e6df" />
         </mesh>
-        {boxes.map((box) => (
-          <mesh
-            key={box.wallId}
-            position={[box.centerX, box.heightFt / 2, box.centerZ]}
+        {slotRenderData.map(({ box, members }) => (
+          <group
+            key={`${box.wallId}-${box.slotIndex}`}
+            position={[box.anchorX, 0, box.anchorZ]}
             rotation={[0, -box.rotationRad, 0]}
           >
-            <boxGeometry args={[box.lengthFt, box.heightFt, box.thicknessFt]} />
-            <meshStandardMaterial color="#d9c9a3" />
-          </mesh>
+            {members ? (
+              <PanelMembersGroup members={members} />
+            ) : (
+              <mesh position={[box.widthFt / 2, box.heightFt / 2, box.depthFt / 2]}>
+                <boxGeometry args={[box.widthFt, box.heightFt, box.depthFt]} />
+                <meshStandardMaterial color={BLOB_COLOR} transparent opacity={0.6} />
+              </mesh>
+            )}
+          </group>
         ))}
         <OrbitControls target={target} makeDefault />
       </Canvas>

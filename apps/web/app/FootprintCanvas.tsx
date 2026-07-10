@@ -14,6 +14,7 @@ import {
 } from "@building-integrity/geometry";
 import {
   SCALE_PX_PER_FT,
+  clientPointFromEvent,
   computeSlotRects,
   cornerMarkerPosition,
   findNearestWall,
@@ -46,7 +47,42 @@ const SLOT_COLORS: Record<PanelSlot["type"], string> = {
   "safety-gap": "#e08a3c",
   window: "#8fc7e8",
   door: "#7a4a2b",
+  column: "#4a90a4",
 };
+
+// A combined slot (e.g. safety-gap + braced near a corner, Tommy: "have
+// multiple types of panels be represented in a particular panel... safety
+// panel should be hashed orange so you can see both colors") renders its
+// secondaryType as the solid base (what it structurally also is) with the
+// primary type's color as a diagonal hatch on top — cached per color since
+// building a canvas pattern tile isn't free and there are only ever a
+// handful of distinct colors in play.
+// react-konva types fillPatternImage as HTMLImageElement only, but Konva
+// itself accepts any CanvasImageSource at runtime (including a canvas) —
+// the cast below is safe, not a real type mismatch.
+const hatchPatternCache = new Map<string, HTMLImageElement>();
+function diagonalHatchPattern(color: string): HTMLImageElement {
+  const cached = hatchPatternCache.get(color);
+  if (cached) return cached;
+  const size = 8;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, size);
+  ctx.lineTo(size, 0);
+  ctx.moveTo(-size / 2, size / 2);
+  ctx.lineTo(size / 2, -size / 2);
+  ctx.moveTo(size / 2, size * 1.5);
+  ctx.lineTo(size * 1.5, size / 2);
+  ctx.stroke();
+  const image = canvas as unknown as HTMLImageElement;
+  hatchPatternCache.set(color, image);
+  return image;
+}
 
 interface BumpOutGesture {
   stage: "span" | "depth";
@@ -262,9 +298,10 @@ export default function FootprintCanvas({
     }
   }, [shapeTool]);
 
-  const handleMouseDown = (e: KonvaEventObject<MouseEvent>) => {
+  const handleMouseDown = (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (isPanning) {
-      panStartRef.current = { clientX: e.evt.clientX, clientY: e.evt.clientY, viewOffset: { ...viewOffset } };
+      const client = clientPointFromEvent(e.evt);
+      if (client) panStartRef.current = { ...client, viewOffset: { ...viewOffset } };
       return;
     }
 
@@ -318,13 +355,15 @@ export default function FootprintCanvas({
     setDragCurrent(pos);
   };
 
-  const handleMouseMove = (e: KonvaEventObject<MouseEvent>) => {
+  const handleMouseMove = (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (isPanning) {
       const start = panStartRef.current;
       if (!start) return;
+      const client = clientPointFromEvent(e.evt);
+      if (!client) return;
       setViewOffset({
-        x: start.viewOffset.x + (e.evt.clientX - start.clientX),
-        y: start.viewOffset.y + (e.evt.clientY - start.clientY),
+        x: start.viewOffset.x + (client.clientX - start.clientX),
+        y: start.viewOffset.y + (client.clientY - start.clientY),
       });
       return;
     }
@@ -373,7 +412,7 @@ export default function FootprintCanvas({
     setDragCurrent(pos);
   };
 
-  const handleMouseUp = (e: KonvaEventObject<MouseEvent>) => {
+  const handleMouseUp = (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (isPanning) {
       panStartRef.current = null;
       return;
@@ -605,7 +644,10 @@ export default function FootprintCanvas({
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
-          style={{ border: "1px solid #ccc", background: "#fcfcfa", cursor: isPanning ? "grab" : "crosshair" }}
+          onTouchStart={handleMouseDown}
+          onTouchMove={handleMouseMove}
+          onTouchEnd={handleMouseUp}
+          style={{ border: "1px solid #ccc", background: "#fcfcfa", cursor: isPanning ? "grab" : "crosshair", touchAction: "none" }}
         >
           <Layer>
           {!footprint && !previewRect && (
@@ -672,6 +714,8 @@ export default function FootprintCanvas({
                 wallThicknessPx,
               ).map((r) => {
                 const panelName = panelNameByKey.get(`${r.wallId}-${r.slotIndex}`);
+                const baseColor = SLOT_COLORS[r.slot.secondaryType ?? r.slot.type];
+                const hatchColor = r.slot.secondaryType ? SLOT_COLORS[r.slot.type] : null;
                 if (r.trapezoidPoints) {
                   // Point index 3 (x,y at array indices 6,7) is always the
                   // interior-side corner nearest the slot's start, for both
@@ -683,11 +727,21 @@ export default function FootprintCanvas({
                       <Line
                         points={r.trapezoidPoints}
                         closed
-                        fill={SLOT_COLORS[r.slot.type]}
+                        fill={baseColor}
                         stroke="#555"
                         strokeWidth={0.5}
                         onClick={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
+                        onTap={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
                       />
+                      {hatchColor && (
+                        <Line
+                          points={r.trapezoidPoints}
+                          closed
+                          fillPatternImage={diagonalHatchPattern(hatchColor)}
+                          fillPatternRepeat="repeat"
+                          listening={false}
+                        />
+                      )}
                       {showPanelLabels && panelName && (
                         <Text
                           x={labelX + 2}
@@ -713,11 +767,21 @@ export default function FootprintCanvas({
                     <Rect
                       width={r.width}
                       height={r.height}
-                      fill={SLOT_COLORS[r.slot.type]}
+                      fill={baseColor}
                       stroke="#555"
                       strokeWidth={0.5}
                       onClick={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
+                      onTap={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
                     />
+                    {hatchColor && (
+                      <Rect
+                        width={r.width}
+                        height={r.height}
+                        fillPatternImage={diagonalHatchPattern(hatchColor)}
+                        fillPatternRepeat="repeat"
+                        listening={false}
+                      />
+                    )}
                     {showPanelLabels && panelName && (
                       <Text
                         x={2}
@@ -748,6 +812,7 @@ export default function FootprintCanvas({
                   stroke="#333"
                   strokeWidth={1.5}
                   onClick={shapeTool === "edit" ? () => onSetLeastAccessibleCorner(c.id) : undefined}
+                  onTap={shapeTool === "edit" ? () => onSetLeastAccessibleCorner(c.id) : undefined}
                 />
               );
             })}
@@ -759,6 +824,9 @@ export default function FootprintCanvas({
                 <Group
                   key={`label-${wall.id}`}
                   onClick={
+                    shapeTool === "edit" && isWallLengthEditable(wall.id) ? () => startEditingWall(wall) : undefined
+                  }
+                  onTap={
                     shapeTool === "edit" && isWallLengthEditable(wall.id) ? () => startEditingWall(wall) : undefined
                   }
                 >

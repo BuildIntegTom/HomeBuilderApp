@@ -29,6 +29,11 @@ export interface PanelWeightBreakdownInputs {
    * today, via computeStandardPanelWoodWeight); null for a known-
    * applicable-but-unmodeled gap (corner/safety-gap — no BOM yet). */
   woodWeightKg: number | null;
+  /** A number when fastener counts are modeled for this panel type
+   * (standard/braced/column/corner, via computeFastenerWeight on its real
+   * member list); null for a known-applicable-but-unmodeled gap
+   * (header/sill/safety-gap — no member geometry yet). */
+  fastenerWeightKg: number | null;
   /** True only when the interior or exterior finish actually applies a
    * clay-plaster coat directly on this panel's straw face. */
   hasClayPlaster: boolean;
@@ -52,7 +57,7 @@ export function computePanelWeightBreakdown(inputs: PanelWeightBreakdownInputs):
   const components: PanelWeightComponent[] = [
     { label: "Straw", weightKg: straw.weightKg, weightLb: straw.weightLb },
     { label: "Wood (studs/plates/girts)", weightKg: inputs.woodWeightKg, weightLb: toLb(inputs.woodWeightKg) },
-    { label: "Fasteners", weightKg: null, weightLb: null },
+    { label: "Fasteners", weightKg: inputs.fastenerWeightKg, weightLb: toLb(inputs.fastenerWeightKg) },
     ...(inputs.hasClayPlaster ? [{ label: "Clay plaster", weightKg: null, weightLb: null }] : []),
     ...(inputs.hasLimePlaster ? [{ label: "Lime plaster", weightKg: null, weightLb: null }] : []),
   ];

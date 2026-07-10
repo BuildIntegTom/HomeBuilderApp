@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { PanelStructuralStatus } from "@building-integrity/panel-catalog";
 import type { PanelWeightBreakdown } from "@building-integrity/calc-engine";
 import SheetTitleBlock from "./SheetTitleBlock";
@@ -28,6 +29,17 @@ export interface ShopDrawingPageProps {
   /** undefined = no BOM exists yet for this panel type (e.g. corner, safety-gap). */
   bomParts?: ShopDrawingBomPart[];
   bomNote?: string;
+  /** A real 3D model (built from actual member geometry), shown instead of
+   * the flat placeholder diagram when provided — undefined = no member
+   * geometry modeled yet for this panel type, falls back to the placeholder. */
+  diagram3D?: ReactNode;
+  /** First-pass NDS-based bearing/shear estimates (Tommy: "let's take a
+   * stab at making some estimated engineering numbers") — shown alongside
+   * (not instead of) the "not yet modeled" real-engineering status, since
+   * a licensed engineer's real number is still pending either way.
+   * Undefined = no estimate applies to this panel type. */
+  estimatedBearingLb?: number;
+  estimatedShearLb?: number;
   instances: ShopDrawingInstance[];
   role: ViewerRole;
 }
@@ -76,13 +88,16 @@ export default function ShopDrawingPage({
   shearValue,
   bomParts,
   bomNote,
+  diagram3D,
+  estimatedBearingLb,
+  estimatedShearLb,
   instances,
   role,
 }: ShopDrawingPageProps) {
   return (
     <SheetTitleBlock title={title} description={panelDescription} role={role}>
       <div className={styles.diagram}>
-        <StandardPanelPlaceholder widthIn={standardWidthIn} heightIn={heightIn} thicknessIn={thicknessIn} />
+        {diagram3D ?? <StandardPanelPlaceholder widthIn={standardWidthIn} heightIn={heightIn} thicknessIn={thicknessIn} />}
       </div>
 
       <div>
@@ -93,12 +108,32 @@ export default function ShopDrawingPage({
               <td>Load-bearing capacity</td>
               <td className={styles.pendingCell}>not yet modeled — {loadBearingCapacity.note}</td>
             </tr>
+            {estimatedBearingLb !== undefined && (
+              <tr>
+                <td>Estimated bearing capacity (double stud pack)</td>
+                <td className={styles.note}>~{Math.round(estimatedBearingLb).toLocaleString()} lb</td>
+              </tr>
+            )}
             <tr>
               <td>Shear value</td>
               <td className={styles.pendingCell}>not yet modeled — {shearValue.note}</td>
             </tr>
+            {estimatedShearLb !== undefined && (
+              <tr>
+                <td>Estimated shear capacity (diagonal brace)</td>
+                <td className={styles.note}>~{Math.round(estimatedShearLb).toLocaleString()} lb</td>
+              </tr>
+            )}
           </tbody>
         </table>
+        {(estimatedBearingLb !== undefined || estimatedShearLb !== undefined) && (
+          <p className={styles.note}>
+            Estimated values above are Building Integrity&apos;s own first-pass engineering estimates (NDS
+            sawn-lumber column-buckling method, applied to the diagonal brace / double stud pack) — not a licensed
+            engineer&apos;s calculation. Do not use for permitting or construction without independent structural
+            review.
+          </p>
+        )}
       </div>
 
       {bomParts && bomParts.length > 0 && (

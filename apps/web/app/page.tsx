@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   applyBracedPlacement,
   buildOctagonFootprint,
@@ -29,20 +29,29 @@ import {
 } from "@building-integrity/geometry";
 import {
   computeAssemblyPerm,
+  computeBracedPanelShearCapacityLb,
   computeCarbonRange,
   computeConcretePierVolume,
+  computeFastenerWeight,
   computeNetEmbodiedCarbonCO2e,
   computePanelWeightBreakdown,
   computePrice,
   computeStandardPanelWoodWeight,
   computeStrawWeight,
+  computeStudPackBearingCapacityLb,
   toReviewLog,
   validateVaporOpenness,
   type Season,
 } from "@building-integrity/calc-engine";
 import {
   bomWidthMismatchWarning,
+  buildBracedPanelMembers,
+  buildColumnPanelMembers,
+  buildCornerPanelMembers,
+  buildStandardPanelMembers,
   carbonFractionOfDryMass,
+  COLUMN_TOTAL_WIDTH_IN,
+  computePanelSizeShares,
   concreteEmbodiedCarbonKgPerFt3,
   concretePierDimensions,
   cornerPanelWidthIn,
@@ -91,6 +100,7 @@ import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType } from "./panelInstances";
 import PierFoundationDiagram from "./PierFoundationDiagram";
+import { parseProjectFile, serializeProject, type ProjectState } from "./projectFile";
 import RubbleTrenchDiagram from "./RubbleTrenchDiagram";
 import ShopDrawingPage from "./ShopDrawingPage";
 import SlabFoundationDiagram from "./SlabFoundationDiagram";
@@ -99,6 +109,7 @@ import styles from "./page.module.css";
 
 const FootprintCanvas = dynamic(() => import("./FootprintCanvas"), { ssr: false });
 const Building3DView = dynamic(() => import("./Building3DView"), { ssr: false });
+const StandardPanel3DView = dynamic(() => import("./StandardPanel3DView"), { ssr: false });
 
 const KG_TO_LB = 2.20462;
 const LB_FT3_TO_KG_M3 = 16.018463;
@@ -131,7 +142,7 @@ type ShapeTool = "rectangle" | "octagon" | "bump-out" | "edit" | "drag-wall";
 // sill, a door is a header only, not their own PanelSlot type.
 const SHOP_DRAWING_PANEL_TYPES: {
   namedTypes: NamedPanelType[];
-  panelTypeId: "standard" | "corner" | "braced" | "safety-gap" | "header" | "sill";
+  panelTypeId: "standard" | "corner" | "braced" | "safety-gap" | "header" | "sill" | "column";
   hasWoodBom: boolean;
 }[] = [
   { namedTypes: ["standard"], panelTypeId: "standard", hasWoodBom: true },
@@ -140,6 +151,7 @@ const SHOP_DRAWING_PANEL_TYPES: {
   { namedTypes: ["safety-gap"], panelTypeId: "safety-gap", hasWoodBom: false },
   { namedTypes: ["header"], panelTypeId: "header", hasWoodBom: false },
   { namedTypes: ["sill"], panelTypeId: "sill", hasWoodBom: false },
+  { namedTypes: ["column"], panelTypeId: "column", hasWoodBom: false },
 ];
 
 const SHOP_DRAWING_BOM_PARTS = [
@@ -209,6 +221,93 @@ export default function LayoutEditor() {
     null,
   );
   const [perpendicular2x4Enabled, setPerpendicular2x4Enabled] = useState(false);
+
+  const loadInputRef = useRef<HTMLInputElement>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Save/Load a project file (Tommy: "a saveable file that the user or
+  // anyone could upload and look at the plans for") — every input above
+  // that shapes the design, bundled into one downloadable JSON file and
+  // restorable from one, so a design can be handed off or resumed later
+  // without redrawing/re-selecting anything.
+  const handleSaveProject = () => {
+    const state: ProjectState = {
+      editorTab,
+      viewMode,
+      shapeTool,
+      footprint,
+      isBumpedOut,
+      primaryCornerIds,
+      offsetPx,
+      baseWallSlots,
+      leastAccessibleCorner,
+      standardWidthIn,
+      thicknessIn,
+      densityLbFt3,
+      wallHeightFt,
+      includeNailer,
+      interiorId,
+      exteriorId,
+      season,
+      seismicZone,
+      foundationTypeId,
+      pierSpacingFt,
+      zipCode,
+      role,
+      unitSystem,
+      priceModifier,
+      floorSystemId,
+      perpendicular2x4Enabled,
+    };
+    const blob = new Blob([JSON.stringify(serializeProject(state), null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "building-integrity-project.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleLoadFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same filename later
+    if (!file) return;
+    file.text().then((raw) => {
+      const result = parseProjectFile(raw);
+      if (!result.ok) {
+        setLoadError(result.error);
+        return;
+      }
+      setLoadError(null);
+      const s = result.state;
+      setEditorTab(s.editorTab);
+      setViewMode(s.viewMode);
+      setShapeTool(s.shapeTool);
+      setFootprint(s.footprint);
+      setIsBumpedOut(s.isBumpedOut);
+      setPrimaryCornerIds(s.primaryCornerIds);
+      setOffsetPx(s.offsetPx);
+      setBaseWallSlots(s.baseWallSlots);
+      setLeastAccessibleCorner(s.leastAccessibleCorner);
+      setStandardWidthIn(s.standardWidthIn);
+      setThicknessIn(s.thicknessIn);
+      setDensityLbFt3(s.densityLbFt3);
+      setWallHeightFt(s.wallHeightFt);
+      setIncludeNailer(s.includeNailer);
+      setInteriorId(s.interiorId);
+      setExteriorId(s.exteriorId);
+      setSeason(s.season);
+      setSeismicZone(s.seismicZone);
+      setFoundationTypeId(s.foundationTypeId as typeof foundationTypeId);
+      setPierSpacingFt(s.pierSpacingFt);
+      setZipCode(s.zipCode);
+      setRole(s.role);
+      setUnitSystem(s.unitSystem);
+      setPriceModifier(s.priceModifier);
+      setFloorSystemId(s.floorSystemId as typeof floorSystemId);
+      setPerpendicular2x4Enabled(s.perpendicular2x4Enabled);
+    });
+  };
 
   const interior = interiorLayers.find((l) => l.id === interiorId)!;
   const exterior = exteriorLayers.find((l) => l.id === exteriorId)!;
@@ -295,16 +394,17 @@ export default function LayoutEditor() {
     const cycle: Partial<Record<PanelSlot["type"], PanelSlot["type"]>> = {
       standard: "window",
       window: "door",
-      door: "standard",
+      door: "column",
+      column: "standard",
     };
     const nextType = cycle[currentSlot.type];
     if (!nextType) return; // corner/safety-gap untouched
 
-    const anchors: { beforeStandardCount: number; type: "window" | "door"; widthIn: number }[] = [];
+    const anchors: { beforeStandardCount: number; type: "window" | "door" | "column"; widthIn: number }[] = [];
     let standardsSeen = 0;
     currentSlots.forEach((slot, i) => {
       const type = i === slotIndex ? nextType : slot.type;
-      if (type === "window" || type === "door") {
+      if (type === "window" || type === "door" || type === "column") {
         anchors.push({ beforeStandardCount: standardsSeen, type, widthIn: slot.widthIn });
       } else if (type === "standard") {
         standardsSeen++;
@@ -522,10 +622,10 @@ export default function LayoutEditor() {
   const overlayWallSlots = useMemo(() => {
     const next: Record<string, PanelSlot[]> = {};
     for (const [wallId, slots] of Object.entries(baseWallSlots)) {
-      next[wallId] = applyBracedPlacement(slots, spacingIn);
+      next[wallId] = applyBracedPlacement(slots, spacingIn, standardWidthIn);
     }
     return next;
-  }, [baseWallSlots, spacingIn]);
+  }, [baseWallSlots, spacingIn, standardWidthIn]);
 
   const windowList = useMemo(() => {
     const items: { wallId: string; slotIndex: number; widthIn: number }[] = [];
@@ -544,7 +644,8 @@ export default function LayoutEditor() {
       s.type === "safety-oct-corner" ||
       s.type === "standard" ||
       s.type === "safety-gap" ||
-      s.type === "braced",
+      s.type === "braced" ||
+      s.type === "column",
   );
   const woodEligibleCount = allSlots.filter((s) => s.type === "standard" || s.type === "braced").length;
   const openingCounts = useMemo(
@@ -588,6 +689,38 @@ export default function LayoutEditor() {
     [footprint, overlayWallSlots],
   );
 
+  // Column/Corner panels are always COLUMN_TOTAL_WIDTH_IN (25.5in) wide —
+  // a fixed unit, independent of standardWidthIn — so there's no size
+  // grouping to do, just one 3D model each.
+  const columnPanelMembers = useMemo(
+    () => buildColumnPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer),
+    [thicknessIn, wallHeightFt, includeNailer],
+  );
+  const cornerPanelMembers3D = useMemo(
+    () => buildCornerPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer),
+    [thicknessIn, wallHeightFt, includeNailer],
+  );
+
+  // Fastener counts/weight are only modeled for panel types with real
+  // member geometry (standard/braced/column/corner) — built per-instance
+  // at that instance's own width (column/corner ignore it, always fixed at
+  // COLUMN_TOTAL_WIDTH_IN) so girt-row/plate/brace counts are exact, not a
+  // flat scalar like the older wood-weight calc.
+  const fastenerWeightKgFor = (panelTypeId: string, widthIn: number): number | null => {
+    const heightIn = wallHeightFt * 12;
+    const members =
+      panelTypeId === "standard"
+        ? buildStandardPanelMembers(widthIn, thicknessIn, heightIn, includeNailer)
+        : panelTypeId === "braced"
+          ? buildBracedPanelMembers(widthIn, thicknessIn, heightIn, includeNailer)
+          : panelTypeId === "column"
+            ? columnPanelMembers
+            : panelTypeId === "corner"
+              ? cornerPanelMembers3D
+              : null;
+    return members ? computeFastenerWeight(members).totalWeightKg : null;
+  };
+
   const shopDrawings = useMemo(
     () =>
       SHOP_DRAWING_PANEL_TYPES.map(({ namedTypes, panelTypeId, hasWoodBom }) => {
@@ -602,6 +735,7 @@ export default function LayoutEditor() {
               heightIn: wallHeightFt * 12,
               densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
               woodWeightKg: hasWoodBom ? woodPerPanel.weightKg : null,
+              fastenerWeightKg: fastenerWeightKgFor(panelTypeId, inst.widthIn),
               hasClayPlaster,
               hasLimePlaster,
             }),
@@ -609,6 +743,43 @@ export default function LayoutEditor() {
         return { panelType, hasWoodBom, instances };
       }),
     [allInstances, thicknessIn, wallHeightFt, densityLbFt3, woodPerPanel.weightKg, hasClayPlaster, hasLimePlaster],
+  );
+
+  // Distinct-width 3D renderings for the Standard/Braced Shop Drawing pages
+  // — panel instances of the same type can differ in size (already true
+  // for window/header/sill panels via their per-instance widthIn), so every
+  // distinct width actually in the design gets its own model, sized per
+  // Tommy's half/quarter/equal-share rule (see computePanelSizeShares).
+  // Falls back to the globally-selected standardWidthIn when the design
+  // has no instances of that type yet, so the page still shows a preview.
+  const standardSizeGroups = useMemo(() => {
+    const instances = shopDrawings.find((d) => d.panelType.id === "standard")?.instances ?? [];
+    const widths = instances.length > 0 ? instances.map((i) => i.widthIn) : [standardWidthIn];
+    return computePanelSizeShares(widths).map((share) => ({
+      ...share,
+      members: buildStandardPanelMembers(share.widthIn, thicknessIn, wallHeightFt * 12, includeNailer),
+    }));
+  }, [shopDrawings, standardWidthIn, thicknessIn, wallHeightFt, includeNailer]);
+
+  const bracedSizeGroups = useMemo(() => {
+    const instances = shopDrawings.find((d) => d.panelType.id === "braced")?.instances ?? [];
+    const widths = instances.length > 0 ? instances.map((i) => i.widthIn) : [standardWidthIn];
+    return computePanelSizeShares(widths).map((share) => ({
+      ...share,
+      members: buildBracedPanelMembers(share.widthIn, thicknessIn, wallHeightFt * 12, includeNailer),
+    }));
+  }, [shopDrawings, standardWidthIn, thicknessIn, wallHeightFt, includeNailer]);
+
+  // Estimated bearing/shear numbers (Tommy: "let's take a stab at making
+  // some estimated engineering numbers") — bearing applies to any panel
+  // type with real stud geometry (standard/braced/column/corner all share
+  // the same 2x4 studs); shear is specific to the Braced Panel's diagonal
+  // brace, computed from its own actual member geometry at the currently-
+  // selected width/height rather than a flat constant.
+  const estimatedStudPackBearingLb = useMemo(() => computeStudPackBearingCapacityLb(), []);
+  const estimatedBracedShearLb = useMemo(
+    () => computeBracedPanelShearCapacityLb(buildBracedPanelMembers(standardWidthIn, thicknessIn, wallHeightFt * 12, includeNailer)),
+    [standardWidthIn, thicknessIn, wallHeightFt, includeNailer],
   );
 
   // Only surface pages that actually apply to what's currently selected/
@@ -659,6 +830,7 @@ export default function LayoutEditor() {
         { type: "corner", areaSqFt: areaSqFtFor("corner") + areaSqFtFor("safety-oct-corner") },
         { type: "braced", areaSqFt: areaSqFtFor("braced") },
         { type: "opening", areaSqFt: areaSqFtFor("window") + areaSqFtFor("door") },
+        { type: "column", areaSqFt: areaSqFtFor("column") },
       ],
       effectivePriceModifier,
     );
@@ -771,20 +943,26 @@ export default function LayoutEditor() {
           <Link href="/sandbox">Simpler single-wall-run calculation sandbox →</Link>
         </p>
 
-        <section className={styles.relevantPages}>
-          <h2>Relevant Detail Pages</h2>
-          {relevantDetailPages.length === 0 ? (
-            <p className={styles.note}>Draw a footprint below to see the detail/shop-drawing pages that apply to your current design.</p>
-          ) : (
-            <ul className={styles.relevantPagesList}>
-              {relevantDetailPages.map((p) => (
-                <li key={p.id}>
-                  <a href={`#${p.id}`}>{p.label} →</a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <div className={styles.toolbar} role="group" aria-label="Project file">
+          <button type="button" className={styles.tool} onClick={handleSaveProject}>
+            Save Project
+          </button>
+          <button type="button" className={styles.tool} onClick={() => loadInputRef.current?.click()}>
+            Load Project
+          </button>
+          <input
+            ref={loadInputRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={handleLoadFileSelected}
+            style={{ display: "none" }}
+          />
+        </div>
+        {loadError && <p className={styles.disclaimer}>Couldn&apos;t load that file — {loadError}</p>}
+        <p className={styles.note}>
+          Save downloads every input on this page (footprint, panel/wall settings, site info) as one JSON file —
+          hand it to someone else or reload it later with Load Project to pick up exactly where you left off.
+        </p>
 
         <section>
           <h2>Site</h2>
@@ -1020,8 +1198,11 @@ export default function LayoutEditor() {
           {viewMode === "3d" && (
             <p className={styles.note}>
               Drag to orbit, scroll to zoom — a rough bird's-eye starting
-              angle, not a fixed camera. Walls are extruded to wall height
-              only; no roof yet.
+              angle, not a fixed camera. Each wall panel shows its real
+              member geometry (standard/braced/column/corner) at its actual
+              position and width; panel types without member geometry yet
+              (window, door, safety/gap) render as plain gray placeholder
+              blocks. No roof yet.
             </p>
           )}
           {viewMode === "plan" ? (
@@ -1045,20 +1226,24 @@ export default function LayoutEditor() {
           ) : (
             <Building3DView
               footprint={footprint}
+              wallSlots={overlayWallSlots}
               wallHeightFt={wallHeightFt}
               thicknessIn={thicknessIn}
+              includeNailer={includeNailer}
               primaryCornerIds={primaryCornerIds}
             />
           )}
           {viewMode === "plan" && (
             <p className={styles.note}>
               {shapeTool === "edit"
-                ? "Click a tan panel to cycle it: standard → window → door → standard."
-                : "Switch to Edit mode, then click a tan panel to cycle it: standard → window → door → standard."}{" "}
+                ? "Click a tan panel to cycle it: standard → window → door → column → standard."
+                : "Switch to Edit mode, then click a tan panel to cycle it: standard → window → door → column → standard."}{" "}
               Gray = corner, dark brown = safety-oct-corner, purple = braced,
-              orange = safety/gap. Panel labels are named by compass
-              direction (N/NE/E/SE/S/SW/W/NW) — up is treated as North (no
-              real site orientation set yet).{" "}
+              orange = safety/gap, teal = column. A panel hashed orange over
+              purple is a safety/gap panel combined with a corner brace (both
+              roles, one panel). Panel labels are named by compass direction
+              (N/NE/E/SE/S/SW/W/NW) — up is treated as North (no real site
+              orientation set yet).{" "}
               {isBumpedOut ? (
                 <>Red circle = least-accessible corner. Click a wall&apos;s
                   length label to type an exact value — editing one wall moves
@@ -1381,6 +1566,21 @@ export default function LayoutEditor() {
           )}
         </section>
 
+        <section className={styles.relevantPages}>
+          <h2>Relevant Detail Pages</h2>
+          {relevantDetailPages.length === 0 ? (
+            <p className={styles.note}>Draw a footprint below to see the detail/shop-drawing pages that apply to your current design.</p>
+          ) : (
+            <ul className={styles.relevantPagesList}>
+              {relevantDetailPages.map((p) => (
+                <li key={p.id}>
+                  <a href={`#${p.id}`}>{p.label} →</a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
         <section id="detail-foundation">
           <h2>Detail Guide Pages</h2>
           {foundationType.usesPierGrid ? (
@@ -1535,8 +1735,9 @@ export default function LayoutEditor() {
               straw-only and full weight breakdown.
             </p>
             <p className={styles.pending}>
-              Standard-panel reference drawings (the labeled-parts picture) are placeholders — Tommy still needs to
-              provide the real shop-drawing reference images.
+              Standard Panel now has a real 3D model, built member-by-member from its actual BOM geometry. Other
+              panel types' reference drawings (the labeled-parts picture) are still placeholders — Tommy still needs
+              to provide those real shop-drawing reference images.
             </p>
             {shopDrawings.map(({ panelType, hasWoodBom, instances }) => (
               <div key={panelType.id} id={`shop-${panelType.id}`} className={styles.anchorTarget}>
@@ -1550,15 +1751,45 @@ export default function LayoutEditor() {
                   shearValue={panelType.shearValue}
                   bomParts={hasWoodBom ? SHOP_DRAWING_BOM_PARTS : undefined}
                   bomNote={hasWoodBom ? standardPanelBom.note : undefined}
+                  diagram3D={
+                    panelType.id === "standard" || panelType.id === "braced" ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+                        {(panelType.id === "standard" ? standardSizeGroups : bracedSizeGroups).map((group) => (
+                          <div key={group.widthIn} style={{ flex: `${group.sharePercent} 1 0%`, minWidth: 160 }}>
+                            <StandardPanel3DView
+                              members={group.members}
+                              overallDimensions={{ heightIn: wallHeightFt * 12, widthIn: group.widthIn, depthIn: thicknessIn }}
+                              displayName={`${panelType.label} ${group.widthIn}in (${group.count})`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : panelType.id === "column" || panelType.id === "corner" ? (
+                      <StandardPanel3DView
+                        members={panelType.id === "column" ? columnPanelMembers : cornerPanelMembers3D}
+                        overallDimensions={{ heightIn: wallHeightFt * 12, widthIn: COLUMN_TOTAL_WIDTH_IN, depthIn: thicknessIn }}
+                        displayName={panelType.label}
+                      />
+                    ) : undefined
+                  }
+                  estimatedBearingLb={
+                    panelType.id === "standard" ||
+                    panelType.id === "braced" ||
+                    panelType.id === "column" ||
+                    panelType.id === "corner"
+                      ? estimatedStudPackBearingLb
+                      : undefined
+                  }
+                  estimatedShearLb={panelType.id === "braced" ? estimatedBracedShearLb : undefined}
                   instances={instances}
                   role={role}
                 />
               </div>
             ))}
             <p className={styles.note}>
-              Column and inclined/gable panel types aren&apos;t placed anywhere in the current layout system yet (no
-              geometry produces them), and floor/roof panels don&apos;t exist as a modeled panel system yet either —
-              all deferred until those systems are built.
+              Inclined/gable panel types aren&apos;t placed anywhere in the current layout system yet (no geometry
+              produces them), and floor/roof panels don&apos;t exist as a modeled panel system yet either — all
+              deferred until those systems are built.
             </p>
           </section>
         )}

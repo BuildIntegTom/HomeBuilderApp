@@ -37,9 +37,9 @@ export const looseDensePackDefaultThicknessIn: CatalogValue<number> = {
 };
 
 export const cornerPanelWidthIn: CatalogValue<number> = {
-  value: 24,
+  value: 25.5,
   status: "confirmed",
-  note: "Corner panel width (Tommy).",
+  note: "24in core + two 3/4in plywood side faces = 25.5in (Tommy: corner panels are built exactly like Column Panels — see columnPanelMembers.ts's COLUMN_TOTAL_WIDTH_IN).",
 };
 
 // --- Standard panel BOM (Panel Set 1, Tommy) ---------------------------------
@@ -542,7 +542,9 @@ export const panelTypes: PanelTypeDef[] = [
   {
     id: "corner",
     label: "Corner",
-    description: "Corner connection panel.",
+    description:
+      "Corner connection panel — same construction as the Column Panel (Tommy): 24in standard-panel core + " +
+      "3/4in plywood on both tall sides + 2x4 blocking every 16in, both sides, in addition to girts. 25.5in wide overall.",
     loadBearingCapacity: {
       status: "pending-BI-confirmation",
       note: `Bears load from 2 intersecting walls at the shared corner, not just 1. ${STRUCTURAL_PENDING_NOTE}`,
@@ -553,7 +555,11 @@ export const panelTypes: PanelTypeDef[] = [
     id: "column",
     label: "Column",
     description:
-      "Reinforced/plywood-sided, for >12' runs needing beam bearing under roof panels; not needed under trusses.",
+      "Reinforced/plywood-sided, for >12' runs needing beam bearing under roof panels; not needed under trusses. " +
+      "24in standard-panel core + 3/4in plywood on both tall sides + 2x4 blocking every 16in, both sides, in " +
+      "addition to girts — always fabricated 25.5in wide (Tommy), regardless of the wall-slot width shown in the " +
+      "2D editor (converting a panel to Column via the click-cycle keeps its prior slot width today; the " +
+      "fabricated unit itself is fixed at 25.5in).",
     loadBearingCapacity: {
       status: "pending-BI-confirmation",
       note: `This type exists specifically for higher point-load bearing (roof beam reactions on long runs) — expected to rate above standard/corner once modeled. ${STRUCTURAL_PENDING_NOTE}`,
@@ -602,7 +608,16 @@ export const panelTypes: PanelTypeDef[] = [
     id: "safety-gap",
     label: "Safety / Gap Panel",
     description:
-      "Dimensional-tolerance absorption panel: standard width minus 3/4\", plus 1/2\" plywood on one face, held back 1 1/4\" from top/bottom (full-height); placed farthest from the site's least-accessible side. Applies to roof panels too.",
+      "Dimensional-tolerance absorption panel: width normally set dynamically to absorb whatever length is left " +
+      "over after fitting standard panels along the wall (a 3/4\" plywood buffer, held back 1 1/4\" from top/" +
+      "bottom full-height, guards against install mistakes); placed farthest from the site's least-accessible " +
+      "side. When it also satisfies the corner-touching braced-panel requirement (Tommy: \"maintain the rules of " +
+      "the safety panel, but have it combine with the braced panel near corners\") its width becomes fixed at " +
+      "standard width + 3/4\" instead, denoted as \"standard + 3/4in safety gap\" — the wall's remaining length " +
+      "shifts onto the nearest standard panel in that case, and the panel renders hashed (its own orange over " +
+      "the braced panel's purple) to show both roles. Applies to roof panels too. A combined panel doesn't yet " +
+      "get the Braced Panel's own real member geometry/fastener modeling — it's still tracked as a Safety/Gap " +
+      "panel structurally, just flagged as also brace-placed.",
     loadBearingCapacity: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
     shearValue: {
       status: "pending-BI-confirmation",

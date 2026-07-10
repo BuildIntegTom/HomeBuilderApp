@@ -37,11 +37,18 @@ export type PanelSlotType =
   | "safety-gap"
   | "window"
   | "door"
-  | "braced";
+  | "braced"
+  | "column";
 
 export interface PanelSlot {
   type: PanelSlotType;
   widthIn: number;
+  /** A slot can carry a second type alongside its primary one (Tommy: "have
+   * multiple types of panels be represented in a particular panel") — e.g.
+   * a safety-gap panel near a corner that also satisfies the braced-panel
+   * placement rule, instead of needing two separate adjacent panels.
+   * Undefined = single-type slot, the overwhelmingly common case. */
+  secondaryType?: PanelSlotType;
 }
 
 export type WallEnd = "start" | "end";

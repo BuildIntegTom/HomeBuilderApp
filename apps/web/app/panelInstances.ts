@@ -4,7 +4,15 @@ import { wallCompassDirection, type CompassDirection, type Footprint, type Panel
  * are derived from window/door slots (see derivedPanelTypes), not their
  * own PanelSlot type: a window/door opening isn't a panel itself, but the
  * header above it (and, for a window, the sill below it) are. */
-export type NamedPanelType = "standard" | "corner" | "safety-oct-corner" | "braced" | "safety-gap" | "header" | "sill";
+export type NamedPanelType =
+  | "standard"
+  | "corner"
+  | "safety-oct-corner"
+  | "braced"
+  | "safety-gap"
+  | "header"
+  | "sill"
+  | "column";
 
 export interface PanelInstance {
   /** e.g. "N-3" — sequential per compass direction, across every wall
@@ -39,6 +47,7 @@ function derivedPanelTypes(slotType: PanelSlot["type"]): NamedPanelType[] {
     case "standard":
     case "braced":
     case "safety-gap":
+    case "column":
       return [slotType];
     default:
       return [];
