@@ -25,13 +25,15 @@ export const PANEL_TYPE_LABELS: Record<PanelSlot["type"], string> = {
   door: "Door",
 };
 
+// Tommy: "lets make safety gaps the second to last label slot - right
+// before the corner piece" — corner moved to last, safety-gap right before it.
 export const PANEL_LEGEND_ORDER: PanelSlot["type"][] = [
   "standard",
-  "corner",
   "safety-oct-corner",
   "braced",
-  "safety-gap",
   "column",
   "window",
   "door",
+  "safety-gap",
+  "corner",
 ];

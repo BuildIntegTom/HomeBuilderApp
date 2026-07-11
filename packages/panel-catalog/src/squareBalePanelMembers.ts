@@ -23,7 +23,7 @@ const SQUARE_BALE_GIRT_ROW_COUNT = 2; // same baseline row count as the other pa
  */
 export type StudConfig = "single-2x4" | "double-2x4" | "double-2x6";
 
-interface StudConfigSpec {
+export interface StudConfigSpec {
   studCount: 1 | 2;
   studThicknessIn: number;
   studWidthIn: number;
@@ -32,14 +32,17 @@ interface StudConfigSpec {
   studGapIn: number;
 }
 
-const STUD_CONFIGS: Record<StudConfig, StudConfigSpec> = {
+// Exported for squareBaleCornerPanelMembers.ts, which builds an asymmetric
+// panel (a plain single-2x4 corner on one side, a reinforced double-2x6 on
+// the "primary" corner) instead of one uniform config for all 4 corners.
+export const STUD_CONFIGS: Record<StudConfig, StudConfigSpec> = {
   "single-2x4": { studCount: 1, studThicknessIn: PLATE_2X4_THICKNESS_IN, studWidthIn: PLATE_2X4_WIDTH_IN, studGapIn: 0 },
   "double-2x4": { studCount: 2, studThicknessIn: PLATE_2X4_THICKNESS_IN, studWidthIn: PLATE_2X4_WIDTH_IN, studGapIn: PLATE_2X4_THICKNESS_IN },
   "double-2x6": { studCount: 2, studThicknessIn: PLATE_2X4_THICKNESS_IN, studWidthIn: 5.5, studGapIn: PLATE_2X4_THICKNESS_IN },
 };
 
 /** Total X-footprint one corner's stud (or stud pair + gap) occupies. */
-function studAssemblyThicknessIn(spec: StudConfigSpec): number {
+export function studAssemblyThicknessIn(spec: StudConfigSpec): number {
   return spec.studCount === 1 ? spec.studThicknessIn : 2 * spec.studThicknessIn + spec.studGapIn;
 }
 
@@ -126,9 +129,9 @@ function buildSquareBalePlates(widthIn: number, depthIn: number, heightIn: numbe
  * Width (7in) is Tommy's literal figure, not derived from other panel
  * dimensions — flagged as a fixed reference value.
  */
-const VOID_FILL_WIDTH_IN = 7;
+export const VOID_FILL_WIDTH_IN = 7;
 
-function buildVoidFillPieces(widthIn: number, depthIn: number, heightIn: number, spec: StudConfigSpec): PanelMember[] {
+export function buildVoidFillPieces(widthIn: number, depthIn: number, heightIn: number, spec: StudConfigSpec): PanelMember[] {
   if (spec.studCount === 1) return [];
   const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
   const assemblyThicknessIn = studAssemblyThicknessIn(spec);
@@ -171,31 +174,42 @@ function buildVoidFillPieces(widthIn: number, depthIn: number, heightIn: number,
  * abutting boxes (no mitered/lapped joinery modeled), consistent with
  * this schema's existing girt-web-overlap simplification.
  */
-function buildBlockingGirtRows(
+// A single-2x4 corner's spec — the implicit default every existing (pre-
+// asymmetric-corner) caller of buildBlockingGirtRows was built against.
+const DEFAULT_SIDE_SPEC: StudConfigSpec = STUD_CONFIGS["single-2x4"];
+
+export function buildBlockingGirtRows(
   rowCount: number,
   widthIn: number,
   depthIn: number,
   studSpanIn: number,
-  studAssemblyThicknessIn: number = PLATE_2X4_THICKNESS_IN,
+  leftSpec: StudConfigSpec = DEFAULT_SIDE_SPEC,
+  // Defaults to the left side's own spec — every existing caller passes
+  // one uniform config for a whole (symmetric) panel. Only
+  // squareBaleCornerPanelMembers.ts's asymmetric corner (single-2x4 one
+  // side, double-2x6 the "primary" side) supplies two different specs.
+  rightSpec: StudConfigSpec = leftSpec,
 ): PanelMember[] {
   const members: PanelMember[] = [];
   const shortSideIn = depthIn - 2 * PLATE_2X4_THICKNESS_IN;
   const longSideIn = widthIn - 2 * PLATE_END_CLEARANCE_IN;
+  const leftAssemblyThicknessIn = studAssemblyThicknessIn(leftSpec);
+  const rightAssemblyThicknessIn = studAssemblyThicknessIn(rightSpec);
   // Flush against the inner face of each corner stud assembly — for a
   // single 2x4 this reduces to PLATE_2X4_THICKNESS_IN/widthIn-2*that (the
   // original single-stud reference numbers); a doubled stud assembly is
   // wider, so the girt shifts inward to stay flush against it.
-  const leftXIn = studAssemblyThicknessIn;
-  const rightXIn = widthIn - studAssemblyThicknessIn - PLATE_2X4_THICKNESS_IN;
+  const leftXIn = leftAssemblyThicknessIn;
+  const rightXIn = widthIn - rightAssemblyThicknessIn - PLATE_2X4_THICKNESS_IN;
   const backYIn = depthIn - 2 * PLATE_2X4_THICKNESS_IN;
 
   for (let row = 1; row <= rowCount; row++) {
     const centerZIn = SKIN_THICKNESS_IN + (studSpanIn * row) / (rowCount + 1);
     const zIn = centerZIn - PLATE_2X4_WIDTH_IN / 2;
 
-    for (const [side, xIn] of [
-      ["left", leftXIn],
-      ["right", rightXIn],
+    for (const [side, xIn, spec] of [
+      ["left", leftXIn, leftSpec],
+      ["right", rightXIn, rightSpec],
     ] as const) {
       members.push({
         memberId: `blocking_girt_${row}_short_${side}`,
@@ -208,8 +222,29 @@ function buildBlockingGirtRows(
         position: { xIn, yIn: PLATE_2X4_THICKNESS_IN, zIn, rotationDeg: 90 },
         role: "girt",
         qty: 1,
-        notes: `blocking girt ${row} of ${rowCount}, ${side} short side — slides through the panel studs like a girt bar.`,
+        notes: `blocking girt ${row} of ${rowCount}, ${side} short side — slides through the panel studs like a girt bar, flush to the inner face of the ${side} stud assembly.`,
       });
+      // Tommy: a doubled stud pack (nailer/corner reinforcement) gets its
+      // own additional girt piece reaching the OUTER stud too — the bar
+      // above only reaches the assembly's inner (2nd) stud, mirroring how
+      // the corner itself has 2 studs instead of 1 (see
+      // buildSquareBaleCornerStuds / the asymmetric corner panel).
+      if (spec.studCount === 2) {
+        const outerXIn = side === "left" ? 0 : widthIn - spec.studThicknessIn;
+        members.push({
+          memberId: `blocking_girt_${row}_short_${side}_outer`,
+          material: "dimensional_lumber",
+          speciesGrade: LUMBER_SPECIES_GRADE,
+          plySpec: null,
+          nominalSize: "2x4",
+          actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: shortSideIn },
+          orientation: "horizontal",
+          position: { xIn: outerXIn, yIn: PLATE_2X4_THICKNESS_IN, zIn, rotationDeg: 90 },
+          role: "girt",
+          qty: 1,
+          notes: `blocking girt ${row} of ${rowCount}, ${side} short side (outer stud) — additional bar reaching the outer stud of the doubled ${side} corner pack.`,
+        });
+      }
     }
 
     for (const [side, yIn] of [
@@ -243,7 +278,7 @@ function buildBlockingGirtRows(
  * thick reference) is read as half the panel depth, centered — the exact
  * rationale wasn't specified further, flagged as an interpretation.
  */
-function buildEndBlocks(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
+export function buildEndBlocks(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
   const endBlockLengthIn = depthIn / 2;
   const yIn = (depthIn - endBlockLengthIn) / 2;
   const members: PanelMember[] = [];
@@ -292,13 +327,12 @@ export function buildSquareBalePanelMembers(
 ): PanelMember[] {
   const spec = STUD_CONFIGS[studConfig];
   const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
-  const assemblyThicknessIn = studAssemblyThicknessIn(spec);
   const members: PanelMember[] = [
     ...buildSkins(widthIn, depthIn, heightIn),
     ...buildSquareBalePlates(widthIn, depthIn, heightIn, spec),
     ...buildSquareBaleCornerStuds(widthIn, depthIn, heightIn, spec),
     ...buildVoidFillPieces(widthIn, depthIn, heightIn, spec),
-    ...buildBlockingGirtRows(SQUARE_BALE_GIRT_ROW_COUNT, widthIn, depthIn, studSpanIn, assemblyThicknessIn),
+    ...buildBlockingGirtRows(SQUARE_BALE_GIRT_ROW_COUNT, widthIn, depthIn, studSpanIn, spec),
     ...buildEndBlocks(widthIn, depthIn, heightIn),
   ];
   if (includeNailer) members.push(buildNailer(widthIn, heightIn, nailerOffsetIn));

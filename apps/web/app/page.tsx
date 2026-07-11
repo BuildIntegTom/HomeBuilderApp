@@ -58,6 +58,7 @@ import {
   buildGablePanelMembers,
   buildJackStudMembers,
   buildSafetyGapMembers,
+  buildSquareBaleCornerPanelMembers,
   buildSquareBalePanelMembers,
   buildStandardPanelMembers,
   buildTrussPlateMembers,
@@ -343,6 +344,14 @@ export default function LayoutEditor() {
   const [timberFrameCurtainPanelType, setTimberFrameCurtainPanelType] = useState<"standard" | "braced">("standard");
   const [timberFrameCurtainWidthIn, setTimberFrameCurtainWidthIn] = useState(36);
   const isSquareBalePanelization = panelizationType === "square-bale-panels";
+  // Tommy: "loose packed braced and square bale panels are two very
+  // different panelization rules and 3d models... corners should also be
+  // 39in panels for square bale panels" — the tiling's corner-slot width
+  // isn't just a 3D-model detail, it's part of what makes these 2 styles
+  // genuinely different layouts. Timber Frame Curtain is unaffected (Tommy:
+  // still deciding how that style should behave) — it keeps the plain
+  // 25.5in Column/Corner unit for now.
+  const cornerWidthInForTiling = isSquareBalePanelization ? squareBalePanel.widthIn : cornerPanelWidthIn.value;
 
   const loadInputRef = useRef<HTMLInputElement>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -566,7 +575,7 @@ export default function LayoutEditor() {
   // closure-capturing signature these provide.
   const cornerOwnership = (fp: Footprint, primary: Set<string>) => cornerOwnershipPure(fp, primary, thicknessIn);
   const retile = (fp: Footprint, leastAccessible: CornerId, primary: Set<string>): Record<string, PanelSlot[]> =>
-    retilePure(fp, leastAccessible, primary, standardWidthIn, cornerPanelWidthIn.value, thicknessIn);
+    retilePure(fp, leastAccessible, primary, standardWidthIn, cornerWidthInForTiling, thicknessIn);
   const wallGeometryFor = (wallId: string) =>
     footprint ? wallGeometryForPure(footprint, wallId, primaryCornerIds, leastAccessibleCorner, thicknessIn) : null;
 
@@ -621,7 +630,7 @@ export default function LayoutEditor() {
     const slots = retileWithOpenings(
       geometry.lengthIn,
       standardWidthIn,
-      cornerPanelWidthIn.value,
+      cornerWidthInForTiling,
       geometry.gapEnd,
       geometry.hasCornerStart,
       geometry.hasCornerEnd,
@@ -655,7 +664,7 @@ export default function LayoutEditor() {
     const slots = retileWithOpenings(
       geometry.lengthIn,
       standardWidthIn,
-      cornerPanelWidthIn.value,
+      cornerWidthInForTiling,
       geometry.gapEnd,
       geometry.hasCornerStart,
       geometry.hasCornerEnd,
@@ -918,9 +927,17 @@ export default function LayoutEditor() {
     () => buildColumnPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer),
     [thicknessIn, wallHeightFt, includeNailer],
   );
+  // Square Bale corner panels are their own construction (Tommy: "corner
+  // panels for square bale panel style are a standard square bale panel
+  // with a double 2x6 stud pack in the primary corner") — a 39in-wide
+  // Square Bale Panel body, not the 25.5in Column/Corner unit the other 2
+  // panelization styles share.
   const cornerPanelMembers3D = useMemo(
-    () => buildCornerPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer),
-    [thicknessIn, wallHeightFt, includeNailer],
+    () =>
+      isSquareBalePanelization
+        ? buildSquareBaleCornerPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer, nailerOffsetIn)
+        : buildCornerPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer),
+    [isSquareBalePanelization, thicknessIn, wallHeightFt, includeNailer, nailerOffsetIn],
   );
 
   // Gable End Panel: the low edge is the current wall height (the eave);
@@ -1592,8 +1609,10 @@ export default function LayoutEditor() {
           <p className={styles.pending}>
             Reference/layout mode only — not fabricated to anymore (Tommy). Every wall infill span (in place
             of standard/braced/safety-gap) is tiled at a fixed {squareBalePanel.widthIn}
-            &quot; x {squareBalePanel.thicknessIn}&quot; whole-bale unit ({squareBalePanel.note}). Corners,
-            columns, and openings are unaffected.
+            &quot; x {squareBalePanel.thicknessIn}&quot; whole-bale unit ({squareBalePanel.note}). Corner panels are
+            also a {squareBalePanel.widthIn}&quot; Square Bale Panel body, with a double 2x6 stud pack at the
+            primary corner instead of the plain 25.5&quot; Column/Corner unit — see the Corner Shop Drawing page.
+            Columns and openings are unaffected.
           </p>
           <div role="group" aria-label="Square bale stud configuration" className={styles.toolbar}>
             <button
@@ -2825,9 +2844,19 @@ export default function LayoutEditor() {
                       <div>
                         <StandardPanel3DView
                           members={panelType.id === "column" ? columnPanelMembers : cornerPanelMembers3D}
-                          overallDimensions={{ heightIn: wallHeightFt * 12, widthIn: COLUMN_TOTAL_WIDTH_IN, depthIn: thicknessIn }}
+                          overallDimensions={{
+                            heightIn: wallHeightFt * 12,
+                            widthIn: panelType.id === "corner" && isSquareBalePanelization ? squareBalePanel.widthIn : COLUMN_TOTAL_WIDTH_IN,
+                            depthIn: thicknessIn,
+                          }}
                           displayName={panelType.label}
                         />
+                        {panelType.id === "corner" && isSquareBalePanelization && (
+                          <p className={styles.note}>
+                            Square Bale Panels selected (Wall tab) — this is a Square Bale Corner Panel (39in, double-2x6
+                            primary corner), not the 25.5in Column/Corner unit the other 2 panelization styles use.
+                          </p>
+                        )}
                         {panelType.id === "column" && roofSystemTypeId === "structural-panel" && (
                           <p className={styles.note}>
                             At a Gable End roof-catcher-beam bearing point (structural-panel roof selected on the

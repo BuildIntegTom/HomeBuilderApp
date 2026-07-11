@@ -11,6 +11,7 @@ export * from "./gablePanelMembers";
 export * from "./jackStudMembers";
 export * from "./safetyGapMembers";
 export * from "./squareBalePanelMembers";
+export * from "./squareBaleCornerPanelMembers";
 export * from "./trussPlateMembers";
 export * from "./boxBeamMembers";
 export * from "./panelObjExport";

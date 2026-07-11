@@ -54,37 +54,8 @@
   margin: 0;
 }
 
-.dropdownAnchor {
-  position: relative;
-}
-
-.dropdownPanel {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  z-index: 101;
-  min-width: 320px;
-  max-width: 420px;
-  max-height: 70vh;
-  overflow-y: auto;
-  background: #fffef8;
-  border: 2px solid #b8901f;
-  border-radius: 10px;
-  padding: 16px 18px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.dropdownPanelRight {
-  left: auto;
-  right: 0;
-}
-
 @media (max-width: 900px) {
-  .row1,
-  .row2 {
+  .row {
     justify-content: flex-start;
   }
 }

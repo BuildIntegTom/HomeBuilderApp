@@ -907,11 +907,21 @@ export default function FootprintCanvas({
                         pixel at typical zoom) — Tommy: "they are kinda hard
                         to see without a label" — a call-out arrow + text
                         makes it findable, toggled by the same Panel ID
-                        Visibility button as the other panel labels. */}
+                        Visibility button as the other panel labels. Tommy:
+                        "the safety gap lines... are off a little - it
+                        appears to be like a wall depth off" — the old
+                        offsets (tail 8/22 units outside the exterior line,
+                        tip landing 2 units past the panel's edge instead of
+                        touching it) were plain inches at 1px/in-zoom, so
+                        they read as comparable to the wall's own 15.5in
+                        depth instead of a tight, close-by callout. Tightened
+                        so the tip touches the panel's actual edge/mid-depth
+                        and the tail/text sit just outside the wall instead
+                        of floating a wall-depth's distance away. */}
                     {showPanelLabels && r.slot.type === "safety-gap" && (
                       <>
                         <Arrow
-                          points={[r.width + 24, -8, r.width + 2, r.height / 2 - 2]}
+                          points={[r.width + 16, -4, r.width, r.height / 2]}
                           pointerLength={5}
                           pointerWidth={5}
                           fill="#b8630f"
@@ -920,8 +930,8 @@ export default function FootprintCanvas({
                           listening={false}
                         />
                         <Text
-                          x={r.width + 18}
-                          y={-22}
+                          x={r.width + 11}
+                          y={-15}
                           text="Safety Gap"
                           fontSize={9}
                           fontStyle="bold"
