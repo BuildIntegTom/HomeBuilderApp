@@ -16,7 +16,7 @@
    width-capped. */
 .main {
   position: fixed;
-  top: 118px;
+  top: 56px;
   left: 0;
   right: 0;
   bottom: 0;
@@ -104,64 +104,60 @@
   font-weight: 600;
 }
 
-/* The drawn footprint/foundation/floor/3D-view visual — sits behind the
-   floating toolbar stack and tool-text StickyNote, always transparent (no
-   straw-bale card outline; Tommy: "no straw bale outline for the editor
-   section — totally transparent") and filling the whole `.main` surface. */
+/* The drawn footprint/foundation/floor/3D-view visual — always transparent
+   (no straw-bale card outline; Tommy: "no straw bale outline for the editor
+   section — totally transparent") and filling the whole `.main` surface,
+   minus the docked left tool sidebar and the reserved right-hand strip the
+   SectionCarousel sits in (Tommy: "viewing and drawing tool bars... on the
+   left side of the editor section, not overlayed on top... that way the
+   editor has the most visibility and isn't blocked" — both side columns
+   are real flex layout space now, not absolutely-positioned overlays, so
+   the canvas never renders underneath them). */
 .editorSection {
   position: absolute;
   inset: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: row;
 }
 
 .editorCanvasLayer {
-  position: absolute;
-  inset: 0;
+  flex: 1 1 auto;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
 }
 
-/* EditorToolbar + DrawingToolPen + compass + pan/zoom portal float over the
-   canvas, docked top-left right under the sticky TopBar (Tommy: "the
-   drawing tool buttons widget hosts the drawing tools floating under the
-   2d/3d buttons bar, all of this stuck to the bottom of the top bar"). */
-.editorOverlayStack {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 40;
+/* EditorToolbar + DrawingToolPen + compass + pan/zoom portal dock in their
+   own left-hand column, in normal flow (not an overlay) — see the comment
+   on .editorSection above. */
+.editorSidebar {
+  flex: 0 0 240px;
+  width: 240px;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 10px;
-  max-width: calc(100vw - 24px);
+  border-right: 1px solid #ddd;
+}
+
+/* Reserves the same width as SectionCarousel's fixed-position right-hand
+   strip (see SectionCarousel.module.css) so the canvas never centers
+   underneath it — the carousel itself isn't a flex child here (it's
+   rendered outside .editorSection, still `position: fixed`), this is just
+   empty layout space matching its width. */
+.editorRightSpacer {
+  flex: 0 0 170px;
+  width: 170px;
+  height: 100%;
 }
 
 .toolbarPortalInline {
   display: contents;
-}
-
-/* Footer link after the last SectionCarousel card (Tommy: "put the simpler
-   single wall run calculation sandbox as a footer after the last
-   section"). Docked at the carousel bar's right end since the app no
-   longer has a scrolling document flow to put a trailing footer under. */
-.sandboxFooter {
-  position: fixed;
-  right: 16px;
-  bottom: 14px;
-  z-index: 160;
-  font-size: 12px;
-}
-
-.sandboxFooter a {
-  display: inline-block;
-  padding: 6px 12px;
-  background: #fff;
-  border: 1px solid #ccd6e0;
-  border-radius: 6px;
-  color: #4a90d9;
-  text-decoration: underline;
-  white-space: nowrap;
 }

@@ -17,6 +17,7 @@ import {
   type WorldPlacedPanel,
 } from "@building-integrity/panel-catalog";
 import PanelMembersGroup from "./PanelMembersGroup";
+import { PANEL_TYPE_COLORS } from "./panelColors";
 
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 480;
@@ -343,7 +344,10 @@ export default function Building3DView({
               rotation={[0, -box.rotationRad, 0]}
             >
               {members ? (
-                <PanelMembersGroup members={members} />
+                <PanelMembersGroup
+                  members={members}
+                  colorOverride={box.slot.type === "safety-gap" ? PANEL_TYPE_COLORS["safety-gap"] : undefined}
+                />
               ) : (
                 <mesh position={[box.widthFt / 2, box.heightFt / 2, box.depthFt / 2]}>
                   <boxGeometry args={[box.widthFt, box.heightFt, box.depthFt]} />
@@ -359,7 +363,10 @@ export default function Building3DView({
               rotation={[0, -box.rotationRad, 0]}
             >
               {members ? (
-                <PanelMembersGroup members={members} />
+                <PanelMembersGroup
+                  members={members}
+                  colorOverride={box.slot.type === "safety-gap" ? PANEL_TYPE_COLORS["safety-gap"] : undefined}
+                />
               ) : (
                 <mesh position={[box.widthFt / 2, box.heightFt / 2, box.depthFt / 2]}>
                   <boxGeometry args={[box.widthFt, box.heightFt, box.depthFt]} />

@@ -23,6 +23,13 @@ const MATERIAL_OPACITY: Partial<Record<PanelMember["material"], number>> = {
 
 export interface PanelMembersGroupProps {
   members: PanelMember[];
+  /** Overrides every member's material color with one flat color — used
+   * for the safety-gap panel's plywood sheet (Tommy: "it appears in the 3d
+   * drawing that there are spaces here" — a 3/4in plywood sheet the same
+   * tan as every other plywood member is easy to mistake for empty space
+   * at typical zoom; this makes it read as the same distinct orange as its
+   * 2D panel-type color instead). */
+  colorOverride?: string;
 }
 
 /** Renders one box mesh per member, in the panel's own local space — X=width
@@ -32,7 +39,7 @@ export interface PanelMembersGroupProps {
  * footprint, each wrapped in its own positioned/rotated `<group>` — since
  * this renders purely in local space, it composes correctly either way
  * without knowing which context it's in). */
-export default function PanelMembersGroup({ members }: PanelMembersGroupProps) {
+export default function PanelMembersGroup({ members, colorOverride }: PanelMembersGroupProps) {
   return (
     <>
       {members.map((member) => {
@@ -60,7 +67,7 @@ export default function PanelMembersGroup({ members }: PanelMembersGroupProps) {
           <mesh key={member.memberId} position={centerPos} rotation={rotation}>
             <boxGeometry args={sizeFt} />
             <meshStandardMaterial
-              color={MATERIAL_COLOR[member.material]}
+              color={colorOverride ?? MATERIAL_COLOR[member.material]}
               transparent={MATERIAL_OPACITY[member.material] !== undefined}
               opacity={MATERIAL_OPACITY[member.material] ?? 1}
             />

@@ -1,29 +1,55 @@
+/* Snaps to the TopBar above and the very bottom of the viewport below
+   (Tommy: "for the right side bar, can they snap to the top bar and the
+   bottom?") — `top` must match the TopBar's own rendered height (see
+   page.module.css's `.main`/`.editorSidebar`, which use the same value). */
 .carousel {
   position: fixed;
-  left: 0;
+  top: 56px;
   right: 0;
   bottom: 0;
+  width: 170px;
   z-index: 150;
   display: flex;
+  flex-direction: column;
   gap: 10px;
-  padding: 10px 16px;
-  overflow-x: auto;
+  padding: 12px 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
   background: rgba(255, 255, 255, 0.9);
-  border-top: 2px solid #d9c072;
+  border-left: 2px solid #d9c072;
   backdrop-filter: blur(2px);
+}
+
+.footerSlot {
+  flex: 0 0 auto;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 2px solid #d9c072;
+  text-align: center;
+}
+
+.footerSlot a {
+  display: inline-block;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #4a90d9;
+  text-decoration: underline;
 }
 
 .card,
 .cardActive {
   flex: 0 0 auto;
-  padding: 10px 18px;
-  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 12px;
   font-weight: 600;
-  white-space: nowrap;
+  text-align: left;
+  white-space: normal;
   cursor: pointer;
   background: linear-gradient(180deg, #fbf6e6 0%, #f2e8c9 100%);
   border: 2px solid #d9c072;
-  border-radius: 40% 50% 45% 50%;
+  border-radius: 12px;
   color: #1c3d5a;
 }
 

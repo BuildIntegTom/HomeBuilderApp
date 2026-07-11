@@ -22,15 +22,15 @@ type OpenDropdown = "site" | "panel-standards" | "admin" | null;
 
 /**
  * Sticky top-of-screen chrome (Tommy: "Viewing as section at the very top
- * of ... a window bar that always stays at the top of the screen") — a
- * fixed 2-row bar. Row 1 is Viewing-as + the admin/fabricator "show all
- * detail pages" toggle. Row 2 uses `justify-content: space-between` across
- * exactly 4 children, which naturally lands them at top-left (Save/Load),
- * middle-left (Site Properties), center (unit switch), and middle-right
- * (Panel Standards) — matching Tommy's spec without hand-tuned positioning.
- * The two dropdown buttons toggle a popover open/closed on repeat clicks;
- * `siteContent`/`panelStandardsContent` are passed in as JSX from page.tsx
- * so all of their existing state/logic stays exactly where it was.
+ * of ... a window bar that always stays at the top of the screen... lets
+ * try to fit all the top bar stuff in one row") — a fixed single-row bar:
+ * Viewing-as (short Public/Fabricator/Admin labels) + the admin/fabricator
+ * "show all detail pages" dropdown, then Save/Load, Site Properties, the
+ * unit switch, and Panel Standards, left to right in one `justify-content:
+ * space-between` row instead of two stacked rows. The dropdown buttons
+ * toggle a popover open/closed on repeat clicks; `siteContent`/
+ * `panelStandardsContent` are passed in as JSX from page.tsx so all of
+ * their existing state/logic stays exactly where it was.
  */
 export default function TopBar({
   role,
@@ -49,7 +49,7 @@ export default function TopBar({
 
   return (
     <div className={styles.bar}>
-      <div className={styles.row1}>
+      <div className={styles.row}>
         <div className={styles.roleGroup} role="group" aria-label="Viewing as">
           {(Object.keys(roleDisclaimers) as ViewerRole[]).map((r) => (
             <button
@@ -60,7 +60,7 @@ export default function TopBar({
               aria-pressed={role === r}
               onClick={() => onRoleChange(r)}
             >
-              Viewing as: {roleDisclaimers[r].label}
+              {roleDisclaimers[r].label}
             </button>
           ))}
         </div>
@@ -93,9 +93,7 @@ export default function TopBar({
             )}
           </div>
         )}
-      </div>
 
-      <div className={styles.row2}>
         <div className={styles.projectFileGroup} role="group" aria-label="Project file">
           <button type="button" title="Download every input on this page as one JSON file" className={styles.tool} onClick={onSaveProject}>
             Save Project

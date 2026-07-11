@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { Stage, Layer, Rect, Circle, Text, Group, Line } from "react-konva";
+import { Stage, Layer, Rect, Circle, Text, Group, Line, Arrow } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import {
   buildOctagonFootprint,
@@ -42,20 +42,10 @@ import {
   type DragPoint,
 } from "./canvasGeometry";
 import { allPanelInstances, combinedPanelLabel, type PanelInstance } from "./panelInstances";
+import { PANEL_TYPE_COLORS as SLOT_COLORS } from "./panelColors";
 
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 480;
-
-const SLOT_COLORS: Record<PanelSlot["type"], string> = {
-  corner: "#8a8a8a",
-  "safety-oct-corner": "#5c4a2e",
-  standard: "#d9c9a3",
-  braced: "#b06fc9",
-  "safety-gap": "#e08a3c",
-  window: "#8fc7e8",
-  door: "#7a4a2b",
-  column: "#4a90a4",
-};
 
 // A combined slot (e.g. safety-gap + braced near a corner, Tommy: "have
 // multiple types of panels be represented in a particular panel... safety
@@ -136,12 +126,16 @@ export interface FootprintCanvasProps {
   onEditWallLength: (wallId: Wall["id"], newLengthFt: number) => void;
   onAddBumpOut: (wallId: Wall["id"], spanStartFt: number, spanEndFt: number, depthFt: number) => void;
   onDragWall: (wallId: Wall["id"], offsetFt: number) => void;
-  /** When supplied, the Pan/Zoom/Reset View/Panel ID Visibility/Measure
-   * toolbar renders into this DOM node (via a portal) instead of inline
-   * above the canvas — its own state/handlers never move, only where the
-   * JSX mounts (Tommy: relocate this toolbar to top-left, under the editor
-   * bar, in fullscreen). Undefined/null renders it inline as before. */
+  /** When supplied, the compact Pan/Zoom/Reset icon row renders into this
+   * DOM node (via a portal) instead of inline above the canvas — its own
+   * state/handlers never move, only where the JSX mounts (Tommy: "squeeze
+   * all the viewing tab stuff beside the compass"). Undefined/null renders
+   * it inline as before. */
   toolbarPortalTarget?: HTMLDivElement | null;
+  /** Same portal mechanism, for the separate Panel ID Visibility/Measure
+   * row — kept apart from `toolbarPortalTarget` since only Pan/Zoom/Reset
+   * are meant to sit beside the compass, not these two. */
+  secondaryToolbarPortalTarget?: HTMLDivElement | null;
 }
 
 export default function FootprintCanvas({
@@ -163,6 +157,7 @@ export default function FootprintCanvas({
   onAddBumpOut,
   onDragWall,
   toolbarPortalTarget,
+  secondaryToolbarPortalTarget,
 }: FootprintCanvasProps) {
   // A ref (not state) because mousedown/mousemove/mouseup can all fire within
   // the same React batch during a fast drag — state set in mousedown wouldn't
@@ -656,11 +651,28 @@ export default function FootprintCanvas({
       ? wallLabelPosition(editingWall, footprint.corners, offsetPx)
       : null;
 
-  const toolbar = (
-    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+  // Compact icon buttons (Tommy: "lets squeeze all the viewing tab stuff
+  // beside the compass - pan zoom, full screen. each of these can be
+  // changed to an icon that gives a hover over description... pan can be a
+  // cooking pan... zoom can be magnifying glasses with plus or minus...
+  // reset view doesnt have to be an icon but can just read Reset") — a
+  // hover title carries the full description since the icon alone doesn't.
+  const iconButtonStyle = (active: boolean): CSSProperties => ({
+    fontSize: 15,
+    lineHeight: 1,
+    padding: "6px 9px",
+    borderRadius: 6,
+    border: active ? "1px solid #4a90d9" : "1px solid #ccc",
+    background: active ? "#4a90d9" : "#fff",
+    color: active ? "#fff" : "#333",
+    cursor: "pointer",
+  });
+
+  const viewingToolbar = (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
       <button
         type="button"
-        title="Drag the canvas to pan around"
+        title="Pan: drag the canvas to pan around"
         aria-pressed={isPanning}
         onClick={() =>
           setIsPanning((p) => {
@@ -669,25 +681,35 @@ export default function FootprintCanvas({
             return next;
           })
         }
-        style={{ fontWeight: isPanning ? "bold" : "normal" }}
+        style={iconButtonStyle(isPanning)}
       >
-        Pan
+        🍳
       </button>
-      <button type="button" title="Zoom out" onClick={zoomOut}>
-        Zoom −
+      <button type="button" title="Zoom out" onClick={zoomOut} style={iconButtonStyle(false)}>
+        🔍−
       </button>
-      <span style={{ fontSize: 12, color: "#555", minWidth: 40, textAlign: "center" }}>
+      <span style={{ fontSize: 11, color: "#555", minWidth: 28, textAlign: "center" }}>
         {Math.round(viewScale * 100)}%
       </span>
-      <button type="button" title="Zoom in" onClick={zoomIn}>
-        Zoom +
-      </button>
-      <button type="button" title="Reset pan and zoom to the default view" onClick={resetView}>
-        Reset View
+      <button type="button" title="Zoom in" onClick={zoomIn} style={iconButtonStyle(false)}>
+        🔍+
       </button>
       <button
         type="button"
-        title="Show or hide the panel ID labels drawn on each panel"
+        title="Reset pan and zoom to the default view"
+        onClick={resetView}
+        style={{ ...iconButtonStyle(false), fontSize: 12, padding: "6px 10px" }}
+      >
+        Reset
+      </button>
+    </div>
+  );
+
+  const panelToolsToolbar = (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6, width: "100%" }}>
+      <button
+        type="button"
+        title="Show or hide the panel ID labels drawn on each panel, and the safety-gap call-out arrows"
         aria-pressed={showPanelLabels}
         onClick={() => setShowPanelLabels((v) => !v)}
         style={{ fontWeight: showPanelLabels ? "bold" : "normal" }}
@@ -708,7 +730,8 @@ export default function FootprintCanvas({
 
   return (
     <div>
-      {toolbarPortalTarget ? createPortal(toolbar, toolbarPortalTarget) : toolbar}
+      {toolbarPortalTarget ? createPortal(viewingToolbar, toolbarPortalTarget) : viewingToolbar}
+      {secondaryToolbarPortalTarget ? createPortal(panelToolsToolbar, secondaryToolbarPortalTarget) : panelToolsToolbar}
       <div style={{ position: "relative", width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}>
         <Stage
           width={CANVAS_WIDTH}
@@ -879,6 +902,35 @@ export default function FootprintCanvas({
                         strokeWidth={0.6}
                         listening={false}
                       />
+                    )}
+                    {/* The safety-gap panel is only 3/4in wide (well under a
+                        pixel at typical zoom) — Tommy: "they are kinda hard
+                        to see without a label" — a call-out arrow + text
+                        makes it findable, toggled by the same Panel ID
+                        Visibility button as the other panel labels. */}
+                    {showPanelLabels && r.slot.type === "safety-gap" && (
+                      <>
+                        <Arrow
+                          points={[r.width + 24, -8, r.width + 2, r.height / 2 - 2]}
+                          pointerLength={5}
+                          pointerWidth={5}
+                          fill="#b8630f"
+                          stroke="#b8630f"
+                          strokeWidth={1.5}
+                          listening={false}
+                        />
+                        <Text
+                          x={r.width + 18}
+                          y={-22}
+                          text="Safety Gap"
+                          fontSize={9}
+                          fontStyle="bold"
+                          fill="#b8630f"
+                          stroke="#fff"
+                          strokeWidth={0.5}
+                          listening={false}
+                        />
+                      </>
                     )}
                   </Group>
                 );

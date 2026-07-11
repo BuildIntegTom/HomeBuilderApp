@@ -1,8 +1,6 @@
 "use client";
 
-import { useState } from "react";
 import EditorTabDial, { type EditorTab } from "./EditorTabDial";
-import StrawWiggleBadge from "./StrawWiggleBadge";
 import { useRustleSound } from "./useRustleSound";
 import styles from "./EditorToolbar.module.css";
 
@@ -12,19 +10,19 @@ export interface EditorToolbarProps {
   viewMode: "plan" | "3d";
   onViewModeChange: (mode: "plan" | "3d") => void;
   viewModeDisabled: boolean;
-  isFullscreen: boolean;
-  onToggleFullscreen: () => void;
 }
 
 /**
  * Sits directly above the Wall/Foundation/Floor/Roof editor region (Tommy:
- * "the editor should have a menu bar along the top of it and be able to
- * snap to full screen mode"). Left: the tab dial. Center: big 2D/3D
- * buttons — the 3D one gets an extruded look (layered shadow) so it reads
- * as more three-dimensional next to the flat 2D button — plus a small
- * decorative straw bale that wiggles with a rustle sound + flying wisps on
- * every 2D/3D toggle (Tommy: "a brushling bush sound when you toggle 2d to
- * three d and back, and wiggle the straw bale"). Right: fullscreen toggle.
+ * "the editor should have a menu bar along the top of it"). Left: the tab
+ * dial. Right: big 2D/3D buttons — the 3D one gets an extruded look
+ * (layered shadow) so it reads as more three-dimensional next to the flat
+ * 2D button — plus a synthesized rustle sound on every toggle (Tommy: "a
+ * brushling bush sound when you toggle 2d to three d and back" — the
+ * accompanying straw-wiggle animation was dropped later, "no need to have
+ * this feature... the grass animation", but the sound stayed). Fullscreen
+ * now lives in page.tsx's compass row instead of here (Tommy: "squeeze all
+ * the viewing tab stuff beside the compass").
  */
 export default function EditorToolbar({
   editorTab,
@@ -32,16 +30,12 @@ export default function EditorToolbar({
   viewMode,
   onViewModeChange,
   viewModeDisabled,
-  isFullscreen,
-  onToggleFullscreen,
 }: EditorToolbarProps) {
   const playRustle = useRustleSound();
-  const [isBadgeAnimating, setIsBadgeAnimating] = useState(false);
 
   const handleViewModeChange = (mode: "plan" | "3d") => {
     if (mode !== viewMode) {
       playRustle();
-      setIsBadgeAnimating(true);
     }
     onViewModeChange(mode);
   };
@@ -72,17 +66,7 @@ export default function EditorToolbar({
         >
           3D
         </button>
-        <StrawWiggleBadge isAnimating={isBadgeAnimating} onAnimationEnd={() => setIsBadgeAnimating(false)} />
       </div>
-
-      <button
-        type="button"
-        title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen editor"}
-        className={styles.fullscreenButton}
-        onClick={onToggleFullscreen}
-      >
-        {isFullscreen ? "⤡ Exit Fullscreen" : "⤢ Fullscreen"}
-      </button>
     </div>
   );
 }

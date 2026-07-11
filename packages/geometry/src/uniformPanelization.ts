@@ -2,10 +2,17 @@ import type { PanelSlot } from "./types";
 
 /** Slot types considered plain wall infill — eligible to be replaced by a
  * uniform-width run under an alternate panelization type. Corners, columns,
- * and openings (window/door) are structural/functional necessities
- * regardless of infill construction choice, so they're left untouched. */
+ * openings (window/door), and the safety-gap panel are all structural/
+ * functional necessities regardless of infill construction choice, so
+ * they're left untouched (Tommy: "safety gaps should be a part of each wall
+ * panelizing style" — previously a safety-gap slot got absorbed into the
+ * uniform run and disappeared entirely under Square Bale Panels/Timber
+ * Frame Curtain; now it's a fixed anchor like a corner or opening, breaking
+ * the infill run in two around it, so its own tiled width/position from
+ * `retile()` — flush against its neighbors — survives unchanged no matter
+ * which panelization style is chosen). */
 function isInfillType(slot: PanelSlot): boolean {
-  return slot.type === "standard" || slot.type === "braced" || slot.type === "safety-gap";
+  return slot.type === "standard" || slot.type === "braced";
 }
 
 /** Tiles a total width into uniform-width slots of `uniformType` — same

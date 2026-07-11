@@ -22,17 +22,27 @@ export function applyBracedPlacement(slots: PanelSlot[], spacingIn: number, stan
    * direction (continuing further into the wall run, away from the
    * corner) and, failing that, back toward the corner — Tommy: "shed the
    * absorption to the nearest standard panel available" when a safety
-   * panel gets fixed-width'd to combine with a corner brace. */
+   * panel gets fixed-width'd to combine with a corner brace. Clamped at 0
+   * (never negative) — on a short wall the gap panel can end up directly
+   * corner-adjacent with only one small resized standard panel absorbing
+   * the wall's whole leftover budget (see tiling.ts's `computePlainSizing`,
+   * which always keeps the gap itself at a fixed 3/4in and pushes any
+   * slack into that neighbor instead); shedding this combine's full
+   * `standardWidthIn` swing to it could otherwise go negative, which would
+   * render as a visually inverted/broken panel. When there isn't enough to
+   * shed without going negative, it sheds as much as there is — same
+   * documented "wall's total length is off by a little" tradeoff as the
+   * "no standard panel at all" case below, just partial instead of total. */
   const shedWidthToNearestStandard = (fromIndex: number, step: number, deltaIn: number) => {
     for (let i = fromIndex + step; i >= 0 && i < result.length; i += step) {
       if (result[i]!.type === "standard") {
-        result[i]!.widthIn += deltaIn;
+        result[i]!.widthIn = Math.max(0, result[i]!.widthIn + deltaIn);
         return;
       }
     }
     for (let i = fromIndex - step; i >= 0 && i < result.length; i -= step) {
       if (result[i]!.type === "standard") {
-        result[i]!.widthIn += deltaIn;
+        result[i]!.widthIn = Math.max(0, result[i]!.widthIn + deltaIn);
         return;
       }
     }

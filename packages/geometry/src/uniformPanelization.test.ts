@@ -17,7 +17,7 @@ describe("applyUniformPanelization", () => {
     expect(result[result.length - 1]).toEqual({ type: "corner", widthIn: 25.5 });
   });
 
-  it("re-tiles a contiguous infill run (standard/braced/safety-gap) at the uniform width", () => {
+  it("re-tiles a contiguous infill run (standard/braced) at the uniform width, leaving a safety-gap slot untouched as a fixed anchor", () => {
     const slots: PanelSlot[] = [
       { type: "corner", widthIn: 25.5 },
       { type: "standard", widthIn: 40 },
@@ -25,11 +25,16 @@ describe("applyUniformPanelization", () => {
       { type: "safety-gap", widthIn: 30 },
       { type: "corner", widthIn: 25.5 },
     ];
-    // total infill run = 110in, tiled at 36in -> round(110/36)=3 panels of 36.667in
+    // the safety-gap slot breaks the run in two (Tommy: "safety gaps should
+    // be a part of each wall panelizing style" — it must survive every
+    // panelization type, not just get absorbed into the uniform infill) —
+    // only the standard+braced run (80in) before it gets re-tiled: tiled at
+    // 36in -> round(80/36)=2 panels of 40in.
     const result = applyUniformPanelization(slots, "braced", 36);
     const infill = result.filter((s) => s.type === "braced");
-    expect(infill).toHaveLength(3);
-    for (const s of infill) expect(s.widthIn).toBeCloseTo(110 / 3, 6);
+    expect(infill).toHaveLength(2);
+    for (const s of infill) expect(s.widthIn).toBeCloseTo(40, 6);
+    expect(result.find((s) => s.type === "safety-gap")).toEqual({ type: "safety-gap", widthIn: 30 });
   });
 
   it("re-tiles at a fixed width for a square-bale-style call (all standard, e.g. 39in)", () => {

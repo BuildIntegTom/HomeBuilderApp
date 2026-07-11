@@ -140,6 +140,7 @@ import CompassWidget from "./CompassWidget";
 import { DocumentMetaProvider } from "./DocumentMetaContext";
 import DrawingToolPen from "./DrawingToolPen";
 import EditorToolbar from "./EditorToolbar";
+import PanelLegend from "./PanelLegend";
 import ProjectSummaryPage from "./ProjectSummaryPage";
 import SectionCarousel from "./SectionCarousel";
 import SlabFoundationDiagram from "./SlabFoundationDiagram";
@@ -268,7 +269,7 @@ export default function LayoutEditor() {
   // project, site, date, etc.") — projectName is the only genuinely new
   // input; site label and date are derived from state that already exists.
   const [projectName, setProjectName] = useState("Untitled Project");
-  const [role, setRole] = useState<ViewerRole>("public");
+  const [role, setRole] = useState<ViewerRole>("fabricator");
   // Fabricator/admin-only (Tommy) — shows every Detail Guide/Shop Drawing
   // page regardless of the existing "relevant to current design" filter.
   const [showAllDetailPages, setShowAllDetailPages] = useState(false);
@@ -354,15 +355,8 @@ export default function LayoutEditor() {
   // FootprintCanvas's Pan/Zoom/Measure toolbar portals to.
   const pageRef = useRef<HTMLDivElement>(null);
   const [toolbarPortalNode, setToolbarPortalNode] = useState<HTMLDivElement | null>(null);
+  const [toolbarSecondaryPortalNode, setToolbarSecondaryPortalNode] = useState<HTMLDivElement | null>(null);
   const [isOsFullscreen, setIsOsFullscreen] = useState(false);
-
-  // The current editor tab's notes/controls (Tommy: "all the other text
-  // appears as its own sticky note on the screen and has a toggle hide
-  // button on the top right") float over the canvas as one StickyNote,
-  // shared across tabs — only its content (not its open/fullscreen state)
-  // changes when `editorTab` changes.
-  const [editorNoteOpen, setEditorNoteOpen] = useState(true);
-  const [editorNoteFullscreen, setEditorNoteFullscreen] = useState(false);
 
   // Static SE bird's-eye render for the Project Summary page (Tommy: "a
   // static 3d rendering image from a SE birdseye view") — captured by an
@@ -1276,6 +1270,9 @@ export default function LayoutEditor() {
     canPreviewAllDetailPages,
   ]);
 
+  const editorToolsLabel =
+    editorTab === "wall" ? "Wall Tools" : editorTab === "foundation" ? "Foundation Tools" : editorTab === "floor" ? "Floor Tools" : "Roof Tools";
+
   // Sticky-note sections (Tommy: "the other sections... appear as its own
   // sticky note on the screen... make sure we aren't hiding any options") —
   // every section that used to be its own always-visible StrawSection in
@@ -1283,9 +1280,13 @@ export default function LayoutEditor() {
   // bottom SectionCarousel. `formalDocumentNoteIds` is the subset "Print
   // Packet" covers (the actual printable sheets — Project Summary + every
   // Detail Guide/Shop Drawing page — not the live editing panels like
-  // Windows/Wall Assembly/Project Totals/Review Log).
+  // Windows/Wall Assembly/Project Totals/Review Log). "Wall Tools" (Tommy:
+  // "wall tools sticky note should be a clickable option on the right tool
+  // bar") relabels itself to match whichever editor tab is active, same as
+  // it always has.
   const allNoteSections = useMemo(
     () => [
+      { id: "editor-tools", label: editorToolsLabel },
       { id: "windows", label: "Windows" },
       { id: "wall-assembly", label: "Wall Assembly (Vapor Check)" },
       { id: "detail-summary", label: "Project Summary" },
@@ -1293,7 +1294,7 @@ export default function LayoutEditor() {
       { id: "review-log", label: "Review Log" },
       ...relevantDetailPages,
     ],
-    [relevantDetailPages],
+    [editorToolsLabel, relevantDetailPages],
   );
   const formalDocumentNoteIds = useMemo(
     () => new Set(["detail-summary", ...relevantDetailPages.map((p) => p.id)]),
@@ -1710,8 +1711,6 @@ export default function LayoutEditor() {
     (v): v is string => v !== null,
   );
   const plasterNote = plasterFinishes.length > 0 ? `${plasterFinishes.join(", ")} selected — weight not yet modeled` : null;
-  const editorToolsLabel =
-    editorTab === "wall" ? "Wall Tools" : editorTab === "foundation" ? "Foundation Tools" : editorTab === "floor" ? "Floor Tools" : "Roof Tools";
 
   return (
     <DocumentMetaProvider value={{ projectName, siteLabel: documentSiteLabel, date: documentDate }}>
@@ -1739,6 +1738,57 @@ export default function LayoutEditor() {
       />
       <main className={styles.main}>
         <div className={`${styles.editorSection} print-hidden-chrome`}>
+          <div className={styles.editorSidebar}>
+            {loadError && <p className={styles.disclaimer}>Couldn&apos;t load that file — {loadError}</p>}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", width: "100%" }}>
+              {editorTab === "wall" && <CompassWidget ref={compassNeedleRef} />}
+              {editorTab === "wall" && viewMode === "plan" && (
+                <div ref={setToolbarPortalNode} className={styles.toolbarPortalInline} />
+              )}
+              <button
+                type="button"
+                title={isOsFullscreen ? "Exit fullscreen" : "Enter fullscreen editor"}
+                onClick={handleToggleOsFullscreen}
+                style={{
+                  fontSize: 15,
+                  lineHeight: 1,
+                  padding: "6px 9px",
+                  borderRadius: 6,
+                  border: "1px solid #ccc",
+                  background: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                {isOsFullscreen ? "⤡" : "⤢"}
+              </button>
+            </div>
+            <EditorToolbar
+              editorTab={editorTab}
+              onEditorTabChange={setEditorTab}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              viewModeDisabled={editorTab !== "wall" || !footprint}
+            />
+            {editorTab === "wall" && viewMode === "plan" && (
+              <>
+                <DrawingToolPen
+                  value={shapeTool}
+                  onChange={setShapeTool}
+                  bumpOutDisabled={!footprint}
+                  dragWallDisabled={!footprint}
+                  editDisabled={!footprint}
+                  secondStoryEnabled={secondStoryEnabled}
+                  onToggleSecondStory={() => setSecondStoryEnabled((v) => !v)}
+                  secondStoryDisabled={!footprint}
+                  secondStoryWallHeightFt={secondStoryWallHeightFt}
+                  onSecondStoryWallHeightChange={setSecondStoryWallHeightFt}
+                />
+                <div ref={setToolbarSecondaryPortalNode} className={styles.toolbarPortalInline} />
+                <PanelLegend />
+              </>
+            )}
+          </div>
+
           <div className={styles.editorCanvasLayer}>
             {editorTab === "wall" &&
               (viewMode === "plan" ? (
@@ -1761,6 +1811,7 @@ export default function LayoutEditor() {
                   onAddBumpOut={handleAddBumpOut}
                   onDragWall={handleDragWall}
                   toolbarPortalTarget={toolbarPortalNode}
+                  secondaryToolbarPortalTarget={toolbarSecondaryPortalNode}
                 />
               ) : (
                 <Building3DView
@@ -1807,44 +1858,19 @@ export default function LayoutEditor() {
             />
           )}
 
-          <div className={styles.editorOverlayStack}>
-            {loadError && <p className={styles.disclaimer}>Couldn&apos;t load that file — {loadError}</p>}
-            <EditorToolbar
-              editorTab={editorTab}
-              onEditorTabChange={setEditorTab}
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              viewModeDisabled={editorTab !== "wall" || !footprint}
-              isFullscreen={isOsFullscreen}
-              onToggleFullscreen={handleToggleOsFullscreen}
-            />
-            {editorTab === "wall" && viewMode === "plan" && (
-              <DrawingToolPen
-                value={shapeTool}
-                onChange={setShapeTool}
-                bumpOutDisabled={!footprint}
-                dragWallDisabled={!footprint}
-                editDisabled={!footprint}
-              />
-            )}
-            {editorTab === "wall" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <CompassWidget ref={compassNeedleRef} />
-                {viewMode === "plan" && <div ref={setToolbarPortalNode} className={styles.toolbarPortalInline} />}
-              </div>
-            )}
-          </div>
+          <div className={styles.editorRightSpacer} aria-hidden="true" />
 
           <StickyNote
             id="editor-tools"
             label={editorToolsLabel}
-            isOpen={editorNoteOpen}
-            isFullscreen={editorNoteFullscreen}
-            cascadeIndex={0}
-            top={340}
-            left={16}
-            onClose={() => setEditorNoteOpen(false)}
-            onToggleFullscreen={() => setEditorNoteFullscreen((was) => !was)}
+            isOpen={openNoteIds.has("editor-tools")}
+            isFullscreen={fullscreenNoteId === "editor-tools"}
+            cascadeIndex={noteOpenOrder.indexOf("editor-tools")}
+            top={68}
+            left={256}
+            onClose={() => handleToggleNote("editor-tools")}
+            onToggleFullscreen={() => handleToggleNoteFullscreen("editor-tools")}
+            onPrint={() => handlePrintNote("editor-tools")}
           >
             {editorTab === "wall" && (
               <>
@@ -1856,34 +1882,6 @@ export default function LayoutEditor() {
                     ? "In Edit mode, click a corner marker to mark it least-accessible — safety/gap panels re-place to the far end of each wall (this also clears any openings you've placed, since re-tiling re-derives all slots)."
                     : "Every wall owns its own mitered corner panels — the left-most corner of each run (standing outside the shell) is automatically the safety-oct-corner panel, so there's no corner marker to set here."}
                 </p>
-                <div>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <input
-                      type="checkbox"
-                      checked={secondStoryEnabled}
-                      onChange={(e) => setSecondStoryEnabled(e.target.checked)}
-                      disabled={!footprint}
-                    />
-                    Add Second Story
-                  </label>
-                  {secondStoryEnabled && (
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
-                      Second story wall height (ft){" "}
-                      <input
-                        type="number"
-                        value={secondStoryWallHeightFt}
-                        step={0.5}
-                        min={1}
-                        onChange={(e) => setSecondStoryWallHeightFt(Number(e.target.value))}
-                      />
-                    </label>
-                  )}
-                  <p className={styles.note}>
-                    Shares the ground floor&apos;s footprint and panel layout for now (a fully independent second-story
-                    footprint/opening editor isn&apos;t wired up yet) — stacked at the ground floor&apos;s own top-plate
-                    height in 3D Preview and the whole-building OBJ export.
-                  </p>
-                </div>
                 {viewMode === "plan" && shapeTool === "bump-out" && (
                   <p className={styles.note}>
                     Drag along a wall to pick the span it attaches to, then drag
@@ -1912,11 +1910,10 @@ export default function LayoutEditor() {
                 {viewMode === "plan" && (
                   <p className={styles.note}>
                     {shapeTool === "edit"
-                      ? "Click a tan panel to cycle it: standard → window → door → column → standard."
-                      : "Switch to Edit mode, then click a tan panel to cycle it: standard → window → door → column → standard."}{" "}
-                    Gray = corner, dark brown = safety-oct-corner, purple = braced,
-                    orange = safety/gap, teal = column. A panel hashed orange over
-                    purple is a safety/gap panel combined with a corner brace (both
+                      ? "Click a panel to cycle it: standard → window → door → column → standard."
+                      : "Switch to Edit mode, then click a panel to cycle it: standard → window → door → column → standard."}{" "}
+                    See the legend to the left for what each panel color means — a panel hashed
+                    orange over purple is a safety/gap panel combined with a corner brace (both
                     roles, one panel). Panel labels are named by compass direction
                     (N/NE/E/SE/S/SW/W/NW) — up is treated as North (no real site
                     orientation set yet).{" "}
@@ -2152,18 +2149,18 @@ export default function LayoutEditor() {
           </StickyNote>
         </div>
 
-        {windowList.length > 0 && (
-          <StickyNote
-            id="windows"
-            label="Windows"
-            isOpen={openNoteIds.has("windows")}
-            isFullscreen={fullscreenNoteId === "windows"}
-            cascadeIndex={noteOpenOrder.indexOf("windows")}
-            onClose={() => handleToggleNote("windows")}
-            onToggleFullscreen={() => handleToggleNoteFullscreen("windows")}
-            onPrint={() => handlePrintNote("windows")}
-          >
-            {windowList.map(({ wallId, slotIndex, widthIn }) => (
+        <StickyNote
+          id="windows"
+          label="Windows"
+          isOpen={openNoteIds.has("windows")}
+          isFullscreen={fullscreenNoteId === "windows"}
+          cascadeIndex={noteOpenOrder.indexOf("windows")}
+          onClose={() => handleToggleNote("windows")}
+          onToggleFullscreen={() => handleToggleNoteFullscreen("windows")}
+          onPrint={() => handlePrintNote("windows")}
+        >
+          {windowList.length > 0 ? (
+            windowList.map(({ wallId, slotIndex, widthIn }) => (
               <label key={`${wallId}-${slotIndex}`}>
                 Wall {wallId}, window #{slotIndex}{" "}
                 <select
@@ -2178,9 +2175,14 @@ export default function LayoutEditor() {
                   ))}
                 </select>
               </label>
-            ))}
-          </StickyNote>
-        )}
+            ))
+          ) : (
+            <p className={styles.note}>
+              No windows placed yet. Switch to the Wall tab&apos;s 2D view, set the shape tool to Edit, and click a
+              tan panel to cycle it to Window — it&apos;ll show up here with a width dropdown once placed.
+            </p>
+          )}
+        </StickyNote>
 
         <StickyNote
           id="wall-assembly"
@@ -2912,10 +2914,12 @@ export default function LayoutEditor() {
           </>
         )}
 
-        <SectionCarousel sections={allNoteSections} openIds={openNoteIds} onToggle={handleToggleNote} />
-        <footer className={`${styles.sandboxFooter} print-hidden-chrome`}>
-          <Link href="/sandbox">Single Wall Run Calculation Sandbox →</Link>
-        </footer>
+        <SectionCarousel
+          sections={allNoteSections}
+          openIds={openNoteIds}
+          onToggle={handleToggleNote}
+          footer={<Link href="/sandbox">Single Wall Run Calculation Sandbox →</Link>}
+        />
       </main>
     </div>
     </DocumentMetaProvider>

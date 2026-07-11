@@ -5,10 +5,10 @@ import type { PanelSlot } from "./types";
 
 describe("applyBracedPlacement", () => {
   it("places exactly 1 braced panel touching each corner, then periodic braced panels every `spacing` along the plain run", () => {
-    // 480 wall, 48in standard, 24in corners: middle=432, divides evenly into
-    // 9x48 with 0 remainder (<2ft) -> borrows+splits the corner-touching
-    // standard with the gap panel (24/24); gapEnd 'end' puts gap
-    // second-to-last, corner-touching standard last (before the corner).
+    // 480 wall, 48in standard, 24in corners: middle=432, minus the fixed
+    // 3/4in gap leaves 431.25 for standards -> 8 fit (384) with a 47.25
+    // remainder, absorbed into the one next to the gap (95.25 wide); gapEnd
+    // 'end' puts the gap second-to-last, corner-touching standard last.
     const { slots } = tileWall(480, 48, 24, "end");
     const result = applyBracedPlacement(slots, 96 /* 8ft high-seismic spacing */, 48);
     expect(result.map((s) => s.type)).toEqual([
@@ -19,10 +19,9 @@ describe("applyBracedPlacement", () => {
       "standard",
       "braced", // periodic
       "standard",
-      "braced", // periodic
-      "standard",
-      "safety-gap", // second-to-last
-      "braced", // touches the end corner (the resized corner-touching standard)
+      "braced", // periodic (the resized standard next to the gap)
+      "safety-gap", // second-to-last, fixed 3/4in
+      "braced", // touches the end corner (the corner-touching standard)
       "corner",
     ]);
   });

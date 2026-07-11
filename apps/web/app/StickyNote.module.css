@@ -31,7 +31,9 @@
   padding: 8px 10px;
   background: #f2e8c9;
   border-bottom: 2px solid #b8901f;
-  cursor: default;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
 .label {

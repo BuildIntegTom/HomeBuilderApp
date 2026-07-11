@@ -4,10 +4,15 @@ export interface TileWallResult {
   slots: PanelSlot[];
 }
 
-const MIN_GAP_PANEL_IN = 24; // 2ft — below this, borrow a standard panel and split 50/50 instead
-// Nominal upper bound is 4ft, but since the remainder of dividing by
-// standardWidthIn is always < standardWidthIn, that's only reachable if
-// standardWidthIn itself exceeds 4ft — not enforced separately.
+// The safety/gap panel is always this fixed width (Tommy: "a safety gap
+// should be a 3/4in wide piece of plywood... I want the 3/4in wide safety
+// gap plywood spacers to be flush with both adjacent panels" — not a
+// leftover-sized bay with the actual 3/4in board floating somewhere inside
+// it, unaccounted space on both sides). Must match panel-catalog's
+// SAFETY_GAP_THICKNESS_IN (packages/panel-catalog/src/safetyGapMembers.ts)
+// — duplicated here rather than imported since packages/geometry doesn't
+// depend on packages/panel-catalog.
+const SAFETY_GAP_WIDTH_IN = 0.75;
 
 // Tommy: a safety/gap panel is only needed on walls longer than 12ft — a
 // shorter run doesn't accumulate enough dimensional tolerance to matter.
@@ -33,42 +38,47 @@ interface PlainSizing {
 /**
  * Core arithmetic shared by `tileWall` and `retileWithOpenings`: given a
  * budget length (already excluding corners and any opening reservations),
- * how many standard panels fit and how wide the gap/resized panels end up
- * being. See `tileWall`'s doc comment for the sizing rules.
+ * how many standard panels fit and how wide the one next to the gap ends
+ * up being. See `tileWall`'s doc comment for the sizing rules.
  *
- * `allowBorrow` (default true) gates the under-2ft borrow-and-split branch
- * below — octagon walls don't use it at all (Tommy: "no standard-safety
- * panels for octagons"), so the gap panel just absorbs whatever's left,
- * even under 2ft.
+ * The gap panel itself is always exactly `SAFETY_GAP_WIDTH_IN` — everything
+ * else in the budget goes to standard panels, with the single one next to
+ * the gap "resized" to absorb whatever's left over past a whole number of
+ * standard widths, so the tiled total always adds up exactly and the gap
+ * sits flush against both of its neighbors. (Previously the *gap itself*
+ * absorbed that leftover — sizing its own slot to whatever remained, 2 to
+ * 4ft typically — while the panel-catalog's actual 3D member for it is
+ * only 3/4in wide, leaving a wide unrendered gap around the real board;
+ * see `SAFETY_GAP_WIDTH_IN`'s comment.)
+ *
+ * `allowBorrow` no longer changes this function's math — every wall now
+ * gets the same fixed-width gap regardless of shape — but the parameter is
+ * kept so `tileWall`/`retileWithOpenings` callers (mitered vs. non-mitered
+ * shapes) don't need to change their call sites.
  */
 function computePlainSizing(
   budgetLengthIn: number,
   standardWidthIn: number,
   allowBorrow = true,
 ): PlainSizing {
-  const rawStandardCount = Math.max(0, Math.floor(budgetLengthIn / standardWidthIn));
-  const remainderIn = budgetLengthIn - rawStandardCount * standardWidthIn;
+  void allowBorrow; // kept for call-site compatibility — see doc comment above
+  const availableForStandardsIn = Math.max(0, budgetLengthIn - SAFETY_GAP_WIDTH_IN);
+  const rawStandardCount = Math.max(0, Math.floor(availableForStandardsIn / standardWidthIn));
+  const remainderIn = availableForStandardsIn - rawStandardCount * standardWidthIn;
 
   let standardCount = rawStandardCount;
-  let gapWidthIn: number;
   let resizedStandardWidthIn = standardWidthIn;
 
-  if (rawStandardCount < 2 && remainderIn < MIN_GAP_PANEL_IN) {
-    // nothing to borrow from — the gap panel just takes whatever's left
-    standardCount = 0;
-    gapWidthIn = budgetLengthIn;
-  } else if (remainderIn >= MIN_GAP_PANEL_IN || !allowBorrow) {
-    gapWidthIn = remainderIn;
-  } else {
-    // Keep the same standard-panel COUNT (rawStandardCount) — resizing one
-    // of them down to half of (its own width + the remainder) is what frees
-    // up the other half for the gap panel, not a separate deduction.
-    const combinedIn = remainderIn + standardWidthIn;
-    gapWidthIn = combinedIn / 2;
-    resizedStandardWidthIn = combinedIn / 2;
+  if (rawStandardCount === 0) {
+    // Not even one full standard panel fits alongside the gap — the whole
+    // leftover becomes a single resized standard panel (0 if there's none).
+    standardCount = availableForStandardsIn > 0 ? 1 : 0;
+    resizedStandardWidthIn = availableForStandardsIn;
+  } else if (remainderIn > 0) {
+    resizedStandardWidthIn = standardWidthIn + remainderIn;
   }
 
-  return { standardCount, gapWidthIn, resizedStandardWidthIn };
+  return { standardCount, gapWidthIn: SAFETY_GAP_WIDTH_IN, resizedStandardWidthIn };
 }
 
 /**
@@ -197,20 +207,21 @@ function resolveCorners(
  * itself is a separate derived overlay (see `applyBracedPlacement`); this
  * function only fixes the *order* of standard/gap slots.
  *
- * The safety/gap panel's width is derived from whatever's actually left
- * over after fitting as many standard panels as possible (Tommy), not a
- * fixed width — this is the panel's whole purpose (dimensional tolerance
- * absorption), so there's no unaccounted slack by construction:
- * - Leftover in [2ft, 4ft): the gap panel is exactly that leftover width.
- * - Leftover < 2ft (and `allowBorrow`, the default): too small on its own,
- *   so one standard panel is "un-placed" and its width combined with the
- *   leftover, then split evenly between the gap panel and that borrowed
- *   standard panel — placed next to the gap, never at either corner-
- *   touching position (Tommy: the borrowed panel must not be the one that
- *   rule 1 in `applyBracedPlacement` braces for touching the corner).
- * - Too short to borrow a standard panel from at all (0 or 1 fit): gap
- *   panel absorbs the whole remaining length, standards degrade to 0 (no
- *   corner-touching brace possible at that end either, at that point).
+ * The safety/gap panel's width is always exactly `SAFETY_GAP_WIDTH_IN`
+ * (Tommy: "the 3/4in wide safety gap plywood spacers [should] be flush with
+ * both adjacent panels") — everything else in the budget goes to whichever
+ * standard panel sits next to the gap, resized wider than the nominal
+ * `standardWidthIn` to absorb the leftover past a whole number of standard
+ * widths, so the total always adds up exactly with no unaccounted slack on
+ * either side of the gap:
+ * - 2 or more standard panels fit: the one next to the gap gets resized;
+ *   every other standard panel (including the corner-touching one) stays at
+ *   the nominal `standardWidthIn`.
+ * - Fewer than 1 full standard panel fits after reserving the gap: the
+ *   whole remaining budget becomes a single resized standard panel next to
+ *   the gap (which then sits directly corner-adjacent — see
+ *   `applyBracedPlacement`'s corner-brace-combining rule for what happens
+ *   to a gap panel that ends up there).
  *
  * `hasCornerStart`/`hasCornerEnd` (default true) control whether this wall
  * gets its own corner panel at each end independently — a wall can win the
@@ -223,14 +234,13 @@ function resolveCorners(
  * already have shortened `wallLengthIn` by the perpendicular wall's
  * thickness there before calling this.
  *
- * `allowBorrow` (default true) disables the whole borrow-and-split branch
- * above when false — octagon walls don't do it at all (Tommy: "no
- * standard-safety panels for octagons"), so the gap panel just takes
- * whatever's left over, even under 2ft.
+ * `allowBorrow` no longer affects sizing (see `computePlainSizing`'s doc
+ * comment) — kept as a parameter so mitered (octagon) vs. non-mitered
+ * callers don't need to change.
  *
- * Regardless of `allowBorrow`, a wall at or under 12ft skips the gap panel
- * entirely (Tommy: "safety panels only needed for walls more than 12'
- * long") — see `buildMiddle`/`buildEvenMiddle`.
+ * A wall at or under 12ft skips the gap panel entirely (Tommy: "safety
+ * panels only needed for walls more than 12' long") — see
+ * `buildMiddle`/`buildEvenMiddle`.
  *
  * If the wall owns corners at both ends but is too short to fit them
  * without overlapping, they're merged into a single corner panel spanning
