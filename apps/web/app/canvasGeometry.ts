@@ -31,15 +31,38 @@ export const OCTAGON_CLIP_RATIO = 1 - 1 / Math.SQRT2;
  * empty `touches` list (the finger's already lifted), so that falls back
  * to `changedTouches` instead. Returns null only for a touchend/touchcancel
  * with no touch data at all (shouldn't normally happen).
+ *
+ * `touchId` (Tommy, mobile: "after a while... the image gets dragged and
+ * makes a mess when you pan around") pins this to one specific finger by
+ * its stable `identifier` — without it, a multi-touch drag gesture (e.g. a
+ * panning finger plus an incidental second touch from a resting palm)
+ * would silently grab whichever touch happens to be `touches[0]` on each
+ * event, which can jump to a completely different finger mid-gesture once
+ * the original touch's list position shifts, producing a sudden huge
+ * position delta. Callers that track a gesture across multiple events
+ * (panning) should capture the first touch's `identifier` at gesture start
+ * and pass it on every subsequent call; one-shot readers (measure) can
+ * omit it and keep the old "just use touches[0]" behavior.
  */
 export function clientPointFromEvent(
   evt: MouseEvent | TouchEvent | React.MouseEvent | React.TouchEvent,
+  touchId?: number,
 ): { clientX: number; clientY: number } | null {
   if ("touches" in evt) {
-    const touch = evt.touches[0] ?? evt.changedTouches[0];
+    const find = (list: TouchList | React.TouchList) =>
+      touchId != null ? Array.from(list).find((t) => t.identifier === touchId) : list[0];
+    const touch = find(evt.touches) ?? find(evt.changedTouches);
     return touch ? { clientX: touch.clientX, clientY: touch.clientY } : null;
   }
   return { clientX: evt.clientX, clientY: evt.clientY };
+}
+
+/** Pulls the identifier of the first active touch off a touch event, for
+ * pinning a subsequent `clientPointFromEvent` call to that same finger —
+ * see its doc comment. Returns undefined for a mouse event (no touches to
+ * pin to; harmless since `clientPointFromEvent` ignores `touchId` for mice). */
+export function firstTouchId(evt: MouseEvent | TouchEvent | React.MouseEvent | React.TouchEvent): number | undefined {
+  return "touches" in evt ? evt.touches[0]?.identifier : undefined;
 }
 
 export const WALL_PICK_TOLERANCE_PX = 20;

@@ -38,6 +38,7 @@
   border-radius: 6px;
   border: 1px solid #ccc;
   background: #fff;
+  color: #333;
   cursor: pointer;
   white-space: nowrap;
 }

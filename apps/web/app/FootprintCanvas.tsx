@@ -26,6 +26,7 @@ import {
   cornerMarkerPosition,
   findNearestWall,
   findNearestWallCandidates,
+  firstTouchId,
   formatFeetInches,
   nearestPointOnSegments,
   octagonPreviewPoints,
@@ -291,7 +292,7 @@ export default function FootprintCanvas({
   // Raw screen-space (clientX/clientY) drag tracking for panning — NOT
   // `getPointerPosition()`, which is already adjusted by the very
   // transform we're trying to change here (using it would be circular).
-  const panStartRef = useRef<{ clientX: number; clientY: number; viewOffset: DragPoint } | null>(null);
+  const panStartRef = useRef<{ clientX: number; clientY: number; viewOffset: DragPoint; touchId?: number } | null>(null);
 
   const zoomIn = () => setViewScale((s) => Math.min(3, s * 1.25));
   const zoomOut = () => setViewScale((s) => Math.max(0.25, s / 1.25));
@@ -364,8 +365,9 @@ export default function FootprintCanvas({
 
   const handleMouseDown = (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (isPanning) {
-      const client = clientPointFromEvent(e.evt);
-      if (client) panStartRef.current = { ...client, viewOffset: { ...viewOffset } };
+      const touchId = firstTouchId(e.evt);
+      const client = clientPointFromEvent(e.evt, touchId);
+      if (client) panStartRef.current = { ...client, viewOffset: { ...viewOffset }, touchId };
       return;
     }
 
@@ -423,7 +425,7 @@ export default function FootprintCanvas({
     if (isPanning) {
       const start = panStartRef.current;
       if (!start) return;
-      const client = clientPointFromEvent(e.evt);
+      const client = clientPointFromEvent(e.evt, start.touchId);
       if (!client) return;
       setViewOffset({
         x: start.viewOffset.x + (client.clientX - start.clientX),

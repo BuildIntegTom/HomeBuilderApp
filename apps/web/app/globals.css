@@ -1,13 +1,17 @@
+/* Tommy, mobile: "labels on the buttons on the top bar aren't showing up"
+   — a phone in dark mode matched the (leftover create-next-app
+   boilerplate) `prefers-color-scheme: dark` query below, flipping
+   `--foreground` to a near-white color. Most buttons app-wide (TopBar's
+   `.tool`, StickyNote's `.headerButton`, etc.) don't set their own text
+   `color` and so inherit `body`'s, which is normally fine against this
+   app's fixed white/light backgrounds — but near-white-on-white made
+   every non-active button's label invisible. This app has no actual dark
+   theme (every component hardcodes light colors), so the auto-switching
+   root variables were a latent bug rather than a real feature — fixed
+   colors always, matching what the app actually renders. */
 :root {
   --background: #ffffff;
   --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 html {
@@ -40,12 +44,6 @@ body {
 a {
   color: inherit;
   text-decoration: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
 }
 
 /* Print system (Tommy: "Print Page" / "Print Packet") — a landscape sheet
