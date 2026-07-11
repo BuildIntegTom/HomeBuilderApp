@@ -1,4 +1,4 @@
-import type { PanelMember } from "@building-integrity/panel-catalog";
+import { memberBoxSizeIn, type PanelMember } from "@building-integrity/panel-catalog";
 
 /**
  * First-pass estimated shear (racking) and bearing (axial load-bearing)
@@ -71,6 +71,74 @@ export function computeNdsColumnCapacityLb(unbracedLengthIn: number, weakAxisDim
 export function computeStudPackBearingCapacityLb(studCount = 2): number {
   const perStudLb = computeNdsColumnCapacityLb(STUD_BLOCKING_SPACING_IN, STUD_THICKNESS_IN, STUD_AREA_IN2);
   return perStudLb * studCount;
+}
+
+export interface BuiltUpColumnSection {
+  totalAreaIn2: number;
+  /** Equivalent solid-rectangle weak-axis dimension (d = r x sqrt(12))
+   * giving the same radius of gyration as the real built-up section —
+   * plugs directly into computeNdsColumnCapacityLb's existing d/area
+   * inputs, no changes needed to that formula itself. */
+  effectiveWeakAxisDimIn: number;
+}
+
+/** One vertical member's own area/centroid/self-moment-of-inertia about
+ * the panel's X axis (the axis every corner stud's weak 1.5in face already
+ * lies along) — null for anything that isn't a full-height vertical
+ * member (girts, plates, braces aren't part of this composite section). */
+function verticalMemberXSection(member: PanelMember): { areaIn2: number; centerXIn: number; ownIIn4: number } | null {
+  if (member.orientation !== "vertical") return null;
+  const size = memberBoxSizeIn(member);
+  return {
+    areaIn2: size.xIn * size.yIn,
+    centerXIn: member.position.xIn + size.xIn / 2,
+    ownIIn4: (size.yIn * size.xIn ** 3) / 12,
+  };
+}
+
+/**
+ * Built-up composite cross-section for a Column/Corner panel's plywood-
+ * clad sides (Tommy: "corner and column panels should have a much higher
+ * estimate load bearing capacity because they have those two sheets of
+ * plywood running up the sides... calculate the load bearing strength of
+ * basically a truss plate turned up") — the two full-height side plywood
+ * sheets and the corner studs (everything with a "vertical" orientation,
+ * i.e. running the panel's full height) are treated as one composite
+ * column cross-section via the parallel-axis theorem, rather than each
+ * stud buckling independently. Material sitting far from the panel's own
+ * centerline (the plywood, clad at the very edges) contributes far more
+ * moment of inertia than a lone 1.5in stud ever could — the same principle
+ * that makes a built-up/boxed column dramatically stiffer than its
+ * individual parts. Uses the SAME NDS column formula as the plain stud
+ * pack (computeNdsColumnCapacityLb) — this only changes what geometry
+ * feeds into it, treating all material as one grade/species for
+ * simplicity (plywood's actual E differs from the stud lumber's, an
+ * explicit simplification consistent with this being a first-pass
+ * estimate).
+ */
+export function computeBuiltUpColumnSection(members: PanelMember[]): BuiltUpColumnSection {
+  const parts = members
+    .map(verticalMemberXSection)
+    .filter((p): p is NonNullable<typeof p> => p !== null);
+  const totalAreaIn2 = parts.reduce((sum, p) => sum + p.areaIn2, 0);
+  if (totalAreaIn2 === 0) return { totalAreaIn2: 0, effectiveWeakAxisDimIn: 0 };
+  const centroidXIn = parts.reduce((sum, p) => sum + p.areaIn2 * p.centerXIn, 0) / totalAreaIn2;
+  const totalIIn4 = parts.reduce((sum, p) => sum + p.ownIIn4 + p.areaIn2 * (p.centerXIn - centroidXIn) ** 2, 0);
+  const rIn = Math.sqrt(totalIIn4 / totalAreaIn2);
+  return { totalAreaIn2, effectiveWeakAxisDimIn: rIn * Math.sqrt(12) };
+}
+
+/**
+ * Estimated axial bearing capacity for a Column/Corner panel's full
+ * built-up section (see computeBuiltUpColumnSection) — unbraced length is
+ * the full stud span, not the 36in blocking spacing the plain stud pack
+ * uses, since the continuous full-height plywood cladding (not
+ * intermittent blocking) is what braces this section against buckling.
+ */
+export function computeBuiltUpColumnBearingCapacityLb(members: PanelMember[], studSpanIn: number): number {
+  const section = computeBuiltUpColumnSection(members);
+  if (section.totalAreaIn2 === 0) return 0;
+  return computeNdsColumnCapacityLb(studSpanIn, section.effectiveWeakAxisDimIn, section.totalAreaIn2);
 }
 
 /**

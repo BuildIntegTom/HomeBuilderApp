@@ -1,6 +1,6 @@
 import type { Footprint, PanelSlot } from "@building-integrity/geometry";
 import type { Season } from "@building-integrity/calc-engine";
-import type { SeismicZone } from "@building-integrity/panel-catalog";
+import type { RoofCatcherBeamShape, RoofSystemType, SeismicZone, StudConfig } from "@building-integrity/panel-catalog";
 import type { ViewerRole } from "./viewerRole";
 
 /**
@@ -10,7 +10,7 @@ import type { ViewerRole } from "./viewerRole";
  * a future incompatible version fails loudly (`parseProjectFile`) instead
  * of silently restoring a half-broken layout.
  */
-export const PROJECT_FILE_VERSION = 1;
+export const PROJECT_FILE_VERSION = 7;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -39,6 +39,31 @@ export interface ProjectState {
   priceModifier: number;
   floorSystemId: string | null;
   perpendicular2x4Enabled: boolean;
+  roofSystemTypeId: RoofSystemType;
+  bottomOfTrussMaxHeightFt: number;
+  trussPlateInsetIn: number;
+  roofCatcherBeamOffsetIn: number;
+  roofCatcherBeamShape: RoofCatcherBeamShape;
+  /** Wall ids with "Add Gable End" enabled in the elevation view — see
+   * WallElevationView.tsx. */
+  gableEndWallIds: Set<string>;
+  /** Second story, sharing the ground floor's footprint/wallSlots shape —
+   * see Building3DView.tsx's secondStory prop. */
+  secondStoryEnabled: boolean;
+  secondStoryWallHeightFt: number;
+  panelizationType: "loose-packed-braced" | "square-bale-panels" | "timber-frame-curtain";
+  timberFrameCurtainPanelType: "standard" | "braced";
+  timberFrameCurtainWidthIn: number;
+  /** Square Bale Panel-only controls (Tommy: nailer "slide" + "double 2x4
+   * studs, or double 2x6 studs"). Nailer offset is a numeric slide amount,
+   * not a literal drag gesture yet — see buildNailer's doc comment. */
+  nailerOffsetIn: number;
+  squareBaleStudConfig: StudConfig;
+  /** Landscape title-block metadata (Tommy: "project, site, date, etc.") —
+   * see DocumentMetaContext.tsx. Site/date are derived from other state
+   * already in this file (zipCode, current date), so only the project name
+   * itself needs to round-trip here. */
+  projectName: string;
 }
 
 const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
@@ -68,20 +93,37 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "priceModifier",
   "floorSystemId",
   "perpendicular2x4Enabled",
+  "roofSystemTypeId",
+  "bottomOfTrussMaxHeightFt",
+  "trussPlateInsetIn",
+  "roofCatcherBeamOffsetIn",
+  "roofCatcherBeamShape",
+  "gableEndWallIds",
+  "secondStoryEnabled",
+  "secondStoryWallHeightFt",
+  "panelizationType",
+  "timberFrameCurtainPanelType",
+  "timberFrameCurtainWidthIn",
+  "nailerOffsetIn",
+  "squareBaleStudConfig",
+  "projectName",
 ];
 
-/** JSON has no Set type — `primaryCornerIds` round-trips as a plain array. */
+/** JSON has no Set type — `primaryCornerIds`/`gableEndWallIds` round-trip as plain arrays. */
 export interface ProjectFile {
   schemaVersion: number;
   savedAt: string;
-  state: Omit<ProjectState, "primaryCornerIds"> & { primaryCornerIds: string[] };
+  state: Omit<ProjectState, "primaryCornerIds" | "gableEndWallIds"> & {
+    primaryCornerIds: string[];
+    gableEndWallIds: string[];
+  };
 }
 
 export function serializeProject(state: ProjectState): ProjectFile {
   return {
     schemaVersion: PROJECT_FILE_VERSION,
     savedAt: new Date().toISOString(),
-    state: { ...state, primaryCornerIds: [...state.primaryCornerIds] },
+    state: { ...state, primaryCornerIds: [...state.primaryCornerIds], gableEndWallIds: [...state.gableEndWallIds] },
   };
 }
 
@@ -123,12 +165,16 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   if (!Array.isArray(state.primaryCornerIds)) {
     return { ok: false, error: '"primaryCornerIds" should be a list of corner ids.' };
   }
+  if (!Array.isArray(state.gableEndWallIds)) {
+    return { ok: false, error: '"gableEndWallIds" should be a list of wall ids.' };
+  }
 
   return {
     ok: true,
     state: {
       ...(state as unknown as ProjectState),
       primaryCornerIds: new Set(state.primaryCornerIds as string[]),
+      gableEndWallIds: new Set(state.gableEndWallIds as string[]),
     },
   };
 }

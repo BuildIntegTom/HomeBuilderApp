@@ -16,3 +16,5 @@ export * from "./floorPanelGrid";
 export * from "./joistLayout";
 export * from "./pointInPolygon";
 export * from "./wallCompassDirection";
+export * from "./gableTiledRow";
+export * from "./uniformPanelization";

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Stage, Layer, Rect, Circle, Text, Group, Line } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import {
@@ -12,6 +13,12 @@ import {
   type PanelSlot,
   type Wall,
 } from "@building-integrity/geometry";
+import {
+  computeBracedPanelShearCapacityLb,
+  computeBuiltUpColumnBearingCapacityLb,
+  computeStudPackBearingCapacityLb,
+} from "@building-integrity/calc-engine";
+import { buildBracedPanelMembers, buildColumnPanelMembers, buildCornerPanelMembers } from "@building-integrity/panel-catalog";
 import {
   SCALE_PX_PER_FT,
   clientPointFromEvent,
@@ -110,6 +117,10 @@ export interface FootprintCanvasProps {
   wallSlots: Record<string, PanelSlot[]>;
   wallStartOffsetIn: Record<string, number>;
   wallThicknessIn: number;
+  /** Only needed for the hover tooltip's estimated bearing/shear numbers —
+   * see structuralByKey below. */
+  wallHeightFt: number;
+  includeNailer: boolean;
   leastAccessibleCorner: CornerId;
   /** Corners present before any bump-out was added — only these ever show
    * a least-accessible-corner marker (once a shape's first 4 corners are
@@ -125,6 +136,12 @@ export interface FootprintCanvasProps {
   onEditWallLength: (wallId: Wall["id"], newLengthFt: number) => void;
   onAddBumpOut: (wallId: Wall["id"], spanStartFt: number, spanEndFt: number, depthFt: number) => void;
   onDragWall: (wallId: Wall["id"], offsetFt: number) => void;
+  /** When supplied, the Pan/Zoom/Reset View/Panel ID Visibility/Measure
+   * toolbar renders into this DOM node (via a portal) instead of inline
+   * above the canvas — its own state/handlers never move, only where the
+   * JSX mounts (Tommy: relocate this toolbar to top-left, under the editor
+   * bar, in fullscreen). Undefined/null renders it inline as before. */
+  toolbarPortalTarget?: HTMLDivElement | null;
 }
 
 export default function FootprintCanvas({
@@ -134,6 +151,8 @@ export default function FootprintCanvas({
   wallSlots,
   wallStartOffsetIn,
   wallThicknessIn,
+  wallHeightFt,
+  includeNailer,
   leastAccessibleCorner,
   primaryCornerIds,
   isWallLengthEditable,
@@ -143,6 +162,7 @@ export default function FootprintCanvas({
   onEditWallLength,
   onAddBumpOut,
   onDragWall,
+  toolbarPortalTarget,
 }: FootprintCanvasProps) {
   // A ref (not state) because mousedown/mousemove/mouseup can all fire within
   // the same React batch during a fast drag — state set in mousedown wouldn't
@@ -172,6 +192,55 @@ export default function FootprintCanvas({
     for (const [key, instances] of grouped) map.set(key, combinedPanelLabel(instances));
     return map;
   }, [footprint, wallSlots]);
+
+  // Estimated bearing/shear numbers for the hover tooltip below (Tommy:
+  // "when you hover over a panel... shows you extra details... shear and
+  // load bearing estimates if applicable"). Bearing is a flat per-panel
+  // figure for standard/braced/safety-gap, but MUCH higher for column/
+  // corner (their two full-height side plywood sheets form a built-up
+  // section — see computeBuiltUpColumnBearingCapacityLb). Shear (diagonal
+  // brace) only applies to a braced panel (or a safety-gap combined with one).
+  const structuralByKey = useMemo(() => {
+    const map = new Map<string, { bearingLb: number; shearLb?: number }>();
+    if (!footprint) return map;
+    const standardBearingLb = computeStudPackBearingCapacityLb();
+    const columnBearingLb = computeBuiltUpColumnBearingCapacityLb(
+      buildColumnPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer),
+      wallHeightFt * 12,
+    );
+    const cornerBearingLb = computeBuiltUpColumnBearingCapacityLb(
+      buildCornerPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer),
+      wallHeightFt * 12,
+    );
+    for (const wall of footprint.walls) {
+      const slots = wallSlots[wall.id] ?? [];
+      slots.forEach((slot, slotIndex) => {
+        const isBraced = slot.type === "braced" || slot.secondaryType === "braced";
+        const shearLb = isBraced
+          ? computeBracedPanelShearCapacityLb(
+              buildBracedPanelMembers(slot.widthIn, wallThicknessIn, wallHeightFt * 12, includeNailer),
+            )
+          : undefined;
+        const bearingLb =
+          slot.type === "column"
+            ? columnBearingLb
+            : slot.type === "corner" || slot.type === "safety-oct-corner"
+              ? cornerBearingLb
+              : standardBearingLb;
+        map.set(`${wall.id}-${slotIndex}`, { bearingLb, shearLb });
+      });
+    }
+    return map;
+  }, [footprint, wallSlots, wallThicknessIn, wallHeightFt, includeNailer]);
+
+  const [hoveredSlot, setHoveredSlot] = useState<{
+    key: string;
+    type: string;
+    x: number;
+    y: number;
+    rotationDeg: number;
+    width: number;
+  } | null>(null);
 
   const [showPanelLabels, setShowPanelLabels] = useState(true);
 
@@ -587,52 +656,59 @@ export default function FootprintCanvas({
       ? wallLabelPosition(editingWall, footprint.corners, offsetPx)
       : null;
 
+  const toolbar = (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+      <button
+        type="button"
+        title="Drag the canvas to pan around"
+        aria-pressed={isPanning}
+        onClick={() =>
+          setIsPanning((p) => {
+            const next = !p;
+            if (next) toggleMeasuringOff();
+            return next;
+          })
+        }
+        style={{ fontWeight: isPanning ? "bold" : "normal" }}
+      >
+        Pan
+      </button>
+      <button type="button" title="Zoom out" onClick={zoomOut}>
+        Zoom −
+      </button>
+      <span style={{ fontSize: 12, color: "#555", minWidth: 40, textAlign: "center" }}>
+        {Math.round(viewScale * 100)}%
+      </span>
+      <button type="button" title="Zoom in" onClick={zoomIn}>
+        Zoom +
+      </button>
+      <button type="button" title="Reset pan and zoom to the default view" onClick={resetView}>
+        Reset View
+      </button>
+      <button
+        type="button"
+        title="Show or hide the panel ID labels drawn on each panel"
+        aria-pressed={showPanelLabels}
+        onClick={() => setShowPanelLabels((v) => !v)}
+        style={{ fontWeight: showPanelLabels ? "bold" : "normal" }}
+      >
+        Panel ID Visibility
+      </button>
+      <button
+        type="button"
+        title="Click two points on the canvas to measure the distance between them"
+        aria-pressed={isMeasuring}
+        onClick={toggleMeasuring}
+        style={{ fontWeight: isMeasuring ? "bold" : "normal" }}
+      >
+        Measure
+      </button>
+    </div>
+  );
+
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-        <button
-          type="button"
-          aria-pressed={isPanning}
-          onClick={() =>
-            setIsPanning((p) => {
-              const next = !p;
-              if (next) toggleMeasuringOff();
-              return next;
-            })
-          }
-          style={{ fontWeight: isPanning ? "bold" : "normal" }}
-        >
-          Pan
-        </button>
-        <button type="button" onClick={zoomOut}>
-          Zoom −
-        </button>
-        <span style={{ fontSize: 12, color: "#555", minWidth: 40, textAlign: "center" }}>
-          {Math.round(viewScale * 100)}%
-        </span>
-        <button type="button" onClick={zoomIn}>
-          Zoom +
-        </button>
-        <button type="button" onClick={resetView}>
-          Reset View
-        </button>
-        <button
-          type="button"
-          aria-pressed={showPanelLabels}
-          onClick={() => setShowPanelLabels((v) => !v)}
-          style={{ fontWeight: showPanelLabels ? "bold" : "normal" }}
-        >
-          Panel ID Visibility
-        </button>
-        <button
-          type="button"
-          aria-pressed={isMeasuring}
-          onClick={toggleMeasuring}
-          style={{ fontWeight: isMeasuring ? "bold" : "normal" }}
-        >
-          Measure
-        </button>
-      </div>
+      {toolbarPortalTarget ? createPortal(toolbar, toolbarPortalTarget) : toolbar}
       <div style={{ position: "relative", width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}>
         <Stage
           width={CANVAS_WIDTH}
@@ -714,6 +790,8 @@ export default function FootprintCanvas({
                 wallThicknessPx,
               ).map((r) => {
                 const panelName = panelNameByKey.get(`${r.wallId}-${r.slotIndex}`);
+                const slotKey = `${r.wallId}-${r.slotIndex}`;
+                const typeLabel = r.slot.secondaryType ? `${r.slot.secondaryType} + ${r.slot.type}` : r.slot.type;
                 const baseColor = SLOT_COLORS[r.slot.secondaryType ?? r.slot.type];
                 const hatchColor = r.slot.secondaryType ? SLOT_COLORS[r.slot.type] : null;
                 if (r.trapezoidPoints) {
@@ -732,6 +810,10 @@ export default function FootprintCanvas({
                         strokeWidth={0.5}
                         onClick={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
                         onTap={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
+                        onMouseEnter={() =>
+                          setHoveredSlot({ key: slotKey, type: typeLabel, x: labelX, y: labelY, rotationDeg: 0, width: 0 })
+                        }
+                        onMouseLeave={() => setHoveredSlot((was) => (was?.key === slotKey ? null : was))}
                       />
                       {hatchColor && (
                         <Line
@@ -772,6 +854,10 @@ export default function FootprintCanvas({
                       strokeWidth={0.5}
                       onClick={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
                       onTap={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
+                      onMouseEnter={() =>
+                        setHoveredSlot({ key: slotKey, type: typeLabel, x: r.x, y: r.y, rotationDeg: r.rotationDeg, width: r.width })
+                      }
+                      onMouseLeave={() => setHoveredSlot((was) => (was?.key === slotKey ? null : was))}
                     />
                     {hatchColor && (
                       <Rect
@@ -798,6 +884,35 @@ export default function FootprintCanvas({
                 );
               }),
             )}
+          {hoveredSlot &&
+            (() => {
+              const info = structuralByKey.get(hoveredSlot.key);
+              if (!info) return null;
+              const lines = [
+                hoveredSlot.type,
+                `Est. bearing: ~${Math.round(info.bearingLb).toLocaleString()} lb`,
+                ...(info.shearLb !== undefined ? [`Est. shear: ~${Math.round(info.shearLb).toLocaleString()} lb`] : []),
+              ];
+              const boxWidth = 130;
+              const boxHeight = lines.length * 13 + 8;
+              const boxX = hoveredSlot.width / 2 - boxWidth / 2;
+              const boxY = -boxHeight - 6;
+              return (
+                <Group x={hoveredSlot.x} y={hoveredSlot.y} rotation={hoveredSlot.rotationDeg} listening={false}>
+                  <Rect x={boxX} y={boxY} width={boxWidth} height={boxHeight} fill="#222" opacity={0.85} cornerRadius={3} />
+                  {lines.map((line, i) => (
+                    <Text
+                      key={i}
+                      x={boxX + 6}
+                      y={boxY + 4 + i * 13}
+                      text={line}
+                      fontSize={10}
+                      fill="#fff"
+                    />
+                  ))}
+                </Group>
+              );
+            })()}
           {footprint &&
             footprintIsAllRightAngles(footprint) &&
             footprint.corners.filter((c) => primaryCornerIds.has(c.id)).map((c) => {

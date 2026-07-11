@@ -3,9 +3,11 @@ import {
   COLUMN_CORE_WIDTH_IN,
   COLUMN_SIDE_PLY_THICKNESS_IN,
   COLUMN_TOTAL_WIDTH_IN,
+  DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN,
   buildColumnPanelMembers,
   buildColumnPanelSchema,
   computeColumnBlockingRowCount,
+  computeGableColumnHeightIn,
 } from "./columnPanelMembers";
 import { memberBoxSizeIn } from "./panelMemberHelpers";
 
@@ -87,5 +89,16 @@ describe("buildColumnPanelSchema", () => {
     expect(schema.id).toBe("column_panel");
     expect(schema.overallDimensions.widthIn).toBeCloseTo(25.5, 6);
     expect(schema.members.length).toBeGreaterThan(0);
+  });
+});
+
+describe("computeGableColumnHeightIn", () => {
+  it("subtracts the default 11.5in beam-depth offset from the gable peak height", () => {
+    expect(computeGableColumnHeightIn(150)).toBeCloseTo(150 - 11.5, 6);
+    expect(DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN).toBe(11.5);
+  });
+
+  it("accepts a custom offset instead of the default", () => {
+    expect(computeGableColumnHeightIn(150, 8)).toBeCloseTo(142, 6);
   });
 });

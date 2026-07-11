@@ -1,0 +1,61 @@
+.housing {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+}
+
+.face {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, #dfe6ec 80%);
+  border: 2px solid #4a5a68;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.tick {
+  position: absolute;
+  font-size: 10px;
+  font-weight: 700;
+  color: #1c3d5a;
+}
+
+.tickN {
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.tickS {
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.tickE {
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.tickW {
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Stays fixed to the housing (doesn't rotate with .face) — whichever
+   letter currently sits under this marker is the direction facing the
+   camera right now. */
+.fixedMarker {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 7px solid #a33;
+}

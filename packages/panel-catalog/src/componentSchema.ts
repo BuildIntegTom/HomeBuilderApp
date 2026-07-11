@@ -28,7 +28,7 @@ export type MemberMaterial =
 
 export type MemberOrientation = "vertical" | "horizontal" | "diagonal" | "flat";
 
-export type MemberRole = "stud" | "plate" | "girt" | "girt_web" | "nailer" | "brace" | "skin" | "blocking";
+export type MemberRole = "stud" | "plate" | "girt" | "girt_web" | "nailer" | "brace" | "skin" | "blocking" | "jack_stud";
 
 export interface MemberDims {
   thicknessIn: number;

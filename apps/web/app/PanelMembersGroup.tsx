@@ -4,13 +4,21 @@ import { memberBoxSizeIn, type PanelMember } from "@building-integrity/panel-cat
 
 const IN_PER_FT = 12;
 
+// wood_fiber_board (e.g. the square-bale panel's timber fiber board void
+// fill — Tommy: "highlighted with the same opacity in a light brown color
+// just like straw was") reuses the exact straw-fill overlay's own color/
+// opacity from StandardPanel3DView.tsx's STRAW_COLOR/straw opacity.
 const MATERIAL_COLOR: Record<PanelMember["material"], string> = {
   dimensional_lumber: "#8a6a3a",
   plywood: "#d9c9a3",
   osb: "#c9b483",
-  wood_fiber_board: "#e8e0cc",
+  wood_fiber_board: "#e0c458",
   wire_mesh: "#b8b8b8",
   fastener: "#777777",
+};
+
+const MATERIAL_OPACITY: Partial<Record<PanelMember["material"], number>> = {
+  wood_fiber_board: 0.55,
 };
 
 export interface PanelMembersGroupProps {
@@ -51,7 +59,11 @@ export default function PanelMembersGroup({ members }: PanelMembersGroupProps) {
         return (
           <mesh key={member.memberId} position={centerPos} rotation={rotation}>
             <boxGeometry args={sizeFt} />
-            <meshStandardMaterial color={MATERIAL_COLOR[member.material]} />
+            <meshStandardMaterial
+              color={MATERIAL_COLOR[member.material]}
+              transparent={MATERIAL_OPACITY[member.material] !== undefined}
+              opacity={MATERIAL_OPACITY[member.material] ?? 1}
+            />
           </mesh>
         );
       })}

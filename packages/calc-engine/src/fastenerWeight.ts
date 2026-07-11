@@ -18,6 +18,10 @@ const LB_TO_KG = 0.453592;
  * - A 2in "plywood nail" is modeled on a standard 6d common nail's shank
  *   (0.113in diameter, ~2in length — a widely-published construction
  *   reference size).
+ * - A "T25 #9" structural screw (jack sheet fastening, Tommy) is modeled on
+ *   a #9 wood screw's ANSI major diameter (~0.177in), reduced ~20% for
+ *   thread geometry (same ratio as the GRK 5/16in->0.25in reduction above)
+ *   to a ~0.14in effective solid diameter.
  * - Steel density: 0.284 lb/in3 (standard reference value for mild steel).
  * Flag as illustrative/estimated wherever these numbers surface in the UI.
  */
@@ -25,6 +29,7 @@ const STEEL_DENSITY_LB_PER_IN3 = 0.284;
 const GRK_EFFECTIVE_DIAMETER_IN = 0.25;
 const NAIL_DIAMETER_IN = 0.113;
 const NAIL_LENGTH_IN = 2;
+const T25_NO9_EFFECTIVE_DIAMETER_IN = 0.14;
 
 function cylinderWeightLb(diameterIn: number, lengthIn: number): number {
   const areaIn2 = (Math.PI / 4) * diameterIn ** 2;
@@ -35,6 +40,7 @@ export const PLYWOOD_NAIL_WEIGHT_LB = cylinderWeightLb(NAIL_DIAMETER_IN, NAIL_LE
 export const GRK_3IN_WEIGHT_LB = cylinderWeightLb(GRK_EFFECTIVE_DIAMETER_IN, 3);
 export const GRK_4IN_WEIGHT_LB = cylinderWeightLb(GRK_EFFECTIVE_DIAMETER_IN, 4);
 export const GRK_6IN_WEIGHT_LB = cylinderWeightLb(GRK_EFFECTIVE_DIAMETER_IN, 6);
+export const T25_NO9_4IN_WEIGHT_LB = cylinderWeightLb(T25_NO9_EFFECTIVE_DIAMETER_IN, 4);
 
 const NAIL_SPACING_IN = 4;
 
@@ -105,6 +111,30 @@ export function computeFastenerWeight(members: PanelMember[]): FastenerWeightRes
     });
   }
 
+  const totalWeightLb = items.reduce((sum, i) => sum + i.totalWeightLb, 0);
+  return { items, totalWeightLb, totalWeightKg: totalWeightLb * LB_TO_KG };
+}
+
+const JACK_STUD_SCREW_ROW_SPACING_IN = 6;
+const JACK_STUD_SCREWS_PER_ROW = 2;
+
+/**
+ * Fastener count/weight for one plywood jack sheet fastened to its
+ * adjacent wall panel (Tommy: "screwed to the adjacent wall using 2 4in
+ * T25 #9 screws every 6in") — same "round(length/spacing)" row-count
+ * convention as the plywood nail spacing above, 2 screws per row.
+ */
+export function computeJackStudFastenerWeight(heightIn: number): FastenerWeightResult {
+  const rowCount = Math.round(heightIn / JACK_STUD_SCREW_ROW_SPACING_IN);
+  const count = rowCount * JACK_STUD_SCREWS_PER_ROW;
+  const items: FastenerLineItem[] = [
+    {
+      label: "4in T25 #9 screw (6in o.c. rows, 2 each)",
+      count,
+      unitWeightLb: T25_NO9_4IN_WEIGHT_LB,
+      totalWeightLb: count * T25_NO9_4IN_WEIGHT_LB,
+    },
+  ];
   const totalWeightLb = items.reduce((sum, i) => sum + i.totalWeightLb, 0);
   return { items, totalWeightLb, totalWeightKg: totalWeightLb * LB_TO_KG };
 }

@@ -1,7 +1,13 @@
+/* A genuine landscape sheet (Tommy: matches Title Block.pdf's 11x8.5
+   landscape proportions) with a solid black frame around the whole outside
+   edge. aspect-ratio keeps the shape correct at any width; min-height
+   guards very narrow viewports where width alone would crush it flat. */
 .sheet {
   display: flex;
-  border: 2px solid #1c3d5a;
-  border-radius: 4px;
+  aspect-ratio: 11 / 8.5;
+  min-height: 420px;
+  width: 100%;
+  border: 3px solid #000;
   background: #fff;
   overflow: hidden;
 }
@@ -13,25 +19,27 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow: auto;
 }
 
 .titleBlock {
   flex: 0 0 30%;
-  max-width: 260px;
+  max-width: 280px;
   display: flex;
   flex-direction: column;
-  border-left: 2px solid #1c3d5a;
+  border-left: 3px solid #000;
 }
 
-/* Proportions mirror Title Block.pdf's right-hand strip: a small logo
-   zone, a large title/description zone, and a medium disclaimer zone. */
-.logoZone {
-  flex: 0 0 15%;
+/* Proportions mirror Title Block.pdf's right-hand strip, now subdivided
+   into explicit project/site/date/sheet-number fields instead of one
+   generic logo zone. */
+.metaZone {
+  flex: 0 0 32%;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px 8px;
-  border-bottom: 1px solid #ccc;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 10px 8px;
+  border-bottom: 2px solid #000;
 }
 
 .wordmark {
@@ -40,31 +48,56 @@
   letter-spacing: 0.03em;
   color: #1c3d5a;
   text-transform: uppercase;
-  text-align: center;
+  margin-bottom: 4px;
+}
+
+.metaRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+  border-top: 1px solid #ddd;
+  padding-top: 2px;
+}
+
+.metaLabel {
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.metaValue {
+  color: #111;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .titleZone {
-  flex: 1 1 60%;
-  padding: 14px 12px;
-  border-bottom: 1px solid #ccc;
+  flex: 1 1 43%;
+  padding: 12px 10px;
+  border-bottom: 2px solid #000;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow: auto;
 }
 
 .title {
-  font-size: 15px;
+  font-size: 14px;
   margin: 0;
 }
 
 .description {
-  font-size: 12px;
+  font-size: 11px;
   color: #333;
 }
 
 .footerZone {
   flex: 0 0 25%;
-  padding: 10px 12px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -72,14 +105,14 @@
 }
 
 .disclaimer {
-  font-size: 11px;
+  font-size: 10px;
   color: #a33;
   margin: 0;
 }
 
 .roleTag {
   display: inline-block;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
   color: #fff;
@@ -90,7 +123,7 @@
 }
 
 .signoff {
-  font-size: 10px;
+  font-size: 9px;
   color: #555;
   margin: 0;
 }
@@ -98,11 +131,13 @@
 @media (max-width: 700px) {
   .sheet {
     flex-direction: column;
+    aspect-ratio: auto;
+    min-height: 0;
   }
 
   .titleBlock {
     max-width: none;
     border-left: none;
-    border-top: 2px solid #1c3d5a;
+    border-top: 3px solid #000;
   }
 }

@@ -40,6 +40,12 @@ export interface ShopDrawingPageProps {
    * Undefined = no estimate applies to this panel type. */
   estimatedBearingLb?: number;
   estimatedShearLb?: number;
+  /** Which NDS method the bearing estimate used — "double stud pack" for
+   * standard/braced/gable, "built-up plywood section" for column/corner
+   * (their two full-height side plywood sheets act as a composite column,
+   * not a lone stud — see computeBuiltUpColumnBearingCapacityLb). Defaults
+   * to "double stud pack" for backward compatibility. */
+  estimatedBearingMethodLabel?: string;
   instances: ShopDrawingInstance[];
   role: ViewerRole;
 }
@@ -91,6 +97,7 @@ export default function ShopDrawingPage({
   diagram3D,
   estimatedBearingLb,
   estimatedShearLb,
+  estimatedBearingMethodLabel = "double stud pack",
   instances,
   role,
 }: ShopDrawingPageProps) {
@@ -102,36 +109,36 @@ export default function ShopDrawingPage({
 
       <div>
         <h4 className={styles.sectionHeading}>Structural values</h4>
-        <table className={styles.table}>
-          <tbody>
-            <tr>
-              <td>Load-bearing capacity</td>
-              <td className={styles.pendingCell}>not yet modeled — {loadBearingCapacity.note}</td>
-            </tr>
-            {estimatedBearingLb !== undefined && (
-              <tr>
-                <td>Estimated bearing capacity (double stud pack)</td>
-                <td className={styles.note}>~{Math.round(estimatedBearingLb).toLocaleString()} lb</td>
-              </tr>
-            )}
-            <tr>
-              <td>Shear value</td>
-              <td className={styles.pendingCell}>not yet modeled — {shearValue.note}</td>
-            </tr>
-            {estimatedShearLb !== undefined && (
-              <tr>
-                <td>Estimated shear capacity (diagonal brace)</td>
-                <td className={styles.note}>~{Math.round(estimatedShearLb).toLocaleString()} lb</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        {(estimatedBearingLb !== undefined || estimatedShearLb !== undefined) && (
-          <p className={styles.note}>
-            Estimated values above are Building Integrity&apos;s own first-pass engineering estimates (NDS
-            sawn-lumber column-buckling method, applied to the diagonal brace / double stud pack) — not a licensed
-            engineer&apos;s calculation. Do not use for permitting or construction without independent structural
-            review.
+        {estimatedBearingLb !== undefined || estimatedShearLb !== undefined ? (
+          <>
+            <table className={styles.table}>
+              <tbody>
+                {estimatedBearingLb !== undefined && (
+                  <tr>
+                    <td>Estimated bearing capacity ({estimatedBearingMethodLabel})</td>
+                    <td className={styles.note}>~{Math.round(estimatedBearingLb).toLocaleString()} lb</td>
+                  </tr>
+                )}
+                {estimatedShearLb !== undefined && (
+                  <tr>
+                    <td>Estimated shear capacity (diagonal brace)</td>
+                    <td className={styles.note}>~{Math.round(estimatedShearLb).toLocaleString()} lb</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <p className={styles.pendingCell}>
+              Not yet modeled: real load-bearing capacity ({loadBearingCapacity.note}) and shear value (
+              {shearValue.note}). The numbers above are Building Integrity&apos;s own first-pass engineering
+              estimates (NDS sawn-lumber column-buckling method, applied to the diagonal brace / {estimatedBearingMethodLabel})
+              — not a licensed engineer&apos;s calculation. Do not use for permitting or construction without
+              independent structural review.
+            </p>
+          </>
+        ) : (
+          <p className={styles.pendingCell}>
+            Not yet modeled — neither a real engineering value nor an estimate exists yet for this panel type.
+            Load-bearing: {loadBearingCapacity.note} Shear: {shearValue.note}
           </p>
         )}
       </div>

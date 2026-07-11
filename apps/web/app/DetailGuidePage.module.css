@@ -39,6 +39,10 @@
   margin: 6px 0 0;
 }
 
+.pendingCell {
+  color: #a67c00;
+}
+
 .notesList {
   margin: 0;
   padding-left: 18px;

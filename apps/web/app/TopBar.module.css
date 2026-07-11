@@ -1,0 +1,97 @@
+.bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 20px;
+  background: #fff;
+  border-bottom: 2px solid #1c3d5a;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.row1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.row2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.roleGroup {
+  display: flex;
+  gap: 8px;
+}
+
+.projectFileGroup {
+  display: flex;
+  gap: 8px;
+}
+
+.tool,
+.toolActive {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toolActive {
+  background: #4a90d9;
+  border-color: #4a90d9;
+  color: #fff;
+}
+
+.dropdownNote {
+  font-size: 11px;
+  color: #777;
+  margin: 0;
+}
+
+.dropdownAnchor {
+  position: relative;
+}
+
+.dropdownPanel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 101;
+  min-width: 320px;
+  max-width: 420px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: #fffef8;
+  border: 2px solid #b8901f;
+  border-radius: 10px;
+  padding: 16px 18px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dropdownPanelRight {
+  left: auto;
+  right: 0;
+}
+
+@media (max-width: 900px) {
+  .row1,
+  .row2 {
+    justify-content: flex-start;
+  }
+}

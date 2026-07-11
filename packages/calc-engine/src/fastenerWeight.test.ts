@@ -5,7 +5,9 @@ import {
   GRK_4IN_WEIGHT_LB,
   GRK_6IN_WEIGHT_LB,
   PLYWOOD_NAIL_WEIGHT_LB,
+  T25_NO9_4IN_WEIGHT_LB,
   computeFastenerWeight,
+  computeJackStudFastenerWeight,
 } from "./fastenerWeight";
 
 const WIDTH_IN = 40;
@@ -76,6 +78,21 @@ describe("computeFastenerWeight", () => {
     const result = computeFastenerWeight(members);
     const expectedTotal = result.items.reduce((s, i) => s + i.totalWeightLb, 0);
     expect(result.totalWeightLb).toBeCloseTo(expectedTotal, 9);
+    expect(result.totalWeightKg).toBeCloseTo(result.totalWeightLb * 0.453592, 6);
+  });
+});
+
+describe("computeJackStudFastenerWeight", () => {
+  it("counts 2 screws per 6in row along the jack sheet's height", () => {
+    const result = computeJackStudFastenerWeight(120);
+    const expectedRows = Math.round(120 / 6);
+    expect(result.items[0]!.count).toBe(expectedRows * 2);
+    expect(result.items[0]!.unitWeightLb).toBeCloseTo(T25_NO9_4IN_WEIGHT_LB, 9);
+  });
+
+  it("sums into totalWeightLb/Kg", () => {
+    const result = computeJackStudFastenerWeight(120);
+    expect(result.totalWeightLb).toBeCloseTo(result.items[0]!.count * T25_NO9_4IN_WEIGHT_LB, 9);
     expect(result.totalWeightKg).toBeCloseTo(result.totalWeightLb * 0.453592, 6);
   });
 });

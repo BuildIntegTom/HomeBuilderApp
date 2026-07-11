@@ -1,0 +1,33 @@
+.dial {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 12px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+  min-width: 110px;
+  user-select: none;
+}
+
+.chevron {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px;
+  color: #4a90d9;
+}
+
+.chevron:hover {
+  color: #1c3d5a;
+}
+
+.current {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1c3d5a;
+  text-align: center;
+}

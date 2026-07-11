@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildBracedPanelMembers } from "@building-integrity/panel-catalog";
+import { buildBracedPanelMembers, buildColumnPanelMembers } from "@building-integrity/panel-catalog";
 import {
   SPF_NO2_EMIN_PSI,
   SPF_NO2_FC_PSI,
   computeBracedPanelShearCapacityLb,
+  computeBuiltUpColumnBearingCapacityLb,
+  computeBuiltUpColumnSection,
   computeNdsColumnCapacityLb,
   computeStudPackBearingCapacityLb,
 } from "./panelStructuralEstimates";
@@ -46,6 +48,43 @@ describe("computeStudPackBearingCapacityLb", () => {
     const pack = computeStudPackBearingCapacityLb();
     expect(pack).toBeGreaterThan(1000);
     expect(pack).toBeLessThan(20000);
+  });
+});
+
+describe("computeBuiltUpColumnSection", () => {
+  it("returns 0 area/dimension for a member list with no vertical members", () => {
+    const section = computeBuiltUpColumnSection([]);
+    expect(section.totalAreaIn2).toBe(0);
+    expect(section.effectiveWeakAxisDimIn).toBe(0);
+  });
+
+  it("gives a Column Panel's real built-up section a far larger effective weak-axis dimension than a bare 2x4 stud (1.5in)", () => {
+    const members = buildColumnPanelMembers(15.5, 120, false);
+    const section = computeBuiltUpColumnSection(members);
+    expect(section.totalAreaIn2).toBeGreaterThan(0);
+    expect(section.effectiveWeakAxisDimIn).toBeGreaterThan(10); // dramatically more than a bare 1.5in stud
+  });
+
+  it("sums the area of every vertical member (4 corner studs + 2 side plies, no nailer)", () => {
+    const members = buildColumnPanelMembers(15.5, 120, false);
+    const verticalMembers = members.filter((m) => m.orientation === "vertical");
+    expect(verticalMembers).toHaveLength(6); // 4 studs + 2 side plies
+    const section = computeBuiltUpColumnSection(members);
+    const expectedAreaIn2 = verticalMembers.reduce((sum, m) => sum + m.actualDimsIn.thicknessIn * m.actualDimsIn.widthIn, 0);
+    expect(section.totalAreaIn2).toBeCloseTo(expectedAreaIn2, 6);
+  });
+});
+
+describe("computeBuiltUpColumnBearingCapacityLb", () => {
+  it("gives a Column Panel a dramatically higher bearing capacity than the plain double-stud-pack estimate", () => {
+    const members = buildColumnPanelMembers(15.5, 120, false);
+    const builtUpLb = computeBuiltUpColumnBearingCapacityLb(members, 120);
+    const studPackLb = computeStudPackBearingCapacityLb();
+    expect(builtUpLb).toBeGreaterThan(studPackLb * 5);
+  });
+
+  it("returns 0 for a member list with no vertical members", () => {
+    expect(computeBuiltUpColumnBearingCapacityLb([], 120)).toBe(0);
   });
 });
 

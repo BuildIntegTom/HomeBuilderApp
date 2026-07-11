@@ -580,7 +580,10 @@ export const panelTypes: PanelTypeDef[] = [
   {
     id: "header",
     label: "Header (Lintel)",
-    description: "Above-opening beam-bearing panel.",
+    description:
+      "Above-opening beam-bearing panel. Gets a Plywood Jack Stud (\"jack sheet\") on each side of the rough " +
+      "opening — 3/4in plywood, panel-depth wide, full rough-opening height, screwed to the adjacent wall panel " +
+      "with 2x 4in T25 #9 screws every 6in. See the Plywood Jack Stud detail page for its own geometry/fasteners.",
     loadBearingCapacity: {
       status: "pending-BI-confirmation",
       note: `The header BEAM (double 2x6, or 2x8 for spans to 12ft) carries the actual opening load, not the panel skin itself. ${STRUCTURAL_PENDING_NOTE}`,
@@ -590,7 +593,9 @@ export const panelTypes: PanelTypeDef[] = [
   {
     id: "sill",
     label: "Sill",
-    description: "Below-opening panel.",
+    description:
+      "Below-opening panel. Shares the same pair of Plywood Jack Studs as the header above it (same rough " +
+      "opening) — see the Plywood Jack Stud detail page.",
     loadBearingCapacity: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
     shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
   },
@@ -605,24 +610,49 @@ export const panelTypes: PanelTypeDef[] = [
     shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
   },
   {
+    id: "gable",
+    label: "Gable End Panel",
+    description:
+      "Wall panel forming the triangular gable end below the roof — a Standard Panel core, but the top plate is " +
+      "cut at the roof pitch instead of flat, so the envelope is trapezoidal, not rectangular. Each instance has " +
+      "two distinct edge-stud heights (low edge / high edge, whichever end sits closer to the ridge), each with " +
+      "an angle-cut top (modeled as a plain box, not the true bevel). The top plate 2x4s are mitered to the same " +
+      "angle and face-fastened to the top plywood skin, which is rip-cut at that angle — the schema reports the " +
+      "rip angle and rip length for that skin. Low/high edge heights are supplied manually per instance for now; " +
+      "there's no roof/ridge system yet to derive them from a pitch automatically. Distinct from \"Inclined / " +
+      "Gable\" above, which is a roof-slope (sloped roof surface) panel, not a gable end wall panel.",
+    loadBearingCapacity: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+    shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+  },
+  {
+    id: "jack-stud",
+    label: "Plywood Jack Stud",
+    description:
+      "3/4in plywood \"jack sheet,\" panel-depth wide, standing the full rough-opening height under a header — a " +
+      "plywood substitute for a dimensional-lumber jack stud. One on each side of a window/door rough opening, " +
+      "screwed to the adjacent wall panel with 2x 4in T25 #9 screws every 6in. See the Header/Sill panel " +
+      "descriptions above.",
+    loadBearingCapacity: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+    shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
+  },
+  {
     id: "safety-gap",
     label: "Safety / Gap Panel",
     description:
-      "Dimensional-tolerance absorption panel: width normally set dynamically to absorb whatever length is left " +
-      "over after fitting standard panels along the wall (a 3/4\" plywood buffer, held back 1 1/4\" from top/" +
-      "bottom full-height, guards against install mistakes); placed farthest from the site's least-accessible " +
-      "side. When it also satisfies the corner-touching braced-panel requirement (Tommy: \"maintain the rules of " +
-      "the safety panel, but have it combine with the braced panel near corners\") its width becomes fixed at " +
-      "standard width + 3/4\" instead, denoted as \"standard + 3/4in safety gap\" — the wall's remaining length " +
-      "shifts onto the nearest standard panel in that case, and the panel renders hashed (its own orange over " +
-      "the braced panel's purple) to show both roles. Applies to roof panels too. A combined panel doesn't yet " +
-      "get the Braced Panel's own real member geometry/fastener modeling — it's still tracked as a Safety/Gap " +
-      "panel structurally, just flagged as also brace-placed.",
+      "Dimensional-tolerance absorption panel: NOT an altered Standard Panel (Tommy) — no studs, plates, or " +
+      "girts, just a single 3/4\" plywood sheet (panel-depth wide, full panel height), regardless of how much " +
+      "wall-run width the tiling reserves for this slot. That reserved width is normally set dynamically to " +
+      "absorb whatever length is left over after fitting standard panels along the wall, placed farthest from " +
+      "the site's least-accessible side. When it also satisfies the corner-touching braced-panel requirement " +
+      "(Tommy: \"maintain the rules of the safety panel, but have it combine with the braced panel near " +
+      "corners\") its reserved width becomes fixed at standard width + 3/4\" instead, denoted as \"standard + " +
+      "3/4in safety gap\" — the wall's remaining length shifts onto the nearest standard panel in that case, and " +
+      "the panel renders hashed (its own orange over the braced panel's purple) to show both roles. Applies to " +
+      "roof panels too. A combined panel doesn't yet get the Braced Panel's own real bracing modeled in 3D — " +
+      "it's still tracked as a Safety/Gap panel structurally, just flagged as also brace-placed. See the " +
+      "Material Totals page for its 3/4\" plywood contribution.",
     loadBearingCapacity: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
-    shearValue: {
-      status: "pending-BI-confirmation",
-      note: `The 1/2" plywood skin gives a genuine strength bonus (confirmed via NFW's own notes) — but that bonus isn't the reason this panel exists (dimensional tolerance is) and isn't quantified yet. ${STRUCTURAL_PENDING_NOTE}`,
-    },
+    shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
   },
 ];
 
@@ -959,3 +989,91 @@ export const floorAddOnLayerLayers: FloorAssemblyLayerDef[] = [
     note: "Tommy.",
   },
 ];
+
+// --- Roof --------------------------------------------------------------------
+//
+// Roof is its own system, parallel to the Floor tab's joist catalog above —
+// not a wall panel type. There's always a bearing member on top of the wall
+// panels: a truss plate (truss roof) or a box beam (structural-panel roof).
+// Both are flagged to model later (Tommy) — only the inset/height/offset
+// numbers below are tracked for now; no truss/box-beam geometry exists yet.
+
+export type RoofSystemType = "truss" | "structural-panel";
+
+export interface RoofSystemTypeDef {
+  id: RoofSystemType;
+  label: string;
+  description: string;
+}
+
+export const roofSystemTypes: RoofSystemTypeDef[] = [
+  {
+    id: "truss",
+    label: "Truss",
+    description: "Prefab roof trusses bear on a truss plate running atop the wall panels.",
+  },
+  {
+    id: "structural-panel",
+    label: "Structural Panel (Box Beam)",
+    description:
+      "Roof is built from structural panels rather than trusses — needs a roof-catcher beam spanning between the " +
+      "two Gable End Panels' peaks, bearing on Column Panels (see the Roof-catcher-beam depth offset input below).",
+  },
+];
+
+/** Tommy: "how fat the truss bottoms are — default of 5.5in from flush with
+ * the edge of the floor plan line." Read as the truss bottom chord's own
+ * depth doubling as this inset amount (one editable number, not confirmed as
+ * two separate figures) — user-editable in the Roof tab, not a fixed
+ * constant. */
+export const trussPlateInsetDefaultIn: CatalogValue<number> = {
+  value: 5.5,
+  status: "pending-BI-confirmation",
+  note: "Tommy: default 5.5in inset from flush with the wall's exterior/floor-plan line. User-editable per project.",
+};
+
+export const roofBearingMemberNote =
+  "There's always a bearing member on top of the wall panels — a truss plate (truss roof) or a box beam " +
+  "(structural-panel roof). Real geometry for both is flagged to model later; only the inset/height/offset numbers " +
+  "here are tracked for now.";
+
+/** Placeholder shape options for the structural-panel roof's catcher beam —
+ * labels only, no real geometry/engineering behind any of them yet (the beam
+ * itself is flagged to model later, see roofBearingMemberNote). */
+export const roofCatcherBeamShapeOptions = [
+  "4x12 solid sawn",
+  "Built-up 2-ply 2x12",
+  "LVL 1-3/4in x 11-7/8in",
+  "Steel I-beam",
+] as const;
+
+export type RoofCatcherBeamShape = (typeof roofCatcherBeamShapeOptions)[number];
+
+export const roofCatcherBeamShapeDefault: RoofCatcherBeamShape = "Built-up 2-ply 2x12";
+
+/** Timber HP is a real wood-fiber board insulation product — fills the
+ * truss plate's open cavity on single-story buildings (see
+ * trussPlateMembers.ts). Tommy: "its qualities should be calculated as we
+ * will build this material in more" — density here is a placeholder
+ * general reference for wood-fiber board (~1.9-3.4 lb/ft3 typical range),
+ * not yet a Building Integrity-confirmed spec sheet value. */
+export const timberHpDensityLbFt3: CatalogValue<number> = {
+  value: 2.4,
+  status: "pending-BI-confirmation",
+  note:
+    "Placeholder general reference for wood-fiber board insulation (~1.9-3.4 lb/ft3 typical range) — not yet a " +
+    "Building Integrity-confirmed spec sheet value for the specific Timber HP product. Tommy: \"we will build " +
+    "this material in more.\"",
+};
+
+/** Blown into the two-story box beam's hollow cavity (see
+ * boxBeamMembers.ts). Standard published dense-pack cellulose installed-
+ * density reference for closed wall cavities. */
+export const densePackCelluloseDensityLbFt3: CatalogValue<number> = {
+  value: 3.5,
+  status: "pending-BI-confirmation",
+  note:
+    "Standard published dense-pack cellulose installed-density reference (~3.0-3.5 lb/ft3 for closed wall " +
+    "cavities, common insulation-industry installation standard) — not yet a Building Integrity-confirmed figure " +
+    "for this specific box-beam application.",
+};

@@ -1,35 +1,30 @@
 .page {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
   font-family: var(--font-geist-sans);
   color: #111;
   background: #fafafa;
-  min-height: 100vh;
 }
 
+/* The editor is the entire app surface below the sticky TopBar — full
+   screen, stationary, never scrolls (Tommy: "the whole rest of the screen
+   is the editor visual, full screen and stationary/cannot scroll"). Every
+   other section lives in floating StickyNotes/the SectionCarousel instead
+   of this normal-flow column, so `.main` no longer needs to scroll or be
+   width-capped. */
 .main {
-  width: 100%;
-  max-width: 800px;
-  padding: 48px 24px 96px;
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
+  position: fixed;
+  top: 118px;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
 .main h1 {
   font-size: 28px;
   margin-bottom: 4px;
-}
-
-.main section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px 20px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  background: #fff;
-  scroll-margin-top: 16px;
 }
 
 .main h2 {
@@ -109,16 +104,64 @@
   font-weight: 600;
 }
 
-.relevantPagesList {
-  margin: 0;
-  padding-left: 20px;
-  font-size: 14px;
+/* The drawn footprint/foundation/floor/3D-view visual — sits behind the
+   floating toolbar stack and tool-text StickyNote, always transparent (no
+   straw-bale card outline; Tommy: "no straw bale outline for the editor
+   section — totally transparent") and filling the whole `.main` surface. */
+.editorSection {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
 }
 
-.relevantPagesList li {
-  margin-bottom: 4px;
+.editorCanvasLayer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
-.anchorTarget {
-  scroll-margin-top: 16px;
+/* EditorToolbar + DrawingToolPen + compass + pan/zoom portal float over the
+   canvas, docked top-left right under the sticky TopBar (Tommy: "the
+   drawing tool buttons widget hosts the drawing tools floating under the
+   2d/3d buttons bar, all of this stuck to the bottom of the top bar"). */
+.editorOverlayStack {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: calc(100vw - 24px);
+}
+
+.toolbarPortalInline {
+  display: contents;
+}
+
+/* Footer link after the last SectionCarousel card (Tommy: "put the simpler
+   single wall run calculation sandbox as a footer after the last
+   section"). Docked at the carousel bar's right end since the app no
+   longer has a scrolling document flow to put a trailing footer under. */
+.sandboxFooter {
+  position: fixed;
+  right: 16px;
+  bottom: 14px;
+  z-index: 160;
+  font-size: 12px;
+}
+
+.sandboxFooter a {
+  display: inline-block;
+  padding: 6px 12px;
+  background: #fff;
+  border: 1px solid #ccd6e0;
+  border-radius: 6px;
+  color: #4a90d9;
+  text-decoration: underline;
+  white-space: nowrap;
 }

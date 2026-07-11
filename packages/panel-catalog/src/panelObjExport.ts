@@ -102,6 +102,9 @@ export interface WorldPlacedPanel {
   label: string;
   worldXIn: number;
   worldZIn: number;
+  /** Vertical offset (e.g. a story stacked above the ground floor) —
+   * undefined/0 means it sits directly on the ground plane. */
+  worldYIn?: number;
   rotationRad: number;
   members: PanelMember[] | null;
   blobSizeIn?: { widthIn: number; heightIn: number; depthIn: number };
@@ -125,7 +128,7 @@ export function buildBuildingObj(panels: WorldPlacedPanel[], displayName: string
     const sin = Math.sin(panel.rotationRad);
     const toWorld = ([x, y, z]: [number, number, number]): [number, number, number] => [
       x * cos - z * sin + panel.worldXIn,
-      y,
+      y + (panel.worldYIn ?? 0),
       x * sin + z * cos + panel.worldZIn,
     ];
 

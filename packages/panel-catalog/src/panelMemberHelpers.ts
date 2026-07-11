@@ -158,7 +158,14 @@ export function buildCornerStuds(widthIn: number, depthIn: number, heightIn: num
 }
 
 /** Optional vertical nailer, centered along the width on the exterior wythe. */
-export function buildNailer(widthIn: number, heightIn: number): PanelMember {
+/**
+ * `offsetIn` slides the nailer along the exterior wythe from its default
+ * centered position (Tommy: "nailer studs should be able to slide on the
+ * wyth they are on" — square-bale panels lean on this heavily). This is a
+ * numeric position control, not a literal drag gesture in the 3D/2D view
+ * yet — flagged as a simplification of "slide."
+ */
+export function buildNailer(widthIn: number, heightIn: number, offsetIn = 0): PanelMember {
   const nailerLengthIn = heightIn - NAILER_LENGTH_DEFICIT_IN;
   return {
     memberId: "nailer",
@@ -168,10 +175,12 @@ export function buildNailer(widthIn: number, heightIn: number): PanelMember {
     nominalSize: "2x4",
     actualDimsIn: { thicknessIn: NAILER_THICKNESS_IN, widthIn: NAILER_WIDTH_IN, lengthIn: nailerLengthIn },
     orientation: "vertical",
-    position: { xIn: widthIn / 2 - NAILER_THICKNESS_IN / 2, yIn: 0, zIn: SKIN_THICKNESS_IN, rotationDeg: 0 },
+    position: { xIn: widthIn / 2 - NAILER_THICKNESS_IN / 2 + offsetIn, yIn: 0, zIn: SKIN_THICKNESS_IN, rotationDeg: 0 },
     role: "nailer",
     qty: 1,
-    notes: "OPTIONAL — \"with nailer\" vs \"bare standard\". 3.5in face oriented outward as exterior surface, centered on exterior wythe.",
+    notes:
+      "OPTIONAL — \"with nailer\" vs \"bare standard\". 3.5in face oriented outward as exterior surface." +
+      (offsetIn !== 0 ? ` Slid ${offsetIn > 0 ? "+" : ""}${offsetIn}in from center along the exterior wythe.` : " Centered on exterior wythe."),
   };
 }
 
@@ -241,4 +250,22 @@ export function buildGirtRows(rowCount: number, widthIn: number, depthIn: number
   }
 
   return members;
+}
+
+/** Standard 4ft x 8ft sheet, the unit plywood is actually purchased in. */
+export const PLYWOOD_SHEET_AREA_SQFT = 32;
+
+/**
+ * Total real sheet area (sqft) of every plywood member at a given
+ * thickness — `actualDimsIn.widthIn x actualDimsIn.lengthIn` is always the
+ * member's true physical size regardless of its 3D orientation/tilt (a
+ * rip-cut gable skin's `lengthIn` is already its full rip length), so this
+ * works uniformly across every panel type's member list. Used for the
+ * Material Totals page (Tommy: "take note of this for 3/4in plywood
+ * material totals").
+ */
+export function computePlywoodAreaSqFt(members: PanelMember[], thicknessIn: number, toleranceIn = 0.05): number {
+  return members
+    .filter((m) => m.material === "plywood" && Math.abs(m.actualDimsIn.thicknessIn - thicknessIn) < toleranceIn)
+    .reduce((sum, m) => sum + (m.actualDimsIn.widthIn * m.actualDimsIn.lengthIn) / 144, 0);
 }

@@ -47,3 +47,45 @@ a {
     color-scheme: dark;
   }
 }
+
+/* Print system (Tommy: "Print Page" / "Print Packet") — a landscape sheet
+   size matching the title block's own aspect ratio. Plain global classes
+   (not CSS Module ones, so they can be referenced from any component
+   without reaching into another file's hashed names) mark what's chrome
+   (never printed) vs. a sticky note's content (only printed when
+   explicitly targeted). By default every note is hidden when printing;
+   `data-print-target` (set imperatively right before `window.print()`,
+   see page.tsx) flips just the target note(s) back to a normal static
+   full-page layout. */
+@media print {
+  @page {
+    size: landscape;
+    margin: 0.25in;
+  }
+
+  .print-hidden-chrome {
+    display: none !important;
+  }
+
+  body[data-print-mode] .documentSection {
+    display: none !important;
+  }
+
+  body[data-print-mode] .documentSection[data-print-target] {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    box-shadow: none !important;
+  }
+
+  body[data-print-mode="packet"] .documentSection[data-print-target] {
+    break-after: page;
+  }
+
+  body[data-print-mode="packet"] .documentSection[data-print-target]:last-of-type {
+    break-after: auto;
+  }
+}

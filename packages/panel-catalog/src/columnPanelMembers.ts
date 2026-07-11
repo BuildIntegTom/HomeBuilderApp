@@ -26,6 +26,26 @@ export const COLUMN_SIDE_PLY_SPEC = "3/4in_5ply_CDX";
 const COLUMN_GIRT_ROW_COUNT = 2; // same as the Standard Panel core it's built from
 const COLUMN_BLOCKING_SPACING_IN = 16; // Tommy: 2x4 blocking every 16in, both sides, in addition to girts
 
+/** Default beam-depth allowance (Tommy) for a Column Panel used as roof-
+ * catcher-beam bearing at a Gable End (when the roof is structural panels
+ * rather than trusses — see the gable-multistory-roof-strategy memory).
+ * User-toggleable, not a fixed constant baked into the geometry — the
+ * beam itself (and its shape) is flagged to model later. */
+export const DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN = 11.5;
+
+/**
+ * Column Panel height when bearing a roof-catcher beam between two Gable
+ * End Panels (Tommy: "column panel should be 11.5in shorter than the top
+ * of the triangle of the gable panels"). Pure calc only — no editor UI
+ * wires this up yet, since it depends on the not-yet-built roof system.
+ */
+export function computeGableColumnHeightIn(
+  gablePeakHeightIn: number,
+  offsetIn: number = DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN,
+): number {
+  return gablePeakHeightIn - offsetIn;
+}
+
 /** Shifts every member's X position by `deltaXIn` — used to slide the
  * 24in-wide core over so it sits centered between the two side plywood
  * faces, without needing every helper in panelMemberHelpers.ts to accept

@@ -31,6 +31,8 @@ export interface PanelTypeDef {
     | "header"
     | "sill"
     | "inclined-gable"
+    | "gable"
+    | "jack-stud"
     | "safety-gap";
   label: string;
   description: string;

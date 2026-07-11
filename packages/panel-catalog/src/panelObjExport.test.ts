@@ -161,6 +161,22 @@ describe("buildBuildingObj", () => {
     expect(Math.max(...zs)).toBeCloseTo(10, 6);
   });
 
+  it("adds worldYIn as a vertical offset, e.g. a second story stacked above the ground floor", () => {
+    const member = makeMember({
+      actualDimsIn: { thicknessIn: 1.5, widthIn: 3.5, lengthIn: 10 },
+      orientation: "flat",
+      position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0 },
+    });
+    const panels: WorldPlacedPanel[] = [
+      { label: "story2_panel0", worldXIn: 0, worldZIn: 0, worldYIn: 120, rotationRad: 0, members: [member] },
+    ];
+    const { vertices } = parseObj(buildBuildingObj(panels, "Building"));
+    const ys = vertices.map((v) => v[1]);
+    // Local flat box: Y (height) in [0, 1.5] before the +120 offset.
+    expect(Math.min(...ys)).toBeCloseTo(120, 6);
+    expect(Math.max(...ys)).toBeCloseTo(121.5, 6);
+  });
+
   it("renders a placeholder blob box (min-corner at the world anchor) for a panel with no member geometry", () => {
     const panels: WorldPlacedPanel[] = [
       {
