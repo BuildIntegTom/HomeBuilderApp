@@ -93,3 +93,22 @@ export function computePierGrid(footprint: Footprint, spacingFt: number): PierPo
 
   return Array.from(positions.values()).map((point, i) => ({ id: `pier-${i}`, point }));
 }
+
+/** Straight-line distance (ft) from `point` to the nearest pier — Infinity
+ * for an empty pier list. */
+export function nearestPierDistanceFt(point: Point, piers: PierPosition[]): number {
+  if (piers.length === 0) return Infinity;
+  return Math.min(...piers.map((p) => Math.hypot(p.point.x - point.x, p.point.y - point.y)));
+}
+
+/**
+ * Whether `point` (e.g. a roof-catcher-beam post's real footprint position
+ * — see pointAlongRidgeLine) lands within `toleranceFt` of an existing pier
+ * — Tommy: "posts under them that correlate to piers." A false result means
+ * the post needs a new pier at that spot; this only checks the existing
+ * grid, it doesn't add one (see isPostPositionOnPier's own doc comment in
+ * roofCatcherBeamMembers.ts for the analogous 1D version of this idea).
+ */
+export function isPointNearPier(point: Point, piers: PierPosition[], toleranceFt = 0.5): boolean {
+  return nearestPierDistanceFt(point, piers) <= toleranceFt;
+}

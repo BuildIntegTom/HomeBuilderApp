@@ -83,6 +83,30 @@ describe("buildGablePanelMembers", () => {
     expect(lowZ).toBeCloseTo(LOW_EDGE_IN - 0.375, 4); // center of the 0.75in-thick skin at the low edge
   });
 
+  it("adds W-truss web bracing on both wythes, following the sloped top plate", () => {
+    const members = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false);
+    const braces = members.filter((m) => m.role === "brace");
+    expect(braces.length).toBeGreaterThan(0);
+    expect(braces.length % 4).toBe(0); // (rise+fall) x (ext+int) per peak
+
+    const ext = braces.filter((m) => m.memberId.includes("_ext_"));
+    const int = braces.filter((m) => m.memberId.includes("_int_"));
+    expect(ext.length).toBe(int.length);
+    expect(ext.length).toBeGreaterThan(0);
+    for (const b of ext) expect(b.position.yIn).toBeCloseTo(0.75, 6);
+    for (const b of int) expect(b.position.yIn).toBeCloseTo(DEPTH_IN - 0.75, 6);
+
+    // A wide, short gable forces multiple peaks — peaks nearer the high
+    // edge should sit higher than peaks nearer the low edge.
+    const wideMembers = buildGablePanelMembers(400, DEPTH_IN, 20, 40, false);
+    const wideExt = wideMembers.filter((m) => m.role === "brace" && m.memberId.includes("_ext_"));
+    const rises = wideExt.filter((m) => m.memberId.includes("_rise"));
+    expect(rises.length).toBeGreaterThan(1);
+    const firstRise = rises.find((m) => m.memberId.endsWith("_1_rise"))!;
+    const lastRise = [...rises].sort((a, b) => a.position.xIn - b.position.xIn).at(-1)!;
+    expect(lastRise.position.zIn).toBeGreaterThan(firstRise.position.zIn);
+  });
+
   it("bases girt rows and the optional nailer on the low edge's stud span", () => {
     const withoutNailer = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false);
     expect(withoutNailer.some((m) => m.role === "nailer")).toBe(false);

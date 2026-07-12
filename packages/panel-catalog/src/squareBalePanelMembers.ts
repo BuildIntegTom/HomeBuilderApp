@@ -272,13 +272,25 @@ export function buildBlockingGirtRows(
 
 /**
  * End blocks (Tommy: "there is a 7in 2x4 on each side of each top and
- * bottom plate, flush with the 36in top plate runners") — one 2x4 at each
- * end (left, right) of both the bottom and top plate rows, running the
- * depth direction, Z-flush with that plate. Length (7in for the 14in-
- * thick reference) is read as half the panel depth, centered — the exact
- * rationale wasn't specified further, flagged as an interpretation.
+ * bottom plate, flush with the 36in top plate runners" — corrected:
+ * "you put the 7in pieces in the wrong spot, they should be on the
+ * inside of the panel, as part of the lid") — one 2x4 at each end (left,
+ * right) of both the bottom and top plate rows, running the depth
+ * direction, Z-flush with that plate. Positioned flush with the
+ * blocking-girt frame's own short-side X position (inner face of the
+ * corner stud assembly) — the original flush-with-the-true-edge (x=0)
+ * placement collided with the corner stud itself, which sits at that
+ * exact X too. Length (7in for the 14in-thick reference) is read as half
+ * the panel depth, centered — the exact rationale wasn't specified
+ * further, flagged as an interpretation.
  */
-export function buildEndBlocks(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
+export function buildEndBlocks(
+  widthIn: number,
+  depthIn: number,
+  heightIn: number,
+  leftAssemblyThicknessIn: number = PLATE_2X4_THICKNESS_IN,
+  rightAssemblyThicknessIn: number = leftAssemblyThicknessIn,
+): PanelMember[] {
   const endBlockLengthIn = depthIn / 2;
   const yIn = (depthIn - endBlockLengthIn) / 2;
   const members: PanelMember[] = [];
@@ -287,8 +299,8 @@ export function buildEndBlocks(widthIn: number, depthIn: number, heightIn: numbe
     ["top", heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN],
   ] as const) {
     for (const [side, xIn] of [
-      ["left", 0],
-      ["right", widthIn - PLATE_2X4_THICKNESS_IN],
+      ["left", leftAssemblyThicknessIn],
+      ["right", widthIn - rightAssemblyThicknessIn - PLATE_2X4_THICKNESS_IN],
     ] as const) {
       members.push({
         memberId: `end_block_${plateLabel}_${side}`,
@@ -301,7 +313,7 @@ export function buildEndBlocks(widthIn: number, depthIn: number, heightIn: numbe
         position: { xIn, yIn, zIn: zIn + SKIN_THICKNESS_IN, rotationDeg: 90 },
         role: "blocking",
         qty: 1,
-        notes: `${side} end of the ${plateLabel} plate, flush with the plate's own Z height.`,
+        notes: `${side} end of the ${plateLabel} plate — inside the panel, flush with the blocking-girt frame's own short-side position (inner face of the ${side} stud assembly), not the true outer edge (which would collide with the corner stud itself).`,
       });
     }
   }
@@ -327,13 +339,14 @@ export function buildSquareBalePanelMembers(
 ): PanelMember[] {
   const spec = STUD_CONFIGS[studConfig];
   const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
+  const assemblyThicknessIn = studAssemblyThicknessIn(spec);
   const members: PanelMember[] = [
     ...buildSkins(widthIn, depthIn, heightIn),
     ...buildSquareBalePlates(widthIn, depthIn, heightIn, spec),
     ...buildSquareBaleCornerStuds(widthIn, depthIn, heightIn, spec),
     ...buildVoidFillPieces(widthIn, depthIn, heightIn, spec),
     ...buildBlockingGirtRows(SQUARE_BALE_GIRT_ROW_COUNT, widthIn, depthIn, studSpanIn, spec),
-    ...buildEndBlocks(widthIn, depthIn, heightIn),
+    ...buildEndBlocks(widthIn, depthIn, heightIn, assemblyThicknessIn),
   ];
   if (includeNailer) members.push(buildNailer(widthIn, heightIn, nailerOffsetIn));
   return members;

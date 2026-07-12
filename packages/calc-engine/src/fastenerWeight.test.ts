@@ -62,10 +62,10 @@ describe("computeFastenerWeight", () => {
     expect(result.items.some((i) => i.label.includes("6in GRK"))).toBe(false);
   });
 
-  it("gives every brace member (2, for a braced panel) 4x 6in GRK screws", () => {
+  it("gives every brace member (4, for a braced panel: upper+lower x ext+int wythe) 4x 6in GRK screws", () => {
     const members = buildBracedPanelMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN, false);
     const braceCount = members.filter((m) => m.role === "brace").length;
-    expect(braceCount).toBe(2); // upper + lower
+    expect(braceCount).toBe(4); // upper+lower, each on both wythes
 
     const result = computeFastenerWeight(members);
     const braceItem = result.items.find((i) => i.label.includes("6in GRK"))!;

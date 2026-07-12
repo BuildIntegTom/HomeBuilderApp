@@ -42,6 +42,34 @@ export const cornerPanelWidthIn: CatalogValue<number> = {
   note: "24in core + two 3/4in plywood side faces = 25.5in (Tommy: corner panels are built exactly like Column Panels — see columnPanelMembers.ts's COLUMN_TOTAL_WIDTH_IN).",
 };
 
+export const sillDefaultHeightIn: CatalogValue<number> = {
+  value: 32,
+  status: "confirmed",
+  note: "Tommy: \"sill panels are almost always 32in tall\" — a sill is otherwise a short Standard Panel (same construction, just this default height instead of the full wall height).",
+};
+
+export const doorRoughOpeningSelectedHeightIn: CatalogValue<number> = {
+  value: 82.5,
+  status: "confirmed",
+  note: "Tommy: default selected door Rough Opening height (the door unit's own spec height) — see computeDoorRoughOpeningHeightIn, which subtracts the toe-up height to get the real built RO height.",
+};
+
+export const toeUpHeightIn: CatalogValue<number> = {
+  value: 1.5,
+  status: "confirmed",
+  note: "Tommy: \"toe up height (usually 1.5in)\" — the floor-to-wall-panel toe-up member's height, subtracted from the selected door RO height to get the real built door RO height (and jack stud height).",
+};
+
+/** Header height has no confirmed real formula yet (unlike the door RO
+ * height above) — an illustrative default shared by every header/opening-
+ * assembly preview (Shop Drawing pages, Building3DView) so they all agree
+ * on the same number rather than each picking their own. */
+export const headerPreviewHeightIn: CatalogValue<number> = {
+  value: 18,
+  status: "pending-BI-confirmation",
+  note: "Illustrative default — headers don't have their own confirmed real height yet (same gap as the jack stud's own placement mechanism).",
+};
+
 // --- Standard panel BOM (Panel Set 1, Tommy) ---------------------------------
 // Applies to standard and braced panels (braced = standard panel with bracing
 // carved in after fabrication — identical wood BOM). Corner and safety-gap
@@ -1032,24 +1060,45 @@ export const trussPlateInsetDefaultIn: CatalogValue<number> = {
   note: "Tommy: default 5.5in inset from flush with the wall's exterior/floor-plan line. User-editable per project.",
 };
 
-export const roofBearingMemberNote =
-  "There's always a bearing member on top of the wall panels — a truss plate (truss roof) or a box beam " +
-  "(structural-panel roof). Real geometry for both is flagged to model later; only the inset/height/offset numbers " +
-  "here are tracked for now.";
+/**
+ * Preset choices for the bearing member's (truss bottom/roof-catcher beam)
+ * "bottom edge reference" — Tommy: "the bottom edge reference should have an
+ * option of being 1) on the primary edge 2) 3.5in in from the adjacent
+ * walls primary edge or 3) default - 5.5in from adjacent walls primary
+ * edge." Replaces free-typed inset values with these 3 named options (the
+ * 5.5in default matches trussPlateInsetDefaultIn above); 3.5in is a single
+ * 2x4's actual width, a plausible "one stud in" reference.
+ */
+export const bearingEdgeReferenceOptions = [
+  { id: "primary-edge", label: "Primary edge (flush)", insetIn: 0 },
+  { id: "3.5in-in", label: "3.5in in", insetIn: 3.5 },
+  { id: "5.5in-in-default", label: "5.5in in (default)", insetIn: 5.5 },
+] as const;
 
-/** Placeholder shape options for the structural-panel roof's catcher beam —
- * labels only, no real geometry/engineering behind any of them yet (the beam
- * itself is flagged to model later, see roofBearingMemberNote). */
+export type BearingEdgeReferenceId = (typeof bearingEdgeReferenceOptions)[number]["id"];
+
+export const roofBearingMemberNote =
+  "There's always a bearing member on top of the wall panels — a truss plate (single-story truss roof, see " +
+  "trussPlateMembers.ts), a box beam (two-story, see boxBeamMembers.ts), or a roof-catcher beam spanning between " +
+  "the two Gable End Column Panels (structural-panel roof, \"Built-up 3-ply 2x12\" shape — see " +
+  "roofCatcherBeamMembers.ts; the other beam shape options remain labels only).";
+
+/** Shape options for the structural-panel roof's catcher beam — only
+ * "Built-up 3-ply 2x12" (Tommy: "spawn in 3 2x12 dimensional lumber pieces
+ * that span a maximum of 12'") has real modeled geometry (see
+ * buildRoofCatcherBeamMembers in roofCatcherBeamMembers.ts); the rest remain
+ * labels only, no real geometry/engineering behind them yet. */
 export const roofCatcherBeamShapeOptions = [
   "4x12 solid sawn",
   "Built-up 2-ply 2x12",
+  "Built-up 3-ply 2x12",
   "LVL 1-3/4in x 11-7/8in",
   "Steel I-beam",
 ] as const;
 
 export type RoofCatcherBeamShape = (typeof roofCatcherBeamShapeOptions)[number];
 
-export const roofCatcherBeamShapeDefault: RoofCatcherBeamShape = "Built-up 2-ply 2x12";
+export const roofCatcherBeamShapeDefault: RoofCatcherBeamShape = "Built-up 3-ply 2x12";
 
 /** Timber HP is a real wood-fiber board insulation product — fills the
  * truss plate's open cavity on single-story buildings (see

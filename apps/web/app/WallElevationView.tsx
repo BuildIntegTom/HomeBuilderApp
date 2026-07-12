@@ -1,7 +1,8 @@
 "use client";
 
-import { computeGableTiledRow, type PanelSlot, type Wall } from "@building-integrity/geometry";
-import { computeGableRipCallout } from "@building-integrity/panel-catalog";
+import { useEffect, useRef, useState } from "react";
+import { computeGableTiledRow, GABLE_SHED_SNAP_THRESHOLD_IN, type PanelSlot, type Wall } from "@building-integrity/geometry";
+import { COLUMN_TOTAL_WIDTH_IN, computeGableColumnHeightIn, computeGableRipCallout } from "@building-integrity/panel-catalog";
 
 const CANVAS_WIDTH = 720;
 const PX_PER_IN = 1.6;
@@ -29,7 +30,19 @@ export interface WallElevationViewProps {
   hasGableEnd: boolean;
   ridgeHeightFt: number;
   targetPanelWidthIn: number;
+  /** Beam-depth allowance under the peak — see computeGableColumnHeightIn. */
+  roofCatcherBeamOffsetIn: number;
+  /** Inches from the wall's start corner — undefined means "not yet
+   * customized" (auto-centered at the wall's own midpoint). */
+  gablePeakPositionIn: number | undefined;
+  /** Non-null (and disables the checkbox) when turning "Add Gable End" ON
+   * for this wall would violate the 2-wall/opposite-pair guardrail — see
+   * gableEndToggleBlockReason in page.tsx. Ignored while hasGableEnd is
+   * already true (always allowed to turn back off). */
+  gableEndToggleBlockReason: string | null;
   onToggleGableEnd: (enabled: boolean) => void;
+  onChangeGablePeakPositionIn: (positionIn: number | undefined) => void;
+  onGenerateShedRoof: () => void;
   onClose: () => void;
 }
 
@@ -40,9 +53,15 @@ export interface WallElevationViewProps {
  * slots/colors as the plan view, read-only here — cycle panel types in the
  * Wall tab, not here) and, when "Add Gable End" is toggled on for this
  * wall, a tiled row of Gable End Panels above it rising to the Roof tab's
- * ridge height. This first pass is read/visualize + the gable toggle only
- * — dragging/resizing individual gable panels (the way Drag Wall/Edit
- * Length already work in the plan view) isn't wired up yet.
+ * ridge height. The peak — "the inside of the truss seat, and the bottom of
+ * the peak of the truss outline" (Tommy) — can be dragged directly on the
+ * SVG, dragged via the slider, or typed as a distance from either end;
+ * dragging it within GABLE_SHED_SNAP_THRESHOLD_IN of an end snaps the whole
+ * row to a single-slope shed roofline (see computeGableTiledRow). Unless
+ * snapped to a shed, a Column Panel is always centered under the peak
+ * (Tommy: "there is always a column panel centered under the peak — and not
+ * there if its a shed roof"), shorter than a standard full-height Column
+ * Panel by the roof-catcher-beam's own depth so its top can catch the beam.
  */
 export default function WallElevationView({
   wall,
@@ -51,14 +70,29 @@ export default function WallElevationView({
   hasGableEnd,
   ridgeHeightFt,
   targetPanelWidthIn,
+  roofCatcherBeamOffsetIn,
+  gablePeakPositionIn,
+  gableEndToggleBlockReason,
   onToggleGableEnd,
+  onChangeGablePeakPositionIn,
+  onGenerateShedRoof,
   onClose,
 }: WallElevationViewProps) {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [isDraggingPeak, setIsDraggingPeak] = useState(false);
+
   const wallWidthIn = wall.lengthFt * 12;
   const eaveHeightIn = wallHeightFt * 12;
   const ridgeHeightIn = Math.max(ridgeHeightFt * 12, eaveHeightIn);
+  const peakPositionIn = Math.min(Math.max(gablePeakPositionIn ?? wallWidthIn / 2, 0), wallWidthIn);
+  const isShedRoof =
+    peakPositionIn < GABLE_SHED_SNAP_THRESHOLD_IN || peakPositionIn > wallWidthIn - GABLE_SHED_SNAP_THRESHOLD_IN;
 
-  const gablePanels = hasGableEnd ? computeGableTiledRow(wallWidthIn, eaveHeightIn, ridgeHeightIn, targetPanelWidthIn) : [];
+  const gablePanels = hasGableEnd
+    ? computeGableTiledRow(wallWidthIn, eaveHeightIn, ridgeHeightIn, targetPanelWidthIn, gablePeakPositionIn)
+    : [];
+  const showColumnPanel = hasGableEnd && !isShedRoof;
+  const columnHeightIn = computeGableColumnHeightIn(ridgeHeightIn, roofCatcherBeamOffsetIn);
 
   const maxHeightIn = hasGableEnd ? ridgeHeightIn : eaveHeightIn;
   const svgWidthPx = Math.min(CANVAS_WIDTH, LEFT_MARGIN_PX + wallWidthIn * PX_PER_IN + 24);
@@ -68,12 +102,32 @@ export default function WallElevationView({
   const yPx = (heightIn: number) => svgHeightPx - BOTTOM_MARGIN_PX - heightIn * PX_PER_IN;
   const xPx = (posIn: number) => LEFT_MARGIN_PX + posIn * scaleX;
 
-  let cursorIn = 0;
-  const groundRects = slots.map((slot, i) => {
-    const x0 = cursorIn;
-    cursorIn += slot.widthIn;
-    return { slot, i, x0, x1: cursorIn };
-  });
+  useEffect(() => {
+    if (!isDraggingPeak) return;
+    const handleMove = (e: MouseEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const pxPerScreenPx = svgWidthPx / rect.width;
+      const localPx = (e.clientX - rect.left) * pxPerScreenPx;
+      const posIn = Math.min(Math.max((localPx - LEFT_MARGIN_PX) / scaleX, 0), wallWidthIn);
+      onChangeGablePeakPositionIn(posIn);
+    };
+    const handleUp = () => setIsDraggingPeak(false);
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [isDraggingPeak, svgWidthPx, scaleX, wallWidthIn, onChangeGablePeakPositionIn]);
+
+  const groundRects = slots.reduce<{ slot: PanelSlot; i: number; x0: number; x1: number }[]>((acc, slot, i) => {
+    const x0 = acc.length > 0 ? acc[acc.length - 1]!.x1 : 0;
+    acc.push({ slot, i, x0, x1: x0 + slot.widthIn });
+    return acc;
+  }, []);
 
   return (
     <div style={{ border: "1px solid #ccc", padding: 12, borderRadius: 4 }}>
@@ -83,11 +137,23 @@ export default function WallElevationView({
           Close
         </button>
       </div>
-      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 8 }}>
-        <input type="checkbox" checked={hasGableEnd} onChange={(e) => onToggleGableEnd(e.target.checked)} />
+      <label
+        style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 4 }}
+        title={!hasGableEnd && gableEndToggleBlockReason ? gableEndToggleBlockReason : undefined}
+      >
+        <input
+          type="checkbox"
+          checked={hasGableEnd}
+          disabled={!hasGableEnd && !!gableEndToggleBlockReason}
+          onChange={(e) => onToggleGableEnd(e.target.checked)}
+        />
         Add Gable End (tiles Gable End Panels up to the Roof tab&apos;s ridge height)
       </label>
+      {!hasGableEnd && gableEndToggleBlockReason && (
+        <p style={{ fontSize: 12, color: "#c0392b", marginTop: 0, marginBottom: 8 }}>{gableEndToggleBlockReason}</p>
+      )}
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${svgWidthPx} ${svgHeightPx}`}
         style={{ width: "100%", maxWidth: svgWidthPx, height: "auto", background: "#fafafa" }}
         role="img"
@@ -141,6 +207,27 @@ export default function WallElevationView({
             );
           })}
 
+        {/* Column Panel, centered under the peak — bears the roof-catcher
+            beam, so it's shorter than a full-height Column Panel by the
+            beam's own depth (roofCatcherBeamOffsetIn). Not shown for a shed
+            roof (single slope, no peak to bear a beam under). */}
+        {showColumnPanel && (
+          <g>
+            <rect
+              x={xPx(peakPositionIn - COLUMN_TOTAL_WIDTH_IN / 2)}
+              y={yPx(columnHeightIn)}
+              width={COLUMN_TOTAL_WIDTH_IN * scaleX}
+              height={columnHeightIn * PX_PER_IN}
+              fill={SLOT_COLORS.column}
+              stroke="#2c5a66"
+              strokeWidth={1}
+            />
+            <text x={xPx(peakPositionIn)} y={yPx(columnHeightIn / 2)} fontSize={8} textAnchor="middle" fill="#fff">
+              Column
+            </text>
+          </g>
+        )}
+
         {/* Ridge line */}
         {hasGableEnd && (
           <>
@@ -148,16 +235,106 @@ export default function WallElevationView({
             <text x={4} y={yPx(ridgeHeightIn) + 4} fontSize={10} fill="#3a5a8a">
               {ridgeHeightIn}&quot;
             </text>
+
+            {/* Snap-zone hints at both ends */}
+            <rect
+              x={xPx(0)}
+              y={yPx(ridgeHeightIn)}
+              width={GABLE_SHED_SNAP_THRESHOLD_IN * scaleX}
+              height={(ridgeHeightIn - eaveHeightIn) * PX_PER_IN}
+              fill="#c0392b"
+              opacity={0.08}
+            />
+            <rect
+              x={xPx(wallWidthIn - GABLE_SHED_SNAP_THRESHOLD_IN)}
+              y={yPx(ridgeHeightIn)}
+              width={GABLE_SHED_SNAP_THRESHOLD_IN * scaleX}
+              height={(ridgeHeightIn - eaveHeightIn) * PX_PER_IN}
+              fill="#c0392b"
+              opacity={0.08}
+            />
+
+            {/* Draggable peak handle */}
+            <g
+              style={{ cursor: "ew-resize" }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setIsDraggingPeak(true);
+              }}
+            >
+              <line
+                x1={xPx(peakPositionIn)}
+                y1={yPx(eaveHeightIn)}
+                x2={xPx(peakPositionIn)}
+                y2={yPx(ridgeHeightIn)}
+                stroke="#c0392b"
+                strokeWidth={1}
+                strokeDasharray="2 2"
+              />
+              <circle cx={xPx(peakPositionIn)} cy={yPx(ridgeHeightIn)} r={7} fill="#c0392b" stroke="#fff" strokeWidth={1.5} />
+            </g>
           </>
         )}
       </svg>
+      {hasGableEnd && (
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", fontSize: 12, marginTop: 6 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            Peak
+            <input
+              type="range"
+              min={0}
+              max={wallWidthIn}
+              step={1}
+              value={peakPositionIn}
+              onChange={(e) => onChangeGablePeakPositionIn(Number(e.target.value))}
+            />
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            From left end
+            <input
+              type="number"
+              min={0}
+              max={wallWidthIn}
+              value={Math.round(peakPositionIn)}
+              onChange={(e) => onChangeGablePeakPositionIn(Number(e.target.value))}
+              style={{ width: 60 }}
+            />
+            in
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            From right end
+            <input
+              type="number"
+              min={0}
+              max={wallWidthIn}
+              value={Math.round(wallWidthIn - peakPositionIn)}
+              onChange={(e) => onChangeGablePeakPositionIn(wallWidthIn - Number(e.target.value))}
+              style={{ width: 60 }}
+            />
+            in
+          </label>
+          <button type="button" onClick={() => onChangeGablePeakPositionIn(undefined)}>
+            Center
+          </button>
+          <button type="button" onClick={onGenerateShedRoof} title="Snaps the peak to one end and sets the ridge height for a 4/12 pitch across this wall's full width">
+            Shed Roof (auto 4/12)
+          </button>
+          {isShedRoof && <span style={{ color: "#c0392b" }}>Snapped to a shed roof (single slope)</span>}
+        </div>
+      )}
       <p style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
         {hasGableEnd
           ? `${gablePanels.length} Gable End Panel${gablePanels.length === 1 ? "" : "s"} tiled at ~${targetPanelWidthIn}in each, ` +
-            `rising from the ${eaveHeightIn}in eave to the ${ridgeHeightIn}in ridge (symmetric peak at the wall's midpoint). ` +
-            "Each panel's rip angle/length is labeled above it. Read/visualize only for now — drag/resize individual gable " +
-            "panels isn't wired up yet (use the Roof tab to change the ridge height, or the panel-width setting above to " +
-            "change the tiling)."
+            `rising from the ${eaveHeightIn}in eave to the ${ridgeHeightIn}in ridge` +
+            (isShedRoof ? " (snapped to a single-slope shed)." : ` (peak ${Math.round(peakPositionIn)}in from the left end).`) +
+            " Each panel's rip angle/length is labeled above it. Drag the red peak marker, use the slider, " +
+            "or type an exact distance from either end — dragging within " +
+            `${GABLE_SHED_SNAP_THRESHOLD_IN}in of an end (shaded above) snaps to a shed roof. Use the Roof tab to change the ` +
+            "ridge height, or the panel-width setting above to change the tiling." +
+            (showColumnPanel
+              ? ` A ${columnHeightIn.toFixed(1)}in Column Panel is centered under the peak, ${roofCatcherBeamOffsetIn}in ` +
+                "shorter than the ridge so its top can catch the roof-catcher beam (see the Roof tab)."
+              : " No Column Panel for a shed roof (single slope, no peak to bear a beam under).")
           : "Ground-floor run shown for reference (cycle panel types in the Wall tab, not here). Toggle \"Add Gable End\" " +
             "above to preview a tiled row of Gable End Panels rising to the Roof tab's ridge height."}
       </p>

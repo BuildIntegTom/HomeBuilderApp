@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildRectangleFootprint } from "./footprint";
 import { buildOctagonFootprint } from "./octagon";
-import { computePierGrid } from "./pierGrid";
+import { computePierGrid, isPointNearPier, nearestPierDistanceFt } from "./pierGrid";
 
 describe("computePierGrid", () => {
   it("places a pier every spacingFt around a rectangle's 100ft perimeter, deduped at shared corners", () => {
@@ -101,6 +101,34 @@ describe("computePierGrid", () => {
       const bayIndexX = p.x / bayX;
       expect(bayIndexX).toBeCloseTo(Math.round(bayIndexX), 6);
     }
+  });
+});
+
+describe("nearestPierDistanceFt / isPointNearPier", () => {
+  const fp = buildRectangleFootprint(30, 20);
+  const piers = computePierGrid(fp, 10); // includes a pier at (10, 10)
+
+  it("returns 0 for a point exactly on a pier", () => {
+    expect(nearestPierDistanceFt({ x: 10, y: 10 }, piers)).toBeCloseTo(0, 6);
+    expect(isPointNearPier({ x: 10, y: 10 }, piers)).toBe(true);
+  });
+
+  it("returns the straight-line distance to the closest pier", () => {
+    expect(nearestPierDistanceFt({ x: 10, y: 10.3 }, piers)).toBeCloseTo(0.3, 6);
+  });
+
+  it("is false when the nearest pier is farther than the tolerance", () => {
+    expect(isPointNearPier({ x: 15, y: 15 }, piers, 0.5)).toBe(false);
+  });
+
+  it("is true when within a wider explicit tolerance", () => {
+    expect(isPointNearPier({ x: 10, y: 10.4 }, piers, 0.5)).toBe(true);
+    expect(isPointNearPier({ x: 10, y: 10.6 }, piers, 0.5)).toBe(false);
+  });
+
+  it("returns Infinity/false for an empty pier list", () => {
+    expect(nearestPierDistanceFt({ x: 0, y: 0 }, [])).toBe(Infinity);
+    expect(isPointNearPier({ x: 0, y: 0 }, [])).toBe(false);
   });
 });
 

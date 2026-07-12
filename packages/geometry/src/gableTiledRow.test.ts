@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeGableTiledRow } from "./gableTiledRow";
+import { computeGableTiledRow, GABLE_SHED_SNAP_THRESHOLD_IN } from "./gableTiledRow";
 
 describe("computeGableTiledRow", () => {
   it("tiles an evenly-divisible wall width into whole panels at the target width", () => {
@@ -72,5 +72,57 @@ describe("computeGableTiledRow", () => {
     expect(panels.some((p) => Math.abs(p.xEndIn - ridgeIn) < 1e-6)).toBe(true);
     expect(panels.some((p) => Math.abs(p.xStartIn - ridgeIn) < 1e-6)).toBe(true);
     for (const p of panels) expect(p.leftHeightIn).not.toBeCloseTo(p.rightHeightIn, 3);
+  });
+
+  describe("adjustable peak position", () => {
+    it("places the peak off-center when a peakPositionIn is given", () => {
+      // 200in wall, peak at 50in (not the 100in midpoint): near run 50in, far run 150in.
+      const panels = computeGableTiledRow(200, 120, 192, 40, 50);
+      const peakIn = 50;
+      expect(panels.some((p) => Math.abs(p.xEndIn - peakIn) < 1e-6 && Math.abs(p.rightHeightIn - 192) < 1e-6)).toBe(
+        true,
+      );
+      expect(panels.some((p) => Math.abs(p.xStartIn - peakIn) < 1e-6 && Math.abs(p.leftHeightIn - 192) < 1e-6)).toBe(
+        true,
+      );
+    });
+
+    it("defaults to the exact midpoint when peakPositionIn is omitted (backward compatible)", () => {
+      const withDefault = computeGableTiledRow(160, 120, 192, 40);
+      const explicit = computeGableTiledRow(160, 120, 192, 40, 80);
+      expect(withDefault).toEqual(explicit);
+    });
+
+    it("snaps to a pure shed (single slope) when the peak is within the threshold of the start edge", () => {
+      const panels = computeGableTiledRow(200, 120, 192, 40, GABLE_SHED_SNAP_THRESHOLD_IN - 1);
+      // High edge (ridge) at x=0, sloping down to the eave at x=wallWidthIn — no boundary at the peak.
+      expect(panels[0]!.leftHeightIn).toBeCloseTo(192, 6);
+      expect(panels[panels.length - 1]!.rightHeightIn).toBeCloseTo(120, 6);
+      for (const p of panels) expect(p.leftHeightIn).toBeGreaterThan(p.rightHeightIn);
+    });
+
+    it("snaps to a pure shed (single slope) when the peak is within the threshold of the end edge", () => {
+      const panels = computeGableTiledRow(200, 120, 192, 40, 200 - (GABLE_SHED_SNAP_THRESHOLD_IN - 1));
+      // Eave at x=0, sloping up to the high edge (ridge) at x=wallWidthIn.
+      expect(panels[0]!.leftHeightIn).toBeCloseTo(120, 6);
+      expect(panels[panels.length - 1]!.rightHeightIn).toBeCloseTo(192, 6);
+      for (const p of panels) expect(p.rightHeightIn).toBeGreaterThan(p.leftHeightIn);
+    });
+
+    it("treats an exact 0 or wallWidthIn peak position the same as a snapped shed", () => {
+      const atStart = computeGableTiledRow(200, 120, 192, 40, 0);
+      const atEnd = computeGableTiledRow(200, 120, 192, 40, 200);
+      expect(atStart[0]!.leftHeightIn).toBeCloseTo(192, 6);
+      expect(atStart[atStart.length - 1]!.rightHeightIn).toBeCloseTo(120, 6);
+      expect(atEnd[0]!.leftHeightIn).toBeCloseTo(120, 6);
+      expect(atEnd[atEnd.length - 1]!.rightHeightIn).toBeCloseTo(192, 6);
+    });
+
+    it("clamps an out-of-range peakPositionIn to the wall's own bounds", () => {
+      const negative = computeGableTiledRow(200, 120, 192, 40, -50);
+      const beyond = computeGableTiledRow(200, 120, 192, 40, 500);
+      expect(negative[0]!.leftHeightIn).toBeCloseTo(192, 6);
+      expect(beyond[beyond.length - 1]!.rightHeightIn).toBeCloseTo(192, 6);
+    });
   });
 });

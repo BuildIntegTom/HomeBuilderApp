@@ -1,6 +1,6 @@
 import type { Footprint, PanelSlot } from "@building-integrity/geometry";
 import type { Season } from "@building-integrity/calc-engine";
-import type { RoofCatcherBeamShape, RoofSystemType, SeismicZone, StudConfig } from "@building-integrity/panel-catalog";
+import type { OctagonRingDiameterFt, RoofCatcherBeamShape, RoofSystemType, SeismicZone, StudConfig } from "@building-integrity/panel-catalog";
 import type { ViewerRole } from "./viewerRole";
 
 /**
@@ -10,7 +10,7 @@ import type { ViewerRole } from "./viewerRole";
  * a future incompatible version fails loudly (`parseProjectFile`) instead
  * of silently restoring a half-broken layout.
  */
-export const PROJECT_FILE_VERSION = 7;
+export const PROJECT_FILE_VERSION = 11;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -44,9 +44,22 @@ export interface ProjectState {
   trussPlateInsetIn: number;
   roofCatcherBeamOffsetIn: number;
   roofCatcherBeamShape: RoofCatcherBeamShape;
+  /** Octagon roof-catcher ring's outside diameter (ft) — only shown/used
+   * when the footprint is an octagon (8 corners), see octagonRingMembers.ts. */
+  octagonRingDiameterFt: OctagonRingDiameterFt;
   /** Wall ids with "Add Gable End" enabled in the elevation view — see
-   * WallElevationView.tsx. */
+   * WallElevationView.tsx. Capped at 2, and the 2nd must be
+   * areWallsOppositePair with the 1st (see gableEndToggleBlockReason in
+   * page.tsx) — the roof-catcher beam's run is computed directly from these
+   * 2 walls + gablePeakPositionInByWallId via computeRidgeLine, so no
+   * separate run-length field needs to round-trip here. */
   gableEndWallIds: Set<string>;
+  /** Per-wall Gable End peak position (inches from the wall's start corner)
+   * — Tommy: "drag wall tool the peak of this triangle." Absent entry means
+   * "not yet customized" (auto-centered at the wall's own midpoint, a
+   * symmetric gable) — see computeGableTiledRow's own peakPositionIn
+   * default. */
+  gablePeakPositionInByWallId: Record<string, number>;
   /** Second story, sharing the ground floor's footprint/wallSlots shape —
    * see Building3DView.tsx's secondStory prop. */
   secondStoryEnabled: boolean;
@@ -98,7 +111,9 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "trussPlateInsetIn",
   "roofCatcherBeamOffsetIn",
   "roofCatcherBeamShape",
+  "octagonRingDiameterFt",
   "gableEndWallIds",
+  "gablePeakPositionInByWallId",
   "secondStoryEnabled",
   "secondStoryWallHeightFt",
   "panelizationType",

@@ -6,11 +6,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyBracedPlacement,
   applyUniformPanelization,
+  areWallsOppositePair,
   buildOctagonFootprint,
   buildRectangleFootprint,
   computeFloorPanelGrid,
   computeJoistLayout,
   computePierGrid,
+  computeRidgeLine,
+  computeSillRunWidths,
   cornerOwnership as cornerOwnershipPure,
   dragWall,
   editWallLength,
@@ -19,7 +22,9 @@ import {
   getOpeningAnchors,
   insertBumpOut,
   isMiteredShape,
+  isPointNearPier,
   markSafetyCorner,
+  pointAlongRidgeLine,
   retile as retilePure,
   retileWithOpenings,
   wallGeometryFor as wallGeometryForPure,
@@ -30,6 +35,7 @@ import {
 } from "@building-integrity/geometry";
 import {
   computeAssemblyPerm,
+  computeBoardFeetByNominalSize,
   computeBracedPanelShearCapacityLb,
   computeBuiltUpColumnBearingCapacityLb,
   computeCarbonRange,
@@ -55,13 +61,20 @@ import {
   buildBracedPanelMembers,
   buildColumnPanelMembers,
   buildCornerPanelMembers,
+  buildDoorHeaderMembers,
   buildGablePanelMembers,
   buildJackStudMembers,
   buildSafetyGapMembers,
   buildSquareBaleCornerPanelMembers,
   buildSquareBalePanelMembers,
+  buildSillPanelMembers,
   buildStandardPanelMembers,
   buildTrussPlateMembers,
+  buildWindowHeaderMembers,
+  computeDoorRoughOpeningHeightIn,
+  computeRoughOpeningWidthIn,
+  doorRoughOpeningSelectedHeightIn,
+  jackStudThicknessIn,
   JACK_STUD_THICKNESS_IN,
   SAFETY_GAP_THICKNESS_IN,
   PLATE_2X6_THICKNESS_IN,
@@ -72,8 +85,11 @@ import {
   computeGableRipCallout,
   computePanelSizeShares,
   computePlywoodAreaSqFt,
+  computeRoofCatcherBeamPostPositions,
+  computeRoofCatcherBeamSegments,
   computeTimberHpVolume,
   DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN,
+  OCTAGON_RING_DIAMETER_OPTIONS_FT,
   PLYWOOD_SHEET_AREA_SQFT,
   concreteEmbodiedCarbonKgPerFt3,
   concretePierDimensions,
@@ -88,10 +104,12 @@ import {
   floorFieldBayDetail,
   floorInsulationSequencingRule,
   floorJoistTypes,
+  bearingEdgeReferenceOptions,
   floorLongSideBlockingNote,
   floorRimJoistDetail,
   foundationFastenerSchedule,
   foundationTypes,
+  headerPreviewHeightIn,
   looseDensePackDefaultThicknessIn,
   looseDensePackThicknessOptionsIn,
   looseDensePackWidthIn,
@@ -109,6 +127,8 @@ import {
   slabFoundationDimensions,
   squareBalePanel,
   seismicBracedPanelSpacingFt,
+  sillDefaultHeightIn,
+  toeUpHeightIn,
   standardPanelBom,
   standardPanelBomReferenceWidthIn,
   standardPanelHeightIn,
@@ -118,6 +138,9 @@ import {
   timberHpDensityLbFt3,
   trussPlateInsetDefaultIn,
   wallAssemblyLayers,
+  type JackStudConfig,
+  type OctagonRingDiameterFt,
+  type PanelMember,
   type RoofCatcherBeamShape,
   type RoofSystemType,
   type SeismicZone,
@@ -131,7 +154,7 @@ import FloorCanvas from "./FloorCanvas";
 import FloorCornerDetailDiagram from "./FloorCornerDetailDiagram";
 import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
-import { allPanelInstances, type NamedPanelType } from "./panelInstances";
+import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
 import PierFoundationDiagram from "./PierFoundationDiagram";
 import { parseProjectFile, serializeProject, type ProjectState } from "./projectFile";
 import RubbleTrenchDiagram from "./RubbleTrenchDiagram";
@@ -141,12 +164,14 @@ import CompassWidget from "./CompassWidget";
 import { DocumentMetaProvider } from "./DocumentMetaContext";
 import DrawingToolPen from "./DrawingToolPen";
 import EditorToolbar from "./EditorToolbar";
+import OctagonRingPreview from "./OctagonRingPreview";
 import PanelLegend from "./PanelLegend";
 import ProjectSummaryPage from "./ProjectSummaryPage";
 import SectionCarousel from "./SectionCarousel";
 import SlabFoundationDiagram from "./SlabFoundationDiagram";
 import StickyNote from "./StickyNote";
 import TopBar from "./TopBar";
+import ViewModeToggle from "./ViewModeToggle";
 import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import WallElevationView from "./WallElevationView";
 import styles from "./page.module.css";
@@ -258,6 +283,10 @@ export default function LayoutEditor() {
   // buildSquareBalePanelMembers doc comments for how each is modeled).
   const [nailerOffsetIn, setNailerOffsetIn] = useState(0);
   const [squareBaleStudConfig, setSquareBaleStudConfig] = useState<StudConfig>("single-2x4");
+  // Tommy: "RO's depend on jack studs, which i want to be able to change
+  // from a default of 3/4in plywood to vertical 2x4's" — default matches
+  // the original single-sheet jack stud behavior.
+  const [jackStudConfig, setJackStudConfig] = useState<JackStudConfig>("plywood");
   const [interiorId, setInteriorId] = useState(interiorLayers[1]!.id);
   const [exteriorId, setExteriorId] = useState(exteriorLayers[1]!.id);
   const [season, setSeason] = useState<Season>("winter");
@@ -301,6 +330,11 @@ export default function LayoutEditor() {
   const [trussPlateInsetIn, setTrussPlateInsetIn] = useState(trussPlateInsetDefaultIn.value);
   const [roofCatcherBeamOffsetIn, setRoofCatcherBeamOffsetIn] = useState(DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN);
   const [roofCatcherBeamShape, setRoofCatcherBeamShape] = useState<RoofCatcherBeamShape>(roofCatcherBeamShapeDefault);
+  // Octagon roof-catcher ring (Tommy: "for octagon roofs, lets do an octagon
+  // ring made out of LVL's that are 14x1.75in") — only relevant when the
+  // footprint is an octagon (8 corners, the octagon drawing tool's own
+  // shape), independent of roofSystemTypeId.
+  const [octagonRingDiameterFt, setOctagonRingDiameterFt] = useState<OctagonRingDiameterFt>(3);
 
   // Per-wall elevation view (Tommy: "an arrow button for each wall section,
   // where we can see the whole line up still in 2d view") — additive to the
@@ -310,13 +344,57 @@ export default function LayoutEditor() {
   // (only one at a time).
   const [gableEndWallIds, setGableEndWallIds] = useState<Set<string>>(new Set());
   const [elevationViewWallId, setElevationViewWallId] = useState<string | null>(null);
+  // Hard guardrail (Tommy): at most 2 Gable End walls, and once 1 is active,
+  // the 2nd must be its geometric opposite (parallel, facing away) — the
+  // roof-catcher beam needs exactly 2 walls forming a straight run between
+  // them, so a 3rd or a non-opposite 2nd would leave that run undefined.
+  const gableEndToggleBlockReason = (wallId: string): string | null => {
+    if (gableEndWallIds.has(wallId)) return null; // always allowed to turn back off
+    if (gableEndWallIds.size >= 2) {
+      return "Only 2 Gable End walls are allowed — the roof-catcher beam spans between exactly 2. Turn one off first.";
+    }
+    if (gableEndWallIds.size === 1 && footprint) {
+      const otherWallId = [...gableEndWallIds][0]!;
+      const otherWall = footprint.walls.find((w) => w.id === otherWallId);
+      const thisWall = footprint.walls.find((w) => w.id === wallId);
+      if (otherWall && thisWall && !areWallsOppositePair(thisWall, otherWall, footprint)) {
+        return `Must face opposite wall ${otherWallId} (parallel, facing away) to form a straight roof-catcher beam run.`;
+      }
+    }
+    return null;
+  };
   const handleToggleGableEnd = (wallId: string, enabled: boolean) => {
+    if (enabled && gableEndToggleBlockReason(wallId)) return;
     setGableEndWallIds((was) => {
       const next = new Set(was);
       if (enabled) next.add(wallId);
       else next.delete(wallId);
       return next;
     });
+  };
+
+  // Gable End peak position (Tommy: "drag wall tool the peak of this
+  // triangle... a sliding scale that you can also click and edit how far
+  // away from each end it is"). Inches from the wall's start corner; a
+  // missing entry means "not yet customized" (auto-centered midpoint) — see
+  // computeGableTiledRow's own peakPositionIn default + snap-to-shed logic.
+  const [gablePeakPositionInByWallId, setGablePeakPositionInByWallId] = useState<Record<string, number>>({});
+  const handleChangeGablePeakPositionIn = useCallback((wallId: string, positionIn: number | undefined) => {
+    setGablePeakPositionInByWallId((was) => {
+      const next = { ...was };
+      if (positionIn === undefined || Number.isNaN(positionIn)) delete next[wallId];
+      else next[wallId] = positionIn;
+      return next;
+    });
+  }, []);
+  // "add shed roof option next to gable end options to auto generate a 4/12
+  // scenario of gable end shed roof" (Tommy) — snaps the peak to this wall's
+  // start and sets the Roof tab's ridge height so the resulting single slope
+  // (spanning the wall's own full width) is a 4-in-12 pitch.
+  const handleGenerateShedRoof = (wall: Wall) => {
+    handleToggleGableEnd(wall.id, true);
+    handleChangeGablePeakPositionIn(wall.id, 0);
+    setBottomOfTrussMaxHeightFt(wallHeightFt + wall.lengthFt * (4 / 12));
   };
 
   // Second story (Tommy: "add a second level of panels") — shares the
@@ -438,7 +516,9 @@ export default function LayoutEditor() {
       trussPlateInsetIn,
       roofCatcherBeamOffsetIn,
       roofCatcherBeamShape,
+      octagonRingDiameterFt,
       gableEndWallIds,
+      gablePeakPositionInByWallId,
       secondStoryEnabled,
       secondStoryWallHeightFt,
       panelizationType,
@@ -500,7 +580,9 @@ export default function LayoutEditor() {
       setTrussPlateInsetIn(s.trussPlateInsetIn);
       setRoofCatcherBeamOffsetIn(s.roofCatcherBeamOffsetIn);
       setRoofCatcherBeamShape(s.roofCatcherBeamShape);
+      setOctagonRingDiameterFt(s.octagonRingDiameterFt);
       setGableEndWallIds(s.gableEndWallIds);
+      setGablePeakPositionInByWallId(s.gablePeakPositionInByWallId);
       setSecondStoryEnabled(s.secondStoryEnabled);
       setSecondStoryWallHeightFt(s.secondStoryWallHeightFt);
       setPanelizationType(s.panelizationType);
@@ -916,8 +998,8 @@ export default function LayoutEditor() {
   // Shop Drawing pages then just filter this same list, rather than each
   // recomputing its own independent (and previously mismatched) counter.
   const allInstances = useMemo(
-    () => (footprint ? allPanelInstances(footprint, overlayWallSlots) : []),
-    [footprint, overlayWallSlots],
+    () => (footprint ? allPanelInstances(footprint, overlayWallSlots, standardWidthIn, jackStudConfig) : []),
+    [footprint, overlayWallSlots, standardWidthIn, jackStudConfig],
   );
 
   // Column/Corner panels are always COLUMN_TOTAL_WIDTH_IN (25.5in) wide —
@@ -964,19 +1046,81 @@ export default function LayoutEditor() {
     [standardWidthIn, gablePreviewLowEdgeHeightIn, gablePreviewHighEdgeHeightIn],
   );
 
-  // Plywood Jack Stud: full rough-opening height isn't tracked anywhere yet
-  // (headers/sills have no real placement mechanism), so this preview uses
-  // the current wall height as an illustrative default, same pattern as
-  // the gable preview above.
-  const jackStudPreviewHeightIn = wallHeightFt * 12;
+  // Door/Window Header: no real rough-opening height/placement mechanism
+  // yet, so this previews at an illustrative default height. Width uses
+  // the first real header instance of that opening type if one's been
+  // drawn, otherwise a representative default (Tommy: "there are long
+  // headers and door headers... door headers just have one upside down V
+  // as a brace" — the window default is picked wide enough to actually
+  // show the "long header" multi-peak truss).
+  const HEADER_PREVIEW_HEIGHT_IN = headerPreviewHeightIn.value;
+  const DOOR_HEADER_DEFAULT_WIDTH_IN = 36;
+  const WINDOW_HEADER_DEFAULT_WIDTH_IN = 60;
+  const doorHeaderWidthIn =
+    allInstances.find((inst) => inst.panelType === "header" && inst.sourceSlotType === "door")?.widthIn ?? DOOR_HEADER_DEFAULT_WIDTH_IN;
+  const windowHeaderWidthIn =
+    allInstances.find((inst) => inst.panelType === "header" && inst.sourceSlotType === "window")?.widthIn ?? WINDOW_HEADER_DEFAULT_WIDTH_IN;
+  const doorHeaderMembers = useMemo(
+    () => buildDoorHeaderMembers(doorHeaderWidthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN),
+    [doorHeaderWidthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN],
+  );
+  const windowHeaderMembers = useMemo(
+    () => buildWindowHeaderMembers(windowHeaderWidthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN),
+    [windowHeaderWidthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN],
+  );
+
+  // Sill Panel: "short standard panel" (Tommy) at sillDefaultHeightIn
+  // (32in). Width uses the first real sill instance's own (already RO-
+  // aware, already-split-if-wide) width if one exists, otherwise a
+  // representative default.
+  const SILL_DEFAULT_WIDTH_IN = 36;
+  const sillHeightIn = sillDefaultHeightIn.value;
+  const sillWidthIn = allInstances.find((inst) => inst.panelType === "sill")?.widthIn ?? SILL_DEFAULT_WIDTH_IN;
+  const sillMembers = useMemo(
+    () => buildSillPanelMembers(sillWidthIn, thicknessIn, sillHeightIn, includeNailer),
+    [sillWidthIn, thicknessIn, sillHeightIn, includeNailer],
+  );
+
+  // Plywood Jack Stud: spans sill-top to header-bottom (Tommy: jack studs
+  // "go from the sill to the header") — approximated as the wall height
+  // minus the sill and header illustrative heights, since neither has a
+  // real tracked Z-position yet (same "no placement mechanism" gap noted
+  // throughout headers/sills/jack studs).
+  const jackStudPreviewHeightIn = Math.max(0, wallHeightFt * 12 - sillHeightIn - HEADER_PREVIEW_HEIGHT_IN);
   const jackStudMembers = useMemo(
-    () => buildJackStudMembers(thicknessIn, jackStudPreviewHeightIn),
-    [thicknessIn, jackStudPreviewHeightIn],
+    () => buildJackStudMembers(thicknessIn, jackStudPreviewHeightIn, jackStudConfig),
+    [thicknessIn, jackStudPreviewHeightIn, jackStudConfig],
   );
   const jackStudFastenerResult = useMemo(
     () => computeJackStudFastenerWeight(jackStudPreviewHeightIn),
     [jackStudPreviewHeightIn],
   );
+
+  // Door Rough Opening height (Tommy: "RO height for doors is almost
+  // always 80.5in — the actual number is derived from door RO selected
+  // (default 82.5) − toe up height (usually 1.5in)") — a real formula,
+  // unlike the sill/header-based illustrative approximation above (which
+  // stays the window's own jack stud height, since a door has no sill —
+  // its jack studs span this full RO height instead, floor to header-
+  // bottom).
+  const doorRoughOpeningHeightIn = computeDoorRoughOpeningHeightIn(doorRoughOpeningSelectedHeightIn.value, toeUpHeightIn.value);
+  const doorJackStudMembers = useMemo(
+    () => buildJackStudMembers(thicknessIn, doorRoughOpeningHeightIn, jackStudConfig),
+    [thicknessIn, doorRoughOpeningHeightIn, jackStudConfig],
+  );
+  const doorJackStudFastenerResult = useMemo(
+    () => computeJackStudFastenerWeight(doorRoughOpeningHeightIn),
+    [doorRoughOpeningHeightIn],
+  );
+
+  // Rough Opening widths (Tommy: "RO's take into account these jack
+  // studs... make sure... the window slot... represents the entire
+  // primary space which the headers, RO, and sills are") — the door/
+  // window slot's own width is the whole assembly; the RO itself is
+  // narrower by one jack stud thickness on each side.
+  const doorRoughOpeningWidthIn = computeRoughOpeningWidthIn(doorHeaderWidthIn, jackStudConfig);
+  const windowRoughOpeningWidthIn = computeRoughOpeningWidthIn(windowHeaderWidthIn, jackStudConfig);
+  const windowSillRunWidthsIn = computeSillRunWidths(windowRoughOpeningWidthIn, standardWidthIn);
 
   // Safety/Gap panel: fixed-size (doesn't scale with the slot's own
   // widthIn) — one model covers every instance.
@@ -1028,11 +1172,14 @@ export default function LayoutEditor() {
   // total wall perimeter (not an illustrative preview length). 1/2in
   // plywood (girt webs) is tallied too, for a complete picture.
   const heightIn = wallHeightFt * 12;
-  const plywoodAreaSqFt = useMemo(() => {
-    let threeQuarterSqFt = 0;
-    let halfSqFt = 0;
+  // Every real panel instance's own member geometry, flattened once —
+  // shared by both the plywood-area tally and the board-feet tally below
+  // so the (fairly involved) per-instance member-selection logic isn't
+  // duplicated.
+  const allRealMembers = useMemo(() => {
+    const members: PanelMember[] = [];
     for (const inst of allInstances) {
-      const members =
+      const instMembers =
         inst.panelType === "standard"
           ? isSquareBalePanelization
             ? buildSquareBalePanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, squareBaleStudConfig, nailerOffsetIn)
@@ -1045,17 +1192,16 @@ export default function LayoutEditor() {
                 ? cornerPanelMembers3D
                 : inst.panelType === "safety-gap"
                   ? safetyGapMembers3D
-                  : null;
-      if (!members) continue;
-      threeQuarterSqFt += computePlywoodAreaSqFt(members, 0.75);
-      halfSqFt += computePlywoodAreaSqFt(members, 0.5);
+                  : inst.panelType === "sill"
+                    ? buildSillPanelMembers(inst.widthIn, thicknessIn, sillDefaultHeightIn.value, includeNailer)
+                    : inst.panelType === "header"
+                      ? inst.sourceSlotType === "door"
+                        ? buildDoorHeaderMembers(inst.widthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN)
+                        : buildWindowHeaderMembers(inst.widthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN)
+                      : null;
+      if (instMembers) members.push(...instMembers);
     }
-    // Roof-bearing assembly's own plywood cap(s) — box beam has both a top
-    // and bottom cap, truss plate just one — over the real wall perimeter.
-    threeQuarterSqFt += secondStoryEnabled
-      ? (2 * totalWallPerimeterIn * thicknessIn) / 144
-      : (totalWallPerimeterIn * thicknessIn) / 144;
-    return { threeQuarterSqFt, halfSqFt };
+    return members;
   }, [
     allInstances,
     thicknessIn,
@@ -1064,15 +1210,37 @@ export default function LayoutEditor() {
     columnPanelMembers,
     cornerPanelMembers3D,
     safetyGapMembers3D,
-    secondStoryEnabled,
-    totalWallPerimeterIn,
     isSquareBalePanelization,
     squareBaleStudConfig,
     nailerOffsetIn,
+    HEADER_PREVIEW_HEIGHT_IN,
   ]);
+
+  const plywoodAreaSqFt = useMemo(() => {
+    let threeQuarterSqFt = computePlywoodAreaSqFt(allRealMembers, 0.75);
+    const halfSqFt = computePlywoodAreaSqFt(allRealMembers, 0.5);
+    // Roof-bearing assembly's own plywood cap(s) — box beam has both a top
+    // and bottom cap, truss plate just one — over the real wall perimeter.
+    threeQuarterSqFt += secondStoryEnabled
+      ? (2 * totalWallPerimeterIn * thicknessIn) / 144
+      : (totalWallPerimeterIn * thicknessIn) / 144;
+    return { threeQuarterSqFt, halfSqFt };
+  }, [allRealMembers, secondStoryEnabled, totalWallPerimeterIn, thicknessIn]);
 
   const plywoodThreeQuarterSheetCount = Math.ceil(plywoodAreaSqFt.threeQuarterSqFt / PLYWOOD_SHEET_AREA_SQFT);
   const plywoodHalfSheetCount = Math.ceil(plywoodAreaSqFt.halfSqFt / PLYWOOD_SHEET_AREA_SQFT);
+
+  // Board feet (Tommy: "wood weight totals should be able to be
+  // calculated... how many boardfeet of 2x4's (and any other dimensional
+  // lumber) are in a panel, and that total should be put onto the
+  // materials total and divided by the panel height to count 2x4's") —
+  // grouped by nominal size, converted to a "how many standard 10ft-stock
+  // sticks to buy" purchase count using the standard panel height as the
+  // stock length.
+  const boardFeetByNominalSize = useMemo(
+    () => computeBoardFeetByNominalSize(allRealMembers, standardPanelHeightIn.value / 12),
+    [allRealMembers],
+  );
 
   // Square Bale Panels: each "standard"-typed slot under this panelization
   // type is a bale-pair unit (Tommy: "two 18in bales" per panel) — counted
@@ -1087,7 +1255,7 @@ export default function LayoutEditor() {
   // at that instance's own width (column/corner ignore it, always fixed at
   // COLUMN_TOTAL_WIDTH_IN) so girt-row/plate/brace counts are exact, not a
   // flat scalar like the older wood-weight calc.
-  const fastenerWeightKgFor = (panelTypeId: string, widthIn: number): number | null => {
+  const fastenerWeightKgFor = (panelTypeId: string, widthIn: number, sourceSlotType?: PanelInstance["sourceSlotType"]): number | null => {
     const heightIn = wallHeightFt * 12;
     const members =
       panelTypeId === "standard"
@@ -1100,7 +1268,13 @@ export default function LayoutEditor() {
               ? cornerPanelMembers3D
               : panelTypeId === "gable"
                 ? gablePanelMembers
-                : null;
+                : panelTypeId === "header"
+                  ? sourceSlotType === "door"
+                    ? buildDoorHeaderMembers(widthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN)
+                    : buildWindowHeaderMembers(widthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN)
+                  : panelTypeId === "sill"
+                    ? buildSillPanelMembers(widthIn, thicknessIn, sillDefaultHeightIn.value, includeNailer)
+                    : null;
     return members ? computeFastenerWeight(members).totalWeightKg : null;
   };
 
@@ -1113,16 +1287,20 @@ export default function LayoutEditor() {
           .map((inst) => ({
             ...inst,
             weightBreakdown: computePanelWeightBreakdown({
-              // Safety/Gap is just a plywood sheet now, no straw-filled
-              // cavity at all — widthIn: 0 forces straw weight to a
-              // correct 0 here without touching inst.widthIn itself
-              // (still shown as-is in the table's own Width column).
-              widthIn: panelTypeId === "safety-gap" ? 0 : inst.widthIn,
+              // Safety/Gap and Header are both a solid wood truss/sheet
+              // filling the wall's cavity there, no straw at all — widthIn:
+              // 0 forces straw weight to a correct 0 here without touching
+              // inst.widthIn itself (still shown as-is in the table's own
+              // Width column).
+              widthIn: panelTypeId === "safety-gap" || panelTypeId === "header" ? 0 : inst.widthIn,
               thicknessIn,
-              heightIn: wallHeightFt * 12,
+              // A sill is a much shorter panel (Tommy: "sills are almost
+              // always 32in tall") than the full wall height every other
+              // panel type here uses.
+              heightIn: panelTypeId === "sill" ? sillDefaultHeightIn.value : wallHeightFt * 12,
               densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
               woodWeightKg: hasWoodBom ? woodPerPanel.weightKg : null,
-              fastenerWeightKg: fastenerWeightKgFor(panelTypeId, inst.widthIn),
+              fastenerWeightKg: fastenerWeightKgFor(panelTypeId, inst.widthIn, inst.sourceSlotType),
               hasClayPlaster,
               hasLimePlaster,
             }),
@@ -1267,6 +1445,16 @@ export default function LayoutEditor() {
       pages.push({ id: "detail-box-beam", label: "Roof: Box Beam (Two-Story)" });
     }
     pages.push({ id: "detail-material-totals", label: "Material Totals" });
+    // Rough Opening Detail pages (Tommy: "We are going to make a Rough
+    // Opening Detail page, so we can keep track of window and door
+    // needs... lets do them on two separate rough opening pages") — like
+    // Foundation/Floor, general reference content, not fabricator-only.
+    if (allInstances.some((i) => i.sourceSlotType === "door") || canPreviewAllDetailPages) {
+      pages.push({ id: "detail-door-ro", label: "Door Rough Opening" });
+    }
+    if (allInstances.some((i) => i.sourceSlotType === "window") || canPreviewAllDetailPages) {
+      pages.push({ id: "detail-window-ro", label: "Window Rough Opening" });
+    }
     // Shop Drawings are a fabricator/detailer document, not a public-facing one (Tommy).
     if (role !== "public") {
       for (const { panelType, instances } of shopDrawings) {
@@ -1285,6 +1473,7 @@ export default function LayoutEditor() {
     shopDrawings,
     role,
     canPreviewAllDetailPages,
+    allInstances,
   ]);
 
   const editorToolsLabel =
@@ -1572,6 +1761,33 @@ export default function LayoutEditor() {
         Include exterior nailer (optional, per standard panel BOM)
       </label>
 
+      <div role="group" aria-label="Jack stud construction" className={styles.toolbar}>
+        <button
+          type="button"
+          title="3/4in plywood sheet, panel-depth wide"
+          aria-pressed={jackStudConfig === "plywood"}
+          className={jackStudConfig === "plywood" ? styles.toolActive : styles.tool}
+          onClick={() => setJackStudConfig("plywood")}
+        >
+          Plywood Jack Studs
+        </button>
+        <button
+          type="button"
+          title="Vertical 2x4 stud pair (ext + int wythe), flush with the adjacent wall's own studs"
+          aria-pressed={jackStudConfig === "2x4-stud"}
+          className={jackStudConfig === "2x4-stud" ? styles.toolActive : styles.tool}
+          onClick={() => setJackStudConfig("2x4-stud")}
+        >
+          2x4 Stud Jack Studs
+        </button>
+      </div>
+      <p className={styles.note}>
+        Rough Opening jack studs (each side of a window/door) — plywood is the original &quot;jack sheet&quot;;
+        2x4 studs sit right at the slot&apos;s perimeter, next to the adjacent panel&apos;s own studs. Either way,
+        jack studs narrow the actual clear Rough Opening below the full window/door slot width — see the Door/
+        Window Rough Opening Detail pages.
+      </p>
+
       <div role="group" aria-label="Panelization type" className={styles.toolbar}>
         <button
           type="button"
@@ -1764,6 +1980,11 @@ export default function LayoutEditor() {
               {editorTab === "wall" && viewMode === "plan" && (
                 <div ref={setToolbarPortalNode} className={styles.toolbarPortalInline} />
               )}
+              <ViewModeToggle
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+                viewModeDisabled={editorTab !== "wall" || !footprint}
+              />
               <button
                 type="button"
                 title={isOsFullscreen ? "Exit fullscreen" : "Enter fullscreen editor"}
@@ -1781,13 +2002,7 @@ export default function LayoutEditor() {
                 {isOsFullscreen ? "⤡" : "⤢"}
               </button>
             </div>
-            <EditorToolbar
-              editorTab={editorTab}
-              onEditorTabChange={setEditorTab}
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              viewModeDisabled={editorTab !== "wall" || !footprint}
-            />
+            <EditorToolbar editorTab={editorTab} onEditorTabChange={setEditorTab} />
             {editorTab === "wall" && viewMode === "plan" && (
               <>
                 <DrawingToolPen
@@ -1820,6 +2035,8 @@ export default function LayoutEditor() {
                   wallThicknessIn={thicknessIn}
                   wallHeightFt={wallHeightFt}
                   includeNailer={includeNailer}
+                  standardWidthIn={standardWidthIn}
+                  jackStudConfig={jackStudConfig}
                   leastAccessibleCorner={leastAccessibleCorner}
                   primaryCornerIds={primaryCornerIds}
                   isWallLengthEditable={isWallLengthEditable}
@@ -1844,6 +2061,8 @@ export default function LayoutEditor() {
                   isSquareBalePanelization={panelizationType === "square-bale-panels"}
                   squareBaleStudConfig={squareBaleStudConfig}
                   nailerOffsetIn={nailerOffsetIn}
+                  jackStudConfig={jackStudConfig}
+                  standardWidthIn={standardWidthIn}
                   compassRef={compassNeedleRef}
                 />
               ))}
@@ -1873,6 +2092,8 @@ export default function LayoutEditor() {
               isSquareBalePanelization={panelizationType === "square-bale-panels"}
               squareBaleStudConfig={squareBaleStudConfig}
               nailerOffsetIn={nailerOffsetIn}
+              jackStudConfig={jackStudConfig}
+              standardWidthIn={standardWidthIn}
               onCapture={handleCaptureRenderImage}
             />
           )}
@@ -1918,12 +2139,10 @@ export default function LayoutEditor() {
                 )}
                 {viewMode === "3d" && (
                   <p className={styles.note}>
-                    Drag to orbit, scroll to zoom — a rough bird's-eye starting
-                    angle, not a fixed camera. Each wall panel shows its real
-                    member geometry (standard/braced/column/corner) at its actual
-                    position and width; panel types without member geometry yet
-                    (window, door, safety/gap) render as plain gray placeholder
-                    blocks. No roof yet.
+                    Drag to orbit, scroll to zoom — a rough bird&apos;s-eye starting
+                    angle, not a fixed camera. Every wall panel — including window/door
+                    openings (header, jack studs, and sill) — shows its real member
+                    geometry at its actual position and width. No roof surface yet.
                   </p>
                 )}
                 {viewMode === "plan" && (
@@ -1986,7 +2205,12 @@ export default function LayoutEditor() {
                         hasGableEnd={gableEndWallIds.has(elevationWall.id)}
                         ridgeHeightFt={bottomOfTrussMaxHeightFt}
                         targetPanelWidthIn={standardWidthIn}
+                        roofCatcherBeamOffsetIn={roofCatcherBeamOffsetIn}
+                        gablePeakPositionIn={gablePeakPositionInByWallId[elevationWall.id]}
+                        gableEndToggleBlockReason={gableEndToggleBlockReason(elevationWall.id)}
                         onToggleGableEnd={(enabled) => handleToggleGableEnd(elevationWall.id, enabled)}
+                        onChangeGablePeakPositionIn={(positionIn) => handleChangeGablePeakPositionIn(elevationWall.id, positionIn)}
+                        onGenerateShedRoof={() => handleGenerateShedRoof(elevationWall)}
                         onClose={() => setElevationViewWallId(null)}
                       />
                     )}
@@ -2116,17 +2340,24 @@ export default function LayoutEditor() {
                   rises to meet this number (see the Gable End Panel Shop Drawing page below).
                 </p>
 
-                <label>
-                  Truss plate inset (in){" "}
-                  <input
-                    type="number"
-                    value={trussPlateInsetIn}
-                    min={0}
-                    step={0.25}
-                    onChange={(e) => setTrussPlateInsetIn(Number(e.target.value))}
-                  />
-                </label>
-                <p className={styles.note}>{trussPlateInsetDefaultIn.note}</p>
+                <div role="group" aria-label="Bottom edge reference" className={styles.toolbar}>
+                  <span style={{ fontSize: 13, marginRight: 4 }}>Bottom edge reference:</span>
+                  {bearingEdgeReferenceOptions.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      aria-pressed={trussPlateInsetIn === opt.insetIn}
+                      className={trussPlateInsetIn === opt.insetIn ? styles.toolActive : styles.tool}
+                      onClick={() => setTrussPlateInsetIn(opt.insetIn)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className={styles.note}>
+                  How far the truss bottom / roof-catcher beam sits inset from the adjacent wall&apos;s primary
+                  (exterior/floor-plan-line) edge. {trussPlateInsetDefaultIn.note}
+                </p>
 
                 <p className={styles.pending}>{roofBearingMemberNote}</p>
 
@@ -2158,8 +2389,77 @@ export default function LayoutEditor() {
                     <p className={styles.note}>
                       Column Panel height at a roof-catcher-beam bearing point = bottom-of-truss max height minus this
                       offset ({computeGableColumnHeightIn(bottomOfTrussMaxHeightFt * 12, roofCatcherBeamOffsetIn).toFixed(1)}
-                      in at the current inputs) — see the Column Panel Shop Drawing page below. Beam shape is a label
-                      only for now; real beam geometry is flagged to model later.
+                      in at the current inputs) — see the Column Panel Shop Drawing page below.
+                    </p>
+
+                    {(() => {
+                      const gableWallIds = [...gableEndWallIds];
+                      const ridge =
+                        footprint && gableWallIds.length === 2
+                          ? computeRidgeLine(footprint, gableWallIds[0]!, gableWallIds[1]!, gablePeakPositionInByWallId)
+                          : null;
+                      if (!ridge) {
+                        return (
+                          <p className={styles.note}>
+                            Add Gable End to exactly 2 (opposite) walls — see the Elevation view in the Wall tab — to
+                            compute a real roof-catcher-beam run from the footprint.
+                          </p>
+                        );
+                      }
+                      const segments = computeRoofCatcherBeamSegments(ridge.runIn);
+                      const postPositionsIn = computeRoofCatcherBeamPostPositions(ridge.runIn);
+                      const piers = footprint ? computePierGrid(footprint, pierSpacingFt) : [];
+                      const postPoints = postPositionsIn.map((posIn) => pointAlongRidgeLine(ridge, posIn));
+                      return (
+                        <p className={styles.note}>
+                          Run: {(ridge.runIn / 12).toFixed(1)}ft between {gableWallIds[0]} and {gableWallIds[1]}
+                          &apos;s Column Panels — {segments.length} built-up 3-ply 2x12 beam segment
+                          {segments.length === 1 ? "" : "s"} ({segments[0]!.spanIn.toFixed(1)}in each, max 144in/12ft).{" "}
+                          {postPoints.length === 0
+                            ? "No intermediate posts needed at this run."
+                            : `${postPoints.length} intermediate post${postPoints.length === 1 ? "" : "s"} at real ` +
+                              "footprint position " +
+                              postPoints
+                                .map((pt) => {
+                                  const onPier = isPointNearPier(pt, piers);
+                                  return `(${pt.x.toFixed(1)}, ${pt.y.toFixed(1)})${onPier ? "" : " — no pier here yet"}`;
+                                })
+                                .join(", ") +
+                              ` — cross-checked against the real pier grid (${pierSpacingFt}ft o.c.). Ideal scenario ` +
+                              "(Tommy): piers every 6ft, a post on every other one (12ft) — a post lands off-pier " +
+                              "whenever the run isn't a whole multiple of 2x the pier spacing, since segments are " +
+                              "evenly re-split rather than forced onto exact pier positions."}{" "}
+                          Post construction (size/material) isn&apos;t specified yet — only positions are modeled.
+                        </p>
+                      );
+                    })()}
+                  </>
+                )}
+
+                {footprint && footprint.corners.length === 8 && (
+                  <>
+                    <div role="group" aria-label="Octagon ring outside diameter" className={styles.toolbar}>
+                      <span style={{ fontSize: 13, marginRight: 4 }}>Octagon ring outside diameter:</span>
+                      {OCTAGON_RING_DIAMETER_OPTIONS_FT.map((ft) => (
+                        <button
+                          key={ft}
+                          type="button"
+                          aria-pressed={octagonRingDiameterFt === ft}
+                          className={octagonRingDiameterFt === ft ? styles.toolActive : styles.tool}
+                          onClick={() => setOctagonRingDiameterFt(ft)}
+                        >
+                          {ft}ft
+                        </button>
+                      ))}
+                    </div>
+                    <OctagonRingPreview outsideDiameterFt={octagonRingDiameterFt} />
+                    <p className={styles.note}>
+                      8 mitered 1-3/4in x 14in LVL segments (on edge), one per compass direction, forming a closed
+                      ring — a compression ring near the roof&apos;s apex for an octagon roof, sized independently of
+                      the building&apos;s own (much larger) footprint. &quot;Outside diameter&quot; is the flat-to-flat
+                      distance across the ring (the standard way octagonal hardware/rings are sized), not
+                      point-to-point across the corners. Miters (22.5deg at each of the 8 corners) are simplified to
+                      straight boxes here, not true beveled geometry.
                     </p>
                   </>
                 )}
@@ -2732,6 +3032,167 @@ export default function LayoutEditor() {
         )}
 
         <StickyNote
+          id="detail-door-ro"
+          label="Door Rough Opening"
+          isOpen={openNoteIds.has("detail-door-ro")}
+          isFullscreen={fullscreenNoteId === "detail-door-ro"}
+          cascadeIndex={noteOpenOrder.indexOf("detail-door-ro")}
+          onClose={() => handleToggleNote("detail-door-ro")}
+          onToggleFullscreen={() => handleToggleNoteFullscreen("detail-door-ro")}
+          onPrint={() => handlePrintNote("detail-door-ro")}
+        >
+          <DetailGuidePage
+            title="Door Rough Opening"
+            triggerCondition="Every door opening — header, jack studs, and the resulting clear Rough Opening width. No sill (floor-level)."
+            diagram={
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+                <div style={{ flex: "1 1 0%", minWidth: 200 }}>
+                  <StandardPanel3DView
+                    members={doorHeaderMembers}
+                    overallDimensions={{ heightIn: HEADER_PREVIEW_HEIGHT_IN, widthIn: doorHeaderWidthIn, depthIn: thicknessIn }}
+                    displayName="Door Header"
+                  />
+                </div>
+                <div style={{ flex: "1 1 0%", minWidth: 200 }}>
+                  <StandardPanel3DView
+                    members={doorJackStudMembers}
+                    overallDimensions={{ heightIn: doorRoughOpeningHeightIn, widthIn: jackStudThicknessIn(jackStudConfig), depthIn: thicknessIn }}
+                    displayName="Jack Stud"
+                  />
+                </div>
+                <table className={styles.results} style={{ width: "100%" }}>
+                  <tbody>
+                    <tr>
+                      <td>Door slot width (whole assembly)</td>
+                      <td>{doorHeaderWidthIn.toFixed(1)}&quot;</td>
+                    </tr>
+                    <tr>
+                      <td>Jack stud construction</td>
+                      <td>{jackStudConfig === "plywood" ? "3/4in plywood sheet" : "2x4 stud pair (ext + int wythe)"}</td>
+                    </tr>
+                    <tr>
+                      <td>Clear Rough Opening width</td>
+                      <td>
+                        {doorHeaderWidthIn.toFixed(1)}&quot; − 2 x {jackStudThicknessIn(jackStudConfig).toFixed(2)}&quot; = {doorRoughOpeningWidthIn.toFixed(1)}&quot;
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Selected door RO height (unit spec)</td>
+                      <td>{doorRoughOpeningSelectedHeightIn.value}&quot;</td>
+                    </tr>
+                    <tr>
+                      <td>Toe-up height</td>
+                      <td>{toeUpHeightIn.value}&quot;</td>
+                    </tr>
+                    <tr>
+                      <td>Real built Rough Opening height (= jack stud height)</td>
+                      <td>
+                        {doorRoughOpeningSelectedHeightIn.value}&quot; − {toeUpHeightIn.value}&quot; = {doorRoughOpeningHeightIn.toFixed(1)}&quot;
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            }
+            fastenerSchedule={[]}
+            notes={[
+              "The header spans the full slot width, resting on top of both jack studs — the clear Rough Opening (where the door unit itself installs) is narrower, inside the jack studs.",
+              "A door header is always a single upside-down-V truss web, on both interior and exterior wythes — see the Header Shop Drawing page.",
+              `Rough Opening height = selected door RO (${doorRoughOpeningSelectedHeightIn.value}in) minus the toe-up height (${toeUpHeightIn.value}in) — a real formula, not illustrative. The door's jack studs span this full height (floor to header-bottom), since a door has no sill.`,
+              jackStudConfig === "2x4-stud"
+                ? "2x4 stud jack studs selected — fastener count/weight not modeled for this config yet (plywood jack sheet fastening is modeled)."
+                : `Plywood jack studs selected — screwed to the adjacent wall panel, 2x 4in T25 #9 screws every 6in (${doorJackStudFastenerResult.items[0]!.count} screws, ${doorJackStudFastenerResult.totalWeightLb.toFixed(2)} lb, for this one sheet at the real RO height).`,
+            ]}
+            role={role}
+          />
+        </StickyNote>
+
+        <StickyNote
+          id="detail-window-ro"
+          label="Window Rough Opening"
+          isOpen={openNoteIds.has("detail-window-ro")}
+          isFullscreen={fullscreenNoteId === "detail-window-ro"}
+          cascadeIndex={noteOpenOrder.indexOf("detail-window-ro")}
+          onClose={() => handleToggleNote("detail-window-ro")}
+          onToggleFullscreen={() => handleToggleNoteFullscreen("detail-window-ro")}
+          onPrint={() => handlePrintNote("detail-window-ro")}
+        >
+          <DetailGuidePage
+            title="Window Rough Opening"
+            triggerCondition="Every window opening — header, jack studs, sill, and the resulting clear Rough Opening width."
+            diagram={
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+                <div style={{ flex: "1 1 0%", minWidth: 200 }}>
+                  <StandardPanel3DView
+                    members={windowHeaderMembers}
+                    overallDimensions={{ heightIn: HEADER_PREVIEW_HEIGHT_IN, widthIn: windowHeaderWidthIn, depthIn: thicknessIn }}
+                    displayName="Window Header (Long Header)"
+                  />
+                </div>
+                <div style={{ flex: "1 1 0%", minWidth: 200 }}>
+                  <StandardPanel3DView
+                    members={jackStudMembers}
+                    overallDimensions={{ heightIn: jackStudPreviewHeightIn, widthIn: jackStudThicknessIn(jackStudConfig), depthIn: thicknessIn }}
+                    displayName="Jack Stud"
+                  />
+                </div>
+                <div style={{ flex: "1 1 0%", minWidth: 200 }}>
+                  <StandardPanel3DView
+                    members={sillMembers}
+                    overallDimensions={{ heightIn: sillHeightIn, widthIn: sillWidthIn, depthIn: thicknessIn }}
+                    displayName="Sill Panel"
+                  />
+                </div>
+                <table className={styles.results} style={{ width: "100%" }}>
+                  <tbody>
+                    <tr>
+                      <td>Window slot width (whole assembly)</td>
+                      <td>{windowHeaderWidthIn.toFixed(1)}&quot;</td>
+                    </tr>
+                    <tr>
+                      <td>Jack stud construction</td>
+                      <td>{jackStudConfig === "plywood" ? "3/4in plywood sheet" : "2x4 stud pair (ext + int wythe)"}</td>
+                    </tr>
+                    <tr>
+                      <td>Clear Rough Opening width</td>
+                      <td>
+                        {windowHeaderWidthIn.toFixed(1)}&quot; − 2 x {jackStudThicknessIn(jackStudConfig).toFixed(2)}&quot; = {windowRoughOpeningWidthIn.toFixed(1)}&quot;
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Sill height</td>
+                      <td>{sillHeightIn}&quot; (default)</td>
+                    </tr>
+                    <tr>
+                      <td>Sill run</td>
+                      <td>
+                        {windowSillRunWidthsIn.length} sill panel{windowSillRunWidthsIn.length === 1 ? "" : "s"} @{" "}
+                        {windowSillRunWidthsIn[0]?.toFixed(1) ?? "0.0"}&quot; each
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Jack stud height (sill-top to header-bottom)</td>
+                      <td>{jackStudPreviewHeightIn.toFixed(1)}&quot;</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            }
+            fastenerSchedule={[]}
+            notes={[
+              "The header spans the full slot width, resting on top of both jack studs — the clear Rough Opening (where the window unit itself installs) is narrower, inside the jack studs. The sill sits below, sized to that same clear RO width.",
+              `A window ("long") header repeats as many peaks as needed to keep every truss web segment at or above a 30deg bracing angle — a door header is always exactly 1 peak. Both are on interior and exterior wythes.`,
+              `A sill is a short Standard Panel (default ${sillHeightIn}in tall) — a window wider than one standard panel width (${standardWidthIn}in) gets multiple sill panels sharing the run instead of one oversized sill.`,
+              "Real rough-opening height (floor to header) isn't tracked yet — jack stud height above is illustrative (current wall height minus the header/sill illustrative heights).",
+              jackStudConfig === "2x4-stud"
+                ? "2x4 stud jack studs selected — fastener count/weight not modeled for this config yet (plywood jack sheet fastening is modeled)."
+                : "Plywood jack studs selected — screwed to the adjacent wall panel, 2x 4in T25 #9 screws every 6in.",
+            ]}
+            role={role}
+          />
+        </StickyNote>
+
+        <StickyNote
           id="detail-material-totals"
           label="Material Totals"
           isOpen={openNoteIds.has("detail-material-totals")}
@@ -2770,6 +3231,15 @@ export default function LayoutEditor() {
                       </td>
                     </tr>
                   )}
+                  {boardFeetByNominalSize.map((bf) => (
+                    <tr key={bf.nominalSize}>
+                      <td>{bf.nominalSize} dimensional lumber</td>
+                      <td>
+                        {bf.totalBoardFeet.toFixed(1)} bd ft → {bf.stickCount} stick{bf.stickCount === 1 ? "" : "s"} @{" "}
+                        {bf.stockLengthFt}ft ({bf.boardFeetPerStick.toFixed(2)} bd ft/stick)
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             }
@@ -2783,6 +3253,8 @@ export default function LayoutEditor() {
                   ]
                 : ["Straw bale counts only apply when Square Bale Panels is the selected panelization type (Wall tab)."]),
               "Sheet counts round up from the summed real area (not per-instance), a reasonable purchasing estimate assuming offcuts get reused across panels.",
+              `Board feet: every real panel instance's dimensional-lumber members (studs, plates, girts, braces, jack studs, headers), grouped by nominal size (2x4/2x6/etc — using NOMINAL, not actual, dimensions, per standard lumber-industry convention). Stick count assumes ${standardPanelHeightIn.value / 12}ft stock length (the standard panel height) and rounds up — doesn't account for cut-length waste/offcuts across pieces shorter than a full stick.`,
+              "Roof-bearing assembly (Truss Plate/Box Beam) and Gable/Column preview-only members aren't included in the board-feet total yet — only real, placed panel instances are.",
             ]}
             role={role}
           />
@@ -2887,15 +3359,21 @@ export default function LayoutEditor() {
                       <div>
                         <StandardPanel3DView
                           members={jackStudMembers}
-                          overallDimensions={{ heightIn: jackStudPreviewHeightIn, widthIn: JACK_STUD_THICKNESS_IN, depthIn: thicknessIn }}
+                          overallDimensions={{ heightIn: jackStudPreviewHeightIn, widthIn: jackStudThicknessIn(jackStudConfig), depthIn: thicknessIn }}
                           displayName={panelType.label}
                         />
                         <p className={styles.note}>
-                          Preview only, at an illustrative default height (current wall height, {jackStudPreviewHeightIn}
-                          &quot;) — real rough-opening height isn&apos;t tracked yet. Fasteners:{" "}
-                          {jackStudFastenerResult.items[0]!.count} x 4in T25 #9 screws (
-                          {jackStudFastenerResult.totalWeightLb.toFixed(2)} lb) for this one sheet — a full opening gets
-                          2 (one each side).
+                          Preview only, at an illustrative default height (sill-top to header-bottom, {jackStudPreviewHeightIn.toFixed(1)}
+                          &quot;) — real rough-opening height isn&apos;t tracked yet.{" "}
+                          {jackStudConfig === "plywood" ? (
+                            <>
+                              Fasteners: {jackStudFastenerResult.items[0]!.count} x 4in T25 #9 screws (
+                              {jackStudFastenerResult.totalWeightLb.toFixed(2)} lb) for this one sheet — a full opening
+                              gets 2 (one each side).
+                            </>
+                          ) : (
+                            "2x4 stud config selected (Panel Standards) — fastener count/weight not modeled for this config yet."
+                          )}
                         </p>
                       </div>
                     ) : panelType.id === "safety-gap" ? (
@@ -2909,6 +3387,44 @@ export default function LayoutEditor() {
                           No longer an altered Standard Panel — just this one {SAFETY_GAP_THICKNESS_IN}in plywood
                           sheet, regardless of how much wall-run width the tiling reserves for this slot. See the
                           Material Totals page for the whole-project plywood count.
+                        </p>
+                      </div>
+                    ) : panelType.id === "header" ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+                        <div style={{ flex: "1 1 0%", minWidth: 200 }}>
+                          <StandardPanel3DView
+                            members={doorHeaderMembers}
+                            overallDimensions={{ heightIn: HEADER_PREVIEW_HEIGHT_IN, widthIn: doorHeaderWidthIn, depthIn: thicknessIn }}
+                            displayName="Door Header"
+                          />
+                        </div>
+                        <div style={{ flex: "1 1 0%", minWidth: 200 }}>
+                          <StandardPanel3DView
+                            members={windowHeaderMembers}
+                            overallDimensions={{ heightIn: HEADER_PREVIEW_HEIGHT_IN, widthIn: windowHeaderWidthIn, depthIn: thicknessIn }}
+                            displayName="Window Header (Long Header)"
+                          />
+                        </div>
+                        <p className={styles.note}>
+                          Preview only, at an illustrative default height ({HEADER_PREVIEW_HEIGHT_IN}&quot;) — real
+                          rough-opening-to-top-plate height isn&apos;t tracked yet (same gap as the Plywood Jack
+                          Stud). A door header is always a single upside-down-V truss web; a window (&quot;long&quot;)
+                          header repeats as many peaks as needed to keep every web segment at or above a {30}deg
+                          bracing angle. Both have the V framing on interior AND exterior wythes.
+                        </p>
+                      </div>
+                    ) : panelType.id === "sill" ? (
+                      <div>
+                        <StandardPanel3DView
+                          members={sillMembers}
+                          overallDimensions={{ heightIn: sillHeightIn, widthIn: sillWidthIn, depthIn: thicknessIn }}
+                          displayName={panelType.label}
+                        />
+                        <p className={styles.note}>
+                          Identical construction to a Standard Panel, just shorter (Tommy: &quot;sills are short
+                          standard panels&quot;) — default {sillHeightIn}&quot; tall. A window wider than one standard
+                          panel width ({standardWidthIn}&quot;) gets multiple sill panels sharing the run instead of
+                          one oversized sill — see the Window Rough Opening Detail page.
                         </p>
                       </div>
                     ) : undefined

@@ -39,3 +39,27 @@ export function wallCompassDirection(wall: Wall, footprint: Footprint): CompassD
   const index = Math.round(angleDeg / 45) % 8;
   return DIRECTIONS[index]!;
 }
+
+const OPPOSITE_DIRECTION: Record<CompassDirection, CompassDirection> = {
+  N: "S",
+  S: "N",
+  E: "W",
+  W: "E",
+  NE: "SW",
+  SW: "NE",
+  SE: "NW",
+  NW: "SE",
+};
+
+/**
+ * Whether two walls face exactly opposite compass directions (N/S, E/W,
+ * NE/SW, or SE/NW) — Tommy: the two Gable End walls a roof-catcher beam
+ * spans between must be "opposite" (parallel, facing away from each other),
+ * not adjacent/perpendicular, or the beam's run has no straight line to
+ * follow. Reuses wallCompassDirection's own 8-way snapped direction rather
+ * than raw angle math, so it agrees with what the UI already shows.
+ */
+export function areWallsOppositePair(wallA: Wall, wallB: Wall, footprint: Footprint): boolean {
+  if (wallA.id === wallB.id) return false;
+  return wallCompassDirection(wallA, footprint) === OPPOSITE_DIRECTION[wallCompassDirection(wallB, footprint)];
+}

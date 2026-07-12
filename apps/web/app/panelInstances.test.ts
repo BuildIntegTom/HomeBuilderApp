@@ -22,7 +22,7 @@ describe("allPanelInstances", () => {
   };
 
   it("counts every nameable type together, in true along-wall order, per compass direction", () => {
-    const instances = allPanelInstances(fp, wallSlots);
+    const instances = allPanelInstances(fp, wallSlots, 40);
     const ab = instances.filter((i) => i.wallId === "AB");
     // corner, standard, [window -> header+sill], standard, corner
     expect(ab.map((i) => ({ name: i.name, panelType: i.panelType }))).toEqual([
@@ -36,7 +36,7 @@ describe("allPanelInstances", () => {
   });
 
   it("gives a door only a header, no sill", () => {
-    const instances = allPanelInstances(fp, wallSlots);
+    const instances = allPanelInstances(fp, wallSlots, 40);
     const bc = instances.filter((i) => i.wallId === "BC");
     expect(bc.map((i) => ({ name: i.name, panelType: i.panelType }))).toEqual([
       { name: "E-1", panelType: "safety-oct-corner" },
@@ -47,17 +47,38 @@ describe("allPanelInstances", () => {
   });
 
   it("shares one slotIndexInWall between a window's header and sill (same physical slot)", () => {
-    const instances = allPanelInstances(fp, wallSlots);
+    const instances = allPanelInstances(fp, wallSlots, 40);
     const [header, sill] = instances.filter((i) => i.wallId === "AB" && (i.panelType === "header" || i.panelType === "sill"));
     expect(header!.slotIndexInWall).toBe(sill!.slotIndexInWall);
   });
 
   it("keeps numbering consistent regardless of which panel types a caller later filters to (the pre-existing Shop-Drawing-vs-canvas mismatch this replaces)", () => {
-    const instances = allPanelInstances(fp, wallSlots);
+    const instances = allPanelInstances(fp, wallSlots, 40);
     const onlyStandard = instances.filter((i) => i.panelType === "standard");
     // These must still be "N-2" and "N-5" (their true position in the AB sequence),
     // not "N-1"/"N-2" from an independent per-type counter.
     expect(onlyStandard.map((i) => i.name)).toEqual(["N-2", "N-5"]);
+  });
+
+  it("splits a wide window's sill run into multiple sill instances sharing the same slotIndexInWall", () => {
+    const wideWallSlots = {
+      AB: [{ type: "window" as const, widthIn: 90 }],
+    };
+    // RO width (plywood jack studs, default config): 90 - 1.5 = 88.5in; at a
+    // 40in standard width that's 2 sills sharing the run (round(88.5/40)=2).
+    const instances = allPanelInstances(fp, wideWallSlots, 40);
+    const sills = instances.filter((i) => i.panelType === "sill");
+    expect(sills.length).toBeGreaterThan(1);
+    for (const s of sills) expect(s.slotIndexInWall).toBe(0);
+    const totalWidth = sills.reduce((sum, s) => sum + s.widthIn, 0);
+    expect(totalWidth).toBeCloseTo(88.5, 6);
+  });
+
+  it("gives every header/sill instance a sourceSlotType matching the opening it came from", () => {
+    const instances = allPanelInstances(fp, wallSlots, 40);
+    const headersAndSills = instances.filter((i) => i.panelType === "header" || i.panelType === "sill");
+    expect(headersAndSills.length).toBeGreaterThan(0);
+    for (const inst of headersAndSills) expect(["window", "door"]).toContain(inst.sourceSlotType);
   });
 });
 

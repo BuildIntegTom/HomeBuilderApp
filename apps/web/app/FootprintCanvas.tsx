@@ -18,7 +18,12 @@ import {
   computeBuiltUpColumnBearingCapacityLb,
   computeStudPackBearingCapacityLb,
 } from "@building-integrity/calc-engine";
-import { buildBracedPanelMembers, buildColumnPanelMembers, buildCornerPanelMembers } from "@building-integrity/panel-catalog";
+import {
+  buildBracedPanelMembers,
+  buildColumnPanelMembers,
+  buildCornerPanelMembers,
+  type JackStudConfig,
+} from "@building-integrity/panel-catalog";
 import {
   SCALE_PX_PER_FT,
   clientPointFromEvent,
@@ -112,6 +117,12 @@ export interface FootprintCanvasProps {
    * see structuralByKey below. */
   wallHeightFt: number;
   includeNailer: boolean;
+  /** Needed to compute how many sill instances a wide window's rough
+   * opening splits into (see allPanelInstances/computeSillRunWidths), so
+   * the on-canvas combined label (e.g. "N-3+4+5") matches its Shop
+   * Drawing page. */
+  standardWidthIn: number;
+  jackStudConfig: JackStudConfig;
   leastAccessibleCorner: CornerId;
   /** Corners present before any bump-out was added — only these ever show
    * a least-accessible-corner marker (once a shape's first 4 corners are
@@ -148,6 +159,8 @@ export default function FootprintCanvas({
   wallThicknessIn,
   wallHeightFt,
   includeNailer,
+  standardWidthIn,
+  jackStudConfig,
   leastAccessibleCorner,
   primaryCornerIds,
   isWallLengthEditable,
@@ -177,7 +190,7 @@ export default function FootprintCanvas({
   const panelNameByKey = useMemo(() => {
     const grouped = new Map<string, PanelInstance[]>();
     if (footprint) {
-      for (const inst of allPanelInstances(footprint, wallSlots)) {
+      for (const inst of allPanelInstances(footprint, wallSlots, standardWidthIn, jackStudConfig)) {
         const key = `${inst.wallId}-${inst.slotIndexInWall}`;
         const list = grouped.get(key) ?? [];
         list.push(inst);
@@ -187,7 +200,7 @@ export default function FootprintCanvas({
     const map = new Map<string, string>();
     for (const [key, instances] of grouped) map.set(key, combinedPanelLabel(instances));
     return map;
-  }, [footprint, wallSlots]);
+  }, [footprint, wallSlots, standardWidthIn, jackStudConfig]);
 
   // Estimated bearing/shear numbers for the hover tooltip below (Tommy:
   // "when you hover over a panel... shows you extra details... shear and

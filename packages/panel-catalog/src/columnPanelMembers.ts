@@ -29,15 +29,20 @@ const COLUMN_BLOCKING_SPACING_IN = 16; // Tommy: 2x4 blocking every 16in, both s
 /** Default beam-depth allowance (Tommy) for a Column Panel used as roof-
  * catcher-beam bearing at a Gable End (when the roof is structural panels
  * rather than trusses — see the gable-multistory-roof-strategy memory).
- * User-toggleable, not a fixed constant baked into the geometry — the
- * beam itself (and its shape) is flagged to model later. */
-export const DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN = 11.5;
+ * Matches a real 2x12's actual depth (11.25in, not the 12in nominal) —
+ * Tommy: "spawn in 3 2x12 dimensional lumber pieces" for the roof-catcher
+ * beam itself (see buildRoofCatcherBeamMembers), which bears directly on
+ * top of the column, its own top face flush with the gable peak. User-
+ * toggleable, not a fixed constant baked into the geometry. */
+export const DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN = 11.25;
 
 /**
  * Column Panel height when bearing a roof-catcher beam between two Gable
- * End Panels (Tommy: "column panel should be 11.5in shorter than the top
- * of the triangle of the gable panels"). Pure calc only — no editor UI
- * wires this up yet, since it depends on the not-yet-built roof system.
+ * End Panels (Tommy: "column panel...11.25in down from the peak (so it can
+ * catch a beam)" — shorter than the peak by the beam's own depth). Real
+ * geometry now — see WallElevationView.tsx, which spawns a Column Panel
+ * centered under the peak whenever a wall has "Add Gable End" on and isn't
+ * snapped to a shed roof.
  */
 export function computeGableColumnHeightIn(
   gablePeakHeightIn: number,

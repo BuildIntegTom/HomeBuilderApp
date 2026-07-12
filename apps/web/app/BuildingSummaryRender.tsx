@@ -1,7 +1,7 @@
 "use client";
 
 import type { Footprint, PanelSlot } from "@building-integrity/geometry";
-import type { StudConfig } from "@building-integrity/panel-catalog";
+import type { JackStudConfig, StudConfig } from "@building-integrity/panel-catalog";
 import Building3DView from "./Building3DView";
 
 export interface BuildingSummaryRenderProps {
@@ -15,6 +15,8 @@ export interface BuildingSummaryRenderProps {
   isSquareBalePanelization?: boolean;
   squareBaleStudConfig?: StudConfig;
   nailerOffsetIn?: number;
+  jackStudConfig: JackStudConfig;
+  standardWidthIn: number;
   onCapture: (dataUrl: string) => void;
 }
 

@@ -3,15 +3,23 @@
 import { useEffect, useMemo, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { panelSlotBoxes3D, type Footprint, type PanelSlot } from "@building-integrity/geometry";
+import { computeSillRunWidths, panelSlotBoxes3D, type Footprint, type PanelSlot } from "@building-integrity/geometry";
 import {
   buildBracedPanelMembers,
   buildBuildingObj,
   buildColumnPanelMembers,
   buildCornerPanelMembers,
+  buildOpeningAssemblyMembers,
   buildSafetyGapMembers,
   buildSquareBalePanelMembers,
   buildStandardPanelMembers,
+  computeDoorRoughOpeningHeightIn,
+  computeRoughOpeningWidthIn,
+  doorRoughOpeningSelectedHeightIn,
+  headerPreviewHeightIn,
+  sillDefaultHeightIn,
+  toeUpHeightIn,
+  type JackStudConfig,
   type PanelMember,
   type StudConfig,
   type WorldPlacedPanel,
@@ -68,16 +76,23 @@ function birdsEyeCameraPosition(bounds: Bounds): [number, number, number] {
   ];
 }
 
-/** Panel types with real member geometry today — everything else (window,
- * door) falls back to a plain placeholder "blob" box, since there's no
- * member builder for them yet (Tommy: "unmodeled variants such as headers
- * and sills and door headers just be blobs so its obvious they arent done yet").
- * Safety/Gap (including one combined with a corner brace — its bracing
- * itself still isn't modeled in 3D, only its own plywood sheet) is just a
- * single 3/4in plywood sheet now, not an altered Standard Panel. Under
- * Square Bale Panels (Tommy's panelization type), a "standard"-typed slot
- * is actually a Square Bale Panel (blocking-girt construction), not a
- * loose-pack Standard Panel. */
+/** Real, real-height door Rough Opening height — see
+ * computeDoorRoughOpeningHeightIn's own doc comment; a window's jack-stud
+ * span has no confirmed real formula yet (see headerPreviewHeightIn), so it
+ * fills whatever's left between the sill's top and the wall's own top
+ * plate instead. */
+const DOOR_RO_HEIGHT_IN = computeDoorRoughOpeningHeightIn(doorRoughOpeningSelectedHeightIn.value, toeUpHeightIn.value);
+
+/** Real member geometry for every panel type, including window/door
+ * openings (Tommy: "why arent the RO's, headers, and sills spawning into
+ * the 3d drawing... fill them in") — a whole opening (header + both jack
+ * studs + sill(s) for windows) via buildOpeningAssemblyMembers, correctly
+ * Z-positioned within the slot's own box. Safety/Gap (including one
+ * combined with a corner brace — its bracing itself still isn't modeled in
+ * 3D, only its own plywood sheet) is just a single 3/4in plywood sheet now,
+ * not an altered Standard Panel. Under Square Bale Panels (Tommy's
+ * panelization type), a "standard"-typed slot is actually a Square Bale
+ * Panel (blocking-girt construction), not a loose-pack Standard Panel. */
 function membersForSlot(
   slot: PanelSlot,
   thicknessIn: number,
@@ -86,6 +101,8 @@ function membersForSlot(
   isSquareBalePanelization: boolean,
   squareBaleStudConfig: StudConfig,
   nailerOffsetIn: number,
+  jackStudConfig: JackStudConfig,
+  standardWidthIn: number,
 ): PanelMember[] | null {
   switch (slot.type) {
     case "standard":
@@ -101,6 +118,28 @@ function membersForSlot(
       return buildCornerPanelMembers(thicknessIn, heightIn, includeNailer);
     case "safety-gap":
       return buildSafetyGapMembers(thicknessIn, heightIn);
+    case "window":
+    case "door": {
+      const isDoor = slot.type === "door";
+      const sillHeightIn = sillDefaultHeightIn.value;
+      const bottomZIn = isDoor ? 0 : sillHeightIn;
+      const jackStudSpanIn = isDoor ? DOOR_RO_HEIGHT_IN : Math.max(0, heightIn - headerPreviewHeightIn.value - sillHeightIn);
+      const sillWidthsIn = isDoor
+        ? []
+        : computeSillRunWidths(computeRoughOpeningWidthIn(slot.widthIn, jackStudConfig), standardWidthIn);
+      return buildOpeningAssemblyMembers(
+        slot.widthIn,
+        thicknessIn,
+        isDoor ? "door" : "window",
+        jackStudConfig,
+        bottomZIn,
+        jackStudSpanIn,
+        headerPreviewHeightIn.value,
+        sillHeightIn,
+        sillWidthsIn,
+        includeNailer,
+      );
+    }
     default:
       return null;
   }
@@ -127,6 +166,10 @@ interface Building3DViewProps {
    * when `isSquareBalePanelization` is false. */
   squareBaleStudConfig?: StudConfig;
   nailerOffsetIn?: number;
+  /** Jack stud construction + standard panel width — feed window/door
+   * opening assemblies (header/jack-studs/sill) via buildOpeningAssemblyMembers. */
+  jackStudConfig: JackStudConfig;
+  standardWidthIn: number;
   /** Renders a static, non-interactive SE bird's-eye frame instead of the
    * normal orbit-able preview — used to capture a PNG for the Project
    * Summary page's static rendering (Tommy: "a static 3d rendering image
@@ -195,6 +238,8 @@ export default function Building3DView({
   isSquareBalePanelization = false,
   squareBaleStudConfig = "single-2x4",
   nailerOffsetIn = 0,
+  jackStudConfig,
+  standardWidthIn,
   captureMode = false,
   onCapture,
   compassRef,
@@ -218,9 +263,21 @@ export default function Building3DView({
           isSquareBalePanelization,
           squareBaleStudConfig,
           nailerOffsetIn,
+          jackStudConfig,
+          standardWidthIn,
         ),
       })),
-    [slotBoxes, thicknessIn, heightIn, includeNailer, isSquareBalePanelization, squareBaleStudConfig, nailerOffsetIn],
+    [
+      slotBoxes,
+      thicknessIn,
+      heightIn,
+      includeNailer,
+      isSquareBalePanelization,
+      squareBaleStudConfig,
+      nailerOffsetIn,
+      jackStudConfig,
+      standardWidthIn,
+    ],
   );
 
   // Second story: same XZ anchor positions as the ground floor (shares its
@@ -246,6 +303,8 @@ export default function Building3DView({
           isSquareBalePanelization,
           squareBaleStudConfig,
           nailerOffsetIn,
+          jackStudConfig,
+          standardWidthIn,
         ),
       })),
     [
@@ -256,6 +315,8 @@ export default function Building3DView({
       isSquareBalePanelization,
       squareBaleStudConfig,
       nailerOffsetIn,
+      jackStudConfig,
+      standardWidthIn,
     ],
   );
 

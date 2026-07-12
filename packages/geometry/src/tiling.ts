@@ -29,6 +29,22 @@ function buildEvenMiddle(budgetLengthIn: number, standardWidthIn: number): Panel
   return Array.from({ length: count }, () => ({ type: "standard" as const, widthIn: widthEachIn }));
 }
 
+/**
+ * How many sill panels a window's rough-opening run needs, and how wide
+ * each one is (Tommy: "sills are short standard panels... if the window
+ * spacing or header length exceeds the standard panel width, then create
+ * another sill to share the run") — the exact same even-split math as
+ * `buildEvenMiddle` (a wall run under the safety-gap threshold), just
+ * returning plain widths instead of PanelSlot[]: a sill isn't part of a
+ * wall's own tiled slots array, it's derived per window opening.
+ */
+export function computeSillRunWidths(roWidthIn: number, standardWidthIn: number): number[] {
+  if (roWidthIn <= 0) return [];
+  const count = Math.max(1, Math.round(roWidthIn / standardWidthIn));
+  const widthEachIn = roWidthIn / count;
+  return Array.from({ length: count }, () => widthEachIn);
+}
+
 interface PlainSizing {
   standardCount: number;
   gapWidthIn: number;

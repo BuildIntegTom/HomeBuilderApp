@@ -93,9 +93,9 @@ describe("buildColumnPanelSchema", () => {
 });
 
 describe("computeGableColumnHeightIn", () => {
-  it("subtracts the default 11.5in beam-depth offset from the gable peak height", () => {
-    expect(computeGableColumnHeightIn(150)).toBeCloseTo(150 - 11.5, 6);
-    expect(DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN).toBe(11.5);
+  it("subtracts the default 11.25in beam-depth offset (a real 2x12's actual depth) from the gable peak height", () => {
+    expect(computeGableColumnHeightIn(150)).toBeCloseTo(150 - 11.25, 6);
+    expect(DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN).toBe(11.25);
   });
 
   it("accepts a custom offset instead of the default", () => {

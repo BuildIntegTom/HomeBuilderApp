@@ -185,6 +185,117 @@ export function buildNailer(widthIn: number, heightIn: number, offsetIn = 0): Pa
 }
 
 /**
+ * Minimum brace angle (Tommy: "the math with the triangle parts of the
+ * headers cannot go outside the range of 30-45 degrees") — used by
+ * `computeTrussWebPeakCount` to decide how many repeating peaks a truss
+ * web needs so no single web segment ends up too shallow. There's no
+ * matching MAX constant because the upper bound only ever gets tighter as
+ * peak count grows (more, narrower segments only get steeper), so nothing
+ * needs to clamp against exceeding 45deg from this side — see that
+ * function's own doc comment.
+ */
+export const TRUSS_WEB_MIN_ANGLE_DEG = 30;
+
+/**
+ * How many repeating peaks a "W-truss" web (see `buildTrussWebBraces`)
+ * needs so every individual web segment's rise angle is at least
+ * `TRUSS_WEB_MIN_ANGLE_DEG` — Tommy: "door headers just have one upside
+ * down V" (1 peak) but a wider "long header" or a gable's full width
+ * needs more, narrower peaks to stay in a sane bracing angle instead of
+ * one shallow, wide one. `riseIn` is the (possibly conservative/shortest)
+ * vertical rise available to a peak; `widthIn` is the full span being
+ * webbed. Always returns at least 1 (an isolated call site — e.g. a door
+ * header — can force exactly 1 regardless of this).
+ */
+export function computeTrussWebPeakCount(widthIn: number, riseIn: number): number {
+  const minAngleRad = (TRUSS_WEB_MIN_ANGLE_DEG * Math.PI) / 180;
+  const n = Math.ceil((widthIn * Math.tan(minAngleRad)) / (2 * riseIn));
+  return Math.max(1, n);
+}
+
+/** The rise angle (degrees, from horizontal) one truss-web peak makes,
+ * given how many peaks share `widthIn` and how much vertical `riseIn` each
+ * has — the inverse of what `computeTrussWebPeakCount` solves for, used to
+ * report/flag the actual resulting angle (e.g. a door header's forced
+ * single peak might land outside the 30-45deg range for an unusually
+ * wide/short opening; this is how a caller would notice and flag it). */
+export function computeTrussWebAngleDeg(widthIn: number, riseIn: number, peakCount: number): number {
+  const halfSegmentIn = widthIn / (2 * peakCount);
+  return (Math.atan2(riseIn, halfSegmentIn) * 180) / Math.PI;
+}
+
+/**
+ * A continuous "W-truss" zigzag of `peakCount` triangular webs between a
+ * flat bottom chord and a (possibly sloped) top chord — Tommy, from
+ * reference photos of real straw-bale wall/gable bracing: repeating
+ * "upside-down V" triangles sharing their feet/peaks continuously
+ * (foot0-peak0-foot1-peak1-...-footN) rather than isolated, gapped
+ * triangles, the same way a real truss's web members connect. `topZAt(x)`
+ * lets the top chord follow a slope (a Gable End Panel's rip) or stay
+ * flat (headers — pass a constant function). Every brace is a 2x4,
+ * rotated 90deg so it's confined to a thin (1.5in) Y-slice — pass `yIn`
+ * to place that slice on whichever wythe (see the "diagonal" +
+ * rotationDeg=90 case in `memberBoxSizeIn`).
+ */
+export function buildTrussWebBraces(
+  peakCount: number,
+  widthIn: number,
+  bottomZIn: number,
+  topZAt: (xIn: number) => number,
+  yIn: number,
+  idPrefix: string,
+): PanelMember[] {
+  const members: PanelMember[] = [];
+  const segWidthIn = widthIn / peakCount;
+
+  function makeWebBrace(memberId: string, x1: number, z1: number, x2: number, z2: number, notes: string): PanelMember {
+    const centerX = (x1 + x2) / 2;
+    const centerZ = (z1 + z2) / 2;
+    const lengthIn = Math.hypot(x2 - x1, z2 - z1);
+    const tiltDeg = (Math.atan2(-(x1 - centerX), z1 - centerZ) * 180) / Math.PI;
+    return {
+      memberId,
+      material: "dimensional_lumber",
+      speciesGrade: LUMBER_SPECIES_GRADE,
+      plySpec: null,
+      nominalSize: "2x4",
+      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn },
+      orientation: "diagonal",
+      position: { xIn: centerX, yIn, zIn: centerZ, rotationDeg: 90, tiltDeg },
+      role: "brace",
+      qty: 1,
+      notes,
+    };
+  }
+
+  for (let i = 0; i < peakCount; i++) {
+    const footLeftXIn = i * segWidthIn;
+    const footRightXIn = (i + 1) * segWidthIn;
+    const peakXIn = footLeftXIn + segWidthIn / 2;
+    const peakZIn = topZAt(peakXIn);
+    members.push(
+      makeWebBrace(
+        `${idPrefix}_${i + 1}_rise`,
+        footLeftXIn,
+        bottomZIn,
+        peakXIn,
+        peakZIn,
+        `web ${i + 1} of ${peakCount}, rising from the bottom chord to the peak.`,
+      ),
+      makeWebBrace(
+        `${idPrefix}_${i + 1}_fall`,
+        peakXIn,
+        peakZIn,
+        footRightXIn,
+        bottomZIn,
+        `web ${i + 1} of ${peakCount}, falling from the peak back to the bottom chord.`,
+      ),
+    );
+  }
+  return members;
+}
+
+/**
  * `rowCount` girt rows, evenly spaced across the stud span (Tommy: the
  * Standard Panel always uses 2; the Braced Panel uses 3+, see
  * `computeBracedGirtRowCount`). Each row is 2 short 2x4 bars (one per

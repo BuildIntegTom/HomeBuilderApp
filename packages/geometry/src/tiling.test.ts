@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall, toggleOpening } from "./tiling";
+import { computeSillRunWidths, getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall, toggleOpening } from "./tiling";
 import type { PanelSlot } from "./types";
+
+describe("computeSillRunWidths", () => {
+  it("returns a single sill sized to the RO when it's under the standard width", () => {
+    expect(computeSillRunWidths(34, 40)).toEqual([34]);
+  });
+
+  it("splits into multiple even sills when the RO exceeds the standard width", () => {
+    const widths = computeSillRunWidths(84, 40);
+    expect(widths.length).toBeGreaterThan(1);
+    const total = widths.reduce((s, w) => s + w, 0);
+    expect(total).toBeCloseTo(84, 6);
+    for (const w of widths) expect(w).toBeCloseTo(widths[0]!, 6); // evenly split
+  });
+
+  it("returns an empty array for a zero/negative RO width", () => {
+    expect(computeSillRunWidths(0, 40)).toEqual([]);
+    expect(computeSillRunWidths(-5, 40)).toEqual([]);
+  });
+});
 
 describe("tileWall", () => {
   it("keeps the gap panel a fixed 3/4in wide, resizing the standard panel next to it to absorb the leftover, gap second-to-last", () => {

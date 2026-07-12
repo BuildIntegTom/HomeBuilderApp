@@ -208,7 +208,7 @@ export function buildSquareBaleCornerPanelMembers(depthIn: number, heightIn: num
     ...buildCornerPanelStuds(widthIn, depthIn, heightIn, primarySpec, baseSpec),
     ...buildCornerPanelVoidFill(depthIn, heightIn, primarySpec),
     ...buildBlockingGirtRows(SQUARE_BALE_CORNER_GIRT_ROW_COUNT, widthIn, depthIn, studSpanIn, primarySpec, baseSpec),
-    ...buildEndBlocks(widthIn, depthIn, heightIn),
+    ...buildEndBlocks(widthIn, depthIn, heightIn, studAssemblyThicknessIn(primarySpec), studAssemblyThicknessIn(baseSpec)),
   ];
   if (includeNailer) members.push(buildNailer(widthIn, heightIn, nailerOffsetIn));
   return members;
