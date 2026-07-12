@@ -31,3 +31,16 @@
   color: #1c3d5a;
   text-align: center;
 }
+
+@media (max-width: 600px) {
+  .dial {
+    min-width: 0;
+    width: 100%;
+    padding: 3px 4px;
+    box-sizing: border-box;
+  }
+
+  .current {
+    font-size: 11px;
+  }
+}

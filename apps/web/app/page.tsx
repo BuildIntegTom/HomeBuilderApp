@@ -49,6 +49,8 @@ import {
   computeStandardPanelWoodWeight,
   computeStrawWeight,
   computeStudPackBearingCapacityLb,
+  formatLengthIn,
+  MM_PER_IN,
   toReviewLog,
   validateVaporOpenness,
   type Season,
@@ -105,10 +107,22 @@ import {
   floorInsulationSequencingRule,
   floorJoistTypes,
   bearingEdgeReferenceOptions,
+  CLASSIC_TRUSS_DEFAULT_PITCH_IN12,
+  CLASSIC_TRUSS_DISCLAIMER,
+  CLASSIC_TRUSS_TYPES,
+  buildEnergyHeelTrussSchema,
+  buildParallelChordTrussSchema,
+  HIGH_PERF_TRUSS_BEARING_SHAPES,
+  HIGH_PERF_TRUSS_CAVITY_DEPTH_OPTIONS_IN,
+  HIGH_PERF_TRUSS_DEFAULT_SPAN_IN,
+  HIGH_PERF_TRUSS_MAX_PITCH_IN12,
+  HIGH_PERF_TRUSS_MIN_PITCH_IN12,
   floorLongSideBlockingNote,
   floorRimJoistDetail,
   foundationFastenerSchedule,
   foundationTypes,
+  groundScrewProducts,
+  groundScrewProductsStatus,
   headerPreviewHeightIn,
   looseDensePackDefaultThicknessIn,
   looseDensePackThicknessOptionsIn,
@@ -126,6 +140,8 @@ import {
   roofSystemTypes,
   slabFoundationDimensions,
   squareBalePanel,
+  bracedWallLineSpacingFt,
+  bracedWallLineSpacingStatus,
   seismicBracedPanelSpacingFt,
   sillDefaultHeightIn,
   toeUpHeightIn,
@@ -138,6 +154,9 @@ import {
   timberHpDensityLbFt3,
   trussPlateInsetDefaultIn,
   wallAssemblyLayers,
+  type ClassicTrussTypeId,
+  type HighPerfTrussBearingShapeId,
+  type HighPerfTrussCavityDepthIn,
   type JackStudConfig,
   type OctagonRingDiameterFt,
   type PanelMember,
@@ -165,6 +184,8 @@ import { DocumentMetaProvider } from "./DocumentMetaContext";
 import DrawingToolPen from "./DrawingToolPen";
 import EditorToolbar from "./EditorToolbar";
 import OctagonRingPreview from "./OctagonRingPreview";
+import TrussPreview from "./TrussPreview";
+import HighPerfTrussPreview, { type HighPerfTrussTypeId } from "./HighPerfTrussPreview";
 import PanelLegend from "./PanelLegend";
 import ProjectSummaryPage from "./ProjectSummaryPage";
 import SectionCarousel from "./SectionCarousel";
@@ -294,6 +315,12 @@ export default function LayoutEditor() {
   const [seismicZone, setSeismicZone] = useState<SeismicZone>("moderate");
   const [foundationTypeId, setFoundationTypeId] = useState(foundationTypes[0]!.id);
   const [pierSpacingFt, setPierSpacingFt] = useState<number>(pierSpacingDefaultFt);
+  // Real ground-screw product selection (Tommy: "pick the top 3 options...
+  // include them as sub objects with their relative specs") — only shown/
+  // relevant when foundationTypeId === "ground-screw"; doesn't affect any
+  // calculation yet (loadCapacity display only), same as the generic
+  // groundScrewLoadPath figure it supplements.
+  const [selectedGroundScrewProductId, setSelectedGroundScrewProductId] = useState(groundScrewProducts[0]!.id);
   const [zipCode, setZipCode] = useState("");
   // Title-block metadata (Tommy: "title block stuff on the right side...
   // project, site, date, etc.") — projectName is the only genuinely new
@@ -335,6 +362,25 @@ export default function LayoutEditor() {
   // footprint is an octagon (8 corners, the octagon drawing tool's own
   // shape), independent of roofSystemTypeId.
   const [octagonRingDiameterFt, setOctagonRingDiameterFt] = useState<OctagonRingDiameterFt>(3);
+
+  // Classic Truss Reference gallery (Tommy: "model out some classic truss
+  // examples... this is a basic outline and estimate - refer to truss
+  // manufacturer for more details") — a standalone browsing selection, not
+  // tied to the project's own drawn footprint/roof, so (like
+  // elevationViewWallId) it doesn't round-trip in ProjectFile.
+  const [selectedClassicTrussId, setSelectedClassicTrussId] = useState<ClassicTrussTypeId>(CLASSIC_TRUSS_TYPES[0]!.id);
+  const selectedClassicTruss = CLASSIC_TRUSS_TYPES.find((t) => t.id === selectedClassicTrussId)!;
+
+  // High-Performance Truss (Tommy: "we are designing for a high performance
+  // house here... each of these trusses should be able to meet a variety of
+  // different slopes, 2/12 to 12/12... have them sit on the 2x12's that are
+  // up there (or 14in LVL)") — same standalone-reference pattern as the
+  // Classic Truss gallery above, but with real adjustable pitch/cavity-
+  // depth/bearing-shape controls instead of fixed illustrative defaults.
+  const [highPerfTrussTypeId, setHighPerfTrussTypeId] = useState<HighPerfTrussTypeId>("energy-heel");
+  const [highPerfTrussPitchIn12, setHighPerfTrussPitchIn12] = useState(CLASSIC_TRUSS_DEFAULT_PITCH_IN12);
+  const [highPerfTrussCavityDepthIn, setHighPerfTrussCavityDepthIn] = useState<HighPerfTrussCavityDepthIn>(18);
+  const [highPerfTrussBearingShapeId, setHighPerfTrussBearingShapeId] = useState<HighPerfTrussBearingShapeId>(HIGH_PERF_TRUSS_BEARING_SHAPES[0]!.id);
 
   // Per-wall elevation view (Tommy: "an arrow button for each wall section,
   // where we can see the whole line up still in 2d view") — additive to the
@@ -394,7 +440,11 @@ export default function LayoutEditor() {
   const handleGenerateShedRoof = (wall: Wall) => {
     handleToggleGableEnd(wall.id, true);
     handleChangeGablePeakPositionIn(wall.id, 0);
-    setBottomOfTrussMaxHeightFt(wallHeightFt + wall.lengthFt * (4 / 12));
+    // Round to the nearest inch (this app's finest dimension unit
+    // everywhere else) — a raw 4/12 pitch over an arbitrary wall length
+    // is a repeating decimal in feet and would otherwise leak an ugly
+    // value like 16.666666666666668 into the height input/diagrams below.
+    setBottomOfTrussMaxHeightFt(Math.round((wallHeightFt + wall.lengthFt * (4 / 12)) * 12) / 12);
   };
 
   // Second story (Tommy: "add a second level of panels") — shares the
@@ -1445,6 +1495,8 @@ export default function LayoutEditor() {
       pages.push({ id: "detail-box-beam", label: "Roof: Box Beam (Two-Story)" });
     }
     pages.push({ id: "detail-material-totals", label: "Material Totals" });
+    pages.push({ id: "detail-classic-truss", label: "Classic Truss Reference" });
+    pages.push({ id: "detail-high-perf-truss", label: "High-Performance Truss" });
     // Rough Opening Detail pages (Tommy: "We are going to make a Rough
     // Opening Detail page, so we can keep track of window and door
     // needs... lets do them on two separate rough opening pages") — like
@@ -1672,14 +1724,32 @@ export default function LayoutEditor() {
       <label>
         Seismic zone{" "}
         <select value={seismicZone} onChange={(e) => setSeismicZone(e.target.value as SeismicZone)}>
-          <option value="high">High ({seismicBracedPanelSpacingFt.high}ft braced spacing)</option>
-          <option value="moderate">Moderate ({seismicBracedPanelSpacingFt.moderate}ft braced spacing)</option>
-          <option value="low">Low ({seismicBracedPanelSpacingFt.low}ft braced spacing)</option>
+          <option value="high">High ({seismicBracedPanelSpacingFt.high}ft braced PANEL spacing)</option>
+          <option value="moderate">Moderate ({seismicBracedPanelSpacingFt.moderate}ft braced PANEL spacing)</option>
+          <option value="low">Low ({seismicBracedPanelSpacingFt.low}ft braced PANEL spacing)</option>
         </select>
       </label>
+      <p className={styles.note}>
+        Braced wall PANEL spacing (above, drives how often a braced panel is placed along one wall run) is a
+        different limit than braced wall LINE spacing (how far apart two parallel bracing-required wall lines can
+        be) — this design&apos;s longest unbraced run between parallel wall lines should stay under{" "}
+        {bracedWallLineSpacingFt[seismicZone]}ft. {bracedWallLineSpacingStatus.note}
+      </p>
       <label>
         Foundation type{" "}
-        <select value={foundationTypeId} onChange={(e) => setFoundationTypeId(e.target.value as typeof foundationTypeId)}>
+        <select
+          value={foundationTypeId}
+          onChange={(e) => {
+            const nextId = e.target.value as typeof foundationTypeId;
+            setFoundationTypeId(nextId);
+            // A monolithic slab floor can't coexist with a pier/crawlspace
+            // foundation — see the Thermally Broken Slab button's own
+            // disabled/title logic below for the other half of this guardrail.
+            if (foundationTypes.find((f) => f.id === nextId)!.usesPierGrid && floorSystemId === "thermal-slab") {
+              setFloorSystemId(null);
+            }
+          }}
+        >
           {foundationTypes.map((f) => (
             <option key={f.id} value={f.id}>
               {f.label}
@@ -1698,6 +1768,35 @@ export default function LayoutEditor() {
             ))}
           </select>
         </label>
+      )}
+      {foundationTypeId === "ground-screw" && (
+        <>
+          <div role="group" aria-label="Ground screw product" className={styles.toolbar}>
+            {groundScrewProducts.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                title={`${p.manufacturer} ${p.model} — ${formatLengthIn(p.diameterMm / MM_PER_IN, unitSystem)} diameter, ${p.representativeCapacityKN}kN`}
+                aria-pressed={selectedGroundScrewProductId === p.id}
+                className={selectedGroundScrewProductId === p.id ? styles.toolActive : styles.tool}
+                onClick={() => setSelectedGroundScrewProductId(p.id)}
+              >
+                {p.manufacturer} {p.model}
+              </button>
+            ))}
+          </div>
+          {(() => {
+            const p = groundScrewProducts.find((gp) => gp.id === selectedGroundScrewProductId)!;
+            return (
+              <p className={styles.note}>
+                {formatLengthIn(p.diameterMm / MM_PER_IN, unitSystem)} diameter, length {p.lengthMmRange},{" "}
+                ~{p.representativeCapacityKN}kN ({p.capacityBasis}). Origin: {p.originCountry}.{" "}
+                {p.availabilityNote} {p.note}
+              </p>
+            );
+          })()}
+          <p className={styles.pending}>{groundScrewProductsStatus.note}</p>
+        </>
       )}
       <p className={foundationType.status === "pending-BI-confirmation" ? styles.pending : styles.note}>
         {foundationType.vaporNote}
@@ -1724,11 +1823,16 @@ export default function LayoutEditor() {
         />
       </label>
       <label>
-        Thickness (in){" "}
-        <select value={thicknessIn} onChange={(e) => setThicknessIn(Number(e.target.value))}>
+        Thickness{" "}
+        <select
+          value={thicknessIn}
+          disabled={isSquareBalePanelization}
+          title={isSquareBalePanelization ? `Locked to ${formatLengthIn(squareBalePanel.thicknessIn, unitSystem)} while Square Bale Panels is selected.` : undefined}
+          onChange={(e) => setThicknessIn(Number(e.target.value))}
+        >
           {looseDensePackThicknessOptionsIn.map((t) => (
             <option key={t} value={t}>
-              {t}&quot;
+              {formatLengthIn(t, unitSystem)}
             </option>
           ))}
         </select>
@@ -1801,7 +1905,14 @@ export default function LayoutEditor() {
           type="button"
           aria-pressed={panelizationType === "square-bale-panels"}
           className={panelizationType === "square-bale-panels" ? styles.toolActive : styles.tool}
-          onClick={() => setPanelizationType("square-bale-panels")}
+          title={`Locks Thickness to ${squareBalePanel.thicknessIn}in — a whole-bale unit's width/thickness are physically fixed, not adjustable.`}
+          onClick={() => {
+            setPanelizationType("square-bale-panels");
+            // Square bale panels are a fixed real-world bale size (Tommy: "always
+            // 14in") — not an independently adjustable wall thickness like every
+            // other panelization type.
+            setThicknessIn(squareBalePanel.thicknessIn);
+          }}
         >
           Square Bale Panels
         </button>
@@ -1824,11 +1935,12 @@ export default function LayoutEditor() {
         <>
           <p className={styles.pending}>
             Reference/layout mode only — not fabricated to anymore (Tommy). Every wall infill span (in place
-            of standard/braced/safety-gap) is tiled at a fixed {squareBalePanel.widthIn}
-            &quot; x {squareBalePanel.thicknessIn}&quot; whole-bale unit ({squareBalePanel.note}). Corner panels are
-            also a {squareBalePanel.widthIn}&quot; Square Bale Panel body, with a double 2x6 stud pack at the
-            primary corner instead of the plain 25.5&quot; Column/Corner unit — see the Corner Shop Drawing page.
-            Columns and openings are unaffected.
+            of standard/braced/safety-gap) is tiled at a fixed {formatLengthIn(squareBalePanel.widthIn, unitSystem)}
+            {" "}x {formatLengthIn(squareBalePanel.thicknessIn, unitSystem)} whole-bale unit ({squareBalePanel.note}).
+            Corner panels are also a {formatLengthIn(squareBalePanel.widthIn, unitSystem)} Square Bale Panel body,
+            with a double 2x6 stud pack at the primary corner instead of the plain{" "}
+            {formatLengthIn(cornerPanelWidthIn.value, unitSystem)} Column/Corner unit — see the Corner Shop Drawing
+            page. Columns and openings are unaffected.
           </p>
           <div role="group" aria-label="Square bale stud configuration" className={styles.toolbar}>
             <button
@@ -2239,10 +2351,16 @@ export default function LayoutEditor() {
                       {foundationType.label}). See Detail Guide Pages below for the full load path.
                     </p>
                   </>
-                ) : (
+                ) : foundationType.loadPath.length > 0 ? (
                   <p className={styles.note}>
                     {foundationType.label} doesn&apos;t use a pier grid — see the Detail Guide Pages section below for
                     its construction detail.
+                  </p>
+                ) : (
+                  <p className={styles.pending}>
+                    {foundationType.label} doesn&apos;t use a pier grid, and its construction isn&apos;t modeled yet —
+                    {" "}
+                    {foundationType.vaporNote}
                   </p>
                 )}
               </>
@@ -2267,7 +2385,12 @@ export default function LayoutEditor() {
                     aria-pressed={isThermalSlabFloor}
                     className={isThermalSlabFloor ? styles.toolActive : styles.tool}
                     onClick={() => setFloorSystemId((was) => (was === "thermal-slab" ? null : "thermal-slab"))}
-                    disabled={!footprint}
+                    disabled={!footprint || foundationType.usesPierGrid}
+                    title={
+                      foundationType.usesPierGrid
+                        ? "A monolithic slab floor isn't compatible with a pier/crawlspace foundation — pick a joist floor type instead, or switch to a slab-compatible foundation type on the Site Properties panel."
+                        : undefined
+                    }
                   >
                     Thermally Broken Slab
                   </button>
@@ -2301,10 +2424,15 @@ export default function LayoutEditor() {
                     there&apos;s no separate floor panel/joist layout to draw. See the Detail Guide Pages section below
                     for the full thermal-break detail.
                   </p>
-                ) : (
+                ) : foundationType.loadPath.length > 0 ? (
                   <p className={styles.note}>
                     {foundationType.label} doesn&apos;t use a pier grid, so there&apos;s no pier-to-pier floor panel
                     bay to derive yet — see the Detail Guide Pages section below for its construction detail.
+                  </p>
+                ) : (
+                  <p className={styles.pending}>
+                    {foundationType.label} doesn&apos;t use a pier grid, so there&apos;s no pier-to-pier floor panel
+                    bay to derive yet, and its construction isn&apos;t modeled yet — {foundationType.vaporNote}
                   </p>
                 )}
               </>
@@ -3258,6 +3386,145 @@ export default function LayoutEditor() {
             ]}
             role={role}
           />
+        </StickyNote>
+
+        <StickyNote
+          id="detail-classic-truss"
+          label="Classic Truss Reference"
+          isOpen={openNoteIds.has("detail-classic-truss")}
+          isFullscreen={fullscreenNoteId === "detail-classic-truss"}
+          cascadeIndex={noteOpenOrder.indexOf("detail-classic-truss")}
+          onClose={() => handleToggleNote("detail-classic-truss")}
+          onToggleFullscreen={() => handleToggleNoteFullscreen("detail-classic-truss")}
+          onPrint={() => handlePrintNote("detail-classic-truss")}
+        >
+          <DetailGuidePage
+            title={`Classic Truss Reference — ${selectedClassicTruss.label}`}
+            triggerCondition="Always available — a standalone reference gallery of classic truss profiles, independent of this project's own drawn footprint/roof (see the Roof tab's Truss Plate for the actual roof-bearing member this app models)."
+            diagram={
+              <>
+                <div role="group" aria-label="Classic truss type" className={styles.toolbar}>
+                  {CLASSIC_TRUSS_TYPES.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      aria-pressed={selectedClassicTrussId === t.id}
+                      className={selectedClassicTrussId === t.id ? styles.toolActive : styles.tool}
+                      onClick={() => setSelectedClassicTrussId(t.id)}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                <TrussPreview trussType={selectedClassicTruss} />
+              </>
+            }
+            fastenerSchedule={[]}
+            notes={[
+              CLASSIC_TRUSS_DISCLAIMER,
+              selectedClassicTruss.description,
+              `Shown at a representative ${Math.round(selectedClassicTruss.defaultSpanIn / 12)}ft span — chords are 2x6, web/post members are 2x4, all a single ~1.5in-thick flat truss unit (no metal plate connectors modeled).`,
+              "Every chord/web angle-cut end is simplified to a straight tilted box, not true beveled geometry — same simplification as every other diagonal brace in this app.",
+            ]}
+            role={role}
+          />
+        </StickyNote>
+
+        <StickyNote
+          id="detail-high-perf-truss"
+          label="High-Performance Truss"
+          isOpen={openNoteIds.has("detail-high-perf-truss")}
+          isFullscreen={fullscreenNoteId === "detail-high-perf-truss"}
+          cascadeIndex={noteOpenOrder.indexOf("detail-high-perf-truss")}
+          onClose={() => handleToggleNote("detail-high-perf-truss")}
+          onToggleFullscreen={() => handleToggleNoteFullscreen("detail-high-perf-truss")}
+          onPrint={() => handlePrintNote("detail-high-perf-truss")}
+        >
+          {(() => {
+            const bearingShape = HIGH_PERF_TRUSS_BEARING_SHAPES.find((b) => b.id === highPerfTrussBearingShapeId)!;
+            const schema =
+              highPerfTrussTypeId === "energy-heel"
+                ? buildEnergyHeelTrussSchema(HIGH_PERF_TRUSS_DEFAULT_SPAN_IN, highPerfTrussPitchIn12, highPerfTrussCavityDepthIn, highPerfTrussBearingShapeId)
+                : buildParallelChordTrussSchema(HIGH_PERF_TRUSS_DEFAULT_SPAN_IN, highPerfTrussPitchIn12, highPerfTrussCavityDepthIn, highPerfTrussBearingShapeId);
+            return (
+              <DetailGuidePage
+                title={schema.displayName}
+                triggerCondition="Always available — a standalone, adjustable high-performance roof truss reference (energy/raised heel for a deep, uncompressed insulation cavity), independent of this project's own drawn footprint/roof."
+                diagram={
+                  <>
+                    <div role="group" aria-label="High-performance truss type" className={styles.toolbar}>
+                      <button
+                        type="button"
+                        aria-pressed={highPerfTrussTypeId === "energy-heel"}
+                        className={highPerfTrussTypeId === "energy-heel" ? styles.toolActive : styles.tool}
+                        onClick={() => setHighPerfTrussTypeId("energy-heel")}
+                      >
+                        Energy-Heel (Gable)
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={highPerfTrussTypeId === "parallel-chord"}
+                        className={highPerfTrussTypeId === "parallel-chord" ? styles.toolActive : styles.tool}
+                        onClick={() => setHighPerfTrussTypeId("parallel-chord")}
+                      >
+                        Parallel Chord (Shed)
+                      </button>
+                    </div>
+                    <label>
+                      Pitch{" "}
+                      <select value={highPerfTrussPitchIn12} onChange={(e) => setHighPerfTrussPitchIn12(Number(e.target.value))}>
+                        {Array.from({ length: HIGH_PERF_TRUSS_MAX_PITCH_IN12 - HIGH_PERF_TRUSS_MIN_PITCH_IN12 + 1 }, (_, i) => HIGH_PERF_TRUSS_MIN_PITCH_IN12 + i).map((p) => (
+                          <option key={p} value={p}>
+                            {p}/12
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div role="group" aria-label="Insulation cavity depth" className={styles.toolbar}>
+                      {HIGH_PERF_TRUSS_CAVITY_DEPTH_OPTIONS_IN.map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          aria-pressed={highPerfTrussCavityDepthIn === d}
+                          className={highPerfTrussCavityDepthIn === d ? styles.toolActive : styles.tool}
+                          onClick={() => setHighPerfTrussCavityDepthIn(d)}
+                        >
+                          {formatLengthIn(d, unitSystem)} cavity
+                        </button>
+                      ))}
+                    </div>
+                    <div role="group" aria-label="Truss bearing member" className={styles.toolbar}>
+                      {HIGH_PERF_TRUSS_BEARING_SHAPES.map((b) => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          aria-pressed={highPerfTrussBearingShapeId === b.id}
+                          className={highPerfTrussBearingShapeId === b.id ? styles.toolActive : styles.tool}
+                          onClick={() => setHighPerfTrussBearingShapeId(b.id)}
+                        >
+                          {b.label}
+                        </button>
+                      ))}
+                    </div>
+                    <HighPerfTrussPreview
+                      trussTypeId={highPerfTrussTypeId}
+                      spanIn={HIGH_PERF_TRUSS_DEFAULT_SPAN_IN}
+                      pitchIn12={highPerfTrussPitchIn12}
+                      cavityDepthIn={highPerfTrussCavityDepthIn}
+                      bearingShapeId={highPerfTrussBearingShapeId}
+                    />
+                  </>
+                }
+                fastenerSchedule={[]}
+                notes={[
+                  ...schema.notes.map((n) => n.text),
+                  `Shown at a representative ${Math.round(HIGH_PERF_TRUSS_DEFAULT_SPAN_IN / 12)}ft span — chords are 2x6, web/heel-post members are 2x4, matching the Classic Truss Reference gallery's own convention.`,
+                  `Bearing shown: ${bearingShape.label}, ${formatLengthIn(bearingShape.depthIn, unitSystem)} deep — this is a visualization only; it doesn't change the wall's own real roof-bearing member (see the Roof tab's Truss Plate/Box Beam).`,
+                ]}
+                role={role}
+              />
+            );
+          })()}
         </StickyNote>
 
         {role !== "public" && (

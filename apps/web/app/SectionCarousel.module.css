@@ -58,3 +58,18 @@
   border-color: #2f6fb8;
   color: #fff;
 }
+
+@media (max-width: 600px) {
+  .carousel {
+    width: 88px;
+    padding: 6px 4px;
+    gap: 6px;
+  }
+
+  .card,
+  .cardActive {
+    padding: 6px 5px;
+    font-size: 10px;
+    border-radius: 8px;
+  }
+}

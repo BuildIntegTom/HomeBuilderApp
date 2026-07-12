@@ -161,3 +161,32 @@
 .toolbarPortalInline {
   display: contents;
 }
+
+/* Mobile — the 240px sidebar + 170px right spacer (410px combined) already
+   exceeds a phone's own viewport width before the canvas gets any space at
+   all, overlapping the sticky notes/carousel docked beside it. Shrinking
+   every toolbar button (not just the columns) is what actually reclaims
+   room, since the columns are sized to fit their buttons' natural width. */
+@media (max-width: 600px) {
+  .editorSidebar {
+    flex-basis: 64px;
+    width: 64px;
+    padding: 6px 4px;
+    gap: 6px;
+  }
+
+  .editorRightSpacer {
+    flex-basis: 88px;
+    width: 88px;
+  }
+
+  .toolbar {
+    gap: 4px;
+  }
+
+  .tool,
+  .toolActive {
+    padding: 3px 6px;
+    font-size: 11px;
+  }
+}

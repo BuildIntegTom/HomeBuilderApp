@@ -19,5 +19,6 @@ export * from "./trussPlateMembers";
 export * from "./boxBeamMembers";
 export * from "./roofCatcherBeamMembers";
 export * from "./octagonRingMembers";
+export * from "./trussMembers";
 export * from "./panelObjExport";
 export * from "./panelSizeShares";

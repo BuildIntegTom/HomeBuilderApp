@@ -59,3 +59,14 @@
   border-right: 5px solid transparent;
   border-bottom: 7px solid #a33;
 }
+
+@media (max-width: 600px) {
+  .housing {
+    width: 36px;
+    height: 36px;
+  }
+
+  .tick {
+    font-size: 8px;
+  }
+}

@@ -68,3 +68,20 @@
   box-shadow: none;
   transform: none;
 }
+
+@media (max-width: 600px) {
+  .bar {
+    padding: 6px;
+    gap: 6px;
+  }
+
+  .viewModeGroup {
+    gap: 6px;
+  }
+
+  .flatButton,
+  .cubeButton {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+}

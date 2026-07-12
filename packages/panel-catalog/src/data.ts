@@ -116,18 +116,77 @@ export const referenceDensities = {
 };
 
 // --- Seismic bracing (Tommy) --------------------------------------------------
+//
+// Two genuinely different IRC R602.10 concepts, previously conflated into
+// one number — researched directly for this rewrite (see PR discussion):
+//
+// - BRACED WALL PANEL spacing: how far apart the individual braced panels
+//   are ALONG one wall line (this is what `applyBracedPlacement` actually
+//   places) — IRC R602.10.2.2: for intermittent bracing methods in Seismic
+//   Design Category A/B/C, adjacent braced wall panels may be no more than
+//   20ft apart, and a panel must start within 10ft of each end of the wall
+//   line. Higher categories (D0-D2) don't tighten this spacing number
+//   directly in the code — they instead raise the required AMOUNT/length
+//   of bracing per line (a percentage-of-wall-length calculation this app
+//   doesn't model), so `seismicBracedPanelSpacingFt`'s 3-tier "high/
+//   moderate/low" scheme below is Building Integrity's own simplified
+//   PROXY for that (tighter panel spacing -> more braced panels -> more
+//   shear capacity), not a literal code table lookup.
+// - BRACED WALL LINE spacing: how far apart two PARALLEL wall lines
+//   needing bracing can be, in plan — a completely separate number (this
+//   app doesn't check it geometrically yet; `bracedWallLineSpacingFt`
+//   below is informational). IRC Table R602.10.1.3 (2021 IRC): up to 60ft
+//   for lower/wind-governed categories; R602.10.1.1's older SDC D0-D2 rule
+//   caps this at 25ft per story (both directions), with an exception up to
+//   35ft for a single room <=900sqft per dwelling unit.
+//
+// Every number here varies by exact bracing method, wind exposure, story
+// count, and adopted code EDITION/jurisdiction amendment — treat these as
+// a reasonable illustrative default, not a substitute for a real R602.10
+// (or local equivalent) calculation by the project's engineer/plan
+// reviewer.
 
 export type SeismicZone = "high" | "moderate" | "low";
 
+/** Braced WALL PANEL spacing (within one wall line) — drives
+ * `applyBracedPlacement`'s actual periodic brace placement. Capped at the
+ * real IRC R602.10.2.2 max (20ft, SDC A/B/C, intermittent bracing) for the
+ * "low" tier; moderate/high tighten further as BI's own simplified proxy
+ * for rising seismic demand (see the block comment above). */
 export const seismicBracedPanelSpacingFt: Record<SeismicZone, number> = {
-  high: 8,
-  moderate: 12,
-  low: 16,
+  high: 12,
+  moderate: 16,
+  low: 20,
 };
 
 export const seismicBracedPanelSpacingStatus = {
-  status: "confirmed" as const,
-  note: "High seismic = 8ft, moderate = 12ft, low = 16ft (Tommy) — replaces the spec's generic 4/8/12/16ft list with a concrete zone mapping.",
+  status: "pending-BI-confirmation" as const,
+  note:
+    "Braced WALL PANEL spacing (distance between individual braced panels along one wall line) — low=20ft matches " +
+    "IRC R602.10.2.2's real max for intermittent bracing in Seismic Design Category A/B/C; moderate=16ft/high=12ft " +
+    "are Building Integrity's own tightening as a simplified proxy for higher seismic demand (real code raises the " +
+    "required bracing AMOUNT/percentage in SDC D0-D2, not this spacing number directly). Not a substitute for a " +
+    "jurisdiction- and method-specific R602.10 calculation.",
+};
+
+/** Braced WALL LINE spacing (distance between parallel wall lines needing
+ * bracing, in plan) — a DIFFERENT limit than the panel spacing above, not
+ * yet geometrically checked by this app (informational only). */
+export const bracedWallLineSpacingFt: Record<SeismicZone, number> = {
+  high: 25,
+  moderate: 45,
+  low: 60,
+};
+
+export const bracedWallLineSpacingStatus = {
+  status: "pending-BI-confirmation" as const,
+  note:
+    "Braced WALL LINE spacing (distance between parallel wall lines, not between panels within one line) — low/" +
+    "moderate=60/45ft interpolates IRC Table R602.10.1.3's wind/lower-Seismic-Design-Category allowance (up to " +
+    "60ft); high=25ft matches the older SDC D0-D2 per-story cap (R602.10.1.1), which also allows a one-time " +
+    "exception up to 35ft for a single room <=900sqft per dwelling unit (not modeled here). Not yet checked " +
+    "against the drawn footprint — informational only. Code editions vary this figure; confirm against the " +
+    "project's adopted code/jurisdiction.",
 };
 
 // --- Windows -------------------------------------------------------------------
@@ -366,6 +425,83 @@ const slabLoadPath: FoundationLoadPathStep[] = [
   },
 ];
 
+/**
+ * Real, globally-purchasable ground-screw products (Tommy: "pick the top 3
+ * options you see online especially if between them they can be bought all
+ * around the world, and include them as sub objects with their relative
+ * specs") — researched directly (manufacturer sites + ICC-ES/DIBt approval
+ * documents), replacing the single unsourced 6kN placeholder below. Every
+ * manufacturer publishes capacity as soil/torque/length/diameter-dependent
+ * (not one flat number), so `representativeCapacityKN` is each product's
+ * own published CEILING figure for its line (see `capacityBasis` for what
+ * it actually represents) — not a substitute for that manufacturer's own
+ * site-specific load tables.
+ */
+export interface GroundScrewProductDef {
+  id: string;
+  manufacturer: string;
+  model: string;
+  originCountry: string;
+  diameterMm: number;
+  /** Fully self-describing (not a bare number) — e.g. "1600-2000mm" or "per
+   * design load" — since not every product publishes a simple mm range. */
+  lengthMmRange: string;
+  representativeCapacityKN: number;
+  capacityBasis: string;
+  availabilityNote: string;
+  status: CatalogStatus;
+  note: string;
+}
+
+export const groundScrewProducts: GroundScrewProductDef[] = [
+  {
+    id: "stopdigging-sgu",
+    manufacturer: "StopDigging",
+    model: "SGU",
+    originCountry: "Sweden (design); distributed in Sweden, UK, Norway, Germany, Denmark, Switzerland, Finland, Netherlands, New Zealand, Australia, Canada, USA",
+    diameterMm: 67,
+    lengthMmRange: "sized per design load (no fixed length published)",
+    representativeCapacityKN: 6,
+    capacityBasis: "tested compression capacity (612kg) for the base SGU model — also rated 4.5kN tensile / 2.5kN lateral",
+    availabilityNote: "Confirmed active distribution in 12 countries across Europe, Oceania, and North America — the broadest confirmed footprint of these 3.",
+    status: "confirmed",
+    note: "Light-duty, deck/shed-scale reference point — closest match to this catalog's original placeholder figure, now a sourced real product instead of an unsourced guess.",
+  },
+  {
+    id: "ags-model-3",
+    manufacturer: "American Ground Screw (AGS)",
+    model: "Model 3",
+    originCountry: "USA",
+    diameterMm: 76,
+    lengthMmRange: "1600-2000mm",
+    representativeCapacityKN: 200,
+    capacityBasis: "ICC-ESR-4160 certified ultimate compression ceiling across the model's diameter/length range (up to 45 kips / ~200kN compression, 20+ kips / ~89kN uplift)",
+    availabilityNote: "ICC-ESR-4160 certified — accepted by building departments in all 50 US states without extra engineering letters or special inspection. Primary confirmed market is the USA.",
+    status: "confirmed",
+    note: "The only one of these 3 with a US model-code evaluation report (ESR-4160) backing it — best fit when the project needs a code-recognized citation, not just a manufacturer claim.",
+  },
+  {
+    id: "krinner-v89",
+    manufacturer: "Krinner Schraubfundamente",
+    model: "V89 (V-series)",
+    originCountry: "Germany",
+    diameterMm: 89,
+    lengthMmRange: "300-2000mm (extendable)",
+    representativeCapacityKN: 200,
+    capacityBasis: "DIBt-approved (German national technical approval) for structural loads; Krinner's own V89/V114/V140 test rig is rated to 200kN",
+    availabilityNote: "Krinner states the product line is available worldwide, with confirmed distribution through dealers in the US (e.g. Rexel) in addition to Europe.",
+    status: "confirmed",
+    note: "Krinner's own site states worldwide availability — the strongest single-manufacturer global claim of these 3, though StopDigging's confirmed country list is broader.",
+  },
+];
+
+export const groundScrewProductsStatus = {
+  status: "pending-BI-confirmation" as const,
+  note:
+    "3 real products researched directly from manufacturer/certification sources (not Building-Integrity-sourced) — a starting reference set, not an exhaustive market survey. Every figure above is each " +
+    "manufacturer's own published ceiling/test rating, not a site-specific allowable value; an actual project still needs that manufacturer's own load table + a site soil report/torque correlation.",
+};
+
 export const foundationTypes: FoundationTypeDef[] = [
   {
     id: "crawlspace",
@@ -404,9 +540,9 @@ export const foundationTypes: FoundationTypeDef[] = [
     usesPierGrid: true,
     loadCapacity: {
       value: 6,
-      unit: "kN (ultimate, per screw)",
+      unit: "kN (ultimate, per screw) — light-duty default; see groundScrewProducts for 2 higher-capacity, code-certified options",
       status: "pending-BI-confirmation",
-      note: "Placeholder mid-range figure for a light-duty direct-drive ground screw (industry range ~2-15 kN ultimate depending on product/soil) — needs Building Integrity's own product spec + site soil report.",
+      note: "Matches StopDigging's SGU model (see groundScrewProducts) as the default light-duty reference — American Ground Screw's Model 3 (ICC-ESR-4160) and Krinner's V89 both rate to a ~200kN ceiling for heavier point loads. Still needs Building Integrity's own product spec + site soil report before a real design.",
     },
   },
   {

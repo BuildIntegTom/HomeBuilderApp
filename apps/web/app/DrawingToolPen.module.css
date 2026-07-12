@@ -43,3 +43,18 @@
   font-size: 12px;
   white-space: nowrap;
 }
+
+/* Icon-only on mobile — the label text is what makes each button wide
+   enough to force the sidebar column past a phone's own viewport width. */
+@media (max-width: 600px) {
+  .tool,
+  .toolActive {
+    padding: 5px;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .toolLabel {
+    display: none;
+  }
+}
