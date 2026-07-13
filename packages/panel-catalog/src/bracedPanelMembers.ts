@@ -9,6 +9,7 @@ import {
   buildNailer,
   buildPlates,
   buildSkins,
+  computeBraceEndCutAngleDeg,
 } from "./panelMemberHelpers";
 
 const MAX_GIRT_BAY_IN = 36; // Tommy: another girt row if bays exceed 36in
@@ -173,6 +174,30 @@ export function buildBracedPanelSchema(
   heightIn: number,
   includeNailer: boolean,
 ): PanelComponentSchema {
+  const members = buildBracedPanelMembers(widthIn, depthIn, heightIn, includeNailer);
+  const notes: PanelComponentSchema["notes"] = [
+    {
+      type: "deviation",
+      text: "All 4 diagonal braces' angle-cut ends (flush with the plates/middle girt bar) are simplified to straight tilted boxes in the 3D model above, not the true beveled end shape.",
+    },
+  ];
+  // Both braces (upper/lower, per wythe) share the same tilt magnitude by
+  // construction (mirror images around the girt bar) — see
+  // buildDiagonalBraces — so one representative brace's angle describes
+  // all 4 (Tommy: "lets come up with a way to really hone in on the math
+  // involved with cutting the angles of braced panels").
+  const brace = members.find((m) => m.role === "brace" && m.position.tiltDeg !== undefined);
+  if (brace) {
+    const cutAngleDeg = computeBraceEndCutAngleDeg(brace.position.tiltDeg!);
+    notes.push({
+      type: "deviation",
+      text:
+        `Each diagonal brace's ends: bevel-cut at ${cutAngleDeg.toFixed(1)}deg off a square crosscut (one ` +
+        "miter-saw blade-tilt setting, no compound angle) — a level cut, landing the end face flush (full " +
+        "contact) against the girt bar's/plate's own flat face. See computeBraceEndCutAngleDeg's own doc comment " +
+        "for the full derivation.",
+    });
+  }
   return {
     schemaVersion: "0.1",
     componentType: "panel",
@@ -181,14 +206,9 @@ export function buildBracedPanelSchema(
     status: "draft",
     derivedFrom: "standard_panel",
     overallDimensions: { heightIn, widthIn, depthIn },
-    members: buildBracedPanelMembers(widthIn, depthIn, heightIn, includeNailer),
+    members,
     fasteners: [],
-    notes: [
-      {
-        type: "deviation",
-        text: "All 4 diagonal braces' angle-cut ends (flush with the plates/middle girt bar) are simplified to straight tilted boxes, not true beveled geometry.",
-      },
-    ],
+    notes,
     disclaimer: "Reference only — not engineered, not for construction.",
   };
 }

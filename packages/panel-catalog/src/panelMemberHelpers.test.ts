@@ -4,6 +4,7 @@ import type { PanelMember } from "./componentSchema";
 import {
   buildNailer,
   buildTrussWebBraces,
+  computeBraceEndCutAngleDeg,
   computePlywoodAreaSqFt,
   computeTrussWebAngleDeg,
   computeTrussWebPeakCount,
@@ -53,6 +54,28 @@ describe("computeTrussWebPeakCount / computeTrussWebAngleDeg", () => {
 
   it("never returns fewer than 1 peak even for a very short rise", () => {
     expect(computeTrussWebPeakCount(200, 0.001)).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("computeBraceEndCutAngleDeg", () => {
+  it("is 0deg (a plain square crosscut) for a perfectly vertical board", () => {
+    expect(computeBraceEndCutAngleDeg(0)).toBe(0);
+  });
+
+  it("is 90deg (the cut plane runs parallel to the board's own length) for a perfectly flat board", () => {
+    expect(computeBraceEndCutAngleDeg(90)).toBe(90);
+  });
+
+  it("equals the tilt magnitude regardless of which direction the board leans", () => {
+    expect(computeBraceEndCutAngleDeg(42.3)).toBeCloseTo(42.3, 6);
+    expect(computeBraceEndCutAngleDeg(-42.3)).toBeCloseTo(42.3, 6);
+  });
+
+  it("matches a real header brace's own tiltDeg (a level cut against the flat chord it lands on)", () => {
+    const braces = buildTrussWebBraces(1, 36, 0, () => 18, 0.75, "web");
+    const rise = braces.find((b) => b.memberId === "web_1_rise")!;
+    // A 36in-wide, 18in-rise single-peak brace: half-width 18, rise 18 -> 45deg tilt.
+    expect(computeBraceEndCutAngleDeg(rise.position.tiltDeg!)).toBeCloseTo(45, 6);
   });
 });
 

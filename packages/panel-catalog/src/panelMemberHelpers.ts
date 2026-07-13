@@ -231,6 +231,46 @@ export function computeTrussWebAngleDeg(widthIn: number, riseIn: number, peakCou
 }
 
 /**
+ * The real end-cut bevel angle (degrees off a plain square crosscut) a
+ * fabricator needs to cut a diagonal brace's end so it sits FLUSH — full
+ * face contact, not just touching at one edge — against the flat,
+ * horizontal surface it lands on (a chord, plate, or girt bar's own
+ * top/bottom face) — Tommy: "lets come up with a way to really hone in on
+ * the math involved with cutting the angles of braced panels."
+ *
+ * The derivation: every brace in this app tilts ONLY within the wall's own
+ * elevation plane (X = along-wall, Z = height) — its depth-wise (Y)
+ * dimension never rotates (see the "diagonal"+rotationDeg=90 case in
+ * `memberBoxSizeIn`, which keeps the board's thin 1.5in face square to Y).
+ * That means a single bevel (one miter-saw blade-tilt setting, around an
+ * axis parallel to the board's own depth) is enough to produce a flat end
+ * face flush against a horizontal surface — no compound/2-axis miter
+ * needed, unlike e.g. a hip-roof rafter's cut.
+ *
+ * `tiltDeg` (`makeBrace`/`makeWebBrace`'s own `atan2(-(x1-centerX),
+ * z1-centerZ)`) is a real rotation angle for drawing the box — perfectly
+ * fine for that, since a box rotated 180deg from "true" occupies the exact
+ * same visual space — but it's NOT normalized to a small "deviation from
+ * plumb": swapping which endpoint a caller labels (x1,z1) vs (x2,z2) shifts
+ * the raw value by a full 180deg, and it can come out anywhere in
+ * (-180,180]. The real, physical tilt-off-plumb only ever needs a value in
+ * [0,90] (a board can't lean past horizontal), so this first folds the raw
+ * angle into (-90,90] — treating 180deg swings as the same physical board
+ * — before taking the magnitude: a perfectly vertical board (folded value
+ * 0) already meets a level surface at square (0deg off); a perfectly flat
+ * one (folded value +-90) would need the cut plane running parallel to its
+ * own length (90deg off square, the other limit). The board's own
+ * centerline length (endpoint-to-endpoint, already how every brace's
+ * `actualDimsIn.lengthIn` is computed) doesn't change — a bevel cut only
+ * re-angles the end face around that same centerline endpoint, it doesn't
+ * add or remove length.
+ */
+export function computeBraceEndCutAngleDeg(tiltDeg: number): number {
+  const foldedDeg = (((tiltDeg + 90) % 180) + 180) % 180 - 90;
+  return Math.abs(foldedDeg);
+}
+
+/**
  * Two diagonal 2x4s can't literally converge to one shared atom-point
  * (Tommy: "the ends of the diagonal pieces of header brace should be
  * angled like the bracing panels" — the same "flank instead of pinch"

@@ -73,6 +73,7 @@ import {
   buildStandardPanelMembers,
   buildTrussPlateMembers,
   buildWindowHeaderMembers,
+  computeBraceEndCutAngleDeg,
   computeDoorRoughOpeningHeightIn,
   computeHeaderHeightIn,
   computeRoughOpeningWidthIn,
@@ -210,6 +211,18 @@ const LB_FT3_TO_KG_M3 = 16.018463;
 
 const interiorLayers = wallAssemblyLayers.filter((l) => l.side === "interior");
 const exteriorLayers = wallAssemblyLayers.filter((l) => l.side === "exterior");
+
+/** A representative brace end-cut bevel angle for a set of built members
+ * (Tommy: "lets come up with a way to really hone in on the math involved
+ * with cutting the angles of braced panels") — every brace in a given
+ * header/braced-panel assembly shares the same tilt magnitude by
+ * construction (see computeBraceEndCutAngleDeg's own doc comment), so the
+ * first one found describes them all. Returns null if there's no brace
+ * (e.g. a Standard Panel, which has none). */
+function representativeBraceCutAngleDeg(members: PanelMember[]): number | null {
+  const brace = members.find((m) => m.role === "brace" && m.position.tiltDeg !== undefined);
+  return brace ? computeBraceEndCutAngleDeg(brace.position.tiltDeg!) : null;
+}
 
 const PHASE2_ASSUMPTIONS = [
   {
@@ -3654,6 +3667,19 @@ export default function LayoutEditor() {
                             (rectangular blocking-girt construction) here, not a loose-pack Standard Panel.
                           </p>
                         )}
+                        {panelType.id === "braced" &&
+                          (() => {
+                            const cutAngleDeg = representativeBraceCutAngleDeg(bracedSizeGroups[0]?.members ?? []);
+                            return cutAngleDeg === null ? null : (
+                              <p className={styles.note}>
+                                All 4 diagonal braces&apos; ends are cut FLUSH — a bevel-cut, one miter-saw
+                                blade-tilt setting (no compound angle needed, since every brace tilts only within
+                                the wall&apos;s own elevation plane) — at {cutAngleDeg.toFixed(1)}&deg; off a square
+                                crosscut, landing full face contact against the girt bar&apos;s/plate&apos;s own flat
+                                face instead of just touching at one edge.
+                              </p>
+                            );
+                          })()}
                       </div>
                     ) : panelType.id === "column" || panelType.id === "corner" ? (
                       <div>
@@ -3755,6 +3781,9 @@ export default function LayoutEditor() {
                           {(sillHeightIn + jackStudPreviewHeightIn).toFixed(1)}&quot; sill+RO). A door header is always a single
                           upside-down-V truss web; a window (&quot;long&quot;) header repeats as many peaks as needed to keep every
                           web segment at or above a {30}deg bracing angle. Both have the V framing on interior AND exterior wythes.
+                          Each truss web brace&apos;s ends are cut FLUSH against the 2x4 chord&apos;s own face — a bevel-cut,
+                          one miter-saw blade-tilt setting (no compound angle), at door {representativeBraceCutAngleDeg(doorHeaderMembers)?.toFixed(1) ?? "—"}
+                          &deg; and window {representativeBraceCutAngleDeg(windowHeaderMembers)?.toFixed(1) ?? "—"}&deg; off a square crosscut.
                         </p>
                       </div>
                     ) : panelType.id === "sill" ? (

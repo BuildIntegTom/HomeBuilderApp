@@ -7,6 +7,7 @@ import {
   SKIN_THICKNESS_IN,
   TRUSS_WEB_MIN_ANGLE_DEG,
   buildTrussWebBraces,
+  computeBraceEndCutAngleDeg,
   computeTrussWebAngleDeg,
   computeTrussWebPeakCount,
 } from "./panelMemberHelpers";
@@ -24,18 +25,29 @@ const HEADER_MAX_ANGLE_DEG = 45;
  * Top + bottom chord 2x4s, on both wythes (Tommy: "window and door headers
  * have the V framing on interior and exterior"), plus a plywood cap tying
  * each chord's 2 wythes into one rigid plate (Tommy: "we need to add the
- * plywood in the top and bottom plate") — the truss web braces (see
- * `buildTrussWebBraces`) bear against these plywood caps, not the raw 2x4
- * faces directly, same "lumber + plywood cap" convention as the truss
- * plate's own skin (see trussPlateMembers.ts). Otherwise no skins of its
- * own (like the Plywood Jack Stud, this is a sub-assembly that sits inside
- * a larger wall panel's own rough opening, not a free-standing panel).
+ * plywood in the top and bottom plate"). The plywood is the OUTER face of
+ * each chord — flush with the header's own top/bottom, the same
+ * skin-then-plate layering every other panel type uses (see `buildPlates`:
+ * skins outermost, 2x4 plates just inside them) — with the 2x4s just
+ * inside it, facing the truss web cavity (Tommy: "for the top plate, the
+ * 3/4in plywood should be on top with the 2x4's under... for the header
+ * bottom plate, the plywood is on the bottom with the 2x4's facing the
+ * middle of the panel" — the previous ordering had this backwards). The
+ * truss web braces (see `buildTrussWebBraces`) bear against the 2x4s' own
+ * inner faces. Otherwise no skins of its own (like the Plywood Jack Stud,
+ * this is a sub-assembly that sits inside a larger wall panel's own rough
+ * opening, not a free-standing panel).
  */
 function buildHeaderChords(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
   const members: PanelMember[] = [];
+  const bottomPlyZIn = 0;
+  const bottom2x4ZIn = SKIN_THICKNESS_IN;
+  const topPlyZIn = heightIn - SKIN_THICKNESS_IN;
+  const top2x4ZIn = heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
+
   for (const [chord, zIn, otherChord] of [
-    ["bottom", 0, "top"],
-    ["top", heightIn - PLATE_2X4_THICKNESS_IN, "bottom"],
+    ["bottom", bottom2x4ZIn, "top"],
+    ["top", top2x4ZIn, "bottom"],
   ] as const) {
     for (const [wythe, yIn] of [
       ["ext", 0],
@@ -52,13 +64,11 @@ function buildHeaderChords(widthIn: number, depthIn: number, heightIn: number): 
         position: { xIn: 0, yIn, zIn, rotationDeg: 0 },
         role: "plate",
         qty: 1,
-        notes: `${chord} chord, ${wythe} wythe — the truss web braces span between this and the ${otherChord} chord.`,
+        notes: `${chord} chord, ${wythe} wythe — inside the ${chord} plywood cap, facing the cavity; the truss web braces span between this and the ${otherChord} chord.`,
       });
     }
   }
 
-  const bottomPlyZIn = PLATE_2X4_THICKNESS_IN;
-  const topPlyZIn = heightIn - PLATE_2X4_THICKNESS_IN - SKIN_THICKNESS_IN;
   for (const [chord, zIn] of [
     ["bottom", bottomPlyZIn],
     ["top", topPlyZIn],
@@ -74,7 +84,7 @@ function buildHeaderChords(widthIn: number, depthIn: number, heightIn: number): 
       position: { xIn: 0, yIn: 0, zIn, rotationDeg: 0 },
       role: "skin",
       qty: 1,
-      notes: `${chord} plate plywood cap — ties both wythes' ${chord} chord 2x4s into one rigid plate; the truss web bears against this, not the bare 2x4 faces.`,
+      notes: `${chord} plate plywood cap — the header's own outer face, flush with the ${chord === "bottom" ? "RO/jack studs below" : "wall's top plate above"}; ties both wythes' ${chord} chord 2x4s into one rigid plate from the inside.`,
     });
   }
   return members;
@@ -95,10 +105,11 @@ export function headerWebRiseIn(heightIn: number): number {
  * needs to keep every web segment at or above the 30deg minimum.
  */
 function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number, isDoor: boolean): PanelMember[] {
-  // The web bears against each chord's plywood cap (see buildHeaderChords),
-  // not the bare 2x4 face — one skin thickness further inboard on each side.
-  const bottomChordTopZIn = PLATE_2X4_THICKNESS_IN + SKIN_THICKNESS_IN;
-  const topChordBottomZIn = heightIn - PLATE_2X4_THICKNESS_IN - SKIN_THICKNESS_IN;
+  // The web bears against each chord's own 2x4 face (see buildHeaderChords
+  // — the 2x4 is the inner member, the plywood cap is outer), one skin
+  // thickness inboard of the header's own outer face on each side.
+  const bottomChordTopZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  const topChordBottomZIn = heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
   const riseIn = headerWebRiseIn(heightIn);
   const peakCount = isDoor ? 1 : computeTrussWebPeakCount(widthIn, riseIn);
 
@@ -133,16 +144,43 @@ function angleNote(widthIn: number, heightIn: number, peakCount: number): { type
   };
 }
 
+/**
+ * The real fabrication cut for every truss web brace's ends (Tommy: "lets
+ * come up with a way to really hone in on the math involved with cutting
+ * the angles of braced panels") — pulled directly from a real built brace's
+ * own `tiltDeg`, not re-derived, so it can never drift out of sync with
+ * whatever the actual geometry produces. See `computeBraceEndCutAngleDeg`'s
+ * own doc comment for the full derivation. Every brace here shares the same
+ * tilt magnitude (a header's top/bottom chords are always flat, so every
+ * peak's rise/fall is geometrically identical), so one representative
+ * brace's angle describes the whole set.
+ */
+function braceCutAngleNote(members: PanelMember[]): { type: "deviation"; text: string } | null {
+  const brace = members.find((m) => m.role === "brace" && m.position.tiltDeg !== undefined);
+  if (!brace) return null;
+  const cutAngleDeg = computeBraceEndCutAngleDeg(brace.position.tiltDeg!);
+  return {
+    type: "deviation",
+    text:
+      `Each truss web brace's ends: bevel-cut at ${cutAngleDeg.toFixed(1)}deg off a square crosscut (one miter-saw ` +
+      "blade-tilt setting, no compound angle) — a level cut, landing the end face flush (full contact, not just " +
+      "an edge) against the chord's own flat face. The 3D model above still draws each brace as a simple straight " +
+      "box (not the true beveled end shape) for consistency with every other diagram in this app.",
+  };
+}
+
 export function buildDoorHeaderSchema(widthIn: number, depthIn: number, heightIn: number): PanelComponentSchema {
+  const members = buildDoorHeaderMembers(widthIn, depthIn, heightIn);
   const notes: PanelComponentSchema["notes"] = [
     {
       type: "deviation",
       text:
-        "Height shown is an illustrative default, not a real rough-opening-to-top-plate height — headers don't " +
-        "have their own tracked height or placement mechanism yet (same gap as the Plywood Jack Stud). Chord/brace " +
-        "angle-cut ends are simplified to straight tilted boxes, not true beveled geometry.",
+        "Height is a real rough-opening-to-top-plate height (wall standard height minus the door's own RO height) " +
+        "— see computeHeaderHeightIn.",
     },
   ];
+  const cutAngle = braceCutAngleNote(members);
+  if (cutAngle) notes.push(cutAngle);
   const angle = angleNote(widthIn, heightIn, 1);
   if (angle) notes.push(angle);
   return {
@@ -153,7 +191,7 @@ export function buildDoorHeaderSchema(widthIn: number, depthIn: number, heightIn
     status: "draft",
     derivedFrom: null,
     overallDimensions: { heightIn, widthIn, depthIn },
-    members: buildDoorHeaderMembers(widthIn, depthIn, heightIn),
+    members,
     fasteners: [],
     notes,
     disclaimer: "Reference only — not engineered, not for construction.",
@@ -162,19 +200,21 @@ export function buildDoorHeaderSchema(widthIn: number, depthIn: number, heightIn
 
 export function buildWindowHeaderSchema(widthIn: number, depthIn: number, heightIn: number): PanelComponentSchema {
   const peakCount = computeTrussWebPeakCount(widthIn, headerWebRiseIn(heightIn));
+  const members = buildWindowHeaderMembers(widthIn, depthIn, heightIn);
   const notes: PanelComponentSchema["notes"] = [
     {
       type: "deviation",
       text:
-        "Height shown is an illustrative default, not a real rough-opening-to-top-plate height — headers don't " +
-        "have their own tracked height or placement mechanism yet (same gap as the Plywood Jack Stud). Chord/brace " +
-        "angle-cut ends are simplified to straight tilted boxes, not true beveled geometry.",
+        "Height is a real rough-opening-to-top-plate height (wall standard height minus the sill height and the " +
+        "selected window height) — see computeHeaderHeightIn.",
     },
     {
       type: "warning",
       text: `${peakCount} truss web peak${peakCount === 1 ? "" : "s"} at this opening's width/height, chosen so every web segment stays at or above the ${TRUSS_WEB_MIN_ANGLE_DEG}deg minimum bracing angle.`,
     },
   ];
+  const cutAngle = braceCutAngleNote(members);
+  if (cutAngle) notes.push(cutAngle);
   const angle = angleNote(widthIn, heightIn, peakCount);
   if (angle) notes.push(angle);
   return {
@@ -185,7 +225,7 @@ export function buildWindowHeaderSchema(widthIn: number, depthIn: number, height
     status: "draft",
     derivedFrom: null,
     overallDimensions: { heightIn, widthIn, depthIn },
-    members: buildWindowHeaderMembers(widthIn, depthIn, heightIn),
+    members,
     fasteners: [],
     notes,
     disclaimer: "Reference only — not engineered, not for construction.",

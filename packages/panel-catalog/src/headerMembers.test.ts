@@ -77,16 +77,29 @@ describe("header chord plywood caps", () => {
   const WIDTH_IN = 60;
   const HEIGHT_IN = 20;
 
-  it("the web braces bear against the plywood caps' faces, not the bare 2x4 chord faces", () => {
+  it("the plywood cap is the header's own OUTER face (bottom: z=0; top: flush with the header's own top) — Tommy: plywood on top/bottom, 2x4s facing the middle", () => {
     const members = buildWindowHeaderMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN);
     const bottomChord = members.find((m) => m.memberId === "bottom_chord_2x4_ext")!;
     const bottomPly = members.find((m) => m.memberId === "bottom_chord_ply")!;
+    const topChord = members.find((m) => m.memberId === "top_chord_2x4_ext")!;
+    const topPly = members.find((m) => m.memberId === "top_chord_ply")!;
+
+    expect(bottomPly.position.zIn).toBeCloseTo(0, 6); // bottom ply is the header's own bottom face
+    const bottomPlyTopZ = bottomPly.position.zIn + bottomPly.actualDimsIn.thicknessIn;
+    expect(bottomChord.position.zIn).toBeCloseTo(bottomPlyTopZ, 6); // 2x4 sits right above the ply, facing the cavity
+
+    const topPlyTopZ = topPly.position.zIn + topPly.actualDimsIn.thicknessIn;
+    expect(topPlyTopZ).toBeCloseTo(HEIGHT_IN, 6); // top ply is the header's own top face
+    const topChordTopZ = topChord.position.zIn + topChord.actualDimsIn.thicknessIn;
+    expect(topChordTopZ).toBeCloseTo(topPly.position.zIn, 6); // 2x4 sits right below the ply, facing the cavity
+  });
+
+  it("the web braces bear against the 2x4 chords' own inner faces (not the plywood, which is now the outer skin)", () => {
+    const members = buildWindowHeaderMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN);
+    const bottomChord = members.find((m) => m.memberId === "bottom_chord_2x4_ext")!;
     const firstRiseExt = members.find((m) => m.role === "brace" && m.memberId.includes("_ext_") && m.memberId.includes("1_rise"))!;
 
     const bottomChordTopZ = bottomChord.position.zIn + bottomChord.actualDimsIn.thicknessIn;
-    const bottomPlyTopZ = bottomPly.position.zIn + bottomPly.actualDimsIn.thicknessIn;
-    expect(bottomPly.position.zIn).toBeCloseTo(bottomChordTopZ, 6); // ply sits right on top of the chord
-    expect(bottomPlyTopZ).toBeGreaterThan(bottomChordTopZ); // ply's own top face is further up
 
     // Reconstruct both real endpoints of the tilted brace (same method as bracedPanelMembers.test.ts).
     const size = memberBoxSizeIn(firstRiseExt);
@@ -94,7 +107,7 @@ describe("header chord plywood caps", () => {
     const halfLen = size.zIn / 2;
     const endpointZs = [firstRiseExt.position.zIn + Math.cos(tiltRad) * halfLen, firstRiseExt.position.zIn - Math.cos(tiltRad) * halfLen];
     const lowFootZ = Math.min(...endpointZs);
-    expect(lowFootZ).toBeCloseTo(bottomPlyTopZ, 6); // the web's low foot bears on the plywood's top face, not the bare chord
+    expect(lowFootZ).toBeCloseTo(bottomChordTopZ, 6); // the web's low foot bears on the 2x4 chord's own top face
   });
 });
 
@@ -116,5 +129,11 @@ describe("buildDoorHeaderSchema / buildWindowHeaderSchema", () => {
     // A very short, wide door header — even 1 peak will be far too shallow.
     const schema = buildDoorHeaderSchema(400, DEPTH_IN, 5);
     expect(schema.notes.some((n) => n.type === "warning" && n.text.includes("outside the target"))).toBe(true);
+  });
+
+  it("reports a real bevel-cut angle for the truss web braces' ends", () => {
+    // 36in wide, 22.5in tall -> rise 18in (heightIn - 2*1.5 - 2*0.75), half-width 18 -> 45deg tilt.
+    const schema = buildDoorHeaderSchema(36, DEPTH_IN, 22.5);
+    expect(schema.notes.some((n) => n.type === "deviation" && n.text.includes("45.0deg off a square crosscut"))).toBe(true);
   });
 });

@@ -127,4 +127,9 @@ describe("buildBracedPanelSchema", () => {
     expect(schema.derivedFrom).toBe("standard_panel");
     expect(schema.members.length).toBeGreaterThan(0);
   });
+
+  it("reports a real bevel-cut angle for the diagonal braces' ends", () => {
+    const schema = buildBracedPanelSchema(WIDTH_IN, DEPTH_IN, HEIGHT_IN, false);
+    expect(schema.notes.some((n) => n.type === "deviation" && n.text.includes("deg off a square crosscut"))).toBe(true);
+  });
 });
