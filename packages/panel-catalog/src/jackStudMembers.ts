@@ -49,6 +49,20 @@ export function computeDoorRoughOpeningHeightIn(selectedDoorRoHeightIn: number, 
   return Math.max(0, selectedDoorRoHeightIn - toeUpHeightIn);
 }
 
+/**
+ * The header's real height (Tommy: "headers should be sized from the RO to
+ * the top of the wall panel standard height") — everything above the
+ * rough opening's own top, up to the wall's own top plate line, instead of
+ * the old flat illustrative default. `roTopZIn` is the RO's top elevation
+ * measured from the floor — a door's is just its own RO height (it starts
+ * at the floor); a window's is the sill height plus the window's own
+ * selected RO height (it starts on top of the sill) — see
+ * `standardWindowHeightsIn`/`standardWindowHeightDefaultIn` in data.ts.
+ */
+export function computeHeaderHeightIn(wallHeightIn: number, roTopZIn: number): number {
+  return Math.max(0, wallHeightIn - roTopZIn);
+}
+
 /** Jack stud material `qty: 1` here is one side's jack stud (matching the
  * pre-existing "one of a pair" note) — a real opening always needs 2 (one
  * each side of the rough opening), doubled by whatever's counting them. */

@@ -1,8 +1,23 @@
-import { standardPanelBomReferenceWidthIn } from "./data";
+import { standardPanelBomReferenceWidthIn, standardPanelHeightIn } from "./data";
 import type { PanelComponentSchema, PanelMember } from "./componentSchema";
 import { SKIN_THICKNESS_IN, buildCornerStuds, buildGirtRows, buildNailer, buildPlates, buildSkins } from "./panelMemberHelpers";
 
 const STANDARD_GIRT_ROW_COUNT = 2;
+
+/** How many girt rows past-height's short spot needs (Tommy: "sill panels
+ * (or any short variety of standard panel) only needs to spawn 1 girt if
+ * it is more than 36", 2 girts if the total height is more than 72
+ * inches, etc") — a girt every 36in, starting past 36in. At/above the
+ * confirmed Panel Set 1 standard height (`standardPanelHeightIn`) this
+ * stays at the fixed, already-confirmed `STANDARD_GIRT_ROW_COUNT` (2)
+ * instead — this rule is specifically for panels SHORTER than that (sills,
+ * or any other custom short standard panel), not a replacement for the
+ * confirmed full-height spec.
+ */
+export function computeStandardGirtRowCount(heightIn: number): number {
+  if (heightIn >= standardPanelHeightIn.value) return STANDARD_GIRT_ROW_COUNT;
+  return Math.max(0, Math.ceil(heightIn / 36) - 1);
+}
 
 /**
  * Every physical member of a Standard Panel, positioned in world space —
@@ -19,8 +34,8 @@ const STANDARD_GIRT_ROW_COUNT = 2;
  * Skins, plate 2x4s, 4 corner studs, and the optional nailer are shared
  * with the Braced Panel (see `buildBracedPanelMembers` in
  * `bracedPanelMembers.ts`) via `panelMemberHelpers.ts` — a Standard Panel
- * differs only in using 2 girt rows (see `buildGirtRows`'s doc comment)
- * instead of 3+.
+ * differs only in its girt row count (see `computeStandardGirtRowCount`
+ * and `buildGirtRows`'s doc comment) instead of 3+.
  */
 export function buildStandardPanelMembers(
   widthIn: number,
@@ -33,7 +48,7 @@ export function buildStandardPanelMembers(
     ...buildSkins(widthIn, depthIn, heightIn),
     ...buildPlates(widthIn, depthIn, heightIn),
     ...buildCornerStuds(widthIn, depthIn, heightIn),
-    ...buildGirtRows(STANDARD_GIRT_ROW_COUNT, widthIn, depthIn, studSpanIn),
+    ...buildGirtRows(computeStandardGirtRowCount(heightIn), widthIn, depthIn, studSpanIn),
   ];
   if (includeNailer) members.push(buildNailer(widthIn, heightIn));
   return members;

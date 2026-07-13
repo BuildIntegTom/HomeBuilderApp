@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStandardPanelMembers, buildStandardPanelSchema } from "./standardPanelMembers";
+import { buildStandardPanelMembers, buildStandardPanelSchema, computeStandardGirtRowCount } from "./standardPanelMembers";
 import { memberBoxSizeIn } from "./panelMemberHelpers";
 
 const WIDTH_IN = 40;
@@ -63,18 +63,21 @@ describe("buildStandardPanelMembers", () => {
     expect(bars1).toHaveLength(2);
     expect(bars2).toHaveLength(2);
 
-    // centerZ = 0.75 + studSpan*row/3; bar z (min-corner) = centerZ - 3.5/2
+    // centerZ = 0.75 + studSpan*row/3; bar z (min-corner) = centerZ - 1.5/2
+    // (bars are rolled 90deg "hotdog style" onto their 3.5in face — only
+    // their 1.5in thickness is vertical now, not their 3.5in width).
     const bar1Left = findMember(members, "girt_1_bar_left");
     const bar1Right = findMember(members, "girt_1_bar_right");
-    expect(bar1Left.position.zIn).toBeCloseTo(0.75 + 118.5 / 3 - 1.75, 6);
+    expect(bar1Left.position.zIn).toBeCloseTo(0.75 + 118.5 / 3 - 0.75, 6);
     expect(bar1Right.position.zIn).toBeCloseTo(bar1Left.position.zIn, 6);
     expect(bar1Left.actualDimsIn.lengthIn).toBeCloseTo(DEPTH_IN, 6); // spans the full depth
-    // Flush to the inside face of each stud double — not centered.
+    // Each bar's OUTER edge is flush to its stud double's inner face,
+    // extending inward by its own (now-rotated) 3.5in face.
     expect(bar1Left.position.xIn).toBeCloseTo(1.5, 6); // flush with the left stud pair's inner face
-    expect(bar1Right.position.xIn).toBeCloseTo(WIDTH_IN - 3, 6); // flush with the right stud pair's inner face
+    expect(bar1Right.position.xIn).toBeCloseTo(WIDTH_IN - 1.5 - 3.5, 6); // flush with the right stud pair's inner face
 
     const bar2Left = findMember(members, "girt_2_bar_left");
-    expect(bar2Left.position.zIn).toBeCloseTo(0.75 + (118.5 * 2) / 3 - 1.75, 6);
+    expect(bar2Left.position.zIn).toBeCloseTo(0.75 + (118.5 * 2) / 3 - 0.75, 6);
 
     // Web lies flat (Z=thickness), resting on top of both bars, overhanging
     // the stud-face span by 0.5in total.
@@ -82,7 +85,7 @@ describe("buildStandardPanelMembers", () => {
     expect(girt1Web.orientation).toBe("flat");
     expect(girt1Web.actualDimsIn.lengthIn).toBeCloseTo(WIDTH_IN - 3 + 0.5, 6); // 37.5
     expect(girt1Web.position.xIn).toBeCloseTo(1.5 - 0.25, 6); // 1.25
-    expect(girt1Web.position.zIn).toBeCloseTo(bar1Left.position.zIn + 3.5, 6); // rests on top of the bars
+    expect(girt1Web.position.zIn).toBeCloseTo(bar1Left.position.zIn + 1.5, 6); // rests on top of the bars
   });
 
   it("omits the nailer when includeNailer is false, includes it centered on the exterior wythe when true", () => {
@@ -116,6 +119,51 @@ describe("buildStandardPanelMembers", () => {
       expect(m.position.zIn).toBeGreaterThanOrEqual(0);
       expect(m.position.zIn + size.zIn).toBeLessThanOrEqual(HEIGHT_IN + 1e-6);
     }
+  });
+});
+
+describe("computeStandardGirtRowCount", () => {
+  it("spawns 0 girts for a panel 36in or shorter (e.g. a short sill)", () => {
+    expect(computeStandardGirtRowCount(20)).toBe(0);
+    expect(computeStandardGirtRowCount(36)).toBe(0); // exactly 36 is not yet "more than 36"
+  });
+
+  it("spawns 1 girt once a panel is more than 36in tall", () => {
+    expect(computeStandardGirtRowCount(37)).toBe(1);
+    expect(computeStandardGirtRowCount(60)).toBe(1);
+    expect(computeStandardGirtRowCount(72)).toBe(1); // exactly 72 is not yet "more than 72"
+  });
+
+  it("spawns 2 girts once a panel is more than 72in tall", () => {
+    expect(computeStandardGirtRowCount(73)).toBe(2);
+    expect(computeStandardGirtRowCount(100)).toBe(2);
+  });
+
+  it("keeps the confirmed fixed 2-row spec at/above the real Panel Set 1 standard height (120in), not the extrapolated formula", () => {
+    expect(computeStandardGirtRowCount(120)).toBe(2);
+    expect(computeStandardGirtRowCount(200)).toBe(2); // a taller-than-normal custom wall still uses the confirmed spec
+  });
+
+  it("the sill's own default height (32in) lands at 0 girts", () => {
+    expect(computeStandardGirtRowCount(32)).toBe(0);
+  });
+});
+
+describe("buildStandardPanelMembers at a short (sill-scale) height", () => {
+  it("spawns no girt rows for a 32in-tall panel (Tommy's sill default)", () => {
+    const members = buildStandardPanelMembers(WIDTH_IN, DEPTH_IN, 32, false);
+    expect(members.filter((m) => m.role === "girt")).toHaveLength(0);
+    expect(members.filter((m) => m.role === "girt_web")).toHaveLength(0);
+  });
+
+  it("spawns exactly 1 girt row for a 50in-tall panel", () => {
+    const members = buildStandardPanelMembers(WIDTH_IN, DEPTH_IN, 50, false);
+    expect(members.filter((m) => m.role === "girt_web")).toHaveLength(1);
+  });
+
+  it("still spawns the full 2 girt rows at the real 120in standard height", () => {
+    const members = buildStandardPanelMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN, false);
+    expect(members.filter((m) => m.role === "girt_web")).toHaveLength(2);
   });
 });
 

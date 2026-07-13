@@ -197,6 +197,25 @@ export const standardWindowWidthsIn: CatalogValue<number[]> = {
   note: "Common construction window widths — not spec-given or Building-Integrity-sourced yet.",
 };
 
+/** 5 standard window heights (Tommy: "an option for 5 different standard
+ * window heights, and that should determine the height of the windows") —
+ * a project-wide setting (like `standardWidthIn`), not per-window, same
+ * unsourced-but-reasonable status as `standardWindowWidthsIn` above. This
+ * IS the window's own Rough Opening height (sill-top to header-bottom) —
+ * see `computeWindowHeaderHeightIn`, which derives the header's real
+ * height from it (wall height minus this RO's own top elevation). */
+export const standardWindowHeightsIn: CatalogValue<number[]> = {
+  value: [24, 36, 48, 60, 72],
+  status: "pending-BI-confirmation",
+  note: "Common construction window heights — not spec-given or Building-Integrity-sourced yet, same status as standardWindowWidthsIn.",
+};
+
+export const standardWindowHeightDefaultIn: CatalogValue<number> = {
+  value: 48,
+  status: "pending-BI-confirmation",
+  note: "Default among the 5 standard window height options — a common mid-size residential window height, not independently confirmed.",
+};
+
 // --- Foundation type ------------------------------------------------------------
 
 /** Per-pier-product load-bearing capacity — deliberately not a single

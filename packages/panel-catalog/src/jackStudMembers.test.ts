@@ -3,6 +3,7 @@ import {
   buildJackStudMembers,
   buildJackStudSchema,
   computeDoorRoughOpeningHeightIn,
+  computeHeaderHeightIn,
   computeRoughOpeningWidthIn,
   jackStudThicknessIn,
   JACK_STUD_THICKNESS_IN,
@@ -73,6 +74,23 @@ describe("computeDoorRoughOpeningHeightIn", () => {
 
   it("never goes negative for a toe-up taller than the selected RO", () => {
     expect(computeDoorRoughOpeningHeightIn(1, 1.5)).toBe(0);
+  });
+});
+
+describe("computeHeaderHeightIn", () => {
+  it("subtracts the RO's top elevation from the wall height (a door: RO starts at the floor)", () => {
+    expect(computeHeaderHeightIn(120, 81)).toBeCloseTo(39, 6);
+  });
+
+  it("subtracts sill height + window RO height together (a window: RO starts on top of the sill)", () => {
+    const sillHeightIn = 32;
+    const windowRoHeightIn = 48;
+    expect(computeHeaderHeightIn(120, sillHeightIn + windowRoHeightIn)).toBeCloseTo(40, 6);
+  });
+
+  it("never goes negative when the RO's top is at or above the wall height", () => {
+    expect(computeHeaderHeightIn(96, 96)).toBe(0);
+    expect(computeHeaderHeightIn(96, 120)).toBe(0);
   });
 });
 

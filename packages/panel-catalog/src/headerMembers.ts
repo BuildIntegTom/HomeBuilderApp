@@ -3,6 +3,8 @@ import {
   LUMBER_SPECIES_GRADE,
   PLATE_2X4_THICKNESS_IN,
   PLATE_2X4_WIDTH_IN,
+  SKIN_PLY_SPEC,
+  SKIN_THICKNESS_IN,
   TRUSS_WEB_MIN_ANGLE_DEG,
   buildTrussWebBraces,
   computeTrussWebAngleDeg,
@@ -20,10 +22,14 @@ const HEADER_MAX_ANGLE_DEG = 45;
 
 /**
  * Top + bottom chord 2x4s, on both wythes (Tommy: "window and door headers
- * have the V framing on interior and exterior") — the truss web braces
- * (see `buildTrussWebBraces`) span between these. No skins of its own
- * (like the Plywood Jack Stud, this is a sub-assembly that sits inside a
- * larger wall panel's own rough opening, not a free-standing panel).
+ * have the V framing on interior and exterior"), plus a plywood cap tying
+ * each chord's 2 wythes into one rigid plate (Tommy: "we need to add the
+ * plywood in the top and bottom plate") — the truss web braces (see
+ * `buildTrussWebBraces`) bear against these plywood caps, not the raw 2x4
+ * faces directly, same "lumber + plywood cap" convention as the truss
+ * plate's own skin (see trussPlateMembers.ts). Otherwise no skins of its
+ * own (like the Plywood Jack Stud, this is a sub-assembly that sits inside
+ * a larger wall panel's own rough opening, not a free-standing panel).
  */
 function buildHeaderChords(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
   const members: PanelMember[] = [];
@@ -50,12 +56,33 @@ function buildHeaderChords(widthIn: number, depthIn: number, heightIn: number): 
       });
     }
   }
+
+  const bottomPlyZIn = PLATE_2X4_THICKNESS_IN;
+  const topPlyZIn = heightIn - PLATE_2X4_THICKNESS_IN - SKIN_THICKNESS_IN;
+  for (const [chord, zIn] of [
+    ["bottom", bottomPlyZIn],
+    ["top", topPlyZIn],
+  ] as const) {
+    members.push({
+      memberId: `${chord}_chord_ply`,
+      material: "plywood",
+      speciesGrade: null,
+      plySpec: SKIN_PLY_SPEC,
+      nominalSize: null,
+      actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: depthIn, lengthIn: widthIn },
+      orientation: "flat",
+      position: { xIn: 0, yIn: 0, zIn, rotationDeg: 0 },
+      role: "skin",
+      qty: 1,
+      notes: `${chord} plate plywood cap — ties both wythes' ${chord} chord 2x4s into one rigid plate; the truss web bears against this, not the bare 2x4 faces.`,
+    });
+  }
   return members;
 }
 
-/** The rise (in) available to the truss web between the chords' facing edges. */
-function headerWebRiseIn(heightIn: number): number {
-  return heightIn - 2 * PLATE_2X4_THICKNESS_IN;
+/** The rise (in) available to the truss web between the chords' plywood-capped facing edges. */
+export function headerWebRiseIn(heightIn: number): number {
+  return heightIn - 2 * PLATE_2X4_THICKNESS_IN - 2 * SKIN_THICKNESS_IN;
 }
 
 /**
@@ -68,8 +95,10 @@ function headerWebRiseIn(heightIn: number): number {
  * needs to keep every web segment at or above the 30deg minimum.
  */
 function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number, isDoor: boolean): PanelMember[] {
-  const bottomChordTopZIn = PLATE_2X4_THICKNESS_IN;
-  const topChordBottomZIn = heightIn - PLATE_2X4_THICKNESS_IN;
+  // The web bears against each chord's plywood cap (see buildHeaderChords),
+  // not the bare 2x4 face — one skin thickness further inboard on each side.
+  const bottomChordTopZIn = PLATE_2X4_THICKNESS_IN + SKIN_THICKNESS_IN;
+  const topChordBottomZIn = heightIn - PLATE_2X4_THICKNESS_IN - SKIN_THICKNESS_IN;
   const riseIn = headerWebRiseIn(heightIn);
   const peakCount = isDoor ? 1 : computeTrussWebPeakCount(widthIn, riseIn);
 

@@ -41,10 +41,15 @@ export const NAILER_LENGTH_DEFICIT_IN = standardPanelHeightIn.value - standardPa
  * - "flat", 0deg (skins, plate 2x4s, girt web): lying flat on the XY plane — X=length, Y=width, Z=thickness.
  * - "vertical", 0deg (studs, nailer): standing upright — X=thickness, Y=width, Z=length.
  * - "diagonal", 0deg: tilted brace, wide face spanning Y — X=thickness, Y=width, Z=length (unused today).
- * - "diagonal", 90deg (braced panel's diagonal braces): rotated so the wide face spans X instead —
- *   X=width, Y=thickness, Z=length — keeps the brace confined to a thin Y-slice (e.g. the exterior
- *   wythe) instead of centered across the panel's full depth.
- * - "horizontal", 90deg (girt bars): on its side, spanning Y — X=thickness, Y=length, Z=width.
+ * - "diagonal", 90deg (braced panel's diagonal braces, header/gable/truss web braces): rotated so the
+ *   wide face spans X instead — X=width, Y=thickness, Z=length — keeps the brace confined to a thin
+ *   Y-slice (e.g. the exterior wythe) instead of centered across the panel's full depth.
+ * - "horizontal", 90deg: standing on its 1.5in edge, spanning Y — X=thickness, Y=length, Z=width
+ *   (unused today, kept for a future member that genuinely stands tall on its narrow edge).
+ * - "horizontal", 180deg (girt bars, Tommy: "rotate girt bars 90 degrees hotdog style" — rolled about
+ *   its own long/Y axis from the 90deg case above): laid onto its wide 3.5in face instead, spanning Y —
+ *   X=width, Y=length, Z=thickness — a real bearing ledge (3.5in) for the girt web to rest on, with
+ *   only a thin (1.5in) vertical footprint.
  * - "horizontal", 0deg: on edge, spanning X — X=length, Y=thickness, Z=width (unused today, kept for a
  *   future member that genuinely stands on edge rather than lying flat).
  * Shared here (not duplicated per-consumer) since the 3D renderer and any
@@ -55,6 +60,7 @@ export function memberBoxSizeIn(member: PanelMember): { xIn: number; yIn: number
   if (member.orientation === "diagonal" && member.position.rotationDeg === 90) return { xIn: w, yIn: t, zIn: l };
   if (member.orientation === "vertical" || member.orientation === "diagonal") return { xIn: t, yIn: w, zIn: l };
   if (member.orientation === "horizontal" && member.position.rotationDeg === 90) return { xIn: t, yIn: l, zIn: w };
+  if (member.orientation === "horizontal" && member.position.rotationDeg === 180) return { xIn: w, yIn: l, zIn: t };
   if (member.orientation === "horizontal") return { xIn: l, yIn: t, zIn: w };
   return { xIn: l, yIn: w, zIn: t }; // "flat"
 }
@@ -225,17 +231,41 @@ export function computeTrussWebAngleDeg(widthIn: number, riseIn: number, peakCou
 }
 
 /**
+ * Two diagonal 2x4s can't literally converge to one shared atom-point
+ * (Tommy: "the ends of the diagonal pieces of header brace should be
+ * angled like the bracing panels" — the same "flank instead of pinch"
+ * principle as a Braced Panel's chevron braces around its girt bar) — every
+ * PEAK (a triangle's own rise meeting its own fall) and every INTERNAL foot
+ * (one triangle's fall meeting the next triangle's rise) stops each piece
+ * `PEAK_GAP_IN / 2` short of the shared point instead, flanking a small gap
+ * the width of one 2x4. The very first/last foot (touching the continuous
+ * bottom chord, not another diagonal piece) is unaffected.
+ */
+export const PEAK_GAP_IN = PLATE_2X4_THICKNESS_IN;
+
+/** A point `distIn` inches from (fromX,fromZ) along the line toward (towardX,towardZ). */
+function retreatPoint(fromXIn: number, fromZIn: number, towardXIn: number, towardZIn: number, distIn: number): [number, number] {
+  const dx = towardXIn - fromXIn;
+  const dz = towardZIn - fromZIn;
+  const lenIn = Math.hypot(dx, dz);
+  if (lenIn === 0) return [fromXIn, fromZIn];
+  const t = distIn / lenIn;
+  return [fromXIn + dx * t, fromZIn + dz * t];
+}
+
+/**
  * A continuous "W-truss" zigzag of `peakCount` triangular webs between a
  * flat bottom chord and a (possibly sloped) top chord — Tommy, from
  * reference photos of real straw-bale wall/gable bracing: repeating
  * "upside-down V" triangles sharing their feet/peaks continuously
  * (foot0-peak0-foot1-peak1-...-footN) rather than isolated, gapped
- * triangles, the same way a real truss's web members connect. `topZAt(x)`
- * lets the top chord follow a slope (a Gable End Panel's rip) or stay
- * flat (headers — pass a constant function). Every brace is a 2x4,
- * rotated 90deg so it's confined to a thin (1.5in) Y-slice — pass `yIn`
- * to place that slice on whichever wythe (see the "diagonal" +
- * rotationDeg=90 case in `memberBoxSizeIn`).
+ * triangles, the same way a real truss's web members connect — except each
+ * internal peak/foot flanks a small gap instead of sharing one exact point
+ * (see `PEAK_GAP_IN`/`retreatPoint`). `topZAt(x)` lets the top chord follow
+ * a slope (a Gable End Panel's rip) or stay flat (headers — pass a constant
+ * function). Every brace is a 2x4, rotated 90deg so it's confined to a thin
+ * (1.5in) Y-slice — pass `yIn` to place that slice on whichever wythe (see
+ * the "diagonal" + rotationDeg=90 case in `memberBoxSizeIn`).
  */
 export function buildTrussWebBraces(
   peakCount: number,
@@ -273,22 +303,31 @@ export function buildTrussWebBraces(
     const footRightXIn = (i + 1) * segWidthIn;
     const peakXIn = footLeftXIn + segWidthIn / 2;
     const peakZIn = topZAt(peakXIn);
+    const halfGapIn = PEAK_GAP_IN / 2;
+
+    const [riseFootXIn, riseFootZIn] =
+      i === 0 ? [footLeftXIn, bottomZIn] : retreatPoint(footLeftXIn, bottomZIn, peakXIn, peakZIn, halfGapIn);
+    const [risePeakXIn, risePeakZIn] = retreatPoint(peakXIn, peakZIn, footLeftXIn, bottomZIn, halfGapIn);
+    const [fallPeakXIn, fallPeakZIn] = retreatPoint(peakXIn, peakZIn, footRightXIn, bottomZIn, halfGapIn);
+    const [fallFootXIn, fallFootZIn] =
+      i === peakCount - 1 ? [footRightXIn, bottomZIn] : retreatPoint(footRightXIn, bottomZIn, peakXIn, peakZIn, halfGapIn);
+
     members.push(
       makeWebBrace(
         `${idPrefix}_${i + 1}_rise`,
-        footLeftXIn,
-        bottomZIn,
-        peakXIn,
-        peakZIn,
-        `web ${i + 1} of ${peakCount}, rising from the bottom chord to the peak.`,
+        riseFootXIn,
+        riseFootZIn,
+        risePeakXIn,
+        risePeakZIn,
+        `web ${i + 1} of ${peakCount}, rising from the bottom chord to the peak — stops short of the peak/foot on either end, flanking a small gap rather than pinching to a shared point with the adjacent piece.`,
       ),
       makeWebBrace(
         `${idPrefix}_${i + 1}_fall`,
-        peakXIn,
-        peakZIn,
-        footRightXIn,
-        bottomZIn,
-        `web ${i + 1} of ${peakCount}, falling from the peak back to the bottom chord.`,
+        fallPeakXIn,
+        fallPeakZIn,
+        fallFootXIn,
+        fallFootZIn,
+        `web ${i + 1} of ${peakCount}, falling from the peak back to the bottom chord — stops short of the peak/foot on either end, flanking a small gap rather than pinching to a shared point with the adjacent piece.`,
       ),
     );
   }
@@ -299,23 +338,35 @@ export function buildTrussWebBraces(
  * `rowCount` girt rows, evenly spaced across the stud span (Tommy: the
  * Standard Panel always uses 2; the Braced Panel uses 3+, see
  * `computeBracedGirtRowCount`). Each row is 2 short 2x4 bars (one per
- * stud double, flush to that stud pair's INSIDE face — not centered along
- * the width) plus 1 plywood web that rests flat on top of both bars,
+ * stud double) plus 1 plywood web that rests flat on top of both bars,
  * spanning between them with a little extra bearing overhang past each
  * bar (`WEB_OVERHANG_TOTAL_IN`) — modeling how the web physically slides
- * down the stud channels into place during fabrication. This in-plane
- * placement is an interpretation of the confirmed girt qty/cross-section
- * sizes (exact position wasn't independently specified elsewhere).
+ * down the stud channels into place during fabrication. Each bar's OUTER
+ * edge sits flush to its stud pair's INSIDE face and extends inward
+ * (toward the panel's center) by its own 3.5in face — rolled 90deg
+ * "hotdog style" from a standing-on-edge orientation (Tommy: "rotate girt
+ * bars 90 degrees hotdog style") so that wide face lies horizontal,
+ * giving the web a real 3.5in-deep bearing ledge instead of a thin 1.5in
+ * one; the bar's own vertical footprint shrinks to its 1.5in thickness.
+ * Each row's own CENTER Z is a fixed fraction of the total stud span
+ * (Tommy: "the center of the girt bar... should be [determined] based on
+ * total height of the panel") — the reference other members (the web
+ * above, and a Braced Panel's diagonal braces) align to, not the bar's
+ * own top/bottom face. This in-plane placement is an interpretation of
+ * the confirmed girt qty/cross-section sizes (exact position wasn't
+ * independently specified elsewhere).
  */
 export function buildGirtRows(rowCount: number, widthIn: number, depthIn: number, studSpanIn: number): PanelMember[] {
   const members: PanelMember[] = [];
-  const barLeftXIn = PLATE_2X4_THICKNESS_IN;
-  const barRightXIn = widthIn - 2 * PLATE_2X4_THICKNESS_IN;
+  const leftStudInnerFaceXIn = PLATE_2X4_THICKNESS_IN;
+  const rightStudInnerFaceXIn = widthIn - PLATE_2X4_THICKNESS_IN;
+  const barLeftXIn = leftStudInnerFaceXIn;
+  const barRightXIn = rightStudInnerFaceXIn - PLATE_2X4_WIDTH_IN;
   const studFaceSpanIn = widthIn - 2 * PLATE_2X4_THICKNESS_IN;
 
   for (let row = 1; row <= rowCount; row++) {
     const centerZIn = SKIN_THICKNESS_IN + (studSpanIn * row) / (rowCount + 1);
-    const barTopZIn = centerZIn + PLATE_2X4_WIDTH_IN / 2;
+    const barTopZIn = centerZIn + PLATE_2X4_THICKNESS_IN / 2;
 
     for (const [side, barXIn] of [
       ["left", barLeftXIn],
@@ -329,10 +380,10 @@ export function buildGirtRows(rowCount: number, widthIn: number, depthIn: number
         nominalSize: "2x4",
         actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: depthIn },
         orientation: "horizontal",
-        position: { xIn: barXIn, yIn: 0, zIn: centerZIn - PLATE_2X4_WIDTH_IN / 2, rotationDeg: 90 },
+        position: { xIn: barXIn, yIn: 0, zIn: centerZIn - PLATE_2X4_THICKNESS_IN / 2, rotationDeg: 180 },
         role: "girt",
         qty: 1,
-        notes: `girt ${row} of ${rowCount}, ${side} bar — flush to the inside face of the ${side} stud double; the web rests on top of this pair`,
+        notes: `girt ${row} of ${rowCount}, ${side} bar — flush to the inside face of the ${side} stud double, rolled onto its 3.5in face so the web has a real bearing ledge to rest on; centered at a fixed fraction of the total panel height.`,
       });
     }
 

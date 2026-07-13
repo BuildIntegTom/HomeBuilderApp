@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
+import type { PanelMember } from "./componentSchema";
 import {
   buildNailer,
   buildTrussWebBraces,
@@ -68,22 +69,46 @@ describe("buildTrussWebBraces", () => {
     }
   });
 
-  it("shares feet/peaks continuously — each peak's fall-end X matches the next peak's rise-start X", () => {
+  function endpoints(brace: PanelMember): { x: number; z: number }[] {
+    const size = memberBoxSizeIn(brace);
+    const tiltRad = (brace.position.tiltDeg! * Math.PI) / 180;
+    const halfLen = size.zIn / 2;
+    return [
+      { x: brace.position.xIn + -Math.sin(tiltRad) * halfLen, z: brace.position.zIn + Math.cos(tiltRad) * halfLen },
+      { x: brace.position.xIn - -Math.sin(tiltRad) * halfLen, z: brace.position.zIn - Math.cos(tiltRad) * halfLen },
+    ];
+  }
+
+  it("flanks a small gap at an internal foot instead of pinching fall/rise to one shared point", () => {
     const braces = buildTrussWebBraces(3, 90, 0, () => 20, 0.75, "web");
-    function endpoints(brace: (typeof braces)[number]) {
-      const size = memberBoxSizeIn(brace);
-      const tiltRad = (brace.position.tiltDeg! * Math.PI) / 180;
-      const halfLen = size.zIn / 2;
-      return {
-        x1: brace.position.xIn + -Math.sin(tiltRad) * halfLen,
-        x2: brace.position.xIn - -Math.sin(tiltRad) * halfLen,
-      };
-    }
-    // rise_1: foot at x=0; fall_1 and rise_2 should meet at the shared foot x=30 (90/3); fall_3 ends at x=90.
-    const fall1 = endpoints(braces.find((b) => b.memberId === "web_1_fall")!);
-    const rise2 = endpoints(braces.find((b) => b.memberId === "web_2_rise")!);
-    const sharedFootXs = [fall1.x1, fall1.x2, rise2.x1, rise2.x2].map((x) => Math.round(x * 1e6) / 1e6);
-    expect(new Set(sharedFootXs).size).toBeLessThanOrEqual(3); // at least one X value repeats between the two braces
+    // rise_1: foot at x=0; fall_1 and rise_2 used to meet at the shared foot x=30 (90/3); fall_3 ends at x=90.
+    const nearFoot = (p: { x: number; z: number }) => Math.abs(p.z) < 5; // the foot-side endpoint, near the bottom chord (z=0), not the peak (z=20)
+    const fall1FootEnd = endpoints(braces.find((b) => b.memberId === "web_1_fall")!).find(nearFoot)!;
+    const rise2FootEnd = endpoints(braces.find((b) => b.memberId === "web_2_rise")!).find(nearFoot)!;
+
+    // Neither piece actually reaches the nominal shared foot (x=30) anymore — each stops
+    // PEAK_GAP_IN/2 short of it, flanking a real gap instead.
+    expect(fall1FootEnd.x).toBeLessThan(30);
+    expect(rise2FootEnd.x).toBeGreaterThan(30);
+    expect(rise2FootEnd.x - fall1FootEnd.x).toBeGreaterThan(0.5);
+  });
+
+  it("still touches the bottom chord exactly at the very first/last foot (no flanking against the continuous chord)", () => {
+    const braces = buildTrussWebBraces(3, 90, 0, () => 20, 0.75, "web");
+    const rise1 = endpoints(braces.find((b) => b.memberId === "web_1_rise")!);
+    const fall3 = endpoints(braces.find((b) => b.memberId === "web_3_fall")!);
+    expect(rise1.some((p) => Math.abs(p.x) < 1e-6 && Math.abs(p.z) < 1e-6)).toBe(true); // starts exactly at x=0
+    expect(fall3.some((p) => Math.abs(p.x - 90) < 1e-6 && Math.abs(p.z) < 1e-6)).toBe(true); // ends exactly at x=90
+  });
+
+  it("flanks a small gap at a peak too (rise meeting its own fall)", () => {
+    const braces = buildTrussWebBraces(1, 36, 0, () => 18, 0.75, "web");
+    const nearPeak = (p: { x: number; z: number }) => Math.abs(p.z - 18) < 5;
+    const risePeakEnd = endpoints(braces.find((b) => b.memberId === "web_1_rise")!).find(nearPeak)!;
+    const fallPeakEnd = endpoints(braces.find((b) => b.memberId === "web_1_fall")!).find(nearPeak)!;
+    expect(risePeakEnd.x).toBeLessThan(18); // short of the nominal peak (x=18)
+    expect(fallPeakEnd.x).toBeGreaterThan(18);
+    expect(fallPeakEnd.x - risePeakEnd.x).toBeGreaterThan(0.5);
   });
 
   it("follows a sloped top chord (gable-style) via topZAt", () => {

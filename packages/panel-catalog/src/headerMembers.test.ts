@@ -4,6 +4,7 @@ import {
   buildDoorHeaderSchema,
   buildWindowHeaderMembers,
   buildWindowHeaderSchema,
+  headerWebRiseIn,
 } from "./headerMembers";
 import { computeTrussWebPeakCount, memberBoxSizeIn } from "./panelMemberHelpers";
 
@@ -11,13 +12,21 @@ const DEPTH_IN = 15.5;
 
 describe("buildDoorHeaderMembers", () => {
   const WIDTH_IN = 36;
-  const HEIGHT_IN = 18; // rise ~15in, half-width 18 -> ~50deg with 1 peak; still forced to 1
+  const HEIGHT_IN = 18; // rise ~13.5in (2x4 chords + plywood caps eat into it), half-width 18 -> forced to 1 peak regardless
 
-  it("has 4 chords (top/bottom x ext/int), each spanning the full width", () => {
+  it("has 4 chords (top/bottom x ext/int) plus 2 plywood plate caps, chords each spanning the full width", () => {
     const members = buildDoorHeaderMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN);
     const chords = members.filter((m) => m.role === "plate");
     expect(chords).toHaveLength(4);
     for (const c of chords) expect(c.actualDimsIn.lengthIn).toBeCloseTo(WIDTH_IN, 6);
+
+    const plyCaps = members.filter((m) => m.role === "skin");
+    expect(plyCaps).toHaveLength(2); // bottom_chord_ply + top_chord_ply
+    for (const p of plyCaps) {
+      expect(p.material).toBe("plywood");
+      expect(p.actualDimsIn.widthIn).toBeCloseTo(DEPTH_IN, 6); // spans the full depth, bridging both wythes
+      expect(p.actualDimsIn.lengthIn).toBeCloseTo(WIDTH_IN, 6);
+    }
   });
 
   it("always has exactly 1 peak (one upside-down V) regardless of proportions, on both wythes", () => {
@@ -57,11 +66,35 @@ describe("buildWindowHeaderMembers", () => {
   it("matches computeTrussWebPeakCount's own prediction", () => {
     const widthIn = 96;
     const heightIn = 14;
-    const riseIn = heightIn - 2 * 1.5;
-    const expectedPeaks = computeTrussWebPeakCount(widthIn, riseIn);
+    const expectedPeaks = computeTrussWebPeakCount(widthIn, headerWebRiseIn(heightIn));
     const members = buildWindowHeaderMembers(widthIn, DEPTH_IN, heightIn);
     const extRises = members.filter((m) => m.role === "brace" && m.memberId.includes("_ext_") && m.memberId.includes("_rise"));
     expect(extRises).toHaveLength(expectedPeaks);
+  });
+});
+
+describe("header chord plywood caps", () => {
+  const WIDTH_IN = 60;
+  const HEIGHT_IN = 20;
+
+  it("the web braces bear against the plywood caps' faces, not the bare 2x4 chord faces", () => {
+    const members = buildWindowHeaderMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN);
+    const bottomChord = members.find((m) => m.memberId === "bottom_chord_2x4_ext")!;
+    const bottomPly = members.find((m) => m.memberId === "bottom_chord_ply")!;
+    const firstRiseExt = members.find((m) => m.role === "brace" && m.memberId.includes("_ext_") && m.memberId.includes("1_rise"))!;
+
+    const bottomChordTopZ = bottomChord.position.zIn + bottomChord.actualDimsIn.thicknessIn;
+    const bottomPlyTopZ = bottomPly.position.zIn + bottomPly.actualDimsIn.thicknessIn;
+    expect(bottomPly.position.zIn).toBeCloseTo(bottomChordTopZ, 6); // ply sits right on top of the chord
+    expect(bottomPlyTopZ).toBeGreaterThan(bottomChordTopZ); // ply's own top face is further up
+
+    // Reconstruct both real endpoints of the tilted brace (same method as bracedPanelMembers.test.ts).
+    const size = memberBoxSizeIn(firstRiseExt);
+    const tiltRad = (firstRiseExt.position.tiltDeg! * Math.PI) / 180;
+    const halfLen = size.zIn / 2;
+    const endpointZs = [firstRiseExt.position.zIn + Math.cos(tiltRad) * halfLen, firstRiseExt.position.zIn - Math.cos(tiltRad) * halfLen];
+    const lowFootZ = Math.min(...endpointZs);
+    expect(lowFootZ).toBeCloseTo(bottomPlyTopZ, 6); // the web's low foot bears on the plywood's top face, not the bare chord
   });
 });
 

@@ -36,20 +36,32 @@ export function computeBracedGirtRowCount(studSpanIn: number): number {
 /**
  * A chevron of 2 mirrored diagonal 2x4 braces per wythe (Tommy, revised
  * spec, from reference photos: "how i want the...bracing to be: like a
- * <") sharing one vertex at the middle girt row's LEFT bar/stud junction
- * — reading left-to-right, this traces the "<" character exactly: one
- * shared point on the left, two braces fanning out to the top-right and
- * bottom-right corners. Present on BOTH wythes (Tommy: "braced panels
- * might as well be on both sides too"), each rotated 90deg so it's
- * confined to its own wythe's outer 1.5in Y-slice instead of centered
- * across the panel's full depth — see the "diagonal"+rotationDeg=90 case
- * in `memberBoxSizeIn`, which swaps the box's wide (3.5in) face onto the
- * X axis and its thin (1.5in) face onto Y.
+ * <") — their inner (middle) ends are flush to the left stud's own inner
+ * face (Tommy: "the middle connections of the diagonal braces... should
+ * be flush to the stud, not the girt bar"), both sharing that same X, and
+ * flank the middle girt row's own bar vertically instead — one landing
+ * just above its center, the other just below (Tommy: "the points of the
+ * diagonals should start on either side of the girt"), since two braces
+ * can't actually converge on a single atom of lumber. Reading
+ * left-to-right, this still traces the "<" character (both braces fan out
+ * to the top-right and bottom-right corners), just with a small flat spot
+ * at the girt bar instead of a knife-point. Present on BOTH wythes (Tommy:
+ * "braced panels might as well be on both sides too"), each rotated 90deg
+ * so it's confined to its own wythe's outer 1.5in Y-slice instead of
+ * centered across the panel's full depth — see the "diagonal"+
+ * rotationDeg=90 case in `memberBoxSizeIn`, which swaps the box's wide
+ * (3.5in) face onto the X axis and its thin (1.5in) face onto Y.
  *
  * "Middle" girt row = `(rowCount + 1) / 2`, exact because
  * `computeBracedGirtRowCount` always returns an odd count (Tommy: "there
  * are always an odd number of girts... so there is one in the middle
  * that defines where the two braced pieces go").
+ *
+ * The outer (plate-side) ends are equidistant from the middle girt row's
+ * own center — the underside of the top plate above, the TOP face of the
+ * bottom plate below (Tommy: "this should keep the diagonal bracing
+ * symmetrical") — so the upper and lower brace are true mirror images of
+ * one another.
  *
  * Both braces are straight tilted boxes (see `tiltDeg`) — the real
  * angle-cut ends aren't modeled as actual beveled geometry, consistent
@@ -58,12 +70,23 @@ export function computeBracedGirtRowCount(studSpanIn: number): number {
 export function buildDiagonalBraces(widthIn: number, depthIn: number, heightIn: number, rowCount: number, studSpanIn: number): PanelMember[] {
   const middleRow = (rowCount + 1) / 2;
   const middleRowCenterZIn = SKIN_THICKNESS_IN + (studSpanIn * middleRow) / (rowCount + 1);
-  const middleRowBarTopZIn = middleRowCenterZIn + PLATE_2X4_WIDTH_IN / 2;
+  // The middle girt row's bar is now rolled 90deg "hotdog style" (see
+  // buildGirtRows) — a thin 1.5in vertical band centered at
+  // middleRowCenterZIn — so the 2 braces flank its top/bottom face
+  // instead of its (now much wider) left/right face.
+  const middleRowBarTopZIn = middleRowCenterZIn + PLATE_2X4_THICKNESS_IN / 2;
+  const middleRowBarBottomZIn = middleRowCenterZIn - PLATE_2X4_THICKNESS_IN / 2;
 
-  const barLeftXIn = PLATE_2X4_THICKNESS_IN;
+  // Both braces' inner nose shares the left stud's own inner face — flush
+  // to the stud, not derived from the girt bar's own (now-rotated) width.
+  const studFaceXIn = PLATE_2X4_THICKNESS_IN;
   const barRightXIn = widthIn - 2 * PLATE_2X4_THICKNESS_IN;
   const topPlate2x4ZIn = heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
-  const bottomPlate2x4ZIn = SKIN_THICKNESS_IN;
+  // Top face of the bottom plate (mirrors topPlate2x4ZIn's "underside of
+  // the top plate") — the bottom plate assembly spans
+  // [SKIN_THICKNESS_IN, SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN], so
+  // its own top face is the far end of that span, not its bottom.
+  const bottomPlate2x4ZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
 
   function makeBrace(memberId: string, x1: number, z1: number, x2: number, z2: number, centerYIn: number, notes: string): PanelMember {
     const centerX = (x1 + x2) / 2;
@@ -93,21 +116,21 @@ export function buildDiagonalBraces(widthIn: number, depthIn: number, heightIn: 
     members.push(
       makeBrace(
         `diagonal_brace_upper_${wythe}`,
-        barLeftXIn,
+        studFaceXIn,
         middleRowBarTopZIn,
         barRightXIn,
         topPlate2x4ZIn,
         centerYIn,
-        `${wythe}-wythe upper brace — shares its vertex with the lower brace at the middle girt row (row ${middleRow} of ${rowCount})'s left bar/stud junction; other nose flush with the underside of the top plate at the right stud double.`,
+        `${wythe}-wythe upper brace — inner nose flush to the left stud's inner face, bearing against the middle girt row (row ${middleRow} of ${rowCount})'s top face; other nose flush with the underside of the top plate at the right stud double.`,
       ),
       makeBrace(
         `diagonal_brace_lower_${wythe}`,
-        barLeftXIn,
-        middleRowBarTopZIn,
+        studFaceXIn,
+        middleRowBarBottomZIn,
         barRightXIn,
         bottomPlate2x4ZIn,
         centerYIn,
-        `${wythe}-wythe lower brace — shares its vertex with the upper brace at the middle girt row (row ${middleRow} of ${rowCount})'s left bar/stud junction; other nose flush with the top of the bottom plate at the right stud double.`,
+        `${wythe}-wythe lower brace — inner nose flush to the SAME left stud face as the upper brace, bearing against the middle girt row (row ${middleRow} of ${rowCount})'s bottom face (the upper brace takes the top face, so the 2 braces flank the girt bar vertically instead of pinching to one point); other nose flush with the top of the bottom plate at the right stud double.`,
       ),
     );
   }

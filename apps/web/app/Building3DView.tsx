@@ -14,10 +14,11 @@ import {
   buildSquareBalePanelMembers,
   buildStandardPanelMembers,
   computeDoorRoughOpeningHeightIn,
+  computeHeaderHeightIn,
   computeRoughOpeningWidthIn,
   doorRoughOpeningSelectedHeightIn,
-  headerPreviewHeightIn,
   sillDefaultHeightIn,
+  standardWindowHeightDefaultIn,
   toeUpHeightIn,
   type JackStudConfig,
   type PanelMember,
@@ -77,10 +78,11 @@ function birdsEyeCameraPosition(bounds: Bounds): [number, number, number] {
 }
 
 /** Real, real-height door Rough Opening height — see
- * computeDoorRoughOpeningHeightIn's own doc comment; a window's jack-stud
- * span has no confirmed real formula yet (see headerPreviewHeightIn), so it
- * fills whatever's left between the sill's top and the wall's own top
- * plate instead. */
+ * computeDoorRoughOpeningHeightIn's own doc comment. A window's RO height is
+ * its own `PanelSlot.heightIn` instead (Tommy: "i want each window
+ * individually adjustable"), falling back to `standardWindowHeightDefaultIn`
+ * when uncustomized — both openings' headers fill the real remaining space
+ * up to the wall's own top plate, via `computeHeaderHeightIn`. */
 const DOOR_RO_HEIGHT_IN = computeDoorRoughOpeningHeightIn(doorRoughOpeningSelectedHeightIn.value, toeUpHeightIn.value);
 
 /** Real member geometry for every panel type, including window/door
@@ -123,7 +125,12 @@ function membersForSlot(
       const isDoor = slot.type === "door";
       const sillHeightIn = sillDefaultHeightIn.value;
       const bottomZIn = isDoor ? 0 : sillHeightIn;
-      const jackStudSpanIn = isDoor ? DOOR_RO_HEIGHT_IN : Math.max(0, heightIn - headerPreviewHeightIn.value - sillHeightIn);
+      // Each window carries its own height (Tommy: "i want each window
+      // individually adjustable") — falls back to the project default
+      // when this particular slot hasn't been customized.
+      const jackStudSpanIn = isDoor ? DOOR_RO_HEIGHT_IN : (slot.heightIn ?? standardWindowHeightDefaultIn.value);
+      const roTopZIn = bottomZIn + jackStudSpanIn;
+      const headerHeightIn = computeHeaderHeightIn(heightIn, roTopZIn);
       const sillWidthsIn = isDoor
         ? []
         : computeSillRunWidths(computeRoughOpeningWidthIn(slot.widthIn, jackStudConfig), standardWidthIn);
@@ -134,7 +141,7 @@ function membersForSlot(
         jackStudConfig,
         bottomZIn,
         jackStudSpanIn,
-        headerPreviewHeightIn.value,
+        headerHeightIn,
         sillHeightIn,
         sillWidthsIn,
         includeNailer,

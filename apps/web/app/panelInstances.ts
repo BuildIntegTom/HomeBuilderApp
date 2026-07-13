@@ -37,6 +37,12 @@ export interface PanelInstance {
    * `panelType` ("header") otherwise. Lets a caller pick a door-header vs.
    * window-header 3D model for what's still one Shop Drawing page/type. */
   sourceSlotType?: PanelSlot["type"];
+  /** Only set for "header" instances derived from a "window" slot — that
+   * window's own selected height (Tommy: "i want each window individually
+   * adjustable"), carried through from `PanelSlot.heightIn`. Undefined =
+   * that window hasn't been customized (falls back to the project
+   * default, same as the source slot's own field). */
+  windowHeightIn?: number;
 }
 
 const SIMPLE_NAMED_TYPES = new Set<PanelSlot["type"]>([
@@ -86,6 +92,7 @@ export function allPanelInstances(
     widthIn: number,
     slotIndexInWall: number,
     sourceSlotType?: PanelSlot["type"],
+    windowHeightIn?: number,
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     instances.push({
@@ -95,6 +102,7 @@ export function allPanelInstances(
       widthIn,
       slotIndexInWall,
       ...(sourceSlotType && { sourceSlotType }),
+      ...(windowHeightIn !== undefined && { windowHeightIn }),
     });
   };
 
@@ -104,7 +112,7 @@ export function allPanelInstances(
     for (let slotIndexInWall = 0; slotIndexInWall < slots.length; slotIndexInWall++) {
       const slot = slots[slotIndexInWall]!;
       if (slot.type === "window" || slot.type === "door") {
-        pushInstance(direction, wall.id, "header", slot.widthIn, slotIndexInWall, slot.type);
+        pushInstance(direction, wall.id, "header", slot.widthIn, slotIndexInWall, slot.type, slot.type === "window" ? slot.heightIn : undefined);
         if (slot.type === "window") {
           const roWidthIn = computeRoughOpeningWidthIn(slot.widthIn, jackStudConfig);
           for (const sillWidthIn of computeSillRunWidths(roWidthIn, standardWidthIn)) {

@@ -49,6 +49,16 @@ export interface PanelSlot {
    * placement rule, instead of needing two separate adjacent panels.
    * Undefined = single-type slot, the overwhelmingly common case. */
   secondaryType?: PanelSlotType;
+  /** Only meaningful for "window" slots (Tommy: "an option for 5 different
+   * standard window heights, and that should determine the height of the
+   * windows... i want each window individually adjustable") — this
+   * window's own Rough Opening height (sill-top to header-bottom).
+   * Undefined = not yet customized, falls back to the project's default
+   * (`standardWindowHeightDefaultIn` in panel-catalog's data.ts), same
+   * "absent = default" convention as `secondaryType`. Doors don't use
+   * this — a door's RO height is always the confirmed
+   * `computeDoorRoughOpeningHeightIn` formula, not user-adjustable. */
+  heightIn?: number;
 }
 
 export type WallEnd = "start" | "end";

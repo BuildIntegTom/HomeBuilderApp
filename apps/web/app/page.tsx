@@ -74,6 +74,7 @@ import {
   buildTrussPlateMembers,
   buildWindowHeaderMembers,
   computeDoorRoughOpeningHeightIn,
+  computeHeaderHeightIn,
   computeRoughOpeningWidthIn,
   doorRoughOpeningSelectedHeightIn,
   jackStudThicknessIn,
@@ -123,7 +124,6 @@ import {
   foundationTypes,
   groundScrewProducts,
   groundScrewProductsStatus,
-  headerPreviewHeightIn,
   looseDensePackDefaultThicknessIn,
   looseDensePackThicknessOptionsIn,
   looseDensePackWidthIn,
@@ -148,6 +148,8 @@ import {
   standardPanelBom,
   standardPanelBomReferenceWidthIn,
   standardPanelHeightIn,
+  standardWindowHeightDefaultIn,
+  standardWindowHeightsIn,
   standardWindowWidthsIn,
   strawMoistureContent,
   targetDensityKgM3,
@@ -809,6 +811,19 @@ export default function LayoutEditor() {
     }));
   };
 
+  // Unlike width, a window's height doesn't affect wall tiling at all
+  // (Tommy: "i want each window individually adjustable") — just a direct
+  // per-slot field update, no re-tiling needed.
+  const handleSetWindowHeight = (wallId: string, slotIndex: number, heightIn: number) => {
+    setBaseWallSlots((prev) => {
+      const slots = prev[wallId];
+      if (!slots || !slots[slotIndex]) return prev;
+      const nextSlots = slots.slice();
+      nextSlots[slotIndex] = { ...nextSlots[slotIndex]!, heightIn };
+      return { ...prev, [wallId]: nextSlots };
+    });
+  };
+
   // An octagon is still just 2 numbers (widthFt/depthFt) under the hood —
   // recover them from whatever's currently drawn by reading the clip size
   // straight off one of the mitered diagonal walls (length = clip*sqrt2)
@@ -986,10 +1001,10 @@ export default function LayoutEditor() {
   }, [baseWallSlots, spacingIn, standardWidthIn, panelizationType, timberFrameCurtainPanelType, timberFrameCurtainWidthIn]);
 
   const windowList = useMemo(() => {
-    const items: { wallId: string; slotIndex: number; widthIn: number }[] = [];
+    const items: { wallId: string; slotIndex: number; widthIn: number; heightIn: number }[] = [];
     for (const [wallId, slots] of Object.entries(baseWallSlots)) {
       slots.forEach((s, i) => {
-        if (s.type === "window") items.push({ wallId, slotIndex: i, widthIn: s.widthIn });
+        if (s.type === "window") items.push({ wallId, slotIndex: i, widthIn: s.widthIn, heightIn: s.heightIn ?? standardWindowHeightDefaultIn.value });
       });
     }
     return items;
@@ -1096,63 +1111,12 @@ export default function LayoutEditor() {
     [standardWidthIn, gablePreviewLowEdgeHeightIn, gablePreviewHighEdgeHeightIn],
   );
 
-  // Door/Window Header: no real rough-opening height/placement mechanism
-  // yet, so this previews at an illustrative default height. Width uses
-  // the first real header instance of that opening type if one's been
-  // drawn, otherwise a representative default (Tommy: "there are long
-  // headers and door headers... door headers just have one upside down V
-  // as a brace" — the window default is picked wide enough to actually
-  // show the "long header" multi-peak truss).
-  const HEADER_PREVIEW_HEIGHT_IN = headerPreviewHeightIn.value;
-  const DOOR_HEADER_DEFAULT_WIDTH_IN = 36;
-  const WINDOW_HEADER_DEFAULT_WIDTH_IN = 60;
-  const doorHeaderWidthIn =
-    allInstances.find((inst) => inst.panelType === "header" && inst.sourceSlotType === "door")?.widthIn ?? DOOR_HEADER_DEFAULT_WIDTH_IN;
-  const windowHeaderWidthIn =
-    allInstances.find((inst) => inst.panelType === "header" && inst.sourceSlotType === "window")?.widthIn ?? WINDOW_HEADER_DEFAULT_WIDTH_IN;
-  const doorHeaderMembers = useMemo(
-    () => buildDoorHeaderMembers(doorHeaderWidthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN),
-    [doorHeaderWidthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN],
-  );
-  const windowHeaderMembers = useMemo(
-    () => buildWindowHeaderMembers(windowHeaderWidthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN),
-    [windowHeaderWidthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN],
-  );
-
-  // Sill Panel: "short standard panel" (Tommy) at sillDefaultHeightIn
-  // (32in). Width uses the first real sill instance's own (already RO-
-  // aware, already-split-if-wide) width if one exists, otherwise a
-  // representative default.
-  const SILL_DEFAULT_WIDTH_IN = 36;
-  const sillHeightIn = sillDefaultHeightIn.value;
-  const sillWidthIn = allInstances.find((inst) => inst.panelType === "sill")?.widthIn ?? SILL_DEFAULT_WIDTH_IN;
-  const sillMembers = useMemo(
-    () => buildSillPanelMembers(sillWidthIn, thicknessIn, sillHeightIn, includeNailer),
-    [sillWidthIn, thicknessIn, sillHeightIn, includeNailer],
-  );
-
-  // Plywood Jack Stud: spans sill-top to header-bottom (Tommy: jack studs
-  // "go from the sill to the header") — approximated as the wall height
-  // minus the sill and header illustrative heights, since neither has a
-  // real tracked Z-position yet (same "no placement mechanism" gap noted
-  // throughout headers/sills/jack studs).
-  const jackStudPreviewHeightIn = Math.max(0, wallHeightFt * 12 - sillHeightIn - HEADER_PREVIEW_HEIGHT_IN);
-  const jackStudMembers = useMemo(
-    () => buildJackStudMembers(thicknessIn, jackStudPreviewHeightIn, jackStudConfig),
-    [thicknessIn, jackStudPreviewHeightIn, jackStudConfig],
-  );
-  const jackStudFastenerResult = useMemo(
-    () => computeJackStudFastenerWeight(jackStudPreviewHeightIn),
-    [jackStudPreviewHeightIn],
-  );
-
   // Door Rough Opening height (Tommy: "RO height for doors is almost
   // always 80.5in — the actual number is derived from door RO selected
-  // (default 82.5) − toe up height (usually 1.5in)") — a real formula,
-  // unlike the sill/header-based illustrative approximation above (which
-  // stays the window's own jack stud height, since a door has no sill —
-  // its jack studs span this full RO height instead, floor to header-
-  // bottom).
+  // (default 82.5) − toe up height (usually 1.5in)") — a real formula.
+  // Moved above the header block since the door header now derives its
+  // own real height from it (a door has no sill — its jack studs span
+  // this full RO height instead, floor to header-bottom).
   const doorRoughOpeningHeightIn = computeDoorRoughOpeningHeightIn(doorRoughOpeningSelectedHeightIn.value, toeUpHeightIn.value);
   const doorJackStudMembers = useMemo(
     () => buildJackStudMembers(thicknessIn, doorRoughOpeningHeightIn, jackStudConfig),
@@ -1161,6 +1125,70 @@ export default function LayoutEditor() {
   const doorJackStudFastenerResult = useMemo(
     () => computeJackStudFastenerWeight(doorRoughOpeningHeightIn),
     [doorRoughOpeningHeightIn],
+  );
+
+  // Sill Panel: "short standard panel" (Tommy) at sillDefaultHeightIn
+  // (32in). Width uses the first real sill instance's own (already RO-
+  // aware, already-split-if-wide) width if one exists, otherwise a
+  // representative default. Moved above the header block since the
+  // window header now derives its own real height from the sill height +
+  // the selected window height.
+  const SILL_DEFAULT_WIDTH_IN = 36;
+  const sillHeightIn = sillDefaultHeightIn.value;
+  const sillWidthIn = allInstances.find((inst) => inst.panelType === "sill")?.widthIn ?? SILL_DEFAULT_WIDTH_IN;
+  const sillMembers = useMemo(
+    () => buildSillPanelMembers(sillWidthIn, thicknessIn, sillHeightIn, includeNailer),
+    [sillWidthIn, thicknessIn, sillHeightIn, includeNailer],
+  );
+
+  // Door/Window Header (Tommy: "headers should be sized from the RO to
+  // the top of the wall panel standard height") — real height now, per
+  // opening type: wall height minus the RO's own top elevation (a door's
+  // RO starts at the floor; a window's starts on top of the sill — see
+  // computeHeaderHeightIn). Width still uses the first real header
+  // instance of that opening type if one's been drawn, otherwise a
+  // representative default (Tommy: "there are long headers and door
+  // headers... door headers just have one upside down V as a brace" —
+  // the window default is picked wide enough to actually show the "long
+  // header" multi-peak truss).
+  const DOOR_HEADER_DEFAULT_WIDTH_IN = 36;
+  const WINDOW_HEADER_DEFAULT_WIDTH_IN = 60;
+  const doorHeaderWidthIn =
+    allInstances.find((inst) => inst.panelType === "header" && inst.sourceSlotType === "door")?.widthIn ?? DOOR_HEADER_DEFAULT_WIDTH_IN;
+  const windowHeaderWidthIn =
+    allInstances.find((inst) => inst.panelType === "header" && inst.sourceSlotType === "window")?.widthIn ?? WINDOW_HEADER_DEFAULT_WIDTH_IN;
+  // Preview-only height (Tommy: "i want each window individually
+  // adjustable" — each window's real height lives on its own slot, see
+  // handleSetWindowHeight; this is only for the standalone Header/Jack
+  // Stud/RO preview pages, which aren't tied to one specific instance) —
+  // the first real window instance's own height if one's been drawn,
+  // otherwise the project default.
+  const windowHeightIn =
+    allInstances.find((inst) => inst.panelType === "header" && inst.sourceSlotType === "window")?.windowHeightIn ??
+    standardWindowHeightDefaultIn.value;
+  const doorHeaderHeightIn = computeHeaderHeightIn(wallHeightFt * 12, doorRoughOpeningHeightIn);
+  const windowHeaderHeightIn = computeHeaderHeightIn(wallHeightFt * 12, sillHeightIn + windowHeightIn);
+  const doorHeaderMembers = useMemo(
+    () => buildDoorHeaderMembers(doorHeaderWidthIn, thicknessIn, doorHeaderHeightIn),
+    [doorHeaderWidthIn, thicknessIn, doorHeaderHeightIn],
+  );
+  const windowHeaderMembers = useMemo(
+    () => buildWindowHeaderMembers(windowHeaderWidthIn, thicknessIn, windowHeaderHeightIn),
+    [windowHeaderWidthIn, thicknessIn, windowHeaderHeightIn],
+  );
+
+  // Plywood Jack Stud (window): spans sill-top to header-bottom (Tommy:
+  // jack studs "go from the sill to the header") — IS the window's own
+  // real Rough Opening height directly (the preview windowHeightIn
+  // above), not a "leftover" wall-height-minus-header approximation.
+  const jackStudPreviewHeightIn = windowHeightIn;
+  const jackStudMembers = useMemo(
+    () => buildJackStudMembers(thicknessIn, jackStudPreviewHeightIn, jackStudConfig),
+    [thicknessIn, jackStudPreviewHeightIn, jackStudConfig],
+  );
+  const jackStudFastenerResult = useMemo(
+    () => computeJackStudFastenerWeight(jackStudPreviewHeightIn),
+    [jackStudPreviewHeightIn],
   );
 
   // Rough Opening widths (Tommy: "RO's take into account these jack
@@ -1246,8 +1274,12 @@ export default function LayoutEditor() {
                     ? buildSillPanelMembers(inst.widthIn, thicknessIn, sillDefaultHeightIn.value, includeNailer)
                     : inst.panelType === "header"
                       ? inst.sourceSlotType === "door"
-                        ? buildDoorHeaderMembers(inst.widthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN)
-                        : buildWindowHeaderMembers(inst.widthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN)
+                        ? buildDoorHeaderMembers(inst.widthIn, thicknessIn, doorHeaderHeightIn)
+                        : buildWindowHeaderMembers(
+                            inst.widthIn,
+                            thicknessIn,
+                            computeHeaderHeightIn(heightIn, sillHeightIn + (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value)),
+                          )
                       : null;
       if (instMembers) members.push(...instMembers);
     }
@@ -1263,7 +1295,8 @@ export default function LayoutEditor() {
     isSquareBalePanelization,
     squareBaleStudConfig,
     nailerOffsetIn,
-    HEADER_PREVIEW_HEIGHT_IN,
+    doorHeaderHeightIn,
+    sillHeightIn,
   ]);
 
   const plywoodAreaSqFt = useMemo(() => {
@@ -1305,7 +1338,12 @@ export default function LayoutEditor() {
   // at that instance's own width (column/corner ignore it, always fixed at
   // COLUMN_TOTAL_WIDTH_IN) so girt-row/plate/brace counts are exact, not a
   // flat scalar like the older wood-weight calc.
-  const fastenerWeightKgFor = (panelTypeId: string, widthIn: number, sourceSlotType?: PanelInstance["sourceSlotType"]): number | null => {
+  const fastenerWeightKgFor = (
+    panelTypeId: string,
+    widthIn: number,
+    sourceSlotType?: PanelInstance["sourceSlotType"],
+    windowHeightInOverride?: number,
+  ): number | null => {
     const heightIn = wallHeightFt * 12;
     const members =
       panelTypeId === "standard"
@@ -1320,8 +1358,12 @@ export default function LayoutEditor() {
                 ? gablePanelMembers
                 : panelTypeId === "header"
                   ? sourceSlotType === "door"
-                    ? buildDoorHeaderMembers(widthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN)
-                    : buildWindowHeaderMembers(widthIn, thicknessIn, HEADER_PREVIEW_HEIGHT_IN)
+                    ? buildDoorHeaderMembers(widthIn, thicknessIn, doorHeaderHeightIn)
+                    : buildWindowHeaderMembers(
+                        widthIn,
+                        thicknessIn,
+                        computeHeaderHeightIn(heightIn, sillHeightIn + (windowHeightInOverride ?? standardWindowHeightDefaultIn.value)),
+                      )
                   : panelTypeId === "sill"
                     ? buildSillPanelMembers(widthIn, thicknessIn, sillDefaultHeightIn.value, includeNailer)
                     : null;
@@ -1350,14 +1392,14 @@ export default function LayoutEditor() {
               heightIn: panelTypeId === "sill" ? sillDefaultHeightIn.value : wallHeightFt * 12,
               densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
               woodWeightKg: hasWoodBom ? woodPerPanel.weightKg : null,
-              fastenerWeightKg: fastenerWeightKgFor(panelTypeId, inst.widthIn, inst.sourceSlotType),
+              fastenerWeightKg: fastenerWeightKgFor(panelTypeId, inst.widthIn, inst.sourceSlotType, inst.windowHeightIn),
               hasClayPlaster,
               hasLimePlaster,
             }),
           }));
         return { panelType, hasWoodBom, instances };
       }),
-    [allInstances, thicknessIn, wallHeightFt, densityLbFt3, woodPerPanel.weightKg, hasClayPlaster, hasLimePlaster],
+    [allInstances, thicknessIn, wallHeightFt, densityLbFt3, woodPerPanel.weightKg, hasClayPlaster, hasLimePlaster, doorHeaderHeightIn, sillHeightIn],
   );
 
   // Total fastener weight (Tommy: "do a full check on what might not be on
@@ -1890,6 +1932,11 @@ export default function LayoutEditor() {
         2x4 studs sit right at the slot&apos;s perimeter, next to the adjacent panel&apos;s own studs. Either way,
         jack studs narrow the actual clear Rough Opening below the full window/door slot width — see the Door/
         Window Rough Opening Detail pages.
+      </p>
+      <p className={styles.note}>
+        Each window has its own Rough Opening height, set per-window in the Windows section below (Tommy: "i want
+        each window individually adjustable") — headers are sized from each window's own RO top up to the wall's
+        standard height; see the Window Rough Opening Detail page. {standardWindowHeightsIn.note}
       </p>
 
       <div role="group" aria-label="Panelization type" className={styles.toolbar}>
@@ -2607,7 +2654,7 @@ export default function LayoutEditor() {
           onPrint={() => handlePrintNote("windows")}
         >
           {windowList.length > 0 ? (
-            windowList.map(({ wallId, slotIndex, widthIn }) => (
+            windowList.map(({ wallId, slotIndex, widthIn, heightIn }) => (
               <label key={`${wallId}-${slotIndex}`}>
                 Wall {wallId}, window #{slotIndex}{" "}
                 <select
@@ -2620,13 +2667,25 @@ export default function LayoutEditor() {
                       {w}&quot;
                     </option>
                   ))}
+                </select>{" "}
+                <select
+                  id={`window-height-${wallId}-${slotIndex}`}
+                  title="This window's own Rough Opening height (sill-top to header-bottom)"
+                  value={heightIn}
+                  onChange={(e) => handleSetWindowHeight(wallId, slotIndex, Number(e.target.value))}
+                >
+                  {standardWindowHeightsIn.value.map((h) => (
+                    <option key={h} value={h}>
+                      {formatLengthIn(h, unitSystem)} tall
+                    </option>
+                  ))}
                 </select>
               </label>
             ))
           ) : (
             <p className={styles.note}>
               No windows placed yet. Switch to the Wall tab&apos;s 2D view, set the shape tool to Edit, and click a
-              tan panel to cycle it to Window — it&apos;ll show up here with a width dropdown once placed.
+              tan panel to cycle it to Window — it&apos;ll show up here with width/height dropdowns once placed.
             </p>
           )}
         </StickyNote>
@@ -3177,7 +3236,7 @@ export default function LayoutEditor() {
                 <div style={{ flex: "1 1 0%", minWidth: 200 }}>
                   <StandardPanel3DView
                     members={doorHeaderMembers}
-                    overallDimensions={{ heightIn: HEADER_PREVIEW_HEIGHT_IN, widthIn: doorHeaderWidthIn, depthIn: thicknessIn }}
+                    overallDimensions={{ heightIn: doorHeaderHeightIn, widthIn: doorHeaderWidthIn, depthIn: thicknessIn }}
                     displayName="Door Header"
                   />
                 </div>
@@ -3218,6 +3277,12 @@ export default function LayoutEditor() {
                         {doorRoughOpeningSelectedHeightIn.value}&quot; − {toeUpHeightIn.value}&quot; = {doorRoughOpeningHeightIn.toFixed(1)}&quot;
                       </td>
                     </tr>
+                    <tr>
+                      <td>Header height (RO top to wall standard height)</td>
+                      <td>
+                        {(wallHeightFt * 12).toFixed(1)}&quot; − {doorRoughOpeningHeightIn.toFixed(1)}&quot; = {doorHeaderHeightIn.toFixed(1)}&quot;
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -3227,6 +3292,7 @@ export default function LayoutEditor() {
               "The header spans the full slot width, resting on top of both jack studs — the clear Rough Opening (where the door unit itself installs) is narrower, inside the jack studs.",
               "A door header is always a single upside-down-V truss web, on both interior and exterior wythes — see the Header Shop Drawing page.",
               `Rough Opening height = selected door RO (${doorRoughOpeningSelectedHeightIn.value}in) minus the toe-up height (${toeUpHeightIn.value}in) — a real formula, not illustrative. The door's jack studs span this full height (floor to header-bottom), since a door has no sill.`,
+              `Header height = wall standard height (${(wallHeightFt * 12).toFixed(1)}in) minus the RO height (${doorRoughOpeningHeightIn.toFixed(1)}in) — the header fills everything above the RO up to the top plate.`,
               jackStudConfig === "2x4-stud"
                 ? "2x4 stud jack studs selected — fastener count/weight not modeled for this config yet (plywood jack sheet fastening is modeled)."
                 : `Plywood jack studs selected — screwed to the adjacent wall panel, 2x 4in T25 #9 screws every 6in (${doorJackStudFastenerResult.items[0]!.count} screws, ${doorJackStudFastenerResult.totalWeightLb.toFixed(2)} lb, for this one sheet at the real RO height).`,
@@ -3253,7 +3319,7 @@ export default function LayoutEditor() {
                 <div style={{ flex: "1 1 0%", minWidth: 200 }}>
                   <StandardPanel3DView
                     members={windowHeaderMembers}
-                    overallDimensions={{ heightIn: HEADER_PREVIEW_HEIGHT_IN, widthIn: windowHeaderWidthIn, depthIn: thicknessIn }}
+                    overallDimensions={{ heightIn: windowHeaderHeightIn, widthIn: windowHeaderWidthIn, depthIn: thicknessIn }}
                     displayName="Window Header (Long Header)"
                   />
                 </div>
@@ -3299,8 +3365,18 @@ export default function LayoutEditor() {
                       </td>
                     </tr>
                     <tr>
+                      <td>Selected window height (RO = sill-top to header-bottom)</td>
+                      <td>{formatLengthIn(windowHeightIn, unitSystem)}</td>
+                    </tr>
+                    <tr>
                       <td>Jack stud height (sill-top to header-bottom)</td>
                       <td>{jackStudPreviewHeightIn.toFixed(1)}&quot;</td>
+                    </tr>
+                    <tr>
+                      <td>Header height (RO top to wall standard height)</td>
+                      <td>
+                        {(wallHeightFt * 12).toFixed(1)}&quot; − ({sillHeightIn}&quot; + {jackStudPreviewHeightIn.toFixed(1)}&quot;) = {windowHeaderHeightIn.toFixed(1)}&quot;
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -3311,7 +3387,7 @@ export default function LayoutEditor() {
               "The header spans the full slot width, resting on top of both jack studs — the clear Rough Opening (where the window unit itself installs) is narrower, inside the jack studs. The sill sits below, sized to that same clear RO width.",
               `A window ("long") header repeats as many peaks as needed to keep every truss web segment at or above a 30deg bracing angle — a door header is always exactly 1 peak. Both are on interior and exterior wythes.`,
               `A sill is a short Standard Panel (default ${sillHeightIn}in tall) — a window wider than one standard panel width (${standardWidthIn}in) gets multiple sill panels sharing the run instead of one oversized sill.`,
-              "Real rough-opening height (floor to header) isn't tracked yet — jack stud height above is illustrative (current wall height minus the header/sill illustrative heights).",
+              `Window height (${windowHeightIn}in, selectable in Panel Standards) is the window's own real Rough Opening height, sill-top to header-bottom — the jack studs span exactly this. Header height = wall standard height (${(wallHeightFt * 12).toFixed(1)}in) minus the RO's own top elevation (sill height + window height) — a real formula, not illustrative.`,
               jackStudConfig === "2x4-stud"
                 ? "2x4 stud jack studs selected — fastener count/weight not modeled for this config yet (plywood jack sheet fastening is modeled)."
                 : "Plywood jack studs selected — screwed to the adjacent wall panel, 2x 4in T25 #9 screws every 6in.",
@@ -3373,7 +3449,7 @@ export default function LayoutEditor() {
             }
             fastenerSchedule={[]}
             notes={[
-              "3/4in plywood: every Standard/Braced panel's 2 skins, every Column/Corner panel's 2 side plies, every Safety/Gap panel's single sheet (see the Safety/Gap redesign note on its own Shop Drawing page), plus the roof-bearing assembly's own plywood cap(s) — a box beam's top+bottom caps if Second Story is enabled, a truss plate's single cap otherwise — across the drawn footprint's real total wall perimeter, not an illustrative preview length.",
+              "3/4in plywood: every Standard/Braced/Sill panel's 2 skins, every Column/Corner panel's 2 side plies, every Safety/Gap panel's single sheet (see the Safety/Gap redesign note on its own Shop Drawing page), every Door/Window Header's top+bottom plate caps, plus the roof-bearing assembly's own plywood cap(s) — a box beam's top+bottom caps if Second Story is enabled, a truss plate's single cap otherwise — across the drawn footprint's real total wall perimeter, not an illustrative preview length.",
               "1/2in plywood is only the girt webs (girt bars themselves are dimensional lumber, tallied separately).",
               ...(panelizationType === "square-bale-panels"
                 ? [
@@ -3661,23 +3737,24 @@ export default function LayoutEditor() {
                         <div style={{ flex: "1 1 0%", minWidth: 200 }}>
                           <StandardPanel3DView
                             members={doorHeaderMembers}
-                            overallDimensions={{ heightIn: HEADER_PREVIEW_HEIGHT_IN, widthIn: doorHeaderWidthIn, depthIn: thicknessIn }}
+                            overallDimensions={{ heightIn: doorHeaderHeightIn, widthIn: doorHeaderWidthIn, depthIn: thicknessIn }}
                             displayName="Door Header"
                           />
                         </div>
                         <div style={{ flex: "1 1 0%", minWidth: 200 }}>
                           <StandardPanel3DView
                             members={windowHeaderMembers}
-                            overallDimensions={{ heightIn: HEADER_PREVIEW_HEIGHT_IN, widthIn: windowHeaderWidthIn, depthIn: thicknessIn }}
+                            overallDimensions={{ heightIn: windowHeaderHeightIn, widthIn: windowHeaderWidthIn, depthIn: thicknessIn }}
                             displayName="Window Header (Long Header)"
                           />
                         </div>
                         <p className={styles.note}>
-                          Preview only, at an illustrative default height ({HEADER_PREVIEW_HEIGHT_IN}&quot;) — real
-                          rough-opening-to-top-plate height isn&apos;t tracked yet (same gap as the Plywood Jack
-                          Stud). A door header is always a single upside-down-V truss web; a window (&quot;long&quot;)
-                          header repeats as many peaks as needed to keep every web segment at or above a {30}deg
-                          bracing angle. Both have the V framing on interior AND exterior wythes.
+                          Real heights, sized from the RO to the top of the wall standard height: door {doorHeaderHeightIn.toFixed(1)}
+                          &quot; ({(wallHeightFt * 12).toFixed(1)}&quot; wall − {doorRoughOpeningHeightIn.toFixed(1)}&quot; door RO),
+                          window {windowHeaderHeightIn.toFixed(1)}&quot; ({(wallHeightFt * 12).toFixed(1)}&quot; wall −{" "}
+                          {(sillHeightIn + jackStudPreviewHeightIn).toFixed(1)}&quot; sill+RO). A door header is always a single
+                          upside-down-V truss web; a window (&quot;long&quot;) header repeats as many peaks as needed to keep every
+                          web segment at or above a {30}deg bracing angle. Both have the V framing on interior AND exterior wythes.
                         </p>
                       </div>
                     ) : panelType.id === "sill" ? (

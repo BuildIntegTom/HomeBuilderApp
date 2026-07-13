@@ -26,13 +26,14 @@ describe("computeBracedGirtRowCount", () => {
 describe("buildDiagonalBraces", () => {
   const studSpanIn = HEIGHT_IN - 1.5; // 2*0.75
   const rowCount = 3;
-  // Middle row (row 2 of 3) center Z, then its bar's top.
+  // Middle row (row 2 of 3) center Z, then its (now-rotated, 1.5in-thick) bar's top/bottom faces.
   const middleCenterZ = 0.75 + (studSpanIn * 2) / 4;
-  const middleBarTopZ = middleCenterZ + 1.75;
-  const barLeftX = 1.5; // PLATE_2X4_THICKNESS_IN
-  const barRightX = WIDTH_IN - 3; // barRightXIn
+  const middleBarTopZ = middleCenterZ + 0.75;
+  const middleBarBottomZ = middleCenterZ - 0.75;
+  const studFaceX = 1.5; // PLATE_2X4_THICKNESS_IN — both braces' inner nose, flush to the left stud
+  const barRightX = WIDTH_IN - 3; // barRightXIn — outer (plate-side) nose, near the right stud
   const topPlateZ = HEIGHT_IN - 0.75 - 1.5;
-  const bottomPlateZ = 0.75;
+  const bottomPlateZ = 0.75 + 1.5; // top face of the bottom plate (mirrors topPlateZ's underside of the top plate)
 
   it("returns 4 braces (upper+lower per wythe), all rotated 90deg", () => {
     const braces = buildDiagonalBraces(WIDTH_IN, DEPTH_IN, HEIGHT_IN, rowCount, studSpanIn);
@@ -64,7 +65,7 @@ describe("buildDiagonalBraces", () => {
     expect(size.zIn).toBeCloseTo(upper!.actualDimsIn.lengthIn, 6);
   });
 
-  it("both braces (per wythe) share a vertex at the middle row's left bar/stud junction — the '<' shape", () => {
+  it("the 2 braces (per wythe) land on either side of the middle girt bar vertically, both flush to the same stud face", () => {
     const braces = buildDiagonalBraces(WIDTH_IN, DEPTH_IN, HEIGHT_IN, rowCount, studSpanIn);
     const [upperExt, lowerExt] = braces.filter((b) => b.memberId.endsWith("_ext"));
 
@@ -81,16 +82,24 @@ describe("buildDiagonalBraces", () => {
     const upperEnds = endpoints(upperExt!);
     const lowerEnds = endpoints(lowerExt!);
 
-    // One endpoint of each brace lands on the shared vertex (middle row, left bar/stud junction).
-    const nearVertex = (p: { x: number; z: number }) => Math.abs(p.x - barLeftX) < 1e-4 && Math.abs(p.z - middleBarTopZ) < 1e-4;
-    expect(nearVertex(upperEnds.a) || nearVertex(upperEnds.b)).toBe(true);
-    expect(nearVertex(lowerEnds.a) || nearVertex(lowerEnds.b)).toBe(true);
+    // Upper brace's inner nose lands on the (now-rotated, thin) girt bar's TOP face; lower brace's on
+    // its BOTTOM face — both at the SAME X (flush to the left stud), flanking the bar vertically
+    // instead of pinching to one exact point.
+    const nearTopFace = (p: { x: number; z: number }) => Math.abs(p.x - studFaceX) < 1e-4 && Math.abs(p.z - middleBarTopZ) < 1e-4;
+    const nearBottomFace = (p: { x: number; z: number }) => Math.abs(p.x - studFaceX) < 1e-4 && Math.abs(p.z - middleBarBottomZ) < 1e-4;
+    expect(nearTopFace(upperEnds.a) || nearTopFace(upperEnds.b)).toBe(true);
+    expect(nearBottomFace(lowerEnds.a) || nearBottomFace(lowerEnds.b)).toBe(true);
+    // Confirms they're genuinely offset from each other in Z, not coincident.
+    expect(nearTopFace(lowerEnds.a) || nearTopFace(lowerEnds.b)).toBe(false);
+    expect(nearBottomFace(upperEnds.a) || nearBottomFace(upperEnds.b)).toBe(false);
 
-    // The other endpoint of each brace is at the right stud, flush with the top/bottom plate respectively.
+    // The other endpoint of each brace is at the right stud, flush with the top plate's underside /
+    // bottom plate's top face respectively (equidistant from the girt's center — true mirror images).
     const nearTopRight = (p: { x: number; z: number }) => Math.abs(p.x - barRightX) < 1e-4 && Math.abs(p.z - topPlateZ) < 1e-4;
     const nearBottomRight = (p: { x: number; z: number }) => Math.abs(p.x - barRightX) < 1e-4 && Math.abs(p.z - bottomPlateZ) < 1e-4;
     expect(nearTopRight(upperEnds.a) || nearTopRight(upperEnds.b)).toBe(true);
     expect(nearBottomRight(lowerEnds.a) || nearBottomRight(lowerEnds.b)).toBe(true);
+    expect(topPlateZ - middleCenterZ).toBeCloseTo(middleCenterZ - bottomPlateZ, 6); // symmetric rise/fall
   });
 });
 
