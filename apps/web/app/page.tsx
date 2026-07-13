@@ -3807,7 +3807,13 @@ export default function LayoutEditor() {
           sections={allNoteSections}
           openIds={openNoteIds}
           onToggle={handleToggleNote}
-          footer={<Link href="/sandbox">Single Wall Run Calculation Sandbox →</Link>}
+          footer={
+            <>
+              <Link href="/sandbox">Single Wall Run Calculation Sandbox →</Link>
+              <br />
+              <Link href="/report-bug">Report Bug / Request Feature →</Link>
+            </>
+          }
         />
       </main>
     </div>
