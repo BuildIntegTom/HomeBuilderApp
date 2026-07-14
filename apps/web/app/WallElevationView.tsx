@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { computeGableTiledRow, GABLE_SHED_SNAP_THRESHOLD_IN, type PanelSlot, type Wall } from "@building-integrity/geometry";
-import { COLUMN_TOTAL_WIDTH_IN, computeGableColumnHeightIn, computeGableRipCallout } from "@building-integrity/panel-catalog";
+import { COLUMN_TOTAL_WIDTH_IN, computeGableColumnHeightIn, computeGableRipCallout, type RoofSystemType } from "@building-integrity/panel-catalog";
 
 const CANVAS_WIDTH = 720;
 const PX_PER_IN = 1.6;
@@ -32,6 +32,12 @@ export interface WallElevationViewProps {
   targetPanelWidthIn: number;
   /** Beam-depth allowance under the peak — see computeGableColumnHeightIn. */
   roofCatcherBeamOffsetIn: number;
+  /** Truss roofs bear on a truss plate with no center support (Tommy: "if
+   * trusses, lets panelize the gable end panels with no center column");
+   * only a structural-panel roof needs the center Column Panel + roof-
+   * catcher beam it bears on (Tommy: "if the roof is to be panels, we need
+   * a center beam and column panel"). */
+  roofSystemTypeId: RoofSystemType;
   /** Inches from the wall's start corner — undefined means "not yet
    * customized" (auto-centered at the wall's own midpoint). */
   gablePeakPositionIn: number | undefined;
@@ -58,10 +64,14 @@ export interface WallElevationViewProps {
  * SVG, dragged via the slider, or typed as a distance from either end;
  * dragging it within GABLE_SHED_SNAP_THRESHOLD_IN of an end snaps the whole
  * row to a single-slope shed roofline (see computeGableTiledRow). Unless
- * snapped to a shed, a Column Panel is always centered under the peak
- * (Tommy: "there is always a column panel centered under the peak — and not
- * there if its a shed roof"), shorter than a standard full-height Column
- * Panel by the roof-catcher-beam's own depth so its top can catch the beam.
+ * snapped to a shed, a Column Panel is centered under the peak (Tommy:
+ * "there is always a column panel centered under the peak — and not there
+ * if its a shed roof") — shorter than a standard full-height Column Panel
+ * by the roof-catcher-beam's own depth so its top can catch the beam — but
+ * only when the roof system is structural-panel; a truss roof needs no
+ * center support at all (Tommy: "if trusses, lets panelize the gable end
+ * panels with no center column. If the roof is to be panels, we need a
+ * center beam and column panel").
  */
 export default function WallElevationView({
   wall,
@@ -71,6 +81,7 @@ export default function WallElevationView({
   ridgeHeightFt,
   targetPanelWidthIn,
   roofCatcherBeamOffsetIn,
+  roofSystemTypeId,
   gablePeakPositionIn,
   gableEndToggleBlockReason,
   onToggleGableEnd,
@@ -91,7 +102,7 @@ export default function WallElevationView({
   const gablePanels = hasGableEnd
     ? computeGableTiledRow(wallWidthIn, eaveHeightIn, ridgeHeightIn, targetPanelWidthIn, gablePeakPositionIn)
     : [];
-  const showColumnPanel = hasGableEnd && !isShedRoof;
+  const showColumnPanel = hasGableEnd && !isShedRoof && roofSystemTypeId === "structural-panel";
   const columnHeightIn = computeGableColumnHeightIn(ridgeHeightIn, roofCatcherBeamOffsetIn);
 
   const maxHeightIn = hasGableEnd ? ridgeHeightIn : eaveHeightIn;
@@ -334,7 +345,9 @@ export default function WallElevationView({
             (showColumnPanel
               ? ` A ${columnHeightIn.toFixed(1)}in Column Panel is centered under the peak, ${roofCatcherBeamOffsetIn}in ` +
                 "shorter than the ridge so its top can catch the roof-catcher beam (see the Roof tab)."
-              : " No Column Panel for a shed roof (single slope, no peak to bear a beam under).")
+              : isShedRoof
+                ? " No Column Panel for a shed roof (single slope, no peak to bear a beam under)."
+                : " No Column Panel — Truss roof selected (Roof tab): trusses bear on a truss plate with no center support. Switch to a structural-panel roof for a beam-bearing Column Panel.")
           : "Ground-floor run shown for reference (cycle panel types in the Wall tab, not here). Toggle \"Add Gable End\" " +
             "above to preview a tiled row of Gable End Panels rising to the Roof tab's ridge height."}
       </p>

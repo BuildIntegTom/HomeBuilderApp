@@ -1,4 +1,5 @@
 import type {
+  CatalogRange,
   CatalogStatus,
   CatalogValue,
   FastenerSpacingRow,
@@ -47,6 +48,56 @@ export const sillDefaultHeightIn: CatalogValue<number> = {
   status: "confirmed",
   note: "Tommy: \"sill panels are almost always 32in tall\" — a sill is otherwise a short Standard Panel (same construction, just this default height instead of the full wall height).",
 };
+
+// --- Panel size limits ------------------------------------------------------
+// Source: a manufacturer's "possible sizes" spec sheet Tommy supplied
+// (metric), translated to the app's own nearest-1/8in convention
+// (formatImperialFractionIn) and confirmed with Tommy. Two ceilings were
+// deliberately raised above the manufacturer's own numbers so the app's
+// existing defaults stay valid — see each note below.
+
+export const panelThicknessInRange: CatalogRange = {
+  minIn: 11.75,
+  maxIn: 15.75,
+  status: "confirmed",
+  note: "300-400mm on the mfr spec sheet, translated 1:1 (11¾\"-15¾\"). Covers Standard/Braced/Column/Inclined panel thickness — the app's own 14/15.5/15.75in thickness options all already fall inside this range.",
+};
+
+export const panelWidthInRange: CatalogRange = {
+  minIn: 15.75,
+  maxIn: 48,
+  status: "confirmed",
+  note: "Mfr spec sheet gives 400-850mm (15¾\"-33½\") for Standard/Braced/Column/Inclined panel width. Tommy raised the max to 48in so the app's existing 40in standard-width default (and Square Bale Panels' fixed 39in) stay valid — the mfr's own 33.5in max is not enforced here.",
+};
+
+export const panelHeightInRange: CatalogRange = {
+  minIn: 15.75,
+  maxIn: 144,
+  status: "confirmed",
+  note: "Mfr spec sheet gives 400-3000mm (15¾\"-118⅛\") for Standard/Braced/Column/Inclined panel height (i.e. wall height). Tommy raised the max to 144in (12ft) so the app's existing 120in/10ft wall-height default stays valid — the mfr's own 118.125in max is not enforced here.",
+};
+
+export const columnMinWidthIn = 16.75;
+// 424mm on the mfr spec sheet (16.7in, rounds to 16¾\" at nearest 1/8in) —
+// already satisfied today: Column's real built width (COLUMN_TOTAL_WIDTH_IN,
+// see columnPanelMembers.ts) is 25.5in, comfortably above this floor.
+
+export const lintelWidthInRange: CatalogRange = {
+  minIn: 15.75,
+  maxIn: 118.125,
+  status: "confirmed",
+  note: "400-3000mm on the mfr spec sheet (15¾\"-118⅛\"), translated 1:1 — no conflict with any existing default (door/window widths are well under this ceiling).",
+};
+
+export const sillHeaderHeightInRange: CatalogRange = {
+  minIn: 16.75,
+  maxIn: 33.5,
+  status: "confirmed",
+  note: "424-850mm on the mfr spec sheet (16¾\"-33½\") — governs a sill panel's own height/depth (sillDefaultHeightIn's 32in default already fits) and the derived header depth (computeHeaderHeightIn) once sill height becomes independently draggable per window.",
+};
+
+export const sillMinWidthIn = 23.625;
+// 600mm on the mfr spec sheet (23.622in, rounds to 23⅝\" at nearest 1/8in).
 
 export const doorRoughOpeningSelectedHeightIn: CatalogValue<number> = {
   value: 82.5,
@@ -740,9 +791,10 @@ export const panelTypes: PanelTypeDef[] = [
     description:
       "Reinforced/plywood-sided, for >12' runs needing beam bearing under roof panels; not needed under trusses. " +
       "24in standard-panel core + 3/4in plywood on both tall sides + 2x4 blocking every 16in, both sides, in " +
-      "addition to girts — always fabricated 25.5in wide (Tommy), regardless of the wall-slot width shown in the " +
-      "2D editor (converting a panel to Column via the click-cycle keeps its prior slot width today; the " +
-      "fabricated unit itself is fixed at 25.5in).",
+      "addition to girts — always fabricated 25.5in wide (Tommy). The wall-slot reserved for a Column Panel is " +
+      "always this same 25.5in (COLUMN_TOTAL_WIDTH_IN) — converting a panel to Column via the click-cycle " +
+      "re-tiles the rest of the wall around exactly that reservation, so the standard panels on either side " +
+      "always close up flush with no unaccounted gap.",
     loadBearingCapacity: {
       status: "pending-BI-confirmation",
       note: `This type exists specifically for higher point-load bearing (roof beam reactions on long runs) — expected to rate above standard/corner once modeled. ${STRUCTURAL_PENDING_NOTE}`,

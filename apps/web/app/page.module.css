@@ -16,7 +16,7 @@
    width-capped. */
 .main {
   position: fixed;
-  top: 56px;
+  top: var(--topbar-height);
   left: 0;
   right: 0;
   bottom: 0;

@@ -10,7 +10,7 @@ import type { ViewerRole } from "./viewerRole";
  * a future incompatible version fails loudly (`parseProjectFile`) instead
  * of silently restoring a half-broken layout.
  */
-export const PROJECT_FILE_VERSION = 11;
+export const PROJECT_FILE_VERSION = 12;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -77,6 +77,17 @@ export interface ProjectState {
    * already in this file (zipCode, current date), so only the project name
    * itself needs to round-trip here. */
   projectName: string;
+  /** Panelizer's own "keyhole" scope-of-work checkboxes (Tommy: "I want
+   * this tab to be the keyhole to getting down to what editor tools are
+   * needed for this user's project") — gate which of the Wall/Floor/Roof
+   * editor tabs are relevant, and which of their own Detail Guide/Shop
+   * Drawing pages show up. Foundation has no such checkbox (always
+   * relevant). Walls defaults on since a footprint can't exist without it;
+   * Floors/Roof default off (Tommy: "default is that walls are the only
+   * checked of these three original branches"). */
+  wallsEnabled: boolean;
+  floorsEnabled: boolean;
+  roofEnabled: boolean;
 }
 
 const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
@@ -122,6 +133,9 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "nailerOffsetIn",
   "squareBaleStudConfig",
   "projectName",
+  "wallsEnabled",
+  "floorsEnabled",
+  "roofEnabled",
 ];
 
 /** JSON has no Set type — `primaryCornerIds`/`gableEndWallIds` round-trip as plain arrays. */

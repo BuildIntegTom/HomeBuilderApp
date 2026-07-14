@@ -13,9 +13,21 @@
   overflow: hidden;
 }
 
+/* Starts below the TopBar (--topbar-height), not the true viewport top —
+   NOT the same as `inset: 0`. This note is a descendant of .editorSection
+   (page.module.css), which clips to its own box via `overflow: hidden`;
+   that box itself only spans from --topbar-height down (it lives inside
+   .main, which starts there too), so an `inset: 0` fullscreen note had its
+   own header — with the only exit-fullscreen button — clipped clean off
+   the top, behind the TopBar, with no way to get back out (Tommy: "the top
+   of it disappears under the top bar... impossible to minimize a note once
+   it is maximized"). */
 .noteFullscreen {
   position: fixed;
-  inset: 0;
+  top: var(--topbar-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 500;
   width: 100%;
   max-width: none;

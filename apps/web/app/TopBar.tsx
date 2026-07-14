@@ -16,10 +16,18 @@ export interface TopBarProps {
   onSaveProject: () => void;
   onLoadProjectClick: () => void;
   siteContent: ReactNode;
-  panelStandardsContent: ReactNode;
+  panelizerContent: ReactNode;
 }
 
-type OpenDropdown = "site" | "panel-standards" | "admin" | null;
+type OpenDropdown = "site" | "panelizer" | "admin" | null;
+
+// Matches StickyNote.module.css's own `.note` width — used to keep a
+// dropdown's spawn point from running off the right edge of the screen
+// (Tommy: "the panel standards tab opens to the right of the drop down,
+// since its on the right side of the tool bar this is often pushed out of
+// the screen, lets turn this to spawn more left").
+const NOTE_WIDTH_PX = 420;
+const VIEWPORT_MARGIN_PX = 12;
 
 /**
  * Sticky top-of-screen chrome (Tommy: "Viewing as section at the very top
@@ -27,8 +35,9 @@ type OpenDropdown = "site" | "panel-standards" | "admin" | null;
  * try to fit all the top bar stuff in one row") — a fixed single-row bar:
  * Viewing-as (short Public/Fabricator/Admin labels) + the admin/fabricator
  * "show all detail pages" dropdown, then Save/Load, Site Properties, the
- * unit switch, and Panel Standards, left to right in one `justify-content:
- * space-between` row instead of two stacked rows.
+ * unit switch, and Panelizer (formerly "Panel Standards" — Tommy: "under
+ * Panelizer lets add three check boxes"), left to right in one
+ * `justify-content: space-between` row instead of two stacked rows.
  *
  * Each dropdown button opens its content as a real `StickyNote` (Tommy:
  * "when i click panel standards, it wants to load that menu inside of the
@@ -54,7 +63,7 @@ export default function TopBar({
   onSaveProject,
   onLoadProjectClick,
   siteContent,
-  panelStandardsContent,
+  panelizerContent,
 }: TopBarProps) {
   const [openDropdown, setOpenDropdown] = useState<OpenDropdown>(null);
   const [fullscreenDropdown, setFullscreenDropdown] = useState<OpenDropdown>(null);
@@ -65,7 +74,12 @@ export default function TopBar({
       const next = was === which ? null : which;
       if (next) {
         const rect = buttonEl.getBoundingClientRect();
-        setDropdownPos({ top: rect.bottom + 8, left: rect.left });
+        // Clamped so a button near the bar's right edge (Panelizer, the
+        // last one) still opens fully on-screen instead of spilling off
+        // the right side — anchors further left as needed, never further
+        // right than the button's own left edge.
+        const maxLeft = window.innerWidth - NOTE_WIDTH_PX - VIEWPORT_MARGIN_PX;
+        setDropdownPos({ top: rect.bottom + 8, left: Math.min(rect.left, Math.max(VIEWPORT_MARGIN_PX, maxLeft)) });
       } else if (fullscreenDropdown === which) {
         setFullscreenDropdown(null);
       }
@@ -125,12 +139,12 @@ export default function TopBar({
 
         <button
           type="button"
-          title="Panel width/thickness/density/wall height and wall-panelization style"
-          className={openDropdown === "panel-standards" ? styles.toolActive : styles.tool}
-          aria-expanded={openDropdown === "panel-standards"}
-          onClick={(e) => toggleDropdown("panel-standards", e.currentTarget)}
+          title="Which editor tools this project needs, panel-construction style, and panel width/thickness/density/wall height"
+          className={openDropdown === "panelizer" ? styles.toolActive : styles.tool}
+          aria-expanded={openDropdown === "panelizer"}
+          onClick={(e) => toggleDropdown("panelizer", e.currentTarget)}
         >
-          Panel Standards {openDropdown === "panel-standards" ? "▲" : "▼"}
+          Panelizer {openDropdown === "panelizer" ? "▲" : "▼"}
         </button>
       </div>
 
@@ -170,17 +184,17 @@ export default function TopBar({
       </StickyNote>
 
       <StickyNote
-        id="panel-standards-note"
-        label="Panel Standards"
-        isOpen={openDropdown === "panel-standards"}
-        isFullscreen={fullscreenDropdown === "panel-standards"}
+        id="panelizer-note"
+        label="Panelizer"
+        isOpen={openDropdown === "panelizer"}
+        isFullscreen={fullscreenDropdown === "panelizer"}
         cascadeIndex={0}
         top={dropdownPos?.top ?? 68}
         left={dropdownPos?.left ?? 24}
         onClose={() => setOpenDropdown(null)}
-        onToggleFullscreen={() => setFullscreenDropdown((was) => (was === "panel-standards" ? null : "panel-standards"))}
+        onToggleFullscreen={() => setFullscreenDropdown((was) => (was === "panelizer" ? null : "panelizer"))}
       >
-        {panelStandardsContent}
+        {panelizerContent}
       </StickyNote>
     </div>
   );

@@ -1,10 +1,11 @@
 /* Snaps to the TopBar above and the very bottom of the viewport below
    (Tommy: "for the right side bar, can they snap to the top bar and the
-   bottom?") — `top` must match the TopBar's own rendered height (see
-   page.module.css's `.main`/`.editorSidebar`, which use the same value). */
+   bottom?") — `top` uses the shared --topbar-height custom property (see
+   globals.css), same as page.module.css's `.main` and StickyNote's own
+   fullscreen state. */
 .carousel {
   position: fixed;
-  top: 56px;
+  top: var(--topbar-height);
   right: 0;
   bottom: 0;
   width: 170px;

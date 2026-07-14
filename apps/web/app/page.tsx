@@ -134,7 +134,9 @@ import {
   looseDensePackDefaultThicknessIn,
   looseDensePackThicknessOptionsIn,
   looseDensePackWidthIn,
+  panelHeightInRange,
   panelTypes,
+  panelWidthInRange,
   perpendicular2x4Addition,
   pierSpacingDefaultFt,
   pierSpacingOptionsFt,
@@ -155,6 +157,7 @@ import {
   bracedWallLineSpacingStatus,
   seismicBracedPanelSpacingFt,
   sillDefaultHeightIn,
+  sillHeaderHeightInRange,
   toeUpHeightIn,
   shippingRatePerMileDefault,
   shippingStackBufferIn,
@@ -327,6 +330,12 @@ export default function LayoutEditor() {
   // member detail), since the Shipping page's own truck-load 3D views
   // always render this way regardless of this toggle.
   const [simplified3D, setSimplified3D] = useState(false);
+  // The 3D viewer's own, deliberately smaller tool vocabulary (Tommy: "build
+  // the 3d viewer into an editor with all the same tools as the 2d plan
+  // editor" — Phase 1 ships Edit-cycle parity + the Sill & Header drag
+  // tool; draw/bump-out/drag-wall are a later phase) — see Building3DView's
+  // `tool3D` prop doc comment.
+  const [tool3D, setTool3D] = useState<"orbit" | "edit" | "sill-header">("orbit");
   const [shapeTool, setShapeTool] = useState<ShapeTool>("rectangle");
   const [footprint, setFootprint] = useState<Footprint | null>(null);
   // Whether the current footprint has had a bump-out added since it was
@@ -548,6 +557,37 @@ export default function LayoutEditor() {
   const [secondStoryEnabled, setSecondStoryEnabled] = useState(false);
   const [secondStoryWallHeightFt, setSecondStoryWallHeightFt] = useState(10);
 
+  // Panelizer's own "keyhole" scope-of-work checkboxes (Tommy: "under
+  // Panelizer lets add three check boxes - Floors, Walls, and Roof... I
+  // want this tab to be the keyhole to getting down to what editor tools
+  // are needed for this user's project") — gate which of the Wall/Floor/
+  // Roof editor tabs are relevant (Foundation has no checkbox, always
+  // relevant) and which of their own modality pickers/Detail Guide pages
+  // show up. Walls defaults on (a footprint can't exist without it,
+  // Tommy: "default is that walls are the only checked of these three
+  // original branches"); Floors/Roof default off.
+  const [wallsEnabled, setWallsEnabled] = useState(true);
+  const [floorsEnabled, setFloorsEnabled] = useState(false);
+  const [roofEnabled, setRoofEnabled] = useState(false);
+
+  const enabledEditorTabs = useMemo(() => {
+    const tabs: EditorTab[] = [];
+    if (wallsEnabled) tabs.push("wall");
+    tabs.push("foundation");
+    if (floorsEnabled) tabs.push("floor");
+    if (roofEnabled) tabs.push("roof");
+    return tabs;
+  }, [wallsEnabled, floorsEnabled, roofEnabled]);
+
+  // If Panelizer's checkboxes rule out whichever editor tab is currently
+  // active (e.g. unchecking Walls while the Wall tab is open), snap to the
+  // first tab still in scope rather than stranding the user on a hidden tab.
+  useEffect(() => {
+    if (!enabledEditorTabs.includes(editorTab)) {
+      setEditorTab(enabledEditorTabs[0] ?? "foundation");
+    }
+  }, [enabledEditorTabs, editorTab]);
+
   // Panelization type (Tommy: "categorize panelization types... three to
   // start with") — governs how plain wall infill (standard/braced/
   // safety-gap) is tiled; corners/columns/openings are unaffected in every
@@ -670,6 +710,9 @@ export default function LayoutEditor() {
       nailerOffsetIn,
       squareBaleStudConfig,
       projectName,
+      wallsEnabled,
+      floorsEnabled,
+      roofEnabled,
     };
     const blob = new Blob([JSON.stringify(serializeProject(state), null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -734,6 +777,9 @@ export default function LayoutEditor() {
       setNailerOffsetIn(s.nailerOffsetIn);
       setSquareBaleStudConfig(s.squareBaleStudConfig);
       setProjectName(s.projectName);
+      setWallsEnabled(s.wallsEnabled);
+      setFloorsEnabled(s.floorsEnabled);
+      setRoofEnabled(s.roofEnabled);
     });
   };
 
@@ -841,12 +887,26 @@ export default function LayoutEditor() {
     const nextType = cycle[currentSlot.type];
     if (!nextType) return; // corner/safety-gap untouched
 
+    // A Column Panel is always fabricated exactly `COLUMN_TOTAL_WIDTH_IN`
+    // wide (Tommy: "column panels are a fixed width that's almost never
+    // going to be the standard panel width") — reserving anything else here
+    // leaves the fixed-width member floating in an oversized/undersized
+    // tiled slot, showing up as unrendered blank wall space in the 3D view
+    // (Building3DView always builds the column at its true fixed width,
+    // ignoring the slot's own widthIn). Applying this to every column
+    // anchor on the wall (not just the one just toggled) also self-heals
+    // any other column on this wall that was created before this fix
+    // existed, the next time anything on the wall is touched.
     const anchors: { beforeStandardCount: number; type: "window" | "door" | "column"; widthIn: number }[] = [];
     let standardsSeen = 0;
     currentSlots.forEach((slot, i) => {
       const type = i === slotIndex ? nextType : slot.type;
       if (type === "window" || type === "door" || type === "column") {
-        anchors.push({ beforeStandardCount: standardsSeen, type, widthIn: slot.widthIn });
+        anchors.push({
+          beforeStandardCount: standardsSeen,
+          type,
+          widthIn: type === "column" ? COLUMN_TOTAL_WIDTH_IN : slot.widthIn,
+        });
       } else if (type === "standard") {
         standardsSeen++;
       }
@@ -882,7 +942,12 @@ export default function LayoutEditor() {
     const precedingOpenings = currentSlots
       .slice(0, slotIndex)
       .filter((s) => s.type === "window" || s.type === "door").length;
-    const anchors = getOpeningAnchors(currentSlots);
+    // Same fixed-width self-heal as handleToggleOpening — a Column anchor
+    // read straight off an existing slot could still carry a stale width
+    // from before that fix existed.
+    const anchors = getOpeningAnchors(currentSlots).map((a) =>
+      a.type === "column" ? { ...a, widthIn: COLUMN_TOTAL_WIDTH_IN } : a,
+    );
     if (!anchors[precedingOpenings]) return;
     anchors[precedingOpenings] = { ...anchors[precedingOpenings]!, widthIn };
 
@@ -911,6 +976,29 @@ export default function LayoutEditor() {
       if (!slots || !slots[slotIndex]) return prev;
       const nextSlots = slots.slice();
       nextSlots[slotIndex] = { ...nextSlots[slotIndex]!, heightIn };
+      return { ...prev, [wallId]: nextSlots };
+    });
+  };
+
+  // Same "direct per-slot field, no re-tiling" pattern as
+  // handleSetWindowHeight — a window's sill height (Tommy: "manipulate
+  // sill and header height with the drag tool") is purely a vertical/Z-axis
+  // concern, orthogonal to the horizontal wall-tiling system. Clamped to
+  // the mfr spec sheet's sill/lintel-height range, and further clamped so
+  // the sill can't push the RO's top past the wall's own height.
+  const handleSetWindowSillHeight = (wallId: string, slotIndex: number, sillHeightIn: number) => {
+    setBaseWallSlots((prev) => {
+      const slots = prev[wallId];
+      const slot = slots?.[slotIndex];
+      if (!slots || !slot) return prev;
+      const windowHeightIn = slot.heightIn ?? standardWindowHeightDefaultIn.value;
+      const maxSillHeightIn = wallHeightFt * 12 - windowHeightIn;
+      const clampedSillHeightIn = Math.min(
+        Math.max(sillHeightIn, sillHeaderHeightInRange.minIn),
+        Math.min(sillHeaderHeightInRange.maxIn, maxSillHeightIn),
+      );
+      const nextSlots = slots.slice();
+      nextSlots[slotIndex] = { ...nextSlots[slotIndex]!, sillHeightIn: clampedSillHeightIn };
       return { ...prev, [wallId]: nextSlots };
     });
   };
@@ -1092,10 +1180,17 @@ export default function LayoutEditor() {
   }, [baseWallSlots, spacingIn, standardWidthIn, panelizationType, timberFrameCurtainPanelType, timberFrameCurtainWidthIn]);
 
   const windowList = useMemo(() => {
-    const items: { wallId: string; slotIndex: number; widthIn: number; heightIn: number }[] = [];
+    const items: { wallId: string; slotIndex: number; widthIn: number; heightIn: number; sillHeightIn: number }[] = [];
     for (const [wallId, slots] of Object.entries(baseWallSlots)) {
       slots.forEach((s, i) => {
-        if (s.type === "window") items.push({ wallId, slotIndex: i, widthIn: s.widthIn, heightIn: s.heightIn ?? standardWindowHeightDefaultIn.value });
+        if (s.type === "window")
+          items.push({
+            wallId,
+            slotIndex: i,
+            widthIn: s.widthIn,
+            heightIn: s.heightIn ?? standardWindowHeightDefaultIn.value,
+            sillHeightIn: s.sillHeightIn ?? sillDefaultHeightIn.value,
+          });
       });
     }
     return items;
@@ -1362,14 +1457,17 @@ export default function LayoutEditor() {
                 : inst.panelType === "safety-gap"
                   ? safetyGapMembers3D
                   : inst.panelType === "sill"
-                    ? buildSillPanelMembers(inst.widthIn, thicknessIn, sillDefaultHeightIn.value, includeNailer)
+                    ? buildSillPanelMembers(inst.widthIn, thicknessIn, inst.sillHeightIn ?? sillDefaultHeightIn.value, includeNailer)
                     : inst.panelType === "header"
                       ? inst.sourceSlotType === "door"
                         ? buildDoorHeaderMembers(inst.widthIn, thicknessIn, doorHeaderHeightIn)
                         : buildWindowHeaderMembers(
                             inst.widthIn,
                             thicknessIn,
-                            computeHeaderHeightIn(heightIn, sillHeightIn + (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value)),
+                            computeHeaderHeightIn(
+                              heightIn,
+                              (inst.sillHeightIn ?? sillDefaultHeightIn.value) + (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value),
+                            ),
                           )
                       : null;
       if (instMembers) members.push(...instMembers);
@@ -1560,8 +1658,10 @@ export default function LayoutEditor() {
     widthIn: number,
     sourceSlotType?: PanelInstance["sourceSlotType"],
     windowHeightInOverride?: number,
+    sillHeightInOverride?: number,
   ): number | null => {
     const heightIn = wallHeightFt * 12;
+    const resolvedSillHeightIn = sillHeightInOverride ?? sillDefaultHeightIn.value;
     const members =
       panelTypeId === "standard"
         ? buildStandardPanelMembers(widthIn, thicknessIn, heightIn, includeNailer)
@@ -1579,10 +1679,10 @@ export default function LayoutEditor() {
                     : buildWindowHeaderMembers(
                         widthIn,
                         thicknessIn,
-                        computeHeaderHeightIn(heightIn, sillHeightIn + (windowHeightInOverride ?? standardWindowHeightDefaultIn.value)),
+                        computeHeaderHeightIn(heightIn, resolvedSillHeightIn + (windowHeightInOverride ?? standardWindowHeightDefaultIn.value)),
                       )
                   : panelTypeId === "sill"
-                    ? buildSillPanelMembers(widthIn, thicknessIn, sillDefaultHeightIn.value, includeNailer)
+                    ? buildSillPanelMembers(widthIn, thicknessIn, resolvedSillHeightIn, includeNailer)
                     : null;
     return members ? computeFastenerWeight(members).totalWeightKg : null;
   };
@@ -1606,10 +1706,10 @@ export default function LayoutEditor() {
               // A sill is a much shorter panel (Tommy: "sills are almost
               // always 32in tall") than the full wall height every other
               // panel type here uses.
-              heightIn: panelTypeId === "sill" ? sillDefaultHeightIn.value : wallHeightFt * 12,
+              heightIn: panelTypeId === "sill" ? (inst.sillHeightIn ?? sillDefaultHeightIn.value) : wallHeightFt * 12,
               densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
               woodWeightKg: hasWoodBom ? woodPerPanel.weightKg : null,
-              fastenerWeightKg: fastenerWeightKgFor(panelTypeId, inst.widthIn, inst.sourceSlotType, inst.windowHeightIn),
+              fastenerWeightKg: fastenerWeightKgFor(panelTypeId, inst.widthIn, inst.sourceSlotType, inst.windowHeightIn, inst.sillHeightIn),
               hasClayPlaster,
               hasLimePlaster,
             }),
@@ -1737,7 +1837,7 @@ export default function LayoutEditor() {
     if (foundationType.loadPath.length > 0) {
       pages.push({ id: "detail-foundation", label: `Foundation: ${foundationType.label}` });
     }
-    if (docFloorJoistType) {
+    if (floorsEnabled && docFloorJoistType) {
       pages.push({ id: "detail-floor", label: `Floor: ${docFloorJoistType.label}` });
       pages.push({ id: "detail-floor-assembly", label: "Floor: Full Assembly" });
       pages.push({ id: "detail-floor-corner", label: "Floor: Corner & Perimeter Sequencing" });
@@ -1745,38 +1845,42 @@ export default function LayoutEditor() {
         pages.push({ id: "detail-floor-addon", label: "Floor: Perpendicular 2x4 Add-On Layer" });
       }
     }
-    if (docIsThermalSlabFloor) {
+    if (floorsEnabled && docIsThermalSlabFloor) {
       pages.push({ id: "detail-floor-thermal-slab", label: "Floor: Thermally Broken Slab" });
     }
-    if (!secondStoryEnabled) {
-      pages.push({ id: "detail-truss-plate", label: "Roof: Truss Plate (Single-Story)" });
-    } else {
-      pages.push({ id: "detail-box-beam", label: "Roof: Box Beam (Two-Story)" });
+    if (roofEnabled) {
+      if (!secondStoryEnabled) {
+        pages.push({ id: "detail-truss-plate", label: "Roof: Truss Plate (Single-Story)" });
+      } else {
+        pages.push({ id: "detail-box-beam", label: "Roof: Box Beam (Two-Story)" });
+      }
+      pages.push({ id: "detail-classic-truss", label: "Classic Truss Reference" });
+      pages.push({ id: "detail-high-perf-truss", label: "High-Performance Truss" });
     }
-    pages.push({ id: "detail-material-totals", label: "Material Totals" });
-    if (footprint && allInstances.length > 0) {
-      pages.push({ id: "detail-shipping", label: "Shipping" });
-    }
-    if (hasClayPlaster || hasLimePlaster) {
-      pages.push({ id: "detail-plaster-master", label: "Plaster Master" });
-    }
-    pages.push({ id: "detail-classic-truss", label: "Classic Truss Reference" });
-    pages.push({ id: "detail-high-perf-truss", label: "High-Performance Truss" });
-    // Rough Opening Detail pages (Tommy: "We are going to make a Rough
-    // Opening Detail page, so we can keep track of window and door
-    // needs... lets do them on two separate rough opening pages") — like
-    // Foundation/Floor, general reference content, not fabricator-only.
-    if (allInstances.some((i) => i.sourceSlotType === "door") || canPreviewAllDetailPages) {
-      pages.push({ id: "detail-door-ro", label: "Door Rough Opening" });
-    }
-    if (allInstances.some((i) => i.sourceSlotType === "window") || canPreviewAllDetailPages) {
-      pages.push({ id: "detail-window-ro", label: "Window Rough Opening" });
-    }
-    // Shop Drawings are a fabricator/detailer document, not a public-facing one (Tommy).
-    if (role !== "public") {
-      for (const { panelType, instances } of shopDrawings) {
-        if (instances.length > 0 || canPreviewAllDetailPages) {
-          pages.push({ id: `shop-${panelType.id}`, label: `Shop Drawing: ${panelType.label} (${instances.length})` });
+    if (wallsEnabled) {
+      pages.push({ id: "detail-material-totals", label: "Material Totals" });
+      if (footprint && allInstances.length > 0) {
+        pages.push({ id: "detail-shipping", label: "Shipping" });
+      }
+      if (hasClayPlaster || hasLimePlaster) {
+        pages.push({ id: "detail-plaster-master", label: "Plaster Master" });
+      }
+      // Rough Opening Detail pages (Tommy: "We are going to make a Rough
+      // Opening Detail page, so we can keep track of window and door
+      // needs... lets do them on two separate rough opening pages") — like
+      // Foundation/Floor, general reference content, not fabricator-only.
+      if (allInstances.some((i) => i.sourceSlotType === "door") || canPreviewAllDetailPages) {
+        pages.push({ id: "detail-door-ro", label: "Door Rough Opening" });
+      }
+      if (allInstances.some((i) => i.sourceSlotType === "window") || canPreviewAllDetailPages) {
+        pages.push({ id: "detail-window-ro", label: "Window Rough Opening" });
+      }
+      // Shop Drawings are a fabricator/detailer document, not a public-facing one (Tommy).
+      if (role !== "public") {
+        for (const { panelType, instances } of shopDrawings) {
+          if (instances.length > 0 || canPreviewAllDetailPages) {
+            pages.push({ id: `shop-${panelType.id}`, label: `Shop Drawing: ${panelType.label} (${instances.length})` });
+          }
         }
       }
     }
@@ -1794,6 +1898,9 @@ export default function LayoutEditor() {
     footprint,
     hasClayPlaster,
     hasLimePlaster,
+    floorsEnabled,
+    roofEnabled,
+    wallsEnabled,
   ]);
 
   const editorToolsLabel =
@@ -2072,21 +2179,103 @@ export default function LayoutEditor() {
     </>
   );
 
-  // Panel Standards dropdown content (Tommy: "middle right of the menu bar,
-  // i want Panel Standards, which includes panel parameters section as well
-  // as panel styles") — the old standalone "Panel parameters" section plus
+  // Panelizer dropdown content (Tommy: "middle right of the menu bar, i
+  // want Panel Standards, which includes panel parameters section as well
+  // as panel styles" — later renamed to "Panelizer" and positioned as "the
+  // keyhole to getting down to what editor tools are needed for this
+  // user's project") — the old standalone "Panel parameters" section plus
   // the panelization-type controls that used to live inside the Wall tab
   // (moving them here means they're now editable regardless of which
   // editor tab is active, which is a genuine improvement — the underlying
   // state never depended on the Wall tab specifically).
-  const panelStandardsContent = (
+  const panelizerContent = (
     <>
-      <h2>Panel Standards</h2>
+      <h2>Panelizer</h2>
+      <p className={styles.note}>
+        The keyhole for this project&apos;s scope of work — check off Floors/Walls/Roof to bring their editor tabs,
+        modality pickers, and Detail Guide/Shop Drawing pages into scope. Unchecking a branch hides its tab entirely
+        rather than just disabling it.
+      </p>
+      <div role="group" aria-label="Scope of work" className={styles.toolbar}>
+        <label>
+          <input type="checkbox" checked={floorsEnabled} onChange={(e) => setFloorsEnabled(e.target.checked)} />{" "}
+          Floors
+        </label>
+        <label>
+          <input type="checkbox" checked={wallsEnabled} onChange={(e) => setWallsEnabled(e.target.checked)} />{" "}
+          Walls
+        </label>
+        <label>
+          <input type="checkbox" checked={roofEnabled} onChange={(e) => setRoofEnabled(e.target.checked)} />{" "}
+          Roof
+        </label>
+      </div>
+
+      {floorsEnabled && (
+        <div role="group" aria-label="Floor type" className={styles.toolbar}>
+          {floorJoistTypes.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              aria-pressed={floorSystemId === t.id}
+              className={floorSystemId === t.id ? styles.toolActive : styles.tool}
+              onClick={() => setFloorSystemId((was) => (was === t.id ? null : t.id))}
+              disabled={!footprint}
+            >
+              {t.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            aria-pressed={isThermalSlabFloor}
+            className={isThermalSlabFloor ? styles.toolActive : styles.tool}
+            onClick={() => setFloorSystemId((was) => (was === "thermal-slab" ? null : "thermal-slab"))}
+            disabled={!footprint || foundationType.usesPierGrid}
+            title={
+              foundationType.usesPierGrid
+                ? "A monolithic slab floor isn't compatible with a pier/crawlspace foundation — pick a joist floor type instead, or switch to a slab-compatible foundation type on the Site Properties panel."
+                : undefined
+            }
+          >
+            Thermally Broken Slab
+          </button>
+          <label>
+            <input
+              type="checkbox"
+              checked={perpendicular2x4Enabled}
+              onChange={(e) => setPerpendicular2x4Enabled(e.target.checked)}
+              disabled={!floorJoistTypeId}
+            />{" "}
+            Perpendicular 2x4 addition
+          </label>
+        </div>
+      )}
+
+      {roofEnabled && (
+        <div role="group" aria-label="Roof system type" className={styles.toolbar}>
+          {roofSystemTypes.map((t) => (
+            <label key={t.id} title={t.description}>
+              <input
+                type="checkbox"
+                checked={roofSystemTypeId === t.id}
+                onChange={() => setRoofSystemTypeId(t.id)}
+              />{" "}
+              {t.label}
+            </label>
+          ))}
+        </div>
+      )}
+
+      {wallsEnabled && (
+        <>
       <label>
         Standard width (in){" "}
         <input
           type="number"
           value={standardWidthIn}
+          min={panelWidthInRange.minIn}
+          max={panelWidthInRange.maxIn}
+          title={`Possible panel width: ${formatLengthIn(panelWidthInRange.minIn, unitSystem)}-${formatLengthIn(panelWidthInRange.maxIn, unitSystem)}`}
           onChange={(e) => setStandardWidthIn(Number(e.target.value))}
         />
       </label>
@@ -2118,6 +2307,9 @@ export default function LayoutEditor() {
         <input
           type="number"
           value={wallHeightFt}
+          min={panelHeightInRange.minIn / 12}
+          max={panelHeightInRange.maxIn / 12}
+          title={`Possible panel height: ${formatLengthIn(panelHeightInRange.minIn, unitSystem)}-${formatLengthIn(panelHeightInRange.maxIn, unitSystem)}`}
           onChange={(e) => setWallHeightFt(Number(e.target.value))}
         />
       </label>
@@ -2300,6 +2492,8 @@ export default function LayoutEditor() {
           </p>
         </>
       )}
+        </>
+      )}
     </>
   );
 
@@ -2346,7 +2540,7 @@ export default function LayoutEditor() {
           onSaveProject={handleSaveProject}
           onLoadProjectClick={() => loadInputRef.current?.click()}
           siteContent={siteContent}
-          panelStandardsContent={panelStandardsContent}
+          panelizerContent={panelizerContent}
         />
       </div>
       <input
@@ -2391,7 +2585,7 @@ export default function LayoutEditor() {
                 {isOsFullscreen ? "⤡" : "⤢"}
               </button>
             </div>
-            <EditorToolbar editorTab={editorTab} onEditorTabChange={setEditorTab} />
+            <EditorToolbar editorTab={editorTab} onEditorTabChange={setEditorTab} enabledTabs={enabledEditorTabs} />
             {editorTab === "wall" && viewMode === "plan" && (
               <>
                 <DrawingToolPen
@@ -2409,6 +2603,39 @@ export default function LayoutEditor() {
                 <div ref={setToolbarSecondaryPortalNode} className={styles.toolbarPortalInline} />
                 <PanelLegend />
               </>
+            )}
+            {editorTab === "wall" && viewMode === "3d" && (
+              <div role="group" aria-label="3D tool" className={styles.toolbar}>
+                <button
+                  type="button"
+                  title="Orbit/pan/zoom the camera — panels aren't clickable"
+                  aria-pressed={tool3D === "orbit"}
+                  className={tool3D === "orbit" ? styles.toolActive : styles.tool}
+                  onClick={() => setTool3D("orbit")}
+                >
+                  Orbit
+                </button>
+                <button
+                  type="button"
+                  title="Click a panel to cycle it: standard → window → door → column → standard (same as the 2D Edit tool)"
+                  aria-pressed={tool3D === "edit"}
+                  disabled={!footprint}
+                  className={tool3D === "edit" ? styles.toolActive : styles.tool}
+                  onClick={() => setTool3D("edit")}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  title="Click a window, then drag its top/bottom handles to set header and sill height"
+                  aria-pressed={tool3D === "sill-header"}
+                  disabled={!footprint}
+                  className={tool3D === "sill-header" ? styles.toolActive : styles.tool}
+                  onClick={() => setTool3D("sill-header")}
+                >
+                  Sill &amp; Header
+                </button>
+              </div>
             )}
           </div>
 
@@ -2454,6 +2681,10 @@ export default function LayoutEditor() {
                   standardWidthIn={standardWidthIn}
                   compassRef={compassNeedleRef}
                   simplified={simplified3D}
+                  tool3D={tool3D}
+                  onToggleOpening={(_story, wallId, slotIndex) => handleToggleOpening(wallId, slotIndex)}
+                  onSetWindowSillHeight={(_story, wallId, slotIndex, sillHeightIn) => handleSetWindowSillHeight(wallId, slotIndex, sillHeightIn)}
+                  onSetWindowHeight={(_story, wallId, slotIndex, heightIn) => handleSetWindowHeight(wallId, slotIndex, heightIn)}
                 />
               ))}
             {editorTab === "foundation" && foundationType.usesPierGrid && (
@@ -2596,6 +2827,7 @@ export default function LayoutEditor() {
                         ridgeHeightFt={bottomOfTrussMaxHeightFt}
                         targetPanelWidthIn={standardWidthIn}
                         roofCatcherBeamOffsetIn={roofCatcherBeamOffsetIn}
+                        roofSystemTypeId={roofSystemTypeId}
                         gablePeakPositionIn={gablePeakPositionInByWallId[elevationWall.id]}
                         gableEndToggleBlockReason={gableEndToggleBlockReason(elevationWall.id)}
                         onToggleGableEnd={(enabled) => handleToggleGableEnd(elevationWall.id, enabled)}
@@ -2645,43 +2877,6 @@ export default function LayoutEditor() {
             )}
             {editorTab === "floor" && (
               <>
-                <div role="group" aria-label="Floor type" className={styles.toolbar}>
-                  {floorJoistTypes.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      aria-pressed={floorSystemId === t.id}
-                      className={floorSystemId === t.id ? styles.toolActive : styles.tool}
-                      onClick={() => setFloorSystemId((was) => (was === t.id ? null : t.id))}
-                      disabled={!footprint}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    aria-pressed={isThermalSlabFloor}
-                    className={isThermalSlabFloor ? styles.toolActive : styles.tool}
-                    onClick={() => setFloorSystemId((was) => (was === "thermal-slab" ? null : "thermal-slab"))}
-                    disabled={!footprint || foundationType.usesPierGrid}
-                    title={
-                      foundationType.usesPierGrid
-                        ? "A monolithic slab floor isn't compatible with a pier/crawlspace foundation — pick a joist floor type instead, or switch to a slab-compatible foundation type on the Site Properties panel."
-                        : undefined
-                    }
-                  >
-                    Thermally Broken Slab
-                  </button>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={perpendicular2x4Enabled}
-                      onChange={(e) => setPerpendicular2x4Enabled(e.target.checked)}
-                      disabled={!floorJoistTypeId}
-                    />{" "}
-                    Perpendicular 2x4 addition
-                  </label>
-                </div>
                 {foundationType.usesPierGrid ? (
                   <>
                     <p className={styles.note}>
@@ -2717,19 +2912,6 @@ export default function LayoutEditor() {
             )}
             {editorTab === "roof" && (
               <>
-                <div role="group" aria-label="Roof system type" className={styles.toolbar}>
-                  {roofSystemTypes.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      aria-pressed={roofSystemTypeId === t.id}
-                      className={roofSystemTypeId === t.id ? styles.toolActive : styles.tool}
-                      onClick={() => setRoofSystemTypeId(t.id)}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
                 <p className={styles.note}>{roofSystemTypes.find((t) => t.id === roofSystemTypeId)!.description}</p>
 
                 <label>
@@ -2885,7 +3067,7 @@ export default function LayoutEditor() {
           onPrint={() => handlePrintNote("windows")}
         >
           {windowList.length > 0 ? (
-            windowList.map(({ wallId, slotIndex, widthIn, heightIn }) => (
+            windowList.map(({ wallId, slotIndex, widthIn, heightIn, sillHeightIn }) => (
               <label key={`${wallId}-${slotIndex}`}>
                 Wall {wallId}, window #{slotIndex}{" "}
                 <select
@@ -2910,7 +3092,19 @@ export default function LayoutEditor() {
                       {formatLengthIn(h, unitSystem)} tall
                     </option>
                   ))}
-                </select>
+                </select>{" "}
+                <input
+                  type="number"
+                  id={`window-sill-height-${wallId}-${slotIndex}`}
+                  title="This window's own sill height (floor to Rough Opening bottom) — also draggable in the 3D Sill & Header tool"
+                  value={sillHeightIn}
+                  min={sillHeaderHeightInRange.minIn}
+                  max={sillHeaderHeightInRange.maxIn}
+                  step={0.125}
+                  style={{ width: 64 }}
+                  onChange={(e) => handleSetWindowSillHeight(wallId, slotIndex, Number(e.target.value))}
+                />
+                {" sill"}
               </label>
             ))
           ) : (
@@ -3586,7 +3780,7 @@ export default function LayoutEditor() {
                     </tr>
                     <tr>
                       <td>Sill height</td>
-                      <td>{sillHeightIn}&quot; (default)</td>
+                      <td>{sillHeightIn}&quot; default — customizable per window via the 3D Sill &amp; Header drag tool</td>
                     </tr>
                     <tr>
                       <td>Sill run</td>
@@ -3618,7 +3812,7 @@ export default function LayoutEditor() {
               "The header spans the full slot width, resting on top of both jack studs — the clear Rough Opening (where the window unit itself installs) is narrower, inside the jack studs. The sill sits below, sized to that same clear RO width.",
               `A window ("long") header repeats as many peaks as needed to keep every truss web segment at or above a 30deg bracing angle — a door header is always exactly 1 peak. Both are on interior and exterior wythes.`,
               `A sill is a short Standard Panel (default ${sillHeightIn}in tall) — a window wider than one standard panel width (${standardWidthIn}in) gets multiple sill panels sharing the run instead of one oversized sill.`,
-              `Window height (${windowHeightIn}in, selectable in Panel Standards) is the window's own real Rough Opening height, sill-top to header-bottom — the jack studs span exactly this. Header height = wall standard height (${(wallHeightFt * 12).toFixed(1)}in) minus the RO's own top elevation (sill height + window height) — a real formula, not illustrative.`,
+              `Window height (${windowHeightIn}in, selectable in Panelizer) is the window's own real Rough Opening height, sill-top to header-bottom — the jack studs span exactly this. Header height = wall standard height (${(wallHeightFt * 12).toFixed(1)}in) minus the RO's own top elevation (sill height + window height) — a real formula, not illustrative.`,
               jackStudConfig === "2x4-stud"
                 ? "2x4 stud jack studs selected — fastener count/weight not modeled for this config yet (plywood jack sheet fastening is modeled)."
                 : "Plywood jack studs selected — screwed to the adjacent wall panel, 2x 4in T25 #9 screws every 6in.",
@@ -3832,7 +4026,7 @@ export default function LayoutEditor() {
         >
           <DetailGuidePage
             title="Plaster Master"
-            triggerCondition="Interior finish = Clay plaster and/or exterior finish = Lime plaster (Panel Standards > Wall Assembly) — total plaster materials, purchase units, and price."
+            triggerCondition="Interior finish = Clay plaster and/or exterior finish = Lime plaster (Panelizer > Wall Assembly) — total plaster materials, purchase units, and price."
             diagram={
               <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
                 <table className={styles.results} style={{ width: "100%", marginBottom: 8 }}>
@@ -4247,7 +4441,7 @@ export default function LayoutEditor() {
                               gets 2 (one each side).
                             </>
                           ) : (
-                            "2x4 stud config selected (Panel Standards) — fastener count/weight not modeled for this config yet."
+                            "2x4 stud config selected (Panelizer) — fastener count/weight not modeled for this config yet."
                           )}
                         </p>
                       </div>
@@ -4301,7 +4495,8 @@ export default function LayoutEditor() {
                         />
                         <p className={styles.note}>
                           Identical construction to a Standard Panel, just shorter (Tommy: &quot;sills are short
-                          standard panels&quot;) — default {sillHeightIn}&quot; tall. A window wider than one standard
+                          standard panels&quot;) — default {sillHeightIn}&quot; tall, customizable per window via the
+                          3D Sill &amp; Header drag tool. A window wider than one standard
                           panel width ({standardWidthIn}&quot;) gets multiple sill panels sharing the run instead of
                           one oversized sill — see the Window Rough Opening Detail page.
                         </p>

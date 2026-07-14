@@ -51,6 +51,9 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     nailerOffsetIn: 0,
     squareBaleStudConfig: "single-2x4",
     projectName: "Untitled Project",
+    wallsEnabled: true,
+    floorsEnabled: false,
+    roofEnabled: false,
     ...overrides,
   };
 }

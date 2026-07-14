@@ -6,6 +6,7 @@ import styles from "./EditorToolbar.module.css";
 export interface EditorToolbarProps {
   editorTab: EditorTab;
   onEditorTabChange: (tab: EditorTab) => void;
+  enabledTabs: EditorTab[];
 }
 
 /**
@@ -16,10 +17,10 @@ export interface EditorToolbarProps {
  * scrollwheel and 2d 3d buttons at the top of the tool bar") — see
  * ViewModeToggle.tsx.
  */
-export default function EditorToolbar({ editorTab, onEditorTabChange }: EditorToolbarProps) {
+export default function EditorToolbar({ editorTab, onEditorTabChange, enabledTabs }: EditorToolbarProps) {
   return (
     <div className={styles.bar}>
-      <EditorTabDial value={editorTab} onChange={onEditorTabChange} />
+      <EditorTabDial value={editorTab} onChange={onEditorTabChange} enabledTabs={enabledTabs} />
     </div>
   );
 }

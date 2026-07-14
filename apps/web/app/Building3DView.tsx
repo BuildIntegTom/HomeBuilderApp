@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { OrbitControls, TransformControls } from "@react-three/drei";
+import type { Mesh } from "three";
 import { computeSillRunWidths, panelSlotBoxes3D, type Footprint, type PanelSlot } from "@building-integrity/geometry";
 import {
   buildBracedPanelMembers,
@@ -11,6 +12,7 @@ import {
   buildCornerPanelMembers,
   buildOpeningAssemblyMembers,
   buildSafetyGapMembers,
+  buildSquareBaleCornerPanelMembers,
   buildSquareBalePanelMembers,
   buildStandardPanelMembers,
   computeDoorRoughOpeningHeightIn,
@@ -18,6 +20,7 @@ import {
   computeRoughOpeningWidthIn,
   doorRoughOpeningSelectedHeightIn,
   sillDefaultHeightIn,
+  sillHeaderHeightInRange,
   standardWindowHeightDefaultIn,
   toeUpHeightIn,
   type JackStudConfig,
@@ -117,14 +120,24 @@ function membersForSlot(
       return buildColumnPanelMembers(thicknessIn, heightIn, includeNailer);
     case "corner":
     case "safety-oct-corner":
-      return buildCornerPanelMembers(thicknessIn, heightIn, includeNailer);
+      // Square Bale Panels' corner is a wider, asymmetric-stud construction
+      // (Tommy: "standard size at 39in") matching the 39in slot the tiling
+      // system already reserves for it under this panelization type (see
+      // cornerWidthInForTiling in page.tsx) — the plain fixed-25.5in
+      // Column/Corner unit only applies to every other panelization type.
+      return isSquareBalePanelization
+        ? buildSquareBaleCornerPanelMembers(thicknessIn, heightIn, includeNailer, nailerOffsetIn)
+        : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer);
     case "safety-gap":
       return buildSafetyGapMembers(thicknessIn, heightIn);
     case "window":
     case "door": {
       const isDoor = slot.type === "door";
-      const sillHeightIn = sillDefaultHeightIn.value;
-      const bottomZIn = isDoor ? 0 : sillHeightIn;
+      // Each window carries its own sill height (Tommy: "manipulate sill
+      // and header height with the drag tool") — falls back to the
+      // project default when this particular slot hasn't been customized.
+      const sillHeightIn = isDoor ? 0 : (slot.sillHeightIn ?? sillDefaultHeightIn.value);
+      const bottomZIn = sillHeightIn;
       // Each window carries its own height (Tommy: "i want each window
       // individually adjustable") — falls back to the project default
       // when this particular slot hasn't been customized.
@@ -200,6 +213,29 @@ interface Building3DViewProps {
    * shipping view) where full wood-member detail would be unreadable
    * clutter, but available as a general toggle here too. Off by default. */
   simplified?: boolean;
+  /** Which 3D-only editor tool is active (Tommy: "build the 3d viewer into
+   * an editor with all the same tools as the 2d plan editor" — Phase 1
+   * scope: just Edit-cycle parity + the Sill & Header drag tool; draw/
+   * bump-out/drag-wall are deferred, so this is a deliberately separate,
+   * smaller vocabulary from the 2D `ShapeTool` union, not a reuse of it).
+   * "orbit" (default) leaves every slot non-interactive so OrbitControls
+   * has the pointer to itself. */
+  tool3D?: "orbit" | "edit" | "sill-header";
+  /** Cycles one panel slot's type the same way the 2D Edit tool's
+   * `onToggleOpening` does — only wired up when `tool3D === "edit"`. The
+   * `story` param is accepted now (not yet meaningfully different from the
+   * caller's point of view, since ground/second story share the same
+   * underlying wallSlots today) so a future independent per-story data
+   * model can slot in without changing this component's interaction code. */
+  onToggleOpening?: (story: "ground" | "second", wallId: string, slotIndex: number) => void;
+  /** Commits the bottom handle's dragged position (floor to RO-bottom) —
+   * only wired up when `tool3D === "sill-header"`. Same story-forwarding
+   * rationale as `onToggleOpening`. */
+  onSetWindowSillHeight?: (story: "ground" | "second", wallId: string, slotIndex: number, sillHeightIn: number) => void;
+  /** Commits the top handle's dragged position, expressed as the window's
+   * own RO height (top edge relative to the bottom handle) — same field
+   * `handleSetWindowHeight` already writes for the 2D dropdown. */
+  onSetWindowHeight?: (story: "ground" | "second", wallId: string, slotIndex: number, heightIn: number) => void;
 }
 
 /** Mounted only in `captureMode` — reads the Canvas's own `gl` via
@@ -237,11 +273,12 @@ function CompassTracker({ compassRef, target }: { compassRef: RefObject<HTMLDivE
  * Preview button can show these models in their place together on the
  * floor plan?") — one positioned/rotated group per wall slot, each
  * containing that slot's own `PanelMembersGroup`. Column/Corner panels
- * ignore the slot's own tiled width (always fabricated at
- * `COLUMN_TOTAL_WIDTH_IN`, same simplification as their Shop Drawing
- * pages) — the group is still sized/positioned to the slot's actual tiled
- * width so it doesn't visibly overlap its neighbors, just slightly
- * mismatched from the panel's true 25.5in build width. */
+ * ignore the slot's own tiled width and instead always build at their own
+ * fixed fabrication width (`COLUMN_TOTAL_WIDTH_IN`, or 39in for a Square
+ * Bale Panels corner) — the group is still sized/positioned to the slot's
+ * tiled width, which the tiling system (page.tsx/retile.ts/tiling.ts) keeps
+ * exactly equal to that same fixed width, so there's no unrendered gap
+ * (Tommy: "we cannot have this type of error happening"). */
 export default function Building3DView({
   footprint,
   wallSlots,
@@ -259,8 +296,27 @@ export default function Building3DView({
   onCapture,
   compassRef,
   simplified = false,
+  tool3D = "orbit",
+  onToggleOpening,
+  onSetWindowSillHeight,
+  onSetWindowHeight,
 }: Building3DViewProps) {
   const heightIn = wallHeightFt * IN_PER_FT;
+  // Sill & Header drag tool's own selection + drag-in-progress state — a
+  // pure 3D-view interaction concern (mirrors how FootprintCanvas.tsx keeps
+  // its own pan/zoom fully local rather than lifting it to page.tsx).
+  const [selectedWindow, setSelectedWindow] = useState<{ wallId: string; slotIndex: number; story: "ground" | "second" } | null>(
+    null,
+  );
+  const [isDraggingHandle, setIsDraggingHandle] = useState(false);
+  useEffect(() => {
+    if (tool3D !== "sill-header") setSelectedWindow(null);
+  }, [tool3D]);
+  // Only one window can be selected at a time, so one pair of refs (rather
+  // than a ref per rendered slot) is enough to read each handle's own
+  // dragged position back out on release.
+  const sillHandleRef = useRef<Mesh>(null);
+  const headerHandleRef = useRef<Mesh>(null);
 
   const slotBoxes = useMemo(
     () => (footprint ? panelSlotBoxes3D(footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds) : []),
@@ -393,6 +449,66 @@ export default function Building3DView({
   const target: [number, number, number] = [footprintBoundsRaw.centerX, totalHeightFt / 2, footprintBoundsRaw.centerZ];
   const groundSize = bounds.maxDim * 3;
 
+  // Sill & Header drag tool (Tommy: "manipulate sill and header height with
+  // the drag tool") — only rendered for the currently-selected window slot,
+  // as 2 small Y-axis-only TransformControls handles at its RO's bottom
+  // (sill) and top (header) edges. The scene's Y axis is in FEET (see the
+  // second-story stacking above, which uses `wallHeightFt` directly as a Y
+  // offset) while sill/window heights are stored in INCHES — every
+  // conversion here divides/multiplies by IN_PER_FT accordingly.
+  const renderSillHeaderHandles = (box: (typeof slotBoxes)[number], story: "ground" | "second") => {
+    if (
+      tool3D !== "sill-header" ||
+      box.slot.type !== "window" ||
+      !selectedWindow ||
+      selectedWindow.story !== story ||
+      selectedWindow.wallId !== box.wallId ||
+      selectedWindow.slotIndex !== box.slotIndex
+    ) {
+      return null;
+    }
+    const sillHeightIn = box.slot.sillHeightIn ?? sillDefaultHeightIn.value;
+    const windowHeightIn = box.slot.heightIn ?? standardWindowHeightDefaultIn.value;
+    const xLocal = box.widthFt / 2;
+    const zLocal = box.depthFt / 2;
+    const sillYFt = sillHeightIn / IN_PER_FT;
+    const headerYFt = (sillHeightIn + windowHeightIn) / IN_PER_FT;
+
+    const commitSill = () => {
+      setIsDraggingHandle(false);
+      const draggedYFt = sillHandleRef.current?.position.y;
+      if (draggedYFt === undefined) return;
+      const rawIn = draggedYFt * IN_PER_FT;
+      const maxSillHeightIn = wallHeightFt * IN_PER_FT - windowHeightIn;
+      const clampedIn = Math.min(Math.max(rawIn, sillHeaderHeightInRange.minIn), Math.min(sillHeaderHeightInRange.maxIn, maxSillHeightIn));
+      onSetWindowSillHeight?.(story, box.wallId, box.slotIndex, clampedIn);
+    };
+    const commitHeader = () => {
+      setIsDraggingHandle(false);
+      const draggedYFt = headerHandleRef.current?.position.y;
+      if (draggedYFt === undefined) return;
+      const rawTopIn = draggedYFt * IN_PER_FT;
+      onSetWindowHeight?.(story, box.wallId, box.slotIndex, Math.max(1, rawTopIn - sillHeightIn));
+    };
+
+    return (
+      <>
+        <TransformControls mode="translate" showX={false} showZ={false} onMouseDown={() => setIsDraggingHandle(true)} onMouseUp={commitSill}>
+          <mesh ref={sillHandleRef} position={[xLocal, sillYFt, zLocal]}>
+            <sphereGeometry args={[0.15, 12, 12]} />
+            <meshStandardMaterial color="#2f8f4e" />
+          </mesh>
+        </TransformControls>
+        <TransformControls mode="translate" showX={false} showZ={false} onMouseDown={() => setIsDraggingHandle(true)} onMouseUp={commitHeader}>
+          <mesh ref={headerHandleRef} position={[xLocal, headerYFt, zLocal]}>
+            <sphereGeometry args={[0.15, 12, 12]} />
+            <meshStandardMaterial color="#c0392b" />
+          </mesh>
+        </TransformControls>
+      </>
+    );
+  };
+
   return (
     <div style={{ width: CANVAS_WIDTH }}>
       {!captureMode && (
@@ -419,6 +535,19 @@ export default function Building3DView({
               key={`${box.wallId}-${box.slotIndex}`}
               position={[box.anchorX, 0, box.anchorZ]}
               rotation={[0, -box.rotationRad, 0]}
+              onClick={
+                tool3D === "edit"
+                  ? (e) => {
+                      e.stopPropagation();
+                      onToggleOpening?.("ground", box.wallId, box.slotIndex);
+                    }
+                  : tool3D === "sill-header" && box.slot.type === "window"
+                    ? (e) => {
+                        e.stopPropagation();
+                        setSelectedWindow({ wallId: box.wallId, slotIndex: box.slotIndex, story: "ground" });
+                      }
+                    : undefined
+              }
             >
               {members && !simplified ? (
                 <PanelMembersGroup
@@ -431,6 +560,7 @@ export default function Building3DView({
                   <meshStandardMaterial color={simplified ? PANEL_TYPE_COLORS[box.slot.type] : BLOB_COLOR} transparent opacity={0.6} />
                 </mesh>
               )}
+              {renderSillHeaderHandles(box, "ground")}
             </group>
           ))}
           {secondStorySlotRenderData.map(({ box, members }) => (
@@ -438,6 +568,19 @@ export default function Building3DView({
               key={`story2-${box.wallId}-${box.slotIndex}`}
               position={[box.anchorX, wallHeightFt, box.anchorZ]}
               rotation={[0, -box.rotationRad, 0]}
+              onClick={
+                tool3D === "edit"
+                  ? (e) => {
+                      e.stopPropagation();
+                      onToggleOpening?.("second", box.wallId, box.slotIndex);
+                    }
+                  : tool3D === "sill-header" && box.slot.type === "window"
+                    ? (e) => {
+                        e.stopPropagation();
+                        setSelectedWindow({ wallId: box.wallId, slotIndex: box.slotIndex, story: "second" });
+                      }
+                    : undefined
+              }
             >
               {members && !simplified ? (
                 <PanelMembersGroup
@@ -450,9 +593,10 @@ export default function Building3DView({
                   <meshStandardMaterial color={simplified ? PANEL_TYPE_COLORS[box.slot.type] : BLOB_COLOR} transparent opacity={0.6} />
                 </mesh>
               )}
+              {renderSillHeaderHandles(box, "second")}
             </group>
           ))}
-          {!captureMode && <OrbitControls target={target} makeDefault />}
+          {!captureMode && <OrbitControls target={target} makeDefault enabled={!isDraggingHandle} />}
           {!captureMode && compassRef && <CompassTracker compassRef={compassRef} target={target} />}
         </Canvas>
       </div>

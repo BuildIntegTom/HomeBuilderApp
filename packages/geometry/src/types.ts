@@ -59,6 +59,14 @@ export interface PanelSlot {
    * this — a door's RO height is always the confirmed
    * `computeDoorRoughOpeningHeightIn` formula, not user-adjustable. */
   heightIn?: number;
+  /** Only meaningful for "window" slots — this window's own sill height
+   * (floor to Rough Opening bottom), draggable independently of `heightIn`
+   * (the RO's own height, i.e. its top edge) via the 3D Sill & Header drag
+   * tool. Undefined = not yet customized, falls back to the project's
+   * default (`sillDefaultHeightIn` in panel-catalog's data.ts), same
+   * "absent = default" convention as `heightIn`. Doors don't use this —
+   * a door's RO always starts at the floor (bottomZIn = 0). */
+  sillHeightIn?: number;
 }
 
 export type WallEnd = "start" | "end";

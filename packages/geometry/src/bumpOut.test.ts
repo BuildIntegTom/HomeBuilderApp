@@ -1,10 +1,37 @@
 import { describe, expect, it } from "vitest";
 import { buildRectangleFootprint } from "./footprint";
-import { insertBumpOut } from "./bumpOut";
+import { insertBumpOut, outwardNormal } from "./bumpOut";
 import { cornerTurnAngleRad, isConvexCorner, isRightAngleCorner } from "./cornerAngle";
-import type { Footprint } from "./types";
+import type { Footprint, Point } from "./types";
 
 const allPrimary = (fp: Footprint) => new Set(fp.corners.map((c) => c.id));
+
+function segmentsIntersect(p1: Point, p2: Point, p3: Point, p4: Point): boolean {
+  const cross = (o: Point, a: Point, b: Point) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const d1 = cross(p3, p4, p1);
+  const d2 = cross(p3, p4, p2);
+  const d3 = cross(p1, p2, p3);
+  const d4 = cross(p1, p2, p4);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
+/** True if any 2 non-adjacent walls cross — a sign the bump-out sent a
+ * wall shooting off in the wrong direction instead of staying a simple
+ * (non-self-intersecting) polygon. */
+function hasSelfIntersection(fp: Footprint): boolean {
+  const cornersById = new Map(fp.corners.map((c) => [c.id, c.point]));
+  for (let i = 0; i < fp.walls.length; i++) {
+    for (let j = i + 1; j < fp.walls.length; j++) {
+      const w1 = fp.walls[i]!;
+      const w2 = fp.walls[j]!;
+      if ([w1.startCorner, w1.endCorner].some((id) => id === w2.startCorner || id === w2.endCorner)) continue;
+      if (segmentsIntersect(cornersById.get(w1.startCorner)!, cornersById.get(w1.endCorner)!, cornersById.get(w2.startCorner)!, cornersById.get(w2.endCorner)!)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 describe("insertBumpOut", () => {
   it("replaces the target wall with 5 walls, adding 4 corners", () => {
@@ -184,6 +211,102 @@ describe("insertBumpOut", () => {
       expect(isConvexCorner(wallPaToPaOut, wallPaOutToPbOut, footprint.corners)).toBe(true); // outside corner at paOut
       expect(isConvexCorner(wallPaOutToPbOut, wallPbOutToPb, footprint.corners)).toBe(true); // outside corner at pbOut
       expect(isConvexCorner(wallPbOutToPb, wallPbToB, footprint.corners)).toBe(false); // inside corner at pb
+    });
+  });
+
+  describe("outwardNormal", () => {
+    it("is a fixed -90deg rotation of the direction vector, independent of any centroid", () => {
+      const closeVec = (v: Point, expected: Point) => {
+        expect(v.x).toBeCloseTo(expected.x, 9);
+        expect(v.y).toBeCloseTo(expected.y, 9);
+      };
+      closeVec(outwardNormal({ x: 1, y: 0 }), { x: 0, y: -1 });
+      closeVec(outwardNormal({ x: 0, y: 1 }), { x: 1, y: 0 });
+      closeVec(outwardNormal({ x: -1, y: 0 }), { x: 0, y: 1 });
+      closeVec(outwardNormal({ x: 0, y: -1 }), { x: -1, y: 0 });
+    });
+  });
+
+  describe("regression: outward direction stays correct after prior bump-outs skew a naive centroid", () => {
+    // Tommy: "it sends a shorter wall onto the other side of the perimeter
+    // making the 2d layout look glitchy... it is clearly spawning outside
+    // the primary floor plan." A vertex-averaged "centroid" (the old
+    // heuristic) gets dragged hard toward a cluster of 4 tightly-spaced new
+    // corners from a single bump-out, which can flip which side reads as
+    // "outward" for an unrelated wall elsewhere on the building. The fixed
+    // winding-order-based `outwardNormal` doesn't have this failure mode.
+    it("keeps a deep, wide notch (heavily skewing the naive vertex average) from flipping later bump-outs on other walls", () => {
+      let fp = buildRectangleFootprint(40, 30);
+      let primary = allPrimary(fp);
+
+      // A deep notch spanning most of the top wall — clusters 4 new corners
+      // tightly around y=12, dragging a naive vertex-average centroid from
+      // (20,15) down to (20,10.5), more than a third of the way across the
+      // building's own depth.
+      const step1 = insertBumpOut(fp, "AB", 5, 35, -12, primary);
+      fp = step1.footprint;
+      primary = step1.primaryCornerIds;
+      expect(hasSelfIntersection(fp)).toBe(false);
+
+      // Outward bump on the bottom wall (opposite the notch) should still
+      // land further away (larger y), not flip back toward/through the notch.
+      const bottomWall = fp.walls.find((w) => w.startCorner === "6" && w.endCorner === "7")!;
+      const step2 = insertBumpOut(fp, bottomWall.id, 5, 15, 6, primary);
+      expect(hasSelfIntersection(step2.footprint)).toBe(false);
+      // The new bump-out's own outward corners (any corner further along
+      // than the original bottom wall's own y=30) must land strictly
+      // further out (y>30), never flipped back toward/through the notch.
+      const outwardCorners = step2.footprint.corners.filter((c) => c.point.y !== 30 && c.point.y >= 25);
+      expect(outwardCorners.length).toBeGreaterThan(0);
+      for (const c of outwardCorners) expect(c.point.y).toBeGreaterThan(30); // further out, not backward
+
+      // Outward bump on a side wall too, for good measure.
+      fp = step2.footprint;
+      primary = step2.primaryCornerIds;
+      const rightSideWall = fp.walls.find((w) => {
+        const s = fp.corners.find((c) => c.id === w.startCorner)!.point;
+        const e = fp.corners.find((c) => c.id === w.endCorner)!.point;
+        return s.x === 40 && e.x === 40 && Math.abs(s.y - e.y) > 20;
+      })!;
+      const step3 = insertBumpOut(fp, rightSideWall.id, 5, 15, 6, primary);
+      expect(hasSelfIntersection(step3.footprint)).toBe(false);
+    });
+
+    // Capped at 3 chained bump-outs with modest depths — realistic usage
+    // (a handful of additions/notches while sketching a floor plan), not an
+    // adversarial stress test. Deliberately deep/numerous chained notches
+    // can still, in rare cases, cut into an unrelated far-away part of the
+    // same polygon regardless of direction correctness — a separate "ran
+    // out of room" collision-detection gap (this app never checked new
+    // bump-out geometry against the *rest* of the polygon, only against its
+    // own wall's local centroid distance) that predates this fix and isn't
+    // what Tommy reported (a wall coming out on the *wrong side*, not
+    // colliding with something on the *right* side).
+    it("chains several realistic bump-outs across many pseudo-random seeds without ever self-intersecting", () => {
+      const rng = (seed: { v: number }) => {
+        seed.v = (seed.v * 1103515245 + 12345) & 0x7fffffff;
+        return seed.v / 0x7fffffff;
+      };
+      for (let s = 0; s < 25; s++) {
+        let fp: Footprint = buildRectangleFootprint(40, 30);
+        let primary = allPrimary(fp);
+        const seed = { v: s * 97 + 1 };
+        for (let iter = 0; iter < 3; iter++) {
+          const wallIds = fp.walls.map((w) => w.id).filter((id) => fp.walls.find((w) => w.id === id)!.lengthFt >= 10);
+          if (wallIds.length === 0) break;
+          const wallId = wallIds[Math.floor(rng(seed) * wallIds.length)]!;
+          const wall = fp.walls.find((w) => w.id === wallId)!;
+          const len = wall.lengthFt;
+          const spanLen = 3 + rng(seed) * 5;
+          const a = 2 + rng(seed) * Math.max(1, len - spanLen - 4);
+          const b = a + spanLen;
+          const depth = (rng(seed) < 0.3 ? -1 : 1) * (3 + rng(seed) * 4); // mostly additions, some modest notches
+          const result = insertBumpOut(fp, wallId, a, b, depth, primary);
+          fp = result.footprint;
+          primary = result.primaryCornerIds;
+          expect(hasSelfIntersection(fp)).toBe(false);
+        }
+      }
     });
   });
 });

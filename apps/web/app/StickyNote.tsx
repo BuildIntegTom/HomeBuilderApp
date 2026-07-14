@@ -38,6 +38,15 @@ export interface StickyNoteProps {
  * goes down on one of the header's own buttons, so print/fullscreen/close
  * still work normally.
  */
+// Mirrors globals.css's --topbar-height custom property (plain CSS custom
+// properties aren't readable from a JS default-prop expression without an
+// extra getComputedStyle round trip, so this stays a plain constant kept in
+// sync by hand) — every spawn point in this app, fullscreen or not,
+// measures from here (Tommy: "let's make the bottom of the top bar a real
+// notable place where everything else spawns").
+const TOPBAR_HEIGHT_PX = 56;
+const NOTE_SPAWN_MARGIN_PX = 12;
+
 export default function StickyNote({
   id,
   label,
@@ -51,12 +60,12 @@ export default function StickyNote({
   onPrint,
   children,
 }: StickyNoteProps) {
-  // Default spawn point sits just below the sticky TopBar (56px tall) —
-  // Tommy: "sticky notes to spawn directly below/stuck to the top bar -
-  // sometimes it looks like they spawn under and you cant see the bar" —
-  // the old default (24px) landed inside the bar itself, so a note's
-  // higher z-index visually covered part of it instead of appearing below.
-  const baseTop = top ?? 68 + (cascadeIndex % 6) * 26;
+  // Default spawn point sits just below the sticky TopBar — Tommy: "sticky
+  // notes to spawn directly below/stuck to the top bar - sometimes it
+  // looks like they spawn under and you cant see the bar" — the old
+  // default (24px) landed inside the bar itself, so a note's higher
+  // z-index visually covered part of it instead of appearing below.
+  const baseTop = top ?? TOPBAR_HEIGHT_PX + NOTE_SPAWN_MARGIN_PX + (cascadeIndex % 6) * 26;
   const baseLeft = left ?? 24 + (cascadeIndex % 6) * 26;
 
   const [dragPos, setDragPos] = useState<{ top: number; left: number } | null>(null);

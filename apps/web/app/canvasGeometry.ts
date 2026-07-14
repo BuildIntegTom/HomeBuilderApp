@@ -2,6 +2,7 @@ import type * as React from "react";
 import {
   cornerTurnAngleRad,
   footprintIsAllRightAngles,
+  outwardNormal,
   type Footprint,
   type PanelSlot,
   type Wall,
@@ -207,21 +208,17 @@ export function projectOntoWallFt(
 }
 
 /** Signed perpendicular distance (ft) from a wall's line to a screen point,
- * positive = outward (away from the footprint's centroid, an addition),
- * negative = inward (a notch) — the live "depth" reading for a bump-out. */
+ * positive = outward (an addition), negative = inward (a notch) — the live
+ * "depth" reading for a bump-out. Uses the same fixed winding-order-based
+ * outward normal as `insertBumpOut` (see that function's own doc comment
+ * for why a centroid-relative heuristic doesn't hold up here) so the live
+ * preview always matches what actually gets committed. */
 export function signedDepthFt(point: DragPoint, wall: Wall, footprint: Footprint, offsetPx: DragPoint): number {
   const { startPx, endPx } = wallPointsPx(wall, footprint.corners, offsetPx);
   const lengthPx = Math.hypot(endPx.x - startPx.x, endPx.y - startPx.y) || 1;
   const dir = { x: (endPx.x - startPx.x) / lengthPx, y: (endPx.y - startPx.y) / lengthPx };
-  const perp = { x: -dir.y, y: dir.x };
-  const centerFt = {
-    x: footprint.corners.reduce((sum, c) => sum + c.point.x, 0) / footprint.corners.length,
-    y: footprint.corners.reduce((sum, c) => sum + c.point.y, 0) / footprint.corners.length,
-  };
-  const centerPx = { x: centerFt.x * SCALE_PX_PER_FT + offsetPx.x, y: centerFt.y * SCALE_PX_PER_FT + offsetPx.y };
+  const outward = outwardNormal(dir);
   const midPx = { x: (startPx.x + endPx.x) / 2, y: (startPx.y + endPx.y) / 2 };
-  const outward =
-    perp.x * (midPx.x - centerPx.x) + perp.y * (midPx.y - centerPx.y) >= 0 ? perp : { x: -perp.x, y: -perp.y };
   const rel = { x: point.x - midPx.x, y: point.y - midPx.y };
   return (rel.x * outward.x + rel.y * outward.y) / SCALE_PX_PER_FT;
 }

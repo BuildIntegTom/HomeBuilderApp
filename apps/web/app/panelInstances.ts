@@ -43,6 +43,13 @@ export interface PanelInstance {
    * that window hasn't been customized (falls back to the project
    * default, same as the source slot's own field). */
   windowHeightIn?: number;
+  /** Only set for "header"/"sill" instances derived from a "window" slot —
+   * that window's own sill height (Tommy: "manipulate sill and header
+   * height with the drag tool"), carried through from
+   * `PanelSlot.sillHeightIn`. Undefined = that window hasn't been
+   * customized (falls back to the project default, same as the source
+   * slot's own field). */
+  sillHeightIn?: number;
 }
 
 const SIMPLE_NAMED_TYPES = new Set<PanelSlot["type"]>([
@@ -93,6 +100,7 @@ export function allPanelInstances(
     slotIndexInWall: number,
     sourceSlotType?: PanelSlot["type"],
     windowHeightIn?: number,
+    sillHeightIn?: number,
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     instances.push({
@@ -103,6 +111,7 @@ export function allPanelInstances(
       slotIndexInWall,
       ...(sourceSlotType && { sourceSlotType }),
       ...(windowHeightIn !== undefined && { windowHeightIn }),
+      ...(sillHeightIn !== undefined && { sillHeightIn }),
     });
   };
 
@@ -112,11 +121,20 @@ export function allPanelInstances(
     for (let slotIndexInWall = 0; slotIndexInWall < slots.length; slotIndexInWall++) {
       const slot = slots[slotIndexInWall]!;
       if (slot.type === "window" || slot.type === "door") {
-        pushInstance(direction, wall.id, "header", slot.widthIn, slotIndexInWall, slot.type, slot.type === "window" ? slot.heightIn : undefined);
+        pushInstance(
+          direction,
+          wall.id,
+          "header",
+          slot.widthIn,
+          slotIndexInWall,
+          slot.type,
+          slot.type === "window" ? slot.heightIn : undefined,
+          slot.type === "window" ? slot.sillHeightIn : undefined,
+        );
         if (slot.type === "window") {
           const roWidthIn = computeRoughOpeningWidthIn(slot.widthIn, jackStudConfig);
           for (const sillWidthIn of computeSillRunWidths(roWidthIn, standardWidthIn)) {
-            pushInstance(direction, wall.id, "sill", sillWidthIn, slotIndexInWall, slot.type);
+            pushInstance(direction, wall.id, "sill", sillWidthIn, slotIndexInWall, slot.type, undefined, slot.sillHeightIn);
           }
         }
       } else if (SIMPLE_NAMED_TYPES.has(slot.type)) {

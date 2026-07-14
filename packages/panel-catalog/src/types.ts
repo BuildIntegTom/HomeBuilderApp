@@ -12,6 +12,16 @@ export interface CatalogValue<T> {
 
 export type ConstructionMethod = "square-bale-reference" | "loose-dense-pack";
 
+/** A min/max bound in inches — same traceability shape as `CatalogValue`,
+ * just for a range instead of a single number (e.g. a manufacturer's
+ * possible-panel-size spec sheet). */
+export interface CatalogRange {
+  minIn: number;
+  maxIn: number;
+  status: CatalogStatus;
+  note: string;
+}
+
 /** Any structural figure (load-bearing, shear) with no real number yet —
  * unlike CatalogValue, there's deliberately no `value` field: inventing a
  * placeholder for straw-panel structural capacity (unlike, say, a

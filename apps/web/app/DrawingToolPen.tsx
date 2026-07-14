@@ -1,5 +1,6 @@
 "use client";
 
+import { panelHeightInRange } from "@building-integrity/panel-catalog";
 import styles from "./DrawingToolPen.module.css";
 
 export type ShapeTool = "rectangle" | "octagon" | "bump-out" | "drag-wall" | "edit";
@@ -90,7 +91,8 @@ export default function DrawingToolPen({
             type="number"
             value={secondStoryWallHeightFt}
             step={0.5}
-            min={1}
+            min={panelHeightInRange.minIn / 12}
+            max={panelHeightInRange.maxIn / 12}
             style={{ width: 56 }}
             onChange={(e) => onSecondStoryWallHeightChange(Number(e.target.value))}
           />

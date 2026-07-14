@@ -1,5 +1,28 @@
 import type { Corner, Footprint, Point } from "./types";
 
+/**
+ * The consistent winding order every footprint in this app is built and
+ * maintained in (`buildRectangleFootprint`/`buildOctagonFootprint`'s own
+ * comments: corners "clockwise" on screen — Y increasing downward) means a
+ * wall's outward normal is always this fixed -90deg rotation of its own
+ * direction vector, for ANY wall on ANY valid (non-self-intersecting)
+ * polygon, convex or not — a polygon's winding is a global, not local,
+ * property, so this never depends on the shape's overall geometry. This
+ * replaced an earlier centroid-based heuristic (checking which side of the
+ * footprint's own vertex-average a wall's midpoint fell on) that broke down
+ * after a few bump-outs: a notch or addition clusters several new corners
+ * tightly in one spot, which skews a plain arithmetic mean far more than it
+ * skews the shape's true interior, and once skewed enough it can flip which
+ * side reads as "outward" for an unrelated wall elsewhere on the building —
+ * sending that wall's own new bump-out shooting off in the wrong direction
+ * (Tommy: "it sends a shorter wall onto the other side of the perimeter").
+ * Mirrored in apps/web/app/canvasGeometry.ts's `signedDepthFt` (the live
+ * drag preview) — keep both in sync.
+ */
+export function outwardNormal(dir: Point): Point {
+  return { x: dir.y, y: -dir.x };
+}
+
 const MARGIN_FT = 2; // Tommy: never leave a remainder wall shorter than 2ft (defensive floor — the UI layer snaps to this same rule before calling in)
 // The bump-out's depth becomes the length of its 2 new perpendicular walls,
 // and both ends of each of those walls own a corner panel (they're always
@@ -108,12 +131,12 @@ export function insertBumpOut(
 
   const centroid = footprintCentroid(footprint);
   const wallMid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-  const perp = { x: -dir.y, y: dir.x };
-  const outward =
-    perp.x * (wallMid.x - centroid.x) + perp.y * (wallMid.y - centroid.y) >= 0
-      ? perp
-      : { x: -perp.x, y: -perp.y };
+  const outward = outwardNormal(dir);
 
+  // Purely a depth-magnitude safety clamp (how far a notch can cut inward
+  // before it risks crossing the opposite side of the building) — distance-
+  // to-centroid is a fine, non-fragile stand-in for that, since only the
+  // *direction* heuristic (replaced above) was ever the fragile part.
   const maxInwardFt = Math.hypot(wallMid.x - centroid.x, wallMid.y - centroid.y) * MAX_INWARD_FRACTION;
   let depth = depthFt;
   if (Math.abs(depth) < MIN_DEPTH_FT) depth = depth < 0 ? -MIN_DEPTH_FT : MIN_DEPTH_FT;
