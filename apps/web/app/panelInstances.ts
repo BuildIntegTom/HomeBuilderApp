@@ -13,7 +13,8 @@ export type NamedPanelType =
   | "safety-gap"
   | "header"
   | "sill"
-  | "column";
+  | "column"
+  | "jack-stud";
 
 export interface PanelInstance {
   /** e.g. "N-3" — sequential per compass direction, across every wall

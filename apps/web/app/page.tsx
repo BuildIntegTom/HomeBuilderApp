@@ -33,6 +33,7 @@ import {
   wallGeometryFor as wallGeometryForPure,
   type CornerId,
   type Footprint,
+  type PanelGroup,
   type PanelSlot,
   type TruckDims,
   type Wall,
@@ -87,6 +88,7 @@ import {
   jackStudThicknessIn,
   JACK_STUD_THICKNESS_IN,
   SAFETY_GAP_THICKNESS_IN,
+  PLATE_2X4_WIDTH_IN,
   PLATE_2X6_THICKNESS_IN,
   carbonFractionOfDryMass,
   COLUMN_TOTAL_WIDTH_IN,
@@ -1522,11 +1524,31 @@ export default function LayoutEditor() {
   // start there — Tommy: "If the PLA is on the top left (NW) then that
   // panel on the corner is the top of the first stack"); header/sill
   // panels get their own separate stacks, biggest to smallest.
+  // Loose jack-stud lumber (Tommy: "jack studs can be piled up together and
+  // stacked 90 degrees hot dog rotation") — not a flat wall panel, so each
+  // window/door opening's own jack studs ship as their own small, thin
+  // items (2 plywood sheets, or 4 real 2x4 sticks — ext + int wythe on each
+  // side) rather than being left out of the truck-loadout calc entirely.
+  const shippingJackStudRefs = useMemo(() => {
+    const studsPerOpening = jackStudConfig === "plywood" ? 2 : 4;
+    const crossSectionWidthIn = jackStudConfig === "plywood" ? thicknessIn : PLATE_2X4_WIDTH_IN;
+    const refs: { id: string; widthIn: number; heightIn: number }[] = [];
+    for (const inst of allInstances) {
+      if (inst.panelType !== "header") continue;
+      const spanIn = inst.sourceSlotType === "door" ? doorRoughOpeningHeightIn : (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value);
+      for (let i = 0; i < studsPerOpening; i++) {
+        refs.push({ id: `${inst.name}-JS${i + 1}`, widthIn: crossSectionWidthIn, heightIn: spanIn });
+      }
+    }
+    return refs;
+  }, [allInstances, jackStudConfig, thicknessIn, doorRoughOpeningHeightIn]);
+
   const shippingPanelTypeById = useMemo(() => {
     const map = new Map<string, NamedPanelType>();
     for (const inst of allInstances) map.set(inst.name, inst.panelType);
+    for (const ref of shippingJackStudRefs) map.set(ref.id, "jack-stud");
     return map;
-  }, [allInstances]);
+  }, [allInstances, shippingJackStudRefs]);
 
   // Each instance's own real width/height (Tommy: "windows and column
   // panels are not loading correctly... they are mostly loading as big
@@ -1551,14 +1573,16 @@ export default function LayoutEditor() {
         map.set(inst.name, mainHeightIn);
       }
     }
+    for (const ref of shippingJackStudRefs) map.set(ref.id, ref.heightIn);
     return map;
-  }, [allInstances, wallHeightFt, doorHeaderHeightIn]);
+  }, [allInstances, wallHeightFt, doorHeaderHeightIn, shippingJackStudRefs]);
 
   const shippingPanelWidthById = useMemo(() => {
     const map = new Map<string, number>();
     for (const inst of allInstances) map.set(inst.name, inst.widthIn);
+    for (const ref of shippingJackStudRefs) map.set(ref.id, ref.widthIn);
     return map;
-  }, [allInstances]);
+  }, [allInstances, shippingJackStudRefs]);
 
   const shippingLoadOrderIndex = useMemo(() => {
     const map = new Map<string, number>();
@@ -1599,19 +1623,12 @@ export default function LayoutEditor() {
     widthIn: selectedTruck.interiorWidthIn,
     heightIn: selectedTruck.interiorHeightIn,
   };
-  const shippingMaxStackWidthIn = Math.max(
-    1,
-    ...shippingMainPanelRefs.map((p) => p.widthIn),
-    ...shippingHeaderSillRefs.map((p) => p.widthIn),
-  );
-  const truckLoads = computeTruckLoads(
-    shippingMainPanelRefs,
-    shippingHeaderSillRefs,
-    shippingTruckDims,
-    thicknessIn,
-    wallHeightFt * 12,
-    shippingStackBufferIn.value,
-  );
+  const shippingGroups: PanelGroup[] = [
+    { panels: shippingMainPanelRefs, thicknessIn, defaultHeightIn: wallHeightFt * 12 },
+    { panels: shippingHeaderSillRefs, thicknessIn, defaultHeightIn: wallHeightFt * 12 },
+    { panels: shippingJackStudRefs, thicknessIn: jackStudThicknessIn(jackStudConfig), defaultHeightIn: wallHeightFt * 12 },
+  ];
+  const truckLoads = computeTruckLoads(shippingGroups, shippingTruckDims, shippingStackBufferIn.value);
   const shippingTruckCount = truckLoads.length;
   const shippingCost = shippingTruckCount * shippingMiles * shippingRatePerMile;
   const shippingPanelsPerStack = computePanelsPerStack(shippingTruckDims.heightIn, thicknessIn, shippingStackBufferIn.value);
@@ -4015,9 +4032,7 @@ export default function LayoutEditor() {
                       key={i}
                       load={load}
                       truck={shippingTruckDims}
-                      maxStackWidthIn={shippingMaxStackWidthIn}
                       panelHeightIn={wallHeightFt * 12}
-                      panelThicknessIn={thicknessIn}
                       bufferIn={shippingStackBufferIn.value}
                       panelTypeById={shippingPanelTypeById}
                       panelWidthById={shippingPanelWidthById}
@@ -4040,7 +4055,8 @@ export default function LayoutEditor() {
               `A ${shippingStackBufferIn.value}in buffer is kept clear on every side of every stack (Tommy) — shared between neighbors, so it's one gap between any two things (stack-to-stack or stack-to-wall), not doubled.`,
               'Loading order follows the point of least accessibility (Tommy: "the stack order must correlate to the point of least accessibility... that panel on the corner is the top of the first stack, and it\'s row stacked under it") — panels load starting at that corner, all the way around the footprint.',
               "Headers and sills stack separately from the main run, biggest to smallest (Tommy: \"no need for headers and sills to be stacked with the main stack if they are different sizes\"), filling in after the main stacks in whichever truck has room.",
-              "Every stack in a shipment shares one uniform footprint (the single widest panel anywhere in the load) so stacks grid-pack predictably — a simplification, not a true bin-packing optimizer, consistent with this app's other reference-only geometry.",
+              "Stacks pack row by row across the trailer's own width using each stack's own real width (Tommy: \"its very very handy to be able to have 2 rows of panels\") — 2 or more narrower stacks share a row whenever they both fit, rather than every stack being forced into one lane sized to the single widest stack anywhere.",
+              "Jack studs ship as their own loose-lumber bundle (Tommy: \"jack studs can be piled up together and stacked 90 degrees hot dog rotation\") — thin sheets or 2x4 sticks piled face-to-face using their own real thickness, not the wall's own much thicker cross-section, so far more of them stack in the same trailer height.",
               shippingRatePerMileDefault.note ?? "",
               "3D views always render simplified flat-colored boxes (one per panel, colored by its panel type) rather than full member geometry — matches the \"Viewer: 3D Boxes\" state available in the main wall 3D view.",
             ].filter(Boolean)}
