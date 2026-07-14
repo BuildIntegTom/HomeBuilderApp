@@ -1528,6 +1528,38 @@ export default function LayoutEditor() {
     return map;
   }, [allInstances]);
 
+  // Each instance's own real width/height (Tommy: "windows and column
+  // panels are not loading correctly... they are mostly loading as big
+  // blocks") — a header/sill is far shorter than a full wall panel, so the
+  // 3D truck view needs each panel's own true dimensions instead of a
+  // shared stack/uniform-height assumption. Same formula fastenerWeightKgFor
+  // and the Shop Drawing weight breakdown already use per instance.
+  const shippingPanelHeightById = useMemo(() => {
+    const map = new Map<string, number>();
+    const mainHeightIn = wallHeightFt * 12;
+    for (const inst of allInstances) {
+      if (inst.panelType === "sill") {
+        map.set(inst.name, inst.sillHeightIn ?? sillDefaultHeightIn.value);
+      } else if (inst.panelType === "header") {
+        map.set(
+          inst.name,
+          inst.sourceSlotType === "door"
+            ? doorHeaderHeightIn
+            : computeHeaderHeightIn(mainHeightIn, (inst.sillHeightIn ?? sillDefaultHeightIn.value) + (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value)),
+        );
+      } else {
+        map.set(inst.name, mainHeightIn);
+      }
+    }
+    return map;
+  }, [allInstances, wallHeightFt, doorHeaderHeightIn]);
+
+  const shippingPanelWidthById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const inst of allInstances) map.set(inst.name, inst.widthIn);
+    return map;
+  }, [allInstances]);
+
   const shippingLoadOrderIndex = useMemo(() => {
     const map = new Map<string, number>();
     if (!footprint) return map;
@@ -1547,8 +1579,8 @@ export default function LayoutEditor() {
             (shippingLoadOrderIndex.get(`${a.wallId}:${a.slotIndexInWall}`) ?? 0) -
             (shippingLoadOrderIndex.get(`${b.wallId}:${b.slotIndexInWall}`) ?? 0),
         )
-        .map((inst) => ({ id: inst.name, widthIn: inst.widthIn })),
-    [allInstances, shippingLoadOrderIndex],
+        .map((inst) => ({ id: inst.name, widthIn: inst.widthIn, heightIn: shippingPanelHeightById.get(inst.name) })),
+    [allInstances, shippingLoadOrderIndex, shippingPanelHeightById],
   );
 
   const shippingHeaderSillRefs = useMemo(
@@ -1557,8 +1589,8 @@ export default function LayoutEditor() {
         .filter((inst) => inst.panelType === "header" || inst.panelType === "sill")
         .slice()
         .sort((a, b) => b.widthIn - a.widthIn)
-        .map((inst) => ({ id: inst.name, widthIn: inst.widthIn })),
-    [allInstances],
+        .map((inst) => ({ id: inst.name, widthIn: inst.widthIn, heightIn: shippingPanelHeightById.get(inst.name) })),
+    [allInstances, shippingPanelHeightById],
   );
 
   const selectedTruck = truckBedTypes.value.find((t) => t.id === selectedTruckBedId) ?? truckBedTypes.value[0]!;
@@ -1577,7 +1609,7 @@ export default function LayoutEditor() {
     shippingHeaderSillRefs,
     shippingTruckDims,
     thicknessIn,
-    standardPanelHeightIn.value,
+    wallHeightFt * 12,
     shippingStackBufferIn.value,
   );
   const shippingTruckCount = truckLoads.length;
@@ -3984,10 +4016,12 @@ export default function LayoutEditor() {
                       load={load}
                       truck={shippingTruckDims}
                       maxStackWidthIn={shippingMaxStackWidthIn}
-                      panelHeightIn={standardPanelHeightIn.value}
+                      panelHeightIn={wallHeightFt * 12}
                       panelThicknessIn={thicknessIn}
                       bufferIn={shippingStackBufferIn.value}
                       panelTypeById={shippingPanelTypeById}
+                      panelWidthById={shippingPanelWidthById}
+                      panelHeightById={shippingPanelHeightById}
                       displayName={`Truck ${i + 1} of ${shippingTruckCount}`}
                     />
                   ))}

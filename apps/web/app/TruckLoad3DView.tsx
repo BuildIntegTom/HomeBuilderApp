@@ -27,12 +27,20 @@ export interface TruckLoad3DViewProps {
    * stack shares one grid cell sized to the widest panel in the whole
    * shipment). */
   maxStackWidthIn: number;
+  /** Fallback height for a panel absent from `panelHeightById` — matches
+   * the same default computeTruckLoads itself was called with. */
   panelHeightIn: number;
   panelThicknessIn: number;
   bufferIn: number;
   /** Looks up each panel id's own named type, for its box color (Tommy:
    * "panels to appear as their respective color"). */
   panelTypeById: Map<string, NamedPanelType>;
+  /** Each panel's own real width/height (Tommy: "windows and column panels
+   * are not loading correctly... they are mostly loading as big blocks") —
+   * a narrow Column panel or a short header/sill renders at its own true
+   * size instead of the shared stack footprint every panel used to borrow. */
+  panelWidthById: Map<string, number>;
+  panelHeightById: Map<string, number>;
   displayName?: string;
 }
 
@@ -53,9 +61,28 @@ export default function TruckLoad3DView({
   panelThicknessIn,
   bufferIn,
   panelTypeById,
+  panelWidthById,
+  panelHeightById,
   displayName = "Truck",
 }: TruckLoad3DViewProps) {
   const stacksAcross = Math.max(1, computeStacksAcrossWidth(truck.widthIn, maxStackWidthIn, bufferIn));
+
+  // Each row's own real depth (Tommy: "you can orient the panels however
+  // you want to make them space efficient") — mirrors computeTruckLoads's
+  // own row-packing, so a row of short header/sill stacks reserves only as
+  // much of the truck's length as its own tallest member actually needs
+  // instead of a fixed uniform depth for every row.
+  const rowHeightsIn: number[] = [];
+  for (let i = 0; i < load.stacks.length; i += stacksAcross) {
+    const row = load.stacks.slice(i, i + stacksAcross);
+    rowHeightsIn.push(Math.max(...row.flatMap((stack) => stack.panelIds.map((id) => panelHeightById.get(id) ?? panelHeightIn))));
+  }
+  const rowZStartsIn: number[] = [];
+  let cumulativeZIn = bufferIn;
+  for (const rowHeightIn of rowHeightsIn) {
+    rowZStartsIn.push(cumulativeZIn);
+    cumulativeZIn += rowHeightIn + bufferIn;
+  }
 
   const truckWidthFt = truck.widthIn / IN_PER_FT;
   const truckHeightFt = truck.heightIn / IN_PER_FT;
@@ -90,17 +117,18 @@ export default function TruckLoad3DView({
           {load.stacks.map((stack, stackIndex) => {
             const col = stackIndex % stacksAcross;
             const row = Math.floor(stackIndex / stacksAcross);
+            const rowHeightIn = rowHeightsIn[row]!;
             const stackXStartIn = bufferIn + col * (maxStackWidthIn + bufferIn);
-            const stackZStartIn = bufferIn + row * (panelHeightIn + bufferIn);
+            const stackZStartIn = rowZStartsIn[row]!;
             const stackCenterXFt = (stackXStartIn + stack.widthIn / 2) / IN_PER_FT;
-            const stackCenterZFt = (stackZStartIn + panelHeightIn / 2) / IN_PER_FT;
+            const stackCenterZFt = (stackZStartIn + rowHeightIn / 2) / IN_PER_FT;
             return stack.panelIds.map((panelId, indexFromTop) => {
               const indexFromBottom = stack.panelIds.length - 1 - indexFromTop;
               const centerYFt = (bufferIn + (indexFromBottom + 0.5) * panelThicknessIn) / IN_PER_FT;
               const color = NAMED_PANEL_TYPE_COLORS[panelTypeById.get(panelId) ?? "standard"];
-              const widthFt = stack.widthIn / IN_PER_FT;
+              const widthFt = (panelWidthById.get(panelId) ?? stack.widthIn) / IN_PER_FT;
               const thicknessFt = panelThicknessIn / IN_PER_FT;
-              const depthFt = panelHeightIn / IN_PER_FT;
+              const depthFt = (panelHeightById.get(panelId) ?? panelHeightIn) / IN_PER_FT;
               // Only the topmost panel of each stack is ever actually
               // visible from above (Tommy: "the specific panel label...
               // across all models") — every panel under it is hidden face-

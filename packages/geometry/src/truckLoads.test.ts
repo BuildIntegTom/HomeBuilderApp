@@ -56,7 +56,7 @@ describe("chunkIntoStacks", () => {
   ];
 
   it("groups panels into stacks of the given size, preserving order", () => {
-    const stacks = chunkIntoStacks(panels, 2);
+    const stacks = chunkIntoStacks(panels, 2, 120);
     expect(stacks).toHaveLength(3); // 2, 2, 1
     expect(stacks[0]!.panelIds).toEqual(["N-1", "N-2"]);
     expect(stacks[1]!.panelIds).toEqual(["N-3", "N-4"]);
@@ -64,12 +64,26 @@ describe("chunkIntoStacks", () => {
   });
 
   it("uses the widest panel in each stack as that stack's own footprint width", () => {
-    const stacks = chunkIntoStacks(panels, 2);
+    const stacks = chunkIntoStacks(panels, 2, 120);
     expect(stacks[1]!.widthIn).toBe(40); // max(25.5, 40)
   });
 
   it("returns an empty list for a non-positive stack size", () => {
-    expect(chunkIntoStacks(panels, 0)).toEqual([]);
+    expect(chunkIntoStacks(panels, 0, 120)).toEqual([]);
+  });
+
+  it("falls back to the given default height for panels with no heightIn of their own", () => {
+    const stacks = chunkIntoStacks(panels, 2, 120);
+    expect(stacks[0]!.heightIn).toBe(120);
+  });
+
+  it("uses the tallest panel's own real heightIn when panels specify one", () => {
+    const shortPanels: StackablePanelRef[] = [
+      { id: "header-1", widthIn: 60, heightIn: 18 },
+      { id: "sill-1", widthIn: 36, heightIn: 32 },
+    ];
+    const stacks = chunkIntoStacks(shortPanels, 2, 120);
+    expect(stacks[0]!.heightIn).toBe(32); // max(18, 32), not the 120in default
   });
 });
 
@@ -112,5 +126,38 @@ describe("computeTruckLoads", () => {
 
   it("returns no loads when panelThicknessIn makes even 1 panel not fit", () => {
     expect(computeTruckLoads(panelsNamed("N", 3), [], truck, 0, panelHeightIn, bufferIn)).toEqual([]);
+  });
+
+  it("packs short header/sill stacks using their own real height, not the main panels' uniform height", () => {
+    // Each header/sill stack is only 20in tall (its own heightIn), far
+    // shorter than the 120in main-panel default — a uniform-height packer
+    // would only fit 5 rows total (see the "spills into a 2nd truck" case
+    // above); giving these their own height should let many more of them
+    // share the same truck length instead of being forced into extra rows
+    // at the 120in default.
+    const shortHeaderSill: StackablePanelRef[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `header-${i + 1}`,
+      widthIn: 40,
+      heightIn: 20,
+    }));
+    const loads = computeTruckLoads([], shortHeaderSill, truck, panelThicknessIn, panelHeightIn, bufferIn);
+    // panelsPerStack=6 -> 20 panels chunk into 4 stacks of 6/6/6/2, 2 across
+    // -> 2 rows, each row costing 20+3=23in -> well within the 636in truck,
+    // so everything fits in 1 truck (a uniform 120in assumption would still
+    // fit here too, but the point is confirming the row cost is really 23in
+    // per row, not 123in — checked below via a tighter truck).
+    expect(loads).toHaveLength(1);
+    expect(loads[0]!.stacks).toHaveLength(4);
+
+    // With a truck barely long enough for 1 row at the old 120in/row
+    // assumption (126in) but easily long enough for many 23in rows, a
+    // correct per-panel-height packer should still fit all 4 stacks (2
+    // rows) into 1 truck, whereas the old uniform-height code would have
+    // read this truck as only fitting 1 row (1 rowsAlongLength) and forced
+    // a 2nd truck.
+    const tightTruck: TruckDims = { lengthIn: 130, widthIn: 98, heightIn: 100 };
+    const tightLoads = computeTruckLoads([], shortHeaderSill, tightTruck, panelThicknessIn, panelHeightIn, bufferIn);
+    expect(tightLoads).toHaveLength(1);
+    expect(tightLoads[0]!.stacks).toHaveLength(4);
   });
 });
