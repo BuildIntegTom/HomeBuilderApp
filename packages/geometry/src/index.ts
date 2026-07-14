@@ -19,3 +19,5 @@ export * from "./wallCompassDirection";
 export * from "./gableTiledRow";
 export * from "./uniformPanelization";
 export * from "./ridgeLine";
+export * from "./panelLoadOrder";
+export * from "./truckLoads";

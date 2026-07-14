@@ -1281,3 +1281,186 @@ export const densePackCelluloseDensityLbFt3: CatalogValue<number> = {
     "cavities, common insulation-industry installation standard) — not yet a Building Integrity-confirmed figure " +
     "for this specific box-beam application.",
 };
+
+// --- Shipping ---------------------------------------------------------------
+
+export interface TruckBedSpec {
+  id: string;
+  label: string;
+  /** Usable cargo envelope — front-to-back, side-to-side, floor-to-ceiling. */
+  interiorLengthIn: number;
+  interiorWidthIn: number;
+  interiorHeightIn: number;
+}
+
+/**
+ * The most common size of each of the 3 requested trailer types (Tommy:
+ * "which truck bed size are we using... pull numbers for volume for 1) the
+ * most popular conestoga size 2) the most common flat bed and 3) most
+ * common type of box trailer") — industry-typical published dimensions,
+ * not a specific manufacturer's spec sheet or Building-Integrity-confirmed
+ * figure. A wall panel's own 10ft (120in) standard height is taller than
+ * every one of these trailers' own cross-section (width/height, ~100in
+ * each) — it can only fit lying flat with that 120in dimension running
+ * along the trailer's LENGTH (48-53ft), not its width or height — see
+ * `computeTruckLoads`.
+ */
+export const truckBedTypes: CatalogValue<TruckBedSpec[]> = {
+  value: [
+    {
+      id: "conestoga-53",
+      label: "Conestoga (53ft) — most popular size",
+      interiorLengthIn: 636, // 53ft
+      interiorWidthIn: 98, // 102in deck, less for the tarp's own track rails
+      interiorHeightIn: 100, // door/cargo height under the tarp, ~98-102in typical
+    },
+    {
+      id: "flatbed-48",
+      label: "Flatbed (48ft) — most common size",
+      interiorLengthIn: 576, // 48ft, the industry-favorite length
+      interiorWidthIn: 102, // full deck width, no side walls
+      interiorHeightIn: 102, // legal 13'6" (162in) height limit minus a 60in (5ft) deck height
+    },
+    {
+      id: "dry-van-53",
+      label: "Dry Van / Box Trailer (53ft) — most common type",
+      interiorLengthIn: 630, // ~52'6" typical interior
+      interiorWidthIn: 100,
+      interiorHeightIn: 108, // 9ft typical interior height
+    },
+  ],
+  status: "pending-BI-confirmation",
+  note:
+    "Industry-typical published interior dimensions for the most common size of each trailer type — cross-" +
+    "referenced against multiple trucking-industry equipment guides, not a specific manufacturer's spec sheet or " +
+    "a Building-Integrity-confirmed figure. Real trailers vary by manufacturer/model.",
+};
+
+/** 3in clearance on every side of each stack (Tommy: "always keep in mind a
+ * 3in buffer on all sides of each stack") — shared between neighbors (one
+ * 3in gap between any two things, stack-to-stack or stack-to-wall), not
+ * doubled. */
+export const shippingStackBufferIn: CatalogValue<number> = {
+  value: 3,
+  status: "confirmed",
+  note: "Tommy: \"always keep in mind a 3in buffer on all sides of each stack.\"",
+};
+
+/** Shipping cost = trucks (computed from the stacking calculation) x miles
+ * (one-way, editable) x this rate (editable) — Tommy: "a changeable
+ * equation for how many trucks x how many miles x a changeable dollars per
+ * hour that defaults at $6/mile one way." The $6 default is given in
+ * dollars-per-MILE, not per hour (the two phrasings conflicted; $6/mile is
+ * the one with a concrete number attached, confirmed with Tommy). */
+export const shippingRatePerMileDefault: CatalogValue<number> = {
+  value: 6,
+  status: "pending-BI-confirmation",
+  note: "Tommy: \"a changeable... dollars per [mile] that defaults at $6/mile one way.\"",
+};
+
+// --- Plaster Master -----------------------------------------------------------
+
+/** Cu-ft-per-purchase-unit reference, straight from Tommy's "Faster Plaster
+ * Calculator" spreadsheet's own "Cubic Footage Quick Ref." table. */
+export const plasterCubicFootageRef = {
+  bucketCuFt: { value: 0.5, status: "confirmed" as const, note: "Spreadsheet: \"Bucket\" 0.5 cu ft — NFW best practice, only filled to 4 gal." },
+  bagCuFt: {
+    value: 1.25,
+    status: "confirmed" as const,
+    note: "Spreadsheet: \"Bag (Clay)\" and \"Bag (Lime)\" both 1.25 cu ft (\"Getting 2-1/2 buckets from a bag\").",
+  },
+  tub110GalCuFt: {
+    value: 17.11,
+    status: "confirmed" as const,
+    note: "Spreadsheet's own \"110 gal tub\" divisor — a practical field-use figure (buckets filled only to 4 gal, per NFW best practice), not a pure 110gal-to-cuft geometric conversion, so it doesn't exactly reconcile with the bucket/bag figures above. Reproduced as given.",
+  },
+};
+
+/** Default mix ratios by volume ("Parts"), from the spreadsheet's own "Key"
+ * section. Base Coat parts are identical for both interior/exterior (the
+ * spreadsheet gives one Base Coat recipe, used straight-onto-the-straw on
+ * either side); Finish Coat only ever gave a Sand:Lime recipe in the
+ * source, so the interior (clay-plaster) Finish Coat's Sand:Clay default is
+ * this app's own adaptation (same 3:1 structure, clay in place of lime) —
+ * confirmed with Tommy as the desired default, fully user-editable either
+ * way. */
+export const plasterMixPartsDefaults = {
+  baseCoat: {
+    value: { sand: 3.5, clay: 1, lime: 0.25, straw: 1 },
+    status: "confirmed" as const,
+    note: "Spreadsheet \"Key\" — Base 1: Sand 3.5, Clay 1, Lime 0.25, Chopped Straw 1.",
+  },
+  finishCoatClay: {
+    value: { sand: 3, clay: 1, lime: 0, straw: 0 },
+    status: "pending-BI-confirmation" as const,
+    note: "This app's own adaptation for a clay-bound finish coat (interior/clay-plaster default) — the spreadsheet's \"Key\" only gives a Finish recipe of Sand 3 : Lime 1, no clay-finish preset. Same 3:1 structure, clay swapped in for lime. Fully editable.",
+  },
+  finishCoatLime: {
+    value: { sand: 3, clay: 0, lime: 1, straw: 0 },
+    status: "confirmed" as const,
+    note: "Spreadsheet \"Key\" — Finish: Sand 3, Lime 1 (no clay/straw).",
+  },
+};
+
+/** Default coat thicknesses, matching the spreadsheet's own worked example
+ * ("Copy of TEMPLATE" sheet: Base 0.75in, Finish 0.25in). Editable per
+ * side/coat. */
+export const plasterCoatThicknessInDefaults = {
+  base: { value: 0.75, status: "confirmed" as const, note: "Spreadsheet's own worked example: Base Coat 0.75in." },
+  finish: { value: 0.25, status: "confirmed" as const, note: "Spreadsheet's own worked example: Finish Coat 0.25in." },
+};
+
+/** Labor-hours reference constants, from the spreadsheet's own "Time"
+ * table: each rough opening (door/window) gets a 15 sqft "edge" (trim/
+ * cutting-in) allowance carved out of the total area, billed at a slower
+ * rate than the open "field" area. */
+export const plasterLaborRatesRef = {
+  roughOpeningEdgeAllowanceSqFt: {
+    value: 15,
+    status: "confirmed" as const,
+    note: "Spreadsheet: each RO's own edge/trim area = # ROs x 15 sqft, subtracted from the room's total to get the open \"field\" area.",
+  },
+  fieldHrsPerSqFt: {
+    value: 0.02,
+    status: "confirmed" as const,
+    note: "Spreadsheet's own Time table: field-area hours = field sqft x 0.02.",
+  },
+  edgeHrsPerSqFt: {
+    value: 0.04,
+    status: "confirmed" as const,
+    note: "Spreadsheet's own Time table: edge-area (near ROs) hours = edge sqft x 0.04 — double the field rate, slower detail/cutting-in work.",
+  },
+};
+
+/** Material + labor prices — the source spreadsheet has no pricing at all
+ * (materials/quantities only), so every default here is this app's own
+ * researched industry-typical placeholder (WebSearch, mid-2026), not a
+ * Building-Integrity-confirmed figure. All editable in the Plaster Master
+ * page. */
+export const plasterPriceDefaults = {
+  sandPricePerCuYd: {
+    value: 45,
+    status: "pending-BI-confirmation" as const,
+    note: "Typical mason sand, ~$20-60/cu yd depending on region/quantity (excludes delivery) — e.g. hellogravel.com, bridgewaterfarm.com 2026 pricing guides.",
+  },
+  clayPricePerBag: {
+    value: 19,
+    status: "pending-BI-confirmation" as const,
+    note: "OM-4 ball clay, 50lb bag (matches the spreadsheet's own \"Clay is OM-4 from VT Ceramics Supply\" note) — ~$7.50-19/bag across ceramics suppliers; used the higher end since this is a ceramics-grade product, not bulk construction clay.",
+  },
+  limePricePerBag: {
+    value: 10,
+    status: "pending-BI-confirmation" as const,
+    note: "Type \"S\" mason's hydrated lime, 50lb bag (matches the spreadsheet's own \"Type 'S' Mason's Lime\" note) — ~$8-15/bag typical.",
+  },
+  strawPricePerCuFt: {
+    value: 1.25,
+    status: "pending-BI-confirmation" as const,
+    note: "Derived from a typical $5-15 straw bale (~5.25 cu ft for a standard 14x18x36in 2-string bale) — the spreadsheet never gives chopped straw its own bag/bale purchase unit, so this app prices it directly by the cu ft.",
+  },
+  laborRatePerHour: {
+    value: 45,
+    status: "pending-BI-confirmation" as const,
+    note: "Mid-range for skilled natural-plaster labor — published rates for plastering generally run ~$30-100/hr depending on region and finish difficulty.",
+  },
+};

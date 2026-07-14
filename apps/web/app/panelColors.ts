@@ -1,4 +1,5 @@
 import type { PanelSlot } from "@building-integrity/geometry";
+import type { NamedPanelType } from "./panelInstances";
 
 /** Shared 2D-canvas/legend/3D-accent color per panel type — single source
  * of truth so FootprintCanvas, PanelLegend, and Building3DView's safety-gap
@@ -37,3 +38,19 @@ export const PANEL_LEGEND_ORDER: PanelSlot["type"][] = [
   "safety-gap",
   "corner",
 ];
+
+/** Same color per named panel type (see panelInstances.ts) as
+ * PANEL_TYPE_COLORS where the two share a name — header/sill get their own
+ * colors here since they're not real `PanelSlot["type"]` values (they're
+ * derived from a window/door slot, not their own slot type). Used by
+ * TruckLoad3DView.tsx's simplified shipping-stack boxes. */
+export const NAMED_PANEL_TYPE_COLORS: Record<NamedPanelType, string> = {
+  standard: PANEL_TYPE_COLORS.standard,
+  corner: PANEL_TYPE_COLORS.corner,
+  "safety-oct-corner": PANEL_TYPE_COLORS["safety-oct-corner"],
+  braced: PANEL_TYPE_COLORS.braced,
+  "safety-gap": PANEL_TYPE_COLORS["safety-gap"],
+  column: PANEL_TYPE_COLORS.column,
+  header: "#c9a63f",
+  sill: "#6fa87a",
+};

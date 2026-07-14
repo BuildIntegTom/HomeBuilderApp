@@ -192,6 +192,14 @@ interface Building3DViewProps {
   onCapture?: (dataUrl: string) => void;
   /** Forwarded to CompassWidget's rotating face — see CompassTracker below. */
   compassRef?: RefObject<HTMLDivElement | null>;
+  /** Renders every panel as a single flat-colored box (its own panel-type
+   * legend color) instead of its full member-by-member geometry (Tommy:
+   * "lets simplify... for panels to appear as their respective color and
+   * just appear as the primary 3D shapes that they are") — meant for
+   * scenes with many panels at once (e.g. TruckLoad3DView's stacked
+   * shipping view) where full wood-member detail would be unreadable
+   * clutter, but available as a general toggle here too. Off by default. */
+  simplified?: boolean;
 }
 
 /** Mounted only in `captureMode` — reads the Canvas's own `gl` via
@@ -250,6 +258,7 @@ export default function Building3DView({
   captureMode = false,
   onCapture,
   compassRef,
+  simplified = false,
 }: Building3DViewProps) {
   const heightIn = wallHeightFt * IN_PER_FT;
 
@@ -411,7 +420,7 @@ export default function Building3DView({
               position={[box.anchorX, 0, box.anchorZ]}
               rotation={[0, -box.rotationRad, 0]}
             >
-              {members ? (
+              {members && !simplified ? (
                 <PanelMembersGroup
                   members={members}
                   colorOverride={box.slot.type === "safety-gap" ? PANEL_TYPE_COLORS["safety-gap"] : undefined}
@@ -419,7 +428,7 @@ export default function Building3DView({
               ) : (
                 <mesh position={[box.widthFt / 2, box.heightFt / 2, box.depthFt / 2]}>
                   <boxGeometry args={[box.widthFt, box.heightFt, box.depthFt]} />
-                  <meshStandardMaterial color={BLOB_COLOR} transparent opacity={0.6} />
+                  <meshStandardMaterial color={simplified ? PANEL_TYPE_COLORS[box.slot.type] : BLOB_COLOR} transparent opacity={0.6} />
                 </mesh>
               )}
             </group>
@@ -430,7 +439,7 @@ export default function Building3DView({
               position={[box.anchorX, wallHeightFt, box.anchorZ]}
               rotation={[0, -box.rotationRad, 0]}
             >
-              {members ? (
+              {members && !simplified ? (
                 <PanelMembersGroup
                   members={members}
                   colorOverride={box.slot.type === "safety-gap" ? PANEL_TYPE_COLORS["safety-gap"] : undefined}
@@ -438,7 +447,7 @@ export default function Building3DView({
               ) : (
                 <mesh position={[box.widthFt / 2, box.heightFt / 2, box.depthFt / 2]}>
                   <boxGeometry args={[box.widthFt, box.heightFt, box.depthFt]} />
-                  <meshStandardMaterial color={BLOB_COLOR} transparent opacity={0.6} />
+                  <meshStandardMaterial color={simplified ? PANEL_TYPE_COLORS[box.slot.type] : BLOB_COLOR} transparent opacity={0.6} />
                 </mesh>
               )}
             </group>

@@ -1,5 +1,13 @@
+/* flex-shrink: 0 matters here — .diagram's own overflow-x:auto forces
+   overflow-y to become non-visible too (per the flexbox spec), which
+   otherwise lets this shrink below its content's natural height (all the
+   way to ~0) whenever the sheet runs out of vertical room, silently
+   clipping away tall diagram content (e.g. Shipping's truck-type buttons +
+   table + 3D views) instead of letting .content's own scrollbar handle the
+   overflow like it does for every other section on the sheet. */
 .diagram {
   display: flex;
+  flex-shrink: 0;
   justify-content: center;
   padding: 8px 0;
   overflow-x: auto;

@@ -11,9 +11,12 @@ import {
   buildRectangleFootprint,
   computeFloorPanelGrid,
   computeJoistLayout,
+  computePanelLoadOrder,
+  computePanelsPerStack,
   computePierGrid,
   computeRidgeLine,
   computeSillRunWidths,
+  computeTruckLoads,
   cornerOwnership as cornerOwnershipPure,
   dragWall,
   editWallLength,
@@ -31,6 +34,7 @@ import {
   type CornerId,
   type Footprint,
   type PanelSlot,
+  type TruckDims,
   type Wall,
 } from "@building-integrity/geometry";
 import {
@@ -45,6 +49,8 @@ import {
   computeJackStudFastenerWeight,
   computeNetEmbodiedCarbonCO2e,
   computePanelWeightBreakdown,
+  computePlasterLaborCost,
+  computePlasterLaborHours,
   computePrice,
   computeStandardPanelWoodWeight,
   computeStrawWeight,
@@ -133,6 +139,10 @@ import {
   pierSpacingDefaultFt,
   pierSpacingOptionsFt,
   pierSpacingStatus,
+  plasterCoatThicknessInDefaults,
+  plasterLaborRatesRef,
+  plasterMixPartsDefaults,
+  plasterPriceDefaults,
   priceRates,
   referenceDensities,
   roofCatcherBeamShapeDefault,
@@ -146,6 +156,8 @@ import {
   seismicBracedPanelSpacingFt,
   sillDefaultHeightIn,
   toeUpHeightIn,
+  shippingRatePerMileDefault,
+  shippingStackBufferIn,
   standardPanelBom,
   standardPanelBomReferenceWidthIn,
   standardPanelHeightIn,
@@ -155,6 +167,7 @@ import {
   strawMoistureContent,
   targetDensityKgM3,
   timberHpDensityLbFt3,
+  truckBedTypes,
   trussPlateInsetDefaultIn,
   wallAssemblyLayers,
   type ClassicTrussTypeId,
@@ -178,6 +191,14 @@ import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
 import PierFoundationDiagram from "./PierFoundationDiagram";
+import PlasterCoatEditor from "./PlasterCoatEditor";
+import {
+  computePlasterCoatResult,
+  type PlasterCoat,
+  type PlasterCoatInputs,
+  type PlasterInputsState,
+  type PlasterSide,
+} from "./plasterTypes";
 import { parseProjectFile, serializeProject, type ProjectState } from "./projectFile";
 import RubbleTrenchDiagram from "./RubbleTrenchDiagram";
 import ShopDrawingPage from "./ShopDrawingPage";
@@ -203,6 +224,7 @@ import styles from "./page.module.css";
 const FootprintCanvas = dynamic(() => import("./FootprintCanvas"), { ssr: false });
 const Building3DView = dynamic(() => import("./Building3DView"), { ssr: false });
 const StandardPanel3DView = dynamic(() => import("./StandardPanel3DView"), { ssr: false });
+const TruckLoad3DView = dynamic(() => import("./TruckLoad3DView"), { ssr: false });
 
 const BEARING_ELIGIBLE_TYPES = new Set(["standard", "corner", "safety-oct-corner", "braced", "column"]);
 const STRAW_BALE_WEIGHT_LB = 40;
@@ -222,6 +244,14 @@ const exteriorLayers = wallAssemblyLayers.filter((l) => l.side === "exterior");
 function representativeBraceCutAngleDeg(members: PanelMember[]): number | null {
   const brace = members.find((m) => m.role === "brace" && m.position.tiltDeg !== undefined);
   return brace ? computeBraceEndCutAngleDeg(brace.position.tiltDeg!) : null;
+}
+
+/** A trailer's own length runs tens of feet — too long for the imperial
+ * 1/8in-fraction convention (formatLengthIn) to read naturally, so imperial
+ * shows whole feet instead; metric still always shows mm (Tommy: "for
+ * metric, make to the nearest mm"). */
+function formatTrailerLengthIn(valueIn: number, unitSystem: "imperial" | "metric"): string {
+  return unitSystem === "metric" ? formatLengthIn(valueIn, unitSystem) : `${(valueIn / 12).toFixed(1)}ft`;
 }
 
 const PHASE2_ASSUMPTIONS = [
@@ -291,6 +321,12 @@ export default function LayoutEditor() {
   // independent control of its own). Roof has no editor yet (future work).
   const [editorTab, setEditorTab] = useState<EditorTab>("wall");
   const [viewMode, setViewMode] = useState<"plan" | "3d">("plan");
+  // Tommy: "lets simplify (and have this be an option for the 3D view
+  // somewhere) for panels to appear as their respective color and just
+  // appear as the primary 3D shapes that they are" — off by default (full
+  // member detail), since the Shipping page's own truck-load 3D views
+  // always render this way regardless of this toggle.
+  const [simplified3D, setSimplified3D] = useState(false);
   const [shapeTool, setShapeTool] = useState<ShapeTool>("rectangle");
   const [footprint, setFootprint] = useState<Footprint | null>(null);
   // Whether the current footprint has had a bump-out added since it was
@@ -341,6 +377,48 @@ export default function LayoutEditor() {
   // project, site, date, etc.") — projectName is the only genuinely new
   // input; site label and date are derived from state that already exists.
   const [projectName, setProjectName] = useState("Untitled Project");
+  // Shipping (Tommy: "which truck bed size are we using... how many trucks
+  // will be needed... a changeable equation for how many trucks x how many
+  // miles x a changeable dollars per hour that defaults at $6/mile one
+  // way") — truck count itself isn't state, it's computed from the
+  // stacking calculation below; only the truck TYPE, miles, and rate are
+  // user inputs.
+  const [selectedTruckBedId, setSelectedTruckBedId] = useState(truckBedTypes.value[0]!.id);
+  const [shippingMiles, setShippingMiles] = useState(0);
+  const [shippingRatePerMile, setShippingRatePerMile] = useState(shippingRatePerMileDefault.value);
+  // Plaster Master (Tommy: "total materials and total price for plaster
+  // options... link whether this turns on or off to the exterior or
+  // interior finish options") — only relevant when interior=clay-plaster
+  // and/or exterior=lime-plaster (see hasClayPlaster/hasLimePlaster
+  // below). Each side gets its own independent Base Coat + Finish Coat
+  // inputs (thickness + sand/clay/lime/straw mix ratio) since the two
+  // sides can use different plaster types; pricing/labor-rate inputs are
+  // shared (same suppliers/crew either side).
+  const [plasterInputs, setPlasterInputs] = useState<PlasterInputsState>({
+    interior: {
+      base: { thicknessIn: plasterCoatThicknessInDefaults.base.value, parts: { ...plasterMixPartsDefaults.baseCoat.value } },
+      finish: { thicknessIn: plasterCoatThicknessInDefaults.finish.value, parts: { ...plasterMixPartsDefaults.finishCoatClay.value } },
+    },
+    exterior: {
+      base: { thicknessIn: plasterCoatThicknessInDefaults.base.value, parts: { ...plasterMixPartsDefaults.baseCoat.value } },
+      finish: { thicknessIn: plasterCoatThicknessInDefaults.finish.value, parts: { ...plasterMixPartsDefaults.finishCoatLime.value } },
+    },
+  });
+  const [plasterSandPricePerCuYd, setPlasterSandPricePerCuYd] = useState(plasterPriceDefaults.sandPricePerCuYd.value);
+  const [plasterClayPricePerBag, setPlasterClayPricePerBag] = useState(plasterPriceDefaults.clayPricePerBag.value);
+  const [plasterLimePricePerBag, setPlasterLimePricePerBag] = useState(plasterPriceDefaults.limePricePerBag.value);
+  const [plasterStrawPricePerCuFt, setPlasterStrawPricePerCuFt] = useState(plasterPriceDefaults.strawPricePerCuFt.value);
+  const [plasterLaborRatePerHour, setPlasterLaborRatePerHour] = useState(plasterPriceDefaults.laborRatePerHour.value);
+  const [plasterFussyHoursExtra, setPlasterFussyHoursExtra] = useState(0);
+  const updatePlasterCoatThickness = (side: PlasterSide, coat: PlasterCoat, thicknessIn: number) => {
+    setPlasterInputs((prev) => ({ ...prev, [side]: { ...prev[side], [coat]: { ...prev[side][coat], thicknessIn } } }));
+  };
+  const updatePlasterCoatPart = (side: PlasterSide, coat: PlasterCoat, part: keyof PlasterCoatInputs["parts"], value: number) => {
+    setPlasterInputs((prev) => ({
+      ...prev,
+      [side]: { ...prev[side], [coat]: { ...prev[side][coat], parts: { ...prev[side][coat].parts, [part]: value } } },
+    }));
+  };
   const [role, setRole] = useState<ViewerRole>("fabricator");
   // Fabricator/admin-only (Tommy) — shows every Detail Guide/Shop Drawing
   // page regardless of the existing "relevant to current design" filter.
@@ -1338,6 +1416,132 @@ export default function LayoutEditor() {
     [allRealMembers],
   );
 
+  // Shipping (Tommy: "how many trucks will be needed to transport this
+  // project, how should they be stacked, and how should those stacks be
+  // put into the truck") — the main-panel loading sequence follows the
+  // same "point of least accessibility" concept the safety/gap panel
+  // placement already uses (computePanelLoadOrder rotates the wall ring to
+  // start there — Tommy: "If the PLA is on the top left (NW) then that
+  // panel on the corner is the top of the first stack"); header/sill
+  // panels get their own separate stacks, biggest to smallest.
+  const shippingPanelTypeById = useMemo(() => {
+    const map = new Map<string, NamedPanelType>();
+    for (const inst of allInstances) map.set(inst.name, inst.panelType);
+    return map;
+  }, [allInstances]);
+
+  const shippingLoadOrderIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!footprint) return map;
+    computePanelLoadOrder(footprint, overlayWallSlots, leastAccessibleCorner).forEach((entry, i) =>
+      map.set(`${entry.wallId}:${entry.slotIndex}`, i),
+    );
+    return map;
+  }, [footprint, overlayWallSlots, leastAccessibleCorner]);
+
+  const shippingMainPanelRefs = useMemo(
+    () =>
+      allInstances
+        .filter((inst) => inst.panelType !== "header" && inst.panelType !== "sill")
+        .slice()
+        .sort(
+          (a, b) =>
+            (shippingLoadOrderIndex.get(`${a.wallId}:${a.slotIndexInWall}`) ?? 0) -
+            (shippingLoadOrderIndex.get(`${b.wallId}:${b.slotIndexInWall}`) ?? 0),
+        )
+        .map((inst) => ({ id: inst.name, widthIn: inst.widthIn })),
+    [allInstances, shippingLoadOrderIndex],
+  );
+
+  const shippingHeaderSillRefs = useMemo(
+    () =>
+      allInstances
+        .filter((inst) => inst.panelType === "header" || inst.panelType === "sill")
+        .slice()
+        .sort((a, b) => b.widthIn - a.widthIn)
+        .map((inst) => ({ id: inst.name, widthIn: inst.widthIn })),
+    [allInstances],
+  );
+
+  const selectedTruck = truckBedTypes.value.find((t) => t.id === selectedTruckBedId) ?? truckBedTypes.value[0]!;
+  const shippingTruckDims: TruckDims = {
+    lengthIn: selectedTruck.interiorLengthIn,
+    widthIn: selectedTruck.interiorWidthIn,
+    heightIn: selectedTruck.interiorHeightIn,
+  };
+  const shippingMaxStackWidthIn = Math.max(
+    1,
+    ...shippingMainPanelRefs.map((p) => p.widthIn),
+    ...shippingHeaderSillRefs.map((p) => p.widthIn),
+  );
+  const truckLoads = computeTruckLoads(
+    shippingMainPanelRefs,
+    shippingHeaderSillRefs,
+    shippingTruckDims,
+    thicknessIn,
+    standardPanelHeightIn.value,
+    shippingStackBufferIn.value,
+  );
+  const shippingTruckCount = truckLoads.length;
+  const shippingCost = shippingTruckCount * shippingMiles * shippingRatePerMile;
+  const shippingPanelsPerStack = computePanelsPerStack(shippingTruckDims.heightIn, thicknessIn, shippingStackBufferIn.value);
+
+  // Plaster Master (Tommy: "total materials and total price for plaster
+  // options... link whether this turns on or off to the exterior or
+  // interior finish options") — net plastered area auto-derives from the
+  // drawn footprint (wall perimeter x wall height, doubled if Second Story
+  // is on, since it mirrors story 1's own footprint) minus each window/
+  // door's own clear Rough Opening area (you don't plaster over the
+  // opening itself). Same area/RO-count applies to both faces of the same
+  // wall, so it's computed once and shared by whichever side(s) are active.
+  const plasterOpeningsAreaSqFtPerFloor = allInstances
+    .filter((inst) => inst.panelType === "header")
+    .reduce((sum, inst) => {
+      const roWidthIn = computeRoughOpeningWidthIn(inst.widthIn, jackStudConfig);
+      const roHeightIn = inst.sourceSlotType === "door" ? doorRoughOpeningHeightIn : (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value);
+      return sum + (roWidthIn * roHeightIn) / 144;
+    }, 0);
+  const plasterFloorCount = secondStoryEnabled ? 2 : 1;
+  const plasterGrossWallAreaSqFt =
+    (totalWallPerimeterIn / 12) * wallHeightFt + (secondStoryEnabled ? (totalWallPerimeterIn / 12) * secondStoryWallHeightFt : 0);
+  const plasterNetAreaSqFt = Math.max(0, plasterGrossWallAreaSqFt - plasterOpeningsAreaSqFtPerFloor * plasterFloorCount);
+  const plasterRoughOpeningCount = allInstances.filter((inst) => inst.panelType === "header").length * plasterFloorCount;
+
+  const plasterPrices = {
+    sandPricePerCuYd: plasterSandPricePerCuYd,
+    clayPricePerBag: plasterClayPricePerBag,
+    limePricePerBag: plasterLimePricePerBag,
+    strawPricePerCuFt: plasterStrawPricePerCuFt,
+  };
+  const plasterSideResults = {
+    interior: hasClayPlaster
+      ? {
+          base: computePlasterCoatResult(plasterInputs.interior.base, plasterNetAreaSqFt, plasterPrices),
+          finish: computePlasterCoatResult(plasterInputs.interior.finish, plasterNetAreaSqFt, plasterPrices),
+        }
+      : null,
+    exterior: hasLimePlaster
+      ? {
+          base: computePlasterCoatResult(plasterInputs.exterior.base, plasterNetAreaSqFt, plasterPrices),
+          finish: computePlasterCoatResult(plasterInputs.exterior.finish, plasterNetAreaSqFt, plasterPrices),
+        }
+      : null,
+  };
+  const plasterActiveSideCount = (hasClayPlaster ? 1 : 0) + (hasLimePlaster ? 1 : 0);
+  const plasterLaborHoursPerSide = computePlasterLaborHours(
+    plasterNetAreaSqFt,
+    plasterRoughOpeningCount,
+    plasterLaborRatesRef.roughOpeningEdgeAllowanceSqFt.value,
+    plasterLaborRatesRef.fieldHrsPerSqFt.value,
+    plasterLaborRatesRef.edgeHrsPerSqFt.value,
+  );
+  const plasterTotalLaborHrs = plasterLaborHoursPerSide.totalHrs * plasterActiveSideCount + plasterFussyHoursExtra;
+  const plasterTotalLaborCost = computePlasterLaborCost(plasterTotalLaborHrs, plasterLaborRatePerHour);
+  const plasterTotalMaterialCost =
+    (plasterSideResults.interior ? plasterSideResults.interior.base.materialCost + plasterSideResults.interior.finish.materialCost : 0) +
+    (plasterSideResults.exterior ? plasterSideResults.exterior.base.materialCost + plasterSideResults.exterior.finish.materialCost : 0);
+  const plasterGrandTotalCost = plasterTotalMaterialCost + plasterTotalLaborCost;
+
   // Square Bale Panels: each "standard"-typed slot under this panelization
   // type is a bale-pair unit (Tommy: "two 18in bales" per panel) — counted
   // as discrete purchase units, not a density x volume estimate, since
@@ -1550,6 +1754,12 @@ export default function LayoutEditor() {
       pages.push({ id: "detail-box-beam", label: "Roof: Box Beam (Two-Story)" });
     }
     pages.push({ id: "detail-material-totals", label: "Material Totals" });
+    if (footprint && allInstances.length > 0) {
+      pages.push({ id: "detail-shipping", label: "Shipping" });
+    }
+    if (hasClayPlaster || hasLimePlaster) {
+      pages.push({ id: "detail-plaster-master", label: "Plaster Master" });
+    }
     pages.push({ id: "detail-classic-truss", label: "Classic Truss Reference" });
     pages.push({ id: "detail-high-perf-truss", label: "High-Performance Truss" });
     // Rough Opening Detail pages (Tommy: "We are going to make a Rough
@@ -1581,6 +1791,9 @@ export default function LayoutEditor() {
     role,
     canPreviewAllDetailPages,
     allInstances,
+    footprint,
+    hasClayPlaster,
+    hasLimePlaster,
   ]);
 
   const editorToolsLabel =
@@ -2154,7 +2367,11 @@ export default function LayoutEditor() {
               )}
               <ViewModeToggle
                 viewMode={viewMode}
-                onViewModeChange={setViewMode}
+                simplified3D={simplified3D}
+                onChange={(mode, simplified) => {
+                  setViewMode(mode);
+                  setSimplified3D(simplified);
+                }}
                 viewModeDisabled={editorTab !== "wall" || !footprint}
               />
               <button
@@ -2236,6 +2453,7 @@ export default function LayoutEditor() {
                   jackStudConfig={jackStudConfig}
                   standardWidthIn={standardWidthIn}
                   compassRef={compassNeedleRef}
+                  simplified={simplified3D}
                 />
               ))}
             {editorTab === "foundation" && foundationType.usesPierGrid && (
@@ -3472,6 +3690,294 @@ export default function LayoutEditor() {
               "Sheet counts round up from the summed real area (not per-instance), a reasonable purchasing estimate assuming offcuts get reused across panels.",
               `Board feet: every real panel instance's dimensional-lumber members (studs, plates, girts, braces, jack studs, headers), grouped by nominal size (2x4/2x6/etc — using NOMINAL, not actual, dimensions, per standard lumber-industry convention). Stick count assumes ${standardPanelHeightIn.value / 12}ft stock length (the standard panel height) and rounds up — doesn't account for cut-length waste/offcuts across pieces shorter than a full stick.`,
               "Roof-bearing assembly (Truss Plate/Box Beam) and Gable/Column preview-only members aren't included in the board-feet total yet — only real, placed panel instances are.",
+            ]}
+            role={role}
+          />
+        </StickyNote>
+
+        <StickyNote
+          id="detail-shipping"
+          label="Shipping"
+          isOpen={openNoteIds.has("detail-shipping")}
+          isFullscreen={fullscreenNoteId === "detail-shipping"}
+          cascadeIndex={noteOpenOrder.indexOf("detail-shipping")}
+          onClose={() => handleToggleNote("detail-shipping")}
+          onToggleFullscreen={() => handleToggleNoteFullscreen("detail-shipping")}
+          onPrint={() => handlePrintNote("detail-shipping")}
+        >
+          <DetailGuidePage
+            title="Shipping"
+            triggerCondition="Every design with at least 1 real panel instance — how many trucks this project needs, how each truck's own panels stack, and a rough shipping-cost estimate."
+            diagram={
+              <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+                <div role="group" aria-label="Truck bed type" className={styles.toolbar}>
+                  {truckBedTypes.value.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      aria-pressed={selectedTruckBedId === t.id}
+                      className={selectedTruckBedId === t.id ? styles.toolActive : styles.tool}
+                      onClick={() => setSelectedTruckBedId(t.id)}
+                      title={`${formatTrailerLengthIn(t.interiorLengthIn, unitSystem)} long x ${formatLengthIn(t.interiorWidthIn, unitSystem)} wide x ${formatLengthIn(t.interiorHeightIn, unitSystem)} tall (interior)`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                <table className={styles.results} style={{ width: "100%", marginTop: 8 }}>
+                  <tbody>
+                    <tr>
+                      <td>Selected trailer (interior)</td>
+                      <td>
+                        {formatTrailerLengthIn(selectedTruck.interiorLengthIn, unitSystem)} long x{" "}
+                        {formatLengthIn(selectedTruck.interiorWidthIn, unitSystem)} wide x{" "}
+                        {formatLengthIn(selectedTruck.interiorHeightIn, unitSystem)} tall
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Panels per stack (height-wise)</td>
+                      <td>{shippingPanelsPerStack} panels tall, face to face, at {formatLengthIn(thicknessIn, unitSystem)} thick each</td>
+                    </tr>
+                    <tr>
+                      <td>Trucks needed</td>
+                      <td>{shippingTruckCount}</td>
+                    </tr>
+                    <tr>
+                      <td>Miles (one-way)</td>
+                      <td>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={shippingMiles}
+                          onChange={(e) => setShippingMiles(Number(e.target.value))}
+                          style={{ width: 80 }}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Rate</td>
+                      <td>
+                        ${" "}
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.25"
+                          value={shippingRatePerMile}
+                          onChange={(e) => setShippingRatePerMile(Number(e.target.value))}
+                          style={{ width: 64 }}
+                        />
+                        /mile, one-way
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Estimated shipping cost</td>
+                      <td>
+                        ${shippingCost.toFixed(2)}
+                        <span className={styles.note}>
+                          {" "}
+                          — {shippingTruckCount} truck{shippingTruckCount === 1 ? "" : "s"} x {shippingMiles} mi x $
+                          {shippingRatePerMile.toFixed(2)}/mi
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 12 }}>
+                  {truckLoads.map((load, i) => (
+                    <TruckLoad3DView
+                      key={i}
+                      load={load}
+                      truck={shippingTruckDims}
+                      maxStackWidthIn={shippingMaxStackWidthIn}
+                      panelHeightIn={standardPanelHeightIn.value}
+                      panelThicknessIn={thicknessIn}
+                      bufferIn={shippingStackBufferIn.value}
+                      panelTypeById={shippingPanelTypeById}
+                      displayName={`Truck ${i + 1} of ${shippingTruckCount}`}
+                    />
+                  ))}
+                </div>
+                {truckLoads.length === 0 && (
+                  <p className={styles.note}>
+                    No panels fit in this trailer type at this thickness/width — try a different truck bed.
+                  </p>
+                )}
+              </div>
+            }
+            fastenerSchedule={[]}
+            notes={[
+              truckBedTypes.note ?? "",
+              "Every panel lies flat, its own standard height (10ft) running along the trailer's length — every trailer's own cross-section is narrower than that, so a panel can only physically fit that way, with its width and thickness forming the stack's own cross-section.",
+              `A ${shippingStackBufferIn.value}in buffer is kept clear on every side of every stack (Tommy) — shared between neighbors, so it's one gap between any two things (stack-to-stack or stack-to-wall), not doubled.`,
+              'Loading order follows the point of least accessibility (Tommy: "the stack order must correlate to the point of least accessibility... that panel on the corner is the top of the first stack, and it\'s row stacked under it") — panels load starting at that corner, all the way around the footprint.',
+              "Headers and sills stack separately from the main run, biggest to smallest (Tommy: \"no need for headers and sills to be stacked with the main stack if they are different sizes\"), filling in after the main stacks in whichever truck has room.",
+              "Every stack in a shipment shares one uniform footprint (the single widest panel anywhere in the load) so stacks grid-pack predictably — a simplification, not a true bin-packing optimizer, consistent with this app's other reference-only geometry.",
+              shippingRatePerMileDefault.note ?? "",
+              "3D views always render simplified flat-colored boxes (one per panel, colored by its panel type) rather than full member geometry — matches the \"Viewer: 3D Boxes\" state available in the main wall 3D view.",
+            ].filter(Boolean)}
+            role={role}
+          />
+        </StickyNote>
+
+        <StickyNote
+          id="detail-plaster-master"
+          label="Plaster Master"
+          isOpen={openNoteIds.has("detail-plaster-master")}
+          isFullscreen={fullscreenNoteId === "detail-plaster-master"}
+          cascadeIndex={noteOpenOrder.indexOf("detail-plaster-master")}
+          onClose={() => handleToggleNote("detail-plaster-master")}
+          onToggleFullscreen={() => handleToggleNoteFullscreen("detail-plaster-master")}
+          onPrint={() => handlePrintNote("detail-plaster-master")}
+        >
+          <DetailGuidePage
+            title="Plaster Master"
+            triggerCondition="Interior finish = Clay plaster and/or exterior finish = Lime plaster (Panel Standards > Wall Assembly) — total plaster materials, purchase units, and price."
+            diagram={
+              <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+                <table className={styles.results} style={{ width: "100%", marginBottom: 8 }}>
+                  <tbody>
+                    <tr>
+                      <td>Net plastered area (per side)</td>
+                      <td>
+                        {plasterNetAreaSqFt.toFixed(1)} sqft
+                        <span className={styles.note}>
+                          {" "}
+                          — {plasterGrossWallAreaSqFt.toFixed(1)} sqft gross wall{secondStoryEnabled ? " (both stories)" : ""} minus{" "}
+                          {(plasterOpeningsAreaSqFtPerFloor * plasterFloorCount).toFixed(1)} sqft of window/door rough openings
+                        </span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Sand price</td>
+                      <td>
+                        $ <input type="number" min="0" step="1" value={plasterSandPricePerCuYd} onChange={(e) => setPlasterSandPricePerCuYd(Number(e.target.value))} style={{ width: 56 }} /> /cu yd
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Clay price</td>
+                      <td>
+                        $ <input type="number" min="0" step="0.5" value={plasterClayPricePerBag} onChange={(e) => setPlasterClayPricePerBag(Number(e.target.value))} style={{ width: 56 }} /> /bag (50lb)
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Lime price</td>
+                      <td>
+                        $ <input type="number" min="0" step="0.5" value={plasterLimePricePerBag} onChange={(e) => setPlasterLimePricePerBag(Number(e.target.value))} style={{ width: 56 }} /> /bag (50lb)
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Chopped straw price</td>
+                      <td>
+                        $ <input type="number" min="0" step="0.05" value={plasterStrawPricePerCuFt} onChange={(e) => setPlasterStrawPricePerCuFt(Number(e.target.value))} style={{ width: 56 }} /> /cu ft
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Labor rate</td>
+                      <td>
+                        $ <input type="number" min="0" step="1" value={plasterLaborRatePerHour} onChange={(e) => setPlasterLaborRatePerHour(Number(e.target.value))} style={{ width: 56 }} /> /hr
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Extra fussy hours</td>
+                      <td>
+                        <input type="number" min="0" step="0.5" value={plasterFussyHoursExtra} onChange={(e) => setPlasterFussyHoursExtra(Number(e.target.value))} style={{ width: 56 }} />
+                        <span className={styles.note}> — manual add-on for extra detail work not captured by the field/edge estimate below</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {plasterSideResults.interior && (
+                  <div style={{ marginBottom: 12 }}>
+                    <p style={{ fontWeight: 700, margin: "0 0 4px" }}>Interior — Clay Plaster</p>
+                    <PlasterCoatEditor
+                      title="Base Coat"
+                      coat={plasterInputs.interior.base}
+                      onThicknessChange={(v) => updatePlasterCoatThickness("interior", "base", v)}
+                      onPartChange={(part, v) => updatePlasterCoatPart("interior", "base", part, v)}
+                      result={plasterSideResults.interior.base}
+                    />
+                    <PlasterCoatEditor
+                      title="Finish Coat"
+                      coat={plasterInputs.interior.finish}
+                      onThicknessChange={(v) => updatePlasterCoatThickness("interior", "finish", v)}
+                      onPartChange={(part, v) => updatePlasterCoatPart("interior", "finish", part, v)}
+                      result={plasterSideResults.interior.finish}
+                    />
+                    <p style={{ fontSize: 13, margin: 0 }}>
+                      Interior material subtotal: <strong>${(plasterSideResults.interior.base.materialCost + plasterSideResults.interior.finish.materialCost).toFixed(2)}</strong>
+                    </p>
+                  </div>
+                )}
+
+                {plasterSideResults.exterior && (
+                  <div style={{ marginBottom: 12 }}>
+                    <p style={{ fontWeight: 700, margin: "0 0 4px" }}>Exterior — Lime Plaster</p>
+                    <PlasterCoatEditor
+                      title="Base Coat"
+                      coat={plasterInputs.exterior.base}
+                      onThicknessChange={(v) => updatePlasterCoatThickness("exterior", "base", v)}
+                      onPartChange={(part, v) => updatePlasterCoatPart("exterior", "base", part, v)}
+                      result={plasterSideResults.exterior.base}
+                    />
+                    <PlasterCoatEditor
+                      title="Finish Coat"
+                      coat={plasterInputs.exterior.finish}
+                      onThicknessChange={(v) => updatePlasterCoatThickness("exterior", "finish", v)}
+                      onPartChange={(part, v) => updatePlasterCoatPart("exterior", "finish", part, v)}
+                      result={plasterSideResults.exterior.finish}
+                    />
+                    <p style={{ fontSize: 13, margin: 0 }}>
+                      Exterior material subtotal: <strong>${(plasterSideResults.exterior.base.materialCost + plasterSideResults.exterior.finish.materialCost).toFixed(2)}</strong>
+                    </p>
+                  </div>
+                )}
+
+                <table className={styles.results} style={{ width: "100%" }}>
+                  <tbody>
+                    <tr>
+                      <td>Labor hours</td>
+                      <td>
+                        {plasterTotalLaborHrs.toFixed(1)} hrs
+                        <span className={styles.note}>
+                          {" "}
+                          — {(plasterLaborHoursPerSide.fieldHrs * plasterActiveSideCount).toFixed(1)} field +{" "}
+                          {(plasterLaborHoursPerSide.edgeHrs * plasterActiveSideCount).toFixed(1)} edge (near {plasterRoughOpeningCount} rough opening
+                          {plasterRoughOpeningCount === 1 ? "" : "s"}){plasterFussyHoursExtra > 0 ? ` + ${plasterFussyHoursExtra} fussy` : ""}, across {plasterActiveSideCount} active side
+                          {plasterActiveSideCount === 1 ? "" : "s"}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Labor cost</td>
+                      <td>${plasterTotalLaborCost.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td>Total material cost</td>
+                      <td>${plasterTotalMaterialCost.toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                      <td>Grand total price</td>
+                      <td>
+                        <strong>${plasterGrandTotalCost.toFixed(2)}</strong>
+                        <span className={styles.note}> — material + labor</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            }
+            fastenerSchedule={[]}
+            notes={[
+              "Every formula here (Cu Ft, Parts ratios, buckets/bags/cu-yd/110-gal-tub conversions, and the field/edge labor-hours split) mirrors Tommy's own \"Faster Plaster Calculator\" spreadsheet.",
+              "Net plastered area auto-derives from the drawn footprint (wall perimeter x wall height, doubled if Second Story is on) minus each window/door's own clear Rough Opening area — the spreadsheet's own workflow instead had you type in a sqft figure by hand.",
+              "Base Coat mix defaults (Sand 3.5 : Clay 1 : Lime 0.25 : Chopped Straw 1) match the spreadsheet's own \"Key\" — used for both interior and exterior, since the spreadsheet only gives one Base Coat recipe (straight onto the straw either side).",
+              "Finish Coat: exterior (lime-plaster) defaults to the spreadsheet's own Sand 3 : Lime 1 recipe. Interior (clay-plaster) defaults to Sand 3 : Clay 1 — this app's own adaptation (same structure, clay in place of lime), since the spreadsheet never gave a clay-finish recipe. Every ratio is editable.",
+              "\"Base 2\" (a distinct second base-coat layer in the source spreadsheet) isn't modeled separately — each side's own single Base Coat here covers that side's own straight-onto-the-straw layer.",
+              "Labor hours: each rough opening gets a 15 sqft \"edge\" (trim/cutting-in) allowance carved out of the total area, billed at 0.04 hr/sqft (2x the 0.02 hr/sqft open \"field\" rate) — straight from the spreadsheet's own \"Time\" table, collapsed from a per-room breakdown into one whole-project estimate.",
+              "The source spreadsheet has no pricing at all (materials/quantities only) — every $ default here (sand, clay, lime, straw, labor rate) is this app's own researched industry-typical placeholder, not a Building-Integrity-confirmed figure. All editable.",
+              "Sand priced by the cu yd, clay/lime by the 50lb bag, chopped straw by the cu ft directly (the spreadsheet never gives chopped straw its own bag/bale purchase unit).",
             ]}
             role={role}
           />
