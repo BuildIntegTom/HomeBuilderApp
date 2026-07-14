@@ -4,7 +4,10 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, TransformControls } from "@react-three/drei";
 import type { Mesh } from "three";
-import { computeSillRunWidths, panelSlotBoxes3D, type Footprint, type PanelSlot } from "@building-integrity/geometry";
+import { computeSillRunWidths, panelSlotBoxes3D, type Footprint, type PanelSlot, type PanelSlotBox3D } from "@building-integrity/geometry";
+import { allPanelInstances, type PanelInstance } from "./panelInstances";
+import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
+import PanelLabel from "./PanelLabel";
 import {
   buildBracedPanelMembers,
   buildBuildingObj,
@@ -88,6 +91,50 @@ function birdsEyeCameraPosition(bounds: Bounds): [number, number, number] {
  * up to the wall's own top plate, via `computeHeaderHeightIn`. */
 const DOOR_RO_HEIGHT_IN = computeDoorRoughOpeningHeightIn(doorRoughOpeningSelectedHeightIn.value, toeUpHeightIn.value);
 
+interface OpeningGeometry {
+  isDoor: boolean;
+  /** Floor to RO-bottom (0 for a door — its RO always starts at the floor). */
+  sillHeightIn: number;
+  /** The RO's own height (sill-top to header-bottom for a window; floor to
+   * header-bottom for a door). */
+  jackStudSpanIn: number;
+  /** The RO's top elevation, measured from the floor. */
+  roTopZIn: number;
+  headerHeightIn: number;
+  /** Each side's jack stud thickness — the sill run is inset this much from
+   * either edge of the slot's own full width. */
+  jackThicknessIn: number;
+  /** Empty for a door (no sill). */
+  sillWidthsIn: number[];
+}
+
+/** Shared by the real member view (`membersForSlot`'s window/door case) and
+ * the simplified box view's header/sill decomposition — one formula, so the
+ * two renderers can never drift apart on where the header/sill actually
+ * sit. */
+function computeOpeningGeometry(
+  slot: PanelSlot,
+  heightIn: number,
+  jackStudConfig: JackStudConfig,
+  standardWidthIn: number,
+): OpeningGeometry {
+  const isDoor = slot.type === "door";
+  // Each window carries its own sill height (Tommy: "manipulate sill
+  // and header height with the drag tool") — falls back to the
+  // project default when this particular slot hasn't been customized.
+  const sillHeightIn = isDoor ? 0 : (slot.sillHeightIn ?? sillDefaultHeightIn.value);
+  // Each window carries its own height (Tommy: "i want each window
+  // individually adjustable") — falls back to the project default
+  // when this particular slot hasn't been customized.
+  const jackStudSpanIn = isDoor ? DOOR_RO_HEIGHT_IN : (slot.heightIn ?? standardWindowHeightDefaultIn.value);
+  const roTopZIn = sillHeightIn + jackStudSpanIn;
+  const headerHeightIn = computeHeaderHeightIn(heightIn, roTopZIn);
+  const roWidthIn = computeRoughOpeningWidthIn(slot.widthIn, jackStudConfig);
+  const jackThicknessIn = (slot.widthIn - roWidthIn) / 2;
+  const sillWidthsIn = isDoor ? [] : computeSillRunWidths(roWidthIn, standardWidthIn);
+  return { isDoor, sillHeightIn, jackStudSpanIn, roTopZIn, headerHeightIn, jackThicknessIn, sillWidthsIn };
+}
+
 /** Real member geometry for every panel type, including window/door
  * openings (Tommy: "why arent the RO's, headers, and sills spawning into
  * the 3d drawing... fill them in") — a whole opening (header + both jack
@@ -133,36 +180,164 @@ function membersForSlot(
     case "window":
     case "door": {
       const isDoor = slot.type === "door";
-      // Each window carries its own sill height (Tommy: "manipulate sill
-      // and header height with the drag tool") — falls back to the
-      // project default when this particular slot hasn't been customized.
-      const sillHeightIn = isDoor ? 0 : (slot.sillHeightIn ?? sillDefaultHeightIn.value);
-      const bottomZIn = sillHeightIn;
-      // Each window carries its own height (Tommy: "i want each window
-      // individually adjustable") — falls back to the project default
-      // when this particular slot hasn't been customized.
-      const jackStudSpanIn = isDoor ? DOOR_RO_HEIGHT_IN : (slot.heightIn ?? standardWindowHeightDefaultIn.value);
-      const roTopZIn = bottomZIn + jackStudSpanIn;
-      const headerHeightIn = computeHeaderHeightIn(heightIn, roTopZIn);
-      const sillWidthsIn = isDoor
-        ? []
-        : computeSillRunWidths(computeRoughOpeningWidthIn(slot.widthIn, jackStudConfig), standardWidthIn);
+      const g = computeOpeningGeometry(slot, heightIn, jackStudConfig, standardWidthIn);
       return buildOpeningAssemblyMembers(
         slot.widthIn,
         thicknessIn,
         isDoor ? "door" : "window",
         jackStudConfig,
-        bottomZIn,
-        jackStudSpanIn,
-        headerHeightIn,
-        sillHeightIn,
-        sillWidthsIn,
+        g.sillHeightIn,
+        g.jackStudSpanIn,
+        g.headerHeightIn,
+        g.sillHeightIn,
+        g.sillWidthsIn,
         includeNailer,
       );
     }
     default:
       return null;
   }
+}
+
+/** Keys every instance by the single rendered slot it came from — a
+ * window/door slot produces multiple instances (1 header + however many
+ * sills share its run) sharing one `wallId`+`slotIndexInWall` (see
+ * `panelInstances.ts`'s own doc comment), everything else exactly 1. */
+function groupInstancesBySlot(instances: PanelInstance[]): Map<string, PanelInstance[]> {
+  const map = new Map<string, PanelInstance[]>();
+  for (const inst of instances) {
+    const key = `${inst.wallId}-${inst.slotIndexInWall}`;
+    const existing = map.get(key);
+    if (existing) existing.push(inst);
+    else map.set(key, [inst]);
+  }
+  return map;
+}
+
+const LABEL_MIN_WIDTH_FT = 0.5;
+// Tommy: "double the size of the box view labeling".
+const LABEL_SIZE_MULTIPLIER = 2;
+
+/** Each simplified box's own panel-name label, on 3 of its faces (Tommy:
+ * "the specific panel label... on the top, largest exterior face... as if
+ * looking at it from the exterior" plus, later, "add the label on the top
+ * and right side of each panel") — same double-outline white-fill look as
+ * the 2D plan view's panel labels, via the shared `PanelLabel`. A slot's
+ * box origin is always its EXTERIOR face at local Z=0 (see
+ * `panelSlotBoxes3D`'s own doc comment: "Z=depth from the exterior face at
+ * the anchor"), so:
+ * - Front: sits just outside that face (Z slightly negative), rotated
+ *   180deg around Y — a rigid turn-around, not a mirror — so it reads
+ *   correctly for a viewer standing outside the building looking at the
+ *   wall's exterior face.
+ * - Top: sits just above the box's top edge, rotated -90deg around X to
+ *   face straight up, for a viewer looking straight down.
+ * - Right: sits just past the box's +X edge (its right side as drawn,
+ *   i.e. "right" per the wall's own local frame), rotated 90deg around Y
+ *   to face outward, for a viewer standing to that side looking back.
+ * Skipped entirely for anything too narrow to hold legible text on its
+ * front face (e.g. a 0.75in Safety/Gap sheet). */
+function WallPanelLabel({
+  text,
+  widthFt,
+  heightFt,
+  depthFt,
+}: {
+  text: string | undefined;
+  widthFt: number;
+  heightFt: number;
+  depthFt: number;
+}) {
+  if (!text || widthFt < LABEL_MIN_WIDTH_FT) return null;
+  const frontFontSize = Math.max(0.12, Math.min(0.35, heightFt * 0.15, widthFt * 0.3)) * LABEL_SIZE_MULTIPLIER;
+  const topFontSize = Math.max(0.1, Math.min(0.3, widthFt * 0.25, depthFt * 0.6)) * LABEL_SIZE_MULTIPLIER;
+  const rightFontSize = Math.max(0.1, Math.min(0.3, heightFt * 0.12, depthFt * 0.6)) * LABEL_SIZE_MULTIPLIER;
+  return (
+    <>
+      <PanelLabel
+        text={text}
+        position={[widthFt / 2, heightFt - frontFontSize * 1.3, -0.02]}
+        rotation={[0, Math.PI, 0]}
+        fontSize={frontFontSize}
+      />
+      <PanelLabel
+        text={text}
+        position={[widthFt / 2, heightFt + 0.02, depthFt / 2]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        fontSize={topFontSize}
+      />
+      <PanelLabel
+        text={text}
+        position={[widthFt + 0.02, heightFt / 2, depthFt / 2]}
+        rotation={[0, Math.PI / 2, 0]}
+        fontSize={rightFontSize}
+      />
+    </>
+  );
+}
+
+/** One simplified-mode slot (Tommy: "for panels to appear as their
+ * respective color and just appear as the primary 3D shapes that they
+ * are"), now split into a real header box + sill box(es) for a window/door
+ * instead of one undivided placeholder (Tommy: "i want headers and sills
+ * in the 3d box view to appear as separate panels") — reuses the exact
+ * same `computeOpeningGeometry` the full member view builds from, so the
+ * two can never drift apart on where the header/sill actually sit. Each
+ * box gets its own `PanelLabel` from `instances` (that slot's own ordered
+ * `PanelInstance[]` — header first, then each sill, matching
+ * `panelInstances.ts`'s own push order). */
+function renderSimplifiedSlot(
+  box: PanelSlotBox3D,
+  heightIn: number,
+  jackStudConfig: JackStudConfig,
+  standardWidthIn: number,
+  instances: PanelInstance[],
+) {
+  const slot = box.slot;
+  if (slot.type === "window" || slot.type === "door") {
+    const g = computeOpeningGeometry(slot, heightIn, jackStudConfig, standardWidthIn);
+    const headerHeightFt = g.headerHeightIn / IN_PER_FT;
+    const headerYFt = g.roTopZIn / IN_PER_FT;
+    const headerName = instances.find((i) => i.panelType === "header")?.name;
+    const sillInstances = instances.filter((i) => i.panelType === "sill");
+    let sillCursorFt = g.jackThicknessIn / IN_PER_FT;
+    return (
+      <>
+        <mesh position={[box.widthFt / 2, headerYFt + headerHeightFt / 2, box.depthFt / 2]}>
+          <boxGeometry args={[box.widthFt, headerHeightFt, box.depthFt]} />
+          <meshStandardMaterial color={NAMED_PANEL_TYPE_COLORS.header} transparent opacity={0.6} />
+        </mesh>
+        <group position={[0, headerYFt, 0]}>
+          <WallPanelLabel text={headerName} widthFt={box.widthFt} heightFt={headerHeightFt} depthFt={box.depthFt} />
+        </group>
+        {!g.isDoor &&
+          g.sillWidthsIn.map((sillWidthIn, i) => {
+            const sillWidthFt = sillWidthIn / IN_PER_FT;
+            const xFt = sillCursorFt;
+            sillCursorFt += sillWidthFt;
+            const sillHeightFt = g.sillHeightIn / IN_PER_FT;
+            return (
+              <group key={i} position={[xFt, 0, 0]}>
+                <mesh position={[sillWidthFt / 2, sillHeightFt / 2, box.depthFt / 2]}>
+                  <boxGeometry args={[sillWidthFt, sillHeightFt, box.depthFt]} />
+                  <meshStandardMaterial color={NAMED_PANEL_TYPE_COLORS.sill} transparent opacity={0.6} />
+                </mesh>
+                <WallPanelLabel text={sillInstances[i]?.name} widthFt={sillWidthFt} heightFt={sillHeightFt} depthFt={box.depthFt} />
+              </group>
+            );
+          })}
+      </>
+    );
+  }
+  return (
+    <>
+      <mesh position={[box.widthFt / 2, box.heightFt / 2, box.depthFt / 2]}>
+        <boxGeometry args={[box.widthFt, box.heightFt, box.depthFt]} />
+        <meshStandardMaterial color={PANEL_TYPE_COLORS[slot.type]} transparent opacity={0.6} />
+      </mesh>
+      <WallPanelLabel text={instances[0]?.name} widthFt={box.widthFt} heightFt={box.heightFt} depthFt={box.depthFt} />
+    </>
+  );
 }
 
 interface Building3DViewProps {
@@ -392,6 +567,27 @@ export default function Building3DView({
     ],
   );
 
+  // Panel-name labels (Tommy: "the specific panel label (N1 for example)
+  // to appear on... the simplified box 3d views") — a pure re-derivation of
+  // the exact same compass-direction naming `page.tsx`'s own `allInstances`
+  // uses (same footprint/wallSlots/standardWidthIn/jackStudConfig inputs),
+  // so labels here can never drift out of sync with the 2D view or Shop
+  // Drawing pages' own numbering. Second story reuses the ground floor's
+  // wallSlots today (no independent per-story data yet), so it currently
+  // resolves to the same names — computed separately anyway so this stays
+  // correct once a real per-story model exists.
+  const groundInstancesBySlot = useMemo(
+    () => groupInstancesBySlot(footprint ? allPanelInstances(footprint, wallSlots, standardWidthIn, jackStudConfig) : []),
+    [footprint, wallSlots, standardWidthIn, jackStudConfig],
+  );
+  const secondStoryInstancesBySlot = useMemo(
+    () =>
+      groupInstancesBySlot(
+        footprint && secondStory ? allPanelInstances(footprint, secondStory.wallSlots, standardWidthIn, jackStudConfig) : [],
+      ),
+    [footprint, secondStory, standardWidthIn, jackStudConfig],
+  );
+
   const handleDownloadObj = () => {
     const toWorldPlacedPanel =
       (labelPrefix: string, worldYIn: number) =>
@@ -549,15 +745,23 @@ export default function Building3DView({
                     : undefined
               }
             >
-              {members && !simplified ? (
+              {!simplified && members ? (
                 <PanelMembersGroup
                   members={members}
                   colorOverride={box.slot.type === "safety-gap" ? PANEL_TYPE_COLORS["safety-gap"] : undefined}
                 />
+              ) : simplified ? (
+                renderSimplifiedSlot(
+                  box,
+                  heightIn,
+                  jackStudConfig,
+                  standardWidthIn,
+                  groundInstancesBySlot.get(`${box.wallId}-${box.slotIndex}`) ?? [],
+                )
               ) : (
                 <mesh position={[box.widthFt / 2, box.heightFt / 2, box.depthFt / 2]}>
                   <boxGeometry args={[box.widthFt, box.heightFt, box.depthFt]} />
-                  <meshStandardMaterial color={simplified ? PANEL_TYPE_COLORS[box.slot.type] : BLOB_COLOR} transparent opacity={0.6} />
+                  <meshStandardMaterial color={BLOB_COLOR} transparent opacity={0.6} />
                 </mesh>
               )}
               {renderSillHeaderHandles(box, "ground")}
@@ -582,15 +786,23 @@ export default function Building3DView({
                     : undefined
               }
             >
-              {members && !simplified ? (
+              {!simplified && members ? (
                 <PanelMembersGroup
                   members={members}
                   colorOverride={box.slot.type === "safety-gap" ? PANEL_TYPE_COLORS["safety-gap"] : undefined}
                 />
+              ) : simplified ? (
+                renderSimplifiedSlot(
+                  box,
+                  secondStoryHeightIn,
+                  jackStudConfig,
+                  standardWidthIn,
+                  secondStoryInstancesBySlot.get(`${box.wallId}-${box.slotIndex}`) ?? [],
+                )
               ) : (
                 <mesh position={[box.widthFt / 2, box.heightFt / 2, box.depthFt / 2]}>
                   <boxGeometry args={[box.widthFt, box.heightFt, box.depthFt]} />
-                  <meshStandardMaterial color={simplified ? PANEL_TYPE_COLORS[box.slot.type] : BLOB_COLOR} transparent opacity={0.6} />
+                  <meshStandardMaterial color={BLOB_COLOR} transparent opacity={0.6} />
                 </mesh>
               )}
               {renderSillHeaderHandles(box, "second")}

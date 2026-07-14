@@ -5,6 +5,7 @@ import { OrbitControls } from "@react-three/drei";
 import { computeStacksAcrossWidth, type TruckDims, type TruckLoad } from "@building-integrity/geometry";
 import type { NamedPanelType } from "./panelInstances";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
+import PanelLabel from "./PanelLabel";
 
 const CANVAS_WIDTH = 420;
 const CANVAS_HEIGHT = 320;
@@ -12,6 +13,11 @@ const IN_PER_FT = 12;
 const ELEVATION_DEG = 22;
 const AZIMUTH_DEG = 35;
 const TRAILER_COLOR = "#999999";
+const LABEL_MIN_WIDTH_FT = 0.5;
+// Tommy: "double the size of the box view labeling" — same multiplier
+// Building3DView's WallPanelLabel applies, for visual consistency across
+// every simplified box view.
+const LABEL_SIZE_MULTIPLIER = 2;
 
 export interface TruckLoad3DViewProps {
   load: TruckLoad;
@@ -92,10 +98,26 @@ export default function TruckLoad3DView({
               const indexFromBottom = stack.panelIds.length - 1 - indexFromTop;
               const centerYFt = (bufferIn + (indexFromBottom + 0.5) * panelThicknessIn) / IN_PER_FT;
               const color = NAMED_PANEL_TYPE_COLORS[panelTypeById.get(panelId) ?? "standard"];
+              const widthFt = stack.widthIn / IN_PER_FT;
+              const thicknessFt = panelThicknessIn / IN_PER_FT;
+              const depthFt = panelHeightIn / IN_PER_FT;
+              // Only the topmost panel of each stack is ever actually
+              // visible from above (Tommy: "the specific panel label...
+              // across all models") — every panel under it is hidden face-
+              // to-face, so labeling them too would just render unseen text.
+              const isTopOfStack = indexFromTop === 0;
               return (
                 <mesh key={panelId} position={[stackCenterXFt, centerYFt, stackCenterZFt]}>
-                  <boxGeometry args={[stack.widthIn / IN_PER_FT, panelThicknessIn / IN_PER_FT, panelHeightIn / IN_PER_FT]} />
+                  <boxGeometry args={[widthFt, thicknessFt, depthFt]} />
                   <meshStandardMaterial color={color} />
+                  {isTopOfStack && widthFt >= LABEL_MIN_WIDTH_FT && (
+                    <PanelLabel
+                      text={panelId}
+                      position={[0, thicknessFt / 2 + 0.01, 0]}
+                      rotation={[-Math.PI / 2, 0, 0]}
+                      fontSize={Math.max(0.1, Math.min(0.3, widthFt * 0.25, depthFt * 0.2)) * LABEL_SIZE_MULTIPLIER}
+                    />
+                  )}
                 </mesh>
               );
             });
