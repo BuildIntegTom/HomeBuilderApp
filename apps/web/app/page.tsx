@@ -4591,6 +4591,8 @@ export default function LayoutEditor() {
             <>
               <Link href="/sandbox">Single Wall Run Calculation Sandbox →</Link>
               <br />
+              <Link href="/read-me">Read Me →</Link>
+              <br />
               <Link href="/report-bug">Report Bug / Request Feature →</Link>
             </>
           }
