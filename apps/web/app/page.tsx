@@ -10,6 +10,7 @@ import {
   buildOctagonFootprint,
   buildRectangleFootprint,
   computeFloorPanelGrid,
+  computeFootprintAreaSqFt,
   computeJoistLayout,
   computePanelLoadOrder,
   computePanelsPerStack,
@@ -48,12 +49,14 @@ import {
   computeFastenerWeight,
   computeInsulationWeight,
   computeJackStudFastenerWeight,
+  computeMembraneCoverage,
+  computeMemberSetWoodWeight,
   computeNetEmbodiedCarbonCO2e,
   computePanelWeightBreakdown,
   computePlasterLaborCost,
   computePlasterLaborHours,
   computePrice,
-  computeStandardPanelWoodWeight,
+  computeSillTapeLengthFt,
   computeStrawWeight,
   computeStudPackBearingCapacityLb,
   formatLengthIn,
@@ -187,6 +190,7 @@ import {
   type RoofSystemType,
   type SeismicZone,
   type StudConfig,
+  type WallAssemblyLayer,
 } from "@building-integrity/panel-catalog";
 import ConcreteBlockStemWallDiagram from "./ConcreteBlockStemWallDiagram";
 import DetailGuidePage from "./DetailGuidePage";
@@ -239,8 +243,34 @@ const STRAW_BALE_WEIGHT_LB = 40;
 const KG_TO_LB = 2.20462;
 const LB_FT3_TO_KG_M3 = 16.018463;
 
-const interiorLayers = wallAssemblyLayers.filter((l) => l.side === "interior");
-const exteriorLayers = wallAssemblyLayers.filter((l) => l.side === "exterior");
+// "both" is for accessory products (Exto Seal, Tescon Vana) that aren't
+// inherently one-sided — they show up in both checkbox lists.
+const interiorLayers = wallAssemblyLayers.filter((l) => l.side === "interior" || l.side === "both");
+const exteriorLayers = wallAssemblyLayers.filter((l) => l.side === "exterior" || l.side === "both");
+
+// Fed to computeAssemblyPerm/validateVaporOpenness (unchanged) when nothing
+// rated is checked on a side — its null perms make them report "not
+// computable," identical to today's behavior for a lone unrated layer.
+const UNRATED_SENTINEL: WallAssemblyLayer = {
+  id: "none",
+  side: "interior",
+  label: "(none checked)",
+  permWinter: null,
+  permSummer: null,
+  status: "pending-BI-confirmation",
+  note: "No rated product checked on this side.",
+};
+
+/** Tommy: "when multiple interior (or exterior) items are checked... the
+ * perm-rating math uses whichever checked item is most vapor-restrictive"
+ * — the real vapor control layer in a physical assembly is whichever
+ * layer is hardest to pass through, not a sum of everything present. */
+function mostRestrictiveLayer(layers: WallAssemblyLayer[], checkedIds: Set<string>, season: Season): WallAssemblyLayer | null {
+  const rated = layers.filter((l) => checkedIds.has(l.id) && (season === "winter" ? l.permWinter : l.permSummer) !== null);
+  if (rated.length === 0) return null;
+  const permOf = (l: WallAssemblyLayer) => (season === "winter" ? l.permWinter! : l.permSummer!);
+  return rated.reduce((most, l) => (permOf(l) < permOf(most) ? l : most));
+}
 
 /** A representative brace end-cut bevel angle for a set of built members
  * (Tommy: "lets come up with a way to really hone in on the math involved
@@ -335,6 +365,13 @@ export default function LayoutEditor() {
   // member detail), since the Shipping page's own truck-load 3D views
   // always render this way regardless of this toggle.
   const [simplified3D, setSimplified3D] = useState(false);
+  // 3D Wraps view (Tommy: "3d model selected after box mode and is
+  // everything box mode is with a few changes: panels not labeled, and
+  // the 3D models of the wraps appear") — always implies simplified3D too
+  // (same box geometry), see handleViewerStopChange below. Ephemeral UI
+  // view-state, same category as viewMode/simplified3D — not persisted in
+  // ProjectState.
+  const [showWraps, setShowWraps] = useState(false);
   // The 3D viewer's own, deliberately smaller tool vocabulary (Tommy: "build
   // the 3d viewer into an editor with all the same tools as the 2d plan
   // editor" — Phase 1 ships Edit-cycle parity + the Sill & Header drag
@@ -378,8 +415,8 @@ export default function LayoutEditor() {
   // from a default of 3/4in plywood to vertical 2x4's" — default matches
   // the original single-sheet jack stud behavior.
   const [jackStudConfig, setJackStudConfig] = useState<JackStudConfig>("plywood");
-  const [interiorId, setInteriorId] = useState(interiorLayers[1]!.id);
-  const [exteriorId, setExteriorId] = useState(exteriorLayers[1]!.id);
+  const [checkedInteriorIds, setCheckedInteriorIds] = useState<Set<string>>(new Set([interiorLayers[1]!.id]));
+  const [checkedExteriorIds, setCheckedExteriorIds] = useState<Set<string>>(new Set([exteriorLayers[1]!.id]));
   const [season, setSeason] = useState<Season>("winter");
 
   const [seismicZone, setSeismicZone] = useState<SeismicZone>("moderate");
@@ -699,8 +736,8 @@ export default function LayoutEditor() {
       densityLbFt3,
       wallHeightFt,
       includeNailer,
-      interiorId,
-      exteriorId,
+      checkedInteriorIds,
+      checkedExteriorIds,
       season,
       seismicZone,
       foundationTypeId,
@@ -767,8 +804,8 @@ export default function LayoutEditor() {
       setDensityLbFt3(s.densityLbFt3);
       setWallHeightFt(s.wallHeightFt);
       setIncludeNailer(s.includeNailer);
-      setInteriorId(s.interiorId);
-      setExteriorId(s.exteriorId);
+      setCheckedInteriorIds(s.checkedInteriorIds);
+      setCheckedExteriorIds(s.checkedExteriorIds);
       setSeason(s.season);
       setSeismicZone(s.seismicZone);
       setFoundationTypeId(s.foundationTypeId as typeof foundationTypeId);
@@ -802,8 +839,8 @@ export default function LayoutEditor() {
     });
   };
 
-  const interior = interiorLayers.find((l) => l.id === interiorId)!;
-  const exterior = exteriorLayers.find((l) => l.id === exteriorId)!;
+  const interior = mostRestrictiveLayer(interiorLayers, checkedInteriorIds, season) ?? UNRATED_SENTINEL;
+  const exterior = mostRestrictiveLayer(exteriorLayers, checkedExteriorIds, season) ?? { ...UNRATED_SENTINEL, side: "exterior" as const };
   const foundationType = foundationTypes.find((f) => f.id === foundationTypeId)!;
   const foundationFasteners = foundationFastenerSchedule(foundationType, fastenerSpacingTable);
 
@@ -834,6 +871,7 @@ export default function LayoutEditor() {
       ...(footprint?.walls.map((w) => ({ kind: "elevation" as const, wallId: w.id, label: w.id })) ?? []),
       { kind: "3d-framed" },
       { kind: "3d-boxes" },
+      { kind: "3d-wraps" },
     ],
     [footprint],
   );
@@ -841,9 +879,11 @@ export default function LayoutEditor() {
     ? { kind: "elevation", wallId: elevationViewWallId, label: elevationViewWallId }
     : viewMode === "plan"
       ? { kind: "plan" }
-      : simplified3D
-        ? { kind: "3d-boxes" }
-        : { kind: "3d-framed" };
+      : showWraps
+        ? { kind: "3d-wraps" }
+        : simplified3D
+          ? { kind: "3d-boxes" }
+          : { kind: "3d-framed" };
   const handleViewerStopChange = (stop: ViewerStop) => {
     if (stop.kind === "elevation") {
       setElevationViewWallId(stop.wallId);
@@ -852,9 +892,11 @@ export default function LayoutEditor() {
     setElevationViewWallId(null);
     if (stop.kind === "plan") {
       setViewMode("plan");
+      setShowWraps(false);
     } else {
       setViewMode("3d");
-      setSimplified3D(stop.kind === "3d-boxes");
+      setSimplified3D(stop.kind === "3d-boxes" || stop.kind === "3d-wraps");
+      setShowWraps(stop.kind === "3d-wraps");
     }
   };
 
@@ -1313,16 +1355,29 @@ export default function LayoutEditor() {
     [totalStrawWidthIn, thicknessIn, wallHeightFt, densityLbFt3],
   );
 
-  const woodPerPanel = useMemo(
-    () => computeStandardPanelWoodWeight(includeNailer),
-    [includeNailer],
-  );
-  const totalWoodWeightKg = woodEligibleCount * woodPerPanel.weightKg;
+  // Summed from each real instance's own member geometry (not a flat
+  // per-panel constant multiplied by count) — the only way a braced
+  // panel's diagonal braces/connector (real trapezoid-cut length, per
+  // bracingStyle) actually count toward the project's wood weight total
+  // (Tommy: "make sure trapezoid pieces... have wood weight... that fill
+  // into project totals").
+  const totalWoodWeightKg = useMemo(() => {
+    const heightIn = wallHeightFt * 12;
+    return allSlots
+      .filter((s) => s.type === "standard" || s.type === "braced")
+      .reduce((sum, s) => {
+        const members =
+          s.type === "braced"
+            ? buildBracedPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer, bracingStyle)
+            : buildStandardPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer);
+        return sum + computeMemberSetWoodWeight(members).weightKg;
+      }, 0);
+  }, [allSlots, wallHeightFt, thicknessIn, includeNailer, bracingStyle]);
   const totalWeightKg = strawWeight.weightKg + totalWoodWeightKg;
   const totalWeightLb = totalWeightKg * KG_TO_LB;
 
-  const hasClayPlaster = interior.id === "clay-plaster";
-  const hasLimePlaster = exterior.id === "lime-plaster";
+  const hasClayPlaster = checkedInteriorIds.has("clay-plaster");
+  const hasLimePlaster = checkedExteriorIds.has("lime-plaster");
 
   // Computed once, across every nameable panel type together, so a panel's
   // number always reflects its true position in the along-wall sequence —
@@ -1733,6 +1788,36 @@ export default function LayoutEditor() {
   const plasterNetAreaSqFt = Math.max(0, plasterGrossWallAreaSqFt - plasterOpeningsAreaSqFtPerFloor * plasterFloorCount);
   const plasterRoughOpeningCount = allInstances.filter((inst) => inst.panelType === "header").length * plasterFloorCount;
 
+  // Auto-computed purchase quantities for whichever wall-assembly products
+  // are checked (Tommy: "when checked on a product, i want to autofill the
+  // most efficient way to use that product in the house") — same
+  // per-floor doubling convention as the plaster block above.
+  const extoSealOpeningWidths = useMemo(() => {
+    const perFloor = allInstances
+      .filter((inst) => inst.panelType === "header")
+      .map((inst) => ({ widthIn: computeRoughOpeningWidthIn(inst.widthIn, jackStudConfig) }));
+    return secondStoryEnabled ? [...perFloor, ...perFloor] : perFloor;
+  }, [allInstances, jackStudConfig, secondStoryEnabled]);
+  const extoSealLengthFt = useMemo(() => computeSillTapeLengthFt(extoSealOpeningWidths), [extoSealOpeningWidths]);
+
+  const intelloWallRuns = useMemo(() => {
+    if (!footprint) return [];
+    const ground = footprint.walls.map((w) => ({ lengthFt: w.lengthFt, heightFt: wallHeightFt }));
+    const second = secondStoryEnabled
+      ? footprint.walls.map((w) => ({ lengthFt: w.lengthFt, heightFt: secondStoryWallHeightFt }))
+      : [];
+    return [...ground, ...second];
+  }, [footprint, wallHeightFt, secondStoryEnabled, secondStoryWallHeightFt]);
+  // Flat plan-view placeholder — see computeFootprintAreaSqFt's own doc
+  // comment on why real sloped roof area isn't computable yet.
+  const intelloRoofAreaSqFt = useMemo(() => (footprint ? computeFootprintAreaSqFt(footprint) : 0), [footprint]);
+  const intelloLayer = wallAssemblyLayers.find((l) => l.id === "intello-plus")!;
+  const intelloRollWidthFt = (intelloLayer.rollWidthIn ?? 0) / 12;
+  const intelloCoverage = useMemo(
+    () => computeMembraneCoverage(intelloWallRuns, intelloRollWidthFt, intelloRoofAreaSqFt),
+    [intelloWallRuns, intelloRollWidthFt, intelloRoofAreaSqFt],
+  );
+
   const plasterPrices = {
     sandPricePerCuYd: plasterSandPricePerCuYd,
     clayPricePerBag: plasterClayPricePerBag,
@@ -1776,11 +1861,46 @@ export default function LayoutEditor() {
     panelizationType === "square-bale-panels" ? allInstances.filter((inst) => inst.panelType === "standard").length * 2 : 0;
   const strawBaleWeightLb = strawBaleCount * STRAW_BALE_WEIGHT_LB;
 
+  // Real member geometry, built per-instance at that instance's own width
+  // (column/corner ignore it, always fixed at COLUMN_TOTAL_WIDTH_IN), for
+  // any panel type that has one — shared by fastenerWeightKgFor and
+  // woodWeightKgFor below so both read from the exact same member list
+  // (e.g. a braced panel's real diagonal braces/connector, trapezoid length
+  // included, not a flat per-type scalar).
+  const membersForPanelTypeId = (
+    panelTypeId: string,
+    widthIn: number,
+    sourceSlotType?: PanelInstance["sourceSlotType"],
+    windowHeightInOverride?: number,
+    sillHeightInOverride?: number,
+  ) => {
+    const heightIn = wallHeightFt * 12;
+    const resolvedSillHeightIn = sillHeightInOverride ?? sillDefaultHeightIn.value;
+    return panelTypeId === "standard"
+      ? buildStandardPanelMembers(widthIn, thicknessIn, heightIn, includeNailer)
+      : panelTypeId === "braced"
+        ? buildBracedPanelMembers(widthIn, thicknessIn, heightIn, includeNailer, bracingStyle)
+        : panelTypeId === "column"
+          ? columnPanelMembers
+          : panelTypeId === "corner"
+            ? cornerPanelMembers3D
+            : panelTypeId === "gable"
+              ? gablePanelMembers
+              : panelTypeId === "header"
+                ? sourceSlotType === "door"
+                  ? buildDoorHeaderMembers(widthIn, thicknessIn, doorHeaderHeightIn)
+                  : buildWindowHeaderMembers(
+                      widthIn,
+                      thicknessIn,
+                      computeHeaderHeightIn(heightIn, resolvedSillHeightIn + (windowHeightInOverride ?? standardWindowHeightDefaultIn.value)),
+                    )
+                : panelTypeId === "sill"
+                  ? buildSillPanelMembers(widthIn, thicknessIn, resolvedSillHeightIn, includeNailer)
+                  : null;
+  };
+
   // Fastener counts/weight are only modeled for panel types with real
-  // member geometry (standard/braced/column/corner) — built per-instance
-  // at that instance's own width (column/corner ignore it, always fixed at
-  // COLUMN_TOTAL_WIDTH_IN) so girt-row/plate/brace counts are exact, not a
-  // flat scalar like the older wood-weight calc.
+  // member geometry (standard/braced/column/corner).
   const fastenerWeightKgFor = (
     panelTypeId: string,
     widthIn: number,
@@ -1788,31 +1908,26 @@ export default function LayoutEditor() {
     windowHeightInOverride?: number,
     sillHeightInOverride?: number,
   ): number | null => {
-    const heightIn = wallHeightFt * 12;
-    const resolvedSillHeightIn = sillHeightInOverride ?? sillDefaultHeightIn.value;
-    const members =
-      panelTypeId === "standard"
-        ? buildStandardPanelMembers(widthIn, thicknessIn, heightIn, includeNailer)
-        : panelTypeId === "braced"
-          ? buildBracedPanelMembers(widthIn, thicknessIn, heightIn, includeNailer, bracingStyle)
-          : panelTypeId === "column"
-            ? columnPanelMembers
-            : panelTypeId === "corner"
-              ? cornerPanelMembers3D
-              : panelTypeId === "gable"
-                ? gablePanelMembers
-                : panelTypeId === "header"
-                  ? sourceSlotType === "door"
-                    ? buildDoorHeaderMembers(widthIn, thicknessIn, doorHeaderHeightIn)
-                    : buildWindowHeaderMembers(
-                        widthIn,
-                        thicknessIn,
-                        computeHeaderHeightIn(heightIn, resolvedSillHeightIn + (windowHeightInOverride ?? standardWindowHeightDefaultIn.value)),
-                      )
-                  : panelTypeId === "sill"
-                    ? buildSillPanelMembers(widthIn, thicknessIn, resolvedSillHeightIn, includeNailer)
-                    : null;
+    const members = membersForPanelTypeId(panelTypeId, widthIn, sourceSlotType, windowHeightInOverride, sillHeightInOverride);
     return members ? computeFastenerWeight(members).totalWeightKg : null;
+  };
+
+  // Wood weight is only modeled for standard/braced (matches hasWoodBom in
+  // SHOP_DRAWING_PANEL_TYPES) — geometry-aware via the same real member
+  // list fastenerWeightKgFor uses, so a braced panel's diagonal braces
+  // (real trapezoid length) actually count, unlike the old flat
+  // computeStandardPanelWoodWeight scalar that assumed every braced panel
+  // shares the plain standard panel's BOM.
+  const woodWeightKgFor = (
+    panelTypeId: string,
+    widthIn: number,
+    sourceSlotType?: PanelInstance["sourceSlotType"],
+    windowHeightInOverride?: number,
+    sillHeightInOverride?: number,
+  ): number | null => {
+    if (panelTypeId !== "standard" && panelTypeId !== "braced") return null;
+    const members = membersForPanelTypeId(panelTypeId, widthIn, sourceSlotType, windowHeightInOverride, sillHeightInOverride);
+    return members ? computeMemberSetWoodWeight(members).weightKg : null;
   };
 
   const shopDrawings = useMemo(
@@ -1836,7 +1951,7 @@ export default function LayoutEditor() {
               // panel type here uses.
               heightIn: panelTypeId === "sill" ? (inst.sillHeightIn ?? sillDefaultHeightIn.value) : wallHeightFt * 12,
               densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
-              woodWeightKg: hasWoodBom ? woodPerPanel.weightKg : null,
+              woodWeightKg: woodWeightKgFor(panelTypeId, inst.widthIn, inst.sourceSlotType, inst.windowHeightIn, inst.sillHeightIn),
               fastenerWeightKg: fastenerWeightKgFor(panelTypeId, inst.widthIn, inst.sourceSlotType, inst.windowHeightIn, inst.sillHeightIn),
               hasClayPlaster,
               hasLimePlaster,
@@ -1844,7 +1959,18 @@ export default function LayoutEditor() {
           }));
         return { panelType, hasWoodBom, instances };
       }),
-    [allInstances, thicknessIn, wallHeightFt, densityLbFt3, woodPerPanel.weightKg, hasClayPlaster, hasLimePlaster, doorHeaderHeightIn, sillHeightIn],
+    [
+      allInstances,
+      thicknessIn,
+      wallHeightFt,
+      densityLbFt3,
+      includeNailer,
+      bracingStyle,
+      hasClayPlaster,
+      hasLimePlaster,
+      doorHeaderHeightIn,
+      sillHeightIn,
+    ],
   );
 
   // Total fastener weight (Tommy: "do a full check on what might not be on
@@ -2059,7 +2185,7 @@ export default function LayoutEditor() {
   const allNoteSections = useMemo(
     () => [
       { id: "editor-tools", label: editorToolsLabel },
-      { id: "wall-assembly", label: "Wall Assembly (Vapor Check)" },
+      { id: "wall-assembly", label: "Wall Assembly" },
       { id: "detail-summary", label: "Project Summary" },
       { id: "project-totals", label: "Project Totals" },
       { id: "review-log", label: "Review Log" },
@@ -2074,6 +2200,18 @@ export default function LayoutEditor() {
   const [openNoteIds, setOpenNoteIds] = useState<Set<string>>(new Set());
   const [noteOpenOrder, setNoteOpenOrder] = useState<string[]>([]);
   const [fullscreenNoteId, setFullscreenNoteId] = useState<string | null>(null);
+
+  // A link from elsewhere (Tommy: "review logs button... at the bottom of
+  // the report bug page") can deep-link straight to one note via
+  // ?openNote=<id> — read directly off window.location instead of
+  // useSearchParams so this stays a plain client-side effect with no
+  // Suspense-boundary requirement. Runs once on mount only.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("openNote");
+    if (!id) return;
+    setOpenNoteIds((was) => new Set(was).add(id));
+    setNoteOpenOrder((order) => (order.includes(id) ? order : [...order, id]));
+  }, []);
 
   const handleToggleNote = (id: string) => {
     setOpenNoteIds((was) => {
@@ -2114,6 +2252,27 @@ export default function LayoutEditor() {
       window.print();
       setOpenNoteIds(wasOpen);
     });
+  };
+
+  // Tommy: "at the top of the right bar, lets make an export pdf button for
+  // all of the highlighted/opened detail pages" — unlike handlePrintPacket
+  // above (which force-opens every formal document regardless of current
+  // state), this only exports whichever detail pages are ALREADY open —
+  // they're already mounted, so no open/restore dance needed. The 8.5x11
+  // vs 11x17 choice happens in the browser's own print dialog (the @page
+  // rule in globals.css only forces landscape orientation, not an exact
+  // paper size, so both are already selectable there).
+  const openDetailPageIds = useMemo(
+    () => [...openNoteIds].filter((id) => formalDocumentNoteIds.has(id)),
+    [openNoteIds, formalDocumentNoteIds],
+  );
+  const handleExportOpenDetailPagesPdf = () => {
+    if (openDetailPageIds.length === 0) return;
+    for (const id of openDetailPageIds) {
+      document.getElementById(id)?.setAttribute("data-print-target", "true");
+    }
+    document.body.setAttribute("data-print-mode", "packet");
+    window.print();
   };
 
   useEffect(() => {
@@ -2872,6 +3031,9 @@ export default function LayoutEditor() {
                   standardWidthIn={standardWidthIn}
                   compassRef={compassNeedleRef}
                   simplified={simplified3D}
+                  showWraps={showWraps}
+                  checkedInteriorIds={checkedInteriorIds}
+                  checkedExteriorIds={checkedExteriorIds}
                   tool3D={tool3D}
                   onToggleOpening={(_story, wallId, slotIndex) => handleToggleOpening(wallId, slotIndex)}
                   onSetWindowSillHeight={(_story, wallId, slotIndex, sillHeightIn) => handleSetWindowSillHeight(wallId, slotIndex, sillHeightIn)}
@@ -3277,7 +3439,7 @@ export default function LayoutEditor() {
 
         <StickyNote
           id="wall-assembly"
-          label="Wall Assembly (Vapor Check)"
+          label="Wall Assembly"
           isOpen={openNoteIds.has("wall-assembly")}
           isFullscreen={fullscreenNoteId === "wall-assembly"}
           cascadeIndex={noteOpenOrder.indexOf("wall-assembly")}
@@ -3285,26 +3447,74 @@ export default function LayoutEditor() {
           onToggleFullscreen={() => handleToggleNoteFullscreen("wall-assembly")}
           onPrint={() => handlePrintNote("wall-assembly")}
         >
-          <label>
-            Interior finish{" "}
-            <select value={interiorId} onChange={(e) => setInteriorId(e.target.value)}>
-              {interiorLayers.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Exterior finish{" "}
-            <select value={exteriorId} onChange={(e) => setExteriorId(e.target.value)}>
-              {exteriorLayers.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <p className={styles.note}>
+            Check every finish/product this wall assembly actually uses — when several are checked on one side, the
+            perm-rating check below uses whichever is most vapor-restrictive as that side&apos;s effective layer.
+            Checking a product with a known coverage rule (Intello, Exto Seal, Tescon Vana) auto-computes how much of
+            it this building needs.
+          </p>
+          <fieldset>
+            <legend>Interior</legend>
+            {interiorLayers.map((l) => (
+              <label key={l.id} style={{ display: "block" }}>
+                <input
+                  type="checkbox"
+                  checked={checkedInteriorIds.has(l.id)}
+                  onChange={(e) =>
+                    setCheckedInteriorIds((was) => {
+                      const next = new Set(was);
+                      if (e.target.checked) next.add(l.id);
+                      else next.delete(l.id);
+                      return next;
+                    })
+                  }
+                />{" "}
+                {l.label}
+                {l.id === "exto-seal" && checkedInteriorIds.has("exto-seal") && (
+                  <span className={styles.note}> — {extoSealLengthFt.toFixed(1)}ft needed (sill perimeter + 1ft/opening)</span>
+                )}
+                {l.id === "intello-plus" && checkedInteriorIds.has("intello-plus") && (
+                  <span className={styles.note}>
+                    {" "}
+                    — {intelloCoverage.areaSqFt.toFixed(0)} sqft ({(intelloCoverage.areaSqFt - intelloRoofAreaSqFt).toFixed(0)} wall +{" "}
+                    {intelloRoofAreaSqFt.toFixed(0)} roof, flat plan-view placeholder — not modeled roof slope)
+                  </span>
+                )}
+                {l.id === "tescon-vana" && checkedInteriorIds.has("tescon-vana") && (
+                  <span className={styles.note}>
+                    {" "}
+                    —{" "}
+                    {checkedInteriorIds.has("intello-plus")
+                      ? `${intelloCoverage.seamLengthFt.toFixed(1)}ft of seams (fewest-seams layout)`
+                      : "Intello isn't checked, so no seams to tape yet"}
+                  </span>
+                )}
+              </label>
+            ))}
+          </fieldset>
+          <fieldset>
+            <legend>Exterior</legend>
+            {exteriorLayers.map((l) => (
+              <label key={l.id} style={{ display: "block" }}>
+                <input
+                  type="checkbox"
+                  checked={checkedExteriorIds.has(l.id)}
+                  onChange={(e) =>
+                    setCheckedExteriorIds((was) => {
+                      const next = new Set(was);
+                      if (e.target.checked) next.add(l.id);
+                      else next.delete(l.id);
+                      return next;
+                    })
+                  }
+                />{" "}
+                {l.label}
+                {l.id === "exto-seal" && checkedExteriorIds.has("exto-seal") && (
+                  <span className={styles.note}> — {extoSealLengthFt.toFixed(1)}ft needed (sill perimeter + 1ft/opening)</span>
+                )}
+              </label>
+            ))}
+          </fieldset>
           <label>
             Season{" "}
             <select value={season} onChange={(e) => setSeason(e.target.value as Season)}>
@@ -4711,6 +4921,16 @@ export default function LayoutEditor() {
           sections={allNoteSections}
           openIds={openNoteIds}
           onToggle={handleToggleNote}
+          header={
+            <button
+              type="button"
+              title="Export every currently-open detail page as one PDF (landscape — choose Letter 8.5x11 or Tabloid 11x17 in the print dialog)"
+              disabled={openDetailPageIds.length === 0}
+              onClick={handleExportOpenDetailPagesPdf}
+            >
+              Export PDF{openDetailPageIds.length > 0 ? ` (${openDetailPageIds.length})` : ""}
+            </button>
+          }
           footer={
             <>
               <Link href="/sandbox">Single Wall Run Calculation Sandbox →</Link>

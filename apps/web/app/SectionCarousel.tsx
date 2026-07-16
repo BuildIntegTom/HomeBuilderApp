@@ -7,6 +7,10 @@ export interface SectionCarouselProps {
   sections: { id: string; label: string }[];
   openIds: Set<string>;
   onToggle: (id: string) => void;
+  /** Rendered as the first item, above every section card (Tommy: "at the
+   * top of the right bar, lets make an export pdf button") — a fixed slot
+   * for actions that apply across sections, not a section toggle itself. */
+  header?: ReactNode;
   /** Rendered as the last item in the scrolling list (Tommy: "for the right
    * side bar, can they snap to the top bar and the bottom?" — the strip now
    * spans the full height under the TopBar down to the very bottom edge, so
@@ -24,9 +28,10 @@ export interface SectionCarouselProps {
  * StickyNote; a note's own fullscreen button (not this carousel) is what
  * makes it fill the screen.
  */
-export default function SectionCarousel({ sections, openIds, onToggle, footer }: SectionCarouselProps) {
+export default function SectionCarousel({ sections, openIds, onToggle, header, footer }: SectionCarouselProps) {
   return (
     <div className={`${styles.carousel} print-hidden-chrome`} role="group" aria-label="Sections">
+      {header && <div className={styles.headerSlot}>{header}</div>}
       {sections.map((s) => (
         <button
           key={s.id}

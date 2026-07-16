@@ -66,7 +66,22 @@ export interface FoundationLoadPathStep {
   fastenerConnection?: string;
 }
 
-export type AssemblySide = "interior" | "exterior";
+/** "both" is for accessory products (tapes) that aren't inherently
+ * one-sided — Tommy: "also include Tescon Vana as a check mark," used to
+ * seal interior membrane seams but conceptually available on either
+ * checkbox list. */
+export type AssemblySide = "interior" | "exterior" | "both";
+
+/** How much of a checked product the current building needs, auto-derived
+ * from its real geometry (Tommy: "when checked on a product, i want to
+ * autofill the most efficient way to use that product in the house") —
+ * present only on products with a computable purchase quantity; a plain
+ * finish coat like clay/lime plaster has none (its material quantity is
+ * already tracked by the separate Plaster Master calc). */
+export type ProductCoverageRule =
+  | { kind: "opening-sill-perimeter" }
+  | { kind: "wall-and-roof-interior-surface" }
+  | { kind: "seam-tape-for"; coveredProductId: string };
 
 export interface WallAssemblyLayer {
   id: string;
@@ -78,4 +93,13 @@ export interface WallAssemblyLayer {
   permSummer: number | null;
   status: CatalogStatus;
   note: string;
+  coverageRule?: ProductCoverageRule;
+  /** Roll width (in) — only for roll goods needing seam-count tiling
+   * (Intello). Tape products (Exto Seal, Tescon Vana) don't need this;
+   * they're purchased by linear length alone, not tiled. */
+  rollWidthIn?: number;
+  /** 3D Wraps view skin color (CSS color string) — omitted means this
+   * product gets no on-screen overlay (e.g. Tescon Vana: quantity-only,
+   * no continuous-seam 3D geometry in this first pass). */
+  skinColor?: string;
 }

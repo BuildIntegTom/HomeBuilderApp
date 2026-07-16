@@ -7,7 +7,8 @@ export type ViewerStop =
   | { kind: "plan" }
   | { kind: "elevation"; wallId: string; label: string }
   | { kind: "3d-framed" }
-  | { kind: "3d-boxes" };
+  | { kind: "3d-boxes" }
+  | { kind: "3d-wraps" };
 
 function stopKey(stop: ViewerStop): string {
   return stop.kind === "elevation" ? `elevation-${stop.wallId}` : stop.kind;
@@ -23,6 +24,8 @@ function stopLabel(stop: ViewerStop): string {
       return "3D Framed";
     case "3d-boxes":
       return "3D Boxes";
+    case "3d-wraps":
+      return "3D Wraps";
   }
 }
 
@@ -40,8 +43,11 @@ export interface ViewerDialProps {
  * of the old single click-to-cycle button. Its cycle isn't fixed — the
  * caller supplies `stops`, which is 2D Floor Plan, then one "elevation"
  * stop per wall in the footprint (compass order, same as the wall list
- * already uses), then 3D Framed, then 3D Boxes. Landing on any stop swaps
- * out the whole canvas area, same as the old plan/3d toggle already did.
+ * already uses), then 3D Framed, then 3D Boxes, then 3D Wraps (Tommy: "3d
+ * model selected after box mode and is everything box mode is with a few
+ * changes: panels not labeled, and the 3D models of the wraps appear").
+ * Landing on any stop swaps out the whole canvas area, same as the old
+ * plan/3d toggle already did.
  */
 export default function ViewerDial({ stops, value, onChange, disabled }: ViewerDialProps) {
   const playRustle = useRustleSound();
@@ -61,7 +67,7 @@ export default function ViewerDial({ stops, value, onChange, disabled }: ViewerD
       className={styles.dial}
       role="group"
       aria-label="View mode"
-      title="Scroll or use the arrows to switch between 2D Floor Plan, each wall's elevation view, 3D Framed, and 3D Boxes"
+      title="Scroll or use the arrows to switch between 2D Floor Plan, each wall's elevation view, 3D Framed, 3D Boxes, and 3D Wraps"
       onWheel={(e) => {
         if (disabled) return;
         e.preventDefault();

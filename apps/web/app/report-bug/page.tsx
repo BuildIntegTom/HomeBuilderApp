@@ -55,7 +55,11 @@ export default function ReportBugPage() {
           </p>
         </section>
 
-        <Link href="/">← Back to the layout editor</Link>
+        <div>
+          <Link href="/">← Back to the layout editor</Link>
+          <br />
+          <Link href="/?openNote=review-log">Review Log — Items for Engineer/Contractor Review →</Link>
+        </div>
       </main>
     </div>
   );

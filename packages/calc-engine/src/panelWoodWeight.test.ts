@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { computeStandardPanelWoodWeight } from "./panelWoodWeight";
+import { buildBracedPanelMembers, buildStandardPanelMembers, type PanelMember } from "@building-integrity/panel-catalog";
+import { computeMemberSetWoodWeight, computeStandardPanelWoodWeight } from "./panelWoodWeight";
 
 describe("computeStandardPanelWoodWeight", () => {
   it("matches the hand-computed volume/weight for the bare standard panel (no nailer)", () => {
@@ -22,5 +23,74 @@ describe("computeStandardPanelWoodWeight", () => {
     const withoutNailer = computeStandardPanelWoodWeight(false);
     expect(withNailer.weightLb - withoutNailer.weightLb).toBeCloseTo(10.5273, 3);
     expect(withNailer.includesNailer).toBe(true);
+  });
+});
+
+describe("computeMemberSetWoodWeight", () => {
+  it("lands in the same ballpark as computeStandardPanelWoodWeight's flat reference BOM at the same nominal dimensions", () => {
+    // 48in wide x 15.5in deep x 120in tall matches standardPanelBom's own
+    // reference dimensions (skin 48in long, girt web 8.75x46, studs
+    // 118.5in) — see standardPanelMembers.test.ts's own cross-check. Not
+    // expected to match exactly: buildStandardPanelMembers derives girt row
+    // count dynamically (computeStandardGirtRowCount) rather than the flat
+    // BOM's fixed qty:2, so a few-percent difference is normal, not a bug.
+    const members = buildStandardPanelMembers(48, 15.5, 120, false);
+    const fromMembers = computeMemberSetWoodWeight(members);
+    const fromFlatBom = computeStandardPanelWoodWeight(false);
+    expect(fromMembers.weightLb).toBeGreaterThan(fromFlatBom.weightLb * 0.8);
+    expect(fromMembers.weightLb).toBeLessThan(fromFlatBom.weightLb * 1.2);
+  });
+
+  it("gives a braced panel more wood weight than a standard panel at the same dimensions (real brace/connector geometry, not the flat same-BOM assumption)", () => {
+    const standard = computeMemberSetWoodWeight(buildStandardPanelMembers(40, 15.5, 120, false));
+    const braced = computeMemberSetWoodWeight(buildBracedPanelMembers(40, 15.5, 120, false, "chevron"));
+    expect(braced.weightLb).toBeGreaterThan(standard.weightLb);
+  });
+
+  it("sums thickness x width x length x qty per member, split plywood vs. dimensional lumber by material", () => {
+    const members: PanelMember[] = [
+      {
+        memberId: "ply",
+        material: "plywood",
+        speciesGrade: null,
+        plySpec: null,
+        nominalSize: null,
+        actualDimsIn: { thicknessIn: 0.75, widthIn: 12, lengthIn: 24 },
+        orientation: "flat",
+        position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0 },
+        role: "skin",
+        qty: 2,
+      },
+      {
+        memberId: "lumber",
+        material: "dimensional_lumber",
+        speciesGrade: null,
+        plySpec: null,
+        nominalSize: "2x4",
+        actualDimsIn: { thicknessIn: 1.5, widthIn: 3.5, lengthIn: 96 },
+        orientation: "vertical",
+        position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0 },
+        role: "stud",
+        qty: 3,
+      },
+      {
+        memberId: "screws",
+        material: "fastener",
+        speciesGrade: null,
+        plySpec: null,
+        nominalSize: null,
+        actualDimsIn: { thicknessIn: 0.25, widthIn: 0.25, lengthIn: 4 },
+        orientation: "flat",
+        position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0 },
+        role: "blocking",
+        qty: 100,
+      },
+    ];
+    const result = computeMemberSetWoodWeight(members);
+    // plywood: 0.75*12*24*2 = 432 in3 = 0.25 ft3; lumber: 1.5*3.5*96*3 = 1512 in3 = 0.875 ft3
+    expect(result.plywoodVolumeFt3).toBeCloseTo(0.25, 6);
+    expect(result.lumberVolumeFt3).toBeCloseTo(0.875, 6);
+    // fasteners excluded entirely — weight = 0.25*36 + 0.875*30 = 35.25 lb
+    expect(result.weightLb).toBeCloseTo(35.25, 4);
   });
 });

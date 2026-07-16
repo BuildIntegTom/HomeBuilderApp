@@ -21,6 +21,31 @@
   backdrop-filter: blur(2px);
 }
 
+.headerSlot {
+  flex: 0 0 auto;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #d9c072;
+  text-align: center;
+}
+
+.headerSlot button {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(180deg, #fbf6e6 0%, #f2e8c9 100%);
+  border: 2px solid #d9c072;
+  border-radius: 10px;
+  color: #1c3d5a;
+}
+
+.headerSlot button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .footerSlot {
   flex: 0 0 auto;
   margin-top: auto;

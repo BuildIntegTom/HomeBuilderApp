@@ -26,6 +26,7 @@ import {
   sillHeaderHeightInRange,
   standardWindowHeightDefaultIn,
   toeUpHeightIn,
+  wallAssemblyLayers,
   type BracingStyle,
   type JackStudConfig,
   type PanelMember,
@@ -41,6 +42,7 @@ const BIRDS_EYE_ELEVATION_DEG = 50;
 const BIRDS_EYE_AZIMUTH_DEG = 45; // a corner/3-quarter starting view, not straight-on
 const IN_PER_FT = 12;
 const BLOB_COLOR = "#b5b0a8";
+const EMPTY_ID_SET: Set<string> = new Set();
 
 interface Bounds {
   centerX: number;
@@ -278,6 +280,70 @@ function WallPanelLabel({
   );
 }
 
+interface WrapSkin {
+  color: string;
+  coverageKind: "wall-and-roof-interior-surface" | "opening-sill-perimeter";
+  side: "interior" | "exterior";
+}
+
+/** Which checked products get a 3D Wraps skin (Tommy: "most things dont
+ * need an elaborate model, just a skin of color... on the face surface
+ * area") — only products with both a `skinColor` AND a coverage rule this
+ * view knows how to draw (a whole-surface color, or a sill strip);
+ * Tescon Vana (seam-tape-for) is quantity-only, no 3D geometry yet — see
+ * the module doc comment on renderSimplifiedSlot. */
+function checkedWrapSkins(checkedIds: Set<string>, side: "interior" | "exterior"): WrapSkin[] {
+  const skins: WrapSkin[] = [];
+  for (const l of wallAssemblyLayers) {
+    if (!checkedIds.has(l.id) || !l.skinColor) continue;
+    if (l.coverageRule?.kind === "wall-and-roof-interior-surface" || l.coverageRule?.kind === "opening-sill-perimeter") {
+      skins.push({ color: l.skinColor, coverageKind: l.coverageRule.kind, side });
+    }
+  }
+  return skins;
+}
+
+const SKIN_THICKNESS_FT = 0.02;
+// Stacks 2+ skins checked on the same face slightly apart so they don't
+// z-fight (Tommy: "just a skin of color... on the face surface area" —
+// illustrative layering, not real material thickness).
+const SKIN_STACK_STEP_FT = 0.03;
+
+/** One flush-face colored overlay per full-surface skin checked on a side
+ * — interior skins stack outward from the interior face (Z=depthFt),
+ * exterior skins stack outward from the exterior face (Z=0), per the
+ * panel-space convention `panelSlotBoxes3D` already establishes. */
+function renderWallSkins(widthFt: number, heightFt: number, depthFt: number, skins: WrapSkin[]) {
+  const wallSkins = skins.filter((s) => s.coverageKind === "wall-and-roof-interior-surface");
+  return wallSkins.map((skin, i) => {
+    const z = skin.side === "interior" ? depthFt + SKIN_STACK_STEP_FT * i : -SKIN_STACK_STEP_FT * i;
+    return (
+      <mesh key={`${skin.side}-${skin.color}-${i}`} position={[widthFt / 2, heightFt / 2, z]}>
+        <boxGeometry args={[widthFt, heightFt, SKIN_THICKNESS_FT]} />
+        <meshStandardMaterial color={skin.color} transparent opacity={0.5} side={2} />
+      </mesh>
+    );
+  });
+}
+
+/** Same idea as renderWallSkins, but only for a sill's own (narrower)
+ * box — Exto Seal (Tommy: "Exto Seal is for window and door sills"). Only
+ * ever called for a WINDOW sill box — doors have no sill box in this
+ * model at all (floor-level RO), so a door's Exto Seal contribution is
+ * quantity-only, not drawn. */
+function renderSillSkins(sillWidthFt: number, sillHeightFt: number, depthFt: number, skins: WrapSkin[]) {
+  const sillSkins = skins.filter((s) => s.coverageKind === "opening-sill-perimeter");
+  return sillSkins.map((skin, i) => {
+    const z = skin.side === "interior" ? depthFt + SKIN_STACK_STEP_FT * i : -SKIN_STACK_STEP_FT * i;
+    return (
+      <mesh key={`${skin.side}-${skin.color}-${i}`} position={[sillWidthFt / 2, sillHeightFt / 2, z]}>
+        <boxGeometry args={[sillWidthFt, sillHeightFt, SKIN_THICKNESS_FT]} />
+        <meshStandardMaterial color={skin.color} transparent opacity={0.7} side={2} />
+      </mesh>
+    );
+  });
+}
+
 /** One simplified-mode slot (Tommy: "for panels to appear as their
  * respective color and just appear as the primary 3D shapes that they
  * are"), now split into a real header box + sill box(es) for a window/door
@@ -287,13 +353,24 @@ function WallPanelLabel({
  * two can never drift apart on where the header/sill actually sit. Each
  * box gets its own `PanelLabel` from `instances` (that slot's own ordered
  * `PanelInstance[]` — header first, then each sill, matching
- * `panelInstances.ts`'s own push order). */
+ * `panelInstances.ts`'s own push order).
+ *
+ * `showWraps`/`wrapSkins` (Tommy: "3d model selected after box mode and is
+ * everything box mode is with a few changes: panels not labeled, and the
+ * 3D models of the wraps appear") — `showWraps` suppresses every label;
+ * `wrapSkins` adds a thin colored overlay per checked product with a
+ * drawable coverage rule. Window/door openings themselves don't get a
+ * whole-surface skin (the opening is the actual hole in the wall, not
+ * wall surface) — only the header box does, since it's still real wall
+ * material above the RO. */
 function renderSimplifiedSlot(
   box: PanelSlotBox3D,
   heightIn: number,
   jackStudConfig: JackStudConfig,
   standardWidthIn: number,
   instances: PanelInstance[],
+  showWraps: boolean,
+  wrapSkins: WrapSkin[],
 ) {
   const slot = box.slot;
   if (slot.type === "window" || slot.type === "door") {
@@ -310,7 +387,8 @@ function renderSimplifiedSlot(
           <meshStandardMaterial color={NAMED_PANEL_TYPE_COLORS.header} transparent opacity={0.6} />
         </mesh>
         <group position={[0, headerYFt, 0]}>
-          <WallPanelLabel text={headerName} widthFt={box.widthFt} heightFt={headerHeightFt} depthFt={box.depthFt} />
+          <WallPanelLabel text={showWraps ? undefined : headerName} widthFt={box.widthFt} heightFt={headerHeightFt} depthFt={box.depthFt} />
+          {showWraps && renderWallSkins(box.widthFt, headerHeightFt, box.depthFt, wrapSkins)}
         </group>
         {!g.isDoor &&
           g.sillWidthsIn.map((sillWidthIn, i) => {
@@ -324,7 +402,13 @@ function renderSimplifiedSlot(
                   <boxGeometry args={[sillWidthFt, sillHeightFt, box.depthFt]} />
                   <meshStandardMaterial color={NAMED_PANEL_TYPE_COLORS.sill} transparent opacity={0.6} />
                 </mesh>
-                <WallPanelLabel text={sillInstances[i]?.name} widthFt={sillWidthFt} heightFt={sillHeightFt} depthFt={box.depthFt} />
+                <WallPanelLabel
+                  text={showWraps ? undefined : sillInstances[i]?.name}
+                  widthFt={sillWidthFt}
+                  heightFt={sillHeightFt}
+                  depthFt={box.depthFt}
+                />
+                {showWraps && renderSillSkins(sillWidthFt, sillHeightFt, box.depthFt, wrapSkins)}
               </group>
             );
           })}
@@ -337,7 +421,8 @@ function renderSimplifiedSlot(
         <boxGeometry args={[box.widthFt, box.heightFt, box.depthFt]} />
         <meshStandardMaterial color={PANEL_TYPE_COLORS[slot.type]} transparent opacity={0.6} />
       </mesh>
-      <WallPanelLabel text={instances[0]?.name} widthFt={box.widthFt} heightFt={box.heightFt} depthFt={box.depthFt} />
+      <WallPanelLabel text={showWraps ? undefined : instances[0]?.name} widthFt={box.widthFt} heightFt={box.heightFt} depthFt={box.depthFt} />
+      {showWraps && renderWallSkins(box.widthFt, box.heightFt, box.depthFt, wrapSkins)}
     </>
   );
 }
@@ -394,6 +479,18 @@ interface Building3DViewProps {
    * shipping view) where full wood-member detail would be unreadable
    * clutter, but available as a general toggle here too. Off by default. */
   simplified?: boolean;
+  /** 3D Wraps view (Tommy: "3d model selected after box mode and is
+   * everything box mode is with a few changes: panels not labeled, and
+   * the 3D models of the wraps appear") — implies `simplified` (same box
+   * geometry); suppresses every panel label and adds a colored skin mesh
+   * for each checked product with a `skinColor` (see panelColors.ts /
+   * wallAssemblyLayers). Off by default. */
+  showWraps?: boolean;
+  /** Every interior/exterior wall-assembly product currently checked
+   * (page.tsx's checkedInteriorIds/checkedExteriorIds) — only consulted
+   * when `showWraps` is true. */
+  checkedInteriorIds?: Set<string>;
+  checkedExteriorIds?: Set<string>;
   /** Which 3D-only editor tool is active (Tommy: "build the 3d viewer into
    * an editor with all the same tools as the 2d plan editor" — Phase 1
    * scope: just Edit-cycle parity + the Sill & Header drag tool; draw/
@@ -478,6 +575,9 @@ export default function Building3DView({
   onCapture,
   compassRef,
   simplified = false,
+  showWraps = false,
+  checkedInteriorIds = EMPTY_ID_SET,
+  checkedExteriorIds = EMPTY_ID_SET,
   tool3D = "orbit",
   onToggleOpening,
   onSetWindowSillHeight,
@@ -597,6 +697,12 @@ export default function Building3DView({
         footprint && secondStory ? allPanelInstances(footprint, secondStory.wallSlots, standardWidthIn, jackStudConfig) : [],
       ),
     [footprint, secondStory, standardWidthIn, jackStudConfig],
+  );
+
+  const wrapSkins = useMemo(
+    () =>
+      showWraps ? [...checkedWrapSkins(checkedInteriorIds, "interior"), ...checkedWrapSkins(checkedExteriorIds, "exterior")] : [],
+    [showWraps, checkedInteriorIds, checkedExteriorIds],
   );
 
   const handleDownloadObj = () => {
@@ -768,6 +874,8 @@ export default function Building3DView({
                   jackStudConfig,
                   standardWidthIn,
                   groundInstancesBySlot.get(`${box.wallId}-${box.slotIndex}`) ?? [],
+                  showWraps,
+                  wrapSkins,
                 )
               ) : (
                 <mesh position={[box.widthFt / 2, box.heightFt / 2, box.depthFt / 2]}>
@@ -809,6 +917,8 @@ export default function Building3DView({
                   jackStudConfig,
                   standardWidthIn,
                   secondStoryInstancesBySlot.get(`${box.wallId}-${box.slotIndex}`) ?? [],
+                  showWraps,
+                  wrapSkins,
                 )
               ) : (
                 <mesh position={[box.widthFt / 2, box.heightFt / 2, box.depthFt / 2]}>

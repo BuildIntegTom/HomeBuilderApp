@@ -17,7 +17,7 @@ import type { ViewerRole } from "./viewerRole";
  * a future incompatible version fails loudly (`parseProjectFile`) instead
  * of silently restoring a half-broken layout.
  */
-export const PROJECT_FILE_VERSION = 13;
+export const PROJECT_FILE_VERSION = 14;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -34,8 +34,11 @@ export interface ProjectState {
   densityLbFt3: number;
   wallHeightFt: number;
   includeNailer: boolean;
-  interiorId: string;
-  exteriorId: string;
+  /** Every interior/exterior finish AND product checked (Tommy: "change
+   * those interior and exterior finishes to check boxes... a repertoire")
+   * — replaces the old single-select interiorId/exteriorId. */
+  checkedInteriorIds: Set<string>;
+  checkedExteriorIds: Set<string>;
   season: Season;
   seismicZone: SeismicZone;
   foundationTypeId: string;
@@ -116,8 +119,8 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "densityLbFt3",
   "wallHeightFt",
   "includeNailer",
-  "interiorId",
-  "exteriorId",
+  "checkedInteriorIds",
+  "checkedExteriorIds",
   "season",
   "seismicZone",
   "foundationTypeId",
@@ -150,13 +153,16 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "roofEnabled",
 ];
 
-/** JSON has no Set type — `primaryCornerIds`/`gableEndWallIds` round-trip as plain arrays. */
+/** JSON has no Set type — `primaryCornerIds`/`gableEndWallIds`/
+ * `checkedInteriorIds`/`checkedExteriorIds` round-trip as plain arrays. */
 export interface ProjectFile {
   schemaVersion: number;
   savedAt: string;
-  state: Omit<ProjectState, "primaryCornerIds" | "gableEndWallIds"> & {
+  state: Omit<ProjectState, "primaryCornerIds" | "gableEndWallIds" | "checkedInteriorIds" | "checkedExteriorIds"> & {
     primaryCornerIds: string[];
     gableEndWallIds: string[];
+    checkedInteriorIds: string[];
+    checkedExteriorIds: string[];
   };
 }
 
@@ -164,7 +170,13 @@ export function serializeProject(state: ProjectState): ProjectFile {
   return {
     schemaVersion: PROJECT_FILE_VERSION,
     savedAt: new Date().toISOString(),
-    state: { ...state, primaryCornerIds: [...state.primaryCornerIds], gableEndWallIds: [...state.gableEndWallIds] },
+    state: {
+      ...state,
+      primaryCornerIds: [...state.primaryCornerIds],
+      gableEndWallIds: [...state.gableEndWallIds],
+      checkedInteriorIds: [...state.checkedInteriorIds],
+      checkedExteriorIds: [...state.checkedExteriorIds],
+    },
   };
 }
 
@@ -209,6 +221,12 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   if (!Array.isArray(state.gableEndWallIds)) {
     return { ok: false, error: '"gableEndWallIds" should be a list of wall ids.' };
   }
+  if (!Array.isArray(state.checkedInteriorIds)) {
+    return { ok: false, error: '"checkedInteriorIds" should be a list of product ids.' };
+  }
+  if (!Array.isArray(state.checkedExteriorIds)) {
+    return { ok: false, error: '"checkedExteriorIds" should be a list of product ids.' };
+  }
 
   return {
     ok: true,
@@ -216,6 +234,8 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       ...(state as unknown as ProjectState),
       primaryCornerIds: new Set(state.primaryCornerIds as string[]),
       gableEndWallIds: new Set(state.gableEndWallIds as string[]),
+      checkedInteriorIds: new Set(state.checkedInteriorIds as string[]),
+      checkedExteriorIds: new Set(state.checkedExteriorIds as string[]),
     },
   };
 }

@@ -1,5 +1,6 @@
 export * from "./types";
 export * from "./footprint";
+export * from "./footprintArea";
 export * from "./octagon";
 export * from "./cornerAngle";
 export * from "./bumpOut";

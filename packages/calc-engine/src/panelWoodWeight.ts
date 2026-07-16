@@ -1,4 +1,4 @@
-import { referenceDensities, standardPanelBom } from "@building-integrity/panel-catalog";
+import { referenceDensities, standardPanelBom, type PanelMember } from "@building-integrity/panel-catalog";
 
 const IN3_PER_FT3 = 1728;
 const LB_TO_KG = 0.453592;
@@ -54,5 +54,51 @@ export function computeStandardPanelWoodWeight(includeNailer = false): PanelWood
     weightLb,
     weightKg: weightLb * LB_TO_KG,
     includesNailer: includeNailer,
+  };
+}
+
+export interface MemberSetWoodWeightResult {
+  plywoodVolumeFt3: number;
+  lumberVolumeFt3: number;
+  weightLb: number;
+  weightKg: number;
+}
+
+/**
+ * Wood-only weight summed directly from a real member list's actual
+ * dimensions/qty — unlike computeStandardPanelWoodWeight above (a flat
+ * scalar from the standard panel's own fixed BOM, applied to braced panels
+ * too under the assumption they share the same BOM), this is geometry-
+ * aware: a braced panel's diagonal braces (and chevron center connector)
+ * are real members in the list and get weighed for what they actually are,
+ * including their true beveled-trapezoid length (Tommy: "make sure
+ * trapezoid pieces... have wood weight fasteners associated with it that
+ * fill into project totals" — computeFastenerWeight already did this for
+ * fasteners; this is the wood-weight equivalent). Skips non-wood materials
+ * (fastener, wire_mesh) so it's safe to call on any member list.
+ */
+export function computeMemberSetWoodWeight(members: PanelMember[]): MemberSetWoodWeightResult {
+  let plywoodVolIn3 = 0;
+  let lumberVolIn3 = 0;
+  for (const m of members) {
+    const volIn3 = m.actualDimsIn.thicknessIn * m.actualDimsIn.widthIn * m.actualDimsIn.lengthIn * m.qty;
+    if (m.material === "plywood" || m.material === "osb") {
+      plywoodVolIn3 += volIn3;
+    } else if (m.material === "dimensional_lumber") {
+      lumberVolIn3 += volIn3;
+    }
+  }
+
+  const plywoodVolumeFt3 = plywoodVolIn3 / IN3_PER_FT3;
+  const lumberVolumeFt3 = lumberVolIn3 / IN3_PER_FT3;
+  const weightLb =
+    plywoodVolumeFt3 * referenceDensities.plywoodLbFt3.value +
+    lumberVolumeFt3 * referenceDensities.framingLumberLbFt3.value;
+
+  return {
+    plywoodVolumeFt3,
+    lumberVolumeFt3,
+    weightLb,
+    weightKg: weightLb * LB_TO_KG,
   };
 }

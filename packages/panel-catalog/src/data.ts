@@ -970,6 +970,9 @@ export const wallAssemblyLayers: WallAssemblyLayer[] = [
     permSummer: 13.2,
     status: "confirmed",
     note: "Variable, 0.13-13.2 perm depending on season/RH.",
+    coverageRule: { kind: "wall-and-roof-interior-surface" },
+    rollWidthIn: 59.06, // 1.5m — pro clima's common Intello Plus roll width.
+    skinColor: "#7fb8e0",
   },
   {
     id: "lime-plaster",
@@ -1006,6 +1009,31 @@ export const wallAssemblyLayers: WallAssemblyLayer[] = [
     permSummer: 8,
     status: "pending-BI-confirmation",
     note: "Adhero 3000 itself is rated 8 perm (fixed); the plywood component has no numeric perm rating in spec, so this assembly's total resistance is not fully modeled.",
+  },
+  // --- Accessory products (Tommy: "check boxes that we will begin to build
+  // the repitior of") — not a whole-assembly vapor layer, so both are
+  // unrated (permWinter/permSummer null); their purpose is a computable
+  // purchase quantity (coverageRule below), not the perm check.
+  {
+    id: "exto-seal",
+    side: "both",
+    label: "Exto Seal (window/door sill tape)",
+    permWinter: null,
+    permSummer: null,
+    status: "pending-BI-confirmation",
+    note: "300mm x 20m (65.6ft) roll is a common SKU — Building Integrity hasn't confirmed which exact width/length they'd spec. Not a whole-assembly vapor layer, so no perm rating applies.",
+    coverageRule: { kind: "opening-sill-perimeter" },
+    skinColor: "#e0a83f",
+  },
+  {
+    id: "tescon-vana",
+    side: "both",
+    label: "Tescon Vana (seam/connection tape)",
+    permWinter: null,
+    permSummer: null,
+    status: "pending-BI-confirmation",
+    note: "60mm x 30m (98.4ft) roll is a common SKU — Building Integrity hasn't confirmed which exact width they'd spec. Not a whole-assembly vapor layer, so no perm rating applies.",
+    coverageRule: { kind: "seam-tape-for", coveredProductId: "intello-plus" },
   },
 ];
 
