@@ -22,6 +22,7 @@ import {
   buildBracedPanelMembers,
   buildColumnPanelMembers,
   buildCornerPanelMembers,
+  type BracingStyle,
   type JackStudConfig,
 } from "@building-integrity/panel-catalog";
 import {
@@ -117,6 +118,10 @@ export interface FootprintCanvasProps {
    * see structuralByKey below. */
   wallHeightFt: number;
   includeNailer: boolean;
+  /** Which diagonal-brace pattern the hover tooltip's estimated shear
+   * number uses for a "braced" slot (Tommy: "add another bracing
+   * option... Hatch Forward, and Hatch Back"). */
+  bracingStyle: BracingStyle;
   /** Needed to compute how many sill instances a wide window's rough
    * opening splits into (see allPanelInstances/computeSillRunWidths), so
    * the on-canvas combined label (e.g. "N-3+4+5") matches its Shop
@@ -159,6 +164,7 @@ export default function FootprintCanvas({
   wallThicknessIn,
   wallHeightFt,
   includeNailer,
+  bracingStyle,
   standardWidthIn,
   jackStudConfig,
   leastAccessibleCorner,
@@ -227,7 +233,7 @@ export default function FootprintCanvas({
         const isBraced = slot.type === "braced" || slot.secondaryType === "braced";
         const shearLb = isBraced
           ? computeBracedPanelShearCapacityLb(
-              buildBracedPanelMembers(slot.widthIn, wallThicknessIn, wallHeightFt * 12, includeNailer),
+              buildBracedPanelMembers(slot.widthIn, wallThicknessIn, wallHeightFt * 12, includeNailer, bracingStyle),
             )
           : undefined;
         const bearingLb =
@@ -240,7 +246,7 @@ export default function FootprintCanvas({
       });
     }
     return map;
-  }, [footprint, wallSlots, wallThicknessIn, wallHeightFt, includeNailer]);
+  }, [footprint, wallSlots, wallThicknessIn, wallHeightFt, includeNailer, bracingStyle]);
 
   const [hoveredSlot, setHoveredSlot] = useState<{
     key: string;

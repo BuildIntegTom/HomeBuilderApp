@@ -1,6 +1,13 @@
 import type { Footprint, PanelSlot } from "@building-integrity/geometry";
 import type { Season } from "@building-integrity/calc-engine";
-import type { OctagonRingDiameterFt, RoofCatcherBeamShape, RoofSystemType, SeismicZone, StudConfig } from "@building-integrity/panel-catalog";
+import type {
+  BracingStyle,
+  OctagonRingDiameterFt,
+  RoofCatcherBeamShape,
+  RoofSystemType,
+  SeismicZone,
+  StudConfig,
+} from "@building-integrity/panel-catalog";
 import type { ViewerRole } from "./viewerRole";
 
 /**
@@ -10,7 +17,7 @@ import type { ViewerRole } from "./viewerRole";
  * a future incompatible version fails loudly (`parseProjectFile`) instead
  * of silently restoring a half-broken layout.
  */
-export const PROJECT_FILE_VERSION = 12;
+export const PROJECT_FILE_VERSION = 13;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -72,6 +79,10 @@ export interface ProjectState {
    * not a literal drag gesture yet — see buildNailer's doc comment. */
   nailerOffsetIn: number;
   squareBaleStudConfig: StudConfig;
+  /** Which diagonal-brace pattern every "braced"-typed slot uses,
+   * project-wide (Tommy: "add another bracing option... Hatch Forward,
+   * and Hatch Back"). */
+  bracingStyle: BracingStyle;
   /** Landscape title-block metadata (Tommy: "project, site, date, etc.") —
    * see DocumentMetaContext.tsx. Site/date are derived from other state
    * already in this file (zipCode, current date), so only the project name
@@ -132,6 +143,7 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "timberFrameCurtainWidthIn",
   "nailerOffsetIn",
   "squareBaleStudConfig",
+  "bracingStyle",
   "projectName",
   "wallsEnabled",
   "floorsEnabled",

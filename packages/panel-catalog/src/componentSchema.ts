@@ -36,6 +36,13 @@ export interface MemberDims {
   lengthIn: number;
 }
 
+/** A point in a panel's own local X-Z (elevation) plane — panel-X = along
+ * its width, panel-Z = up from its bottom face. */
+export interface PanelSpacePoint2D {
+  xIn: number;
+  zIn: number;
+}
+
 export interface MemberPosition {
   /** Min-corner (not center) for every orientation except "diagonal" —
    * see `tiltDeg` below and `memberBoxSizeIn` in panelMemberHelpers.ts. */
@@ -50,6 +57,17 @@ export interface MemberPosition {
    * single natural corner to anchor on) — the one exception to the
    * min-corner rule every other orientation follows. */
   tiltDeg?: number;
+  /** True beveled-end trapezoid corners (panel-space X/Z, absolute,
+   * perimeter order — see `computeBraceTrapezoidCornersIn` in
+   * panelMemberHelpers.ts) — present only for a diagonal brace with a
+   * real plumb (stud-end) + level (plate-end) cut pair. When present,
+   * this OVERRIDES the plain tilted-box shape both `PanelMembersGroup.tsx`
+   * and `panelObjExport.ts` would otherwise derive from xIn/zIn/tiltDeg —
+   * both must check this first. `xIn`/`yIn`/`zIn`/`tiltDeg` remain
+   * populated as the centerline reference (still used by
+   * `computeBraceEndCutAngleDeg`, shear-capacity estimates, and any note
+   * text that doesn't know about trapezoids). */
+  trapezoidCornersIn?: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D];
 }
 
 export interface PanelMember {

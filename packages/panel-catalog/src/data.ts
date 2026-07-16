@@ -14,7 +14,7 @@ export const squareBalePanel = {
   widthIn: 39,
   thicknessIn: 14,
   status: "confirmed" as const,
-  note: "Two 18\" bales + two 1.5\" studs, width/thickness locked together. Reference/layout mode only, not fabricated to anymore.",
+  note: "Two 18\" bales + two 1.5\" studs, width/thickness locked together — a fully supported panelization type, fabricated the same as any other panel.",
 };
 
 export const looseDensePackWidthIn: CatalogValue<number> = {

@@ -66,6 +66,7 @@ import {
   bomWidthMismatchWarning,
   BOX_BEAM_CAP_THICKNESS_IN,
   BOX_BEAM_LVL_HEIGHT_IN,
+  bracedPanelDisplayLabel,
   buildBoxBeamMembers,
   buildBracedPanelMembers,
   buildColumnPanelMembers,
@@ -175,6 +176,7 @@ import {
   truckBedTypes,
   trussPlateInsetDefaultIn,
   wallAssemblyLayers,
+  type BracingStyle,
   type ClassicTrussTypeId,
   type HighPerfTrussBearingShapeId,
   type HighPerfTrussCavityDepthIn,
@@ -366,6 +368,11 @@ export default function LayoutEditor() {
   // buildSquareBalePanelMembers doc comments for how each is modeled).
   const [nailerOffsetIn, setNailerOffsetIn] = useState(0);
   const [squareBaleStudConfig, setSquareBaleStudConfig] = useState<StudConfig>("single-2x4");
+  // Which diagonal-brace pattern every "braced"-typed slot uses project-wide
+  // (Tommy: "add another bracing option... Hatch Forward, and Hatch Back...
+  // we need all braced panel types to both be on the toggle cycle") — no new
+  // PanelSlotType, just which geometry buildBracedPanelMembers builds.
+  const [bracingStyle, setBracingStyle] = useState<BracingStyle>("chevron");
   // Tommy: "RO's depend on jack studs, which i want to be able to change
   // from a default of 3/4in plywood to vertical 2x4's" — default matches
   // the original single-sheet jack stud behavior.
@@ -597,8 +604,8 @@ export default function LayoutEditor() {
   // infill construction choice.
   // - loose-packed-braced: today's existing tiling/bracing system, unchanged.
   // - square-bale-panels: uniform 39in whole-bale panels (Tommy's existing
-  //   squareBalePanel reference spec — "two 18in bales + two 1.5in studs,"
-  //   already flagged reference/layout-mode-only, not fabricated to anymore).
+  //   squareBalePanel spec — "two 18in bales + two 1.5in studs" — a fully
+  //   supported panelization type, fabricated the same as any other panel).
   // - timber-frame-curtain: uniform standard OR braced panels at a fixed,
   //   adjustable width (default 3ft) — no bracing-near-corners/safety-gap
   //   logic, since the actual timber frame (not modeled) carries the
@@ -711,6 +718,7 @@ export default function LayoutEditor() {
       timberFrameCurtainWidthIn,
       nailerOffsetIn,
       squareBaleStudConfig,
+      bracingStyle,
       projectName,
       wallsEnabled,
       floorsEnabled,
@@ -778,6 +786,7 @@ export default function LayoutEditor() {
       setTimberFrameCurtainWidthIn(s.timberFrameCurtainWidthIn);
       setNailerOffsetIn(s.nailerOffsetIn);
       setSquareBaleStudConfig(s.squareBaleStudConfig);
+      setBracingStyle(s.bracingStyle);
       setProjectName(s.projectName);
       setWallsEnabled(s.wallsEnabled);
       setFloorsEnabled(s.floorsEnabled);
@@ -1451,7 +1460,7 @@ export default function LayoutEditor() {
             ? buildSquareBalePanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, squareBaleStudConfig, nailerOffsetIn)
             : buildStandardPanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer)
           : inst.panelType === "braced"
-            ? buildBracedPanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer)
+            ? buildBracedPanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, bracingStyle)
             : inst.panelType === "column"
               ? columnPanelMembers
               : inst.panelType === "corner" || inst.panelType === "safety-oct-corner"
@@ -1485,6 +1494,7 @@ export default function LayoutEditor() {
     safetyGapMembers3D,
     isSquareBalePanelization,
     squareBaleStudConfig,
+    bracingStyle,
     nailerOffsetIn,
     doorHeaderHeightIn,
     sillHeightIn,
@@ -1715,7 +1725,7 @@ export default function LayoutEditor() {
       panelTypeId === "standard"
         ? buildStandardPanelMembers(widthIn, thicknessIn, heightIn, includeNailer)
         : panelTypeId === "braced"
-          ? buildBracedPanelMembers(widthIn, thicknessIn, heightIn, includeNailer)
+          ? buildBracedPanelMembers(widthIn, thicknessIn, heightIn, includeNailer, bracingStyle)
           : panelTypeId === "column"
             ? columnPanelMembers
             : panelTypeId === "corner"
@@ -1818,9 +1828,9 @@ export default function LayoutEditor() {
     const widths = instances.length > 0 ? instances.map((i) => i.widthIn) : [standardWidthIn];
     return computePanelSizeShares(widths).map((share) => ({
       ...share,
-      members: buildBracedPanelMembers(share.widthIn, thicknessIn, wallHeightFt * 12, includeNailer),
+      members: buildBracedPanelMembers(share.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, bracingStyle),
     }));
-  }, [shopDrawings, standardWidthIn, thicknessIn, wallHeightFt, includeNailer]);
+  }, [shopDrawings, standardWidthIn, thicknessIn, wallHeightFt, includeNailer, bracingStyle]);
 
   // Estimated bearing/shear numbers (Tommy: "let's take a stab at making
   // some estimated engineering numbers") — bearing applies to any panel
@@ -1830,8 +1840,9 @@ export default function LayoutEditor() {
   // selected width/height rather than a flat constant.
   const estimatedStudPackBearingLb = useMemo(() => computeStudPackBearingCapacityLb(), []);
   const estimatedBracedShearLb = useMemo(
-    () => computeBracedPanelShearCapacityLb(buildBracedPanelMembers(standardWidthIn, thicknessIn, wallHeightFt * 12, includeNailer)),
-    [standardWidthIn, thicknessIn, wallHeightFt, includeNailer],
+    () =>
+      computeBracedPanelShearCapacityLb(buildBracedPanelMembers(standardWidthIn, thicknessIn, wallHeightFt * 12, includeNailer, bracingStyle)),
+    [standardWidthIn, thicknessIn, wallHeightFt, includeNailer, bracingStyle],
   );
   // Column/Corner panels get a MUCH higher estimate than the plain stud
   // pack (Tommy: "they have those two sheets of plywood running up the
@@ -1870,10 +1881,13 @@ export default function LayoutEditor() {
         .filter((inst) => inst.panelType === "braced")
         .reduce(
           (sum, inst) =>
-            sum + computeBracedPanelShearCapacityLb(buildBracedPanelMembers(inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer)),
+            sum +
+            computeBracedPanelShearCapacityLb(
+              buildBracedPanelMembers(inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, bracingStyle),
+            ),
           0,
         ),
-    [allInstances, thicknessIn, wallHeightFt, includeNailer],
+    [allInstances, thicknessIn, wallHeightFt, includeNailer, bracingStyle],
   );
 
   // Only surface pages that actually apply to what's currently selected/
@@ -1928,7 +1942,8 @@ export default function LayoutEditor() {
       if (role !== "public") {
         for (const { panelType, instances } of shopDrawings) {
           if (instances.length > 0 || canPreviewAllDetailPages) {
-            pages.push({ id: `shop-${panelType.id}`, label: `Shop Drawing: ${panelType.label} (${instances.length})` });
+            const label = panelType.id === "braced" ? bracedPanelDisplayLabel(bracingStyle) : panelType.label;
+            pages.push({ id: `shop-${panelType.id}`, label: `Shop Drawing: ${label} (${instances.length})` });
           }
         }
       }
@@ -1950,6 +1965,7 @@ export default function LayoutEditor() {
     floorsEnabled,
     roofEnabled,
     wallsEnabled,
+    bracingStyle,
   ]);
 
   const editorToolsLabel =
@@ -2439,6 +2455,40 @@ export default function LayoutEditor() {
           Timber Frame Curtain
         </button>
       </div>
+      <div role="group" aria-label="Bracing style" className={styles.toolbar}>
+        <button
+          type="button"
+          aria-pressed={bracingStyle === "chevron"}
+          className={bracingStyle === "chevron" ? styles.toolActive : styles.tool}
+          onClick={() => setBracingStyle("chevron")}
+        >
+          Chevron Braced
+        </button>
+        <button
+          type="button"
+          aria-pressed={bracingStyle === "hatch-forward"}
+          className={bracingStyle === "hatch-forward" ? styles.toolActive : styles.tool}
+          onClick={() => setBracingStyle("hatch-forward")}
+        >
+          Hatch Forward
+        </button>
+        <button
+          type="button"
+          aria-pressed={bracingStyle === "hatch-back"}
+          className={bracingStyle === "hatch-back" ? styles.toolActive : styles.tool}
+          onClick={() => setBracingStyle("hatch-back")}
+        >
+          Hatch Back
+        </button>
+      </div>
+      <p className={styles.note}>
+        Which diagonal-brace pattern every &quot;braced&quot;-typed panel uses, project-wide — Chevron is the
+        original &quot;&lt;&quot; shape (both braces meet at the same stud); Hatch Forward (&quot;/&quot;) and Hatch
+        Back (&quot;\&quot;) continue one single diagonal slope instead, split at the middle girt row with each
+        brace's inner end at the opposite stud from the other. Applies wherever a &quot;braced&quot; panel is
+        placed (corner-proximity/seismic spacing under Loose Packed Braced, or &quot;All Braced&quot; under Timber
+        Frame Curtain) — has no effect under Square Bale Panels, which never places a braced slot.
+      </p>
       {panelizationType === "loose-packed-braced" && (
         <p className={styles.note}>
           Today&apos;s system: standard panels tiled at the width above, with corner-proximity bracing and
@@ -2447,14 +2497,13 @@ export default function LayoutEditor() {
       )}
       {panelizationType === "square-bale-panels" && (
         <>
-          <p className={styles.pending}>
-            Reference/layout mode only — not fabricated to anymore (Tommy). Every wall infill span (in place
-            of standard/braced/safety-gap) is tiled at a fixed {formatLengthIn(squareBalePanel.widthIn, unitSystem)}
-            {" "}x {formatLengthIn(squareBalePanel.thicknessIn, unitSystem)} whole-bale unit ({squareBalePanel.note}).
-            Corner panels are also a {formatLengthIn(squareBalePanel.widthIn, unitSystem)} Square Bale Panel body,
-            with a double 2x6 stud pack at the primary corner instead of the plain{" "}
-            {formatLengthIn(cornerPanelWidthIn.value, unitSystem)} Column/Corner unit — see the Corner Shop Drawing
-            page. Columns and openings are unaffected.
+          <p className={styles.note}>
+            Every wall infill span (in place of standard/braced/safety-gap) is tiled at a fixed{" "}
+            {formatLengthIn(squareBalePanel.widthIn, unitSystem)} x {formatLengthIn(squareBalePanel.thicknessIn, unitSystem)}{" "}
+            whole-bale unit ({squareBalePanel.note}). Corner panels are also a{" "}
+            {formatLengthIn(squareBalePanel.widthIn, unitSystem)} Square Bale Panel body, with a double 2x6 stud
+            pack at the primary corner instead of the plain {formatLengthIn(cornerPanelWidthIn.value, unitSystem)}{" "}
+            Column/Corner unit — see the Corner Shop Drawing page. Columns and openings are unaffected.
           </p>
           <div role="group" aria-label="Square bale stud configuration" className={styles.toolbar}>
             <button
@@ -2700,6 +2749,7 @@ export default function LayoutEditor() {
                   wallThicknessIn={thicknessIn}
                   wallHeightFt={wallHeightFt}
                   includeNailer={includeNailer}
+                  bracingStyle={bracingStyle}
                   standardWidthIn={standardWidthIn}
                   jackStudConfig={jackStudConfig}
                   leastAccessibleCorner={leastAccessibleCorner}
@@ -2725,6 +2775,7 @@ export default function LayoutEditor() {
                   secondStory={secondStoryEnabled ? { wallHeightFt: secondStoryWallHeightFt, wallSlots: overlayWallSlots } : null}
                   isSquareBalePanelization={panelizationType === "square-bale-panels"}
                   squareBaleStudConfig={squareBaleStudConfig}
+                  bracingStyle={bracingStyle}
                   nailerOffsetIn={nailerOffsetIn}
                   jackStudConfig={jackStudConfig}
                   standardWidthIn={standardWidthIn}
@@ -2761,6 +2812,7 @@ export default function LayoutEditor() {
               secondStory={secondStoryEnabled ? { wallHeightFt: secondStoryWallHeightFt, wallSlots: overlayWallSlots } : null}
               isSquareBalePanelization={panelizationType === "square-bale-panels"}
               squareBaleStudConfig={squareBaleStudConfig}
+              bracingStyle={bracingStyle}
               nailerOffsetIn={nailerOffsetIn}
               jackStudConfig={jackStudConfig}
               standardWidthIn={standardWidthIn}
@@ -4368,11 +4420,19 @@ export default function LayoutEditor() {
 
         {role !== "public" && (
           <>
-            {shopDrawings.map(({ panelType, hasWoodBom, instances }) => (
+            {shopDrawings.map(({ panelType, hasWoodBom, instances }) => {
+              // Hatch Forward/Back panels are still "braced"-typed slots
+              // under the hood (no new PanelSlotType), but Tommy wants
+              // them to literally read as "Hatch Forward Panel"/"Hatch
+              // Back Panel" wherever a user actually sees the name — the
+              // shared catalog label stays generically "Braced Panel" so
+              // BOM/structural notes stay correct for the whole family.
+              const displayLabel = panelType.id === "braced" ? bracedPanelDisplayLabel(bracingStyle) : panelType.label;
+              return (
               <StickyNote
                 key={panelType.id}
                 id={`shop-${panelType.id}`}
-                label={`Shop Drawing: ${panelType.label}`}
+                label={`Shop Drawing: ${displayLabel}`}
                 isOpen={openNoteIds.has(`shop-${panelType.id}`)}
                 isFullscreen={fullscreenNoteId === `shop-${panelType.id}`}
                 cascadeIndex={noteOpenOrder.indexOf(`shop-${panelType.id}`)}
@@ -4388,7 +4448,7 @@ export default function LayoutEditor() {
                   picture) are still placeholders.
                 </p>
                 <ShopDrawingPage
-                  title={`Shop Drawing — ${panelType.label}${panelType.label.toLowerCase().includes("panel") ? "" : " Panel"}`}
+                  title={`Shop Drawing — ${displayLabel}${displayLabel.toLowerCase().includes("panel") ? "" : " Panel"}`}
                   panelDescription={panelType.description}
                   standardWidthIn={standardWidthIn}
                   thicknessIn={thicknessIn}
@@ -4406,7 +4466,7 @@ export default function LayoutEditor() {
                               <StandardPanel3DView
                                 members={group.members}
                                 overallDimensions={{ heightIn: wallHeightFt * 12, widthIn: group.widthIn, depthIn: thicknessIn }}
-                                displayName={`${panelType.label} ${group.widthIn}in (${group.count})`}
+                                displayName={`${displayLabel} ${group.widthIn}in (${group.count})`}
                               />
                             </div>
                           ))}
@@ -4419,14 +4479,18 @@ export default function LayoutEditor() {
                         )}
                         {panelType.id === "braced" &&
                           (() => {
-                            const cutAngleDeg = representativeBraceCutAngleDeg(bracedSizeGroups[0]?.members ?? []);
-                            return cutAngleDeg === null ? null : (
+                            const levelCutAngleDeg = representativeBraceCutAngleDeg(bracedSizeGroups[0]?.members ?? []);
+                            return levelCutAngleDeg === null ? null : (
                               <p className={styles.note}>
-                                All 4 diagonal braces&apos; ends are cut FLUSH — a bevel-cut, one miter-saw
-                                blade-tilt setting (no compound angle needed, since every brace tilts only within
-                                the wall&apos;s own elevation plane) — at {cutAngleDeg.toFixed(1)}&deg; off a square
-                                crosscut, landing full face contact against the girt bar&apos;s/plate&apos;s own flat
-                                face instead of just touching at one edge.
+                                {displayLabel} — every diagonal brace is now a true beveled trapezoid, not a
+                                simplified box: a level cut ({levelCutAngleDeg.toFixed(1)}&deg; off a square
+                                crosscut) flush against the plate&apos;s own flat face, and a plumb cut (
+                                {(90 - levelCutAngleDeg).toFixed(1)}&deg; off a square crosscut) flush against the
+                                stud&apos;s own face, both landing full face contact instead of just touching at one
+                                edge. Board-feet purchasing length uses the longer of the trapezoid&apos;s 2 long
+                                edges.
+                                {bracingStyle === "chevron" &&
+                                  " Chevron also adds a vertical center connector, spanning between the upper and lower braces where each crosses the panel's horizontal center."}
                               </p>
                             );
                           })()}
@@ -4579,7 +4643,8 @@ export default function LayoutEditor() {
                   </p>
                 )}
               </StickyNote>
-            ))}
+              );
+            })}
           </>
         )}
 

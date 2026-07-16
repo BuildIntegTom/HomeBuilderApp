@@ -1,61 +1,11 @@
 import type { PanelMember } from "./componentSchema";
-import { memberBoxSizeIn } from "./panelMemberHelpers";
+import { BOX_FACES, memberLocalCornersIn } from "./panelMemberHelpers";
 
 const HEADER_LINES = [
   "# Reference-only export — not engineered, not for construction.",
   "# Units: inches. Axes: X=width, Y=height(up), Z=depth.",
   "",
 ];
-
-const BOX_FACES: [number, number, number, number][] = [
-  [1, 2, 6, 5], // -Y face
-  [2, 3, 7, 6], // +X face
-  [3, 4, 8, 7], // +Y face
-  [1, 4, 8, 5], // -X face
-  [4, 3, 2, 1], // -Z face
-  [5, 6, 7, 8], // +Z face
-];
-
-/**
- * One member's 8 box corners in its panel's own local space — X=width,
- * Y=height(up), Z=depth, min-corner at (0,0,0) for every orientation
- * except "diagonal" (center-anchored, rotated by `tiltDeg` around world Z,
- * matching the 3D renderer's `rotation.z`). Shared by `buildPanelObj` (one
- * panel, local space) and `buildBuildingObj` (many panels, each further
- * transformed into world space).
- */
-function memberLocalCornersIn(member: PanelMember): [number, number, number][] {
-  const sizeIn = memberBoxSizeIn(member);
-  const hx = sizeIn.xIn / 2;
-  const hy = sizeIn.zIn / 2;
-  const hz = sizeIn.yIn / 2;
-  const { tiltDeg } = member.position;
-  const isTilted = tiltDeg !== undefined;
-
-  const centerX = isTilted ? member.position.xIn : member.position.xIn + hx;
-  const centerY = isTilted ? member.position.zIn : member.position.zIn + hy;
-  const centerZ = isTilted ? member.position.yIn : member.position.yIn + hz;
-  const tiltRad = isTilted ? (tiltDeg * Math.PI) / 180 : 0;
-  const cos = Math.cos(tiltRad);
-  const sin = Math.sin(tiltRad);
-
-  const localCorners: [number, number, number][] = [
-    [-hx, -hy, -hz],
-    [hx, -hy, -hz],
-    [hx, hy, -hz],
-    [-hx, hy, -hz],
-    [-hx, -hy, hz],
-    [hx, -hy, hz],
-    [hx, hy, hz],
-    [-hx, hy, hz],
-  ];
-
-  return localCorners.map(([x, y, z]) => {
-    const rx = x * cos - y * sin;
-    const ry = x * sin + y * cos;
-    return [centerX + rx, centerY + ry, centerZ + z];
-  });
-}
 
 /**
  * Converts a panel's members into a Wavefront OBJ mesh (one box per

@@ -50,6 +50,7 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     timberFrameCurtainWidthIn: 36,
     nailerOffsetIn: 0,
     squareBaleStudConfig: "single-2x4",
+    bracingStyle: "chevron",
     projectName: "Untitled Project",
     wallsEnabled: true,
     floorsEnabled: false,

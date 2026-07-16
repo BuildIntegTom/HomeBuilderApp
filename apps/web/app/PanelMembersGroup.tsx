@@ -1,6 +1,7 @@
 "use client";
 
-import { memberBoxSizeIn, type PanelMember } from "@building-integrity/panel-catalog";
+import * as THREE from "three";
+import { BOX_FACES, memberBoxSizeIn, memberLocalCornersIn, type PanelMember } from "@building-integrity/panel-catalog";
 
 const IN_PER_FT = 12;
 
@@ -20,6 +21,38 @@ const MATERIAL_COLOR: Record<PanelMember["material"], string> = {
 const MATERIAL_OPACITY: Partial<Record<PanelMember["material"], number>> = {
   wood_fiber_board: 0.55,
 };
+
+/**
+ * A true beveled-end trapezoid prism (Tommy: "trapezoid cuts" — a diagonal
+ * brace's real plumb+level end cuts, not a plain tilted box) — the first
+ * non-box member geometry in this app. `memberLocalCornersIn` (shared with
+ * the OBJ exporter, so the downloadable file and the on-screen view can
+ * never disagree) already returns the 8 corners in this component's own
+ * local-space convention (X=width, Y=height up, Z=depth) — this just
+ * converts to feet and wires them into a `BufferGeometry` using the same
+ * `BOX_FACES` topology (each quad face split into 2 triangles). `DoubleSide`
+ * is used defensively — `BOX_FACES`' winding was only ever validated
+ * against the OBJ format's own face convention, not against three.js'
+ * CCW-front-face convention specifically, so this guards against an
+ * invisible (backface-culled) mesh if that winding turns out reversed. */
+function buildTrapezoidGeometry(member: PanelMember): THREE.BufferGeometry {
+  const corners = memberLocalCornersIn(member);
+  const positions = new Float32Array(corners.length * 3);
+  corners.forEach(([x, y, z], i) => {
+    positions[i * 3] = x / IN_PER_FT;
+    positions[i * 3 + 1] = y / IN_PER_FT;
+    positions[i * 3 + 2] = z / IN_PER_FT;
+  });
+  const indices: number[] = [];
+  for (const [a, b, c, d] of BOX_FACES) {
+    indices.push(a - 1, b - 1, c - 1, a - 1, c - 1, d - 1);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
 
 export interface PanelMembersGroupProps {
   members: PanelMember[];
@@ -43,6 +76,18 @@ export default function PanelMembersGroup({ members, colorOverride }: PanelMembe
   return (
     <>
       {members.map((member) => {
+        if (member.position.trapezoidCornersIn) {
+          return (
+            <mesh key={member.memberId} geometry={buildTrapezoidGeometry(member)}>
+              <meshStandardMaterial
+                color={colorOverride ?? MATERIAL_COLOR[member.material]}
+                transparent={MATERIAL_OPACITY[member.material] !== undefined}
+                opacity={MATERIAL_OPACITY[member.material] ?? 1}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+          );
+        }
         const sizeIn = memberBoxSizeIn(member);
         const sizeFt: [number, number, number] = [sizeIn.xIn / IN_PER_FT, sizeIn.zIn / IN_PER_FT, sizeIn.yIn / IN_PER_FT];
         const { tiltDeg } = member.position;

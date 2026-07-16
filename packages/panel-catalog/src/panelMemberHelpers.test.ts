@@ -1,15 +1,32 @@
 import { describe, expect, it } from "vitest";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
-import type { PanelMember } from "./componentSchema";
+import type { PanelMember, PanelSpacePoint2D } from "./componentSchema";
 import {
+  braceLongestEdgeIn,
   buildNailer,
   buildTrussWebBraces,
   computeBraceEndCutAngleDeg,
+  computeBraceTrapezoidCornersIn,
   computePlywoodAreaSqFt,
   computeTrussWebAngleDeg,
   computeTrussWebPeakCount,
   memberBoxSizeIn,
 } from "./panelMemberHelpers";
+
+/** Shoelace signed area (x2) of a 4-point polygon — positive means CCW. */
+function signedArea2x(corners: readonly PanelSpacePoint2D[]): number {
+  let sum = 0;
+  for (let i = 0; i < corners.length; i++) {
+    const c = corners[i]!;
+    const next = corners[(i + 1) % corners.length]!;
+    sum += c.xIn * next.zIn - next.xIn * c.zIn;
+  }
+  return sum;
+}
+
+function dist(a: PanelSpacePoint2D, b: PanelSpacePoint2D): number {
+  return Math.hypot(b.xIn - a.xIn, b.zIn - a.zIn);
+}
 
 describe("computePlywoodAreaSqFt", () => {
   it("sums only plywood members at the requested thickness", () => {
@@ -140,6 +157,77 @@ describe("buildTrussWebBraces", () => {
     const peak1 = braces.find((b) => b.memberId === "web_1_rise")!;
     const peak2 = braces.find((b) => b.memberId === "web_2_rise")!;
     expect(peak2.position.zIn).toBeGreaterThan(peak1.position.zIn);
+  });
+});
+
+describe("computeBraceTrapezoidCornersIn / braceLongestEdgeIn", () => {
+  // A 45deg brace from (0,0) [plumb target x=0] to (10,10) [level target
+  // z=10], board width 2 — hand-derived corners (see the module's own
+  // test-authoring notes) confirm the "intersect against 2 planes"
+  // algorithm and the closed-form cross-check L +- W/(2*ux*uz) agree.
+  const L = Math.hypot(10, 10);
+
+  it("both plumb corners land exactly on the plumb plane, both level corners exactly on the level plane", () => {
+    const corners = computeBraceTrapezoidCornersIn(0, 0, 10, 10, 2, 0, 10);
+    // corners[0]/corners[3] and corners[1]/corners[2] are one plumb/level
+    // pair each in SOME order — self-normalizing winding can swap which
+    // index holds which, so check by property (x==plumbX or z==levelX),
+    // not by fixed index.
+    const plumbCount = corners.filter((c) => Math.abs(c.xIn - 0) < 1e-6).length;
+    const levelCount = corners.filter((c) => Math.abs(c.zIn - 10) < 1e-6).length;
+    expect(plumbCount).toBe(2);
+    expect(levelCount).toBe(2);
+  });
+
+  it("the 2 centerline-parallel edges match the closed-form cross-check L +- boardWidthIn/(2*ux*uz)", () => {
+    const corners = computeBraceTrapezoidCornersIn(0, 0, 10, 10, 2, 0, 10);
+    const ux = 10 / L;
+    const uz = 10 / L;
+    const expectedLonger = L + 2 / (2 * ux * uz);
+    const expectedShorter = L - 2 / (2 * ux * uz);
+    expect(braceLongestEdgeIn(corners)).toBeCloseTo(expectedLonger, 6);
+    // The 2 opposite-edge pairs are {e01,e23} (the 2 centerline-parallel
+    // long edges — one longer, one shorter, per the +-halfWidth offset)
+    // and {e12,e30} (the true short bevel-cut end faces, close to the
+    // board's own width) — braceLongestEdgeIn picks whichever pair has
+    // the greater TOTAL length as "the long pair", then returns its
+    // longer member. Confirm both members of that identified long pair
+    // reproduce the closed-form longer/shorter split.
+    const e01 = dist(corners[0], corners[1]);
+    const e23 = dist(corners[2], corners[3]);
+    const e12 = dist(corners[1], corners[2]);
+    const e30 = dist(corners[3], corners[0]);
+    const longPair = e01 + e23 > e12 + e30 ? [e01, e23] : [e12, e30];
+    expect(Math.max(...longPair)).toBeCloseTo(expectedLonger, 6);
+    expect(Math.min(...longPair)).toBeCloseTo(expectedShorter, 6);
+    // The other pair is the true short bevel-cut faces — genuinely small,
+    // nowhere near the centerline length.
+    const shortPair = e01 + e23 > e12 + e30 ? [e12, e30] : [e01, e23];
+    expect(Math.max(...shortPair)).toBeLessThan(L / 2);
+  });
+
+  it("always returns a positive (CCW) winding, for every stud-side/direction combination a bracing style can produce", () => {
+    // The 4 sign combinations of (ux,uz) a chevron/hatch brace can ever
+    // produce: upper-left("/"-ish), upper-right("\"-ish), lower-left,
+    // lower-right (girt-to-plate in every direction).
+    const configs: [number, number, number, number, number, number][] = [
+      [0, 0, 10, 10, 0, 10], // ux>0, uz>0
+      [10, 0, 0, 10, 10, 10], // ux<0, uz>0
+      [10, 0, 0, -10, 10, -10], // ux<0, uz<0
+      [0, 10, 10, 0, 0, 0], // ux>0, uz<0
+    ];
+    for (const [xA, zA, xB, zB, plumbX, levelZ] of configs) {
+      const corners = computeBraceTrapezoidCornersIn(xA, zA, xB, zB, 2, plumbX, levelZ);
+      expect(signedArea2x(corners)).toBeGreaterThan(0);
+    }
+  });
+
+  it("degenerates gracefully to a thin sliver (not NaN) when boardWidthIn is 0", () => {
+    const corners = computeBraceTrapezoidCornersIn(0, 0, 10, 10, 0, 0, 10);
+    for (const c of corners) {
+      expect(Number.isFinite(c.xIn)).toBe(true);
+      expect(Number.isFinite(c.zIn)).toBe(true);
+    }
   });
 });
 

@@ -134,17 +134,13 @@ export default function PanelCalcSandbox() {
               onChange={(e) => setMethod(e.target.value as ConstructionMethod)}
             >
               <option value="loose-dense-pack">Loose Dense-Pack</option>
-              <option value="square-bale-reference">
-                Square Bale (reference/layout only)
-              </option>
+              <option value="square-bale-reference">Square Bale</option>
             </select>
           </label>
           {isSquareBale && (
             <p className={styles.note}>
               Square bale: width/thickness locked at {squareBalePanel.widthIn}
-              &quot; x {squareBalePanel.thicknessIn}&quot;. Reference/layout
-              mode only — not fabricated to anymore, calculations below are
-              illustrative, not the fully-supported engine.
+              &quot; x {squareBalePanel.thicknessIn}&quot; — {squareBalePanel.note}
             </p>
           )}
           {!isSquareBale && (

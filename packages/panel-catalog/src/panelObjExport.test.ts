@@ -119,6 +119,47 @@ describe("buildPanelObj", () => {
     expect(obj).toContain("# Building Integrity — Standard Panel");
     expect(obj).toMatch(/reference-only/i);
   });
+
+  it("a member carrying trapezoidCornersIn still emits 8 vertices/6 faces, using the trapezoid's own real (non-rectangular) shape instead of the plain box", () => {
+    const member = makeMember({
+      actualDimsIn: { thicknessIn: 1.5, widthIn: 3.5, lengthIn: 16.14 },
+      orientation: "diagonal",
+      position: {
+        xIn: 5,
+        yIn: 4,
+        zIn: 5,
+        rotationDeg: 90,
+        tiltDeg: 45,
+        trapezoidCornersIn: [
+          { xIn: 0, zIn: -1.4142 },
+          { xIn: 11.4142, zIn: 10 },
+          { xIn: 8.5858, zIn: 10 },
+          { xIn: 0, zIn: 1.4142 },
+        ],
+      },
+    });
+    const { vertices, faces } = parseObj(buildPanelObj([member], "Test"));
+    expect(vertices).toHaveLength(8);
+    expect(faces).toHaveLength(6);
+    // The trapezoid's own panel-space (x,z) pairs map directly to (worldX,
+    // worldY) — no rotation/shear math applied, since these corners are
+    // already the real absolute shape — paired with worldZ = position.yIn
+    // +- half the member's own thickness (the depth span every diagonal
+    // brace occupies).
+    const xs = vertices.map((v) => v[0]);
+    const ys = vertices.map((v) => v[1]);
+    const zs = vertices.map((v) => v[2]);
+    expect(Math.min(...xs)).toBeCloseTo(0, 4);
+    expect(Math.max(...xs)).toBeCloseTo(11.4142, 4);
+    expect(Math.min(...ys)).toBeCloseTo(-1.4142, 4);
+    expect(Math.max(...ys)).toBeCloseTo(10, 4);
+    expect(Math.min(...zs)).toBeCloseTo(4 - 0.75, 4);
+    expect(Math.max(...zs)).toBeCloseTo(4 + 0.75, 4);
+    // Not a rectangle: the 4 (x,y) corners aren't just 2 unique x's x 2
+    // unique y's the way a plain box's would be.
+    const uniqueXs = new Set(vertices.slice(0, 4).map((v) => v[0].toFixed(4)));
+    expect(uniqueXs.size).toBeGreaterThan(2);
+  });
 });
 
 describe("buildBuildingObj", () => {

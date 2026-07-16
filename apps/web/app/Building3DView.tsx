@@ -26,6 +26,7 @@ import {
   sillHeaderHeightInRange,
   standardWindowHeightDefaultIn,
   toeUpHeightIn,
+  type BracingStyle,
   type JackStudConfig,
   type PanelMember,
   type StudConfig,
@@ -152,6 +153,7 @@ function membersForSlot(
   includeNailer: boolean,
   isSquareBalePanelization: boolean,
   squareBaleStudConfig: StudConfig,
+  bracingStyle: BracingStyle,
   nailerOffsetIn: number,
   jackStudConfig: JackStudConfig,
   standardWidthIn: number,
@@ -162,7 +164,7 @@ function membersForSlot(
         ? buildSquareBalePanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, squareBaleStudConfig, nailerOffsetIn)
         : buildStandardPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer);
     case "braced":
-      return buildBracedPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer);
+      return buildBracedPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, bracingStyle);
     case "column":
       return buildColumnPanelMembers(thicknessIn, heightIn, includeNailer);
     case "corner":
@@ -360,6 +362,10 @@ interface Building3DViewProps {
   /** Square Bale Panel-only stud config + nailer slide offset — ignored
    * when `isSquareBalePanelization` is false. */
   squareBaleStudConfig?: StudConfig;
+  /** Which diagonal-brace pattern every "braced"-typed slot uses,
+   * project-wide (Tommy: "add another bracing option... Hatch Forward,
+   * and Hatch Back"). */
+  bracingStyle?: BracingStyle;
   nailerOffsetIn?: number;
   /** Jack stud construction + standard panel width — feed window/door
    * opening assemblies (header/jack-studs/sill) via buildOpeningAssemblyMembers. */
@@ -464,6 +470,7 @@ export default function Building3DView({
   secondStory,
   isSquareBalePanelization = false,
   squareBaleStudConfig = "single-2x4",
+  bracingStyle = "chevron",
   nailerOffsetIn = 0,
   jackStudConfig,
   standardWidthIn,
@@ -509,6 +516,7 @@ export default function Building3DView({
           includeNailer,
           isSquareBalePanelization,
           squareBaleStudConfig,
+          bracingStyle,
           nailerOffsetIn,
           jackStudConfig,
           standardWidthIn,
@@ -521,6 +529,7 @@ export default function Building3DView({
       includeNailer,
       isSquareBalePanelization,
       squareBaleStudConfig,
+      bracingStyle,
       nailerOffsetIn,
       jackStudConfig,
       standardWidthIn,
@@ -549,6 +558,7 @@ export default function Building3DView({
           includeNailer,
           isSquareBalePanelization,
           squareBaleStudConfig,
+          bracingStyle,
           nailerOffsetIn,
           jackStudConfig,
           standardWidthIn,
@@ -561,6 +571,7 @@ export default function Building3DView({
       includeNailer,
       isSquareBalePanelization,
       squareBaleStudConfig,
+      bracingStyle,
       nailerOffsetIn,
       jackStudConfig,
       standardWidthIn,

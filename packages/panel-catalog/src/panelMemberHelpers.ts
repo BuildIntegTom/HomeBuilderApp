@@ -1,5 +1,5 @@
 import { standardPanelBom, standardPanelHeightIn } from "./data";
-import type { PanelMember } from "./componentSchema";
+import type { PanelMember, PanelSpacePoint2D } from "./componentSchema";
 
 /**
  * Shared cross-section constants + member builders behind both
@@ -63,6 +63,81 @@ export function memberBoxSizeIn(member: PanelMember): { xIn: number; yIn: number
   if (member.orientation === "horizontal" && member.position.rotationDeg === 180) return { xIn: w, yIn: l, zIn: t };
   if (member.orientation === "horizontal") return { xIn: l, yIn: t, zIn: w };
   return { xIn: l, yIn: w, zIn: t }; // "flat"
+}
+
+/** Every box/trapezoid-prism member's 6 quad faces, as 1-indexed corner
+ * references into the 8-corner array `memberLocalCornersIn` returns — this
+ * table is purely topological (which corner-index belongs to which face)
+ * and works identically for a true box OR a trapezoid prism, since both
+ * shapes share the same "2 sets of 4 corners, one at each depth extreme"
+ * structure. Shared by the OBJ exporter (`buildPanelObj`/`buildBuildingObj`
+ * in panelObjExport.ts) and the 3D renderer (`PanelMembersGroup.tsx`, which
+ * builds a matching `THREE.BufferGeometry` from the same 8 corners for any
+ * member carrying `position.trapezoidCornersIn`). */
+export const BOX_FACES: [number, number, number, number][] = [
+  [1, 2, 6, 5], // -Y face
+  [2, 3, 7, 6], // +X face
+  [3, 4, 8, 7], // +Y face
+  [1, 4, 8, 5], // -X face
+  [4, 3, 2, 1], // -Z face
+  [5, 6, 7, 8], // +Z face
+];
+
+/**
+ * One member's 8 corners in its panel's own local space — X=width,
+ * Y=height(up), Z=depth. For a true beveled brace (`position.
+ * trapezoidCornersIn` present — see `computeBraceTrapezoidCornersIn`), the
+ * 4 already-absolute panel-space (X,Z) corners are used directly as both
+ * depth faces (`Y = position.yIn +- thicknessIn/2`, the same depth span
+ * every diagonal brace already occupies) — no rotation math needed, since
+ * they're already the real cut shape. Every other member: min-corner at
+ * (0,0,0) for every orientation except "diagonal" (center-anchored,
+ * rotated by `tiltDeg` around world Z, matching the 3D renderer's
+ * `rotation.z`). Shared by `buildPanelObj`/`buildBuildingObj`
+ * (panelObjExport.ts, one panel at a time / placed in world space) and
+ * `PanelMembersGroup.tsx` (the on-screen 3D renderer) — one function, so
+ * the downloadable .obj can never visually disagree with what's on screen.
+ */
+export function memberLocalCornersIn(member: PanelMember): [number, number, number][] {
+  const { trapezoidCornersIn } = member.position;
+  if (trapezoidCornersIn) {
+    const halfThicknessIn = member.actualDimsIn.thicknessIn / 2;
+    const centerDepthIn = member.position.yIn;
+    const near: [number, number, number][] = trapezoidCornersIn.map((c) => [c.xIn, c.zIn, centerDepthIn - halfThicknessIn]);
+    const far: [number, number, number][] = trapezoidCornersIn.map((c) => [c.xIn, c.zIn, centerDepthIn + halfThicknessIn]);
+    return [...near, ...far];
+  }
+
+  const sizeIn = memberBoxSizeIn(member);
+  const hx = sizeIn.xIn / 2;
+  const hy = sizeIn.zIn / 2;
+  const hz = sizeIn.yIn / 2;
+  const { tiltDeg } = member.position;
+  const isTilted = tiltDeg !== undefined;
+
+  const centerX = isTilted ? member.position.xIn : member.position.xIn + hx;
+  const centerY = isTilted ? member.position.zIn : member.position.zIn + hy;
+  const centerZ = isTilted ? member.position.yIn : member.position.yIn + hz;
+  const tiltRad = isTilted ? ((tiltDeg as number) * Math.PI) / 180 : 0;
+  const cos = Math.cos(tiltRad);
+  const sin = Math.sin(tiltRad);
+
+  const localCorners: [number, number, number][] = [
+    [-hx, -hy, -hz],
+    [hx, -hy, -hz],
+    [hx, hy, -hz],
+    [-hx, hy, -hz],
+    [-hx, -hy, hz],
+    [hx, -hy, hz],
+    [hx, hy, hz],
+    [-hx, hy, hz],
+  ];
+
+  return localCorners.map(([x, y, z]) => {
+    const rx = x * cos - y * sin;
+    const ry = x * sin + y * cos;
+    return [centerX + rx, centerY + ry, centerZ + z];
+  });
 }
 
 /** Bottom + top plywood skins, spanning the full widthIn x depthIn footprint. */
@@ -268,6 +343,109 @@ export function computeTrussWebAngleDeg(widthIn: number, riseIn: number, peakCou
 export function computeBraceEndCutAngleDeg(tiltDeg: number): number {
   const foldedDeg = (((tiltDeg + 90) % 180) + 180) % 180 - 90;
   return Math.abs(foldedDeg);
+}
+
+/**
+ * The 4 absolute panel-space corners of a diagonal brace's true beveled
+ * shape (Tommy: "trapezoid cuts... derived from the angle that the
+ * trapezoid has been rotated"). A brace has 2 different end cuts, not one
+ * angle at both ends: a LEVEL (horizontal) cut at the plate end, flush
+ * against the plate's/girt's own flat face (`levelZIn`) — the existing
+ * `computeBraceEndCutAngleDeg` angle — and a PLUMB (vertical) cut at the
+ * stud end, flush against the stud's own face (`plumbXIn`) — the
+ * complementary `90 - computeBraceEndCutAngleDeg(...)` angle. These 2 cuts
+ * are never parallel to each other (except at exactly 45deg), so the
+ * brace is a genuine trapezoid, not a parallelogram: one pair of parallel
+ * sides (the 2 long edges, both parallel to the centerline `A->B`) and
+ * one non-parallel pair (the 2 end cuts).
+ *
+ * Computed by intersecting the board's own 2 long edges — each offset
+ * +-boardWidthIn/2 from the centerline along the width direction
+ * perpendicular to it — against the 2 known target planes directly, more
+ * robust than an abstract shear-angle formula (and verified to exactly
+ * reproduce what `PanelMembersGroup.tsx`'s own `tiltDeg` rotation draws
+ * for the untrimmed reference case).
+ *
+ * Self-normalizes winding (via the shoelace signed area) so every caller
+ * — chevron and both hatch styles, which mirror which end is plumb vs.
+ * level — always gets the same rotational sense `memberLocalCornersIn`'s
+ * plain-box corners already use, keeping `BOX_FACES`' fixed face-index
+ * topology valid for either shape. Because that normalization can swap
+ * which array positions hold the long vs. short edges, `braceLongestEdgeIn`
+ * below never assumes a fixed index pairing — see its own doc comment.
+ */
+export function computeBraceTrapezoidCornersIn(
+  xA: number,
+  zA: number,
+  xB: number,
+  zB: number,
+  boardWidthIn: number,
+  plumbXIn: number,
+  levelZIn: number,
+): [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] {
+  const dx = xB - xA;
+  const dz = zB - zA;
+  const lengthIn = Math.hypot(dx, dz);
+  const ux = dx / lengthIn;
+  const uz = dz / lengthIn;
+  const wx = uz;
+  const wz = -ux;
+  const halfWidthIn = boardWidthIn / 2;
+
+  function edgeCorners(sign: 1 | -1): [PanelSpacePoint2D, PanelSpacePoint2D] {
+    const px = xA + sign * halfWidthIn * wx;
+    const pz = zA + sign * halfWidthIn * wz;
+    const tPlumb = (plumbXIn - px) / ux;
+    const tLevel = (levelZIn - pz) / uz;
+    return [
+      { xIn: plumbXIn, zIn: pz + tPlumb * uz },
+      { xIn: px + tLevel * ux, zIn: levelZIn },
+    ];
+  }
+
+  const [plumbPlus, levelPlus] = edgeCorners(1);
+  const [plumbMinus, levelMinus] = edgeCorners(-1);
+  const corners: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] = [
+    plumbPlus,
+    levelPlus,
+    levelMinus,
+    plumbMinus,
+  ];
+
+  let signedArea2x = 0;
+  for (let i = 0; i < 4; i++) {
+    const c = corners[i]!;
+    const next = corners[(i + 1) % 4]!;
+    signedArea2x += c.xIn * next.zIn - next.xIn * c.zIn;
+  }
+  return signedArea2x < 0 ? [corners[0]!, corners[3]!, corners[2]!, corners[1]!] : corners;
+}
+
+/**
+ * The longer of a trapezoid brace's 2 long (centerline-parallel) edges —
+ * Tommy: "board feet numbers... calculated with these trapezoid pieces
+ * from longest point to longest point" — written into `actualDimsIn.
+ * lengthIn` in place of the plain centerline length, since
+ * `computeBoardFeetByNominalSize` reads that field verbatim with no other
+ * override mechanism.
+ *
+ * Never assumes which array positions hold the long vs. short edges —
+ * `computeBraceTrapezoidCornersIn`'s winding self-normalization can swap
+ * them. Instead this compares both possible opposite-edge pairings and
+ * picks whichever pair has the greater total length: since a board's own
+ * width (a few inches) is always tiny next to its real length (feet), the
+ * true long pair's total is always far greater than the short pair's,
+ * regardless of winding.
+ */
+export function braceLongestEdgeIn(corners: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D]): number {
+  function dist(a: PanelSpacePoint2D, b: PanelSpacePoint2D): number {
+    return Math.hypot(b.xIn - a.xIn, b.zIn - a.zIn);
+  }
+  const e01 = dist(corners[0], corners[1]);
+  const e12 = dist(corners[1], corners[2]);
+  const e23 = dist(corners[2], corners[3]);
+  const e30 = dist(corners[3], corners[0]);
+  return e01 + e23 > e12 + e30 ? Math.max(e01, e23) : Math.max(e12, e30);
 }
 
 /**
