@@ -12,10 +12,11 @@ export interface EditorToolbarProps {
 /**
  * Sits directly above the Wall/Foundation/Floor/Roof editor region (Tommy:
  * "the editor should have a menu bar along the top of it") — just the tab
- * dial now. The 2D/3D view-mode buttons moved up to page.tsx's top row
- * alongside the compass/zoom/pan controls (Tommy: "put the layout editor
+ * dial now. The 2D/3D view-mode dial moved up to page.tsx's top row
+ * alongside the zoom/pan controls (Tommy: "put the layout editor
  * scrollwheel and 2d 3d buttons at the top of the tool bar") — see
- * ViewModeToggle.tsx.
+ * ViewerDial.tsx. The compass docks separately in the page's own top-left
+ * corner (see page.module.css's .compassDock).
  */
 export default function EditorToolbar({ editorTab, onEditorTabChange, enabledTabs }: EditorToolbarProps) {
   return (

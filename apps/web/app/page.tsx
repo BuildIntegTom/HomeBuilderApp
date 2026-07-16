@@ -218,12 +218,13 @@ import OctagonRingPreview from "./OctagonRingPreview";
 import TrussPreview from "./TrussPreview";
 import HighPerfTrussPreview, { type HighPerfTrussTypeId } from "./HighPerfTrussPreview";
 import PanelLegend from "./PanelLegend";
+import { PANEL_TYPE_LABELS } from "./panelColors";
 import ProjectSummaryPage from "./ProjectSummaryPage";
 import SectionCarousel from "./SectionCarousel";
 import SlabFoundationDiagram from "./SlabFoundationDiagram";
 import StickyNote from "./StickyNote";
 import TopBar from "./TopBar";
-import ViewModeToggle from "./ViewModeToggle";
+import ViewerDial, { type ViewerStop } from "./ViewerDial";
 import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import WallElevationView from "./WallElevationView";
 import styles from "./page.module.css";
@@ -501,6 +502,13 @@ export default function LayoutEditor() {
   // (only one at a time).
   const [gableEndWallIds, setGableEndWallIds] = useState<Set<string>>(new Set());
   const [elevationViewWallId, setElevationViewWallId] = useState<string | null>(null);
+  // Which panel a click in Edit mode most recently landed on (2D or 3D —
+  // both route through handleToggleOpening below) — drives the "Selected
+  // Panel" note. Re-derived fresh from baseWallSlots on every render (see
+  // that note's isOpen check), so a stale wallId/slotIndex after a redraw
+  // just fails to find a slot and the note stops rendering, rather than
+  // showing the wrong panel.
+  const [selectedSlot, setSelectedSlot] = useState<{ wallId: string; slotIndex: number } | null>(null);
   // Hard guardrail (Tommy): at most 2 Gable End walls, and once 1 is active,
   // the 2nd must be its geometric opposite (parallel, facing away) — the
   // roof-catcher beam needs exactly 2 walls forming a straight run between
@@ -814,6 +822,42 @@ export default function LayoutEditor() {
 
   const elevationWall = footprint && elevationViewWallId ? (footprint.walls.find((w) => w.id === elevationViewWallId) ?? null) : null;
 
+  // The view-mode dial's cycle (Tommy: "cycle the wall view options...
+  // starting at the top and going clockwise, and the wheel moves onto 3D
+  // views") — 2D Floor Plan, then one elevation stop per wall in the same
+  // order the footprint already lists them (compass order for the common
+  // rectangle/octagon cases), then the 2 existing 3D modes. See
+  // ViewerDial.tsx.
+  const viewerStops = useMemo<ViewerStop[]>(
+    () => [
+      { kind: "plan" },
+      ...(footprint?.walls.map((w) => ({ kind: "elevation" as const, wallId: w.id, label: w.id })) ?? []),
+      { kind: "3d-framed" },
+      { kind: "3d-boxes" },
+    ],
+    [footprint],
+  );
+  const currentViewerStop: ViewerStop = elevationViewWallId
+    ? { kind: "elevation", wallId: elevationViewWallId, label: elevationViewWallId }
+    : viewMode === "plan"
+      ? { kind: "plan" }
+      : simplified3D
+        ? { kind: "3d-boxes" }
+        : { kind: "3d-framed" };
+  const handleViewerStopChange = (stop: ViewerStop) => {
+    if (stop.kind === "elevation") {
+      setElevationViewWallId(stop.wallId);
+      return;
+    }
+    setElevationViewWallId(null);
+    if (stop.kind === "plan") {
+      setViewMode("plan");
+    } else {
+      setViewMode("3d");
+      setSimplified3D(stop.kind === "3d-boxes");
+    }
+  };
+
   const floorJoistTypeId = floorSystemId && floorSystemId !== "thermal-slab" ? floorSystemId : null;
   const floorJoistType = floorJoistTypeId ? floorJoistTypes.find((t) => t.id === floorJoistTypeId)! : null;
   const isThermalSlabFloor = floorSystemId === "thermal-slab";
@@ -884,6 +928,26 @@ export default function LayoutEditor() {
   // an opening was leaving the rest of the wall protruding past the drawn
   // box instead of auto-adjusting the standard count and gap/borrowed
   // panel sizing) — see `retileWithOpenings`.
+  const isOpeningType = (type: PanelSlot["type"]) => type === "window" || type === "door" || type === "column";
+
+  // Openings keep their left-to-right order through retileWithOpenings even
+  // though slot *indices* can shift (filler standard/safety-gap panels
+  // around them get re-derived) — so "the Nth opening slot" is a stable way
+  // to relocate the panel a click just changed, in the freshly-retiled
+  // array. Used by handleToggleOpening below to keep `selectedSlot` pointed
+  // at the panel that was actually clicked, not whatever now sits at its
+  // old index.
+  const findNthOpeningIndex = (slots: PanelSlot[], ordinal: number): number => {
+    let seen = 0;
+    for (let i = 0; i < slots.length; i++) {
+      if (isOpeningType(slots[i]!.type)) {
+        if (seen === ordinal) return i;
+        seen++;
+      }
+    }
+    return -1;
+  };
+
   const handleToggleOpening = (wallId: Wall["id"], slotIndex: number) => {
     const currentSlots = baseWallSlots[wallId] ?? [];
     const currentSlot = currentSlots[slotIndex];
@@ -896,7 +960,12 @@ export default function LayoutEditor() {
       column: "standard",
     };
     const nextType = cycle[currentSlot.type];
-    if (!nextType) return; // corner/safety-gap untouched
+    if (!nextType) {
+      // corner/safety-gap: not cyclable, but still selectable for read-only
+      // details in the Selected Panel note.
+      setSelectedSlot({ wallId, slotIndex });
+      return;
+    }
 
     // A Column Panel is always fabricated exactly `COLUMN_TOTAL_WIDTH_IN`
     // wide (Tommy: "column panels are a fixed width that's almost never
@@ -923,6 +992,14 @@ export default function LayoutEditor() {
       }
     });
 
+    // Openings keep their relative order, so "how many opening-type slots
+    // sit before this one" (computed against the *pre*-retile array, same
+    // ordinal handleSetWindowWidth's precedingOpenings uses) still uniquely
+    // identifies this exact panel after retiling reshuffles indices.
+    // Converting *to* plain "standard" has no such stable identity (any
+    // number of standards can appear anywhere) — selection is just cleared.
+    const openingOrdinal = nextType === "standard" ? null : currentSlots.slice(0, slotIndex).filter((s) => isOpeningType(s.type)).length;
+
     const slots = retileWithOpenings(
       geometry.lengthIn,
       standardWidthIn,
@@ -933,9 +1010,18 @@ export default function LayoutEditor() {
       anchors,
       geometry.allowBorrow,
     ).slots;
+    const finalSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
+
+    if (openingOrdinal === null) {
+      setSelectedSlot(null);
+    } else {
+      const newIndex = findNthOpeningIndex(finalSlots, openingOrdinal);
+      setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex });
+    }
+
     setBaseWallSlots((prev) => ({
       ...prev,
-      [wallId]: footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots,
+      [wallId]: finalSlots,
     }));
   };
 
@@ -1189,23 +1275,6 @@ export default function LayoutEditor() {
     }
     return next;
   }, [baseWallSlots, spacingIn, standardWidthIn, panelizationType, timberFrameCurtainPanelType, timberFrameCurtainWidthIn]);
-
-  const windowList = useMemo(() => {
-    const items: { wallId: string; slotIndex: number; widthIn: number; heightIn: number; sillHeightIn: number }[] = [];
-    for (const [wallId, slots] of Object.entries(baseWallSlots)) {
-      slots.forEach((s, i) => {
-        if (s.type === "window")
-          items.push({
-            wallId,
-            slotIndex: i,
-            widthIn: s.widthIn,
-            heightIn: s.heightIn ?? standardWindowHeightDefaultIn.value,
-            sillHeightIn: s.sillHeightIn ?? sillDefaultHeightIn.value,
-          });
-      });
-    }
-    return items;
-  }, [baseWallSlots]);
 
   const allSlots = useMemo(() => Object.values(overlayWallSlots).flat(), [overlayWallSlots]);
   // Every real wall panel type, straw-filled or not — used for the panel
@@ -1978,14 +2047,18 @@ export default function LayoutEditor() {
   // bottom SectionCarousel. `formalDocumentNoteIds` is the subset "Print
   // Packet" covers (the actual printable sheets — Project Summary + every
   // Detail Guide/Shop Drawing page — not the live editing panels like
-  // Windows/Wall Assembly/Project Totals/Review Log). "Wall Tools" (Tommy:
+  // Wall Assembly/Project Totals/Review Log). "Windows" used to be one of
+  // these too, but its per-window controls moved into the click-driven
+  // "Selected Panel" note (see selectedSlot/handleToggleOpening) — not part
+  // of this carousel list at all, since its visibility is driven by
+  // selection state rather than being manually toggled open/closed. "Wall
+  // Tools" (Tommy:
   // "wall tools sticky note should be a clickable option on the right tool
   // bar") relabels itself to match whichever editor tab is active, same as
   // it always has.
   const allNoteSections = useMemo(
     () => [
       { id: "editor-tools", label: editorToolsLabel },
-      { id: "windows", label: "Windows" },
       { id: "wall-assembly", label: "Wall Assembly (Vapor Check)" },
       { id: "detail-summary", label: "Project Summary" },
       { id: "project-totals", label: "Project Totals" },
@@ -2650,21 +2723,22 @@ export default function LayoutEditor() {
       />
       <main className={styles.main}>
         <div className={`${styles.editorSection} print-hidden-chrome`}>
+          {editorTab === "wall" && (
+            <div className={styles.compassDock}>
+              <CompassWidget ref={compassNeedleRef} />
+            </div>
+          )}
           <div className={styles.editorSidebar}>
             {loadError && <p className={styles.disclaimer}>Couldn&apos;t load that file — {loadError}</p>}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", width: "100%" }}>
-              {editorTab === "wall" && <CompassWidget ref={compassNeedleRef} />}
               {editorTab === "wall" && viewMode === "plan" && (
                 <div ref={setToolbarPortalNode} className={styles.toolbarPortalInline} />
               )}
-              <ViewModeToggle
-                viewMode={viewMode}
-                simplified3D={simplified3D}
-                onChange={(mode, simplified) => {
-                  setViewMode(mode);
-                  setSimplified3D(simplified);
-                }}
-                viewModeDisabled={editorTab !== "wall" || !footprint}
+              <ViewerDial
+                stops={viewerStops}
+                value={currentViewerStop}
+                onChange={handleViewerStopChange}
+                disabled={editorTab !== "wall" || !footprint}
               />
               <button
                 type="button"
@@ -2739,7 +2813,24 @@ export default function LayoutEditor() {
 
           <div className={styles.editorCanvasLayer}>
             {editorTab === "wall" &&
-              (viewMode === "plan" ? (
+              (elevationWall ? (
+                <WallElevationView
+                  wall={elevationWall}
+                  slots={overlayWallSlots[elevationWall.id] ?? []}
+                  wallHeightFt={wallHeightFt}
+                  hasGableEnd={gableEndWallIds.has(elevationWall.id)}
+                  ridgeHeightFt={bottomOfTrussMaxHeightFt}
+                  targetPanelWidthIn={standardWidthIn}
+                  roofCatcherBeamOffsetIn={roofCatcherBeamOffsetIn}
+                  roofSystemTypeId={roofSystemTypeId}
+                  gablePeakPositionIn={gablePeakPositionInByWallId[elevationWall.id]}
+                  gableEndToggleBlockReason={gableEndToggleBlockReason(elevationWall.id)}
+                  onToggleGableEnd={(enabled) => handleToggleGableEnd(elevationWall.id, enabled)}
+                  onChangeGablePeakPositionIn={(positionIn) => handleChangeGablePeakPositionIn(elevationWall.id, positionIn)}
+                  onGenerateShedRoof={() => handleGenerateShedRoof(elevationWall)}
+                  onClose={() => setElevationViewWallId(null)}
+                />
+              ) : viewMode === "plan" ? (
                 <FootprintCanvas
                   footprint={footprint}
                   shapeTool={shapeTool}
@@ -2898,47 +2989,6 @@ export default function LayoutEditor() {
                     typing a length.
                   </p>
                 )}
-                {viewMode === "plan" && footprint && (
-                  <div>
-                    <div role="group" aria-label="Elevation view" className={styles.toolbar}>
-                      <span style={{ fontSize: 13, marginRight: 4 }}>Elevation view:</span>
-                      {footprint.walls.map((w) => (
-                        <button
-                          key={w.id}
-                          type="button"
-                          aria-pressed={elevationViewWallId === w.id}
-                          className={elevationViewWallId === w.id ? styles.toolActive : styles.tool}
-                          onClick={() => setElevationViewWallId((was) => (was === w.id ? null : w.id))}
-                        >
-                          {w.id} ↑
-                        </button>
-                      ))}
-                    </div>
-                    <p className={styles.note}>
-                      Opens a face-on 2D view of that wall section (X = position along the wall, Y = height) — the same
-                      ground-floor run shown above, plus an optional Gable End row on top (see the Roof tab for the ridge
-                      height it rises to).
-                    </p>
-                    {elevationWall && (
-                      <WallElevationView
-                        wall={elevationWall}
-                        slots={overlayWallSlots[elevationWall.id] ?? []}
-                        wallHeightFt={wallHeightFt}
-                        hasGableEnd={gableEndWallIds.has(elevationWall.id)}
-                        ridgeHeightFt={bottomOfTrussMaxHeightFt}
-                        targetPanelWidthIn={standardWidthIn}
-                        roofCatcherBeamOffsetIn={roofCatcherBeamOffsetIn}
-                        roofSystemTypeId={roofSystemTypeId}
-                        gablePeakPositionIn={gablePeakPositionInByWallId[elevationWall.id]}
-                        gableEndToggleBlockReason={gableEndToggleBlockReason(elevationWall.id)}
-                        onToggleGableEnd={(enabled) => handleToggleGableEnd(elevationWall.id, enabled)}
-                        onChangeGablePeakPositionIn={(positionIn) => handleChangeGablePeakPositionIn(elevationWall.id, positionIn)}
-                        onGenerateShedRoof={() => handleGenerateShedRoof(elevationWall)}
-                        onClose={() => setElevationViewWallId(null)}
-                      />
-                    )}
-                  </div>
-                )}
               </>
             )}
             {editorTab === "foundation" && (
@@ -3090,8 +3140,8 @@ export default function LayoutEditor() {
                       if (!ridge) {
                         return (
                           <p className={styles.note}>
-                            Add Gable End to exactly 2 (opposite) walls — see the Elevation view in the Wall tab — to
-                            compute a real roof-catcher-beam run from the footprint.
+                            Add Gable End to exactly 2 (opposite) walls — see that wall&apos;s elevation view (Wall
+                            tab&apos;s view-mode dial) — to compute a real roof-catcher-beam run from the footprint.
                           </p>
                         );
                       }
@@ -3157,64 +3207,73 @@ export default function LayoutEditor() {
           </StickyNote>
         </div>
 
-        <StickyNote
-          id="windows"
-          label="Windows"
-          isOpen={openNoteIds.has("windows")}
-          isFullscreen={fullscreenNoteId === "windows"}
-          cascadeIndex={noteOpenOrder.indexOf("windows")}
-          onClose={() => handleToggleNote("windows")}
-          onToggleFullscreen={() => handleToggleNoteFullscreen("windows")}
-          onPrint={() => handlePrintNote("windows")}
-        >
-          {windowList.length > 0 ? (
-            windowList.map(({ wallId, slotIndex, widthIn, heightIn, sillHeightIn }) => (
-              <label key={`${wallId}-${slotIndex}`}>
-                Wall {wallId}, window #{slotIndex}{" "}
-                <select
-                  id={`window-size-${wallId}-${slotIndex}`}
-                  value={widthIn}
-                  onChange={(e) => handleSetWindowWidth(wallId, slotIndex, Number(e.target.value))}
-                >
-                  {standardWindowWidthsIn.value.map((w) => (
-                    <option key={w} value={w}>
-                      {w}&quot;
-                    </option>
-                  ))}
-                </select>{" "}
-                <select
-                  id={`window-height-${wallId}-${slotIndex}`}
-                  title="This window's own Rough Opening height (sill-top to header-bottom)"
-                  value={heightIn}
-                  onChange={(e) => handleSetWindowHeight(wallId, slotIndex, Number(e.target.value))}
-                >
-                  {standardWindowHeightsIn.value.map((h) => (
-                    <option key={h} value={h}>
-                      {formatLengthIn(h, unitSystem)} tall
-                    </option>
-                  ))}
-                </select>{" "}
-                <input
-                  type="number"
-                  id={`window-sill-height-${wallId}-${slotIndex}`}
-                  title="This window's own sill height (floor to Rough Opening bottom) — also draggable in the 3D Sill & Header tool"
-                  value={sillHeightIn}
-                  min={sillHeaderHeightInRange.minIn}
-                  max={sillHeaderHeightInRange.maxIn}
-                  step={0.125}
-                  style={{ width: 64 }}
-                  onChange={(e) => handleSetWindowSillHeight(wallId, slotIndex, Number(e.target.value))}
-                />
-                {" sill"}
-              </label>
-            ))
-          ) : (
-            <p className={styles.note}>
-              No windows placed yet. Switch to the Wall tab&apos;s 2D view, set the shape tool to Edit, and click a
-              tan panel to cycle it to Window — it&apos;ll show up here with width/height dropdowns once placed.
-            </p>
-          )}
-        </StickyNote>
+        {selectedSlot &&
+          (() => {
+            const slot = baseWallSlots[selectedSlot.wallId]?.[selectedSlot.slotIndex];
+            if (!slot) return null;
+            const { wallId, slotIndex } = selectedSlot;
+            return (
+              <StickyNote
+                id="selected-panel"
+                label={`Panel: ${wallId} #${slotIndex} — ${PANEL_TYPE_LABELS[slot.type]}`}
+                isOpen
+                isFullscreen={fullscreenNoteId === "selected-panel"}
+                cascadeIndex={0}
+                onClose={() => setSelectedSlot(null)}
+                onToggleFullscreen={() => handleToggleNoteFullscreen("selected-panel")}
+              >
+                {slot.type === "window" ? (
+                  <label>
+                    Width{" "}
+                    <select
+                      id={`window-size-${wallId}-${slotIndex}`}
+                      value={slot.widthIn}
+                      onChange={(e) => handleSetWindowWidth(wallId, slotIndex, Number(e.target.value))}
+                    >
+                      {standardWindowWidthsIn.value.map((w) => (
+                        <option key={w} value={w}>
+                          {w}&quot;
+                        </option>
+                      ))}
+                    </select>{" "}
+                    Height{" "}
+                    <select
+                      id={`window-height-${wallId}-${slotIndex}`}
+                      title="This window's own Rough Opening height (sill-top to header-bottom)"
+                      value={slot.heightIn ?? standardWindowHeightsIn.value[0]}
+                      onChange={(e) => handleSetWindowHeight(wallId, slotIndex, Number(e.target.value))}
+                    >
+                      {standardWindowHeightsIn.value.map((h) => (
+                        <option key={h} value={h}>
+                          {formatLengthIn(h, unitSystem)} tall
+                        </option>
+                      ))}
+                    </select>{" "}
+                    <input
+                      type="number"
+                      id={`window-sill-height-${wallId}-${slotIndex}`}
+                      title="This window's own sill height (floor to Rough Opening bottom) — also draggable in the 3D Sill & Header tool"
+                      value={slot.sillHeightIn ?? sillHeaderHeightInRange.minIn}
+                      min={sillHeaderHeightInRange.minIn}
+                      max={sillHeaderHeightInRange.maxIn}
+                      step={0.125}
+                      style={{ width: 64 }}
+                      onChange={(e) => handleSetWindowSillHeight(wallId, slotIndex, Number(e.target.value))}
+                    />
+                    {" sill"}
+                  </label>
+                ) : (
+                  <p className={styles.note}>
+                    {PANEL_TYPE_LABELS[slot.type]} panel, {slot.widthIn.toFixed(1)}in wide.
+                    {slot.type === "column" ? " Column Panels are always fabricated at a fixed width, not adjustable here." : ""}
+                    {slot.type === "standard" || slot.type === "door"
+                      ? " Click it again on the canvas to cycle its type."
+                      : ""}
+                  </p>
+                )}
+              </StickyNote>
+            );
+          })()}
 
         <StickyNote
           id="wall-assembly"

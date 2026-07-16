@@ -121,6 +121,20 @@
   flex-direction: row;
 }
 
+/* Docks the compass flush in the top-left corner (Tommy: "add the compass
+   in the top corner touching the top bar on its top and left bar on its
+   left") — an absolutely-positioned overlay against .editorSection's own
+   padding box, which starts exactly at the TopBar's underside (.main's
+   top is var(--topbar-height)) and the page's left edge, so top:0/left:0
+   here touches both with no gap. Sits above the canvas/sidebar (z-index)
+   but doesn't participate in .editorSidebar's flex layout/padding. */
+.compassDock {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 50;
+}
+
 .editorCanvasLayer {
   flex: 1 1 auto;
   height: 100%;
@@ -130,9 +144,9 @@
   overflow: hidden;
 }
 
-/* EditorToolbar + DrawingToolPen + compass + pan/zoom portal dock in their
-   own left-hand column, in normal flow (not an overlay) — see the comment
-   on .editorSection above. */
+/* EditorToolbar + DrawingToolPen + pan/zoom portal dock in their own
+   left-hand column, in normal flow (not an overlay) — see the comment on
+   .editorSection above. The compass docks separately, see .compassDock. */
 .editorSidebar {
   flex: 0 0 240px;
   width: 240px;
