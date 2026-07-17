@@ -6,7 +6,7 @@ import { Stage, Layer, Rect, Circle, Text, Group, Line, Arrow } from "react-konv
 import type { KonvaEventObject } from "konva/lib/Node";
 import {
   buildOctagonFootprint,
-  dragWall,
+  dragWallBounded,
   footprintIsAllRightAngles,
   type CornerId,
   type Footprint,
@@ -632,7 +632,7 @@ export default function FootprintCanvas({
     const offsetFt = signedPerpOffsetFt(dragWallPointerPos, wall, footprint, offsetPx);
 
     if (footprintIsAllRightAngles(footprint)) {
-      return dragWall(footprint, gesture.wallId, offsetFt);
+      return dragWallBounded(footprint, gesture.wallId, offsetFt);
     }
 
     const isWidthWall = wall.id === "01" || wall.id === "45";

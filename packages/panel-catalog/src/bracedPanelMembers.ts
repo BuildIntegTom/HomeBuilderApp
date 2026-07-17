@@ -84,7 +84,17 @@ const BRACE_STUD_SIDES: Record<BracingStyle, { upper: "left" | "right"; lower: "
  */
 function braceEndpoints(widthIn: number, studSide: "left" | "right", girtBarZIn: number, plateZIn: number): [number, number, number, number] {
   const studXIn = studSide === "left" ? PLATE_2X4_THICKNESS_IN : widthIn - PLATE_2X4_THICKNESS_IN;
-  const plateNearXIn = studSide === "left" ? widthIn - 2 * PLATE_2X4_THICKNESS_IN : 2 * PLATE_2X4_THICKNESS_IN;
+  // The wide/"long point" end lands on the OPPOSITE stud's own real inner
+  // face (Tommy: "i want the 2x4 trapezoid to end on the top plate with
+  // the long point ending where the vertical stud and the plate 2x4
+  // runner intersect") — exactly `studXIn`'s own formula with the
+  // branches swapped, matching `buildCornerStuds`'s real corner layout
+  // (cornerXs = [0, widthIn - PLATE_2X4_THICKNESS_IN]): the left stud's
+  // inner face is at PLATE_2X4_THICKNESS_IN, the right stud's inner face
+  // is at widthIn - PLATE_2X4_THICKNESS_IN. Previously a fixed
+  // `2 * PLATE_2X4_THICKNESS_IN` inset from the panel edge, which stopped
+  // 1 stud-thickness short of the actual stud face.
+  const plateNearXIn = studSide === "left" ? widthIn - PLATE_2X4_THICKNESS_IN : PLATE_2X4_THICKNESS_IN;
   return [studXIn, girtBarZIn, plateNearXIn, plateZIn];
 }
 

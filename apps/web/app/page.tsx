@@ -20,7 +20,7 @@ import {
   computeSillRunWidths,
   computeTruckLoads,
   cornerOwnership as cornerOwnershipPure,
-  dragWall,
+  dragWallBounded,
   editWallLength,
   footprintIsAllRightAngles,
   gapEndFor,
@@ -1315,12 +1315,15 @@ export default function LayoutEditor() {
   const handleDragWall = (wallId: string, offsetFt: number) => {
     if (!footprint) return;
     if (footprintIsAllRightAngles(footprint)) {
-      // dragWall itself never renumbers ids (same reuse as editWallLength),
-      // but a follow-up collapse (Tommy: "walls can snap back into each
-      // other and reform a straight one") can — it removes a near-zero
-      // wall's corner and renumbers every survivor "0".."n-1", which can
-      // shift EVERY wall's id, not just the ones next to the drag.
-      const dragged = dragWall(footprint, wallId, offsetFt);
+      // dragWallBounded itself never renumbers ids (same reuse as
+      // editWallLength), but a follow-up collapse (Tommy: "walls can snap
+      // back into each other and reform a straight one") can — it removes
+      // a near-zero wall's corner and renumbers every survivor "0".."n-1",
+      // which can shift EVERY wall's id, not just the ones next to the
+      // drag. dragWallBounded (not plain dragWall) guards against a large
+      // drag sliding a corner past an unrelated wall (Tommy: "it flips the
+      // opposing wall to the other side of the floor layout line").
+      const dragged = dragWallBounded(footprint, wallId, offsetFt);
       const { footprint: fp, primaryCornerIds: nextPrimary } = collapseNearZeroWalls(dragged, primaryCornerIds);
       setFootprint(fp);
       setPrimaryCornerIds(nextPrimary);
@@ -3017,10 +3020,15 @@ export default function LayoutEditor() {
         <div className={`${styles.editorSection} print-hidden-chrome`}>
           <div className={styles.editorSidebar}>
             {loadError && <p className={styles.disclaimer}>Couldn&apos;t load that file — {loadError}</p>}
+            {/* Region 1 (always first, fixed): viewer selection. Tommy:
+                "having the viewer selection on top, then the floor/wall/
+                roof layer, then all the editor relevant tools below" —
+                previously shared this row with the pan/zoom portal div
+                below, whose presence/absence (wall+plan only) changed the
+                row's own height and shifted everything below it every time
+                the tab/view changed. Kept to just ViewerDial + fullscreen
+                now, so this row's height never varies. */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", width: "100%" }}>
-              {editorTab === "wall" && viewMode === "plan" && (
-                <div ref={setToolbarPortalNode} className={styles.toolbarPortalInline} />
-              )}
               <ViewerDial
                 stops={viewerStops}
                 value={currentViewerStop}
@@ -3044,9 +3052,16 @@ export default function LayoutEditor() {
                 {isOsFullscreen ? "⤡" : "⤢"}
               </button>
             </div>
+            {/* Region 2 (always second, fixed): floor/wall/roof layer tabs
+                — now guaranteed to sit right below Region 1 every time,
+                since Region 1 no longer varies in height. */}
             <EditorToolbar editorTab={editorTab} onEditorTabChange={setEditorTab} enabledTabs={enabledEditorTabs} />
+            {/* Region 3 (variable, always last): everything else — its own
+                presence/height still varies by tab/view, but nothing below
+                it depends on that anymore. */}
             {editorTab === "wall" && viewMode === "plan" && (
               <>
+                <div ref={setToolbarPortalNode} className={styles.toolbarPortalInline} />
                 <DrawingToolPen
                   value={shapeTool}
                   onChange={setShapeTool}

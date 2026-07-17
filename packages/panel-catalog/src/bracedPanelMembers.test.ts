@@ -40,8 +40,12 @@ describe("buildDiagonalBraces", () => {
   const middleBarBottomZ = middleCenterZ - 0.75;
   const leftStudFaceX = 1.5; // PLATE_2X4_THICKNESS_IN
   const rightStudFaceX = WIDTH_IN - 1.5;
-  const barRightX = WIDTH_IN - 3; // near-right plate-side reference
-  const barLeftX = 3; // near-left plate-side reference (mirror of barRightX)
+  // The trapezoid's wide end lands exactly on the OPPOSITE stud's own face
+  // (Tommy: "the long point ending where the vertical stud and the plate
+  // 2x4 runner intersect") — same target as leftStudFaceX/rightStudFaceX,
+  // just named for readability at each call site below.
+  const barRightX = rightStudFaceX;
+  const barLeftX = leftStudFaceX;
   const topPlateZ = HEIGHT_IN - 0.75 - 1.5;
   const bottomPlateZ = 0.75 + 1.5; // top face of the bottom plate
 

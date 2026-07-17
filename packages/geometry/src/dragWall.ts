@@ -1,5 +1,6 @@
 import type { Corner, Footprint, Point, Wall } from "./types";
 import { wallDirection } from "./cornerAngle";
+import { isSelfIntersecting } from "./polygonValidity";
 
 const MIN_NEIGHBOR_LENGTH_FT = 1;
 const PARALLEL_EPS = 1e-9;
@@ -103,6 +104,65 @@ export function dragWall(footprint: Footprint, wallId: string, offsetFt: number)
   return { corners, walls };
 }
 
+const SAFETY_SCAN_STEPS = 40;
+const SAFETY_BISECT_ITERATIONS = 20;
+
+/**
+ * `dragWall`, guarded against producing a self-intersecting polygon —
+ * Tommy: "sometimes when i make a bump out and drag the wall, it flips
+ * the opposing wall to the other side of the floor layout line and makes
+ * the plan look sketchy." `dragWall` only floors its 2 immediate
+ * neighbors' lengths; the neighbor that's *growing* (and the dragged wall
+ * itself) has no ceiling, and nothing checks the result against any OTHER
+ * wall in the footprint — so a large enough drag (most easily reached
+ * dragging a bump-out's short jog wall) can slide a corner straight past
+ * an unrelated wall, producing a self-intersecting polygon.
+ *
+ * A plain bisection on `offsetFt` alone isn't provably safe here: the 2
+ * neighbor walls extend along a fixed line (monotonic — once a neighbor
+ * starts crossing another wall, it keeps crossing for every larger
+ * `|offsetFt|`), but the dragged wall itself TRANSLATES rigidly (both
+ * endpoints move together), so it can enter a crossing zone against some
+ * far-off wall and exit it again at a larger offset — not guaranteed
+ * monotonic. Instead: scan outward from 0 (guaranteed safe — `offsetFt=0`
+ * is a no-op) in fixed steps toward the requested offset, stop at the
+ * FIRST unsafe step, then bisect within that last-safe/first-unsafe
+ * bracket. Every accepted value is independently re-verified, so this can
+ * never return a self-intersecting result even if the safe/unsafe pattern
+ * along the way isn't monotonic — it just finds "the first obstacle"
+ * along the drag path, which also matches how `MIN_NEIGHBOR_LENGTH_FT`'s
+ * own floor already "stops the drag early" today (clamp, not reject).
+ *
+ * Costs nothing extra for an ordinary (non-crossing) drag — exactly 1
+ * `dragWall` + 1 `isSelfIntersecting` call, same as calling `dragWall`
+ * directly. The scan+bisect only runs when the naive result would
+ * self-intersect.
+ */
+export function dragWallBounded(footprint: Footprint, wallId: string, offsetFt: number): Footprint {
+  const naive = dragWall(footprint, wallId, offsetFt);
+  if (offsetFt === 0 || !isSelfIntersecting(naive)) return naive;
+
+  let lastSafeOffsetFt = 0;
+  let firstUnsafeOffsetFt = offsetFt;
+  for (let i = 1; i <= SAFETY_SCAN_STEPS; i++) {
+    const candidateOffsetFt = (offsetFt * i) / SAFETY_SCAN_STEPS;
+    if (isSelfIntersecting(dragWall(footprint, wallId, candidateOffsetFt))) {
+      firstUnsafeOffsetFt = candidateOffsetFt;
+      break;
+    }
+    lastSafeOffsetFt = candidateOffsetFt;
+  }
+  for (let i = 0; i < SAFETY_BISECT_ITERATIONS; i++) {
+    const midOffsetFt = (lastSafeOffsetFt + firstUnsafeOffsetFt) / 2;
+    if (isSelfIntersecting(dragWall(footprint, wallId, midOffsetFt))) {
+      firstUnsafeOffsetFt = midOffsetFt;
+    } else {
+      lastSafeOffsetFt = midOffsetFt;
+    }
+  }
+  return dragWall(footprint, wallId, lastSafeOffsetFt);
+}
+
 export interface CollapseResult {
   footprint: Footprint;
   primaryCornerIds: Set<string>;
@@ -189,11 +249,14 @@ function wallsFromCorners(corners: Corner[]): Wall[] {
 }
 
 /**
- * `dragWall` followed by a snap-back collapse — Tommy's "undo a bump-out by
- * dragging" feature. Threading `primaryCornerIds` through (rather than
- * leaving it to the caller to reconcile separately) mirrors
+ * `dragWallBounded` followed by a snap-back collapse — Tommy's "undo a
+ * bump-out by dragging" feature. Threading `primaryCornerIds` through
+ * (rather than leaving it to the caller to reconcile separately) mirrors
  * `insertBumpOut`'s own `{ footprint, primaryCornerIds }` result shape,
  * since a collapse can renumber corner ids exactly like a bump-out can.
+ * Uses the self-intersection-guarded drag (not plain `dragWall`) for the
+ * same reason every other drag-wall call site does — see
+ * `dragWallBounded`'s own doc comment.
  */
 export function dragWallWithCollapse(
   footprint: Footprint,
@@ -201,6 +264,6 @@ export function dragWallWithCollapse(
   offsetFt: number,
   primaryCornerIds: Set<string>,
 ): CollapseResult {
-  const dragged = dragWall(footprint, wallId, offsetFt);
+  const dragged = dragWallBounded(footprint, wallId, offsetFt);
   return collapseNearZeroWalls(dragged, primaryCornerIds);
 }

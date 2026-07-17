@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { buildRectangleFootprint } from "./footprint";
 import { insertBumpOut } from "./bumpOut";
-import { collapseNearZeroWalls, dragWall, dragWallWithCollapse } from "./dragWall";
+import { collapseNearZeroWalls, dragWall, dragWallBounded, dragWallWithCollapse } from "./dragWall";
 import { cornerTurnAngleRad, isRightAngleCorner } from "./cornerAngle";
+import { isSelfIntersecting } from "./polygonValidity";
 import type { Footprint } from "./types";
 
 const allPrimary = (fp: Footprint) => new Set(fp.corners.map((c) => c.id));
@@ -163,5 +164,59 @@ describe("collapseNearZeroWalls / dragWallWithCollapse", () => {
     const result = collapseNearZeroWalls(thin, primary);
     expect(result.footprint.corners.length).toBe(4);
     expect(result.footprint).toBe(thin);
+  });
+});
+
+describe("dragWallBounded", () => {
+  // Tommy: "sometimes when i make a bump out and drag the wall, it flips
+  // the opposing wall to the other side of the floor layout line and
+  // makes the plan look sketchy" — a single bump-out's own neighbor-floor
+  // clamp happens to always keep a jog wall's travel within the span its
+  // immediate neighbors already occupy, but a SECOND bump-out chained onto
+  // the first can leave an immediate neighbor "unaware" of a wall further
+  // away that a large drag then slides straight through. Found by brute-
+  // force search (not hand-derived) — this exact double-bump-out shape is
+  // the smallest repro found.
+  function selfIntersectingRepro(): { fp: Footprint; wallId: string } {
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const step1 = insertBumpOut(fp, "AB", 4, 10, 8, primary);
+    const wallFromA = step1.footprint.walls.find((w) => w.startCorner === "0")!;
+    const step2 = insertBumpOut(step1.footprint, wallFromA.id, 0.5, 3, 6, step1.primaryCornerIds);
+    return { fp: step2.footprint, wallId: "45" };
+  }
+
+  it("confirms the repro: plain dragWall DOES self-intersect at a large offset", () => {
+    const { fp, wallId } = selfIntersectingRepro();
+    expect(isSelfIntersecting(dragWall(fp, wallId, 1000))).toBe(true);
+  });
+
+  it("clamps the offset down to a simple (non-self-intersecting) result instead", () => {
+    const { fp, wallId } = selfIntersectingRepro();
+    const bounded = dragWallBounded(fp, wallId, 1000);
+    expect(isSelfIntersecting(bounded)).toBe(false);
+    // Some real drag still happened (didn't just fall all the way back to
+    // a 0-offset no-op) — the clamp finds "the first obstacle", not "give up".
+    expect(bounded).not.toEqual(fp);
+  });
+
+  it("is a complete no-op for an offset the naive drag already handles safely", () => {
+    const { fp, wallId } = selfIntersectingRepro();
+    const naive = dragWall(fp, wallId, 2);
+    const bounded = dragWallBounded(fp, wallId, 2);
+    expect(bounded).toEqual(naive);
+  });
+
+  it("is a no-op when offsetFt is exactly 0, matching plain dragWall", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const bounded = dragWallBounded(fp, "AB", 0);
+    expect(bounded).toEqual(dragWall(fp, "AB", 0));
+  });
+
+  it("leaves an ordinary (non-crossing) drag on a plain rectangle completely unaffected", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const naive = dragWall(fp, "AB", 5);
+    const bounded = dragWallBounded(fp, "AB", 5);
+    expect(bounded).toEqual(naive);
   });
 });
