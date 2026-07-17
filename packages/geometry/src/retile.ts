@@ -1,6 +1,6 @@
 import { computeGapEnd, computeSafetyEnd } from "./gapPlacement";
 import { cornerTurnAngleRad, footprintIsAllRightAngles, isConvexCorner, isRightAngleCorner } from "./cornerAngle";
-import { markSafetyCorner, tileWall } from "./tiling";
+import { getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall } from "./tiling";
 import type { CornerId, Footprint, PanelSlot, Wall, WallEnd } from "./types";
 
 export interface CornerEndOwnership {
@@ -140,6 +140,82 @@ export function retile(
     // panel for the gap — Tommy: no standard-safety panels for octagons.
     const slots = tileWall(lengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, start.hasCorner, end.hasCorner, !mitered)
       .slots;
+    next[wall.id] = mitered ? markSafetyCorner(slots, gapEnd) : slots;
+  }
+  return next;
+}
+
+/** Re-tiles one wall, reusing `oldSlots`' existing openings via the same
+ * anchor mechanism `handleSetWindowWidth`/`handleToggleOpening` already
+ * use for a single-wall re-tile — falls back to a plain (opening-free)
+ * tile when no old slots are supplied (a brand-new wall, or one whose old
+ * openings don't carry forward — see `retilePreservingOpenings`). */
+function tileOneWallPreservingOpenings(
+  oldSlots: PanelSlot[] | undefined,
+  wallLengthIn: number,
+  standardWidthIn: number,
+  cornerPanelWidthIn: number,
+  gapEnd: WallEnd,
+  hasCornerStart: boolean,
+  hasCornerEnd: boolean,
+  allowBorrow: boolean,
+): PanelSlot[] {
+  if (!oldSlots) {
+    return tileWall(wallLengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, hasCornerStart, hasCornerEnd, allowBorrow)
+      .slots;
+  }
+  return retileWithOpenings(
+    wallLengthIn,
+    standardWidthIn,
+    cornerPanelWidthIn,
+    gapEnd,
+    hasCornerStart,
+    hasCornerEnd,
+    getOpeningAnchors(oldSlots),
+    allowBorrow,
+  ).slots;
+}
+
+/** Same as `retile`, but preserves each wall's existing window/door/column
+ * openings wherever the caller can identify a corresponding old wall for
+ * it (Tommy: "make a surefire way that... panelization rules... dont
+ * produce panels that adhere to the primary floor layout" — bump-out/
+ * drag-wall/wall-length-edit no longer wipe every OTHER wall's openings
+ * just because one wall changed elsewhere). `oldSlotsByNewWallId` is keyed
+ * by the NEW footprint's wall ids — the caller resolves the old-to-new
+ * correlation, since it differs by operation: an id-stable operation
+ * (dragWall, editWallLength) can pass its old `baseWallSlots` straight
+ * through unmodified, since ids never change; `insertBumpOut` (which
+ * renumbers every id) needs an exact-point-pair lookup first — see
+ * `handleAddBumpOut` in page.tsx. A missing entry (undefined) means "no
+ * old counterpart" — that wall gets plain-tiled with no openings, same as
+ * `retile`. */
+export function retilePreservingOpenings(
+  fp: Footprint,
+  leastAccessible: CornerId,
+  primary: Set<string>,
+  standardWidthIn: number,
+  cornerPanelWidthIn: number,
+  thicknessIn: number,
+  oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined>,
+): Record<string, PanelSlot[]> {
+  const next: Record<string, PanelSlot[]> = {};
+  const ownership = cornerOwnership(fp, primary, thicknessIn);
+  const mitered = isMiteredShape(fp);
+  for (const wall of fp.walls) {
+    const gapEnd = gapEndFor(fp, wall, leastAccessible);
+    const { start, end } = ownership[wall.id]!;
+    const lengthIn = wall.lengthFt * 12 - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+    const slots = tileOneWallPreservingOpenings(
+      oldSlotsByNewWallId[wall.id],
+      lengthIn,
+      standardWidthIn,
+      cornerPanelWidthIn,
+      gapEnd,
+      start.hasCorner,
+      end.hasCorner,
+      !mitered,
+    );
     next[wall.id] = mitered ? markSafetyCorner(slots, gapEnd) : slots;
   }
   return next;

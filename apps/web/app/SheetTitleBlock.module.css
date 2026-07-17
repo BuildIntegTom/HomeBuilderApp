@@ -141,3 +141,30 @@
     border-top: 3px solid #000;
   }
 }
+
+/* Print pagination fix (Tommy: "if it spills over to needing more than one
+   page, then additional pages are made for that content") — on screen,
+   .sheet is a fixed-shape box (aspect-ratio/min-height) and .content
+   scrolls its own overflow; on paper there's no scrollbar, so content
+   taller than that fixed box was silently cut off instead of flowing to a
+   second printed page. Resetting the shape to auto/visible here lets the
+   browser's native print pagination take over — this is the actual
+   overflow-clipping culprit (not the StickyNote wrapper one layer up,
+   which globals.css's print rules already correctly neutralize via
+   height:auto!important on [data-print-target]). Screen appearance is
+   untouched; this only applies inside @media print. */
+@media print {
+  .sheet {
+    aspect-ratio: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .content {
+    overflow: visible;
+  }
+
+  .titleZone {
+    overflow: visible;
+  }
+}

@@ -9,6 +9,7 @@ import {
   areWallsOppositePair,
   buildOctagonFootprint,
   buildRectangleFootprint,
+  collapseNearZeroWalls,
   computeFloorPanelGrid,
   computeFootprintAreaSqFt,
   computeJoistLayout,
@@ -30,6 +31,7 @@ import {
   markSafetyCorner,
   pointAlongRidgeLine,
   retile as retilePure,
+  retilePreservingOpenings as retilePreservingOpeningsPure,
   retileWithOpenings,
   wallGeometryFor as wallGeometryForPure,
   type CornerId,
@@ -229,6 +231,7 @@ import SlabFoundationDiagram from "./SlabFoundationDiagram";
 import StickyNote from "./StickyNote";
 import TopBar from "./TopBar";
 import ViewerDial, { type ViewerStop } from "./ViewerDial";
+import WindowSizeDiagram from "./WindowSizeDiagram";
 import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import WallElevationView from "./WallElevationView";
 import styles from "./page.module.css";
@@ -546,6 +549,13 @@ export default function LayoutEditor() {
   // just fails to find a slot and the note stops rendering, rather than
   // showing the wrong panel.
   const [selectedSlot, setSelectedSlot] = useState<{ wallId: string; slotIndex: number } | null>(null);
+  // Feedback for the Selected Panel note's window-sill controls (number
+  // input + WindowSizeDiagram's drag handle) — Tommy: "when a drag or the
+  // number input gets clamped... show a brief inline note instead of
+  // silently snapping". Set by handleSetWindowSillHeight itself, so both
+  // input paths share one source of truth for what actually got clamped.
+  const [sillClampNotice, setSillClampNotice] = useState<string | null>(null);
+  const sillClampNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Hard guardrail (Tommy): at most 2 Gable End walls, and once 1 is active,
   // the 2nd must be its geometric opposite (parallel, facing away) — the
   // roof-catcher beam needs exactly 2 walls forming a straight run between
@@ -944,6 +954,25 @@ export default function LayoutEditor() {
   const cornerOwnership = (fp: Footprint, primary: Set<string>) => cornerOwnershipPure(fp, primary, thicknessIn);
   const retile = (fp: Footprint, leastAccessible: CornerId, primary: Set<string>): Record<string, PanelSlot[]> =>
     retilePure(fp, leastAccessible, primary, standardWidthIn, cornerWidthInForTiling, thicknessIn);
+  // Same as `retile` above, but preserves each wall's existing openings —
+  // see retile.ts's own doc comment. `oldSlotsByNewWallId` resolves the
+  // old-to-new wall correlation; for an id-stable operation (dragWall,
+  // editWallLength) callers just pass `baseWallSlots` straight through.
+  const retilePreservingOpenings = (
+    fp: Footprint,
+    leastAccessible: CornerId,
+    primary: Set<string>,
+    oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined>,
+  ): Record<string, PanelSlot[]> =>
+    retilePreservingOpeningsPure(
+      fp,
+      leastAccessible,
+      primary,
+      standardWidthIn,
+      cornerWidthInForTiling,
+      thicknessIn,
+      oldSlotsByNewWallId,
+    );
   const wallGeometryFor = (wallId: string) =>
     footprint ? wallGeometryForPure(footprint, wallId, primaryCornerIds, leastAccessibleCorner, thicknessIn) : null;
 
@@ -1125,21 +1154,26 @@ export default function LayoutEditor() {
   // concern, orthogonal to the horizontal wall-tiling system. Clamped to
   // the mfr spec sheet's sill/lintel-height range, and further clamped so
   // the sill can't push the RO's top past the wall's own height.
-  const handleSetWindowSillHeight = (wallId: string, slotIndex: number, sillHeightIn: number) => {
-    setBaseWallSlots((prev) => {
-      const slots = prev[wallId];
-      const slot = slots?.[slotIndex];
-      if (!slots || !slot) return prev;
-      const windowHeightIn = slot.heightIn ?? standardWindowHeightDefaultIn.value;
-      const maxSillHeightIn = wallHeightFt * 12 - windowHeightIn;
-      const clampedSillHeightIn = Math.min(
-        Math.max(sillHeightIn, sillHeaderHeightInRange.minIn),
-        Math.min(sillHeaderHeightInRange.maxIn, maxSillHeightIn),
+  const handleSetWindowSillHeight = (wallId: string, slotIndex: number, requestedSillHeightIn: number) => {
+    const slots = baseWallSlots[wallId];
+    const slot = slots?.[slotIndex];
+    if (!slots || !slot) return;
+    const windowHeightIn = slot.heightIn ?? standardWindowHeightDefaultIn.value;
+    const maxSillHeightIn = wallHeightFt * 12 - windowHeightIn;
+    const clampMaxIn = Math.min(sillHeaderHeightInRange.maxIn, maxSillHeightIn);
+    const clampedSillHeightIn = Math.min(Math.max(requestedSillHeightIn, sillHeaderHeightInRange.minIn), clampMaxIn);
+
+    if (Math.abs(clampedSillHeightIn - requestedSillHeightIn) > 0.05) {
+      if (sillClampNoticeTimerRef.current) clearTimeout(sillClampNoticeTimerRef.current);
+      setSillClampNotice(
+        `Sill height clamped to ${clampedSillHeightIn.toFixed(1)}in — allowed range is ${sillHeaderHeightInRange.minIn}"-${clampMaxIn.toFixed(1)}" for this window (mfr sill/header limit, and the header can't exceed the wall's own height).`,
       );
-      const nextSlots = slots.slice();
-      nextSlots[slotIndex] = { ...nextSlots[slotIndex]!, sillHeightIn: clampedSillHeightIn };
-      return { ...prev, [wallId]: nextSlots };
-    });
+      sillClampNoticeTimerRef.current = setTimeout(() => setSillClampNotice(null), 4000);
+    }
+
+    const nextSlots = slots.slice();
+    nextSlots[slotIndex] = { ...nextSlots[slotIndex]!, sillHeightIn: clampedSillHeightIn };
+    setBaseWallSlots((prev) => ({ ...prev, [wallId]: nextSlots }));
   };
 
   // An octagon is still just 2 numbers (widthFt/depthFt) under the hood —
@@ -1168,7 +1202,10 @@ export default function LayoutEditor() {
       // next wall's end corner (see editWallLength's own docs).
       const fp = editWallLength(footprint, wallId, newLengthFt);
       setFootprint(fp);
-      setBaseWallSlots(retile(fp, leastAccessibleCorner, primaryCornerIds));
+      // editWallLength never renumbers ids, so baseWallSlots' old keys are
+      // still valid — every wall's own openings survive, re-tiled at its
+      // (possibly new) length.
+      setBaseWallSlots(retilePreservingOpenings(fp, leastAccessibleCorner, primaryCornerIds, baseWallSlots));
       return;
     }
     if (footprint.corners.length === 4) {
@@ -1182,7 +1219,10 @@ export default function LayoutEditor() {
       const nextPrimary = new Set(fp.corners.map((c) => c.id));
       setFootprint(fp);
       setPrimaryCornerIds(nextPrimary);
-      setBaseWallSlots(retile(fp, leastAccessibleCorner, nextPrimary));
+      // buildRectangleFootprint always uses the same fixed "AB"/"BC"/"CD"/
+      // "DA" wall ids regardless of dimensions, so baseWallSlots' keys stay
+      // valid here too.
+      setBaseWallSlots(retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
       return;
     }
 
@@ -1197,7 +1237,8 @@ export default function LayoutEditor() {
     const nextPrimary = new Set(fp.corners.map((c) => c.id));
     setFootprint(fp);
     setPrimaryCornerIds(nextPrimary);
-    setBaseWallSlots(retile(fp, leastAccessibleCorner, nextPrimary));
+    // buildOctagonFootprint always uses the same fixed "0".."7" wall ids too.
+    setBaseWallSlots(retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
   };
 
   const isWallLengthEditable = (wallId: string): boolean => {
@@ -1228,11 +1269,39 @@ export default function LayoutEditor() {
       primaryCornerIds,
     );
     const nextLeastAccessible = [...nextPrimary][0] ?? fp.corners[0]!.id;
+
+    // insertBumpOut renumbers every corner/wall id from scratch, even for
+    // walls it didn't touch — but an untouched wall keeps the EXACT same
+    // start/end points (see insertBumpOut's own code), so its real
+    // identity survives as a point-pair match even though its id doesn't.
+    // The wall actually being bumped out is excluded even if some partial
+    // match existed — its own openings have nowhere valid to go once
+    // split into a jog (Tommy: make bump-out reliable, not "produce
+    // panels that adhere to the primary floor layout" — the OTHER walls
+    // are what must survive intact, not necessarily this one).
+    const pointKey = (p: { x: number; y: number }) => `${p.x.toFixed(6)},${p.y.toFixed(6)}`;
+    const oldCornersById = new Map(footprint.corners.map((c) => [c.id, c.point]));
+    const oldWallIdByPointPair = new Map<string, string>();
+    for (const w of footprint.walls) {
+      if (w.id === wallId) continue;
+      const start = oldCornersById.get(w.startCorner)!;
+      const end = oldCornersById.get(w.endCorner)!;
+      oldWallIdByPointPair.set(`${pointKey(start)}|${pointKey(end)}`, w.id);
+    }
+    const newCornersById = new Map(fp.corners.map((c) => [c.id, c.point]));
+    const oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined> = {};
+    for (const w of fp.walls) {
+      const start = newCornersById.get(w.startCorner)!;
+      const end = newCornersById.get(w.endCorner)!;
+      const oldWallId = oldWallIdByPointPair.get(`${pointKey(start)}|${pointKey(end)}`);
+      if (oldWallId) oldSlotsByNewWallId[w.id] = baseWallSlots[oldWallId];
+    }
+
     setFootprint(fp);
     setIsBumpedOut(true);
     setPrimaryCornerIds(nextPrimary);
     setLeastAccessibleCorner(nextLeastAccessible);
-    setBaseWallSlots(retile(fp, nextLeastAccessible, nextPrimary));
+    setBaseWallSlots(retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId));
     setShapeTool("edit");
   };
 
@@ -1246,9 +1315,57 @@ export default function LayoutEditor() {
   const handleDragWall = (wallId: string, offsetFt: number) => {
     if (!footprint) return;
     if (footprintIsAllRightAngles(footprint)) {
-      const fp = dragWall(footprint, wallId, offsetFt);
+      // dragWall itself never renumbers ids (same reuse as editWallLength),
+      // but a follow-up collapse (Tommy: "walls can snap back into each
+      // other and reform a straight one") can — it removes a near-zero
+      // wall's corner and renumbers every survivor "0".."n-1", which can
+      // shift EVERY wall's id, not just the ones next to the drag.
+      const dragged = dragWall(footprint, wallId, offsetFt);
+      const { footprint: fp, primaryCornerIds: nextPrimary } = collapseNearZeroWalls(dragged, primaryCornerIds);
       setFootprint(fp);
-      setBaseWallSlots(retile(fp, leastAccessibleCorner, primaryCornerIds));
+      setPrimaryCornerIds(nextPrimary);
+
+      if (fp === dragged) {
+        // No collapse fired — ids are unchanged, reuse baseWallSlots directly.
+        setBaseWallSlots(retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
+      } else {
+        // A collapse fired — correlate by exact point-pair (a collapse never
+        // moves a surviving corner's point, only removes one and relabels
+        // the rest), same technique handleAddBumpOut uses for insertBumpOut's
+        // renumbering.
+        const pointKey = (p: { x: number; y: number }) => `${p.x.toFixed(6)},${p.y.toFixed(6)}`;
+        const draggedCornersById = new Map(dragged.corners.map((c) => [c.id, c.point]));
+        const draggedWallIdByPointPair = new Map<string, string>();
+        for (const w of dragged.walls) {
+          const start = draggedCornersById.get(w.startCorner)!;
+          const end = draggedCornersById.get(w.endCorner)!;
+          draggedWallIdByPointPair.set(`${pointKey(start)}|${pointKey(end)}`, w.id);
+        }
+        const newCornersById = new Map(fp.corners.map((c) => [c.id, c.point]));
+        const oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined> = {};
+        for (const w of fp.walls) {
+          const start = newCornersById.get(w.startCorner)!;
+          const end = newCornersById.get(w.endCorner)!;
+          const draggedWallId = draggedWallIdByPointPair.get(`${pointKey(start)}|${pointKey(end)}`);
+          if (draggedWallId) oldSlotsByNewWallId[w.id] = baseWallSlots[draggedWallId];
+        }
+
+        // leastAccessibleCorner is a site-wide marker corner id — if the
+        // collapse renumbered ids, the old value may no longer point at any
+        // corner (computeGapEnd asserts it exists, and would crash
+        // otherwise). Carry it forward by point match; if the collapse
+        // removed that exact corner, fall back to the same
+        // "first surviving primary corner, else first corner" rule
+        // handleAddBumpOut already uses for the same situation.
+        const oldLeastAccessiblePoint = draggedCornersById.get(leastAccessibleCorner)!;
+        const matchedCorner = fp.corners.find((c) => pointKey(c.point) === pointKey(oldLeastAccessiblePoint));
+        const nextLeastAccessible: CornerId = matchedCorner
+          ? matchedCorner.id
+          : ([...nextPrimary][0] ?? fp.corners[0]!.id);
+        setLeastAccessibleCorner(nextLeastAccessible);
+
+        setBaseWallSlots(retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId));
+      }
       return;
     }
 
@@ -1271,7 +1388,7 @@ export default function LayoutEditor() {
     const nextPrimary = new Set(fp.corners.map((c) => c.id));
     setFootprint(fp);
     setPrimaryCornerIds(nextPrimary);
-    setBaseWallSlots(retile(fp, leastAccessibleCorner, nextPrimary));
+    setBaseWallSlots(retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
   };
 
   // For rendering: butting walls' content starts inset from the actual
@@ -2238,42 +2355,57 @@ export default function LayoutEditor() {
     window.print();
   };
 
-  const handlePrintPacket = () => {
-    // Every formal document note needs to actually be open (mounted) to
-    // print — silently open any that aren't, restoring the prior open set
-    // afterward.
-    const wasOpen = new Set(openNoteIds);
-    setOpenNoteIds((was) => new Set([...was, ...formalDocumentNoteIds]));
-    requestAnimationFrame(() => {
-      for (const id of formalDocumentNoteIds) {
-        document.getElementById(id)?.setAttribute("data-print-target", "true");
-      }
-      document.body.setAttribute("data-print-mode", "packet");
-      window.print();
-      setOpenNoteIds(wasOpen);
-    });
-  };
-
   // Tommy: "at the top of the right bar, lets make an export pdf button for
-  // all of the highlighted/opened detail pages" — unlike handlePrintPacket
-  // above (which force-opens every formal document regardless of current
-  // state), this only exports whichever detail pages are ALREADY open —
-  // they're already mounted, so no open/restore dance needed. The 8.5x11
-  // vs 11x17 choice happens in the browser's own print dialog (the @page
-  // rule in globals.css only forces landscape orientation, not an exact
-  // paper size, so both are already selectable there).
+  // all of the highlighted/opened detail pages" — later expanded ("Let me
+  // pick which sections to export") to a checklist the user can override.
+  // `exportableSections` is every page "Choose sections" can offer;
+  // `manualExportIds` is null until the user checks/unchecks anything in
+  // the picker (defaulting to "whatever's currently open", the original
+  // behavior) — once touched, it's an explicit set that no longer tracks
+  // openNoteIds automatically.
   const openDetailPageIds = useMemo(
     () => [...openNoteIds].filter((id) => formalDocumentNoteIds.has(id)),
     [openNoteIds, formalDocumentNoteIds],
   );
-  const handleExportOpenDetailPagesPdf = () => {
-    if (openDetailPageIds.length === 0) return;
-    for (const id of openDetailPageIds) {
-      document.getElementById(id)?.setAttribute("data-print-target", "true");
+  const exportableSections = useMemo(
+    () => [{ id: "detail-summary", label: "Project Summary" }, ...relevantDetailPages],
+    [relevantDetailPages],
+  );
+  const [manualExportIds, setManualExportIds] = useState<Set<string> | null>(null);
+  const [exportPickerOpen, setExportPickerOpen] = useState(false);
+  const effectiveExportIds = manualExportIds ?? new Set(openDetailPageIds);
+
+  // Revives/generalizes the old handlePrintPacket's "silently open whatever
+  // isn't already mounted, print, restore the prior open state" pattern —
+  // now driven by the checked set instead of unconditionally every formal
+  // document.
+  const handleExportSelectedPdf = () => {
+    const ids = effectiveExportIds;
+    if (ids.size === 0) return;
+    const wasOpen = new Set(openNoteIds);
+    const needsOpening = [...ids].some((id) => !openNoteIds.has(id));
+    const doExport = () => {
+      for (const id of ids) document.getElementById(id)?.setAttribute("data-print-target", "true");
+      document.body.setAttribute("data-print-mode", "packet");
+      window.print();
+      if (needsOpening) setOpenNoteIds(wasOpen);
+    };
+    if (needsOpening) {
+      setOpenNoteIds((was) => new Set([...was, ...ids]));
+      requestAnimationFrame(doExport);
+    } else {
+      doExport();
     }
-    document.body.setAttribute("data-print-mode", "packet");
-    window.print();
   };
+
+  // In-app Letter/Tabloid choice (Tommy: "in-app page size choice") — the
+  // named @page rules (globals.css) key off this body attribute, since a
+  // named page can only be assigned via the standard `page` CSS property on
+  // an ordinary selector, not by conditionally selecting @page itself.
+  const [printPageSizeId, setPrintPageSizeId] = useState<"letter" | "tabloid">("letter");
+  useEffect(() => {
+    document.body.setAttribute("data-print-page-size", printPageSizeId);
+  }, [printPageSizeId]);
 
   useEffect(() => {
     const onAfterPrint = () => {
@@ -2649,9 +2781,10 @@ export default function LayoutEditor() {
         Window Rough Opening Detail pages.
       </p>
       <p className={styles.note}>
-        Each window has its own Rough Opening height, set per-window in the Windows section below (Tommy: "i want
-        each window individually adjustable") — headers are sized from each window's own RO top up to the wall's
-        standard height; see the Window Rough Opening Detail page. {standardWindowHeightsIn.note}
+        Each window has its own Rough Opening height, set per-window by clicking it on the canvas and using the
+        Selected Panel note's size diagram (Tommy: "i want each window individually adjustable") — headers are sized
+        from each window's own RO top up to the wall's standard height; see the Window Rough Opening Detail page.{" "}
+        {standardWindowHeightsIn.note}
       </p>
 
       <div role="group" aria-label="Panelization type" className={styles.toolbar}>
@@ -2882,11 +3015,6 @@ export default function LayoutEditor() {
       />
       <main className={styles.main}>
         <div className={`${styles.editorSection} print-hidden-chrome`}>
-          {editorTab === "wall" && (
-            <div className={styles.compassDock}>
-              <CompassWidget ref={compassNeedleRef} />
-            </div>
-          )}
           <div className={styles.editorSidebar}>
             {loadError && <p className={styles.disclaimer}>Couldn&apos;t load that file — {loadError}</p>}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", width: "100%" }}>
@@ -2971,6 +3099,11 @@ export default function LayoutEditor() {
           </div>
 
           <div className={styles.editorCanvasLayer}>
+            {editorTab === "wall" && (
+              <div className={styles.compassDock}>
+                <CompassWidget ref={compassNeedleRef} />
+              </div>
+            )}
             {editorTab === "wall" &&
               (elevationWall ? (
                 <WallElevationView
@@ -3385,45 +3518,68 @@ export default function LayoutEditor() {
                 onToggleFullscreen={() => handleToggleNoteFullscreen("selected-panel")}
               >
                 {slot.type === "window" ? (
-                  <label>
-                    Width{" "}
-                    <select
-                      id={`window-size-${wallId}-${slotIndex}`}
-                      value={slot.widthIn}
-                      onChange={(e) => handleSetWindowWidth(wallId, slotIndex, Number(e.target.value))}
-                    >
-                      {standardWindowWidthsIn.value.map((w) => (
-                        <option key={w} value={w}>
-                          {w}&quot;
-                        </option>
-                      ))}
-                    </select>{" "}
-                    Height{" "}
-                    <select
-                      id={`window-height-${wallId}-${slotIndex}`}
-                      title="This window's own Rough Opening height (sill-top to header-bottom)"
-                      value={slot.heightIn ?? standardWindowHeightsIn.value[0]}
-                      onChange={(e) => handleSetWindowHeight(wallId, slotIndex, Number(e.target.value))}
-                    >
-                      {standardWindowHeightsIn.value.map((h) => (
-                        <option key={h} value={h}>
-                          {formatLengthIn(h, unitSystem)} tall
-                        </option>
-                      ))}
-                    </select>{" "}
-                    <input
-                      type="number"
-                      id={`window-sill-height-${wallId}-${slotIndex}`}
-                      title="This window's own sill height (floor to Rough Opening bottom) — also draggable in the 3D Sill & Header tool"
-                      value={slot.sillHeightIn ?? sillHeaderHeightInRange.minIn}
-                      min={sillHeaderHeightInRange.minIn}
-                      max={sillHeaderHeightInRange.maxIn}
-                      step={0.125}
-                      style={{ width: 64 }}
-                      onChange={(e) => handleSetWindowSillHeight(wallId, slotIndex, Number(e.target.value))}
+                  <>
+                    <WindowSizeDiagram
+                      wallHeightFt={wallHeightFt}
+                      windowWidthIn={slot.widthIn}
+                      sillHeightIn={slot.sillHeightIn ?? sillDefaultHeightIn.value}
+                      windowHeightIn={slot.heightIn ?? standardWindowHeightDefaultIn.value}
+                      onSetSillHeight={(v) => handleSetWindowSillHeight(wallId, slotIndex, v)}
+                      onSetWindowHeight={(v) => handleSetWindowHeight(wallId, slotIndex, v)}
                     />
-                    {" sill"}
-                  </label>
+                    {sillClampNotice && (
+                      <p className={styles.note} style={{ color: "#a67c00" }}>
+                        {sillClampNotice}
+                      </p>
+                    )}
+                    <label style={{ display: "block", marginTop: 6 }}>
+                      Width{" "}
+                      <select
+                        id={`window-size-${wallId}-${slotIndex}`}
+                        value={slot.widthIn}
+                        onChange={(e) => handleSetWindowWidth(wallId, slotIndex, Number(e.target.value))}
+                      >
+                        {standardWindowWidthsIn.value.map((w) => (
+                          <option key={w} value={w}>
+                            {w}&quot;
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className={styles.note}>
+                      Changing width can shift neighboring panels on this wall (the wall re-tiles around it); height
+                      and sill (above) never do — they're a purely vertical/Z-axis change.
+                    </p>
+                    <label style={{ display: "block" }}>
+                      Height (preset){" "}
+                      <select
+                        id={`window-height-${wallId}-${slotIndex}`}
+                        title="This window's own Rough Opening height (sill-top to header-bottom) — also draggable above"
+                        value={slot.heightIn ?? standardWindowHeightsIn.value[0]}
+                        onChange={(e) => handleSetWindowHeight(wallId, slotIndex, Number(e.target.value))}
+                      >
+                        {standardWindowHeightsIn.value.map((h) => (
+                          <option key={h} value={h}>
+                            {formatLengthIn(h, unitSystem)} tall
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={{ display: "block" }}>
+                      Sill height{" "}
+                      <input
+                        type="number"
+                        id={`window-sill-height-${wallId}-${slotIndex}`}
+                        title="This window's own sill height (floor to Rough Opening bottom) — also draggable above and in the 3D Sill & Header tool"
+                        value={slot.sillHeightIn ?? sillHeaderHeightInRange.minIn}
+                        min={sillHeaderHeightInRange.minIn}
+                        max={sillHeaderHeightInRange.maxIn}
+                        step={0.125}
+                        style={{ width: 64 }}
+                        onChange={(e) => handleSetWindowSillHeight(wallId, slotIndex, Number(e.target.value))}
+                      />
+                    </label>
+                  </>
                 ) : (
                   <p className={styles.note}>
                     {PANEL_TYPE_LABELS[slot.type]} panel, {slot.widthIn.toFixed(1)}in wide.
@@ -4922,14 +5078,71 @@ export default function LayoutEditor() {
           openIds={openNoteIds}
           onToggle={handleToggleNote}
           header={
-            <button
-              type="button"
-              title="Export every currently-open detail page as one PDF (landscape — choose Letter 8.5x11 or Tabloid 11x17 in the print dialog)"
-              disabled={openDetailPageIds.length === 0}
-              onClick={handleExportOpenDetailPagesPdf}
-            >
-              Export PDF{openDetailPageIds.length > 0 ? ` (${openDetailPageIds.length})` : ""}
-            </button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+              <div style={{ display: "flex", gap: 4, alignItems: "center", position: "relative" }}>
+                <button
+                  type="button"
+                  title="Export the checked sections as one PDF (opening any that aren't already, then restoring what was open)"
+                  disabled={effectiveExportIds.size === 0}
+                  onClick={handleExportSelectedPdf}
+                >
+                  Export PDF{effectiveExportIds.size > 0 ? ` (${effectiveExportIds.size})` : ""}
+                </button>
+                <button
+                  type="button"
+                  aria-expanded={exportPickerOpen}
+                  onClick={() => setExportPickerOpen((was) => !was)}
+                  style={{ fontSize: 12 }}
+                >
+                  Choose sections {exportPickerOpen ? "▴" : "▾"}
+                </button>
+                {exportPickerOpen && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      zIndex: 100,
+                      marginTop: 4,
+                      background: "#fff",
+                      border: "1px solid #ccc",
+                      borderRadius: 6,
+                      padding: 8,
+                      minWidth: 240,
+                      maxHeight: 260,
+                      overflowY: "auto",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                    }}
+                  >
+                    {exportableSections.map((s) => (
+                      <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "3px 0" }}>
+                        <input
+                          type="checkbox"
+                          checked={effectiveExportIds.has(s.id)}
+                          onChange={(e) => {
+                            const next = new Set(effectiveExportIds);
+                            if (e.target.checked) next.add(s.id);
+                            else next.delete(s.id);
+                            setManualExportIds(next);
+                          }}
+                        />
+                        {s.label}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                Page size{" "}
+                <select
+                  value={printPageSizeId}
+                  onChange={(e) => setPrintPageSizeId(e.target.value as "letter" | "tabloid")}
+                >
+                  <option value="letter">Letter (11x8.5in)</option>
+                  <option value="tabloid">Tabloid (17x11in)</option>
+                </select>
+              </label>
+            </div>
           }
           footer={
             <>

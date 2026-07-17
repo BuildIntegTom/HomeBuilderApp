@@ -57,3 +57,22 @@
   font-size: 13px;
   color: #333;
 }
+
+/* Print pagination (Tommy: "additional pages are made for that content" —
+   see SheetTitleBlock.module.css's own print block for the main fix).
+   .diagram's overflow-x:auto forces overflow-y non-visible too per the
+   flexbox spec (see the comment up top) — fine on screen where .content
+   scrolls, but on paper that silently clips a tall diagram instead of
+   flowing it. break-inside:avoid on the table rows and the diagram itself
+   stops the print engine from splitting a row or a diagram awkwardly
+   across a page boundary. */
+@media print {
+  .diagram {
+    overflow: visible;
+    break-inside: avoid;
+  }
+
+  .fastenerTable tr {
+    break-inside: avoid;
+  }
+}

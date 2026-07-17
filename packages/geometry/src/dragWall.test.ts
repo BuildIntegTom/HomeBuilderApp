@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildRectangleFootprint } from "./footprint";
 import { insertBumpOut } from "./bumpOut";
-import { dragWall } from "./dragWall";
+import { collapseNearZeroWalls, dragWall, dragWallWithCollapse } from "./dragWall";
 import { cornerTurnAngleRad, isRightAngleCorner } from "./cornerAngle";
 import type { Footprint } from "./types";
 
@@ -100,5 +100,68 @@ describe("dragWall", () => {
     for (const c of fp.corners) {
       expect(pointOf(dragged, c.id)).toEqual(c.point);
     }
+  });
+});
+
+describe("collapseNearZeroWalls / dragWallWithCollapse", () => {
+  it("collapses a wall dragged down to dragWall's own floor into a merged corner, reforming a straight run", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const { footprint: bumped, primaryCornerIds: bumpedPrimary } = insertBumpOut(fp, "AB", 10, 15, 5, primary);
+    // corners: A(0), pa(1), paOut(2), pbOut(3), pb(4), B(5), C(6), D(7)
+    expect(bumpedPrimary).toEqual(new Set(["0", "5", "6", "7"]));
+    const jogWall = bumped.walls.find((w) => w.startCorner === "1" && w.endCorner === "2")!; // pa->paOut
+
+    // Per the existing dragWall clamp test, dragging this jog wall by
+    // +1000 shrinks its "23" (paOut->pbOut, 5ft) neighbor to dragWall's own
+    // 1ft floor — below COLLAPSE_THRESHOLD_FT (1.1ft) — while the other
+    // neighbor grows freely, so exactly one wall should collapse.
+    const result = dragWallWithCollapse(bumped, jogWall.id, 1000, bumpedPrimary);
+
+    expect(result.footprint.corners.length).toBe(bumped.corners.length - 1);
+    expect(result.footprint.walls.length).toBe(result.footprint.corners.length);
+    // Every remaining wall is above the collapse threshold — no leftover
+    // sliver walls.
+    for (const w of result.footprint.walls) {
+      expect(w.lengthFt).toBeGreaterThanOrEqual(1);
+    }
+    // Still a single closed loop: every corner is exactly one wall's start
+    // and exactly one wall's end.
+    for (const c of result.footprint.corners) {
+      expect(result.footprint.walls.filter((w) => w.startCorner === c.id).length).toBe(1);
+      expect(result.footprint.walls.filter((w) => w.endCorner === c.id).length).toBe(1);
+    }
+    // Corner "3" (pbOut) was absorbed; every other original-primary corner
+    // (A, B, C, D) survives, remapped to its shifted post-renumbering id.
+    expect(result.primaryCornerIds).toEqual(new Set(["0", "4", "5", "6"]));
+  });
+
+  it("is a no-op when no wall is near the collapse threshold", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const result = dragWallWithCollapse(fp, "AB", 2, primary);
+    expect(result.footprint.corners.length).toBe(4);
+    expect(result.primaryCornerIds).toEqual(primary);
+  });
+
+  it("never collapses below 4 corners, even if a wall is already near-zero", () => {
+    const thin: Footprint = {
+      corners: [
+        { id: "A", point: { x: 0, y: 0 } },
+        { id: "B", point: { x: 0.5, y: 0 } },
+        { id: "C", point: { x: 0.5, y: 10 } },
+        { id: "D", point: { x: 0, y: 10 } },
+      ],
+      walls: [
+        { id: "AB", startCorner: "A", endCorner: "B", lengthFt: 0.5 },
+        { id: "BC", startCorner: "B", endCorner: "C", lengthFt: 10 },
+        { id: "CD", startCorner: "C", endCorner: "D", lengthFt: 0.5 },
+        { id: "DA", startCorner: "D", endCorner: "A", lengthFt: 10 },
+      ],
+    };
+    const primary = new Set(["A", "B", "C", "D"]);
+    const result = collapseNearZeroWalls(thin, primary);
+    expect(result.footprint.corners.length).toBe(4);
+    expect(result.footprint).toBe(thin);
   });
 });

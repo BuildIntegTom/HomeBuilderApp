@@ -1,8 +1,16 @@
-import type { Footprint, Point } from "./types";
+import type { Corner, Footprint, Point, Wall } from "./types";
 import { wallDirection } from "./cornerAngle";
 
 const MIN_NEIGHBOR_LENGTH_FT = 1;
 const PARALLEL_EPS = 1e-9;
+// Tommy: "when using the drag wall tool, walls can snap back into each
+// other and reform a straight one (as if drag wall tool can undo what
+// bump out tool did)" — deliberately just above MIN_NEIGHBOR_LENGTH_FT,
+// so dragging a neighbor all the way down to dragWall's own floor (the
+// most a single drag can ever shrink it) reliably crosses this threshold
+// and triggers a collapse, instead of leaving it stranded 1ft short of
+// straight forever. See collapseNearZeroWalls below.
+const COLLAPSE_THRESHOLD_FT = MIN_NEIGHBOR_LENGTH_FT + 0.1;
 
 /**
  * Tightens a `{ lo, hi }` range for `offsetFt` given a linear constraint
@@ -93,4 +101,106 @@ export function dragWall(footprint: Footprint, wallId: string, offsetFt: number)
   });
 
   return { corners, walls };
+}
+
+export interface CollapseResult {
+  footprint: Footprint;
+  primaryCornerIds: Set<string>;
+}
+
+/**
+ * Removes every wall shorter than `COLLAPSE_THRESHOLD_FT`, merging its two
+ * flanking corners into one — Tommy: "when using the drag wall tool, walls
+ * can snap back into each other and reform a straight one (as if drag wall
+ * tool can undo what bump out tool did)". The wall list is always DERIVED
+ * from `corners` by connecting consecutive entries (the same convention
+ * `insertBumpOut` establishes), so "merge two corners into one" is just
+ * "delete one of the two corners" — no manual wall-reference patching
+ * needed, and the two walls that used to meet at the deleted wall's far
+ * endpoints become one wall automatically once the array closes back up.
+ *
+ * Deliberately keeps the *start* corner of each near-zero wall and drops
+ * its *end* corner — arbitrary but consistent, and irrelevant to the
+ * result: both corners sit at (almost) the same point by definition of
+ * "near-zero length", so which one survives doesn't change the resulting
+ * geometry.
+ *
+ * Checks wall LENGTH only, never angle/collinearity — a rectilinear
+ * bump-out's far wall is always parallel to the wall it was split from, so
+ * removing the short jog wall alone is guaranteed to restore a straight
+ * line; a separate collinearity check would be redundant, and near-zero
+ * walls have numerically unstable direction vectors anyway (dividing by a
+ * ~0 length), so length is the only robust signal here.
+ *
+ * Loops (rather than a single pass) since removing one wall changes its
+ * neighbors' effective endpoints, which could in principle cascade —
+ * though in practice `dragWall` itself only ever shrinks one neighbor
+ * toward the floor per call (its other neighbor grows freely), so a
+ * single collapse per drag is the common case. Stops at 4 corners: a valid
+ * closed rectilinear polygon needs an even number of corners, and 4 is the
+ * smallest (a plain rectangle) — never collapse below that.
+ *
+ * Corner ids are renumbered "0".."n-1" after every removal (matching
+ * `insertBumpOut`'s own renumbering convention), so `primaryCornerIds` is
+ * remapped alongside: each surviving corner's old primary status carries
+ * over to its new id. The corner that absorbs a merge is NOT specially
+ * promoted to primary even if the corner it swallowed was — there's no
+ * reliable way to know a merged corner "used to be" primary before an
+ * earlier bump-out already un-primaried it, so this is a small, accepted
+ * cosmetic gap (consistent with how `primaryCornerIds` already degrades
+ * gracefully elsewhere, e.g. in `insertBumpOut`).
+ */
+export function collapseNearZeroWalls(footprint: Footprint, primaryCornerIds: Set<string>): CollapseResult {
+  let corners = footprint.corners;
+  let primary = primaryCornerIds;
+
+  let changed = true;
+  while (changed && corners.length > 4) {
+    changed = false;
+    const walls = wallsFromCorners(corners);
+    const shortWall = walls.find((w) => w.lengthFt < COLLAPSE_THRESHOLD_FT);
+    if (!shortWall) break;
+
+    corners = corners.filter((c) => c.id !== shortWall.endCorner);
+    changed = true;
+  }
+
+  if (corners === footprint.corners) return { footprint, primaryCornerIds };
+
+  const renumbered: Corner[] = corners.map((c, i) => ({ ...c, id: String(i) }));
+  const nextPrimary = new Set<string>();
+  corners.forEach((c, i) => {
+    if (primary.has(c.id)) nextPrimary.add(String(i));
+  });
+
+  return { footprint: { corners: renumbered, walls: wallsFromCorners(renumbered) }, primaryCornerIds: nextPrimary };
+}
+
+function wallsFromCorners(corners: Corner[]): Wall[] {
+  return corners.map((c, i) => {
+    const next = corners[(i + 1) % corners.length]!;
+    return {
+      id: `${c.id}${next.id}`,
+      startCorner: c.id,
+      endCorner: next.id,
+      lengthFt: Math.hypot(next.point.x - c.point.x, next.point.y - c.point.y),
+    };
+  });
+}
+
+/**
+ * `dragWall` followed by a snap-back collapse — Tommy's "undo a bump-out by
+ * dragging" feature. Threading `primaryCornerIds` through (rather than
+ * leaving it to the caller to reconcile separately) mirrors
+ * `insertBumpOut`'s own `{ footprint, primaryCornerIds }` result shape,
+ * since a collapse can renumber corner ids exactly like a bump-out can.
+ */
+export function dragWallWithCollapse(
+  footprint: Footprint,
+  wallId: string,
+  offsetFt: number,
+  primaryCornerIds: Set<string>,
+): CollapseResult {
+  const dragged = dragWall(footprint, wallId, offsetFt);
+  return collapseNearZeroWalls(dragged, primaryCornerIds);
 }

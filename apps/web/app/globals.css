@@ -68,6 +68,32 @@ a {
     margin: 0.25in;
   }
 
+  /* In-app Letter/Tabloid choice (Tommy: "in-app page size choice") —
+     named @page rules, since the at-rule itself can't be conditionally
+     selected; a named page is instead assigned via the standard `page`
+     property on an ordinary selector (below), keyed off a body attribute
+     page.tsx keeps in sync with the toggle. Explicit width-then-height
+     dimensions (not the `landscape` keyword) since combining a page-size
+     keyword with an explicit size isn't valid — ordering the dimensions
+     wide-then-tall already implies landscape. */
+  @page letter {
+    size: 11in 8.5in;
+    margin: 0.25in;
+  }
+
+  @page tabloid {
+    size: 17in 11in;
+    margin: 0.25in;
+  }
+
+  body[data-print-page-size="letter"] {
+    page: letter;
+  }
+
+  body[data-print-page-size="tabloid"] {
+    page: tabloid;
+  }
+
   .print-hidden-chrome {
     display: none !important;
   }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildRectangleFootprint } from "./footprint";
 import { buildOctagonFootprint } from "./octagon";
 import { insertBumpOut } from "./bumpOut";
-import { cornerOwnership, gapEndFor, isMiteredShape, retile, wallGeometryFor } from "./retile";
+import { cornerOwnership, gapEndFor, isMiteredShape, retile, retilePreservingOpenings, wallGeometryFor } from "./retile";
 import type { Footprint } from "./types";
 
 const THICKNESS_IN = 15.5;
@@ -75,6 +75,70 @@ describe("retile", () => {
     for (const wall of fp.walls) {
       expect(slots[wall.id]!.some((s) => s.type === "safety-oct-corner")).toBe(true);
     }
+  });
+});
+
+describe("retilePreservingOpenings", () => {
+  it("preserves an existing window on an id-stable wall (dragWall/editWallLength style: same-id old slots passed straight through)", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
+    const cdSlots = plainSlots["CD"]!.slice();
+    const standardIdx = cdSlots.findIndex((s) => s.type === "standard");
+    cdSlots[standardIdx] = { type: "window", widthIn: 36 };
+    const oldSlots = { ...plainSlots, CD: cdSlots };
+
+    const nextSlots = retilePreservingOpenings(
+      fp,
+      "A",
+      primary,
+      STANDARD_WIDTH_IN,
+      CORNER_PANEL_WIDTH_IN,
+      THICKNESS_IN,
+      oldSlots,
+    );
+    expect(nextSlots["CD"]!.some((s) => s.type === "window")).toBe(true);
+    // A wall whose old slots were untouched re-tiles identically to plain retile.
+    expect(nextSlots["AB"]).toEqual(plainSlots["AB"]);
+  });
+
+  it("falls back to a plain (opening-free) tile when a wall has no entry in oldSlotsByNewWallId", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
+    const nextSlots = retilePreservingOpenings(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, {});
+    expect(nextSlots["AB"]!.some((s) => s.type === "window" || s.type === "door")).toBe(false);
+    expect(nextSlots["AB"]).toEqual(plainSlots["AB"]);
+  });
+
+  it("preserves an opening across insertBumpOut's id renumbering (a caller-built correlation map), but a brand-new jog wall gets no openings", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
+    const cdSlots = plainSlots["CD"]!.slice();
+    const standardIdx = cdSlots.findIndex((s) => s.type === "standard");
+    cdSlots[standardIdx] = { type: "door", widthIn: 36 };
+
+    const { footprint: bumped, primaryCornerIds: nextPrimary } = insertBumpOut(fp, "AB", 10, 15, 5, primary);
+    // Per insertBumpOut's own renumbering (corners: A(0), pa(1), paOut(2),
+    // pbOut(3), pb(4), B(5), C(6), D(7) — same convention the
+    // cornerOwnership bump-out test above documents), wall "CD"
+    // (untouched by the bump-out on "AB") becomes wall "67" — this is
+    // exactly the kind of caller-built point-pair correlation
+    // handleAddBumpOut assembles in page.tsx.
+    const nextSlots = retilePreservingOpenings(
+      bumped,
+      [...nextPrimary][0]!,
+      nextPrimary,
+      STANDARD_WIDTH_IN,
+      CORNER_PANEL_WIDTH_IN,
+      THICKNESS_IN,
+      { "67": cdSlots },
+    );
+    expect(nextSlots["67"]!.some((s) => s.type === "door")).toBe(true);
+    // The bump-out's own new jog wall has no old counterpart at all.
+    const jogWall = bumped.walls.find((w) => w.startCorner === "1" && w.endCorner === "2")!;
+    expect(nextSlots[jogWall.id]!.some((s) => s.type === "window" || s.type === "door")).toBe(false);
   });
 });
 

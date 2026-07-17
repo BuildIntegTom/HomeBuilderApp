@@ -121,13 +121,14 @@
   flex-direction: row;
 }
 
-/* Docks the compass flush in the top-left corner (Tommy: "add the compass
-   in the top corner touching the top bar on its top and left bar on its
-   left") — an absolutely-positioned overlay against .editorSection's own
-   padding box, which starts exactly at the TopBar's underside (.main's
-   top is var(--topbar-height)) and the page's left edge, so top:0/left:0
-   here touches both with no gap. Sits above the canvas/sidebar (z-index)
-   but doesn't participate in .editorSidebar's flex layout/padding. */
+/* Docks the compass at the canvas's own top-left corner — Tommy: "the
+   compass to be to the right of the left bar, and on the top layer so
+   that it doesn't effect the editor area." An absolutely-positioned
+   overlay against .editorCanvasLayer's own box (which starts exactly
+   where .editorSidebar ends, whatever that width currently is — no
+   hardcoded offset, so this stays correct at the mobile breakpoint where
+   the sidebar narrows too), stacked above the canvas content but out of
+   flow, so it never pushes/resizes anything in the editor area. */
 .compassDock {
   position: absolute;
   top: 0;
@@ -136,6 +137,7 @@
 }
 
 .editorCanvasLayer {
+  position: relative;
   flex: 1 1 auto;
   height: 100%;
   display: flex;
