@@ -65,6 +65,12 @@ export interface PanelGroup {
   panels: StackablePanelRef[];
   thicknessIn: number;
   defaultHeightIn: number;
+  /** Chunk this group with `chunkIntoStacksSmart` (size-safety-aware)
+   * instead of the plain count-based `chunkIntoStacks`. Left off (falsy)
+   * for groups like loose jack-stud lumber, whose per-opening heights
+   * vary too wildly to be meaningfully compared this way and which are
+   * already a categorically different, not-a-flat-wall-panel shipment. */
+  useCompatibilityStacking?: boolean;
 }
 
 /**
@@ -110,6 +116,127 @@ export function chunkIntoStacks(
   return stacks;
 }
 
+const STACK_SAFETY_TOLERANCE = 0.9; // a panel can't support something more than 10% bigger than itself, in either dimension
+
+interface OpenStack {
+  stack: PanelStack;
+  bottomWidthIn: number;
+  bottomHeightIn: number;
+}
+
+function isValidDimension(n: number): boolean {
+  return Number.isFinite(n) && n > 0;
+}
+
+/** True if `candidateWidthIn`/`candidateHeightIn` is safe to place as the
+ * new physical bottom of a stack currently topped by
+ * `bottomWidthIn`/`bottomHeightIn` (Tommy: "smaller panels can always be
+ * on top of bigger panels, just not under"). One-directional: a panel can
+ * be arbitrarily LARGER than what it's going under (always safe — no
+ * overhang), but can't be more than 10% SMALLER in either width or height
+ * (would leave the panel above unsupported). Any non-positive/NaN
+ * dimension on either side fails closed (never a valid bottom, never a
+ * valid candidate) rather than becoming a universal "anything fits"
+ * magnet for corrupt data. */
+function canSupport(candidateWidthIn: number, candidateHeightIn: number, bottomWidthIn: number, bottomHeightIn: number): boolean {
+  if (!isValidDimension(candidateWidthIn) || !isValidDimension(candidateHeightIn)) return false;
+  if (!isValidDimension(bottomWidthIn) || !isValidDimension(bottomHeightIn)) return false;
+  return candidateWidthIn >= bottomWidthIn * STACK_SAFETY_TOLERANCE && candidateHeightIn >= bottomHeightIn * STACK_SAFETY_TOLERANCE;
+}
+
+/**
+ * Same job as `chunkIntoStacks` — groups an ordered panel list into
+ * stacks — but safety-aware (Tommy: "we cannot stack panels that are like
+ * 10% or more bigger than the top panel... [although] we can put multiple
+ * panels in the row to make up for this"): a panel can only become the
+ * new bottom of a stack if it can safely support whatever's currently on
+ * top of that stack (see `canSupport`). When the next panel in sequence
+ * can't extend the main stack, it's diverted into a side-stack instead of
+ * forcing an unsafe/oversized combination — and 2+ consecutive diverted
+ * panels that ARE compatible with each other (e.g. 2 sills back to back)
+ * share one side-stack rather than each getting its own.
+ *
+ * Side-stacks are tracked most-recently-touched-first and always sealed
+ * (stop accepting new panels) the moment the main stack either resumes or
+ * hits its own `panelsPerStack` capacity — this keeps a side-stack's
+ * lifetime anchored to the single "disruption episode" that created it,
+ * rather than letting a header from one wall silently merge with a sill
+ * from a totally different, much-later point in the load sequence.
+ *
+ * Every stack is appended to the output array at the moment it's
+ * CREATED, then only ever mutated in place afterward — never moved or
+ * reordered — which is what guarantees every side-stack always lands
+ * immediately adjacent, in the returned list, to the main-stack segment
+ * it interrupted. `packRowsByWidth` (unchanged) then naturally keeps
+ * those side-stacks in the same or very next row, with no awareness of
+ * where they came from needed.
+ */
+export function chunkIntoStacksSmart(
+  panels: StackablePanelRef[],
+  panelsPerStack: number,
+  defaultHeightIn: number,
+  thicknessIn: number,
+): PanelStack[] {
+  if (panelsPerStack <= 0) return [];
+
+  const output: PanelStack[] = [];
+  let mainStack: OpenStack | null = null;
+  let sideStacks: OpenStack[] = [];
+
+  const newOpenStack = (id: string, widthIn: number, heightIn: number): OpenStack => {
+    const stack: PanelStack = { panelIds: [id], widthIn, heightIn, thicknessIn };
+    output.push(stack);
+    return { stack, bottomWidthIn: widthIn, bottomHeightIn: heightIn };
+  };
+
+  const appendTo = (entry: OpenStack, id: string, widthIn: number, heightIn: number) => {
+    entry.stack.panelIds.push(id);
+    entry.stack.widthIn = Math.max(entry.stack.widthIn, widthIn);
+    entry.stack.heightIn = Math.max(entry.stack.heightIn, heightIn);
+    entry.bottomWidthIn = widthIn;
+    entry.bottomHeightIn = heightIn;
+  };
+
+  for (const panel of panels) {
+    const widthIn = panel.widthIn;
+    const heightIn = panel.heightIn ?? defaultHeightIn;
+
+    if (mainStack && mainStack.stack.panelIds.length >= panelsPerStack) {
+      mainStack = null;
+      sideStacks = [];
+    }
+
+    if (!mainStack) {
+      mainStack = newOpenStack(panel.id, widthIn, heightIn);
+      continue;
+    }
+
+    if (canSupport(widthIn, heightIn, mainStack.bottomWidthIn, mainStack.bottomHeightIn)) {
+      appendTo(mainStack, panel.id, widthIn, heightIn);
+      sideStacks = [];
+      continue;
+    }
+
+    let joined = false;
+    for (let i = sideStacks.length - 1; i >= 0; i--) {
+      const candidate = sideStacks[i]!;
+      if (
+        candidate.stack.panelIds.length < panelsPerStack &&
+        canSupport(widthIn, heightIn, candidate.bottomWidthIn, candidate.bottomHeightIn)
+      ) {
+        appendTo(candidate, panel.id, widthIn, heightIn);
+        sideStacks.splice(i, 1);
+        if (candidate.stack.panelIds.length < panelsPerStack) sideStacks.push(candidate);
+        joined = true;
+        break;
+      }
+    }
+    if (!joined) sideStacks.push(newOpenStack(panel.id, widthIn, heightIn));
+  }
+
+  return output;
+}
+
 /**
  * Wraps an ordered list of stacks into rows across the trailer's own width
  * (Tommy: "it usually spawns with a single row, its very very handy to be
@@ -145,10 +272,15 @@ export function packRowsByWidth(stacks: PanelStack[], truckWidthIn: number, buff
  * "how many trucks will be needed to transport this project, how should
  * they be stacked, and how should those stacks be put into the truck") —
  * each `PanelGroup`'s panels should already be given in the intended stack/
- * row order (main panels in load order — see `computePanelLoadOrder` in
- * panelLoadOrder.ts — then header/sill panels biggest-to-smallest, then any
- * further groups like loose jack-stud lumber), since groups are chunked and
- * packed in the order given, never reordered.
+ * row order (main + header/sill panels together, in load order — see
+ * `computePanelLoadOrder` in panelLoadOrder.ts — then any further groups
+ * like loose jack-stud lumber), since groups are chunked and packed in the
+ * order given, never reordered. A group with `useCompatibilityStacking` set
+ * is chunked with `chunkIntoStacksSmart` (Tommy: "we cannot stack panels
+ * that are like 10% or more bigger than the top panel") instead of the
+ * plain count-based `chunkIntoStacks` — see that function's own doc
+ * comment for why headers/sills no longer get pulled into one separate
+ * biggest-to-smallest batch at the end.
  *
  * Stacks are packed into rows across the trailer's own width by their own
  * real width (`packRowsByWidth`), then rows are packed front-to-back along
@@ -165,7 +297,11 @@ export function computeTruckLoads(groups: PanelGroup[], truck: TruckDims, buffer
     if (group.panels.length === 0) continue;
     const panelsPerStack = computePanelsPerStack(truck.heightIn, group.thicknessIn, bufferIn);
     if (panelsPerStack <= 0) continue; // this group's own thickness doesn't fit at all — skip it, not the whole shipment
-    allStacks.push(...chunkIntoStacks(group.panels, panelsPerStack, group.defaultHeightIn, group.thicknessIn));
+    allStacks.push(
+      ...(group.useCompatibilityStacking
+        ? chunkIntoStacksSmart(group.panels, panelsPerStack, group.defaultHeightIn, group.thicknessIn)
+        : chunkIntoStacks(group.panels, panelsPerStack, group.defaultHeightIn, group.thicknessIn)),
+    );
   }
   if (allStacks.length === 0) return [];
 

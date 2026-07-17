@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   chunkIntoStacks,
+  chunkIntoStacksSmart,
   computePanelsPerStack,
   computeTruckLoads,
   packRowsByWidth,
@@ -68,6 +69,150 @@ describe("chunkIntoStacks", () => {
   it("stamps every stack with the group's own real thicknessIn", () => {
     const stacks = chunkIntoStacks(panels, 2, 120, 0.75);
     expect(stacks.every((s) => s.thicknessIn === 0.75)).toBe(true);
+  });
+});
+
+describe("chunkIntoStacksSmart", () => {
+  const MAIN_W = 40;
+  const MAIN_H = 120;
+
+  it("behaves exactly like plain chunking when every panel is mutually compatible", () => {
+    const panels: StackablePanelRef[] = [
+      { id: "N-1", widthIn: MAIN_W, heightIn: MAIN_H },
+      { id: "N-2", widthIn: MAIN_W, heightIn: MAIN_H },
+      { id: "N-3", widthIn: MAIN_W, heightIn: MAIN_H },
+    ];
+    const stacks = chunkIntoStacksSmart(panels, 6, MAIN_H, 15.5);
+    expect(stacks).toHaveLength(1);
+    expect(stacks[0]!.panelIds).toEqual(["N-1", "N-2", "N-3"]);
+  });
+
+  it("diverts a panel that can't support the main stack's current bottom into its own side-stack, then resumes the main run", () => {
+    // A header (40w x 20h) is >10% shorter than the 120h main panel above
+    // it (N-2) would need to support — diverts instead of forcing an
+    // unsafe stack. N-3 (back to 120h) is still compatible with N-2 (the
+    // main stack's bottom never changed), so it extends the SAME main
+    // stack rather than starting a new one.
+    const panels: StackablePanelRef[] = [
+      { id: "N-1", widthIn: MAIN_W, heightIn: MAIN_H },
+      { id: "N-2", widthIn: MAIN_W, heightIn: MAIN_H },
+      { id: "header-1", widthIn: MAIN_W, heightIn: 20 },
+      { id: "N-3", widthIn: MAIN_W, heightIn: MAIN_H },
+    ];
+    const stacks = chunkIntoStacksSmart(panels, 6, MAIN_H, 15.5);
+    expect(stacks).toHaveLength(2);
+    expect(stacks[0]!.panelIds).toEqual(["N-1", "N-2", "N-3"]); // main run, uninterrupted
+    expect(stacks[1]!.panelIds).toEqual(["header-1"]); // diverted, adjacent to the main run it interrupted
+  });
+
+  it("combines a diverted header with its wall's sills into ONE side-stack when the sills are big enough to support it — the 'N4 and N5 sills' case, no type-based special-casing needed", () => {
+    // header-3 (20h) diverts off the 120h main run. sill-4 and sill-5
+    // (32h each) are BIGGER than header-3, so both safely stack UNDER it
+    // in the same side-stack (Tommy: "smaller panels can always be on
+    // top of bigger panels, just not under") — the dimensional rule
+    // alone produces this grouping, with no header-vs-sill type
+    // distinction anywhere in the algorithm.
+    const panels: StackablePanelRef[] = [
+      { id: "N-1", widthIn: MAIN_W, heightIn: MAIN_H },
+      { id: "N-2", widthIn: MAIN_W, heightIn: MAIN_H },
+      { id: "header-3", widthIn: MAIN_W, heightIn: 20 },
+      { id: "sill-4", widthIn: 36, heightIn: 32 },
+      { id: "sill-5", widthIn: 35, heightIn: 31 },
+      { id: "N-6", widthIn: MAIN_W, heightIn: MAIN_H },
+    ];
+    const stacks = chunkIntoStacksSmart(panels, 6, MAIN_H, 15.5);
+    expect(stacks).toHaveLength(2);
+    expect(stacks[0]!.panelIds).toEqual(["N-1", "N-2", "N-6"]); // main run continues past the whole diversion
+    expect(stacks[1]!.panelIds).toEqual(["header-3", "sill-4", "sill-5"]); // one side-stack, safely ordered top-to-bottom
+  });
+
+  it("keeps a panel that's too small to SUPPORT what's already on top of a side-stack from joining it (the reverse ordering)", () => {
+    // sill-2 (32h) diverts off main. header-3 (20h) can't safely support
+    // the sill above it (20 < 32*0.9=28.8) -> opens its own separate
+    // side-stack instead of joining sill-2's — this is the genuinely
+    // incompatible direction, unlike the header-then-sills case above.
+    const panels: StackablePanelRef[] = [
+      { id: "N-1", widthIn: MAIN_W, heightIn: MAIN_H },
+      { id: "sill-2", widthIn: 36, heightIn: 32 },
+      { id: "header-3", widthIn: MAIN_W, heightIn: 20 },
+    ];
+    const stacks = chunkIntoStacksSmart(panels, 6, MAIN_H, 15.5);
+    expect(stacks).toHaveLength(3);
+    expect(stacks[0]!.panelIds).toEqual(["N-1"]);
+    expect(stacks[1]!.panelIds).toEqual(["sill-2"]);
+    expect(stacks[2]!.panelIds).toEqual(["header-3"]); // too small to support sill-2, gets its own stack
+  });
+
+  it("clears open side-stacks the moment the main stack resumes, so a later diversion never rejoins an earlier one", () => {
+    const panels: StackablePanelRef[] = [
+      { id: "N-1", widthIn: MAIN_W, heightIn: MAIN_H },
+      { id: "header-a", widthIn: MAIN_W, heightIn: 20 }, // diverts, opens side-stack A
+      { id: "N-2", widthIn: MAIN_W, heightIn: MAIN_H }, // resumes main -> side-stack A is sealed
+      { id: "header-b", widthIn: MAIN_W, heightIn: 20 }, // dimensionally identical to header-a, but must open a NEW side-stack
+    ];
+    const stacks = chunkIntoStacksSmart(panels, 6, MAIN_H, 15.5);
+    expect(stacks).toHaveLength(3);
+    expect(stacks[0]!.panelIds).toEqual(["N-1", "N-2"]);
+    expect(stacks[1]!.panelIds).toEqual(["header-a"]);
+    expect(stacks[2]!.panelIds).toEqual(["header-b"]); // NOT merged with header-a
+  });
+
+  it("respects panelsPerStack capacity — a full main chunk starts a fresh one even for an otherwise-compatible next panel", () => {
+    const panels: StackablePanelRef[] = [
+      { id: "N-1", widthIn: MAIN_W, heightIn: MAIN_H },
+      { id: "N-2", widthIn: MAIN_W, heightIn: MAIN_H }, // fills a 2-per-stack cap
+      { id: "N-3", widthIn: MAIN_W, heightIn: MAIN_H }, // compatible, but the previous chunk is already full
+    ];
+    const stacks = chunkIntoStacksSmart(panels, 2, MAIN_H, 15.5);
+    expect(stacks).toHaveLength(2);
+    expect(stacks[0]!.panelIds).toEqual(["N-1", "N-2"]);
+    expect(stacks[1]!.panelIds).toEqual(["N-3"]);
+  });
+
+  it("isolates a panel with corrupt (zero/NaN) dimensions into its own stack, rather than letting it become a universal 'anything fits' magnet", () => {
+    const panels: StackablePanelRef[] = [
+      { id: "N-1", widthIn: MAIN_W, heightIn: MAIN_H },
+      { id: "bad", widthIn: NaN, heightIn: 20 }, // diverts (can't support/be supported), opens a corrupt side-stack
+      { id: "sill-a", widthIn: 30, heightIn: 20 }, // would trivially "fit" a corrupt bottom — must NOT join it
+      { id: "sill-b", widthIn: 29, heightIn: 19 }, // compatible with sill-a instead
+    ];
+    const stacks = chunkIntoStacksSmart(panels, 6, MAIN_H, 15.5);
+    expect(stacks).toHaveLength(3);
+    expect(stacks[0]!.panelIds).toEqual(["N-1"]); // never extended — sill-a/b are too short for a 120h bottom
+    expect(stacks[1]!.panelIds).toEqual(["bad"]); // isolated, alone forever
+    expect(stacks[2]!.panelIds).toEqual(["sill-a", "sill-b"]); // grouped with each other, not with "bad"
+  });
+
+  it("returns an empty list for a non-positive panelsPerStack, matching chunkIntoStacks", () => {
+    const panels: StackablePanelRef[] = [{ id: "N-1", widthIn: MAIN_W, heightIn: MAIN_H }];
+    expect(chunkIntoStacksSmart(panels, 0, MAIN_H, 15.5)).toEqual([]);
+    expect(chunkIntoStacksSmart(panels, -1, MAIN_H, 15.5)).toEqual([]);
+  });
+
+  it("always accepts the very first panel as a fresh stack's seed, with no comparison performed", () => {
+    // Even a 0-width panel is accepted as a seed (only panels joining an
+    // EXISTING stack need to pass canSupport) — the seed just starts alone.
+    const stacks = chunkIntoStacksSmart([{ id: "odd", widthIn: 0, heightIn: 0 }], 6, MAIN_H, 15.5);
+    expect(stacks).toEqual([{ panelIds: ["odd"], widthIn: 0, heightIn: 0, thicknessIn: 15.5 }]);
+  });
+
+  it("still returns a side-stack that's left open at the very end of the list — no separate flush step needed", () => {
+    const panels: StackablePanelRef[] = [
+      { id: "N-1", widthIn: MAIN_W, heightIn: MAIN_H },
+      { id: "header-1", widthIn: MAIN_W, heightIn: 20 },
+    ];
+    const stacks = chunkIntoStacksSmart(panels, 6, MAIN_H, 15.5);
+    expect(stacks.map((s) => s.panelIds)).toEqual([["N-1"], ["header-1"]]);
+  });
+
+  it("rolls up each stack's own widthIn/heightIn to its widest/tallest member, same convention as chunkIntoStacks", () => {
+    const panels: StackablePanelRef[] = [
+      { id: "corner-1", widthIn: 25.5, heightIn: MAIN_H },
+      { id: "N-2", widthIn: MAIN_W, heightIn: MAIN_H }, // wider than corner-1, still compatible (smaller-on-bigger is always fine)
+    ];
+    const stacks = chunkIntoStacksSmart(panels, 6, MAIN_H, 15.5);
+    expect(stacks).toHaveLength(1);
+    expect(stacks[0]!.widthIn).toBe(40); // max(25.5, 40)
   });
 });
 
@@ -231,5 +376,30 @@ describe("computeTruckLoads", () => {
     const jackStudStack = stacks.find((s) => s.panelIds.includes("JS-1"));
     expect(jackStudStack?.thicknessIn).toBe(1.5);
     expect(stacks.find((s) => s.panelIds.includes("N-1"))?.thicknessIn).toBe(panelThicknessIn);
+  });
+
+  it("dispatches a useCompatibilityStacking group through chunkIntoStacksSmart and a plain group through chunkIntoStacks, in the same call", () => {
+    const smart: PanelGroup = {
+      panels: [
+        { id: "N-1", widthIn: 40, heightIn: panelHeightIn },
+        { id: "header-2", widthIn: 40, heightIn: 20 }, // too short to support N-1 -> should divert
+        { id: "N-3", widthIn: 40, heightIn: panelHeightIn },
+      ],
+      thicknessIn: panelThicknessIn,
+      defaultHeightIn: panelHeightIn,
+      useCompatibilityStacking: true,
+    };
+    const legacy = mainGroup(panelsNamed("X", 3)); // no flag -> plain count-based chunking, unaffected by height differences
+
+    const loads = computeTruckLoads([smart, legacy], truck, bufferIn);
+    const stacks = loads.flatMap((l) => l.rows.flat());
+
+    const smartMain = stacks.find((s) => s.panelIds.includes("N-1"));
+    expect(smartMain?.panelIds).toEqual(["N-1", "N-3"]); // main run, header diverted out
+    const diverted = stacks.find((s) => s.panelIds.includes("header-2"));
+    expect(diverted?.panelIds).toEqual(["header-2"]);
+
+    const legacyStack = stacks.find((s) => s.panelIds.includes("X-1"));
+    expect(legacyStack?.panelIds).toEqual(["X-1", "X-2", "X-3"]); // untouched — same 3 panels, one chunk
   });
 });

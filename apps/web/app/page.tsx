@@ -1772,12 +1772,18 @@ export default function LayoutEditor() {
 
   // Shipping (Tommy: "how many trucks will be needed to transport this
   // project, how should they be stacked, and how should those stacks be
-  // put into the truck") — the main-panel loading sequence follows the
-  // same "point of least accessibility" concept the safety/gap panel
-  // placement already uses (computePanelLoadOrder rotates the wall ring to
-  // start there — Tommy: "If the PLA is on the top left (NW) then that
-  // panel on the corner is the top of the first stack"); header/sill
-  // panels get their own separate stacks, biggest to smallest.
+  // put into the truck") — the whole loading sequence (main panels AND
+  // header/sill panels together) follows the same "point of least
+  // accessibility" concept the safety/gap panel placement already uses
+  // (computePanelLoadOrder rotates the wall ring to start there — Tommy:
+  // "If the PLA is on the top left (NW) then that panel on the corner is
+  // the top of the first stack"). A header/sill only splits into its own
+  // stack when it can't safely support (or be supported by) its neighbor
+  // in the sequence (Tommy: "we cannot stack panels that are like 10% or
+  // more bigger than the top panel") — see chunkIntoStacksSmart in
+  // truckLoads.ts — so it still ships as close as possible to where it's
+  // actually needed, instead of being batched into one separate
+  // biggest-to-smallest pile at the end of the shipment.
   // Loose jack-stud lumber (Tommy: "jack studs can be piled up together and
   // stacked 90 degrees hot dog rotation") — not a flat wall panel, so each
   // window/door opening's own jack studs ship as their own small, thin
@@ -1847,10 +1853,14 @@ export default function LayoutEditor() {
     return map;
   }, [footprint, overlayWallSlots, leastAccessibleCorner]);
 
-  const shippingMainPanelRefs = useMemo(
+  // Every non-jack-stud instance (main panels AND header/sill together —
+  // jack studs aren't part of `allInstances`, they're built separately
+  // above), sorted purely by load order — chunkIntoStacksSmart (via
+  // useCompatibilityStacking below) is what decides whether a header/sill
+  // gets diverted into its own stack, not this sort.
+  const shippingCombinedPanelRefs = useMemo(
     () =>
       allInstances
-        .filter((inst) => inst.panelType !== "header" && inst.panelType !== "sill")
         .slice()
         .sort(
           (a, b) =>
@@ -1861,16 +1871,6 @@ export default function LayoutEditor() {
     [allInstances, shippingLoadOrderIndex, shippingPanelHeightById],
   );
 
-  const shippingHeaderSillRefs = useMemo(
-    () =>
-      allInstances
-        .filter((inst) => inst.panelType === "header" || inst.panelType === "sill")
-        .slice()
-        .sort((a, b) => b.widthIn - a.widthIn)
-        .map((inst) => ({ id: inst.name, widthIn: inst.widthIn, heightIn: shippingPanelHeightById.get(inst.name) })),
-    [allInstances, shippingPanelHeightById],
-  );
-
   const selectedTruck = truckBedTypes.value.find((t) => t.id === selectedTruckBedId) ?? truckBedTypes.value[0]!;
   const shippingTruckDims: TruckDims = {
     lengthIn: selectedTruck.interiorLengthIn,
@@ -1878,8 +1878,7 @@ export default function LayoutEditor() {
     heightIn: selectedTruck.interiorHeightIn,
   };
   const shippingGroups: PanelGroup[] = [
-    { panels: shippingMainPanelRefs, thicknessIn, defaultHeightIn: wallHeightFt * 12 },
-    { panels: shippingHeaderSillRefs, thicknessIn, defaultHeightIn: wallHeightFt * 12 },
+    { panels: shippingCombinedPanelRefs, thicknessIn, defaultHeightIn: wallHeightFt * 12, useCompatibilityStacking: true },
     { panels: shippingJackStudRefs, thicknessIn: jackStudThicknessIn(jackStudConfig), defaultHeightIn: wallHeightFt * 12 },
   ];
   const truckLoads = computeTruckLoads(shippingGroups, shippingTruckDims, shippingStackBufferIn.value);
@@ -4546,7 +4545,7 @@ export default function LayoutEditor() {
               "Every panel lies flat, its own standard height (10ft) running along the trailer's length — every trailer's own cross-section is narrower than that, so a panel can only physically fit that way, with its width and thickness forming the stack's own cross-section.",
               `A ${shippingStackBufferIn.value}in buffer is kept clear on every side of every stack (Tommy) — shared between neighbors, so it's one gap between any two things (stack-to-stack or stack-to-wall), not doubled.`,
               'Loading order follows the point of least accessibility (Tommy: "the stack order must correlate to the point of least accessibility... that panel on the corner is the top of the first stack, and it\'s row stacked under it") — panels load starting at that corner, all the way around the footprint.',
-              "Headers and sills stack separately from the main run, biggest to smallest (Tommy: \"no need for headers and sills to be stacked with the main stack if they are different sizes\"), filling in after the main stacks in whichever truck has room.",
+              "A panel only stacks on top of another if it can safely support it — nothing gets loaded under something more than 10% bigger than itself, in width or height (Tommy: \"we cannot stack panels that are like 10% or more bigger than the top panel\"; a smaller panel can always sit on a bigger one, never the reverse). A header or sill that doesn't fit its neighbor splits into its own small stack right where it's needed in the load sequence — not batched separately at the end — and consecutive same-size ones (like 2 sills in a row) share one stack together.",
               "Stacks pack row by row across the trailer's own width using each stack's own real width (Tommy: \"its very very handy to be able to have 2 rows of panels\") — 2 or more narrower stacks share a row whenever they both fit, rather than every stack being forced into one lane sized to the single widest stack anywhere.",
               "Jack studs ship as their own loose-lumber bundle (Tommy: \"jack studs can be piled up together and stacked 90 degrees hot dog rotation\") — thin sheets or 2x4 sticks piled face-to-face using their own real thickness, not the wall's own much thicker cross-section, so far more of them stack in the same trailer height.",
               shippingRatePerMileDefault.note ?? "",
