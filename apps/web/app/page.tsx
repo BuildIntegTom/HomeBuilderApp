@@ -3145,6 +3145,9 @@ export default function LayoutEditor() {
                   hasGableEnd={gableEndWallIds.has(elevationWall.id)}
                   ridgeHeightFt={bottomOfTrussMaxHeightFt}
                   targetPanelWidthIn={standardWidthIn}
+                  thicknessIn={thicknessIn}
+                  jackStudConfig={jackStudConfig}
+                  includeNailer={includeNailer}
                   roofCatcherBeamOffsetIn={roofCatcherBeamOffsetIn}
                   roofSystemTypeId={roofSystemTypeId}
                   gablePeakPositionIn={gablePeakPositionInByWallId[elevationWall.id]}
@@ -3556,6 +3559,10 @@ export default function LayoutEditor() {
                       windowWidthIn={slot.widthIn}
                       sillHeightIn={slot.sillHeightIn ?? sillDefaultHeightIn.value}
                       windowHeightIn={slot.heightIn ?? standardWindowHeightDefaultIn.value}
+                      thicknessIn={thicknessIn}
+                      jackStudConfig={jackStudConfig}
+                      includeNailer={includeNailer}
+                      standardWidthIn={standardWidthIn}
                       onSetSillHeight={(v) => handleSetWindowSillHeight(wallId, slotIndex, v)}
                       onSetWindowHeight={(v) => handleSetWindowHeight(wallId, slotIndex, v)}
                     />

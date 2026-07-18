@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, TransformControls } from "@react-three/drei";
 import type { Mesh } from "three";
-import { computeSillRunWidths, panelSlotBoxes3D, type Footprint, type PanelSlot, type PanelSlotBox3D } from "@building-integrity/geometry";
+import { panelSlotBoxes3D, type Footprint, type PanelSlot, type PanelSlotBox3D } from "@building-integrity/geometry";
 import { allPanelInstances, type PanelInstance } from "./panelInstances";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import PanelLabel from "./PanelLabel";
@@ -19,8 +19,6 @@ import {
   buildSquareBalePanelMembers,
   buildStandardPanelMembers,
   computeDoorRoughOpeningHeightIn,
-  computeHeaderHeightIn,
-  computeRoughOpeningWidthIn,
   doorRoughOpeningSelectedHeightIn,
   sillDefaultHeightIn,
   sillHeaderHeightInRange,
@@ -35,6 +33,7 @@ import {
 } from "@building-integrity/panel-catalog";
 import PanelMembersGroup from "./PanelMembersGroup";
 import { PANEL_TYPE_COLORS } from "./panelColors";
+import { computeOpeningGeometry } from "./openingGeometry";
 
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 480;
@@ -94,48 +93,17 @@ function birdsEyeCameraPosition(bounds: Bounds): [number, number, number] {
  * up to the wall's own top plate, via `computeHeaderHeightIn`. */
 const DOOR_RO_HEIGHT_IN = computeDoorRoughOpeningHeightIn(doorRoughOpeningSelectedHeightIn.value, toeUpHeightIn.value);
 
-interface OpeningGeometry {
-  isDoor: boolean;
-  /** Floor to RO-bottom (0 for a door — its RO always starts at the floor). */
-  sillHeightIn: number;
-  /** The RO's own height (sill-top to header-bottom for a window; floor to
-   * header-bottom for a door). */
-  jackStudSpanIn: number;
-  /** The RO's top elevation, measured from the floor. */
-  roTopZIn: number;
-  headerHeightIn: number;
-  /** Each side's jack stud thickness — the sill run is inset this much from
-   * either edge of the slot's own full width. */
-  jackThicknessIn: number;
-  /** Empty for a door (no sill). */
-  sillWidthsIn: number[];
+// Each window carries its own sill/RO height (Tommy: "manipulate sill and
+// header height with the drag tool" / "i want each window individually
+// adjustable") — falls back to the project default when this particular
+// slot hasn't been customized. A door's RO always starts at the floor
+// (sillHeightIn 0) and uses the fixed real door RO height, not a window's
+// slot.heightIn field.
+function resolveSillHeightIn(slot: PanelSlot, isDoor: boolean): number {
+  return isDoor ? 0 : (slot.sillHeightIn ?? sillDefaultHeightIn.value);
 }
-
-/** Shared by the real member view (`membersForSlot`'s window/door case) and
- * the simplified box view's header/sill decomposition — one formula, so the
- * two renderers can never drift apart on where the header/sill actually
- * sit. */
-function computeOpeningGeometry(
-  slot: PanelSlot,
-  heightIn: number,
-  jackStudConfig: JackStudConfig,
-  standardWidthIn: number,
-): OpeningGeometry {
-  const isDoor = slot.type === "door";
-  // Each window carries its own sill height (Tommy: "manipulate sill
-  // and header height with the drag tool") — falls back to the
-  // project default when this particular slot hasn't been customized.
-  const sillHeightIn = isDoor ? 0 : (slot.sillHeightIn ?? sillDefaultHeightIn.value);
-  // Each window carries its own height (Tommy: "i want each window
-  // individually adjustable") — falls back to the project default
-  // when this particular slot hasn't been customized.
-  const jackStudSpanIn = isDoor ? DOOR_RO_HEIGHT_IN : (slot.heightIn ?? standardWindowHeightDefaultIn.value);
-  const roTopZIn = sillHeightIn + jackStudSpanIn;
-  const headerHeightIn = computeHeaderHeightIn(heightIn, roTopZIn);
-  const roWidthIn = computeRoughOpeningWidthIn(slot.widthIn, jackStudConfig);
-  const jackThicknessIn = (slot.widthIn - roWidthIn) / 2;
-  const sillWidthsIn = isDoor ? [] : computeSillRunWidths(roWidthIn, standardWidthIn);
-  return { isDoor, sillHeightIn, jackStudSpanIn, roTopZIn, headerHeightIn, jackThicknessIn, sillWidthsIn };
+function resolveJackStudSpanIn(slot: PanelSlot, isDoor: boolean): number {
+  return isDoor ? DOOR_RO_HEIGHT_IN : (slot.heightIn ?? standardWindowHeightDefaultIn.value);
 }
 
 /** Real member geometry for every panel type, including window/door
@@ -184,7 +152,15 @@ function membersForSlot(
     case "window":
     case "door": {
       const isDoor = slot.type === "door";
-      const g = computeOpeningGeometry(slot, heightIn, jackStudConfig, standardWidthIn);
+      const g = computeOpeningGeometry(
+        isDoor,
+        slot.widthIn,
+        heightIn,
+        resolveSillHeightIn(slot, isDoor),
+        resolveJackStudSpanIn(slot, isDoor),
+        jackStudConfig,
+        standardWidthIn,
+      );
       return buildOpeningAssemblyMembers(
         slot.widthIn,
         thicknessIn,
@@ -374,7 +350,16 @@ function renderSimplifiedSlot(
 ) {
   const slot = box.slot;
   if (slot.type === "window" || slot.type === "door") {
-    const g = computeOpeningGeometry(slot, heightIn, jackStudConfig, standardWidthIn);
+    const isDoor = slot.type === "door";
+    const g = computeOpeningGeometry(
+      isDoor,
+      slot.widthIn,
+      heightIn,
+      resolveSillHeightIn(slot, isDoor),
+      resolveJackStudSpanIn(slot, isDoor),
+      jackStudConfig,
+      standardWidthIn,
+    );
     const headerHeightFt = g.headerHeightIn / IN_PER_FT;
     const headerYFt = g.roTopZIn / IN_PER_FT;
     const headerName = instances.find((i) => i.panelType === "header")?.name;
@@ -390,7 +375,7 @@ function renderSimplifiedSlot(
           <WallPanelLabel text={showWraps ? undefined : headerName} widthFt={box.widthFt} heightFt={headerHeightFt} depthFt={box.depthFt} />
           {showWraps && renderWallSkins(box.widthFt, headerHeightFt, box.depthFt, wrapSkins)}
         </group>
-        {!g.isDoor &&
+        {!isDoor &&
           g.sillWidthsIn.map((sillWidthIn, i) => {
             const sillWidthFt = sillWidthIn / IN_PER_FT;
             const xFt = sillCursorFt;

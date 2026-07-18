@@ -1,6 +1,6 @@
-import { memberBoxSizeIn, memberLocalCornersIn } from "@building-integrity/panel-catalog";
 import { computePanelCutList } from "@building-integrity/panel-catalog";
 import type { PanelMember } from "@building-integrity/panel-catalog";
+import { MATERIAL_FILL, MATERIAL_STROKE, projectMemberShapes, type ProjectedShape } from "./MemberElevationShapes";
 import styles from "./DiagramLegend.module.css";
 
 export interface PanelElevationDiagramProps {
@@ -19,25 +19,8 @@ const MAX_CANVAS_HEIGHT_PX = 480;
 const MIN_CANVAS_WIDTH_PX = 170; // a Safety/Gap panel is only 0.75in wide — floor so it isn't an unreadable sliver
 const MARGIN_PX = 44; // room for leader-line badges to sit outside the panel's own outline
 
-// Same colors PanelMembersGroup.tsx uses for the live 3D model, for a
-// consistent look between the two.
-const MATERIAL_FILL: Record<"dimensional_lumber" | "plywood", string> = {
-  dimensional_lumber: "#c9a876",
-  plywood: "#e8dcc0",
-};
-const MATERIAL_STROKE: Record<"dimensional_lumber" | "plywood", string> = {
-  dimensional_lumber: "#8a6a3a",
-  plywood: "#a68a5c",
-};
-
-interface ProjectedShape {
-  member: PanelMember;
+interface LetteredShape extends ProjectedShape {
   letter: string;
-  kind: "rect" | "polygon";
-  rect?: { xPx: number; yPx: number; widthPx: number; heightPx: number };
-  points?: { xPx: number; yPx: number }[];
-  centroidPx: { xPx: number; yPx: number };
-  minorDimIn: number;
 }
 
 /**
@@ -68,44 +51,21 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn }: Pa
   const panelHeightPx = heightIn * pxPerIn;
   const panelWidthPx = Math.max(MIN_CANVAS_WIDTH_PX - 2 * MARGIN_PX, widthIn * pxPerIn);
 
-  const svgY = (zIn: number) => (heightIn - zIn) * pxPerIn;
-
-  const shapes: ProjectedShape[] = [];
-  for (const member of members) {
-    const letter = letterByMemberId.get(member.memberId);
-    if (!letter) continue; // not a lumber/plywood cut-list member — not part of this diagram's scope
-
-    const size = memberBoxSizeIn(member);
-    const minorDimIn = Math.min(size.xIn, size.zIn);
-
-    if (member.position.tiltDeg === undefined) {
-      const xPx = member.position.xIn * pxPerIn;
-      const widthPx = size.xIn * pxPerIn;
-      const yPx = svgY(member.position.zIn + size.zIn);
-      const heightPx = size.zIn * pxPerIn;
-      shapes.push({
-        member,
-        letter,
-        kind: "rect",
-        rect: { xPx, yPx, widthPx, heightPx },
-        centroidPx: { xPx: xPx + widthPx / 2, yPx: yPx + heightPx / 2 },
-        minorDimIn,
-      });
-    } else {
-      const corners = memberLocalCornersIn(member).slice(0, 4);
-      const points = corners.map(([xIn, zIn]) => ({ xPx: xIn * pxPerIn, yPx: svgY(zIn) }));
-      const centroidPx = {
-        xPx: points.reduce((s, p) => s + p.xPx, 0) / points.length,
-        yPx: points.reduce((s, p) => s + p.yPx, 0) / points.length,
-      };
-      shapes.push({ member, letter, kind: "polygon", points, centroidPx, minorDimIn });
-    }
-  }
-
   const viewBoxWidth = Math.max(MIN_CANVAS_WIDTH_PX, panelWidthPx + 2 * MARGIN_PX);
   const viewBoxHeight = panelHeightPx + 2 * MARGIN_PX;
   const originX = (viewBoxWidth - panelWidthPx) / 2;
   const originY = MARGIN_PX;
+
+  const xToPx = (xIn: number) => originX + xIn * pxPerIn;
+  const zToPx = (zIn: number) => originY + (heightIn - zIn) * pxPerIn;
+
+  // Only lumber/plywood cut-list members are part of this diagram's scope
+  // (matches computePanelCutList's own material filter).
+  const eligibleMembers = members.filter((m) => letterByMemberId.has(m.memberId));
+  const shapes: LetteredShape[] = projectMemberShapes(eligibleMembers, xToPx, zToPx).map((shape) => ({
+    ...shape,
+    letter: letterByMemberId.get(shape.member.memberId)!,
+  }));
 
   const panelCenterPx = { xPx: originX + panelWidthPx / 2, yPx: originY + panelHeightPx / 2 };
 
@@ -130,8 +90,8 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn }: Pa
             <g key={shape.member.memberId}>
               {shape.kind === "rect" ? (
                 <rect
-                  x={originX + shape.rect!.xPx}
-                  y={originY + shape.rect!.yPx}
+                  x={shape.rect!.xPx}
+                  y={shape.rect!.yPx}
                   width={shape.rect!.widthPx}
                   height={shape.rect!.heightPx}
                   fill={fill}
@@ -141,7 +101,7 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn }: Pa
                 />
               ) : (
                 <polygon
-                  points={shape.points!.map((p) => `${originX + p.xPx},${originY + p.yPx}`).join(" ")}
+                  points={shape.points!.map((p) => `${p.xPx},${p.yPx}`).join(" ")}
                   fill={fill}
                   stroke={stroke}
                   strokeWidth={1}
@@ -153,7 +113,7 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn }: Pa
         })}
 
         {shapes.map((shape) => {
-          const centroid = { xPx: originX + shape.centroidPx.xPx, yPx: originY + shape.centroidPx.yPx };
+          const centroid = shape.centroidPx;
           const inside = shape.minorDimIn * pxPerIn >= INSIDE_THRESHOLD_PX;
 
           if (inside) {

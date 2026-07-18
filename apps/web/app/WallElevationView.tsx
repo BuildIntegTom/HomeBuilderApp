@@ -2,7 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { computeGableTiledRow, GABLE_SHED_SNAP_THRESHOLD_IN, type PanelSlot, type Wall } from "@building-integrity/geometry";
-import { COLUMN_TOTAL_WIDTH_IN, computeGableColumnHeightIn, computeGableRipCallout, type RoofSystemType } from "@building-integrity/panel-catalog";
+import {
+  buildOpeningAssemblyMembers,
+  COLUMN_TOTAL_WIDTH_IN,
+  computeGableColumnHeightIn,
+  computeGableRipCallout,
+  sillDefaultHeightIn,
+  standardWindowHeightDefaultIn,
+  type JackStudConfig,
+  type RoofSystemType,
+} from "@building-integrity/panel-catalog";
+import { computeOpeningGeometry } from "./openingGeometry";
+import { MemberElevationShapes } from "./MemberElevationShapes";
 
 const CANVAS_WIDTH = 720;
 const PX_PER_IN = 1.6;
@@ -30,6 +41,9 @@ export interface WallElevationViewProps {
   hasGableEnd: boolean;
   ridgeHeightFt: number;
   targetPanelWidthIn: number;
+  thicknessIn: number;
+  jackStudConfig: JackStudConfig;
+  includeNailer: boolean;
   /** Beam-depth allowance under the peak — see computeGableColumnHeightIn. */
   roofCatcherBeamOffsetIn: number;
   /** Truss roofs bear on a truss plate with no center support (Tommy: "if
@@ -80,6 +94,9 @@ export default function WallElevationView({
   hasGableEnd,
   ridgeHeightFt,
   targetPanelWidthIn,
+  thicknessIn,
+  jackStudConfig,
+  includeNailer,
   roofCatcherBeamOffsetIn,
   roofSystemTypeId,
   gablePeakPositionIn,
@@ -176,23 +193,80 @@ export default function WallElevationView({
           {eaveHeightIn}&quot;
         </text>
 
-        {/* Ground-row slots */}
-        {groundRects.map(({ slot, i, x0, x1 }) => (
-          <g key={i}>
-            <rect
-              x={xPx(x0)}
-              y={yPx(eaveHeightIn)}
-              width={(x1 - x0) * scaleX}
-              height={eaveHeightIn * PX_PER_IN}
-              fill={SLOT_COLORS[slot.type]}
-              stroke="#666"
-              strokeWidth={1}
-            />
-            <text x={xPx((x0 + x1) / 2)} y={yPx(eaveHeightIn / 2)} fontSize={9} textAnchor="middle" fill="#333">
-              {slot.widthIn}&quot;
-            </text>
-          </g>
-        ))}
+        {/* Ground-row slots — windows break down into their real
+            header/jack-stud/sill framing (Tommy: "they should break down
+            in the 2d elevations just like they do in the 3D box views"),
+            colored exactly like the 3D Framed view via the same
+            computeOpeningGeometry/buildOpeningAssemblyMembers geometry
+            WindowSizeDiagram/Building3DView already share. Every other
+            slot type (and doors — no sill to make the distinction
+            meaningful for) keeps the existing flat SLOT_COLORS rect. */}
+        {groundRects.map(({ slot, i, x0, x1 }) => {
+          if (slot.type === "window") {
+            const g = computeOpeningGeometry(
+              false,
+              slot.widthIn,
+              eaveHeightIn,
+              slot.sillHeightIn ?? sillDefaultHeightIn.value,
+              slot.heightIn ?? standardWindowHeightDefaultIn.value,
+              jackStudConfig,
+              targetPanelWidthIn,
+            );
+            const members = buildOpeningAssemblyMembers(
+              slot.widthIn,
+              thicknessIn,
+              "window",
+              jackStudConfig,
+              g.sillHeightIn,
+              g.jackStudSpanIn,
+              g.headerHeightIn,
+              g.sillHeightIn,
+              g.sillWidthsIn,
+              includeNailer,
+            );
+            const localXToPx = (xIn: number) => xPx(x0 + xIn);
+            // The actual glazed opening — open, not filled by any member,
+            // matching the 3D view, inset between the two jack studs.
+            const roGapXPx = localXToPx(g.jackThicknessIn);
+            const roGapWidthPx = localXToPx(slot.widthIn - g.jackThicknessIn) - roGapXPx;
+            const roGapTopPx = yPx(g.roTopZIn);
+            const roGapHeightPx = yPx(g.sillHeightIn) - roGapTopPx;
+            return (
+              <g key={i}>
+                <MemberElevationShapes members={members} xToPx={localXToPx} zToPx={yPx} />
+                <rect
+                  x={roGapXPx}
+                  y={roGapTopPx}
+                  width={Math.max(0, roGapWidthPx)}
+                  height={Math.max(0, roGapHeightPx)}
+                  fill="none"
+                  stroke="#6fa0c9"
+                  strokeWidth={1}
+                  strokeDasharray="4 2"
+                />
+                <text x={xPx((x0 + x1) / 2)} y={yPx(eaveHeightIn) - 6} fontSize={8} textAnchor="middle" fill="#333">
+                  {slot.widthIn}&quot;
+                </text>
+              </g>
+            );
+          }
+          return (
+            <g key={i}>
+              <rect
+                x={xPx(x0)}
+                y={yPx(eaveHeightIn)}
+                width={(x1 - x0) * scaleX}
+                height={eaveHeightIn * PX_PER_IN}
+                fill={SLOT_COLORS[slot.type]}
+                stroke="#666"
+                strokeWidth={1}
+              />
+              <text x={xPx((x0 + x1) / 2)} y={yPx(eaveHeightIn / 2)} fontSize={9} textAnchor="middle" fill="#333">
+                {slot.widthIn}&quot;
+              </text>
+            </g>
+          );
+        })}
 
         {/* Gable row */}
         {hasGableEnd &&
