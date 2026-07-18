@@ -1,7 +1,21 @@
 import { computeGapEnd, computeSafetyEnd } from "./gapPlacement";
 import { cornerTurnAngleRad, footprintIsAllRightAngles, isConvexCorner, isRightAngleCorner } from "./cornerAngle";
+import { reconcileBracedPlacement } from "./bracedPlacement";
 import { getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall } from "./tiling";
-import type { CornerId, Footprint, PanelSlot, Wall, WallEnd } from "./types";
+import type { BracePattern, CornerId, Footprint, PanelSlot, Wall, WallEnd } from "./types";
+
+/** The project's seismic-zone-driven suggestion for brand-new braced-panel
+ * positions (Tommy: "softly decouple [seismic auto-population] to be an
+ * original suggestion for autopopulating panels, but then allows the user
+ * to change each panel") — bundled since `retile`/`retilePreservingOpenings`
+ * both need all 3 together, purely to seed NEW standard-slot positions;
+ * existing per-wall braced decisions are preserved via
+ * `reconcileBracedPlacement`, not re-derived from this every time. */
+export interface BracedSeed {
+  spacingIn: number;
+  defaultPattern: BracePattern;
+  defaultMirrored: boolean;
+}
 
 export interface CornerEndOwnership {
   hasCorner: boolean;
@@ -120,7 +134,10 @@ export function cornerOwnership(
 /** Re-tiles every wall of a footprint from scratch — discards any existing
  * openings, since re-deriving corner ownership can change every wall's
  * available length. Used after any structural change (draw, bump-out,
- * wall-length edit, least-accessible-corner change). */
+ * wall-length edit, least-accessible-corner change). Braced-panel choices
+ * are discarded right along with openings here (no prior wall to preserve
+ * from — every standard slot gets freshly seeded via `bracedSeed`), same
+ * as this function has always fully rebuilt everything else. */
 export function retile(
   fp: Footprint,
   leastAccessible: CornerId,
@@ -128,6 +145,7 @@ export function retile(
   standardWidthIn: number,
   cornerPanelWidthIn: number,
   thicknessIn: number,
+  bracedSeed: BracedSeed,
 ): Record<string, PanelSlot[]> {
   const next: Record<string, PanelSlot[]> = {};
   const ownership = cornerOwnership(fp, primary, thicknessIn);
@@ -140,7 +158,15 @@ export function retile(
     // panel for the gap — Tommy: no standard-safety panels for octagons.
     const slots = tileWall(lengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, start.hasCorner, end.hasCorner, !mitered)
       .slots;
-    next[wall.id] = mitered ? markSafetyCorner(slots, gapEnd) : slots;
+    const seeded = reconcileBracedPlacement(
+      undefined,
+      slots,
+      bracedSeed.spacingIn,
+      standardWidthIn,
+      bracedSeed.defaultPattern,
+      bracedSeed.defaultMirrored,
+    );
+    next[wall.id] = mitered ? markSafetyCorner(seeded, gapEnd) : seeded;
   }
   return next;
 }
@@ -198,6 +224,7 @@ export function retilePreservingOpenings(
   cornerPanelWidthIn: number,
   thicknessIn: number,
   oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined>,
+  bracedSeed: BracedSeed,
 ): Record<string, PanelSlot[]> {
   const next: Record<string, PanelSlot[]> = {};
   const ownership = cornerOwnership(fp, primary, thicknessIn);
@@ -206,8 +233,9 @@ export function retilePreservingOpenings(
     const gapEnd = gapEndFor(fp, wall, leastAccessible);
     const { start, end } = ownership[wall.id]!;
     const lengthIn = wall.lengthFt * 12 - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+    const oldSlots = oldSlotsByNewWallId[wall.id];
     const slots = tileOneWallPreservingOpenings(
-      oldSlotsByNewWallId[wall.id],
+      oldSlots,
       lengthIn,
       standardWidthIn,
       cornerPanelWidthIn,
@@ -216,7 +244,21 @@ export function retilePreservingOpenings(
       end.hasCorner,
       !mitered,
     );
-    next[wall.id] = mitered ? markSafetyCorner(slots, gapEnd) : slots;
+    // Preserves this wall's own prior braced-panel decisions (type, style,
+    // mirror) by position, seeding only genuinely new standard-slot
+    // positions via `bracedSeed` — see `reconcileBracedPlacement`'s own
+    // doc comment. `oldSlots` undefined (no old counterpart for this wall
+    // id) means every standard slot here is new — full fresh seed, same
+    // as `retile`.
+    const reconciled = reconcileBracedPlacement(
+      oldSlots,
+      slots,
+      bracedSeed.spacingIn,
+      standardWidthIn,
+      bracedSeed.defaultPattern,
+      bracedSeed.defaultMirrored,
+    );
+    next[wall.id] = mitered ? markSafetyCorner(reconciled, gapEnd) : reconciled;
   }
   return next;
 }

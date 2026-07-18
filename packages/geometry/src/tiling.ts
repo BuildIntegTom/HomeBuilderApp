@@ -1,4 +1,4 @@
-import type { PanelSlot, WallEnd } from "./types";
+import type { BracePattern, PanelSlot, PanelSlotType, WallEnd } from "./types";
 
 export interface TileWallResult {
   slots: PanelSlot[];
@@ -21,10 +21,15 @@ const SAFETY_PANEL_MIN_WALL_LENGTH_IN = 144;
 /**
  * The no-gap-panel path for walls at or under 12ft: however many standard
  * panels roughly fit, evenly resized to exactly fill the budget — no
- * dedicated safety-gap slot, no borrowed/resized outlier panel.
+ * dedicated safety-gap slot, no borrowed/resized outlier panel. Uses
+ * `Math.ceil`, not `Math.round` (Tommy: "the default auto spawn should be
+ * capped at the standard width") — rounding DOWN can still leave
+ * `widthEachIn` past `standardWidthIn` (e.g. a 50in budget at a 40in
+ * standard rounds to 1 panel, not 2); ceiling guarantees an extra panel
+ * gets added instead of ever exceeding the standard width.
  */
 function buildEvenMiddle(budgetLengthIn: number, standardWidthIn: number): PanelSlot[] {
-  const count = Math.max(1, Math.round(budgetLengthIn / standardWidthIn));
+  const count = Math.max(1, Math.ceil(budgetLengthIn / standardWidthIn));
   const widthEachIn = budgetLengthIn / count;
   return Array.from({ length: count }, () => ({ type: "standard" as const, widthIn: widthEachIn }));
 }
@@ -36,11 +41,14 @@ function buildEvenMiddle(budgetLengthIn: number, standardWidthIn: number): Panel
  * another sill to share the run") — the exact same even-split math as
  * `buildEvenMiddle` (a wall run under the safety-gap threshold), just
  * returning plain widths instead of PanelSlot[]: a sill isn't part of a
- * wall's own tiled slots array, it's derived per window opening.
+ * wall's own tiled slots array, it's derived per window opening. Uses
+ * `Math.ceil` for the same reason `buildEvenMiddle` does — a sill is
+ * fabricated as a real (short) Standard Panel, so it shouldn't exceed
+ * `standardWidthIn` either.
  */
 export function computeSillRunWidths(roWidthIn: number, standardWidthIn: number): number[] {
   if (roWidthIn <= 0) return [];
-  const count = Math.max(1, Math.round(roWidthIn / standardWidthIn));
+  const count = Math.max(1, Math.ceil(roWidthIn / standardWidthIn));
   const widthEachIn = roWidthIn / count;
   return Array.from({ length: count }, () => widthEachIn);
 }
@@ -48,24 +56,37 @@ export function computeSillRunWidths(roWidthIn: number, standardWidthIn: number)
 interface PlainSizing {
   standardCount: number;
   gapWidthIn: number;
-  resizedStandardWidthIn: number;
+  /** 1 entry for the "nothing to split" cases (an exact fit, or fewer than
+   * 1 full standard panel — see the doc comment below); 2 entries, each
+   * always under `standardWidthIn`, when there's a remainder to absorb. */
+  resizedWidthsIn: number[];
 }
 
 /**
  * Core arithmetic shared by `tileWall` and `retileWithOpenings`: given a
  * budget length (already excluding corners and any opening reservations),
- * how many standard panels fit and how wide the one next to the gap ends
- * up being. See `tileWall`'s doc comment for the sizing rules.
+ * how many standard panels fit and how wide the one or two next to the gap
+ * end up being. See `tileWall`'s doc comment for the sizing rules.
  *
  * The gap panel itself is always exactly `SAFETY_GAP_WIDTH_IN` — everything
- * else in the budget goes to standard panels, with the single one next to
- * the gap "resized" to absorb whatever's left over past a whole number of
- * standard widths, so the tiled total always adds up exactly and the gap
- * sits flush against both of its neighbors. (Previously the *gap itself*
- * absorbed that leftover — sizing its own slot to whatever remained, 2 to
- * 4ft typically — while the panel-catalog's actual 3D member for it is
- * only 3/4in wide, leaving a wide unrendered gap around the real board;
- * see `SAFETY_GAP_WIDTH_IN`'s comment.)
+ * else in the budget goes to standard panels. Whatever's left over past a
+ * whole number of standard widths no longer grows a single panel past
+ * `standardWidthIn` (Tommy: "I want to have a panel break down into an
+ * additional panel if the length is going to exceed standard panel width...
+ * this is not something I really want to build into the shop") — instead
+ * the panel that would have absorbed it splits into 2 EVEN panels sharing
+ * that same budget (`standardWidthIn + remainderIn`), so the tiled total
+ * still adds up exactly and the gap still sits flush against both
+ * neighbors, but neither new panel is ever oversized: since `remainderIn`
+ * is always less than `standardWidthIn` by construction (it's what's left
+ * after floor division), `(standardWidthIn + remainderIn) / 2` is always
+ * itself less than `standardWidthIn`. Every OTHER standard panel in the run
+ * (including the corner-touching one) is untouched by this — same as
+ * before. (Previously the *gap itself* absorbed the leftover — sizing its
+ * own slot to whatever remained, 2 to 4ft typically — while the
+ * panel-catalog's actual 3D member for it is only 3/4in wide, leaving a
+ * wide unrendered gap around the real board; see `SAFETY_GAP_WIDTH_IN`'s
+ * comment.)
  *
  * `allowBorrow` no longer changes this function's math — every wall now
  * gets the same fixed-width gap regardless of shape — but the parameter is
@@ -83,18 +104,24 @@ function computePlainSizing(
   const remainderIn = availableForStandardsIn - rawStandardCount * standardWidthIn;
 
   let standardCount = rawStandardCount;
-  let resizedStandardWidthIn = standardWidthIn;
+  let resizedWidthsIn: number[];
 
   if (rawStandardCount === 0) {
     // Not even one full standard panel fits alongside the gap — the whole
-    // leftover becomes a single resized standard panel (0 if there's none).
+    // leftover becomes a single resized standard panel (0 if there's
+    // none). Already under standardWidthIn by construction — not part of
+    // the "shop doesn't want an oversized panel" problem, left untouched.
     standardCount = availableForStandardsIn > 0 ? 1 : 0;
-    resizedStandardWidthIn = availableForStandardsIn;
+    resizedWidthsIn = [availableForStandardsIn];
   } else if (remainderIn > 0) {
-    resizedStandardWidthIn = standardWidthIn + remainderIn;
+    const eachIn = (standardWidthIn + remainderIn) / 2;
+    resizedWidthsIn = [eachIn, eachIn];
+    standardCount += 1; // the split adds one extra panel to the run
+  } else {
+    resizedWidthsIn = [standardWidthIn]; // exact fit — nothing to split
   }
 
-  return { standardCount, gapWidthIn: SAFETY_GAP_WIDTH_IN, resizedStandardWidthIn };
+  return { standardCount, gapWidthIn: SAFETY_GAP_WIDTH_IN, resizedWidthsIn };
 }
 
 /**
@@ -103,34 +130,36 @@ function computePlainSizing(
  * designates, with a full-width standard panel between it and the corner,
  * and plain standards filling the rest.
  *
- * The resized (borrowed) panel — when `resizedStandardWidthIn` differs from
- * `standardWidthIn` — is tucked in next to the gap panel instead, never at
- * the corner-touching position: rule 1 in `applyBracedPlacement` always
+ * The resized (borrowed) panel(s) — when `resizedWidthsIn` differs from
+ * `[standardWidthIn]` — are tucked in next to the gap panel instead, never
+ * at the corner-touching position: rule 1 in `applyBracedPlacement` always
  * braces whichever standard panel touches each corner, and Tommy wants the
- * borrowed panel to never be the one that ends up braced.
+ * borrowed panel(s) to never be the one that ends up braced.
  */
 function buildPlainMiddle(sizing: PlainSizing, standardWidthIn: number, gapEnd: WallEnd): PanelSlot[] {
-  const { standardCount, gapWidthIn, resizedStandardWidthIn } = sizing;
+  const { standardCount, gapWidthIn, resizedWidthsIn } = sizing;
   const gap: PanelSlot = { type: "safety-gap", widthIn: gapWidthIn };
   const plainStandard = (): PanelSlot => ({ type: "standard", widthIn: standardWidthIn });
   const cornerTouching: PanelSlot = plainStandard(); // always full width — rule 1 always braces this one
+  const resizedSlots: PanelSlot[] = resizedWidthsIn.map((widthIn) => ({ type: "standard", widthIn }));
 
   if (standardCount === 0) {
     return [gap];
   }
-  if (standardCount === 1) {
-    // Only 1 standard total — there's no position that isn't corner-
-    // adjacent, so the resize (if any) has nowhere safe to go.
-    const only: PanelSlot = { type: "standard", widthIn: resizedStandardWidthIn };
-    return gapEnd === "start" ? [only, gap] : [gap, only];
+  if (standardCount === resizedSlots.length) {
+    // No room for a separate corner-touching/others split — every standard
+    // panel in the run is one of the resized slot(s), which sit directly
+    // corner-adjacent (see applyBracedPlacement's corner-brace-combining
+    // rule for what happens when a gap panel ends up there too).
+    return gapEnd === "start" ? [...resizedSlots, gap] : [gap, ...resizedSlots];
   }
 
-  const resized: PanelSlot = { type: "standard", widthIn: resizedStandardWidthIn };
-  const others = Array.from({ length: standardCount - 2 }, plainStandard);
-  // Placing `resized` adjacent to the gap (farthest from both corners, since
-  // each corner-touching walk in applyBracedPlacement stops at the very
-  // first standard slot it finds) keeps it out of either corner's brace.
-  const plainStandards = gapEnd === "start" ? [resized, ...others] : [...others, resized];
+  const others = Array.from({ length: standardCount - 1 - resizedSlots.length }, plainStandard);
+  // Placing the resized slot(s) adjacent to the gap (farthest from both
+  // corners, since each corner-touching walk in applyBracedPlacement stops
+  // at the very first standard slot it finds) keeps them out of either
+  // corner's brace.
+  const plainStandards = gapEnd === "start" ? [...resizedSlots, ...others] : [...others, ...resizedSlots];
   return gapEnd === "start" ? [cornerTouching, gap, ...plainStandards] : [...plainStandards, gap, cornerTouching];
 }
 
@@ -388,18 +417,56 @@ export function markSafetyCorner(slots: PanelSlot[], end: WallEnd): PanelSlot[] 
   return slots.map((s, i) => (i === index ? { ...s, type: "safety-oct-corner" as const } : s));
 }
 
-const OPENING_CYCLE: Record<string, PanelSlot["type"]> = {
-  standard: "window",
-  window: "door",
-  door: "standard",
-};
+export interface PanelCycleState {
+  type: PanelSlotType;
+  bracedPattern?: BracePattern;
+  bracedMirrored?: boolean;
+}
 
-/** Cycles a standard/window/door slot: standard -> window -> door -> standard. Corner and safety-gap slots are left untouched. */
-export function toggleOpening(slots: PanelSlot[], index: number): PanelSlot[] {
-  const slot = slots[index];
-  if (!slot || !(slot.type in OPENING_CYCLE)) {
-    return slots;
+/**
+ * The full click-through panel-type cycle (Tommy: "I want to be able to
+ * include each panel style for braced panels in the click-through cycle
+ * for panel type selections"): standard -> window -> door -> column -> all
+ * 4 braced styles (chevron, mirrored chevron, hatch, mirrored hatch) ->
+ * back to standard. Corner and safety-gap slots aren't cyclable at all
+ * (returns null), same as before this cycle grew to include braced
+ * styles.
+ *
+ * Pure "what's next" decision only — doesn't touch `widthIn` or retile
+ * anything itself. The caller (`handleToggleOpening` in page.tsx) uses
+ * this to decide whether the transition needs a full retile (any
+ * transition into or out of window/door/column, since those reserve their
+ * own width) or is a simple in-place field mutation (every other
+ * transition, including entering/leaving the braced-style block, which
+ * never changes a slot's width). Supersedes the old 3-stop
+ * standard->window->door->standard cycle this function used to be (it had
+ * no way to represent column or braced at all, and nothing outside its own
+ * tests ever called it).
+ */
+export function nextPanelCycleState(current: PanelCycleState): PanelCycleState | null {
+  switch (current.type) {
+    case "standard":
+      return { type: "window" };
+    case "window":
+      return { type: "door" };
+    case "door":
+      return { type: "column" };
+    case "column":
+      return { type: "braced", bracedPattern: "chevron", bracedMirrored: false };
+    case "braced":
+      if (current.bracedPattern === "chevron" && current.bracedMirrored === false) {
+        return { type: "braced", bracedPattern: "chevron", bracedMirrored: true };
+      }
+      if (current.bracedPattern === "chevron" && current.bracedMirrored === true) {
+        return { type: "braced", bracedPattern: "hatch", bracedMirrored: false };
+      }
+      if (current.bracedPattern === "hatch" && current.bracedMirrored === false) {
+        return { type: "braced", bracedPattern: "hatch", bracedMirrored: true };
+      }
+      // hatch+mirrored (the last stop), or an unrecognized/legacy
+      // pattern-mirror combo — wrap back to standard either way.
+      return { type: "standard" };
+    default:
+      return null; // corner, safety-gap — not cyclable
   }
-  const nextType = OPENING_CYCLE[slot.type]!;
-  return slots.map((s, i) => (i === index ? { ...s, type: nextType } : s));
 }

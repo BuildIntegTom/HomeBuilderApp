@@ -1,4 +1,4 @@
-import type { PanelSlot } from "./types";
+import type { BracePattern, PanelSlot } from "./types";
 
 const BRACE_NEAR_CORNER_COUNT = 1;
 
@@ -8,15 +8,32 @@ const BRACE_NEAR_CORNER_COUNT = 1;
 export const SAFETY_PLYWOOD_BUFFER_IN = 0.75;
 
 /**
- * Derived overlay, not stored state: recomputed fresh from the base slots
- * (which only ever contain corner/standard/safety-gap/window/door) every
- * time. Two rules, applied in order — the corner-touching brace is a fixed
+ * Two rules, applied in order — the corner-touching brace is a fixed
  * point; periodic spacing fills the plain run and resets at every
  * non-standard slot (corner, gap, window, door, or a slot already braced by
  * the first rule). Windows are no longer auto-flanked (Tommy).
+ *
+ * Every "standard" slot is a candidate by default; `eligibleIndices`
+ * (undefined = everything eligible — a brand-new wall, or a legacy project
+ * file's one-time migration seed) restricts which ones this pass is
+ * actually allowed to promote — see `reconcileBracedPlacement`, which is
+ * what callers should normally use instead of calling this directly, since
+ * it computes `eligibleIndices` from a wall's own prior state (Tommy:
+ * "softly decouple [seismic auto-population] to be an original suggestion
+ * for autopopulating panels, but then allows the user to change each
+ * panel" — once a position has been decided, one way or the other, this
+ * function won't re-decide it again).
  */
-export function applyBracedPlacement(slots: PanelSlot[], spacingIn: number, standardWidthIn: number): PanelSlot[] {
+export function applyBracedPlacement(
+  slots: PanelSlot[],
+  spacingIn: number,
+  standardWidthIn: number,
+  defaultPattern: BracePattern,
+  defaultMirrored: boolean,
+  eligibleIndices?: Set<number>,
+): PanelSlot[] {
   const result = slots.map((s) => ({ ...s }));
+  const isEligible = (i: number) => eligibleIndices === undefined || eligibleIndices.has(i);
 
   /** Nearest standard-type slot to `fromIndex`, searched first in `step`'s
    * direction (continuing further into the wall run, away from the
@@ -64,13 +81,33 @@ export function applyBracedPlacement(slots: PanelSlot[], spacingIn: number, stan
   // braced panel near corners") — fixed-width at standardWidthIn + the
   // plywood buffer instead of its usual dynamically-absorbed width, with
   // the difference shed onto the nearest standard panel so the wall's
-  // total length still comes out exactly right.
+  // total length still comes out exactly right. This combine is NOT gated
+  // by `eligibleIndices` — a combined safety-gap+brace slot has no
+  // per-panel style of its own (see `PanelSlot.bracedPattern`'s own doc
+  // comment) and isn't reachable from the click-cycle, so it's always
+  // freely re-derived, same as before this function gained per-position
+  // stickiness for genuine "braced"-typed slots.
+  //
+  // A slot that's already braced (or already a combined safety-gap+brace)
+  // satisfies the requirement without being touched — this is what makes a
+  // *preserved* corner brace (see `reconcileBracedPlacement`) register as
+  // "already handled" instead of the walk searching further inward for a
+  // second one. A LOCKED "standard" slot (ineligible — the user explicitly
+  // chose to keep it plain) stops the walk entirely rather than reaching
+  // past it for an eligible slot further in: Tommy's own choice at that
+  // specific position wins, even if that means this corner ends up with no
+  // brace suggestion at all.
   const markNearestBraceable = (start: number, step: number, count: number) => {
     let marked = 0;
     for (let i = start; i >= 0 && i < result.length && marked < count; i += step) {
       const slot = result[i]!;
-      if (slot.type === "standard") {
+      if (slot.type === "braced" || slot.secondaryType === "braced") {
+        marked++;
+      } else if (slot.type === "standard") {
+        if (!isEligible(i)) break;
         slot.type = "braced";
+        slot.bracedPattern = defaultPattern;
+        slot.bracedMirrored = defaultMirrored;
         marked++;
       } else if (slot.type === "safety-gap" && slot.secondaryType === undefined) {
         const fixedWidthIn = standardWidthIn + SAFETY_PLYWOOD_BUFFER_IN;
@@ -89,28 +126,95 @@ export function applyBracedPlacement(slots: PanelSlot[], spacingIn: number, stan
   // per run"). Corner and already-braced slots are genuine reset points —
   // rule 1 already placed a brace there (a combined safety+braced slot
   // counts too — it's a real brace, not just a safety panel). But a plain
-  // window/door/safety-gap slot must NOT reset the count: the wall's shear
-  // requirement doesn't go away just because the panel that would've been
-  // braced turned out to be an opening. So distance keeps accumulating
-  // through those, and once a standard slot is reached with enough
-  // accumulated distance, it (and if the shortfall was large enough, the
-  // standard slot(s) after it too) picks up the brace(s) that would
-  // otherwise have been dropped (Tommy: "another standard panel becomes a
-  // braced panel on that same wall").
+  // window/door/safety-gap slot — or a LOCKED "standard" slot ineligible
+  // for promotion — must NOT reset the count: the wall's shear requirement
+  // doesn't go away just because the panel that would've been braced
+  // turned out to be an opening (or the user's own explicit choice). So
+  // distance keeps accumulating through those, and once an ELIGIBLE
+  // standard slot is reached with enough accumulated distance, it (and if
+  // the shortfall was large enough, the standard slot(s) after it too)
+  // picks up the brace(s) that would otherwise have been dropped (Tommy:
+  // "another standard panel becomes a braced panel on that same wall").
   let cumulativeIn = 0;
-  for (const slot of result) {
+  for (let i = 0; i < result.length; i++) {
+    const slot = result[i]!;
     if (slot.type === "corner" || slot.type === "braced" || slot.secondaryType === "braced") {
       cumulativeIn = 0;
       continue;
     }
     cumulativeIn += slot.widthIn;
-    if (cumulativeIn >= spacingIn && slot.type === "standard") {
+    if (cumulativeIn >= spacingIn && slot.type === "standard" && isEligible(i)) {
       slot.type = "braced";
+      slot.bracedPattern = defaultPattern;
+      slot.bracedMirrored = defaultMirrored;
       cumulativeIn -= spacingIn; // carry any excess forward instead of discarding it
     }
   }
 
   return result;
+}
+
+/**
+ * Preserves each wall's own prior braced-panel decisions across a retile,
+ * seeding only genuinely new standard-slot positions via the seismic rule
+ * (Tommy: "softly decouple [seismic auto-population] to be an original
+ * suggestion... allows the user to change each panel" — once decided, a
+ * position's type stays decided). `oldSlots` is the wall's slots array
+ * from BEFORE the retile that produced `newSlots` — undefined for a wall
+ * with no prior state (a brand-new wall, or a legacy project file's
+ * one-time migration seed — see `applyBracedPlacement`'s own doc comment),
+ * which just runs the seismic rule freely over everything, same as before
+ * this function existed.
+ *
+ * Matches positions by ordinal among "standard"|"braced" slots only (the
+ * same convention `getOpeningAnchors`'s `beforeStandardCount` uses for
+ * window/door/column) — a "standard" position is just as sticky as a
+ * "braced" one, so a user reverting a panel back to plain standard stays
+ * reverted through future retiles, not just braced choices.
+ */
+export function reconcileBracedPlacement(
+  oldSlots: PanelSlot[] | undefined,
+  newSlots: PanelSlot[],
+  spacingIn: number,
+  standardWidthIn: number,
+  defaultPattern: BracePattern,
+  defaultMirrored: boolean,
+): PanelSlot[] {
+  if (!oldSlots) {
+    return applyBracedPlacement(newSlots, spacingIn, standardWidthIn, defaultPattern, defaultMirrored);
+  }
+
+  const oldMarkers: { type: "standard" | "braced"; bracedPattern?: BracePattern; bracedMirrored?: boolean }[] = [];
+  for (const slot of oldSlots) {
+    if (slot.type === "standard") {
+      oldMarkers.push({ type: "standard" });
+    } else if (slot.type === "braced") {
+      oldMarkers.push({ type: "braced", bracedPattern: slot.bracedPattern, bracedMirrored: slot.bracedMirrored });
+    }
+  }
+
+  const reconciled = newSlots.map((s) => ({ ...s }));
+  const eligibleIndices = new Set<number>();
+  let ordinal = 0;
+  for (let i = 0; i < reconciled.length; i++) {
+    const slot = reconciled[i]!;
+    // A fresh tiling/retile pass never itself produces a "braced" slot
+    // (see tiling.ts) — only "standard" slots are candidates here.
+    if (slot.type !== "standard") continue;
+    const marker = oldMarkers[ordinal];
+    if (marker) {
+      slot.type = marker.type;
+      if (marker.type === "braced") {
+        slot.bracedPattern = marker.bracedPattern;
+        slot.bracedMirrored = marker.bracedMirrored;
+      }
+    } else {
+      eligibleIndices.add(i);
+    }
+    ordinal++;
+  }
+
+  return applyBracedPlacement(reconciled, spacingIn, standardWidthIn, defaultPattern, defaultMirrored, eligibleIndices);
 }
 
 export function setWindowWidth(slots: PanelSlot[], index: number, widthIn: number): PanelSlot[] {

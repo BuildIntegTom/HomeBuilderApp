@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  applyBracedPlacement,
   applyUniformPanelization,
   areWallsOppositePair,
   buildOctagonFootprint,
@@ -29,7 +28,9 @@ import {
   isMiteredShape,
   isPointNearPier,
   markSafetyCorner,
+  nextPanelCycleState,
   pointAlongRidgeLine,
+  reconcileBracedPlacement,
   retile as retilePure,
   retilePreservingOpenings as retilePreservingOpeningsPure,
   retileWithOpenings,
@@ -72,6 +73,8 @@ import {
   BOX_BEAM_CAP_THICKNESS_IN,
   BOX_BEAM_LVL_HEIGHT_IN,
   bracedPanelDisplayLabel,
+  bracingStyleToPatternMirror,
+  patternMirrorToBracingStyle,
   buildBoxBeamMembers,
   buildBracedPanelMembers,
   buildColumnPanelMembers,
@@ -178,6 +181,7 @@ import {
   truckBedTypes,
   trussPlateInsetDefaultIn,
   wallAssemblyLayers,
+  type BracePattern,
   type BracingStyle,
   type ClassicTrussTypeId,
   type HighPerfTrussBearingShapeId,
@@ -200,6 +204,7 @@ import FloorCornerDetailDiagram from "./FloorCornerDetailDiagram";
 import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
+import { resolveBracedStyle } from "./bracedStyle";
 import PierFoundationDiagram from "./PierFoundationDiagram";
 import PlasterCoatEditor from "./PlasterCoatEditor";
 import {
@@ -783,7 +788,24 @@ export default function LayoutEditor() {
       setIsBumpedOut(s.isBumpedOut);
       setPrimaryCornerIds(s.primaryCornerIds);
       setOffsetPx(s.offsetPx);
-      setBaseWallSlots(s.baseWallSlots);
+      // Old saves (predating braced state becoming real stored data) have
+      // zero "braced" slots in baseWallSlots — run the one-time seed pass
+      // per wall so they come back looking exactly as they would have
+      // rendered pre-change (the old derived-overlay system, using this
+      // same file's own seismicZone/bracingStyle). Newer saves (already
+      // carrying real per-slot braced state) pass through untouched — see
+      // bracedStateSeeded's own doc comment in projectFile.ts.
+      if (s.bracedStateSeeded) {
+        setBaseWallSlots(s.baseWallSlots);
+      } else {
+        const { pattern: loadDefaultPattern, mirrored: loadDefaultMirrored } = bracingStyleToPatternMirror(s.bracingStyle);
+        const loadSpacingIn = seismicBracedPanelSpacingFt[s.seismicZone] * 12;
+        const seeded: Record<string, PanelSlot[]> = {};
+        for (const [wallId, slots] of Object.entries(s.baseWallSlots)) {
+          seeded[wallId] = reconcileBracedPlacement(undefined, slots, loadSpacingIn, s.standardWidthIn, loadDefaultPattern, loadDefaultMirrored);
+        }
+        setBaseWallSlots(seeded);
+      }
       setLeastAccessibleCorner(s.leastAccessibleCorner);
       setStandardWidthIn(s.standardWidthIn);
       setThicknessIn(s.thicknessIn);
@@ -915,6 +937,14 @@ export default function LayoutEditor() {
       : 0;
 
   const spacingIn = seismicBracedPanelSpacingFt[seismicZone] * 12;
+  // The seismic-zone-driven spacing/corner rule now only SEEDS a brand-new
+  // standard slot's initial suggestion (Tommy: "softly decouple [it] to be
+  // an original suggestion for autopopulating panels, but then allows the
+  // user to change each panel") — bracingStyle (the "Bracing style"
+  // toolbar) supplies which pattern/mirror a fresh suggestion uses; it no
+  // longer forces every braced panel project-wide (see reconcileBracedPlacement).
+  const { pattern: defaultBracePattern, mirrored: defaultBracedMirrored } = bracingStyleToPatternMirror(bracingStyle);
+  const bracedSeed = { spacingIn, defaultPattern: defaultBracePattern, defaultMirrored: defaultBracedMirrored };
 
   // `cornerOwnership`/`retile`/`wallGeometryFor` (imported above) are pure
   // functions from the geometry package — corner-ownership rules,
@@ -925,11 +955,11 @@ export default function LayoutEditor() {
   // arguments rather than closing over them, so these 3 names are
   // intentionally shadowed for the rest of this component with thin
   // partial applications supplying `thicknessIn`/`standardWidthIn`/
-  // `cornerPanelWidthIn` — every call site below already expects the
-  // closure-capturing signature these provide.
+  // `cornerPanelWidthIn`/`bracedSeed` — every call site below already
+  // expects the closure-capturing signature these provide.
   const cornerOwnership = (fp: Footprint, primary: Set<string>) => cornerOwnershipPure(fp, primary, thicknessIn);
   const retile = (fp: Footprint, leastAccessible: CornerId, primary: Set<string>): Record<string, PanelSlot[]> =>
-    retilePure(fp, leastAccessible, primary, standardWidthIn, cornerWidthInForTiling, thicknessIn);
+    retilePure(fp, leastAccessible, primary, standardWidthIn, cornerWidthInForTiling, thicknessIn, bracedSeed);
   // Same as `retile` above, but preserves each wall's existing openings —
   // see retile.ts's own doc comment. `oldSlotsByNewWallId` resolves the
   // old-to-new wall correlation; for an id-stable operation (dragWall,
@@ -948,6 +978,7 @@ export default function LayoutEditor() {
       cornerWidthInForTiling,
       thicknessIn,
       oldSlotsByNewWallId,
+      bracedSeed,
     );
   const wallGeometryFor = (wallId: string) =>
     footprint ? wallGeometryForPure(footprint, wallId, primaryCornerIds, leastAccessibleCorner, thicknessIn) : null;
@@ -995,22 +1026,57 @@ export default function LayoutEditor() {
     return -1;
   };
 
+  // "How many standard-family (standard OR braced) slots precede this one"
+  // — the same ordinal convention `getOpeningAnchors`'s `beforeStandardCount`
+  // and `reconcileBracedPlacement`'s own marker-matching use — lets a
+  // caller relocate a specific braced/standard panel after a retile
+  // reshuffles indices, the same way `findNthOpeningIndex` does for
+  // window/door/column.
+  const findNthStandardFamilyIndex = (slots: PanelSlot[], ordinal: number): number => {
+    let seen = 0;
+    for (let i = 0; i < slots.length; i++) {
+      if (slots[i]!.type === "standard" || slots[i]!.type === "braced") {
+        if (seen === ordinal) return i;
+        seen++;
+      }
+    }
+    return -1;
+  };
+
   const handleToggleOpening = (wallId: Wall["id"], slotIndex: number) => {
     const currentSlots = baseWallSlots[wallId] ?? [];
     const currentSlot = currentSlots[slotIndex];
     const geometry = wallGeometryFor(wallId);
     if (!currentSlot || !geometry) return;
-    const cycle: Partial<Record<PanelSlot["type"], PanelSlot["type"]>> = {
-      standard: "window",
-      window: "door",
-      door: "column",
-      column: "standard",
-    };
-    const nextType = cycle[currentSlot.type];
-    if (!nextType) {
+    const next = nextPanelCycleState(currentSlot);
+    if (!next) {
       // corner/safety-gap: not cyclable, but still selectable for read-only
       // details in the Selected Panel note.
       setSelectedSlot({ wallId, slotIndex });
+      return;
+    }
+
+    // Transitions into/out of window/door/column change that slot's own
+    // reserved width, so they still need the full retileWithOpenings
+    // anchor dance. Every other transition — cycling among the 4 braced
+    // styles, entering the braced block from "column", or leaving it back
+    // to "standard" — never changes widthIn at all (a braced panel's width
+    // always tracks the normal standard-panel tiling math, not a
+    // reservation), so it's a pure in-place field mutation instead.
+    if (!isOpeningType(currentSlot.type) && !isOpeningType(next.type)) {
+      setBaseWallSlots((prev) => {
+        const slots = prev[wallId];
+        if (!slots || !slots[slotIndex]) return prev;
+        const nextSlots = slots.slice();
+        nextSlots[slotIndex] = {
+          ...nextSlots[slotIndex]!,
+          type: next.type,
+          bracedPattern: next.bracedPattern,
+          bracedMirrored: next.bracedMirrored,
+        };
+        return { ...prev, [wallId]: nextSlots };
+      });
+      if (next.type === "standard") setSelectedSlot(null);
       return;
     }
 
@@ -1024,28 +1090,37 @@ export default function LayoutEditor() {
     // anchor on the wall (not just the one just toggled) also self-heals
     // any other column on this wall that was created before this fix
     // existed, the next time anything on the wall is touched.
+    //
+    // The toggled slot itself counts toward `standardsSeen` here whenever
+    // its NEXT type is "braced" too (not just "standard") — a braced
+    // panel's width comes from the same normal tiling math as a plain
+    // standard one, so it needs to be excluded from `anchors` exactly like
+    // "standard" already is.
     const anchors: { beforeStandardCount: number; type: "window" | "door" | "column"; widthIn: number }[] = [];
     let standardsSeen = 0;
     currentSlots.forEach((slot, i) => {
-      const type = i === slotIndex ? nextType : slot.type;
+      const type = i === slotIndex ? next.type : slot.type;
       if (type === "window" || type === "door" || type === "column") {
         anchors.push({
           beforeStandardCount: standardsSeen,
           type,
           widthIn: type === "column" ? COLUMN_TOTAL_WIDTH_IN : slot.widthIn,
         });
-      } else if (type === "standard") {
+      } else if (type === "standard" || type === "braced") {
         standardsSeen++;
       }
     });
+    // Where the toggled slot itself will land among standard-family slots
+    // post-retile — only meaningful when it's headed into the braced block
+    // (computed against the *pre*-retile array, same convention
+    // `reconcileBracedPlacement` uses).
+    const precedingStandardFamilyCount = currentSlots.slice(0, slotIndex).filter((s) => s.type === "standard" || s.type === "braced").length;
 
     // Openings keep their relative order, so "how many opening-type slots
     // sit before this one" (computed against the *pre*-retile array, same
     // ordinal handleSetWindowWidth's precedingOpenings uses) still uniquely
     // identifies this exact panel after retiling reshuffles indices.
-    // Converting *to* plain "standard" has no such stable identity (any
-    // number of standards can appear anywhere) — selection is just cleared.
-    const openingOrdinal = nextType === "standard" ? null : currentSlots.slice(0, slotIndex).filter((s) => isOpeningType(s.type)).length;
+    const openingOrdinal = isOpeningType(next.type) ? currentSlots.slice(0, slotIndex).filter((s) => isOpeningType(s.type)).length : null;
 
     const slots = retileWithOpenings(
       geometry.lengthIn,
@@ -1057,13 +1132,33 @@ export default function LayoutEditor() {
       anchors,
       geometry.allowBorrow,
     ).slots;
-    const finalSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
+    const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
+    // Preserves every OTHER braced panel already decided on this wall
+    // (this single-slot retile would otherwise silently wipe them, since
+    // retileWithOpenings itself only knows about window/door/column
+    // anchors) and seeds any genuinely new standard-slot position via the
+    // seismic rule — see reconcileBracedPlacement's own doc comment.
+    let finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
 
-    if (openingOrdinal === null) {
-      setSelectedSlot(null);
-    } else {
+    if (next.type === "braced") {
+      // The user's own explicit click always wins over whatever the
+      // generic seed pass just decided for this specific position.
+      const targetIdx = findNthStandardFamilyIndex(finalSlots, precedingStandardFamilyCount);
+      if (targetIdx !== -1) {
+        finalSlots = finalSlots.map((s, i) =>
+          i === targetIdx ? { ...s, type: "braced" as const, bracedPattern: next.bracedPattern, bracedMirrored: next.bracedMirrored } : s,
+        );
+      }
+    }
+
+    if (openingOrdinal !== null) {
       const newIndex = findNthOpeningIndex(finalSlots, openingOrdinal);
       setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex });
+    } else if (next.type === "braced") {
+      const newIndex = findNthStandardFamilyIndex(finalSlots, precedingStandardFamilyCount);
+      setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex });
+    } else {
+      setSelectedSlot(null);
     }
 
     setBaseWallSlots((prev) => ({
@@ -1105,9 +1200,16 @@ export default function LayoutEditor() {
       anchors,
       geometry.allowBorrow,
     ).slots;
+    const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
+    // Preserves every braced panel already decided on this wall — a window
+    // width change re-tiles the WHOLE wall, which would otherwise silently
+    // wipe every one of them back to plain "standard" (see
+    // reconcileBracedPlacement's own doc comment; same fix already applied
+    // to handleToggleOpening's own retile branch).
+    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
     setBaseWallSlots((prev) => ({
       ...prev,
-      [wallId]: footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots,
+      [wallId]: finalSlots,
     }));
   };
 
@@ -1120,6 +1222,24 @@ export default function LayoutEditor() {
       if (!slots || !slots[slotIndex]) return prev;
       const nextSlots = slots.slice();
       nextSlots[slotIndex] = { ...nextSlots[slotIndex]!, heightIn };
+      return { ...prev, [wallId]: nextSlots };
+    });
+  };
+
+  // Same "direct per-slot field, no re-tiling" pattern as
+  // handleSetWindowHeight — a braced panel's own pattern/mirror is purely
+  // a style choice, never a width change (see handleToggleOpening's own
+  // braced-block transitions), so this is the quick-pick dropdown's own
+  // fast path alongside the full click-through cycle (Tommy: "include each
+  // panel style for braced panels in the click-through cycle... allows the
+  // user to change each panel").
+  const handleSetBracedStyle = (wallId: string, slotIndex: number, pattern: BracePattern, mirrored: boolean) => {
+    setBaseWallSlots((prev) => {
+      const slots = prev[wallId];
+      const slot = slots?.[slotIndex];
+      if (!slots || !slot || slot.type !== "braced") return prev;
+      const nextSlots = slots.slice();
+      nextSlots[slotIndex] = { ...slot, bracedPattern: pattern, bracedMirrored: mirrored };
       return { ...prev, [wallId]: nextSlots };
     });
   };
@@ -1391,28 +1511,27 @@ export default function LayoutEditor() {
     return offsets;
   }, [footprint, thicknessIn, primaryCornerIds]);
 
-  // Braced-panel placement (or, under an alternate panelization type, a
-  // uniform re-tiling instead) is a derived overlay, recomputed from the
-  // base slots every render — never stored, so toggling an opening back to
-  // standard, or switching panelization type, just falls out of
-  // recomputation instead of needing to be undone. Corner-bracing/safety-
-  // gap placement only applies to "loose-packed-braced" (today's system) —
-  // the other two types are uniform by explicit choice, not by the
-  // automatic corner-proximity rule, so they skip straight to
-  // applyUniformPanelization instead.
+  // Under "loose-packed-braced" (today's default system), braced-panel
+  // placement is now real stored state directly in `baseWallSlots` (Tommy:
+  // "softly decouple [seismic auto-population] to be an original
+  // suggestion... allows the user to change each panel") — seeded/
+  // preserved by `reconcileBracedPlacement` inside `retile`/
+  // `retilePreservingOpenings` whenever a wall's slots are recomputed, not
+  // re-derived fresh here every render. The other 2 panelization types are
+  // still a derived overlay (uniform by explicit choice, not the
+  // automatic corner-proximity rule), recomputed fresh from the base slots
+  // every render — never stored, so switching panelization type just
+  // falls out of recomputation instead of needing to be undone.
   const overlayWallSlots = useMemo(() => {
+    if (panelizationType === "loose-packed-braced") return baseWallSlots;
     const next: Record<string, PanelSlot[]> = {};
     for (const [wallId, slots] of Object.entries(baseWallSlots)) {
-      if (panelizationType === "loose-packed-braced") {
-        next[wallId] = applyBracedPlacement(slots, spacingIn, standardWidthIn);
-      } else {
-        const uniformType = panelizationType === "square-bale-panels" ? "standard" : timberFrameCurtainPanelType;
-        const uniformWidthIn = panelizationType === "square-bale-panels" ? squareBalePanel.widthIn : timberFrameCurtainWidthIn;
-        next[wallId] = applyUniformPanelization(slots, uniformType, uniformWidthIn);
-      }
+      const uniformType = panelizationType === "square-bale-panels" ? "standard" : timberFrameCurtainPanelType;
+      const uniformWidthIn = panelizationType === "square-bale-panels" ? squareBalePanel.widthIn : timberFrameCurtainWidthIn;
+      next[wallId] = applyUniformPanelization(slots, uniformType, uniformWidthIn);
     }
     return next;
-  }, [baseWallSlots, spacingIn, standardWidthIn, panelizationType, timberFrameCurtainPanelType, timberFrameCurtainWidthIn]);
+  }, [baseWallSlots, panelizationType, timberFrameCurtainPanelType, timberFrameCurtainWidthIn]);
 
   const allSlots = useMemo(() => Object.values(overlayWallSlots).flat(), [overlayWallSlots]);
   // Every real wall panel type, straw-filled or not — used for the panel
@@ -1462,13 +1581,16 @@ export default function LayoutEditor() {
     return allSlots
       .filter((s) => s.type === "standard" || s.type === "braced")
       .reduce((sum, s) => {
-        const members =
-          s.type === "braced"
-            ? buildBracedPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer, bracingStyle)
-            : buildStandardPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer);
+        let members: PanelMember[];
+        if (s.type === "braced") {
+          const style = resolveBracedStyle(s, defaultBracePattern, defaultBracedMirrored);
+          members = buildBracedPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored);
+        } else {
+          members = buildStandardPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer);
+        }
         return sum + computeMemberSetWoodWeight(members).weightKg;
       }, 0);
-  }, [allSlots, wallHeightFt, thicknessIn, includeNailer, bracingStyle]);
+  }, [allSlots, wallHeightFt, thicknessIn, includeNailer, defaultBracePattern, defaultBracedMirrored]);
   const totalWeightKg = strawWeight.weightKg + totalWoodWeightKg;
   const totalWeightLb = totalWeightKg * KG_TO_LB;
 
@@ -1680,7 +1802,9 @@ export default function LayoutEditor() {
             ? buildSquareBalePanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, squareBaleStudConfig, nailerOffsetIn)
             : buildStandardPanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer)
           : inst.panelType === "braced"
-            ? buildBracedPanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, bracingStyle)
+            ? (({ pattern, mirrored }) => buildBracedPanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, pattern, mirrored))(
+                resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored),
+              )
             : inst.panelType === "column"
               ? columnPanelMembers
               : inst.panelType === "corner" || inst.panelType === "safety-oct-corner"
@@ -1714,7 +1838,8 @@ export default function LayoutEditor() {
     safetyGapMembers3D,
     isSquareBalePanelization,
     squareBaleStudConfig,
-    bracingStyle,
+    defaultBracePattern,
+    defaultBracedMirrored,
     nailerOffsetIn,
     doorHeaderHeightIn,
     sillHeightIn,
@@ -1968,13 +2093,22 @@ export default function LayoutEditor() {
     sourceSlotType?: PanelInstance["sourceSlotType"],
     windowHeightInOverride?: number,
     sillHeightInOverride?: number,
+    bracedPatternOverride?: BracePattern,
+    bracedMirroredOverride?: boolean,
   ) => {
     const heightIn = wallHeightFt * 12;
     const resolvedSillHeightIn = sillHeightInOverride ?? sillDefaultHeightIn.value;
     return panelTypeId === "standard"
       ? buildStandardPanelMembers(widthIn, thicknessIn, heightIn, includeNailer)
       : panelTypeId === "braced"
-        ? buildBracedPanelMembers(widthIn, thicknessIn, heightIn, includeNailer, bracingStyle)
+        ? buildBracedPanelMembers(
+            widthIn,
+            thicknessIn,
+            heightIn,
+            includeNailer,
+            bracedPatternOverride ?? defaultBracePattern,
+            bracedMirroredOverride ?? defaultBracedMirrored,
+          )
         : panelTypeId === "column"
           ? columnPanelMembers
           : panelTypeId === "corner"
@@ -2004,8 +2138,18 @@ export default function LayoutEditor() {
     sourceSlotType?: PanelInstance["sourceSlotType"],
     windowHeightInOverride?: number,
     sillHeightInOverride?: number,
+    bracedPatternOverride?: BracePattern,
+    bracedMirroredOverride?: boolean,
   ): number | null => {
-    const members = membersForPanelTypeId(panelTypeId, widthIn, sourceSlotType, windowHeightInOverride, sillHeightInOverride);
+    const members = membersForPanelTypeId(
+      panelTypeId,
+      widthIn,
+      sourceSlotType,
+      windowHeightInOverride,
+      sillHeightInOverride,
+      bracedPatternOverride,
+      bracedMirroredOverride,
+    );
     return members ? computeFastenerWeight(members).totalWeightKg : null;
   };
 
@@ -2022,8 +2166,18 @@ export default function LayoutEditor() {
     sourceSlotType?: PanelInstance["sourceSlotType"],
     windowHeightInOverride?: number,
     sillHeightInOverride?: number,
+    bracedPatternOverride?: BracePattern,
+    bracedMirroredOverride?: boolean,
   ): number | null => {
-    const members = membersForPanelTypeId(panelTypeId, widthIn, sourceSlotType, windowHeightInOverride, sillHeightInOverride);
+    const members = membersForPanelTypeId(
+      panelTypeId,
+      widthIn,
+      sourceSlotType,
+      windowHeightInOverride,
+      sillHeightInOverride,
+      bracedPatternOverride,
+      bracedMirroredOverride,
+    );
     return members ? computeMemberSetWoodWeight(members).weightKg : null;
   };
 
@@ -2048,8 +2202,24 @@ export default function LayoutEditor() {
               // panel type here uses.
               heightIn: panelTypeId === "sill" ? (inst.sillHeightIn ?? sillDefaultHeightIn.value) : wallHeightFt * 12,
               densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
-              woodWeightKg: woodWeightKgFor(panelTypeId, inst.widthIn, inst.sourceSlotType, inst.windowHeightIn, inst.sillHeightIn),
-              fastenerWeightKg: fastenerWeightKgFor(panelTypeId, inst.widthIn, inst.sourceSlotType, inst.windowHeightIn, inst.sillHeightIn),
+              woodWeightKg: woodWeightKgFor(
+                panelTypeId,
+                inst.widthIn,
+                inst.sourceSlotType,
+                inst.windowHeightIn,
+                inst.sillHeightIn,
+                inst.bracedPattern,
+                inst.bracedMirrored,
+              ),
+              fastenerWeightKg: fastenerWeightKgFor(
+                panelTypeId,
+                inst.widthIn,
+                inst.sourceSlotType,
+                inst.windowHeightIn,
+                inst.sillHeightIn,
+                inst.bracedPattern,
+                inst.bracedMirrored,
+              ),
               hasClayPlaster,
               hasLimePlaster,
             }),
@@ -2062,7 +2232,8 @@ export default function LayoutEditor() {
       wallHeightFt,
       densityLbFt3,
       includeNailer,
-      bracingStyle,
+      defaultBracePattern,
+      defaultBracedMirrored,
       hasClayPlaster,
       hasLimePlaster,
       doorHeaderHeightIn,
@@ -2097,8 +2268,10 @@ export default function LayoutEditor() {
   const estimatedStudPackBearingLb = useMemo(() => computeStudPackBearingCapacityLb(), []);
   const estimatedBracedShearLb = useMemo(
     () =>
-      computeBracedPanelShearCapacityLb(buildBracedPanelMembers(standardWidthIn, thicknessIn, wallHeightFt * 12, includeNailer, bracingStyle)),
-    [standardWidthIn, thicknessIn, wallHeightFt, includeNailer, bracingStyle],
+      computeBracedPanelShearCapacityLb(
+        buildBracedPanelMembers(standardWidthIn, thicknessIn, wallHeightFt * 12, includeNailer, defaultBracePattern, defaultBracedMirrored),
+      ),
+    [standardWidthIn, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored],
   );
   // Column/Corner panels get a MUCH higher estimate than the plain stud
   // pack (Tommy: "they have those two sheets of plywood running up the
@@ -2135,15 +2308,16 @@ export default function LayoutEditor() {
     () =>
       allInstances
         .filter((inst) => inst.panelType === "braced")
-        .reduce(
-          (sum, inst) =>
+        .reduce((sum, inst) => {
+          const style = resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored);
+          return (
             sum +
             computeBracedPanelShearCapacityLb(
-              buildBracedPanelMembers(inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, bracingStyle),
-            ),
-          0,
-        ),
-    [allInstances, thicknessIn, wallHeightFt, includeNailer, bracingStyle],
+              buildBracedPanelMembers(inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, style.pattern, style.mirrored),
+            )
+          );
+        }, 0),
+    [allInstances, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored],
   );
 
   // Per-unique-panel Shop Fabrication pages (Tommy: "if there's exact
@@ -2177,6 +2351,14 @@ export default function LayoutEditor() {
       if (panelTypeId === "header" || panelTypeId === "sill") {
         parts.push(inst.sourceSlotType ?? "", resolvedWindowHeightInFor(inst).toFixed(3), resolvedSillHeightInFor(inst).toFixed(3));
       }
+      // Two braced panels of the same width but a different pattern/mirror
+      // are physically different fabricated parts now (Tommy: "include
+      // each panel style for braced panels") — must not merge onto one
+      // Shop Fabrication page.
+      if (panelTypeId === "braced") {
+        const style = resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored);
+        parts.push(style.pattern, String(style.mirrored));
+      }
       return parts.join("|");
     };
 
@@ -2192,8 +2374,17 @@ export default function LayoutEditor() {
         }
         return [...groups.entries()].map(([key, groupInstances]) => {
           const first = groupInstances[0]!;
+          const bracedStyle = panelType.id === "braced" ? resolveBracedStyle(first, defaultBracePattern, defaultBracedMirrored) : null;
           const members =
-            membersForPanelTypeId(panelType.id, first.widthIn, first.sourceSlotType, first.windowHeightIn, first.sillHeightIn) ?? [];
+            membersForPanelTypeId(
+              panelType.id,
+              first.widthIn,
+              first.sourceSlotType,
+              first.windowHeightIn,
+              first.sillHeightIn,
+              bracedStyle?.pattern,
+              bracedStyle?.mirrored,
+            ) ?? [];
           return {
             uniqueKey: `${panelType.id}-${key}`,
             panelType,
@@ -2201,6 +2392,8 @@ export default function LayoutEditor() {
             heightIn: panelHeightInFor(panelType.id, first),
             members,
             weightBreakdown: first.weightBreakdown,
+            bracedPattern: bracedStyle?.pattern,
+            bracedMirrored: bracedStyle?.mirrored,
             instances: groupInstances.map((inst) => ({
               name: inst.name,
               isSafetyOctCorner: inst.panelType === "safety-oct-corner",
@@ -2208,7 +2401,7 @@ export default function LayoutEditor() {
           };
         });
       });
-  }, [shopDrawings, thicknessIn, wallHeightFt, includeNailer, bracingStyle, doorHeaderHeightIn, sillHeightIn]);
+  }, [shopDrawings, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored, doorHeaderHeightIn, sillHeightIn]);
 
   // Only surface pages that actually apply to what's currently selected/
   // drawn — a foundation detail page only if one exists for this type, a
@@ -2271,7 +2464,10 @@ export default function LayoutEditor() {
         }
         // Every other type: one page per unique panel (exact copies grouped together).
         for (const group of panelFabricationGroups) {
-          const label = group.panelType.id === "braced" ? bracedPanelDisplayLabel(bracingStyle) : group.panelType.label;
+          const label =
+            group.panelType.id === "braced" && group.bracedPattern !== undefined && group.bracedMirrored !== undefined
+              ? bracedPanelDisplayLabel(group.bracedPattern, group.bracedMirrored)
+              : group.panelType.label;
           pages.push({
             id: `shop-fab-${group.uniqueKey}`,
             label: `Panel Fabrication: ${label} ${group.widthIn}in (${group.instances.length} copies)`,
@@ -2840,39 +3036,43 @@ export default function LayoutEditor() {
           Timber Frame Curtain
         </button>
       </div>
-      <div role="group" aria-label="Bracing style" className={styles.toolbar}>
+      <div role="group" aria-label="Default bracing style" className={styles.toolbar}>
         <button
           type="button"
-          aria-pressed={bracingStyle === "chevron"}
-          className={bracingStyle === "chevron" ? styles.toolActive : styles.tool}
-          onClick={() => setBracingStyle("chevron")}
+          aria-pressed={defaultBracePattern === "chevron"}
+          className={defaultBracePattern === "chevron" ? styles.toolActive : styles.tool}
+          onClick={() => setBracingStyle(patternMirrorToBracingStyle("chevron", defaultBracedMirrored))}
         >
-          Chevron Braced
+          Chevron
         </button>
         <button
           type="button"
-          aria-pressed={bracingStyle === "hatch-forward"}
-          className={bracingStyle === "hatch-forward" ? styles.toolActive : styles.tool}
-          onClick={() => setBracingStyle("hatch-forward")}
+          aria-pressed={defaultBracePattern === "hatch"}
+          className={defaultBracePattern === "hatch" ? styles.toolActive : styles.tool}
+          onClick={() => setBracingStyle(patternMirrorToBracingStyle("hatch", defaultBracedMirrored))}
         >
-          Hatch Forward
+          Hatch
         </button>
         <button
           type="button"
-          aria-pressed={bracingStyle === "hatch-back"}
-          className={bracingStyle === "hatch-back" ? styles.toolActive : styles.tool}
-          onClick={() => setBracingStyle("hatch-back")}
+          aria-pressed={defaultBracedMirrored}
+          className={defaultBracedMirrored ? styles.toolActive : styles.tool}
+          onClick={() => setBracingStyle(patternMirrorToBracingStyle(defaultBracePattern, !defaultBracedMirrored))}
         >
-          Hatch Back
+          Mirrored
         </button>
       </div>
       <p className={styles.note}>
-        Which diagonal-brace pattern every &quot;braced&quot;-typed panel uses, project-wide — Chevron is the
-        original &quot;&lt;&quot; shape (both braces meet at the same stud); Hatch Forward (&quot;/&quot;) and Hatch
-        Back (&quot;\&quot;) continue one single diagonal slope instead, split at the middle girt row with each
-        brace's inner end at the opposite stud from the other. Applies wherever a &quot;braced&quot; panel is
-        placed (corner-proximity/seismic spacing under Loose Packed Braced, or &quot;All Braced&quot; under Timber
-        Frame Curtain) — has no effect under Square Bale Panels, which never places a braced slot.
+        The default pattern/mirror a brand-new braced panel gets auto-suggested with (Tommy: &quot;softly decouple
+        [seismic auto-population] to be an original suggestion... allows the user to change each panel&quot;) —
+        Chevron is the original &quot;&lt;&quot; shape (both braces meet at the same stud, or &quot;&gt;&quot;
+        mirrored); Hatch continues one single diagonal slope instead (&quot;/&quot; unmirrored, &quot;\&quot;
+        mirrored), split at the middle girt row with each brace's inner end at the opposite stud from the other. No
+        longer forces every braced panel project-wide — an existing braced panel keeps whatever style it was already
+        given (click it on the canvas, or use its own Selected Panel note, to change it individually). Still applies
+        wherever a NEW &quot;braced&quot; panel gets auto-placed (corner-proximity/seismic spacing under Loose
+        Packed Braced, or &quot;All Braced&quot; under Timber Frame Curtain) — has no effect under Square Bale
+        Panels, which never places a braced slot.
       </p>
       {panelizationType === "loose-packed-braced" && (
         <p className={styles.note}>
@@ -3542,6 +3742,7 @@ export default function LayoutEditor() {
             const slot = baseWallSlots[selectedSlot.wallId]?.[selectedSlot.slotIndex];
             if (!slot) return null;
             const { wallId, slotIndex } = selectedSlot;
+            const bracedStyle = slot.type === "braced" ? resolveBracedStyle(slot, defaultBracePattern, defaultBracedMirrored) : null;
             return (
               <StickyNote
                 id="selected-panel"
@@ -3617,6 +3818,34 @@ export default function LayoutEditor() {
                         style={{ width: 64 }}
                         onChange={(e) => handleSetWindowSillHeight(wallId, slotIndex, Number(e.target.value))}
                       />
+                    </label>
+                  </>
+                ) : slot.type === "braced" && bracedStyle ? (
+                  <>
+                    <p className={styles.note}>
+                      {bracedPanelDisplayLabel(bracedStyle.pattern, bracedStyle.mirrored)}, {slot.widthIn.toFixed(1)}in wide.
+                      Click it again on the canvas to cycle through every style (then back to Standard), or pick one
+                      directly below.
+                    </p>
+                    <label style={{ display: "block" }}>
+                      Pattern{" "}
+                      <select
+                        id={`braced-pattern-${wallId}-${slotIndex}`}
+                        value={bracedStyle.pattern}
+                        onChange={(e) => handleSetBracedStyle(wallId, slotIndex, e.target.value as BracePattern, bracedStyle.mirrored)}
+                      >
+                        <option value="chevron">Chevron (&quot;&lt;&quot;)</option>
+                        <option value="hatch">Hatch (&quot;/&quot;)</option>
+                      </select>
+                    </label>
+                    <label style={{ display: "block" }}>
+                      <input
+                        type="checkbox"
+                        id={`braced-mirrored-${wallId}-${slotIndex}`}
+                        checked={bracedStyle.mirrored}
+                        onChange={(e) => handleSetBracedStyle(wallId, slotIndex, bracedStyle.pattern, e.target.checked)}
+                      />{" "}
+                      Mirrored ({bracedStyle.pattern === "chevron" ? '">"' : '"\\"'})
                     </label>
                   </>
                 ) : (
@@ -4971,7 +5200,10 @@ export default function LayoutEditor() {
               // Back Panel" wherever a user actually sees the name — the
               // shared catalog label stays generically "Braced Panel" so
               // structural notes stay correct for the whole family.
-              const displayLabel = group.panelType.id === "braced" ? bracedPanelDisplayLabel(bracingStyle) : group.panelType.label;
+              const displayLabel =
+                group.panelType.id === "braced" && group.bracedPattern !== undefined && group.bracedMirrored !== undefined
+                  ? bracedPanelDisplayLabel(group.bracedPattern, group.bracedMirrored)
+                  : group.panelType.label;
               const noteId = `shop-fab-${group.uniqueKey}`;
               return (
                 <StickyNote

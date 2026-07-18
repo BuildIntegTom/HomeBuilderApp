@@ -16,7 +16,12 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     isBumpedOut: false,
     primaryCornerIds: new Set(["A", "B"]),
     offsetPx: { x: 60, y: 60 },
-    baseWallSlots: { AB: [{ type: "standard", widthIn: 40 }] },
+    baseWallSlots: {
+      AB: [
+        { type: "standard", widthIn: 40 },
+        { type: "braced", widthIn: 40, bracedPattern: "hatch", bracedMirrored: true },
+      ],
+    },
     leastAccessibleCorner: "A",
     standardWidthIn: 40,
     thicknessIn: 15.5,
@@ -51,6 +56,7 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     nailerOffsetIn: 0,
     squareBaleStudConfig: "single-2x4",
     bracingStyle: "chevron",
+    bracedStateSeeded: true,
     projectName: "Untitled Project",
     wallsEnabled: true,
     floorsEnabled: false,
@@ -81,6 +87,29 @@ describe("serializeProject / parseProjectFile round-trip", () => {
     if (!result.ok) return;
     expect(result.state.footprint).toBeNull();
     expect(result.state.primaryCornerIds.size).toBe(0);
+  });
+
+  it("always stamps bracedStateSeeded: true on save, even if the in-memory state being saved didn't have it set", () => {
+    // Simulates an in-memory state that originated from an old
+    // (pre-migration) load, before page.tsx's own load handler had a
+    // chance to seed it.
+    const state = makeState();
+    delete state.bracedStateSeeded;
+    const file = serializeProject(state);
+    expect(file.state.bracedStateSeeded).toBe(true);
+  });
+
+  it("parses an old-format file with no bracedStateSeeded field at all (the actual pre-migration shape) without error", () => {
+    const file = serializeProject(makeState());
+    const { bracedStateSeeded: _drop, ...oldFormatState } = file.state;
+    const result = parseProjectFile(JSON.stringify({ ...file, state: oldFormatState }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Absent, not defaulted — parseProjectFile itself doesn't run the
+    // migration seed pass (that's page.tsx's own load-handler job, since
+    // it needs reconcileBracedPlacement + the project's own seismic
+    // settings, not something this file-format layer should own).
+    expect(result.state.bracedStateSeeded).toBeUndefined();
   });
 });
 

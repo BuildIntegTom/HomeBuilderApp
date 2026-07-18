@@ -19,12 +19,14 @@ import {
   computeStudPackBearingCapacityLb,
 } from "@building-integrity/calc-engine";
 import {
+  bracingStyleToPatternMirror,
   buildBracedPanelMembers,
   buildColumnPanelMembers,
   buildCornerPanelMembers,
   type BracingStyle,
   type JackStudConfig,
 } from "@building-integrity/panel-catalog";
+import { resolveBracedStyle } from "./bracedStyle";
 import {
   SCALE_PX_PER_FT,
   clientPointFromEvent,
@@ -232,9 +234,17 @@ export default function FootprintCanvas({
       slots.forEach((slot, slotIndex) => {
         const isBraced = slot.type === "braced" || slot.secondaryType === "braced";
         const shearLb = isBraced
-          ? computeBracedPanelShearCapacityLb(
-              buildBracedPanelMembers(slot.widthIn, wallThicknessIn, wallHeightFt * 12, includeNailer, bracingStyle),
-            )
+          ? (() => {
+              // A combined safety-gap+brace slot (secondaryType==="braced")
+              // has no per-slot style of its own — resolveBracedStyle's
+              // "absent = default" fallback handles that case naturally,
+              // same as a plain "braced" slot missing bracedPattern.
+              const defaultStyle = bracingStyleToPatternMirror(bracingStyle);
+              const style = resolveBracedStyle(slot, defaultStyle.pattern, defaultStyle.mirrored);
+              return computeBracedPanelShearCapacityLb(
+                buildBracedPanelMembers(slot.widthIn, wallThicknessIn, wallHeightFt * 12, includeNailer, style.pattern, style.mirrored),
+              );
+            })()
           : undefined;
         const bearingLb =
           slot.type === "column"

@@ -82,10 +82,20 @@ export interface ProjectState {
    * not a literal drag gesture yet — see buildNailer's doc comment. */
   nailerOffsetIn: number;
   squareBaleStudConfig: StudConfig;
-  /** Which diagonal-brace pattern every "braced"-typed slot uses,
-   * project-wide (Tommy: "add another bracing option... Hatch Forward,
-   * and Hatch Back"). */
+  /** The DEFAULT pattern/mirror a brand-new braced panel gets
+   * auto-suggested with — no longer forces every braced panel project-wide
+   * (Tommy: "softly decouple [seismic auto-population] to be an original
+   * suggestion... allows the user to change each panel"); each slot's own
+   * choice now lives directly in `baseWallSlots` (see `PanelSlot.bracedPattern`). */
   bracingStyle: BracingStyle;
+  /** True once this file has gone through the braced-state-is-real-stored-
+   * data migration (see page.tsx's load handler) — absent (an old file,
+   * predating this field) means `baseWallSlots` has zero "braced" slots
+   * stored and needs the one-time corner/spacing seed pass on load, exactly
+   * reproducing what the old derived-overlay system would have rendered.
+   * Deliberately NOT in `REQUIRED_STATE_KEYS` — its absence is the whole
+   * migration signal, not an error. */
+  bracedStateSeeded?: boolean;
   /** Landscape title-block metadata (Tommy: "project, site, date, etc.") —
    * see DocumentMetaContext.tsx. Site/date are derived from other state
    * already in this file (zipCode, current date), so only the project name
@@ -176,6 +186,10 @@ export function serializeProject(state: ProjectState): ProjectFile {
       gableEndWallIds: [...state.gableEndWallIds],
       checkedInteriorIds: [...state.checkedInteriorIds],
       checkedExteriorIds: [...state.checkedExteriorIds],
+      // Every save is written post-migration, regardless of whether the
+      // in-memory state getting saved originated from an old (unseeded)
+      // load — see bracedStateSeeded's own doc comment.
+      bracedStateSeeded: true,
     },
   };
 }

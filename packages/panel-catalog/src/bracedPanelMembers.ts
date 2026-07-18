@@ -40,35 +40,77 @@ export function computeBracedGirtRowCount(studSpanIn: number): number {
 
 /**
  * Which bracing pattern to build (Tommy: "add another bracing option...
- * lets call these hatch panels... hatch forward, and hatch back") — a
- * project-wide choice (see `bracingStyle` in page.tsx), not a per-slot
- * one; every `"braced"`-typed slot in a project uses the same style, so
- * no new `PanelSlotType` value is needed.
+ * lets call these hatch panels... hatch forward, and hatch back" / "I want
+ * this editor to be quite flexible... there should be variations for left
+ * and right versions of each") — a per-panel choice (see `bracedPattern`/
+ * `bracedMirrored` on `PanelSlot` in packages/geometry), decomposed into a
+ * base pattern and an orthogonal left/right mirror flag rather than a flat
+ * list of named styles, so every pattern automatically gets a mirrored
+ * partner instead of needing its own hand-added style string.
  *
- * - `"chevron"`: today's original "<" pattern — both the upper and lower
- *   brace's inner (girt-flanking) end are flush to the SAME stud.
- * - `"hatch-forward"` ("/"): the upper and lower brace continue ONE
- *   single diagonal slope, split at the middle girt row — each brace's
- *   inner end is flush to the OPPOSITE stud from the other instead.
- * - `"hatch-back"` ("\\"), the mirror of hatch-forward.
+ * - `"chevron"`, unmirrored: the original "<" pattern — both the upper and
+ *   lower brace's inner (girt-flanking) end are flush to the SAME (left)
+ *   stud. Mirrored: ">" — both flush to the right stud instead.
+ * - `"hatch"`, unmirrored ("/", formerly "hatch-forward"): the upper and
+ *   lower brace continue ONE single diagonal slope, split at the middle
+ *   girt row — each brace's inner end is flush to the OPPOSITE stud from
+ *   the other. Mirrored ("\\", formerly "hatch-back"): the same swap,
+ *   reflected.
  *
- * See `BRACE_STUD_SIDES`/`buildDiagonalBraces` for exactly which stud
- * each style picks.
+ * See `BRACE_STUD_SIDES`/`buildDiagonalBraces` for exactly which stud each
+ * combination picks.
  */
-export type BracingStyle = "chevron" | "hatch-forward" | "hatch-back";
+export type BracePattern = "chevron" | "hatch";
+
+/**
+ * The 4 concrete style combinations, used only for the project's stored
+ * *default* (the global "Bracing style" toolbar in page.tsx, and the
+ * project-file field of the same name) — individual panels store their own
+ * `bracedPattern`/`bracedMirrored` directly instead of this flat union (see
+ * `BracePattern`'s own doc comment). Kept as a flat union (not a
+ * `{pattern,mirrored}` object) specifically so old project files' stored
+ * `"chevron"`/`"hatch-forward"`/`"hatch-back"` values stay valid without a
+ * schema migration — `"chevron-mirrored"` is the one new value.
+ */
+export type BracingStyle = "chevron" | "chevron-mirrored" | "hatch-forward" | "hatch-back";
+
+export function bracingStyleToPatternMirror(style: BracingStyle): { pattern: BracePattern; mirrored: boolean } {
+  switch (style) {
+    case "chevron":
+      return { pattern: "chevron", mirrored: false };
+    case "chevron-mirrored":
+      return { pattern: "chevron", mirrored: true };
+    case "hatch-forward":
+      return { pattern: "hatch", mirrored: false };
+    case "hatch-back":
+      return { pattern: "hatch", mirrored: true };
+  }
+}
+
+export function patternMirrorToBracingStyle(pattern: BracePattern, mirrored: boolean): BracingStyle {
+  if (pattern === "hatch") return mirrored ? "hatch-back" : "hatch-forward";
+  return mirrored ? "chevron-mirrored" : "chevron";
+}
 
 /** Which stud each of a wythe's 2 braces' inner (girt-flanking) end is
- * flush to, per bracing style — see `BracingStyle`'s own doc comment.
- * Chevron: both the same (left) stud, unchanged from the original "<"
- * design. Hatch Forward/Back: opposite studs, continuing one diagonal
- * slope instead of forming a chevron — reusing chevron's own upper/lower
- * endpoints verbatim for one of their 2 braces each (see the table in
- * `buildDiagonalBraces`'s own doc comment). */
-const BRACE_STUD_SIDES: Record<BracingStyle, { upper: "left" | "right"; lower: "left" | "right" }> = {
+ * flush to, per base pattern (unmirrored) — see `BracePattern`'s own doc
+ * comment. Chevron: both the same (left) stud, unchanged from the original
+ * "<" design. Hatch: opposite studs, continuing one diagonal slope instead
+ * of forming a chevron — reusing chevron's own upper/lower endpoints
+ * verbatim for one of their 2 braces each (see the table in
+ * `buildDiagonalBraces`'s own doc comment). Mirroring (see
+ * `buildDiagonalBraces`) swaps "left"<->"right" on both entries — verified
+ * by hand that this reproduces the old `hatch-back` style's exact values
+ * from `hatch`'s own (formerly `hatch-forward`'s) table, so the 2 patterns
+ * already in use lose zero geometry precision from this refactor. */
+const BRACE_STUD_SIDES: Record<BracePattern, { upper: "left" | "right"; lower: "left" | "right" }> = {
   chevron: { upper: "left", lower: "left" },
-  "hatch-forward": { upper: "left", lower: "right" },
-  "hatch-back": { upper: "right", lower: "left" },
+  hatch: { upper: "left", lower: "right" },
 };
+
+function flipStudSide(side: "left" | "right"): "left" | "right" {
+  return side === "left" ? "right" : "left";
+}
 
 /**
  * A brace's 2 defining reference endpoints: `(studXIn, girtBarZIn)` — its
@@ -112,16 +154,21 @@ function braceEndpoints(widthIn: number, studSide: "left" | "right", girtBarZIn:
  * girt") — flanking it vertically (one just above its center, one just
  * below) instead of pinching to a single point, since two braces can't
  * actually converge on one atom of lumber. Which STUD each inner end is
- * flush to depends on `bracingStyle` (`BRACE_STUD_SIDES`):
+ * flush to depends on `pattern` (`BRACE_STUD_SIDES`), with `mirrored`
+ * swapping left<->right on both entries afterward:
  *
- * | Config               | Inner (plumb) end        | Outer (level) end     |
+ * | Config (unmirrored)  | Inner (plumb) end        | Outer (level) end     |
  * |-----------------------|---------------------------|------------------------|
  * | chevron upper          | left stud @ girt-top      | right-side, top plate  |
  * | chevron lower           | left stud @ girt-bottom   | right-side, bottom plate |
- * | hatch-forward upper (=chevron upper) | left stud @ girt-top | right-side, top plate |
- * | hatch-forward lower    | right stud @ girt-bottom  | left-side, bottom plate |
- * | hatch-back upper       | right stud @ girt-top     | left-side, top plate   |
- * | hatch-back lower (=chevron lower)    | left stud @ girt-bottom | right-side, bottom plate |
+ * | hatch upper (=chevron upper) | left stud @ girt-top | right-side, top plate |
+ * | hatch lower    | right stud @ girt-bottom  | left-side, bottom plate |
+ *
+ * Mirrored, every "left"/"right" above swaps — e.g. mirrored hatch's upper
+ * becomes "right stud @ girt-top, left-side top plate" and its lower
+ * becomes "left stud @ girt-bottom, right-side bottom plate" (the same
+ * values as unmirrored chevron's own lower, coincidentally) — together
+ * exactly today's "hatch-back", now derived instead of hand-tabulated.
  *
  * "Middle" girt row = `(rowCount + 1) / 2`, exact because
  * `computeBracedGirtRowCount` always returns an odd count.
@@ -146,7 +193,8 @@ export function buildDiagonalBraces(
   heightIn: number,
   rowCount: number,
   studSpanIn: number,
-  bracingStyle: BracingStyle,
+  pattern: BracePattern,
+  mirrored: boolean,
 ): PanelMember[] {
   const middleRow = (rowCount + 1) / 2;
   const middleRowCenterZIn = SKIN_THICKNESS_IN + (studSpanIn * middleRow) / (rowCount + 1);
@@ -189,9 +237,12 @@ export function buildDiagonalBraces(
     };
   }
 
-  const { upper: upperStudSide, lower: lowerStudSide } = BRACE_STUD_SIDES[bracingStyle];
+  const sides = BRACE_STUD_SIDES[pattern];
+  const upperStudSide = mirrored ? flipStudSide(sides.upper) : sides.upper;
+  const lowerStudSide = mirrored ? flipStudSide(sides.lower) : sides.lower;
   const [upperX1, upperZ1, upperX2, upperZ2] = braceEndpoints(widthIn, upperStudSide, middleRowBarTopZIn, topPlate2x4ZIn);
   const [lowerX1, lowerZ1, lowerX2, lowerZ2] = braceEndpoints(widthIn, lowerStudSide, middleRowBarBottomZIn, bottomPlate2x4ZIn);
+  const styleLabel = `${pattern}${mirrored ? "-mirrored" : ""}`;
 
   const members: PanelMember[] = [];
   for (const [wythe, centerYIn] of [
@@ -206,7 +257,7 @@ export function buildDiagonalBraces(
         upperX2,
         upperZ2,
         centerYIn,
-        `${wythe}-wythe upper brace (${bracingStyle}) — true beveled ends: a plumb cut flush to the ${upperStudSide} stud's own face, positioned to align with the middle girt row (row ${middleRow} of ${rowCount})'s top face; a level cut flush with the underside of the top plate.`,
+        `${wythe}-wythe upper brace (${styleLabel}) — true beveled ends: a plumb cut flush to the ${upperStudSide} stud's own face, positioned to align with the middle girt row (row ${middleRow} of ${rowCount})'s top face; a level cut flush with the underside of the top plate.`,
       ),
       makeBrace(
         `diagonal_brace_lower_${wythe}`,
@@ -215,7 +266,7 @@ export function buildDiagonalBraces(
         lowerX2,
         lowerZ2,
         centerYIn,
-        `${wythe}-wythe lower brace (${bracingStyle}) — true beveled ends: a plumb cut flush to the ${lowerStudSide} stud's own face, positioned to align with the middle girt row (row ${middleRow} of ${rowCount})'s bottom face; a level cut flush with the top of the bottom plate.`,
+        `${wythe}-wythe lower brace (${styleLabel}) — true beveled ends: a plumb cut flush to the ${lowerStudSide} stud's own face, positioned to align with the middle girt row (row ${middleRow} of ${rowCount})'s bottom face; a level cut flush with the top of the bottom plate.`,
       ),
     );
   }
@@ -237,18 +288,23 @@ export function buildDiagonalBraces(
  * "blocking"`, not `"brace"`, so it's excluded from fastener-weight's
  * brace-screw rule and the shear-capacity racking estimate — the same
  * "no fastener rule specified yet" precedent already used for Column/
- * Corner blocking.
+ * Corner blocking. `mirrored` must match the chevron braces it's actually
+ * connecting — chevron's own upper/lower stud sides are always equal to
+ * each other (both "left" unmirrored, both "right" mirrored — see
+ * `BRACE_STUD_SIDES.chevron`), so a single stud-side flip covers both
+ * reference braces here.
  */
-function buildBracedCenterConnector(widthIn: number, heightIn: number, rowCount: number, studSpanIn: number): PanelMember {
+function buildBracedCenterConnector(widthIn: number, heightIn: number, rowCount: number, studSpanIn: number, mirrored: boolean): PanelMember {
   const middleRow = (rowCount + 1) / 2;
   const middleRowCenterZIn = SKIN_THICKNESS_IN + (studSpanIn * middleRow) / (rowCount + 1);
   const middleRowBarTopZIn = middleRowCenterZIn + PLATE_2X4_THICKNESS_IN / 2;
   const middleRowBarBottomZIn = middleRowCenterZIn - PLATE_2X4_THICKNESS_IN / 2;
   const topPlate2x4ZIn = heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
   const bottomPlate2x4ZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  const studSide = mirrored ? "right" : "left";
 
-  const [upperX1, upperZ1, upperX2, upperZ2] = braceEndpoints(widthIn, "left", middleRowBarTopZIn, topPlate2x4ZIn);
-  const [lowerX1, lowerZ1, lowerX2, lowerZ2] = braceEndpoints(widthIn, "left", middleRowBarBottomZIn, bottomPlate2x4ZIn);
+  const [upperX1, upperZ1, upperX2, upperZ2] = braceEndpoints(widthIn, studSide, middleRowBarTopZIn, topPlate2x4ZIn);
+  const [lowerX1, lowerZ1, lowerX2, lowerZ2] = braceEndpoints(widthIn, studSide, middleRowBarBottomZIn, bottomPlate2x4ZIn);
 
   const centerXIn = widthIn / 2;
   function crossZAt(x1: number, z1: number, x2: number, z2: number): number {
@@ -281,15 +337,17 @@ function buildBracedCenterConnector(widthIn: number, heightIn: number, rowCount:
  * corner studs, and optional nailer as a Standard Panel (see
  * `buildStandardPanelMembers`), but with 3+ girt rows (per
  * `computeBracedGirtRowCount`) instead of 2, the diagonal braces for the
- * chosen `bracingStyle` (see `buildDiagonalBraces`), and — chevron only —
- * the new vertical center connector (see `buildBracedCenterConnector`).
+ * chosen `pattern`/`mirrored` (see `buildDiagonalBraces`), and — chevron
+ * only, either mirror state — the vertical center connector (see
+ * `buildBracedCenterConnector`).
  */
 export function buildBracedPanelMembers(
   widthIn: number,
   depthIn: number,
   heightIn: number,
   includeNailer: boolean,
-  bracingStyle: BracingStyle,
+  pattern: BracePattern,
+  mirrored: boolean,
 ): PanelMember[] {
   const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
   const rowCount = computeBracedGirtRowCount(studSpanIn);
@@ -298,30 +356,29 @@ export function buildBracedPanelMembers(
     ...buildPlates(widthIn, depthIn, heightIn),
     ...buildCornerStuds(widthIn, depthIn, heightIn),
     ...buildGirtRows(rowCount, widthIn, depthIn, studSpanIn),
-    ...buildDiagonalBraces(widthIn, depthIn, heightIn, rowCount, studSpanIn, bracingStyle),
+    ...buildDiagonalBraces(widthIn, depthIn, heightIn, rowCount, studSpanIn, pattern, mirrored),
   ];
-  if (bracingStyle === "chevron") {
-    members.push(buildBracedCenterConnector(widthIn, heightIn, rowCount, studSpanIn));
+  if (pattern === "chevron") {
+    members.push(buildBracedCenterConnector(widthIn, heightIn, rowCount, studSpanIn, mirrored));
   }
   if (includeNailer) members.push(buildNailer(widthIn, heightIn));
   return members;
 }
 
 /**
- * Display name for the Shop Drawing title/3D-view captions, dynamic on
- * the active bracing style (Tommy wants "Hatch Forward Panel"/"Hatch Back
+ * Display name for the Shop Drawing title/3D-view captions, dynamic on the
+ * active pattern/mirror (Tommy wants "Hatch Forward Panel"/"Hatch Back
  * Panel" to actually read that way wherever a user sees them) — the
  * shared `panelTypes` catalog entry stays generically "Braced Panel" so
  * BOM/structural notes read correctly for the whole family regardless of
  * style; this helper is used only at the specific UI surfaces that show a
- * bracing-style-aware name (mirrors how Square Bale Panels' own note text
+ * style-aware name (mirrors how Square Bale Panels' own note text
  * dynamically relabels a "standard"-typed slot, without renaming the
  * shared catalog entry itself).
  */
-export function bracedPanelDisplayLabel(bracingStyle: BracingStyle): string {
-  if (bracingStyle === "hatch-forward") return "Hatch Forward Panel";
-  if (bracingStyle === "hatch-back") return "Hatch Back Panel";
-  return "Braced Panel";
+export function bracedPanelDisplayLabel(pattern: BracePattern, mirrored: boolean): string {
+  if (pattern === "hatch") return mirrored ? "Hatch Back Panel" : "Hatch Forward Panel";
+  return mirrored ? "Chevron Braced Panel (Mirrored)" : "Chevron Braced Panel";
 }
 
 /**
@@ -333,9 +390,10 @@ export function buildBracedPanelSchema(
   depthIn: number,
   heightIn: number,
   includeNailer: boolean,
-  bracingStyle: BracingStyle,
+  pattern: BracePattern,
+  mirrored: boolean,
 ): PanelComponentSchema {
-  const members = buildBracedPanelMembers(widthIn, depthIn, heightIn, includeNailer, bracingStyle);
+  const members = buildBracedPanelMembers(widthIn, depthIn, heightIn, includeNailer, pattern, mirrored);
   const notes: PanelComponentSchema["notes"] = [
     {
       type: "deviation",
@@ -369,7 +427,7 @@ export function buildBracedPanelSchema(
     schemaVersion: "0.1",
     componentType: "panel",
     id: "braced_panel",
-    displayName: bracedPanelDisplayLabel(bracingStyle),
+    displayName: bracedPanelDisplayLabel(pattern, mirrored),
     status: "draft",
     derivedFrom: "standard_panel",
     overallDimensions: { heightIn, widthIn, depthIn },

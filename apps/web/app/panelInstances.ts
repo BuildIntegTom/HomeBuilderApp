@@ -1,5 +1,5 @@
 import { wallCompassDirection, computeSillRunWidths, type CompassDirection, type Footprint, type PanelSlot } from "@building-integrity/geometry";
-import { computeRoughOpeningWidthIn, type JackStudConfig } from "@building-integrity/panel-catalog";
+import { computeRoughOpeningWidthIn, type BracePattern, type JackStudConfig } from "@building-integrity/panel-catalog";
 
 /** Every real structural panel this app can name/count — header and sill
  * are derived from window/door slots (see allPanelInstances), not their
@@ -51,6 +51,14 @@ export interface PanelInstance {
    * customized (falls back to the project default, same as the source
    * slot's own field). */
   sillHeightIn?: number;
+  /** Only set for "braced" instances — carried through from
+   * `PanelSlot.bracedPattern`/`bracedMirrored` (see that field's own doc
+   * comment) so per-instance consumers (Shop Drawing grouping/naming) can
+   * tell 2 same-width braced panels of different styles apart without
+   * re-reading the source slot. Undefined = not yet decided, resolves to
+   * the project default (see `resolveBracedStyle` in bracedStyle.ts). */
+  bracedPattern?: BracePattern;
+  bracedMirrored?: boolean;
 }
 
 const SIMPLE_NAMED_TYPES = new Set<PanelSlot["type"]>([
@@ -102,6 +110,8 @@ export function allPanelInstances(
     sourceSlotType?: PanelSlot["type"],
     windowHeightIn?: number,
     sillHeightIn?: number,
+    bracedPattern?: BracePattern,
+    bracedMirrored?: boolean,
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     instances.push({
@@ -113,6 +123,8 @@ export function allPanelInstances(
       ...(sourceSlotType && { sourceSlotType }),
       ...(windowHeightIn !== undefined && { windowHeightIn }),
       ...(sillHeightIn !== undefined && { sillHeightIn }),
+      ...(bracedPattern !== undefined && { bracedPattern }),
+      ...(bracedMirrored !== undefined && { bracedMirrored }),
     });
   };
 
@@ -139,7 +151,18 @@ export function allPanelInstances(
           }
         }
       } else if (SIMPLE_NAMED_TYPES.has(slot.type)) {
-        pushInstance(direction, wall.id, slot.type as NamedPanelType, slot.widthIn, slotIndexInWall);
+        pushInstance(
+          direction,
+          wall.id,
+          slot.type as NamedPanelType,
+          slot.widthIn,
+          slotIndexInWall,
+          undefined,
+          undefined,
+          undefined,
+          slot.type === "braced" ? slot.bracedPattern : undefined,
+          slot.type === "braced" ? slot.bracedMirrored : undefined,
+        );
       }
     }
   }

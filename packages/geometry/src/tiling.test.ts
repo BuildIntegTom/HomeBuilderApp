@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeSillRunWidths, getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall, toggleOpening } from "./tiling";
+import { computeSillRunWidths, getOpeningAnchors, markSafetyCorner, nextPanelCycleState, retileWithOpenings, tileWall } from "./tiling";
 import type { PanelSlot } from "./types";
 
 describe("computeSillRunWidths", () => {
@@ -22,16 +22,19 @@ describe("computeSillRunWidths", () => {
 });
 
 describe("tileWall", () => {
-  it("keeps the gap panel a fixed 3/4in wide, resizing the standard panel next to it to absorb the leftover, gap second-to-last", () => {
+  it("keeps the gap panel a fixed 3/4in wide, splitting the leftover evenly into 2 panels next to it, gap second-to-last", () => {
     // middle = 350-40(corners) = 310; minus the fixed 0.75in gap leaves
-    // 309.25 for standards -> 7 fit (280) with a 29.25 remainder, absorbed
-    // into the one next to the gap (69.25 wide) so the gap sits flush
-    // against both neighbors — gapEnd='end': 5 plain standards, then the
-    // resized one, then the fixed 3/4in gap, then the corner-touching
-    // standard, then corner.
+    // 309.25 for standards -> 7 fit (280) with a 29.25 remainder. Rather
+    // than growing one panel to 69.25 (over the 40in standard width),
+    // that budget splits evenly into 2 panels of 34.625 each (Tommy:
+    // "have a panel break down into an additional panel if the length is
+    // going to exceed standard panel width") — gapEnd='end': 5 plain
+    // standards, then the 2 split ones, then the fixed 3/4in gap, then
+    // the corner-touching standard, then corner.
     const result = tileWall(350, 40, 20, "end");
     expect(result.slots.map((s) => s.type)).toEqual([
       "corner",
+      "standard",
       "standard",
       "standard",
       "standard",
@@ -42,20 +45,21 @@ describe("tileWall", () => {
       "standard",
       "corner",
     ]);
-    expect(result.slots.map((s) => s.widthIn)).toEqual([20, 40, 40, 40, 40, 40, 69.25, 0.75, 40, 20]);
+    expect(result.slots.map((s) => s.widthIn)).toEqual([20, 40, 40, 40, 40, 40, 34.625, 34.625, 0.75, 40, 20]);
   });
 
-  it("resizes the standard panel next to the gap to absorb the whole leftover when it's under 2ft (gapEnd 'end')", () => {
+  it("splits the leftover evenly into 2 panels next to the gap when it's under 2ft (gapEnd 'end')", () => {
     // middle = 330-40 = 290; minus the fixed 0.75in gap leaves 289.25 for
-    // standards -> 7 fit (280) with a 9.25 remainder, absorbed entirely into
-    // the standard panel next to the gap (49.25 wide) — never the
-    // corner-touching standard, which stays full width since rule 1 in
-    // applyBracedPlacement always braces it.
+    // standards -> 7 fit (280) with a 9.25 remainder, split evenly into 2
+    // panels of 24.625 each next to the gap — never the corner-touching
+    // standard, which stays full width since rule 1 in applyBracedPlacement
+    // always braces it.
     const result = tileWall(330, 40, 20, "end");
     const widths = result.slots.map((s) => s.widthIn);
-    expect(widths).toEqual([20, 40, 40, 40, 40, 40, 49.25, 0.75, 40, 20]);
+    expect(widths).toEqual([20, 40, 40, 40, 40, 40, 24.625, 24.625, 0.75, 40, 20]);
     expect(result.slots.map((s) => s.type)).toEqual([
       "corner",
+      "standard",
       "standard",
       "standard",
       "standard",
@@ -70,14 +74,15 @@ describe("tileWall", () => {
     expect(widths.reduce((a, b) => a + b, 0)).toBe(330);
   });
 
-  it("mirrors the order when gapEnd is 'start': full-width corner-touching standard, then the fixed 3/4in gap, then the resized standard, then the plain run", () => {
+  it("mirrors the order when gapEnd is 'start': full-width corner-touching standard, then the fixed 3/4in gap, then the 2 split standards, then the plain run", () => {
     const result = tileWall(330, 40, 20, "start");
     const widths = result.slots.map((s) => s.widthIn);
-    expect(widths).toEqual([20, 40, 0.75, 49.25, 40, 40, 40, 40, 40, 20]);
+    expect(widths).toEqual([20, 40, 0.75, 24.625, 24.625, 40, 40, 40, 40, 40, 20]);
     expect(result.slots.map((s) => s.type)).toEqual([
       "corner",
       "standard",
       "safety-gap",
+      "standard",
       "standard",
       "standard",
       "standard",
@@ -97,11 +102,12 @@ describe("tileWall", () => {
     expect(result.slots[1]!.widthIn).toBe(15);
   });
 
-  it("still skips the gap panel under 12ft when more than 1 standard's worth fits", () => {
-    // wallLengthIn=90 <= 144; middle=50, round(50/40)=1 -> 1 evenly-sized standard
+  it("still skips the gap panel under 12ft when more than 1 standard's worth fits, capped at standard width", () => {
+    // wallLengthIn=90 <= 144; middle=50, ceil(50/40)=2 -> 2 evenly-sized
+    // standards (25 each) instead of 1 oversized 50in panel.
     const result = tileWall(90, 40, 20, "end");
-    expect(result.slots.map((s) => s.type)).toEqual(["corner", "standard", "corner"]);
-    expect(result.slots[1]!.widthIn).toBe(50);
+    expect(result.slots.map((s) => s.type)).toEqual(["corner", "standard", "standard", "corner"]);
+    expect(result.slots.map((s) => s.widthIn)).toEqual([20, 25, 25, 20]);
   });
 
   it("splits evenly into multiple standards under 12ft when the budget calls for more than one", () => {
@@ -131,27 +137,30 @@ describe("tileWall", () => {
     expect(result.slots.map((s) => s.widthIn)).toEqual([55, 0.75, 39.25, 55]);
   });
 
-  it("keeps the gap second-to-last even with exactly 1 standard panel and a clean remainder, on a wall over 12ft", () => {
+  it("keeps the gap second-to-last with only 1 standard's worth of budget and a remainder, splitting into 2 capped panels", () => {
     // wallLengthIn=150 > 144, cornerWidthIn=40 each -> middle=70; minus the
     // fixed 0.75in gap leaves 69.25 for standards -> 1 fits (40) with a
-    // 29.25 remainder, absorbed into that same standard (69.25 wide) since
-    // it's the only one — gap still sits before it.
+    // 29.25 remainder. Rather than one 69.25in panel, that budget splits
+    // into 2 panels of 34.625 each (there's no separate corner-touching
+    // slot here — both sit directly next to the gap) — gap still sits
+    // before them.
     const result = tileWall(150, 40, 40, "end");
-    expect(result.slots.map((s) => s.type)).toEqual(["corner", "safety-gap", "standard", "corner"]);
-    expect(result.slots.map((s) => s.widthIn)).toEqual([40, 0.75, 69.25, 40]);
+    expect(result.slots.map((s) => s.type)).toEqual(["corner", "safety-gap", "standard", "standard", "corner"]);
+    expect(result.slots.map((s) => s.widthIn)).toEqual([40, 0.75, 34.625, 34.625, 40]);
   });
 
   it("omits corner slots entirely when hasCorners is false (butting wall), same fixed-gap logic applies", () => {
     // middle = 300 (no corners reserved); minus the fixed 0.75in gap leaves
-    // 299.25 for standards -> 7 fit (280) with a 19.25 remainder, absorbed
-    // into the standard next to the gap (59.25 wide) — corner-touching
+    // 299.25 for standards -> 7 fit (280) with a 19.25 remainder, split
+    // into 2 panels of 29.625 each next to the gap — corner-touching
     // standard (still present even with hasCorners false — it's what rule 1
     // braces at the butting end) stays full width.
     const result = tileWall(300, 40, 20, "end", false, false);
     const widths = result.slots.map((s) => s.widthIn);
-    expect(widths).toEqual([40, 40, 40, 40, 40, 59.25, 0.75, 40]);
+    expect(widths).toEqual([40, 40, 40, 40, 40, 29.625, 29.625, 0.75, 40]);
     expect(widths.reduce((a, b) => a + b, 0)).toBe(300);
     expect(result.slots.map((s) => s.type)).toEqual([
+      "standard",
       "standard",
       "standard",
       "standard",
@@ -169,10 +178,11 @@ describe("tileWall", () => {
     // borrow-and-split branch this flag used to gate no longer exists.
     const result = tileWall(330, 40, 20, "end", true, true, false);
     const widths = result.slots.map((s) => s.widthIn);
-    expect(widths).toEqual([20, 40, 40, 40, 40, 40, 49.25, 0.75, 40, 20]);
+    expect(widths).toEqual([20, 40, 40, 40, 40, 40, 24.625, 24.625, 0.75, 40, 20]);
     expect(widths.reduce((a, b) => a + b, 0)).toBe(330);
     expect(result.slots.map((s) => s.type)).toEqual([
       "corner",
+      "standard",
       "standard",
       "standard",
       "standard",
@@ -237,24 +247,33 @@ describe("tileWall", () => {
   });
 });
 
-describe("toggleOpening", () => {
-  it("cycles standard -> window -> door -> standard", () => {
-    const slots = [{ type: "standard" as const, widthIn: 40 }];
-    const afterOne = toggleOpening(slots, 0);
-    expect(afterOne[0]!.type).toBe("window");
-    const afterTwo = toggleOpening(afterOne, 0);
-    expect(afterTwo[0]!.type).toBe("door");
-    const afterThree = toggleOpening(afterTwo, 0);
-    expect(afterThree[0]!.type).toBe("standard");
+describe("nextPanelCycleState", () => {
+  it("cycles standard -> window -> door -> column -> chevron -> mirrored chevron -> hatch -> mirrored hatch -> standard", () => {
+    let state = nextPanelCycleState({ type: "standard" });
+    expect(state).toEqual({ type: "window" });
+    state = nextPanelCycleState(state!);
+    expect(state).toEqual({ type: "door" });
+    state = nextPanelCycleState(state!);
+    expect(state).toEqual({ type: "column" });
+    state = nextPanelCycleState(state!);
+    expect(state).toEqual({ type: "braced", bracedPattern: "chevron", bracedMirrored: false });
+    state = nextPanelCycleState(state!);
+    expect(state).toEqual({ type: "braced", bracedPattern: "chevron", bracedMirrored: true });
+    state = nextPanelCycleState(state!);
+    expect(state).toEqual({ type: "braced", bracedPattern: "hatch", bracedMirrored: false });
+    state = nextPanelCycleState(state!);
+    expect(state).toEqual({ type: "braced", bracedPattern: "hatch", bracedMirrored: true });
+    state = nextPanelCycleState(state!);
+    expect(state).toEqual({ type: "standard" });
   });
 
-  it("leaves corner and safety-gap slots untouched", () => {
-    const slots = [
-      { type: "corner" as const, widthIn: 24 },
-      { type: "safety-gap" as const, widthIn: 39.25 },
-    ];
-    expect(toggleOpening(slots, 0)[0]!.type).toBe("corner");
-    expect(toggleOpening(slots, 1)[1]!.type).toBe("safety-gap");
+  it("returns null for corner and safety-gap slots — not cyclable", () => {
+    expect(nextPanelCycleState({ type: "corner" })).toBeNull();
+    expect(nextPanelCycleState({ type: "safety-gap" })).toBeNull();
+  });
+
+  it("treats an unrecognized/legacy braced pattern-mirror combo as the last stop, wrapping to standard", () => {
+    expect(nextPanelCycleState({ type: "braced" })).toEqual({ type: "standard" });
   });
 });
 
@@ -295,8 +314,8 @@ describe("retileWithOpenings", () => {
   it("reserves the opening's width and re-derives standard count + gap sizing around it (no protrusion)", () => {
     // middle = 430-40(corners) = 390; reserve a 100in window -> budget 290;
     // minus the fixed 0.75in gap leaves 289.25 for standards -> 7 fit (280)
-    // with a 9.25 remainder, absorbed into the one next to the gap (49.25
-    // wide) — window anchored after 2 standard slots
+    // with a 9.25 remainder, split into 2 panels of 24.625 each next to the
+    // gap — window anchored after 2 standard slots
     const result = retileWithOpenings(430, 40, 20, "end", true, true, [
       { beforeStandardCount: 2, type: "window", widthIn: 100 },
     ]);
@@ -311,11 +330,12 @@ describe("retileWithOpenings", () => {
       "standard",
       "standard",
       "standard",
+      "standard",
       "safety-gap",
       "standard",
       "corner",
     ]);
-    expect(widths).toEqual([20, 40, 40, 100, 40, 40, 40, 49.25, 0.75, 40, 20]);
+    expect(widths).toEqual([20, 40, 40, 100, 40, 40, 40, 24.625, 24.625, 0.75, 40, 20]);
     // total unchanged — the gap's fixed width never introduces slack
     expect(widths.reduce((a, b) => a + b, 0)).toBe(430);
   });
@@ -323,7 +343,7 @@ describe("retileWithOpenings", () => {
   it("growing the same window further re-derives again, staying anchored and still fitting exactly", () => {
     // same wall, window grown to 140in -> budget 250; minus the fixed
     // 0.75in gap leaves 249.25 for standards -> 6 fit (240) with a 9.25
-    // remainder, absorbed into the one next to the gap
+    // remainder, split into 2 panels of 24.625 each next to the gap
     const result = retileWithOpenings(430, 40, 20, "end", true, true, [
       { beforeStandardCount: 2, type: "window", widthIn: 140 },
     ]);
@@ -334,6 +354,7 @@ describe("retileWithOpenings", () => {
       "standard",
       "standard",
       "window",
+      "standard",
       "standard",
       "standard",
       "standard",

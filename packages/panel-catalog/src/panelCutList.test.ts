@@ -36,7 +36,7 @@ describe("computePanelCutList", () => {
   });
 
   it("gives a true trapezoid brace a 'long point, beveled ends' qualifier with both cut angles", () => {
-    const members = buildBracedPanelMembers(40, 15.5, 120, false, "chevron");
+    const members = buildBracedPanelMembers(40, 15.5, 120, false, "chevron", false);
     const rows = computePanelCutList(members);
     const braceRow = rows.find((r) => r.role === "brace")!;
     expect(braceRow.dimensions).toContain("long point, beveled ends");
@@ -96,7 +96,7 @@ describe("computePanelCutList", () => {
   });
 
   it("assigns the same letter to a panel's cut list deterministically across repeated calls", () => {
-    const members = buildBracedPanelMembers(40, 15.5, 120, true, "hatch-forward");
+    const members = buildBracedPanelMembers(40, 15.5, 120, true, "hatch", false);
     const first = computePanelCutList(members).map((r) => `${r.letter}:${r.partLabel}`);
     const second = computePanelCutList(members).map((r) => `${r.letter}:${r.partLabel}`);
     expect(first).toEqual(second);

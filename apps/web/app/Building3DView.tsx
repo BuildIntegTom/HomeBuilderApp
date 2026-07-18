@@ -7,8 +7,10 @@ import type { Mesh } from "three";
 import { panelSlotBoxes3D, type Footprint, type PanelSlot, type PanelSlotBox3D } from "@building-integrity/geometry";
 import { allPanelInstances, type PanelInstance } from "./panelInstances";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
+import { resolveBracedStyle } from "./bracedStyle";
 import PanelLabel from "./PanelLabel";
 import {
+  bracingStyleToPatternMirror,
   buildBracedPanelMembers,
   buildBuildingObj,
   buildColumnPanelMembers,
@@ -137,8 +139,11 @@ function membersForSlot(
       return isSquareBalePanelization
         ? buildSquareBalePanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, squareBaleStudConfig, nailerOffsetIn)
         : buildStandardPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer);
-    case "braced":
-      return buildBracedPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, bracingStyle);
+    case "braced": {
+      const defaultStyle = bracingStyleToPatternMirror(bracingStyle);
+      const style = resolveBracedStyle(slot, defaultStyle.pattern, defaultStyle.mirrored);
+      return buildBracedPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored);
+    }
     case "column":
       return buildColumnPanelMembers(thicknessIn, heightIn, includeNailer);
     case "corner":
