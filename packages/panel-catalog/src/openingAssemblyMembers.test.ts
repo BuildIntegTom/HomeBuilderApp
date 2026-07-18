@@ -73,6 +73,22 @@ describe("buildOpeningAssemblyMembers", () => {
       expect(minZ).toBeCloseTo(SILL_HEIGHT_IN + jackStudSpanIn, 6);
     });
 
+    it("shifts a header brace's own trapezoidCornersIn up with the rest of the assembly, not just position.zIn", () => {
+      // Regression test: a brace's actual rendered geometry comes from
+      // trapezoidCornersIn (absolute panel-space corners), not
+      // position.xIn/zIn — shiftAndPrefix used to only move the latter,
+      // leaving braces rendering at their original near-floor local Z
+      // (Tommy: bracing "spawns awkwardly on the ground") while the rest
+      // of the header assembly correctly moved up.
+      const headerBraces = members.filter((m) => m.memberId.startsWith("header_") && m.position.trapezoidCornersIn);
+      expect(headerBraces.length).toBeGreaterThan(0);
+      const headerZIn = SILL_HEIGHT_IN + jackStudSpanIn;
+      for (const brace of headerBraces) {
+        const minCornerZ = Math.min(...brace.position.trapezoidCornersIn!.map((c) => c.zIn));
+        expect(minCornerZ).toBeGreaterThanOrEqual(headerZIn - 1e-6);
+      }
+    });
+
     it("spans jack studs from the sill's top to the header's bottom", () => {
       const leftJackStuds = members.filter((m) => m.memberId.startsWith("jack_left_"));
       for (const m of leftJackStuds) {

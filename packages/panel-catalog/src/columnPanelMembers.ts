@@ -10,6 +10,7 @@ import {
   buildNailer,
   buildPlates,
   buildSkins,
+  shiftTrapezoidCorners,
 } from "./panelMemberHelpers";
 
 /**
@@ -55,9 +56,22 @@ export function computeGableColumnHeightIn(
 /** Shifts every member's X position by `deltaXIn` — used to slide the
  * 24in-wide core over so it sits centered between the two side plywood
  * faces, without needing every helper in panelMemberHelpers.ts to accept
- * an X offset of its own. */
+ * an X offset of its own. Also shifts `trapezoidCornersIn` (a true beveled
+ * brace's actual rendered geometry, stored as absolute panel-space
+ * corners — see memberLocalCornersIn) when present — no diagonal-braced
+ * member passes through here today (Column Panels have no bracing), but
+ * this mirrors the fix applied to openingAssemblyMembers.ts's own
+ * shiftAndPrefix, which shipped exactly this same bug for header braces
+ * by only shifting position.xIn/zIn and leaving the corners stale. */
 function shiftMembersX(members: PanelMember[], deltaXIn: number): PanelMember[] {
-  return members.map((m) => ({ ...m, position: { ...m.position, xIn: m.position.xIn + deltaXIn } }));
+  return members.map((m) => ({
+    ...m,
+    position: {
+      ...m.position,
+      xIn: m.position.xIn + deltaXIn,
+      trapezoidCornersIn: shiftTrapezoidCorners(m.position.trapezoidCornersIn, deltaXIn, 0),
+    },
+  }));
 }
 
 /** Number of 2x4 blocking rows spaced `COLUMN_BLOCKING_SPACING_IN` apart,

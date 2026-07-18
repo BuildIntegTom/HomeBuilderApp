@@ -9,6 +9,30 @@ import type { PanelMember, PanelSpacePoint2D } from "./componentSchema";
  * once instead of being duplicated per panel type.
  */
 
+/**
+ * Translates a true beveled brace's 4 absolute panel-space corners by
+ * (deltaXIn, deltaZIn) — for callers that reposition an already-built
+ * member array (e.g. openingAssemblyMembers.ts's `shiftAndPrefix`,
+ * columnPanelMembers.ts's `shiftMembersX`). A brace's actual rendered
+ * geometry comes from these corners directly (see `memberLocalCornersIn`),
+ * NOT from `position.xIn`/`zIn` — a caller that only shifts the latter
+ * silently leaves the real geometry behind. Preserves the 4-tuple type
+ * (a plain `.map()` degrades it to a general array).
+ */
+export function shiftTrapezoidCorners(
+  corners: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] | undefined,
+  deltaXIn: number,
+  deltaZIn: number,
+): [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] | undefined {
+  if (!corners) return undefined;
+  return corners.map((c) => ({ xIn: c.xIn + deltaXIn, zIn: c.zIn + deltaZIn })) as [
+    PanelSpacePoint2D,
+    PanelSpacePoint2D,
+    PanelSpacePoint2D,
+    PanelSpacePoint2D,
+  ];
+}
+
 export const SKIN_THICKNESS_IN = standardPanelBom.bottomPlateSkin.thicknessIn; // 0.75
 export const SKIN_PLY_SPEC = "3/4in_5ply_CDX";
 export const PLATE_2X4_THICKNESS_IN = 1.5; // standard nominal 2x4 actual thickness

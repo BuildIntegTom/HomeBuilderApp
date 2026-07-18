@@ -2,12 +2,24 @@ import type { PanelMember } from "./componentSchema";
 import { buildDoorHeaderMembers, buildWindowHeaderMembers } from "./headerMembers";
 import { buildJackStudMembers, jackStudThicknessIn, type JackStudConfig } from "./jackStudMembers";
 import { buildSillPanelMembers } from "./sillPanelMembers";
+import { shiftTrapezoidCorners } from "./panelMemberHelpers";
 
 function shiftAndPrefix(members: PanelMember[], deltaXIn: number, deltaZIn: number, idPrefix: string): PanelMember[] {
   return members.map((m) => ({
     ...m,
     memberId: `${idPrefix}${m.memberId}`,
-    position: { ...m.position, xIn: m.position.xIn + deltaXIn, zIn: m.position.zIn + deltaZIn },
+    position: {
+      ...m.position,
+      xIn: m.position.xIn + deltaXIn,
+      zIn: m.position.zIn + deltaZIn,
+      // A true beveled brace's actual rendered geometry comes from these
+      // ABSOLUTE panel-space corners (see memberLocalCornersIn), not from
+      // position.xIn/zIn — shifting only the latter left a header's own
+      // diagonal braces rendering at their original near-floor local Z
+      // while the rest of the assembly correctly moved up to the header's
+      // real height (Tommy: bracing "spawns awkwardly on the ground").
+      trapezoidCornersIn: shiftTrapezoidCorners(m.position.trapezoidCornersIn, deltaXIn, deltaZIn),
+    },
   }));
 }
 
