@@ -9,7 +9,7 @@ import {
   computeColumnBlockingRowCount,
   computeGableColumnHeightIn,
 } from "./columnPanelMembers";
-import { memberBoxSizeIn } from "./panelMemberHelpers";
+import { memberBoxSizeIn, PLATE_END_CLEARANCE_IN } from "./panelMemberHelpers";
 
 const DEPTH_IN = 15.5;
 const HEIGHT_IN = 120;
@@ -54,17 +54,31 @@ describe("buildColumnPanelMembers", () => {
     expect(leftSize.zIn).toBeCloseTo(HEIGHT_IN, 6);
   });
 
-  it("adds 2x4 blocking every 16in on both edges, in addition to the girt rows", () => {
+  it("adds 2x4 blocking every 16in on both the interior and exterior face, running the same X span as the plate runners", () => {
     const studSpanIn = HEIGHT_IN - 1.5;
     const expectedRows = computeColumnBlockingRowCount(studSpanIn);
     const blockingMembers = members.filter((m) => m.role === "blocking");
     expect(blockingMembers).toHaveLength(expectedRows * 2);
+    // "On edge" (orientation "horizontal", rotationDeg 0), spanning X the
+    // same length as the top/bottom plate runners (widthIn - 2 *
+    // PLATE_END_CLEARANCE_IN) — not the old "on edge, spanning Y" front-
+    // to-back strip at the panel's 2 X-extremes.
+    const expectedLengthIn = COLUMN_CORE_WIDTH_IN - 2 * PLATE_END_CLEARANCE_IN;
     for (const b of blockingMembers) {
-      expect(b.actualDimsIn).toEqual({ thicknessIn: 1.5, widthIn: 3.5, lengthIn: DEPTH_IN });
+      expect(b.actualDimsIn).toEqual({ thicknessIn: 1.5, widthIn: 3.5, lengthIn: expectedLengthIn });
+      expect(b.orientation).toBe("horizontal");
+      expect(b.position.rotationDeg).toBe(0);
     }
-    // Left-edge blocking sits flush with the (shifted) left corner stud.
-    const leftRow1 = blockingMembers.find((m) => m.memberId === "blocking_1_left")!;
-    expect(leftRow1.position.xIn).toBeCloseTo(COLUMN_SIDE_PLY_THICKNESS_IN, 6);
+    // Both faces' row 1 sit at the same X (matching the plate runners' own
+    // clearance from the panel edge), differing only in Y — exterior at
+    // the panel's front face, interior set back by the blocking's own
+    // (on-edge) 1.5in Y-footprint from the panel's back face.
+    const exteriorRow1 = blockingMembers.find((m) => m.memberId === "blocking_1_exterior")!;
+    const interiorRow1 = blockingMembers.find((m) => m.memberId === "blocking_1_interior")!;
+    expect(exteriorRow1.position.xIn).toBeCloseTo(COLUMN_SIDE_PLY_THICKNESS_IN + PLATE_END_CLEARANCE_IN, 6);
+    expect(interiorRow1.position.xIn).toBeCloseTo(exteriorRow1.position.xIn, 6);
+    expect(exteriorRow1.position.yIn).toBeCloseTo(0, 6);
+    expect(interiorRow1.position.yIn).toBeCloseTo(DEPTH_IN - 1.5, 6);
   });
 
   it("includes the nailer when requested", () => {

@@ -7,16 +7,17 @@ import type { PanelMember } from "./componentSchema";
 
 describe("computePanelCutList", () => {
   it("merges members that share material/nominalSize/actualDimsIn into one lettered row, regardless of role", () => {
-    // A Column Panel's girt bars (role "girt") and blocking (role
-    // "blocking") can be the exact same 2x4 x depthIn cut — a shop
-    // cutting a batch doesn't care which role a stick fills.
+    // A Column Panel's blocking (role "blocking") is deliberately built to
+    // match the plate runners' (role "plate") own length exactly (same
+    // PLATE_END_CLEARANCE_IN-derived formula) — a shop cutting a batch of
+    // these identical 2x4s doesn't care which role a given stick fills.
     const members = buildColumnPanelMembers(15.5, 120, false);
     const rows = computePanelCutList(members);
-    const girtBar = members.find((m) => m.role === "girt")!;
+    const plate = members.find((m) => m.role === "plate")!;
     const blocking = members.find((m) => m.role === "blocking")!;
-    expect(girtBar.actualDimsIn).toEqual(blocking.actualDimsIn);
+    expect(plate.actualDimsIn).toEqual(blocking.actualDimsIn);
 
-    const row = rows.find((r) => r.members.includes(girtBar))!;
+    const row = rows.find((r) => r.members.includes(plate))!;
     expect(row.members).toContain(blocking);
   });
 

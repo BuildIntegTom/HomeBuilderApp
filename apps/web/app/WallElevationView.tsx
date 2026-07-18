@@ -156,6 +156,14 @@ export default function WallElevationView({
     acc.push({ slot, i, x0, x1: x0 + slot.widthIn });
     return acc;
   }, []);
+  // A wall's own `slots` don't always cover its full geometric length —
+  // for a plain rectangle, corner panels are only stored on one pair of
+  // opposite walls (drawn once per building corner, attributed to whichever
+  // wall "owns" it, per the tiling convention), so THIS wall's own slots
+  // can legitimately stop short of `wallWidthIn` at one or both ends. The
+  // eave line should reflect what's actually drawn in the ground row, not
+  // the wall's raw length, or it visibly runs past the last real panel.
+  const groundRunWidthIn = groundRects.length > 0 ? groundRects[groundRects.length - 1]!.x1 : 0;
 
   return (
     <div style={{ border: "1px solid #ccc", padding: 12, borderRadius: 4 }}>
@@ -187,8 +195,9 @@ export default function WallElevationView({
         role="img"
         aria-label={`Elevation view of wall ${wall.id}`}
       >
-        {/* Eave line */}
-        <line x1={LEFT_MARGIN_PX} y1={yPx(eaveHeightIn)} x2={xPx(wallWidthIn)} y2={yPx(eaveHeightIn)} stroke="#999" strokeDasharray="4 3" />
+        {/* Eave line — spans only the ground row's own actual width (see
+            groundRunWidthIn above), not the wall's raw geometric length. */}
+        <line x1={LEFT_MARGIN_PX} y1={yPx(eaveHeightIn)} x2={xPx(groundRunWidthIn)} y2={yPx(eaveHeightIn)} stroke="#999" strokeDasharray="4 3" />
         <text x={4} y={yPx(eaveHeightIn) + 4} fontSize={10} fill="#666">
           {eaveHeightIn}&quot;
         </text>

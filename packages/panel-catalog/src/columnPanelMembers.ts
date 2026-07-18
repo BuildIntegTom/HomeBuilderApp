@@ -3,6 +3,7 @@ import {
   LUMBER_SPECIES_GRADE,
   PLATE_2X4_THICKNESS_IN,
   PLATE_2X4_WIDTH_IN,
+  PLATE_END_CLEARANCE_IN,
   SKIN_THICKNESS_IN,
   buildCornerStuds,
   buildGirtRows,
@@ -68,33 +69,50 @@ export function computeColumnBlockingRowCount(studSpanIn: number): number {
   return Math.floor(studSpanIn / COLUMN_BLOCKING_SPACING_IN);
 }
 
-/** 2x4 blocking between the front/back corner studs at each vertical edge
- * (left and right), stacked every 16in up the stud span — backing/lateral
+/** 2x4 blocking between the vertical corner studs, on both the interior
+ * and exterior face, stacked every 16in up the stud span — backing/lateral
  * bracing for the side plywood faces, in addition to (not instead of) the
- * core's own girt rows. */
+ * core's own girt rows. Tommy: "blocking...need to be on the interior and
+ * exterior face - between the studs going the other way (parallel to the
+ * primary perimeter line) and are the same length (but on edge rather than
+ * flat) as the 2x4 runners of the top and bottom plates." Runs along X
+ * (`orientation: "horizontal"`, `rotationDeg: 0` — per `memberBoxSizeIn`'s
+ * own vocabulary, "on edge, spanning X": X=length, Y=thickness, Z=width),
+ * matching `buildPlates`' own plate-runner orientation exactly, not the
+ * old "on edge, spanning Y" (rotationDeg 90) that ran front-to-back at the
+ * panel's 2 X-extremes instead of side-to-side between the studs.
+ *
+ * Length/position reuse `PLATE_END_CLEARANCE_IN` directly — the exact same
+ * constant `buildPlates` uses for its own `plateLengthIn` — so blocking's
+ * length is guaranteed to track the plate runners' length ("same length...
+ * as the runners") rather than an independently-derived formula that could
+ * drift from it. `PLATE_END_CLEARANCE_IN` (1.5) happens to numerically
+ * equal `PLATE_2X4_THICKNESS_IN` (1.5) for this core, so this also lands
+ * exactly on the studs' own inner faces ("same distance between the studs
+ * horizontally") — flagged here so an independent future change to either
+ * constant doesn't silently break that framing unnoticed. */
 function buildColumnBlocking(depthIn: number, studSpanIn: number): PanelMember[] {
-  const leftXIn = 0;
-  const rightXIn = COLUMN_CORE_WIDTH_IN - PLATE_2X4_THICKNESS_IN;
+  const lengthIn = COLUMN_CORE_WIDTH_IN - 2 * PLATE_END_CLEARANCE_IN;
   const rowCount = computeColumnBlockingRowCount(studSpanIn);
   const members: PanelMember[] = [];
   for (let row = 1; row <= rowCount; row++) {
     const zIn = SKIN_THICKNESS_IN + COLUMN_BLOCKING_SPACING_IN * row;
-    for (const [side, xIn] of [
-      ["left", leftXIn],
-      ["right", rightXIn],
+    for (const [face, yIn] of [
+      ["exterior", 0],
+      ["interior", depthIn - PLATE_2X4_THICKNESS_IN],
     ] as const) {
       members.push({
-        memberId: `blocking_${row}_${side}`,
+        memberId: `blocking_${row}_${face}`,
         material: "dimensional_lumber",
         speciesGrade: LUMBER_SPECIES_GRADE,
         plySpec: null,
         nominalSize: "2x4",
-        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: depthIn },
+        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn },
         orientation: "horizontal",
-        position: { xIn, yIn: 0, zIn, rotationDeg: 90 },
+        position: { xIn: PLATE_END_CLEARANCE_IN, yIn, zIn, rotationDeg: 0 },
         role: "blocking",
         qty: 1,
-        notes: `Blocking row ${row} of ${rowCount}, ${side} edge — between the front/back corner studs, backing for the side plywood.`,
+        notes: `Blocking row ${row} of ${rowCount}, ${face} face — between the corner studs, on edge, matching the plate runners' own length.`,
       });
     }
   }
@@ -168,7 +186,7 @@ export function buildColumnPanelSchema(depthIn: number, heightIn: number, includ
     notes: [
       {
         type: "deviation",
-        text: "Blocking row count/spacing (every 16in o.c.) and its in-plane X position (flush with the corner studs) are interpretations of Tommy's spec, not independently confirmed against a shop drawing.",
+        text: "Blocking row count/spacing (every 16in o.c.) is an interpretation of Tommy's spec, not independently confirmed against a shop drawing.",
       },
     ],
     disclaimer: "Reference only — not engineered, not for construction.",

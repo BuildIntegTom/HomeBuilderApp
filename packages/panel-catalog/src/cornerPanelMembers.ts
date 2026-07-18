@@ -25,7 +25,7 @@ export function buildCornerPanelSchema(depthIn: number, heightIn: number, includ
     notes: [
       {
         type: "deviation",
-        text: "Identical construction to the Column Panel (Tommy) — blocking row count/spacing and in-plane X position are interpretations, not independently confirmed against a shop drawing.",
+        text: "Identical construction to the Column Panel (Tommy) — blocking row count/spacing is an interpretation, not independently confirmed against a shop drawing.",
       },
     ],
     disclaimer: "Reference only — not engineered, not for construction.",

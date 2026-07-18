@@ -1,5 +1,5 @@
 import type { MemberRole, PanelMember } from "./componentSchema";
-import { computeBraceEndCutAngleDeg } from "./panelMemberHelpers";
+import { computeBraceEndCutAngleDeg, describeBraceEndCuts, type BraceEndCut } from "./panelMemberHelpers";
 
 export interface PanelCutListRow {
   letter: string;
@@ -135,15 +135,35 @@ function partLabelFor(member: PanelMember): string {
  * braceLongestEdgeIn) plus a qualifier and its own bevel angles, since a
  * plain length alone isn't enough for a shop to cut the bevel. Plywood: a
  * 2-dim sheet size (thickness already lives in the Part label). */
+// Braced-Panel braces meet 2 stationary faces (a plate, a stud) — always
+// exactly one "level" cut and one "plumb" cut, printed in that fixed order
+// to match this codebase's own established convention. A header brace's
+// outer end can ALSO come back "angled" — a compound cut where one long
+// edge stays plumb (flush with the jack stud) and the other falls back to
+// level (flush with the bottom chord) to avoid overshooting past it. This
+// is NOT a brace-to-brace miter (a header's own internal peak/foot miters
+// always resolve to "level" instead, per its flat-chord symmetry — see
+// describeBraceEndCuts's own doc comment), so it's labeled "angled", not
+// "miter", to avoid implying this end meets another board.
+function describeCut(cut: BraceEndCut): string {
+  const label = cut.kind === "plumb" ? "plumb" : cut.kind === "level" ? "level" : "angled";
+  return `${cut.angleDeg.toFixed(1)}° ${label}`;
+}
+
 function dimensionsFor(member: PanelMember): string {
   const { thicknessIn, widthIn, lengthIn } = member.actualDimsIn;
   if (member.material === "plywood") return `${formatDimIn(widthIn)} x ${formatDimIn(lengthIn)}`;
 
   const base = `${formatDimIn(thicknessIn)} x ${formatDimIn(widthIn)} x ${formatDimIn(lengthIn)}`;
-  if (member.position.trapezoidCornersIn !== undefined && member.position.tiltDeg !== undefined) {
-    const levelAngleDeg = computeBraceEndCutAngleDeg(member.position.tiltDeg);
-    const plumbAngleDeg = 90 - levelAngleDeg;
-    return `${base} (long point, beveled ends: ${levelAngleDeg.toFixed(1)}° level / ${plumbAngleDeg.toFixed(1)}° plumb)`;
+  if (member.position.trapezoidCornersIn !== undefined) {
+    // Real cuts derived directly from the trapezoid's own geometry (not
+    // re-derived from tiltDeg alone) — correct uniformly for a Braced
+    // Panel's plumb+level brace and a header's corner-clip/mitered mix.
+    const cuts = describeBraceEndCuts(member.position.trapezoidCornersIn).slice().sort((a, b) => {
+      const order = { level: 0, plumb: 1, angled: 2 };
+      return order[a.kind] - order[b.kind];
+    });
+    return `${base} (long point, beveled ends: ${cuts.map(describeCut).join(" / ")})`;
   }
   return base;
 }

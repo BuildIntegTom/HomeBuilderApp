@@ -42,6 +42,10 @@ const BIRDS_EYE_AZIMUTH_DEG = 45; // a corner/3-quarter starting view, not strai
 const IN_PER_FT = 12;
 const BLOB_COLOR = "#b5b0a8";
 const EMPTY_ID_SET: Set<string> = new Set();
+// Standard click-vs-drag screen-space threshold (px) before the Orbit
+// tool's click-and-swipe re-centering commits — a plain click stays a
+// true no-op below this.
+const ORBIT_RETARGET_DRAG_THRESHOLD_PX = 5;
 
 interface Bounds {
   centerX: number;
@@ -585,6 +589,49 @@ export default function Building3DView({
   const sillHandleRef = useRef<Mesh>(null);
   const headerHandleRef = useRef<Mesh>(null);
 
+  // Orbit tool re-centering (Tommy: "if you click and swipe on a panel or
+  // object, then the camera orbits around that point instead" of the
+  // building's own default center) — null means "use the default
+  // building-center target", matching today's behavior exactly. Reset
+  // whenever the Orbit tool isn't active, so a stale override from a
+  // previous session doesn't linger once the user switches tools and back.
+  const [orbitTargetOverride, setOrbitTargetOverride] = useState<[number, number, number] | null>(null);
+  useEffect(() => {
+    if (tool3D !== "orbit") setOrbitTargetOverride(null);
+  }, [tool3D]);
+  // Click-vs-drag disambiguation: a plain click on a panel (no follow-up
+  // drag) should be a true no-op — changing OrbitControls' own `target`
+  // alone never produces a visible camera jump (it only affects where the
+  // NEXT orbit gesture rotates around), so a bare click would otherwise
+  // silently arm a later, unrelated gesture to behave differently than
+  // expected. This ref holds the pointerdown's own screen position + the
+  // clicked world point; only once real drag movement is observed does it
+  // get promoted into `orbitTargetOverride` state.
+  const orbitDragStartRef = useRef<{ clientX: number; clientY: number; worldPoint: [number, number, number] } | null>(null);
+  useEffect(() => {
+    const handlePointerMove = (e: PointerEvent) => {
+      const start = orbitDragStartRef.current;
+      if (!start) return;
+      const distancePx = Math.hypot(e.clientX - start.clientX, e.clientY - start.clientY);
+      if (distancePx < ORBIT_RETARGET_DRAG_THRESHOLD_PX) return;
+      setOrbitTargetOverride(start.worldPoint);
+      orbitDragStartRef.current = null; // commit once per gesture, then stop tracking
+    };
+    const handlePointerUp = () => {
+      orbitDragStartRef.current = null;
+    };
+    // Window-level, not on the Canvas/group itself — purely observing an
+    // in-progress gesture that OrbitControls is simultaneously handling
+    // for the actual rotation; never calls stopPropagation/preventDefault,
+    // so it can't interfere with that.
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, []);
+
   const slotBoxes = useMemo(
     () => (footprint ? panelSlotBoxes3D(footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds) : []),
     [footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds],
@@ -744,7 +791,8 @@ export default function Building3DView({
   const totalHeightFt = wallHeightFt + (secondStory ? secondStory.wallHeightFt : 0);
   const bounds: Bounds = { ...footprintBoundsRaw, maxDim: Math.max(footprintBoundsRaw.maxDim, totalHeightFt) };
   const cameraPosition = birdsEyeCameraPosition(bounds);
-  const target: [number, number, number] = [footprintBoundsRaw.centerX, totalHeightFt / 2, footprintBoundsRaw.centerZ];
+  const defaultTarget: [number, number, number] = [footprintBoundsRaw.centerX, totalHeightFt / 2, footprintBoundsRaw.centerZ];
+  const target: [number, number, number] = orbitTargetOverride ?? defaultTarget;
   const groundSize = bounds.maxDim * 3;
 
   // Sill & Header drag tool (Tommy: "manipulate sill and header height with
@@ -820,6 +868,9 @@ export default function Building3DView({
         <Canvas
           camera={{ position: cameraPosition, fov: 50, near: 0.1, far: 10000 }}
           gl={captureMode ? { preserveDrawingBuffer: true } : undefined}
+          onPointerMissed={() => {
+            if (tool3D === "orbit") setOrbitTargetOverride(null);
+          }}
         >
           {captureMode && onCapture && <CaptureFrame onCapture={onCapture} />}
           <ambientLight intensity={0.6} />
@@ -845,6 +896,17 @@ export default function Building3DView({
                         setSelectedWindow({ wallId: box.wallId, slotIndex: box.slotIndex, story: "ground" });
                       }
                     : undefined
+              }
+              onPointerDown={
+                tool3D === "orbit"
+                  ? (e) => {
+                      orbitDragStartRef.current = {
+                        clientX: e.nativeEvent.clientX,
+                        clientY: e.nativeEvent.clientY,
+                        worldPoint: [e.point.x, e.point.y, e.point.z],
+                      };
+                    }
+                  : undefined
               }
             >
               {!simplified && members ? (
@@ -888,6 +950,17 @@ export default function Building3DView({
                         setSelectedWindow({ wallId: box.wallId, slotIndex: box.slotIndex, story: "second" });
                       }
                     : undefined
+              }
+              onPointerDown={
+                tool3D === "orbit"
+                  ? (e) => {
+                      orbitDragStartRef.current = {
+                        clientX: e.nativeEvent.clientX,
+                        clientY: e.nativeEvent.clientY,
+                        worldPoint: [e.point.x, e.point.y, e.point.z],
+                      };
+                    }
+                  : undefined
               }
             >
               {!simplified && members ? (

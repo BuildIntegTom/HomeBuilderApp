@@ -134,6 +134,6 @@ describe("buildDoorHeaderSchema / buildWindowHeaderSchema", () => {
   it("reports a real bevel-cut angle for the truss web braces' ends", () => {
     // 36in wide, 22.5in tall -> rise 18in (heightIn - 2*1.5 - 2*0.75), half-width 18 -> 45deg tilt.
     const schema = buildDoorHeaderSchema(36, DEPTH_IN, 22.5);
-    expect(schema.notes.some((n) => n.type === "deviation" && n.text.includes("45.0deg off a square crosscut"))).toBe(true);
+    expect(schema.notes.some((n) => n.type === "deviation" && n.text.includes("45.0deg off vertical"))).toBe(true);
   });
 });

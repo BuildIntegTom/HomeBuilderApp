@@ -23,6 +23,152 @@ interface LetteredShape extends ProjectedShape {
   letter: string;
 }
 
+interface BadgePlacement {
+  shape: LetteredShape;
+  centroid: { xPx: number; yPx: number };
+  inside: boolean;
+  badgeX: number;
+  badgeY: number;
+  lineEndX: number;
+  lineEndY: number;
+}
+
+// Two badges land within this many px of each other counts as a collision
+// worth spreading apart — roughly 2 badge diameters, enough clearance that
+// neither circle nor its text overlaps the other's.
+const COLLISION_RADIUS_PX = BADGE_RADIUS_PX * 2 + 4;
+const BADGE_SPREAD_PX = BADGE_RADIUS_PX * 2 + 6;
+
+/**
+ * Places a badge for every shape — centered inside wide/tall shapes, or
+ * outside on a dashed leader line for thin ones (see the module doc comment
+ * for the general heuristic). Two members that are both thin, full-width Z
+ * bands stacked at nearly the same panel edge (e.g. a top plate and its
+ * immediately-adjacent skin cap, or a plate's own ext/int-wythe pair, which
+ * project to the identical rectangle since they only differ in the
+ * (invisible-in-2D) Y depth) push their leader-line badges toward nearly
+ * the identical target, since both computations start from a near-
+ * identical centroid and the same outward direction — Tommy: "when
+ * labeling the plywood skin of the top and bottom plate... A and E
+ * overlap... off center one or both of these labels." Resolved with a
+ * second pass: badges pushing the same direction whose (pre-spread)
+ * targets are within COLLISION_RADIUS_PX of ANY other badge in the same
+ * connected group (transitively — not just their own nearest neighbor, so
+ * a 3-way collision spreads as one group of 3 rather than 2 overlapping
+ * pairs) are spread apart along the axis perpendicular to their shared
+ * push direction, centered on the group's own average position — not a
+ * full collision solver, just enough to separate the cases this diagram
+ * actually produces (2-4 members capping the same panel edge).
+ */
+function placeBadges(
+  shapes: LetteredShape[],
+  panelCenterPx: { xPx: number; yPx: number },
+  pxPerIn: number,
+): BadgePlacement[] {
+  const placements = shapes.map((shape) => {
+    const centroid = shape.centroidPx;
+    const inside = shape.minorDimIn * pxPerIn >= INSIDE_THRESHOLD_PX;
+    if (inside) {
+      return { shape, centroid, inside: true, badgeX: centroid.xPx, badgeY: centroid.yPx, dirX: 0, dirY: 0 };
+    }
+    // Push outward from the member's own centroid, away from the panel's
+    // center, along whichever axis has less room (the member's own short
+    // axis).
+    const dx = centroid.xPx - panelCenterPx.xPx;
+    const dy = centroid.yPx - panelCenterPx.yPx;
+    const horizontal = Math.abs(dx) >= Math.abs(dy);
+    const dirX = horizontal ? Math.sign(dx) || 1 : 0;
+    const dirY = horizontal ? 0 : Math.sign(dy) || 1;
+    const offsetPx = LEADER_OFFSET_IN * pxPerIn;
+    return { shape, centroid, inside: false, badgeX: centroid.xPx + dirX * offsetPx, badgeY: centroid.yPx + dirY * offsetPx, dirX, dirY };
+  });
+
+  // Connected-components clustering via union-find: two same-direction
+  // badges within COLLISION_RADIUS_PX of each other join one cluster,
+  // transitively — a plain nearest-neighbor/grid-bucket check can miss a
+  // genuinely-close pair that happens to straddle a bucket boundary.
+  const outsideIdx: number[] = [];
+  placements.forEach((p, i) => {
+    if (!p.inside) outsideIdx.push(i);
+  });
+  const parent = new Map<number, number>(outsideIdx.map((i) => [i, i]));
+  const find = (i: number): number => {
+    let root = i;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    let cur = i;
+    while (parent.get(cur) !== root) {
+      const next = parent.get(cur)!;
+      parent.set(cur, root);
+      cur = next;
+    }
+    return root;
+  };
+  const union = (a: number, b: number) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+  for (let a = 0; a < outsideIdx.length; a++) {
+    for (let b = a + 1; b < outsideIdx.length; b++) {
+      const i = outsideIdx[a]!;
+      const j = outsideIdx[b]!;
+      const p1 = placements[i]!;
+      const p2 = placements[j]!;
+      if (p1.dirX !== p2.dirX || p1.dirY !== p2.dirY) continue;
+      if (Math.hypot(p2.badgeX - p1.badgeX, p2.badgeY - p1.badgeY) < COLLISION_RADIUS_PX) union(i, j);
+    }
+  }
+  const clusters = new Map<number, number[]>();
+  for (const i of outsideIdx) {
+    const root = find(i);
+    const existing = clusters.get(root);
+    if (existing) existing.push(i);
+    else clusters.set(root, [i]);
+  }
+  for (const idxs of clusters.values()) {
+    if (idxs.length < 2) continue;
+    const first = placements[idxs[0]!]!;
+    // Spread along the axis perpendicular to the shared push direction —
+    // pushing vertically (dirY set) spreads horizontally, and vice versa —
+    // centered on the group's own average (pre-spread) position, in a
+    // deterministic left-to-right / top-to-bottom order.
+    const spreadAxisIsX = first.dirY !== 0;
+    idxs.sort((a, b) =>
+      spreadAxisIsX ? placements[a]!.centroid.xPx - placements[b]!.centroid.xPx : placements[a]!.centroid.yPx - placements[b]!.centroid.yPx,
+    );
+    const n = idxs.length;
+    const avgX = idxs.reduce((s, i) => s + placements[i]!.badgeX, 0) / n;
+    const avgY = idxs.reduce((s, i) => s + placements[i]!.badgeY, 0) / n;
+    idxs.forEach((i, k) => {
+      const spreadIndex = k - (n - 1) / 2;
+      const p = placements[i]!;
+      p.badgeX = avgX + (spreadAxisIsX ? spreadIndex * BADGE_SPREAD_PX : 0);
+      p.badgeY = avgY + (spreadAxisIsX ? 0 : spreadIndex * BADGE_SPREAD_PX);
+    });
+  }
+
+  return placements.map((p) => {
+    if (p.inside) return { shape: p.shape, centroid: p.centroid, inside: true, badgeX: p.badgeX, badgeY: p.badgeY, lineEndX: p.badgeX, lineEndY: p.badgeY };
+    // Line direction now points at wherever the badge actually ended up
+    // (which may no longer be purely axis-aligned once spread apart),
+    // shortened so it doesn't poke through the badge circle.
+    const lineDx = p.badgeX - p.centroid.xPx;
+    const lineDy = p.badgeY - p.centroid.yPx;
+    const lineLen = Math.hypot(lineDx, lineDy) || 1;
+    const unitX = lineDx / lineLen;
+    const unitY = lineDy / lineLen;
+    return {
+      shape: p.shape,
+      centroid: p.centroid,
+      inside: false,
+      badgeX: p.badgeX,
+      badgeY: p.badgeY,
+      lineEndX: p.badgeX - unitX * (BADGE_RADIUS_PX + 2),
+      lineEndY: p.badgeY - unitY * (BADGE_RADIUS_PX + 2),
+    };
+  });
+}
+
 /**
  * To-scale 2D front elevation of one panel's real member geometry (Tommy:
  * "a 2d snap shot... labeling each dimensional lumber and plywood piece in
@@ -69,6 +215,8 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn }: Pa
 
   const panelCenterPx = { xPx: originX + panelWidthPx / 2, yPx: originY + panelHeightPx / 2 };
 
+  const badges = placeBadges(shapes, panelCenterPx, pxPerIn);
+
   return (
     <div className={styles.wrap}>
       <svg
@@ -112,53 +260,24 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn }: Pa
           );
         })}
 
-        {shapes.map((shape) => {
-          const centroid = shape.centroidPx;
-          const inside = shape.minorDimIn * pxPerIn >= INSIDE_THRESHOLD_PX;
-
-          if (inside) {
-            return (
-              <g key={`${shape.member.memberId}-badge`}>
-                <circle cx={centroid.xPx} cy={centroid.yPx} r={BADGE_RADIUS_PX} fill="#1c3d5a" />
-                <text x={centroid.xPx} y={centroid.yPx + 4} fontSize={11} fontWeight={700} fill="#fff" textAnchor="middle">
-                  {shape.letter}
-                </text>
-              </g>
-            );
-          }
-
-          // Leader line: push outward from the member's own centroid, away
-          // from the panel's center, along whichever axis has less room
-          // (the member's own short axis) — enough separation at the
-          // realistic panel/lumber scales this diagram renders at, without
-          // a full collision solver.
-          const dx = centroid.xPx - panelCenterPx.xPx;
-          const dy = centroid.yPx - panelCenterPx.yPx;
-          const horizontal = Math.abs(dx) >= Math.abs(dy);
-          const dirX = horizontal ? Math.sign(dx) || 1 : 0;
-          const dirY = horizontal ? 0 : Math.sign(dy) || 1;
-          const offsetPx = LEADER_OFFSET_IN * pxPerIn;
-          const badgeX = centroid.xPx + dirX * offsetPx;
-          const badgeY = centroid.yPx + dirY * offsetPx;
-
-          return (
+        {badges.map(({ shape, centroid, inside, badgeX, badgeY, lineEndX, lineEndY }) =>
+          inside ? (
             <g key={`${shape.member.memberId}-badge`}>
-              <line
-                x1={centroid.xPx}
-                y1={centroid.yPx}
-                x2={badgeX - dirX * (BADGE_RADIUS_PX + 2)}
-                y2={badgeY - dirY * (BADGE_RADIUS_PX + 2)}
-                stroke="#999"
-                strokeWidth={1}
-                strokeDasharray="3 2"
-              />
               <circle cx={badgeX} cy={badgeY} r={BADGE_RADIUS_PX} fill="#1c3d5a" />
               <text x={badgeX} y={badgeY + 4} fontSize={11} fontWeight={700} fill="#fff" textAnchor="middle">
                 {shape.letter}
               </text>
             </g>
-          );
-        })}
+          ) : (
+            <g key={`${shape.member.memberId}-badge`}>
+              <line x1={centroid.xPx} y1={centroid.yPx} x2={lineEndX} y2={lineEndY} stroke="#999" strokeWidth={1} strokeDasharray="3 2" />
+              <circle cx={badgeX} cy={badgeY} r={BADGE_RADIUS_PX} fill="#1c3d5a" />
+              <text x={badgeX} y={badgeY + 4} fontSize={11} fontWeight={700} fill="#fff" textAnchor="middle">
+                {shape.letter}
+              </text>
+            </g>
+          ),
+        )}
       </svg>
     </div>
   );

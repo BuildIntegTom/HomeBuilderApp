@@ -421,6 +421,151 @@ export function computeBraceTrapezoidCornersIn(
   return signedArea2x < 0 ? [corners[0]!, corners[3]!, corners[2]!, corners[1]!] : corners;
 }
 
+/** This end meets ANOTHER brace at a shared peak/foot point, rather than a
+ * stationary plate/stud/chord face — Tommy: "insides of their long points
+ * meet." `otherDirXIn`/`otherDirZIn` is the OTHER brace's own centerline
+ * direction, pointing AWAY from this shared point into that other board's
+ * own body (need not be normalized). */
+export interface HeaderBraceMiterTarget {
+  kind: "miter";
+  otherDirXIn: number;
+  otherDirZIn: number;
+}
+
+/** This end meets the header's own outer corner, where the jack-stud face
+ * (`plumbXIn`) and the bottom-chord face (`levelZIn`) are co-located at
+ * the SAME end of the board — Tommy: "plum cuts be vertically flush with
+ * the studs." */
+export interface HeaderBraceCornerClipTarget {
+  kind: "cornerClip";
+  plumbXIn: number;
+  levelZIn: number;
+}
+
+export type HeaderBraceEndTarget = HeaderBraceMiterTarget | HeaderBraceCornerClipTarget;
+
+/**
+ * The 4 absolute panel-space corners of a header truss-web brace's true
+ * beveled trapezoid shape, where EACH of its 2 ends can independently be
+ * either a MITER (this brace meets another brace at a shared peak/foot) or
+ * a CORNER CLIP (this brace meets the header's own outer jack-stud+chord
+ * corner) — see `HeaderBraceMiterTarget`/`HeaderBraceCornerClipTarget`.
+ *
+ * Generalizes `computeBraceTrapezoidCornersIn`'s "2 well-separated
+ * stationary targets" case (kept completely untouched — this is a new,
+ * separate function, not a modification of it) to a header's own 2
+ * different joint types, which that function can't produce correctly:
+ *
+ * - A brace-to-brace MITER is standard picture-frame-corner geometry — for
+ *   2 board centerlines converging at a shared point, both directions
+ *   pointing away from it, the cut plane bisects the angle between them
+ *   (`normalize(dirA + dirB)`, cut line = its own perpendicular). This
+ *   isn't generally axis-aligned, so it needs real line-line intersection,
+ *   not `computeBraceTrapezoidCornersIn`'s axis-aligned parametric
+ *   shortcut.
+ * - A CORNER CLIP is needed because the header's own outer corner has its
+ *   plumb (jack-stud) and level (bottom-chord) targets co-located at the
+ *   SAME end of the board (unlike a braced-panel brace, whose plumb and
+ *   level targets sit on 2 well-separated ends) — feeding that case into
+ *   `computeBraceTrapezoidCornersIn` unchanged produces a self-
+ *   intersecting ("bowtie") quad. Instead, both candidate corners per long
+ *   edge are computed (exactly as that function's own internal
+ *   `edgeCorners` does), and whichever one overshoots past the board's
+ *   OTHER (far) endpoint is discarded, keeping only the corner on the same
+ *   side as that far endpoint.
+ */
+export function computeHeaderBraceTrapezoidCornersIn(
+  xA: number,
+  zA: number,
+  xB: number,
+  zB: number,
+  boardWidthIn: number,
+  endA: HeaderBraceEndTarget,
+  endB: HeaderBraceEndTarget,
+): [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] {
+  const dx = xB - xA;
+  const dz = zB - zA;
+  const lengthIn = Math.hypot(dx, dz);
+  const ux = dx / lengthIn;
+  const uz = dz / lengthIn;
+  const wx = uz;
+  const wz = -ux;
+  const halfWidthIn = boardWidthIn / 2;
+
+  function cornerClipCorner(sign: 1 | -1, nearXIn: number, nearZIn: number, farZIn: number, target: HeaderBraceCornerClipTarget): PanelSpacePoint2D {
+    const px = nearXIn + sign * halfWidthIn * wx;
+    const pz = nearZIn + sign * halfWidthIn * wz;
+    const tPlumb = (target.plumbXIn - px) / ux;
+    const plumbCandidate: PanelSpacePoint2D = { xIn: target.plumbXIn, zIn: pz + tPlumb * uz };
+    const otherSideSign = Math.sign(farZIn - target.levelZIn) || 1;
+    if (Math.sign(plumbCandidate.zIn - target.levelZIn) === otherSideSign) return plumbCandidate;
+    const tLevel = (target.levelZIn - pz) / uz;
+    return { xIn: px + tLevel * ux, zIn: target.levelZIn };
+  }
+
+  function miterCorner(
+    sign: 1 | -1,
+    nearXIn: number,
+    nearZIn: number,
+    ownDirXIn: number,
+    ownDirZIn: number,
+    target: HeaderBraceMiterTarget,
+  ): PanelSpacePoint2D {
+    const ex = nearXIn + sign * halfWidthIn * wx;
+    const ez = nearZIn + sign * halfWidthIn * wz;
+    const ownLenIn = Math.hypot(ownDirXIn, ownDirZIn);
+    const oax = ownDirXIn / ownLenIn;
+    const oaz = ownDirZIn / ownLenIn;
+    const otherLenIn = Math.hypot(target.otherDirXIn, target.otherDirZIn);
+    const obx = target.otherDirXIn / otherLenIn;
+    const obz = target.otherDirZIn / otherLenIn;
+    let bx = oax + obx;
+    let bz = oaz + obz;
+    const bLenIn = Math.hypot(bx, bz);
+    if (bLenIn < 1e-9) {
+      // The 2 braces run exactly opposite (a straight 180deg run) — any
+      // perpendicular works as the bisector's own perpendicular.
+      bx = -oaz;
+      bz = oax;
+    } else {
+      bx /= bLenIn;
+      bz /= bLenIn;
+    }
+    const cx = -bz; // cut line direction = perp(bisector), through the shared point
+    const cz = bx;
+    const denom = ux * cz - uz * cx;
+    const t = ((nearXIn - ex) * cz - (nearZIn - ez) * cx) / denom;
+    return { xIn: ex + t * ux, zIn: ez + t * uz };
+  }
+
+  function endCorner(sign: 1 | -1, end: "A" | "B"): PanelSpacePoint2D {
+    const target = end === "A" ? endA : endB;
+    const nearXIn = end === "A" ? xA : xB;
+    const nearZIn = end === "A" ? zA : zB;
+    const farZIn = end === "A" ? zB : zA;
+    const ownDirXIn = end === "A" ? ux : -ux;
+    const ownDirZIn = end === "A" ? uz : -uz;
+    return target.kind === "cornerClip"
+      ? cornerClipCorner(sign, nearXIn, nearZIn, farZIn, target)
+      : miterCorner(sign, nearXIn, nearZIn, ownDirXIn, ownDirZIn, target);
+  }
+
+  const corners: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] = [
+    endCorner(1, "A"),
+    endCorner(1, "B"),
+    endCorner(-1, "B"),
+    endCorner(-1, "A"),
+  ];
+
+  let signedArea2x = 0;
+  for (let i = 0; i < 4; i++) {
+    const c = corners[i]!;
+    const next = corners[(i + 1) % 4]!;
+    signedArea2x += c.xIn * next.zIn - next.xIn * c.zIn;
+  }
+  return signedArea2x < 0 ? [corners[0]!, corners[3]!, corners[2]!, corners[1]!] : corners;
+}
+
 /**
  * The longer of a trapezoid brace's 2 long (centerline-parallel) edges —
  * Tommy: "board feet numbers... calculated with these trapezoid pieces
@@ -446,6 +591,83 @@ export function braceLongestEdgeIn(corners: [PanelSpacePoint2D, PanelSpacePoint2
   const e23 = dist(corners[2], corners[3]);
   const e30 = dist(corners[3], corners[0]);
   return e01 + e23 > e12 + e30 ? Math.max(e01, e23) : Math.max(e12, e30);
+}
+
+export interface BraceEndCut {
+  kind: "plumb" | "level" | "angled";
+  /** Bevel angle off a square crosscut (perpendicular to the board's own
+   * length), degrees, always in [0,90]. */
+  angleDeg: number;
+}
+
+// Real cuts here are always constructed from exact arithmetic (a literal
+// plumbXIn/levelZIn assignment, no trig involved) — floating-point noise
+// from unrelated normalize/atan2 calls elsewhere never approaches this,
+// so a tight tolerance is safe and won't misclassify a genuine miter as
+// plumb/level or vice versa.
+const SQUARE_TOLERANCE_IN = 1e-6;
+
+/**
+ * Classifies and measures BOTH of a trapezoid brace's own end cuts,
+ * directly from its already-computed corners — general enough for ANY
+ * trapezoid brace regardless of which function produced it (a Braced
+ * Panel's plumb+level brace via `computeBraceTrapezoidCornersIn`, or a
+ * header's mix of corner-clip and mitered ends via
+ * `computeHeaderBraceTrapezoidCornersIn`), rather than assuming a fixed
+ * "one plumb end, one complementary level end" shape the way deriving
+ * everything from `tiltDeg` alone would. Each end's own cut edge (one of
+ * the trapezoid's 2 SHORT edges — the pair NOT selected by
+ * `braceLongestEdgeIn`'s own robust length-based long/short split, which
+ * this reuses since winding-normalization can swap which array positions
+ * hold which pair) is compared against the board's own square-crosscut
+ * reference direction (perpendicular to the 2 LONG, centerline-parallel
+ * edges) — the angle between them is the real bevel a fabricator needs to
+ * cut. A cut edge with constant X is "plumb" (vertical); constant Z is
+ * "level" (horizontal). "angled" means neither — in practice this is a
+ * header's own outer corner-clip end (see
+ * `computeHeaderBraceTrapezoidCornersIn`'s `cornerClipCorner`), a compound
+ * cut where one long edge stays plumb (flush with the jack stud) and the
+ * other falls back to level (flush with the bottom chord) to avoid
+ * overshooting past it — NOT a brace-to-brace miter. A genuine internal
+ * miter joint, for a header specifically, always resolves to "level"
+ * instead (its bisector is always exactly horizontal — see
+ * `buildHeaderTrussWebBraces`'s own doc comment), so "angled" never
+ * actually indicates a miter for any brace this codebase currently builds.
+ */
+export function describeBraceEndCuts(
+  corners: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D],
+): [BraceEndCut, BraceEndCut] {
+  function edgeVec(a: PanelSpacePoint2D, b: PanelSpacePoint2D): [number, number] {
+    return [b.xIn - a.xIn, b.zIn - a.zIn];
+  }
+  const e01 = edgeVec(corners[0], corners[1]);
+  const e12 = edgeVec(corners[1], corners[2]);
+  const e23 = edgeVec(corners[2], corners[3]);
+  const e30 = edgeVec(corners[3], corners[0]);
+  const len = (v: [number, number]) => Math.hypot(v[0], v[1]);
+  const longIs0123 = len(e01) + len(e23) > len(e12) + len(e30);
+  // The 2 LONG edges (parallel to the centerline) share one direction —
+  // either one gives the board's own square-crosscut reference.
+  const [longEdge, shortEdgeA, shortEdgeB] = longIs0123 ? [e01, e30, e12] : [e12, e01, e23];
+  const squareLen = len(longEdge);
+  const sqx = longEdge[1] / squareLen;
+  const sqz = -longEdge[0] / squareLen;
+
+  function describe(edge: [number, number]): BraceEndCut {
+    const edgeLen = len(edge);
+    const ex = edge[0] / edgeLen;
+    const ez = edge[1] / edgeLen;
+    const dot = ex * sqx + ez * sqz;
+    const cross = ex * sqz - ez * sqx;
+    let angleDeg = Math.abs((Math.atan2(cross, dot) * 180) / Math.PI);
+    if (angleDeg > 90) angleDeg = 180 - angleDeg;
+    const isPlumb = Math.abs(edge[0]) < SQUARE_TOLERANCE_IN;
+    const isLevel = Math.abs(edge[1]) < SQUARE_TOLERANCE_IN;
+    const kind = isPlumb ? "plumb" : isLevel ? "level" : "angled";
+    return { kind, angleDeg };
+  }
+
+  return [describe(shortEdgeA), describe(shortEdgeB)];
 }
 
 /**
@@ -546,6 +768,118 @@ export function buildTrussWebBraces(
         fallFootXIn,
         fallFootZIn,
         `web ${i + 1} of ${peakCount}, falling from the peak back to the bottom chord — stops short of the peak/foot on either end, flanking a small gap rather than pinching to a shared point with the adjacent piece.`,
+      ),
+    );
+  }
+  return members;
+}
+
+/**
+ * A header-only sibling to `buildTrussWebBraces` — same continuous W-truss
+ * zigzag of `peakCount` triangular webs between a flat bottom chord and a
+ * flat top chord (a header's top chord never slopes, unlike a gable's
+ * `topZAt`), but with TRUE beveled trapezoid ends instead of a plain
+ * tilted box, and no `PEAK_GAP_IN` gap-flanking — Tommy: "Header panels on
+ * windows and doors braces need to be trapeziod, have the insides of their
+ * long points meet, and plum cuts be vertically flush with the studs."
+ * `buildTrussWebBraces` itself stays completely untouched (still plain-
+ * tilted-box, still gap-flanked) — gable and classic-truss webs keep
+ * today's behavior; this is a header-only addition, not a generalization
+ * of the shared function.
+ *
+ * Every internal peak (a triangle's own rise meeting its own fall) and
+ * every internal foot (one triangle's fall meeting the next triangle's
+ * rise) is a MITER joint between the 2 real adjacent braces — since a
+ * header's peak layout is always mirror-symmetric about the vertical
+ * through each joint (flat chords, uniform `segWidthIn`), the miter cut
+ * line always comes out exactly horizontal, automatically flush with the
+ * chord's own flat face (verified by direct computation — no separate
+ * brace-to-chord handling is needed on top of the pure brace-to-brace
+ * miter). The header's own 2 outermost feet (the very first rise's foot at
+ * X=0, the very last fall's foot at X=widthIn) are CORNER CLIPS instead —
+ * the jack-stud face and the bottom-chord face, co-located at that same
+ * corner. See `computeHeaderBraceTrapezoidCornersIn` for both joint types'
+ * math.
+ */
+export function buildHeaderTrussWebBraces(
+  peakCount: number,
+  widthIn: number,
+  bottomZIn: number,
+  topZIn: number,
+  yIn: number,
+  idPrefix: string,
+): PanelMember[] {
+  const members: PanelMember[] = [];
+  const segWidthIn = widthIn / peakCount;
+  const peakXAt = (idx: number) => idx * segWidthIn + segWidthIn / 2;
+
+  function makeWebBrace(
+    memberId: string,
+    x1: number,
+    z1: number,
+    x2: number,
+    z2: number,
+    end1: HeaderBraceEndTarget,
+    end2: HeaderBraceEndTarget,
+    notes: string,
+  ): PanelMember {
+    const centerX = (x1 + x2) / 2;
+    const centerZ = (z1 + z2) / 2;
+    const tiltDeg = (Math.atan2(-(x1 - centerX), z1 - centerZ) * 180) / Math.PI;
+    const trapezoidCornersIn = computeHeaderBraceTrapezoidCornersIn(x1, z1, x2, z2, PLATE_2X4_WIDTH_IN, end1, end2);
+    const lengthIn = braceLongestEdgeIn(trapezoidCornersIn);
+    return {
+      memberId,
+      material: "dimensional_lumber",
+      speciesGrade: LUMBER_SPECIES_GRADE,
+      plySpec: null,
+      nominalSize: "2x4",
+      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn },
+      orientation: "diagonal",
+      position: { xIn: centerX, yIn, zIn: centerZ, rotationDeg: 90, tiltDeg, trapezoidCornersIn },
+      role: "brace",
+      qty: 1,
+      notes,
+    };
+  }
+
+  for (let i = 0; i < peakCount; i++) {
+    const footLeftXIn = i * segWidthIn;
+    const footRightXIn = (i + 1) * segWidthIn;
+    const peakXIn = peakXAt(i);
+    const peakZIn = topZIn;
+
+    const riseFootEnd: HeaderBraceEndTarget =
+      i === 0
+        ? { kind: "cornerClip", plumbXIn: 0, levelZIn: bottomZIn }
+        : { kind: "miter", otherDirXIn: peakXAt(i - 1) - footLeftXIn, otherDirZIn: topZIn - bottomZIn };
+    const risePeakEnd: HeaderBraceEndTarget = { kind: "miter", otherDirXIn: footRightXIn - peakXIn, otherDirZIn: bottomZIn - topZIn };
+    const fallPeakEnd: HeaderBraceEndTarget = { kind: "miter", otherDirXIn: footLeftXIn - peakXIn, otherDirZIn: bottomZIn - topZIn };
+    const fallFootEnd: HeaderBraceEndTarget =
+      i === peakCount - 1
+        ? { kind: "cornerClip", plumbXIn: widthIn, levelZIn: bottomZIn }
+        : { kind: "miter", otherDirXIn: peakXAt(i + 1) - footRightXIn, otherDirZIn: topZIn - bottomZIn };
+
+    members.push(
+      makeWebBrace(
+        `${idPrefix}_${i + 1}_rise`,
+        footLeftXIn,
+        bottomZIn,
+        peakXIn,
+        peakZIn,
+        riseFootEnd,
+        risePeakEnd,
+        `web ${i + 1} of ${peakCount}, rising from the bottom chord to the peak — true beveled trapezoid, long points meeting the adjacent brace(s) with no gap.`,
+      ),
+      makeWebBrace(
+        `${idPrefix}_${i + 1}_fall`,
+        peakXIn,
+        peakZIn,
+        footRightXIn,
+        bottomZIn,
+        fallPeakEnd,
+        fallFootEnd,
+        `web ${i + 1} of ${peakCount}, falling from the peak back to the bottom chord — true beveled trapezoid, long points meeting the adjacent brace(s) with no gap.`,
       ),
     );
   }
