@@ -86,7 +86,6 @@ import {
   buildStandardPanelMembers,
   buildTrussPlateMembers,
   buildWindowHeaderMembers,
-  computeBraceEndCutAngleDeg,
   computeDoorRoughOpeningHeightIn,
   computeHeaderHeightIn,
   computeRoughOpeningWidthIn,
@@ -101,7 +100,6 @@ import {
   computeDensePackCelluloseVolume,
   computeGableColumnHeightIn,
   computeGableRipCallout,
-  computePanelSizeShares,
   computePlywoodAreaSqFt,
   computeRoofCatcherBeamPostPositions,
   computeRoofCatcherBeamSegments,
@@ -169,7 +167,6 @@ import {
   toeUpHeightIn,
   shippingRatePerMileDefault,
   shippingStackBufferIn,
-  standardPanelBom,
   standardPanelBomReferenceWidthIn,
   standardPanelHeightIn,
   standardWindowHeightDefaultIn,
@@ -215,6 +212,7 @@ import {
 import { parseProjectFile, serializeProject, type ProjectState } from "./projectFile";
 import RubbleTrenchDiagram from "./RubbleTrenchDiagram";
 import ShopDrawingPage from "./ShopDrawingPage";
+import PanelFabricationPage from "./PanelFabricationPage";
 import BuildingSummaryRender from "./BuildingSummaryRender";
 import CompassWidget from "./CompassWidget";
 import { DocumentMetaProvider } from "./DocumentMetaContext";
@@ -275,18 +273,6 @@ function mostRestrictiveLayer(layers: WallAssemblyLayer[], checkedIds: Set<strin
   return rated.reduce((most, l) => (permOf(l) < permOf(most) ? l : most));
 }
 
-/** A representative brace end-cut bevel angle for a set of built members
- * (Tommy: "lets come up with a way to really hone in on the math involved
- * with cutting the angles of braced panels") — every brace in a given
- * header/braced-panel assembly shares the same tilt magnitude by
- * construction (see computeBraceEndCutAngleDeg's own doc comment), so the
- * first one found describes them all. Returns null if there's no brace
- * (e.g. a Standard Panel, which has none). */
-function representativeBraceCutAngleDeg(members: PanelMember[]): number | null {
-  const brace = members.find((m) => m.role === "brace" && m.position.tiltDeg !== undefined);
-  return brace ? computeBraceEndCutAngleDeg(brace.position.tiltDeg!) : null;
-}
-
 /** A trailer's own length runs tens of feet — too long for the imperial
  * 1/8in-fraction convention (formatLengthIn) to read naturally, so imperial
  * shows whole feet instead; metric still always shows mm (Tommy: "for
@@ -324,32 +310,22 @@ type PanelizationType = "loose-packed-braced" | "square-bale-panels" | "timber-f
 const SHOP_DRAWING_PANEL_TYPES: {
   namedTypes: NamedPanelType[];
   panelTypeId: "standard" | "corner" | "braced" | "safety-gap" | "header" | "sill" | "column" | "gable" | "jack-stud";
-  hasWoodBom: boolean;
 }[] = [
-  { namedTypes: ["standard"], panelTypeId: "standard", hasWoodBom: true },
-  { namedTypes: ["corner", "safety-oct-corner"], panelTypeId: "corner", hasWoodBom: false },
-  { namedTypes: ["braced"], panelTypeId: "braced", hasWoodBom: true },
-  { namedTypes: ["safety-gap"], panelTypeId: "safety-gap", hasWoodBom: false },
-  { namedTypes: ["header"], panelTypeId: "header", hasWoodBom: false },
-  { namedTypes: ["sill"], panelTypeId: "sill", hasWoodBom: false },
-  { namedTypes: ["column"], panelTypeId: "column", hasWoodBom: false },
+  { namedTypes: ["standard"], panelTypeId: "standard" },
+  { namedTypes: ["corner", "safety-oct-corner"], panelTypeId: "corner" },
+  { namedTypes: ["braced"], panelTypeId: "braced" },
+  { namedTypes: ["safety-gap"], panelTypeId: "safety-gap" },
+  { namedTypes: ["header"], panelTypeId: "header" },
+  { namedTypes: ["sill"], panelTypeId: "sill" },
+  { namedTypes: ["column"], panelTypeId: "column" },
   // Gable End Panel isn't placeable anywhere in the layout yet (no roof/
   // ridge system exists) — namedTypes: [] means it always shows 0 real
   // instances, but it still gets a preview 3D model + rip-angle callout
   // below, built at illustrative default heights.
-  { namedTypes: [], panelTypeId: "gable", hasWoodBom: false },
+  { namedTypes: [], panelTypeId: "gable" },
   // Plywood Jack Stud is always derived from a header/sill opening, never
   // its own placed slot — namedTypes: [] for the same reason as gable.
-  { namedTypes: [], panelTypeId: "jack-stud", hasWoodBom: false },
-];
-
-const SHOP_DRAWING_BOM_PARTS = [
-  { label: "Bottom plate skin (plywood)", qty: standardPanelBom.bottomPlateSkin.qty, dimensions: `${standardPanelBom.bottomPlateSkin.thicknessIn}"x${standardPanelBom.bottomPlateSkin.widthIn}"x${standardPanelBom.bottomPlateSkin.lengthIn}"` },
-  { label: "Bottom plate 2x4s", qty: standardPanelBom.bottomPlate2x4s.qty, dimensions: `2x4 x ${standardPanelBom.bottomPlate2x4s.lengthIn}"` },
-  { label: "Top plate assembly", qty: standardPanelBom.topPlateAssembly.qty, dimensions: "Mirrors bottom plate (1 skin + 2x 2x4s), inverted" },
-  { label: "Studs", qty: standardPanelBom.studs.qty, dimensions: `2x4 x ${standardPanelBom.studs.lengthIn}"` },
-  { label: "Girt block", qty: standardPanelBom.girts.qty, dimensions: `2x4 x ${standardPanelBom.girts.block.lengthIn}"` },
-  { label: "Girt web (plywood)", qty: standardPanelBom.girts.qty, dimensions: `${standardPanelBom.girts.web.thicknessIn}"x${standardPanelBom.girts.web.widthIn}"x${standardPanelBom.girts.web.lengthIn}"` },
+  { namedTypes: [], panelTypeId: "jack-stud" },
 ];
 
 type EditorTab = "wall" | "foundation" | "floor" | "roof";
@@ -2015,7 +1991,9 @@ export default function LayoutEditor() {
                     )
                 : panelTypeId === "sill"
                   ? buildSillPanelMembers(widthIn, thicknessIn, resolvedSillHeightIn, includeNailer)
-                  : null;
+                  : panelTypeId === "safety-gap"
+                    ? buildSafetyGapMembers(thicknessIn, heightIn)
+                    : null;
   };
 
   // Fastener counts/weight are only modeled for panel types with real
@@ -2031,12 +2009,13 @@ export default function LayoutEditor() {
     return members ? computeFastenerWeight(members).totalWeightKg : null;
   };
 
-  // Wood weight is only modeled for standard/braced (matches hasWoodBom in
-  // SHOP_DRAWING_PANEL_TYPES) — geometry-aware via the same real member
-  // list fastenerWeightKgFor uses, so a braced panel's diagonal braces
-  // (real trapezoid length) actually count, unlike the old flat
-  // computeStandardPanelWoodWeight scalar that assumed every braced panel
-  // shares the plain standard panel's BOM.
+  // Wood weight is modeled for any panel type with real member geometry
+  // (membersForPanelTypeId returns non-null) — geometry-aware via the same
+  // real member list fastenerWeightKgFor uses, so e.g. a braced panel's
+  // diagonal braces (real trapezoid length) actually count, unlike the old
+  // flat computeStandardPanelWoodWeight scalar that assumed every braced
+  // panel shares the plain standard panel's BOM. Only gable/jack-stud (no
+  // membersForPanelTypeId branch) fall through to "not modeled".
   const woodWeightKgFor = (
     panelTypeId: string,
     widthIn: number,
@@ -2044,14 +2023,13 @@ export default function LayoutEditor() {
     windowHeightInOverride?: number,
     sillHeightInOverride?: number,
   ): number | null => {
-    if (panelTypeId !== "standard" && panelTypeId !== "braced") return null;
     const members = membersForPanelTypeId(panelTypeId, widthIn, sourceSlotType, windowHeightInOverride, sillHeightInOverride);
     return members ? computeMemberSetWoodWeight(members).weightKg : null;
   };
 
   const shopDrawings = useMemo(
     () =>
-      SHOP_DRAWING_PANEL_TYPES.map(({ namedTypes, panelTypeId, hasWoodBom }) => {
+      SHOP_DRAWING_PANEL_TYPES.map(({ namedTypes, panelTypeId }) => {
         const panelType = panelTypes.find((p) => p.id === panelTypeId)!;
         const instances = allInstances
           .filter((inst) => namedTypes.includes(inst.panelType))
@@ -2076,7 +2054,7 @@ export default function LayoutEditor() {
               hasLimePlaster,
             }),
           }));
-        return { panelType, hasWoodBom, instances };
+        return { panelType, instances };
       }),
     [
       allInstances,
@@ -2109,42 +2087,6 @@ export default function LayoutEditor() {
     }
     return { totalLb: totalKg * KG_TO_LB, unmodeledLabels: [...unmodeledLabels] };
   }, [shopDrawings]);
-
-  // Distinct-width 3D renderings for the Standard/Braced Shop Drawing pages
-  // — panel instances of the same type can differ in size (already true
-  // for window/header/sill panels via their per-instance widthIn), so every
-  // distinct width actually in the design gets its own model, sized per
-  // Tommy's half/quarter/equal-share rule (see computePanelSizeShares).
-  // Falls back to the globally-selected standardWidthIn when the design
-  // has no instances of that type yet, so the page still shows a preview.
-  const standardSizeGroups = useMemo(() => {
-    const instances = shopDrawings.find((d) => d.panelType.id === "standard")?.instances ?? [];
-    const widths = instances.length > 0 ? instances.map((i) => i.widthIn) : [standardWidthIn];
-    return computePanelSizeShares(widths).map((share) => ({
-      ...share,
-      members: isSquareBalePanelization
-        ? buildSquareBalePanelMembers(share.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, squareBaleStudConfig, nailerOffsetIn)
-        : buildStandardPanelMembers(share.widthIn, thicknessIn, wallHeightFt * 12, includeNailer),
-    }));
-  }, [
-    shopDrawings,
-    standardWidthIn,
-    thicknessIn,
-    wallHeightFt,
-    includeNailer,
-    isSquareBalePanelization,
-    squareBaleStudConfig,
-    nailerOffsetIn,
-  ]);
-
-  const bracedSizeGroups = useMemo(() => {
-    const instances = shopDrawings.find((d) => d.panelType.id === "braced")?.instances ?? [];
-    const widths = instances.length > 0 ? instances.map((i) => i.widthIn) : [standardWidthIn];
-    return computePanelSizeShares(widths).map((share) => ({
-      ...share,
-      members: buildBracedPanelMembers(share.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, bracingStyle),
-    }));
-  }, [shopDrawings, standardWidthIn, thicknessIn, wallHeightFt, includeNailer, bracingStyle]);
 
   // Estimated bearing/shear numbers (Tommy: "let's take a stab at making
   // some estimated engineering numbers") — bearing applies to any panel
@@ -2204,6 +2146,70 @@ export default function LayoutEditor() {
     [allInstances, thicknessIn, wallHeightFt, includeNailer, bracingStyle],
   );
 
+  // Per-unique-panel Shop Fabrication pages (Tommy: "if there's exact
+  // copies of panels we can group those up" — same principle already used
+  // for shipping/truck-loading). Covers every panel type WITH real placed
+  // instances — everything shopDrawings has except Gable/Jack-Stud, which
+  // have no PanelInstance identity at all (no roof/ridge placement system,
+  // no rough-opening height tracking yet) and stay on their existing
+  // preview-only ShopDrawingPage. Safety/Gap is a special case: its real
+  // member geometry (buildSafetyGapMembers) ignores widthIn entirely — the
+  // sheet is a fixed-size edge-on plywood panel regardless of how wide a
+  // gap it's filling — so its instances are grouped as ONE page, not split
+  // by the (physically irrelevant) reserved wall-run width.
+  const panelFabricationGroups = useMemo(() => {
+    const resolvedSillHeightInFor = (inst: PanelInstance) => inst.sillHeightIn ?? sillDefaultHeightIn.value;
+    const resolvedWindowHeightInFor = (inst: PanelInstance) => inst.windowHeightIn ?? standardWindowHeightDefaultIn.value;
+    const panelHeightInFor = (panelTypeId: string, inst: PanelInstance): number => {
+      if (panelTypeId === "sill") return resolvedSillHeightInFor(inst);
+      if (panelTypeId === "header") {
+        return inst.sourceSlotType === "door"
+          ? doorHeaderHeightIn
+          : computeHeaderHeightIn(wallHeightFt * 12, resolvedSillHeightInFor(inst) + resolvedWindowHeightInFor(inst));
+      }
+      return wallHeightFt * 12;
+    };
+    const panelWidthInFor = (panelTypeId: string, inst: PanelInstance): number =>
+      panelTypeId === "safety-gap" ? SAFETY_GAP_THICKNESS_IN : inst.widthIn;
+    const groupKeyFor = (panelTypeId: string, inst: PanelInstance): string => {
+      if (panelTypeId === "safety-gap") return panelTypeId;
+      const parts = [panelTypeId, inst.widthIn.toFixed(3)];
+      if (panelTypeId === "header" || panelTypeId === "sill") {
+        parts.push(inst.sourceSlotType ?? "", resolvedWindowHeightInFor(inst).toFixed(3), resolvedSillHeightInFor(inst).toFixed(3));
+      }
+      return parts.join("|");
+    };
+
+    return shopDrawings
+      .filter(({ panelType }) => panelType.id !== "gable" && panelType.id !== "jack-stud")
+      .flatMap(({ panelType, instances }) => {
+        const groups = new Map<string, typeof instances>();
+        for (const inst of instances) {
+          const key = groupKeyFor(panelType.id, inst);
+          const existing = groups.get(key);
+          if (existing) existing.push(inst);
+          else groups.set(key, [inst]);
+        }
+        return [...groups.entries()].map(([key, groupInstances]) => {
+          const first = groupInstances[0]!;
+          const members =
+            membersForPanelTypeId(panelType.id, first.widthIn, first.sourceSlotType, first.windowHeightIn, first.sillHeightIn) ?? [];
+          return {
+            uniqueKey: `${panelType.id}-${key}`,
+            panelType,
+            widthIn: panelWidthInFor(panelType.id, first),
+            heightIn: panelHeightInFor(panelType.id, first),
+            members,
+            weightBreakdown: first.weightBreakdown,
+            instances: groupInstances.map((inst) => ({
+              name: inst.name,
+              isSafetyOctCorner: inst.panelType === "safety-oct-corner",
+            })),
+          };
+        });
+      });
+  }, [shopDrawings, thicknessIn, wallHeightFt, includeNailer, bracingStyle, doorHeaderHeightIn, sillHeightIn]);
+
   // Only surface pages that actually apply to what's currently selected/
   // drawn — a foundation detail page only if one exists for this type, a
   // panel type's Shop Drawing only if the current design actually has any
@@ -2254,11 +2260,22 @@ export default function LayoutEditor() {
       }
       // Shop Drawings are a fabricator/detailer document, not a public-facing one (Tommy).
       if (role !== "public") {
+        // Gable/Jack-Stud: no real placed instances yet (see
+        // panelFabricationGroups' own doc comment) — keep the single
+        // preview-only page.
         for (const { panelType, instances } of shopDrawings) {
+          if (panelType.id !== "gable" && panelType.id !== "jack-stud") continue;
           if (instances.length > 0 || canPreviewAllDetailPages) {
-            const label = panelType.id === "braced" ? bracedPanelDisplayLabel(bracingStyle) : panelType.label;
-            pages.push({ id: `shop-${panelType.id}`, label: `Shop Drawing: ${label} (${instances.length})` });
+            pages.push({ id: `shop-${panelType.id}`, label: `Shop Drawing: ${panelType.label} (${instances.length})` });
           }
+        }
+        // Every other type: one page per unique panel (exact copies grouped together).
+        for (const group of panelFabricationGroups) {
+          const label = group.panelType.id === "braced" ? bracedPanelDisplayLabel(bracingStyle) : group.panelType.label;
+          pages.push({
+            id: `shop-fab-${group.uniqueKey}`,
+            label: `Panel Fabrication: ${label} ${group.widthIn}in (${group.instances.length} copies)`,
+          });
         }
       }
     }
@@ -2270,6 +2287,7 @@ export default function LayoutEditor() {
     docPerpendicular2x4Enabled,
     secondStoryEnabled,
     shopDrawings,
+    panelFabricationGroups,
     role,
     canPreviewAllDetailPages,
     allInstances,
@@ -4859,19 +4877,13 @@ export default function LayoutEditor() {
 
         {role !== "public" && (
           <>
-            {shopDrawings.map(({ panelType, hasWoodBom, instances }) => {
-              // Hatch Forward/Back panels are still "braced"-typed slots
-              // under the hood (no new PanelSlotType), but Tommy wants
-              // them to literally read as "Hatch Forward Panel"/"Hatch
-              // Back Panel" wherever a user actually sees the name — the
-              // shared catalog label stays generically "Braced Panel" so
-              // BOM/structural notes stay correct for the whole family.
-              const displayLabel = panelType.id === "braced" ? bracedPanelDisplayLabel(bracingStyle) : panelType.label;
-              return (
+            {shopDrawings
+              .filter(({ panelType }) => panelType.id === "gable" || panelType.id === "jack-stud")
+              .map(({ panelType, instances }) => (
               <StickyNote
                 key={panelType.id}
                 id={`shop-${panelType.id}`}
-                label={`Shop Drawing: ${displayLabel}`}
+                label={`Shop Drawing: ${panelType.label}`}
                 isOpen={openNoteIds.has(`shop-${panelType.id}`)}
                 isFullscreen={fullscreenNoteId === `shop-${panelType.id}`}
                 cascadeIndex={noteOpenOrder.indexOf(`shop-${panelType.id}`)}
@@ -4880,89 +4892,20 @@ export default function LayoutEditor() {
                 onPrint={() => handlePrintNote(`shop-${panelType.id}`)}
               >
                 <p className={styles.note}>
-                  Fabricator/detailer document — one sheet per wall panel type, every individual panel currently in
-                  the design, named by compass direction (e.g. &quot;N-1&quot; — up is treated as North), with its
-                  own straw-only and full weight breakdown. Standard Panel has a real 3D model, built member-by-
-                  member from its actual BOM geometry; other panel types&apos; reference drawings (the labeled-parts
-                  picture) are still placeholders.
+                  Preview-only reference — {panelType.label} isn&apos;t placeable in the current layout system yet
+                  (see the note below), so this shows an illustrative 3D model at default dimensions rather than
+                  real placed instances.
                 </p>
                 <ShopDrawingPage
-                  title={`Shop Drawing — ${displayLabel}${displayLabel.toLowerCase().includes("panel") ? "" : " Panel"}`}
+                  title={`Shop Drawing — ${panelType.label}`}
                   panelDescription={panelType.description}
                   standardWidthIn={standardWidthIn}
                   thicknessIn={thicknessIn}
                   heightIn={wallHeightFt * 12}
                   loadBearingCapacity={panelType.loadBearingCapacity}
                   shearValue={panelType.shearValue}
-                  bomParts={hasWoodBom ? SHOP_DRAWING_BOM_PARTS : undefined}
-                  bomNote={hasWoodBom ? standardPanelBom.note : undefined}
                   diagram3D={
-                    panelType.id === "standard" || panelType.id === "braced" ? (
-                      <div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                          {(panelType.id === "standard" ? standardSizeGroups : bracedSizeGroups).map((group) => (
-                            <div key={group.widthIn} style={{ flex: `${group.sharePercent} 1 0%`, minWidth: 160 }}>
-                              <StandardPanel3DView
-                                members={group.members}
-                                overallDimensions={{ heightIn: wallHeightFt * 12, widthIn: group.widthIn, depthIn: thicknessIn }}
-                                displayName={`${displayLabel} ${group.widthIn}in (${group.count})`}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                        {panelType.id === "standard" && isSquareBalePanelization && (
-                          <p className={styles.note}>
-                            Square Bale Panels selected (Wall tab) — this is actually a Square Bale Panel
-                            (rectangular blocking-girt construction) here, not a loose-pack Standard Panel.
-                          </p>
-                        )}
-                        {panelType.id === "braced" &&
-                          (() => {
-                            const levelCutAngleDeg = representativeBraceCutAngleDeg(bracedSizeGroups[0]?.members ?? []);
-                            return levelCutAngleDeg === null ? null : (
-                              <p className={styles.note}>
-                                {displayLabel} — every diagonal brace is now a true beveled trapezoid, not a
-                                simplified box: a level cut ({levelCutAngleDeg.toFixed(1)}&deg; off a square
-                                crosscut) flush against the plate&apos;s own flat face, and a plumb cut (
-                                {(90 - levelCutAngleDeg).toFixed(1)}&deg; off a square crosscut) flush against the
-                                stud&apos;s own face, both landing full face contact instead of just touching at one
-                                edge. Board-feet purchasing length uses the longer of the trapezoid&apos;s 2 long
-                                edges.
-                                {bracingStyle === "chevron" &&
-                                  " Chevron also adds a vertical center connector, spanning between the upper and lower braces where each crosses the panel's horizontal center."}
-                              </p>
-                            );
-                          })()}
-                      </div>
-                    ) : panelType.id === "column" || panelType.id === "corner" ? (
-                      <div>
-                        <StandardPanel3DView
-                          members={panelType.id === "column" ? columnPanelMembers : cornerPanelMembers3D}
-                          overallDimensions={{
-                            heightIn: wallHeightFt * 12,
-                            widthIn: panelType.id === "corner" && isSquareBalePanelization ? squareBalePanel.widthIn : COLUMN_TOTAL_WIDTH_IN,
-                            depthIn: thicknessIn,
-                          }}
-                          displayName={panelType.label}
-                        />
-                        {panelType.id === "corner" && isSquareBalePanelization && (
-                          <p className={styles.note}>
-                            Square Bale Panels selected (Wall tab) — this is a Square Bale Corner Panel (39in, double-2x6
-                            primary corner), not the 25.5in Column/Corner unit the other 2 panelization styles use.
-                          </p>
-                        )}
-                        {panelType.id === "column" && roofSystemTypeId === "structural-panel" && (
-                          <p className={styles.note}>
-                            At a Gable End roof-catcher-beam bearing point (structural-panel roof selected on the
-                            Roof tab): Column Panel height ={" "}
-                            {computeGableColumnHeightIn(bottomOfTrussMaxHeightFt * 12, roofCatcherBeamOffsetIn).toFixed(1)}
-                            &quot; ({bottomOfTrussMaxHeightFt * 12}&quot; bottom-of-truss max height minus{" "}
-                            {roofCatcherBeamOffsetIn}&quot; beam-depth offset), beam shape: {roofCatcherBeamShape} (label
-                            only — real beam geometry flagged to model later).
-                          </p>
-                        )}
-                      </div>
-                    ) : panelType.id === "gable" ? (
+                    panelType.id === "gable" ? (
                       <div>
                         <StandardPanel3DView
                           members={gablePanelMembers}
@@ -4977,7 +4920,7 @@ export default function LayoutEditor() {
                           &deg;, {gableRipCallout.lengthIn.toFixed(2)}&quot; long.
                         </p>
                       </div>
-                    ) : panelType.id === "jack-stud" ? (
+                    ) : (
                       <div>
                         <StandardPanel3DView
                           members={jackStudMembers}
@@ -4998,90 +4941,74 @@ export default function LayoutEditor() {
                           )}
                         </p>
                       </div>
-                    ) : panelType.id === "safety-gap" ? (
-                      <div>
-                        <StandardPanel3DView
-                          members={safetyGapMembers3D}
-                          overallDimensions={{ heightIn: wallHeightFt * 12, widthIn: SAFETY_GAP_THICKNESS_IN, depthIn: thicknessIn }}
-                          displayName={panelType.label}
-                        />
-                        <p className={styles.note}>
-                          No longer an altered Standard Panel — just this one {SAFETY_GAP_THICKNESS_IN}in plywood
-                          sheet, regardless of how much wall-run width the tiling reserves for this slot. See the
-                          Material Totals page for the whole-project plywood count.
-                        </p>
-                      </div>
-                    ) : panelType.id === "header" ? (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-                        <div style={{ flex: "1 1 0%", minWidth: 200 }}>
-                          <StandardPanel3DView
-                            members={doorHeaderMembers}
-                            overallDimensions={{ heightIn: doorHeaderHeightIn, widthIn: doorHeaderWidthIn, depthIn: thicknessIn }}
-                            displayName="Door Header"
-                          />
-                        </div>
-                        <div style={{ flex: "1 1 0%", minWidth: 200 }}>
-                          <StandardPanel3DView
-                            members={windowHeaderMembers}
-                            overallDimensions={{ heightIn: windowHeaderHeightIn, widthIn: windowHeaderWidthIn, depthIn: thicknessIn }}
-                            displayName="Window Header (Long Header)"
-                          />
-                        </div>
-                        <p className={styles.note}>
-                          Real heights, sized from the RO to the top of the wall standard height: door {doorHeaderHeightIn.toFixed(1)}
-                          &quot; ({(wallHeightFt * 12).toFixed(1)}&quot; wall − {doorRoughOpeningHeightIn.toFixed(1)}&quot; door RO),
-                          window {windowHeaderHeightIn.toFixed(1)}&quot; ({(wallHeightFt * 12).toFixed(1)}&quot; wall −{" "}
-                          {(sillHeightIn + jackStudPreviewHeightIn).toFixed(1)}&quot; sill+RO). A door header is always a single
-                          upside-down-V truss web; a window (&quot;long&quot;) header repeats as many peaks as needed to keep every
-                          web segment at or above a {30}deg bracing angle. Both have the V framing on interior AND exterior wythes.
-                          Each truss web brace&apos;s ends are cut FLUSH against the 2x4 chord&apos;s own face — a bevel-cut,
-                          one miter-saw blade-tilt setting (no compound angle), at door {representativeBraceCutAngleDeg(doorHeaderMembers)?.toFixed(1) ?? "—"}
-                          &deg; and window {representativeBraceCutAngleDeg(windowHeaderMembers)?.toFixed(1) ?? "—"}&deg; off a square crosscut.
-                        </p>
-                      </div>
-                    ) : panelType.id === "sill" ? (
-                      <div>
-                        <StandardPanel3DView
-                          members={sillMembers}
-                          overallDimensions={{ heightIn: sillHeightIn, widthIn: sillWidthIn, depthIn: thicknessIn }}
-                          displayName={panelType.label}
-                        />
-                        <p className={styles.note}>
-                          Identical construction to a Standard Panel, just shorter (Tommy: &quot;sills are short
-                          standard panels&quot;) — default {sillHeightIn}&quot; tall, customizable per window via the
-                          3D Sill &amp; Header drag tool. A window wider than one standard
-                          panel width ({standardWidthIn}&quot;) gets multiple sill panels sharing the run instead of
-                          one oversized sill — see the Window Rough Opening Detail page.
-                        </p>
-                      </div>
-                    ) : undefined
+                    )
                   }
-                  estimatedBearingLb={
-                    panelType.id === "column"
-                      ? estimatedColumnBuiltUpBearingLb
-                      : panelType.id === "corner"
-                        ? estimatedCornerBuiltUpBearingLb
-                        : panelType.id === "standard" || panelType.id === "braced" || panelType.id === "gable"
-                          ? estimatedStudPackBearingLb
-                          : undefined
-                  }
-                  estimatedShearLb={panelType.id === "braced" ? estimatedBracedShearLb : undefined}
-                  estimatedBearingMethodLabel={
-                    panelType.id === "column" || panelType.id === "corner" ? "built-up plywood section" : undefined
-                  }
+                  estimatedBearingLb={panelType.id === "gable" ? estimatedStudPackBearingLb : undefined}
                   instances={instances}
                   role={role}
                 />
-                {(panelType.id === "gable" || panelType.id === "jack-stud") && (
-                  <p className={styles.note}>
-                    Preview-only (3D model + illustrative default dimensions) — not placed anywhere in the current
-                    layout system yet: gable needs the not-yet-built roof/ridge system to supply real per-instance
-                    edge heights, and jack studs need a real rough-opening height, which headers/sills don&apos;t
-                    track yet either. Inclined/Gable (roof-slope) and floor/roof panels don&apos;t exist as modeled
-                    panel systems yet either — all deferred until those systems are built.
-                  </p>
-                )}
+                <p className={styles.note}>
+                  Preview-only (3D model + illustrative default dimensions) — not placed anywhere in the current
+                  layout system yet: gable needs the not-yet-built roof/ridge system to supply real per-instance
+                  edge heights, and jack studs need a real rough-opening height, which headers/sills don&apos;t
+                  track yet either. Inclined/Gable (roof-slope) and floor/roof panels don&apos;t exist as modeled
+                  panel systems yet either — all deferred until those systems are built.
+                </p>
               </StickyNote>
+              ))}
+
+            {panelFabricationGroups.map((group) => {
+              // Hatch Forward/Back panels are still "braced"-typed slots
+              // under the hood (no new PanelSlotType), but Tommy wants
+              // them to literally read as "Hatch Forward Panel"/"Hatch
+              // Back Panel" wherever a user actually sees the name — the
+              // shared catalog label stays generically "Braced Panel" so
+              // structural notes stay correct for the whole family.
+              const displayLabel = group.panelType.id === "braced" ? bracedPanelDisplayLabel(bracingStyle) : group.panelType.label;
+              const noteId = `shop-fab-${group.uniqueKey}`;
+              return (
+                <StickyNote
+                  key={group.uniqueKey}
+                  id={noteId}
+                  label={`Panel Fabrication: ${displayLabel} ${group.widthIn}in (${group.instances.length})`}
+                  isOpen={openNoteIds.has(noteId)}
+                  isFullscreen={fullscreenNoteId === noteId}
+                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
+                  onClose={() => handleToggleNote(noteId)}
+                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
+                  onPrint={() => handlePrintNote(noteId)}
+                >
+                  <p className={styles.note}>
+                    Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with
+                    a to-scale lettered elevation, a materials cut list, which placed panels are copies of this one,
+                    and a weight checker with a blank line for the shop&apos;s own measured weight.
+                  </p>
+                  <PanelFabricationPage
+                    title={`Panel Fabrication — ${displayLabel}${displayLabel.toLowerCase().includes("panel") ? "" : " Panel"}`}
+                    panelDescription={group.panelType.description}
+                    widthIn={group.widthIn}
+                    heightIn={group.heightIn}
+                    members={group.members}
+                    instances={group.instances}
+                    weightBreakdown={group.weightBreakdown}
+                    loadBearingCapacity={group.panelType.loadBearingCapacity}
+                    shearValue={group.panelType.shearValue}
+                    estimatedBearingLb={
+                      group.panelType.id === "column"
+                        ? estimatedColumnBuiltUpBearingLb
+                        : group.panelType.id === "corner"
+                          ? estimatedCornerBuiltUpBearingLb
+                          : group.panelType.id === "standard" || group.panelType.id === "braced"
+                            ? estimatedStudPackBearingLb
+                            : undefined
+                    }
+                    estimatedShearLb={group.panelType.id === "braced" ? estimatedBracedShearLb : undefined}
+                    estimatedBearingMethodLabel={
+                      group.panelType.id === "column" || group.panelType.id === "corner" ? "built-up plywood section" : undefined
+                    }
+                    role={role}
+                  />
+                </StickyNote>
               );
             })}
           </>
