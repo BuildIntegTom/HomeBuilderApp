@@ -137,14 +137,13 @@ function partLabelFor(member: PanelMember): string {
  * 2-dim sheet size (thickness already lives in the Part label). */
 // Braced-Panel braces meet 2 stationary faces (a plate, a stud) — always
 // exactly one "level" cut and one "plumb" cut, printed in that fixed order
-// to match this codebase's own established convention. A header brace's
-// outer end can ALSO come back "angled" — a compound cut where one long
-// edge stays plumb (flush with the jack stud) and the other falls back to
-// level (flush with the bottom chord) to avoid overshooting past it. This
-// is NOT a brace-to-brace miter (a header's own internal peak/foot miters
-// always resolve to "level" instead, per its flat-chord symmetry — see
-// describeBraceEndCuts's own doc comment), so it's labeled "angled", not
-// "miter", to avoid implying this end meets another board.
+// to match this codebase's own established convention. A header brace never
+// gets a "plumb" cut at all — every end is "level" (both its 2 outermost
+// feet, flush with a chord directly, and every internal peak/foot, a
+// brace-to-brace miter that always resolves exactly horizontal per its own
+// flat-chord symmetry — see describeBraceEndCuts's own doc comment).
+// "angled" is possible in principle (a genuinely non-axis-aligned miter)
+// but no current caller produces one.
 function describeCut(cut: BraceEndCut): string {
   const label = cut.kind === "plumb" ? "plumb" : cut.kind === "level" ? "level" : "angled";
   return `${cut.angleDeg.toFixed(1)}° ${label}`;

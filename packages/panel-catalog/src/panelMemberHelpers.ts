@@ -456,24 +456,29 @@ export interface HeaderBraceMiterTarget {
   otherDirZIn: number;
 }
 
-/** This end meets the header's own outer corner, where the jack-stud face
- * (`plumbXIn`) and the bottom-chord face (`levelZIn`) are co-located at
- * the SAME end of the board — Tommy: "plum cuts be vertically flush with
- * the studs." */
-export interface HeaderBraceCornerClipTarget {
-  kind: "cornerClip";
-  plumbXIn: number;
+/** This end meets a stationary chord face (`levelZIn`) head-on, with NO
+ * plumb constraint — Tommy, correcting an earlier spec: "notice that there
+ * are no plum[b] cuts on headers — unlike full height braced panels — the
+ * trapezoid has parallel cuts that meet the top and bottom chords... headers
+ * for window openings and doors are made sideways in the shop." A header has
+ * no internal vertical member for a brace to plumb-cut against (a braced
+ * panel's corner/jack studs sit OUTSIDE a header's own truss, not inside
+ * it) — every end, including the 2 outermost feet touching the bottom
+ * chord, is a plain level cut, the same as an ordinary roof/floor truss's
+ * web-to-chord joint. */
+export interface HeaderBraceLevelTarget {
+  kind: "level";
   levelZIn: number;
 }
 
-export type HeaderBraceEndTarget = HeaderBraceMiterTarget | HeaderBraceCornerClipTarget;
+export type HeaderBraceEndTarget = HeaderBraceMiterTarget | HeaderBraceLevelTarget;
 
 /**
  * The 4 absolute panel-space corners of a header truss-web brace's true
  * beveled trapezoid shape, where EACH of its 2 ends can independently be
  * either a MITER (this brace meets another brace at a shared peak/foot) or
- * a CORNER CLIP (this brace meets the header's own outer jack-stud+chord
- * corner) — see `HeaderBraceMiterTarget`/`HeaderBraceCornerClipTarget`.
+ * a LEVEL cut (this brace meets the header's own top/bottom chord directly,
+ * no plumb component) — see `HeaderBraceMiterTarget`/`HeaderBraceLevelTarget`.
  *
  * Generalizes `computeBraceTrapezoidCornersIn`'s "2 well-separated
  * stationary targets" case (kept completely untouched — this is a new,
@@ -487,16 +492,10 @@ export type HeaderBraceEndTarget = HeaderBraceMiterTarget | HeaderBraceCornerCli
  *   isn't generally axis-aligned, so it needs real line-line intersection,
  *   not `computeBraceTrapezoidCornersIn`'s axis-aligned parametric
  *   shortcut.
- * - A CORNER CLIP is needed because the header's own outer corner has its
- *   plumb (jack-stud) and level (bottom-chord) targets co-located at the
- *   SAME end of the board (unlike a braced-panel brace, whose plumb and
- *   level targets sit on 2 well-separated ends) — feeding that case into
- *   `computeBraceTrapezoidCornersIn` unchanged produces a self-
- *   intersecting ("bowtie") quad. Instead, both candidate corners per long
- *   edge are computed (exactly as that function's own internal
- *   `edgeCorners` does), and whichever one overshoots past the board's
- *   OTHER (far) endpoint is discarded, keeping only the corner on the same
- *   side as that far endpoint.
+ * - A LEVEL end just intersects the board's 2 long edges with the single
+ *   `levelZIn` plane — simpler than `computeBraceTrapezoidCornersIn`'s own
+ *   2-target case (which needs a plumb target too), so it's handled
+ *   directly here rather than by delegating to that function.
  */
 export function computeHeaderBraceTrapezoidCornersIn(
   xA: number,
@@ -516,13 +515,9 @@ export function computeHeaderBraceTrapezoidCornersIn(
   const wz = -ux;
   const halfWidthIn = boardWidthIn / 2;
 
-  function cornerClipCorner(sign: 1 | -1, nearXIn: number, nearZIn: number, farZIn: number, target: HeaderBraceCornerClipTarget): PanelSpacePoint2D {
+  function levelCorner(sign: 1 | -1, nearXIn: number, nearZIn: number, target: HeaderBraceLevelTarget): PanelSpacePoint2D {
     const px = nearXIn + sign * halfWidthIn * wx;
     const pz = nearZIn + sign * halfWidthIn * wz;
-    const tPlumb = (target.plumbXIn - px) / ux;
-    const plumbCandidate: PanelSpacePoint2D = { xIn: target.plumbXIn, zIn: pz + tPlumb * uz };
-    const otherSideSign = Math.sign(farZIn - target.levelZIn) || 1;
-    if (Math.sign(plumbCandidate.zIn - target.levelZIn) === otherSideSign) return plumbCandidate;
     const tLevel = (target.levelZIn - pz) / uz;
     return { xIn: px + tLevel * ux, zIn: target.levelZIn };
   }
@@ -566,11 +561,10 @@ export function computeHeaderBraceTrapezoidCornersIn(
     const target = end === "A" ? endA : endB;
     const nearXIn = end === "A" ? xA : xB;
     const nearZIn = end === "A" ? zA : zB;
-    const farZIn = end === "A" ? zB : zA;
     const ownDirXIn = end === "A" ? ux : -ux;
     const ownDirZIn = end === "A" ? uz : -uz;
-    return target.kind === "cornerClip"
-      ? cornerClipCorner(sign, nearXIn, nearZIn, farZIn, target)
+    return target.kind === "level"
+      ? levelCorner(sign, nearXIn, nearZIn, target)
       : miterCorner(sign, nearXIn, nearZIn, ownDirXIn, ownDirZIn, target);
   }
 
@@ -636,7 +630,7 @@ const SQUARE_TOLERANCE_IN = 1e-6;
  * directly from its already-computed corners — general enough for ANY
  * trapezoid brace regardless of which function produced it (a Braced
  * Panel's plumb+level brace via `computeBraceTrapezoidCornersIn`, or a
- * header's mix of corner-clip and mitered ends via
+ * header's mix of level and mitered ends via
  * `computeHeaderBraceTrapezoidCornersIn`), rather than assuming a fixed
  * "one plumb end, one complementary level end" shape the way deriving
  * everything from `tiltDeg` alone would. Each end's own cut edge (one of
@@ -647,16 +641,12 @@ const SQUARE_TOLERANCE_IN = 1e-6;
  * reference direction (perpendicular to the 2 LONG, centerline-parallel
  * edges) — the angle between them is the real bevel a fabricator needs to
  * cut. A cut edge with constant X is "plumb" (vertical); constant Z is
- * "level" (horizontal). "angled" means neither — in practice this is a
- * header's own outer corner-clip end (see
- * `computeHeaderBraceTrapezoidCornersIn`'s `cornerClipCorner`), a compound
- * cut where one long edge stays plumb (flush with the jack stud) and the
- * other falls back to level (flush with the bottom chord) to avoid
- * overshooting past it — NOT a brace-to-brace miter. A genuine internal
- * miter joint, for a header specifically, always resolves to "level"
- * instead (its bisector is always exactly horizontal — see
- * `buildHeaderTrussWebBraces`'s own doc comment), so "angled" never
- * actually indicates a miter for any brace this codebase currently builds.
+ * "level" (horizontal). "angled" means neither — a header brace never
+ * produces this today (every end is either a plain `HeaderBraceLevelTarget`
+ * or a miter that resolves exactly horizontal, per its own flat-chord
+ * symmetry — see `buildHeaderTrussWebBraces`'s own doc comment); it only
+ * shows up for a genuinely non-axis-aligned miter, which no current caller
+ * builds.
  */
 export function describeBraceEndCuts(
   corners: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D],
@@ -805,11 +795,16 @@ export function buildTrussWebBraces(
  * `topZAt`), but with TRUE beveled trapezoid ends instead of a plain
  * tilted box, and no `PEAK_GAP_IN` gap-flanking — Tommy: "Header panels on
  * windows and doors braces need to be trapeziod, have the insides of their
- * long points meet, and plum cuts be vertically flush with the studs."
- * `buildTrussWebBraces` itself stays completely untouched (still plain-
- * tilted-box, still gap-flanked) — gable and classic-truss webs keep
- * today's behavior; this is a header-only addition, not a generalization
- * of the shared function.
+ * long points meet." No end is ever plumb-cut (Tommy, correcting an
+ * earlier spec that gave the 2 outermost feet a plumb cut against the jack
+ * stud: "there are no plum[b] cuts on headers — unlike full height braced
+ * panels — the trapezoid has parallel cuts that meet the top and bottom
+ * chords") — a header has no internal vertical member to plumb against; the
+ * jack studs sit OUTSIDE the header's own truss, in the wall panel it's
+ * installed into, not part of this assembly. `buildTrussWebBraces` itself
+ * stays completely untouched (still plain-tilted-box, still gap-flanked) —
+ * gable and classic-truss webs keep today's behavior; this is a
+ * header-only addition, not a generalization of the shared function.
  *
  * Every internal peak (a triangle's own rise meeting its own fall) and
  * every internal foot (one triangle's fall meeting the next triangle's
@@ -820,9 +815,9 @@ export function buildTrussWebBraces(
  * chord's own flat face (verified by direct computation — no separate
  * brace-to-chord handling is needed on top of the pure brace-to-brace
  * miter). The header's own 2 outermost feet (the very first rise's foot at
- * X=0, the very last fall's foot at X=widthIn) are CORNER CLIPS instead —
- * the jack-stud face and the bottom-chord face, co-located at that same
- * corner. See `computeHeaderBraceTrapezoidCornersIn` for both joint types'
+ * X=0, the very last fall's foot at X=widthIn) are plain LEVEL cuts
+ * instead — flush with the bottom chord's own face, same as every internal
+ * joint. See `computeHeaderBraceTrapezoidCornersIn` for both joint types'
  * math.
  */
 export function buildHeaderTrussWebBraces(
@@ -850,7 +845,22 @@ export function buildHeaderTrussWebBraces(
     const centerX = (x1 + x2) / 2;
     const centerZ = (z1 + z2) / 2;
     const tiltDeg = (Math.atan2(-(x1 - centerX), z1 - centerZ) * 180) / Math.PI;
-    const trapezoidCornersIn = computeHeaderBraceTrapezoidCornersIn(x1, z1, x2, z2, PLATE_2X4_WIDTH_IN, end1, end2);
+    const rawCorners = computeHeaderBraceTrapezoidCornersIn(x1, z1, x2, z2, PLATE_2X4_WIDTH_IN, end1, end2);
+    // A board of real width, cut level right where its own centerline
+    // meets the header's outer corner, naturally has one long edge reach
+    // past that corner (X<0 or X>widthIn) — real trapezoid geometry, not a
+    // math error, but past X=0/widthIn is the jack stud's own territory,
+    // outside this header's assembly entirely. Clamped flush with the
+    // header's own edge, same as a fabricator would just trim the
+    // overshooting corner rather than let the board hang out past the
+    // panel — see panelMemberHelpers.test.ts's own overshoot regression
+    // test for a worked example of the pre-clamp geometry.
+    const trapezoidCornersIn = rawCorners.map((c) => ({ ...c, xIn: Math.min(Math.max(c.xIn, 0), widthIn) })) as [
+      PanelSpacePoint2D,
+      PanelSpacePoint2D,
+      PanelSpacePoint2D,
+      PanelSpacePoint2D,
+    ];
     const lengthIn = braceLongestEdgeIn(trapezoidCornersIn);
     return {
       memberId,
@@ -875,13 +885,13 @@ export function buildHeaderTrussWebBraces(
 
     const riseFootEnd: HeaderBraceEndTarget =
       i === 0
-        ? { kind: "cornerClip", plumbXIn: 0, levelZIn: bottomZIn }
+        ? { kind: "level", levelZIn: bottomZIn }
         : { kind: "miter", otherDirXIn: peakXAt(i - 1) - footLeftXIn, otherDirZIn: topZIn - bottomZIn };
     const risePeakEnd: HeaderBraceEndTarget = { kind: "miter", otherDirXIn: footRightXIn - peakXIn, otherDirZIn: bottomZIn - topZIn };
     const fallPeakEnd: HeaderBraceEndTarget = { kind: "miter", otherDirXIn: footLeftXIn - peakXIn, otherDirZIn: bottomZIn - topZIn };
     const fallFootEnd: HeaderBraceEndTarget =
       i === peakCount - 1
-        ? { kind: "cornerClip", plumbXIn: widthIn, levelZIn: bottomZIn }
+        ? { kind: "level", levelZIn: bottomZIn }
         : { kind: "miter", otherDirXIn: peakXAt(i + 1) - footRightXIn, otherDirZIn: topZIn - bottomZIn };
 
     members.push(

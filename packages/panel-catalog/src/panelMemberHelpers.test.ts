@@ -288,26 +288,48 @@ describe("computeHeaderBraceTrapezoidCornersIn", () => {
     }
   });
 
-  it("produces a valid, non-self-intersecting quad at the header's own outer corner (co-located plumb+level targets)", () => {
+  it("produces a valid, non-self-intersecting quad at the header's own outer corner (a plain level end, no plumb component)", () => {
     // A 36in-wide, 1-peak (door) header: rise 18 -> peak at (18,18), 45deg
     // tilt — the same reference geometry as the existing
     // computeTrussWebPeakCount test. rise_1's own foot (i=0) is the
-    // header's own left outer corner (a cornerClip, plumbXIn=0, levelZIn=0).
+    // header's own left outer corner — Tommy: "there are no plum[b] cuts on
+    // headers... the trapezoid has parallel cuts that meet the top and
+    // bottom chords" — so both its corners land exactly on levelZIn, no X
+    // constraint at this level (buildHeaderTrussWebBraces clamps the
+    // resulting X into the header's own [0,widthIn] afterward — see its
+    // own overshoot regression test below).
     const peakEndTarget: HeaderBraceEndTarget = { kind: "miter", otherDirXIn: 18, otherDirZIn: -18 };
-    const cornerClipTarget: HeaderBraceEndTarget = { kind: "cornerClip", plumbXIn: 0, levelZIn: 0 };
-    const corners = computeHeaderBraceTrapezoidCornersIn(0, 0, 18, 18, 3.5, cornerClipTarget, peakEndTarget);
+    const levelTarget: HeaderBraceEndTarget = { kind: "level", levelZIn: 0 };
+    const corners = computeHeaderBraceTrapezoidCornersIn(0, 0, 18, 18, 3.5, levelTarget, peakEndTarget);
 
     for (const c of corners) {
       expect(Number.isFinite(c.xIn)).toBe(true);
       expect(Number.isFinite(c.zIn)).toBe(true);
-      // Never overshoots past the co-located corner's own targets — the
-      // exact "bowtie" failure mode a naive computeBraceTrapezoidCornersIn
-      // reuse would produce (a corner landing below Z=0, into the jack
-      // stud's own territory, or past X=0 into empty space).
-      expect(c.zIn).toBeGreaterThanOrEqual(-1e-6);
-      expect(c.xIn).toBeGreaterThanOrEqual(-1e-6);
     }
+    const levelEndCorners = closestTwo(corners, 0, 0);
+    for (const c of levelEndCorners) expect(c.zIn).toBeCloseTo(0, 6);
     expect(segmentsIntersect(corners[0], corners[2], corners[1], corners[3])).toBe(true);
+  });
+
+  it("buildHeaderTrussWebBraces clamps a level end's overshooting corner into the header's own [0,widthIn] — Tommy: 'take careful note of how the diagonals meet at the point in the top'", () => {
+    // Same 36in-wide, 1-peak door header as above, built through the real
+    // entry point (buildHeaderTrussWebBraces), where the outer foot's own
+    // reference point sits exactly ON its target level plane — a board of
+    // real width cut level right there naturally has one edge reach past
+    // X=0 (the header's own left corner, real trapezoid geometry, not a
+    // math error) — clamped flush with the header's own edge instead of
+    // hanging out past the panel into the jack stud's own territory.
+    const members = buildHeaderTrussWebBraces(1, 36, 0, 18, 1.5, "web");
+    for (const m of members) {
+      for (const c of m.position.trapezoidCornersIn!) {
+        expect(c.xIn).toBeGreaterThanOrEqual(-1e-9);
+        expect(c.xIn).toBeLessThanOrEqual(36 + 1e-9);
+      }
+    }
+    // The clamp actually engaged for this geometry (not a vacuous check) —
+    // at least one corner lands exactly on the boundary.
+    const allX = members.flatMap((m) => m.position.trapezoidCornersIn!.map((c) => c.xIn));
+    expect(allX.some((x) => x === 0 || x === 36)).toBe(true);
   });
 });
 
@@ -336,11 +358,11 @@ describe("describeBraceEndCuts", () => {
     // 2 braces meeting at a 30/60-ish (non-axis-aligned) miter — the
     // resulting cut edge is neither purely vertical nor purely horizontal.
     const target: HeaderBraceEndTarget = { kind: "miter", otherDirXIn: 5, otherDirZIn: -1 };
-    const placeholder: HeaderBraceEndTarget = { kind: "cornerClip", plumbXIn: 0, levelZIn: 0 };
+    const placeholder: HeaderBraceEndTarget = { kind: "level", levelZIn: 0 };
     const corners = computeHeaderBraceTrapezoidCornersIn(0, 0, 10, 10, 3.5, placeholder, target);
     const [cutA, cutB] = describeBraceEndCuts(corners);
-    // One end is the placeholder cornerClip (plumb or level), the other is
-    // the genuine miter — at least one of the 2 should be "angled".
+    // One end is the placeholder level cut, the other is the genuine
+    // (non-axis-aligned) miter — at least one of the 2 should be "angled".
     expect([cutA.kind, cutB.kind]).toContain("angled");
   });
 });
