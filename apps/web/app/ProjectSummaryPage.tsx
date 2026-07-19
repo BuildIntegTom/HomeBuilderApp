@@ -30,8 +30,37 @@ export interface ProjectSummaryPageProps {
   plywoodThreeQuarterSheetCount: number;
   plywoodHalfSheetCount: number;
   strawBaleNote: string | null;
-  fastenerWeightNote: string;
+  /** Project-wide fastener counts by type (Tommy: "flesh out the fasteners
+   * section to include the amount of 2in sheathing nails, #9 T25 screws,
+   * 4in 5/16in GRK's, and 6in 5/16in GRK's") — one row per real fastener
+   * type computeFastenerWeight/computeJackStudFastenerWeight can produce,
+   * summed across every real placed panel/jack-stud in the project. Labels
+   * are the raw calc-engine ones (see fastenerDisplayLabel below for the
+   * user-facing translation). */
+  fastenerItems: { label: string; count: number; totalWeightLb: number }[];
+  fastenerTotalWeightLb: number;
+  /** Panel types with no member geometry yet (gable/jack-stud preview-only
+   * types) — same "honest gap" callout fastenerTotals already surfaced. */
+  fastenerUnmodeledLabels: string[];
   plasterNote: string | null;
+}
+
+/** Translates computeFastenerWeight/computeJackStudFastenerWeight's own
+ * technical labels into Tommy's terminology for this summary table — a
+ * presentation-only mapping (the calc-engine labels themselves stay
+ * unchanged, since they're also shown verbatim elsewhere, e.g. the
+ * door/window RO detail notes). Falls back to the raw label for anything
+ * not in this list, so a future new fastener type still shows up rather
+ * than disappearing silently. */
+const FASTENER_DISPLAY_LABELS: Record<string, string> = {
+  "2in plywood nail (4in o.c., plates + girts)": "2in Sheathing Nails (plates + girts, 4in o.c.)",
+  "3in GRK screw (girt bars, 8 each)": "3in 5/16in GRK Screws (girt bars)",
+  "4in GRK screw (skins/girt webs, 8 each)": "4in 5/16in GRK Screws (skins/girt webs)",
+  "6in GRK screw (braced-panel brace members, 4 each)": "6in 5/16in GRK Screws (braced-panel braces)",
+  "4in T25 #9 screw (6in o.c. rows, 2 each)": "#9 T25 Screws, 4in (jack studs, 6in o.c.)",
+};
+function fastenerDisplayLabel(label: string): string {
+  return FASTENER_DISPLAY_LABELS[label] ?? label;
 }
 
 /**
@@ -70,7 +99,9 @@ export default function ProjectSummaryPage({
   plywoodThreeQuarterSheetCount,
   plywoodHalfSheetCount,
   strawBaleNote,
-  fastenerWeightNote,
+  fastenerItems,
+  fastenerTotalWeightLb,
+  fastenerUnmodeledLabels,
   plasterNote,
 }: ProjectSummaryPageProps) {
   return (
@@ -186,10 +217,6 @@ export default function ProjectSummaryPage({
             <td>Roof-bearing insulation</td>
             <td>{roofMaterialNote}</td>
           </tr>
-          <tr>
-            <td>Fasteners</td>
-            <td>{fastenerWeightNote}</td>
-          </tr>
           {plasterNote && (
             <tr>
               <td>Plaster finish</td>
@@ -198,6 +225,42 @@ export default function ProjectSummaryPage({
           )}
         </tbody>
       </table>
+
+      <h4 className={styles.sectionHeading}>Fasteners</h4>
+      {fastenerItems.length === 0 ? (
+        <p className={styles.pendingCell}>No fasteners modeled yet for any placed panel.</p>
+      ) : (
+        <table className={styles.fastenerTable}>
+          <thead>
+            <tr>
+              <th>Fastener</th>
+              <th>Qty</th>
+              <th>Weight</th>
+            </tr>
+          </thead>
+          <tbody>
+            {fastenerItems.map((item) => (
+              <tr key={item.label}>
+                <td>{fastenerDisplayLabel(item.label)}</td>
+                <td>{item.count.toLocaleString()}</td>
+                <td>{item.totalWeightLb.toFixed(1)} lb</td>
+              </tr>
+            ))}
+            <tr>
+              <td>
+                <strong>Total</strong>
+              </td>
+              <td />
+              <td>
+                <strong>{fastenerTotalWeightLb.toFixed(1)} lb</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+      {fastenerUnmodeledLabels.length > 0 && (
+        <p className={styles.pendingCell}>Not yet modeled for: {fastenerUnmodeledLabels.join(", ")}</p>
+      )}
     </SheetTitleBlock>
   );
 }

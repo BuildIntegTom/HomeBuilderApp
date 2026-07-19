@@ -219,6 +219,7 @@ import {
 import { parseProjectFile, serializeProject, type ProjectState } from "./projectFile";
 import RubbleTrenchDiagram from "./RubbleTrenchDiagram";
 import ShopDrawingPage from "./ShopDrawingPage";
+import PlanViewPage from "./PlanViewPage";
 import PanelFabricationPage from "./PanelFabricationPage";
 import BuildingSummaryRender from "./BuildingSummaryRender";
 import CompassWidget from "./CompassWidget";
@@ -2319,23 +2320,55 @@ export default function LayoutEditor() {
     ],
   );
 
-  // Total fastener weight (Tommy: "do a full check on what might not be on
-  // this but should be" — fasteners are computed per-instance via
-  // computePanelWeightBreakdown above, but were never rolled up into a
-  // single project-wide total before). Sums only the panel types that
-  // actually have modeled fastener counts, honestly naming the rest.
-  const fastenerTotals = useMemo(() => {
-    let totalKg = 0;
+  // Per-fastener-type project totals (Tommy: "do a full check on what
+  // might not be on this but should be" / "flesh out the fasteners section
+  // to include the amount of 2in sheathing nails, #9 T25 screws,
+  // 4in 5/16in GRK's, and 6in 5/16in GRK's") — fasteners are computed
+  // per-instance via computePanelWeightBreakdown elsewhere, but only as a
+  // single collapsed weight; this re-runs
+  // computeFastenerWeight/computeJackStudFastenerWeight per real instance
+  // and keeps their own `items` breakdown (count + weight per type),
+  // accumulated by label across the whole project. shippingJackStudRefs is
+  // already the real per-project jack-stud list (one entry per real jack
+  // stud, ext+int wythe both counted, each with its own real RO-height-
+  // derived heightIn) — the same source shipping/truck-loadout already
+  // uses, so this doesn't re-derive opening counts from scratch.
+  const fastenerItemTotals = useMemo(() => {
+    const byLabel = new Map<string, { count: number; totalWeightLb: number }>();
     const unmodeledLabels = new Set<string>();
+    const accumulate = (items: { label: string; count: number; totalWeightLb: number }[]) => {
+      for (const item of items) {
+        const existing = byLabel.get(item.label);
+        if (existing) {
+          existing.count += item.count;
+          existing.totalWeightLb += item.totalWeightLb;
+        } else {
+          byLabel.set(item.label, { count: item.count, totalWeightLb: item.totalWeightLb });
+        }
+      }
+    };
     for (const { panelType, instances } of shopDrawings) {
       for (const inst of instances) {
-        const fastenerKg = inst.weightBreakdown.components.find((c) => c.label === "Fasteners")?.weightKg;
-        if (fastenerKg != null) totalKg += fastenerKg;
+        const members = membersForPanelTypeId(
+          panelType.id,
+          inst.widthIn,
+          inst.sourceSlotType,
+          inst.windowHeightIn,
+          inst.sillHeightIn,
+          inst.bracedPattern,
+          inst.bracedMirrored,
+        );
+        if (members) accumulate(computeFastenerWeight(members).items);
         else unmodeledLabels.add(panelType.label);
       }
     }
-    return { totalLb: totalKg * KG_TO_LB, unmodeledLabels: [...unmodeledLabels] };
-  }, [shopDrawings]);
+    for (const ref of shippingJackStudRefs) {
+      accumulate(computeJackStudFastenerWeight(ref.heightIn).items);
+    }
+    const items = [...byLabel.entries()].map(([label, v]) => ({ label, count: v.count, totalWeightLb: v.totalWeightLb }));
+    const totalWeightLb = items.reduce((sum, i) => sum + i.totalWeightLb, 0);
+    return { items, totalWeightLb, unmodeledLabels: [...unmodeledLabels] };
+  }, [shopDrawings, shippingJackStudRefs]);
 
   // Estimated bearing/shear numbers (Tommy: "let's take a stab at making
   // some estimated engineering numbers") — bearing applies to any panel
@@ -2512,6 +2545,9 @@ export default function LayoutEditor() {
       pages.push({ id: "detail-high-perf-truss", label: "High-Performance Truss" });
     }
     if (wallsEnabled) {
+      if (footprint) {
+        pages.push({ id: "detail-plan-view", label: "Plan View" });
+      }
       pages.push({ id: "detail-material-totals", label: "Material Totals" });
       if (footprint && allInstances.length > 0) {
         pages.push({ id: "detail-shipping", label: "Shipping" });
@@ -3278,10 +3314,6 @@ export default function LayoutEditor() {
     : `Timber HP: ${timberHpTotal.volumeFt3.toFixed(2)} ft3, ~${timberHpWeight.weightLb.toFixed(1)} lb (truss plate)`;
   const strawBaleSummaryNote =
     panelizationType === "square-bale-panels" ? `${strawBaleCount} bales to purchase (${strawBaleWeightLb.toFixed(1)} lb total, ${STRAW_BALE_WEIGHT_LB} lb/bale)` : null;
-  const fastenerWeightNote =
-    fastenerTotals.unmodeledLabels.length > 0
-      ? `~${fastenerTotals.totalLb.toFixed(1)} lb modeled — not modeled for: ${fastenerTotals.unmodeledLabels.join(", ")}`
-      : `~${fastenerTotals.totalLb.toFixed(1)} lb`;
   const plasterFinishes = [hasClayPlaster ? "Clay plaster" : null, hasLimePlaster ? "Lime plaster" : null].filter(
     (v): v is string => v !== null,
   );
@@ -4078,7 +4110,9 @@ export default function LayoutEditor() {
           plywoodThreeQuarterSheetCount={plywoodThreeQuarterSheetCount}
           plywoodHalfSheetCount={plywoodHalfSheetCount}
           strawBaleNote={strawBaleSummaryNote}
-          fastenerWeightNote={fastenerWeightNote}
+          fastenerItems={fastenerItemTotals.items}
+          fastenerTotalWeightLb={fastenerItemTotals.totalWeightLb}
+          fastenerUnmodeledLabels={fastenerItemTotals.unmodeledLabels}
           plasterNote={plasterNote}
         />
         </StickyNote>
@@ -4698,6 +4732,30 @@ export default function LayoutEditor() {
             role={role}
           />
         </StickyNote>
+
+        {footprint && (
+          <StickyNote
+            id="detail-plan-view"
+            label="Plan View"
+            isOpen={openNoteIds.has("detail-plan-view")}
+            isFullscreen={fullscreenNoteId === "detail-plan-view"}
+            cascadeIndex={noteOpenOrder.indexOf("detail-plan-view")}
+            onClose={() => handleToggleNote("detail-plan-view")}
+            onToggleFullscreen={() => handleToggleNoteFullscreen("detail-plan-view")}
+            onPrint={() => handlePrintNote("detail-plan-view")}
+          >
+            <PlanViewPage
+              footprint={footprint}
+              wallSlots={overlayWallSlots}
+              wallStartOffsetIn={wallRenderOffsetIn}
+              thicknessIn={thicknessIn}
+              allInstances={allInstances}
+              primaryCornerIds={primaryCornerIds}
+              leastAccessibleCorner={leastAccessibleCorner}
+              role={role}
+            />
+          </StickyNote>
+        )}
 
         <StickyNote
           id="detail-material-totals"

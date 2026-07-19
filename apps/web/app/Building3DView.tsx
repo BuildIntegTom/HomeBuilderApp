@@ -5,7 +5,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, TransformControls } from "@react-three/drei";
 import type { Mesh } from "three";
 import { panelSlotBoxes3D, type Footprint, type PanelSlot, type PanelSlotBox3D } from "@building-integrity/geometry";
-import { allPanelInstances, type PanelInstance } from "./panelInstances";
+import { allPanelInstances, combinedPanelLabel, type PanelInstance } from "./panelInstances";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
 import PanelLabel from "./PanelLabel";
@@ -231,11 +231,16 @@ function WallPanelLabel({
   widthFt,
   heightFt,
   depthFt,
+  faces = ["front", "top", "right"],
 }: {
   text: string | undefined;
   widthFt: number;
   heightFt: number;
   depthFt: number;
+  /** Which faces to label (Tommy: carry the box-view labeling into 3D
+   * Framed mode, but "only to the top plate area") — defaults to all 3 so
+   * every existing box-mode call site is unaffected. */
+  faces?: ("front" | "top" | "right")[];
 }) {
   if (!text || widthFt < LABEL_MIN_WIDTH_FT) return null;
   const frontFontSize = Math.max(0.12, Math.min(0.35, heightFt * 0.15, widthFt * 0.3)) * LABEL_SIZE_MULTIPLIER;
@@ -243,24 +248,30 @@ function WallPanelLabel({
   const rightFontSize = Math.max(0.1, Math.min(0.3, heightFt * 0.12, depthFt * 0.6)) * LABEL_SIZE_MULTIPLIER;
   return (
     <>
-      <PanelLabel
-        text={text}
-        position={[widthFt / 2, heightFt - frontFontSize * 1.3, -0.02]}
-        rotation={[0, Math.PI, 0]}
-        fontSize={frontFontSize}
-      />
-      <PanelLabel
-        text={text}
-        position={[widthFt / 2, heightFt + 0.02, depthFt / 2]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        fontSize={topFontSize}
-      />
-      <PanelLabel
-        text={text}
-        position={[widthFt + 0.02, heightFt / 2, depthFt / 2]}
-        rotation={[0, Math.PI / 2, 0]}
-        fontSize={rightFontSize}
-      />
+      {faces.includes("front") && (
+        <PanelLabel
+          text={text}
+          position={[widthFt / 2, heightFt - frontFontSize * 1.3, -0.02]}
+          rotation={[0, Math.PI, 0]}
+          fontSize={frontFontSize}
+        />
+      )}
+      {faces.includes("top") && (
+        <PanelLabel
+          text={text}
+          position={[widthFt / 2, heightFt + 0.02, depthFt / 2]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          fontSize={topFontSize}
+        />
+      )}
+      {faces.includes("right") && (
+        <PanelLabel
+          text={text}
+          position={[widthFt + 0.02, heightFt / 2, depthFt / 2]}
+          rotation={[0, Math.PI / 2, 0]}
+          fontSize={rightFontSize}
+        />
+      )}
     </>
   );
 }
@@ -915,10 +926,19 @@ export default function Building3DView({
               }
             >
               {!simplified && members ? (
-                <PanelMembersGroup
-                  members={members}
-                  colorOverride={box.slot.type === "safety-gap" ? PANEL_TYPE_COLORS["safety-gap"] : undefined}
-                />
+                <>
+                  <PanelMembersGroup
+                    members={members}
+                    colorOverride={box.slot.type === "safety-gap" ? PANEL_TYPE_COLORS["safety-gap"] : undefined}
+                  />
+                  <WallPanelLabel
+                    faces={["top"]}
+                    text={combinedPanelLabel(groundInstancesBySlot.get(`${box.wallId}-${box.slotIndex}`) ?? [])}
+                    widthFt={box.widthFt}
+                    heightFt={box.heightFt}
+                    depthFt={box.depthFt}
+                  />
+                </>
               ) : simplified ? (
                 renderSimplifiedSlot(
                   box,
@@ -969,10 +989,19 @@ export default function Building3DView({
               }
             >
               {!simplified && members ? (
-                <PanelMembersGroup
-                  members={members}
-                  colorOverride={box.slot.type === "safety-gap" ? PANEL_TYPE_COLORS["safety-gap"] : undefined}
-                />
+                <>
+                  <PanelMembersGroup
+                    members={members}
+                    colorOverride={box.slot.type === "safety-gap" ? PANEL_TYPE_COLORS["safety-gap"] : undefined}
+                  />
+                  <WallPanelLabel
+                    faces={["top"]}
+                    text={combinedPanelLabel(secondStoryInstancesBySlot.get(`${box.wallId}-${box.slotIndex}`) ?? [])}
+                    widthFt={box.widthFt}
+                    heightFt={box.heightFt}
+                    depthFt={box.depthFt}
+                  />
+                </>
               ) : simplified ? (
                 renderSimplifiedSlot(
                   box,
