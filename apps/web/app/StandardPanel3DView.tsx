@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { buildPanelObj, memberBoxSizeIn, type PanelMember } from "@building-integrity/panel-catalog";
+import { buildPanelObj, memberBoxSizeIn, SKIN_THICKNESS_IN, type PanelMember } from "@building-integrity/panel-catalog";
 import { computeStandardPanelStrawVolume } from "@building-integrity/calc-engine";
 import PanelMembersGroup from "./PanelMembersGroup";
 
@@ -59,11 +59,17 @@ export default function StandardPanel3DView({ members, overallDimensions, displa
     [members, overallDimensions],
   );
 
-  // Interior cavity Z-bounds derived from the actual skin members (not a
-  // hardcoded thickness) — falls back to the full envelope if a panel
-  // variant ever omits them.
-  const bottomSkin = members.find((m) => m.memberId === "bottom_plate_skin");
-  const topSkin = members.find((m) => m.memberId === "top_plate_skin");
+  // Interior cavity Z-bounds derived from the actual Z-capping skin members
+  // (not a hardcoded thickness or member-name list) — matched generically by
+  // role + a thin Z box size, so this works for a wall panel's own
+  // "bottom/top_plate_skin" AND a header's "bottom/top_chord_ply" alike,
+  // while correctly excluding a header's own full-height ext/int side skins
+  // (role "skin" too, but their Z size spans the whole panel, not a thin
+  // cap). Falls back to the full envelope if a panel variant has no
+  // Z-capping skins at all.
+  const zCapSkins = members.filter((m) => m.role === "skin" && memberBoxSizeIn(m).zIn <= SKIN_THICKNESS_IN + 0.01);
+  const bottomSkin = zCapSkins.reduce<PanelMember | null>((min, m) => (!min || m.position.zIn < min.position.zIn ? m : min), null);
+  const topSkin = zCapSkins.reduce<PanelMember | null>((max, m) => (!max || m.position.zIn > max.position.zIn ? m : max), null);
   const interiorZStartIn = bottomSkin ? bottomSkin.position.zIn + memberBoxSizeIn(bottomSkin).zIn : 0;
   const interiorZEndIn = topSkin ? topSkin.position.zIn : overallDimensions.heightIn;
   const strawSizeFt: [number, number, number] = [widthFt, (interiorZEndIn - interiorZStartIn) / IN_PER_FT, depthFt];

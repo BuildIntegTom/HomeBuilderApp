@@ -248,6 +248,13 @@ export const standardWindowWidthsIn: CatalogValue<number[]> = {
   note: "Common construction window widths — not spec-given or Building-Integrity-sourced yet.",
 };
 
+export const windowHeaderWidthInRange: CatalogRange = {
+  minIn: 24,
+  maxIn: 120,
+  status: "pending-BI-confirmation",
+  note: "Tommy: window headers 'can be however wide up to 10 ft wide.' Floor matches today's smallest reachable window width; the 120in (10ft) ceiling is Tommy's own stated spec, not mfr-sourced like lintelWidthInRange's 118.125in.",
+};
+
 /** 5 standard window heights (Tommy: "an option for 5 different standard
  * window heights, and that should determine the height of the windows") —
  * a project-wide setting (like `standardWidthIn`), not per-window, same

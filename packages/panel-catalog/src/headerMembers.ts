@@ -50,8 +50,8 @@ function buildHeaderChords(widthIn: number, depthIn: number, heightIn: number): 
     ["top", top2x4ZIn, "bottom"],
   ] as const) {
     for (const [wythe, yIn] of [
-      ["ext", 0],
-      ["int", depthIn - PLATE_2X4_WIDTH_IN],
+      ["ext", SKIN_THICKNESS_IN],
+      ["int", depthIn - SKIN_THICKNESS_IN - PLATE_2X4_WIDTH_IN],
     ] as const) {
       members.push({
         memberId: `${chord}_chord_2x4_${wythe}`,
@@ -90,6 +90,38 @@ function buildHeaderChords(widthIn: number, depthIn: number, heightIn: number): 
   return members;
 }
 
+/**
+ * The header's own big ext/int faces (Tommy, from a real fabrication photo:
+ * "3/4in plywood on the sides, notice this is the longest width dimension
+ * ... this kind of panel is essentially made sideways on the fabrication
+ * table") — one full-width x full-height sheet on each wythe, tying the
+ * top/bottom chords and truss web bracing into one rigid panel on that
+ * face, the same role `buildColumnSidePly` plays for a Column Panel's own
+ * two side faces (just on the header's Y axis instead of Column's X axis).
+ * `buildHeaderChords`'/`buildHeaderMembers`'s own wythe framing is inset by
+ * `SKIN_THICKNESS_IN` on each side so it sits just inboard of these skins
+ * rather than overlapping them. These skins do slightly overlap the top/
+ * bottom chord-ply Z-caps at the 4 corners (both are full-span sheets
+ * meeting at 90deg) — an illustrative simplification, not a true mitered
+ * corner joint, same class as the corner-overlap `computeStandardPanel
+ * StrawVolume` already documents for member volume.
+ */
+function buildHeaderSideSkins(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
+  return (["ext", "int"] as const).map((wythe) => ({
+    memberId: `${wythe}_side_ply`,
+    material: "plywood",
+    speciesGrade: null,
+    plySpec: SKIN_PLY_SPEC,
+    nominalSize: null,
+    actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: heightIn, lengthIn: widthIn },
+    orientation: "horizontal",
+    position: { xIn: 0, yIn: wythe === "ext" ? 0 : depthIn - SKIN_THICKNESS_IN, zIn: 0, rotationDeg: 0 },
+    role: "skin",
+    qty: 1,
+    notes: `${wythe} wythe's own full-face plywood skin, full width x full height — the header's real "side," built flat on the fabrication table with the framing sandwiched between this and the other wythe's skin.`,
+  }));
+}
+
 /** The rise (in) available to the truss web between the chords' plywood-capped facing edges. */
 export function headerWebRiseIn(heightIn: number): number {
   return heightIn - 2 * PLATE_2X4_THICKNESS_IN - 2 * SKIN_THICKNESS_IN;
@@ -113,10 +145,10 @@ function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number, 
   const riseIn = headerWebRiseIn(heightIn);
   const peakCount = isDoor ? 1 : computeTrussWebPeakCount(widthIn, riseIn);
 
-  const members: PanelMember[] = [...buildHeaderChords(widthIn, depthIn, heightIn)];
+  const members: PanelMember[] = [...buildHeaderChords(widthIn, depthIn, heightIn), ...buildHeaderSideSkins(widthIn, depthIn, heightIn)];
   for (const [wythe, yIn] of [
-    ["ext", PLATE_2X4_THICKNESS_IN / 2],
-    ["int", depthIn - PLATE_2X4_THICKNESS_IN / 2],
+    ["ext", SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN / 2],
+    ["int", depthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2],
   ] as const) {
     members.push(
       ...buildHeaderTrussWebBraces(peakCount, widthIn, bottomChordTopZIn, topChordBottomZIn, yIn, `truss_brace_${wythe}`),

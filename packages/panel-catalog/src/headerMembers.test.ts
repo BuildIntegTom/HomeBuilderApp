@@ -6,7 +6,7 @@ import {
   buildWindowHeaderSchema,
   headerWebRiseIn,
 } from "./headerMembers";
-import { computeTrussWebPeakCount, memberBoxSizeIn } from "./panelMemberHelpers";
+import { computeTrussWebPeakCount, memberBoxSizeIn, SKIN_THICKNESS_IN } from "./panelMemberHelpers";
 
 const DEPTH_IN = 15.5;
 
@@ -20,8 +20,8 @@ describe("buildDoorHeaderMembers", () => {
     expect(chords).toHaveLength(4);
     for (const c of chords) expect(c.actualDimsIn.lengthIn).toBeCloseTo(WIDTH_IN, 6);
 
-    const plyCaps = members.filter((m) => m.role === "skin");
-    expect(plyCaps).toHaveLength(2); // bottom_chord_ply + top_chord_ply
+    const plyCaps = members.filter((m) => m.role === "skin" && (m.memberId === "bottom_chord_ply" || m.memberId === "top_chord_ply"));
+    expect(plyCaps).toHaveLength(2); // bottom_chord_ply + top_chord_ply (the header also has its own ext/int side skins — see the dedicated describe block below)
     for (const p of plyCaps) {
       expect(p.material).toBe("plywood");
       expect(p.actualDimsIn.widthIn).toBeCloseTo(DEPTH_IN, 6); // spans the full depth, bridging both wythes
@@ -108,6 +108,44 @@ describe("header chord plywood caps", () => {
     const endpointZs = [firstRiseExt.position.zIn + Math.cos(tiltRad) * halfLen, firstRiseExt.position.zIn - Math.cos(tiltRad) * halfLen];
     const lowFootZ = Math.min(...endpointZs);
     expect(lowFootZ).toBeCloseTo(bottomChordTopZ, 6); // the web's low foot bears on the 2x4 chord's own top face
+  });
+});
+
+describe("header side skins (Tommy: '3/4in plywood on the sides ... this kind of panel is essentially made sideways on the fabrication table')", () => {
+  const WIDTH_IN = 60;
+  const DEPTH_IN_LOCAL = DEPTH_IN;
+  const HEIGHT_IN = 20;
+
+  it("has an ext_side_ply and int_side_ply spanning the full width x full height, thin in depth", () => {
+    for (const members of [
+      buildWindowHeaderMembers(WIDTH_IN, DEPTH_IN_LOCAL, HEIGHT_IN),
+      buildDoorHeaderMembers(WIDTH_IN, DEPTH_IN_LOCAL, HEIGHT_IN),
+    ]) {
+      const extSkin = members.find((m) => m.memberId === "ext_side_ply")!;
+      const intSkin = members.find((m) => m.memberId === "int_side_ply")!;
+      expect(extSkin).toBeDefined();
+      expect(intSkin).toBeDefined();
+      expect(extSkin.role).toBe("skin");
+      expect(extSkin.material).toBe("plywood");
+
+      const extSize = memberBoxSizeIn(extSkin);
+      expect(extSize.xIn).toBeCloseTo(WIDTH_IN, 6);
+      expect(extSize.zIn).toBeCloseTo(HEIGHT_IN, 6);
+      expect(extSize.yIn).toBeCloseTo(SKIN_THICKNESS_IN, 6);
+
+      expect(extSkin.position.yIn).toBeCloseTo(0, 6);
+      expect(intSkin.position.yIn).toBeCloseTo(DEPTH_IN_LOCAL - SKIN_THICKNESS_IN, 6);
+    }
+  });
+
+  it("insets every chord (plate) and truss brace so none touches the header's own Y=0/Y=depthIn extremes directly", () => {
+    const members = buildWindowHeaderMembers(WIDTH_IN, DEPTH_IN_LOCAL, HEIGHT_IN);
+    const framing = members.filter((m) => m.role === "plate" || m.role === "brace");
+    expect(framing.length).toBeGreaterThan(0);
+    for (const m of framing) {
+      expect(m.position.yIn).toBeGreaterThanOrEqual(SKIN_THICKNESS_IN - 1e-6);
+      expect(m.position.yIn).toBeLessThanOrEqual(DEPTH_IN_LOCAL - SKIN_THICKNESS_IN + 1e-6);
+    }
   });
 });
 

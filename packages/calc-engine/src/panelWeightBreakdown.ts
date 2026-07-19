@@ -40,6 +40,13 @@ export interface PanelWeightBreakdownInputs {
   /** True only when the exterior finish actually applies a lime-plaster
    * coat directly on this panel's straw face. */
   hasLimePlaster: boolean;
+  /** When set, replaces the flat width x thickness x height straw estimate
+   * with a real member-aware volume (envelope minus every framing member's
+   * own box volume, via computeStandardPanelStrawVolume) — used for Header
+   * panels, whose straw cavity is bounded by truss chords/webs, not a
+   * plain box. Every other panel type omits this and keeps the flat
+   * estimate. */
+  strawWeightKgOverride?: number | null;
 }
 
 /**
@@ -50,12 +57,14 @@ export interface PanelWeightBreakdownInputs {
  * selected — they're not applicable to every panel).
  */
 export function computePanelWeightBreakdown(inputs: PanelWeightBreakdownInputs): PanelWeightBreakdown {
-  const straw = computeStrawWeight(inputs.widthIn, inputs.thicknessIn, inputs.heightIn, inputs.densityKgM3);
+  const flatStraw = computeStrawWeight(inputs.widthIn, inputs.thicknessIn, inputs.heightIn, inputs.densityKgM3);
+  const strawWeightKg = inputs.strawWeightKgOverride ?? flatStraw.weightKg;
+  const strawWeightLb = strawWeightKg * KG_TO_LB;
 
   const toLb = (kg: number | null) => (kg === null ? null : kg * KG_TO_LB);
 
   const components: PanelWeightComponent[] = [
-    { label: "Straw", weightKg: straw.weightKg, weightLb: straw.weightLb },
+    { label: "Straw", weightKg: strawWeightKg, weightLb: strawWeightLb },
     { label: "Wood (studs/plates/girts)", weightKg: inputs.woodWeightKg, weightLb: toLb(inputs.woodWeightKg) },
     { label: "Fasteners", weightKg: inputs.fastenerWeightKg, weightLb: toLb(inputs.fastenerWeightKg) },
     ...(inputs.hasClayPlaster ? [{ label: "Clay plaster", weightKg: null, weightLb: null }] : []),
@@ -65,8 +74,8 @@ export function computePanelWeightBreakdown(inputs: PanelWeightBreakdownInputs):
   const totalModeledWeightKg = components.reduce((sum, c) => sum + (c.weightKg ?? 0), 0);
 
   return {
-    strawOnlyWeightKg: straw.weightKg,
-    strawOnlyWeightLb: straw.weightLb,
+    strawOnlyWeightKg: strawWeightKg,
+    strawOnlyWeightLb: strawWeightLb,
     components,
     totalModeledWeightKg,
     totalModeledWeightLb: totalModeledWeightKg * KG_TO_LB,

@@ -60,6 +60,7 @@ import {
   computePlasterLaborHours,
   computePrice,
   computeSillTapeLengthFt,
+  computeStandardPanelStrawVolume,
   computeStrawWeight,
   computeStudPackBearingCapacityLb,
   formatLengthIn,
@@ -181,6 +182,7 @@ import {
   truckBedTypes,
   trussPlateInsetDefaultIn,
   wallAssemblyLayers,
+  windowHeaderWidthInRange,
   type BracePattern,
   type BracingStyle,
   type ClassicTrussTypeId,
@@ -248,6 +250,7 @@ const BEARING_ELIGIBLE_TYPES = new Set(["standard", "corner", "safety-oct-corner
 const STRAW_BALE_WEIGHT_LB = 40;
 const KG_TO_LB = 2.20462;
 const LB_FT3_TO_KG_M3 = 16.018463;
+const FT3_TO_M3 = 0.0283168;
 
 // "both" is for accessory products (Exto Seal, Tescon Vana) that aren't
 // inherently one-sided — they show up in both checkbox lists.
@@ -537,6 +540,12 @@ export default function LayoutEditor() {
   // input paths share one source of truth for what actually got clamped.
   const [sillClampNotice, setSillClampNotice] = useState<string | null>(null);
   const sillClampNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Same "clamped, briefly say so" pattern as sillClampNotice, for the
+  // window Width field once it became a free-typed number instead of a
+  // fixed-preset dropdown (Tommy: window headers "can be however wide up
+  // to 10 ft wide").
+  const [windowWidthClampNotice, setWindowWidthClampNotice] = useState<string | null>(null);
+  const windowWidthClampNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Hard guardrail (Tommy): at most 2 Gable End walls, and once 1 is active,
   // the 2nd must be its geometric opposite (parallel, facing away) — the
   // roof-catcher beam needs exactly 2 walls forming a straight run between
@@ -1174,10 +1183,18 @@ export default function LayoutEditor() {
     }
   };
 
-  const handleSetWindowWidth = (wallId: string, slotIndex: number, widthIn: number) => {
+  const handleSetWindowWidth = (wallId: string, slotIndex: number, requestedWidthIn: number) => {
     const currentSlots = baseWallSlots[wallId] ?? [];
     const geometry = wallGeometryFor(wallId);
     if (!geometry) return;
+    const widthIn = Math.min(Math.max(requestedWidthIn, windowHeaderWidthInRange.minIn), windowHeaderWidthInRange.maxIn);
+    if (Math.abs(widthIn - requestedWidthIn) > 0.05) {
+      if (windowWidthClampNoticeTimerRef.current) clearTimeout(windowWidthClampNoticeTimerRef.current);
+      setWindowWidthClampNotice(
+        `Width clamped to ${widthIn.toFixed(1)}in — allowed range is ${windowHeaderWidthInRange.minIn}"-${windowHeaderWidthInRange.maxIn}" for a window header.`,
+      );
+      windowWidthClampNoticeTimerRef.current = setTimeout(() => setWindowWidthClampNotice(null), 4000);
+    }
     const precedingOpenings = currentSlots
       .slice(0, slotIndex)
       .filter((s) => s.type === "window" || s.type === "door").length;
@@ -2181,6 +2198,46 @@ export default function LayoutEditor() {
     return members ? computeMemberSetWoodWeight(members).weightKg : null;
   };
 
+  // Straw for a Header isn't a flat width x thickness x height box — its
+  // cavity is bounded by the truss chords/web bracing/side skins, so the
+  // weight-checker table needs the same real member list fastenerWeightKgFor
+  // and woodWeightKgFor already use, run through computeStandardPanelStraw
+  // Volume (envelope minus every member's own box volume) instead of the
+  // flat computeStrawWeight formula every other panel type keeps using.
+  // Every other panel type returns null here, so computePanelWeightBreakdown
+  // falls back to its own flat estimate unchanged.
+  const strawWeightKgFor = (
+    panelTypeId: string,
+    widthIn: number,
+    sourceSlotType?: PanelInstance["sourceSlotType"],
+    windowHeightInOverride?: number,
+    sillHeightInOverride?: number,
+    bracedPatternOverride?: BracePattern,
+    bracedMirroredOverride?: boolean,
+  ): number | null => {
+    if (panelTypeId !== "header") return null;
+    const members = membersForPanelTypeId(
+      panelTypeId,
+      widthIn,
+      sourceSlotType,
+      windowHeightInOverride,
+      sillHeightInOverride,
+      bracedPatternOverride,
+      bracedMirroredOverride,
+    );
+    if (!members) return null;
+    const heightIn =
+      sourceSlotType === "door"
+        ? doorHeaderHeightIn
+        : computeHeaderHeightIn(
+            wallHeightFt * 12,
+            (sillHeightInOverride ?? sillDefaultHeightIn.value) + (windowHeightInOverride ?? standardWindowHeightDefaultIn.value),
+          );
+    const straw = computeStandardPanelStrawVolume(members, { heightIn, widthIn, depthIn: thicknessIn });
+    const volumeM3 = straw.strawVolumeFt3 * FT3_TO_M3;
+    return volumeM3 * densityLbFt3 * LB_FT3_TO_KG_M3;
+  };
+
   const shopDrawings = useMemo(
     () =>
       SHOP_DRAWING_PANEL_TYPES.map(({ namedTypes, panelTypeId }) => {
@@ -2190,12 +2247,25 @@ export default function LayoutEditor() {
           .map((inst) => ({
             ...inst,
             weightBreakdown: computePanelWeightBreakdown({
-              // Safety/Gap and Header are both a solid wood truss/sheet
-              // filling the wall's cavity there, no straw at all — widthIn:
-              // 0 forces straw weight to a correct 0 here without touching
-              // inst.widthIn itself (still shown as-is in the table's own
-              // Width column).
+              // Safety/Gap is a solid wood truss/sheet filling the wall's
+              // cavity there, no straw at all — widthIn: 0 forces the flat
+              // straw formula to a correct 0 without touching inst.widthIn
+              // itself (still shown as-is in the table's own Width column).
+              // Header also zeroes the flat formula here, but its real straw
+              // weight comes from strawWeightKgOverride below (a member-
+              // aware volume — a header's own cavity is bounded by its truss
+              // chords/web/side skins, not a plain box), so this 0 is just a
+              // moot fallback for that panel type, not the real answer.
               widthIn: panelTypeId === "safety-gap" || panelTypeId === "header" ? 0 : inst.widthIn,
+              strawWeightKgOverride: strawWeightKgFor(
+                panelTypeId,
+                inst.widthIn,
+                inst.sourceSlotType,
+                inst.windowHeightIn,
+                inst.sillHeightIn,
+                inst.bracedPattern,
+                inst.bracedMirrored,
+              ),
               thicknessIn,
               // A sill is a much shorter panel (Tommy: "sills are almost
               // always 32in tall") than the full wall height every other
@@ -3774,18 +3844,24 @@ export default function LayoutEditor() {
                     )}
                     <label style={{ display: "block", marginTop: 6 }}>
                       Width{" "}
-                      <select
+                      <input
+                        type="number"
                         id={`window-size-${wallId}-${slotIndex}`}
+                        title="However wide, up to 10ft — the header's own truss web bracing angle adds/removes peaks in pairs to stay within its 30-45deg range as width changes"
                         value={slot.widthIn}
+                        min={windowHeaderWidthInRange.minIn}
+                        max={windowHeaderWidthInRange.maxIn}
+                        step={0.125}
+                        style={{ width: 64 }}
                         onChange={(e) => handleSetWindowWidth(wallId, slotIndex, Number(e.target.value))}
-                      >
-                        {standardWindowWidthsIn.value.map((w) => (
-                          <option key={w} value={w}>
-                            {w}&quot;
-                          </option>
-                        ))}
-                      </select>
+                      />
+                      &quot;
                     </label>
+                    {windowWidthClampNotice && (
+                      <p className={styles.note} style={{ color: "#a67c00" }}>
+                        {windowWidthClampNotice}
+                      </p>
+                    )}
                     <p className={styles.note}>
                       Changing width can shift neighboring panels on this wall (the wall re-tiles around it); height
                       and sill (above) never do — they're a purely vertical/Z-axis change.

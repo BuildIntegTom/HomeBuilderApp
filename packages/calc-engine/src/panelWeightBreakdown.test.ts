@@ -103,4 +103,40 @@ describe("computePanelWeightBreakdown", () => {
     expect(both.components.some((c) => c.label === "Clay plaster")).toBe(true);
     expect(both.components.some((c) => c.label === "Lime plaster")).toBe(true);
   });
+
+  it("replaces the flat straw estimate with strawWeightKgOverride when provided (Header's real member-aware volume)", () => {
+    const breakdown = computePanelWeightBreakdown({
+      ...dims,
+      woodWeightKg: null,
+      fastenerWeightKg: null,
+      hasClayPlaster: false,
+      hasLimePlaster: false,
+      strawWeightKgOverride: 5,
+    });
+    const straw = breakdown.components.find((c) => c.label === "Straw")!;
+    expect(straw.weightKg).toBe(5);
+    expect(breakdown.strawOnlyWeightKg).toBe(5);
+    expect(breakdown.totalModeledWeightKg).toBeCloseTo(5, 9);
+  });
+
+  it("keeps the flat straw estimate when strawWeightKgOverride is omitted or null (every other panel type, unchanged)", () => {
+    const straw = computeStrawWeight(dims.widthIn, dims.thicknessIn, dims.heightIn, dims.densityKgM3);
+    const omitted = computePanelWeightBreakdown({
+      ...dims,
+      woodWeightKg: null,
+      fastenerWeightKg: null,
+      hasClayPlaster: false,
+      hasLimePlaster: false,
+    });
+    const nulled = computePanelWeightBreakdown({
+      ...dims,
+      woodWeightKg: null,
+      fastenerWeightKg: null,
+      hasClayPlaster: false,
+      hasLimePlaster: false,
+      strawWeightKgOverride: null,
+    });
+    expect(omitted.strawOnlyWeightKg).toBeCloseTo(straw.weightKg, 9);
+    expect(nulled.strawOnlyWeightKg).toBeCloseTo(straw.weightKg, 9);
+  });
 });
