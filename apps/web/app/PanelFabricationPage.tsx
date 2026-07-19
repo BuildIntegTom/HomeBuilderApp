@@ -60,11 +60,12 @@ export default function PanelFabricationPage({
   const cutList = computePanelCutList(members);
 
   return (
-    <SheetTitleBlock title={title} description={panelDescription} role={role}>
-      <div className={styles.diagram}>
-        <PanelElevationDiagram members={members} widthIn={widthIn} heightIn={heightIn} />
-      </div>
-
+    <SheetTitleBlock
+      title={title}
+      description={panelDescription}
+      role={role}
+      sideDiagram={<PanelElevationDiagram members={members} widthIn={widthIn} heightIn={heightIn} compact />}
+    >
       <div>
         <h4 className={styles.sectionHeading}>Materials cut list</h4>
         {cutList.length === 0 ? (

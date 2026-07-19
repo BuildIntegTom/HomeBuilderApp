@@ -31,8 +31,14 @@ export interface ShopDrawingPageProps {
   bomNote?: string;
   /** A real 3D model (built from actual member geometry), shown instead of
    * the flat placeholder diagram when provided — undefined = no member
-   * geometry modeled yet for this panel type, falls back to the placeholder. */
+   * geometry modeled yet for this panel type, falls back to the placeholder.
+   * Just the bare visual — SheetTitleBlock's own sideDiagram zone renders
+   * this, so it should already be sized to fit there (e.g. `<StandardPanel3DView compact />`). */
   diagram3D?: ReactNode;
+  /** Explanatory prose that used to sit directly below the diagram — now
+   * rendered as content's own first section (full content width, not
+   * squeezed into the side-panel diagram zone alongside the visual). */
+  diagramNote?: ReactNode;
   /** First-pass NDS-based bearing/shear estimates (Tommy: "let's take a
    * stab at making some estimated engineering numbers") — shown alongside
    * (not instead of) the "not yet modeled" real-engineering status, since
@@ -52,12 +58,29 @@ export interface ShopDrawingPageProps {
 
 /** Placeholder standard-panel reference drawing: real dimensions, but no
  * labeled parts yet — Tommy is providing the actual shop-drawing reference
- * images/part labels separately. */
-function StandardPanelPlaceholder({ widthIn, heightIn, thicknessIn }: { widthIn: number; heightIn: number; thicknessIn: number }) {
+ * images/part labels separately. `compact` shrinks it to fit SheetTitleBlock's
+ * own sideDiagram zone, same convention as PanelElevationDiagram's own
+ * compact mode. */
+function StandardPanelPlaceholder({
+  widthIn,
+  heightIn,
+  thicknessIn,
+  compact = false,
+}: {
+  widthIn: number;
+  heightIn: number;
+  thicknessIn: number;
+  compact?: boolean;
+}) {
   const w = 200;
   const h = Math.min(320, w * (heightIn / widthIn));
   return (
-    <svg viewBox="0 0 360 360" style={{ width: "100%", maxWidth: 360, height: "auto" }} role="img" aria-label="Standard panel placeholder diagram">
+    <svg
+      viewBox="0 0 360 360"
+      style={{ width: "100%", maxWidth: compact ? 220 : 360, height: "auto" }}
+      role="img"
+      aria-label="Standard panel placeholder diagram"
+    >
       <rect x={80} y={20} width={w} height={h} fill="#d9c9a3" stroke="#8a6a3a" strokeWidth={2} />
       <line x1={80} y1={h + 30} x2={80 + w} y2={h + 30} stroke="#999" strokeWidth={1} />
       <text x={80 + w / 2} y={h + 46} fontSize="12" textAnchor="middle" fill="#333">
@@ -95,6 +118,7 @@ export default function ShopDrawingPage({
   bomParts,
   bomNote,
   diagram3D,
+  diagramNote,
   estimatedBearingLb,
   estimatedShearLb,
   estimatedBearingMethodLabel = "double stud pack",
@@ -102,10 +126,13 @@ export default function ShopDrawingPage({
   role,
 }: ShopDrawingPageProps) {
   return (
-    <SheetTitleBlock title={title} description={panelDescription} role={role}>
-      <div className={styles.diagram}>
-        {diagram3D ?? <StandardPanelPlaceholder widthIn={standardWidthIn} heightIn={heightIn} thicknessIn={thicknessIn} />}
-      </div>
+    <SheetTitleBlock
+      title={title}
+      description={panelDescription}
+      role={role}
+      sideDiagram={diagram3D ?? <StandardPanelPlaceholder widthIn={standardWidthIn} heightIn={heightIn} thicknessIn={thicknessIn} compact />}
+    >
+      {diagramNote && <div>{diagramNote}</div>}
 
       <div>
         <h4 className={styles.sectionHeading}>Structural values</h4>

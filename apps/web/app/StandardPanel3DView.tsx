@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { buildPanelObj, memberBoxSizeIn, SKIN_THICKNESS_IN, type PanelMember } from "@building-integrity/panel-catalog";
@@ -9,6 +9,8 @@ import PanelMembersGroup from "./PanelMembersGroup";
 
 const CANVAS_WIDTH = 360;
 const CANVAS_HEIGHT = 420;
+const CANVAS_WIDTH_COMPACT = 220;
+const CANVAS_HEIGHT_COMPACT = 130;
 const IN_PER_FT = 12;
 const ELEVATION_DEG = 25;
 const AZIMUTH_DEG = 35;
@@ -20,6 +22,14 @@ export interface StandardPanel3DViewProps {
   overallDimensions: { heightIn: number; widthIn: number; depthIn: number };
   /** Used for the OBJ file's header comment + download filename. */
   displayName?: string;
+  /** Shrinks the canvas and condenses the toolbar to fit SheetTitleBlock's
+   * own sideDiagram zone (~230-250px wide) — Tommy: "make the image a
+   * little bit smaller and squeeze it." Both controls (straw-fill toggle,
+   * OBJ download) stay functional, just smaller — this is still an
+   * interactive preview, not a static print image. Suppresses the straw-
+   * volume explanatory paragraph (too verbose for the squeezed space);
+   * the checkbox itself still toggles the visual straw fill. */
+  compact?: boolean;
 }
 
 /** Real 3D model of a panel, built straight from its `members` list (see
@@ -33,8 +43,24 @@ export interface StandardPanel3DViewProps {
  * interior cavity (between the bottom/top skins) — illustrative, not a
  * true CSG cutout, so it visually overlaps the studs/girts/nailer at
  * their exact locations rather than wrapping around them. */
-export default function StandardPanel3DView({ members, overallDimensions, displayName = "Panel" }: StandardPanel3DViewProps) {
+export default function StandardPanel3DView({ members, overallDimensions, displayName = "Panel", compact = false }: StandardPanel3DViewProps) {
   const [showStraw, setShowStraw] = useState(false);
+  const canvasWidth = compact ? CANVAS_WIDTH_COMPACT : CANVAS_WIDTH;
+  const canvasHeight = compact ? CANVAS_HEIGHT_COMPACT : CANVAS_HEIGHT;
+
+  // R3F's own ResizeObserver-based canvas sizing can miss its container's
+  // real settled size when mounted inside a StickyNote/title-block zone
+  // that's still mid-open (a fresh-open animation or layout pass after
+  // first paint) — the canvas silently falls back to the raw HTML <canvas>
+  // default (300x150) instead of filling its parent. A follow-up window
+  // resize event forces every ResizeObserver to re-measure; a small delay
+  // lets the surrounding layout (StickyNote open transition, SheetTitleBlock
+  // zone) settle first. Verified this actually fixes a real, reproducible
+  // mis-sized canvas, not a hypothetical.
+  useEffect(() => {
+    const id = window.setTimeout(() => window.dispatchEvent(new Event("resize")), 50);
+    return () => window.clearTimeout(id);
+  }, []);
   const widthFt = overallDimensions.widthIn / IN_PER_FT;
   const depthFt = overallDimensions.depthIn / IN_PER_FT;
   const heightFt = overallDimensions.heightIn / IN_PER_FT;
@@ -87,17 +113,26 @@ export default function StandardPanel3DView({ members, overallDimensions, displa
   };
 
   return (
-    <div style={{ width: "100%", maxWidth: CANVAS_WIDTH }}>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 6 }}>
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+    <div style={{ width: "100%", maxWidth: canvasWidth }}>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: compact ? 3 : 6,
+          marginBottom: compact ? 3 : 6,
+        }}
+      >
+        <label style={{ display: "flex", alignItems: "center", gap: compact ? 3 : 6, fontSize: compact ? 10 : 13 }}>
           <input type="checkbox" checked={showStraw} onChange={(e) => setShowStraw(e.target.checked)} />
-          Show straw fill
+          {compact ? "Straw" : "Show straw fill"}
         </label>
-        <button type="button" onClick={handleDownloadObj} style={{ fontSize: 12 }}>
-          Download OBJ
+        <button type="button" onClick={handleDownloadObj} style={{ fontSize: compact ? 9 : 12 }}>
+          {compact ? "OBJ" : "Download OBJ"}
         </button>
       </div>
-      <div style={{ width: "100%", maxWidth: CANVAS_WIDTH, height: CANVAS_HEIGHT, border: "1px solid #ccc" }}>
+      <div style={{ width: "100%", maxWidth: canvasWidth, height: canvasHeight, border: "1px solid #ccc" }}>
         <Canvas camera={{ position: cameraPosition, fov: 45, near: 0.01, far: 1000 }}>
           <ambientLight intensity={0.7} />
           <directionalLight position={[maxDim, maxDim * 2, maxDim]} intensity={0.8} />
@@ -111,7 +146,7 @@ export default function StandardPanel3DView({ members, overallDimensions, displa
           <OrbitControls target={[centerX, centerY, centerZ]} makeDefault />
         </Canvas>
       </div>
-      {showStraw && (
+      {showStraw && !compact && (
         <p style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
           Straw fill volume: {strawVolume.strawVolumeFt3.toFixed(2)} ft³ (envelope {strawVolume.envelopeVolumeFt3.toFixed(2)} ft³ minus
           modeled wood/plywood {strawVolume.memberVolumeFt3.toFixed(2)} ft³). Illustrative — the fill isn&apos;t cut out around the

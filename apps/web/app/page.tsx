@@ -5226,41 +5226,44 @@ export default function LayoutEditor() {
                   shearValue={panelType.shearValue}
                   diagram3D={
                     panelType.id === "gable" ? (
-                      <div>
-                        <StandardPanel3DView
-                          members={gablePanelMembers}
-                          overallDimensions={{ heightIn: gablePreviewHighEdgeHeightIn, widthIn: standardWidthIn, depthIn: thicknessIn }}
-                          displayName={panelType.label}
-                        />
-                        <p className={styles.note}>
-                          Preview only, at the Roof tab&apos;s current inputs (low/eave edge {gablePreviewLowEdgeHeightIn}
-                          &quot;, high/ridge edge {gablePreviewHighEdgeHeightIn.toFixed(1)}&quot;) — real instances will
-                          take manual per-instance edge heights once there&apos;s a layout mechanism to place them (see
-                          the elevation view). Top skin rip: {gableRipCallout.angleDeg.toFixed(2)}
-                          &deg;, {gableRipCallout.lengthIn.toFixed(2)}&quot; long.
-                        </p>
-                      </div>
+                      <StandardPanel3DView
+                        members={gablePanelMembers}
+                        overallDimensions={{ heightIn: gablePreviewHighEdgeHeightIn, widthIn: standardWidthIn, depthIn: thicknessIn }}
+                        displayName={panelType.label}
+                        compact
+                      />
                     ) : (
-                      <div>
-                        <StandardPanel3DView
-                          members={jackStudMembers}
-                          overallDimensions={{ heightIn: jackStudPreviewHeightIn, widthIn: jackStudThicknessIn(jackStudConfig), depthIn: thicknessIn }}
-                          displayName={panelType.label}
-                        />
-                        <p className={styles.note}>
-                          Preview only, at an illustrative default height (sill-top to header-bottom, {jackStudPreviewHeightIn.toFixed(1)}
-                          &quot;) — real rough-opening height isn&apos;t tracked yet.{" "}
-                          {jackStudConfig === "plywood" ? (
-                            <>
-                              Fasteners: {jackStudFastenerResult.items[0]!.count} x 4in T25 #9 screws (
-                              {jackStudFastenerResult.totalWeightLb.toFixed(2)} lb) for this one sheet — a full opening
-                              gets 2 (one each side).
-                            </>
-                          ) : (
-                            "2x4 stud config selected (Panelizer) — fastener count/weight not modeled for this config yet."
-                          )}
-                        </p>
-                      </div>
+                      <StandardPanel3DView
+                        members={jackStudMembers}
+                        overallDimensions={{ heightIn: jackStudPreviewHeightIn, widthIn: jackStudThicknessIn(jackStudConfig), depthIn: thicknessIn }}
+                        displayName={panelType.label}
+                        compact
+                      />
+                    )
+                  }
+                  diagramNote={
+                    panelType.id === "gable" ? (
+                      <p className={styles.note}>
+                        Preview only, at the Roof tab&apos;s current inputs (low/eave edge {gablePreviewLowEdgeHeightIn}
+                        &quot;, high/ridge edge {gablePreviewHighEdgeHeightIn.toFixed(1)}&quot;) — real instances will
+                        take manual per-instance edge heights once there&apos;s a layout mechanism to place them (see
+                        the elevation view). Top skin rip: {gableRipCallout.angleDeg.toFixed(2)}
+                        &deg;, {gableRipCallout.lengthIn.toFixed(2)}&quot; long.
+                      </p>
+                    ) : (
+                      <p className={styles.note}>
+                        Preview only, at an illustrative default height (sill-top to header-bottom, {jackStudPreviewHeightIn.toFixed(1)}
+                        &quot;) — real rough-opening height isn&apos;t tracked yet.{" "}
+                        {jackStudConfig === "plywood" ? (
+                          <>
+                            Fasteners: {jackStudFastenerResult.items[0]!.count} x 4in T25 #9 screws (
+                            {jackStudFastenerResult.totalWeightLb.toFixed(2)} lb) for this one sheet — a full opening
+                            gets 2 (one each side).
+                          </>
+                        ) : (
+                          "2x4 stud config selected (Panelizer) — fastener count/weight not modeled for this config yet."
+                        )}
+                      </p>
                     )
                   }
                   estimatedBearingLb={panelType.id === "gable" ? estimatedStudPackBearingLb : undefined}

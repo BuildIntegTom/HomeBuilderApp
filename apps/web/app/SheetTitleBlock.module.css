@@ -30,6 +30,23 @@
   border-left: 3px solid #000;
 }
 
+/* A shop-drawing caller's own squeezed-down reference diagram (Tommy:
+   "squeeze it... into the top big part of the side panel on the right") —
+   the "big part" (biggest of the 4 title-block zones) since a diagram
+   needs real room to stay legible even shrunk down. Only rendered when a
+   caller passes `sideDiagram`; every other caller's title block is
+   untouched (see .metaZoneCompact etc. below, which likewise only apply
+   alongside a diagramZone). */
+.diagramZone {
+  flex: 0 0 40%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-bottom: 2px solid #000;
+  overflow: hidden;
+}
+
 /* Proportions mirror Title Block.pdf's right-hand strip, now subdivided
    into explicit project/site/date/sheet-number fields instead of one
    generic logo zone. */
@@ -40,6 +57,13 @@
   gap: 4px;
   padding: 10px 10px 8px;
   border-bottom: 2px solid #000;
+}
+
+/* Shrunk to make room for .diagramZone above — still fits the wordmark +
+   up to 4 meta rows, just tighter. */
+.metaZoneCompact {
+  flex: 0 0 20%;
+  padding: 6px 10px 4px;
 }
 
 .wordmark {
@@ -85,6 +109,14 @@
   overflow: auto;
 }
 
+/* Shrunk to make room for .diagramZone above — titleZone's own
+   overflow: auto (unchanged) is the safety valve for a long description
+   that no longer fits. */
+.titleZoneCompact {
+  flex: 1 1 27%;
+  padding: 8px 10px;
+}
+
 .title {
   font-size: 14px;
   margin: 0;
@@ -102,6 +134,13 @@
   flex-direction: column;
   gap: 6px;
   justify-content: center;
+}
+
+/* Shrunk to make room for .diagramZone above — footerZone's own
+   justify-content: center already meant it had slack to give up. */
+.footerZoneCompact {
+  flex: 0 0 13%;
+  padding: 4px 10px;
 }
 
 .disclaimer {
@@ -166,5 +205,13 @@
 
   .titleZone {
     overflow: visible;
+  }
+
+  /* Same "never split awkwardly across a page boundary" treatment
+     PanelFabricationPage.module.css/ShopDrawingPage.module.css already give
+     their own .diagram — the print-relevant twin of this zone. */
+  .diagramZone {
+    overflow: visible;
+    break-inside: avoid;
   }
 }

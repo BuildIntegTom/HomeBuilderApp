@@ -9,6 +9,14 @@ export interface SheetTitleBlockProps {
   role: ViewerRole;
   /** Main drawing/content area — everything left of the title-block strip. */
   children: ReactNode;
+  /** A small reference diagram/thumbnail shown in its own zone at the TOP
+   * of the right-hand title-block strip (Tommy: "squeeze it... into the top
+   * big part of the side panel on the right, so the large center area has
+   * lots of room for tables") — undefined (every non-shop-drawing caller)
+   * renders the title block exactly as before, no new zone. Callers that
+   * pass this should shrink their own diagram to fit (~230-250px wide) —
+   * this prop just provides the slot, not any scaling. */
+  sideDiagram?: ReactNode;
 }
 
 /**
@@ -22,7 +30,7 @@ export interface SheetTitleBlockProps {
  * zones. Project/site/date/sheet-number come from DocumentMetaContext
  * (see that file's doc comment for why — too many call sites to prop-drill).
  */
-export default function SheetTitleBlock({ title, description, role, children }: SheetTitleBlockProps) {
+export default function SheetTitleBlock({ title, description, role, children, sideDiagram }: SheetTitleBlockProps) {
   const disclaimer = roleDisclaimers[role];
   const meta = useDocumentMeta();
 
@@ -30,7 +38,8 @@ export default function SheetTitleBlock({ title, description, role, children }: 
     <article className={styles.sheet}>
       <div className={styles.content}>{children}</div>
       <div className={styles.titleBlock}>
-        <div className={styles.metaZone}>
+        {sideDiagram && <div className={styles.diagramZone}>{sideDiagram}</div>}
+        <div className={sideDiagram ? `${styles.metaZone} ${styles.metaZoneCompact}` : styles.metaZone}>
           <div className={styles.wordmark}>Building Integrity</div>
           <div className={styles.metaRow}>
             <span className={styles.metaLabel}>Project</span>
@@ -53,11 +62,11 @@ export default function SheetTitleBlock({ title, description, role, children }: 
             </div>
           )}
         </div>
-        <div className={styles.titleZone}>
+        <div className={sideDiagram ? `${styles.titleZone} ${styles.titleZoneCompact}` : styles.titleZone}>
           <h3 className={styles.title}>{title}</h3>
           <div className={styles.description}>{description}</div>
         </div>
-        <div className={styles.footerZone}>
+        <div className={sideDiagram ? `${styles.footerZone} ${styles.footerZoneCompact}` : styles.footerZone}>
           <p className={styles.disclaimer}>
             <span className={styles.roleTag}>{disclaimer.label}</span> {disclaimer.text}
           </p>

@@ -7,6 +7,14 @@ export interface PanelElevationDiagramProps {
   members: PanelMember[];
   widthIn: number;
   heightIn: number;
+  /** Shrinks the drawing to fit SheetTitleBlock's own sideDiagram zone
+   * (~230-250px wide) — Tommy: "make the image a little bit smaller and
+   * squeeze it, still adequately labeled." Only the panel geometry itself
+   * gets more "zoomed out" (a smaller MAX_CANVAS_HEIGHT_PX); the lettered
+   * badges shrink much less (10px radius -> 8px), so they stay a fixed,
+   * legible size regardless of how small the drawing gets — the same
+   * convention real technical drawings use. */
+  compact?: boolean;
 }
 
 // Same navy-badge/white-text/dashed-leader convention already established
@@ -18,6 +26,15 @@ const LEADER_OFFSET_IN = 3.5; // in real inches, so it scales with the drawing l
 const MAX_CANVAS_HEIGHT_PX = 480;
 const MIN_CANVAS_WIDTH_PX = 170; // a Safety/Gap panel is only 0.75in wide — floor so it isn't an unreadable sliver
 const MARGIN_PX = 44; // room for leader-line badges to sit outside the panel's own outline
+
+// compact mode's own equivalents — see the `compact` prop's own doc comment.
+const BADGE_RADIUS_PX_COMPACT = 8;
+const INSIDE_THRESHOLD_PX_COMPACT = 20; // badge diameter (16px) + clearance
+const MAX_CANVAS_HEIGHT_PX_COMPACT = 190;
+const MIN_CANVAS_WIDTH_PX_COMPACT = 90;
+const MARGIN_PX_COMPACT = 20;
+const WRAP_MAX_WIDTH_PX = 420;
+const WRAP_MAX_WIDTH_PX_COMPACT = 230;
 
 interface LetteredShape extends ProjectedShape {
   letter: string;
@@ -35,9 +52,15 @@ interface BadgePlacement {
 
 // Two badges land within this many px of each other counts as a collision
 // worth spreading apart — roughly 2 badge diameters, enough clearance that
-// neither circle nor its text overlaps the other's.
-const COLLISION_RADIUS_PX = BADGE_RADIUS_PX * 2 + 4;
-const BADGE_SPREAD_PX = BADGE_RADIUS_PX * 2 + 6;
+// neither circle nor its text overlaps the other's. Derived from whichever
+// badge radius is actually in play (see placeBadges's own badgeRadiusPx
+// param), not always the full-size BADGE_RADIUS_PX.
+function collisionRadiusPx(badgeRadiusPx: number): number {
+  return badgeRadiusPx * 2 + 4;
+}
+function badgeSpreadPx(badgeRadiusPx: number): number {
+  return badgeRadiusPx * 2 + 6;
+}
 
 /**
  * Places a badge for every shape — centered inside wide/tall shapes, or
@@ -64,10 +87,14 @@ function placeBadges(
   shapes: LetteredShape[],
   panelCenterPx: { xPx: number; yPx: number },
   pxPerIn: number,
+  badgeRadiusPx: number = BADGE_RADIUS_PX,
+  insideThresholdPx: number = INSIDE_THRESHOLD_PX,
 ): BadgePlacement[] {
+  const collisionRadius = collisionRadiusPx(badgeRadiusPx);
+  const spreadPx = badgeSpreadPx(badgeRadiusPx);
   const placements = shapes.map((shape) => {
     const centroid = shape.centroidPx;
-    const inside = shape.minorDimIn * pxPerIn >= INSIDE_THRESHOLD_PX;
+    const inside = shape.minorDimIn * pxPerIn >= insideThresholdPx;
     if (inside) {
       return { shape, centroid, inside: true, badgeX: centroid.xPx, badgeY: centroid.yPx, dirX: 0, dirY: 0 };
     }
@@ -115,7 +142,7 @@ function placeBadges(
       const p1 = placements[i]!;
       const p2 = placements[j]!;
       if (p1.dirX !== p2.dirX || p1.dirY !== p2.dirY) continue;
-      if (Math.hypot(p2.badgeX - p1.badgeX, p2.badgeY - p1.badgeY) < COLLISION_RADIUS_PX) union(i, j);
+      if (Math.hypot(p2.badgeX - p1.badgeX, p2.badgeY - p1.badgeY) < collisionRadius) union(i, j);
     }
   }
   const clusters = new Map<number, number[]>();
@@ -142,8 +169,8 @@ function placeBadges(
     idxs.forEach((i, k) => {
       const spreadIndex = k - (n - 1) / 2;
       const p = placements[i]!;
-      p.badgeX = avgX + (spreadAxisIsX ? spreadIndex * BADGE_SPREAD_PX : 0);
-      p.badgeY = avgY + (spreadAxisIsX ? 0 : spreadIndex * BADGE_SPREAD_PX);
+      p.badgeX = avgX + (spreadAxisIsX ? spreadIndex * spreadPx : 0);
+      p.badgeY = avgY + (spreadAxisIsX ? 0 : spreadIndex * spreadPx);
     });
   }
 
@@ -163,8 +190,8 @@ function placeBadges(
       inside: false,
       badgeX: p.badgeX,
       badgeY: p.badgeY,
-      lineEndX: p.badgeX - unitX * (BADGE_RADIUS_PX + 2),
-      lineEndY: p.badgeY - unitY * (BADGE_RADIUS_PX + 2),
+      lineEndX: p.badgeX - unitX * (badgeRadiusPx + 2),
+      lineEndY: p.badgeY - unitY * (badgeRadiusPx + 2),
     };
   });
 }
@@ -186,21 +213,29 @@ function placeBadges(
  * table (PanelFabricationPage.tsx) also calls, so a letter always means
  * the same cut in both places.
  */
-export default function PanelElevationDiagram({ members, widthIn, heightIn }: PanelElevationDiagramProps) {
+export default function PanelElevationDiagram({ members, widthIn, heightIn, compact = false }: PanelElevationDiagramProps) {
   const cutList = computePanelCutList(members);
   const letterByMemberId = new Map<string, string>();
   for (const row of cutList) {
     for (const m of row.members) letterByMemberId.set(m.memberId, row.letter);
   }
 
-  const pxPerIn = MAX_CANVAS_HEIGHT_PX / heightIn;
-  const panelHeightPx = heightIn * pxPerIn;
-  const panelWidthPx = Math.max(MIN_CANVAS_WIDTH_PX - 2 * MARGIN_PX, widthIn * pxPerIn);
+  const maxCanvasHeightPx = compact ? MAX_CANVAS_HEIGHT_PX_COMPACT : MAX_CANVAS_HEIGHT_PX;
+  const minCanvasWidthPx = compact ? MIN_CANVAS_WIDTH_PX_COMPACT : MIN_CANVAS_WIDTH_PX;
+  const marginPx = compact ? MARGIN_PX_COMPACT : MARGIN_PX;
+  const badgeRadiusPx = compact ? BADGE_RADIUS_PX_COMPACT : BADGE_RADIUS_PX;
+  const insideThresholdPx = compact ? INSIDE_THRESHOLD_PX_COMPACT : INSIDE_THRESHOLD_PX;
+  const badgeFontSizePx = compact ? 9 : 11;
+  const wrapMaxWidthPx = compact ? WRAP_MAX_WIDTH_PX_COMPACT : WRAP_MAX_WIDTH_PX;
 
-  const viewBoxWidth = Math.max(MIN_CANVAS_WIDTH_PX, panelWidthPx + 2 * MARGIN_PX);
-  const viewBoxHeight = panelHeightPx + 2 * MARGIN_PX;
+  const pxPerIn = maxCanvasHeightPx / heightIn;
+  const panelHeightPx = heightIn * pxPerIn;
+  const panelWidthPx = Math.max(minCanvasWidthPx - 2 * marginPx, widthIn * pxPerIn);
+
+  const viewBoxWidth = Math.max(minCanvasWidthPx, panelWidthPx + 2 * marginPx);
+  const viewBoxHeight = panelHeightPx + 2 * marginPx;
   const originX = (viewBoxWidth - panelWidthPx) / 2;
-  const originY = MARGIN_PX;
+  const originY = marginPx;
 
   const xToPx = (xIn: number) => originX + xIn * pxPerIn;
   const zToPx = (zIn: number) => originY + (heightIn - zIn) * pxPerIn;
@@ -215,13 +250,13 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn }: Pa
 
   const panelCenterPx = { xPx: originX + panelWidthPx / 2, yPx: originY + panelHeightPx / 2 };
 
-  const badges = placeBadges(shapes, panelCenterPx, pxPerIn);
+  const badges = placeBadges(shapes, panelCenterPx, pxPerIn, badgeRadiusPx, insideThresholdPx);
 
   return (
     <div className={styles.wrap}>
       <svg
         viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
-        style={{ width: "100%", maxWidth: 420, height: "auto" }}
+        style={{ width: "100%", maxWidth: wrapMaxWidthPx, height: "auto" }}
         role="img"
         aria-label={`To-scale front elevation, ${widthIn}in wide x ${heightIn}in tall, with lettered part callouts`}
       >
@@ -263,16 +298,16 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn }: Pa
         {badges.map(({ shape, centroid, inside, badgeX, badgeY, lineEndX, lineEndY }) =>
           inside ? (
             <g key={`${shape.member.memberId}-badge`}>
-              <circle cx={badgeX} cy={badgeY} r={BADGE_RADIUS_PX} fill="#1c3d5a" />
-              <text x={badgeX} y={badgeY + 4} fontSize={11} fontWeight={700} fill="#fff" textAnchor="middle">
+              <circle cx={badgeX} cy={badgeY} r={badgeRadiusPx} fill="#1c3d5a" />
+              <text x={badgeX} y={badgeY + (compact ? 3 : 4)} fontSize={badgeFontSizePx} fontWeight={700} fill="#fff" textAnchor="middle">
                 {shape.letter}
               </text>
             </g>
           ) : (
             <g key={`${shape.member.memberId}-badge`}>
               <line x1={centroid.xPx} y1={centroid.yPx} x2={lineEndX} y2={lineEndY} stroke="#999" strokeWidth={1} strokeDasharray="3 2" />
-              <circle cx={badgeX} cy={badgeY} r={BADGE_RADIUS_PX} fill="#1c3d5a" />
-              <text x={badgeX} y={badgeY + 4} fontSize={11} fontWeight={700} fill="#fff" textAnchor="middle">
+              <circle cx={badgeX} cy={badgeY} r={badgeRadiusPx} fill="#1c3d5a" />
+              <text x={badgeX} y={badgeY + (compact ? 3 : 4)} fontSize={badgeFontSizePx} fontWeight={700} fill="#fff" textAnchor="middle">
                 {shape.letter}
               </text>
             </g>
