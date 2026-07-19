@@ -1,4 +1,4 @@
-import type { PanelComponentSchema, PanelMember } from "./componentSchema";
+import type { PanelComponentSchema, PanelMember, PanelSpacePoint2D } from "./componentSchema";
 import {
   LUMBER_SPECIES_GRADE,
   PLATE_2X4_THICKNESS_IN,
@@ -220,7 +220,21 @@ export function buildDiagonalBraces(
     // file builds (via braceEndpoints) already places its 2 reference
     // points exactly on those 2 planes, so no separate target params are
     // needed beyond the endpoints themselves.
-    const trapezoidCornersIn = computeBraceTrapezoidCornersIn(x1, z1, x2, z2, PLATE_2X4_WIDTH_IN, x1, z2);
+    const rawCorners = computeBraceTrapezoidCornersIn(x1, z1, x2, z2, PLATE_2X4_WIDTH_IN, x1, z2);
+    // The level (plate) end's own 2 corners aren't both forced to a single
+    // X the way the plumb end's are — a board of real width, cut level
+    // right where its centerline meets the plate near the FAR stud, can
+    // have one long edge reach past that stud's own outer face (X<0 or
+    // X>widthIn) — real trapezoid geometry, not a math error, but past the
+    // panel's own edge is empty space outside this panel entirely. Clamped
+    // flush with the panel's own edge, same fix as the header brace's
+    // outer feet (see buildHeaderTrussWebBraces in panelMemberHelpers.ts).
+    const trapezoidCornersIn = rawCorners.map((c) => ({ ...c, xIn: Math.min(Math.max(c.xIn, 0), widthIn) })) as [
+      PanelSpacePoint2D,
+      PanelSpacePoint2D,
+      PanelSpacePoint2D,
+      PanelSpacePoint2D,
+    ];
     const lengthIn = braceLongestEdgeIn(trapezoidCornersIn);
     return {
       memberId,

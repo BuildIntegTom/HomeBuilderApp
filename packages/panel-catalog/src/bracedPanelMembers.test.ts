@@ -9,6 +9,7 @@ import {
   patternMirrorToBracingStyle,
   type BracePattern,
 } from "./bracedPanelMembers";
+import type { PanelSpacePoint2D } from "./componentSchema";
 import { computeBraceEndCutAngleDeg, memberBoxSizeIn } from "./panelMemberHelpers";
 
 const WIDTH_IN = 40;
@@ -68,6 +69,36 @@ describe("buildDiagonalBraces", () => {
   const barLeftX = leftStudFaceX;
   const topPlateZ = HEIGHT_IN - 0.75 - 1.5;
   const bottomPlateZ = 0.75 + 1.5; // top face of the bottom plate
+
+  // A level end's 2 corners are no longer guaranteed to average out to the
+  // opposite stud's own face (barLeftX/barRightX) — a board of real width,
+  // cut level right where its centerline meets that reference, can have one
+  // long edge reach past the panel's own X=0/widthIn edge (real trapezoid
+  // geometry for this panel's proportions, not a math error), clamped flush
+  // with the panel edge instead of hanging out past it (see buildDiagonal
+  // Braces's own makeBrace). For a level end NEAR the left edge, this
+  // clamps one corner to exactly X=0; both corners still land on the
+  // correct Z (the plate face) and stay within the panel's own width.
+  function expectLevelEndClampedAtLeftEdge(corners: PanelSpacePoint2D[], targetZIn: number) {
+    expect(corners).toHaveLength(2);
+    for (const c of corners) {
+      expect(c.zIn).toBeCloseTo(targetZIn, 6);
+      expect(c.xIn).toBeGreaterThanOrEqual(0);
+      expect(c.xIn).toBeLessThanOrEqual(WIDTH_IN);
+    }
+    expect(corners.some((c) => c.xIn === 0)).toBe(true);
+  }
+
+  // Same as above, mirrored — a level end near the RIGHT edge instead.
+  function expectLevelEndClampedAtRightEdge(corners: PanelSpacePoint2D[], targetZIn: number) {
+    expect(corners).toHaveLength(2);
+    for (const c of corners) {
+      expect(c.zIn).toBeCloseTo(targetZIn, 6);
+      expect(c.xIn).toBeGreaterThanOrEqual(0);
+      expect(c.xIn).toBeLessThanOrEqual(WIDTH_IN);
+    }
+    expect(corners.some((c) => c.xIn === WIDTH_IN)).toBe(true);
+  }
 
   for (const { pattern, mirrored } of BRACE_CONFIGS) {
     const label = `${pattern}${mirrored ? " mirrored" : ""}`;
@@ -132,12 +163,8 @@ describe("buildDiagonalBraces", () => {
     // the bottom plate face — both near the RIGHT side.
     const nearTopPlate = upperExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - topPlateZ) < 1e-6);
     const nearBottomPlate = lowerExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - bottomPlateZ) < 1e-6);
-    expect(nearTopPlate).toHaveLength(2);
-    expect(nearBottomPlate).toHaveLength(2);
-    const topPlateMidX = (nearTopPlate[0]!.xIn + nearTopPlate[1]!.xIn) / 2;
-    const bottomPlateMidX = (nearBottomPlate[0]!.xIn + nearBottomPlate[1]!.xIn) / 2;
-    expect(topPlateMidX).toBeCloseTo(barRightX, 6);
-    expect(bottomPlateMidX).toBeCloseTo(barRightX, 6);
+    expectLevelEndClampedAtRightEdge(nearTopPlate, topPlateZ);
+    expectLevelEndClampedAtRightEdge(nearBottomPlate, bottomPlateZ);
 
     // The 2 plumb corners' own Z-midpoint lands exactly on the girt row's
     // top/bottom face respectively (upper flanks the top, lower flanks
@@ -161,12 +188,8 @@ describe("buildDiagonalBraces", () => {
 
     const nearTopPlate = upperExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - topPlateZ) < 1e-6);
     const nearBottomPlate = lowerExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - bottomPlateZ) < 1e-6);
-    expect(nearTopPlate).toHaveLength(2);
-    expect(nearBottomPlate).toHaveLength(2);
-    const topPlateMidX = (nearTopPlate[0]!.xIn + nearTopPlate[1]!.xIn) / 2;
-    const bottomPlateMidX = (nearBottomPlate[0]!.xIn + nearBottomPlate[1]!.xIn) / 2;
-    expect(topPlateMidX).toBeCloseTo(barLeftX, 6);
-    expect(bottomPlateMidX).toBeCloseTo(barLeftX, 6);
+    expectLevelEndClampedAtLeftEdge(nearTopPlate, topPlateZ);
+    expectLevelEndClampedAtLeftEdge(nearBottomPlate, bottomPlateZ);
 
     const upperPlumb = upperExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.xIn - rightStudFaceX) < 1e-6);
     const lowerPlumb = lowerExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.xIn - rightStudFaceX) < 1e-6);
@@ -181,8 +204,7 @@ describe("buildDiagonalBraces", () => {
     expect(nearRightStud).toHaveLength(2);
     expect((nearRightStud[0]!.zIn + nearRightStud[1]!.zIn) / 2).toBeCloseTo(middleBarBottomZ, 6);
     const nearBottomPlate = lowerExt.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - bottomPlateZ) < 1e-6);
-    expect(nearBottomPlate).toHaveLength(2);
-    expect((nearBottomPlate[0]!.xIn + nearBottomPlate[1]!.xIn) / 2).toBeCloseTo(barLeftX, 6);
+    expectLevelEndClampedAtLeftEdge(nearBottomPlate, bottomPlateZ);
   });
 
   it("hatch mirrored (formerly 'hatch-back'): lower brace matches chevron's lower (left stud), upper brace flips to the RIGHT stud + left-side top plate", () => {
@@ -192,8 +214,7 @@ describe("buildDiagonalBraces", () => {
     expect(nearRightStud).toHaveLength(2);
     expect((nearRightStud[0]!.zIn + nearRightStud[1]!.zIn) / 2).toBeCloseTo(middleBarTopZ, 6);
     const nearTopPlate = upperExt.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - topPlateZ) < 1e-6);
-    expect(nearTopPlate).toHaveLength(2);
-    expect((nearTopPlate[0]!.xIn + nearTopPlate[1]!.xIn) / 2).toBeCloseTo(barLeftX, 6);
+    expectLevelEndClampedAtLeftEdge(nearTopPlate, topPlateZ);
   });
 
   it("every brace, across all 4 configs, shares the same folded tilt magnitude (panel's own vertical symmetry)", () => {
