@@ -2199,7 +2199,7 @@ export default function LayoutEditor() {
   };
 
   // Straw for a Header isn't a flat width x thickness x height box — its
-  // cavity is bounded by the truss chords/web bracing/side skins, so the
+  // cavity is bounded by the truss chords/web bracing/end caps, so the
   // weight-checker table needs the same real member list fastenerWeightKgFor
   // and woodWeightKgFor already use, run through computeStandardPanelStraw
   // Volume (envelope minus every member's own box volume) instead of the
@@ -2254,7 +2254,7 @@ export default function LayoutEditor() {
               // Header also zeroes the flat formula here, but its real straw
               // weight comes from strawWeightKgOverride below (a member-
               // aware volume — a header's own cavity is bounded by its truss
-              // chords/web/side skins, not a plain box), so this 0 is just a
+              // chords/web/end caps, not a plain box), so this 0 is just a
               // moot fallback for that panel type, not the real answer.
               widthIn: panelTypeId === "safety-gap" || panelTypeId === "header" ? 0 : inst.widthIn,
               strawWeightKgOverride: strawWeightKgFor(

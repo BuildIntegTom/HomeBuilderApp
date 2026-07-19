@@ -111,41 +111,39 @@ describe("header chord plywood caps", () => {
   });
 });
 
-describe("header side skins (Tommy: '3/4in plywood on the sides ... this kind of panel is essentially made sideways on the fabrication table')", () => {
+describe("header end caps (Tommy: 'plywood on the panel thickness side, not the interior and exterior faces' — confirmed against the SketchUp reference render: solid end, open/braced front)", () => {
   const WIDTH_IN = 60;
   const DEPTH_IN_LOCAL = DEPTH_IN;
   const HEIGHT_IN = 20;
 
-  it("has an ext_side_ply and int_side_ply spanning the full width x full height, thin in depth", () => {
+  it("has a left_end_ply and right_end_ply spanning the full depth x full height, thin in width", () => {
     for (const members of [
       buildWindowHeaderMembers(WIDTH_IN, DEPTH_IN_LOCAL, HEIGHT_IN),
       buildDoorHeaderMembers(WIDTH_IN, DEPTH_IN_LOCAL, HEIGHT_IN),
     ]) {
-      const extSkin = members.find((m) => m.memberId === "ext_side_ply")!;
-      const intSkin = members.find((m) => m.memberId === "int_side_ply")!;
-      expect(extSkin).toBeDefined();
-      expect(intSkin).toBeDefined();
-      expect(extSkin.role).toBe("skin");
-      expect(extSkin.material).toBe("plywood");
+      const leftCap = members.find((m) => m.memberId === "left_end_ply")!;
+      const rightCap = members.find((m) => m.memberId === "right_end_ply")!;
+      expect(leftCap).toBeDefined();
+      expect(rightCap).toBeDefined();
+      expect(leftCap.role).toBe("skin");
+      expect(leftCap.material).toBe("plywood");
 
-      const extSize = memberBoxSizeIn(extSkin);
-      expect(extSize.xIn).toBeCloseTo(WIDTH_IN, 6);
-      expect(extSize.zIn).toBeCloseTo(HEIGHT_IN, 6);
-      expect(extSize.yIn).toBeCloseTo(SKIN_THICKNESS_IN, 6);
+      const leftSize = memberBoxSizeIn(leftCap);
+      expect(leftSize.yIn).toBeCloseTo(DEPTH_IN_LOCAL, 6);
+      expect(leftSize.zIn).toBeCloseTo(HEIGHT_IN, 6);
+      expect(leftSize.xIn).toBeCloseTo(SKIN_THICKNESS_IN, 6);
 
-      expect(extSkin.position.yIn).toBeCloseTo(0, 6);
-      expect(intSkin.position.yIn).toBeCloseTo(DEPTH_IN_LOCAL - SKIN_THICKNESS_IN, 6);
+      expect(leftCap.position.xIn).toBeCloseTo(0, 6);
+      expect(rightCap.position.xIn).toBeCloseTo(WIDTH_IN - SKIN_THICKNESS_IN, 6);
     }
   });
 
-  it("insets every chord (plate) and truss brace so none touches the header's own Y=0/Y=depthIn extremes directly", () => {
+  it("does not add a skin on the ext/int (Y=0/Y=depthIn) faces — those stay open, showing the truss web directly", () => {
     const members = buildWindowHeaderMembers(WIDTH_IN, DEPTH_IN_LOCAL, HEIGHT_IN);
-    const framing = members.filter((m) => m.role === "plate" || m.role === "brace");
-    expect(framing.length).toBeGreaterThan(0);
-    for (const m of framing) {
-      expect(m.position.yIn).toBeGreaterThanOrEqual(SKIN_THICKNESS_IN - 1e-6);
-      expect(m.position.yIn).toBeLessThanOrEqual(DEPTH_IN_LOCAL - SKIN_THICKNESS_IN + 1e-6);
-    }
+    const skins = members.filter((m) => m.role === "skin");
+    // Exactly 4: bottom_chord_ply, top_chord_ply, left_end_ply, right_end_ply — no ext/int face skin.
+    expect(skins).toHaveLength(4);
+    expect(skins.some((m) => m.memberId.includes("side_ply"))).toBe(false);
   });
 });
 

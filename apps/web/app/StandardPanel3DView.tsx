@@ -63,9 +63,9 @@ export default function StandardPanel3DView({ members, overallDimensions, displa
   // (not a hardcoded thickness or member-name list) — matched generically by
   // role + a thin Z box size, so this works for a wall panel's own
   // "bottom/top_plate_skin" AND a header's "bottom/top_chord_ply" alike,
-  // while correctly excluding a header's own full-height ext/int side skins
-  // (role "skin" too, but their Z size spans the whole panel, not a thin
-  // cap). Falls back to the full envelope if a panel variant has no
+  // while correctly excluding a header's own full-height left/right end
+  // caps (role "skin" too, but their Z size spans the whole panel, not a
+  // thin cap). Falls back to the full envelope if a panel variant has no
   // Z-capping skins at all.
   const zCapSkins = members.filter((m) => m.role === "skin" && memberBoxSizeIn(m).zIn <= SKIN_THICKNESS_IN + 0.01);
   const bottomSkin = zCapSkins.reduce<PanelMember | null>((min, m) => (!min || m.position.zIn < min.position.zIn ? m : min), null);
