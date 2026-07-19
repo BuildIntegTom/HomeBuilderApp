@@ -1224,6 +1224,14 @@ export default function LayoutEditor() {
     // reconcileBracedPlacement's own doc comment; same fix already applied
     // to handleToggleOpening's own retile branch).
     const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    // Same relocation handleToggleOpening's own retile branch already does —
+    // without it, selectedSlot keeps pointing at its old raw index, which a
+    // width-driven retile can reassign to a totally different panel/type,
+    // making the Selected Panel note look like it "cycled" to another type
+    // on its own (Tommy: "when i try to edit ro/header width, it changes
+    // through the cycle instead").
+    const newIndex = findNthOpeningIndex(finalSlots, precedingOpenings);
+    setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex });
     setBaseWallSlots((prev) => ({
       ...prev,
       [wallId]: finalSlots,
