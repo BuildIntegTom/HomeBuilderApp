@@ -41,6 +41,7 @@ import {
   type Footprint,
   type PanelGroup,
   type PanelSlot,
+  type RoofProfilePoint,
   type Story,
   type TruckDims,
   type Wall,
@@ -75,8 +76,6 @@ import {
 } from "@building-integrity/calc-engine";
 import {
   bomWidthMismatchWarning,
-  BOX_BEAM_CAP_THICKNESS_IN,
-  BOX_BEAM_LVL_HEIGHT_IN,
   bracedPanelDisplayLabel,
   bracingStyleToPatternMirror,
   patternMirrorToBracingStyle,
@@ -93,6 +92,7 @@ import {
   buildSillPanelMembers,
   buildStandardPanelMembers,
   buildTrussPlateMembers,
+  buildVerticalGapFillerMembers,
   buildWindowHeaderMembers,
   computeDoorRoughOpeningHeightIn,
   computeHeaderHeightIn,
@@ -102,12 +102,12 @@ import {
   JACK_STUD_THICKNESS_IN,
   SAFETY_GAP_THICKNESS_IN,
   PLATE_2X4_WIDTH_IN,
-  PLATE_2X6_THICKNESS_IN,
   carbonFractionOfDryMass,
   COLUMN_TOTAL_WIDTH_IN,
   computeDensePackCelluloseVolume,
   computeGableColumnHeightIn,
   computePlywoodAreaSqFt,
+  computeRoofBearingAssemblyHeightIn,
   computeRoofCatcherBeamPostPositions,
   computeRoofCatcherBeamSegments,
   computeTimberHpVolume,
@@ -257,6 +257,11 @@ const STRAW_BALE_WEIGHT_LB = 40;
 const KG_TO_LB = 2.20462;
 const LB_FT3_TO_KG_M3 = 16.018463;
 const FT3_TO_M3 = 0.0283168;
+// Roofline profile point height quick-picks (Tommy: "choose from 2/12...12/12
+// slopes") — a real, standalone range scoped to this control, kept separate
+// from the untouched decorative gallery's own HIGH_PERF_TRUSS_MIN/MAX_PITCH_IN12
+// even though the numeric range happens to coincide.
+const ROOF_PROFILE_PITCH_OPTIONS_IN12 = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 const ROOF_BEARING_STRUCTURAL_STATUS: PanelStructuralStatus = {
   status: "pending-BI-confirmation",
@@ -499,7 +504,32 @@ export default function LayoutEditor() {
   // inset/height/offset numbers that feed the Gable End Panel + Column
   // Panel previews.
   const [roofSystemTypeId, setRoofSystemTypeId] = useState<RoofSystemType>("truss");
-  const [bottomOfTrussMaxHeightFt, setBottomOfTrussMaxHeightFt] = useState(16);
+  // The roofline gable-end panels tile up to meet (Tommy: "options for
+  // peaked trusses with 1 point on the top, or two points to make a
+  // triangle shaped with the top chopped off") — "peaked" has 1 real
+  // profile point (a ridge, replacing the old single bottomOfTrussMaxHeightFt);
+  // "flat-top" has 2, fully independent in both height and along-wall
+  // position (see gableProfilePositionsInByWallId below). Global (Roof
+  // tab), same as the single ridge height it replaces.
+  const [roofProfileType, setRoofProfileType] = useState<"peaked" | "flat-top">("peaked");
+  const [roofProfilePointHeightsFt, setRoofProfilePointHeightsFt] = useState<number[]>([16]);
+  const handleChangeRoofProfileType = (type: "peaked" | "flat-top") => {
+    setRoofProfileType(type);
+    setRoofProfilePointHeightsFt((was) => (type === "peaked" ? [was[0] ?? 16] : was.length >= 2 ? was.slice(0, 2) : [was[0] ?? 16, was[0] ?? 16]));
+  };
+  const handleChangeRoofProfilePointHeightFt = useCallback((pointIndex: number, heightFt: number) => {
+    setRoofProfilePointHeightsFt((was) => {
+      const next = [...was];
+      next[pointIndex] = heightFt;
+      return next;
+    });
+  }, []);
+  // A single Gable End Panel can't be fabricated taller than
+  // GABLE_PANEL_MAX_HEIGHT_IN (packages/panel-catalog) — this is a
+  // user-tunable threshold at or below that real physical ceiling; the
+  // difference (if any) between it and the true truss-bottom height is
+  // filled by a real vertical safety-gap tile instead of silently clamped.
+  const [maxGablePanelHeightIn, setMaxGablePanelHeightIn] = useState(96);
   const [trussPlateInsetIn, setTrussPlateInsetIn] = useState(trussPlateInsetDefaultIn.value);
   const [roofCatcherBeamOffsetIn, setRoofCatcherBeamOffsetIn] = useState(DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN);
   const [roofCatcherBeamShape, setRoofCatcherBeamShape] = useState<RoofCatcherBeamShape>(roofCatcherBeamShapeDefault);
@@ -585,32 +615,36 @@ export default function LayoutEditor() {
     });
   };
 
-  // Gable End peak position (Tommy: "drag wall tool the peak of this
-  // triangle... a sliding scale that you can also click and edit how far
-  // away from each end it is"). Inches from the wall's start corner; a
-  // missing entry means "not yet customized" (auto-centered midpoint) — see
-  // computeGableTiledRow's own peakPositionIn default + snap-to-shed logic.
-  const [gablePeakPositionInByWallId, setGablePeakPositionInByWallId] = useState<Record<string, number>>({});
-  const handleChangeGablePeakPositionIn = useCallback((wallId: string, positionIn: number | undefined) => {
-    setGablePeakPositionInByWallId((was) => {
+  // Gable End profile point positions (Tommy: "drag wall tool the peak of
+  // this triangle... a sliding scale that you can also click and edit how
+  // far away from each end it is"), generalized from a single peak to up to
+  // 2 independently-placeable points (index-matched to roofProfileType's
+  // own point count). Inches from the wall's start corner; a missing/null
+  // entry means "not yet customized" (auto-centered) — see
+  // computeGableTiledRow's own resolution + snap-to-shed logic.
+  const [gableProfilePositionsInByWallId, setGableProfilePositionsInByWallId] = useState<Record<string, (number | null)[]>>({});
+  const handleChangeGableProfilePositionIn = useCallback((wallId: string, pointIndex: number, positionIn: number | undefined) => {
+    setGableProfilePositionsInByWallId((was) => {
       const next = { ...was };
-      if (positionIn === undefined || Number.isNaN(positionIn)) delete next[wallId];
-      else next[wallId] = positionIn;
+      const arr = [...(next[wallId] ?? [])];
+      arr[pointIndex] = positionIn === undefined || Number.isNaN(positionIn) ? null : positionIn;
+      next[wallId] = arr;
       return next;
     });
   }, []);
   // "add shed roof option next to gable end options to auto generate a 4/12
-  // scenario of gable end shed roof" (Tommy) — snaps the peak to this wall's
-  // start and sets the Roof tab's ridge height so the resulting single slope
-  // (spanning the wall's own full width) is a 4-in-12 pitch.
+  // scenario of gable end shed roof" (Tommy) — snaps this wall's own first
+  // profile point to its start and sets the Roof tab's ridge height so the
+  // resulting single slope (spanning the wall's own full width) is a
+  // 4-in-12 pitch.
   const handleGenerateShedRoof = (wall: Wall) => {
     handleToggleGableEnd(wall.id, true);
-    handleChangeGablePeakPositionIn(wall.id, 0);
+    handleChangeGableProfilePositionIn(wall.id, 0, 0);
     // Round to the nearest inch (this app's finest dimension unit
     // everywhere else) — a raw 4/12 pitch over an arbitrary wall length
     // is a repeating decimal in feet and would otherwise leak an ugly
     // value like 16.666666666666668 into the height input/diagrams below.
-    setBottomOfTrussMaxHeightFt(Math.round((wallHeightFt + wall.lengthFt * (4 / 12)) * 12) / 12);
+    handleChangeRoofProfilePointHeightFt(0, Math.round((wallHeightFt + wall.lengthFt * (4 / 12)) * 12) / 12);
   };
 
   // Second story (Tommy: "add a second level of panels") — a real,
@@ -768,13 +802,15 @@ export default function LayoutEditor() {
       floorSystemId,
       perpendicular2x4Enabled,
       roofSystemTypeId,
-      bottomOfTrussMaxHeightFt,
+      roofProfileType,
+      roofProfilePointHeightsFt,
+      gableProfilePositionsInByWallId,
+      maxGablePanelHeightIn,
       trussPlateInsetIn,
       roofCatcherBeamOffsetIn,
       roofCatcherBeamShape,
       octagonRingDiameterFt,
       gableEndWallIds,
-      gablePeakPositionInByWallId,
       stories,
       panelizationType,
       timberFrameCurtainPanelType,
@@ -852,13 +888,15 @@ export default function LayoutEditor() {
       setFloorSystemId(s.floorSystemId as typeof floorSystemId);
       setPerpendicular2x4Enabled(s.perpendicular2x4Enabled);
       setRoofSystemTypeId(s.roofSystemTypeId);
-      setBottomOfTrussMaxHeightFt(s.bottomOfTrussMaxHeightFt);
+      setRoofProfileType(s.roofProfileType);
+      setRoofProfilePointHeightsFt(s.roofProfilePointHeightsFt);
+      setGableProfilePositionsInByWallId(s.gableProfilePositionsInByWallId);
+      setMaxGablePanelHeightIn(s.maxGablePanelHeightIn);
       setTrussPlateInsetIn(s.trussPlateInsetIn);
       setRoofCatcherBeamOffsetIn(s.roofCatcherBeamOffsetIn);
       setRoofCatcherBeamShape(s.roofCatcherBeamShape);
       setOctagonRingDiameterFt(s.octagonRingDiameterFt);
       setGableEndWallIds(s.gableEndWallIds);
-      setGablePeakPositionInByWallId(s.gablePeakPositionInByWallId);
       setSecondStory(s.stories[1] ?? null);
       setPanelizationType(s.panelizationType);
       setTimberFrameCurtainPanelType(s.timberFrameCurtainPanelType);
@@ -892,6 +930,14 @@ export default function LayoutEditor() {
   );
 
   const elevationWall = footprint && elevationViewWallId ? (footprint.walls.find((w) => w.id === elevationViewWallId) ?? null) : null;
+
+  // The Roof tab's pitch-select is global (not tied to any one wall), so it
+  // needs some real wall width to turn a picked slope into a height —
+  // whichever wall's elevation is currently open, else the first
+  // gable-enabled wall, else just the first drawn wall. Falls back to a
+  // plain 20ft assumption only when nothing's been drawn yet at all.
+  const pitchReferenceWall =
+    elevationWall ?? (footprint ? (footprint.walls.find((w) => gableEndWallIds.has(w.id)) ?? footprint.walls[0] ?? null) : null);
 
   // The view-mode dial's cycle (Tommy: "cycle the wall view options...
   // starting at the top and going clockwise, and the wheel moves onto 3D
@@ -1721,15 +1767,26 @@ export default function LayoutEditor() {
   // whichever story is tallest (ground-only, or ground+second when a
   // second story exists — same roofBaseHeightIn concept WallElevationView
   // already computes for its own SVG, kept in sync here); the high edge is
-  // the Roof tab's "bottom of truss max height" (the ridge). Clamped so a
-  // ridge typed below the eave doesn't throw. These two heights are also
+  // the Roof tab's own profile point height(s). Clamped so a height typed
+  // below the eave doesn't throw. These two heights are also
   // membersForPanelTypeId's own fallback for any gable call site without a
   // specific real instance's own edge heights (e.g. none today — every
   // gable panel shown anywhere is now a real per-tile instance — but kept
   // as a safe default rather than a required override).
   const roofBaseHeightIn = stories.reduce((sum, s) => sum + s.wallHeightFt, 0) * 12;
-  const gablePreviewLowEdgeHeightIn = roofBaseHeightIn;
-  const gablePreviewHighEdgeHeightIn = Math.max(bottomOfTrussMaxHeightFt * 12, gablePreviewLowEdgeHeightIn);
+  // The true "eave" reference gable panels tile up FROM — a real truss's
+  // own bottom chord bears on TOP of the roof-bearing member (truss plate/
+  // box beam), which itself sits flush on the wall's own top plate, not
+  // bare wall-top-plate height directly (Tommy: "the beginning of where the
+  // shape of the inclined/gable end panels are derrived from must start...
+  // flush with the top of the top plate/panels below it" — i.e. flush with
+  // the top of THAT roof-bearing assembly, matching how a real last truss
+  // "rest[s] on the eve sides... flush" with the gable panels sitting
+  // directly under it). Falls back to bare roofBaseHeightIn when no roof
+  // system is even enabled (no roof-bearing member exists to sit atop).
+  const gableEaveHeightIn = roofBaseHeightIn + (roofEnabled ? computeRoofBearingAssemblyHeightIn(stories.length > 1) : 0);
+  const gablePreviewLowEdgeHeightIn = gableEaveHeightIn;
+  const gablePreviewHighEdgeHeightIn = Math.max(...roofProfilePointHeightsFt.map((h) => h * 12), gablePreviewLowEdgeHeightIn);
   // Real per-wall gable tiles (Tommy: fix "gable end always spawns to the
   // top" by making each tile a real PanelInstance, not one hardcoded
   // full-ridge-height preview) — same computeGableTiledRow call shape
@@ -1737,45 +1794,84 @@ export default function LayoutEditor() {
   // consistent. Feeds allInstances below.
   const gableTilesByWallId = useMemo(() => {
     if (!footprint) return {};
-    const ridgeHeightIn = Math.max(bottomOfTrussMaxHeightFt * 12, roofBaseHeightIn);
-    const result: Record<string, { widthIn: number; xStartIn: number; lowEdgeHeightIn: number; highEdgeHeightIn: number }[]> = {};
+    const result: Record<
+      string,
+      {
+        widthIn: number;
+        xStartIn: number;
+        leftEdgeHeightIn: number;
+        rightEdgeHeightIn: number;
+        verticalGapHeightIn?: number;
+        isSafetyGap?: boolean;
+      }[]
+    > = {};
     for (const wall of footprint.walls) {
       if (!gableEndWallIds.has(wall.id)) continue;
-      const tiles = computeGableTiledRow(
-        wall.lengthFt * 12,
-        roofBaseHeightIn,
-        ridgeHeightIn,
-        standardWidthIn,
-        gablePeakPositionInByWallId[wall.id],
-        trussPlateInsetIn,
-      );
-      // Clamped to GABLE_PANEL_MAX_HEIGHT_IN's own real 8ft cap (Tommy:
-      // "gable panels...can be up to 8' tall") so a real Gable End Panel is
-      // never built taller than buildGablePanelMembers itself allows — a
-      // steep enough pitch clips the panel's own high edge rather than
-      // throwing deep inside a render path; gableEndClampedWallIds below
-      // surfaces this to the user instead of leaving it silent.
-      result[wall.id] = tiles.map((t) => ({
-        widthIn: t.widthIn,
-        xStartIn: t.xStartIn,
-        lowEdgeHeightIn: Math.min(t.leftHeightIn, t.rightHeightIn),
-        highEdgeHeightIn: Math.min(Math.max(t.leftHeightIn, t.rightHeightIn), roofBaseHeightIn + GABLE_PANEL_MAX_HEIGHT_IN),
-      }));
+      const wallLengthIn = wall.lengthFt * 12;
+      const storedPositions = gableProfilePositionsInByWallId[wall.id] ?? [];
+      const points: RoofProfilePoint[] = roofProfilePointHeightsFt.map((heightFt, i) => {
+        // Default position: the single midpoint for a peaked (1-point)
+        // profile, or a symmetric flat run spanning the middle third for a
+        // flat-top (2-point) profile — same "auto-centered, never snaps"
+        // convention the old single-peak default already had.
+        const defaultXIn = roofProfilePointHeightsFt.length === 1 ? wallLengthIn / 2 : ((i + 1) * wallLengthIn) / 3;
+        const storedXIn = storedPositions[i];
+        return {
+          xIn: storedXIn ?? defaultXIn,
+          heightIn: heightFt * 12,
+          isExplicitPosition: storedXIn != null,
+        };
+      });
+      const tiles = computeGableTiledRow(wallLengthIn, gableEaveHeightIn, points, standardWidthIn, trussPlateInsetIn, true);
+      // The real high edge is capped to maxGablePanelHeightIn's own
+      // fabrication ceiling (Tommy: "gable panels...can be up to 8' tall")
+      // so a real Gable End Panel is never built taller than
+      // buildGablePanelMembers itself allows — the remainder (if any) is
+      // absorbed by a real vertical safety-gap filler instead of silently
+      // clipping the panel short.
+      result[wall.id] = tiles.map((t) => {
+        // Cap each edge independently (preserving which one is really on
+        // the left vs right — see buildGablePanelMembers's own doc comment
+        // on why order matters) rather than min/max-ing them together,
+        // which would silently discard which side of a peak this tile is
+        // actually on and mirror it once built.
+        const capHeightIn = gableEaveHeightIn + maxGablePanelHeightIn;
+        const leftCappedIn = Math.min(t.leftHeightIn, capHeightIn);
+        const rightCappedIn = Math.min(t.rightHeightIn, capHeightIn);
+        const verticalGapHeightIn = Math.max(t.leftHeightIn - leftCappedIn, t.rightHeightIn - rightCappedIn);
+        return {
+          widthIn: t.widthIn,
+          xStartIn: t.xStartIn,
+          leftEdgeHeightIn: leftCappedIn,
+          rightEdgeHeightIn: rightCappedIn,
+          ...(verticalGapHeightIn > 1e-6 ? { verticalGapHeightIn } : {}),
+          ...(t.isSafetyGap ? { isSafetyGap: true } : {}),
+        };
+      });
     }
     return result;
-  }, [footprint, gableEndWallIds, gablePeakPositionInByWallId, roofBaseHeightIn, bottomOfTrussMaxHeightFt, standardWidthIn, trussPlateInsetIn]);
+  }, [
+    footprint,
+    gableEndWallIds,
+    gableProfilePositionsInByWallId,
+    gableEaveHeightIn,
+    roofProfilePointHeightsFt,
+    maxGablePanelHeightIn,
+    standardWidthIn,
+    trussPlateInsetIn,
+  ]);
 
-  // Which gable-enabled walls actually got clipped by the clamp above (i.e.
-  // the roofline's real ridge would have pushed a Gable End Panel taller
-  // than the 8ft/GABLE_PANEL_MAX_HEIGHT_IN max) — surfaced to
-  // WallElevationView as a visible warning rather than a silent clip.
+  // Which gable-enabled walls have at least one tile whose real roofline
+  // rise exceeds maxGablePanelHeightIn (i.e. got a real vertical
+  // safety-gap filler tile above the capped Gable End Panel) — surfaced to
+  // WallElevationView as an informational note, not an error.
   const gableEndClampedWallIds = useMemo(() => {
     const ids = new Set<string>();
     for (const [wallId, tiles] of Object.entries(gableTilesByWallId)) {
-      if (tiles.some((t) => t.highEdgeHeightIn - roofBaseHeightIn >= GABLE_PANEL_MAX_HEIGHT_IN)) ids.add(wallId);
+      if (tiles.some((t) => t.verticalGapHeightIn !== undefined)) ids.add(wallId);
     }
     return ids;
-  }, [gableTilesByWallId, roofBaseHeightIn]);
+  }, [gableTilesByWallId]);
 
   // Computed once, across every nameable panel type together, so a panel's
   // number always reflects its true position in the along-wall sequence —
@@ -1961,15 +2057,34 @@ export default function LayoutEditor() {
                             ),
                           )
                       : inst.panelType === "gable"
-                        ? buildGablePanelMembers(
-                            inst.widthIn,
-                            thicknessIn,
-                            inst.lowEdgeHeightIn! - roofBaseHeightIn,
-                            inst.highEdgeHeightIn! - roofBaseHeightIn,
-                            includeNailer,
-                          )
+                        ? inst.isSafetyGap
+                          ? buildSafetyGapMembers(
+                              thicknessIn,
+                              Math.max(inst.leftEdgeHeightIn!, inst.rightEdgeHeightIn!) - gableEaveHeightIn,
+                            )
+                          : buildGablePanelMembers(
+                              inst.widthIn,
+                              thicknessIn,
+                              inst.leftEdgeHeightIn! - gableEaveHeightIn,
+                              inst.rightEdgeHeightIn! - gableEaveHeightIn,
+                              includeNailer,
+                            )
                         : null;
       if (instMembers) members.push(...instMembers);
+      // A vertical safety-gap filler (Tommy: "an ability to put a safety
+      // gap inbetween the truss bottom and the gable end top") stacks on
+      // top of whichever gable geometry this tile got — additive, not a
+      // replacement, since both the real gable/gap piece AND its own real
+      // roofline overflow get fabricated.
+      if (inst.panelType === "gable" && inst.verticalGapHeightIn) {
+        const localTallerIn = Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn;
+        members.push(
+          ...buildVerticalGapFillerMembers(inst.widthIn, thicknessIn, inst.verticalGapHeightIn).map((m) => ({
+            ...m,
+            position: { ...m.position, zIn: m.position.zIn + localTallerIn },
+          })),
+        );
+      }
     }
     return members;
   }, [
@@ -2234,12 +2349,16 @@ export default function LayoutEditor() {
     sillHeightInOverride?: number,
     bracedPatternOverride?: BracePattern,
     bracedMirroredOverride?: boolean,
-    lowEdgeHeightInOverride?: number,
-    highEdgeHeightInOverride?: number,
+    leftEdgeHeightInOverride?: number,
+    rightEdgeHeightInOverride?: number,
+    isSafetyGapOverride?: boolean,
+    verticalGapHeightInOverride?: number,
   ) => {
     const heightIn = wallHeightFt * 12;
     const resolvedSillHeightIn = sillHeightInOverride ?? sillDefaultHeightIn.value;
-    return panelTypeId === "standard"
+    const gableLeftLocalIn = (leftEdgeHeightInOverride ?? gablePreviewLowEdgeHeightIn) - gableEaveHeightIn;
+    const gableRightLocalIn = (rightEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn) - gableEaveHeightIn;
+    const base = panelTypeId === "standard"
       ? buildStandardPanelMembers(widthIn, thicknessIn, heightIn, includeNailer)
       : panelTypeId === "braced"
         ? buildBracedPanelMembers(
@@ -2255,13 +2374,9 @@ export default function LayoutEditor() {
           : panelTypeId === "corner"
             ? cornerPanelMembers3D
             : panelTypeId === "gable"
-              ? buildGablePanelMembers(
-                  widthIn,
-                  thicknessIn,
-                  (lowEdgeHeightInOverride ?? gablePreviewLowEdgeHeightIn) - roofBaseHeightIn,
-                  (highEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn) - roofBaseHeightIn,
-                  includeNailer,
-                )
+              ? isSafetyGapOverride
+                ? buildSafetyGapMembers(thicknessIn, Math.max(gableLeftLocalIn, gableRightLocalIn))
+                : buildGablePanelMembers(widthIn, thicknessIn, gableLeftLocalIn, gableRightLocalIn, includeNailer)
               : panelTypeId === "header"
                 ? sourceSlotType === "door"
                   ? buildDoorHeaderMembers(widthIn, thicknessIn, doorHeaderHeightIn)
@@ -2275,6 +2390,21 @@ export default function LayoutEditor() {
                   : panelTypeId === "safety-gap"
                     ? buildSafetyGapMembers(thicknessIn, heightIn)
                     : null;
+    if (!base) return base;
+    // A vertical safety-gap filler (Tommy: "an ability to put a safety gap
+    // inbetween the truss bottom and the gable end top") stacks ON TOP of
+    // whichever gable geometry this tile got (a real Gable End Panel, or
+    // its own row's horizontal safety-gap sliver) — additive, not a
+    // replacement, since both a real filled/framed piece AND its own real
+    // overflow filler get fabricated.
+    if (panelTypeId === "gable" && verticalGapHeightInOverride) {
+      const filler = buildVerticalGapFillerMembers(widthIn, thicknessIn, verticalGapHeightInOverride).map((m) => ({
+        ...m,
+        position: { ...m.position, zIn: m.position.zIn + Math.max(gableLeftLocalIn, gableRightLocalIn) },
+      }));
+      return [...base, ...filler];
+    }
+    return base;
   };
 
   // Fastener counts/weight are only modeled for panel types with real
@@ -2287,8 +2417,10 @@ export default function LayoutEditor() {
     sillHeightInOverride?: number,
     bracedPatternOverride?: BracePattern,
     bracedMirroredOverride?: boolean,
-    lowEdgeHeightInOverride?: number,
-    highEdgeHeightInOverride?: number,
+    leftEdgeHeightInOverride?: number,
+    rightEdgeHeightInOverride?: number,
+    isSafetyGapOverride?: boolean,
+    verticalGapHeightInOverride?: number,
   ): number | null => {
     const members = membersForPanelTypeId(
       panelTypeId,
@@ -2298,8 +2430,10 @@ export default function LayoutEditor() {
       sillHeightInOverride,
       bracedPatternOverride,
       bracedMirroredOverride,
-      lowEdgeHeightInOverride,
-      highEdgeHeightInOverride,
+      leftEdgeHeightInOverride,
+      rightEdgeHeightInOverride,
+      isSafetyGapOverride,
+      verticalGapHeightInOverride,
     );
     return members ? computeFastenerWeight(members).totalWeightKg : null;
   };
@@ -2319,8 +2453,10 @@ export default function LayoutEditor() {
     sillHeightInOverride?: number,
     bracedPatternOverride?: BracePattern,
     bracedMirroredOverride?: boolean,
-    lowEdgeHeightInOverride?: number,
-    highEdgeHeightInOverride?: number,
+    leftEdgeHeightInOverride?: number,
+    rightEdgeHeightInOverride?: number,
+    isSafetyGapOverride?: boolean,
+    verticalGapHeightInOverride?: number,
   ): number | null => {
     const members = membersForPanelTypeId(
       panelTypeId,
@@ -2330,8 +2466,10 @@ export default function LayoutEditor() {
       sillHeightInOverride,
       bracedPatternOverride,
       bracedMirroredOverride,
-      lowEdgeHeightInOverride,
-      highEdgeHeightInOverride,
+      leftEdgeHeightInOverride,
+      rightEdgeHeightInOverride,
+      isSafetyGapOverride,
+      verticalGapHeightInOverride,
     );
     return members ? computeMemberSetWoodWeight(members).weightKg : null;
   };
@@ -2408,13 +2546,13 @@ export default function LayoutEditor() {
               // A sill is a much shorter panel (Tommy: "sills are almost
               // always 32in tall") than the full wall height every other
               // panel type here uses; a gable tile's own tallest point
-              // (highEdgeHeightIn) stands in for the flat-box approximation
-              // every non-header panel type uses.
+              // (whichever edge that is) stands in for the flat-box
+              // approximation every non-header panel type uses.
               heightIn:
                 panelTypeId === "sill"
                   ? (inst.sillHeightIn ?? sillDefaultHeightIn.value)
                   : panelTypeId === "gable"
-                    ? (inst.highEdgeHeightIn ?? roofBaseHeightIn) - roofBaseHeightIn
+                    ? Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn
                     : wallHeightFt * 12,
               densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
               woodWeightKg: woodWeightKgFor(
@@ -2425,8 +2563,10 @@ export default function LayoutEditor() {
                 inst.sillHeightIn,
                 inst.bracedPattern,
                 inst.bracedMirrored,
-                inst.lowEdgeHeightIn,
-                inst.highEdgeHeightIn,
+                inst.leftEdgeHeightIn,
+                inst.rightEdgeHeightIn,
+                inst.isSafetyGap,
+                inst.verticalGapHeightIn,
               ),
               fastenerWeightKg: fastenerWeightKgFor(
                 panelTypeId,
@@ -2436,8 +2576,10 @@ export default function LayoutEditor() {
                 inst.sillHeightIn,
                 inst.bracedPattern,
                 inst.bracedMirrored,
-                inst.lowEdgeHeightIn,
-                inst.highEdgeHeightIn,
+                inst.leftEdgeHeightIn,
+                inst.rightEdgeHeightIn,
+                inst.isSafetyGap,
+                inst.verticalGapHeightIn,
               ),
               hasClayPlaster,
               hasLimePlaster,
@@ -2497,8 +2639,10 @@ export default function LayoutEditor() {
           inst.sillHeightIn,
           inst.bracedPattern,
           inst.bracedMirrored,
-          inst.lowEdgeHeightIn,
-          inst.highEdgeHeightIn,
+          inst.leftEdgeHeightIn,
+          inst.rightEdgeHeightIn,
+          inst.isSafetyGap,
+          inst.verticalGapHeightIn,
         );
         if (members) accumulate(computeFastenerWeight(members).items);
         else unmodeledLabels.add(panelType.label);
@@ -2594,7 +2738,9 @@ export default function LayoutEditor() {
           ? doorHeaderHeightIn
           : computeHeaderHeightIn(wallHeightFt * 12, resolvedSillHeightInFor(inst) + resolvedWindowHeightInFor(inst));
       }
-      if (panelTypeId === "gable") return (inst.highEdgeHeightIn ?? roofBaseHeightIn) - roofBaseHeightIn;
+      if (panelTypeId === "gable") {
+        return Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn;
+      }
       return wallHeightFt * 12;
     };
     const panelWidthInFor = (panelTypeId: string, inst: PanelInstance): number =>
@@ -2617,7 +2763,12 @@ export default function LayoutEditor() {
       // different edge heights (different position along the roofline)
       // are physically different fabricated parts.
       if (panelTypeId === "gable") {
-        parts.push((inst.lowEdgeHeightIn ?? 0).toFixed(3), (inst.highEdgeHeightIn ?? 0).toFixed(3));
+        parts.push(
+          (inst.leftEdgeHeightIn ?? 0).toFixed(3),
+          (inst.rightEdgeHeightIn ?? 0).toFixed(3),
+          String(!!inst.isSafetyGap),
+          (inst.verticalGapHeightIn ?? 0).toFixed(3),
+        );
       }
       return parts.join("|");
     };
@@ -2644,8 +2795,10 @@ export default function LayoutEditor() {
               first.sillHeightIn,
               bracedStyle?.pattern,
               bracedStyle?.mirrored,
-              first.lowEdgeHeightIn,
-              first.highEdgeHeightIn,
+              first.leftEdgeHeightIn,
+              first.rightEdgeHeightIn,
+              first.isSafetyGap,
+              first.verticalGapHeightIn,
             ) ?? [];
           return {
             uniqueKey: `${panelType.id}-${key}`,
@@ -2679,7 +2832,7 @@ export default function LayoutEditor() {
     if (!footprint) return [];
     const kind: "truss-plate" | "box-beam" = stories.length === 1 ? "truss-plate" : "box-beam";
     const kindLabel = kind === "truss-plate" ? "Truss Plate" : "Box Beam";
-    const heightIn = kind === "truss-plate" ? PLATE_2X6_THICKNESS_IN + 0.75 : 2 * BOX_BEAM_CAP_THICKNESS_IN + BOX_BEAM_LVL_HEIGHT_IN;
+    const heightIn = computeRoofBearingAssemblyHeightIn(kind === "box-beam");
 
     const groups = new Map<string, { lengthIn: number; walls: { id: string; direction: string }[] }>();
     for (const wall of footprint.walls) {
@@ -3691,17 +3844,22 @@ export default function LayoutEditor() {
                   onToggleOpening={handleToggleOpening}
                   hasGableEnd={gableEndWallIds.has(elevationWall.id)}
                   gableEndClamped={gableEndClampedWallIds.has(elevationWall.id)}
-                  ridgeHeightFt={bottomOfTrussMaxHeightFt}
+                  roofProfileType={roofProfileType}
+                  roofProfilePointHeightsFt={roofProfilePointHeightsFt}
+                  roofBearingAssemblyHeightIn={roofEnabled ? computeRoofBearingAssemblyHeightIn(stories.length > 1) : 0}
+                  maxGablePanelHeightIn={maxGablePanelHeightIn}
                   targetPanelWidthIn={standardWidthIn}
                   thicknessIn={thicknessIn}
                   jackStudConfig={jackStudConfig}
                   includeNailer={includeNailer}
                   roofCatcherBeamOffsetIn={roofCatcherBeamOffsetIn}
                   roofSystemTypeId={roofSystemTypeId}
-                  gablePeakPositionIn={gablePeakPositionInByWallId[elevationWall.id]}
+                  gableProfilePositionsIn={gableProfilePositionsInByWallId[elevationWall.id] ?? []}
                   gableEndToggleBlockReason={gableEndToggleBlockReason(elevationWall.id)}
                   onToggleGableEnd={(enabled) => handleToggleGableEnd(elevationWall.id, enabled)}
-                  onChangeGablePeakPositionIn={(positionIn) => handleChangeGablePeakPositionIn(elevationWall.id, positionIn)}
+                  onChangeGableProfilePositionIn={(pointIndex, positionIn) =>
+                    handleChangeGableProfilePositionIn(elevationWall.id, pointIndex, positionIn)
+                  }
                   onGenerateShedRoof={() => handleGenerateShedRoof(elevationWall)}
                   insetIn={trussPlateInsetIn}
                   secondStoryEnabled={stories.length > 1}
@@ -3960,18 +4118,83 @@ export default function LayoutEditor() {
               <>
                 <p className={styles.note}>{roofSystemTypes.find((t) => t.id === roofSystemTypeId)!.description}</p>
 
+                <div role="group" aria-label="Roofline profile" className={styles.toolbar}>
+                  <span style={{ fontSize: 13, marginRight: 4 }}>Roofline profile:</span>
+                  <button
+                    type="button"
+                    aria-pressed={roofProfileType === "peaked"}
+                    className={roofProfileType === "peaked" ? styles.toolActive : styles.tool}
+                    onClick={() => handleChangeRoofProfileType("peaked")}
+                  >
+                    Peaked (1 point)
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={roofProfileType === "flat-top"}
+                    className={roofProfileType === "flat-top" ? styles.toolActive : styles.tool}
+                    onClick={() => handleChangeRoofProfileType("flat-top")}
+                  >
+                    Flat-top (2 points)
+                  </button>
+                </div>
+                <p className={styles.note}>
+                  {roofProfileType === "peaked"
+                    ? "A single ridge — a Gable End Panel's high edge rises to meet one top point."
+                    : "Two independently-placeable top points (each with its own height and along-wall position, set per-wall in that wall's elevation view) — a triangle with the top chopped off."}
+                </p>
+
+                {roofProfilePointHeightsFt.map((heightFt, i) => {
+                  const wallWidthIn = pitchReferenceWall ? pitchReferenceWall.lengthFt * 12 : 240;
+                  const runIn = roofProfilePointHeightsFt.length === 1 ? wallWidthIn / 2 : wallWidthIn / 3;
+                  return (
+                    <label key={i} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      {roofProfilePointHeightsFt.length === 1 ? "Ridge height (ft)" : `Point ${i + 1} height (ft)`}
+                      <input
+                        type="number"
+                        value={heightFt}
+                        step={0.5}
+                        onChange={(e) => handleChangeRoofProfilePointHeightFt(i, Number(e.target.value))}
+                        style={{ width: 70 }}
+                      />
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const pitchIn12 = Number(e.target.value);
+                          if (!pitchIn12) return;
+                          handleChangeRoofProfilePointHeightFt(i, Math.round(gableEaveHeightIn + runIn * (pitchIn12 / 12)) / 12);
+                        }}
+                      >
+                        <option value="">Or pick a slope…</option>
+                        {ROOF_PROFILE_PITCH_OPTIONS_IN12.map((p) => (
+                          <option key={p} value={p}>
+                            {p}/12
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  );
+                })}
+                <p className={styles.note}>
+                  A picked slope computes this point&apos;s height from{" "}
+                  {pitchReferenceWall ? `wall ${pitchReferenceWall.id}'s own width` : "a 20ft reference width (no gable-end wall drawn yet)"}{" "}
+                  at the current eave height — the height field stays freely editable afterward either way.
+                </p>
+
                 <label>
-                  Bottom of truss max height (ft){" "}
+                  Max Gable End Panel height (in){" "}
                   <input
                     type="number"
-                    value={bottomOfTrussMaxHeightFt}
-                    step={0.5}
-                    onChange={(e) => setBottomOfTrussMaxHeightFt(Number(e.target.value))}
+                    value={maxGablePanelHeightIn}
+                    min={12}
+                    max={GABLE_PANEL_MAX_HEIGHT_IN}
+                    step={1}
+                    onChange={(e) => setMaxGablePanelHeightIn(Math.min(Number(e.target.value), GABLE_PANEL_MAX_HEIGHT_IN))}
                   />
                 </label>
                 <p className={styles.note}>
-                  The ridge/peak height of the roof&apos;s bottom bearing line — a Gable End Panel&apos;s high edge
-                  rises to meet this number (see the Gable End Panel Shop Drawing page below).
+                  Any real roofline rise above this (up to a hard fabrication ceiling of {GABLE_PANEL_MAX_HEIGHT_IN}in
+                  per panel) is filled by a real vertical safety-gap tile instead of clamped — see that wall&apos;s
+                  elevation view.
                 </p>
 
                 <div role="group" aria-label="Bottom edge reference" className={styles.toolbar}>
@@ -4020,53 +4243,66 @@ export default function LayoutEditor() {
                         ))}
                       </select>
                     </label>
-                    <p className={styles.note}>
-                      Column Panel height at a roof-catcher-beam bearing point = bottom-of-truss max height minus this
-                      offset ({computeGableColumnHeightIn(bottomOfTrussMaxHeightFt * 12, roofCatcherBeamOffsetIn).toFixed(1)}
-                      in at the current inputs) — see the Column Panel Shop Drawing page below.
-                    </p>
+                    {roofProfileType === "peaked" ? (
+                      <p className={styles.note}>
+                        Column Panel height at a roof-catcher-beam bearing point = ridge height minus this offset (
+                        {computeGableColumnHeightIn((roofProfilePointHeightsFt[0] ?? 0) * 12, roofCatcherBeamOffsetIn).toFixed(1)}
+                        in at the current inputs) — see the Column Panel Shop Drawing page below.
+                      </p>
+                    ) : (
+                      <p className={styles.note}>
+                        No Column Panel or roof-catcher beam for a flat-topped roofline — those need a single real
+                        peak to bear on. Switch the roofline profile above to Peaked to use them.
+                      </p>
+                    )}
 
-                    {(() => {
-                      const gableWallIds = [...gableEndWallIds];
-                      const ridge =
-                        footprint && gableWallIds.length === 2
-                          ? computeRidgeLine(footprint, gableWallIds[0]!, gableWallIds[1]!, gablePeakPositionInByWallId)
-                          : null;
-                      if (!ridge) {
+                    {roofProfileType === "peaked" &&
+                      (() => {
+                        const gableWallIds = [...gableEndWallIds];
+                        const peakPositionInByWallId: Record<string, number> = {};
+                        for (const [wallId, positions] of Object.entries(gableProfilePositionsInByWallId)) {
+                          const posIn = positions[0];
+                          if (posIn != null) peakPositionInByWallId[wallId] = posIn;
+                        }
+                        const ridge =
+                          footprint && gableWallIds.length === 2
+                            ? computeRidgeLine(footprint, gableWallIds[0]!, gableWallIds[1]!, peakPositionInByWallId)
+                            : null;
+                        if (!ridge) {
+                          return (
+                            <p className={styles.note}>
+                              Add Gable End to exactly 2 (opposite) walls — see that wall&apos;s elevation view (Wall
+                              tab&apos;s view-mode dial) — to compute a real roof-catcher-beam run from the footprint.
+                            </p>
+                          );
+                        }
+                        const segments = computeRoofCatcherBeamSegments(ridge.runIn);
+                        const postPositionsIn = computeRoofCatcherBeamPostPositions(ridge.runIn);
+                        const piers = footprint ? computePierGrid(footprint, pierSpacingFt) : [];
+                        const postPoints = postPositionsIn.map((posIn) => pointAlongRidgeLine(ridge, posIn));
                         return (
                           <p className={styles.note}>
-                            Add Gable End to exactly 2 (opposite) walls — see that wall&apos;s elevation view (Wall
-                            tab&apos;s view-mode dial) — to compute a real roof-catcher-beam run from the footprint.
+                            Run: {(ridge.runIn / 12).toFixed(1)}ft between {gableWallIds[0]} and {gableWallIds[1]}
+                            &apos;s Column Panels — {segments.length} built-up 3-ply 2x12 beam segment
+                            {segments.length === 1 ? "" : "s"} ({segments[0]!.spanIn.toFixed(1)}in each, max 144in/12ft).{" "}
+                            {postPoints.length === 0
+                              ? "No intermediate posts needed at this run."
+                              : `${postPoints.length} intermediate post${postPoints.length === 1 ? "" : "s"} at real ` +
+                                "footprint position " +
+                                postPoints
+                                  .map((pt) => {
+                                    const onPier = isPointNearPier(pt, piers);
+                                    return `(${pt.x.toFixed(1)}, ${pt.y.toFixed(1)})${onPier ? "" : " — no pier here yet"}`;
+                                  })
+                                  .join(", ") +
+                                ` — cross-checked against the real pier grid (${pierSpacingFt}ft o.c.). Ideal scenario ` +
+                                "(Tommy): piers every 6ft, a post on every other one (12ft) — a post lands off-pier " +
+                                "whenever the run isn't a whole multiple of 2x the pier spacing, since segments are " +
+                                "evenly re-split rather than forced onto exact pier positions."}{" "}
+                            Post construction (size/material) isn&apos;t specified yet — only positions are modeled.
                           </p>
                         );
-                      }
-                      const segments = computeRoofCatcherBeamSegments(ridge.runIn);
-                      const postPositionsIn = computeRoofCatcherBeamPostPositions(ridge.runIn);
-                      const piers = footprint ? computePierGrid(footprint, pierSpacingFt) : [];
-                      const postPoints = postPositionsIn.map((posIn) => pointAlongRidgeLine(ridge, posIn));
-                      return (
-                        <p className={styles.note}>
-                          Run: {(ridge.runIn / 12).toFixed(1)}ft between {gableWallIds[0]} and {gableWallIds[1]}
-                          &apos;s Column Panels — {segments.length} built-up 3-ply 2x12 beam segment
-                          {segments.length === 1 ? "" : "s"} ({segments[0]!.spanIn.toFixed(1)}in each, max 144in/12ft).{" "}
-                          {postPoints.length === 0
-                            ? "No intermediate posts needed at this run."
-                            : `${postPoints.length} intermediate post${postPoints.length === 1 ? "" : "s"} at real ` +
-                              "footprint position " +
-                              postPoints
-                                .map((pt) => {
-                                  const onPier = isPointNearPier(pt, piers);
-                                  return `(${pt.x.toFixed(1)}, ${pt.y.toFixed(1)})${onPier ? "" : " — no pier here yet"}`;
-                                })
-                                .join(", ") +
-                              ` — cross-checked against the real pier grid (${pierSpacingFt}ft o.c.). Ideal scenario ` +
-                              "(Tommy): piers every 6ft, a post on every other one (12ft) — a post lands off-pier " +
-                              "whenever the run isn't a whole multiple of 2x the pier spacing, since segments are " +
-                              "evenly re-split rather than forced onto exact pier positions."}{" "}
-                          Post construction (size/material) isn&apos;t specified yet — only positions are modeled.
-                        </p>
-                      );
-                    })()}
+                      })()}
                   </>
                 )}
 
@@ -4764,7 +5000,7 @@ export default function LayoutEditor() {
               diagram={
                 <StandardPanel3DView
                   members={trussPlatePreviewMembers}
-                  overallDimensions={{ heightIn: PLATE_2X6_THICKNESS_IN + 0.75, widthIn: ASSEMBLY_PREVIEW_LENGTH_IN, depthIn: thicknessIn }}
+                  overallDimensions={{ heightIn: computeRoofBearingAssemblyHeightIn(false), widthIn: ASSEMBLY_PREVIEW_LENGTH_IN, depthIn: thicknessIn }}
                   displayName="Truss Plate"
                 />
               }
@@ -4797,7 +5033,7 @@ export default function LayoutEditor() {
               diagram={
                 <StandardPanel3DView
                   members={boxBeamPreviewMembers}
-                  overallDimensions={{ heightIn: 2 * BOX_BEAM_CAP_THICKNESS_IN + BOX_BEAM_LVL_HEIGHT_IN, widthIn: ASSEMBLY_PREVIEW_LENGTH_IN, depthIn: thicknessIn }}
+                  overallDimensions={{ heightIn: computeRoofBearingAssemblyHeightIn(true), widthIn: ASSEMBLY_PREVIEW_LENGTH_IN, depthIn: thicknessIn }}
                   displayName="Box Beam"
                 />
               }

@@ -41,13 +41,15 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     floorSystemId: null,
     perpendicular2x4Enabled: false,
     roofSystemTypeId: "truss",
-    bottomOfTrussMaxHeightFt: 16,
+    roofProfileType: "peaked",
+    roofProfilePointHeightsFt: [16],
+    gableProfilePositionsInByWallId: {},
+    maxGablePanelHeightIn: 96,
     trussPlateInsetIn: 5.5,
     roofCatcherBeamOffsetIn: 11.25,
     roofCatcherBeamShape: "Built-up 2-ply 2x12",
     octagonRingDiameterFt: 3,
     gableEndWallIds: new Set(),
-    gablePeakPositionInByWallId: {},
     stories: [
       {
         id: "ground",
@@ -137,52 +139,53 @@ describe("serializeProject / parseProjectFile round-trip", () => {
   });
 });
 
-describe("v14 -> v15 migration (secondStoryEnabled/secondStoryWallHeightFt -> stories)", () => {
-  /** Builds a raw v14-shaped file (old fields, no `stories`) directly —
-   * bypassing serializeProject/ProjectState entirely, since a v14 caller by
+describe("v15 -> v16 migration (bottomOfTrussMaxHeightFt/gablePeakPositionInByWallId -> roofline profile)", () => {
+  /** Builds a raw v15-shaped file (old single ridge height/peak position
+   * fields, none of the new profile fields) directly — bypassing
+   * serializeProject/ProjectState entirely, since a v15 caller by
    * definition doesn't have the current TS types available. */
-  function makeV14File(overrides: { secondStoryEnabled: boolean; secondStoryWallHeightFt?: number }) {
+  function makeV15File(overrides: { bottomOfTrussMaxHeightFt: number; gablePeakPositionInByWallId: Record<string, number> }) {
     const currentState = serializeProject(makeState()).state;
-    const { stories: _drop, ...v14State } = currentState;
+    const { roofProfileType: _drop1, roofProfilePointHeightsFt: _drop2, gableProfilePositionsInByWallId: _drop3, maxGablePanelHeightIn: _drop4, ...v15State } =
+      currentState;
     return {
-      schemaVersion: 14,
+      schemaVersion: 15,
       savedAt: new Date().toISOString(),
       state: {
-        ...v14State,
-        secondStoryEnabled: overrides.secondStoryEnabled,
-        secondStoryWallHeightFt: overrides.secondStoryWallHeightFt ?? 10,
+        ...v15State,
+        bottomOfTrussMaxHeightFt: overrides.bottomOfTrussMaxHeightFt,
+        gablePeakPositionInByWallId: overrides.gablePeakPositionInByWallId,
       },
     };
   }
 
-  it("migrates a v14 file with secondStoryEnabled: false to a length-1 stories array", () => {
-    const result = parseProjectFile(JSON.stringify(makeV14File({ secondStoryEnabled: false })));
+  it("migrates the old ridge height into a length-1 (peaked) roofProfilePointHeightsFt", () => {
+    const result = parseProjectFile(JSON.stringify(makeV15File({ bottomOfTrussMaxHeightFt: 18, gablePeakPositionInByWallId: {} })));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.stories).toHaveLength(1);
-    expect(result.state.stories[0]!.id).toBe("ground");
+    expect(result.state.roofProfileType).toBe("peaked");
+    expect(result.state.roofProfilePointHeightsFt).toEqual([18]);
   });
 
-  it("migrates a v14 file with secondStoryEnabled: true to a length-2 stories array", () => {
-    const result = parseProjectFile(JSON.stringify(makeV14File({ secondStoryEnabled: true, secondStoryWallHeightFt: 8 })));
+  it("migrates each wall's old single peak position into a length-1 positions array", () => {
+    const result = parseProjectFile(
+      JSON.stringify(makeV15File({ bottomOfTrussMaxHeightFt: 16, gablePeakPositionInByWallId: { AB: 120 } })),
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.stories).toHaveLength(2);
-    expect(result.state.stories[1]!.id).toBe("second");
-    expect(result.state.stories[1]!.wallHeightFt).toBe(8);
+    expect(result.state.gableProfilePositionsInByWallId).toEqual({ AB: [120] });
   });
 
-  it("migrates the second story's wallSlots as a genuine deep copy, not the same reference as baseWallSlots", () => {
-    const result = parseProjectFile(JSON.stringify(makeV14File({ secondStoryEnabled: true })));
+  it("defaults maxGablePanelHeightIn to 96 (the pre-existing hardcoded fabrication cap)", () => {
+    const result = parseProjectFile(JSON.stringify(makeV15File({ bottomOfTrussMaxHeightFt: 16, gablePeakPositionInByWallId: {} })));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.stories[1]!.wallSlots).toEqual(result.state.baseWallSlots);
-    expect(result.state.stories[1]!.wallSlots).not.toBe(result.state.baseWallSlots);
+    expect(result.state.maxGablePanelHeightIn).toBe(96);
   });
 
   it("still rejects a version older than the one-version-back migration window", () => {
-    const v13File = { ...makeV14File({ secondStoryEnabled: false }), schemaVersion: 13 };
-    const result = parseProjectFile(JSON.stringify(v13File));
+    const v14File = { ...makeV15File({ bottomOfTrussMaxHeightFt: 16, gablePeakPositionInByWallId: {} }), schemaVersion: 14 };
+    const result = parseProjectFile(JSON.stringify(v14File));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/version/i);

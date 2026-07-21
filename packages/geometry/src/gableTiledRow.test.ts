@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { computeGableTiledRow, GABLE_SHED_SNAP_THRESHOLD_IN } from "./gableTiledRow";
+import { computeGableTiledRow, GABLE_SAFETY_GAP_WIDTH_IN, GABLE_SHED_SNAP_THRESHOLD_IN, type RoofProfilePoint } from "./gableTiledRow";
 
-describe("computeGableTiledRow", () => {
+// Most tests below pass `includeSafetyGap: false` to isolate the pure
+// roofline-profile/tiling math from Part B's separate gap-absorption
+// behavior (covered in its own describe block further down) — matches
+// this file's own pre-gap test values exactly.
+describe("computeGableTiledRow — single-peak profile (1 point)", () => {
   it("tiles an evenly-divisible wall width into whole panels at the target width", () => {
-    const panels = computeGableTiledRow(160, 120, 192, 40);
+    const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false);
     expect(panels).toHaveLength(4);
     for (const p of panels) expect(p.widthIn).toBeCloseTo(40, 6);
     expect(panels[0]!.xStartIn).toBeCloseTo(0, 6);
@@ -11,28 +15,28 @@ describe("computeGableTiledRow", () => {
   });
 
   it("ceils to a uniform pitch (not a short leftover panel) when the width doesn't divide evenly", () => {
-    const panels = computeGableTiledRow(150, 120, 192, 40);
+    const panels = computeGableTiledRow(150, 120, [{ xIn: 75, heightIn: 192 }], 40, 0, false);
     // ceil(150/40) = 4 panels, evenly re-split to 37.5in each
     expect(panels).toHaveLength(4);
     for (const p of panels) expect(p.widthIn).toBeCloseTo(37.5, 6);
   });
 
   it("starts and ends every panel row at the eave height", () => {
-    const panels = computeGableTiledRow(160, 120, 192, 40);
+    const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false);
     expect(panels[0]!.leftHeightIn).toBeCloseTo(120, 6);
     expect(panels[panels.length - 1]!.rightHeightIn).toBeCloseTo(120, 6);
   });
 
   it("peaks at the ridge height exactly at the midpoint", () => {
     // 2 panels of 80in each meet exactly at the 80in midpoint of a 160in wall
-    const panels = computeGableTiledRow(160, 120, 192, 80);
+    const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 80, 0, false);
     expect(panels).toHaveLength(2);
     expect(panels[0]!.rightHeightIn).toBeCloseTo(192, 6);
     expect(panels[1]!.leftHeightIn).toBeCloseTo(192, 6);
   });
 
   it("rises linearly on the near half and falls linearly on the far half", () => {
-    const panels = computeGableTiledRow(160, 120, 192, 20);
+    const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 20, 0, false);
     // panel 0: x 0-20, near half, rising
     expect(panels[0]!.leftHeightIn).toBeCloseTo(120, 6);
     expect(panels[0]!.rightHeightIn).toBeCloseTo(120 + (192 - 120) * (20 / 80), 6);
@@ -43,7 +47,7 @@ describe("computeGableTiledRow", () => {
   });
 
   it("handles a flat roofline (eave == ridge) as a constant height across every panel", () => {
-    const panels = computeGableTiledRow(160, 120, 120, 40);
+    const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 120 }], 40, 0, false);
     for (const p of panels) {
       expect(p.leftHeightIn).toBeCloseTo(120, 6);
       expect(p.rightHeightIn).toBeCloseTo(120, 6);
@@ -51,7 +55,7 @@ describe("computeGableTiledRow", () => {
   });
 
   it("falls back to 2 panels (one per half, meeting at the ridge) when the target width exceeds each half", () => {
-    const panels = computeGableTiledRow(30, 120, 150, 40);
+    const panels = computeGableTiledRow(30, 120, [{ xIn: 15, heightIn: 150 }], 40, 0, false);
     expect(panels).toHaveLength(2);
     expect(panels[0]!.widthIn).toBeCloseTo(15, 6);
     expect(panels[0]!.leftHeightIn).toBeCloseTo(120, 6);
@@ -67,7 +71,7 @@ describe("computeGableTiledRow", () => {
     // its own edges despite the real roofline peaking above its middle.
     // Tiling each half independently guarantees a boundary lands exactly
     // on the ridge instead, so every panel is a strict rise or fall.
-    const panels = computeGableTiledRow(200, 120, 192, 40);
+    const panels = computeGableTiledRow(200, 120, [{ xIn: 100, heightIn: 192 }], 40, 0, false);
     const ridgeIn = 100;
     expect(panels.some((p) => Math.abs(p.xEndIn - ridgeIn) < 1e-6)).toBe(true);
     expect(panels.some((p) => Math.abs(p.xStartIn - ridgeIn) < 1e-6)).toBe(true);
@@ -75,26 +79,33 @@ describe("computeGableTiledRow", () => {
   });
 
   describe("adjustable peak position", () => {
-    it("places the peak off-center when a peakPositionIn is given", () => {
+    it("places the peak off-center when an explicit position is given", () => {
       // 200in wall, peak at 50in (not the 100in midpoint): near run 50in, far run 150in.
-      const panels = computeGableTiledRow(200, 120, 192, 40, 50);
+      const panels = computeGableTiledRow(200, 120, [{ xIn: 50, heightIn: 192, isExplicitPosition: true }], 40, 0, false);
       const peakIn = 50;
-      expect(panels.some((p) => Math.abs(p.xEndIn - peakIn) < 1e-6 && Math.abs(p.rightHeightIn - 192) < 1e-6)).toBe(
-        true,
-      );
-      expect(panels.some((p) => Math.abs(p.xStartIn - peakIn) < 1e-6 && Math.abs(p.leftHeightIn - 192) < 1e-6)).toBe(
-        true,
-      );
+      expect(panels.some((p) => Math.abs(p.xEndIn - peakIn) < 1e-6 && Math.abs(p.rightHeightIn - 192) < 1e-6)).toBe(true);
+      expect(panels.some((p) => Math.abs(p.xStartIn - peakIn) < 1e-6 && Math.abs(p.leftHeightIn - 192) < 1e-6)).toBe(true);
     });
 
-    it("defaults to the exact midpoint when peakPositionIn is omitted (backward compatible)", () => {
-      const withDefault = computeGableTiledRow(160, 120, 192, 40);
-      const explicit = computeGableTiledRow(160, 120, 192, 40, 80);
-      expect(withDefault).toEqual(explicit);
+    it("a non-explicit point near the shed-snap threshold does NOT snap — only an explicit position can", () => {
+      // Same position a snap test below uses, but isExplicitPosition omitted
+      // — a plain (non-dragged) default point is still meant to form a real
+      // slope, not degenerate to a shed, matching the pre-existing
+      // "omitted peakPositionIn never snaps" guarantee.
+      const panels = computeGableTiledRow(200, 120, [{ xIn: GABLE_SHED_SNAP_THRESHOLD_IN - 1, heightIn: 192 }], 40, 0, false);
+      expect(panels[0]!.leftHeightIn).toBeCloseTo(120, 6);
+      expect(panels.some((p) => Math.abs(p.xEndIn - (GABLE_SHED_SNAP_THRESHOLD_IN - 1)) < 1e-6)).toBe(true);
     });
 
     it("snaps to a pure shed (single slope) when the peak is within the threshold of the start edge", () => {
-      const panels = computeGableTiledRow(200, 120, 192, 40, GABLE_SHED_SNAP_THRESHOLD_IN - 1);
+      const panels = computeGableTiledRow(
+        200,
+        120,
+        [{ xIn: GABLE_SHED_SNAP_THRESHOLD_IN - 1, heightIn: 192, isExplicitPosition: true }],
+        40,
+        0,
+        false,
+      );
       // High edge (ridge) at x=0, sloping down to the eave at x=wallWidthIn — no boundary at the peak.
       expect(panels[0]!.leftHeightIn).toBeCloseTo(192, 6);
       expect(panels[panels.length - 1]!.rightHeightIn).toBeCloseTo(120, 6);
@@ -102,7 +113,14 @@ describe("computeGableTiledRow", () => {
     });
 
     it("snaps to a pure shed (single slope) when the peak is within the threshold of the end edge", () => {
-      const panels = computeGableTiledRow(200, 120, 192, 40, 200 - (GABLE_SHED_SNAP_THRESHOLD_IN - 1));
+      const panels = computeGableTiledRow(
+        200,
+        120,
+        [{ xIn: 200 - (GABLE_SHED_SNAP_THRESHOLD_IN - 1), heightIn: 192, isExplicitPosition: true }],
+        40,
+        0,
+        false,
+      );
       // Eave at x=0, sloping up to the high edge (ridge) at x=wallWidthIn.
       expect(panels[0]!.leftHeightIn).toBeCloseTo(120, 6);
       expect(panels[panels.length - 1]!.rightHeightIn).toBeCloseTo(192, 6);
@@ -110,17 +128,17 @@ describe("computeGableTiledRow", () => {
     });
 
     it("treats an exact 0 or wallWidthIn peak position the same as a snapped shed", () => {
-      const atStart = computeGableTiledRow(200, 120, 192, 40, 0);
-      const atEnd = computeGableTiledRow(200, 120, 192, 40, 200);
+      const atStart = computeGableTiledRow(200, 120, [{ xIn: 0, heightIn: 192, isExplicitPosition: true }], 40, 0, false);
+      const atEnd = computeGableTiledRow(200, 120, [{ xIn: 200, heightIn: 192, isExplicitPosition: true }], 40, 0, false);
       expect(atStart[0]!.leftHeightIn).toBeCloseTo(192, 6);
       expect(atStart[atStart.length - 1]!.rightHeightIn).toBeCloseTo(120, 6);
       expect(atEnd[0]!.leftHeightIn).toBeCloseTo(120, 6);
       expect(atEnd[atEnd.length - 1]!.rightHeightIn).toBeCloseTo(192, 6);
     });
 
-    it("clamps an out-of-range peakPositionIn to the wall's own bounds", () => {
-      const negative = computeGableTiledRow(200, 120, 192, 40, -50);
-      const beyond = computeGableTiledRow(200, 120, 192, 40, 500);
+    it("clamps an out-of-range position to the wall's own bounds", () => {
+      const negative = computeGableTiledRow(200, 120, [{ xIn: -50, heightIn: 192, isExplicitPosition: true }], 40, 0, false);
+      const beyond = computeGableTiledRow(200, 120, [{ xIn: 500, heightIn: 192, isExplicitPosition: true }], 40, 0, false);
       expect(negative[0]!.leftHeightIn).toBeCloseTo(192, 6);
       expect(beyond[beyond.length - 1]!.rightHeightIn).toBeCloseTo(192, 6);
     });
@@ -128,14 +146,14 @@ describe("computeGableTiledRow", () => {
 
   describe("insetIn", () => {
     it("starts and ends panels at the inset boundary, not the raw wall corner", () => {
-      const panels = computeGableTiledRow(160, 120, 192, 40, undefined, 10);
+      const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 10, false);
       expect(panels[0]!.xStartIn).toBeCloseTo(10, 6);
       expect(panels[panels.length - 1]!.xEndIn).toBeCloseTo(150, 6);
     });
 
     it("sizes panels off the usable (inset) width, not the raw wall width", () => {
       // 160in wall, 10in inset -> 140in usable, ceil(140/40) = 4 panels of 35in each
-      const panels = computeGableTiledRow(160, 120, 192, 40, undefined, 10);
+      const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 10, false);
       expect(panels).toHaveLength(4);
       for (const p of panels) expect(p.widthIn).toBeCloseTo(35, 6);
     });
@@ -144,7 +162,7 @@ describe("computeGableTiledRow", () => {
       // 160in wall, 80in true half-width, 10in inset: at the inset boundary
       // (x=10) the height should reflect 10/80 up the true half-run, not
       // 0/70 up the usable sub-run (which would wrongly read back as eave).
-      const panels = computeGableTiledRow(160, 120, 192, 40, undefined, 10);
+      const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 10, false);
       const expectedAtInset = 120 + (192 - 120) * (10 / 80);
       expect(panels[0]!.leftHeightIn).toBeCloseTo(expectedAtInset, 6);
     });
@@ -152,7 +170,14 @@ describe("computeGableTiledRow", () => {
     it("applies no inset at all once the peak snaps to a shed — the run spans the full true wall width", () => {
       const insetIn = 10;
       const wallWidthIn = 200;
-      const snapped = computeGableTiledRow(wallWidthIn, 120, 192, 40, GABLE_SHED_SNAP_THRESHOLD_IN - 1, insetIn);
+      const snapped = computeGableTiledRow(
+        wallWidthIn,
+        120,
+        [{ xIn: GABLE_SHED_SNAP_THRESHOLD_IN - 1, heightIn: 192, isExplicitPosition: true }],
+        40,
+        insetIn,
+        false,
+      );
       expect(snapped[0]!.xStartIn).toBeCloseTo(0, 6);
       expect(snapped[snapped.length - 1]!.xEndIn).toBeCloseTo(wallWidthIn, 6);
       expect(snapped[0]!.leftHeightIn).toBeCloseTo(192, 6);
@@ -164,12 +189,26 @@ describe("computeGableTiledRow", () => {
       const insetIn = 10;
       const wallWidthIn = 200;
       // Just inside the RAW threshold -> snaps, regardless of insetIn.
-      const snapped = computeGableTiledRow(wallWidthIn, 120, 192, 40, GABLE_SHED_SNAP_THRESHOLD_IN - 1, insetIn);
+      const snapped = computeGableTiledRow(
+        wallWidthIn,
+        120,
+        [{ xIn: GABLE_SHED_SNAP_THRESHOLD_IN - 1, heightIn: 192, isExplicitPosition: true }],
+        40,
+        insetIn,
+        false,
+      );
       expect(snapped[0]!.leftHeightIn).toBeCloseTo(192, 6);
       // Just outside the RAW threshold -> does not snap, still has a real
       // peak boundary (some panel rising, not just uniformly falling), and
       // the inset still applies since this is a genuinely peaked roof.
-      const notSnapped = computeGableTiledRow(wallWidthIn, 120, 192, 40, GABLE_SHED_SNAP_THRESHOLD_IN + 1, insetIn);
+      const notSnapped = computeGableTiledRow(
+        wallWidthIn,
+        120,
+        [{ xIn: GABLE_SHED_SNAP_THRESHOLD_IN + 1, heightIn: 192, isExplicitPosition: true }],
+        40,
+        insetIn,
+        false,
+      );
       expect(notSnapped.some((p) => p.leftHeightIn < p.rightHeightIn)).toBe(true);
       expect(notSnapped[0]!.xStartIn).toBeCloseTo(insetIn, 6);
       expect(notSnapped[notSnapped.length - 1]!.xEndIn).toBeCloseTo(wallWidthIn - insetIn, 6);
@@ -179,21 +218,159 @@ describe("computeGableTiledRow", () => {
       const insetIn = 5.5;
       const wallWidthIn = 200;
       for (const peakIn of [60, 100, 140, 165]) {
-        const panels = computeGableTiledRow(wallWidthIn, 120, 192, 40, peakIn, insetIn);
+        const panels = computeGableTiledRow(wallWidthIn, 120, [{ xIn: peakIn, heightIn: 192, isExplicitPosition: true }], 40, insetIn, false);
         expect(panels[0]!.xStartIn).toBeCloseTo(insetIn, 6);
         expect(panels[panels.length - 1]!.xEndIn).toBeCloseTo(wallWidthIn - insetIn, 6);
       }
     });
 
     it("returns an empty result (no crash) when the inset consumes the whole wall", () => {
-      const panels = computeGableTiledRow(20, 120, 192, 40, undefined, 15);
+      const panels = computeGableTiledRow(20, 120, [{ xIn: 10, heightIn: 192 }], 40, 15, false);
       expect(panels).toEqual([]);
     });
 
     it("defaults to insetIn=0, matching the pre-inset behavior exactly", () => {
-      const withDefault = computeGableTiledRow(160, 120, 192, 40);
-      const explicitZero = computeGableTiledRow(160, 120, 192, 40, undefined, 0);
+      const withDefault = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false);
+      const explicitZero = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false);
       expect(withDefault).toEqual(explicitZero);
     });
+  });
+});
+
+describe("computeGableTiledRow — flat-topped profile (2 points)", () => {
+  it("tiles 3 segments (rise, flat, fall), with panel boundaries exactly on both points", () => {
+    // 200in wall, points at x=60 (h=180) and x=140 (h=180) — a level flat top.
+    const points: RoofProfilePoint[] = [
+      { xIn: 60, heightIn: 180, isExplicitPosition: true },
+      { xIn: 140, heightIn: 180, isExplicitPosition: true },
+    ];
+    const panels = computeGableTiledRow(200, 120, points, 40, 0, false);
+    expect(panels.some((p) => Math.abs(p.xEndIn - 60) < 1e-6 && Math.abs(p.rightHeightIn - 180) < 1e-6)).toBe(true);
+    expect(panels.some((p) => Math.abs(p.xStartIn - 60) < 1e-6 && Math.abs(p.leftHeightIn - 180) < 1e-6)).toBe(true);
+    expect(panels.some((p) => Math.abs(p.xEndIn - 140) < 1e-6 && Math.abs(p.rightHeightIn - 180) < 1e-6)).toBe(true);
+    expect(panels.some((p) => Math.abs(p.xStartIn - 140) < 1e-6 && Math.abs(p.leftHeightIn - 180) < 1e-6)).toBe(true);
+  });
+
+  it("holds a constant height across the flat run between the 2 points", () => {
+    const points: RoofProfilePoint[] = [
+      { xIn: 60, heightIn: 180, isExplicitPosition: true },
+      { xIn: 140, heightIn: 180, isExplicitPosition: true },
+    ];
+    const panels = computeGableTiledRow(200, 120, points, 40, 0, false);
+    const flatPanels = panels.filter((p) => p.xStartIn >= 60 - 1e-6 && p.xEndIn <= 140 + 1e-6);
+    expect(flatPanels.length).toBeGreaterThan(0);
+    for (const p of flatPanels) {
+      expect(p.leftHeightIn).toBeCloseTo(180, 6);
+      expect(p.rightHeightIn).toBeCloseTo(180, 6);
+    }
+  });
+
+  it("supports fully independent per-point heights (an intentionally sloped flat-top run)", () => {
+    const points: RoofProfilePoint[] = [
+      { xIn: 60, heightIn: 170, isExplicitPosition: true },
+      { xIn: 140, heightIn: 190, isExplicitPosition: true },
+    ];
+    const panels = computeGableTiledRow(200, 120, points, 40, 0, false);
+    expect(panels.some((p) => Math.abs(p.xEndIn - 60) < 1e-6 && Math.abs(p.rightHeightIn - 170) < 1e-6)).toBe(true);
+    expect(panels.some((p) => Math.abs(p.xStartIn - 140) < 1e-6 && Math.abs(p.leftHeightIn - 190) < 1e-6)).toBe(true);
+  });
+
+  it("each point independently snaps to its own nearest end when explicit and within the threshold", () => {
+    // Left point dragged to a shed-snap position; right point stays put.
+    const points: RoofProfilePoint[] = [
+      { xIn: GABLE_SHED_SNAP_THRESHOLD_IN - 1, heightIn: 180, isExplicitPosition: true },
+      { xIn: 140, heightIn: 180, isExplicitPosition: true },
+    ];
+    const panels = computeGableTiledRow(200, 120, points, 40, 0, false);
+    // Left end now reads the snapped point's own height, not the eave height.
+    expect(panels[0]!.leftHeightIn).toBeCloseTo(180, 6);
+    // Right eave is untouched (still a real fall segment down to 120).
+    expect(panels[panels.length - 1]!.rightHeightIn).toBeCloseTo(120, 6);
+  });
+
+  it("both points can independently snap to opposite ends at once", () => {
+    const points: RoofProfilePoint[] = [
+      { xIn: GABLE_SHED_SNAP_THRESHOLD_IN - 1, heightIn: 170, isExplicitPosition: true },
+      { xIn: 200 - (GABLE_SHED_SNAP_THRESHOLD_IN - 1), heightIn: 190, isExplicitPosition: true },
+    ];
+    const panels = computeGableTiledRow(200, 120, points, 40, 0, false);
+    expect(panels[0]!.leftHeightIn).toBeCloseTo(170, 6);
+    expect(panels[panels.length - 1]!.rightHeightIn).toBeCloseTo(190, 6);
+  });
+
+  it("when both points would snap to the SAME end, only the first (input order) claims it — no collision", () => {
+    const points: RoofProfilePoint[] = [
+      { xIn: 5, heightIn: 170, isExplicitPosition: true },
+      { xIn: 10, heightIn: 190, isExplicitPosition: true },
+    ];
+    const panels = computeGableTiledRow(200, 120, points, 40, 0, false);
+    // First point claims the left end...
+    expect(panels[0]!.leftHeightIn).toBeCloseTo(170, 6);
+    // ...the second stays distinct (clamped just outside the threshold) rather than also landing at x=0.
+    const secondPointHeights = panels.filter((p) => Math.abs(p.rightHeightIn - 190) < 1e-6 || Math.abs(p.leftHeightIn - 190) < 1e-6);
+    expect(secondPointHeights.length).toBeGreaterThan(0);
+    for (const p of panels) expect(p.xStartIn).toBeGreaterThanOrEqual(-1e-6);
+  });
+
+  it("insets both true corners the same as the single-peak case, anchored off the outermost points", () => {
+    const insetIn = 5.5;
+    const points: RoofProfilePoint[] = [
+      { xIn: 60, heightIn: 180, isExplicitPosition: true },
+      { xIn: 140, heightIn: 180, isExplicitPosition: true },
+    ];
+    const panels = computeGableTiledRow(200, 120, points, 40, insetIn, false);
+    expect(panels[0]!.xStartIn).toBeCloseTo(insetIn, 6);
+    expect(panels[panels.length - 1]!.xEndIn).toBeCloseTo(200 - insetIn, 6);
+  });
+});
+
+describe("computeGableTiledRow — horizontal safety-gap absorption (Part B)", () => {
+  it("reserves a dedicated GABLE_SAFETY_GAP_WIDTH_IN tile on a long run instead of evenly redistributing overflow", () => {
+    // An explicit point snapped to the left end collapses the whole wall
+    // into a single shed segment — easiest to reason about gap placement.
+    const wallWidthIn = 300;
+    const panels = computeGableTiledRow(wallWidthIn, 120, [{ xIn: 0, heightIn: 150, isExplicitPosition: true }], 40, 0, true);
+    const gapPanels = panels.filter((p) => p.isSafetyGap);
+    expect(gapPanels).toHaveLength(1);
+    expect(gapPanels[0]!.widthIn).toBeCloseTo(GABLE_SAFETY_GAP_WIDTH_IN, 6);
+    // No panel (besides the gap's own 2 split neighbors) exceeds the target width.
+    for (const p of panels) if (!p.isSafetyGap) expect(p.widthIn).toBeLessThanOrEqual(40 + 1e-6);
+  });
+
+  it("does not add a gap on a short run (mirrors the wall-tiling 12ft minimum)", () => {
+    const wallWidthIn = 100; // under GABLE_SAFETY_GAP_MIN_RUN_LENGTH_IN (144)
+    const panels = computeGableTiledRow(wallWidthIn, 120, [{ xIn: wallWidthIn / 2, heightIn: 120 }], 40, 0, true);
+    expect(panels.some((p) => p.isSafetyGap)).toBe(false);
+  });
+
+  it("the total width across every tile (including the gap) still exactly sums to the run's own width", () => {
+    const wallWidthIn = 317; // deliberately not evenly divisible
+    const panels = computeGableTiledRow(wallWidthIn, 120, [{ xIn: wallWidthIn / 2, heightIn: 120 }], 40, 0, true);
+    const totalWidthIn = panels.reduce((sum, p) => sum + p.widthIn, 0);
+    expect(totalWidthIn).toBeCloseTo(wallWidthIn, 6);
+  });
+
+  it("includeSafetyGap: false suppresses the gap even on a long run", () => {
+    const wallWidthIn = 300;
+    const panels = computeGableTiledRow(wallWidthIn, 120, [{ xIn: wallWidthIn / 2, heightIn: 120 }], 40, 0, false);
+    expect(panels.some((p) => p.isSafetyGap)).toBe(false);
+  });
+
+  it("defaults to includeSafetyGap: true when omitted", () => {
+    const wallWidthIn = 300;
+    const withDefault = computeGableTiledRow(wallWidthIn, 120, [{ xIn: wallWidthIn / 2, heightIn: 120 }], 40);
+    expect(withDefault.some((p) => p.isSafetyGap)).toBe(true);
+  });
+
+  it("each rise/flat/fall segment of a flat-top profile gets its own independent gap on a long enough run", () => {
+    const wallWidthIn = 500;
+    const points: RoofProfilePoint[] = [
+      { xIn: 150, heightIn: 180, isExplicitPosition: true },
+      { xIn: 350, heightIn: 180, isExplicitPosition: true },
+    ];
+    const panels = computeGableTiledRow(wallWidthIn, 120, points, 40, 0, true);
+    const gapPanels = panels.filter((p) => p.isSafetyGap);
+    // 3 segments (0-150, 150-350, 350-500), all comfortably over the 144in minimum.
+    expect(gapPanels).toHaveLength(3);
   });
 });

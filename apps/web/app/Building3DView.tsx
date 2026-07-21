@@ -23,11 +23,10 @@ import {
   buildSquareBalePanelMembers,
   buildStandardPanelMembers,
   buildTrussPlateMembers,
-  BOX_BEAM_CAP_THICKNESS_IN,
-  BOX_BEAM_LVL_HEIGHT_IN,
+  buildVerticalGapFillerMembers,
   computeDoorRoughOpeningHeightIn,
+  computeRoofBearingAssemblyHeightIn,
   doorRoughOpeningSelectedHeightIn,
-  PLATE_2X6_THICKNESS_IN,
   sillDefaultHeightIn,
   sillHeaderHeightInRange,
   standardWindowHeightDefaultIn,
@@ -49,8 +48,12 @@ const BIRDS_EYE_ELEVATION_DEG = 50;
 const BIRDS_EYE_AZIMUTH_DEG = 45; // a corner/3-quarter starting view, not straight-on
 const IN_PER_FT = 12;
 const BLOB_COLOR = "#b5b0a8";
+// Roof-bearing member (truss plate / box beam) isn't a NamedPanelType (no
+// panel instance identity — see roofBearingRenderData), so it has no home
+// in panelColors.ts's NAMED_PANEL_TYPE_COLORS; a plain neutral lumber tone.
+const ROOF_BEARING_COLOR = "#c2a878";
 const EMPTY_ID_SET: Set<string> = new Set();
-const EMPTY_GABLE_TILES_BY_WALL_ID: Record<string, { widthIn: number; xStartIn: number; lowEdgeHeightIn: number; highEdgeHeightIn: number }[]> =
+const EMPTY_GABLE_TILES_BY_WALL_ID: Record<string, { widthIn: number; xStartIn: number; leftEdgeHeightIn: number; rightEdgeHeightIn: number }[]> =
   {};
 // Standard click-vs-drag screen-space threshold (px) before the Orbit
 // tool's click-and-swipe re-centering commits — a plain click stays a
@@ -474,12 +477,24 @@ interface Building3DViewProps {
   standardWidthIn: number;
   /** Real per-wall Gable End Panel tiles (page.tsx's own `gableTilesByWallId`
    * memo, already the single source of truth the Panel Fabrication pages
-   * use) — each tile's `lowEdgeHeightIn`/`highEdgeHeightIn` are absolute
-   * (floor-relative), matching how they're stored everywhere else; this
-   * component subtracts its own `roofBaseHeightIn` before building real
-   * member geometry, same as page.tsx does. Empty/missing wall = no gable
-   * tiles there. */
-  gableTilesByWallId?: Record<string, { widthIn: number; xStartIn: number; lowEdgeHeightIn: number; highEdgeHeightIn: number }[]>;
+   * use) — each tile's `leftEdgeHeightIn`/`rightEdgeHeightIn` are absolute
+   * (floor-relative) real heights at this tile's own local x=0 (left) and
+   * x=widthIn (right), matching how they're stored everywhere else; either
+   * can be the taller one (see buildGablePanelMembers's own doc comment on
+   * why order matters). This component subtracts its own `roofBaseHeightIn`
+   * before building real member geometry, same as page.tsx does, without
+   * reordering. Empty/missing wall = no gable tiles there. */
+  gableTilesByWallId?: Record<
+    string,
+    {
+      widthIn: number;
+      xStartIn: number;
+      leftEdgeHeightIn: number;
+      rightEdgeHeightIn: number;
+      isSafetyGap?: boolean;
+      verticalGapHeightIn?: number;
+    }[]
+  >;
   /** Whether the Roof system is in scope at all (page.tsx's own
    * `roofEnabled` checkbox) — gates whether a roof-bearing (truss plate/box
    * beam) member renders atop every wall. */
@@ -766,9 +781,7 @@ export default function Building3DView({
   // Truss plate (single-story) / box beam (two-story) — whichever applies
   // is driven by the same `secondStory` presence check page.tsx's own Roof
   // detail pages already use. Only relevant/rendered when `roofEnabled`.
-  const roofBearingAssemblyHeightIn = secondStory
-    ? 2 * BOX_BEAM_CAP_THICKNESS_IN + BOX_BEAM_LVL_HEIGHT_IN
-    : PLATE_2X6_THICKNESS_IN + 0.75;
+  const roofBearingAssemblyHeightIn = computeRoofBearingAssemblyHeightIn(!!secondStory);
 
   // Real per-wall Gable End Panel tiles (page.tsx's own `gableTilesByWallId`
   // — the same data the Panel Fabrication pages use). Each tile sits on TOP
@@ -778,28 +791,68 @@ export default function Building3DView({
   // roof-bearing has never been drawn alongside gable anywhere until now.
   const gableRenderData = useMemo(() => {
     if (!footprint) return [];
-    const gableBaseYFt = roofBaseHeightIn / IN_PER_FT + (roofEnabled ? roofBearingAssemblyHeightIn / IN_PER_FT : 0);
-    const result: { wallId: string; tileIndex: number; anchorX: number; anchorZ: number; rotationRad: number; members: PanelMember[] }[] =
-      [];
+    // The real "eave" reference every tile's own leftEdgeHeightIn/
+    // rightEdgeHeightIn is absolute relative to (page.tsx's own
+    // gableEaveHeightIn) — flush with the TOP of the roof-bearing member,
+    // not the bare wall-top-plate height. Subtracting anything else here
+    // would offset every gable panel's own LOCAL geometry by the roof-
+    // bearing member's thickness, even though gableBaseYFt (the group's
+    // own world-space anchor) already accounts for it correctly.
+    const gableEaveHeightIn = roofBaseHeightIn + (roofEnabled ? roofBearingAssemblyHeightIn : 0);
+    const gableBaseYFt = gableEaveHeightIn / IN_PER_FT;
+    const result: {
+      wallId: string;
+      tileIndex: number;
+      anchorX: number;
+      anchorZ: number;
+      rotationRad: number;
+      members: PanelMember[];
+      widthFt: number;
+      heightFt: number;
+      depthFt: number;
+      isSafetyGap: boolean;
+      verticalGapHeightFt: number;
+    }[] = [];
     for (const [wallId, tiles] of Object.entries(gableTilesByWallId)) {
       const wall = footprint.walls.find((w) => w.id === wallId);
       if (!wall || tiles.length === 0) continue;
       const axis = wallAxis(footprint, wall);
       tiles.forEach((tile, tileIndex) => {
         const offsetFt = tile.xStartIn / IN_PER_FT;
+        // Pass leftLocalIn/rightLocalIn straight through in this same
+        // order — NOT min/max'd — so a tile whose real roofline falls
+        // left-to-right (e.g. one to the right of a peak) builds correctly
+        // mirrored, instead of always assuming the low edge is on the left.
+        const leftLocalIn = tile.leftEdgeHeightIn - gableEaveHeightIn;
+        const rightLocalIn = tile.rightEdgeHeightIn - gableEaveHeightIn;
+        const tallerLocalIn = Math.max(leftLocalIn, rightLocalIn);
+        const members = tile.isSafetyGap
+          ? buildSafetyGapMembers(thicknessIn, tallerLocalIn)
+          : buildGablePanelMembers(tile.widthIn, thicknessIn, leftLocalIn, rightLocalIn, includeNailer);
+        // A vertical safety-gap filler (Tommy: "an ability to put a safety
+        // gap inbetween the truss bottom and the gable end top") stacks
+        // directly above this tile's own capped high edge, up to the true
+        // roofline — additive, not a replacement.
+        if (tile.verticalGapHeightIn) {
+          members.push(
+            ...buildVerticalGapFillerMembers(tile.widthIn, thicknessIn, tile.verticalGapHeightIn).map((m) => ({
+              ...m,
+              position: { ...m.position, zIn: m.position.zIn + tallerLocalIn },
+            })),
+          );
+        }
         result.push({
           wallId,
           tileIndex,
           anchorX: axis.startXFt + axis.dirX * offsetFt,
           anchorZ: axis.startZFt + axis.dirZ * offsetFt,
           rotationRad: axis.rotationRad,
-          members: buildGablePanelMembers(
-            tile.widthIn,
-            thicknessIn,
-            tile.lowEdgeHeightIn - roofBaseHeightIn,
-            tile.highEdgeHeightIn - roofBaseHeightIn,
-            includeNailer,
-          ),
+          members,
+          widthFt: tile.widthIn / IN_PER_FT,
+          heightFt: tallerLocalIn / IN_PER_FT,
+          depthFt: thicknessIn / IN_PER_FT,
+          isSafetyGap: !!tile.isSafetyGap,
+          verticalGapHeightFt: (tile.verticalGapHeightIn ?? 0) / IN_PER_FT,
         });
       });
     }
@@ -817,9 +870,18 @@ export default function Building3DView({
       const members = secondStory
         ? buildBoxBeamMembers(lengthIn, thicknessIn)
         : buildTrussPlateMembers(lengthIn, thicknessIn, trussPlateInsetIn);
-      return { wallId: wall.id, anchorX: axis.startXFt, anchorZ: axis.startZFt, rotationRad: axis.rotationRad, members };
+      return {
+        wallId: wall.id,
+        anchorX: axis.startXFt,
+        anchorZ: axis.startZFt,
+        rotationRad: axis.rotationRad,
+        members,
+        widthFt: wall.lengthFt,
+        heightFt: roofBearingAssemblyHeightIn / IN_PER_FT,
+        depthFt: thicknessIn / IN_PER_FT,
+      };
     });
-  }, [footprint, roofEnabled, secondStory, thicknessIn, trussPlateInsetIn]);
+  }, [footprint, roofEnabled, secondStory, thicknessIn, trussPlateInsetIn, roofBearingAssemblyHeightIn]);
 
   // Panel-name labels (Tommy: "the specific panel label (N1 for example)
   // to appear on... the simplified box 3d views") — a pure re-derivation of
@@ -1137,18 +1199,46 @@ export default function Building3DView({
               {renderSillHeaderHandles(box, "second")}
             </group>
           ))}
-          {gableRenderData.map(({ wallId, tileIndex, anchorX, anchorZ, anchorYFt, rotationRad, members }) => (
-            <group key={`gable-${wallId}-${tileIndex}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
-              <PanelMembersGroup members={members} />
-            </group>
-          ))}
-          {roofBearingRenderData.map(({ wallId, anchorX, anchorZ, rotationRad, members }) => (
+          {gableRenderData.map(
+            ({ wallId, tileIndex, anchorX, anchorZ, anchorYFt, rotationRad, members, widthFt, heightFt, depthFt, isSafetyGap, verticalGapHeightFt }) => (
+              <group key={`gable-${wallId}-${tileIndex}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
+                {simplified ? (
+                  <>
+                    <mesh position={[widthFt / 2, heightFt / 2, depthFt / 2]}>
+                      <boxGeometry args={[widthFt, heightFt, depthFt]} />
+                      <meshStandardMaterial
+                        color={isSafetyGap ? NAMED_PANEL_TYPE_COLORS["safety-gap"] : NAMED_PANEL_TYPE_COLORS.gable}
+                        transparent
+                        opacity={0.6}
+                      />
+                    </mesh>
+                    {verticalGapHeightFt > 0 && (
+                      <mesh position={[widthFt / 2, heightFt + verticalGapHeightFt / 2, depthFt / 2]}>
+                        <boxGeometry args={[widthFt, verticalGapHeightFt, depthFt]} />
+                        <meshStandardMaterial color={NAMED_PANEL_TYPE_COLORS["safety-gap"]} transparent opacity={0.6} />
+                      </mesh>
+                    )}
+                  </>
+                ) : (
+                  <PanelMembersGroup members={members} />
+                )}
+              </group>
+            ),
+          )}
+          {roofBearingRenderData.map(({ wallId, anchorX, anchorZ, rotationRad, members, widthFt, heightFt, depthFt }) => (
             <group
               key={`roofbearing-${wallId}`}
               position={[anchorX, roofBaseHeightIn / IN_PER_FT, anchorZ]}
               rotation={[0, -rotationRad, 0]}
             >
-              <PanelMembersGroup members={members} />
+              {simplified ? (
+                <mesh position={[widthFt / 2, heightFt / 2, depthFt / 2]}>
+                  <boxGeometry args={[widthFt, heightFt, depthFt]} />
+                  <meshStandardMaterial color={ROOF_BEARING_COLOR} transparent opacity={0.6} />
+                </mesh>
+              ) : (
+                <PanelMembersGroup members={members} />
+              )}
             </group>
           ))}
           {!captureMode && <OrbitControls target={target} makeDefault enabled={!isDraggingHandle} />}

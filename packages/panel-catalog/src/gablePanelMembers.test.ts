@@ -22,16 +22,46 @@ describe("computeGableRipCallout", () => {
     expect(angleDeg).toBeCloseTo(0, 6);
     expect(lengthIn).toBeCloseTo(WIDTH_IN, 6);
   });
+
+  it("returns a negative angle (same magnitude) when the taller edge is on the left instead of the right", () => {
+    const rising = computeGableRipCallout(WIDTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN);
+    const falling = computeGableRipCallout(WIDTH_IN, HIGH_EDGE_IN, LOW_EDGE_IN);
+    expect(falling.angleDeg).toBeCloseTo(-rising.angleDeg, 6);
+    expect(falling.lengthIn).toBeCloseTo(rising.lengthIn, 6);
+  });
 });
 
 describe("buildGablePanelMembers", () => {
-  it("throws if highEdgeHeightIn is less than lowEdgeHeightIn", () => {
-    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, HIGH_EDGE_IN, LOW_EDGE_IN, false)).toThrow();
+  it("builds without throwing regardless of which side (left or right) is taller — no ordering requirement", () => {
+    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false)).not.toThrow();
+    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, HIGH_EDGE_IN, LOW_EDGE_IN, false)).not.toThrow();
   });
 
-  it("throws if highEdgeHeightIn exceeds the 8ft (96in) max a single Gable End Panel can be built at", () => {
+  it("places each edge's real height at its own true local x position — mirrors correctly when the taller edge is on the left", () => {
+    // A tile whose real roofline rises left-to-right (e.g. left of a peak).
+    const rising = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false);
+    const risingStuds = rising.filter((m) => m.role === "stud");
+    const risingLeftStud = risingStuds.find((m) => m.position.xIn === 0)!;
+    const risingRightStud = risingStuds.find((m) => m.position.xIn === WIDTH_IN - 1.5)!;
+    expect(risingLeftStud.actualDimsIn.lengthIn).toBeCloseTo(LOW_EDGE_IN - 1.5, 6);
+    expect(risingRightStud.actualDimsIn.lengthIn).toBeCloseTo(HIGH_EDGE_IN - 1.5, 6);
+
+    // The mirrored tile — real roofline falls left-to-right (e.g. right of
+    // the same peak) — must have the TALL stud on its own left now, not
+    // still on the right, or the panel renders backwards once placed at
+    // its own real (mirrored) world position.
+    const falling = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, HIGH_EDGE_IN, LOW_EDGE_IN, false);
+    const fallingStuds = falling.filter((m) => m.role === "stud");
+    const fallingLeftStud = fallingStuds.find((m) => m.position.xIn === 0)!;
+    const fallingRightStud = fallingStuds.find((m) => m.position.xIn === WIDTH_IN - 1.5)!;
+    expect(fallingLeftStud.actualDimsIn.lengthIn).toBeCloseTo(HIGH_EDGE_IN - 1.5, 6);
+    expect(fallingRightStud.actualDimsIn.lengthIn).toBeCloseTo(LOW_EDGE_IN - 1.5, 6);
+  });
+
+  it("throws if either edge's height exceeds the 8ft (96in) max a single Gable End Panel can be built at, regardless of side", () => {
     expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, 0, GABLE_PANEL_MAX_HEIGHT_IN, false)).not.toThrow();
     expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, 0, GABLE_PANEL_MAX_HEIGHT_IN + 0.01, false)).toThrow();
+    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, GABLE_PANEL_MAX_HEIGHT_IN + 0.01, 0, false)).toThrow();
   });
 
   it("keeps the bottom skin/plates flat and unaffected by the slope", () => {

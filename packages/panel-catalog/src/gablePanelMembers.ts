@@ -20,13 +20,19 @@ const GABLE_GIRT_ROW_COUNT = 2; // same baseline as the Standard Panel core
  * angle and length it should be ripped at") — pure trig off the two edge
  * heights, kept independent of the member-geometry builder so a UI can
  * show this callout without building full member geometry first.
+ * `leftHeightIn`/`rightHeightIn` are the panel's own real edge heights at
+ * local x=0 and x=widthIn respectively — either can be the taller one
+ * (see buildGablePanelMembers's own doc comment on why order matters here
+ * now). `angleDeg` is signed (positive = rising left-to-right); callers
+ * that only want the physical rip magnitude (e.g. a shop-drawing callout,
+ * where the cut is the same either way) should take `Math.abs()` of it.
  */
 export function computeGableRipCallout(
   widthIn: number,
-  lowEdgeHeightIn: number,
-  highEdgeHeightIn: number,
+  leftHeightIn: number,
+  rightHeightIn: number,
 ): { angleDeg: number; lengthIn: number } {
-  const riseIn = highEdgeHeightIn - lowEdgeHeightIn;
+  const riseIn = rightHeightIn - leftHeightIn;
   return {
     angleDeg: (Math.atan2(riseIn, widthIn) * 180) / Math.PI,
     lengthIn: Math.hypot(widthIn, riseIn),
@@ -75,15 +81,15 @@ function tiltedMember(
   };
 }
 
-/** The 4 corner studs, low edge pair + high edge pair, each its own
- * height — angle-cut top simplified to a plain box (not a true bevel),
- * same "illustrative, not to scale" simplification as the Braced Panel's
- * brace ends. */
-function buildGableCornerStuds(widthIn: number, depthIn: number, lowStudSpanIn: number, highStudSpanIn: number): PanelMember[] {
-  const cornerXs: [number, number] = [0, widthIn - PLATE_2X4_THICKNESS_IN]; // [low edge, high edge]
+/** The 4 corner studs, left edge pair + right edge pair, each its own real
+ * height (either can be the taller one) — angle-cut top simplified to a
+ * plain box (not a true bevel), same "illustrative, not to scale"
+ * simplification as the Braced Panel's brace ends. */
+function buildGableCornerStuds(widthIn: number, depthIn: number, leftStudSpanIn: number, rightStudSpanIn: number): PanelMember[] {
+  const cornerXs: [number, number] = [0, widthIn - PLATE_2X4_THICKNESS_IN]; // [left edge, right edge]
   const cornerYs = [0, depthIn - PLATE_2X4_WIDTH_IN];
-  const heights = [lowStudSpanIn, highStudSpanIn];
-  const edgeLabels = ["low", "high"];
+  const heights = [leftStudSpanIn, rightStudSpanIn];
+  const edgeLabels = ["left", "right"];
   const members: PanelMember[] = [];
   let idx = 0;
   for (const yIn of cornerYs) {
@@ -113,21 +119,21 @@ function buildGableCornerStuds(widthIn: number, depthIn: number, lowStudSpanIn: 
  * panels bracing to be") between the flat bottom plate and the sloped top
  * plate, on BOTH wythes (Tommy: "braced panels might as well be on both
  * sides too" — applied here too, for the same reason). Peak count is
- * driven off the LOW edge's rise (the shorter, more conservative side),
- * so every peak stays at or above the minimum bracing angle even though
- * the high-edge side's peaks end up taller/steeper — see
- * `computeTrussWebPeakCount`.
+ * driven off the SHORTER edge's rise (the more conservative side,
+ * whichever end that actually is), so every peak stays at or above the
+ * minimum bracing angle even though the taller-edge side's peaks end up
+ * taller/steeper — see `computeTrussWebPeakCount`.
  */
-function buildGableTrussBraces(widthIn: number, depthIn: number, lowEdgeHeightIn: number, highEdgeHeightIn: number): PanelMember[] {
+function buildGableTrussBraces(widthIn: number, depthIn: number, leftHeightIn: number, rightHeightIn: number): PanelMember[] {
   const bottomChordZIn = SKIN_THICKNESS_IN;
   const topChordZAt = (xIn: number) => {
     const t = widthIn > 0 ? xIn / widthIn : 0;
-    const lowZ = lowEdgeHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2;
-    const highZ = highEdgeHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2;
-    return lowZ + t * (highZ - lowZ);
+    const leftZ = leftHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2;
+    const rightZ = rightHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2;
+    return leftZ + t * (rightZ - leftZ);
   };
-  const lowRiseIn = topChordZAt(0) - bottomChordZIn;
-  const peakCount = computeTrussWebPeakCount(widthIn, lowRiseIn);
+  const shorterRiseIn = Math.min(topChordZAt(0), topChordZAt(widthIn)) - bottomChordZIn;
+  const peakCount = computeTrussWebPeakCount(widthIn, shorterRiseIn);
 
   const members: PanelMember[] = [];
   for (const [wythe, yIn] of [
@@ -142,7 +148,7 @@ function buildGableTrussBraces(widthIn: number, depthIn: number, lowEdgeHeightIn
 /**
  * Every physical member of a Gable End Panel (Tommy): a Standard Panel
  * core whose top is cut at the roof pitch instead of flat — trapezoidal
- * envelope, not rectangular. The low/high edge heights are supplied
+ * envelope, not rectangular. The left/right edge heights are supplied
  * directly per instance; no roof/ridge system exists yet to derive them
  * from automatically (see the gable-multistory-roof-strategy memory —
  * that auto-derivation from a roof pitch + bottom-of-truss height is the
@@ -155,39 +161,46 @@ function buildGableTrussBraces(widthIn: number, depthIn: number, lowEdgeHeightIn
  * ("diagonal") members using the same convention as the Braced Panel's
  * brace.
  *
- * Girt rows and the optional nailer use the LOW edge's (shorter, more
- * conservative) stud span for vertical spacing/length — a real gable
- * panel's high-edge side may need additional fill rows, not modeled here.
- * Flag for refinement, same as the Braced Panel's own draft status.
+ * Girt rows and the optional nailer use the SHORTER edge's (more
+ * conservative) stud span for vertical spacing/length, whichever end that
+ * actually is — a real gable panel's taller-edge side may need additional
+ * fill rows, not modeled here. Flag for refinement, same as the Braced
+ * Panel's own draft status.
  */
 /** A Gable End Panel is a short add-on cap sitting above the wall's own
  * eave line, not a full-height wall panel — Tommy: "gable panels...can be
- * up to 8' tall." `lowEdgeHeightIn`/`highEdgeHeightIn` are this panel's own
- * local height (already relative to the eave line), never the wall's
- * absolute floor-to-edge height — a caller subtracts the roofline's own
- * base height before calling this. */
+ * up to 8' tall." `leftHeightIn`/`rightHeightIn` are this panel's own real
+ * height at local x=0 and x=widthIn respectively — already relative to the
+ * eave line (a caller subtracts the roofline's own base height before
+ * calling this), and already relative to true world position (a caller
+ * placing this panel at a real wall position must NOT reorder these into
+ * "low then high" — a tile whose real roofline descends left-to-right
+ * (e.g. one to the right of a single peak) needs `leftHeightIn >
+ * rightHeightIn` here, or the built panel ends up mirrored: physically
+ * correct in isolation, but facing the wrong way once placed in the real
+ * scene). Either can be the taller one — there is no ordering
+ * requirement. */
 export const GABLE_PANEL_MAX_HEIGHT_IN = 96;
 
 export function buildGablePanelMembers(
   widthIn: number,
   depthIn: number,
-  lowEdgeHeightIn: number,
-  highEdgeHeightIn: number,
+  leftHeightIn: number,
+  rightHeightIn: number,
   includeNailer: boolean,
 ): PanelMember[] {
-  if (highEdgeHeightIn < lowEdgeHeightIn) {
-    throw new Error("highEdgeHeightIn must be >= lowEdgeHeightIn — swap ends if the ridge is on the opposite side.");
-  }
-  if (highEdgeHeightIn > GABLE_PANEL_MAX_HEIGHT_IN) {
+  const tallerHeightIn = Math.max(leftHeightIn, rightHeightIn);
+  if (tallerHeightIn > GABLE_PANEL_MAX_HEIGHT_IN) {
     throw new Error(
-      `highEdgeHeightIn (${highEdgeHeightIn}) exceeds the ${GABLE_PANEL_MAX_HEIGHT_IN}in (8ft) max a single Gable End Panel can be built at — this should be the panel's own height above the eave line, not an absolute floor height.`,
+      `The taller edge height (${tallerHeightIn}) exceeds the ${GABLE_PANEL_MAX_HEIGHT_IN}in (8ft) max a single Gable End Panel can be built at — this should be the panel's own height above the eave line, not an absolute floor height.`,
     );
   }
 
   const plateLengthIn = widthIn - 2 * PLATE_END_CLEARANCE_IN;
-  const lowStudSpanIn = lowEdgeHeightIn - 2 * SKIN_THICKNESS_IN;
-  const highStudSpanIn = highEdgeHeightIn - 2 * SKIN_THICKNESS_IN;
-  const { angleDeg: ripAngleDeg, lengthIn: ripLengthIn } = computeGableRipCallout(widthIn, lowEdgeHeightIn, highEdgeHeightIn);
+  const leftStudSpanIn = leftHeightIn - 2 * SKIN_THICKNESS_IN;
+  const rightStudSpanIn = rightHeightIn - 2 * SKIN_THICKNESS_IN;
+  const shorterStudSpanIn = Math.min(leftStudSpanIn, rightStudSpanIn);
+  const { angleDeg: ripAngleDeg, lengthIn: ripLengthIn } = computeGableRipCallout(widthIn, leftHeightIn, rightHeightIn);
 
   const members: PanelMember[] = [
     {
@@ -228,7 +241,7 @@ export function buildGablePanelMembers(
       qty: 1,
       notes: "interior-wythe edge",
     },
-    ...buildGableCornerStuds(widthIn, depthIn, lowStudSpanIn, highStudSpanIn),
+    ...buildGableCornerStuds(widthIn, depthIn, leftStudSpanIn, rightStudSpanIn),
     tiltedMember(
       "top_plate_2x4_ext",
       "dimensional_lumber",
@@ -237,9 +250,9 @@ export function buildGablePanelMembers(
       PLATE_2X4_THICKNESS_IN,
       PLATE_2X4_WIDTH_IN,
       PLATE_END_CLEARANCE_IN,
-      lowEdgeHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
+      leftHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
       widthIn - PLATE_END_CLEARANCE_IN,
-      highEdgeHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
+      rightHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
       PLATE_2X4_WIDTH_IN / 2,
       "plate",
       "exterior-wythe edge — mitered to match the roof pitch, face-fastened to the top skin.",
@@ -252,9 +265,9 @@ export function buildGablePanelMembers(
       PLATE_2X4_THICKNESS_IN,
       PLATE_2X4_WIDTH_IN,
       PLATE_END_CLEARANCE_IN,
-      lowEdgeHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
+      leftHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
       widthIn - PLATE_END_CLEARANCE_IN,
-      highEdgeHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
+      rightHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
       depthIn - PLATE_2X4_WIDTH_IN / 2,
       "plate",
       "interior-wythe edge — mitered to match the roof pitch, face-fastened to the top skin.",
@@ -267,34 +280,34 @@ export function buildGablePanelMembers(
       SKIN_THICKNESS_IN,
       depthIn,
       0,
-      lowEdgeHeightIn - SKIN_THICKNESS_IN / 2,
+      leftHeightIn - SKIN_THICKNESS_IN / 2,
       widthIn,
-      highEdgeHeightIn - SKIN_THICKNESS_IN / 2,
+      rightHeightIn - SKIN_THICKNESS_IN / 2,
       depthIn / 2,
       "skin",
       `Rip at ${ripAngleDeg.toFixed(2)}deg, cut to ${ripLengthIn.toFixed(2)}in long.`,
     ),
-    ...buildGirtRows(GABLE_GIRT_ROW_COUNT, widthIn, depthIn, lowStudSpanIn),
-    ...buildGableTrussBraces(widthIn, depthIn, lowEdgeHeightIn, highEdgeHeightIn),
+    ...buildGirtRows(GABLE_GIRT_ROW_COUNT, widthIn, depthIn, shorterStudSpanIn),
+    ...buildGableTrussBraces(widthIn, depthIn, leftHeightIn, rightHeightIn),
   ];
-  if (includeNailer) members.push(buildNailer(widthIn, lowEdgeHeightIn));
+  if (includeNailer) members.push(buildNailer(widthIn, Math.min(leftHeightIn, rightHeightIn)));
   return members;
 }
 
 /**
  * Wraps `buildGablePanelMembers` in the full shared component schema —
  * see `buildStandardPanelSchema`'s doc comment for the same rationale.
- * `overallDimensions.heightIn` is the HIGH edge height (the tallest
- * point) — the envelope is trapezoidal, not a uniform rectangle.
+ * `overallDimensions.heightIn` is the TALLER edge height (whichever side
+ * that is) — the envelope is trapezoidal, not a uniform rectangle.
  */
 export function buildGablePanelSchema(
   widthIn: number,
   depthIn: number,
-  lowEdgeHeightIn: number,
-  highEdgeHeightIn: number,
+  leftHeightIn: number,
+  rightHeightIn: number,
   includeNailer: boolean,
 ): PanelComponentSchema {
-  const { angleDeg: ripAngleDeg, lengthIn: ripLengthIn } = computeGableRipCallout(widthIn, lowEdgeHeightIn, highEdgeHeightIn);
+  const { angleDeg: ripAngleDeg, lengthIn: ripLengthIn } = computeGableRipCallout(widthIn, leftHeightIn, rightHeightIn);
   return {
     schemaVersion: "0.1",
     componentType: "panel",
@@ -302,21 +315,21 @@ export function buildGablePanelSchema(
     displayName: "Gable End Panel",
     status: "draft",
     derivedFrom: "standard_panel",
-    overallDimensions: { heightIn: highEdgeHeightIn, widthIn, depthIn },
-    members: buildGablePanelMembers(widthIn, depthIn, lowEdgeHeightIn, highEdgeHeightIn, includeNailer),
+    overallDimensions: { heightIn: Math.max(leftHeightIn, rightHeightIn), widthIn, depthIn },
+    members: buildGablePanelMembers(widthIn, depthIn, leftHeightIn, rightHeightIn, includeNailer),
     fasteners: [],
     notes: [
       {
         type: "deviation",
         text:
           "Trapezoidal envelope — edge stud angle cuts are simplified to plain boxes, not true beveled geometry. " +
-          "Girt rows/nailer use the low edge's stud span for vertical spacing, not the full slope. Truss web brace " +
-          "peak count is derived from the low edge's (shorter) rise — the high-edge side's peaks end up taller/" +
+          "Girt rows/nailer use the shorter edge's stud span for vertical spacing, not the full slope. Truss web " +
+          "brace peak count is derived from the shorter edge's rise — the taller-edge side's peaks end up taller/" +
           "steeper, not independently re-optimized for its own available rise.",
       },
       {
         type: "warning",
-        text: `Top skin rip: ${ripAngleDeg.toFixed(2)}deg, ${ripLengthIn.toFixed(2)}in long. Low/high edge heights are ` +
+        text: `Top skin rip: ${Math.abs(ripAngleDeg).toFixed(2)}deg, ${ripLengthIn.toFixed(2)}in long. Left/right edge heights are ` +
           "supplied manually — no roof/ridge system exists yet to derive them automatically.",
       },
     ],

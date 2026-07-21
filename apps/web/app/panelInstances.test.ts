@@ -95,8 +95,8 @@ describe("allPanelInstances — gableTilesByWallId", () => {
   it("continues the wall's own direction counter, not a fresh one, with no collisions", () => {
     const gableTilesByWallId = {
       AB: [
-        { widthIn: 40, lowEdgeHeightIn: 120, highEdgeHeightIn: 150 },
-        { widthIn: 40, lowEdgeHeightIn: 150, highEdgeHeightIn: 180 },
+        { widthIn: 40, leftEdgeHeightIn: 120, rightEdgeHeightIn: 150 },
+        { widthIn: 40, leftEdgeHeightIn: 150, rightEdgeHeightIn: 180 },
       ],
     };
     const instances = allPanelInstances(fp, wallSlots, 40, "plywood", gableTilesByWallId);
@@ -111,19 +111,19 @@ describe("allPanelInstances — gableTilesByWallId", () => {
     ]);
   });
 
-  it("carries each tile's own low/high edge heights onto its instance", () => {
-    const gableTilesByWallId = { AB: [{ widthIn: 40, lowEdgeHeightIn: 120, highEdgeHeightIn: 150 }] };
+  it("carries each tile's own left/right edge heights onto its instance", () => {
+    const gableTilesByWallId = { AB: [{ widthIn: 40, leftEdgeHeightIn: 120, rightEdgeHeightIn: 150 }] };
     const instances = allPanelInstances(fp, wallSlots, 40, "plywood", gableTilesByWallId);
     const gable = instances.find((i) => i.panelType === "gable")!;
-    expect(gable.lowEdgeHeightIn).toBe(120);
-    expect(gable.highEdgeHeightIn).toBe(150);
+    expect(gable.leftEdgeHeightIn).toBe(120);
+    expect(gable.rightEdgeHeightIn).toBe(150);
   });
 
   it("gives gable tiles a negative slotIndexInWall that never collides with a real slot index", () => {
     const gableTilesByWallId = {
       AB: [
-        { widthIn: 40, lowEdgeHeightIn: 120, highEdgeHeightIn: 150 },
-        { widthIn: 40, lowEdgeHeightIn: 150, highEdgeHeightIn: 180 },
+        { widthIn: 40, leftEdgeHeightIn: 120, rightEdgeHeightIn: 150 },
+        { widthIn: 40, leftEdgeHeightIn: 150, rightEdgeHeightIn: 180 },
       ],
     };
     const instances = allPanelInstances(fp, wallSlots, 40, "plywood", gableTilesByWallId);

@@ -60,13 +60,28 @@ export interface PanelInstance {
    * the project default (see `resolveBracedStyle` in bracedStyle.ts). */
   bracedPattern?: BracePattern;
   bracedMirrored?: boolean;
-  /** Only set for "gable" instances — this tile's own low (eave-side) and
-   * high (ridge-side) edge heights, carried through from
-   * computeGableTiledRow's own leftHeightIn/rightHeightIn (min/max'd, since
-   * a real Gable End Panel builder always takes a low edge then a high
-   * edge). Undefined for every other panel type. */
-  lowEdgeHeightIn?: number;
-  highEdgeHeightIn?: number;
+  /** Only set for "gable" instances — this tile's own REAL edge heights at
+   * its own local x=0 (left) and x=widthIn (right), carried through
+   * directly from computeGableTiledRow's own leftHeightIn/rightHeightIn —
+   * NOT min/max'd. Either can be the taller one (a tile to one side of a
+   * peak rises left-to-right; a tile on the other side falls) — a
+   * consumer building real geometry (buildGablePanelMembers) must pass
+   * these straight through in this same left/right order, or the built
+   * panel ends up mirrored once placed at its own real world position.
+   * Undefined for every other panel type. */
+  leftEdgeHeightIn?: number;
+  rightEdgeHeightIn?: number;
+  /** Only set for "gable" instances that ARE the tiled row's own dedicated
+   * horizontal safety-gap tile (see GABLE_SAFETY_GAP_WIDTH_IN) — never a
+   * real, fabricated Gable End Panel, just a 3/4in plywood filler at this
+   * tile's own local height. Carried through from computeGableTiledRow's
+   * own `isSafetyGap`. */
+  isSafetyGap?: boolean;
+  /** Only set for "gable" instances whose real roofline rise exceeds the
+   * project's own maxGablePanelHeightIn fabrication ceiling — the real
+   * remainder (above this tile's own taller edge) filled by a dedicated
+   * vertical safety-gap filler piece instead of clamped. */
+  verticalGapHeightIn?: number;
 }
 
 const SIMPLE_NAMED_TYPES = new Set<PanelSlot["type"]>([
@@ -113,7 +128,10 @@ export function allPanelInstances(
    * (or a wall with no entry) = no gable instances for that wall, exactly
    * today's behavior — every existing caller omitting this arg is
    * completely unaffected. */
-  gableTilesByWallId?: Record<string, { widthIn: number; lowEdgeHeightIn: number; highEdgeHeightIn: number }[]>,
+  gableTilesByWallId?: Record<
+    string,
+    { widthIn: number; leftEdgeHeightIn: number; rightEdgeHeightIn: number; isSafetyGap?: boolean; verticalGapHeightIn?: number }[]
+  >,
 ): PanelInstance[] {
   const instances: PanelInstance[] = [];
   const counters: Partial<Record<CompassDirection, number>> = {};
@@ -129,8 +147,10 @@ export function allPanelInstances(
     sillHeightIn?: number,
     bracedPattern?: BracePattern,
     bracedMirrored?: boolean,
-    lowEdgeHeightIn?: number,
-    highEdgeHeightIn?: number,
+    leftEdgeHeightIn?: number,
+    rightEdgeHeightIn?: number,
+    isSafetyGap?: boolean,
+    verticalGapHeightIn?: number,
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     instances.push({
@@ -144,8 +164,10 @@ export function allPanelInstances(
       ...(sillHeightIn !== undefined && { sillHeightIn }),
       ...(bracedPattern !== undefined && { bracedPattern }),
       ...(bracedMirrored !== undefined && { bracedMirrored }),
-      ...(lowEdgeHeightIn !== undefined && { lowEdgeHeightIn }),
-      ...(highEdgeHeightIn !== undefined && { highEdgeHeightIn }),
+      ...(leftEdgeHeightIn !== undefined && { leftEdgeHeightIn }),
+      ...(rightEdgeHeightIn !== undefined && { rightEdgeHeightIn }),
+      ...(isSafetyGap !== undefined && { isSafetyGap }),
+      ...(verticalGapHeightIn !== undefined && { verticalGapHeightIn }),
     });
   };
 
@@ -209,8 +231,10 @@ export function allPanelInstances(
           undefined,
           undefined,
           undefined,
-          tile.lowEdgeHeightIn,
-          tile.highEdgeHeightIn,
+          tile.leftEdgeHeightIn,
+          tile.rightEdgeHeightIn,
+          tile.isSafetyGap,
+          tile.verticalGapHeightIn,
         );
       });
     }

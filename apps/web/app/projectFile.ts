@@ -17,13 +17,14 @@ import type { ViewerRole } from "./viewerRole";
  * a future incompatible version fails loudly (`parseProjectFile`) instead
  * of silently restoring a half-broken layout. One deliberate, bounded
  * exception: `parseProjectFile` also accepts the immediately-prior version
- * (v14) and migrates it forward — see the `schemaVersion === 14` branch
- * below — since v15's only change (secondStoryEnabled/
- * secondStoryWallHeightFt -> stories) has a clean, lossless translation,
- * and rejecting a user's existing saved file outright for it would be a
- * real regression, not just an abstract version mismatch.
+ * and migrates it forward. v15->v16: `bottomOfTrussMaxHeightFt`/
+ * `gablePeakPositionInByWallId` (a single ridge height + single per-wall
+ * peak position) were replaced by the generalized N-point roofline profile
+ * (`roofProfileType`/`roofProfilePointHeightsFt`/
+ * `gableProfilePositionsInByWallId`) — see the `schemaVersion === 15`
+ * branch below for the lossless "1 point, same height/position" migration.
  */
-export const PROJECT_FILE_VERSION = 15;
+export const PROJECT_FILE_VERSION = 16;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -56,7 +57,31 @@ export interface ProjectState {
   floorSystemId: string | null;
   perpendicular2x4Enabled: boolean;
   roofSystemTypeId: RoofSystemType;
-  bottomOfTrussMaxHeightFt: number;
+  /** "peaked" = 1 top point (a ridge); "flat-top" = 2 independently
+   * adjustable top points (Tommy: "options for peaked trusses with 1 point
+   * on the top, or two points to make a triangle shaped with the top
+   * chopped off") — the roofline gable-end panels tile up to meet. Global
+   * (Roof tab), same as the single ridge height it replaces. */
+  roofProfileType: "peaked" | "flat-top";
+  /** One real height (ft) per profile point, index-matched to
+   * `roofProfileType`'s own point count (length 1 for "peaked", 2 for
+   * "flat-top") — fully independent, not forced symmetric. */
+  roofProfilePointHeightsFt: number[];
+  /** Per-wall along-wall position (inches from the wall's start corner) for
+   * each profile point, index-matched the same way — Tommy: "drag wall
+   * tool the peak of this triangle," now generalized to up to 2
+   * independently-placeable points per wall. `null` means "not yet
+   * customized" (auto-centered — see computeGableTiledRow's own resolution
+   * in page.tsx), same sentinel meaning the old single-position field's
+   * absent-entry convention had (an explicit `null` instead of an absent
+   * array index, since JSON has no `undefined`). */
+  gableProfilePositionsInByWallId: Record<string, (number | null)[]>;
+  /** A single gable panel can't be fabricated taller than
+   * GABLE_PANEL_MAX_HEIGHT_IN (packages/panel-catalog) — this is a
+   * user-tunable threshold AT OR BELOW that real physical ceiling; the
+   * difference between it and the true truss-bottom height (if any) is
+   * filled by a real vertical safety-gap tile instead of silently clamped. */
+  maxGablePanelHeightIn: number;
   trussPlateInsetIn: number;
   roofCatcherBeamOffsetIn: number;
   roofCatcherBeamShape: RoofCatcherBeamShape;
@@ -70,12 +95,6 @@ export interface ProjectState {
    * 2 walls + gablePeakPositionInByWallId via computeRidgeLine, so no
    * separate run-length field needs to round-trip here. */
   gableEndWallIds: Set<string>;
-  /** Per-wall Gable End peak position (inches from the wall's start corner)
-   * — Tommy: "drag wall tool the peak of this triangle." Absent entry means
-   * "not yet customized" (auto-centered at the wall's own midpoint, a
-   * symmetric gable) — see computeGableTiledRow's own peakPositionIn
-   * default. */
-  gablePeakPositionInByWallId: Record<string, number>;
   /** Every real story, ground floor first (page.tsx's own `stories` memo —
    * see the Story type's own doc comment). Only `stories[1]` (if present)
    * round-trips as genuinely independent data here; `stories[0]` is
@@ -152,13 +171,15 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "floorSystemId",
   "perpendicular2x4Enabled",
   "roofSystemTypeId",
-  "bottomOfTrussMaxHeightFt",
+  "roofProfileType",
+  "roofProfilePointHeightsFt",
+  "gableProfilePositionsInByWallId",
+  "maxGablePanelHeightIn",
   "trussPlateInsetIn",
   "roofCatcherBeamOffsetIn",
   "roofCatcherBeamShape",
   "octagonRingDiameterFt",
   "gableEndWallIds",
-  "gablePeakPositionInByWallId",
   "stories",
   "panelizationType",
   "timberFrameCurtainPanelType",
@@ -172,13 +193,13 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "roofEnabled",
 ];
 
-/** The v14 shape's own required keys — same list as REQUIRED_STATE_KEYS but
- * with "stories" swapped back for the two old fields it replaced — used
- * only to validate a v14 file before migrating it forward (see
- * parseProjectFile's `schemaVersion === 14` branch). */
-const V14_REQUIRED_STATE_KEYS: string[] = (REQUIRED_STATE_KEYS as string[])
-  .filter((k) => k !== "stories")
-  .concat(["secondStoryEnabled", "secondStoryWallHeightFt"]);
+/** The v15 shape's own required keys — same list as REQUIRED_STATE_KEYS but
+ * with the 4 new roofline-profile fields swapped back for the 2 old fields
+ * they replaced — used only to validate a v15 file before migrating it
+ * forward (see parseProjectFile's `schemaVersion === 15` branch). */
+const V15_REQUIRED_STATE_KEYS: string[] = (REQUIRED_STATE_KEYS as string[])
+  .filter((k) => k !== "roofProfileType" && k !== "roofProfilePointHeightsFt" && k !== "gableProfilePositionsInByWallId" && k !== "maxGablePanelHeightIn")
+  .concat(["bottomOfTrussMaxHeightFt", "gablePeakPositionInByWallId"]);
 
 /** JSON has no Set type — `primaryCornerIds`/`gableEndWallIds`/
  * `checkedInteriorIds`/`checkedExteriorIds` round-trip as plain arrays. */
@@ -245,7 +266,7 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   }
   const state = file.state as Record<string, unknown>;
 
-  for (const key of isCurrentVersion ? REQUIRED_STATE_KEYS : V14_REQUIRED_STATE_KEYS) {
+  for (const key of isCurrentVersion ? REQUIRED_STATE_KEYS : V15_REQUIRED_STATE_KEYS) {
     if (!(key in state)) return { ok: false, error: `That file is missing the "${key}" field.` };
   }
   if (!Array.isArray(state.primaryCornerIds)) {
@@ -261,39 +282,35 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
     return { ok: false, error: '"checkedExteriorIds" should be a list of product ids.' };
   }
 
-  // v14 -> v15 migration: secondStoryEnabled/secondStoryWallHeightFt
-  // collapse into `stories`, deep-copying baseWallSlots for the synthesized
-  // second story — same real-independent-copy behavior the live "Add
-  // Second Story"/"Add Layer" action already has, so a migrated file's
-  // second story isn't a stale alias either.
-  let stories: Story[];
+  // v15 -> v16 migration: the old single ridge height
+  // (bottomOfTrussMaxHeightFt) + single per-wall peak position
+  // (gablePeakPositionInByWallId) become a 1-point "peaked" roofline
+  // profile — a lossless translation (a single peak is exactly what the
+  // old fields already described), same "not yet customized" (`null`)
+  // sentinel meaning the old absent-entry convention had.
+  let roofProfileType: "peaked" | "flat-top";
+  let roofProfilePointHeightsFt: number[];
+  let gableProfilePositionsInByWallId: Record<string, (number | null)[]>;
   if (isCurrentVersion) {
-    stories = state.stories as Story[];
+    roofProfileType = state.roofProfileType as "peaked" | "flat-top";
+    roofProfilePointHeightsFt = state.roofProfilePointHeightsFt as number[];
+    gableProfilePositionsInByWallId = state.gableProfilePositionsInByWallId as Record<string, (number | null)[]>;
   } else {
-    const ground: Story = {
-      id: "ground",
-      label: "Ground Floor",
-      wallHeightFt: state.wallHeightFt as number,
-      wallSlots: state.baseWallSlots as Record<string, PanelSlot[]>,
-    };
-    stories = state.secondStoryEnabled
-      ? [
-          ground,
-          {
-            id: "second",
-            label: "Second Story",
-            wallHeightFt: state.secondStoryWallHeightFt as number,
-            wallSlots: structuredClone(state.baseWallSlots as Record<string, PanelSlot[]>),
-          },
-        ]
-      : [ground];
+    roofProfileType = "peaked";
+    roofProfilePointHeightsFt = [state.bottomOfTrussMaxHeightFt as number];
+    const oldPositions = state.gablePeakPositionInByWallId as Record<string, number>;
+    gableProfilePositionsInByWallId = Object.fromEntries(Object.entries(oldPositions).map(([wallId, posIn]) => [wallId, [posIn]]));
   }
 
   return {
     ok: true,
     state: {
       ...(state as unknown as ProjectState),
-      stories,
+      stories: state.stories as Story[],
+      roofProfileType,
+      roofProfilePointHeightsFt,
+      gableProfilePositionsInByWallId,
+      maxGablePanelHeightIn: isCurrentVersion ? (state.maxGablePanelHeightIn as number) : 96,
       primaryCornerIds: new Set(state.primaryCornerIds as string[]),
       gableEndWallIds: new Set(state.gableEndWallIds as string[]),
       checkedInteriorIds: new Set(state.checkedInteriorIds as string[]),

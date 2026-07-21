@@ -18,7 +18,17 @@ export interface BuildingSummaryRenderProps {
   nailerOffsetIn?: number;
   jackStudConfig: JackStudConfig;
   standardWidthIn: number;
-  gableTilesByWallId?: Record<string, { widthIn: number; xStartIn: number; lowEdgeHeightIn: number; highEdgeHeightIn: number }[]>;
+  gableTilesByWallId?: Record<
+    string,
+    {
+      widthIn: number;
+      xStartIn: number;
+      leftEdgeHeightIn: number;
+      rightEdgeHeightIn: number;
+      isSafetyGap?: boolean;
+      verticalGapHeightIn?: number;
+    }[]
+  >;
   roofEnabled?: boolean;
   trussPlateInsetIn?: number;
   onCapture: (dataUrl: string) => void;
