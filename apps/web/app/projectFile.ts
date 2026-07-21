@@ -1,4 +1,4 @@
-import type { Footprint, PanelSlot } from "@building-integrity/geometry";
+import type { Footprint, PanelSlot, Story } from "@building-integrity/geometry";
 import type { Season } from "@building-integrity/calc-engine";
 import type {
   BracingStyle,
@@ -15,9 +15,15 @@ import type { ViewerRole } from "./viewerRole";
  * anyone could upload and look at the plans for." Bumps whenever a field
  * is added/renamed/removed from `ProjectState` below, so an old file from
  * a future incompatible version fails loudly (`parseProjectFile`) instead
- * of silently restoring a half-broken layout.
+ * of silently restoring a half-broken layout. One deliberate, bounded
+ * exception: `parseProjectFile` also accepts the immediately-prior version
+ * (v14) and migrates it forward — see the `schemaVersion === 14` branch
+ * below — since v15's only change (secondStoryEnabled/
+ * secondStoryWallHeightFt -> stories) has a clean, lossless translation,
+ * and rejecting a user's existing saved file outright for it would be a
+ * real regression, not just an abstract version mismatch.
  */
-export const PROJECT_FILE_VERSION = 14;
+export const PROJECT_FILE_VERSION = 15;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -70,10 +76,14 @@ export interface ProjectState {
    * symmetric gable) — see computeGableTiledRow's own peakPositionIn
    * default. */
   gablePeakPositionInByWallId: Record<string, number>;
-  /** Second story, sharing the ground floor's footprint/wallSlots shape —
-   * see Building3DView.tsx's secondStory prop. */
-  secondStoryEnabled: boolean;
-  secondStoryWallHeightFt: number;
+  /** Every real story, ground floor first (page.tsx's own `stories` memo —
+   * see the Story type's own doc comment). Only `stories[1]` (if present)
+   * round-trips as genuinely independent data here; `stories[0]` is
+   * reconstructed on load from `wallHeightFt`/`baseWallSlots` instead (see
+   * page.tsx's load handler), so a saved `stories[0]` entry is otherwise
+   * unused by the loader — kept for shape-completeness/symmetry, not because
+   * anything reads it back out. */
+  stories: Story[];
   panelizationType: "loose-packed-braced" | "square-bale-panels" | "timber-frame-curtain";
   timberFrameCurtainPanelType: "standard" | "braced";
   timberFrameCurtainWidthIn: number;
@@ -149,8 +159,7 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "octagonRingDiameterFt",
   "gableEndWallIds",
   "gablePeakPositionInByWallId",
-  "secondStoryEnabled",
-  "secondStoryWallHeightFt",
+  "stories",
   "panelizationType",
   "timberFrameCurtainPanelType",
   "timberFrameCurtainWidthIn",
@@ -162,6 +171,14 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "floorsEnabled",
   "roofEnabled",
 ];
+
+/** The v14 shape's own required keys — same list as REQUIRED_STATE_KEYS but
+ * with "stories" swapped back for the two old fields it replaced — used
+ * only to validate a v14 file before migrating it forward (see
+ * parseProjectFile's `schemaVersion === 14` branch). */
+const V14_REQUIRED_STATE_KEYS: string[] = (REQUIRED_STATE_KEYS as string[])
+  .filter((k) => k !== "stories")
+  .concat(["secondStoryEnabled", "secondStoryWallHeightFt"]);
 
 /** JSON has no Set type — `primaryCornerIds`/`gableEndWallIds`/
  * `checkedInteriorIds`/`checkedExteriorIds` round-trip as plain arrays. */
@@ -215,7 +232,9 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   }
   const file = json as Record<string, unknown>;
 
-  if (file.schemaVersion !== PROJECT_FILE_VERSION) {
+  const isCurrentVersion = file.schemaVersion === PROJECT_FILE_VERSION;
+  const isPriorVersion = file.schemaVersion === PROJECT_FILE_VERSION - 1;
+  if (!isCurrentVersion && !isPriorVersion) {
     return {
       ok: false,
       error: `Unsupported project file version (${JSON.stringify(file.schemaVersion)}) — expected ${PROJECT_FILE_VERSION}.`,
@@ -226,7 +245,7 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   }
   const state = file.state as Record<string, unknown>;
 
-  for (const key of REQUIRED_STATE_KEYS) {
+  for (const key of isCurrentVersion ? REQUIRED_STATE_KEYS : V14_REQUIRED_STATE_KEYS) {
     if (!(key in state)) return { ok: false, error: `That file is missing the "${key}" field.` };
   }
   if (!Array.isArray(state.primaryCornerIds)) {
@@ -242,10 +261,39 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
     return { ok: false, error: '"checkedExteriorIds" should be a list of product ids.' };
   }
 
+  // v14 -> v15 migration: secondStoryEnabled/secondStoryWallHeightFt
+  // collapse into `stories`, deep-copying baseWallSlots for the synthesized
+  // second story — same real-independent-copy behavior the live "Add
+  // Second Story"/"Add Layer" action already has, so a migrated file's
+  // second story isn't a stale alias either.
+  let stories: Story[];
+  if (isCurrentVersion) {
+    stories = state.stories as Story[];
+  } else {
+    const ground: Story = {
+      id: "ground",
+      label: "Ground Floor",
+      wallHeightFt: state.wallHeightFt as number,
+      wallSlots: state.baseWallSlots as Record<string, PanelSlot[]>,
+    };
+    stories = state.secondStoryEnabled
+      ? [
+          ground,
+          {
+            id: "second",
+            label: "Second Story",
+            wallHeightFt: state.secondStoryWallHeightFt as number,
+            wallSlots: structuredClone(state.baseWallSlots as Record<string, PanelSlot[]>),
+          },
+        ]
+      : [ground];
+  }
+
   return {
     ok: true,
     state: {
       ...(state as unknown as ProjectState),
+      stories,
       primaryCornerIds: new Set(state.primaryCornerIds as string[]),
       gableEndWallIds: new Set(state.gableEndWallIds as string[]),
       checkedInteriorIds: new Set(state.checkedInteriorIds as string[]),

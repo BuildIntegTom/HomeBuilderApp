@@ -39,6 +39,7 @@ import {
   type Footprint,
   type PanelGroup,
   type PanelSlot,
+  type Story,
   type TruckDims,
   type Wall,
 } from "@building-integrity/geometry";
@@ -533,7 +534,7 @@ export default function LayoutEditor() {
   // that note's isOpen check), so a stale wallId/slotIndex after a redraw
   // just fails to find a slot and the note stops rendering, rather than
   // showing the wrong panel.
-  const [selectedSlot, setSelectedSlot] = useState<{ wallId: string; slotIndex: number } | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<{ wallId: string; slotIndex: number; story: "ground" | "second" } | null>(null);
   // Feedback for the Selected Panel note's window-sill controls (number
   // input + WindowSizeDiagram's drag handle) — Tommy: "when a drag or the
   // number input gets clamped... show a brief inline note instead of
@@ -604,13 +605,22 @@ export default function LayoutEditor() {
     setBottomOfTrussMaxHeightFt(Math.round((wallHeightFt + wall.lengthFt * (4 / 12)) * 12) / 12);
   };
 
-  // Second story (Tommy: "add a second level of panels") — shares the
-  // ground floor's footprint/panel layout for now (a fully independent
-  // per-story footprint/opening editor isn't wired up yet, see the
-  // gable-multistory-roof-strategy memory), stacked at the ground floor's
-  // own top-plate height in the 3D Preview + whole-building OBJ export.
-  const [secondStoryEnabled, setSecondStoryEnabled] = useState(false);
-  const [secondStoryWallHeightFt, setSecondStoryWallHeightFt] = useState(10);
+  // Second story (Tommy: "add a second level of panels") — a real,
+  // independently-stored Story (own deep-copied wallSlots, not the ground
+  // floor's own object by reference), stacked at the ground floor's own
+  // top-plate height in the 3D Preview + whole-building OBJ export. There's
+  // still no editing UI wired up for its own wallSlots yet (a fully
+  // independent per-story footprint/opening editor — see the
+  // gable-multistory-roof-strategy memory), so it starts as a mirror of the
+  // ground floor at the moment it's added and stays that way until that
+  // editor exists — but it's no longer a live shared reference underneath.
+  // Footprint edits (bump-out, drag-wall, edit-length) don't resync it once
+  // independent — only a brand-new footprint draw resets it (see
+  // handleDraw) — a known, accepted limitation until per-story editing
+  // lands. `stories` (below, derived after overlayWallSlots exists) is the
+  // real array consumers should read; this is just the one new piece of
+  // state.
+  const [secondStory, setSecondStory] = useState<Story | null>(null);
 
   // Panelizer's own "keyhole" scope-of-work checkboxes (Tommy: "under
   // Panelizer lets add three check boxes - Floors, Walls, and Roof... I
@@ -757,8 +767,7 @@ export default function LayoutEditor() {
       octagonRingDiameterFt,
       gableEndWallIds,
       gablePeakPositionInByWallId,
-      secondStoryEnabled,
-      secondStoryWallHeightFt,
+      stories,
       panelizationType,
       timberFrameCurtainPanelType,
       timberFrameCurtainWidthIn,
@@ -842,8 +851,7 @@ export default function LayoutEditor() {
       setOctagonRingDiameterFt(s.octagonRingDiameterFt);
       setGableEndWallIds(s.gableEndWallIds);
       setGablePeakPositionInByWallId(s.gablePeakPositionInByWallId);
-      setSecondStoryEnabled(s.secondStoryEnabled);
-      setSecondStoryWallHeightFt(s.secondStoryWallHeightFt);
+      setSecondStory(s.stories[1] ?? null);
       setPanelizationType(s.panelizationType);
       setTimberFrameCurtainPanelType(s.timberFrameCurtainPanelType);
       setTimberFrameCurtainWidthIn(s.timberFrameCurtainWidthIn);
@@ -1010,6 +1018,10 @@ export default function LayoutEditor() {
     setLeastAccessibleCorner(nextLeastAccessible);
     setBaseWallSlots(retile(fp, nextLeastAccessible, nextPrimary));
     setShapeTool("edit");
+    // A brand-new footprint has no meaningful relationship to whatever
+    // second-story data existed for the old one (see the `secondStory`
+    // state's own doc comment on why incremental edits don't resync it).
+    setSecondStory(null);
   };
 
   // Re-tiles the whole wall from scratch around its openings (Tommy: resizing
@@ -1053,8 +1065,26 @@ export default function LayoutEditor() {
     return -1;
   };
 
-  const handleToggleOpening = (wallId: Wall["id"], slotIndex: number) => {
-    const currentSlots = baseWallSlots[wallId] ?? [];
+  // Reads/writes whichever story's own wallSlots record a caller is
+  // targeting — ground floor is the pre-existing `baseWallSlots` state;
+  // second story is `secondStory.wallSlots`, a genuinely independent copy
+  // (see the Story type's own doc comment) that these same handlers now
+  // also mutate, in place of a bespoke second copy of every handler.
+  const wallSlotsForStory = (story: "ground" | "second"): Record<string, PanelSlot[]> =>
+    story === "ground" ? baseWallSlots : (secondStory?.wallSlots ?? {});
+  const setWallSlotsForStory = (
+    story: "ground" | "second",
+    updater: (prev: Record<string, PanelSlot[]>) => Record<string, PanelSlot[]>,
+  ) => {
+    if (story === "ground") {
+      setBaseWallSlots(updater);
+    } else {
+      setSecondStory((prev) => (prev ? { ...prev, wallSlots: updater(prev.wallSlots) } : prev));
+    }
+  };
+
+  const handleToggleOpening = (story: "ground" | "second", wallId: Wall["id"], slotIndex: number) => {
+    const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
     const currentSlot = currentSlots[slotIndex];
     const geometry = wallGeometryFor(wallId);
     if (!currentSlot || !geometry) return;
@@ -1062,7 +1092,7 @@ export default function LayoutEditor() {
     if (!next) {
       // corner/safety-gap: not cyclable, but still selectable for read-only
       // details in the Selected Panel note.
-      setSelectedSlot({ wallId, slotIndex });
+      setSelectedSlot({ wallId, slotIndex, story });
       return;
     }
 
@@ -1074,7 +1104,7 @@ export default function LayoutEditor() {
     // always tracks the normal standard-panel tiling math, not a
     // reservation), so it's a pure in-place field mutation instead.
     if (!isOpeningType(currentSlot.type) && !isOpeningType(next.type)) {
-      setBaseWallSlots((prev) => {
+      setWallSlotsForStory(story, (prev) => {
         const slots = prev[wallId];
         if (!slots || !slots[slotIndex]) return prev;
         const nextSlots = slots.slice();
@@ -1163,15 +1193,15 @@ export default function LayoutEditor() {
 
     if (openingOrdinal !== null) {
       const newIndex = findNthOpeningIndex(finalSlots, openingOrdinal);
-      setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex });
+      setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex, story });
     } else if (next.type === "braced") {
       const newIndex = findNthStandardFamilyIndex(finalSlots, precedingStandardFamilyCount);
-      setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex });
+      setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex, story });
     } else {
       setSelectedSlot(null);
     }
 
-    setBaseWallSlots((prev) => ({
+    setWallSlotsForStory(story, (prev) => ({
       ...prev,
       [wallId]: finalSlots,
     }));
@@ -1184,8 +1214,8 @@ export default function LayoutEditor() {
     }
   };
 
-  const handleSetWindowWidth = (wallId: string, slotIndex: number, requestedWidthIn: number) => {
-    const currentSlots = baseWallSlots[wallId] ?? [];
+  const handleSetWindowWidth = (story: "ground" | "second", wallId: string, slotIndex: number, requestedWidthIn: number) => {
+    const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
     const geometry = wallGeometryFor(wallId);
     if (!geometry) return;
     const widthIn = Math.min(Math.max(requestedWidthIn, windowHeaderWidthInRange.minIn), windowHeaderWidthInRange.maxIn);
@@ -1232,8 +1262,8 @@ export default function LayoutEditor() {
     // on its own (Tommy: "when i try to edit ro/header width, it changes
     // through the cycle instead").
     const newIndex = findNthOpeningIndex(finalSlots, precedingOpenings);
-    setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex });
-    setBaseWallSlots((prev) => ({
+    setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex, story });
+    setWallSlotsForStory(story, (prev) => ({
       ...prev,
       [wallId]: finalSlots,
     }));
@@ -1242,8 +1272,8 @@ export default function LayoutEditor() {
   // Unlike width, a window's height doesn't affect wall tiling at all
   // (Tommy: "i want each window individually adjustable") — just a direct
   // per-slot field update, no re-tiling needed.
-  const handleSetWindowHeight = (wallId: string, slotIndex: number, heightIn: number) => {
-    setBaseWallSlots((prev) => {
+  const handleSetWindowHeight = (story: "ground" | "second", wallId: string, slotIndex: number, heightIn: number) => {
+    setWallSlotsForStory(story, (prev) => {
       const slots = prev[wallId];
       if (!slots || !slots[slotIndex]) return prev;
       const nextSlots = slots.slice();
@@ -1259,8 +1289,8 @@ export default function LayoutEditor() {
   // fast path alongside the full click-through cycle (Tommy: "include each
   // panel style for braced panels in the click-through cycle... allows the
   // user to change each panel").
-  const handleSetBracedStyle = (wallId: string, slotIndex: number, pattern: BracePattern, mirrored: boolean) => {
-    setBaseWallSlots((prev) => {
+  const handleSetBracedStyle = (story: "ground" | "second", wallId: string, slotIndex: number, pattern: BracePattern, mirrored: boolean) => {
+    setWallSlotsForStory(story, (prev) => {
       const slots = prev[wallId];
       const slot = slots?.[slotIndex];
       if (!slots || !slot || slot.type !== "braced") return prev;
@@ -1276,12 +1306,13 @@ export default function LayoutEditor() {
   // concern, orthogonal to the horizontal wall-tiling system. Clamped to
   // the mfr spec sheet's sill/lintel-height range, and further clamped so
   // the sill can't push the RO's top past the wall's own height.
-  const handleSetWindowSillHeight = (wallId: string, slotIndex: number, requestedSillHeightIn: number) => {
-    const slots = baseWallSlots[wallId];
+  const handleSetWindowSillHeight = (story: "ground" | "second", wallId: string, slotIndex: number, requestedSillHeightIn: number) => {
+    const slots = wallSlotsForStory(story)[wallId];
     const slot = slots?.[slotIndex];
     if (!slots || !slot) return;
     const windowHeightIn = slot.heightIn ?? standardWindowHeightDefaultIn.value;
-    const maxSillHeightIn = wallHeightFt * 12 - windowHeightIn;
+    const effectiveWallHeightFt = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
+    const maxSillHeightIn = effectiveWallHeightFt * 12 - windowHeightIn;
     const clampMaxIn = Math.min(sillHeaderHeightInRange.maxIn, maxSillHeightIn);
     const clampedSillHeightIn = Math.min(Math.max(requestedSillHeightIn, sillHeaderHeightInRange.minIn), clampMaxIn);
 
@@ -1295,7 +1326,7 @@ export default function LayoutEditor() {
 
     const nextSlots = slots.slice();
     nextSlots[slotIndex] = { ...nextSlots[slotIndex]!, sillHeightIn: clampedSillHeightIn };
-    setBaseWallSlots((prev) => ({ ...prev, [wallId]: nextSlots }));
+    setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: nextSlots }));
   };
 
   // An octagon is still just 2 numbers (widthFt/depthFt) under the hood —
@@ -1558,6 +1589,30 @@ export default function LayoutEditor() {
     }
     return next;
   }, [baseWallSlots, panelizationType, timberFrameCurtainPanelType, timberFrameCurtainWidthIn]);
+
+  // Real Story[] (Tommy: "how to do second story editing... maybe it sees
+  // the ground level, and then can shift upward to the next ring of
+  // panels") — stories[0] (ground floor) is a computed view over the
+  // existing ground-floor primitives (zero change to baseWallSlots/retile/
+  // handleToggleOpening/etc.); stories[1] (if present) is `secondStory`,
+  // the one genuinely independent piece of state above.
+  const stories: Story[] = useMemo(() => {
+    const ground: Story = { id: "ground", label: "Ground Floor", wallHeightFt, wallSlots: overlayWallSlots };
+    return secondStory ? [ground, secondStory] : [ground];
+  }, [wallHeightFt, overlayWallSlots, secondStory]);
+
+  // Shared by both entry points to this action — the 2D toolbar's "Add
+  // Second Story" button and the elevation view's "Add Layer" button (Tommy:
+  // "the add lay[er] button should be next to add gable end button").
+  // Toggling on deep-copies the ground floor's current wallSlots (genuinely
+  // independent storage, not a shared reference); toggling off drops it
+  // entirely — re-adding always builds a fresh mirror, same "no memory"
+  // behavior wallSlots itself has today.
+  const handleToggleSecondStory = useCallback(() => {
+    setSecondStory((prev) =>
+      prev ? null : { id: "second", label: "Second Story", wallHeightFt: 10, wallSlots: structuredClone(overlayWallSlots) },
+    );
+  }, [overlayWallSlots]);
 
   const allSlots = useMemo(() => Object.values(overlayWallSlots).flat(), [overlayWallSlots]);
   // Every real wall panel type, straw-filled or not — used for the panel
@@ -1876,11 +1931,11 @@ export default function LayoutEditor() {
     const halfSqFt = computePlywoodAreaSqFt(allRealMembers, 0.5);
     // Roof-bearing assembly's own plywood cap(s) — box beam has both a top
     // and bottom cap, truss plate just one — over the real wall perimeter.
-    threeQuarterSqFt += secondStoryEnabled
+    threeQuarterSqFt += stories.length > 1
       ? (2 * totalWallPerimeterIn * thicknessIn) / 144
       : (totalWallPerimeterIn * thicknessIn) / 144;
     return { threeQuarterSqFt, halfSqFt };
-  }, [allRealMembers, secondStoryEnabled, totalWallPerimeterIn, thicknessIn]);
+  }, [allRealMembers, stories, totalWallPerimeterIn, thicknessIn]);
 
   const plywoodThreeQuarterSheetCount = Math.ceil(plywoodAreaSqFt.threeQuarterSqFt / PLYWOOD_SHEET_AREA_SQFT);
   const plywoodHalfSheetCount = Math.ceil(plywoodAreaSqFt.halfSqFt / PLYWOOD_SHEET_AREA_SQFT);
@@ -2028,9 +2083,8 @@ export default function LayoutEditor() {
       const roHeightIn = inst.sourceSlotType === "door" ? doorRoughOpeningHeightIn : (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value);
       return sum + (roWidthIn * roHeightIn) / 144;
     }, 0);
-  const plasterFloorCount = secondStoryEnabled ? 2 : 1;
-  const plasterGrossWallAreaSqFt =
-    (totalWallPerimeterIn / 12) * wallHeightFt + (secondStoryEnabled ? (totalWallPerimeterIn / 12) * secondStoryWallHeightFt : 0);
+  const plasterFloorCount = stories.length;
+  const plasterGrossWallAreaSqFt = stories.reduce((sum, s) => sum + (totalWallPerimeterIn / 12) * s.wallHeightFt, 0);
   const plasterNetAreaSqFt = Math.max(0, plasterGrossWallAreaSqFt - plasterOpeningsAreaSqFtPerFloor * plasterFloorCount);
   const plasterRoughOpeningCount = allInstances.filter((inst) => inst.panelType === "header").length * plasterFloorCount;
 
@@ -2042,18 +2096,14 @@ export default function LayoutEditor() {
     const perFloor = allInstances
       .filter((inst) => inst.panelType === "header")
       .map((inst) => ({ widthIn: computeRoughOpeningWidthIn(inst.widthIn, jackStudConfig) }));
-    return secondStoryEnabled ? [...perFloor, ...perFloor] : perFloor;
-  }, [allInstances, jackStudConfig, secondStoryEnabled]);
+    return stories.length > 1 ? [...perFloor, ...perFloor] : perFloor;
+  }, [allInstances, jackStudConfig, stories]);
   const extoSealLengthFt = useMemo(() => computeSillTapeLengthFt(extoSealOpeningWidths), [extoSealOpeningWidths]);
 
   const intelloWallRuns = useMemo(() => {
     if (!footprint) return [];
-    const ground = footprint.walls.map((w) => ({ lengthFt: w.lengthFt, heightFt: wallHeightFt }));
-    const second = secondStoryEnabled
-      ? footprint.walls.map((w) => ({ lengthFt: w.lengthFt, heightFt: secondStoryWallHeightFt }))
-      : [];
-    return [...ground, ...second];
-  }, [footprint, wallHeightFt, secondStoryEnabled, secondStoryWallHeightFt]);
+    return stories.flatMap((story) => footprint.walls.map((w) => ({ lengthFt: w.lengthFt, heightFt: story.wallHeightFt })));
+  }, [footprint, stories]);
   // Flat plan-view placeholder — see computeFootprintAreaSqFt's own doc
   // comment on why real sloped roof area isn't computable yet.
   const intelloRoofAreaSqFt = useMemo(() => (footprint ? computeFootprintAreaSqFt(footprint) : 0), [footprint]);
@@ -2536,7 +2586,7 @@ export default function LayoutEditor() {
       pages.push({ id: "detail-floor-thermal-slab", label: "Floor: Thermally Broken Slab" });
     }
     if (roofEnabled) {
-      if (!secondStoryEnabled) {
+      if (stories.length === 1) {
         pages.push({ id: "detail-truss-plate", label: "Roof: Truss Plate (Single-Story)" });
       } else {
         pages.push({ id: "detail-box-beam", label: "Roof: Box Beam (Two-Story)" });
@@ -2595,7 +2645,7 @@ export default function LayoutEditor() {
     docFloorJoistType,
     docIsThermalSlabFloor,
     docPerpendicular2x4Enabled,
-    secondStoryEnabled,
+    stories,
     shopDrawings,
     panelFabricationGroups,
     role,
@@ -3309,7 +3359,7 @@ export default function LayoutEditor() {
   const floorJoistNote = floorJoistType
     ? `${joistLayout?.joists.length ?? 0} joists (${floorJoistType.label})`
     : null;
-  const roofMaterialNote = secondStoryEnabled
+  const roofMaterialNote = stories.length > 1
     ? `Dense-pack cellulose: ${denseCelluloseTotal.volumeFt3.toFixed(2)} ft3, ~${denseCelluloseWeight.weightLb.toFixed(1)} lb (box beam)`
     : `Timber HP: ${timberHpTotal.volumeFt3.toFixed(2)} ft3, ~${timberHpWeight.weightLb.toFixed(1)} lb (truss plate)`;
   const strawBaleSummaryNote =
@@ -3395,11 +3445,11 @@ export default function LayoutEditor() {
                   bumpOutDisabled={!footprint}
                   dragWallDisabled={!footprint}
                   editDisabled={!footprint}
-                  secondStoryEnabled={secondStoryEnabled}
-                  onToggleSecondStory={() => setSecondStoryEnabled((v) => !v)}
+                  secondStoryEnabled={stories.length > 1}
+                  onToggleSecondStory={handleToggleSecondStory}
                   secondStoryDisabled={!footprint}
-                  secondStoryWallHeightFt={secondStoryWallHeightFt}
-                  onSecondStoryWallHeightChange={setSecondStoryWallHeightFt}
+                  secondStoryWallHeightFt={stories[1]?.wallHeightFt ?? 10}
+                  onSecondStoryWallHeightChange={(ft) => setSecondStory((prev) => (prev ? { ...prev, wallHeightFt: ft } : prev))}
                 />
                 <div ref={setToolbarSecondaryPortalNode} className={styles.toolbarPortalInline} />
                 <PanelLegend />
@@ -3452,6 +3502,9 @@ export default function LayoutEditor() {
                   wall={elevationWall}
                   slots={overlayWallSlots[elevationWall.id] ?? []}
                   wallHeightFt={wallHeightFt}
+                  secondStorySlots={secondStory?.wallSlots[elevationWall.id]}
+                  secondStoryWallHeightFt={secondStory?.wallHeightFt}
+                  onToggleOpening={handleToggleOpening}
                   hasGableEnd={gableEndWallIds.has(elevationWall.id)}
                   ridgeHeightFt={bottomOfTrussMaxHeightFt}
                   targetPanelWidthIn={standardWidthIn}
@@ -3465,6 +3518,9 @@ export default function LayoutEditor() {
                   onToggleGableEnd={(enabled) => handleToggleGableEnd(elevationWall.id, enabled)}
                   onChangeGablePeakPositionIn={(positionIn) => handleChangeGablePeakPositionIn(elevationWall.id, positionIn)}
                   onGenerateShedRoof={() => handleGenerateShedRoof(elevationWall)}
+                  insetIn={trussPlateInsetIn}
+                  secondStoryEnabled={stories.length > 1}
+                  onToggleSecondStory={handleToggleSecondStory}
                   onClose={() => setElevationViewWallId(null)}
                 />
               ) : viewMode === "plan" ? (
@@ -3484,7 +3540,7 @@ export default function LayoutEditor() {
                   primaryCornerIds={primaryCornerIds}
                   isWallLengthEditable={isWallLengthEditable}
                   onDraw={handleDraw}
-                  onToggleOpening={handleToggleOpening}
+                  onToggleOpening={(wallId, slotIndex) => handleToggleOpening("ground", wallId, slotIndex)}
                   onSetLeastAccessibleCorner={handleSetLeastAccessibleCorner}
                   onEditWallLength={handleEditWallLength}
                   onAddBumpOut={handleAddBumpOut}
@@ -3500,7 +3556,7 @@ export default function LayoutEditor() {
                   thicknessIn={thicknessIn}
                   includeNailer={includeNailer}
                   primaryCornerIds={primaryCornerIds}
-                  secondStory={secondStoryEnabled ? { wallHeightFt: secondStoryWallHeightFt, wallSlots: overlayWallSlots } : null}
+                  secondStory={stories[1] ?? null}
                   isSquareBalePanelization={panelizationType === "square-bale-panels"}
                   squareBaleStudConfig={squareBaleStudConfig}
                   bracingStyle={bracingStyle}
@@ -3513,9 +3569,9 @@ export default function LayoutEditor() {
                   checkedInteriorIds={checkedInteriorIds}
                   checkedExteriorIds={checkedExteriorIds}
                   tool3D={tool3D}
-                  onToggleOpening={(_story, wallId, slotIndex) => handleToggleOpening(wallId, slotIndex)}
-                  onSetWindowSillHeight={(_story, wallId, slotIndex, sillHeightIn) => handleSetWindowSillHeight(wallId, slotIndex, sillHeightIn)}
-                  onSetWindowHeight={(_story, wallId, slotIndex, heightIn) => handleSetWindowHeight(wallId, slotIndex, heightIn)}
+                  onToggleOpening={handleToggleOpening}
+                  onSetWindowSillHeight={handleSetWindowSillHeight}
+                  onSetWindowHeight={handleSetWindowHeight}
                 />
               ))}
             {editorTab === "foundation" && foundationType.usesPierGrid && (
@@ -3540,7 +3596,7 @@ export default function LayoutEditor() {
               thicknessIn={thicknessIn}
               includeNailer={includeNailer}
               primaryCornerIds={primaryCornerIds}
-              secondStory={secondStoryEnabled ? { wallHeightFt: secondStoryWallHeightFt, wallSlots: overlayWallSlots } : null}
+              secondStory={stories[1] ?? null}
               isSquareBalePanelization={panelizationType === "square-bale-panels"}
               squareBaleStudConfig={squareBaleStudConfig}
               bracingStyle={bracingStyle}
@@ -3849,9 +3905,10 @@ export default function LayoutEditor() {
 
         {selectedSlot &&
           (() => {
-            const slot = baseWallSlots[selectedSlot.wallId]?.[selectedSlot.slotIndex];
+            const slot = (selectedSlot.story === "ground" ? baseWallSlots : (secondStory?.wallSlots ?? {}))[selectedSlot.wallId]?.[selectedSlot.slotIndex];
             if (!slot) return null;
-            const { wallId, slotIndex } = selectedSlot;
+            const { wallId, slotIndex, story } = selectedSlot;
+            const effectiveWallHeightFt = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
             const bracedStyle = slot.type === "braced" ? resolveBracedStyle(slot, defaultBracePattern, defaultBracedMirrored) : null;
             return (
               <StickyNote
@@ -3866,7 +3923,7 @@ export default function LayoutEditor() {
                 {slot.type === "window" ? (
                   <>
                     <WindowSizeDiagram
-                      wallHeightFt={wallHeightFt}
+                      wallHeightFt={effectiveWallHeightFt}
                       windowWidthIn={slot.widthIn}
                       sillHeightIn={slot.sillHeightIn ?? sillDefaultHeightIn.value}
                       windowHeightIn={slot.heightIn ?? standardWindowHeightDefaultIn.value}
@@ -3874,8 +3931,8 @@ export default function LayoutEditor() {
                       jackStudConfig={jackStudConfig}
                       includeNailer={includeNailer}
                       standardWidthIn={standardWidthIn}
-                      onSetSillHeight={(v) => handleSetWindowSillHeight(wallId, slotIndex, v)}
-                      onSetWindowHeight={(v) => handleSetWindowHeight(wallId, slotIndex, v)}
+                      onSetSillHeight={(v) => handleSetWindowSillHeight(story, wallId, slotIndex, v)}
+                      onSetWindowHeight={(v) => handleSetWindowHeight(story, wallId, slotIndex, v)}
                     />
                     {sillClampNotice && (
                       <p className={styles.note} style={{ color: "#a67c00" }}>
@@ -3893,7 +3950,7 @@ export default function LayoutEditor() {
                         max={windowHeaderWidthInRange.maxIn}
                         step={0.125}
                         style={{ width: 64 }}
-                        onChange={(e) => handleSetWindowWidth(wallId, slotIndex, Number(e.target.value))}
+                        onChange={(e) => handleSetWindowWidth(story, wallId, slotIndex, Number(e.target.value))}
                       />
                       &quot;
                     </label>
@@ -3912,7 +3969,7 @@ export default function LayoutEditor() {
                         id={`window-height-${wallId}-${slotIndex}`}
                         title="This window's own Rough Opening height (sill-top to header-bottom) — also draggable above"
                         value={slot.heightIn ?? standardWindowHeightsIn.value[0]}
-                        onChange={(e) => handleSetWindowHeight(wallId, slotIndex, Number(e.target.value))}
+                        onChange={(e) => handleSetWindowHeight(story, wallId, slotIndex, Number(e.target.value))}
                       >
                         {standardWindowHeightsIn.value.map((h) => (
                           <option key={h} value={h}>
@@ -3932,7 +3989,7 @@ export default function LayoutEditor() {
                         max={sillHeaderHeightInRange.maxIn}
                         step={0.125}
                         style={{ width: 64 }}
-                        onChange={(e) => handleSetWindowSillHeight(wallId, slotIndex, Number(e.target.value))}
+                        onChange={(e) => handleSetWindowSillHeight(story, wallId, slotIndex, Number(e.target.value))}
                       />
                     </label>
                   </>
@@ -3948,7 +4005,7 @@ export default function LayoutEditor() {
                       <select
                         id={`braced-pattern-${wallId}-${slotIndex}`}
                         value={bracedStyle.pattern}
-                        onChange={(e) => handleSetBracedStyle(wallId, slotIndex, e.target.value as BracePattern, bracedStyle.mirrored)}
+                        onChange={(e) => handleSetBracedStyle(story, wallId, slotIndex, e.target.value as BracePattern, bracedStyle.mirrored)}
                       >
                         <option value="chevron">Chevron (&quot;&lt;&quot;)</option>
                         <option value="hatch">Hatch (&quot;/&quot;)</option>
@@ -3959,7 +4016,7 @@ export default function LayoutEditor() {
                         type="checkbox"
                         id={`braced-mirrored-${wallId}-${slotIndex}`}
                         checked={bracedStyle.mirrored}
-                        onChange={(e) => handleSetBracedStyle(wallId, slotIndex, bracedStyle.pattern, e.target.checked)}
+                        onChange={(e) => handleSetBracedStyle(story, wallId, slotIndex, bracedStyle.pattern, e.target.checked)}
                       />{" "}
                       Mirrored ({bracedStyle.pattern === "chevron" ? '">"' : '"\\"'})
                     </label>
@@ -4491,7 +4548,7 @@ export default function LayoutEditor() {
           </StickyNote>
         )}
 
-        {!secondStoryEnabled && (
+        {stories.length === 1 && (
           <StickyNote
             id="detail-truss-plate"
             label="Roof: Truss Plate (Single-Story)"
@@ -4523,7 +4580,7 @@ export default function LayoutEditor() {
           </StickyNote>
         )}
 
-        {secondStoryEnabled && (
+        {stories.length > 1 && (
           <StickyNote
             id="detail-box-beam"
             label="Roof: Box Beam (Two-Story)"
@@ -4974,7 +5031,7 @@ export default function LayoutEditor() {
                         {plasterNetAreaSqFt.toFixed(1)} sqft
                         <span className={styles.note}>
                           {" "}
-                          — {plasterGrossWallAreaSqFt.toFixed(1)} sqft gross wall{secondStoryEnabled ? " (both stories)" : ""} minus{" "}
+                          — {plasterGrossWallAreaSqFt.toFixed(1)} sqft gross wall{stories.length > 1 ? " (both stories)" : ""} minus{" "}
                           {(plasterOpeningsAreaSqFtPerFloor * plasterFloorCount).toFixed(1)} sqft of window/door rough openings
                         </span>
                       </td>

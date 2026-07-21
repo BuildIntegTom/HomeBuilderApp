@@ -441,9 +441,12 @@ interface Building3DViewProps {
   primaryCornerIds: Set<string>;
   /** A second story stacked at `wallHeightFt`'s top-plate height, sharing
    * the ground floor's footprint (Tommy: "an option for adding a second
-   * level of panels" — full independent per-story footprints aren't wired
-   * up yet, so this reuses the same footprint/wallSlots shape at its own
-   * wall height). Undefined/null = single story, unchanged from before. */
+   * level of panels"). `wallSlots` here is a genuinely independent copy of
+   * data (see page.tsx's `Story` type/`secondStory` state) — no longer the
+   * same object reference the ground floor's own `wallSlots` prop uses —
+   * though there's still no editing UI wired up for it yet, so it starts as
+   * a mirror of the ground floor and stays that way until a real per-story
+   * editor exists. Undefined/null = single story, unchanged from before. */
   secondStory?: { wallHeightFt: number; wallSlots: Record<string, PanelSlot[]> } | null;
   /** Square Bale Panels panelization type (Tommy) — "standard"-typed slots
    * are Square Bale Panels (blocking-girt construction), not loose-pack
@@ -506,10 +509,12 @@ interface Building3DViewProps {
   tool3D?: "orbit" | "edit" | "sill-header";
   /** Cycles one panel slot's type the same way the 2D Edit tool's
    * `onToggleOpening` does — only wired up when `tool3D === "edit"`. The
-   * `story` param is accepted now (not yet meaningfully different from the
-   * caller's point of view, since ground/second story share the same
-   * underlying wallSlots today) so a future independent per-story data
-   * model can slot in without changing this component's interaction code. */
+   * `story` param is real now that the second story is independently-stored
+   * data (see the `secondStory` prop's own doc comment): the caller
+   * currently no-ops `story === "second"` clicks (no editing UI exists yet
+   * for the second story's own wallSlots), rather than silently mutating
+   * the ground floor's same-position panel the way a shared-reference
+   * second story used to. */
   onToggleOpening?: (story: "ground" | "second", wallId: string, slotIndex: number) => void;
   /** Commits the bottom handle's dragged position (floor to RO-bottom) —
    * only wired up when `tool3D === "sill-header"`. Same story-forwarding
@@ -841,7 +846,8 @@ export default function Building3DView({
       const draggedYFt = sillHandleRef.current?.position.y;
       if (draggedYFt === undefined) return;
       const rawIn = draggedYFt * IN_PER_FT;
-      const maxSillHeightIn = wallHeightFt * IN_PER_FT - windowHeightIn;
+      const effectiveWallHeightFt = story === "second" && secondStory ? secondStory.wallHeightFt : wallHeightFt;
+      const maxSillHeightIn = effectiveWallHeightFt * IN_PER_FT - windowHeightIn;
       const clampedIn = Math.min(Math.max(rawIn, sillHeaderHeightInRange.minIn), Math.min(sillHeaderHeightInRange.maxIn, maxSillHeightIn));
       onSetWindowSillHeight?.(story, box.wallId, box.slotIndex, clampedIn);
     };

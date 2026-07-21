@@ -90,4 +90,23 @@ export interface PanelSlot {
   bracedMirrored?: boolean;
 }
 
+/**
+ * A whole-building horizontal slice (Tommy: "maybe it sees the ground
+ * level, and then can shift upward to the next ring of panels at a
+ * particular height") — one ring of panels spanning every wall at a shared
+ * height range, with its own independently-editable `wallSlots`. Ground
+ * floor is always `stories[0]`; additional stories are appended as real,
+ * separately-stored data (never the same object reference another story
+ * points at) rather than mirroring another story's slots by reference.
+ */
+export interface Story {
+  /** Deliberately a 2-member union, not a generic string — caps this at
+   * today's ground+one-additional-story cardinality. Widening to a plain
+   * string id is the natural seam for a future N-story pass. */
+  id: "ground" | "second";
+  label: string;
+  wallHeightFt: number;
+  wallSlots: Record<WallId, PanelSlot[]>;
+}
+
 export type WallEnd = "start" | "end";

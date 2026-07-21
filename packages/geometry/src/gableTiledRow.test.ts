@@ -125,4 +125,75 @@ describe("computeGableTiledRow", () => {
       expect(beyond[beyond.length - 1]!.rightHeightIn).toBeCloseTo(192, 6);
     });
   });
+
+  describe("insetIn", () => {
+    it("starts and ends panels at the inset boundary, not the raw wall corner", () => {
+      const panels = computeGableTiledRow(160, 120, 192, 40, undefined, 10);
+      expect(panels[0]!.xStartIn).toBeCloseTo(10, 6);
+      expect(panels[panels.length - 1]!.xEndIn).toBeCloseTo(150, 6);
+    });
+
+    it("sizes panels off the usable (inset) width, not the raw wall width", () => {
+      // 160in wall, 10in inset -> 140in usable, ceil(140/40) = 4 panels of 35in each
+      const panels = computeGableTiledRow(160, 120, 192, 40, undefined, 10);
+      expect(panels).toHaveLength(4);
+      for (const p of panels) expect(p.widthIn).toBeCloseTo(35, 6);
+    });
+
+    it("keeps height interpolation anchored to the true (uninset) half-width", () => {
+      // 160in wall, 80in true half-width, 10in inset: at the inset boundary
+      // (x=10) the height should reflect 10/80 up the true half-run, not
+      // 0/70 up the usable sub-run (which would wrongly read back as eave).
+      const panels = computeGableTiledRow(160, 120, 192, 40, undefined, 10);
+      const expectedAtInset = 120 + (192 - 120) * (10 / 80);
+      expect(panels[0]!.leftHeightIn).toBeCloseTo(expectedAtInset, 6);
+    });
+
+    it("applies no inset at all once the peak snaps to a shed — the run spans the full true wall width", () => {
+      const insetIn = 10;
+      const wallWidthIn = 200;
+      const snapped = computeGableTiledRow(wallWidthIn, 120, 192, 40, GABLE_SHED_SNAP_THRESHOLD_IN - 1, insetIn);
+      expect(snapped[0]!.xStartIn).toBeCloseTo(0, 6);
+      expect(snapped[snapped.length - 1]!.xEndIn).toBeCloseTo(wallWidthIn, 6);
+      expect(snapped[0]!.leftHeightIn).toBeCloseTo(192, 6);
+      expect(snapped[snapped.length - 1]!.rightHeightIn).toBeCloseTo(120, 6);
+      for (const p of snapped) expect(p.leftHeightIn).toBeGreaterThan(p.rightHeightIn);
+    });
+
+    it("the shed-snap threshold itself is never shifted by insetIn — snapping only depends on the raw wall corner distance", () => {
+      const insetIn = 10;
+      const wallWidthIn = 200;
+      // Just inside the RAW threshold -> snaps, regardless of insetIn.
+      const snapped = computeGableTiledRow(wallWidthIn, 120, 192, 40, GABLE_SHED_SNAP_THRESHOLD_IN - 1, insetIn);
+      expect(snapped[0]!.leftHeightIn).toBeCloseTo(192, 6);
+      // Just outside the RAW threshold -> does not snap, still has a real
+      // peak boundary (some panel rising, not just uniformly falling), and
+      // the inset still applies since this is a genuinely peaked roof.
+      const notSnapped = computeGableTiledRow(wallWidthIn, 120, 192, 40, GABLE_SHED_SNAP_THRESHOLD_IN + 1, insetIn);
+      expect(notSnapped.some((p) => p.leftHeightIn < p.rightHeightIn)).toBe(true);
+      expect(notSnapped[0]!.xStartIn).toBeCloseTo(insetIn, 6);
+      expect(notSnapped[notSnapped.length - 1]!.xEndIn).toBeCloseTo(wallWidthIn - insetIn, 6);
+    });
+
+    it("insets both true corners for a genuinely peaked (non-snapped) roof, off-center peak included", () => {
+      const insetIn = 5.5;
+      const wallWidthIn = 200;
+      for (const peakIn of [60, 100, 140, 165]) {
+        const panels = computeGableTiledRow(wallWidthIn, 120, 192, 40, peakIn, insetIn);
+        expect(panels[0]!.xStartIn).toBeCloseTo(insetIn, 6);
+        expect(panels[panels.length - 1]!.xEndIn).toBeCloseTo(wallWidthIn - insetIn, 6);
+      }
+    });
+
+    it("returns an empty result (no crash) when the inset consumes the whole wall", () => {
+      const panels = computeGableTiledRow(20, 120, 192, 40, undefined, 15);
+      expect(panels).toEqual([]);
+    });
+
+    it("defaults to insetIn=0, matching the pre-inset behavior exactly", () => {
+      const withDefault = computeGableTiledRow(160, 120, 192, 40);
+      const explicitZero = computeGableTiledRow(160, 120, 192, 40, undefined, 0);
+      expect(withDefault).toEqual(explicitZero);
+    });
+  });
 });

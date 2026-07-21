@@ -48,8 +48,19 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     octagonRingDiameterFt: 3,
     gableEndWallIds: new Set(),
     gablePeakPositionInByWallId: {},
-    secondStoryEnabled: false,
-    secondStoryWallHeightFt: 10,
+    stories: [
+      {
+        id: "ground",
+        label: "Ground Floor",
+        wallHeightFt: 10,
+        wallSlots: {
+          AB: [
+            { type: "standard", widthIn: 40 },
+            { type: "braced", widthIn: 40, bracedPattern: "hatch", bracedMirrored: true },
+          ],
+        },
+      },
+    ],
     panelizationType: "loose-packed-braced",
     timberFrameCurtainPanelType: "standard",
     timberFrameCurtainWidthIn: 36,
@@ -110,6 +121,71 @@ describe("serializeProject / parseProjectFile round-trip", () => {
     // it needs reconcileBracedPlacement + the project's own seismic
     // settings, not something this file-format layer should own).
     expect(result.state.bracedStateSeeded).toBeUndefined();
+  });
+
+  it("round-trips a 2-entry stories array (ground + second story)", () => {
+    const state = makeState({
+      stories: [
+        { id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: { AB: [{ type: "standard", widthIn: 40 }] } },
+        { id: "second", label: "Second Story", wallHeightFt: 9, wallSlots: { AB: [{ type: "window", widthIn: 40 }] } },
+      ],
+    });
+    const result = parseProjectFile(JSON.stringify(serializeProject(state)));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.stories).toEqual(state.stories);
+  });
+});
+
+describe("v14 -> v15 migration (secondStoryEnabled/secondStoryWallHeightFt -> stories)", () => {
+  /** Builds a raw v14-shaped file (old fields, no `stories`) directly —
+   * bypassing serializeProject/ProjectState entirely, since a v14 caller by
+   * definition doesn't have the current TS types available. */
+  function makeV14File(overrides: { secondStoryEnabled: boolean; secondStoryWallHeightFt?: number }) {
+    const currentState = serializeProject(makeState()).state;
+    const { stories: _drop, ...v14State } = currentState;
+    return {
+      schemaVersion: 14,
+      savedAt: new Date().toISOString(),
+      state: {
+        ...v14State,
+        secondStoryEnabled: overrides.secondStoryEnabled,
+        secondStoryWallHeightFt: overrides.secondStoryWallHeightFt ?? 10,
+      },
+    };
+  }
+
+  it("migrates a v14 file with secondStoryEnabled: false to a length-1 stories array", () => {
+    const result = parseProjectFile(JSON.stringify(makeV14File({ secondStoryEnabled: false })));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.stories).toHaveLength(1);
+    expect(result.state.stories[0]!.id).toBe("ground");
+  });
+
+  it("migrates a v14 file with secondStoryEnabled: true to a length-2 stories array", () => {
+    const result = parseProjectFile(JSON.stringify(makeV14File({ secondStoryEnabled: true, secondStoryWallHeightFt: 8 })));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.stories).toHaveLength(2);
+    expect(result.state.stories[1]!.id).toBe("second");
+    expect(result.state.stories[1]!.wallHeightFt).toBe(8);
+  });
+
+  it("migrates the second story's wallSlots as a genuine deep copy, not the same reference as baseWallSlots", () => {
+    const result = parseProjectFile(JSON.stringify(makeV14File({ secondStoryEnabled: true })));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.stories[1]!.wallSlots).toEqual(result.state.baseWallSlots);
+    expect(result.state.stories[1]!.wallSlots).not.toBe(result.state.baseWallSlots);
+  });
+
+  it("still rejects a version older than the one-version-back migration window", () => {
+    const v13File = { ...makeV14File({ secondStoryEnabled: false }), schemaVersion: 13 };
+    const result = parseProjectFile(JSON.stringify(v13File));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/version/i);
   });
 });
 
