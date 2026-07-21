@@ -53,5 +53,6 @@ export const NAMED_PANEL_TYPE_COLORS: Record<NamedPanelType, string> = {
   column: PANEL_TYPE_COLORS.column,
   header: "#c9a63f",
   sill: "#6fa87a",
+  gable: "#9fb8e0",
   "jack-stud": "#8f6b4a",
 };

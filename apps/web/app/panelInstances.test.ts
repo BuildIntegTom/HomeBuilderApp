@@ -82,6 +82,65 @@ describe("allPanelInstances", () => {
   });
 });
 
+describe("allPanelInstances — gableTilesByWallId", () => {
+  const fp = buildRectangleFootprint(30, 20);
+  const wallSlots = {
+    AB: [
+      { type: "corner" as const, widthIn: 24 },
+      { type: "standard" as const, widthIn: 40 },
+      { type: "corner" as const, widthIn: 24 },
+    ],
+  };
+
+  it("continues the wall's own direction counter, not a fresh one, with no collisions", () => {
+    const gableTilesByWallId = {
+      AB: [
+        { widthIn: 40, lowEdgeHeightIn: 120, highEdgeHeightIn: 150 },
+        { widthIn: 40, lowEdgeHeightIn: 150, highEdgeHeightIn: 180 },
+      ],
+    };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", gableTilesByWallId);
+    const ab = instances.filter((i) => i.wallId === "AB");
+    // 3 real slots (N-1..N-3) then 2 gable tiles continuing the same counter.
+    expect(ab.map((i) => ({ name: i.name, panelType: i.panelType }))).toEqual([
+      { name: "N-1", panelType: "corner" },
+      { name: "N-2", panelType: "standard" },
+      { name: "N-3", panelType: "corner" },
+      { name: "N-4", panelType: "gable" },
+      { name: "N-5", panelType: "gable" },
+    ]);
+  });
+
+  it("carries each tile's own low/high edge heights onto its instance", () => {
+    const gableTilesByWallId = { AB: [{ widthIn: 40, lowEdgeHeightIn: 120, highEdgeHeightIn: 150 }] };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", gableTilesByWallId);
+    const gable = instances.find((i) => i.panelType === "gable")!;
+    expect(gable.lowEdgeHeightIn).toBe(120);
+    expect(gable.highEdgeHeightIn).toBe(150);
+  });
+
+  it("gives gable tiles a negative slotIndexInWall that never collides with a real slot index", () => {
+    const gableTilesByWallId = {
+      AB: [
+        { widthIn: 40, lowEdgeHeightIn: 120, highEdgeHeightIn: 150 },
+        { widthIn: 40, lowEdgeHeightIn: 150, highEdgeHeightIn: 180 },
+      ],
+    };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", gableTilesByWallId);
+    const gableIndexes = instances.filter((i) => i.panelType === "gable").map((i) => i.slotIndexInWall);
+    const realIndexes = instances.filter((i) => i.panelType !== "gable" && i.wallId === "AB").map((i) => i.slotIndexInWall);
+    expect(gableIndexes).toEqual([-1, -2]);
+    for (const gi of gableIndexes) expect(realIndexes).not.toContain(gi);
+  });
+
+  it("produces no gable instances, and identical output to omitting the arg entirely, when a wall has no entry", () => {
+    const withEmptyMap = allPanelInstances(fp, wallSlots, 40, "plywood", {});
+    const withoutArg = allPanelInstances(fp, wallSlots, 40);
+    expect(withEmptyMap).toEqual(withoutArg);
+    expect(withoutArg.some((i) => i.panelType === "gable")).toBe(false);
+  });
+});
+
 describe("combinedPanelLabel", () => {
   it("returns a single instance's own name unchanged", () => {
     expect(combinedPanelLabel([{ name: "N-2", wallId: "AB", panelType: "standard", widthIn: 40, slotIndexInWall: 1 }])).toBe(

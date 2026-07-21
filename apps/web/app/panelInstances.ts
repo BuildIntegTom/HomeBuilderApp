@@ -14,6 +14,7 @@ export type NamedPanelType =
   | "header"
   | "sill"
   | "column"
+  | "gable"
   | "jack-stud";
 
 export interface PanelInstance {
@@ -59,6 +60,13 @@ export interface PanelInstance {
    * the project default (see `resolveBracedStyle` in bracedStyle.ts). */
   bracedPattern?: BracePattern;
   bracedMirrored?: boolean;
+  /** Only set for "gable" instances — this tile's own low (eave-side) and
+   * high (ridge-side) edge heights, carried through from
+   * computeGableTiledRow's own leftHeightIn/rightHeightIn (min/max'd, since
+   * a real Gable End Panel builder always takes a low edge then a high
+   * edge). Undefined for every other panel type. */
+  lowEdgeHeightIn?: number;
+  highEdgeHeightIn?: number;
 }
 
 const SIMPLE_NAMED_TYPES = new Set<PanelSlot["type"]>([
@@ -97,6 +105,15 @@ export function allPanelInstances(
   wallSlots: Record<string, PanelSlot[]>,
   standardWidthIn: number,
   jackStudConfig: JackStudConfig = "plywood",
+  /** Real gable-end tiles for whichever walls have "Add Gable End" enabled
+   * (Tommy: fix "gable end always spawns to the top" by making each tile a
+   * real instance, not one hardcoded full-ridge-height preview) — computed
+   * by the caller (page.tsx) via computeGableTiledRow, since that needs
+   * roof/peak state this function has no business knowing about. Absent
+   * (or a wall with no entry) = no gable instances for that wall, exactly
+   * today's behavior — every existing caller omitting this arg is
+   * completely unaffected. */
+  gableTilesByWallId?: Record<string, { widthIn: number; lowEdgeHeightIn: number; highEdgeHeightIn: number }[]>,
 ): PanelInstance[] {
   const instances: PanelInstance[] = [];
   const counters: Partial<Record<CompassDirection, number>> = {};
@@ -112,6 +129,8 @@ export function allPanelInstances(
     sillHeightIn?: number,
     bracedPattern?: BracePattern,
     bracedMirrored?: boolean,
+    lowEdgeHeightIn?: number,
+    highEdgeHeightIn?: number,
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     instances.push({
@@ -125,6 +144,8 @@ export function allPanelInstances(
       ...(sillHeightIn !== undefined && { sillHeightIn }),
       ...(bracedPattern !== undefined && { bracedPattern }),
       ...(bracedMirrored !== undefined && { bracedMirrored }),
+      ...(lowEdgeHeightIn !== undefined && { lowEdgeHeightIn }),
+      ...(highEdgeHeightIn !== undefined && { highEdgeHeightIn }),
     });
   };
 
@@ -164,6 +185,34 @@ export function allPanelInstances(
           slot.type === "braced" ? slot.bracedMirrored : undefined,
         );
       }
+    }
+
+    // Gable tiles aren't members of this wall's own `slots` array at all
+    // (no PanelSlotType exists for them) — appended after the normal loop,
+    // continuing this same wall's own direction counter so names interleave
+    // correctly (e.g. "N-8", "N-9", ...) with no collisions. `slotIndexInWall`
+    // is negative here — real slot indices are always >= 0, so a negative
+    // one can never collide with a per-slot instance-grouping lookup keyed
+    // by `${wallId}-${slotIndex}` elsewhere (e.g. Building3DView's
+    // groupInstancesBySlot) the way a real 0-based index would risk.
+    const gableTiles = gableTilesByWallId?.[wall.id];
+    if (gableTiles) {
+      gableTiles.forEach((tile, tileIndex) => {
+        pushInstance(
+          direction,
+          wall.id,
+          "gable",
+          tile.widthIn,
+          -(tileIndex + 1),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          tile.lowEdgeHeightIn,
+          tile.highEdgeHeightIn,
+        );
+      });
     }
   }
 

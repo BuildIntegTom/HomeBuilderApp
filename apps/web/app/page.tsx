@@ -11,6 +11,7 @@ import {
   collapseNearZeroWalls,
   computeFloorPanelGrid,
   computeFootprintAreaSqFt,
+  computeGableTiledRow,
   computeJoistLayout,
   computePanelLoadOrder,
   computePanelsPerStack,
@@ -104,7 +105,6 @@ import {
   COLUMN_TOTAL_WIDTH_IN,
   computeDensePackCelluloseVolume,
   computeGableColumnHeightIn,
-  computeGableRipCallout,
   computePlywoodAreaSqFt,
   computeRoofCatcherBeamPostPositions,
   computeRoofCatcherBeamSegments,
@@ -314,9 +314,11 @@ type PanelizationType = "loose-packed-braced" | "square-bale-panels" | "timber-f
 // fabrication, priced identically elsewhere already). Header and sill are
 // derived from window/door slots (see panelInstances.ts) — a window is a
 // header + sill, a door is a header only, not their own PanelSlot type.
-// Gable has an empty namedTypes (no PanelSlotType exists for it yet, so it
-// always shows 0 real instances) but still gets a preview 3D model built
-// at illustrative default heights.
+// Gable is the same idea — no PanelSlotType exists for it either, but
+// allPanelInstances' own gableTilesByWallId parameter produces real "gable"
+// instances directly from each gable wall's tiled row (see page.tsx's
+// gableTilesByWallId memo), so it flows through this same real-instance
+// pipeline like every other type below.
 const SHOP_DRAWING_PANEL_TYPES: {
   namedTypes: NamedPanelType[];
   panelTypeId: "standard" | "corner" | "braced" | "safety-gap" | "header" | "sill" | "column" | "gable" | "jack-stud";
@@ -328,13 +330,10 @@ const SHOP_DRAWING_PANEL_TYPES: {
   { namedTypes: ["header"], panelTypeId: "header" },
   { namedTypes: ["sill"], panelTypeId: "sill" },
   { namedTypes: ["column"], panelTypeId: "column" },
-  // Gable End Panel isn't placeable anywhere in the layout yet (no roof/
-  // ridge system exists) — namedTypes: [] means it always shows 0 real
-  // instances, but it still gets a preview 3D model + rip-angle callout
-  // below, built at illustrative default heights.
-  { namedTypes: [], panelTypeId: "gable" },
+  { namedTypes: ["gable"], panelTypeId: "gable" },
   // Plywood Jack Stud is always derived from a header/sill opening, never
-  // its own placed slot — namedTypes: [] for the same reason as gable.
+  // its own placed slot — namedTypes: [] since it has no PanelInstance
+  // identity of its own (unlike gable, which now does).
   { namedTypes: [], panelTypeId: "jack-stud" },
 ];
 
@@ -1678,15 +1677,6 @@ export default function LayoutEditor() {
   const hasClayPlaster = checkedInteriorIds.has("clay-plaster");
   const hasLimePlaster = checkedExteriorIds.has("lime-plaster");
 
-  // Computed once, across every nameable panel type together, so a panel's
-  // number always reflects its true position in the along-wall sequence —
-  // Shop Drawing pages then just filter this same list, rather than each
-  // recomputing its own independent (and previously mismatched) counter.
-  const allInstances = useMemo(
-    () => (footprint ? allPanelInstances(footprint, overlayWallSlots, standardWidthIn, jackStudConfig) : []),
-    [footprint, overlayWallSlots, standardWidthIn, jackStudConfig],
-  );
-
   // Column/Corner panels are always COLUMN_TOTAL_WIDTH_IN (25.5in) wide —
   // a fixed unit, independent of standardWidthIn — so there's no size
   // grouping to do, just one 3D model each.
@@ -1707,28 +1697,54 @@ export default function LayoutEditor() {
     [isSquareBalePanelization, thicknessIn, wallHeightFt, includeNailer, nailerOffsetIn],
   );
 
-  // Gable End Panel: the low edge is the current wall height (the eave);
-  // the high edge is the Roof tab's "bottom of truss max height" (the
-  // ridge) — a real roof-derived number now, not a placeholder pitch.
-  // Clamped so a ridge typed below the eave doesn't throw. There's still no
-  // per-instance placement mechanism yet (see the elevation view), so this
-  // remains a preview 3D model + rip callout, not a real gable instance.
-  const gablePreviewLowEdgeHeightIn = wallHeightFt * 12;
+  // Gable End Panel: the low edge is the roofline's own base — the top of
+  // whichever story is tallest (ground-only, or ground+second when a
+  // second story exists — same roofBaseHeightIn concept WallElevationView
+  // already computes for its own SVG, kept in sync here); the high edge is
+  // the Roof tab's "bottom of truss max height" (the ridge). Clamped so a
+  // ridge typed below the eave doesn't throw. These two heights are also
+  // membersForPanelTypeId's own fallback for any gable call site without a
+  // specific real instance's own edge heights (e.g. none today — every
+  // gable panel shown anywhere is now a real per-tile instance — but kept
+  // as a safe default rather than a required override).
+  const roofBaseHeightIn = stories.reduce((sum, s) => sum + s.wallHeightFt, 0) * 12;
+  const gablePreviewLowEdgeHeightIn = roofBaseHeightIn;
   const gablePreviewHighEdgeHeightIn = Math.max(bottomOfTrussMaxHeightFt * 12, gablePreviewLowEdgeHeightIn);
-  const gablePanelMembers = useMemo(
-    () =>
-      buildGablePanelMembers(
+  // Real per-wall gable tiles (Tommy: fix "gable end always spawns to the
+  // top" by making each tile a real PanelInstance, not one hardcoded
+  // full-ridge-height preview) — same computeGableTiledRow call shape
+  // WallElevationView.tsx already uses for its own SVG, so the two stay
+  // consistent. Feeds allInstances below.
+  const gableTilesByWallId = useMemo(() => {
+    if (!footprint) return {};
+    const ridgeHeightIn = Math.max(bottomOfTrussMaxHeightFt * 12, roofBaseHeightIn);
+    const result: Record<string, { widthIn: number; lowEdgeHeightIn: number; highEdgeHeightIn: number }[]> = {};
+    for (const wall of footprint.walls) {
+      if (!gableEndWallIds.has(wall.id)) continue;
+      const tiles = computeGableTiledRow(
+        wall.lengthFt * 12,
+        roofBaseHeightIn,
+        ridgeHeightIn,
         standardWidthIn,
-        thicknessIn,
-        gablePreviewLowEdgeHeightIn,
-        gablePreviewHighEdgeHeightIn,
-        includeNailer,
-      ),
-    [standardWidthIn, thicknessIn, gablePreviewLowEdgeHeightIn, gablePreviewHighEdgeHeightIn, includeNailer],
-  );
-  const gableRipCallout = useMemo(
-    () => computeGableRipCallout(standardWidthIn, gablePreviewLowEdgeHeightIn, gablePreviewHighEdgeHeightIn),
-    [standardWidthIn, gablePreviewLowEdgeHeightIn, gablePreviewHighEdgeHeightIn],
+        gablePeakPositionInByWallId[wall.id],
+        trussPlateInsetIn,
+      );
+      result[wall.id] = tiles.map((t) => ({
+        widthIn: t.widthIn,
+        lowEdgeHeightIn: Math.min(t.leftHeightIn, t.rightHeightIn),
+        highEdgeHeightIn: Math.max(t.leftHeightIn, t.rightHeightIn),
+      }));
+    }
+    return result;
+  }, [footprint, gableEndWallIds, gablePeakPositionInByWallId, roofBaseHeightIn, bottomOfTrussMaxHeightFt, standardWidthIn, trussPlateInsetIn]);
+
+  // Computed once, across every nameable panel type together, so a panel's
+  // number always reflects its true position in the along-wall sequence —
+  // Shop Drawing pages then just filter this same list, rather than each
+  // recomputing its own independent (and previously mismatched) counter.
+  const allInstances = useMemo(
+    () => (footprint ? allPanelInstances(footprint, overlayWallSlots, standardWidthIn, jackStudConfig, gableTilesByWallId) : []),
+    [footprint, overlayWallSlots, standardWidthIn, jackStudConfig, gableTilesByWallId],
   );
 
   // Door Rough Opening height (Tommy: "RO height for doors is almost
@@ -1905,7 +1921,9 @@ export default function LayoutEditor() {
                               (inst.sillHeightIn ?? sillDefaultHeightIn.value) + (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value),
                             ),
                           )
-                      : null;
+                      : inst.panelType === "gable"
+                        ? buildGablePanelMembers(inst.widthIn, thicknessIn, inst.lowEdgeHeightIn!, inst.highEdgeHeightIn!, includeNailer)
+                        : null;
       if (instMembers) members.push(...instMembers);
     }
     return members;
@@ -2171,6 +2189,8 @@ export default function LayoutEditor() {
     sillHeightInOverride?: number,
     bracedPatternOverride?: BracePattern,
     bracedMirroredOverride?: boolean,
+    lowEdgeHeightInOverride?: number,
+    highEdgeHeightInOverride?: number,
   ) => {
     const heightIn = wallHeightFt * 12;
     const resolvedSillHeightIn = sillHeightInOverride ?? sillDefaultHeightIn.value;
@@ -2190,7 +2210,13 @@ export default function LayoutEditor() {
           : panelTypeId === "corner"
             ? cornerPanelMembers3D
             : panelTypeId === "gable"
-              ? gablePanelMembers
+              ? buildGablePanelMembers(
+                  widthIn,
+                  thicknessIn,
+                  lowEdgeHeightInOverride ?? gablePreviewLowEdgeHeightIn,
+                  highEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn,
+                  includeNailer,
+                )
               : panelTypeId === "header"
                 ? sourceSlotType === "door"
                   ? buildDoorHeaderMembers(widthIn, thicknessIn, doorHeaderHeightIn)
@@ -2216,6 +2242,8 @@ export default function LayoutEditor() {
     sillHeightInOverride?: number,
     bracedPatternOverride?: BracePattern,
     bracedMirroredOverride?: boolean,
+    lowEdgeHeightInOverride?: number,
+    highEdgeHeightInOverride?: number,
   ): number | null => {
     const members = membersForPanelTypeId(
       panelTypeId,
@@ -2225,6 +2253,8 @@ export default function LayoutEditor() {
       sillHeightInOverride,
       bracedPatternOverride,
       bracedMirroredOverride,
+      lowEdgeHeightInOverride,
+      highEdgeHeightInOverride,
     );
     return members ? computeFastenerWeight(members).totalWeightKg : null;
   };
@@ -2234,8 +2264,8 @@ export default function LayoutEditor() {
   // real member list fastenerWeightKgFor uses, so e.g. a braced panel's
   // diagonal braces (real trapezoid length) actually count, unlike the old
   // flat computeStandardPanelWoodWeight scalar that assumed every braced
-  // panel shares the plain standard panel's BOM. Only gable/jack-stud (no
-  // membersForPanelTypeId branch) fall through to "not modeled".
+  // panel shares the plain standard panel's BOM. Only jack-stud (no
+  // membersForPanelTypeId branch) falls through to "not modeled".
   const woodWeightKgFor = (
     panelTypeId: string,
     widthIn: number,
@@ -2244,6 +2274,8 @@ export default function LayoutEditor() {
     sillHeightInOverride?: number,
     bracedPatternOverride?: BracePattern,
     bracedMirroredOverride?: boolean,
+    lowEdgeHeightInOverride?: number,
+    highEdgeHeightInOverride?: number,
   ): number | null => {
     const members = membersForPanelTypeId(
       panelTypeId,
@@ -2253,6 +2285,8 @@ export default function LayoutEditor() {
       sillHeightInOverride,
       bracedPatternOverride,
       bracedMirroredOverride,
+      lowEdgeHeightInOverride,
+      highEdgeHeightInOverride,
     );
     return members ? computeMemberSetWoodWeight(members).weightKg : null;
   };
@@ -2328,8 +2362,15 @@ export default function LayoutEditor() {
               thicknessIn,
               // A sill is a much shorter panel (Tommy: "sills are almost
               // always 32in tall") than the full wall height every other
-              // panel type here uses.
-              heightIn: panelTypeId === "sill" ? (inst.sillHeightIn ?? sillDefaultHeightIn.value) : wallHeightFt * 12,
+              // panel type here uses; a gable tile's own tallest point
+              // (highEdgeHeightIn) stands in for the flat-box approximation
+              // every non-header panel type uses.
+              heightIn:
+                panelTypeId === "sill"
+                  ? (inst.sillHeightIn ?? sillDefaultHeightIn.value)
+                  : panelTypeId === "gable"
+                    ? (inst.highEdgeHeightIn ?? wallHeightFt * 12)
+                    : wallHeightFt * 12,
               densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
               woodWeightKg: woodWeightKgFor(
                 panelTypeId,
@@ -2339,6 +2380,8 @@ export default function LayoutEditor() {
                 inst.sillHeightIn,
                 inst.bracedPattern,
                 inst.bracedMirrored,
+                inst.lowEdgeHeightIn,
+                inst.highEdgeHeightIn,
               ),
               fastenerWeightKg: fastenerWeightKgFor(
                 panelTypeId,
@@ -2348,6 +2391,8 @@ export default function LayoutEditor() {
                 inst.sillHeightIn,
                 inst.bracedPattern,
                 inst.bracedMirrored,
+                inst.lowEdgeHeightIn,
+                inst.highEdgeHeightIn,
               ),
               hasClayPlaster,
               hasLimePlaster,
@@ -2407,6 +2452,8 @@ export default function LayoutEditor() {
           inst.sillHeightIn,
           inst.bracedPattern,
           inst.bracedMirrored,
+          inst.lowEdgeHeightIn,
+          inst.highEdgeHeightIn,
         );
         if (members) accumulate(computeFastenerWeight(members).items);
         else unmodeledLabels.add(panelType.label);
@@ -2502,6 +2549,7 @@ export default function LayoutEditor() {
           ? doorHeaderHeightIn
           : computeHeaderHeightIn(wallHeightFt * 12, resolvedSillHeightInFor(inst) + resolvedWindowHeightInFor(inst));
       }
+      if (panelTypeId === "gable") return inst.highEdgeHeightIn ?? wallHeightFt * 12;
       return wallHeightFt * 12;
     };
     const panelWidthInFor = (panelTypeId: string, inst: PanelInstance): number =>
@@ -2520,11 +2568,17 @@ export default function LayoutEditor() {
         const style = resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored);
         parts.push(style.pattern, String(style.mirrored));
       }
+      // Same idea for gable tiles — two tiles of the same width but
+      // different edge heights (different position along the roofline)
+      // are physically different fabricated parts.
+      if (panelTypeId === "gable") {
+        parts.push((inst.lowEdgeHeightIn ?? 0).toFixed(3), (inst.highEdgeHeightIn ?? 0).toFixed(3));
+      }
       return parts.join("|");
     };
 
     return shopDrawings
-      .filter(({ panelType }) => panelType.id !== "gable" && panelType.id !== "jack-stud")
+      .filter(({ panelType }) => panelType.id !== "jack-stud")
       .flatMap(({ panelType, instances }) => {
         const groups = new Map<string, typeof instances>();
         for (const inst of instances) {
@@ -2545,6 +2599,8 @@ export default function LayoutEditor() {
               first.sillHeightIn,
               bracedStyle?.pattern,
               bracedStyle?.mirrored,
+              first.lowEdgeHeightIn,
+              first.highEdgeHeightIn,
             ) ?? [];
           return {
             uniqueKey: `${panelType.id}-${key}`,
@@ -2617,11 +2673,13 @@ export default function LayoutEditor() {
       }
       // Shop Drawings are a fabricator/detailer document, not a public-facing one (Tommy).
       if (role !== "public") {
-        // Gable/Jack-Stud: no real placed instances yet (see
-        // panelFabricationGroups' own doc comment) — keep the single
-        // preview-only page.
+        // Jack-Stud: no real placed instances yet (a real rough-opening
+        // height isn't tracked) — keep the single preview-only page. Gable
+        // now has real per-tile instances (see allPanelInstances'
+        // gableTilesByWallId) and flows through panelFabricationGroups
+        // like every other type, below.
         for (const { panelType, instances } of shopDrawings) {
-          if (panelType.id !== "gable" && panelType.id !== "jack-stud") continue;
+          if (panelType.id !== "jack-stud") continue;
           if (instances.length > 0 || canPreviewAllDetailPages) {
             pages.push({ id: `shop-${panelType.id}`, label: `Shop Drawing: ${panelType.label} (${instances.length})` });
           }
@@ -4876,7 +4934,7 @@ export default function LayoutEditor() {
                 : ["Straw bale counts only apply when Square Bale Panels is the selected panelization type (Wall tab)."]),
               "Sheet counts round up from the summed real area (not per-instance), a reasonable purchasing estimate assuming offcuts get reused across panels.",
               `Board feet: every real panel instance's dimensional-lumber members (studs, plates, girts, braces, jack studs, headers), grouped by nominal size (2x4/2x6/etc — using NOMINAL, not actual, dimensions, per standard lumber-industry convention). Stick count assumes ${standardPanelHeightIn.value / 12}ft stock length (the standard panel height) and rounds up — doesn't account for cut-length waste/offcuts across pieces shorter than a full stick.`,
-              "Roof-bearing assembly (Truss Plate/Box Beam) and Gable/Column preview-only members aren't included in the board-feet total yet — only real, placed panel instances are.",
+              "Roof-bearing assembly (Truss Plate/Box Beam) and the roof-catcher-beam Column preview aren't included in the board-feet total yet — only real, placed panel instances are (Gable End Panels now count too, via their own real per-tile instances).",
             ]}
             role={role}
           />
@@ -5313,7 +5371,7 @@ export default function LayoutEditor() {
         {role !== "public" && (
           <>
             {shopDrawings
-              .filter(({ panelType }) => panelType.id === "gable" || panelType.id === "jack-stud")
+              .filter(({ panelType }) => panelType.id === "jack-stud")
               .map(({ panelType, instances }) => (
               <StickyNote
                 key={panelType.id}
@@ -5340,57 +5398,36 @@ export default function LayoutEditor() {
                   loadBearingCapacity={panelType.loadBearingCapacity}
                   shearValue={panelType.shearValue}
                   diagram3D={
-                    panelType.id === "gable" ? (
-                      <StandardPanel3DView
-                        members={gablePanelMembers}
-                        overallDimensions={{ heightIn: gablePreviewHighEdgeHeightIn, widthIn: standardWidthIn, depthIn: thicknessIn }}
-                        displayName={panelType.label}
-                        compact
-                      />
-                    ) : (
-                      <StandardPanel3DView
-                        members={jackStudMembers}
-                        overallDimensions={{ heightIn: jackStudPreviewHeightIn, widthIn: jackStudThicknessIn(jackStudConfig), depthIn: thicknessIn }}
-                        displayName={panelType.label}
-                        compact
-                      />
-                    )
+                    <StandardPanel3DView
+                      members={jackStudMembers}
+                      overallDimensions={{ heightIn: jackStudPreviewHeightIn, widthIn: jackStudThicknessIn(jackStudConfig), depthIn: thicknessIn }}
+                      displayName={panelType.label}
+                      compact
+                    />
                   }
                   diagramNote={
-                    panelType.id === "gable" ? (
-                      <p className={styles.note}>
-                        Preview only, at the Roof tab&apos;s current inputs (low/eave edge {gablePreviewLowEdgeHeightIn}
-                        &quot;, high/ridge edge {gablePreviewHighEdgeHeightIn.toFixed(1)}&quot;) — real instances will
-                        take manual per-instance edge heights once there&apos;s a layout mechanism to place them (see
-                        the elevation view). Top skin rip: {gableRipCallout.angleDeg.toFixed(2)}
-                        &deg;, {gableRipCallout.lengthIn.toFixed(2)}&quot; long.
-                      </p>
-                    ) : (
-                      <p className={styles.note}>
-                        Preview only, at an illustrative default height (sill-top to header-bottom, {jackStudPreviewHeightIn.toFixed(1)}
-                        &quot;) — real rough-opening height isn&apos;t tracked yet.{" "}
-                        {jackStudConfig === "plywood" ? (
-                          <>
-                            Fasteners: {jackStudFastenerResult.items[0]!.count} x 4in T25 #9 screws (
-                            {jackStudFastenerResult.totalWeightLb.toFixed(2)} lb) for this one sheet — a full opening
-                            gets 2 (one each side).
-                          </>
-                        ) : (
-                          "2x4 stud config selected (Panelizer) — fastener count/weight not modeled for this config yet."
-                        )}
-                      </p>
-                    )
+                    <p className={styles.note}>
+                      Preview only, at an illustrative default height (sill-top to header-bottom, {jackStudPreviewHeightIn.toFixed(1)}
+                      &quot;) — real rough-opening height isn&apos;t tracked yet.{" "}
+                      {jackStudConfig === "plywood" ? (
+                        <>
+                          Fasteners: {jackStudFastenerResult.items[0]!.count} x 4in T25 #9 screws (
+                          {jackStudFastenerResult.totalWeightLb.toFixed(2)} lb) for this one sheet — a full opening
+                          gets 2 (one each side).
+                        </>
+                      ) : (
+                        "2x4 stud config selected (Panelizer) — fastener count/weight not modeled for this config yet."
+                      )}
+                    </p>
                   }
-                  estimatedBearingLb={panelType.id === "gable" ? estimatedStudPackBearingLb : undefined}
                   instances={instances}
                   role={role}
                 />
                 <p className={styles.note}>
                   Preview-only (3D model + illustrative default dimensions) — not placed anywhere in the current
-                  layout system yet: gable needs the not-yet-built roof/ridge system to supply real per-instance
-                  edge heights, and jack studs need a real rough-opening height, which headers/sills don&apos;t
-                  track yet either. Inclined/Gable (roof-slope) and floor/roof panels don&apos;t exist as modeled
-                  panel systems yet either — all deferred until those systems are built.
+                  layout system yet: jack studs need a real rough-opening height, which headers/sills don&apos;t
+                  track yet either. Floor/roof panels don&apos;t exist as modeled panel systems yet either — all
+                  deferred until those systems are built.
                 </p>
               </StickyNote>
               ))}
