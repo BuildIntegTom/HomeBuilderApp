@@ -16,13 +16,21 @@ export interface DrawingToolPenProps {
   secondStoryDisabled: boolean;
   secondStoryWallHeightFt: number;
   onSecondStoryWallHeightChange: (heightFt: number) => void;
+  /** Plan View "height-slice lens" (Tommy: "the 2d viewer is basically a
+   * lens of which height slice you are at") — which story the 2D Plan View
+   * currently shows/edits, and every real story to choose from. Only
+   * rendered as a toggle when there's more than one (nothing to switch
+   * between otherwise). */
+  stories: { id: "ground" | "second"; label: string }[];
+  viewedStoryId: "ground" | "second";
+  onChangeViewedStoryId: (id: "ground" | "second") => void;
 }
 
 const TOOLS: { id: ShapeTool; label: string; short: string; disabledKey?: "bumpOutDisabled" | "dragWallDisabled" | "editDisabled" }[] = [
   { id: "rectangle", label: "Rectangle", short: "▭" },
   { id: "octagon", label: "Octagon", short: "⯃" },
   { id: "bump-out", label: "Add Bump-out", short: "+", disabledKey: "bumpOutDisabled" },
-  { id: "drag-wall", label: "Drag Wall", short: "↔" },
+  { id: "drag-wall", label: "Drag Wall", short: "↔", disabledKey: "dragWallDisabled" },
   { id: "edit", label: "Edit", short: "✎" },
 ];
 
@@ -44,6 +52,9 @@ export default function DrawingToolPen({
   secondStoryDisabled,
   secondStoryWallHeightFt,
   onSecondStoryWallHeightChange,
+  stories,
+  viewedStoryId,
+  onChangeViewedStoryId,
 }: DrawingToolPenProps) {
   const disabledFor: Record<string, boolean> = {
     bumpOutDisabled,
@@ -73,7 +84,7 @@ export default function DrawingToolPen({
       {TOOLS.slice(0, 2).map(renderTool)}
       <button
         type="button"
-        title="Shares the ground floor's footprint and panel layout for now (a fully independent second-story footprint/opening editor isn't wired up yet) — stacked at the ground floor's own top-plate height in 3D Preview and the whole-building OBJ export."
+        title="Stacks a second, independently-editable story at the ground floor's own top-plate height — give it its own windows/doors/panel layout via this Plan View's own Ground/Second Story toggle below, the elevation view, or the 3D Edit tool. Note: editing the footprint itself (wall length, bump-out, drag-wall) always applies to the ground floor only — the second story doesn't resync from those edits yet."
         aria-pressed={secondStoryEnabled}
         disabled={secondStoryDisabled}
         className={secondStoryEnabled ? styles.toolActive : styles.tool}
@@ -97,6 +108,22 @@ export default function DrawingToolPen({
             onChange={(e) => onSecondStoryWallHeightChange(Number(e.target.value))}
           />
         </label>
+      )}
+      {stories.length > 1 && (
+        <div role="group" aria-label="Viewed story" style={{ display: "flex", gap: 2 }}>
+          {stories.map((story) => (
+            <button
+              key={story.id}
+              type="button"
+              title={`Show and edit ${story.label}'s own panels in this Plan View`}
+              aria-pressed={viewedStoryId === story.id}
+              className={viewedStoryId === story.id ? styles.toolActive : styles.tool}
+              onClick={() => onChangeViewedStoryId(story.id)}
+            >
+              <span className={styles.toolLabel}>{story.label}</span>
+            </button>
+          ))}
+        </div>
       )}
       {TOOLS.slice(2).map(renderTool)}
     </div>

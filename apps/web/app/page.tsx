@@ -1600,6 +1600,17 @@ export default function LayoutEditor() {
     return secondStory ? [ground, secondStory] : [ground];
   }, [wallHeightFt, overlayWallSlots, secondStory]);
 
+  // Plan View "height-slice lens" (Tommy: "the 2d viewer is basically a lens
+  // of which height slice you are at... maybe it sees the ground level, and
+  // then can shift upward to the next ring of panels") — which story the 2D
+  // Plan View currently shows/edits. `effectiveViewedStoryId` (not the raw
+  // state) is what every consumer reads, so removing the second story (or
+  // drawing a brand-new footprint, which already resets `secondStory` to
+  // null) automatically falls back to the ground floor with no extra reset
+  // logic needed.
+  const [viewedStoryId, setViewedStoryId] = useState<"ground" | "second">("ground");
+  const effectiveViewedStoryId = stories.length > 1 ? viewedStoryId : "ground";
+
   // Shared by both entry points to this action — the 2D toolbar's "Add
   // Second Story" button and the elevation view's "Add Layer" button (Tommy:
   // "the add lay[er] button should be next to add gable end button").
@@ -3500,14 +3511,17 @@ export default function LayoutEditor() {
                 <DrawingToolPen
                   value={shapeTool}
                   onChange={setShapeTool}
-                  bumpOutDisabled={!footprint}
-                  dragWallDisabled={!footprint}
+                  bumpOutDisabled={!footprint || effectiveViewedStoryId !== "ground"}
+                  dragWallDisabled={!footprint || effectiveViewedStoryId !== "ground"}
                   editDisabled={!footprint}
                   secondStoryEnabled={stories.length > 1}
                   onToggleSecondStory={handleToggleSecondStory}
                   secondStoryDisabled={!footprint}
                   secondStoryWallHeightFt={stories[1]?.wallHeightFt ?? 10}
                   onSecondStoryWallHeightChange={(ft) => setSecondStory((prev) => (prev ? { ...prev, wallHeightFt: ft } : prev))}
+                  stories={stories}
+                  viewedStoryId={effectiveViewedStoryId}
+                  onChangeViewedStoryId={setViewedStoryId}
                 />
                 <div ref={setToolbarSecondaryPortalNode} className={styles.toolbarPortalInline} />
                 <PanelLegend />
@@ -3586,23 +3600,31 @@ export default function LayoutEditor() {
                   footprint={footprint}
                   shapeTool={shapeTool}
                   offsetPx={offsetPx}
-                  wallSlots={overlayWallSlots}
+                  wallSlots={effectiveViewedStoryId === "ground" ? overlayWallSlots : (secondStory?.wallSlots ?? {})}
                   wallStartOffsetIn={wallRenderOffsetIn}
                   wallThicknessIn={thicknessIn}
-                  wallHeightFt={wallHeightFt}
+                  wallHeightFt={effectiveViewedStoryId === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt)}
                   includeNailer={includeNailer}
                   bracingStyle={bracingStyle}
                   standardWidthIn={standardWidthIn}
                   jackStudConfig={jackStudConfig}
                   leastAccessibleCorner={leastAccessibleCorner}
                   primaryCornerIds={primaryCornerIds}
-                  isWallLengthEditable={isWallLengthEditable}
+                  isWallLengthEditable={(wallId) => effectiveViewedStoryId === "ground" && isWallLengthEditable(wallId)}
                   onDraw={handleDraw}
-                  onToggleOpening={(wallId, slotIndex) => handleToggleOpening("ground", wallId, slotIndex)}
-                  onSetLeastAccessibleCorner={handleSetLeastAccessibleCorner}
-                  onEditWallLength={handleEditWallLength}
-                  onAddBumpOut={handleAddBumpOut}
-                  onDragWall={handleDragWall}
+                  onToggleOpening={(wallId, slotIndex) => handleToggleOpening(effectiveViewedStoryId, wallId, slotIndex)}
+                  onSetLeastAccessibleCorner={(cornerId) => {
+                    if (effectiveViewedStoryId === "ground") handleSetLeastAccessibleCorner(cornerId);
+                  }}
+                  onEditWallLength={(wallId, newLengthFt) => {
+                    if (effectiveViewedStoryId === "ground") handleEditWallLength(wallId, newLengthFt);
+                  }}
+                  onAddBumpOut={(wallId, spanStartFt, spanEndFt, depthFt) => {
+                    if (effectiveViewedStoryId === "ground") handleAddBumpOut(wallId, spanStartFt, spanEndFt, depthFt);
+                  }}
+                  onDragWall={(wallId, offsetFt) => {
+                    if (effectiveViewedStoryId === "ground") handleDragWall(wallId, offsetFt);
+                  }}
                   toolbarPortalTarget={toolbarPortalNode}
                   secondaryToolbarPortalTarget={toolbarSecondaryPortalNode}
                 />
