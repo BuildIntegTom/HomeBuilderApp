@@ -35,6 +35,7 @@ import {
   retile as retilePure,
   retilePreservingOpenings as retilePreservingOpeningsPure,
   retileWithOpenings,
+  wallCompassDirection,
   wallGeometryFor as wallGeometryForPure,
   type CornerId,
   type Footprint,
@@ -69,6 +70,7 @@ import {
   MM_PER_IN,
   toReviewLog,
   validateVaporOpenness,
+  type PanelWeightBreakdown,
   type Season,
 } from "@building-integrity/calc-engine";
 import {
@@ -192,6 +194,7 @@ import {
   type JackStudConfig,
   type OctagonRingDiameterFt,
   type PanelMember,
+  type PanelStructuralStatus,
   type RoofCatcherBeamShape,
   type RoofSystemType,
   type SeismicZone,
@@ -253,6 +256,11 @@ const STRAW_BALE_WEIGHT_LB = 40;
 const KG_TO_LB = 2.20462;
 const LB_FT3_TO_KG_M3 = 16.018463;
 const FT3_TO_M3 = 0.0283168;
+
+const ROOF_BEARING_STRUCTURAL_STATUS: PanelStructuralStatus = {
+  status: "pending-BI-confirmation",
+  note: "Not yet modeled — pending Building Integrity engineering review.",
+};
 
 // "both" is for accessory products (Exto Seal, Tescon Vana) that aren't
 // inherently one-sided — they show up in both checkbox lists.
@@ -2631,6 +2639,73 @@ export default function LayoutEditor() {
       });
   }, [shopDrawings, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored, doorHeaderHeightIn, sillHeightIn]);
 
+  // Real per-wall roof-bearing (truss plate / box beam) Shop Fabrication
+  // pages — same treatment gable-end panels got: one real segment per wall
+  // (sized to that wall's own actual length), grouped into exact-copy
+  // fabrication pages, replacing the single fixed-10ft illustrative preview
+  // the "Roof: Truss Plate/Box Beam" Detail Guide page still shows (that
+  // page stays as general reference documentation, same role as Door/
+  // Window RO). Truss plate/box beam have no straw at all — a Timber HP or
+  // dense-pack-cellulose fill stands in its place, so the weightBreakdown
+  // below is hand-built rather than routed through computePanelWeightBreakdown
+  // (which hardcodes a "Straw" component label).
+  const roofBearingFabricationGroups = useMemo(() => {
+    if (!footprint) return [];
+    const kind: "truss-plate" | "box-beam" = stories.length === 1 ? "truss-plate" : "box-beam";
+    const kindLabel = kind === "truss-plate" ? "Truss Plate" : "Box Beam";
+    const heightIn = kind === "truss-plate" ? PLATE_2X6_THICKNESS_IN + 0.75 : 2 * BOX_BEAM_CAP_THICKNESS_IN + BOX_BEAM_LVL_HEIGHT_IN;
+
+    const groups = new Map<string, { lengthIn: number; walls: { id: string; direction: string }[] }>();
+    for (const wall of footprint.walls) {
+      const lengthIn = wall.lengthFt * 12;
+      const key = lengthIn.toFixed(3);
+      const direction = wallCompassDirection(wall, footprint);
+      const existing = groups.get(key);
+      if (existing) existing.walls.push({ id: wall.id, direction });
+      else groups.set(key, { lengthIn, walls: [{ id: wall.id, direction }] });
+    }
+
+    return [...groups.entries()].map(([lengthKey, { lengthIn, walls }]) => {
+      const members = kind === "truss-plate" ? buildTrussPlateMembers(lengthIn, thicknessIn, trussPlateInsetIn) : buildBoxBeamMembers(lengthIn, thicknessIn);
+      const woodWeightKg = computeMemberSetWoodWeight(members).weightKg;
+      const fill =
+        kind === "truss-plate"
+          ? (() => {
+              const vol = computeTimberHpVolume(lengthIn, thicknessIn, trussPlateInsetIn);
+              const weight = computeInsulationWeight(vol.volumeFt3, timberHpDensityLbFt3.value);
+              return { label: "Timber HP insulation fill", weightKg: weight.weightKg, weightLb: weight.weightLb };
+            })()
+          : (() => {
+              const vol = computeDensePackCelluloseVolume(lengthIn, thicknessIn);
+              const weight = computeInsulationWeight(vol.volumeFt3, densePackCelluloseDensityLbFt3.value);
+              return { label: "Dense-pack cellulose fill", weightKg: weight.weightKg, weightLb: weight.weightLb };
+            })();
+      const woodComponent = {
+        label: kind === "truss-plate" ? "Wood (2x4/2x6 + plywood cap)" : "Wood (LVL webs + plywood caps)",
+        weightKg: woodWeightKg,
+        weightLb: woodWeightKg * KG_TO_LB,
+      };
+      const weightBreakdown: PanelWeightBreakdown = {
+        strawOnlyWeightKg: 0,
+        strawOnlyWeightLb: 0,
+        components: [woodComponent, fill],
+        totalModeledWeightKg: woodComponent.weightKg + fill.weightKg,
+        totalModeledWeightLb: woodComponent.weightLb + fill.weightLb,
+      };
+
+      return {
+        uniqueKey: `roof-${kind}-${lengthKey}`,
+        kind,
+        kindLabel,
+        lengthIn,
+        heightIn,
+        members,
+        weightBreakdown,
+        instances: walls.map((w) => ({ name: `Wall ${w.id} (${w.direction})` })),
+      };
+    });
+  }, [footprint, stories.length, thicknessIn, trussPlateInsetIn]);
+
   // Only surface pages that actually apply to what's currently selected/
   // drawn — a foundation detail page only if one exists for this type, a
   // panel type's Shop Drawing only if the current design actually has any
@@ -2660,6 +2735,16 @@ export default function LayoutEditor() {
       }
       pages.push({ id: "detail-classic-truss", label: "Classic Truss Reference" });
       pages.push({ id: "detail-high-perf-truss", label: "High-Performance Truss" });
+      // Real per-wall roof-bearing Shop Fabrication pages — fabricator/
+      // detailer documents, not public-facing (same gate panelFabricationGroups uses).
+      if (role !== "public") {
+        for (const group of roofBearingFabricationGroups) {
+          pages.push({
+            id: `shop-fab-${group.uniqueKey}`,
+            label: `Panel Fabrication: ${group.kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
+          });
+        }
+      }
     }
     if (wallsEnabled) {
       if (footprint) {
@@ -2717,6 +2802,7 @@ export default function LayoutEditor() {
     stories,
     shopDrawings,
     panelFabricationGroups,
+    roofBearingFabricationGroups,
     role,
     canPreviewAllDetailPages,
     allInstances,
@@ -4654,6 +4740,7 @@ export default function LayoutEditor() {
                 "3D model above is an illustrative 10ft segment, not full building length. 2x4 along the interior wythe, 2x6 along the exterior wythe (its own 5.5in width doubles as the Roof tab's truss plate inset), both capped by one continuous 3/4in plywood top skin.",
                 `Timber HP fills the open cavity under the plywood cap, between the 2x4 and 2x6 (${timberHpTotal.gapWidthIn.toFixed(2)}in wide x 1.5in tall) — across the drawn footprint's full ${(totalWallPerimeterIn / 12).toFixed(1)}ft wall perimeter: ${timberHpTotal.volumeFt3.toFixed(2)} ft3, ~${timberHpWeight.weightLb.toFixed(1)} lb (${timberHpWeight.weightKg.toFixed(1)} kg) at ${timberHpDensityLbFt3.value} lb/ft3.`,
                 timberHpDensityLbFt3.note,
+                "Real per-wall segments, sized to each wall's own actual length, are on their own \"Panel Fabrication: Truss Plate\" pages below (grouped by unique length) — with a real cut list and weight checker per segment.",
               ]}
               role={role}
             />
@@ -4686,6 +4773,7 @@ export default function LayoutEditor() {
                 "3D model above is an illustrative 10ft segment, not full building length. Two 9in x 2in LVL webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a hollow box, blown in with dense-pack cellulose.",
                 `Across the drawn footprint's full ${(totalWallPerimeterIn / 12).toFixed(1)}ft wall perimeter: ${denseCelluloseTotal.volumeFt3.toFixed(2)} ft3, ~${denseCelluloseWeight.weightLb.toFixed(1)} lb (${denseCelluloseWeight.weightKg.toFixed(1)} kg) at ${densePackCelluloseDensityLbFt3.value} lb/ft3.`,
                 densePackCelluloseDensityLbFt3.note,
+                "Real per-wall segments, sized to each wall's own actual length, are on their own \"Panel Fabrication: Box Beam\" pages below (grouped by unique length) — with a real cut list and weight checker per segment.",
               ]}
               role={role}
             />
@@ -5506,6 +5594,45 @@ export default function LayoutEditor() {
                     estimatedBearingMethodLabel={
                       group.panelType.id === "column" || group.panelType.id === "corner" ? "built-up plywood section" : undefined
                     }
+                    role={role}
+                  />
+                </StickyNote>
+              );
+            })}
+
+            {roofBearingFabricationGroups.map((group) => {
+              const noteId = `shop-fab-${group.uniqueKey}`;
+              const panelDescription =
+                group.kind === "truss-plate"
+                  ? "2x4 along the interior wythe edge, 2x6 along the exterior wythe edge, both capped by one continuous 3/4in plywood top skin — sized to this wall's own real length, not an illustrative segment."
+                  : "Two 9in x 2in LVL webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — sized to this wall's own real length, not an illustrative segment.";
+              return (
+                <StickyNote
+                  key={group.uniqueKey}
+                  id={noteId}
+                  label={`Panel Fabrication: ${group.kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length})`}
+                  isOpen={openNoteIds.has(noteId)}
+                  isFullscreen={fullscreenNoteId === noteId}
+                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
+                  onClose={() => handleToggleNote(noteId)}
+                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
+                  onPrint={() => handlePrintNote(noteId)}
+                >
+                  <p className={styles.note}>
+                    Fabricator/detailer document — one sheet per unique wall length (walls sharing a length grouped
+                    together), with a to-scale lettered elevation, a materials cut list, which walls this segment is
+                    used on, and a weight checker with a blank line for the shop&apos;s own measured weight.
+                  </p>
+                  <PanelFabricationPage
+                    title={`Panel Fabrication — ${group.kindLabel}`}
+                    panelDescription={panelDescription}
+                    widthIn={group.lengthIn}
+                    heightIn={group.heightIn}
+                    members={group.members}
+                    instances={group.instances}
+                    weightBreakdown={group.weightBreakdown}
+                    loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
+                    shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
                     role={role}
                   />
                 </StickyNote>
