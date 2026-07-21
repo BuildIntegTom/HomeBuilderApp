@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildGablePanelMembers, buildGablePanelSchema, computeGableRipCallout } from "./gablePanelMembers";
+import { buildGablePanelMembers, buildGablePanelSchema, computeGableRipCallout, GABLE_PANEL_MAX_HEIGHT_IN } from "./gablePanelMembers";
 import { memberBoxSizeIn } from "./panelMemberHelpers";
 
 const WIDTH_IN = 40;
 const DEPTH_IN = 15.5;
-const LOW_EDGE_IN = 120;
-const HIGH_EDGE_IN = 150;
+// A gable panel's own edge heights are relative to the eave line (its own
+// local height, up to GABLE_PANEL_MAX_HEIGHT_IN) — NOT the absolute wall
+// height these constants used to represent before that bug was fixed.
+const LOW_EDGE_IN = 20;
+const HIGH_EDGE_IN = 50;
 
 describe("computeGableRipCallout", () => {
   it("computes the rip angle/length from the rise over the width", () => {
@@ -24,6 +27,11 @@ describe("computeGableRipCallout", () => {
 describe("buildGablePanelMembers", () => {
   it("throws if highEdgeHeightIn is less than lowEdgeHeightIn", () => {
     expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, HIGH_EDGE_IN, LOW_EDGE_IN, false)).toThrow();
+  });
+
+  it("throws if highEdgeHeightIn exceeds the 8ft (96in) max a single Gable End Panel can be built at", () => {
+    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, 0, GABLE_PANEL_MAX_HEIGHT_IN, false)).not.toThrow();
+    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, 0, GABLE_PANEL_MAX_HEIGHT_IN + 0.01, false)).toThrow();
   });
 
   it("keeps the bottom skin/plates flat and unaffected by the slope", () => {

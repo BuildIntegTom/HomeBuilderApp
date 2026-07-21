@@ -4,24 +4,30 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, TransformControls } from "@react-three/drei";
 import type { Mesh } from "three";
-import { panelSlotBoxes3D, type Footprint, type PanelSlot, type PanelSlotBox3D } from "@building-integrity/geometry";
+import { panelSlotBoxes3D, wallAxis, type Footprint, type PanelSlot, type PanelSlotBox3D } from "@building-integrity/geometry";
 import { allPanelInstances, combinedPanelLabel, type PanelInstance } from "./panelInstances";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
 import PanelLabel from "./PanelLabel";
 import {
   bracingStyleToPatternMirror,
+  buildBoxBeamMembers,
   buildBracedPanelMembers,
   buildBuildingObj,
   buildColumnPanelMembers,
   buildCornerPanelMembers,
+  buildGablePanelMembers,
   buildOpeningAssemblyMembers,
   buildSafetyGapMembers,
   buildSquareBaleCornerPanelMembers,
   buildSquareBalePanelMembers,
   buildStandardPanelMembers,
+  buildTrussPlateMembers,
+  BOX_BEAM_CAP_THICKNESS_IN,
+  BOX_BEAM_LVL_HEIGHT_IN,
   computeDoorRoughOpeningHeightIn,
   doorRoughOpeningSelectedHeightIn,
+  PLATE_2X6_THICKNESS_IN,
   sillDefaultHeightIn,
   sillHeaderHeightInRange,
   standardWindowHeightDefaultIn,
@@ -44,6 +50,8 @@ const BIRDS_EYE_AZIMUTH_DEG = 45; // a corner/3-quarter starting view, not strai
 const IN_PER_FT = 12;
 const BLOB_COLOR = "#b5b0a8";
 const EMPTY_ID_SET: Set<string> = new Set();
+const EMPTY_GABLE_TILES_BY_WALL_ID: Record<string, { widthIn: number; xStartIn: number; lowEdgeHeightIn: number; highEdgeHeightIn: number }[]> =
+  {};
 // Standard click-vs-drag screen-space threshold (px) before the Orbit
 // tool's click-and-swipe re-centering commits — a plain click stays a
 // true no-op below this.
@@ -464,6 +472,21 @@ interface Building3DViewProps {
    * opening assemblies (header/jack-studs/sill) via buildOpeningAssemblyMembers. */
   jackStudConfig: JackStudConfig;
   standardWidthIn: number;
+  /** Real per-wall Gable End Panel tiles (page.tsx's own `gableTilesByWallId`
+   * memo, already the single source of truth the Panel Fabrication pages
+   * use) — each tile's `lowEdgeHeightIn`/`highEdgeHeightIn` are absolute
+   * (floor-relative), matching how they're stored everywhere else; this
+   * component subtracts its own `roofBaseHeightIn` before building real
+   * member geometry, same as page.tsx does. Empty/missing wall = no gable
+   * tiles there. */
+  gableTilesByWallId?: Record<string, { widthIn: number; xStartIn: number; lowEdgeHeightIn: number; highEdgeHeightIn: number }[]>;
+  /** Whether the Roof system is in scope at all (page.tsx's own
+   * `roofEnabled` checkbox) — gates whether a roof-bearing (truss plate/box
+   * beam) member renders atop every wall. */
+  roofEnabled?: boolean;
+  /** Truss plate's own inset from each wall's true corners (page.tsx's
+   * `trussPlateInsetIn`) — unused for box beam, which has no inset. */
+  trussPlateInsetIn?: number;
   /** Renders a static, non-interactive SE bird's-eye frame instead of the
    * normal orbit-able preview — used to capture a PNG for the Project
    * Summary page's static rendering (Tommy: "a static 3d rendering image
@@ -581,6 +604,9 @@ export default function Building3DView({
   nailerOffsetIn = 0,
   jackStudConfig,
   standardWidthIn,
+  gableTilesByWallId = EMPTY_GABLE_TILES_BY_WALL_ID,
+  roofEnabled = false,
+  trussPlateInsetIn = 0,
   captureMode = false,
   onCapture,
   compassRef,
@@ -731,6 +757,70 @@ export default function Building3DView({
     ],
   );
 
+  // The roofline's own base height (sum of every story's own wall height —
+  // same semantics as page.tsx's own `roofBaseHeightIn`, and provably
+  // identical: `wallHeightFt`/`secondStory` here ARE page.tsx's
+  // `stories[0].wallHeightFt`/`stories[1]`). Both the gable cap and the
+  // roof-bearing member anchor off this.
+  const roofBaseHeightIn = heightIn + secondStoryHeightIn;
+  // Truss plate (single-story) / box beam (two-story) — whichever applies
+  // is driven by the same `secondStory` presence check page.tsx's own Roof
+  // detail pages already use. Only relevant/rendered when `roofEnabled`.
+  const roofBearingAssemblyHeightIn = secondStory
+    ? 2 * BOX_BEAM_CAP_THICKNESS_IN + BOX_BEAM_LVL_HEIGHT_IN
+    : PLATE_2X6_THICKNESS_IN + 0.75;
+
+  // Real per-wall Gable End Panel tiles (page.tsx's own `gableTilesByWallId`
+  // — the same data the Panel Fabrication pages use). Each tile sits on TOP
+  // of the roof-bearing member (when one exists), not at the raw eave line,
+  // so the two don't interpenetrate — a real stacking interaction neither
+  // WallElevationView's own 2D SVG nor anything else resolves today, since
+  // roof-bearing has never been drawn alongside gable anywhere until now.
+  const gableRenderData = useMemo(() => {
+    if (!footprint) return [];
+    const gableBaseYFt = roofBaseHeightIn / IN_PER_FT + (roofEnabled ? roofBearingAssemblyHeightIn / IN_PER_FT : 0);
+    const result: { wallId: string; tileIndex: number; anchorX: number; anchorZ: number; rotationRad: number; members: PanelMember[] }[] =
+      [];
+    for (const [wallId, tiles] of Object.entries(gableTilesByWallId)) {
+      const wall = footprint.walls.find((w) => w.id === wallId);
+      if (!wall || tiles.length === 0) continue;
+      const axis = wallAxis(footprint, wall);
+      tiles.forEach((tile, tileIndex) => {
+        const offsetFt = tile.xStartIn / IN_PER_FT;
+        result.push({
+          wallId,
+          tileIndex,
+          anchorX: axis.startXFt + axis.dirX * offsetFt,
+          anchorZ: axis.startZFt + axis.dirZ * offsetFt,
+          rotationRad: axis.rotationRad,
+          members: buildGablePanelMembers(
+            tile.widthIn,
+            thicknessIn,
+            tile.lowEdgeHeightIn - roofBaseHeightIn,
+            tile.highEdgeHeightIn - roofBaseHeightIn,
+            includeNailer,
+          ),
+        });
+      });
+    }
+    return result.map((r) => ({ ...r, anchorYFt: gableBaseYFt }));
+  }, [footprint, gableTilesByWallId, roofBaseHeightIn, roofEnabled, roofBearingAssemblyHeightIn, thicknessIn, includeNailer]);
+
+  // One real roof-bearing (truss plate/box beam) segment per wall, sized to
+  // that wall's own real length — same member builders the Panel
+  // Fabrication pages already use, just placed in world space here.
+  const roofBearingRenderData = useMemo(() => {
+    if (!footprint || !roofEnabled) return [];
+    return footprint.walls.map((wall) => {
+      const axis = wallAxis(footprint, wall);
+      const lengthIn = wall.lengthFt * IN_PER_FT;
+      const members = secondStory
+        ? buildBoxBeamMembers(lengthIn, thicknessIn)
+        : buildTrussPlateMembers(lengthIn, thicknessIn, trussPlateInsetIn);
+      return { wallId: wall.id, anchorX: axis.startXFt, anchorZ: axis.startZFt, rotationRad: axis.rotationRad, members };
+    });
+  }, [footprint, roofEnabled, secondStory, thicknessIn, trussPlateInsetIn]);
+
   // Panel-name labels (Tommy: "the specific panel label (N1 for example)
   // to appear on... the simplified box 3d views") — a pure re-derivation of
   // the exact same compass-direction naming `page.tsx`'s own `allInstances`
@@ -775,6 +865,26 @@ export default function Building3DView({
     const panels: WorldPlacedPanel[] = [
       ...slotRenderData.map(toWorldPlacedPanel("", 0)),
       ...secondStorySlotRenderData.map(toWorldPlacedPanel("story2_", heightIn)),
+      ...gableRenderData.map(
+        ({ wallId, tileIndex, anchorX, anchorZ, anchorYFt, rotationRad, members }): WorldPlacedPanel => ({
+          label: `gable_${wallId}_${tileIndex}`,
+          worldXIn: anchorX * IN_PER_FT,
+          worldZIn: anchorZ * IN_PER_FT,
+          worldYIn: anchorYFt * IN_PER_FT,
+          rotationRad,
+          members,
+        }),
+      ),
+      ...roofBearingRenderData.map(
+        ({ wallId, anchorX, anchorZ, rotationRad, members }): WorldPlacedPanel => ({
+          label: `roofbearing_${wallId}`,
+          worldXIn: anchorX * IN_PER_FT,
+          worldZIn: anchorZ * IN_PER_FT,
+          worldYIn: roofBaseHeightIn,
+          rotationRad,
+          members,
+        }),
+      ),
     ];
     const objText = buildBuildingObj(panels, "Building");
     const blob = new Blob([objText], { type: "text/plain" });
@@ -1025,6 +1135,20 @@ export default function Building3DView({
                 </mesh>
               )}
               {renderSillHeaderHandles(box, "second")}
+            </group>
+          ))}
+          {gableRenderData.map(({ wallId, tileIndex, anchorX, anchorZ, anchorYFt, rotationRad, members }) => (
+            <group key={`gable-${wallId}-${tileIndex}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
+              <PanelMembersGroup members={members} />
+            </group>
+          ))}
+          {roofBearingRenderData.map(({ wallId, anchorX, anchorZ, rotationRad, members }) => (
+            <group
+              key={`roofbearing-${wallId}`}
+              position={[anchorX, roofBaseHeightIn / IN_PER_FT, anchorZ]}
+              rotation={[0, -rotationRad, 0]}
+            >
+              <PanelMembersGroup members={members} />
             </group>
           ))}
           {!captureMode && <OrbitControls target={target} makeDefault enabled={!isDraggingHandle} />}

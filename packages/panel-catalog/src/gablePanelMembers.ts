@@ -160,6 +160,14 @@ function buildGableTrussBraces(widthIn: number, depthIn: number, lowEdgeHeightIn
  * panel's high-edge side may need additional fill rows, not modeled here.
  * Flag for refinement, same as the Braced Panel's own draft status.
  */
+/** A Gable End Panel is a short add-on cap sitting above the wall's own
+ * eave line, not a full-height wall panel — Tommy: "gable panels...can be
+ * up to 8' tall." `lowEdgeHeightIn`/`highEdgeHeightIn` are this panel's own
+ * local height (already relative to the eave line), never the wall's
+ * absolute floor-to-edge height — a caller subtracts the roofline's own
+ * base height before calling this. */
+export const GABLE_PANEL_MAX_HEIGHT_IN = 96;
+
 export function buildGablePanelMembers(
   widthIn: number,
   depthIn: number,
@@ -169,6 +177,11 @@ export function buildGablePanelMembers(
 ): PanelMember[] {
   if (highEdgeHeightIn < lowEdgeHeightIn) {
     throw new Error("highEdgeHeightIn must be >= lowEdgeHeightIn — swap ends if the ridge is on the opposite side.");
+  }
+  if (highEdgeHeightIn > GABLE_PANEL_MAX_HEIGHT_IN) {
+    throw new Error(
+      `highEdgeHeightIn (${highEdgeHeightIn}) exceeds the ${GABLE_PANEL_MAX_HEIGHT_IN}in (8ft) max a single Gable End Panel can be built at — this should be the panel's own height above the eave line, not an absolute floor height.`,
+    );
   }
 
   const plateLengthIn = widthIn - 2 * PLATE_END_CLEARANCE_IN;

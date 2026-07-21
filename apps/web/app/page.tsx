@@ -112,6 +112,7 @@ import {
   computeRoofCatcherBeamSegments,
   computeTimberHpVolume,
   DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN,
+  GABLE_PANEL_MAX_HEIGHT_IN,
   OCTAGON_RING_DIAMETER_OPTIONS_FT,
   PLYWOOD_SHEET_AREA_SQFT,
   concreteEmbodiedCarbonKgPerFt3,
@@ -1737,7 +1738,7 @@ export default function LayoutEditor() {
   const gableTilesByWallId = useMemo(() => {
     if (!footprint) return {};
     const ridgeHeightIn = Math.max(bottomOfTrussMaxHeightFt * 12, roofBaseHeightIn);
-    const result: Record<string, { widthIn: number; lowEdgeHeightIn: number; highEdgeHeightIn: number }[]> = {};
+    const result: Record<string, { widthIn: number; xStartIn: number; lowEdgeHeightIn: number; highEdgeHeightIn: number }[]> = {};
     for (const wall of footprint.walls) {
       if (!gableEndWallIds.has(wall.id)) continue;
       const tiles = computeGableTiledRow(
@@ -1748,14 +1749,33 @@ export default function LayoutEditor() {
         gablePeakPositionInByWallId[wall.id],
         trussPlateInsetIn,
       );
+      // Clamped to GABLE_PANEL_MAX_HEIGHT_IN's own real 8ft cap (Tommy:
+      // "gable panels...can be up to 8' tall") so a real Gable End Panel is
+      // never built taller than buildGablePanelMembers itself allows — a
+      // steep enough pitch clips the panel's own high edge rather than
+      // throwing deep inside a render path; gableEndClampedWallIds below
+      // surfaces this to the user instead of leaving it silent.
       result[wall.id] = tiles.map((t) => ({
         widthIn: t.widthIn,
+        xStartIn: t.xStartIn,
         lowEdgeHeightIn: Math.min(t.leftHeightIn, t.rightHeightIn),
-        highEdgeHeightIn: Math.max(t.leftHeightIn, t.rightHeightIn),
+        highEdgeHeightIn: Math.min(Math.max(t.leftHeightIn, t.rightHeightIn), roofBaseHeightIn + GABLE_PANEL_MAX_HEIGHT_IN),
       }));
     }
     return result;
   }, [footprint, gableEndWallIds, gablePeakPositionInByWallId, roofBaseHeightIn, bottomOfTrussMaxHeightFt, standardWidthIn, trussPlateInsetIn]);
+
+  // Which gable-enabled walls actually got clipped by the clamp above (i.e.
+  // the roofline's real ridge would have pushed a Gable End Panel taller
+  // than the 8ft/GABLE_PANEL_MAX_HEIGHT_IN max) — surfaced to
+  // WallElevationView as a visible warning rather than a silent clip.
+  const gableEndClampedWallIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [wallId, tiles] of Object.entries(gableTilesByWallId)) {
+      if (tiles.some((t) => t.highEdgeHeightIn - roofBaseHeightIn >= GABLE_PANEL_MAX_HEIGHT_IN)) ids.add(wallId);
+    }
+    return ids;
+  }, [gableTilesByWallId, roofBaseHeightIn]);
 
   // Computed once, across every nameable panel type together, so a panel's
   // number always reflects its true position in the along-wall sequence —
@@ -1941,7 +1961,13 @@ export default function LayoutEditor() {
                             ),
                           )
                       : inst.panelType === "gable"
-                        ? buildGablePanelMembers(inst.widthIn, thicknessIn, inst.lowEdgeHeightIn!, inst.highEdgeHeightIn!, includeNailer)
+                        ? buildGablePanelMembers(
+                            inst.widthIn,
+                            thicknessIn,
+                            inst.lowEdgeHeightIn! - roofBaseHeightIn,
+                            inst.highEdgeHeightIn! - roofBaseHeightIn,
+                            includeNailer,
+                          )
                         : null;
       if (instMembers) members.push(...instMembers);
     }
@@ -2232,8 +2258,8 @@ export default function LayoutEditor() {
               ? buildGablePanelMembers(
                   widthIn,
                   thicknessIn,
-                  lowEdgeHeightInOverride ?? gablePreviewLowEdgeHeightIn,
-                  highEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn,
+                  (lowEdgeHeightInOverride ?? gablePreviewLowEdgeHeightIn) - roofBaseHeightIn,
+                  (highEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn) - roofBaseHeightIn,
                   includeNailer,
                 )
               : panelTypeId === "header"
@@ -2388,7 +2414,7 @@ export default function LayoutEditor() {
                 panelTypeId === "sill"
                   ? (inst.sillHeightIn ?? sillDefaultHeightIn.value)
                   : panelTypeId === "gable"
-                    ? (inst.highEdgeHeightIn ?? wallHeightFt * 12)
+                    ? (inst.highEdgeHeightIn ?? roofBaseHeightIn) - roofBaseHeightIn
                     : wallHeightFt * 12,
               densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
               woodWeightKg: woodWeightKgFor(
@@ -2568,7 +2594,7 @@ export default function LayoutEditor() {
           ? doorHeaderHeightIn
           : computeHeaderHeightIn(wallHeightFt * 12, resolvedSillHeightInFor(inst) + resolvedWindowHeightInFor(inst));
       }
-      if (panelTypeId === "gable") return inst.highEdgeHeightIn ?? wallHeightFt * 12;
+      if (panelTypeId === "gable") return (inst.highEdgeHeightIn ?? roofBaseHeightIn) - roofBaseHeightIn;
       return wallHeightFt * 12;
     };
     const panelWidthInFor = (panelTypeId: string, inst: PanelInstance): number =>
@@ -3664,6 +3690,7 @@ export default function LayoutEditor() {
                   secondStoryWallHeightFt={secondStory?.wallHeightFt}
                   onToggleOpening={handleToggleOpening}
                   hasGableEnd={gableEndWallIds.has(elevationWall.id)}
+                  gableEndClamped={gableEndClampedWallIds.has(elevationWall.id)}
                   ridgeHeightFt={bottomOfTrussMaxHeightFt}
                   targetPanelWidthIn={standardWidthIn}
                   thicknessIn={thicknessIn}
@@ -3738,6 +3765,9 @@ export default function LayoutEditor() {
                   onToggleOpening={handleToggleOpening}
                   onSetWindowSillHeight={handleSetWindowSillHeight}
                   onSetWindowHeight={handleSetWindowHeight}
+                  gableTilesByWallId={gableTilesByWallId}
+                  roofEnabled={roofEnabled}
+                  trussPlateInsetIn={trussPlateInsetIn}
                 />
               ))}
             {editorTab === "foundation" && foundationType.usesPierGrid && (
@@ -3769,6 +3799,9 @@ export default function LayoutEditor() {
               nailerOffsetIn={nailerOffsetIn}
               jackStudConfig={jackStudConfig}
               standardWidthIn={standardWidthIn}
+              gableTilesByWallId={gableTilesByWallId}
+              roofEnabled={roofEnabled}
+              trussPlateInsetIn={trussPlateInsetIn}
               onCapture={handleCaptureRenderImage}
             />
           )}

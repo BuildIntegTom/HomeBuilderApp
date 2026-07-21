@@ -52,6 +52,12 @@ export interface WallElevationViewProps {
    * click here could mean, so every rendered panel is always clickable. */
   onToggleOpening: (story: "ground" | "second", wallId: string, slotIndex: number) => void;
   hasGableEnd: boolean;
+  /** True when this wall's own ridge height would push a Gable End Panel
+   * taller than the real 8ft (GABLE_PANEL_MAX_HEIGHT_IN) max a single panel
+   * can be built at (Tommy: "gable panels...can be up to 8' tall") — the
+   * panel's own high edge is clamped there rather than built oversized, so
+   * this surfaces that clamp instead of leaving it silent. */
+  gableEndClamped: boolean;
   ridgeHeightFt: number;
   targetPanelWidthIn: number;
   thicknessIn: number;
@@ -120,6 +126,7 @@ export default function WallElevationView({
   secondStoryWallHeightFt,
   onToggleOpening,
   hasGableEnd,
+  gableEndClamped,
   ridgeHeightFt,
   targetPanelWidthIn,
   thicknessIn,
@@ -324,6 +331,13 @@ export default function WallElevationView({
       </div>
       {!hasGableEnd && gableEndToggleBlockReason && (
         <p style={{ fontSize: 12, color: "#c0392b", marginTop: 0, marginBottom: 8 }}>{gableEndToggleBlockReason}</p>
+      )}
+      {hasGableEnd && gableEndClamped && (
+        <p style={{ fontSize: 12, color: "#c0392b", marginTop: 0, marginBottom: 8 }}>
+          This wall&apos;s ridge is tall enough that its Gable End Panel(s) have been clamped to the real 8ft max a
+          single panel can be built at — lower the Roof tab&apos;s ridge height, or move this wall&apos;s peak, to
+          avoid clipping.
+        </p>
       )}
       <svg
         ref={svgRef}

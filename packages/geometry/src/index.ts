@@ -9,6 +9,7 @@ export * from "./dragWall";
 export * from "./polygonValidity";
 export * from "./wallBoxes3D";
 export * from "./panelSlotBoxes3D";
+export * from "./wallAxis";
 export * from "./gapPlacement";
 export * from "./tiling";
 export * from "./bracedPlacement";
