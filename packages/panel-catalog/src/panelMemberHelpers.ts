@@ -469,6 +469,18 @@ export interface HeaderBraceMiterTarget {
 export interface HeaderBraceLevelTarget {
   kind: "level";
   levelZIn: number;
+  /** Set only on the header's own 2 genuinely outermost feet (the first
+   * rise brace's left foot at X=0, the last fall brace's right foot at
+   * X=widthIn) — the true panel-edge X this end's OUTER edge (not its
+   * centerline) must land flush against. A board has real width, so
+   * offsetting a centerline point that sits exactly ON the boundary by
+   * +-halfWidth always pushes one edge past it; `levelCorner` uses this to
+   * shift the centerline reference inward by exactly enough that the outer
+   * edge — not the centerline — ends up flush with `boundaryXIn`, keeping
+   * the board's true, undistorted, constant cross-section width instead of
+   * the previous "clamp whichever corner overshot" approach, which cut the
+   * outer cap's apparent width in half instead of shifting the whole board. */
+  boundaryXIn?: number;
 }
 
 export type HeaderBraceEndTarget = HeaderBraceMiterTarget | HeaderBraceLevelTarget;
@@ -515,8 +527,28 @@ export function computeHeaderBraceTrapezoidCornersIn(
   const wz = -ux;
   const halfWidthIn = boardWidthIn / 2;
 
-  function levelCorner(sign: 1 | -1, nearXIn: number, nearZIn: number, target: HeaderBraceLevelTarget): PanelSpacePoint2D {
-    const px = nearXIn + sign * halfWidthIn * wx;
+  function levelCorner(
+    sign: 1 | -1,
+    nearXIn: number,
+    nearZIn: number,
+    target: HeaderBraceLevelTarget,
+    otherEndXIn: number,
+  ): PanelSpacePoint2D {
+    let effectiveNearXIn = nearXIn;
+    if (target.boundaryXIn !== undefined) {
+      // Half the board's own horizontal spread at this level cut (see the
+      // shortcut derivation in HeaderBraceLevelTarget's own doc comment:
+      // since nearZIn already sits exactly on target.levelZIn for every
+      // real caller, xIn = nearXIn +- halfWidthIn/uz). Shifting the
+      // centerline reference inward by exactly this amount, toward the
+      // other end (the peak), makes the OUTER edge — not the centerline —
+      // land exactly on boundaryXIn, so the board keeps its true width
+      // instead of one corner getting clamped away.
+      const halfSpanIn = Math.abs(halfWidthIn / uz);
+      const dirSign = Math.sign(otherEndXIn - target.boundaryXIn) || 1;
+      effectiveNearXIn = target.boundaryXIn + dirSign * halfSpanIn;
+    }
+    const px = effectiveNearXIn + sign * halfWidthIn * wx;
     const pz = nearZIn + sign * halfWidthIn * wz;
     const tLevel = (target.levelZIn - pz) / uz;
     return { xIn: px + tLevel * ux, zIn: target.levelZIn };
@@ -561,10 +593,11 @@ export function computeHeaderBraceTrapezoidCornersIn(
     const target = end === "A" ? endA : endB;
     const nearXIn = end === "A" ? xA : xB;
     const nearZIn = end === "A" ? zA : zB;
+    const otherEndXIn = end === "A" ? xB : xA;
     const ownDirXIn = end === "A" ? ux : -ux;
     const ownDirZIn = end === "A" ? uz : -uz;
     return target.kind === "level"
-      ? levelCorner(sign, nearXIn, nearZIn, target)
+      ? levelCorner(sign, nearXIn, nearZIn, target, otherEndXIn)
       : miterCorner(sign, nearXIn, nearZIn, ownDirXIn, ownDirZIn, target);
   }
 
@@ -845,22 +878,14 @@ export function buildHeaderTrussWebBraces(
     const centerX = (x1 + x2) / 2;
     const centerZ = (z1 + z2) / 2;
     const tiltDeg = (Math.atan2(-(x1 - centerX), z1 - centerZ) * 180) / Math.PI;
-    const rawCorners = computeHeaderBraceTrapezoidCornersIn(x1, z1, x2, z2, PLATE_2X4_WIDTH_IN, end1, end2);
-    // A board of real width, cut level right where its own centerline
-    // meets the header's outer corner, naturally has one long edge reach
-    // past that corner (X<0 or X>widthIn) — real trapezoid geometry, not a
-    // math error, but past X=0/widthIn is the jack stud's own territory,
-    // outside this header's assembly entirely. Clamped flush with the
-    // header's own edge, same as a fabricator would just trim the
-    // overshooting corner rather than let the board hang out past the
-    // panel — see panelMemberHelpers.test.ts's own overshoot regression
-    // test for a worked example of the pre-clamp geometry.
-    const trapezoidCornersIn = rawCorners.map((c) => ({ ...c, xIn: Math.min(Math.max(c.xIn, 0), widthIn) })) as [
-      PanelSpacePoint2D,
-      PanelSpacePoint2D,
-      PanelSpacePoint2D,
-      PanelSpacePoint2D,
-    ];
+    // The header's 2 genuinely outermost feet (end1/end2's own `level`
+    // targets, when they carry `boundaryXIn`) already come out correctly
+    // bounded at the source — see HeaderBraceLevelTarget's own doc comment
+    // — so no post-hoc clamp is needed (an earlier version clamped
+    // whichever corner overshot X=0/widthIn here instead, which cut that
+    // outer cap's apparent width in half rather than shifting the whole
+    // board; see panelMemberHelpers.test.ts's own regression test).
+    const trapezoidCornersIn = computeHeaderBraceTrapezoidCornersIn(x1, z1, x2, z2, PLATE_2X4_WIDTH_IN, end1, end2);
     const lengthIn = braceLongestEdgeIn(trapezoidCornersIn);
     return {
       memberId,
@@ -885,13 +910,13 @@ export function buildHeaderTrussWebBraces(
 
     const riseFootEnd: HeaderBraceEndTarget =
       i === 0
-        ? { kind: "level", levelZIn: bottomZIn }
+        ? { kind: "level", levelZIn: bottomZIn, boundaryXIn: 0 }
         : { kind: "miter", otherDirXIn: peakXAt(i - 1) - footLeftXIn, otherDirZIn: topZIn - bottomZIn };
     const risePeakEnd: HeaderBraceEndTarget = { kind: "miter", otherDirXIn: footRightXIn - peakXIn, otherDirZIn: bottomZIn - topZIn };
     const fallPeakEnd: HeaderBraceEndTarget = { kind: "miter", otherDirXIn: footLeftXIn - peakXIn, otherDirZIn: bottomZIn - topZIn };
     const fallFootEnd: HeaderBraceEndTarget =
       i === peakCount - 1
-        ? { kind: "level", levelZIn: bottomZIn }
+        ? { kind: "level", levelZIn: bottomZIn, boundaryXIn: widthIn }
         : { kind: "miter", otherDirXIn: peakXAt(i + 1) - footRightXIn, otherDirZIn: topZIn - bottomZIn };
 
     members.push(

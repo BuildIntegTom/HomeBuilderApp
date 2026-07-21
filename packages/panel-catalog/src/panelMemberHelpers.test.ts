@@ -14,6 +14,7 @@ import {
   computeTrussWebPeakCount,
   describeBraceEndCuts,
   memberBoxSizeIn,
+  PLATE_2X4_WIDTH_IN,
   type HeaderBraceEndTarget,
 } from "./panelMemberHelpers";
 
@@ -311,14 +312,18 @@ describe("computeHeaderBraceTrapezoidCornersIn", () => {
     expect(segmentsIntersect(corners[0], corners[2], corners[1], corners[3])).toBe(true);
   });
 
-  it("buildHeaderTrussWebBraces clamps a level end's overshooting corner into the header's own [0,widthIn] — Tommy: 'take careful note of how the diagonals meet at the point in the top'", () => {
+  it("buildHeaderTrussWebBraces lands the outer foot's outer edge flush on the header's own boundary, without distorting the board's true width — Tommy: 'take careful note of how the diagonals meet at the point in the top'", () => {
     // Same 36in-wide, 1-peak door header as above, built through the real
-    // entry point (buildHeaderTrussWebBraces), where the outer foot's own
-    // reference point sits exactly ON its target level plane — a board of
-    // real width cut level right there naturally has one edge reach past
-    // X=0 (the header's own left corner, real trapezoid geometry, not a
-    // math error) — clamped flush with the header's own edge instead of
-    // hanging out past the panel into the jack stud's own territory.
+    // entry point (buildHeaderTrussWebBraces) — the outer foot's own
+    // reference point sits exactly ON its target level plane, so a board of
+    // real width naturally has one edge reach past X=0 (the header's own
+    // left corner, real trapezoid geometry, not a math error) if left
+    // uncorrected. Rather than clamping just the one overshooting corner
+    // (an earlier version's bug — see HeaderBraceLevelTarget's own doc
+    // comment — which cut that outer cap's apparent width in HALF), the
+    // fix shifts the whole board's reference point inward so its OUTER
+    // edge lands exactly on the boundary while the board's true, full
+    // width is preserved.
     const members = buildHeaderTrussWebBraces(1, 36, 0, 18, 1.5, "web");
     for (const m of members) {
       for (const c of m.position.trapezoidCornersIn!) {
@@ -326,10 +331,21 @@ describe("computeHeaderBraceTrapezoidCornersIn", () => {
         expect(c.xIn).toBeLessThanOrEqual(36 + 1e-9);
       }
     }
-    // The clamp actually engaged for this geometry (not a vacuous check) —
-    // at least one corner lands exactly on the boundary.
+    // Every outer foot still lands exactly on its own boundary (not a
+    // vacuous check) — one at X=0, one at X=36.
     const allX = members.flatMap((m) => m.position.trapezoidCornersIn!.map((c) => c.xIn));
-    expect(allX.some((x) => x === 0 || x === 36)).toBe(true);
+    expect(allX.some((x) => Math.abs(x) < 1e-6)).toBe(true);
+    expect(allX.some((x) => Math.abs(x - 36) < 1e-6)).toBe(true);
+
+    // ...but the cap at that boundary is now the FULL board-width
+    // projection (PLATE_2X4_WIDTH_IN / uz, matching the peak end's own
+    // already-correct cap), not half of it (the old bug's fingerprint).
+    const rise1 = members.find((m) => m.memberId === "web_1_rise")!;
+    const uz = Math.SQRT1_2; // 45deg brace: dx=dz=18 (peak at midpoint 18, rise 18) -> ux=uz=1/sqrt(2)
+    const expectedCapWidthIn = PLATE_2X4_WIDTH_IN / uz;
+    const leftCorners = closestTwo(rise1.position.trapezoidCornersIn!, 0, 0);
+    const actualCapWidthIn = Math.abs(leftCorners[0]!.xIn - leftCorners[1]!.xIn);
+    expect(actualCapWidthIn).toBeCloseTo(expectedCapWidthIn, 6);
   });
 });
 

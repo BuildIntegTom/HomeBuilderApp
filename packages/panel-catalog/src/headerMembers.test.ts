@@ -101,12 +101,15 @@ describe("header chord plywood caps", () => {
 
     const bottomChordTopZ = bottomChord.position.zIn + bottomChord.actualDimsIn.thicknessIn;
 
-    // Reconstruct both real endpoints of the tilted brace (same method as bracedPanelMembers.test.ts).
-    const size = memberBoxSizeIn(firstRiseExt);
-    const tiltRad = (firstRiseExt.position.tiltDeg! * Math.PI) / 180;
-    const halfLen = size.zIn / 2;
-    const endpointZs = [firstRiseExt.position.zIn + Math.cos(tiltRad) * halfLen, firstRiseExt.position.zIn - Math.cos(tiltRad) * halfLen];
-    const lowFootZ = Math.min(...endpointZs);
+    // A header brace is a true trapezoid, not a plain symmetric box — its
+    // own longest edge (actualDimsIn.lengthIn, "long point to long point")
+    // is generally LONGER than the raw centerline span once a real bevel
+    // cut is involved, so reconstructing endpoints from
+    // position.zIn +- cos(tiltDeg)*lengthIn/2 (a plain-box assumption) is
+    // only ever approximate here. Its real corners (trapezoidCornersIn)
+    // are the ground truth instead — same source the 2D diagram/3D
+    // view/OBJ export all render from.
+    const lowFootZ = Math.min(...firstRiseExt.position.trapezoidCornersIn!.map((c) => c.zIn));
     expect(lowFootZ).toBeCloseTo(bottomChordTopZ, 6); // the web's low foot bears on the 2x4 chord's own top face
   });
 });
