@@ -1,4 +1,4 @@
-import type { PanelComponentSchema, PanelMember, PanelSpacePoint2D } from "./componentSchema";
+import type { PanelComponentSchema, PanelMember } from "./componentSchema";
 import {
   LUMBER_SPECIES_GRADE,
   PLATE_2X4_THICKNESS_IN,
@@ -220,21 +220,27 @@ export function buildDiagonalBraces(
     // file builds (via braceEndpoints) already places its 2 reference
     // points exactly on those 2 planes, so no separate target params are
     // needed beyond the endpoints themselves.
-    const rawCorners = computeBraceTrapezoidCornersIn(x1, z1, x2, z2, PLATE_2X4_WIDTH_IN, x1, z2);
+    //
     // The level (plate) end's own 2 corners aren't both forced to a single
     // X the way the plumb end's are — a board of real width, cut level
     // right where its centerline meets the plate near the FAR stud, can
-    // have one long edge reach past that stud's own outer face (X<0 or
-    // X>widthIn) — real trapezoid geometry, not a math error, but past the
-    // panel's own edge is empty space outside this panel entirely. Clamped
-    // flush with the panel's own edge, same fix as the header brace's
-    // outer feet (see buildHeaderTrussWebBraces in panelMemberHelpers.ts).
-    const trapezoidCornersIn = rawCorners.map((c) => ({ ...c, xIn: Math.min(Math.max(c.xIn, 0), widthIn) })) as [
-      PanelSpacePoint2D,
-      PanelSpacePoint2D,
-      PanelSpacePoint2D,
-      PanelSpacePoint2D,
-    ];
+    // have one long edge (the "long point" — Tommy) reach past that stud's
+    // own outer face (X<0 or X>widthIn) — real trapezoid geometry, not a
+    // math error, but past the panel's own edge is empty space outside
+    // this panel entirely. `boundaryXIn` rigidly shifts BOTH level corners
+    // together so the long point lands exactly flush with the panel's own
+    // edge instead — x1's own side of the panel midline tells us which
+    // edge this particular brace's long point reaches toward (a left-stud
+    // brace's plate end reaches right, toward X=widthIn; a right-stud
+    // brace's reaches left, toward X=0). Previously each overshooting
+    // corner was clamped individually after the fact (Math.min/Math.max on
+    // its own xIn) — the same "cut the outer cap's apparent width in half"
+    // distortion bug the header brace's own outer feet had (see
+    // buildHeaderTrussWebBraces in panelMemberHelpers.ts) before that fix;
+    // this uses the same proven "shift the whole cut, don't clamp one
+    // corner" approach instead.
+    const boundaryXIn = x1 < widthIn / 2 ? widthIn : 0;
+    const trapezoidCornersIn = computeBraceTrapezoidCornersIn(x1, z1, x2, z2, PLATE_2X4_WIDTH_IN, x1, z2, boundaryXIn);
     const lengthIn = braceLongestEdgeIn(trapezoidCornersIn);
     return {
       memberId,

@@ -15,6 +15,7 @@ import {
   describeBraceEndCuts,
   memberBoxSizeIn,
   PLATE_2X4_WIDTH_IN,
+  SKIN_THICKNESS_IN,
   type HeaderBraceEndTarget,
 } from "./panelMemberHelpers";
 
@@ -234,6 +235,47 @@ describe("computeBraceTrapezoidCornersIn / braceLongestEdgeIn", () => {
       expect(Number.isFinite(c.zIn)).toBe(true);
     }
   });
+
+  it("boundaryXIn shifts the WHOLE level end inward so its long point lands exactly on the boundary, without shrinking the board's true width", () => {
+    // xB=9 sits close enough to a boundary at X=10 that the raw (unshifted)
+    // level corner on that side overshoots past it — the same real
+    // overshoot buildDiagonalBraces hits near a panel's own true edge.
+    const raw = computeBraceTrapezoidCornersIn(0, 0, 9, 10, 2, 0, 10);
+    const rawLevel = raw.filter((c) => Math.abs(c.zIn - 10) < 1e-6);
+    expect(rawLevel.some((c) => c.xIn > 10)).toBe(true); // confirms this case genuinely overshoots unfixed
+
+    const corrected = computeBraceTrapezoidCornersIn(0, 0, 9, 10, 2, 0, 10, 10);
+    const correctedLevel = corrected.filter((c) => Math.abs(c.zIn - 10) < 1e-6);
+    expect(correctedLevel).toHaveLength(2);
+    // The long point now lands exactly on the boundary...
+    expect(correctedLevel.some((c) => Math.abs(c.xIn - 10) < 1e-6)).toBe(true);
+    // ...neither corner overshoots past it...
+    for (const c of correctedLevel) expect(c.xIn).toBeLessThanOrEqual(10 + 1e-9);
+    // ...and the cut's own true width (both corners' X-spread) is
+    // unchanged from the raw, unshifted computation — a rigid shift, not a
+    // clamp that would shrink it.
+    const rawWidthIn = Math.abs(rawLevel[0]!.xIn - rawLevel[1]!.xIn);
+    const correctedWidthIn = Math.abs(correctedLevel[0]!.xIn - correctedLevel[1]!.xIn);
+    expect(correctedWidthIn).toBeCloseTo(rawWidthIn, 6);
+  });
+
+  it("boundaryXIn always locks the long point to that exact X (Tommy's own spec), even when the raw computation would have landed short of it — not just when it overshoots", () => {
+    // Same brace as the closed-form test above, whose widest raw level
+    // corner is ~11.4 — well short of a boundary at 20. boundaryXIn is a
+    // hard target (the "long point ending where the vertical stud and the
+    // plate 2x4 runner intersect" — Tommy), not a clamp that only engages
+    // on overshoot, so the corrected corner must land exactly on 20 here
+    // too, with the true board width still preserved.
+    const raw = computeBraceTrapezoidCornersIn(0, 0, 10, 10, 2, 0, 10);
+    const rawLevel = raw.filter((c) => Math.abs(c.zIn - 10) < 1e-6);
+    const rawWidthIn = Math.abs(rawLevel[0]!.xIn - rawLevel[1]!.xIn);
+
+    const corrected = computeBraceTrapezoidCornersIn(0, 0, 10, 10, 2, 0, 10, 20);
+    const correctedLevel = corrected.filter((c) => Math.abs(c.zIn - 10) < 1e-6);
+    expect(correctedLevel.some((c) => Math.abs(c.xIn - 20) < 1e-6)).toBe(true);
+    const correctedWidthIn = Math.abs(correctedLevel[0]!.xIn - correctedLevel[1]!.xIn);
+    expect(correctedWidthIn).toBeCloseTo(rawWidthIn, 6);
+  });
 });
 
 /** For a "simple" (non-self-intersecting) quad with vertices in perimeter
@@ -312,18 +354,16 @@ describe("computeHeaderBraceTrapezoidCornersIn", () => {
     expect(segmentsIntersect(corners[0], corners[2], corners[1], corners[3])).toBe(true);
   });
 
-  it("buildHeaderTrussWebBraces lands the outer foot's outer edge flush on the header's own boundary, without distorting the board's true width — Tommy: 'take careful note of how the diagonals meet at the point in the top'", () => {
+  it("lands the outer foot's outer edge flush on the INSIDE of the header's own plywood end cap, not the bare panel edge — Tommy: 'the points of the trapezoid braced piece should be 3/4in plywood depth on the x axis towards the center of the panel'", () => {
     // Same 36in-wide, 1-peak door header as above, built through the real
-    // entry point (buildHeaderTrussWebBraces) — the outer foot's own
-    // reference point sits exactly ON its target level plane, so a board of
-    // real width naturally has one edge reach past X=0 (the header's own
-    // left corner, real trapezoid geometry, not a math error) if left
-    // uncorrected. Rather than clamping just the one overshooting corner
-    // (an earlier version's bug — see HeaderBraceLevelTarget's own doc
-    // comment — which cut that outer cap's apparent width in HALF), the
-    // fix shifts the whole board's reference point inward so its OUTER
-    // edge lands exactly on the boundary while the board's true, full
-    // width is preserved.
+    // entry point (buildHeaderTrussWebBraces). The header's own end caps
+    // (buildHeaderEndCaps) are a full-height SKIN_THICKNESS_IN-wide plywood
+    // sheet at each of X=0/X=widthIn — a brace foot landing flush with the
+    // bare edge cuts straight through that sheet. The boundary target is
+    // therefore inset by SKIN_THICKNESS_IN on each side, using the same
+    // "shift the reference point, not a raw corner" mechanism as the
+    // boundary-overshoot fix below, so the board's true width is preserved
+    // at whatever angle it tilts.
     const members = buildHeaderTrussWebBraces(1, 36, 0, 18, 1.5, "web");
     for (const m of members) {
       for (const c of m.position.trapezoidCornersIn!) {
@@ -331,19 +371,20 @@ describe("computeHeaderBraceTrapezoidCornersIn", () => {
         expect(c.xIn).toBeLessThanOrEqual(36 + 1e-9);
       }
     }
-    // Every outer foot still lands exactly on its own boundary (not a
-    // vacuous check) — one at X=0, one at X=36.
+    // Every outer foot lands exactly on its own inset boundary (not a
+    // vacuous check) — one at X=SKIN_THICKNESS_IN, one at X=36-SKIN_THICKNESS_IN.
     const allX = members.flatMap((m) => m.position.trapezoidCornersIn!.map((c) => c.xIn));
-    expect(allX.some((x) => Math.abs(x) < 1e-6)).toBe(true);
-    expect(allX.some((x) => Math.abs(x - 36) < 1e-6)).toBe(true);
+    expect(allX.some((x) => Math.abs(x - SKIN_THICKNESS_IN) < 1e-6)).toBe(true);
+    expect(allX.some((x) => Math.abs(x - (36 - SKIN_THICKNESS_IN)) < 1e-6)).toBe(true);
 
-    // ...but the cap at that boundary is now the FULL board-width
-    // projection (PLATE_2X4_WIDTH_IN / uz, matching the peak end's own
-    // already-correct cap), not half of it (the old bug's fingerprint).
+    // ...and the cap at that boundary is the FULL board-width projection
+    // (PLATE_2X4_WIDTH_IN / uz, matching the peak end's own already-correct
+    // cap), not half of it (an earlier bug's fingerprint — see
+    // HeaderBraceLevelTarget's own doc comment).
     const rise1 = members.find((m) => m.memberId === "web_1_rise")!;
     const uz = Math.SQRT1_2; // 45deg brace: dx=dz=18 (peak at midpoint 18, rise 18) -> ux=uz=1/sqrt(2)
     const expectedCapWidthIn = PLATE_2X4_WIDTH_IN / uz;
-    const leftCorners = closestTwo(rise1.position.trapezoidCornersIn!, 0, 0);
+    const leftCorners = closestTwo(rise1.position.trapezoidCornersIn!, SKIN_THICKNESS_IN, 0);
     const actualCapWidthIn = Math.abs(leftCorners[0]!.xIn - leftCorners[1]!.xIn);
     expect(actualCapWidthIn).toBeCloseTo(expectedCapWidthIn, 6);
   });
@@ -419,24 +460,27 @@ describe("buildHeaderTrussWebBraces", () => {
     }
 
     // The header's own left/right outer ends are corner clips, flush to
-    // X=0 / X=widthIn — "plum cuts be vertically flush with the studs".
-    // At this brace angle (2-peak/60in/rise 20), the board is wide enough
-    // relative to its tilt that only ONE of its 2 long edges can land
-    // exactly plumb without the OTHER overshooting past the bottom
-    // chord's own face (Z<0) — a real limitation of a 4-corner prism at a
-    // steep inside-corner angle (a true birdsmouth notch is out of scope
-    // — see computeHeaderBraceTrapezoidCornersIn's own doc comment), not
-    // a bug: the discarded edge falls back to a level cut instead of
+    // X=SKIN_THICKNESS_IN / X=widthIn-SKIN_THICKNESS_IN — the INSIDE face of
+    // the header's own plywood end cap (buildHeaderEndCaps), not the bare
+    // panel edge itself (Tommy: "the points of the trapezoid braced piece
+    // should be 3/4in plywood depth on the x axis towards the center of the
+    // panel"). At this brace angle (2-peak/60in/rise 20), the board is wide
+    // enough relative to its tilt that only ONE of its 2 long edges can
+    // land exactly on that boundary without the OTHER overshooting past the
+    // bottom chord's own face (Z<0) — a real limitation of a 4-corner prism
+    // at a steep inside-corner angle (a true birdsmouth notch is out of
+    // scope — see computeHeaderBraceTrapezoidCornersIn's own doc comment),
+    // not a bug: the discarded edge falls back to a level cut instead of
     // overshooting. So the real guarantee checked here is "no overshoot,
-    // and at least one edge is genuinely flush" rather than "both edges
-    // flush."
-    const rise1Foot = closestTwo(rise1.position.trapezoidCornersIn!, 0, 0);
+    // and at least one edge is genuinely flush on the inset boundary"
+    // rather than "both edges flush."
+    const rise1Foot = closestTwo(rise1.position.trapezoidCornersIn!, SKIN_THICKNESS_IN, 0);
     for (const c of rise1Foot) expect(c.zIn).toBeGreaterThanOrEqual(-1e-6);
-    expect(rise1Foot.some((c) => Math.abs(c.xIn) < 1e-6)).toBe(true);
+    expect(rise1Foot.some((c) => Math.abs(c.xIn - SKIN_THICKNESS_IN) < 1e-6)).toBe(true);
 
-    const fall2Foot = closestTwo(fall2.position.trapezoidCornersIn!, 60, 0);
+    const fall2Foot = closestTwo(fall2.position.trapezoidCornersIn!, 60 - SKIN_THICKNESS_IN, 0);
     for (const c of fall2Foot) expect(c.zIn).toBeGreaterThanOrEqual(-1e-6);
-    expect(fall2Foot.some((c) => Math.abs(c.xIn - 60) < 1e-6)).toBe(true);
+    expect(fall2Foot.some((c) => Math.abs(c.xIn - (60 - SKIN_THICKNESS_IN)) < 1e-6)).toBe(true);
   });
 
   it("does not affect buildTrussWebBraces (gable/classic-truss) — still plain tilted boxes, no trapezoidCornersIn", () => {

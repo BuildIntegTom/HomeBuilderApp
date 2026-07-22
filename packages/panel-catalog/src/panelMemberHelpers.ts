@@ -406,6 +406,25 @@ export function computeBraceTrapezoidCornersIn(
   boardWidthIn: number,
   plumbXIn: number,
   levelZIn: number,
+  /** When given, rigidly shifts the level end's own 2 corners (together,
+   * never distorting the board's true width) so that whichever one sits
+   * farther from the plumb end — the "long point" (Tommy: "i want the 2x4
+   * trapezoid to end on the top plate with the long point ending where the
+   * vertical stud and the plate 2x4 runner intersect") — lands exactly on
+   * this X. A hard target, not a clamp that only engages when the raw
+   * (unconstrained) computation would overshoot past it — it applies every
+   * time it's given, even pulling the long point IN to reach the target if
+   * the raw computation would otherwise have fallen short. A caller must
+   * NOT instead clamp an overshooting corner's own `xIn` after the fact
+   * (`buildDiagonalBraces`'s own prior approach) — that only moves the ONE
+   * overshooting corner, shrinking the board's apparent cut width instead
+   * of preserving it; shifting BOTH corners together (this parameter)
+   * keeps the true `boardWidthIn` projection intact, exactly the fix
+   * already proven for `computeHeaderBraceTrapezoidCornersIn`'s own
+   * `boundaryXIn` (see `HeaderBraceLevelTarget`'s doc comment) — same
+   * concept, adapted to this function's single implicit level end instead
+   * of a per-end target list. */
+  boundaryXIn?: number,
 ): [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] {
   const dx = xB - xA;
   const dz = zB - zA;
@@ -429,10 +448,20 @@ export function computeBraceTrapezoidCornersIn(
 
   const [plumbPlus, levelPlus] = edgeCorners(1);
   const [plumbMinus, levelMinus] = edgeCorners(-1);
+
+  let finalLevelPlus = levelPlus;
+  let finalLevelMinus = levelMinus;
+  if (boundaryXIn !== undefined) {
+    const outerIsPlus = Math.abs(levelPlus.xIn - xA) > Math.abs(levelMinus.xIn - xA);
+    const shiftIn = boundaryXIn - (outerIsPlus ? levelPlus.xIn : levelMinus.xIn);
+    finalLevelPlus = { ...levelPlus, xIn: levelPlus.xIn + shiftIn };
+    finalLevelMinus = { ...levelMinus, xIn: levelMinus.xIn + shiftIn };
+  }
+
   const corners: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] = [
     plumbPlus,
-    levelPlus,
-    levelMinus,
+    finalLevelPlus,
+    finalLevelMinus,
     plumbMinus,
   ];
 
@@ -908,15 +937,27 @@ export function buildHeaderTrussWebBraces(
     const peakXIn = peakXAt(i);
     const peakZIn = topZIn;
 
+    // The header's own 2 genuinely outermost feet must clear the end-cap
+    // plywood (see buildHeaderEndCaps — a full-height sheet SKIN_THICKNESS_IN
+    // wide at each of the header's true X=0/X=widthIn extremes), not land
+    // flush with the bare panel edge itself, or the brace's own outer edge
+    // cuts straight through that sheet (Tommy: "the points of the trapezoid
+    // braced piece should be 3/4in plywood depth on the x axis towards the
+    // center of the panel"). `boundaryXIn` already shifts the CENTERLINE
+    // reference (not a raw corner) inward by exactly enough that the outer
+    // EDGE — not the centerline — lands on this target, so the board keeps
+    // its true undistorted width at whatever angle this brace happens to
+    // tilt at (see HeaderBraceLevelTarget's own doc comment) — no separate
+    // angle-specific adjustment needed here.
     const riseFootEnd: HeaderBraceEndTarget =
       i === 0
-        ? { kind: "level", levelZIn: bottomZIn, boundaryXIn: 0 }
+        ? { kind: "level", levelZIn: bottomZIn, boundaryXIn: SKIN_THICKNESS_IN }
         : { kind: "miter", otherDirXIn: peakXAt(i - 1) - footLeftXIn, otherDirZIn: topZIn - bottomZIn };
     const risePeakEnd: HeaderBraceEndTarget = { kind: "miter", otherDirXIn: footRightXIn - peakXIn, otherDirZIn: bottomZIn - topZIn };
     const fallPeakEnd: HeaderBraceEndTarget = { kind: "miter", otherDirXIn: footLeftXIn - peakXIn, otherDirZIn: bottomZIn - topZIn };
     const fallFootEnd: HeaderBraceEndTarget =
       i === peakCount - 1
-        ? { kind: "level", levelZIn: bottomZIn, boundaryXIn: widthIn }
+        ? { kind: "level", levelZIn: bottomZIn, boundaryXIn: widthIn - SKIN_THICKNESS_IN }
         : { kind: "miter", otherDirXIn: peakXAt(i + 1) - footRightXIn, otherDirZIn: topZIn - bottomZIn };
 
     members.push(

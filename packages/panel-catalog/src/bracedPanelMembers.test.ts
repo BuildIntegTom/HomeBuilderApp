@@ -10,7 +10,7 @@ import {
   type BracePattern,
 } from "./bracedPanelMembers";
 import type { PanelSpacePoint2D } from "./componentSchema";
-import { computeBraceEndCutAngleDeg, memberBoxSizeIn } from "./panelMemberHelpers";
+import { computeBraceEndCutAngleDeg, memberBoxSizeIn, PLATE_2X4_WIDTH_IN } from "./panelMemberHelpers";
 
 const WIDTH_IN = 40;
 const DEPTH_IN = 15.5;
@@ -73,12 +73,17 @@ describe("buildDiagonalBraces", () => {
   // A level end's 2 corners are no longer guaranteed to average out to the
   // opposite stud's own face (barLeftX/barRightX) — a board of real width,
   // cut level right where its centerline meets that reference, can have one
-  // long edge reach past the panel's own X=0/widthIn edge (real trapezoid
-  // geometry for this panel's proportions, not a math error), clamped flush
-  // with the panel edge instead of hanging out past it (see buildDiagonal
-  // Braces's own makeBrace). For a level end NEAR the left edge, this
-  // clamps one corner to exactly X=0; both corners still land on the
-  // correct Z (the plate face) and stay within the panel's own width.
+  // long edge (the "long point" — Tommy) reach past the panel's own
+  // X=0/widthIn edge (real trapezoid geometry for this panel's proportions,
+  // not a math error). `computeBraceTrapezoidCornersIn`'s own `boundaryXIn`
+  // rigidly shifts BOTH of that level end's corners together so the long
+  // point lands exactly flush with the panel edge instead — preserving the
+  // board's true, undistorted width (see the dedicated width-preservation
+  // test below) — rather than clamping only the one overshooting corner
+  // (an earlier bug that shrank the apparent cut width; see
+  // buildDiagonalBraces's own makeBrace doc comment). For a level end NEAR
+  // the left edge, this shift lands one corner exactly at X=0; both
+  // corners still land on the correct Z (the plate face).
   function expectLevelEndClampedAtLeftEdge(corners: PanelSpacePoint2D[], targetZIn: number) {
     expect(corners).toHaveLength(2);
     for (const c of corners) {
@@ -86,7 +91,7 @@ describe("buildDiagonalBraces", () => {
       expect(c.xIn).toBeGreaterThanOrEqual(0);
       expect(c.xIn).toBeLessThanOrEqual(WIDTH_IN);
     }
-    expect(corners.some((c) => c.xIn === 0)).toBe(true);
+    expect(corners.some((c) => Math.abs(c.xIn) < 1e-6)).toBe(true);
   }
 
   // Same as above, mirrored — a level end near the RIGHT edge instead.
@@ -97,7 +102,7 @@ describe("buildDiagonalBraces", () => {
       expect(c.xIn).toBeGreaterThanOrEqual(0);
       expect(c.xIn).toBeLessThanOrEqual(WIDTH_IN);
     }
-    expect(corners.some((c) => c.xIn === WIDTH_IN)).toBe(true);
+    expect(corners.some((c) => Math.abs(c.xIn - WIDTH_IN) < 1e-6)).toBe(true);
   }
 
   for (const { pattern, mirrored } of BRACE_CONFIGS) {
@@ -175,6 +180,30 @@ describe("buildDiagonalBraces", () => {
     expect((upperPlumb[0]!.zIn + upperPlumb[1]!.zIn) / 2).toBeCloseTo(middleBarTopZ, 6);
     expect((lowerPlumb[0]!.zIn + lowerPlumb[1]!.zIn) / 2).toBeCloseTo(middleBarBottomZ, 6);
     expect(topPlateZ - middleCenterZ).toBeCloseTo(middleCenterZ - bottomPlateZ, 6); // symmetric rise/fall
+  });
+
+  it("shifts the whole overshooting level end inward so its long point lands flush with the panel edge WITHOUT shrinking the board's true width — Tommy: 'the long point ending where the vertical stud and the plate 2x4 runner intersect'", () => {
+    // Regression test for the exact bug reported live: an earlier version
+    // clamped only the ONE corner that overshot X=0/widthIn, which cut that
+    // corner's own apparent distance from its partner in half instead of
+    // shifting the whole cut — the 2 level corners' own X-spread should
+    // instead always equal the board's true PLATE_2X4_WIDTH_IN, projected
+    // onto X at this brace's own tilt (PLATE_2X4_WIDTH_IN / uz), regardless
+    // of whether the long point had to be pulled in from the raw edge.
+    const braces = buildDiagonalBraces(WIDTH_IN, DEPTH_IN, HEIGHT_IN, rowCount, studSpanIn, "chevron", false);
+    const upperExt = braces.find((b) => b.memberId === "diagonal_brace_upper_ext")!;
+    const dz = topPlateZ - middleBarTopZ;
+    const dx = rightStudFaceX - leftStudFaceX;
+    const uz = dz / Math.hypot(dx, dz);
+    const expectedCapWidthIn = PLATE_2X4_WIDTH_IN / uz;
+
+    const levelCorners = upperExt.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - topPlateZ) < 1e-6);
+    expect(levelCorners).toHaveLength(2);
+    const actualCapWidthIn = Math.abs(levelCorners[0]!.xIn - levelCorners[1]!.xIn);
+    expect(actualCapWidthIn).toBeCloseTo(expectedCapWidthIn, 6);
+    // ...and the long point genuinely reaches the panel's own true edge —
+    // not a vacuous check now that the width is confirmed undistorted.
+    expect(levelCorners.some((c) => Math.abs(c.xIn - WIDTH_IN) < 1e-6)).toBe(true);
   });
 
   it("mirrored chevron: both braces' inner (plumb) end is flush to the RIGHT stud instead, outer (level) end near the left plate", () => {
