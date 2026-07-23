@@ -181,21 +181,22 @@ function angleNote(widthIn: number, heightIn: number, peakCount: number): { type
  * come up with a way to really hone in on the math involved with cutting
  * the angles of braced panels" / "Header panels on windows and doors
  * braces need to be trapeziod, have the insides of their long points
- * meet, and plum cuts be vertically flush with the studs") — pulled
- * directly from a real built brace's own `tiltDeg`, not re-derived, so it
- * can never drift out of sync with whatever the actual geometry produces.
- * See `computeBraceEndCutAngleDeg`'s own doc comment for the full
- * derivation. Every brace here shares the same tilt magnitude (a header's
- * top/bottom chords are always flat, so every peak's rise/fall is
+ * meet" — later corrected: "there are no plum[b] cuts on headers... the
+ * trapezoid has parallel cuts that meet the top and bottom chords") —
+ * pulled directly from a real built brace's own `tiltDeg`, not re-derived,
+ * so it can never drift out of sync with whatever the actual geometry
+ * produces. See `computeBraceEndCutAngleDeg`'s own doc comment for the
+ * full derivation. Every brace here shares the same tilt magnitude (a
+ * header's top/bottom chords are always flat, so every peak's rise/fall is
  * geometrically identical), so one representative brace's angle describes
  * the whole set. Every brace is now a true beveled trapezoid (see
  * `buildHeaderTrussWebBraces`/`computeHeaderBraceTrapezoidCornersIn`), not
- * a plain tilted box — the header's own 2 outermost braces get a genuine
- * plumb cut flush against the jack-stud framing and a level cut flush
- * against the bottom chord; every internal peak/foot is a MITER joint
- * where the two meeting braces' own long points land flush against each
- * other with no gap, bisecting the angle between them (not a single
- * flat-face cut against a stationary chord).
+ * a plain tilted box — every end, including internal peaks/feet (Tommy,
+ * live in the app, on an earlier miter-based version of this: "each tip
+ * of the dimensional lumber edge of the braces should move away from the
+ * center until their tips meet... with no space"), is a plain LEVEL cut
+ * flush against its own chord (top or bottom), never a plumb cut — a
+ * header has no internal vertical member to plumb against.
  */
 function braceCutAngleNote(members: PanelMember[]): { type: "deviation"; text: string } | null {
   const brace = members.find((m) => m.role === "brace" && m.position.tiltDeg !== undefined);
@@ -205,10 +206,10 @@ function braceCutAngleNote(members: PanelMember[]): { type: "deviation"; text: s
     type: "deviation",
     text:
       `Each truss web brace tilts ${cutAngleDeg.toFixed(1)}deg off vertical and is a true beveled trapezoid, not a ` +
-      "simplified straight box. The header's own 2 outermost braces get a plumb cut flush against the jack-stud " +
-      "framing and a level cut flush against the bottom chord's own face; every internal peak/foot is a mitered " +
-      "joint where the two meeting braces' long points land flush against each other with no gap (one miter-saw " +
-      "blade-tilt setting per cut, no compound angle).",
+      "simplified straight box. Every end — the header's own 2 outermost feet, every internal peak, and every " +
+      "internal foot (on a multi-peak window header) — is a plain level cut flush against its own chord (top or " +
+      "bottom), never a plumb cut; adjacent braces meeting at a peak or internal foot land flush against each " +
+      "other with no gap and no overlap (one miter-saw blade-tilt setting per cut, no compound angle).",
   };
 }
 

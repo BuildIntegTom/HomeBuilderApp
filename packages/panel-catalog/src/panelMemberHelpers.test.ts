@@ -437,7 +437,18 @@ describe("buildHeaderTrussWebBraces", () => {
     }
   });
 
-  it("meets every adjacent pair's long points at the exact same peak/foot, with no gap (unlike buildTrussWebBraces' own PEAK_GAP_IN retreat)", () => {
+  it("meets every adjacent pair's long points at exactly ONE shared point per joint, with no gap and no overlap (unlike buildTrussWebBraces' own PEAK_GAP_IN retreat)", () => {
+    // Regression test for the exact bug reported live: an earlier
+    // (miter-based) version made BOTH boards land on the SAME 2-point
+    // interval at a peak/internal foot — which sounds like "meeting" but
+    // actually means both boards' solid bodies overlapped in a wedge right
+    // at the joint (each board's own quadrilateral claimed the ENTIRE
+    // shared interval as its own edge). The fix (level cuts, each with its
+    // own boundaryXIn at the shared joint) instead gives each board just
+    // ONE corner pinned to the joint's own X, with its OTHER corner
+    // extending outward on its own side only — so the two boards' own
+    // X-ranges are adjacent, touching at exactly one point, never
+    // overlapping.
     const members = buildHeaderTrussWebBraces(2, 60, 0, 20, 1.5, "web");
     const byId = new Map(members.map((m) => [m.memberId, m]));
     const rise1 = byId.get("web_1_rise")!;
@@ -445,19 +456,28 @@ describe("buildHeaderTrussWebBraces", () => {
     const rise2 = byId.get("web_2_rise")!;
     const fall2 = byId.get("web_2_fall")!;
 
-    // Peak 1 (X=15,Z=20): rise_1 and fall_1 meet there.
+    // Peak 1 (X=15,Z=20): rise_1 and fall_1 meet there — exactly one
+    // shared corner, not both of each board's own 2 corners.
     const rise1Peak = closestTwo(rise1.position.trapezoidCornersIn!, 15, 20);
     const fall1Peak = closestTwo(fall1.position.trapezoidCornersIn!, 15, 20);
-    for (const c of rise1Peak) {
-      expect(fall1Peak.some((f) => Math.abs(f.xIn - c.xIn) < 1e-6 && Math.abs(f.zIn - c.zIn) < 1e-6)).toBe(true);
-    }
+    const sharedPeak = rise1Peak.filter((c) => fall1Peak.some((f) => Math.abs(f.xIn - c.xIn) < 1e-6 && Math.abs(f.zIn - c.zIn) < 1e-6));
+    expect(sharedPeak).toHaveLength(1);
+    expect(sharedPeak[0]!.xIn).toBeCloseTo(15, 6);
+    // rise_1 (approaching from the left) never extends past the peak;
+    // fall_1 (approaching from the right) never extends before it —
+    // adjacent, non-overlapping X-ranges meeting exactly at X=15.
+    expect(Math.max(...rise1Peak.map((c) => c.xIn))).toBeCloseTo(15, 6);
+    expect(Math.min(...fall1Peak.map((c) => c.xIn))).toBeCloseTo(15, 6);
 
-    // Internal foot between triangle 1 and 2 (X=30,Z=0): fall_1 and rise_2 meet there.
+    // Internal foot between triangle 1 and 2 (X=30,Z=0): fall_1 and rise_2
+    // meet there — same "exactly one shared point, adjacent ranges" shape.
     const fall1Foot = closestTwo(fall1.position.trapezoidCornersIn!, 30, 0);
     const rise2Foot = closestTwo(rise2.position.trapezoidCornersIn!, 30, 0);
-    for (const c of fall1Foot) {
-      expect(rise2Foot.some((r) => Math.abs(r.xIn - c.xIn) < 1e-6 && Math.abs(r.zIn - c.zIn) < 1e-6)).toBe(true);
-    }
+    const sharedFoot = fall1Foot.filter((c) => rise2Foot.some((r) => Math.abs(r.xIn - c.xIn) < 1e-6 && Math.abs(r.zIn - c.zIn) < 1e-6));
+    expect(sharedFoot).toHaveLength(1);
+    expect(sharedFoot[0]!.xIn).toBeCloseTo(30, 6);
+    expect(Math.max(...fall1Foot.map((c) => c.xIn))).toBeCloseTo(30, 6);
+    expect(Math.min(...rise2Foot.map((c) => c.xIn))).toBeCloseTo(30, 6);
 
     // The header's own left/right outer ends are corner clips, flush to
     // X=SKIN_THICKNESS_IN / X=widthIn-SKIN_THICKNESS_IN — the INSIDE face of

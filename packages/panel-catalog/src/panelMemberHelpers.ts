@@ -704,11 +704,10 @@ const SQUARE_TOLERANCE_IN = 1e-6;
  * edges) — the angle between them is the real bevel a fabricator needs to
  * cut. A cut edge with constant X is "plumb" (vertical); constant Z is
  * "level" (horizontal). "angled" means neither — a header brace never
- * produces this today (every end is either a plain `HeaderBraceLevelTarget`
- * or a miter that resolves exactly horizontal, per its own flat-chord
- * symmetry — see `buildHeaderTrussWebBraces`'s own doc comment); it only
- * shows up for a genuinely non-axis-aligned miter, which no current caller
- * builds.
+ * produces this today (every end, including internal peaks/feet, is a
+ * plain `HeaderBraceLevelTarget` — see `buildHeaderTrussWebBraces`'s own
+ * doc comment); it only shows up for a genuinely non-axis-aligned miter,
+ * which no current caller builds.
  */
 export function describeBraceEndCuts(
   corners: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D],
@@ -870,17 +869,30 @@ export function buildTrussWebBraces(
  *
  * Every internal peak (a triangle's own rise meeting its own fall) and
  * every internal foot (one triangle's fall meeting the next triangle's
- * rise) is a MITER joint between the 2 real adjacent braces — since a
- * header's peak layout is always mirror-symmetric about the vertical
- * through each joint (flat chords, uniform `segWidthIn`), the miter cut
- * line always comes out exactly horizontal, automatically flush with the
- * chord's own flat face (verified by direct computation — no separate
- * brace-to-chord handling is needed on top of the pure brace-to-brace
- * miter). The header's own 2 outermost feet (the very first rise's foot at
- * X=0, the very last fall's foot at X=widthIn) are plain LEVEL cuts
- * instead — flush with the bottom chord's own face, same as every internal
- * joint. See `computeHeaderBraceTrapezoidCornersIn` for both joint types'
- * math.
+ * rise) is, like the header's own 2 outermost feet, a plain LEVEL cut
+ * against the flat chord it sits on — NOT a brace-to-brace MITER. Tommy,
+ * live in the app: "the centerlines of those lumber pieces converge in the
+ * center on the bottom edge of the 2x4 on the top plate... each tip of the
+ * dimensional lumber edge of the braces should move away from the center
+ * until their tips meet... they need to meet in the center with no space."
+ * An earlier version DID use a brace-to-brace miter here — mathematically
+ * plausible (2 boards meeting a shared point) but wrong for this specific
+ * shape: a miter bisects the angle BETWEEN 2 boards, which only avoids
+ * overlap when the 2 boards sit on genuinely different planes converging
+ * at that angle (a true picture-frame corner). Here, both boards are
+ * level-cut against the SAME flat chord — the miter math still produced a
+ * cut line, but BOTH boards ended up claiming that entire cut line as
+ * their own edge, so their solid bodies overlapped in a wedge right at the
+ * joint instead of meeting flush. Since this is really "2 independent
+ * level cuts sharing one target X," each side just needs its own
+ * `boundaryXIn` (peakXIn for a peak, footLeftXIn/footRightXIn for an
+ * internal foot) — the exact same mechanism the 2 outermost feet already
+ * use to land their own outer edge flush with the end-cap plywood, reused
+ * here with the shared joint's own X as the target instead of the panel's
+ * true edge. See `computeHeaderBraceTrapezoidCornersIn`'s `boundaryXIn`
+ * (on `HeaderBraceLevelTarget`) for the underlying trig — no changes were
+ * needed there; only which target TYPE gets constructed for each end,
+ * below, changed.
  */
 export function buildHeaderTrussWebBraces(
   peakCount: number,
@@ -949,16 +961,22 @@ export function buildHeaderTrussWebBraces(
     // its true undistorted width at whatever angle this brace happens to
     // tilt at (see HeaderBraceLevelTarget's own doc comment) — no separate
     // angle-specific adjustment needed here.
+    // Every internal joint (a peak, or — for a multi-peak window header —
+    // an internal foot between 2 adjacent triangles) is a LEVEL cut too,
+    // targeting the shared joint's own X as `boundaryXIn` — same mechanism
+    // as the outer feet above, just aimed at an internal point instead of
+    // the panel's true edge. See this function's own doc comment for why a
+    // brace-to-brace MITER (the previous approach) was wrong here.
     const riseFootEnd: HeaderBraceEndTarget =
       i === 0
         ? { kind: "level", levelZIn: bottomZIn, boundaryXIn: SKIN_THICKNESS_IN }
-        : { kind: "miter", otherDirXIn: peakXAt(i - 1) - footLeftXIn, otherDirZIn: topZIn - bottomZIn };
-    const risePeakEnd: HeaderBraceEndTarget = { kind: "miter", otherDirXIn: footRightXIn - peakXIn, otherDirZIn: bottomZIn - topZIn };
-    const fallPeakEnd: HeaderBraceEndTarget = { kind: "miter", otherDirXIn: footLeftXIn - peakXIn, otherDirZIn: bottomZIn - topZIn };
+        : { kind: "level", levelZIn: bottomZIn, boundaryXIn: footLeftXIn };
+    const risePeakEnd: HeaderBraceEndTarget = { kind: "level", levelZIn: topZIn, boundaryXIn: peakXIn };
+    const fallPeakEnd: HeaderBraceEndTarget = { kind: "level", levelZIn: topZIn, boundaryXIn: peakXIn };
     const fallFootEnd: HeaderBraceEndTarget =
       i === peakCount - 1
         ? { kind: "level", levelZIn: bottomZIn, boundaryXIn: widthIn - SKIN_THICKNESS_IN }
-        : { kind: "miter", otherDirXIn: peakXAt(i + 1) - footRightXIn, otherDirZIn: topZIn - bottomZIn };
+        : { kind: "level", levelZIn: bottomZIn, boundaryXIn: footRightXIn };
 
     members.push(
       makeWebBrace(
