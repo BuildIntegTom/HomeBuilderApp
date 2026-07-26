@@ -1332,10 +1332,11 @@ export const bearingEdgeReferenceOptions = [
 export type BearingEdgeReferenceId = (typeof bearingEdgeReferenceOptions)[number]["id"];
 
 export const roofBearingMemberNote =
-  "There's always a bearing member on top of the wall panels — a truss plate (single-story truss roof, see " +
-  "trussPlateMembers.ts), a box beam (two-story, see boxBeamMembers.ts), or a roof-catcher beam spanning between " +
+  "There's always a bearing member on top of the wall panels — a truss plate (see trussPlateMembers.ts), a box " +
+  "beam (2nd-story walls only, per-wall choice — see boxBeamMembers.ts), or a roof-catcher beam spanning between " +
   "the two Gable End Column Panels (structural-panel roof, \"Built-up 3-ply 2x12\" shape — see " +
-  "roofCatcherBeamMembers.ts; the other beam shape options remain labels only).";
+  "roofCatcherBeamMembers.ts; the other beam shape options remain labels only). A 2nd-story wall defaults to a " +
+  "Truss Plate unless Box Beam is turned on for it (see that wall's own elevation view, or the Ring buttons below).";
 
 /** Shape options for the structural-panel roof's catcher beam — only
  * "Built-up 3-ply 2x12" (Tommy: "spawn in 3 2x12 dimensional lumber pieces

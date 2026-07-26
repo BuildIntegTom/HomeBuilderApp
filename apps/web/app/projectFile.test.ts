@@ -47,6 +47,8 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     maxGablePanelHeightIn: 96,
     trussPlateInsetIn: 5.5,
     heelHeightIn: 6,
+    boxBeamWallIds: new Set(),
+    boxBeamSizeId: "9x2-lvl",
     roofCatcherBeamOffsetIn: 11.25,
     roofCatcherBeamShape: "Built-up 2-ply 2x12",
     octagonRingDiameterFt: 3,
@@ -140,30 +142,74 @@ describe("serializeProject / parseProjectFile round-trip", () => {
   });
 });
 
-describe("v16 -> v17 migration (heelHeightIn)", () => {
-  /** Builds a raw v16-shaped file (no heelHeightIn field at all) directly —
-   * bypassing serializeProject/ProjectState entirely, since a v16 caller by
-   * definition doesn't have the current TS types available. */
-  function makeV16File() {
-    const currentState = serializeProject(makeState()).state;
-    const { heelHeightIn: _drop, ...v16State } = currentState;
+describe("v17 -> v18 migration (boxBeamWallIds/boxBeamSizeId)", () => {
+  /** Builds a raw v17-shaped file (no boxBeamWallIds/boxBeamSizeId fields at
+   * all) directly — bypassing serializeProject/ProjectState entirely, since
+   * a v17 caller by definition doesn't have the current TS types
+   * available. */
+  function makeV17File(overrides: Partial<ProjectState> = {}) {
+    const currentState = serializeProject(makeState(overrides)).state;
+    const { boxBeamWallIds: _drop1, boxBeamSizeId: _drop2, ...v17State } = currentState;
     return {
-      schemaVersion: 16,
+      schemaVersion: 17,
       savedAt: new Date().toISOString(),
-      state: v16State,
+      state: v17State,
     };
   }
 
-  it("migrates a v16 file's absent heelHeightIn to 0, preserving its exact existing roofline", () => {
-    const result = parseProjectFile(JSON.stringify(makeV16File()));
+  it("migrates a 2-story v17 file to Box Beam on every existing wall, at the default 9x2 LVL size", () => {
+    const twoStoryOverrides: Partial<ProjectState> = {
+      footprint: {
+        corners: [
+          { id: "A", point: { x: 0, y: 0 } },
+          { id: "B", point: { x: 20, y: 0 } },
+          { id: "C", point: { x: 20, y: 20 } },
+        ],
+        walls: [
+          { id: "AB", startCorner: "A", endCorner: "B", lengthFt: 20 },
+          { id: "BC", startCorner: "B", endCorner: "C", lengthFt: 20 },
+        ],
+      },
+      stories: [
+        { id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: {} },
+        { id: "second", label: "Second Story", wallHeightFt: 9, wallSlots: {} },
+      ],
+    };
+    const result = parseProjectFile(JSON.stringify(makeV17File(twoStoryOverrides)));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.heelHeightIn).toBe(0);
+    expect(result.state.boxBeamWallIds).toEqual(new Set(["AB", "BC"]));
+    expect(result.state.boxBeamSizeId).toBe("9x2-lvl");
+  });
+
+  it("increases the migrated 2nd story's own wallHeightFt by the Box Beam/Truss Plate height delta, preserving the project's exact prior geometry", () => {
+    const result = parseProjectFile(
+      JSON.stringify(
+        makeV17File({
+          stories: [
+            { id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: {} },
+            { id: "second", label: "Second Story", wallHeightFt: 9, wallSlots: {} },
+          ],
+        }),
+      ),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // (2*0.75 + 9) - (1.5 + 0.75) = 8.25in = 0.6875ft
+    expect(result.state.stories[1]!.wallHeightFt).toBeCloseTo(9 + 0.6875, 6);
+    expect(result.state.stories[0]!.wallHeightFt).toBe(10); // ground floor untouched
+  });
+
+  it("migrates a 1-story v17 file to an empty boxBeamWallIds (box beam never applies there)", () => {
+    const result = parseProjectFile(JSON.stringify(makeV17File()));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.boxBeamWallIds).toEqual(new Set());
   });
 
   it("still rejects a version older than the one-version-back migration window", () => {
-    const v15File = { ...makeV16File(), schemaVersion: 15 };
-    const result = parseProjectFile(JSON.stringify(v15File));
+    const v16File = { ...makeV17File(), schemaVersion: 16 };
+    const result = parseProjectFile(JSON.stringify(v16File));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/version/i);

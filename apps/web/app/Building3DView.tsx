@@ -10,6 +10,7 @@ import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
 import PanelLabel from "./PanelLabel";
 import {
+  BOX_BEAM_SIZE_DEFAULT,
   bracingStyleToPatternMirror,
   buildBoxBeamMembers,
   buildBracedPanelMembers,
@@ -24,14 +25,17 @@ import {
   buildStandardPanelMembers,
   buildTrussPlateMembers,
   buildVerticalGapFillerMembers,
+  computeBoxBeamAssemblyHeightIn,
+  computeBoxBeamHeightDeltaIn,
   computeDoorRoughOpeningHeightIn,
-  computeRoofBearingAssemblyHeightIn,
+  computeSharedRooflineBearingHeightIn,
   doorRoughOpeningSelectedHeightIn,
   sillDefaultHeightIn,
   sillHeaderHeightInRange,
   standardWindowHeightDefaultIn,
   toeUpHeightIn,
   wallAssemblyLayers,
+  type BoxBeamSizeId,
   type BracingStyle,
   type JackStudConfig,
   type PanelMember,
@@ -502,6 +506,14 @@ interface Building3DViewProps {
   /** Truss plate's own inset from each wall's true corners (page.tsx's
    * `trussPlateInsetIn`) — unused for box beam, which has no inset. */
   trussPlateInsetIn?: number;
+  /** Which walls have a Box Beam (rather than a Truss Plate) as their own
+   * 2nd-story roof-bearing member (page.tsx's `boxBeamWallIds`) — only
+   * meaningful when `secondStory` is set. Empty/missing = every wall uses
+   * a Truss Plate, same as before this was a per-wall choice. */
+  boxBeamWallIds?: Set<string>;
+  /** Which box-beam size/material every selected wall uses, project-wide
+   * (page.tsx's `boxBeamSizeId`) — see BOX_BEAM_SIZE_OPTIONS. */
+  boxBeamSizeId?: BoxBeamSizeId;
   /** Renders a static, non-interactive SE bird's-eye frame instead of the
    * normal orbit-able preview — used to capture a PNG for the Project
    * Summary page's static rendering (Tommy: "a static 3d rendering image
@@ -622,6 +634,8 @@ export default function Building3DView({
   gableTilesByWallId = EMPTY_GABLE_TILES_BY_WALL_ID,
   roofEnabled = false,
   trussPlateInsetIn = 0,
+  boxBeamWallIds = EMPTY_ID_SET,
+  boxBeamSizeId = BOX_BEAM_SIZE_DEFAULT,
   captureMode = false,
   onCapture,
   compassRef,
@@ -732,23 +746,44 @@ export default function Building3DView({
 
   // Second story: same XZ anchor positions as the ground floor (shares its
   // footprint), just its own wall height for member geometry + a Y offset
-  // by the ground floor's own top-plate height.
+  // by the ground floor's own top-plate height. secondStory.wallHeightFt is
+  // always the NOMINAL (Truss Plate) height — a wall with a Box Beam
+  // selected (boxBeamWallIds) gets its own row built shorter by
+  // computeBoxBeamHeightDeltaIn, so wall+beam still reaches the exact same
+  // shared roofline as every other wall (see sharedRoofBearingHeightIn's
+  // own doc comment). panelSlotBoxes3D is called once per distinct height
+  // (at most 2: covered/uncovered), each time with `wallSlots` filtered
+  // down to just that group's own walls — an omitted wall id there simply
+  // produces zero boxes for it (see panelSlotBoxes3D's own `?? []`), so the
+  // two calls' results are safe to concat.
   const secondStoryHeightIn = secondStory ? secondStory.wallHeightFt * IN_PER_FT : 0;
-  const secondStorySlotBoxes = useMemo(
-    () =>
-      footprint && secondStory
-        ? panelSlotBoxes3D(footprint, secondStory.wallSlots, thicknessIn, secondStory.wallHeightFt, primaryCornerIds)
-        : [],
-    [footprint, secondStory, thicknessIn, primaryCornerIds],
-  );
+  const secondStorySlotBoxes = useMemo(() => {
+    if (!footprint || !secondStory) return [];
+    const boxBeamHeightDeltaIn = boxBeamWallIds.size > 0 ? computeBoxBeamHeightDeltaIn(boxBeamSizeId) : 0;
+    if (boxBeamHeightDeltaIn === 0) {
+      return panelSlotBoxes3D(footprint, secondStory.wallSlots, thicknessIn, secondStory.wallHeightFt, primaryCornerIds);
+    }
+    const coveredSlots: Record<string, PanelSlot[]> = {};
+    const uncoveredSlots: Record<string, PanelSlot[]> = {};
+    for (const [wallId, slots] of Object.entries(secondStory.wallSlots)) {
+      (boxBeamWallIds.has(wallId) ? coveredSlots : uncoveredSlots)[wallId] = slots;
+    }
+    const coveredHeightFt = secondStory.wallHeightFt - boxBeamHeightDeltaIn / IN_PER_FT;
+    return [
+      ...panelSlotBoxes3D(footprint, coveredSlots, thicknessIn, coveredHeightFt, primaryCornerIds),
+      ...panelSlotBoxes3D(footprint, uncoveredSlots, thicknessIn, secondStory.wallHeightFt, primaryCornerIds),
+    ];
+  }, [footprint, secondStory, thicknessIn, primaryCornerIds, boxBeamWallIds, boxBeamSizeId]);
   const secondStorySlotRenderData = useMemo(
     () =>
       secondStorySlotBoxes.map((box) => ({
         box,
+        // Each box already carries its own real height (see above) — a
+        // covered wall's own boxes are shorter than secondStoryHeightIn.
         members: membersForSlot(
           box.slot,
           thicknessIn,
-          secondStoryHeightIn,
+          box.heightFt * IN_PER_FT,
           includeNailer,
           isSquareBalePanelization,
           squareBaleStudConfig,
@@ -761,7 +796,6 @@ export default function Building3DView({
     [
       secondStorySlotBoxes,
       thicknessIn,
-      secondStoryHeightIn,
       includeNailer,
       isSquareBalePanelization,
       squareBaleStudConfig,
@@ -778,10 +812,14 @@ export default function Building3DView({
   // `stories[0].wallHeightFt`/`stories[1]`). Both the gable cap and the
   // roof-bearing member anchor off this.
   const roofBaseHeightIn = heightIn + secondStoryHeightIn;
-  // Truss plate (single-story) / box beam (two-story) — whichever applies
-  // is driven by the same `secondStory` presence check page.tsx's own Roof
-  // detail pages already use. Only relevant/rendered when `roofEnabled`.
-  const roofBearingAssemblyHeightIn = computeRoofBearingAssemblyHeightIn(!!secondStory);
+  // The shared roofline/eave reference every wall agrees on, regardless of
+  // which roof-bearing member any individual wall actually uses (Tommy:
+  // "the roof lines needs to be respected" — a box-beam wall's own panel
+  // row is built shorter to still reach this same height, see the
+  // per-wall secondStoryPanelHeightIn logic below). Always the Truss
+  // Plate's own (shorter) assembly height. Only relevant/rendered when
+  // `roofEnabled`.
+  const sharedRoofBearingHeightIn = computeSharedRooflineBearingHeightIn();
 
   // Real per-wall Gable End Panel tiles (page.tsx's own `gableTilesByWallId`
   // — the same data the Panel Fabrication pages use). Each tile sits on TOP
@@ -798,7 +836,7 @@ export default function Building3DView({
     // would offset every gable panel's own LOCAL geometry by the roof-
     // bearing member's thickness, even though gableBaseYFt (the group's
     // own world-space anchor) already accounts for it correctly.
-    const gableEaveHeightIn = roofBaseHeightIn + (roofEnabled ? roofBearingAssemblyHeightIn : 0);
+    const gableEaveHeightIn = roofBaseHeightIn + (roofEnabled ? sharedRoofBearingHeightIn : 0);
     const gableBaseYFt = gableEaveHeightIn / IN_PER_FT;
     const result: {
       wallId: string;
@@ -857,31 +895,41 @@ export default function Building3DView({
       });
     }
     return result.map((r) => ({ ...r, anchorYFt: gableBaseYFt }));
-  }, [footprint, gableTilesByWallId, roofBaseHeightIn, roofEnabled, roofBearingAssemblyHeightIn, thicknessIn, includeNailer]);
+  }, [footprint, gableTilesByWallId, roofBaseHeightIn, roofEnabled, sharedRoofBearingHeightIn, thicknessIn, includeNailer]);
 
   // One real roof-bearing (truss plate/box beam) segment per wall, sized to
   // that wall's own real length — same member builders the Panel
-  // Fabrication pages already use, just placed in world space here.
+  // Fabrication pages already use, just placed in world space here. Box
+  // beam is a per-wall choice now (boxBeamWallIds), not automatic once
+  // secondStory exists.
   const roofBearingRenderData = useMemo(() => {
     if (!footprint || !roofEnabled) return [];
     return footprint.walls.map((wall) => {
       const axis = wallAxis(footprint, wall);
       const lengthIn = wall.lengthFt * IN_PER_FT;
-      const members = secondStory
-        ? buildBoxBeamMembers(lengthIn, thicknessIn)
+      const hasBoxBeam = !!secondStory && boxBeamWallIds.has(wall.id);
+      const members = hasBoxBeam
+        ? buildBoxBeamMembers(lengthIn, thicknessIn, boxBeamSizeId)
         : buildTrussPlateMembers(lengthIn, thicknessIn, trussPlateInsetIn);
+      const assemblyHeightIn = hasBoxBeam ? computeBoxBeamAssemblyHeightIn(boxBeamSizeId) : sharedRoofBearingHeightIn;
+      // A box-beam wall's own row is built shorter (see
+      // secondStorySlotBoxes above) so the beam itself must anchor lower by
+      // that exact same delta — its own top still reaches roofBaseHeightIn
+      // (the shared roofline), same as an uncovered wall's Truss Plate.
+      const anchorYIn = hasBoxBeam ? roofBaseHeightIn - computeBoxBeamHeightDeltaIn(boxBeamSizeId) : roofBaseHeightIn;
       return {
         wallId: wall.id,
         anchorX: axis.startXFt,
         anchorZ: axis.startZFt,
+        anchorYIn,
         rotationRad: axis.rotationRad,
         members,
         widthFt: wall.lengthFt,
-        heightFt: roofBearingAssemblyHeightIn / IN_PER_FT,
+        heightFt: assemblyHeightIn / IN_PER_FT,
         depthFt: thicknessIn / IN_PER_FT,
       };
     });
-  }, [footprint, roofEnabled, secondStory, thicknessIn, trussPlateInsetIn, roofBearingAssemblyHeightIn]);
+  }, [footprint, roofEnabled, secondStory, boxBeamWallIds, boxBeamSizeId, thicknessIn, trussPlateInsetIn, sharedRoofBearingHeightIn, roofBaseHeightIn]);
 
   // Panel-name labels (Tommy: "the specific panel label (N1 for example)
   // to appear on... the simplified box 3d views") — a pure re-derivation of
@@ -938,11 +986,11 @@ export default function Building3DView({
         }),
       ),
       ...roofBearingRenderData.map(
-        ({ wallId, anchorX, anchorZ, rotationRad, members }): WorldPlacedPanel => ({
+        ({ wallId, anchorX, anchorZ, anchorYIn, rotationRad, members }): WorldPlacedPanel => ({
           label: `roofbearing_${wallId}`,
           worldXIn: anchorX * IN_PER_FT,
           worldZIn: anchorZ * IN_PER_FT,
-          worldYIn: roofBaseHeightIn,
+          worldYIn: anchorYIn,
           rotationRad,
           members,
         }),
@@ -1183,7 +1231,7 @@ export default function Building3DView({
               ) : simplified ? (
                 renderSimplifiedSlot(
                   box,
-                  secondStoryHeightIn,
+                  box.heightFt * IN_PER_FT,
                   jackStudConfig,
                   standardWidthIn,
                   secondStoryInstancesBySlot.get(`${box.wallId}-${box.slotIndex}`) ?? [],
@@ -1225,10 +1273,10 @@ export default function Building3DView({
               </group>
             ),
           )}
-          {roofBearingRenderData.map(({ wallId, anchorX, anchorZ, rotationRad, members, widthFt, heightFt, depthFt }) => (
+          {roofBearingRenderData.map(({ wallId, anchorX, anchorZ, anchorYIn, rotationRad, members, widthFt, heightFt, depthFt }) => (
             <group
               key={`roofbearing-${wallId}`}
-              position={[anchorX, roofBaseHeightIn / IN_PER_FT, anchorZ]}
+              position={[anchorX, anchorYIn / IN_PER_FT, anchorZ]}
               rotation={[0, -rotationRad, 0]}
             >
               {simplified ? (

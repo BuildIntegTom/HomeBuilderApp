@@ -1,6 +1,8 @@
 import type { Footprint, PanelSlot, Story } from "@building-integrity/geometry";
 import type { Season } from "@building-integrity/calc-engine";
+import { BOX_BEAM_SIZE_DEFAULT, computeBoxBeamHeightDeltaIn } from "@building-integrity/panel-catalog";
 import type {
+  BoxBeamSizeId,
   BracingStyle,
   OctagonRingDiameterFt,
   RoofCatcherBeamShape,
@@ -17,14 +19,19 @@ import type { ViewerRole } from "./viewerRole";
  * a future incompatible version fails loudly (`parseProjectFile`) instead
  * of silently restoring a half-broken layout. One deliberate, bounded
  * exception: `parseProjectFile` also accepts the immediately-prior version
- * and migrates it forward. v16->v17: added `heelHeightIn` (the energy-heel
- * truss seat height — see computeGableTiledRow's own doc comment). A v16
- * file has no opinion on this at all, so it migrates to 0 (preserving that
- * project's exact existing roofline) rather than the new-project default of
- * `gableHeelHeightDefaultIn.value` — retroactively defaulting an old
- * project to a nonzero heel would silently change its roofline geometry.
+ * and migrates it forward. v17->v18: added `boxBeamWallIds`/`boxBeamSizeId`
+ * — Box Beam is now a per-wall user choice (see boxBeamMembers.ts's own
+ * BOX_BEAM_SIZE_OPTIONS) instead of automatic whenever a 2nd story exists,
+ * and the shared roofline reference is now always the (shorter) Truss
+ * Plate height, with a covered wall's own row built shorter to compensate
+ * (see computeBoxBeamHeightDeltaIn). A v17 file's box beam was always "on
+ * for every wall, default 9x2 LVL size" (the old automatic behavior), so it
+ * migrates to exactly that selection — AND its stories[1].wallHeightFt (if
+ * a 2nd story exists) is increased by that same delta, so the migrated
+ * project's real geometry stays pixel-identical to what it rendered before
+ * this version.
  */
-export const PROJECT_FILE_VERSION = 17;
+export const PROJECT_FILE_VERSION = 18;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -88,6 +95,14 @@ export interface ProjectState {
    * (adjustable)") — 0 disables it. See computeGableTiledRow's own
    * `heelHeightIn` param. */
   heelHeightIn: number;
+  /** Which walls have a Box Beam (rather than a Truss Plate) as their own
+   * 2nd-story roof-bearing member (Tommy: "options for being a ring all
+   * the way around or just one section of the wall") — see
+   * boxBeamMembers.ts. Only meaningful once a 2nd story exists. */
+  boxBeamWallIds: Set<string>;
+  /** Which box-beam size/material every selected wall uses, project-wide
+   * — see BOX_BEAM_SIZE_OPTIONS in boxBeamMembers.ts. */
+  boxBeamSizeId: BoxBeamSizeId;
   roofCatcherBeamOffsetIn: number;
   roofCatcherBeamShape: RoofCatcherBeamShape;
   /** Octagon roof-catcher ring's outside diameter (ft) — only shown/used
@@ -182,6 +197,8 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "maxGablePanelHeightIn",
   "trussPlateInsetIn",
   "heelHeightIn",
+  "boxBeamWallIds",
+  "boxBeamSizeId",
   "roofCatcherBeamOffsetIn",
   "roofCatcherBeamShape",
   "octagonRingDiameterFt",
@@ -199,19 +216,24 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "roofEnabled",
 ];
 
-/** The v16 shape's own required keys — same list as REQUIRED_STATE_KEYS
- * minus the one field new in v17 — used only to validate a v16 file before
- * migrating it forward (see parseProjectFile's `heelHeightIn` migration). */
-const V16_REQUIRED_STATE_KEYS: string[] = (REQUIRED_STATE_KEYS as string[]).filter((k) => k !== "heelHeightIn");
+/** The v17 shape's own required keys — same list as REQUIRED_STATE_KEYS
+ * minus the two fields new in v18 — used only to validate a v17 file before
+ * migrating it forward (see parseProjectFile's `boxBeamWallIds`/
+ * `boxBeamSizeId` migration). */
+const V17_REQUIRED_STATE_KEYS: string[] = (REQUIRED_STATE_KEYS as string[]).filter(
+  (k) => k !== "boxBeamWallIds" && k !== "boxBeamSizeId",
+);
 
 /** JSON has no Set type — `primaryCornerIds`/`gableEndWallIds`/
- * `checkedInteriorIds`/`checkedExteriorIds` round-trip as plain arrays. */
+ * `boxBeamWallIds`/`checkedInteriorIds`/`checkedExteriorIds` round-trip as
+ * plain arrays. */
 export interface ProjectFile {
   schemaVersion: number;
   savedAt: string;
-  state: Omit<ProjectState, "primaryCornerIds" | "gableEndWallIds" | "checkedInteriorIds" | "checkedExteriorIds"> & {
+  state: Omit<ProjectState, "primaryCornerIds" | "gableEndWallIds" | "boxBeamWallIds" | "checkedInteriorIds" | "checkedExteriorIds"> & {
     primaryCornerIds: string[];
     gableEndWallIds: string[];
+    boxBeamWallIds: string[];
     checkedInteriorIds: string[];
     checkedExteriorIds: string[];
   };
@@ -225,6 +247,7 @@ export function serializeProject(state: ProjectState): ProjectFile {
       ...state,
       primaryCornerIds: [...state.primaryCornerIds],
       gableEndWallIds: [...state.gableEndWallIds],
+      boxBeamWallIds: [...state.boxBeamWallIds],
       checkedInteriorIds: [...state.checkedInteriorIds],
       checkedExteriorIds: [...state.checkedExteriorIds],
       // Every save is written post-migration, regardless of whether the
@@ -269,7 +292,7 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   }
   const state = file.state as Record<string, unknown>;
 
-  for (const key of isCurrentVersion ? REQUIRED_STATE_KEYS : V16_REQUIRED_STATE_KEYS) {
+  for (const key of isCurrentVersion ? REQUIRED_STATE_KEYS : V17_REQUIRED_STATE_KEYS) {
     if (!(key in state)) return { ok: false, error: `That file is missing the "${key}" field.` };
   }
   if (!Array.isArray(state.primaryCornerIds)) {
@@ -278,6 +301,9 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   if (!Array.isArray(state.gableEndWallIds)) {
     return { ok: false, error: '"gableEndWallIds" should be a list of wall ids.' };
   }
+  if (isCurrentVersion && !Array.isArray(state.boxBeamWallIds)) {
+    return { ok: false, error: '"boxBeamWallIds" should be a list of wall ids.' };
+  }
   if (!Array.isArray(state.checkedInteriorIds)) {
     return { ok: false, error: '"checkedInteriorIds" should be a list of product ids.' };
   }
@@ -285,21 +311,36 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
     return { ok: false, error: '"checkedExteriorIds" should be a list of product ids.' };
   }
 
-  // v16 -> v17 migration: heelHeightIn is a new field a v16 file has no
-  // opinion on at all — migrates to 0 (preserving that project's exact
-  // existing roofline) rather than the new-project default, since
-  // retroactively defaulting an old project to a nonzero heel would
-  // silently change its roofline geometry.
+  // v17 -> v18 migration: a v17 file's Box Beam was always automatic (every
+  // wall, once a 2nd story existed) at the original hardcoded 9x2 LVL size
+  // — migrate to exactly that same selection. The shared roofline
+  // reference used to be anchored to the Box Beam's own (taller) height
+  // whenever a 2nd story existed; it's now always anchored to the shorter
+  // Truss Plate height instead, with a covered wall's own row built
+  // shorter to compensate — so a migrated 2nd story's own wallHeightFt
+  // must grow by that exact delta to keep the migrated project's real
+  // geometry pixel-identical to what it rendered under v17.
+  const migratedStories = isCurrentVersion
+    ? (state.stories as Story[])
+    : ((state.stories as Story[] | undefined) ?? []).map((s, i) =>
+        i === 1 ? { ...s, wallHeightFt: s.wallHeightFt + computeBoxBeamHeightDeltaIn(BOX_BEAM_SIZE_DEFAULT) / 12 } : s,
+      );
+  const migratedBoxBeamWallIds = isCurrentVersion
+    ? new Set(state.boxBeamWallIds as string[])
+    : new Set(migratedStories.length > 1 ? ((state.footprint as Footprint | null)?.walls.map((w) => w.id) ?? []) : []);
+
   return {
     ok: true,
     state: {
       ...(state as unknown as ProjectState),
-      stories: state.stories as Story[],
+      stories: migratedStories,
       roofProfileType: state.roofProfileType as "peaked" | "flat-top",
       roofProfilePointHeightsFt: state.roofProfilePointHeightsFt as number[],
       gableProfilePositionsInByWallId: state.gableProfilePositionsInByWallId as Record<string, (number | null)[]>,
       maxGablePanelHeightIn: state.maxGablePanelHeightIn as number,
-      heelHeightIn: isCurrentVersion ? (state.heelHeightIn as number) : 0,
+      heelHeightIn: state.heelHeightIn as number,
+      boxBeamWallIds: migratedBoxBeamWallIds,
+      boxBeamSizeId: isCurrentVersion ? (state.boxBeamSizeId as BoxBeamSizeId) : BOX_BEAM_SIZE_DEFAULT,
       primaryCornerIds: new Set(state.primaryCornerIds as string[]),
       gableEndWallIds: new Set(state.gableEndWallIds as string[]),
       checkedInteriorIds: new Set(state.checkedInteriorIds as string[]),

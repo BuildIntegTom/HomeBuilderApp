@@ -79,6 +79,8 @@ import {
   bracedPanelDisplayLabel,
   bracingStyleToPatternMirror,
   patternMirrorToBracingStyle,
+  BOX_BEAM_SIZE_DEFAULT,
+  BOX_BEAM_SIZE_OPTIONS,
   buildBoxBeamMembers,
   buildBracedPanelMembers,
   buildColumnPanelMembers,
@@ -104,12 +106,15 @@ import {
   PLATE_2X4_WIDTH_IN,
   carbonFractionOfDryMass,
   COLUMN_TOTAL_WIDTH_IN,
+  computeBoxBeamAssemblyHeightIn,
+  computeBoxBeamHeightDeltaIn,
   computeDensePackCelluloseVolume,
   computeGableColumnHeightIn,
   computePlywoodAreaSqFt,
   computeRoofBearingAssemblyHeightIn,
   computeRoofCatcherBeamPostPositions,
   computeRoofCatcherBeamSegments,
+  computeSharedRooflineBearingHeightIn,
   computeTimberHpVolume,
   DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN,
   GABLE_PANEL_MAX_HEIGHT_IN,
@@ -188,6 +193,7 @@ import {
   trussPlateInsetDefaultIn,
   wallAssemblyLayers,
   windowHeaderWidthInRange,
+  type BoxBeamSizeId,
   type BracePattern,
   type BracingStyle,
   type ClassicTrussTypeId,
@@ -621,6 +627,27 @@ export default function LayoutEditor() {
     });
   };
 
+  // boxBeamWallIds tracks which walls have a Box Beam (rather than a Truss
+  // Plate) as their own 2nd-story roof-bearing member (Tommy: "options for
+  // being a ring all the way around or just one section of the wall") — no
+  // opposite-pair/max-2 constraint like gableEndWallIds, since a box beam
+  // doesn't need to form a straight run between exactly 2 walls. Only
+  // meaningful once a 2nd story exists; boxBeamSizeId is one global choice
+  // for the whole building (see BOX_BEAM_SIZE_OPTIONS).
+  const [boxBeamWallIds, setBoxBeamWallIds] = useState<Set<string>>(new Set());
+  const [boxBeamSizeId, setBoxBeamSizeId] = useState<BoxBeamSizeId>(BOX_BEAM_SIZE_DEFAULT);
+  const handleToggleBoxBeam = (wallId: string, enabled: boolean) => {
+    setBoxBeamWallIds((was) => {
+      const next = new Set(was);
+      if (enabled) next.add(wallId);
+      else next.delete(wallId);
+      return next;
+    });
+  };
+  const handleSetBoxBeamRing = (enabled: boolean) => {
+    setBoxBeamWallIds(enabled && footprint ? new Set(footprint.walls.map((w) => w.id)) : new Set());
+  };
+
   // Gable End profile point positions (Tommy: "drag wall tool the peak of
   // this triangle... a sliding scale that you can also click and edit how
   // far away from each end it is"), generalized from a single peak to up to
@@ -814,6 +841,8 @@ export default function LayoutEditor() {
       maxGablePanelHeightIn,
       trussPlateInsetIn,
       heelHeightIn,
+      boxBeamWallIds,
+      boxBeamSizeId,
       roofCatcherBeamOffsetIn,
       roofCatcherBeamShape,
       octagonRingDiameterFt,
@@ -901,6 +930,8 @@ export default function LayoutEditor() {
       setMaxGablePanelHeightIn(s.maxGablePanelHeightIn);
       setTrussPlateInsetIn(s.trussPlateInsetIn);
       setHeelHeightIn(s.heelHeightIn);
+      setBoxBeamWallIds(s.boxBeamWallIds);
+      setBoxBeamSizeId(s.boxBeamSizeId);
       setRoofCatcherBeamOffsetIn(s.roofCatcherBeamOffsetIn);
       setRoofCatcherBeamShape(s.roofCatcherBeamShape);
       setOctagonRingDiameterFt(s.octagonRingDiameterFt);
@@ -1792,7 +1823,7 @@ export default function LayoutEditor() {
   // "rest[s] on the eve sides... flush" with the gable panels sitting
   // directly under it). Falls back to bare roofBaseHeightIn when no roof
   // system is even enabled (no roof-bearing member exists to sit atop).
-  const gableEaveHeightIn = roofBaseHeightIn + (roofEnabled ? computeRoofBearingAssemblyHeightIn(stories.length > 1) : 0);
+  const gableEaveHeightIn = roofBaseHeightIn + (roofEnabled ? computeSharedRooflineBearingHeightIn() : 0);
   const gablePreviewLowEdgeHeightIn = gableEaveHeightIn;
   const gablePreviewHighEdgeHeightIn = Math.max(...roofProfilePointHeightsFt.map((h) => h * 12), gablePreviewLowEdgeHeightIn);
   // Real per-wall gable tiles (Tommy: fix "gable end always spawns to the
@@ -1998,25 +2029,47 @@ export default function LayoutEditor() {
     () => (footprint ? footprint.walls.reduce((sum, w) => sum + w.lengthFt * 12, 0) : 0),
     [footprint],
   );
+  // Box beam is now a per-wall choice (Tommy: "options for being a ring all
+  // the way around or just one section of the wall"), not automatic once
+  // stories.length > 1 — so the truss-plate/box-beam material totals below
+  // split totalWallPerimeterIn by real per-wall coverage instead of always
+  // treating the whole building as one or the other. A 2-story building can
+  // now genuinely need both fills at once.
+  const boxBeamWallLengthTotalIn = useMemo(
+    () =>
+      !footprint || stories.length <= 1
+        ? 0
+        : footprint.walls.filter((w) => boxBeamWallIds.has(w.id)).reduce((sum, w) => sum + w.lengthFt * 12, 0),
+    [footprint, stories.length, boxBeamWallIds],
+  );
+  const trussPlateWallLengthTotalIn = useMemo(
+    () =>
+      !footprint
+        ? 0
+        : stories.length <= 1
+          ? totalWallPerimeterIn
+          : footprint.walls.filter((w) => !boxBeamWallIds.has(w.id)).reduce((sum, w) => sum + w.lengthFt * 12, 0),
+    [footprint, stories.length, boxBeamWallIds, totalWallPerimeterIn],
+  );
   const trussPlatePreviewMembers = useMemo(
     () => buildTrussPlateMembers(ASSEMBLY_PREVIEW_LENGTH_IN, thicknessIn, trussPlateInsetIn),
     [thicknessIn, trussPlateInsetIn],
   );
   const timberHpTotal = useMemo(
-    () => computeTimberHpVolume(totalWallPerimeterIn, thicknessIn, trussPlateInsetIn),
-    [totalWallPerimeterIn, thicknessIn, trussPlateInsetIn],
+    () => computeTimberHpVolume(trussPlateWallLengthTotalIn, thicknessIn, trussPlateInsetIn),
+    [trussPlateWallLengthTotalIn, thicknessIn, trussPlateInsetIn],
   );
   const timberHpWeight = useMemo(
     () => computeInsulationWeight(timberHpTotal.volumeFt3, timberHpDensityLbFt3.value),
     [timberHpTotal],
   );
   const boxBeamPreviewMembers = useMemo(
-    () => buildBoxBeamMembers(ASSEMBLY_PREVIEW_LENGTH_IN, thicknessIn),
-    [thicknessIn],
+    () => buildBoxBeamMembers(ASSEMBLY_PREVIEW_LENGTH_IN, thicknessIn, boxBeamSizeId),
+    [thicknessIn, boxBeamSizeId],
   );
   const denseCelluloseTotal = useMemo(
-    () => computeDensePackCelluloseVolume(totalWallPerimeterIn, thicknessIn),
-    [totalWallPerimeterIn, thicknessIn],
+    () => computeDensePackCelluloseVolume(boxBeamWallLengthTotalIn, thicknessIn, boxBeamSizeId),
+    [boxBeamWallLengthTotalIn, thicknessIn, boxBeamSizeId],
   );
   const denseCelluloseWeight = useMemo(
     () => computeInsulationWeight(denseCelluloseTotal.volumeFt3, densePackCelluloseDensityLbFt3.value),
@@ -2839,22 +2892,28 @@ export default function LayoutEditor() {
   // (which hardcodes a "Straw" component label).
   const roofBearingFabricationGroups = useMemo(() => {
     if (!footprint) return [];
-    const kind: "truss-plate" | "box-beam" = stories.length === 1 ? "truss-plate" : "box-beam";
-    const kindLabel = kind === "truss-plate" ? "Truss Plate" : "Box Beam";
-    const heightIn = computeRoofBearingAssemblyHeightIn(kind === "box-beam");
 
-    const groups = new Map<string, { lengthIn: number; walls: { id: string; direction: string }[] }>();
+    // Box beam is a per-wall choice now (boxBeamWallIds), not automatic
+    // once stories.length > 1 — each wall picks its own kind, so a single
+    // building can produce both Truss Plate and Box Beam fabrication pages
+    // at once (grouped by kind + length, same "exact copies together" rule
+    // gable/standard panels already use).
+    const groups = new Map<string, { kind: "truss-plate" | "box-beam"; lengthIn: number; walls: { id: string; direction: string }[] }>();
     for (const wall of footprint.walls) {
+      const kind: "truss-plate" | "box-beam" = stories.length > 1 && boxBeamWallIds.has(wall.id) ? "box-beam" : "truss-plate";
       const lengthIn = wall.lengthFt * 12;
-      const key = lengthIn.toFixed(3);
+      const key = `${kind}-${lengthIn.toFixed(3)}`;
       const direction = wallCompassDirection(wall, footprint);
       const existing = groups.get(key);
       if (existing) existing.walls.push({ id: wall.id, direction });
-      else groups.set(key, { lengthIn, walls: [{ id: wall.id, direction }] });
+      else groups.set(key, { kind, lengthIn, walls: [{ id: wall.id, direction }] });
     }
 
-    return [...groups.entries()].map(([lengthKey, { lengthIn, walls }]) => {
-      const members = kind === "truss-plate" ? buildTrussPlateMembers(lengthIn, thicknessIn, trussPlateInsetIn) : buildBoxBeamMembers(lengthIn, thicknessIn);
+    return [...groups.entries()].map(([groupKey, { kind, lengthIn, walls }]) => {
+      const kindLabel = kind === "truss-plate" ? "Truss Plate" : "Box Beam";
+      const heightIn = kind === "truss-plate" ? computeRoofBearingAssemblyHeightIn(false) : computeBoxBeamAssemblyHeightIn(boxBeamSizeId);
+      const members =
+        kind === "truss-plate" ? buildTrussPlateMembers(lengthIn, thicknessIn, trussPlateInsetIn) : buildBoxBeamMembers(lengthIn, thicknessIn, boxBeamSizeId);
       const woodWeightKg = computeMemberSetWoodWeight(members).weightKg;
       const fill =
         kind === "truss-plate"
@@ -2864,12 +2923,12 @@ export default function LayoutEditor() {
               return { label: "Timber HP insulation fill", weightKg: weight.weightKg, weightLb: weight.weightLb };
             })()
           : (() => {
-              const vol = computeDensePackCelluloseVolume(lengthIn, thicknessIn);
+              const vol = computeDensePackCelluloseVolume(lengthIn, thicknessIn, boxBeamSizeId);
               const weight = computeInsulationWeight(vol.volumeFt3, densePackCelluloseDensityLbFt3.value);
               return { label: "Dense-pack cellulose fill", weightKg: weight.weightKg, weightLb: weight.weightLb };
             })();
       const woodComponent = {
-        label: kind === "truss-plate" ? "Wood (2x4/2x6 + plywood cap)" : "Wood (LVL webs + plywood caps)",
+        label: kind === "truss-plate" ? "Wood (2x4/2x6 + plywood cap)" : "Wood (webs + plywood caps)",
         weightKg: woodWeightKg,
         weightLb: woodWeightKg * KG_TO_LB,
       };
@@ -2882,7 +2941,7 @@ export default function LayoutEditor() {
       };
 
       return {
-        uniqueKey: `roof-${kind}-${lengthKey}`,
+        uniqueKey: `roof-${groupKey}`,
         kind,
         kindLabel,
         lengthIn,
@@ -2892,7 +2951,7 @@ export default function LayoutEditor() {
         instances: walls.map((w) => ({ name: `Wall ${w.id} (${w.direction})` })),
       };
     });
-  }, [footprint, stories.length, thicknessIn, trussPlateInsetIn]);
+  }, [footprint, stories.length, boxBeamWallIds, boxBeamSizeId, thicknessIn, trussPlateInsetIn]);
 
   // Only surface pages that actually apply to what's currently selected/
   // drawn — a foundation detail page only if one exists for this type, a
@@ -2916,10 +2975,14 @@ export default function LayoutEditor() {
       pages.push({ id: "detail-floor-thermal-slab", label: "Floor: Thermally Broken Slab" });
     }
     if (roofEnabled) {
-      if (stories.length === 1) {
-        pages.push({ id: "detail-truss-plate", label: "Roof: Truss Plate (Single-Story)" });
-      } else {
-        pages.push({ id: "detail-box-beam", label: "Roof: Box Beam (Two-Story)" });
+      // Box beam is a per-wall choice now — a 2-story building with mixed
+      // coverage genuinely needs both Detail Guide pages at once, not
+      // strictly one or the other.
+      if (stories.length === 1 || trussPlateWallLengthTotalIn > 0) {
+        pages.push({ id: "detail-truss-plate", label: stories.length === 1 ? "Roof: Truss Plate (Single-Story)" : "Roof: Truss Plate" });
+      }
+      if (stories.length > 1 && boxBeamWallLengthTotalIn > 0) {
+        pages.push({ id: "detail-box-beam", label: `Roof: Box Beam (${BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === boxBeamSizeId)!.label})` });
       }
       pages.push({ id: "detail-classic-truss", label: "Classic Truss Reference" });
       pages.push({ id: "detail-high-perf-truss", label: "High-Performance Truss" });
@@ -2988,6 +3051,9 @@ export default function LayoutEditor() {
     docIsThermalSlabFloor,
     docPerpendicular2x4Enabled,
     stories,
+    trussPlateWallLengthTotalIn,
+    boxBeamWallLengthTotalIn,
+    boxBeamSizeId,
     shopDrawings,
     panelFabricationGroups,
     roofBearingFabricationGroups,
@@ -3731,9 +3797,18 @@ export default function LayoutEditor() {
   const floorJoistNote = floorJoistType
     ? `${joistLayout?.joists.length ?? 0} joists (${floorJoistType.label})`
     : null;
-  const roofMaterialNote = stories.length > 1
-    ? `Dense-pack cellulose: ${denseCelluloseTotal.volumeFt3.toFixed(2)} ft3, ~${denseCelluloseWeight.weightLb.toFixed(1)} lb (box beam)`
-    : `Timber HP: ${timberHpTotal.volumeFt3.toFixed(2)} ft3, ~${timberHpWeight.weightLb.toFixed(1)} lb (truss plate)`;
+  // Box beam is a per-wall choice now, so a 2-story building can genuinely
+  // need both fills at once (mixed Truss Plate / Box Beam coverage).
+  const roofMaterialNote = [
+    trussPlateWallLengthTotalIn > 0
+      ? `Timber HP: ${timberHpTotal.volumeFt3.toFixed(2)} ft3, ~${timberHpWeight.weightLb.toFixed(1)} lb (truss plate)`
+      : null,
+    boxBeamWallLengthTotalIn > 0
+      ? `Dense-pack cellulose: ${denseCelluloseTotal.volumeFt3.toFixed(2)} ft3, ~${denseCelluloseWeight.weightLb.toFixed(1)} lb (box beam)`
+      : null,
+  ]
+    .filter((s): s is string => s !== null)
+    .join("; ");
   const strawBaleSummaryNote =
     panelizationType === "square-bale-panels" ? `${strawBaleCount} bales to purchase (${strawBaleWeightLb.toFixed(1)} lb total, ${STRAW_BALE_WEIGHT_LB} lb/bale)` : null;
   const plasterFinishes = [hasClayPlaster ? "Clay plaster" : null, hasLimePlaster ? "Lime plaster" : null].filter(
@@ -3885,7 +3960,7 @@ export default function LayoutEditor() {
                   gableEndClamped={gableEndClampedWallIds.has(elevationWall.id)}
                   roofProfileType={roofProfileType}
                   roofProfilePointHeightsFt={roofProfilePointHeightsFt}
-                  roofBearingAssemblyHeightIn={roofEnabled ? computeRoofBearingAssemblyHeightIn(stories.length > 1) : 0}
+                  roofBearingAssemblyHeightIn={roofEnabled ? computeSharedRooflineBearingHeightIn() : 0}
                   maxGablePanelHeightIn={maxGablePanelHeightIn}
                   targetPanelWidthIn={standardWidthIn}
                   thicknessIn={thicknessIn}
@@ -3902,6 +3977,9 @@ export default function LayoutEditor() {
                   onGenerateShedRoof={() => handleGenerateShedRoof(elevationWall)}
                   insetIn={trussPlateInsetIn}
                   heelHeightIn={heelHeightIn}
+                  hasBoxBeam={boxBeamWallIds.has(elevationWall.id)}
+                  onToggleBoxBeam={(enabled) => handleToggleBoxBeam(elevationWall.id, enabled)}
+                  boxBeamSizeId={boxBeamSizeId}
                   secondStoryEnabled={stories.length > 1}
                   onToggleSecondStory={handleToggleSecondStory}
                   onClose={() => setElevationViewWallId(null)}
@@ -3966,6 +4044,8 @@ export default function LayoutEditor() {
                   gableTilesByWallId={gableTilesByWallId}
                   roofEnabled={roofEnabled}
                   trussPlateInsetIn={trussPlateInsetIn}
+                  boxBeamWallIds={boxBeamWallIds}
+                  boxBeamSizeId={boxBeamSizeId}
                 />
               ))}
             {editorTab === "foundation" && foundationType.usesPierGrid && (
@@ -4000,6 +4080,8 @@ export default function LayoutEditor() {
               gableTilesByWallId={gableTilesByWallId}
               roofEnabled={roofEnabled}
               trussPlateInsetIn={trussPlateInsetIn}
+              boxBeamWallIds={boxBeamWallIds}
+              boxBeamSizeId={boxBeamSizeId}
               onCapture={handleCaptureRenderImage}
             />
           )}
@@ -4274,6 +4356,36 @@ export default function LayoutEditor() {
                 </p>
 
                 <p className={styles.pending}>{roofBearingMemberNote}</p>
+
+                {stories.length > 1 && (
+                  <>
+                    <label>
+                      Box beam size{" "}
+                      <select value={boxBeamSizeId} onChange={(e) => setBoxBeamSizeId(e.target.value as BoxBeamSizeId)}>
+                        {BOX_BEAM_SIZE_OPTIONS.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div role="group" aria-label="Box beam coverage" className={styles.toolbar}>
+                      <span style={{ fontSize: 13, marginRight: 4 }}>Box beam coverage:</span>
+                      <button type="button" onClick={() => handleSetBoxBeamRing(true)}>
+                        Add to Every Wall (Ring)
+                      </button>
+                      <button type="button" onClick={() => handleSetBoxBeamRing(false)}>
+                        Remove from Every Wall
+                      </button>
+                    </div>
+                    <p className={styles.note}>
+                      Toggle Box Beam per wall from that wall&apos;s own elevation view (Wall tab), or use the Ring
+                      buttons above for every wall at once. A wall with Box Beam gets its own 2nd-story row of panels
+                      built shorter — by {computeBoxBeamHeightDeltaIn(boxBeamSizeId).toFixed(2)}in for the selected
+                      size — so it still reaches the same roofline as a wall using the shorter Truss Plate.
+                    </p>
+                  </>
+                )}
 
                 {roofSystemTypeId === "structural-panel" && (
                   <>
@@ -5040,10 +5152,10 @@ export default function LayoutEditor() {
           </StickyNote>
         )}
 
-        {stories.length === 1 && (
+        {(stories.length === 1 || trussPlateWallLengthTotalIn > 0) && (
           <StickyNote
             id="detail-truss-plate"
-            label="Roof: Truss Plate (Single-Story)"
+            label={stories.length === 1 ? "Roof: Truss Plate (Single-Story)" : "Roof: Truss Plate"}
             isOpen={openNoteIds.has("detail-truss-plate")}
             isFullscreen={fullscreenNoteId === "detail-truss-plate"}
             cascadeIndex={noteOpenOrder.indexOf("detail-truss-plate")}
@@ -5052,8 +5164,8 @@ export default function LayoutEditor() {
             onPrint={() => handlePrintNote("detail-truss-plate")}
           >
             <DetailGuidePage
-              title="Truss Plate — Single-Story Roof Bearing"
-              triggerCondition="Single-story buildings (Second Story not enabled on the Wall tab) — the roof-bearing member on top of the wall panels."
+              title="Truss Plate — Roof Bearing"
+              triggerCondition="Any wall whose own roof-bearing member isn't a Box Beam — every wall on a single-story building, or a two-story wall left off the Box Beam ring/selection (see the Roof tab)."
               diagram={
                 <StandardPanel3DView
                   members={trussPlatePreviewMembers}
@@ -5064,7 +5176,7 @@ export default function LayoutEditor() {
               fastenerSchedule={[]}
               notes={[
                 "3D model above is an illustrative 10ft segment, not full building length. 2x4 along the interior wythe, 2x6 along the exterior wythe (its own 5.5in width doubles as the Roof tab's truss plate inset), both capped by one continuous 3/4in plywood top skin.",
-                `Timber HP fills the open cavity under the plywood cap, between the 2x4 and 2x6 (${timberHpTotal.gapWidthIn.toFixed(2)}in wide x 1.5in tall) — across the drawn footprint's full ${(totalWallPerimeterIn / 12).toFixed(1)}ft wall perimeter: ${timberHpTotal.volumeFt3.toFixed(2)} ft3, ~${timberHpWeight.weightLb.toFixed(1)} lb (${timberHpWeight.weightKg.toFixed(1)} kg) at ${timberHpDensityLbFt3.value} lb/ft3.`,
+                `Timber HP fills the open cavity under the plywood cap, between the 2x4 and 2x6 (${timberHpTotal.gapWidthIn.toFixed(2)}in wide x 1.5in tall) — across every Truss Plate wall's own real length (${(trussPlateWallLengthTotalIn / 12).toFixed(1)}ft total): ${timberHpTotal.volumeFt3.toFixed(2)} ft3, ~${timberHpWeight.weightLb.toFixed(1)} lb (${timberHpWeight.weightKg.toFixed(1)} kg) at ${timberHpDensityLbFt3.value} lb/ft3.`,
                 timberHpDensityLbFt3.note,
                 "Real per-wall segments, sized to each wall's own actual length, are on their own \"Panel Fabrication: Truss Plate\" pages below (grouped by unique length) — with a real cut list and weight checker per segment.",
               ]}
@@ -5073,10 +5185,10 @@ export default function LayoutEditor() {
           </StickyNote>
         )}
 
-        {stories.length > 1 && (
+        {stories.length > 1 && boxBeamWallLengthTotalIn > 0 && (
           <StickyNote
             id="detail-box-beam"
-            label="Roof: Box Beam (Two-Story)"
+            label={`Roof: Box Beam (${BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === boxBeamSizeId)!.label})`}
             isOpen={openNoteIds.has("detail-box-beam")}
             isFullscreen={fullscreenNoteId === "detail-box-beam"}
             cascadeIndex={noteOpenOrder.indexOf("detail-box-beam")}
@@ -5085,19 +5197,19 @@ export default function LayoutEditor() {
             onPrint={() => handlePrintNote("detail-box-beam")}
           >
             <DetailGuidePage
-              title="Box Beam — Two-Story Roof Bearing"
-              triggerCondition="Two-story buildings (Second Story enabled on the Wall tab) — the roof-bearing member on top of the second story's wall panels."
+              title={`Box Beam (${BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === boxBeamSizeId)!.label}) — Roof Bearing`}
+              triggerCondition="Any wall selected for a Box Beam on the Roof tab (a ring around every wall, or just part of the run) — replaces that wall's own Truss Plate above the second story's row of panels, which is built shorter to compensate so the roofline still lines up."
               diagram={
                 <StandardPanel3DView
                   members={boxBeamPreviewMembers}
-                  overallDimensions={{ heightIn: computeRoofBearingAssemblyHeightIn(true), widthIn: ASSEMBLY_PREVIEW_LENGTH_IN, depthIn: thicknessIn }}
+                  overallDimensions={{ heightIn: computeBoxBeamAssemblyHeightIn(boxBeamSizeId), widthIn: ASSEMBLY_PREVIEW_LENGTH_IN, depthIn: thicknessIn }}
                   displayName="Box Beam"
                 />
               }
               fastenerSchedule={[]}
               notes={[
-                "3D model above is an illustrative 10ft segment, not full building length. Two 9in x 2in LVL webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a hollow box, blown in with dense-pack cellulose.",
-                `Across the drawn footprint's full ${(totalWallPerimeterIn / 12).toFixed(1)}ft wall perimeter: ${denseCelluloseTotal.volumeFt3.toFixed(2)} ft3, ~${denseCelluloseWeight.weightLb.toFixed(1)} lb (${denseCelluloseWeight.weightKg.toFixed(1)} kg) at ${densePackCelluloseDensityLbFt3.value} lb/ft3.`,
+                `3D model above is an illustrative 10ft segment, not full building length. Two ${BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === boxBeamSizeId)!.label} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a hollow box, blown in with dense-pack cellulose.`,
+                `Across every Box Beam wall's own real length (${(boxBeamWallLengthTotalIn / 12).toFixed(1)}ft total): ${denseCelluloseTotal.volumeFt3.toFixed(2)} ft3, ~${denseCelluloseWeight.weightLb.toFixed(1)} lb (${denseCelluloseWeight.weightKg.toFixed(1)} kg) at ${densePackCelluloseDensityLbFt3.value} lb/ft3.`,
                 densePackCelluloseDensityLbFt3.note,
                 "Real per-wall segments, sized to each wall's own actual length, are on their own \"Panel Fabrication: Box Beam\" pages below (grouped by unique length) — with a real cut list and weight checker per segment.",
               ]}
@@ -5931,7 +6043,7 @@ export default function LayoutEditor() {
               const panelDescription =
                 group.kind === "truss-plate"
                   ? "2x4 along the interior wythe edge, 2x6 along the exterior wythe edge, both capped by one continuous 3/4in plywood top skin — sized to this wall's own real length, not an illustrative segment."
-                  : "Two 9in x 2in LVL webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — sized to this wall's own real length, not an illustrative segment.";
+                  : `Two ${BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === boxBeamSizeId)!.label} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — sized to this wall's own real length, not an illustrative segment.`;
               return (
                 <StickyNote
                   key={group.uniqueKey}

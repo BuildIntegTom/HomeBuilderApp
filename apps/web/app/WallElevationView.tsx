@@ -12,10 +12,12 @@ import {
 import {
   buildOpeningAssemblyMembers,
   COLUMN_TOTAL_WIDTH_IN,
+  computeBoxBeamHeightDeltaIn,
   computeGableColumnHeightIn,
   computeGableRipCallout,
   sillDefaultHeightIn,
   standardWindowHeightDefaultIn,
+  type BoxBeamSizeId,
   type JackStudConfig,
   type RoofSystemType,
 } from "@building-integrity/panel-catalog";
@@ -131,6 +133,17 @@ export interface WallElevationViewProps {
    * real heelHeightIn value; 0 disables it. See computeGableTiledRow's own
    * `heelHeightIn` param. */
   heelHeightIn: number;
+  /** Whether THIS wall has a Box Beam (rather than a Truss Plate) as its
+   * own 2nd-story roof-bearing member (Tommy: "options for being a ring
+   * all the way around or just one section of the wall") — only shown/
+   * meaningful once `secondStoryEnabled`. See page.tsx's `boxBeamWallIds`. */
+  hasBoxBeam: boolean;
+  onToggleBoxBeam: (enabled: boolean) => void;
+  /** Which box-beam size/material every selected wall uses, project-wide
+   * (page.tsx's `boxBeamSizeId`) — used to compute how much shorter this
+   * wall's own second-story row is built when `hasBoxBeam` is true (see
+   * computeBoxBeamHeightDeltaIn). */
+  boxBeamSizeId: BoxBeamSizeId;
   /** Whole-building second story toggle (Tommy: "the add lay[er] button
    * should be next to add gable end button") — a second entry point to the
    * exact same action as the 2D toolbar's "Add Second Story" button, just
@@ -191,6 +204,9 @@ export default function WallElevationView({
   onGenerateShedRoof,
   insetIn,
   heelHeightIn,
+  hasBoxBeam,
+  onToggleBoxBeam,
+  boxBeamSizeId,
   secondStoryEnabled,
   onToggleSecondStory,
   onClose,
@@ -208,6 +224,12 @@ export default function WallElevationView({
   // and snap-zone hints all rise from here.
   const secondStoryHeightIn = secondStoryWallHeightFt ? secondStoryWallHeightFt * 12 : 0;
   const roofBaseHeightIn = eaveHeightIn + secondStoryHeightIn + roofBearingAssemblyHeightIn;
+  // A Box Beam wall's own second-story row is built shorter (Tommy: "the
+  // roof lines needs to be respected" — the row shrinks, not the shared
+  // roofline above) — secondStoryHeightIn above stays the NOMINAL height
+  // for roofBaseHeightIn's own purposes; this is the row's own real
+  // rendered height, used only where the row itself is drawn.
+  const secondStoryPanelHeightIn = hasBoxBeam ? secondStoryHeightIn - computeBoxBeamHeightDeltaIn(boxBeamSizeId) : secondStoryHeightIn;
 
   const pointCount = roofProfilePointHeightsFt.length;
   const resolvedPointXsIn = roofProfilePointHeightsFt.map((_, i) => {
@@ -407,6 +429,13 @@ export default function WallElevationView({
           />
           Add Gable End (tiles Gable End Panels up to the Roof tab&apos;s own profile height)
         </label>
+        {secondStoryEnabled && (
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+            <input type="checkbox" checked={hasBoxBeam} onChange={(e) => onToggleBoxBeam(e.target.checked)} />
+            Box Beam (replaces this wall&apos;s Truss Plate above the 2nd story row — that row is built shorter to
+            still reach the same roofline)
+          </label>
+        )}
         <button
           type="button"
           onClick={onToggleSecondStory}
@@ -450,16 +479,17 @@ export default function WallElevationView({
           <>
             <line
               x1={LEFT_MARGIN_PX}
-              y1={yPx(eaveHeightIn + secondStoryHeightIn)}
+              y1={yPx(eaveHeightIn + secondStoryPanelHeightIn)}
               x2={xPx(secondStoryRunWidthIn)}
-              y2={yPx(eaveHeightIn + secondStoryHeightIn)}
+              y2={yPx(eaveHeightIn + secondStoryPanelHeightIn)}
               stroke="#999"
               strokeDasharray="4 3"
             />
-            <text x={4} y={yPx(eaveHeightIn + secondStoryHeightIn) + 4} fontSize={10} fill="#666">
-              {eaveHeightIn + secondStoryHeightIn}&quot;
+            <text x={4} y={yPx(eaveHeightIn + secondStoryPanelHeightIn) + 4} fontSize={10} fill="#666">
+              {eaveHeightIn + secondStoryPanelHeightIn}&quot;
+              {hasBoxBeam ? " (shortened for Box Beam)" : ""}
             </text>
-            {renderRow(secondStorySlots, secondStoryHeightIn, eaveHeightIn, "second")}
+            {renderRow(secondStorySlots, secondStoryPanelHeightIn, eaveHeightIn, "second")}
           </>
         )}
 
