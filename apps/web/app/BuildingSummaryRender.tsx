@@ -1,8 +1,9 @@
 "use client";
 
-import type { BoxBeamCoverage, Footprint, PanelSlot } from "@building-integrity/geometry";
+import type { BoxBeamCoverage, Footprint, PanelSlot, WallVerticalBand } from "@building-integrity/geometry";
 import type { BoxBeamSizeId, BracingStyle, JackStudConfig, StudConfig } from "@building-integrity/panel-catalog";
 import Building3DView from "./Building3DView";
+import type { MidWallBeam } from "./midWallBeam";
 
 export interface BuildingSummaryRenderProps {
   footprint: Footprint | null;
@@ -33,6 +34,10 @@ export interface BuildingSummaryRenderProps {
   trussPlateInsetIn?: number;
   boxBeamCoverageByWallId?: Record<string, BoxBeamCoverage>;
   boxBeamSizeId?: BoxBeamSizeId;
+  midWallBeamBandsByWallId?: Record<string, WallVerticalBand[]>;
+  secondStoryMidWallBeamBandsByWallId?: Record<string, WallVerticalBand[]>;
+  midWallBeamsByWallId?: Record<string, MidWallBeam>;
+  secondStoryMidWallBeamsByWallId?: Record<string, MidWallBeam>;
   onCapture: (dataUrl: string) => void;
 }
 

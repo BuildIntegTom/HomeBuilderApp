@@ -6,6 +6,7 @@ import {
   type CompassDirection,
   type Footprint,
   type PanelSlot,
+  type WallVerticalBand,
 } from "@building-integrity/geometry";
 import { computeRoughOpeningWidthIn, type BracePattern, type JackStudConfig } from "@building-integrity/panel-catalog";
 
@@ -101,6 +102,18 @@ export interface PanelInstance {
    * remainder (above this tile's own taller edge) filled by a dedicated
    * vertical safety-gap filler piece instead of clamped. */
   verticalGapHeightIn?: number;
+  /** This instance's own real fabricated height, when it differs from the
+   * flat per-story `wallHeightFt*12` every consumer otherwise assumes —
+   * set only when this instance came from a wall split by a Mid-Wall Bond
+   * Beam (see `midWallBeamBandsByWallId` below). Undefined = use the flat
+   * nominal height, exactly today's behavior. */
+  heightOverrideIn?: number;
+  /** Only set alongside heightOverrideIn — which of the wall's own bands
+   * this instance belongs to. Needed because 2 instances (one per band)
+   * now share the same wallId+slotIndexInWall, the same way a window's
+   * header and sill already do — this disambiguates them for any consumer
+   * keyed by that pair. */
+  midWallBeamBand?: "below-beam" | "above-beam";
 }
 
 const SIMPLE_NAMED_TYPES = new Set<PanelSlot["type"]>([
@@ -159,6 +172,21 @@ export function allPanelInstances(
    * `isBoxBeamCovered` flag; never applies to "gable" instances (the roof
    * cap sits above this concern entirely). */
   boxBeamCoverageByWallId?: Record<string, BoxBeamCoverage>,
+  /** Which walls (of THIS story) have a Mid-Wall Bond Beam splitting their
+   * own row into real vertical bands (page.tsx's own
+   * midWallBeamBandsByWallId/secondStoryMidWallBeamBandsByWallId,
+   * pre-resolved via computeWallVerticalBands) — a wall with no entry here
+   * produces exactly today's single instance per slot, completely
+   * unaffected. A wall with an entry re-runs its FULL slot list (every
+   * type, including window/door) once per band — each pass's instances get
+   * heightOverrideIn/midWallBeamBand set to that band's own real
+   * height/identity. A window/door slot is therefore NOT specially
+   * excluded or reassigned to "whichever band it falls in" — it appears
+   * once per band, each sized against that band's own local height.
+   * Placing a beam so a window's own sill/RO height doesn't make sense for
+   * either band is the user's own responsibility (Stage 1 does not
+   * validate this). */
+  midWallBeamBandsByWallId?: Record<string, WallVerticalBand[]>,
 ): PanelInstance[] {
   const instances: PanelInstance[] = [];
   const counters: Partial<Record<CompassDirection, number>> = {};
@@ -179,6 +207,8 @@ export function allPanelInstances(
     isSafetyGap?: boolean,
     verticalGapHeightIn?: number,
     isBoxBeamCovered?: boolean,
+    heightOverrideIn?: number,
+    midWallBeamBand?: "below-beam" | "above-beam",
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     instances.push({
@@ -197,6 +227,8 @@ export function allPanelInstances(
       ...(isSafetyGap !== undefined && { isSafetyGap }),
       ...(verticalGapHeightIn !== undefined && { verticalGapHeightIn }),
       ...(isBoxBeamCovered !== undefined && { isBoxBeamCovered }),
+      ...(heightOverrideIn !== undefined && { heightOverrideIn }),
+      ...(midWallBeamBand !== undefined && { midWallBeamBand }),
     });
   };
 
@@ -204,67 +236,82 @@ export function allPanelInstances(
     const slots = wallSlots[wall.id] ?? [];
     const direction = wallCompassDirection(wall, footprint);
     const boxBeamCoverage = boxBeamCoverageByWallId?.[wall.id];
-    for (let slotIndexInWall = 0; slotIndexInWall < slots.length; slotIndexInWall++) {
-      const slot = slots[slotIndexInWall]!;
-      const isBoxBeamCovered = isSlotBoxBeamCovered(slotIndexInWall, boxBeamCoverage) || undefined;
-      if (slot.type === "window" || slot.type === "door") {
-        pushInstance(
-          direction,
-          wall.id,
-          "header",
-          slot.widthIn,
-          slotIndexInWall,
-          slot.type,
-          slot.type === "window" ? slot.heightIn : undefined,
-          slot.type === "window" ? slot.sillHeightIn : undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          isBoxBeamCovered,
-        );
-        if (slot.type === "window") {
-          const roWidthIn = computeRoughOpeningWidthIn(slot.widthIn, jackStudConfig);
-          for (const sillWidthIn of computeSillRunWidths(roWidthIn, standardWidthIn)) {
-            pushInstance(
-              direction,
-              wall.id,
-              "sill",
-              sillWidthIn,
-              slotIndexInWall,
-              slot.type,
-              undefined,
-              slot.sillHeightIn,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              isBoxBeamCovered,
-            );
+    // A wall with no Mid-Wall Bond Beam runs exactly one pass (band =
+    // undefined, today's unmodified behavior). A wall with one DOES run
+    // its full slot list once per real band (0, 1, or 2 — see
+    // computeWallVerticalBands, never assume exactly 2).
+    const bands = midWallBeamBandsByWallId?.[wall.id] ?? [undefined];
+    for (const band of bands) {
+      const heightOverrideIn = band ? band.topIn - band.bottomIn : undefined;
+      const midWallBeamBand = band?.band;
+      for (let slotIndexInWall = 0; slotIndexInWall < slots.length; slotIndexInWall++) {
+        const slot = slots[slotIndexInWall]!;
+        const isBoxBeamCovered = isSlotBoxBeamCovered(slotIndexInWall, boxBeamCoverage) || undefined;
+        if (slot.type === "window" || slot.type === "door") {
+          pushInstance(
+            direction,
+            wall.id,
+            "header",
+            slot.widthIn,
+            slotIndexInWall,
+            slot.type,
+            slot.type === "window" ? slot.heightIn : undefined,
+            slot.type === "window" ? slot.sillHeightIn : undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            isBoxBeamCovered,
+            heightOverrideIn,
+            midWallBeamBand,
+          );
+          if (slot.type === "window") {
+            const roWidthIn = computeRoughOpeningWidthIn(slot.widthIn, jackStudConfig);
+            for (const sillWidthIn of computeSillRunWidths(roWidthIn, standardWidthIn)) {
+              pushInstance(
+                direction,
+                wall.id,
+                "sill",
+                sillWidthIn,
+                slotIndexInWall,
+                slot.type,
+                undefined,
+                slot.sillHeightIn,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                isBoxBeamCovered,
+                heightOverrideIn,
+                midWallBeamBand,
+              );
+            }
           }
+        } else if (SIMPLE_NAMED_TYPES.has(slot.type)) {
+          pushInstance(
+            direction,
+            wall.id,
+            slot.type as NamedPanelType,
+            slot.widthIn,
+            slotIndexInWall,
+            undefined,
+            undefined,
+            undefined,
+            slot.type === "braced" ? slot.bracedPattern : undefined,
+            slot.type === "braced" ? slot.bracedMirrored : undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            isBoxBeamCovered,
+            heightOverrideIn,
+            midWallBeamBand,
+          );
         }
-      } else if (SIMPLE_NAMED_TYPES.has(slot.type)) {
-        pushInstance(
-          direction,
-          wall.id,
-          slot.type as NamedPanelType,
-          slot.widthIn,
-          slotIndexInWall,
-          undefined,
-          undefined,
-          undefined,
-          slot.type === "braced" ? slot.bracedPattern : undefined,
-          slot.type === "braced" ? slot.bracedMirrored : undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          isBoxBeamCovered,
-        );
       }
     }
 

@@ -11,6 +11,7 @@ import type {
   StudConfig,
 } from "@building-integrity/panel-catalog";
 import type { ViewerRole } from "./viewerRole";
+import type { MidWallBeam } from "./midWallBeam";
 
 /**
  * Save/Load a project file — Tommy: "a saveable file that the user or
@@ -28,8 +29,12 @@ import type { ViewerRole } from "./viewerRole";
  * losslessly to `{startSlotIndex: 0, endSlotIndex: <that wall's own real
  * 2nd-story slot count>}` per wall — no roofline/height math needed this
  * time (v18 already has the real per-wall Truss-Plate-anchored heights).
+ * v19->v20: added `midWallBeamsByStoryAndWallId` (Mid-Wall Bond Beam) — a
+ * v19 file simply never had any (the feature didn't exist yet), so this
+ * migration is trivial (defaults to `{ ground: {}, second: {} }`), unlike
+ * v18->v19's real data reshape above.
  */
-export const PROJECT_FILE_VERSION = 19;
+export const PROJECT_FILE_VERSION = 20;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -104,6 +109,16 @@ export interface ProjectState {
   /** Which box-beam size/material every selected wall uses, project-wide
    * — see BOX_BEAM_SIZE_OPTIONS in boxBeamMembers.ts. */
   boxBeamSizeId: BoxBeamSizeId;
+  /** Which walls (on either story) have a Mid-Wall Bond Beam splitting
+   * their own row into real vertical bands, and each beam's own height/
+   * size (Tommy: "cellulose box beam"... "same beam, positionable at any
+   * height in the wall"... "row splits into two: below-beam + above-
+   * beam") — see MidWallBeam/computeWallVerticalBands. A story with no
+   * entries here uses a single full-height row, exactly as before this
+   * feature existed. Story-keyed (unlike boxBeamCoverageByWallId, which
+   * is inherently second-story-only) since a bond beam can exist on
+   * either story. Stage 1: at most one beam per wall, full width. */
+  midWallBeamsByStoryAndWallId: Record<"ground" | "second", Record<string, MidWallBeam>>;
   roofCatcherBeamOffsetIn: number;
   roofCatcherBeamShape: RoofCatcherBeamShape;
   /** Octagon roof-catcher ring's outside diameter (ft) — only shown/used
@@ -200,6 +215,7 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "heelHeightIn",
   "boxBeamCoverageByWallId",
   "boxBeamSizeId",
+  "midWallBeamsByStoryAndWallId",
   "roofCatcherBeamOffsetIn",
   "roofCatcherBeamShape",
   "octagonRingDiameterFt",
@@ -217,13 +233,13 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "roofEnabled",
 ];
 
-/** The v18 shape's own required keys — same list as REQUIRED_STATE_KEYS but
- * with `boxBeamCoverageByWallId` swapped back for the old `boxBeamWallIds`
- * field it replaced — used only to validate a v18 file before migrating it
- * forward (see parseProjectFile's own migration below). */
-const V18_REQUIRED_STATE_KEYS: string[] = (REQUIRED_STATE_KEYS as string[])
-  .filter((k) => k !== "boxBeamCoverageByWallId")
-  .concat(["boxBeamWallIds"]);
+/** The v19 shape's own required keys — same list as REQUIRED_STATE_KEYS
+ * minus `midWallBeamsByStoryAndWallId` (a v19 file simply never had one,
+ * no renamed field to swap in — see PROJECT_FILE_VERSION's own v19->v20
+ * doc comment). */
+const V19_REQUIRED_STATE_KEYS: string[] = (REQUIRED_STATE_KEYS as string[]).filter(
+  (k) => k !== "midWallBeamsByStoryAndWallId",
+);
 
 /** JSON has no Set type — `primaryCornerIds`/`gableEndWallIds`/
  * `checkedInteriorIds`/`checkedExteriorIds` round-trip as plain arrays.
@@ -292,7 +308,7 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   }
   const state = file.state as Record<string, unknown>;
 
-  for (const key of isCurrentVersion ? REQUIRED_STATE_KEYS : V18_REQUIRED_STATE_KEYS) {
+  for (const key of isCurrentVersion ? REQUIRED_STATE_KEYS : V19_REQUIRED_STATE_KEYS) {
     if (!(key in state)) return { ok: false, error: `That file is missing the "${key}" field.` };
   }
   if (!Array.isArray(state.primaryCornerIds)) {
@@ -301,29 +317,12 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   if (!Array.isArray(state.gableEndWallIds)) {
     return { ok: false, error: '"gableEndWallIds" should be a list of wall ids.' };
   }
-  if (!isCurrentVersion && !Array.isArray(state.boxBeamWallIds)) {
-    return { ok: false, error: '"boxBeamWallIds" should be a list of wall ids.' };
-  }
   if (!Array.isArray(state.checkedInteriorIds)) {
     return { ok: false, error: '"checkedInteriorIds" should be a list of product ids.' };
   }
   if (!Array.isArray(state.checkedExteriorIds)) {
     return { ok: false, error: '"checkedExteriorIds" should be a list of product ids.' };
   }
-
-  // v18 -> v19 migration: a v18 file's Box Beam coverage was always "every
-  // slot of this wall" for each wall id listed in the old boxBeamWallIds —
-  // migrate losslessly to the new per-slot-range shape, using that same
-  // wall's own real 2nd-story slot count (stories[1]) as the full range.
-  const secondStoryWallSlots = (state.stories as Story[] | undefined)?.[1]?.wallSlots ?? {};
-  const migratedBoxBeamCoverageByWallId: Record<string, BoxBeamCoverage> = isCurrentVersion
-    ? (state.boxBeamCoverageByWallId as Record<string, BoxBeamCoverage>)
-    : Object.fromEntries(
-        (state.boxBeamWallIds as string[]).map((wallId) => [
-          wallId,
-          { startSlotIndex: 0, endSlotIndex: (secondStoryWallSlots[wallId] ?? []).length },
-        ]),
-      );
 
   return {
     ok: true,
@@ -335,8 +334,13 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       gableProfilePositionsInByWallId: state.gableProfilePositionsInByWallId as Record<string, (number | null)[]>,
       maxGablePanelHeightIn: state.maxGablePanelHeightIn as number,
       heelHeightIn: state.heelHeightIn as number,
-      boxBeamCoverageByWallId: migratedBoxBeamCoverageByWallId,
+      boxBeamCoverageByWallId: state.boxBeamCoverageByWallId as Record<string, BoxBeamCoverage>,
       boxBeamSizeId: (state.boxBeamSizeId as BoxBeamSizeId) ?? BOX_BEAM_SIZE_DEFAULT,
+      // v19 -> v20 migration: trivial (a v19 file never had any bond
+      // beams — see PROJECT_FILE_VERSION's own doc comment).
+      midWallBeamsByStoryAndWallId: isCurrentVersion
+        ? (state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, MidWallBeam>>)
+        : { ground: {}, second: {} },
       primaryCornerIds: new Set(state.primaryCornerIds as string[]),
       gableEndWallIds: new Set(state.gableEndWallIds as string[]),
       checkedInteriorIds: new Set(state.checkedInteriorIds as string[]),

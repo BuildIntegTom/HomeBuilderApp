@@ -191,6 +191,73 @@ describe("allPanelInstances — boxBeamCoverageByWallId", () => {
   });
 });
 
+describe("allPanelInstances — midWallBeamBandsByWallId", () => {
+  const fp = buildRectangleFootprint(30, 20);
+  const wallSlots = {
+    AB: [
+      { type: "standard" as const, widthIn: 40 },
+      { type: "window" as const, widthIn: 40 },
+    ],
+  };
+
+  it("doubles every real instance on an affected wall — one per band — with the correct heightOverrideIn/midWallBeamBand", () => {
+    const midWallBeamBandsByWallId = {
+      AB: [
+        { band: "below-beam" as const, bottomIn: 0, topIn: 60 },
+        { band: "above-beam" as const, bottomIn: 71, topIn: 120 },
+      ],
+    };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, midWallBeamBandsByWallId);
+    const ab = instances.filter((i) => i.wallId === "AB");
+    // Per band: standard (slot 0) + header+sill (slot 1, window) = 3
+    // instances x 2 bands = 6 total.
+    expect(ab.length).toBe(6);
+    const below = ab.filter((i) => i.midWallBeamBand === "below-beam");
+    const above = ab.filter((i) => i.midWallBeamBand === "above-beam");
+    expect(below.length).toBe(3);
+    expect(above.length).toBe(3);
+    for (const inst of below) expect(inst.heightOverrideIn).toBe(60);
+    for (const inst of above) expect(inst.heightOverrideIn).toBe(49);
+  });
+
+  it("shares the same slotIndexInWall between a slot's below-band and above-band instances", () => {
+    const midWallBeamBandsByWallId = {
+      AB: [
+        { band: "below-beam" as const, bottomIn: 0, topIn: 60 },
+        { band: "above-beam" as const, bottomIn: 71, topIn: 120 },
+      ],
+    };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, midWallBeamBandsByWallId);
+    const standardInstances = instances.filter((i) => i.wallId === "AB" && i.panelType === "standard");
+    expect(standardInstances.length).toBe(2);
+    expect(standardInstances[0]!.slotIndexInWall).toBe(standardInstances[1]!.slotIndexInWall);
+    const headers = instances.filter((i) => i.wallId === "AB" && i.panelType === "header");
+    expect(headers.length).toBe(2);
+    expect(headers[0]!.slotIndexInWall).toBe(headers[1]!.slotIndexInWall);
+  });
+
+  it("produces zero instances for a wall whose bands array is empty (beam consumes the whole story), without throwing", () => {
+    const midWallBeamBandsByWallId = { AB: [] };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, midWallBeamBandsByWallId);
+    expect(instances.filter((i) => i.wallId === "AB")).toEqual([]);
+  });
+
+  it("leaves heightOverrideIn/midWallBeamBand undefined and output byte-identical to omitting the arg, for an unaffected wall / omitted arg / empty map", () => {
+    const withoutArg = allPanelInstances(fp, wallSlots, 40);
+    const withUnrelatedWall = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, {
+      XY: [{ band: "below-beam" as const, bottomIn: 0, topIn: 60 }],
+    });
+    const withEmptyMap = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, {});
+    for (const instances of [withoutArg, withUnrelatedWall, withEmptyMap]) {
+      expect(instances).toEqual(withoutArg);
+      for (const inst of instances) {
+        expect(inst.heightOverrideIn).toBeUndefined();
+        expect(inst.midWallBeamBand).toBeUndefined();
+      }
+    }
+  });
+});
+
 describe("combinedPanelLabel", () => {
   it("returns a single instance's own name unchanged", () => {
     expect(combinedPanelLabel([{ name: "N-2", wallId: "AB", panelType: "standard", widthIn: 40, slotIndexInWall: 1 }])).toBe(

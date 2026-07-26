@@ -49,6 +49,7 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     heelHeightIn: 6,
     boxBeamCoverageByWallId: {},
     boxBeamSizeId: "9x2-lvl",
+    midWallBeamsByStoryAndWallId: { ground: {}, second: {} },
     roofCatcherBeamOffsetIn: 11.25,
     roofCatcherBeamShape: "Built-up 2-ply 2x12",
     octagonRingDiameterFt: 3,
@@ -142,83 +143,40 @@ describe("serializeProject / parseProjectFile round-trip", () => {
   });
 });
 
-describe("v18 -> v19 migration (boxBeamWallIds -> boxBeamCoverageByWallId)", () => {
-  /** Builds a raw v18-shaped file (boxBeamCoverageByWallId swapped back for
-   * the old boxBeamWallIds: string[] field it replaced) directly —
-   * bypassing serializeProject/ProjectState entirely, since a v18 caller
-   * by definition doesn't have the current TS types available. */
-  function makeV18File(boxBeamWallIds: string[], overrides: Partial<ProjectState> = {}) {
+describe("v19 -> v20 migration (added midWallBeamsByStoryAndWallId)", () => {
+  /** Builds a raw v19-shaped file (midWallBeamsByStoryAndWallId stripped
+   * out entirely, since a v19 file never had one) directly from a real
+   * serialized current state — a v19 caller by definition doesn't have
+   * this field at all. */
+  function makeV19File(overrides: Partial<ProjectState> = {}) {
     const currentState = serializeProject(makeState(overrides)).state;
-    const { boxBeamCoverageByWallId: _drop, ...v18State } = currentState;
+    const { midWallBeamsByStoryAndWallId: _drop, ...v19State } = currentState;
     return {
-      schemaVersion: 18,
+      schemaVersion: 19,
       savedAt: new Date().toISOString(),
-      state: { ...v18State, boxBeamWallIds },
+      state: v19State,
     };
   }
 
-  it("migrates each listed wall to full-range coverage, using that wall's own real 2nd-story slot count", () => {
-    const overrides: Partial<ProjectState> = {
-      footprint: {
-        corners: [
-          { id: "A", point: { x: 0, y: 0 } },
-          { id: "B", point: { x: 20, y: 0 } },
-          { id: "C", point: { x: 20, y: 20 } },
-        ],
-        walls: [
-          { id: "AB", startCorner: "A", endCorner: "B", lengthFt: 20 },
-          { id: "BC", startCorner: "B", endCorner: "C", lengthFt: 20 },
-        ],
-      },
-      stories: [
-        { id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: {} },
-        {
-          id: "second",
-          label: "Second Story",
-          wallHeightFt: 9,
-          wallSlots: {
-            AB: [{ type: "standard", widthIn: 40 }, { type: "standard", widthIn: 40 }, { type: "standard", widthIn: 40 }],
-            BC: [{ type: "standard", widthIn: 40 }],
-          },
-        },
-      ],
-    };
-    const result = parseProjectFile(JSON.stringify(makeV18File(["AB", "BC"], overrides)));
+  it("defaults midWallBeamsByStoryAndWallId to empty ground/second maps", () => {
+    const result = parseProjectFile(JSON.stringify(makeV19File()));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.boxBeamCoverageByWallId).toEqual({
-      AB: { startSlotIndex: 0, endSlotIndex: 3 },
-      BC: { startSlotIndex: 0, endSlotIndex: 1 },
-    });
+    expect(result.state.midWallBeamsByStoryAndWallId).toEqual({ ground: {}, second: {} });
   });
 
-  it("does not touch wallHeightFt at all — v18 already has real per-wall Truss-Plate-anchored heights", () => {
+  it("leaves every other field (e.g. boxBeamCoverageByWallId) untouched by this migration", () => {
     const result = parseProjectFile(
-      JSON.stringify(
-        makeV18File(["AB"], {
-          stories: [
-            { id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: {} },
-            { id: "second", label: "Second Story", wallHeightFt: 9, wallSlots: { AB: [{ type: "standard", widthIn: 40 }] } },
-          ],
-        }),
-      ),
+      JSON.stringify(makeV19File({ boxBeamCoverageByWallId: { AB: { startSlotIndex: 0, endSlotIndex: 2 } } })),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.stories[1]!.wallHeightFt).toBe(9);
-    expect(result.state.stories[0]!.wallHeightFt).toBe(10);
+    expect(result.state.boxBeamCoverageByWallId).toEqual({ AB: { startSlotIndex: 0, endSlotIndex: 2 } });
   });
 
-  it("migrates an empty boxBeamWallIds to an empty boxBeamCoverageByWallId", () => {
-    const result = parseProjectFile(JSON.stringify(makeV18File([])));
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.state.boxBeamCoverageByWallId).toEqual({});
-  });
-
-  it("still rejects a version older than the one-version-back migration window", () => {
-    const v17File = { ...makeV18File([]), schemaVersion: 17 };
-    const result = parseProjectFile(JSON.stringify(v17File));
+  it("still rejects a version older than the one-version-back migration window (v18, 2 versions back)", () => {
+    const v18File = { ...makeV19File(), schemaVersion: 18 };
+    const result = parseProjectFile(JSON.stringify(v18File));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/version/i);

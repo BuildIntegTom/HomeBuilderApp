@@ -20,6 +20,7 @@ import {
   computeRidgeLine,
   computeRoofBearingSegments,
   computeSillRunWidths,
+  computeWallVerticalBands,
   computeTruckLoads,
   cornerOwnership as cornerOwnershipPure,
   dragWallBounded,
@@ -49,6 +50,7 @@ import {
   type Story,
   type TruckDims,
   type Wall,
+  type WallVerticalBand,
 } from "@building-integrity/geometry";
 import {
   computeAssemblyPerm,
@@ -56,6 +58,7 @@ import {
   computeBracedPanelShearCapacityLb,
   computeBuiltUpColumnBearingCapacityLb,
   computeCarbonRange,
+  computeCO2eEquivalencies,
   computeConcretePierVolume,
   computeFastenerWeight,
   computeInsulationWeight,
@@ -223,6 +226,7 @@ import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
 import { resolveBracedStyle } from "./bracedStyle";
+import type { MidWallBeam } from "./midWallBeam";
 import PierFoundationDiagram from "./PierFoundationDiagram";
 import PlasterCoatEditor from "./PlasterCoatEditor";
 import {
@@ -265,6 +269,10 @@ const StandardPanel3DView = dynamic(() => import("./StandardPanel3DView"), { ssr
 const TruckLoad3DView = dynamic(() => import("./TruckLoad3DView"), { ssr: false });
 
 const BEARING_ELIGIBLE_TYPES = new Set(["standard", "corner", "safety-oct-corner", "braced", "column"]);
+// Every real wall panel type, straw-filled or not (Safety/Gap included —
+// it's a real plywood wall panel, just with no straw cavity, see
+// strawSlots' own exclusion of it below).
+const WALL_PANEL_SLOT_TYPES = new Set(["corner", "safety-oct-corner", "standard", "safety-gap", "braced", "column"]);
 const STRAW_BALE_WEIGHT_LB = 40;
 const KG_TO_LB = 2.20462;
 const LB_FT3_TO_KG_M3 = 16.018463;
@@ -674,6 +682,59 @@ export default function LayoutEditor() {
     setBoxBeamCoverageByWallId(next);
   };
 
+  // Mid-Wall Bond Beam (Tommy: "cellulose box beam"... "same beam,
+  // positionable at any height in the wall"... "row splits into two: below-
+  // beam + above-beam") — the SAME box-beam catalog/assembly as the
+  // roofline Box Beam above, but placeable at an arbitrary height within
+  // EITHER story's own wall (not just the roofline, and not just the
+  // second story). Stage 1: at most one beam per wall, spanning the wall's
+  // full width — story-keyed (unlike boxBeamCoverageByWallId, which is
+  // inherently second-story-only) since a bond beam is a general straw-
+  // bale technique usable on any story, mirroring the existing
+  // `(story: "ground" | "second", ...)` convention already used by
+  // onToggleOpening/onSetWindowSillHeight/etc. rather than duplicating
+  // ground/second state pairs.
+  const [midWallBeamsByStoryAndWallId, setMidWallBeamsByStoryAndWallId] = useState<
+    Record<"ground" | "second", Record<string, MidWallBeam>>
+  >({ ground: {}, second: {} });
+  const handleToggleMidWallBeam = (story: "ground" | "second", wallId: string, enabled: boolean) => {
+    setMidWallBeamsByStoryAndWallId((was) => {
+      const next = { ...was, [story]: { ...was[story] } };
+      if (enabled) {
+        const storyHeightFt = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
+        next[story][wallId] = { heightIn: (storyHeightFt * 12) / 2, sizeId: BOX_BEAM_SIZE_DEFAULT };
+      } else {
+        delete next[story][wallId];
+      }
+      return next;
+    });
+  };
+  const handleChangeMidWallBeamHeight = (story: "ground" | "second", wallId: string, heightIn: number) => {
+    setMidWallBeamsByStoryAndWallId((was) => {
+      const existing = was[story][wallId];
+      if (!existing) return was;
+      return { ...was, [story]: { ...was[story], [wallId]: { ...existing, heightIn } } };
+    });
+  };
+  const handleChangeMidWallBeamSizeId = (story: "ground" | "second", wallId: string, sizeId: BoxBeamSizeId) => {
+    setMidWallBeamsByStoryAndWallId((was) => {
+      const existing = was[story][wallId];
+      if (!existing) return was;
+      return { ...was, [story]: { ...was[story], [wallId]: { ...existing, sizeId } } };
+    });
+  };
+  const midWallBeamBandsByWallId = useMemo(() => {
+    const result: Record<string, WallVerticalBand[]> = {};
+    for (const [wallId, beam] of Object.entries(midWallBeamsByStoryAndWallId.ground)) {
+      result[wallId] = computeWallVerticalBands(wallHeightFt * 12, beam.heightIn, computeBoxBeamAssemblyHeightIn(beam.sizeId));
+    }
+    return result;
+  }, [midWallBeamsByStoryAndWallId.ground, wallHeightFt]);
+  // secondStoryMidWallBeamBandsByWallId/midWallBeamWallLengthTotalIn live
+  // further down, right after `stories`/`secondStory` are declared — both
+  // need to read them inside a useMemo callback that runs synchronously
+  // during THIS render, unlike the deferred handlers above.
+
   // Gable End profile point positions (Tommy: "drag wall tool the peak of
   // this triangle... a sliding scale that you can also click and edit how
   // far away from each end it is"), generalized from a single peak to up to
@@ -894,6 +955,7 @@ export default function LayoutEditor() {
       heelHeightIn,
       boxBeamCoverageByWallId,
       boxBeamSizeId,
+      midWallBeamsByStoryAndWallId,
       roofCatcherBeamOffsetIn,
       roofCatcherBeamShape,
       octagonRingDiameterFt,
@@ -983,6 +1045,7 @@ export default function LayoutEditor() {
       setHeelHeightIn(s.heelHeightIn);
       setBoxBeamCoverageByWallId(s.boxBeamCoverageByWallId);
       setBoxBeamSizeId(s.boxBeamSizeId);
+      setMidWallBeamsByStoryAndWallId(s.midWallBeamsByStoryAndWallId);
       setRoofCatcherBeamOffsetIn(s.roofCatcherBeamOffsetIn);
       setRoofCatcherBeamShape(s.roofCatcherBeamShape);
       setOctagonRingDiameterFt(s.octagonRingDiameterFt);
@@ -1745,6 +1808,30 @@ export default function LayoutEditor() {
     return secondStory ? [ground, secondStory] : [ground];
   }, [wallHeightFt, overlayWallSlots, secondStory]);
 
+  const secondStoryMidWallBeamBandsByWallId = useMemo(() => {
+    const result: Record<string, WallVerticalBand[]> = {};
+    if (!secondStory) return result;
+    for (const [wallId, beam] of Object.entries(midWallBeamsByStoryAndWallId.second)) {
+      result[wallId] = computeWallVerticalBands(
+        secondStory.wallHeightFt * 12,
+        beam.heightIn,
+        computeBoxBeamAssemblyHeightIn(beam.sizeId),
+      );
+    }
+    return result;
+  }, [midWallBeamsByStoryAndWallId.second, secondStory]);
+  const midWallBeamWallLengthTotalIn = useMemo(() => {
+    if (!footprint) return 0;
+    let totalIn = 0;
+    for (const story of stories) {
+      const beams = midWallBeamsByStoryAndWallId[story.id];
+      for (const wall of footprint.walls) {
+        if (beams[wall.id]) totalIn += (story.wallSlots[wall.id] ?? []).reduce((sum, s) => sum + s.widthIn, 0);
+      }
+    }
+    return totalIn;
+  }, [footprint, stories, midWallBeamsByStoryAndWallId]);
+
   // Plan View "height-slice lens" (Tommy: "the 2d viewer is basically a lens
   // of which height slice you are at... maybe it sees the ground level, and
   // then can shift upward to the next ring of panels") — which story the 2D
@@ -1769,20 +1856,13 @@ export default function LayoutEditor() {
     );
   }, [overlayWallSlots]);
 
-  const allSlots = useMemo(() => Object.values(overlayWallSlots).flat(), [overlayWallSlots]);
-  // Every real wall panel type, straw-filled or not — used for the panel
-  // COUNT. Safety/Gap is a real wall panel (counted here) but, since it's
-  // just a plywood sheet now (Tommy), has no straw-filled cavity at all —
-  // strawSlots below excludes it so straw weight isn't overcounted.
-  const allWallPanelSlots = allSlots.filter(
-    (s) =>
-      s.type === "corner" ||
-      s.type === "safety-oct-corner" ||
-      s.type === "standard" ||
-      s.type === "safety-gap" ||
-      s.type === "braced" ||
-      s.type === "column",
-  );
+  // Every real wall panel across EVERY story (not just the ground floor) —
+  // used for the panel COUNT and other height-independent totals. Safety/Gap
+  // is a real wall panel (counted here) but, since it's just a plywood sheet
+  // now (Tommy), has no straw-filled cavity at all — strawSlots below
+  // excludes it so straw weight isn't overcounted.
+  const allSlots = useMemo(() => stories.flatMap((s) => Object.values(s.wallSlots).flat()), [stories]);
+  const allWallPanelSlots = allSlots.filter((s) => WALL_PANEL_SLOT_TYPES.has(s.type));
   const strawSlots = allWallPanelSlots.filter((s) => s.type !== "safety-gap");
   const woodEligibleCount = allSlots.filter((s) => s.type === "standard" || s.type === "braced").length;
   const openingCounts = useMemo(
@@ -1793,40 +1873,53 @@ export default function LayoutEditor() {
     [allSlots],
   );
 
-  const totalStrawWidthIn = strawSlots.reduce((sum, s) => sum + s.widthIn, 0);
-
-  const strawWeight = useMemo(
-    () =>
-      computeStrawWeight(
-        totalStrawWidthIn,
-        thicknessIn,
-        wallHeightFt * 12,
-        densityLbFt3 * LB_FT3_TO_KG_M3,
-      ),
-    [totalStrawWidthIn, thicknessIn, wallHeightFt, densityLbFt3],
-  );
+  // Straw is height-dependent, so (unlike the counts above) it can't just
+  // sum widths across a flattened all-stories slot list against one flat
+  // wallHeightFt — each story contributes its own width x its OWN height,
+  // summed across stories (a 2-story building's second story can have a
+  // different wallHeightFt than the ground floor).
+  const strawWeight = useMemo(() => {
+    return stories.reduce(
+      (acc, story) => {
+        const storyStrawSlots = Object.values(story.wallSlots)
+          .flat()
+          .filter((s) => WALL_PANEL_SLOT_TYPES.has(s.type) && s.type !== "safety-gap");
+        const widthIn = storyStrawSlots.reduce((sum, s) => sum + s.widthIn, 0);
+        const w = computeStrawWeight(widthIn, thicknessIn, story.wallHeightFt * 12, densityLbFt3 * LB_FT3_TO_KG_M3);
+        return { weightKg: acc.weightKg + w.weightKg, weightLb: acc.weightLb + w.weightLb };
+      },
+      { weightKg: 0, weightLb: 0 },
+    );
+  }, [stories, thicknessIn, densityLbFt3]);
 
   // Summed from each real instance's own member geometry (not a flat
   // per-panel constant multiplied by count) — the only way a braced
   // panel's diagonal braces/connector (real trapezoid-cut length, per
   // bracingStyle) actually count toward the project's wood weight total
   // (Tommy: "make sure trapezoid pieces... have wood weight... that fill
-  // into project totals").
+  // into project totals"). Same per-story summing as strawWeight above,
+  // since wood weight is height-dependent too.
   const totalWoodWeightKg = useMemo(() => {
-    const heightIn = wallHeightFt * 12;
-    return allSlots
-      .filter((s) => s.type === "standard" || s.type === "braced")
-      .reduce((sum, s) => {
-        let members: PanelMember[];
-        if (s.type === "braced") {
-          const style = resolveBracedStyle(s, defaultBracePattern, defaultBracedMirrored);
-          members = buildBracedPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored);
-        } else {
-          members = buildStandardPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer);
-        }
-        return sum + computeMemberSetWoodWeight(members).weightKg;
-      }, 0);
-  }, [allSlots, wallHeightFt, thicknessIn, includeNailer, defaultBracePattern, defaultBracedMirrored]);
+    return stories.reduce((sum, story) => {
+      const heightIn = story.wallHeightFt * 12;
+      return (
+        sum +
+        Object.values(story.wallSlots)
+          .flat()
+          .filter((s) => s.type === "standard" || s.type === "braced")
+          .reduce((acc, s) => {
+            let members: PanelMember[];
+            if (s.type === "braced") {
+              const style = resolveBracedStyle(s, defaultBracePattern, defaultBracedMirrored);
+              members = buildBracedPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored);
+            } else {
+              members = buildStandardPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer);
+            }
+            return acc + computeMemberSetWoodWeight(members).weightKg;
+          }, 0)
+      );
+    }, 0);
+  }, [stories, thicknessIn, includeNailer, defaultBracePattern, defaultBracedMirrored]);
   const totalWeightKg = strawWeight.weightKg + totalWoodWeightKg;
   const totalWeightLb = totalWeightKg * KG_TO_LB;
 
@@ -1969,8 +2062,11 @@ export default function LayoutEditor() {
   // Shop Drawing pages then just filter this same list, rather than each
   // recomputing its own independent (and previously mismatched) counter.
   const allInstances = useMemo(
-    () => (footprint ? allPanelInstances(footprint, overlayWallSlots, standardWidthIn, jackStudConfig, gableTilesByWallId) : []),
-    [footprint, overlayWallSlots, standardWidthIn, jackStudConfig, gableTilesByWallId],
+    () =>
+      footprint
+        ? allPanelInstances(footprint, overlayWallSlots, standardWidthIn, jackStudConfig, gableTilesByWallId, undefined, midWallBeamBandsByWallId)
+        : [],
+    [footprint, overlayWallSlots, standardWidthIn, jackStudConfig, gableTilesByWallId, midWallBeamBandsByWallId],
   );
 
   // Door Rough Opening height (Tommy: "RO height for doors is almost
@@ -2475,8 +2571,9 @@ export default function LayoutEditor() {
     rightEdgeHeightInOverride?: number,
     isSafetyGapOverride?: boolean,
     verticalGapHeightInOverride?: number,
+    heightInOverride?: number,
   ) => {
-    const heightIn = wallHeightFt * 12;
+    const heightIn = heightInOverride ?? wallHeightFt * 12;
     const resolvedSillHeightIn = sillHeightInOverride ?? sillDefaultHeightIn.value;
     const gableLeftLocalIn = (leftEdgeHeightInOverride ?? gablePreviewLowEdgeHeightIn) - gableEaveHeightIn;
     const gableRightLocalIn = (rightEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn) - gableEaveHeightIn;
@@ -2543,6 +2640,7 @@ export default function LayoutEditor() {
     rightEdgeHeightInOverride?: number,
     isSafetyGapOverride?: boolean,
     verticalGapHeightInOverride?: number,
+    heightInOverride?: number,
   ): number | null => {
     const members = membersForPanelTypeId(
       panelTypeId,
@@ -2556,6 +2654,7 @@ export default function LayoutEditor() {
       rightEdgeHeightInOverride,
       isSafetyGapOverride,
       verticalGapHeightInOverride,
+      heightInOverride,
     );
     return members ? computeFastenerWeight(members).totalWeightKg : null;
   };
@@ -2579,6 +2678,7 @@ export default function LayoutEditor() {
     rightEdgeHeightInOverride?: number,
     isSafetyGapOverride?: boolean,
     verticalGapHeightInOverride?: number,
+    heightInOverride?: number,
   ): number | null => {
     const members = membersForPanelTypeId(
       panelTypeId,
@@ -2592,6 +2692,7 @@ export default function LayoutEditor() {
       rightEdgeHeightInOverride,
       isSafetyGapOverride,
       verticalGapHeightInOverride,
+      heightInOverride,
     );
     return members ? computeMemberSetWoodWeight(members).weightKg : null;
   };
@@ -2612,6 +2713,7 @@ export default function LayoutEditor() {
     sillHeightInOverride?: number,
     bracedPatternOverride?: BracePattern,
     bracedMirroredOverride?: boolean,
+    heightInOverride?: number,
   ): number | null => {
     if (panelTypeId !== "header") return null;
     const members = membersForPanelTypeId(
@@ -2622,13 +2724,18 @@ export default function LayoutEditor() {
       sillHeightInOverride,
       bracedPatternOverride,
       bracedMirroredOverride,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      heightInOverride,
     );
     if (!members) return null;
     const heightIn =
       sourceSlotType === "door"
         ? doorHeaderHeightIn
         : computeHeaderHeightIn(
-            wallHeightFt * 12,
+            heightInOverride ?? wallHeightFt * 12,
             (sillHeightInOverride ?? sillDefaultHeightIn.value) + (windowHeightInOverride ?? standardWindowHeightDefaultIn.value),
           );
     const straw = computeStandardPanelStrawVolume(members, { heightIn, widthIn, depthIn: thicknessIn });
@@ -2663,19 +2770,22 @@ export default function LayoutEditor() {
                 inst.sillHeightIn,
                 inst.bracedPattern,
                 inst.bracedMirrored,
+                inst.heightOverrideIn,
               ),
               thicknessIn,
               // A sill is a much shorter panel (Tommy: "sills are almost
               // always 32in tall") than the full wall height every other
               // panel type here uses; a gable tile's own tallest point
               // (whichever edge that is) stands in for the flat-box
-              // approximation every non-header panel type uses.
+              // approximation every non-header panel type uses. A Mid-Wall
+              // Bond Beam band overrides the flat wallHeightFt*12 fallback
+              // with that band's own real (shorter) height.
               heightIn:
                 panelTypeId === "sill"
                   ? (inst.sillHeightIn ?? sillDefaultHeightIn.value)
                   : panelTypeId === "gable"
                     ? Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn
-                    : wallHeightFt * 12,
+                    : (inst.heightOverrideIn ?? wallHeightFt * 12),
               densityKgM3: densityLbFt3 * LB_FT3_TO_KG_M3,
               woodWeightKg: woodWeightKgFor(
                 panelTypeId,
@@ -2689,6 +2799,7 @@ export default function LayoutEditor() {
                 inst.rightEdgeHeightIn,
                 inst.isSafetyGap,
                 inst.verticalGapHeightIn,
+                inst.heightOverrideIn,
               ),
               fastenerWeightKg: fastenerWeightKgFor(
                 panelTypeId,
@@ -2702,6 +2813,7 @@ export default function LayoutEditor() {
                 inst.rightEdgeHeightIn,
                 inst.isSafetyGap,
                 inst.verticalGapHeightIn,
+                inst.heightOverrideIn,
               ),
               hasClayPlaster,
               hasLimePlaster,
@@ -2765,6 +2877,7 @@ export default function LayoutEditor() {
           inst.rightEdgeHeightIn,
           inst.isSafetyGap,
           inst.verticalGapHeightIn,
+          inst.heightOverrideIn,
         );
         if (members) accumulate(computeFastenerWeight(members).items);
         else unmodeledLabels.add(panelType.label);
@@ -2858,18 +2971,24 @@ export default function LayoutEditor() {
       if (panelTypeId === "header") {
         return inst.sourceSlotType === "door"
           ? doorHeaderHeightIn
-          : computeHeaderHeightIn(wallHeightFt * 12, resolvedSillHeightInFor(inst) + resolvedWindowHeightInFor(inst));
+          : computeHeaderHeightIn(
+              inst.heightOverrideIn ?? wallHeightFt * 12,
+              resolvedSillHeightInFor(inst) + resolvedWindowHeightInFor(inst),
+            );
       }
       if (panelTypeId === "gable") {
         return Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn;
       }
-      return wallHeightFt * 12;
+      return inst.heightOverrideIn ?? wallHeightFt * 12;
     };
     const panelWidthInFor = (panelTypeId: string, inst: PanelInstance): number =>
       panelTypeId === "safety-gap" ? SAFETY_GAP_THICKNESS_IN : inst.widthIn;
     const groupKeyFor = (panelTypeId: string, inst: PanelInstance): string => {
       if (panelTypeId === "safety-gap") return panelTypeId;
-      const parts = [panelTypeId, inst.widthIn.toFixed(3)];
+      // heightOverrideIn folded in so a Mid-Wall Bond Beam's below-band
+      // piece, above-band piece, and an unrelated full-height copy of the
+      // same width never merge onto one Shop Fab page.
+      const parts = [panelTypeId, inst.widthIn.toFixed(3), (inst.heightOverrideIn ?? -1).toFixed(3)];
       if (panelTypeId === "header" || panelTypeId === "sill") {
         parts.push(inst.sourceSlotType ?? "", resolvedWindowHeightInFor(inst).toFixed(3), resolvedSillHeightInFor(inst).toFixed(3));
       }
@@ -2921,6 +3040,7 @@ export default function LayoutEditor() {
               first.rightEdgeHeightIn,
               first.isSafetyGap,
               first.verticalGapHeightIn,
+              first.heightOverrideIn,
             ) ?? [];
           return {
             uniqueKey: `${panelType.id}-${key}`,
@@ -3021,6 +3141,63 @@ export default function LayoutEditor() {
     });
   }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, boxBeamSizeId, thicknessIn, trussPlateInsetIn]);
 
+  // Mid-Wall Bond Beam's own Shop Fabrication pages — same "walk
+  // walls/stories directly, bypass allInstances" shape as
+  // roofBearingFabricationGroups above (its own beam member is a real
+  // per-wall/per-story piece, grouped by size+length across the whole
+  // project the same "exact copies together" rule every other fabricated
+  // part uses), NOT the ground-floor-only allInstances/panelFabricationGroups
+  // pipeline — so a beam's own piece gets a correct Shop Fab page on EITHER
+  // story, even though that wall's own below/above-band wall panels only
+  // flow through Shop Fab on the ground floor today (see
+  // midWallBeamBandsByWallId's own doc comment).
+  const midWallBondBeamFabricationGroups = useMemo(() => {
+    if (!footprint) return [];
+    const groups = new Map<
+      string,
+      { sizeId: BoxBeamSizeId; lengthIn: number; walls: { id: string; direction: string; storyLabel: string }[] }
+    >();
+    for (const story of stories) {
+      const beams = midWallBeamsByStoryAndWallId[story.id];
+      for (const wall of footprint.walls) {
+        const beam = beams[wall.id];
+        if (!beam) continue;
+        const direction = wallCompassDirection(wall, footprint);
+        const lengthIn = (story.wallSlots[wall.id] ?? []).reduce((sum, s) => sum + s.widthIn, 0);
+        const key = `${beam.sizeId}-${lengthIn.toFixed(3)}`;
+        const existing = groups.get(key);
+        if (existing) existing.walls.push({ id: wall.id, direction, storyLabel: story.label });
+        else groups.set(key, { sizeId: beam.sizeId, lengthIn, walls: [{ id: wall.id, direction, storyLabel: story.label }] });
+      }
+    }
+
+    return [...groups.entries()].map(([groupKey, { sizeId, lengthIn, walls }]) => {
+      const members = buildBoxBeamMembers(lengthIn, thicknessIn, sizeId);
+      const woodWeightKg = computeMemberSetWoodWeight(members).weightKg;
+      const vol = computeDensePackCelluloseVolume(lengthIn, thicknessIn, sizeId);
+      const fillWeight = computeInsulationWeight(vol.volumeFt3, densePackCelluloseDensityLbFt3.value);
+      const weightBreakdown: PanelWeightBreakdown = {
+        strawOnlyWeightKg: 0,
+        strawOnlyWeightLb: 0,
+        components: [
+          { label: "Wood (webs + plywood caps)", weightKg: woodWeightKg, weightLb: woodWeightKg * KG_TO_LB },
+          { label: "Dense-pack cellulose fill", weightKg: fillWeight.weightKg, weightLb: fillWeight.weightLb },
+        ],
+        totalModeledWeightKg: woodWeightKg + fillWeight.weightKg,
+        totalModeledWeightLb: woodWeightKg * KG_TO_LB + fillWeight.weightLb,
+      };
+      return {
+        uniqueKey: `midwallbeam-${groupKey}`,
+        sizeId,
+        lengthIn,
+        heightIn: computeBoxBeamAssemblyHeightIn(sizeId),
+        members,
+        weightBreakdown,
+        instances: walls.map((w) => ({ name: `Wall ${w.id} (${w.direction}, ${w.storyLabel})` })),
+      };
+    });
+  }, [footprint, stories, midWallBeamsByStoryAndWallId, thicknessIn]);
+
   // Only surface pages that actually apply to what's currently selected/
   // drawn — a foundation detail page only if one exists for this type, a
   // panel type's Shop Drawing only if the current design actually has any
@@ -3049,9 +3226,6 @@ export default function LayoutEditor() {
       if (stories.length === 1 || trussPlateWallLengthTotalIn > 0) {
         pages.push({ id: "detail-truss-plate", label: stories.length === 1 ? "Roof: Truss Plate (Single-Story)" : "Roof: Truss Plate" });
       }
-      if (stories.length > 1 && boxBeamWallLengthTotalIn > 0) {
-        pages.push({ id: "detail-box-beam", label: `Roof: Box Beam (${BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === boxBeamSizeId)!.label})` });
-      }
       pages.push({ id: "detail-classic-truss", label: "Classic Truss Reference" });
       pages.push({ id: "detail-high-perf-truss", label: "High-Performance Truss" });
       // Real per-wall roof-bearing Shop Fabrication pages — fabricator/
@@ -3064,6 +3238,13 @@ export default function LayoutEditor() {
           });
         }
       }
+    }
+    // Box Beam's own Detail Guide page — the same assembly whether it's a
+    // roofline roof-bearing member (2-story only, roof concern) or a
+    // Mid-Wall Bond Beam (either story, wall concern) — so it's gated on
+    // EITHER use existing, independent of roofEnabled/wallsEnabled.
+    if ((roofEnabled && stories.length > 1 && boxBeamWallLengthTotalIn > 0) || midWallBeamWallLengthTotalIn > 0) {
+      pages.push({ id: "detail-box-beam", label: "Box Beam" });
     }
     if (wallsEnabled) {
       if (footprint) {
@@ -3110,6 +3291,12 @@ export default function LayoutEditor() {
             label: `Panel Fabrication: ${label} ${group.widthIn}in (${group.instances.length} copies)`,
           });
         }
+        for (const group of midWallBondBeamFabricationGroups) {
+          pages.push({
+            id: `shop-fab-${group.uniqueKey}`,
+            label: `Panel Fabrication: Box Beam ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
+          });
+        }
       }
     }
     return pages;
@@ -3122,6 +3309,8 @@ export default function LayoutEditor() {
     trussPlateWallLengthTotalIn,
     boxBeamWallLengthTotalIn,
     boxBeamSizeId,
+    midWallBeamWallLengthTotalIn,
+    midWallBondBeamFabricationGroups,
     shopDrawings,
     panelFabricationGroups,
     roofBearingFabricationGroups,
@@ -3309,9 +3498,18 @@ export default function LayoutEditor() {
   const effectivePriceModifier = role === "public" ? 1 : priceModifier;
 
   const price = useMemo(() => {
+    // Height-dependent (area = width x height), so — like strawWeight/
+    // totalWoodWeightKg above — this sums each story's own contribution
+    // against that story's own wallHeightFt, not one flat height applied to
+    // every story's slots.
     const areaSqFtFor = (type: PanelSlot["type"]) =>
-      (allSlots.filter((s) => s.type === type).reduce((sum, s) => sum + s.widthIn, 0) / 12) *
-      wallHeightFt;
+      stories.reduce((sum, story) => {
+        const widthIn = Object.values(story.wallSlots)
+          .flat()
+          .filter((s) => s.type === type)
+          .reduce((s2, s) => s2 + s.widthIn, 0);
+        return sum + (widthIn / 12) * story.wallHeightFt;
+      }, 0);
     return computePrice(
       [
         // No distinct rate given for safety/gap panels — priced at the standard rate (assumption, see Review Log).
@@ -3324,7 +3522,7 @@ export default function LayoutEditor() {
       ],
       effectivePriceModifier,
     );
-  }, [allSlots, wallHeightFt, effectivePriceModifier]);
+  }, [stories, effectivePriceModifier]);
 
   const carbonRange = useMemo(
     () =>
@@ -3344,6 +3542,13 @@ export default function LayoutEditor() {
       ),
     [carbonRange.atStandardMoisture.carbonKg, concretePierVolumeFt3],
   );
+
+  // Carbon Sequestered section (Tommy: "the equasion and output for total
+  // weight of straw at 15% moisture content converted into lbs of CO2e and
+  // its respective conversions") — straw-only (not netted against
+  // concrete, unlike embodiedCarbon above), EPA equivalency conversions of
+  // that same straw CO2e credit.
+  const co2eEquivalencies = useMemo(() => computeCO2eEquivalencies(embodiedCarbon.strawCO2eKg), [embodiedCarbon.strawCO2eKg]);
 
   const permResult = useMemo(() => computeAssemblyPerm(interior, exterior, season), [interior, exterior, season]);
   const vaporCheck = useMemo(
@@ -4051,6 +4256,11 @@ export default function LayoutEditor() {
                   boxBeamSizeId={boxBeamSizeId}
                   secondStoryEnabled={stories.length > 1}
                   onToggleSecondStory={handleToggleSecondStory}
+                  midWallBeam={midWallBeamsByStoryAndWallId.ground[elevationWall.id]}
+                  secondStoryMidWallBeam={midWallBeamsByStoryAndWallId.second[elevationWall.id]}
+                  onToggleMidWallBeam={(story, enabled) => handleToggleMidWallBeam(story, elevationWall.id, enabled)}
+                  onChangeMidWallBeamHeight={(story, heightIn) => handleChangeMidWallBeamHeight(story, elevationWall.id, heightIn)}
+                  onChangeMidWallBeamSizeId={(story, sizeId) => handleChangeMidWallBeamSizeId(story, elevationWall.id, sizeId)}
                   onClose={() => setElevationViewWallId(null)}
                 />
               ) : viewMode === "plan" ? (
@@ -4115,6 +4325,10 @@ export default function LayoutEditor() {
                   trussPlateInsetIn={trussPlateInsetIn}
                   boxBeamCoverageByWallId={boxBeamCoverageByWallId}
                   boxBeamSizeId={boxBeamSizeId}
+                  midWallBeamBandsByWallId={midWallBeamBandsByWallId}
+                  secondStoryMidWallBeamBandsByWallId={secondStoryMidWallBeamBandsByWallId}
+                  midWallBeamsByWallId={midWallBeamsByStoryAndWallId.ground}
+                  secondStoryMidWallBeamsByWallId={midWallBeamsByStoryAndWallId.second}
                 />
               ))}
             {editorTab === "foundation" && foundationType.usesPierGrid && (
@@ -4151,6 +4365,10 @@ export default function LayoutEditor() {
               trussPlateInsetIn={trussPlateInsetIn}
               boxBeamCoverageByWallId={boxBeamCoverageByWallId}
               boxBeamSizeId={boxBeamSizeId}
+              midWallBeamBandsByWallId={midWallBeamBandsByWallId}
+              secondStoryMidWallBeamBandsByWallId={secondStoryMidWallBeamBandsByWallId}
+              midWallBeamsByWallId={midWallBeamsByStoryAndWallId.ground}
+              secondStoryMidWallBeamsByWallId={midWallBeamsByStoryAndWallId.second}
               onCapture={handleCaptureRenderImage}
             />
           )}
@@ -4819,6 +5037,16 @@ export default function LayoutEditor() {
           carbonSequesteredKg={carbonRange.atStandardMoisture.carbonKg}
           netCO2eKg={embodiedCarbon.netCO2eKg}
           netCO2eNote={`Straw sequestered: +${embodiedCarbon.strawCO2eKg.toFixed(1)} kg CO2e. Concrete embodied: −${embodiedCarbon.concreteCO2eKg.toFixed(1)} kg CO2e.`}
+          strawMoistWeightLb={strawWeight.weightLb}
+          strawMoistureContentPct={strawMoistureContent.standard * 100}
+          strawDryWeightLb={carbonRange.atStandardMoisture.dryWeightKg * KG_TO_LB}
+          strawCarbonFractionPct={carbonFractionOfDryMass.value * 100}
+          strawCarbonLb={carbonRange.atStandardMoisture.carbonLb}
+          strawCO2eLb={embodiedCarbon.strawCO2eKg * KG_TO_LB}
+          strawCO2eKg={embodiedCarbon.strawCO2eKg}
+          co2eEquivalentMilesDriven={co2eEquivalencies.milesDriven}
+          co2eEquivalentLbCoalBurned={co2eEquivalencies.lbCoalBurned}
+          co2eEquivalentSmartphonesCharged={co2eEquivalencies.smartphonesCharged}
           estimatedBearingLb={estimatedTotalBearingLb}
           estimatedShearLb={estimatedTotalShearLb}
           permeanceLabel={
@@ -5254,10 +5482,10 @@ export default function LayoutEditor() {
           </StickyNote>
         )}
 
-        {stories.length > 1 && boxBeamWallLengthTotalIn > 0 && (
+        {((stories.length > 1 && boxBeamWallLengthTotalIn > 0) || midWallBeamWallLengthTotalIn > 0) && (
           <StickyNote
             id="detail-box-beam"
-            label={`Roof: Box Beam (${BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === boxBeamSizeId)!.label})`}
+            label="Box Beam"
             isOpen={openNoteIds.has("detail-box-beam")}
             isFullscreen={fullscreenNoteId === "detail-box-beam"}
             cascadeIndex={noteOpenOrder.indexOf("detail-box-beam")}
@@ -5266,8 +5494,8 @@ export default function LayoutEditor() {
             onPrint={() => handlePrintNote("detail-box-beam")}
           >
             <DetailGuidePage
-              title={`Box Beam (${BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === boxBeamSizeId)!.label}) — Roof Bearing`}
-              triggerCondition="Any wall selected for a Box Beam on the Roof tab (a ring around every wall, or just part of the run) — replaces that wall's own Truss Plate above the second story's row of panels, which is built shorter to compensate so the roofline still lines up."
+              title="Box Beam"
+              triggerCondition="Used either as this building's roofline roof-bearing member (2-story only — replaces that wall's own Truss Plate above the second story's row of panels, Roof tab) or as a Mid-Wall Bond Beam splitting a wall's own row at any height, on either story (Wall Elevation view) — same catalog of 5 web sizes (2 LVL, 3 dimensional-lumber) either way."
               diagram={
                 <StandardPanel3DView
                   members={boxBeamPreviewMembers}
@@ -5277,10 +5505,10 @@ export default function LayoutEditor() {
               }
               fastenerSchedule={[]}
               notes={[
-                `3D model above is an illustrative 10ft segment, not full building length. Two ${BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === boxBeamSizeId)!.label} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a hollow box, blown in with dense-pack cellulose.`,
-                `Across every Box Beam wall's own real length (${(boxBeamWallLengthTotalIn / 12).toFixed(1)}ft total): ${denseCelluloseTotal.volumeFt3.toFixed(2)} ft3, ~${denseCelluloseWeight.weightLb.toFixed(1)} lb (${denseCelluloseWeight.weightKg.toFixed(1)} kg) at ${densePackCelluloseDensityLbFt3.value} lb/ft3.`,
+                `3D model above is an illustrative 10ft segment at the currently-selected roofline size (${BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === boxBeamSizeId)!.label}), not full building length or every beam's own size. Two webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a hollow box, blown in with dense-pack cellulose.`,
+                `Across every roofline Box Beam wall's own real length (${(boxBeamWallLengthTotalIn / 12).toFixed(1)}ft total): ${denseCelluloseTotal.volumeFt3.toFixed(2)} ft3, ~${denseCelluloseWeight.weightLb.toFixed(1)} lb (${denseCelluloseWeight.weightKg.toFixed(1)} kg) at ${densePackCelluloseDensityLbFt3.value} lb/ft3.`,
                 densePackCelluloseDensityLbFt3.note,
-                "Real per-wall segments, sized to each wall's own actual length, are on their own \"Panel Fabrication: Box Beam\" pages below (grouped by unique length) — with a real cut list and weight checker per segment.",
+                "Real per-wall/per-beam segments, sized to each one's own actual length and selected size, are on their own \"Panel Fabrication: Box Beam\" pages below (grouped by size + unique length) — with a real cut list and weight checker per segment.",
               ]}
               role={role}
             />
@@ -6133,6 +6361,43 @@ export default function LayoutEditor() {
                   <PanelFabricationPage
                     title={`Panel Fabrication — ${group.kindLabel}`}
                     panelDescription={panelDescription}
+                    widthIn={group.lengthIn}
+                    heightIn={group.heightIn}
+                    members={group.members}
+                    instances={group.instances}
+                    weightBreakdown={group.weightBreakdown}
+                    loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
+                    shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
+                    role={role}
+                  />
+                </StickyNote>
+              );
+            })}
+
+            {midWallBondBeamFabricationGroups.map((group) => {
+              const noteId = `shop-fab-${group.uniqueKey}`;
+              const sizeLabel = BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === group.sizeId)!.label;
+              return (
+                <StickyNote
+                  key={group.uniqueKey}
+                  id={noteId}
+                  label={`Panel Fabrication: Box Beam ${group.lengthIn.toFixed(1)}in (${group.instances.length})`}
+                  isOpen={openNoteIds.has(noteId)}
+                  isFullscreen={fullscreenNoteId === noteId}
+                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
+                  onClose={() => handleToggleNote(noteId)}
+                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
+                  onPrint={() => handlePrintNote(noteId)}
+                >
+                  <p className={styles.note}>
+                    Fabricator/detailer document — one sheet per unique size + wall length (walls/stories sharing
+                    both grouped together), with a to-scale lettered elevation, a materials cut list, which
+                    walls this segment is used on, and a weight checker with a blank line for the shop&apos;s own
+                    measured weight.
+                  </p>
+                  <PanelFabricationPage
+                    title={`Panel Fabrication — Box Beam (${sizeLabel})`}
+                    panelDescription={`Two ${sizeLabel} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`}
                     widthIn={group.lengthIn}
                     heightIn={group.heightIn}
                     members={group.members}
