@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import {
   computeGableTiledRow,
+  computeRoofBearingSegments,
+  isSlotBoxBeamCovered,
   GABLE_SHED_SNAP_THRESHOLD_IN,
+  type BoxBeamCoverage,
   type GableTiledPanel,
   type PanelSlot,
   type RoofProfilePoint,
@@ -133,16 +136,25 @@ export interface WallElevationViewProps {
    * real heelHeightIn value; 0 disables it. See computeGableTiledRow's own
    * `heelHeightIn` param. */
   heelHeightIn: number;
-  /** Whether THIS wall has a Box Beam (rather than a Truss Plate) as its
-   * own 2nd-story roof-bearing member (Tommy: "options for being a ring
-   * all the way around or just one section of the wall") — only shown/
-   * meaningful once `secondStoryEnabled`. See page.tsx's `boxBeamWallIds`. */
-  hasBoxBeam: boolean;
+  /** This wall's own Box Beam coverage range, if any (Tommy: "options for
+   * being a ring all the way around or just one section of the wall...
+   * dragged shorter and snap to the edge of each panel, allowing the
+   * previous panel to grow back up to the roofline height") — undefined
+   * means this wall uses a Truss Plate along its own full length. Slot-
+   * index based (not raw inches) — see BoxBeamCoverage's own doc comment.
+   * Only shown/meaningful once `secondStoryEnabled`. */
+  boxBeamCoverage: BoxBeamCoverage | undefined;
+  /** The plain on/off checkbox — on = full-width coverage (every current
+   * slot), off = no coverage at all. */
   onToggleBoxBeam: (enabled: boolean) => void;
+  /** Drag-driven range adjustment — snapping to slot boundaries is handled
+   * entirely by this component (it already has the real slot widths); the
+   * caller just stores whatever range it's given (or clears it, via
+   * `null`, if a drag would leave an empty/inverted range). */
+  onChangeBoxBeamCoverage: (coverage: BoxBeamCoverage | null) => void;
   /** Which box-beam size/material every selected wall uses, project-wide
    * (page.tsx's `boxBeamSizeId`) — used to compute how much shorter this
-   * wall's own second-story row is built when `hasBoxBeam` is true (see
-   * computeBoxBeamHeightDeltaIn). */
+   * wall's own covered slots are built (see computeBoxBeamHeightDeltaIn). */
   boxBeamSizeId: BoxBeamSizeId;
   /** Whole-building second story toggle (Tommy: "the add lay[er] button
    * should be next to add gable end button") — a second entry point to the
@@ -204,8 +216,9 @@ export default function WallElevationView({
   onGenerateShedRoof,
   insetIn,
   heelHeightIn,
-  hasBoxBeam,
+  boxBeamCoverage,
   onToggleBoxBeam,
+  onChangeBoxBeamCoverage,
   boxBeamSizeId,
   secondStoryEnabled,
   onToggleSecondStory,
@@ -213,6 +226,7 @@ export default function WallElevationView({
 }: WallElevationViewProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
+  const [draggingBoxBeamHandle, setDraggingBoxBeamHandle] = useState<"start" | "end" | null>(null);
 
   const wallWidthIn = wall.lengthFt * 12;
   const eaveHeightIn = wallHeightFt * 12;
@@ -224,12 +238,26 @@ export default function WallElevationView({
   // and snap-zone hints all rise from here.
   const secondStoryHeightIn = secondStoryWallHeightFt ? secondStoryWallHeightFt * 12 : 0;
   const roofBaseHeightIn = eaveHeightIn + secondStoryHeightIn + roofBearingAssemblyHeightIn;
-  // A Box Beam wall's own second-story row is built shorter (Tommy: "the
-  // roof lines needs to be respected" — the row shrinks, not the shared
-  // roofline above) — secondStoryHeightIn above stays the NOMINAL height
-  // for roofBaseHeightIn's own purposes; this is the row's own real
-  // rendered height, used only where the row itself is drawn.
-  const secondStoryPanelHeightIn = hasBoxBeam ? secondStoryHeightIn - computeBoxBeamHeightDeltaIn(boxBeamSizeId) : secondStoryHeightIn;
+  // A Box Beam-covered slot's own row is built shorter (Tommy: "the roof
+  // lines needs to be respected" — the row shrinks, not the shared
+  // roofline above; "dragged shorter... allowing the previous panel to
+  // grow back up to the roofline height") — secondStoryHeightIn above
+  // stays the NOMINAL height for roofBaseHeightIn's own purposes; this is
+  // a given slot's own real rendered height, used only where the row
+  // itself is drawn. Uncovered slots (or no coverage at all) render at the
+  // plain nominal height, same as before Box Beam had per-slot coverage.
+  const boxBeamHeightDeltaIn = boxBeamCoverage ? computeBoxBeamHeightDeltaIn(boxBeamSizeId) : 0;
+  const secondStorySlotHeightIn = (slotIndex: number) =>
+    isSlotBoxBeamCovered(slotIndex, boxBeamCoverage) ? secondStoryHeightIn - boxBeamHeightDeltaIn : secondStoryHeightIn;
+  // Cumulative along-wall offsets for the second story's own slots (0..N,
+  // one more entry than slots — offsetsIn[i] is where slot i starts,
+  // offsetsIn[i+1] is where it ends) — the shared source both the row's
+  // own rendering AND the drag-to-adjust-coverage handles below snap to,
+  // so "the boundary always lands on a real panel edge" is automatic.
+  const secondStoryOffsetsIn = (secondStorySlots ?? []).reduce<number[]>(
+    (acc, slot) => [...acc, acc[acc.length - 1]! + slot.widthIn],
+    [0],
+  );
 
   const pointCount = roofProfilePointHeightsFt.length;
   const resolvedPointXsIn = roofProfilePointHeightsFt.map((_, i) => {
@@ -308,6 +336,51 @@ export default function WallElevationView({
     };
   }, [draggingPointIndex, svgWidthPx, scaleX, wallWidthIn, onChangeGableProfilePositionIn]);
 
+  // Box Beam coverage handle drag — same shape as the gable-point drag
+  // above, but snaps to the NEAREST real slot boundary (secondStoryOffsetsIn)
+  // instead of a continuous inch value, since a covered range is always a
+  // whole number of consecutive slots (Tommy: "dragged shorter and snap to
+  // the edge of each panel"). Clamps so the range never crosses itself
+  // (always at least 1 slot covered) — dragging past that just holds at the
+  // boundary; the plain checkbox is how you turn Box Beam off entirely.
+  useEffect(() => {
+    if (!draggingBoxBeamHandle || !boxBeamCoverage) return;
+    const handle = draggingBoxBeamHandle;
+    const coverage = boxBeamCoverage;
+    const handleMove = (e: MouseEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const pxPerScreenPx = svgWidthPx / rect.width;
+      const localPx = (e.clientX - rect.left) * pxPerScreenPx;
+      const posIn = Math.min(Math.max((localPx - LEFT_MARGIN_PX) / scaleX, 0), wallWidthIn);
+      let nearestIndex = 0;
+      let nearestDistIn = Infinity;
+      secondStoryOffsetsIn.forEach((offsetIn, i) => {
+        const distIn = Math.abs(offsetIn - posIn);
+        if (distIn < nearestDistIn) {
+          nearestDistIn = distIn;
+          nearestIndex = i;
+        }
+      });
+      if (handle === "start") {
+        const startSlotIndex = Math.max(0, Math.min(nearestIndex, coverage.endSlotIndex - 1));
+        if (startSlotIndex !== coverage.startSlotIndex) onChangeBoxBeamCoverage({ startSlotIndex, endSlotIndex: coverage.endSlotIndex });
+      } else {
+        const endSlotIndex = Math.min(secondStoryOffsetsIn.length - 1, Math.max(nearestIndex, coverage.startSlotIndex + 1));
+        if (endSlotIndex !== coverage.endSlotIndex) onChangeBoxBeamCoverage({ startSlotIndex: coverage.startSlotIndex, endSlotIndex });
+      }
+    };
+    const handleUp = () => setDraggingBoxBeamHandle(null);
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [draggingBoxBeamHandle, boxBeamCoverage, svgWidthPx, scaleX, wallWidthIn, secondStoryOffsetsIn, onChangeBoxBeamCoverage]);
+
   // A wall's own `slots` don't always cover its full geometric length —
   // for a plain rectangle, corner panels are only stored on one pair of
   // opposite walls (drawn once per building corner, attributed to whichever
@@ -332,8 +405,10 @@ export default function WallElevationView({
   // is this row's own floor, in global inches-from-actual-floor (0 for
   // ground, the ground's own height for a second story), so a shared local
   // `localYPx` can place both rows' geometry correctly without duplicating
-  // this rendering logic per story.
-  const renderRow = (rowSlots: PanelSlot[], rowWallHeightIn: number, rowFloorHeightIn: number, story: "ground" | "second") => {
+  // this rendering logic per story. `heightForSlot` is a per-SLOT lookup
+  // (not one flat number) so a partially Box-Beam-covered second-story row
+  // can render some slots shorter than others, side by side.
+  const renderRow = (rowSlots: PanelSlot[], heightForSlot: (slotIndex: number) => number, rowFloorHeightIn: number, story: "ground" | "second") => {
     const rects = rowSlots.reduce<{ slot: PanelSlot; i: number; x0: number; x1: number }[]>((acc, slot, i) => {
       const x0 = acc.length > 0 ? acc[acc.length - 1]!.x1 : 0;
       acc.push({ slot, i, x0, x1: x0 + slot.widthIn });
@@ -341,6 +416,7 @@ export default function WallElevationView({
     }, []);
     const localYPx = (localHeightIn: number) => yPx(rowFloorHeightIn + localHeightIn);
     return rects.map(({ slot, i, x0, x1 }) => {
+      const rowWallHeightIn = heightForSlot(i);
       if (slot.type === "window") {
         const g = computeOpeningGeometry(
           false,
@@ -431,9 +507,9 @@ export default function WallElevationView({
         </label>
         {secondStoryEnabled && (
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-            <input type="checkbox" checked={hasBoxBeam} onChange={(e) => onToggleBoxBeam(e.target.checked)} />
+            <input type="checkbox" checked={!!boxBeamCoverage} onChange={(e) => onToggleBoxBeam(e.target.checked)} />
             Box Beam (replaces this wall&apos;s Truss Plate above the 2nd story row — that row is built shorter to
-            still reach the same roofline)
+            still reach the same roofline; drag the green handles below to cover just part of the run)
           </label>
         )}
         <button
@@ -470,26 +546,69 @@ export default function WallElevationView({
         <text x={4} y={yPx(eaveHeightIn) + 4} fontSize={10} fill="#666">
           {eaveHeightIn}&quot;
         </text>
-        {renderRow(slots, eaveHeightIn, 0, "ground")}
+        {renderRow(slots, () => eaveHeightIn, 0, "ground")}
 
-        {/* Second-story row + its own top-plate line (Tommy: "each story's
-            row for a given wall is independently clickable/editable") —
-            only rendered once a second story exists. */}
+        {/* Second-story row + its own top-plate line(s) (Tommy: "each
+            story's row for a given wall is independently clickable/
+            editable") — only rendered once a second story exists. One
+            reference line PER real roof-bearing segment (see
+            computeRoofBearingSegments) so a partially Box-Beam-covered row
+            visibly steps up/down exactly at the covered boundary, instead
+            of one flat (and, for a partial selection, wrong) line. */}
         {secondStorySlots && (
           <>
-            <line
-              x1={LEFT_MARGIN_PX}
-              y1={yPx(eaveHeightIn + secondStoryPanelHeightIn)}
-              x2={xPx(secondStoryRunWidthIn)}
-              y2={yPx(eaveHeightIn + secondStoryPanelHeightIn)}
-              stroke="#999"
-              strokeDasharray="4 3"
-            />
-            <text x={4} y={yPx(eaveHeightIn + secondStoryPanelHeightIn) + 4} fontSize={10} fill="#666">
-              {eaveHeightIn + secondStoryPanelHeightIn}&quot;
-              {hasBoxBeam ? " (shortened for Box Beam)" : ""}
+            {computeRoofBearingSegments(secondStorySlots, boxBeamCoverage).map((seg, i) => {
+              const segHeightIn = seg.kind === "box-beam" ? secondStoryHeightIn - boxBeamHeightDeltaIn : secondStoryHeightIn;
+              return (
+                <line
+                  key={`second-top-${i}`}
+                  x1={xPx(seg.startXIn)}
+                  y1={yPx(eaveHeightIn + segHeightIn)}
+                  x2={xPx(seg.startXIn + seg.lengthIn)}
+                  y2={yPx(eaveHeightIn + segHeightIn)}
+                  stroke="#999"
+                  strokeDasharray="4 3"
+                />
+              );
+            })}
+            <text x={4} y={yPx(eaveHeightIn + secondStoryHeightIn) + 4} fontSize={10} fill="#666">
+              {eaveHeightIn + secondStoryHeightIn}&quot;
+              {boxBeamCoverage ? ` (Box Beam sections ${boxBeamHeightDeltaIn.toFixed(2)}in shorter)` : ""}
             </text>
-            {renderRow(secondStorySlots, secondStoryPanelHeightIn, eaveHeightIn, "second")}
+            {renderRow(secondStorySlots, secondStorySlotHeightIn, eaveHeightIn, "second")}
+
+            {/* Box Beam coverage drag handles — one at each end of the
+                covered range, snapping to the nearest real slot boundary
+                (secondStoryOffsetsIn) as dragged. Only shown once the
+                checkbox is on; the plain on/off toggle above still fully
+                controls whether Box Beam applies at all. */}
+            {boxBeamCoverage &&
+              (["start", "end"] as const).map((handle) => {
+                const slotIndex = handle === "start" ? boxBeamCoverage.startSlotIndex : boxBeamCoverage.endSlotIndex;
+                const handleXIn = secondStoryOffsetsIn[slotIndex] ?? (handle === "start" ? 0 : secondStoryRunWidthIn);
+                const handleYIn = eaveHeightIn + secondStoryHeightIn - boxBeamHeightDeltaIn;
+                return (
+                  <g
+                    key={handle}
+                    style={{ cursor: "ew-resize" }}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setDraggingBoxBeamHandle(handle);
+                    }}
+                  >
+                    <line
+                      x1={xPx(handleXIn)}
+                      y1={yPx(eaveHeightIn)}
+                      x2={xPx(handleXIn)}
+                      y2={yPx(handleYIn)}
+                      stroke="#2c7a4b"
+                      strokeWidth={1}
+                      strokeDasharray="2 2"
+                    />
+                    <circle cx={xPx(handleXIn)} cy={yPx(handleYIn)} r={7} fill="#2c7a4b" stroke="#fff" strokeWidth={1.5} />
+                  </g>
+                );
+              })}
           </>
         )}
 

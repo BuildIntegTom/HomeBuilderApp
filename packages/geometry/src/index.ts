@@ -20,6 +20,7 @@ export * from "./joistLayout";
 export * from "./pointInPolygon";
 export * from "./wallCompassDirection";
 export * from "./gableTiledRow";
+export * from "./roofBearingSegments";
 export * from "./uniformPanelization";
 export * from "./ridgeLine";
 export * from "./panelLoadOrder";

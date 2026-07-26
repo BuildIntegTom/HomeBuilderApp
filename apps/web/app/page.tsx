@@ -18,6 +18,7 @@ import {
   computePanelsPerStack,
   computePierGrid,
   computeRidgeLine,
+  computeRoofBearingSegments,
   computeSillRunWidths,
   computeTruckLoads,
   cornerOwnership as cornerOwnershipPure,
@@ -38,6 +39,8 @@ import {
   retileWithOpenings,
   wallCompassDirection,
   wallGeometryFor as wallGeometryForPure,
+  isSlotBoxBeamCovered,
+  type BoxBeamCoverage,
   type CornerId,
   type Footprint,
   type PanelGroup,
@@ -628,25 +631,47 @@ export default function LayoutEditor() {
     });
   };
 
-  // boxBeamWallIds tracks which walls have a Box Beam (rather than a Truss
-  // Plate) as their own 2nd-story roof-bearing member (Tommy: "options for
-  // being a ring all the way around or just one section of the wall") — no
-  // opposite-pair/max-2 constraint like gableEndWallIds, since a box beam
-  // doesn't need to form a straight run between exactly 2 walls. Only
-  // meaningful once a 2nd story exists; boxBeamSizeId is one global choice
-  // for the whole building (see BOX_BEAM_SIZE_OPTIONS).
-  const [boxBeamWallIds, setBoxBeamWallIds] = useState<Set<string>>(new Set());
+  // boxBeamCoverageByWallId tracks which walls have a Box Beam (rather than
+  // a Truss Plate) as their own 2nd-story roof-bearing member, AND exactly
+  // which of that wall's own second-story slots it covers (Tommy: "options
+  // for being a ring all the way around or just one section of the wall...
+  // dragged shorter and snap to the edge of each panel, allowing the
+  // previous panel to grow back up to the roofline height") — a wall with
+  // no entry here (or an empty/inverted range) uses a Truss Plate along its
+  // own full length. Slot-index based (not raw inches) so a covered range
+  // is always a whole number of consecutive slots — see
+  // computeRoofBearingSegments/isSlotBoxBeamCovered in the geometry
+  // package, the shared source every consumer (fabrication grouping, 3D
+  // render, 2D elevation row rendering, panel-instance heights) reads this
+  // through. No opposite-pair/max-2 constraint like gableEndWallIds, since
+  // a box beam doesn't need to form a straight run between exactly 2 walls.
+  // Only meaningful once a 2nd story exists; boxBeamSizeId is one global
+  // choice for the whole building (see BOX_BEAM_SIZE_OPTIONS).
+  const [boxBeamCoverageByWallId, setBoxBeamCoverageByWallId] = useState<Record<string, BoxBeamCoverage>>({});
   const [boxBeamSizeId, setBoxBeamSizeId] = useState<BoxBeamSizeId>(BOX_BEAM_SIZE_DEFAULT);
-  const handleToggleBoxBeam = (wallId: string, enabled: boolean) => {
-    setBoxBeamWallIds((was) => {
-      const next = new Set(was);
-      if (enabled) next.add(wallId);
-      else next.delete(wallId);
+  const handleChangeBoxBeamCoverage = (wallId: string, coverage: BoxBeamCoverage | null) => {
+    setBoxBeamCoverageByWallId((was) => {
+      const next = { ...was };
+      if (coverage && coverage.endSlotIndex > coverage.startSlotIndex) next[wallId] = coverage;
+      else delete next[wallId];
       return next;
     });
   };
+  const handleToggleBoxBeam = (wallId: string, enabled: boolean) => {
+    const slotCount = (secondStory?.wallSlots[wallId] ?? []).length;
+    handleChangeBoxBeamCoverage(wallId, enabled ? { startSlotIndex: 0, endSlotIndex: slotCount } : null);
+  };
   const handleSetBoxBeamRing = (enabled: boolean) => {
-    setBoxBeamWallIds(enabled && footprint ? new Set(footprint.walls.map((w) => w.id)) : new Set());
+    if (!enabled || !footprint) {
+      setBoxBeamCoverageByWallId({});
+      return;
+    }
+    const next: Record<string, BoxBeamCoverage> = {};
+    for (const wall of footprint.walls) {
+      const slotCount = (secondStory?.wallSlots[wall.id] ?? []).length;
+      next[wall.id] = { startSlotIndex: 0, endSlotIndex: slotCount };
+    }
+    setBoxBeamCoverageByWallId(next);
   };
 
   // Gable End profile point positions (Tommy: "drag wall tool the peak of
@@ -867,7 +892,7 @@ export default function LayoutEditor() {
       maxGablePanelHeightIn,
       trussPlateInsetIn,
       heelHeightIn,
-      boxBeamWallIds,
+      boxBeamCoverageByWallId,
       boxBeamSizeId,
       roofCatcherBeamOffsetIn,
       roofCatcherBeamShape,
@@ -956,7 +981,7 @@ export default function LayoutEditor() {
       setMaxGablePanelHeightIn(s.maxGablePanelHeightIn);
       setTrussPlateInsetIn(s.trussPlateInsetIn);
       setHeelHeightIn(s.heelHeightIn);
-      setBoxBeamWallIds(s.boxBeamWallIds);
+      setBoxBeamCoverageByWallId(s.boxBeamCoverageByWallId);
       setBoxBeamSizeId(s.boxBeamSizeId);
       setRoofCatcherBeamOffsetIn(s.roofCatcherBeamOffsetIn);
       setRoofCatcherBeamShape(s.roofCatcherBeamShape);
@@ -2055,28 +2080,37 @@ export default function LayoutEditor() {
     () => (footprint ? footprint.walls.reduce((sum, w) => sum + w.lengthFt * 12, 0) : 0),
     [footprint],
   );
-  // Box beam is now a per-wall choice (Tommy: "options for being a ring all
-  // the way around or just one section of the wall"), not automatic once
-  // stories.length > 1 — so the truss-plate/box-beam material totals below
-  // split totalWallPerimeterIn by real per-wall coverage instead of always
-  // treating the whole building as one or the other. A 2-story building can
-  // now genuinely need both fills at once.
-  const boxBeamWallLengthTotalIn = useMemo(
-    () =>
-      !footprint || stories.length <= 1
-        ? 0
-        : footprint.walls.filter((w) => boxBeamWallIds.has(w.id)).reduce((sum, w) => sum + w.lengthFt * 12, 0),
-    [footprint, stories.length, boxBeamWallIds],
-  );
-  const trussPlateWallLengthTotalIn = useMemo(
-    () =>
-      !footprint
-        ? 0
-        : stories.length <= 1
-          ? totalWallPerimeterIn
-          : footprint.walls.filter((w) => !boxBeamWallIds.has(w.id)).reduce((sum, w) => sum + w.lengthFt * 12, 0),
-    [footprint, stories.length, boxBeamWallIds, totalWallPerimeterIn],
-  );
+  // Box beam is now a per-wall (or per-section-of-a-wall) choice (Tommy:
+  // "options for being a ring all the way around or just one section of
+  // the wall"), not automatic once stories.length > 1 — so the truss-
+  // plate/box-beam material totals below sum the real per-wall/per-segment
+  // coverage (computeRoofBearingSegments) instead of always treating a
+  // whole wall (let alone the whole building) as one or the other. A
+  // 2-story building can now genuinely need both fills at once, even on
+  // the very same wall.
+  const boxBeamWallLengthTotalIn = useMemo(() => {
+    if (!footprint || stories.length <= 1) return 0;
+    let totalIn = 0;
+    for (const wall of footprint.walls) {
+      const slots = secondStory?.wallSlots[wall.id] ?? [];
+      for (const seg of computeRoofBearingSegments(slots, boxBeamCoverageByWallId[wall.id])) {
+        if (seg.kind === "box-beam") totalIn += seg.lengthIn;
+      }
+    }
+    return totalIn;
+  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId]);
+  const trussPlateWallLengthTotalIn = useMemo(() => {
+    if (!footprint) return 0;
+    if (stories.length <= 1) return totalWallPerimeterIn;
+    let totalIn = 0;
+    for (const wall of footprint.walls) {
+      const slots = secondStory?.wallSlots[wall.id] ?? [];
+      for (const seg of computeRoofBearingSegments(slots, boxBeamCoverageByWallId[wall.id])) {
+        if (seg.kind === "truss-plate") totalIn += seg.lengthIn;
+      }
+    }
+    return totalIn;
+  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, totalWallPerimeterIn]);
   const trussPlatePreviewMembers = useMemo(
     () => buildTrussPlateMembers(ASSEMBLY_PREVIEW_LENGTH_IN, thicknessIn, trussPlateInsetIn),
     [thicknessIn, trussPlateInsetIn],
@@ -2906,33 +2940,41 @@ export default function LayoutEditor() {
       });
   }, [shopDrawings, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored, doorHeaderHeightIn, sillHeightIn]);
 
-  // Real per-wall roof-bearing (truss plate / box beam) Shop Fabrication
-  // pages — same treatment gable-end panels got: one real segment per wall
-  // (sized to that wall's own actual length), grouped into exact-copy
-  // fabrication pages, replacing the single fixed-10ft illustrative preview
-  // the "Roof: Truss Plate/Box Beam" Detail Guide page still shows (that
-  // page stays as general reference documentation, same role as Door/
-  // Window RO). Truss plate/box beam have no straw at all — a Timber HP or
-  // dense-pack-cellulose fill stands in its place, so the weightBreakdown
-  // below is hand-built rather than routed through computePanelWeightBreakdown
+  // Real per-wall (or per-section-of-a-wall) roof-bearing (truss plate /
+  // box beam) Shop Fabrication pages — same treatment gable-end panels
+  // got: one real segment per wall (or, with partial Box Beam coverage,
+  // per covered/uncovered stretch of a wall — see
+  // computeRoofBearingSegments), grouped into exact-copy fabrication
+  // pages, replacing the single fixed-10ft illustrative preview the "Roof:
+  // Truss Plate/Box Beam" Detail Guide page still shows (that page stays
+  // as general reference documentation, same role as Door/Window RO).
+  // Truss plate/box beam have no straw at all — a Timber HP or dense-pack-
+  // cellulose fill stands in its place, so the weightBreakdown below is
+  // hand-built rather than routed through computePanelWeightBreakdown
   // (which hardcodes a "Straw" component label).
   const roofBearingFabricationGroups = useMemo(() => {
     if (!footprint) return [];
 
-    // Box beam is a per-wall choice now (boxBeamWallIds), not automatic
-    // once stories.length > 1 — each wall picks its own kind, so a single
-    // building can produce both Truss Plate and Box Beam fabrication pages
-    // at once (grouped by kind + length, same "exact copies together" rule
-    // gable/standard panels already use).
+    // Box beam is a per-wall (or per-section) choice now
+    // (boxBeamCoverageByWallId), not automatic once stories.length > 1 —
+    // each wall's own top can split into up to 3 real segments, so a
+    // single building (or even a single wall) can produce both Truss Plate
+    // and Box Beam fabrication pages at once (grouped by kind + length,
+    // same "exact copies together" rule gable/standard panels already use).
     const groups = new Map<string, { kind: "truss-plate" | "box-beam"; lengthIn: number; walls: { id: string; direction: string }[] }>();
     for (const wall of footprint.walls) {
-      const kind: "truss-plate" | "box-beam" = stories.length > 1 && boxBeamWallIds.has(wall.id) ? "box-beam" : "truss-plate";
-      const lengthIn = wall.lengthFt * 12;
-      const key = `${kind}-${lengthIn.toFixed(3)}`;
       const direction = wallCompassDirection(wall, footprint);
-      const existing = groups.get(key);
-      if (existing) existing.walls.push({ id: wall.id, direction });
-      else groups.set(key, { kind, lengthIn, walls: [{ id: wall.id, direction }] });
+      const slots = stories.length > 1 ? (secondStory?.wallSlots[wall.id] ?? []) : [];
+      const segments =
+        stories.length > 1
+          ? computeRoofBearingSegments(slots, boxBeamCoverageByWallId[wall.id])
+          : [{ kind: "truss-plate" as const, startXIn: 0, lengthIn: wall.lengthFt * 12 }];
+      for (const seg of segments) {
+        const key = `${seg.kind}-${seg.lengthIn.toFixed(3)}`;
+        const existing = groups.get(key);
+        if (existing) existing.walls.push({ id: wall.id, direction });
+        else groups.set(key, { kind: seg.kind, lengthIn: seg.lengthIn, walls: [{ id: wall.id, direction }] });
+      }
     }
 
     return [...groups.entries()].map(([groupKey, { kind, lengthIn, walls }]) => {
@@ -2977,7 +3019,7 @@ export default function LayoutEditor() {
         instances: walls.map((w) => ({ name: `Wall ${w.id} (${w.direction})` })),
       };
     });
-  }, [footprint, stories.length, boxBeamWallIds, boxBeamSizeId, thicknessIn, trussPlateInsetIn]);
+  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, boxBeamSizeId, thicknessIn, trussPlateInsetIn]);
 
   // Only surface pages that actually apply to what's currently selected/
   // drawn — a foundation detail page only if one exists for this type, a
@@ -4003,8 +4045,9 @@ export default function LayoutEditor() {
                   onGenerateShedRoof={() => handleGenerateShedRoof(elevationWall)}
                   insetIn={trussPlateInsetIn}
                   heelHeightIn={heelHeightIn}
-                  hasBoxBeam={boxBeamWallIds.has(elevationWall.id)}
+                  boxBeamCoverage={boxBeamCoverageByWallId[elevationWall.id]}
                   onToggleBoxBeam={(enabled) => handleToggleBoxBeam(elevationWall.id, enabled)}
+                  onChangeBoxBeamCoverage={(coverage) => handleChangeBoxBeamCoverage(elevationWall.id, coverage)}
                   boxBeamSizeId={boxBeamSizeId}
                   secondStoryEnabled={stories.length > 1}
                   onToggleSecondStory={handleToggleSecondStory}
@@ -4070,7 +4113,7 @@ export default function LayoutEditor() {
                   gableTilesByWallId={gableTilesByWallId}
                   roofEnabled={roofEnabled}
                   trussPlateInsetIn={trussPlateInsetIn}
-                  boxBeamWallIds={boxBeamWallIds}
+                  boxBeamCoverageByWallId={boxBeamCoverageByWallId}
                   boxBeamSizeId={boxBeamSizeId}
                 />
               ))}
@@ -4106,7 +4149,7 @@ export default function LayoutEditor() {
               gableTilesByWallId={gableTilesByWallId}
               roofEnabled={roofEnabled}
               trussPlateInsetIn={trussPlateInsetIn}
-              boxBeamWallIds={boxBeamWallIds}
+              boxBeamCoverageByWallId={boxBeamCoverageByWallId}
               boxBeamSizeId={boxBeamSizeId}
               onCapture={handleCaptureRenderImage}
             />

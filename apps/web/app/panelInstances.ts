@@ -1,4 +1,12 @@
-import { wallCompassDirection, computeSillRunWidths, type CompassDirection, type Footprint, type PanelSlot } from "@building-integrity/geometry";
+import {
+  isSlotBoxBeamCovered,
+  wallCompassDirection,
+  computeSillRunWidths,
+  type BoxBeamCoverage,
+  type CompassDirection,
+  type Footprint,
+  type PanelSlot,
+} from "@building-integrity/geometry";
 import { computeRoughOpeningWidthIn, type BracePattern, type JackStudConfig } from "@building-integrity/panel-catalog";
 
 /** Every real structural panel this app can name/count — header and sill
@@ -77,6 +85,17 @@ export interface PanelInstance {
    * tile's own local height. Carried through from computeGableTiledRow's
    * own `isSafetyGap`. */
   isSafetyGap?: boolean;
+  /** Only set (true) for a second-story instance whose own slot falls
+   * inside its wall's Box Beam coverage range (see
+   * `isSlotBoxBeamCovered`/`computeRoofBearingSegments` in the geometry
+   * package) — this instance's own real built height is shorter than the
+   * story's flat nominal height by `computeBoxBeamHeightDeltaIn(sizeId)`,
+   * so it still reaches the same roofline as an uncovered instance under a
+   * Truss Plate. A pure structural fact, not a baked-in height — the
+   * consumer (which already has the nominal height + selected box-beam
+   * size in scope) computes the real number. Undefined for every ground-
+   * floor instance and every 2nd-story instance not covered. */
+  isBoxBeamCovered?: boolean;
   /** Only set for "gable" instances whose real roofline rise exceeds the
    * project's own maxGablePanelHeightIn fabrication ceiling — the real
    * remainder (above this tile's own taller edge) filled by a dedicated
@@ -132,6 +151,14 @@ export function allPanelInstances(
     string,
     { widthIn: number; leftEdgeHeightIn: number; rightEdgeHeightIn: number; isSafetyGap?: boolean; verticalGapHeightIn?: number }[]
   >,
+  /** Which slots of which walls have a Box Beam rather than a Truss Plate
+   * (page.tsx's `boxBeamCoverageByWallId`) — only meaningful for a
+   * SECOND-STORY call (a caller building ground-floor instances should
+   * omit this entirely, same "absent = unaffected" contract
+   * `gableTilesByWallId` already has). Drives each real instance's own
+   * `isBoxBeamCovered` flag; never applies to "gable" instances (the roof
+   * cap sits above this concern entirely). */
+  boxBeamCoverageByWallId?: Record<string, BoxBeamCoverage>,
 ): PanelInstance[] {
   const instances: PanelInstance[] = [];
   const counters: Partial<Record<CompassDirection, number>> = {};
@@ -151,6 +178,7 @@ export function allPanelInstances(
     rightEdgeHeightIn?: number,
     isSafetyGap?: boolean,
     verticalGapHeightIn?: number,
+    isBoxBeamCovered?: boolean,
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     instances.push({
@@ -168,14 +196,17 @@ export function allPanelInstances(
       ...(rightEdgeHeightIn !== undefined && { rightEdgeHeightIn }),
       ...(isSafetyGap !== undefined && { isSafetyGap }),
       ...(verticalGapHeightIn !== undefined && { verticalGapHeightIn }),
+      ...(isBoxBeamCovered !== undefined && { isBoxBeamCovered }),
     });
   };
 
   for (const wall of footprint.walls) {
     const slots = wallSlots[wall.id] ?? [];
     const direction = wallCompassDirection(wall, footprint);
+    const boxBeamCoverage = boxBeamCoverageByWallId?.[wall.id];
     for (let slotIndexInWall = 0; slotIndexInWall < slots.length; slotIndexInWall++) {
       const slot = slots[slotIndexInWall]!;
+      const isBoxBeamCovered = isSlotBoxBeamCovered(slotIndexInWall, boxBeamCoverage) || undefined;
       if (slot.type === "window" || slot.type === "door") {
         pushInstance(
           direction,
@@ -186,11 +217,34 @@ export function allPanelInstances(
           slot.type,
           slot.type === "window" ? slot.heightIn : undefined,
           slot.type === "window" ? slot.sillHeightIn : undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          isBoxBeamCovered,
         );
         if (slot.type === "window") {
           const roWidthIn = computeRoughOpeningWidthIn(slot.widthIn, jackStudConfig);
           for (const sillWidthIn of computeSillRunWidths(roWidthIn, standardWidthIn)) {
-            pushInstance(direction, wall.id, "sill", sillWidthIn, slotIndexInWall, slot.type, undefined, slot.sillHeightIn);
+            pushInstance(
+              direction,
+              wall.id,
+              "sill",
+              sillWidthIn,
+              slotIndexInWall,
+              slot.type,
+              undefined,
+              slot.sillHeightIn,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              isBoxBeamCovered,
+            );
           }
         }
       } else if (SIMPLE_NAMED_TYPES.has(slot.type)) {
@@ -205,6 +259,11 @@ export function allPanelInstances(
           undefined,
           slot.type === "braced" ? slot.bracedPattern : undefined,
           slot.type === "braced" ? slot.bracedMirrored : undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          isBoxBeamCovered,
         );
       }
     }

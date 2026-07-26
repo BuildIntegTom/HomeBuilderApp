@@ -1,6 +1,6 @@
 "use client";
 
-import type { Footprint, PanelSlot } from "@building-integrity/geometry";
+import type { BoxBeamCoverage, Footprint, PanelSlot } from "@building-integrity/geometry";
 import type { BoxBeamSizeId, BracingStyle, JackStudConfig, StudConfig } from "@building-integrity/panel-catalog";
 import Building3DView from "./Building3DView";
 
@@ -31,7 +31,7 @@ export interface BuildingSummaryRenderProps {
   >;
   roofEnabled?: boolean;
   trussPlateInsetIn?: number;
-  boxBeamWallIds?: Set<string>;
+  boxBeamCoverageByWallId?: Record<string, BoxBeamCoverage>;
   boxBeamSizeId?: BoxBeamSizeId;
   onCapture: (dataUrl: string) => void;
 }

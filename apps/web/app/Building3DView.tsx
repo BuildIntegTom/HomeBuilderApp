@@ -4,7 +4,16 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, TransformControls } from "@react-three/drei";
 import type { Mesh } from "three";
-import { panelSlotBoxes3D, wallAxis, type Footprint, type PanelSlot, type PanelSlotBox3D } from "@building-integrity/geometry";
+import {
+  computeRoofBearingSegments,
+  isSlotBoxBeamCovered,
+  panelSlotBoxes3D,
+  wallAxis,
+  type BoxBeamCoverage,
+  type Footprint,
+  type PanelSlot,
+  type PanelSlotBox3D,
+} from "@building-integrity/geometry";
 import { allPanelInstances, combinedPanelLabel, type PanelInstance } from "./panelInstances";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
@@ -59,6 +68,7 @@ const ROOF_BEARING_COLOR = "#c2a878";
 const EMPTY_ID_SET: Set<string> = new Set();
 const EMPTY_GABLE_TILES_BY_WALL_ID: Record<string, { widthIn: number; xStartIn: number; leftEdgeHeightIn: number; rightEdgeHeightIn: number }[]> =
   {};
+const EMPTY_BOX_BEAM_COVERAGE_BY_WALL_ID: Record<string, BoxBeamCoverage> = {};
 // Standard click-vs-drag screen-space threshold (px) before the Orbit
 // tool's click-and-swipe re-centering commits — a plain click stays a
 // true no-op below this.
@@ -506,11 +516,12 @@ interface Building3DViewProps {
   /** Truss plate's own inset from each wall's true corners (page.tsx's
    * `trussPlateInsetIn`) — unused for box beam, which has no inset. */
   trussPlateInsetIn?: number;
-  /** Which walls have a Box Beam (rather than a Truss Plate) as their own
-   * 2nd-story roof-bearing member (page.tsx's `boxBeamWallIds`) — only
-   * meaningful when `secondStory` is set. Empty/missing = every wall uses
-   * a Truss Plate, same as before this was a per-wall choice. */
-  boxBeamWallIds?: Set<string>;
+  /** Which walls (and exactly which of their own 2nd-story slots) have a
+   * Box Beam rather than a Truss Plate (page.tsx's
+   * `boxBeamCoverageByWallId`) — only meaningful when `secondStory` is
+   * set. Empty/missing = every wall uses a Truss Plate along its own full
+   * length, same as before this was a per-wall/per-section choice. */
+  boxBeamCoverageByWallId?: Record<string, BoxBeamCoverage>;
   /** Which box-beam size/material every selected wall uses, project-wide
    * (page.tsx's `boxBeamSizeId`) — see BOX_BEAM_SIZE_OPTIONS. */
   boxBeamSizeId?: BoxBeamSizeId;
@@ -634,7 +645,7 @@ export default function Building3DView({
   gableTilesByWallId = EMPTY_GABLE_TILES_BY_WALL_ID,
   roofEnabled = false,
   trussPlateInsetIn = 0,
-  boxBeamWallIds = EMPTY_ID_SET,
+  boxBeamCoverageByWallId = EMPTY_BOX_BEAM_COVERAGE_BY_WALL_ID,
   boxBeamSizeId = BOX_BEAM_SIZE_DEFAULT,
   captureMode = false,
   onCapture,
@@ -747,33 +758,26 @@ export default function Building3DView({
   // Second story: same XZ anchor positions as the ground floor (shares its
   // footprint), just its own wall height for member geometry + a Y offset
   // by the ground floor's own top-plate height. secondStory.wallHeightFt is
-  // always the NOMINAL (Truss Plate) height — a wall with a Box Beam
-  // selected (boxBeamWallIds) gets its own row built shorter by
+  // always the NOMINAL (Truss Plate) height — a slot inside a wall's own
+  // Box Beam coverage range (boxBeamCoverageByWallId, which can now cover
+  // just PART of a wall's own row) gets its own box built shorter by
   // computeBoxBeamHeightDeltaIn, so wall+beam still reaches the exact same
-  // shared roofline as every other wall (see sharedRoofBearingHeightIn's
-  // own doc comment). panelSlotBoxes3D is called once per distinct height
-  // (at most 2: covered/uncovered), each time with `wallSlots` filtered
-  // down to just that group's own walls — an omitted wall id there simply
-  // produces zero boxes for it (see panelSlotBoxes3D's own `?? []`), so the
-  // two calls' results are safe to concat.
+  // shared roofline as every other slot (see sharedRoofBearingHeightIn's
+  // own doc comment). panelSlotBoxes3D is called once at the nominal
+  // height (so its own X-offset math sees every wall's own FULL slot list,
+  // required for correct positioning), then covered boxes have their own
+  // `heightFt` overridden in a light post-process pass — height is fully
+  // independent of a box's X/Z position/width, so this is safe.
   const secondStoryHeightIn = secondStory ? secondStory.wallHeightFt * IN_PER_FT : 0;
   const secondStorySlotBoxes = useMemo(() => {
     if (!footprint || !secondStory) return [];
-    const boxBeamHeightDeltaIn = boxBeamWallIds.size > 0 ? computeBoxBeamHeightDeltaIn(boxBeamSizeId) : 0;
-    if (boxBeamHeightDeltaIn === 0) {
-      return panelSlotBoxes3D(footprint, secondStory.wallSlots, thicknessIn, secondStory.wallHeightFt, primaryCornerIds);
-    }
-    const coveredSlots: Record<string, PanelSlot[]> = {};
-    const uncoveredSlots: Record<string, PanelSlot[]> = {};
-    for (const [wallId, slots] of Object.entries(secondStory.wallSlots)) {
-      (boxBeamWallIds.has(wallId) ? coveredSlots : uncoveredSlots)[wallId] = slots;
-    }
-    const coveredHeightFt = secondStory.wallHeightFt - boxBeamHeightDeltaIn / IN_PER_FT;
-    return [
-      ...panelSlotBoxes3D(footprint, coveredSlots, thicknessIn, coveredHeightFt, primaryCornerIds),
-      ...panelSlotBoxes3D(footprint, uncoveredSlots, thicknessIn, secondStory.wallHeightFt, primaryCornerIds),
-    ];
-  }, [footprint, secondStory, thicknessIn, primaryCornerIds, boxBeamWallIds, boxBeamSizeId]);
+    const boxes = panelSlotBoxes3D(footprint, secondStory.wallSlots, thicknessIn, secondStory.wallHeightFt, primaryCornerIds);
+    if (Object.keys(boxBeamCoverageByWallId).length === 0) return boxes;
+    const coveredHeightFt = secondStory.wallHeightFt - computeBoxBeamHeightDeltaIn(boxBeamSizeId) / IN_PER_FT;
+    return boxes.map((box) =>
+      isSlotBoxBeamCovered(box.slotIndex, boxBeamCoverageByWallId[box.wallId]) ? { ...box, heightFt: coveredHeightFt } : box,
+    );
+  }, [footprint, secondStory, thicknessIn, primaryCornerIds, boxBeamCoverageByWallId, boxBeamSizeId]);
   const secondStorySlotRenderData = useMemo(
     () =>
       secondStorySlotBoxes.map((box) => ({
@@ -897,39 +901,72 @@ export default function Building3DView({
     return result.map((r) => ({ ...r, anchorYFt: gableBaseYFt }));
   }, [footprint, gableTilesByWallId, roofBaseHeightIn, roofEnabled, sharedRoofBearingHeightIn, thicknessIn, includeNailer]);
 
-  // One real roof-bearing (truss plate/box beam) segment per wall, sized to
-  // that wall's own real length — same member builders the Panel
+  // 1-3 real roof-bearing (truss plate/box beam) segments per wall (see
+  // computeRoofBearingSegments) — a wall with partial Box Beam coverage
+  // gets its own Truss Plate remainder segment(s) on either side, each
+  // sized to its own real length — same member builders the Panel
   // Fabrication pages already use, just placed in world space here. Box
-  // beam is a per-wall choice now (boxBeamWallIds), not automatic once
-  // secondStory exists.
+  // beam is a per-wall/per-section choice now (boxBeamCoverageByWallId),
+  // not automatic once secondStory exists.
   const roofBearingRenderData = useMemo(() => {
     if (!footprint || !roofEnabled) return [];
-    return footprint.walls.map((wall) => {
+    const result: {
+      wallId: string;
+      segmentIndex: number;
+      anchorX: number;
+      anchorZ: number;
+      anchorYIn: number;
+      rotationRad: number;
+      members: PanelMember[];
+      widthFt: number;
+      heightFt: number;
+      depthFt: number;
+    }[] = [];
+    for (const wall of footprint.walls) {
       const axis = wallAxis(footprint, wall);
-      const lengthIn = wall.lengthFt * IN_PER_FT;
-      const hasBoxBeam = !!secondStory && boxBeamWallIds.has(wall.id);
-      const members = hasBoxBeam
-        ? buildBoxBeamMembers(lengthIn, thicknessIn, boxBeamSizeId)
-        : buildTrussPlateMembers(lengthIn, thicknessIn, trussPlateInsetIn);
-      const assemblyHeightIn = hasBoxBeam ? computeBoxBeamAssemblyHeightIn(boxBeamSizeId) : sharedRoofBearingHeightIn;
-      // A box-beam wall's own row is built shorter (see
-      // secondStorySlotBoxes above) so the beam itself must anchor lower by
-      // that exact same delta — its own top still reaches roofBaseHeightIn
-      // (the shared roofline), same as an uncovered wall's Truss Plate.
-      const anchorYIn = hasBoxBeam ? roofBaseHeightIn - computeBoxBeamHeightDeltaIn(boxBeamSizeId) : roofBaseHeightIn;
-      return {
-        wallId: wall.id,
-        anchorX: axis.startXFt,
-        anchorZ: axis.startZFt,
-        anchorYIn,
-        rotationRad: axis.rotationRad,
-        members,
-        widthFt: wall.lengthFt,
-        heightFt: assemblyHeightIn / IN_PER_FT,
-        depthFt: thicknessIn / IN_PER_FT,
-      };
-    });
-  }, [footprint, roofEnabled, secondStory, boxBeamWallIds, boxBeamSizeId, thicknessIn, trussPlateInsetIn, sharedRoofBearingHeightIn, roofBaseHeightIn]);
+      const slots = secondStory?.wallSlots[wall.id] ?? [];
+      const segments = secondStory
+        ? computeRoofBearingSegments(slots, boxBeamCoverageByWallId[wall.id])
+        : [{ kind: "truss-plate" as const, startXIn: 0, lengthIn: wall.lengthFt * IN_PER_FT }];
+      segments.forEach((seg, segmentIndex) => {
+        const hasBoxBeam = seg.kind === "box-beam";
+        const members = hasBoxBeam
+          ? buildBoxBeamMembers(seg.lengthIn, thicknessIn, boxBeamSizeId)
+          : buildTrussPlateMembers(seg.lengthIn, thicknessIn, trussPlateInsetIn);
+        const assemblyHeightIn = hasBoxBeam ? computeBoxBeamAssemblyHeightIn(boxBeamSizeId) : sharedRoofBearingHeightIn;
+        // A box-beam segment's own row is built shorter (see
+        // secondStorySlotBoxes above) so the beam itself must anchor lower
+        // by that exact same delta — its own top still reaches
+        // roofBaseHeightIn (the shared roofline), same as a Truss Plate
+        // segment.
+        const anchorYIn = hasBoxBeam ? roofBaseHeightIn - computeBoxBeamHeightDeltaIn(boxBeamSizeId) : roofBaseHeightIn;
+        const offsetFt = seg.startXIn / IN_PER_FT;
+        result.push({
+          wallId: wall.id,
+          segmentIndex,
+          anchorX: axis.startXFt + axis.dirX * offsetFt,
+          anchorZ: axis.startZFt + axis.dirZ * offsetFt,
+          anchorYIn,
+          rotationRad: axis.rotationRad,
+          members,
+          widthFt: seg.lengthIn / IN_PER_FT,
+          heightFt: assemblyHeightIn / IN_PER_FT,
+          depthFt: thicknessIn / IN_PER_FT,
+        });
+      });
+    }
+    return result;
+  }, [
+    footprint,
+    roofEnabled,
+    secondStory,
+    boxBeamCoverageByWallId,
+    boxBeamSizeId,
+    thicknessIn,
+    trussPlateInsetIn,
+    sharedRoofBearingHeightIn,
+    roofBaseHeightIn,
+  ]);
 
   // Panel-name labels (Tommy: "the specific panel label (N1 for example)
   // to appear on... the simplified box 3d views") — a pure re-derivation of
@@ -986,8 +1023,8 @@ export default function Building3DView({
         }),
       ),
       ...roofBearingRenderData.map(
-        ({ wallId, anchorX, anchorZ, anchorYIn, rotationRad, members }): WorldPlacedPanel => ({
-          label: `roofbearing_${wallId}`,
+        ({ wallId, segmentIndex, anchorX, anchorZ, anchorYIn, rotationRad, members }): WorldPlacedPanel => ({
+          label: `roofbearing_${wallId}_${segmentIndex}`,
           worldXIn: anchorX * IN_PER_FT,
           worldZIn: anchorZ * IN_PER_FT,
           worldYIn: anchorYIn,
@@ -1273,9 +1310,9 @@ export default function Building3DView({
               </group>
             ),
           )}
-          {roofBearingRenderData.map(({ wallId, anchorX, anchorZ, anchorYIn, rotationRad, members, widthFt, heightFt, depthFt }) => (
+          {roofBearingRenderData.map(({ wallId, segmentIndex, anchorX, anchorZ, anchorYIn, rotationRad, members, widthFt, heightFt, depthFt }) => (
             <group
-              key={`roofbearing-${wallId}`}
+              key={`roofbearing-${wallId}-${segmentIndex}`}
               position={[anchorX, anchorYIn / IN_PER_FT, anchorZ]}
               rotation={[0, -rotationRad, 0]}
             >

@@ -141,6 +141,56 @@ describe("allPanelInstances — gableTilesByWallId", () => {
   });
 });
 
+describe("allPanelInstances — boxBeamCoverageByWallId", () => {
+  const fp = buildRectangleFootprint(30, 20);
+  const wallSlots = {
+    AB: [
+      { type: "standard" as const, widthIn: 40 },
+      { type: "standard" as const, widthIn: 40 },
+      { type: "window" as const, widthIn: 40 },
+      { type: "standard" as const, widthIn: 40 },
+    ],
+  };
+
+  it("flags every real instance (including a covered slot's header/sill) whose own slot falls inside the covered range", () => {
+    const boxBeamCoverageByWallId = { AB: { startSlotIndex: 1, endSlotIndex: 3 } };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, boxBeamCoverageByWallId);
+    const ab = instances.filter((i) => i.wallId === "AB");
+    // slot 0: uncovered standard; slot 1: covered standard; slot 2: covered
+    // window (header + sill, same slot index); slot 3: uncovered standard.
+    expect(ab.map((i) => ({ slotIndexInWall: i.slotIndexInWall, panelType: i.panelType, isBoxBeamCovered: i.isBoxBeamCovered }))).toEqual([
+      { slotIndexInWall: 0, panelType: "standard", isBoxBeamCovered: undefined },
+      { slotIndexInWall: 1, panelType: "standard", isBoxBeamCovered: true },
+      { slotIndexInWall: 2, panelType: "header", isBoxBeamCovered: true },
+      { slotIndexInWall: 2, panelType: "sill", isBoxBeamCovered: true },
+      { slotIndexInWall: 3, panelType: "standard", isBoxBeamCovered: undefined },
+    ]);
+  });
+
+  it("leaves isBoxBeamCovered undefined for every instance when the coverage map is omitted, missing this wall, or empty", () => {
+    const withoutArg = allPanelInstances(fp, wallSlots, 40);
+    const withUnrelatedWall = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, { XY: { startSlotIndex: 0, endSlotIndex: 1 } });
+    const withEmptyMap = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, {});
+    for (const instances of [withoutArg, withUnrelatedWall, withEmptyMap]) {
+      for (const inst of instances) expect(inst.isBoxBeamCovered).toBeUndefined();
+    }
+  });
+
+  it("never flags a gable instance, even at a wall/index that otherwise overlaps a covered range numerically", () => {
+    const gableTilesByWallId = { AB: [{ widthIn: 40, leftEdgeHeightIn: 120, rightEdgeHeightIn: 150 }] };
+    // Coverage range [0,4) would numerically "cover" every real slot AND
+    // (if the negative gable index logic were buggy) risk misapplying to
+    // the gable tile too — confirm it never does.
+    const boxBeamCoverageByWallId = { AB: { startSlotIndex: 0, endSlotIndex: 4 } };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", gableTilesByWallId, boxBeamCoverageByWallId);
+    const gable = instances.find((i) => i.panelType === "gable")!;
+    expect(gable.isBoxBeamCovered).toBeUndefined();
+    for (const inst of instances.filter((i) => i.wallId === "AB" && i.panelType !== "gable")) {
+      expect(inst.isBoxBeamCovered).toBe(true);
+    }
+  });
+});
+
 describe("combinedPanelLabel", () => {
   it("returns a single instance's own name unchanged", () => {
     expect(combinedPanelLabel([{ name: "N-2", wallId: "AB", panelType: "standard", widthIn: 40, slotIndexInWall: 1 }])).toBe(
