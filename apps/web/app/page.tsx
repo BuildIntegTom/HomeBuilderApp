@@ -334,6 +334,16 @@ const PHASE2_ASSUMPTIONS = [
     status: "pending-BI-confirmation" as const,
     note: "Header/sill pricing uses the opening's width x full wall height (same area convention as every other panel type) — real header/sill components are shorter than a full wall panel, but their actual dimensions aren't specified yet.",
   },
+  {
+    label: "Gable End Panel pricing",
+    status: "pending-BI-confirmation" as const,
+    note: "Gable End Panels are priced at the roof rate ($42/sqft placeholder) using the trapezoid's own average height above the eave; a tile's vertical safety-gap filler is priced at the standard rate instead, since it's the exact same member a wall-level safety-gap panel uses.",
+  },
+  {
+    label: "Box Beam/Truss Plate/Mid-Wall Bond Beam pricing",
+    status: "pending-BI-confirmation" as const,
+    note: "These are linear members, not flat wall panels, so there's no real width x wall-height face to price — priced at the roof rate ($42/sqft placeholder) using each piece's own covered length x its own assembly's cross-sectional height as a stand-in face area.",
+  },
 ];
 
 type ShapeTool = "rectangle" | "octagon" | "bump-out" | "edit" | "drag-wall";
@@ -3547,19 +3557,83 @@ export default function LayoutEditor() {
           .reduce((s2, s) => s2 + s.widthIn, 0);
         return sum + (widthIn / 12) * story.wallHeightFt;
       }, 0);
+    // Corner panels wrap the building's outside corner — besides their own
+    // "bigger" flat face (widthIn x height, counted above), each one also
+    // closes the corner with a return leg the panel's own thickness deep.
+    // That return leg's face (thicknessIn x height) is real priced area too
+    // (Tommy: "we also include one side of the panelwidth in the price
+    // calculation"), counted once per corner panel — every corner panel
+    // sits at a true wall-run end by construction, so no separate
+    // end-detection is needed.
+    const cornerEdgeAreaSqFtFor = (type: PanelSlot["type"]) =>
+      stories.reduce((sum, story) => {
+        const count = Object.values(story.wallSlots)
+          .flat()
+          .filter((s) => s.type === type).length;
+        return sum + count * (thicknessIn / 12) * story.wallHeightFt;
+      }, 0);
+
+    // Gable End Panels weren't priced at all before — trapezoid face area
+    // (width x average local height above the eave), the same local-height
+    // basis buildGablePanelMembers itself uses. A tile's own isSafetyGap
+    // flag means it built via buildSafetyGapMembers instead — the exact
+    // same member a wall-level safety-gap panel uses — so it's priced at
+    // the standard rate, matching that existing precedent, using the same
+    // taller-edge height basis buildSafetyGapMembers itself is called with.
+    // Any vertical-gap overflow filler (a real gable's rise exceeding the
+    // 8ft panel cap) stacks additively on whichever tile it belongs to, so
+    // it's priced at that same tile's own rate. Clamped at 0: a wall's
+    // roofProfilePointHeightsFt is an ABSOLUTE anchor height (see
+    // computeGableTiledRow/resolveAnchors), not a rise above the eave — an
+    // unconfigured/low profile point can legitimately sit below the eave
+    // (e.g. a 2-story building's default 16ft "peak" is below its own
+    // eave), which would otherwise price as negative area for a panel that
+    // physically can't have negative height.
+    let gableRoofAreaSqFt = 0;
+    let gableStandardAreaSqFt = 0;
+    for (const tiles of Object.values(gableTilesByWallId)) {
+      for (const t of tiles) {
+        const localLeftIn = Math.max(0, t.leftEdgeHeightIn - gableEaveHeightIn);
+        const localRightIn = Math.max(0, t.rightEdgeHeightIn - gableEaveHeightIn);
+        const overflowAreaSqFt = (t.widthIn / 12) * ((t.verticalGapHeightIn ?? 0) / 12);
+        if (t.isSafetyGap) {
+          gableStandardAreaSqFt += (t.widthIn / 12) * (Math.max(localLeftIn, localRightIn) / 12) + overflowAreaSqFt;
+        } else {
+          gableRoofAreaSqFt += (t.widthIn / 12) * ((localLeftIn + localRightIn) / 2 / 12) + overflowAreaSqFt;
+        }
+      }
+    }
+
+    // Box Beam/Truss Plate (roofline bearing) and Mid-Wall Bond Beams are
+    // linear members, not flat wall panels, so there's no natural
+    // "width x wall height" face — priced instead by each group's own
+    // elevation face (its real covered length x its own assembly's
+    // cross-sectional height), the same width-x-height sqft convention
+    // every panel above uses, just with the beam's own dimensions.
+    const roofBearingAreaSqFt = roofBearingFabricationGroups.reduce((sum, g) => sum + (g.lengthIn / 12) * (g.heightIn / 12), 0);
+    const midWallBeamAreaSqFt = midWallBondBeamFabricationGroups.reduce((sum, g) => sum + (g.lengthIn / 12) * (g.heightIn / 12), 0);
+
     return computePrice(
       [
         // No distinct rate given for safety/gap panels — priced at the standard rate (assumption, see Review Log).
-        { type: "standard", areaSqFt: areaSqFtFor("standard") + areaSqFtFor("safety-gap") },
+        { type: "standard", areaSqFt: areaSqFtFor("standard") + areaSqFtFor("safety-gap") + gableStandardAreaSqFt },
         // safety-oct-corner is a fabrication-ID variant of the same corner panel, priced identically.
-        { type: "corner", areaSqFt: areaSqFtFor("corner") + areaSqFtFor("safety-oct-corner") },
+        {
+          type: "corner",
+          areaSqFt:
+            areaSqFtFor("corner") +
+            areaSqFtFor("safety-oct-corner") +
+            cornerEdgeAreaSqFtFor("corner") +
+            cornerEdgeAreaSqFtFor("safety-oct-corner"),
+        },
         { type: "braced", areaSqFt: areaSqFtFor("braced") },
         { type: "opening", areaSqFt: areaSqFtFor("window") + areaSqFtFor("door") },
         { type: "column", areaSqFt: areaSqFtFor("column") },
+        { type: "roof", areaSqFt: gableRoofAreaSqFt + roofBearingAreaSqFt + midWallBeamAreaSqFt },
       ],
       effectivePriceModifier,
     );
-  }, [stories, effectivePriceModifier]);
+  }, [stories, effectivePriceModifier, thicknessIn, gableTilesByWallId, gableEaveHeightIn, roofBearingFabricationGroups, midWallBondBeamFabricationGroups]);
 
   const carbonRange = useMemo(
     () =>
@@ -5073,7 +5147,7 @@ export default function LayoutEditor() {
           totalWeightKg={totalWeightKg}
           weightNote={`Straw: ${strawWeight.weightLb.toFixed(1)} lb. Wood (${woodEligibleCount} standard/braced panels): ${(totalWoodWeightKg * KG_TO_LB).toFixed(1)} lb.`}
           price={price}
-          priceNote="Priced per panel type (standard/corner/braced/opening rates), see Review Log."
+          priceNote="Priced per panel type (standard/corner/braced/opening/roof rates), see Review Log."
           carbonSequesteredLb={carbonRange.atStandardMoisture.carbonLb}
           carbonSequesteredKg={carbonRange.atStandardMoisture.carbonKg}
           netCO2eKg={embodiedCarbon.netCO2eKg}
@@ -5166,7 +5240,7 @@ export default function LayoutEditor() {
                   ${price.toFixed(2)}
                   <span className={styles.note}>
                     {" "}
-                    — priced per panel type (standard/corner/braced/opening rates), see Review Log
+                    — priced per panel type (standard/corner/braced/opening/roof rates), see Review Log
                   </span>
                   {role !== "public" && (
                     <div>
