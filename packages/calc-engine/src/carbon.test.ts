@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeCarbonRange, computeCarbonSequestration, computeNetEmbodiedCarbonCO2e } from "./carbon";
+import { computeCarbonRange, computeCarbonSequestration, computeCO2eEquivalencies, computeNetEmbodiedCarbonCO2e } from "./carbon";
 
 describe("computeCarbonSequestration", () => {
   it("strips out moisture (wet-basis) before applying the carbon fraction", () => {
@@ -41,5 +41,32 @@ describe("computeNetEmbodiedCarbonCO2e", () => {
     const result = computeNetEmbodiedCarbonCO2e(50, 0, 10);
     expect(result.concreteCO2eKg).toBe(0);
     expect(result.netCO2eKg).toBeCloseTo(result.strawCO2eKg, 6);
+  });
+});
+
+describe("computeCO2eEquivalencies", () => {
+  it("matches the EPA Greenhouse Gas Equivalencies Calculator reference factors for 1 metric ton (1000kg) CO2e", () => {
+    // 1 metric ton / 3.93e-4 metric tons/mile = 2544.5... miles
+    // 1 metric ton / 9.00e-4 metric tons/lb coal = 1111.1... lb coal
+    // 1 metric ton / 1.24e-5 metric tons/charge = 80645.1... charges
+    const result = computeCO2eEquivalencies(1000);
+    expect(result.milesDriven).toBeCloseTo(2544.529, 2);
+    expect(result.lbCoalBurned).toBeCloseTo(1111.111, 2);
+    expect(result.smartphonesCharged).toBeCloseTo(80645.161, 2);
+  });
+
+  it("scales linearly with the input CO2e mass", () => {
+    const single = computeCO2eEquivalencies(100);
+    const doubled = computeCO2eEquivalencies(200);
+    expect(doubled.milesDriven).toBeCloseTo(single.milesDriven * 2, 6);
+    expect(doubled.lbCoalBurned).toBeCloseTo(single.lbCoalBurned * 2, 6);
+    expect(doubled.smartphonesCharged).toBeCloseTo(single.smartphonesCharged * 2, 6);
+  });
+
+  it("returns all zeros for zero CO2e", () => {
+    const result = computeCO2eEquivalencies(0);
+    expect(result.milesDriven).toBe(0);
+    expect(result.lbCoalBurned).toBe(0);
+    expect(result.smartphonesCharged).toBe(0);
   });
 });

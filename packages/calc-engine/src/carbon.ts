@@ -95,3 +95,37 @@ export function computeNetEmbodiedCarbonCO2e(
     netCO2eKg: strawCO2eKg - concreteCO2eKg,
   };
 }
+
+const KG_TO_METRIC_TON = 0.001;
+
+/** EPA Greenhouse Gas Equivalencies Calculator reference factors (source:
+ * epa.gov/energy/greenhouse-gas-equivalencies-calculator-calculations-and-references,
+ * 2022 national-average data) — fixed published reference constants, not a
+ * Building-Integrity-specific assumption, so (like CARBON_TO_CO2E_RATIO
+ * above) they need no confirmation/status tracking of their own; only the
+ * straw carbon assumptions feeding computeCarbonSequestration (moisture
+ * content, carbon fraction) carry that. */
+const CO2E_METRIC_TONS_PER_MILE_DRIVEN = 3.93e-4;
+const CO2_METRIC_TONS_PER_LB_COAL = 9.0e-4;
+const CO2E_METRIC_TONS_PER_SMARTPHONE_CHARGE = 1.24e-5;
+
+export interface CO2eEquivalencies {
+  milesDriven: number;
+  lbCoalBurned: number;
+  smartphonesCharged: number;
+}
+
+/**
+ * Translates a CO2e mass into everyday-scale equivalents (Tommy: "its
+ * respective conversions for average car driving miles, lbs of coal
+ * burned, and smart phones charged equivalent") — see the EPA reference
+ * constants above.
+ */
+export function computeCO2eEquivalencies(co2eKg: number): CO2eEquivalencies {
+  const co2eMetricTons = co2eKg * KG_TO_METRIC_TON;
+  return {
+    milesDriven: co2eMetricTons / CO2E_METRIC_TONS_PER_MILE_DRIVEN,
+    lbCoalBurned: co2eMetricTons / CO2_METRIC_TONS_PER_LB_COAL,
+    smartphonesCharged: co2eMetricTons / CO2E_METRIC_TONS_PER_SMARTPHONE_CHARGE,
+  };
+}

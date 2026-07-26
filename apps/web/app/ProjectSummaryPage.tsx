@@ -17,6 +17,21 @@ export interface ProjectSummaryPageProps {
   carbonSequesteredKg: number;
   netCO2eKg: number;
   netCO2eNote: string;
+  /** Carbon Sequestered section (Tommy: "shows the equasion and output for
+   * total weight of straw at 15% moisture content converted into lbs of
+   * CO2e and its respective conversions") — the full straw-only breakdown,
+   * standard (15%) moisture basis, plus EPA equivalency conversions. See
+   * computeCarbonRange/computeCO2eEquivalencies in calc-engine. */
+  strawMoistWeightLb: number;
+  strawMoistureContentPct: number;
+  strawDryWeightLb: number;
+  strawCarbonFractionPct: number;
+  strawCarbonLb: number;
+  strawCO2eLb: number;
+  strawCO2eKg: number;
+  co2eEquivalentMilesDriven: number;
+  co2eEquivalentLbCoalBurned: number;
+  co2eEquivalentSmartphonesCharged: number;
   estimatedBearingLb: number;
   estimatedShearLb: number;
   permeanceLabel: string;
@@ -88,6 +103,16 @@ export default function ProjectSummaryPage({
   carbonSequesteredKg,
   netCO2eKg,
   netCO2eNote,
+  strawMoistWeightLb,
+  strawMoistureContentPct,
+  strawDryWeightLb,
+  strawCarbonFractionPct,
+  strawCarbonLb,
+  strawCO2eLb,
+  strawCO2eKg,
+  co2eEquivalentMilesDriven,
+  co2eEquivalentLbCoalBurned,
+  co2eEquivalentSmartphonesCharged,
   estimatedBearingLb,
   estimatedShearLb,
   permeanceLabel,
@@ -180,6 +205,59 @@ export default function ProjectSummaryPage({
           <tr>
             <td>Vapor-openness rule</td>
             <td className={vaporCheckPasses === false ? styles.pendingCell : undefined}>{vaporCheckLabel}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4 className={styles.sectionHeading}>Carbon Sequestered</h4>
+      <table className={styles.fastenerTable}>
+        <tbody>
+          <tr>
+            <td>Straw weight (moist, as-built)</td>
+            <td>{strawMoistWeightLb.toFixed(1)} lb</td>
+          </tr>
+          <tr>
+            <td>Moisture content (standard)</td>
+            <td>{strawMoistureContentPct.toFixed(0)}%</td>
+          </tr>
+          <tr>
+            <td>Dry weight</td>
+            <td>
+              {strawMoistWeightLb.toFixed(1)} lb x (1 &minus; {strawMoistureContentPct.toFixed(0)}%) = {strawDryWeightLb.toFixed(1)} lb
+            </td>
+          </tr>
+          <tr>
+            <td>Carbon fraction of dry mass</td>
+            <td>{strawCarbonFractionPct.toFixed(0)}%</td>
+          </tr>
+          <tr>
+            <td>Carbon sequestered</td>
+            <td>
+              {strawDryWeightLb.toFixed(1)} lb x {strawCarbonFractionPct.toFixed(0)}% = {strawCarbonLb.toFixed(1)} lb carbon
+            </td>
+          </tr>
+          <tr>
+            <td>Converted to CO2e</td>
+            <td>
+              {strawCarbonLb.toFixed(1)} lb carbon x 44/12 (CO2/C molar mass ratio) ={" "}
+              <strong>
+                {strawCO2eLb.toFixed(1)} lb CO2e ({strawCO2eKg.toFixed(1)} kg)
+              </strong>
+            </td>
+          </tr>
+          <tr>
+            <td>Equivalent to</td>
+            <td>
+              ~{Math.round(co2eEquivalentMilesDriven).toLocaleString()} miles driven by an average gas car
+              <br />
+              ~{Math.round(co2eEquivalentLbCoalBurned).toLocaleString()} lb of coal burned
+              <br />~{Math.round(co2eEquivalentSmartphonesCharged).toLocaleString()} smartphones charged
+              <br />
+              <span className={styles.note}>
+                Equivalency factors: EPA Greenhouse Gas Equivalencies Calculator (epa.gov/energy/greenhouse-gas-equivalencies-calculator),
+                national-average reference data.
+              </span>
+            </td>
           </tr>
         </tbody>
       </table>
