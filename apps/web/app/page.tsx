@@ -13,6 +13,7 @@ import {
   computeFootprintAreaSqFt,
   computeGableTiledRow,
   computeJoistLayout,
+  GABLE_SHED_SNAP_THRESHOLD_IN,
   computePanelLoadOrder,
   computePanelsPerStack,
   computePierGrid,
@@ -656,15 +657,40 @@ export default function LayoutEditor() {
   // entry means "not yet customized" (auto-centered) — see
   // computeGableTiledRow's own resolution + snap-to-shed logic.
   const [gableProfilePositionsInByWallId, setGableProfilePositionsInByWallId] = useState<Record<string, (number | null)[]>>({});
-  const handleChangeGableProfilePositionIn = useCallback((wallId: string, pointIndex: number, positionIn: number | undefined) => {
-    setGableProfilePositionsInByWallId((was) => {
-      const next = { ...was };
-      const arr = [...(next[wallId] ?? [])];
-      arr[pointIndex] = positionIn === undefined || Number.isNaN(positionIn) ? null : positionIn;
-      next[wallId] = arr;
-      return next;
-    });
-  }, []);
+  const handleChangeGableProfilePositionIn = useCallback(
+    (wallId: string, pointIndex: number, positionIn: number | undefined) => {
+      const wall = footprint?.walls.find((w) => w.id === wallId);
+      const oldPositionIn = gableProfilePositionsInByWallId[wallId]?.[pointIndex] ?? null;
+      const newPositionIn = positionIn === undefined || Number.isNaN(positionIn) ? null : positionIn;
+
+      setGableProfilePositionsInByWallId((was) => {
+        const next = { ...was };
+        const arr = [...(next[wallId] ?? [])];
+        arr[pointIndex] = newPositionIn;
+        next[wallId] = arr;
+        return next;
+      });
+
+      // Tommy: "the roofline should snap to a new height whenever a gable
+      // end shed roof is the case" — a drag (or typed position) that newly
+      // lands within the shed-snap threshold auto-recomputes this point's
+      // own height to a sensible 4/12 pitch (same formula "Shed Roof (auto
+      // 4/12)" below already uses), rather than leaving whatever height
+      // was set for the wall's previous (likely very different) run. Fires
+      // only on the actual transition into shed-snapped — not on every
+      // pixel of movement while already snapped — so it doesn't fight a
+      // height the user deliberately types in afterward.
+      if (wall) {
+        const wallLengthIn = wall.lengthFt * 12;
+        const isShedSnapped = (posIn: number | null) =>
+          posIn !== null && (posIn < GABLE_SHED_SNAP_THRESHOLD_IN || posIn > wallLengthIn - GABLE_SHED_SNAP_THRESHOLD_IN);
+        if (!isShedSnapped(oldPositionIn) && isShedSnapped(newPositionIn)) {
+          handleChangeRoofProfilePointHeightFt(pointIndex, Math.round((wallHeightFt + wall.lengthFt * (4 / 12)) * 12) / 12);
+        }
+      }
+    },
+    [footprint, gableProfilePositionsInByWallId, wallHeightFt, handleChangeRoofProfilePointHeightFt],
+  );
   // "add shed roof option next to gable end options to auto generate a 4/12
   // scenario of gable end shed roof" (Tommy) — snaps this wall's own first
   // profile point to its start and sets the Roof tab's ridge height so the
