@@ -229,6 +229,7 @@ import PlanViewPage from "./PlanViewPage";
 import PanelFabricationPage from "./PanelFabricationPage";
 import BuildingSummaryRender from "./BuildingSummaryRender";
 import CompassWidget from "./CompassWidget";
+import PageFeaturesButton from "./PageFeaturesButton";
 import { DocumentMetaProvider } from "./DocumentMetaContext";
 import DrawingToolPen from "./DrawingToolPen";
 import EditorToolbar from "./EditorToolbar";
@@ -3005,6 +3006,35 @@ export default function LayoutEditor() {
   const editorToolsLabel =
     editorTab === "wall" ? "Wall Tools" : editorTab === "foundation" ? "Foundation Tools" : editorTab === "floor" ? "Floor Tools" : "Roof Tools";
 
+  // Tommy: "are there any features or text that i may be missing?" — a
+  // short per-tab pointer, mainly toward controls that live outside this
+  // sidebar (Foundation/Floor/Roof keep almost all of their real inputs in
+  // the "<Tab> Tools" section further down the page, not in this sidebar at
+  // all) — see PageFeaturesButton's own doc comment.
+  const pageFeatures: Record<EditorTab, string[]> = {
+    wall: [
+      "Draw: Rectangle or Octagon, then click-drag on the canvas. Add Second Story / Add Bump-out for more complex shapes.",
+      "Edit mode: click a panel to cycle its type (standard → window → door → column), click a corner to mark it least-accessible, or click a wall's own length label to type an exact size (Drag Wall to resize by dragging instead).",
+      "Switch to 3D (top toggle) for Orbit / Edit / Sill & Header tools.",
+      "Use the view arrows (top-left) to open a wall's own elevation view — toggle \"Add Gable End\" or \"Add Layer\" (second story) per wall from there.",
+      "Wall Assembly, Project Summary, Project Totals, Review Log, and every Detail Guide/Shop Drawing page live in the toggleable sections further down — not just this sidebar.",
+    ],
+    foundation: [
+      "Foundation TYPE itself is set from the top bar's \"Zip code / seismic zone / foundation type\" button, not this tab.",
+      "Pier spacing (when the foundation type uses a pier grid) is the only input here.",
+      "Full load-path detail, fastener schedule, and pier count live in \"Foundation Tools\" / the Detail Guide pages further down the page.",
+    ],
+    floor: [
+      "No direct inputs here — floor panels/joists are derived automatically from the foundation's own pier grid and spacing (set on the Foundation tab).",
+      "Full rim-joist/thermal-break detail lives in \"Floor Tools\" / the Detail Guide pages further down the page.",
+    ],
+    roof: [
+      "Roofline profile: Peaked (1 point) or Flat-top (2 points), ridge height (typed or picked by slope) — each point is independently draggable per wall, from that wall's own elevation view.",
+      "Max Gable End Panel height, Heel height (energy-heel truss seat), and the truss/beam bottom-edge inset are all set here.",
+      "\"Add Gable End\" itself is toggled per-wall from that wall's own elevation view (Wall tab), not here.",
+    ],
+  };
+
   // Sticky-note sections (Tommy: "the other sections... appear as its own
   // sticky note on the screen... make sure we aren't hiding any options") —
   // every section that used to be its own always-visible StrawSection in
@@ -3833,6 +3863,7 @@ export default function LayoutEditor() {
                 </button>
               </div>
             )}
+            <PageFeaturesButton features={pageFeatures[editorTab]} />
           </div>
 
           <div className={styles.editorCanvasLayer}>
