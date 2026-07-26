@@ -191,7 +191,7 @@ describe("allPanelInstances — boxBeamCoverageByWallId", () => {
   });
 });
 
-describe("allPanelInstances — midWallBeamBandsByWallId", () => {
+describe("allPanelInstances — midWallBeamsByWallId", () => {
   const fp = buildRectangleFootprint(30, 20);
   const wallSlots = {
     AB: [
@@ -199,21 +199,16 @@ describe("allPanelInstances — midWallBeamBandsByWallId", () => {
       { type: "window" as const, widthIn: 40 },
     ],
   };
+  const fullWidthBeam = { heightIn: 60, assemblyHeightIn: 11, startSlotIndex: 0, endSlotIndex: 2 };
 
-  it("doubles every real instance on an affected wall — one per band — with the correct heightOverrideIn/midWallBeamBand", () => {
-    const midWallBeamBandsByWallId = {
-      AB: [
-        { band: "below-beam" as const, bottomIn: 0, topIn: 60 },
-        { band: "above-beam" as const, bottomIn: 71, topIn: 120 },
-      ],
-    };
-    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, midWallBeamBandsByWallId);
+  it("doubles every real instance on an affected wall — one per band — with the correct heightOverrideIn/midWallBandIndex", () => {
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, { AB: [fullWidthBeam] });
     const ab = instances.filter((i) => i.wallId === "AB");
     // Per band: standard (slot 0) + header+sill (slot 1, window) = 3
     // instances x 2 bands = 6 total.
     expect(ab.length).toBe(6);
-    const below = ab.filter((i) => i.midWallBeamBand === "below-beam");
-    const above = ab.filter((i) => i.midWallBeamBand === "above-beam");
+    const below = ab.filter((i) => i.midWallBandIndex === 0);
+    const above = ab.filter((i) => i.midWallBandIndex === 1);
     expect(below.length).toBe(3);
     expect(above.length).toBe(3);
     for (const inst of below) expect(inst.heightOverrideIn).toBe(60);
@@ -221,13 +216,7 @@ describe("allPanelInstances — midWallBeamBandsByWallId", () => {
   });
 
   it("shares the same slotIndexInWall between a slot's below-band and above-band instances", () => {
-    const midWallBeamBandsByWallId = {
-      AB: [
-        { band: "below-beam" as const, bottomIn: 0, topIn: 60 },
-        { band: "above-beam" as const, bottomIn: 71, topIn: 120 },
-      ],
-    };
-    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, midWallBeamBandsByWallId);
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, { AB: [fullWidthBeam] });
     const standardInstances = instances.filter((i) => i.wallId === "AB" && i.panelType === "standard");
     expect(standardInstances.length).toBe(2);
     expect(standardInstances[0]!.slotIndexInWall).toBe(standardInstances[1]!.slotIndexInWall);
@@ -236,23 +225,74 @@ describe("allPanelInstances — midWallBeamBandsByWallId", () => {
     expect(headers[0]!.slotIndexInWall).toBe(headers[1]!.slotIndexInWall);
   });
 
-  it("produces zero instances for a wall whose bands array is empty (beam consumes the whole story), without throwing", () => {
-    const midWallBeamBandsByWallId = { AB: [] };
-    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, midWallBeamBandsByWallId);
+  it("leaves an unaffected slot with exactly 1 instance (undefined midWallBandIndex) when a beam covers only some slots", () => {
+    // Beam covers only slot 0 (the standard panel), not slot 1 (the window).
+    const partialBeam = { heightIn: 60, assemblyHeightIn: 11, startSlotIndex: 0, endSlotIndex: 1 };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, { AB: [partialBeam] });
+    const standardInstances = instances.filter((i) => i.wallId === "AB" && i.panelType === "standard");
+    expect(standardInstances.length).toBe(2);
+    for (const inst of standardInstances) expect(inst.midWallBandIndex).toBeDefined();
+    const headers = instances.filter((i) => i.wallId === "AB" && i.panelType === "header");
+    expect(headers.length).toBe(1);
+    expect(headers[0]!.midWallBandIndex).toBeUndefined();
+    expect(headers[0]!.heightOverrideIn).toBeUndefined();
+  });
+
+  it("splits into 3 instances when two beams at different heights both cover the same slot", () => {
+    const beams = [
+      { heightIn: 80, assemblyHeightIn: 10, startSlotIndex: 0, endSlotIndex: 1 },
+      { heightIn: 30, assemblyHeightIn: 10, startSlotIndex: 0, endSlotIndex: 1 },
+    ];
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, { AB: beams });
+    const standardInstances = instances.filter((i) => i.wallId === "AB" && i.panelType === "standard");
+    expect(standardInstances.length).toBe(3);
+    expect(standardInstances.map((i) => i.midWallBandIndex).sort()).toEqual([0, 1, 2]);
+    expect(standardInstances.find((i) => i.midWallBandIndex === 0)!.heightOverrideIn).toBe(30);
+    expect(standardInstances.find((i) => i.midWallBandIndex === 1)!.heightOverrideIn).toBe(40); // 80 - (30+10)
+    expect(standardInstances.find((i) => i.midWallBandIndex === 2)!.heightOverrideIn).toBe(30); // 120 - (80+10)
+  });
+
+  it("splits two beams with disjoint horizontal coverage independently", () => {
+    const wideWallSlots = {
+      AB: [
+        { type: "standard" as const, widthIn: 40 },
+        { type: "standard" as const, widthIn: 40 },
+      ],
+    };
+    const beams = [
+      { heightIn: 60, assemblyHeightIn: 11, startSlotIndex: 0, endSlotIndex: 1 },
+      { heightIn: 30, assemblyHeightIn: 11, startSlotIndex: 1, endSlotIndex: 2 },
+    ];
+    const instances = allPanelInstances(fp, wideWallSlots, 40, "plywood", undefined, undefined, 120, { AB: beams });
+    const bySlot0 = instances.filter((i) => i.wallId === "AB" && i.slotIndexInWall === 0);
+    const bySlot1 = instances.filter((i) => i.wallId === "AB" && i.slotIndexInWall === 1);
+    expect(bySlot0.length).toBe(2); // split by beam 0 only
+    expect(bySlot1.length).toBe(2); // split by beam 1 only
+    expect(bySlot0.every((i) => i.heightOverrideIn === 60 || i.heightOverrideIn === 49)).toBe(true);
+    expect(bySlot1.every((i) => i.heightOverrideIn === 30 || i.heightOverrideIn === 79)).toBe(true);
+  });
+
+  it("produces zero instances for a wall whose real slot bands are empty (a beam consumes the whole story), without throwing", () => {
+    const consumingBeam = { heightIn: 0, assemblyHeightIn: 120, startSlotIndex: 0, endSlotIndex: 2 };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, { AB: [consumingBeam] });
     expect(instances.filter((i) => i.wallId === "AB")).toEqual([]);
   });
 
-  it("leaves heightOverrideIn/midWallBeamBand undefined and output byte-identical to omitting the arg, for an unaffected wall / omitted arg / empty map", () => {
+  it("degrades to unaffected (no throw) when midWallBeamsByWallId is passed but storyHeightIn is omitted", () => {
+    const withoutHeight = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, undefined, { AB: [fullWidthBeam] });
     const withoutArg = allPanelInstances(fp, wallSlots, 40);
-    const withUnrelatedWall = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, {
-      XY: [{ band: "below-beam" as const, bottomIn: 0, topIn: 60 }],
-    });
-    const withEmptyMap = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, {});
+    expect(withoutHeight).toEqual(withoutArg);
+  });
+
+  it("leaves heightOverrideIn/midWallBandIndex undefined and output byte-identical to omitting the arg, for an unaffected wall / omitted arg / empty map", () => {
+    const withoutArg = allPanelInstances(fp, wallSlots, 40);
+    const withUnrelatedWall = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, { XY: [fullWidthBeam] });
+    const withEmptyMap = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, {});
     for (const instances of [withoutArg, withUnrelatedWall, withEmptyMap]) {
       expect(instances).toEqual(withoutArg);
       for (const inst of instances) {
         expect(inst.heightOverrideIn).toBeUndefined();
-        expect(inst.midWallBeamBand).toBeUndefined();
+        expect(inst.midWallBandIndex).toBeUndefined();
       }
     }
   });

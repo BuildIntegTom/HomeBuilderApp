@@ -143,40 +143,116 @@ describe("serializeProject / parseProjectFile round-trip", () => {
   });
 });
 
-describe("v19 -> v20 migration (added midWallBeamsByStoryAndWallId)", () => {
-  /** Builds a raw v19-shaped file (midWallBeamsByStoryAndWallId stripped
-   * out entirely, since a v19 file never had one) directly from a real
-   * serialized current state — a v19 caller by definition doesn't have
-   * this field at all. */
-  function makeV19File(overrides: Partial<ProjectState> = {}) {
+describe("v20 -> v21 migration (midWallBeamsByStoryAndWallId: single beam -> array)", () => {
+  /** Builds a raw v20-shaped file (midWallBeamsByStoryAndWallId's own
+   * per-wall value swapped back to a single beam object — no id, no
+   * coverage range, exactly Stage 1's shape) directly from a real
+   * serialized current state. */
+  function makeV20File(
+    midWallBeamsByStoryAndWallId: Record<"ground" | "second", Record<string, { heightIn: number; sizeId: string }>>,
+    overrides: Partial<ProjectState> = {},
+  ) {
     const currentState = serializeProject(makeState(overrides)).state;
-    const { midWallBeamsByStoryAndWallId: _drop, ...v19State } = currentState;
     return {
-      schemaVersion: 19,
+      schemaVersion: 20,
       savedAt: new Date().toISOString(),
-      state: v19State,
+      state: { ...currentState, midWallBeamsByStoryAndWallId },
     };
   }
 
-  it("defaults midWallBeamsByStoryAndWallId to empty ground/second maps", () => {
-    const result = parseProjectFile(JSON.stringify(makeV19File()));
+  it("migrates a ground-floor beam to a 1-element array with full-width coverage from baseWallSlots", () => {
+    const result = parseProjectFile(
+      JSON.stringify(
+        makeV20File({ ground: { AB: { heightIn: 60, sizeId: "9x2-lvl" } }, second: {} }, { baseWallSlots: { AB: [{ type: "standard", widthIn: 40 }, { type: "standard", widthIn: 40 }, { type: "standard", widthIn: 40 }] } }),
+      ),
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.midWallBeamsByStoryAndWallId).toEqual({ ground: {}, second: {} });
+    const beams = result.state.midWallBeamsByStoryAndWallId.ground.AB;
+    expect(beams).toHaveLength(1);
+    expect(beams![0]).toMatchObject({ heightIn: 60, sizeId: "9x2-lvl", startSlotIndex: 0, endSlotIndex: 3 });
+    expect(typeof beams![0]!.id).toBe("string");
+    expect(beams![0]!.id.length).toBeGreaterThan(0);
+  });
+
+  it("migrates a second-story beam's endSlotIndex from stories[1].wallSlots, NOT baseWallSlots (the swap trap)", () => {
+    const result = parseProjectFile(
+      JSON.stringify(
+        makeV20File(
+          { ground: {}, second: { AB: { heightIn: 30, sizeId: "2x10-dimensional" } } },
+          {
+            baseWallSlots: { AB: [{ type: "standard", widthIn: 40 }] }, // 1 slot — must NOT be used for the second-story beam
+            stories: [
+              { id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: { AB: [{ type: "standard", widthIn: 40 }] } },
+              {
+                id: "second",
+                label: "Second Story",
+                wallHeightFt: 9,
+                wallSlots: { AB: [{ type: "standard", widthIn: 40 }, { type: "standard", widthIn: 40 }] },
+              },
+            ],
+          },
+        ),
+      ),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const beams = result.state.midWallBeamsByStoryAndWallId.second.AB;
+    expect(beams).toHaveLength(1);
+    expect(beams![0]).toMatchObject({ heightIn: 30, sizeId: "2x10-dimensional", startSlotIndex: 0, endSlotIndex: 2 });
+  });
+
+  it("migrates beams on both stories for the same wall id independently", () => {
+    const result = parseProjectFile(
+      JSON.stringify(
+        makeV20File(
+          {
+            ground: { AB: { heightIn: 60, sizeId: "9x2-lvl" } },
+            second: { AB: { heightIn: 30, sizeId: "2x8-dimensional" } },
+          },
+          {
+            baseWallSlots: { AB: [{ type: "standard", widthIn: 40 }] },
+            stories: [
+              { id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: { AB: [{ type: "standard", widthIn: 40 }] } },
+              {
+                id: "second",
+                label: "Second Story",
+                wallHeightFt: 9,
+                wallSlots: { AB: [{ type: "standard", widthIn: 40 }, { type: "standard", widthIn: 40 }] },
+              },
+            ],
+          },
+        ),
+      ),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.midWallBeamsByStoryAndWallId.ground.AB![0]).toMatchObject({ endSlotIndex: 1 });
+    expect(result.state.midWallBeamsByStoryAndWallId.second.AB![0]).toMatchObject({ endSlotIndex: 2 });
+    expect(result.state.midWallBeamsByStoryAndWallId.ground.AB![0]!.id).not.toBe(result.state.midWallBeamsByStoryAndWallId.second.AB![0]!.id);
+  });
+
+  it("migrates a wall with zero slots in that story to endSlotIndex: 0 without throwing", () => {
+    const result = parseProjectFile(
+      JSON.stringify(makeV20File({ ground: { XY: { heightIn: 60, sizeId: "9x2-lvl" } }, second: {} }, { baseWallSlots: {} })),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.midWallBeamsByStoryAndWallId.ground.XY![0]).toMatchObject({ startSlotIndex: 0, endSlotIndex: 0 });
   });
 
   it("leaves every other field (e.g. boxBeamCoverageByWallId) untouched by this migration", () => {
     const result = parseProjectFile(
-      JSON.stringify(makeV19File({ boxBeamCoverageByWallId: { AB: { startSlotIndex: 0, endSlotIndex: 2 } } })),
+      JSON.stringify(makeV20File({ ground: {}, second: {} }, { boxBeamCoverageByWallId: { AB: { startSlotIndex: 0, endSlotIndex: 2 } } })),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.boxBeamCoverageByWallId).toEqual({ AB: { startSlotIndex: 0, endSlotIndex: 2 } });
   });
 
-  it("still rejects a version older than the one-version-back migration window (v18, 2 versions back)", () => {
-    const v18File = { ...makeV19File(), schemaVersion: 18 };
-    const result = parseProjectFile(JSON.stringify(v18File));
+  it("still rejects a version older than the one-version-back migration window (v19, 2 versions back)", () => {
+    const v19File = { ...makeV20File({ ground: {}, second: {} }), schemaVersion: 19 };
+    const result = parseProjectFile(JSON.stringify(v19File));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/version/i);

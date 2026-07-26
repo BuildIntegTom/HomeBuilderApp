@@ -6,7 +6,7 @@ import { OrbitControls, TransformControls } from "@react-three/drei";
 import type { Mesh } from "three";
 import {
   computeRoofBearingSegments,
-  computeWallVerticalBands,
+  computeWallVerticalBandsForSlot,
   isSlotBoxBeamCovered,
   panelSlotBoxes3D,
   wallAxis,
@@ -14,10 +14,9 @@ import {
   type Footprint,
   type PanelSlot,
   type PanelSlotBox3D,
-  type WallVerticalBand,
 } from "@building-integrity/geometry";
 import { allPanelInstances, combinedPanelLabel, type PanelInstance } from "./panelInstances";
-import type { MidWallBeam } from "./midWallBeam";
+import { midWallBeamsToGeometry, type MidWallBeam } from "./midWallBeam";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
 import PanelLabel from "./PanelLabel";
@@ -72,8 +71,7 @@ const EMPTY_ID_SET: Set<string> = new Set();
 const EMPTY_GABLE_TILES_BY_WALL_ID: Record<string, { widthIn: number; xStartIn: number; leftEdgeHeightIn: number; rightEdgeHeightIn: number }[]> =
   {};
 const EMPTY_BOX_BEAM_COVERAGE_BY_WALL_ID: Record<string, BoxBeamCoverage> = {};
-const EMPTY_MID_WALL_BEAM_BANDS_BY_WALL_ID: Record<string, WallVerticalBand[]> = {};
-const EMPTY_MID_WALL_BEAMS_BY_WALL_ID: Record<string, MidWallBeam> = {};
+const EMPTY_MID_WALL_BEAMS_BY_WALL_ID: Record<string, MidWallBeam[]> = {};
 // Standard click-vs-drag screen-space threshold (px) before the Orbit
 // tool's click-and-swipe re-centering commits — a plain click stays a
 // true no-op below this.
@@ -227,34 +225,45 @@ function membersForSlot(
  * the story `<group>`'s flat Y position, since a beam-affected wall's own
  * above-band box no longer starts at that story's own floor the way every
  * other box still does. `isTopmostBand` marks whichever band (the last
- * one, bottom-to-top — see computeWallVerticalBands) actually reaches the
- * story's own ceiling; a roofline Box Beam's own per-slot height
- * reduction (see secondStorySlotBoxes below) only ever applies there,
- * since that shortening always comes from the very top of the row
- * regardless of whether a bond beam also splits it lower down. */
+ * one, bottom-to-top — see computeWallVerticalBandsForSlot) actually
+ * reaches the story's own ceiling; a roofline Box Beam's own per-slot
+ * height reduction (see secondStorySlotBoxes below) only ever applies
+ * there, since that shortening always comes from the very top of the row
+ * regardless of how many bond beams also split it lower down. */
 interface SplitPanelSlotBox3D extends PanelSlotBox3D {
   yOffsetFt: number;
-  midWallBeamBand?: "below-beam" | "above-beam";
+  midWallBandIndex?: number;
   isTopmostBand: boolean;
 }
 
+/** Splits every box on a beam-covered slot into its own real per-band
+ * boxes — different slots of the SAME wall can see different band counts
+ * now (each beam has its own horizontal coverage range), so bands are
+ * computed per slot (via computeWallVerticalBandsForSlot), not once for
+ * the whole wall. A slot not covered by any of that wall's beams (checked
+ * directly, not just "this wall has beams somewhere") stays a single,
+ * unsplit box — same "unaffected = unchanged" contract Stage 1 had. */
 function splitForMidWallBeam(
   boxes: PanelSlotBox3D[],
-  bandsByWallId: Record<string, WallVerticalBand[]>,
+  beamsByWallId: Record<string, MidWallBeam[]>,
+  storyHeightIn: number,
 ): SplitPanelSlotBox3D[] {
   const result: SplitPanelSlotBox3D[] = [];
+  const geomByWallId = new Map(Object.entries(beamsByWallId).map(([wallId, beams]) => [wallId, midWallBeamsToGeometry(beams)]));
   for (const box of boxes) {
-    const bands = bandsByWallId[box.wallId];
-    if (!bands) {
+    const geom = geomByWallId.get(box.wallId);
+    const isAffected = geom?.some((b) => isSlotBoxBeamCovered(box.slotIndex, b)) ?? false;
+    if (!isAffected) {
       result.push({ ...box, yOffsetFt: 0, isTopmostBand: true });
       continue;
     }
+    const bands = computeWallVerticalBandsForSlot(box.slotIndex, storyHeightIn, geom!);
     bands.forEach((band, i) => {
       result.push({
         ...box,
         yOffsetFt: band.bottomIn / IN_PER_FT,
         heightFt: (band.topIn - band.bottomIn) / IN_PER_FT,
-        midWallBeamBand: band.band,
+        midWallBandIndex: band.bandIndex,
         isTopmostBand: i === bands.length - 1,
       });
     });
@@ -274,15 +283,15 @@ function groupInstancesBySlot(instances: PanelInstance[]): Map<string, PanelInst
 }
 
 /** A Mid-Wall Bond Beam-affected slot shares one wallId+slotIndex key
- * across its below/above-band instances (same convention a window's own
+ * across its stacked-band instances (same convention a window's own
  * header+sill already use) — this narrows the lookup to just the one
  * band this particular box belongs to, so its label isn't a merge of
- * both bands' names. A box with no band (unaffected wall) returns every
+ * every band's names. A box with no band (unaffected wall) returns every
  * instance for that key unfiltered, exactly today's behavior. */
 function instancesForBox(instancesBySlot: Map<string, PanelInstance[]>, box: SplitPanelSlotBox3D): PanelInstance[] {
   const all = instancesBySlot.get(`${box.wallId}-${box.slotIndex}`) ?? [];
-  if (!box.midWallBeamBand) return all;
-  return all.filter((i) => i.midWallBeamBand === box.midWallBeamBand);
+  if (box.midWallBandIndex === undefined) return all;
+  return all.filter((i) => i.midWallBandIndex === box.midWallBandIndex);
 }
 
 const LABEL_MIN_WIDTH_FT = 0.5;
@@ -582,20 +591,16 @@ interface Building3DViewProps {
   /** Which box-beam size/material every selected wall uses, project-wide
    * (page.tsx's `boxBeamSizeId`) — see BOX_BEAM_SIZE_OPTIONS. */
   boxBeamSizeId?: BoxBeamSizeId;
-  /** Which walls (ground floor) have a Mid-Wall Bond Beam splitting their
-   * own row into real vertical bands (page.tsx's own
-   * `midWallBeamBandsByWallId`, pre-resolved via computeWallVerticalBands)
-   * — a wall with no entry renders exactly as before this feature existed.
-   * Stage 1: at most one beam per wall, full width. */
-  midWallBeamBandsByWallId?: Record<string, WallVerticalBand[]>;
-  /** Same as `midWallBeamBandsByWallId`, for the second story. */
-  secondStoryMidWallBeamBandsByWallId?: Record<string, WallVerticalBand[]>;
-  /** Each beam's own height/sizeId (page.tsx's own
-   * `midWallBeamsByStoryAndWallId.ground`) — bands alone give the split,
-   * but rendering the beam MEMBER itself (via buildBoxBeamMembers) also
-   * needs its own real sizeId. */
-  midWallBeamsByWallId?: Record<string, MidWallBeam>;
-  secondStoryMidWallBeamsByWallId?: Record<string, MidWallBeam>;
+  /** Which walls (ground floor) have one or more Mid-Wall Bond Beams
+   * (page.tsx's own `midWallBeamsByStoryAndWallId.ground`) — a wall with
+   * no entry renders exactly as before this feature existed. Bands are
+   * computed internally per slot (each beam has its own horizontal
+   * coverage range, so different slots of the same wall can see different
+   * band counts) via computeWallVerticalBandsForSlot, not pre-resolved by
+   * the caller. */
+  midWallBeamsByWallId?: Record<string, MidWallBeam[]>;
+  /** Same as `midWallBeamsByWallId`, for the second story. */
+  secondStoryMidWallBeamsByWallId?: Record<string, MidWallBeam[]>;
   /** Renders a static, non-interactive SE bird's-eye frame instead of the
    * normal orbit-able preview — used to capture a PNG for the Project
    * Summary page's static rendering (Tommy: "a static 3d rendering image
@@ -718,8 +723,6 @@ export default function Building3DView({
   trussPlateInsetIn = 0,
   boxBeamCoverageByWallId = EMPTY_BOX_BEAM_COVERAGE_BY_WALL_ID,
   boxBeamSizeId = BOX_BEAM_SIZE_DEFAULT,
-  midWallBeamBandsByWallId = EMPTY_MID_WALL_BEAM_BANDS_BY_WALL_ID,
-  secondStoryMidWallBeamBandsByWallId = EMPTY_MID_WALL_BEAM_BANDS_BY_WALL_ID,
   midWallBeamsByWallId = EMPTY_MID_WALL_BEAMS_BY_WALL_ID,
   secondStoryMidWallBeamsByWallId = EMPTY_MID_WALL_BEAMS_BY_WALL_ID,
   captureMode = false,
@@ -805,8 +808,8 @@ export default function Building3DView({
   // splitting it into two (a beam-covered slot now needs its own Y offset
   // too, not just its own height).
   const slotBoxes = useMemo(
-    () => splitForMidWallBeam(rawSlotBoxes, midWallBeamBandsByWallId),
-    [rawSlotBoxes, midWallBeamBandsByWallId],
+    () => splitForMidWallBeam(rawSlotBoxes, midWallBeamsByWallId, heightIn),
+    [rawSlotBoxes, midWallBeamsByWallId, heightIn],
   );
 
   const slotRenderData = useMemo(
@@ -856,7 +859,7 @@ export default function Building3DView({
   const secondStorySlotBoxes = useMemo(() => {
     if (!footprint || !secondStory) return [];
     const boxes = panelSlotBoxes3D(footprint, secondStory.wallSlots, thicknessIn, secondStory.wallHeightFt, primaryCornerIds);
-    const splitBoxes = splitForMidWallBeam(boxes, secondStoryMidWallBeamBandsByWallId);
+    const splitBoxes = splitForMidWallBeam(boxes, secondStoryMidWallBeamsByWallId, secondStory.wallHeightFt * IN_PER_FT);
     if (Object.keys(boxBeamCoverageByWallId).length === 0) return splitBoxes;
     const heightDeltaFt = computeBoxBeamHeightDeltaIn(boxBeamSizeId) / IN_PER_FT;
     // Roofline Box Beam always shortens from the very top of the row — only
@@ -867,7 +870,7 @@ export default function Building3DView({
         ? { ...box, heightFt: box.heightFt - heightDeltaFt }
         : box,
     );
-  }, [footprint, secondStory, thicknessIn, primaryCornerIds, secondStoryMidWallBeamBandsByWallId, boxBeamCoverageByWallId, boxBeamSizeId]);
+  }, [footprint, secondStory, thicknessIn, primaryCornerIds, secondStoryMidWallBeamsByWallId, boxBeamCoverageByWallId, boxBeamSizeId]);
   const secondStorySlotRenderData = useMemo(
     () =>
       secondStorySlotBoxes.map((box) => ({
@@ -1058,18 +1061,22 @@ export default function Building3DView({
     roofBaseHeightIn,
   ]);
 
-  // Mid-Wall Bond Beam's own member geometry, one per wall (either story)
-  // with a beam — mirrors roofBearingRenderData's own pattern exactly
-  // (wallAxis for X/Z placement, buildBoxBeamMembers for the assembly),
-  // just anchored at that beam's own real height within its own story
-  // instead of always at the roofline. Stage 1: full wall width, so no
-  // computeRoofBearingSegments-style horizontal splitting needed — the
-  // beam's own length is simply that story's own slot-summed wall length.
+  // Mid-Wall Bond Beam's own member geometry, one per BEAM (either story,
+  // a wall can have several) — mirrors roofBearingRenderData's own
+  // pattern (wallAxis for X/Z placement, buildBoxBeamMembers for the
+  // assembly), just anchored at that beam's own real height within its
+  // own story instead of always at the roofline. Each beam's own
+  // horizontal placement/length comes from that story's own cumulative
+  // slot-offset array — the same "slot index -> real X offset" lookup the
+  // roofline box beam already uses, just without needing
+  // computeRoofBearingSegments' 3-way split (a single beam's own coverage
+  // is always one contiguous run).
   const midWallBeamRenderData = useMemo(() => {
     if (!footprint) return [];
     const result: {
       wallId: string;
       story: "ground" | "second";
+      beamId: string;
       anchorX: number;
       anchorZ: number;
       anchorYIn: number;
@@ -1082,7 +1089,7 @@ export default function Building3DView({
     const storiesData: {
       story: "ground" | "second";
       wallSlots: Record<string, PanelSlot[]>;
-      beams: Record<string, MidWallBeam>;
+      beams: Record<string, MidWallBeam[]>;
       baseYIn: number;
     }[] = [{ story: "ground", wallSlots, beams: midWallBeamsByWallId, baseYIn: 0 }];
     if (secondStory) {
@@ -1090,26 +1097,33 @@ export default function Building3DView({
     }
     for (const { story, wallSlots: storyWallSlots, beams, baseYIn } of storiesData) {
       for (const wall of footprint.walls) {
-        const beam = beams[wall.id];
-        if (!beam) continue;
+        const wallBeams = beams[wall.id];
+        if (!wallBeams || wallBeams.length === 0) continue;
         const axis = wallAxis(footprint, wall);
         const slots = storyWallSlots[wall.id] ?? [];
-        const lengthIn = slots.reduce((sum, s) => sum + s.widthIn, 0);
-        if (lengthIn <= 0) continue;
-        const members = buildBoxBeamMembers(lengthIn, thicknessIn, beam.sizeId);
-        const assemblyHeightIn = computeBoxBeamAssemblyHeightIn(beam.sizeId);
-        result.push({
-          wallId: wall.id,
-          story,
-          anchorX: axis.startXFt,
-          anchorZ: axis.startZFt,
-          anchorYIn: baseYIn + beam.heightIn,
-          rotationRad: axis.rotationRad,
-          members,
-          widthFt: lengthIn / IN_PER_FT,
-          heightFt: assemblyHeightIn / IN_PER_FT,
-          depthFt: thicknessIn / IN_PER_FT,
-        });
+        const offsetsIn = slots.reduce<number[]>((acc, s) => [...acc, acc[acc.length - 1]! + s.widthIn], [0]);
+        for (const beam of wallBeams) {
+          const startXIn = offsetsIn[beam.startSlotIndex] ?? 0;
+          const endXIn = offsetsIn[beam.endSlotIndex] ?? 0;
+          const lengthIn = Math.max(0, endXIn - startXIn);
+          if (lengthIn <= 0) continue;
+          const members = buildBoxBeamMembers(lengthIn, thicknessIn, beam.sizeId);
+          const assemblyHeightIn = computeBoxBeamAssemblyHeightIn(beam.sizeId);
+          const offsetFt = startXIn / IN_PER_FT;
+          result.push({
+            wallId: wall.id,
+            story,
+            beamId: beam.id,
+            anchorX: axis.startXFt + axis.dirX * offsetFt,
+            anchorZ: axis.startZFt + axis.dirZ * offsetFt,
+            anchorYIn: baseYIn + beam.heightIn,
+            rotationRad: axis.rotationRad,
+            members,
+            widthFt: lengthIn / IN_PER_FT,
+            heightFt: assemblyHeightIn / IN_PER_FT,
+            depthFt: thicknessIn / IN_PER_FT,
+          });
+        }
       }
     }
     return result;
@@ -1128,10 +1142,19 @@ export default function Building3DView({
     () =>
       groupInstancesBySlot(
         footprint
-          ? allPanelInstances(footprint, wallSlots, standardWidthIn, jackStudConfig, undefined, undefined, midWallBeamBandsByWallId)
+          ? allPanelInstances(
+              footprint,
+              wallSlots,
+              standardWidthIn,
+              jackStudConfig,
+              undefined,
+              undefined,
+              heightIn,
+              Object.fromEntries(Object.entries(midWallBeamsByWallId).map(([id, beams]) => [id, midWallBeamsToGeometry(beams)])),
+            )
           : [],
       ),
-    [footprint, wallSlots, standardWidthIn, jackStudConfig, midWallBeamBandsByWallId],
+    [footprint, wallSlots, standardWidthIn, jackStudConfig, heightIn, midWallBeamsByWallId],
   );
   const secondStoryInstancesBySlot = useMemo(
     () =>
@@ -1144,11 +1167,14 @@ export default function Building3DView({
               jackStudConfig,
               undefined,
               undefined,
-              secondStoryMidWallBeamBandsByWallId,
+              secondStory.wallHeightFt * IN_PER_FT,
+              Object.fromEntries(
+                Object.entries(secondStoryMidWallBeamsByWallId).map(([id, beams]) => [id, midWallBeamsToGeometry(beams)]),
+              ),
             )
           : [],
       ),
-    [footprint, secondStory, standardWidthIn, jackStudConfig, secondStoryMidWallBeamBandsByWallId],
+    [footprint, secondStory, standardWidthIn, jackStudConfig, secondStoryMidWallBeamsByWallId],
   );
 
   const wrapSkins = useMemo(
@@ -1161,7 +1187,7 @@ export default function Building3DView({
     const toWorldPlacedPanel =
       (labelPrefix: string, worldYIn: number) =>
       ({ box, members }: { box: (typeof slotRenderData)[number]["box"]; members: PanelMember[] | null }): WorldPlacedPanel => ({
-        label: `${labelPrefix}${box.wallId}_${box.slotIndex}${box.midWallBeamBand ? `_${box.midWallBeamBand}` : ""}`,
+        label: `${labelPrefix}${box.wallId}_${box.slotIndex}${box.midWallBandIndex !== undefined ? `_band${box.midWallBandIndex}` : ""}`,
         worldXIn: box.anchorX * IN_PER_FT,
         worldZIn: box.anchorZ * IN_PER_FT,
         worldYIn: worldYIn + box.yOffsetFt * IN_PER_FT,
@@ -1195,8 +1221,8 @@ export default function Building3DView({
         }),
       ),
       ...midWallBeamRenderData.map(
-        ({ wallId, story, anchorX, anchorZ, anchorYIn, rotationRad, members }): WorldPlacedPanel => ({
-          label: `midwallbeam_${story}_${wallId}`,
+        ({ wallId, story, beamId, anchorX, anchorZ, anchorYIn, rotationRad, members }): WorldPlacedPanel => ({
+          label: `midwallbeam_${story}_${wallId}_${beamId}`,
           worldXIn: anchorX * IN_PER_FT,
           worldZIn: anchorZ * IN_PER_FT,
           worldYIn: anchorYIn,
@@ -1332,7 +1358,7 @@ export default function Building3DView({
           </mesh>
           {slotRenderData.map(({ box, members }) => (
             <group
-              key={`${box.wallId}-${box.slotIndex}-${box.midWallBeamBand ?? "full"}`}
+              key={`${box.wallId}-${box.slotIndex}-${box.midWallBandIndex ?? "full"}`}
               position={[box.anchorX, box.yOffsetFt, box.anchorZ]}
               rotation={[0, -box.rotationRad, 0]}
               onClick={
@@ -1395,7 +1421,7 @@ export default function Building3DView({
           ))}
           {secondStorySlotRenderData.map(({ box, members }) => (
             <group
-              key={`story2-${box.wallId}-${box.slotIndex}-${box.midWallBeamBand ?? "full"}`}
+              key={`story2-${box.wallId}-${box.slotIndex}-${box.midWallBandIndex ?? "full"}`}
               position={[box.anchorX, wallHeightFt + box.yOffsetFt, box.anchorZ]}
               rotation={[0, -box.rotationRad, 0]}
               onClick={
@@ -1498,8 +1524,8 @@ export default function Building3DView({
               )}
             </group>
           ))}
-          {midWallBeamRenderData.map(({ wallId, story, anchorX, anchorZ, anchorYIn, rotationRad, members, widthFt, heightFt, depthFt }) => (
-            <group key={`midwallbeam-${story}-${wallId}`} position={[anchorX, anchorYIn / IN_PER_FT, anchorZ]} rotation={[0, -rotationRad, 0]}>
+          {midWallBeamRenderData.map(({ beamId, anchorX, anchorZ, anchorYIn, rotationRad, members, widthFt, heightFt, depthFt }) => (
+            <group key={`midwallbeam-${beamId}`} position={[anchorX, anchorYIn / IN_PER_FT, anchorZ]} rotation={[0, -rotationRad, 0]}>
               {simplified ? (
                 <mesh position={[widthFt / 2, heightFt / 2, depthFt / 2]}>
                   <boxGeometry args={[widthFt, heightFt, depthFt]} />

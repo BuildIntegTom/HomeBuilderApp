@@ -20,7 +20,6 @@ import {
   computeRidgeLine,
   computeRoofBearingSegments,
   computeSillRunWidths,
-  computeWallVerticalBands,
   computeTruckLoads,
   cornerOwnership as cornerOwnershipPure,
   dragWallBounded,
@@ -50,7 +49,6 @@ import {
   type Story,
   type TruckDims,
   type Wall,
-  type WallVerticalBand,
 } from "@building-integrity/geometry";
 import {
   computeAssemblyPerm,
@@ -226,7 +224,7 @@ import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
 import { resolveBracedStyle } from "./bracedStyle";
-import type { MidWallBeam } from "./midWallBeam";
+import { midWallBeamsToGeometry, type MidWallBeam } from "./midWallBeam";
 import PierFoundationDiagram from "./PierFoundationDiagram";
 import PlasterCoatEditor from "./PlasterCoatEditor";
 import {
@@ -687,53 +685,73 @@ export default function LayoutEditor() {
   // beam + above-beam") — the SAME box-beam catalog/assembly as the
   // roofline Box Beam above, but placeable at an arbitrary height within
   // EITHER story's own wall (not just the roofline, and not just the
-  // second story). Stage 1: at most one beam per wall, spanning the wall's
-  // full width — story-keyed (unlike boxBeamCoverageByWallId, which is
+  // second story). Stage 2: a wall can have MULTIPLE beams, stacked at
+  // different heights, each with its OWN independent horizontal coverage
+  // range (same BoxBeamCoverage shape the roofline Box Beam already uses)
+  // and own size — story-keyed (unlike boxBeamCoverageByWallId, which is
   // inherently second-story-only) since a bond beam is a general straw-
   // bale technique usable on any story, mirroring the existing
   // `(story: "ground" | "second", ...)` convention already used by
   // onToggleOpening/onSetWindowSillHeight/etc. rather than duplicating
-  // ground/second state pairs.
+  // ground/second state pairs. Banding (how many stacked panels a given
+  // slot splits into) is a per-slot computation now (different slots of
+  // the same wall can see different beam subsets) — computed inside each
+  // real consumer (panelInstances.ts, WallElevationView.tsx,
+  // Building3DView.tsx) via computeWallVerticalBandsForSlot, not
+  // pre-resolved here.
   const [midWallBeamsByStoryAndWallId, setMidWallBeamsByStoryAndWallId] = useState<
-    Record<"ground" | "second", Record<string, MidWallBeam>>
+    Record<"ground" | "second", Record<string, MidWallBeam[]>>
   >({ ground: {}, second: {} });
-  const handleToggleMidWallBeam = (story: "ground" | "second", wallId: string, enabled: boolean) => {
-    setMidWallBeamsByStoryAndWallId((was) => {
-      const next = { ...was, [story]: { ...was[story] } };
-      if (enabled) {
-        const storyHeightFt = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
-        next[story][wallId] = { heightIn: (storyHeightFt * 12) / 2, sizeId: BOX_BEAM_SIZE_DEFAULT };
-      } else {
-        delete next[story][wallId];
-      }
-      return next;
-    });
+  const handleAddMidWallBeam = (story: "ground" | "second", wallId: string) => {
+    const storyHeightFt = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
+    const slotCount = (story === "ground" ? overlayWallSlots : (secondStory?.wallSlots ?? {}))[wallId]?.length ?? 0;
+    const newBeam: MidWallBeam = {
+      id: crypto.randomUUID(),
+      heightIn: (storyHeightFt * 12) / 2,
+      sizeId: BOX_BEAM_SIZE_DEFAULT,
+      startSlotIndex: 0,
+      endSlotIndex: slotCount,
+    };
+    setMidWallBeamsByStoryAndWallId((was) => ({
+      ...was,
+      [story]: { ...was[story], [wallId]: [...(was[story][wallId] ?? []), newBeam] },
+    }));
   };
-  const handleChangeMidWallBeamHeight = (story: "ground" | "second", wallId: string, heightIn: number) => {
-    setMidWallBeamsByStoryAndWallId((was) => {
-      const existing = was[story][wallId];
-      if (!existing) return was;
-      return { ...was, [story]: { ...was[story], [wallId]: { ...existing, heightIn } } };
-    });
+  const handleRemoveMidWallBeam = (story: "ground" | "second", wallId: string, beamId: string) => {
+    setMidWallBeamsByStoryAndWallId((was) => ({
+      ...was,
+      [story]: { ...was[story], [wallId]: (was[story][wallId] ?? []).filter((b) => b.id !== beamId) },
+    }));
   };
-  const handleChangeMidWallBeamSizeId = (story: "ground" | "second", wallId: string, sizeId: BoxBeamSizeId) => {
-    setMidWallBeamsByStoryAndWallId((was) => {
-      const existing = was[story][wallId];
-      if (!existing) return was;
-      return { ...was, [story]: { ...was[story], [wallId]: { ...existing, sizeId } } };
-    });
+  const updateMidWallBeam = (story: "ground" | "second", wallId: string, beamId: string, patch: Partial<MidWallBeam>) => {
+    setMidWallBeamsByStoryAndWallId((was) => ({
+      ...was,
+      [story]: {
+        ...was[story],
+        [wallId]: (was[story][wallId] ?? []).map((b) => (b.id === beamId ? { ...b, ...patch } : b)),
+      },
+    }));
   };
-  const midWallBeamBandsByWallId = useMemo(() => {
-    const result: Record<string, WallVerticalBand[]> = {};
-    for (const [wallId, beam] of Object.entries(midWallBeamsByStoryAndWallId.ground)) {
-      result[wallId] = computeWallVerticalBands(wallHeightFt * 12, beam.heightIn, computeBoxBeamAssemblyHeightIn(beam.sizeId));
-    }
-    return result;
-  }, [midWallBeamsByStoryAndWallId.ground, wallHeightFt]);
-  // secondStoryMidWallBeamBandsByWallId/midWallBeamWallLengthTotalIn live
-  // further down, right after `stories`/`secondStory` are declared — both
-  // need to read them inside a useMemo callback that runs synchronously
-  // during THIS render, unlike the deferred handlers above.
+  const handleChangeMidWallBeamHeight = (story: "ground" | "second", wallId: string, beamId: string, heightIn: number) =>
+    updateMidWallBeam(story, wallId, beamId, { heightIn });
+  const handleChangeMidWallBeamSizeId = (story: "ground" | "second", wallId: string, beamId: string, sizeId: BoxBeamSizeId) =>
+    updateMidWallBeam(story, wallId, beamId, { sizeId });
+  const handleChangeMidWallBeamCoverage = (story: "ground" | "second", wallId: string, beamId: string, coverage: BoxBeamCoverage) =>
+    updateMidWallBeam(story, wallId, beamId, coverage);
+  // Ground floor's own beams, pre-resolved to geometry (sizeId ->
+  // real assemblyHeightIn) — fed straight into allPanelInstances, which
+  // computes each affected slot's own bands itself now (Stage 2).
+  const midWallBeamGeometryByWallId = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(midWallBeamsByStoryAndWallId.ground).map(([wallId, beams]) => [wallId, midWallBeamsToGeometry(beams)]),
+      ),
+    [midWallBeamsByStoryAndWallId.ground],
+  );
+  // midWallBeamWallLengthTotalIn lives further down, right after `stories`
+  // is declared — it needs to read `stories` inside a useMemo callback
+  // that runs synchronously during THIS render, unlike the deferred
+  // handlers above.
 
   // Gable End profile point positions (Tommy: "drag wall tool the peak of
   // this triangle... a sliding scale that you can also click and edit how
@@ -1808,25 +1826,24 @@ export default function LayoutEditor() {
     return secondStory ? [ground, secondStory] : [ground];
   }, [wallHeightFt, overlayWallSlots, secondStory]);
 
-  const secondStoryMidWallBeamBandsByWallId = useMemo(() => {
-    const result: Record<string, WallVerticalBand[]> = {};
-    if (!secondStory) return result;
-    for (const [wallId, beam] of Object.entries(midWallBeamsByStoryAndWallId.second)) {
-      result[wallId] = computeWallVerticalBands(
-        secondStory.wallHeightFt * 12,
-        beam.heightIn,
-        computeBoxBeamAssemblyHeightIn(beam.sizeId),
-      );
-    }
-    return result;
-  }, [midWallBeamsByStoryAndWallId.second, secondStory]);
+  // Sum of every beam's own COVERED length (not the whole wall's run) —
+  // Stage 1 could get away with the wall's full run since coverage was
+  // always 100%; Stage 2 beams can cover just part of a wall.
   const midWallBeamWallLengthTotalIn = useMemo(() => {
     if (!footprint) return 0;
     let totalIn = 0;
     for (const story of stories) {
       const beams = midWallBeamsByStoryAndWallId[story.id];
       for (const wall of footprint.walls) {
-        if (beams[wall.id]) totalIn += (story.wallSlots[wall.id] ?? []).reduce((sum, s) => sum + s.widthIn, 0);
+        const wallBeams = beams[wall.id];
+        if (!wallBeams || wallBeams.length === 0) continue;
+        const offsetsIn = (story.wallSlots[wall.id] ?? []).reduce<number[]>(
+          (acc, s) => [...acc, acc[acc.length - 1]! + s.widthIn],
+          [0],
+        );
+        for (const beam of wallBeams) {
+          totalIn += Math.max(0, (offsetsIn[beam.endSlotIndex] ?? 0) - (offsetsIn[beam.startSlotIndex] ?? 0));
+        }
       }
     }
     return totalIn;
@@ -2064,9 +2081,18 @@ export default function LayoutEditor() {
   const allInstances = useMemo(
     () =>
       footprint
-        ? allPanelInstances(footprint, overlayWallSlots, standardWidthIn, jackStudConfig, gableTilesByWallId, undefined, midWallBeamBandsByWallId)
+        ? allPanelInstances(
+            footprint,
+            overlayWallSlots,
+            standardWidthIn,
+            jackStudConfig,
+            gableTilesByWallId,
+            undefined,
+            wallHeightFt * 12,
+            midWallBeamGeometryByWallId,
+          )
         : [],
-    [footprint, overlayWallSlots, standardWidthIn, jackStudConfig, gableTilesByWallId, midWallBeamBandsByWallId],
+    [footprint, overlayWallSlots, standardWidthIn, jackStudConfig, gableTilesByWallId, wallHeightFt, midWallBeamGeometryByWallId],
   );
 
   // Door Rough Opening height (Tommy: "RO height for doors is almost
@@ -3143,35 +3169,46 @@ export default function LayoutEditor() {
 
   // Mid-Wall Bond Beam's own Shop Fabrication pages — same "walk
   // walls/stories directly, bypass allInstances" shape as
-  // roofBearingFabricationGroups above (its own beam member is a real
-  // per-wall/per-story piece, grouped by size+length across the whole
-  // project the same "exact copies together" rule every other fabricated
-  // part uses), NOT the ground-floor-only allInstances/panelFabricationGroups
-  // pipeline — so a beam's own piece gets a correct Shop Fab page on EITHER
-  // story, even though that wall's own below/above-band wall panels only
-  // flow through Shop Fab on the ground floor today (see
-  // midWallBeamBandsByWallId's own doc comment).
+  // roofBearingFabricationGroups above (each beam's own member is a real
+  // per-beam piece, grouped by size + its own COVERED length across the
+  // whole project the same "exact copies together" rule every other
+  // fabricated part uses — two different beams, even on different walls/
+  // stories, sharing size+covered-length still correctly group together,
+  // since a shop cuts by size+length, not installed height), NOT the
+  // ground-floor-only allInstances/panelFabricationGroups pipeline — so a
+  // beam's own piece gets a correct Shop Fab page on EITHER story, even
+  // though that wall's own below/above-band wall panels only flow through
+  // Shop Fab on the ground floor today (see midWallBeamGeometryByWallId's
+  // own doc comment).
   const midWallBondBeamFabricationGroups = useMemo(() => {
     if (!footprint) return [];
     const groups = new Map<
       string,
-      { sizeId: BoxBeamSizeId; lengthIn: number; walls: { id: string; direction: string; storyLabel: string }[] }
+      { sizeId: BoxBeamSizeId; lengthIn: number; instances: { name: string }[] }
     >();
     for (const story of stories) {
       const beams = midWallBeamsByStoryAndWallId[story.id];
       for (const wall of footprint.walls) {
-        const beam = beams[wall.id];
-        if (!beam) continue;
+        const wallBeams = beams[wall.id];
+        if (!wallBeams || wallBeams.length === 0) continue;
         const direction = wallCompassDirection(wall, footprint);
-        const lengthIn = (story.wallSlots[wall.id] ?? []).reduce((sum, s) => sum + s.widthIn, 0);
-        const key = `${beam.sizeId}-${lengthIn.toFixed(3)}`;
-        const existing = groups.get(key);
-        if (existing) existing.walls.push({ id: wall.id, direction, storyLabel: story.label });
-        else groups.set(key, { sizeId: beam.sizeId, lengthIn, walls: [{ id: wall.id, direction, storyLabel: story.label }] });
+        const offsetsIn = (story.wallSlots[wall.id] ?? []).reduce<number[]>(
+          (acc, s) => [...acc, acc[acc.length - 1]! + s.widthIn],
+          [0],
+        );
+        for (const beam of wallBeams) {
+          const lengthIn = Math.max(0, (offsetsIn[beam.endSlotIndex] ?? 0) - (offsetsIn[beam.startSlotIndex] ?? 0));
+          if (lengthIn <= 0) continue;
+          const key = `${beam.sizeId}-${lengthIn.toFixed(3)}`;
+          const name = `Wall ${wall.id} (${direction}, ${story.label}, ${beam.heightIn.toFixed(1)}in)`;
+          const existing = groups.get(key);
+          if (existing) existing.instances.push({ name });
+          else groups.set(key, { sizeId: beam.sizeId, lengthIn, instances: [{ name }] });
+        }
       }
     }
 
-    return [...groups.entries()].map(([groupKey, { sizeId, lengthIn, walls }]) => {
+    return [...groups.entries()].map(([groupKey, { sizeId, lengthIn, instances }]) => {
       const members = buildBoxBeamMembers(lengthIn, thicknessIn, sizeId);
       const woodWeightKg = computeMemberSetWoodWeight(members).weightKg;
       const vol = computeDensePackCelluloseVolume(lengthIn, thicknessIn, sizeId);
@@ -3193,7 +3230,7 @@ export default function LayoutEditor() {
         heightIn: computeBoxBeamAssemblyHeightIn(sizeId),
         members,
         weightBreakdown,
-        instances: walls.map((w) => ({ name: `Wall ${w.id} (${w.direction}, ${w.storyLabel})` })),
+        instances,
       };
     });
   }, [footprint, stories, midWallBeamsByStoryAndWallId, thicknessIn]);
@@ -4256,11 +4293,19 @@ export default function LayoutEditor() {
                   boxBeamSizeId={boxBeamSizeId}
                   secondStoryEnabled={stories.length > 1}
                   onToggleSecondStory={handleToggleSecondStory}
-                  midWallBeam={midWallBeamsByStoryAndWallId.ground[elevationWall.id]}
-                  secondStoryMidWallBeam={midWallBeamsByStoryAndWallId.second[elevationWall.id]}
-                  onToggleMidWallBeam={(story, enabled) => handleToggleMidWallBeam(story, elevationWall.id, enabled)}
-                  onChangeMidWallBeamHeight={(story, heightIn) => handleChangeMidWallBeamHeight(story, elevationWall.id, heightIn)}
-                  onChangeMidWallBeamSizeId={(story, sizeId) => handleChangeMidWallBeamSizeId(story, elevationWall.id, sizeId)}
+                  midWallBeams={midWallBeamsByStoryAndWallId.ground[elevationWall.id] ?? []}
+                  secondStoryMidWallBeams={midWallBeamsByStoryAndWallId.second[elevationWall.id] ?? []}
+                  onAddMidWallBeam={(story) => handleAddMidWallBeam(story, elevationWall.id)}
+                  onRemoveMidWallBeam={(story, beamId) => handleRemoveMidWallBeam(story, elevationWall.id, beamId)}
+                  onChangeMidWallBeamHeight={(story, beamId, heightIn) =>
+                    handleChangeMidWallBeamHeight(story, elevationWall.id, beamId, heightIn)
+                  }
+                  onChangeMidWallBeamSizeId={(story, beamId, sizeId) =>
+                    handleChangeMidWallBeamSizeId(story, elevationWall.id, beamId, sizeId)
+                  }
+                  onChangeMidWallBeamCoverage={(story, beamId, coverage) =>
+                    handleChangeMidWallBeamCoverage(story, elevationWall.id, beamId, coverage)
+                  }
                   onClose={() => setElevationViewWallId(null)}
                 />
               ) : viewMode === "plan" ? (
@@ -4325,8 +4370,6 @@ export default function LayoutEditor() {
                   trussPlateInsetIn={trussPlateInsetIn}
                   boxBeamCoverageByWallId={boxBeamCoverageByWallId}
                   boxBeamSizeId={boxBeamSizeId}
-                  midWallBeamBandsByWallId={midWallBeamBandsByWallId}
-                  secondStoryMidWallBeamBandsByWallId={secondStoryMidWallBeamBandsByWallId}
                   midWallBeamsByWallId={midWallBeamsByStoryAndWallId.ground}
                   secondStoryMidWallBeamsByWallId={midWallBeamsByStoryAndWallId.second}
                 />
@@ -4365,8 +4408,6 @@ export default function LayoutEditor() {
               trussPlateInsetIn={trussPlateInsetIn}
               boxBeamCoverageByWallId={boxBeamCoverageByWallId}
               boxBeamSizeId={boxBeamSizeId}
-              midWallBeamBandsByWallId={midWallBeamBandsByWallId}
-              secondStoryMidWallBeamBandsByWallId={secondStoryMidWallBeamBandsByWallId}
               midWallBeamsByWallId={midWallBeamsByStoryAndWallId.ground}
               secondStoryMidWallBeamsByWallId={midWallBeamsByStoryAndWallId.second}
               onCapture={handleCaptureRenderImage}

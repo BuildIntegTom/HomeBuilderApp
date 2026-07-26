@@ -1,12 +1,13 @@
 import {
+  computeWallVerticalBandsForSlot,
   isSlotBoxBeamCovered,
   wallCompassDirection,
   computeSillRunWidths,
   type BoxBeamCoverage,
   type CompassDirection,
   type Footprint,
+  type MidWallBeamGeometry,
   type PanelSlot,
-  type WallVerticalBand,
 } from "@building-integrity/geometry";
 import { computeRoughOpeningWidthIn, type BracePattern, type JackStudConfig } from "@building-integrity/panel-catalog";
 
@@ -109,11 +110,14 @@ export interface PanelInstance {
    * nominal height, exactly today's behavior. */
   heightOverrideIn?: number;
   /** Only set alongside heightOverrideIn — which of the wall's own bands
-   * this instance belongs to. Needed because 2 instances (one per band)
-   * now share the same wallId+slotIndexInWall, the same way a window's
-   * header and sill already do — this disambiguates them for any consumer
-   * keyed by that pair. */
-  midWallBeamBand?: "below-beam" | "above-beam";
+   * (0 = lowest, increasing upward) this instance belongs to. Needed
+   * because N+1 instances (one per band) can now share the same
+   * wallId+slotIndexInWall, the same way a window's header and sill
+   * already do — this disambiguates them for any consumer keyed by that
+   * pair. A numeric index, not a "below-beam"/"above-beam" label, since a
+   * slot covered by multiple Mid-Wall Bond Beams can split into more than
+   * 2 bands. */
+  midWallBandIndex?: number;
 }
 
 const SIMPLE_NAMED_TYPES = new Set<PanelSlot["type"]>([
@@ -172,21 +176,27 @@ export function allPanelInstances(
    * `isBoxBeamCovered` flag; never applies to "gable" instances (the roof
    * cap sits above this concern entirely). */
   boxBeamCoverageByWallId?: Record<string, BoxBeamCoverage>,
-  /** Which walls (of THIS story) have a Mid-Wall Bond Beam splitting their
-   * own row into real vertical bands (page.tsx's own
-   * midWallBeamBandsByWallId/secondStoryMidWallBeamBandsByWallId,
-   * pre-resolved via computeWallVerticalBands) — a wall with no entry here
-   * produces exactly today's single instance per slot, completely
-   * unaffected. A wall with an entry re-runs its FULL slot list (every
-   * type, including window/door) once per band — each pass's instances get
-   * heightOverrideIn/midWallBeamBand set to that band's own real
-   * height/identity. A window/door slot is therefore NOT specially
-   * excluded or reassigned to "whichever band it falls in" — it appears
-   * once per band, each sized against that band's own local height.
-   * Placing a beam so a window's own sill/RO height doesn't make sense for
-   * either band is the user's own responsibility (Stage 1 does not
-   * validate this). */
-  midWallBeamBandsByWallId?: Record<string, WallVerticalBand[]>,
+  /** This story's own flat nominal height — only meaningful together with
+   * `midWallBeamsByWallId` below; both omitted (or either alone) = every
+   * slot renders as one unbanded instance, exactly today's behavior. */
+  storyHeightIn?: number,
+  /** Which walls (of THIS story) have one or more Mid-Wall Bond Beams,
+   * each with its own real height AND its own horizontal coverage range
+   * (page.tsx's own midWallBeamsByStoryAndWallId, resolved to geometry via
+   * midWallBeamsToGeometry) — a wall with no entry produces exactly
+   * today's single instance per slot, completely unaffected. Since each
+   * beam has its own horizontal range, different slots of the SAME wall
+   * can see different band counts — recomputed per slot (not hoisted per
+   * wall) via computeWallVerticalBandsForSlot. A slot with N real bands
+   * re-runs (header/sill/simple type alike) once per band, each pass's
+   * instances getting heightOverrideIn/midWallBandIndex set to that
+   * band's own real height/identity. A window/door slot is therefore NOT
+   * specially excluded or reassigned to "whichever band it falls in" — it
+   * appears once per band, each sized against that band's own local
+   * height. Placing a beam so a window's own sill/RO height doesn't make
+   * sense for either band is the user's own responsibility (not
+   * validated). */
+  midWallBeamsByWallId?: Record<string, MidWallBeamGeometry[]>,
 ): PanelInstance[] {
   const instances: PanelInstance[] = [];
   const counters: Partial<Record<CompassDirection, number>> = {};
@@ -208,7 +218,7 @@ export function allPanelInstances(
     verticalGapHeightIn?: number,
     isBoxBeamCovered?: boolean,
     heightOverrideIn?: number,
-    midWallBeamBand?: "below-beam" | "above-beam",
+    midWallBandIndex?: number,
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     instances.push({
@@ -228,7 +238,7 @@ export function allPanelInstances(
       ...(verticalGapHeightIn !== undefined && { verticalGapHeightIn }),
       ...(isBoxBeamCovered !== undefined && { isBoxBeamCovered }),
       ...(heightOverrideIn !== undefined && { heightOverrideIn }),
-      ...(midWallBeamBand !== undefined && { midWallBeamBand }),
+      ...(midWallBandIndex !== undefined && { midWallBandIndex }),
     });
   };
 
@@ -236,17 +246,28 @@ export function allPanelInstances(
     const slots = wallSlots[wall.id] ?? [];
     const direction = wallCompassDirection(wall, footprint);
     const boxBeamCoverage = boxBeamCoverageByWallId?.[wall.id];
-    // A wall with no Mid-Wall Bond Beam runs exactly one pass (band =
-    // undefined, today's unmodified behavior). A wall with one DOES run
-    // its full slot list once per real band (0, 1, or 2 — see
-    // computeWallVerticalBands, never assume exactly 2).
-    const bands = midWallBeamBandsByWallId?.[wall.id] ?? [undefined];
-    for (const band of bands) {
-      const heightOverrideIn = band ? band.topIn - band.bottomIn : undefined;
-      const midWallBeamBand = band?.band;
-      for (let slotIndexInWall = 0; slotIndexInWall < slots.length; slotIndexInWall++) {
-        const slot = slots[slotIndexInWall]!;
-        const isBoxBeamCovered = isSlotBoxBeamCovered(slotIndexInWall, boxBeamCoverage) || undefined;
+    const midWallBeams = midWallBeamsByWallId?.[wall.id];
+    for (let slotIndexInWall = 0; slotIndexInWall < slots.length; slotIndexInWall++) {
+      const slot = slots[slotIndexInWall]!;
+      const isBoxBeamCovered = isSlotBoxBeamCovered(slotIndexInWall, boxBeamCoverage) || undefined;
+      // Different slots of the SAME wall can see different band counts
+      // (each Mid-Wall Bond Beam has its own horizontal range) — recomputed
+      // per slot, not hoisted above this loop. A slot not covered by ANY of
+      // this wall's beams (checked directly, not just "this wall has some
+      // beams somewhere") runs exactly one pass, today's unmodified
+      // behavior — computeWallVerticalBandsForSlot itself would also
+      // return one full-height band for an uncovered slot, but calling it
+      // unconditionally would still set a (redundant but real)
+      // heightOverrideIn/midWallBandIndex on every instance on a wall that
+      // has ANY beam, even slots none of them actually cover.
+      const isMidWallBeamAffected = midWallBeams?.some((b) => isSlotBoxBeamCovered(slotIndexInWall, b)) ?? false;
+      const bands =
+        isMidWallBeamAffected && storyHeightIn !== undefined
+          ? computeWallVerticalBandsForSlot(slotIndexInWall, storyHeightIn, midWallBeams!)
+          : [undefined];
+      for (const band of bands) {
+        const heightOverrideIn = band ? band.topIn - band.bottomIn : undefined;
+        const midWallBandIndex = band?.bandIndex;
         if (slot.type === "window" || slot.type === "door") {
           pushInstance(
             direction,
@@ -265,7 +286,7 @@ export function allPanelInstances(
             undefined,
             isBoxBeamCovered,
             heightOverrideIn,
-            midWallBeamBand,
+            midWallBandIndex,
           );
           if (slot.type === "window") {
             const roWidthIn = computeRoughOpeningWidthIn(slot.widthIn, jackStudConfig);
@@ -287,7 +308,7 @@ export function allPanelInstances(
                 undefined,
                 isBoxBeamCovered,
                 heightOverrideIn,
-                midWallBeamBand,
+                midWallBandIndex,
               );
             }
           }
@@ -309,7 +330,7 @@ export function allPanelInstances(
             undefined,
             isBoxBeamCovered,
             heightOverrideIn,
-            midWallBeamBand,
+            midWallBandIndex,
           );
         }
       }

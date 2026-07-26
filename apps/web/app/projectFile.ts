@@ -33,8 +33,19 @@ import type { MidWallBeam } from "./midWallBeam";
  * v19 file simply never had any (the feature didn't exist yet), so this
  * migration is trivial (defaults to `{ ground: {}, second: {} }`), unlike
  * v18->v19's real data reshape above.
+ * v20->v21: `midWallBeamsByStoryAndWallId`'s own per-wall value changed
+ * from a single `MidWallBeam` to a `MidWallBeam[]` (Tommy: multiple beams
+ * per wall, each with its own independent horizontal coverage range) — a
+ * v20 file's one beam per wall migrates losslessly to a 1-element array,
+ * assigned a fresh id and full-width coverage
+ * (`{startSlotIndex: 0, endSlotIndex: <that wall's own real slot count
+ * for that story>}`), preserving exactly what a v20 file's beam always
+ * meant (Stage 1: always full width). The top-level key itself is
+ * unchanged (present in both v20 and v21), so no REQUIRED_STATE_KEYS
+ * carve-out is needed this time — unlike v18->v19/v19->v20, which each
+ * added/renamed a top-level key.
  */
-export const PROJECT_FILE_VERSION = 20;
+export const PROJECT_FILE_VERSION = 21;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -109,16 +120,16 @@ export interface ProjectState {
   /** Which box-beam size/material every selected wall uses, project-wide
    * — see BOX_BEAM_SIZE_OPTIONS in boxBeamMembers.ts. */
   boxBeamSizeId: BoxBeamSizeId;
-  /** Which walls (on either story) have a Mid-Wall Bond Beam splitting
-   * their own row into real vertical bands, and each beam's own height/
-   * size (Tommy: "cellulose box beam"... "same beam, positionable at any
-   * height in the wall"... "row splits into two: below-beam + above-
-   * beam") — see MidWallBeam/computeWallVerticalBands. A story with no
-   * entries here uses a single full-height row, exactly as before this
-   * feature existed. Story-keyed (unlike boxBeamCoverageByWallId, which
-   * is inherently second-story-only) since a bond beam can exist on
-   * either story. Stage 1: at most one beam per wall, full width. */
-  midWallBeamsByStoryAndWallId: Record<"ground" | "second", Record<string, MidWallBeam>>;
+  /** Which walls (on either story) have one or more Mid-Wall Bond Beams,
+   * each with its own height/size/horizontal coverage (Tommy: "cellulose
+   * box beam"... "same beam, positionable at any height in the wall"...
+   * multiple beams per wall, each with independent partial horizontal
+   * coverage) — see MidWallBeam/computeWallVerticalBandsForSlot. A story
+   * with no entries here uses a single full-height row, exactly as before
+   * this feature existed. Story-keyed (unlike boxBeamCoverageByWallId,
+   * which is inherently second-story-only) since a bond beam can exist on
+   * either story. */
+  midWallBeamsByStoryAndWallId: Record<"ground" | "second", Record<string, MidWallBeam[]>>;
   roofCatcherBeamOffsetIn: number;
   roofCatcherBeamShape: RoofCatcherBeamShape;
   /** Octagon roof-catcher ring's outside diameter (ft) — only shown/used
@@ -233,14 +244,6 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "roofEnabled",
 ];
 
-/** The v19 shape's own required keys — same list as REQUIRED_STATE_KEYS
- * minus `midWallBeamsByStoryAndWallId` (a v19 file simply never had one,
- * no renamed field to swap in — see PROJECT_FILE_VERSION's own v19->v20
- * doc comment). */
-const V19_REQUIRED_STATE_KEYS: string[] = (REQUIRED_STATE_KEYS as string[]).filter(
-  (k) => k !== "midWallBeamsByStoryAndWallId",
-);
-
 /** JSON has no Set type — `primaryCornerIds`/`gableEndWallIds`/
  * `checkedInteriorIds`/`checkedExteriorIds` round-trip as plain arrays.
  * `boxBeamCoverageByWallId` is a plain `Record`, not a Set, so it needs no
@@ -272,6 +275,36 @@ export function serializeProject(state: ProjectState): ProjectFile {
       bracedStateSeeded: true,
     },
   };
+}
+
+function cumulativeOffsetsIn(slots: PanelSlot[]): number[] {
+  return slots.reduce<number[]>((acc, s) => [...acc, acc[acc.length - 1]! + s.widthIn], [0]);
+}
+
+/** v20->v21: a v20 file's single beam per wall migrates to a 1-element
+ * array, given a fresh id and full-width coverage — preserving exactly
+ * what a v20 beam always meant (Stage 1 had no partial coverage). Ground-
+ * floor slot counts come from `baseWallSlots` (the real ground-floor
+ * source of truth, per this file's own `stories[0]` doc comment above —
+ * NOT `state.stories[0]`); second-story counts come from
+ * `state.stories[1]?.wallSlots`. Getting these two backwards would
+ * silently produce a wrong `endSlotIndex` for one story's migrated beams. */
+function migrateMidWallBeamsV20ToV21(
+  v20: Record<"ground" | "second", Record<string, { heightIn: number; sizeId: BoxBeamSizeId }>>,
+  groundWallSlots: Record<string, PanelSlot[]>,
+  secondWallSlots: Record<string, PanelSlot[]>,
+): Record<"ground" | "second", Record<string, MidWallBeam[]>> {
+  const migrateStory = (story: "ground" | "second", slotsByWallId: Record<string, PanelSlot[]>): Record<string, MidWallBeam[]> => {
+    const result: Record<string, MidWallBeam[]> = {};
+    for (const [wallId, beam] of Object.entries(v20[story] ?? {})) {
+      const offsetsIn = cumulativeOffsetsIn(slotsByWallId[wallId] ?? []);
+      result[wallId] = [
+        { id: crypto.randomUUID(), heightIn: beam.heightIn, sizeId: beam.sizeId, startSlotIndex: 0, endSlotIndex: offsetsIn.length - 1 },
+      ];
+    }
+    return result;
+  };
+  return { ground: migrateStory("ground", groundWallSlots), second: migrateStory("second", secondWallSlots) };
 }
 
 export type ParseProjectFileResult = { ok: true; state: ProjectState } | { ok: false; error: string };
@@ -308,7 +341,12 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   }
   const state = file.state as Record<string, unknown>;
 
-  for (const key of isCurrentVersion ? REQUIRED_STATE_KEYS : V19_REQUIRED_STATE_KEYS) {
+  // v20 (the one prior version this file also accepts) has the exact same
+  // top-level required keys as v21 — only midWallBeamsByStoryAndWallId's
+  // own INNER shape changed (see PROJECT_FILE_VERSION's own v20->v21 doc
+  // comment), so one shared list covers both, unlike v18->v19/v19->v20
+  // which each added/renamed a top-level key.
+  for (const key of REQUIRED_STATE_KEYS) {
     if (!(key in state)) return { ok: false, error: `That file is missing the "${key}" field.` };
   }
   if (!Array.isArray(state.primaryCornerIds)) {
@@ -336,11 +374,16 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       heelHeightIn: state.heelHeightIn as number,
       boxBeamCoverageByWallId: state.boxBeamCoverageByWallId as Record<string, BoxBeamCoverage>,
       boxBeamSizeId: (state.boxBeamSizeId as BoxBeamSizeId) ?? BOX_BEAM_SIZE_DEFAULT,
-      // v19 -> v20 migration: trivial (a v19 file never had any bond
-      // beams — see PROJECT_FILE_VERSION's own doc comment).
+      // v20 -> v21 migration: a v20 file's single beam per wall becomes a
+      // 1-element array with full-width coverage (see
+      // migrateMidWallBeamsV20ToV21's own doc comment).
       midWallBeamsByStoryAndWallId: isCurrentVersion
-        ? (state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, MidWallBeam>>)
-        : { ground: {}, second: {} },
+        ? (state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, MidWallBeam[]>>)
+        : migrateMidWallBeamsV20ToV21(
+            state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, { heightIn: number; sizeId: BoxBeamSizeId }>>,
+            (state.baseWallSlots as Record<string, PanelSlot[]>) ?? {},
+            (state.stories as Story[] | undefined)?.[1]?.wallSlots ?? {},
+          ),
       primaryCornerIds: new Set(state.primaryCornerIds as string[]),
       gableEndWallIds: new Set(state.gableEndWallIds as string[]),
       checkedInteriorIds: new Set(state.checkedInteriorIds as string[]),
