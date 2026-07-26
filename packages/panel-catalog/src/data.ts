@@ -1302,6 +1302,18 @@ export const trussPlateInsetDefaultIn: CatalogValue<number> = {
   note: "Tommy: default 5.5in inset from flush with the wall's exterior/floor-plan line. User-editable per project.",
 };
 
+/** Energy-heel (raised-heel) truss seat default (Tommy: "have the truss
+ * seat be the full panel width AND THEN go vertical for 6in (adjustable)").
+ * Real-world energy-heel trusses typically run 6in-15in (9in-10in minimum
+ * for full-depth R-30 insulation over the plate) — 6in is the low end of
+ * that range, matching Tommy's own requested default. User-editable in the
+ * Roof tab; 0 disables the heel entirely. */
+export const gableHeelHeightDefaultIn: CatalogValue<number> = {
+  value: 6,
+  status: "pending-BI-confirmation",
+  note: "Tommy: default 6in energy-heel truss seat height, adjustable. Typical real-world range is 6in-15in.",
+};
+
 /**
  * Preset choices for the bearing member's (truss bottom/roof-catcher beam)
  * "bottom edge reference" — Tommy: "the bottom edge reference should have an

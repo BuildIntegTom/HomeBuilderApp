@@ -143,6 +143,7 @@ import {
   floorRimJoistDetail,
   foundationFastenerSchedule,
   foundationTypes,
+  gableHeelHeightDefaultIn,
   groundScrewProducts,
   groundScrewProductsStatus,
   looseDensePackDefaultThicknessIn,
@@ -531,6 +532,10 @@ export default function LayoutEditor() {
   // filled by a real vertical safety-gap tile instead of silently clamped.
   const [maxGablePanelHeightIn, setMaxGablePanelHeightIn] = useState(96);
   const [trussPlateInsetIn, setTrussPlateInsetIn] = useState(trussPlateInsetDefaultIn.value);
+  // Energy-heel truss seat (Tommy: "have the truss seat be the full panel
+  // width AND THEN go vertical for 6in (adjustable)") — see
+  // computeGableTiledRow's own heelHeightIn doc comment for the mechanics.
+  const [heelHeightIn, setHeelHeightIn] = useState(gableHeelHeightDefaultIn.value);
   const [roofCatcherBeamOffsetIn, setRoofCatcherBeamOffsetIn] = useState(DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN);
   const [roofCatcherBeamShape, setRoofCatcherBeamShape] = useState<RoofCatcherBeamShape>(roofCatcherBeamShapeDefault);
   // Octagon roof-catcher ring (Tommy: "for octagon roofs, lets do an octagon
@@ -807,6 +812,7 @@ export default function LayoutEditor() {
       gableProfilePositionsInByWallId,
       maxGablePanelHeightIn,
       trussPlateInsetIn,
+      heelHeightIn,
       roofCatcherBeamOffsetIn,
       roofCatcherBeamShape,
       octagonRingDiameterFt,
@@ -893,6 +899,7 @@ export default function LayoutEditor() {
       setGableProfilePositionsInByWallId(s.gableProfilePositionsInByWallId);
       setMaxGablePanelHeightIn(s.maxGablePanelHeightIn);
       setTrussPlateInsetIn(s.trussPlateInsetIn);
+      setHeelHeightIn(s.heelHeightIn);
       setRoofCatcherBeamOffsetIn(s.roofCatcherBeamOffsetIn);
       setRoofCatcherBeamShape(s.roofCatcherBeamShape);
       setOctagonRingDiameterFt(s.octagonRingDiameterFt);
@@ -1822,7 +1829,7 @@ export default function LayoutEditor() {
           isExplicitPosition: storedXIn != null,
         };
       });
-      const tiles = computeGableTiledRow(wallLengthIn, gableEaveHeightIn, points, standardWidthIn, trussPlateInsetIn, true);
+      const tiles = computeGableTiledRow(wallLengthIn, gableEaveHeightIn, points, standardWidthIn, trussPlateInsetIn, true, heelHeightIn);
       // The real high edge is capped to maxGablePanelHeightIn's own
       // fabrication ceiling (Tommy: "gable panels...can be up to 8' tall")
       // so a real Gable End Panel is never built taller than
@@ -1859,6 +1866,7 @@ export default function LayoutEditor() {
     maxGablePanelHeightIn,
     standardWidthIn,
     trussPlateInsetIn,
+    heelHeightIn,
   ]);
 
   // Which gable-enabled walls have at least one tile whose real roofline
@@ -3862,6 +3870,7 @@ export default function LayoutEditor() {
                   }
                   onGenerateShedRoof={() => handleGenerateShedRoof(elevationWall)}
                   insetIn={trussPlateInsetIn}
+                  heelHeightIn={heelHeightIn}
                   secondStoryEnabled={stories.length > 1}
                   onToggleSecondStory={handleToggleSecondStory}
                   onClose={() => setElevationViewWallId(null)}
@@ -4195,6 +4204,23 @@ export default function LayoutEditor() {
                   Any real roofline rise above this (up to a hard fabrication ceiling of {GABLE_PANEL_MAX_HEIGHT_IN}in
                   per panel) is filled by a real vertical safety-gap tile instead of clamped — see that wall&apos;s
                   elevation view.
+                </p>
+
+                <label>
+                  Heel height (in){" "}
+                  <input
+                    type="number"
+                    value={heelHeightIn}
+                    min={0}
+                    max={15}
+                    step={0.5}
+                    onChange={(e) => setHeelHeightIn(Math.max(0, Number(e.target.value)))}
+                  />
+                </label>
+                <p className={styles.note}>
+                  Energy-heel (raised-heel) truss seat: at each end that isn&apos;t snapped to a shed, the roofline
+                  runs flat for one full panel width from the corner, then starts the incline this much above the
+                  eave — {gableHeelHeightDefaultIn.note} Set to 0 to disable.
                 </p>
 
                 <div role="group" aria-label="Bottom edge reference" className={styles.toolbar}>

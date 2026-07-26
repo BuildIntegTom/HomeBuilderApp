@@ -324,6 +324,92 @@ describe("computeGableTiledRow — flat-topped profile (2 points)", () => {
   });
 });
 
+describe("computeGableTiledRow — energy-heel truss seat (heelHeightIn)", () => {
+  it("defaults to heelHeightIn=0, matching the pre-heel behavior exactly", () => {
+    const withDefault = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false);
+    const explicitZero = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false, 0);
+    expect(withDefault).toEqual(explicitZero);
+  });
+
+  it("builds no cap tile over the first targetPanelWidthIn from either corner, and starts the real roofline heelHeightIn above the eave", () => {
+    const wallWidthIn = 300;
+    const eaveHeightIn = 120;
+    const targetPanelWidthIn = 40;
+    const heelHeightIn = 6;
+    const panels = computeGableTiledRow(wallWidthIn, eaveHeightIn, [{ xIn: 150, heightIn: 192 }], targetPanelWidthIn, 0, false, heelHeightIn);
+    for (const p of panels) {
+      expect(p.xStartIn).toBeGreaterThanOrEqual(targetPanelWidthIn - 1e-6);
+      expect(p.xEndIn).toBeLessThanOrEqual(wallWidthIn - targetPanelWidthIn + 1e-6);
+    }
+    expect(panels[0]!.xStartIn).toBeCloseTo(targetPanelWidthIn, 6);
+    expect(panels[0]!.leftHeightIn).toBeCloseTo(eaveHeightIn + heelHeightIn, 6);
+    const last = panels[panels.length - 1]!;
+    expect(last.xEndIn).toBeCloseTo(wallWidthIn - targetPanelWidthIn, 6);
+    expect(last.rightHeightIn).toBeCloseTo(eaveHeightIn + heelHeightIn, 6);
+  });
+
+  it("skips the heel on a shed-snapped side, but still applies it on the other (unclaimed) side", () => {
+    const wallWidthIn = 300;
+    const eaveHeightIn = 120;
+    const targetPanelWidthIn = 40;
+    const heelHeightIn = 6;
+    const panels = computeGableTiledRow(
+      wallWidthIn,
+      eaveHeightIn,
+      [{ xIn: GABLE_SHED_SNAP_THRESHOLD_IN - 1, heightIn: 192, isExplicitPosition: true }],
+      targetPanelWidthIn,
+      0,
+      false,
+      heelHeightIn,
+    );
+    // Left end snapped to a shed at the true corner (x=0), not shifted by the heel.
+    expect(panels[0]!.xStartIn).toBeCloseTo(0, 6);
+    expect(panels[0]!.leftHeightIn).toBeCloseTo(192, 6);
+    // Right end is unclaimed, so it still gets the heel treatment.
+    const last = panels[panels.length - 1]!;
+    expect(last.xEndIn).toBeCloseTo(wallWidthIn - targetPanelWidthIn, 6);
+    expect(last.rightHeightIn).toBeCloseTo(eaveHeightIn + heelHeightIn, 6);
+  });
+
+  it("falls back to legacy flat-corner tiling on a wall too narrow to fit the seat(s) it would need", () => {
+    const wallWidthIn = 60; // under 2 * targetPanelWidthIn (80)
+    const eaveHeightIn = 120;
+    const targetPanelWidthIn = 40;
+    const panels = computeGableTiledRow(wallWidthIn, eaveHeightIn, [], targetPanelWidthIn, 0, false, 6);
+    expect(panels[0]!.xStartIn).toBeCloseTo(0, 6);
+    expect(panels[0]!.leftHeightIn).toBeCloseTo(eaveHeightIn, 6);
+    const last = panels[panels.length - 1]!;
+    expect(last.xEndIn).toBeCloseTo(wallWidthIn, 6);
+    expect(last.rightHeightIn).toBeCloseTo(eaveHeightIn, 6);
+    // No anchor ordering corruption — every tile has a positive width.
+    for (const p of panels) expect(p.widthIn).toBeGreaterThan(0);
+  });
+
+  it("clamps a real point that would otherwise fall inside the seat zone out to the seat's own boundary", () => {
+    // xIn=30 sits past the 24in shed-snap threshold (so it doesn't snap) but
+    // inside the 40in-wide seat zone the heel would claim on the left.
+    const wallWidthIn = 300;
+    const eaveHeightIn = 120;
+    const targetPanelWidthIn = 40;
+    const heelHeightIn = 6;
+    const panels = computeGableTiledRow(
+      wallWidthIn,
+      eaveHeightIn,
+      [{ xIn: 30, heightIn: 150, isExplicitPosition: true }],
+      targetPanelWidthIn,
+      0,
+      false,
+      heelHeightIn,
+    );
+    // Every tile is still strictly ordered/positive-width — no corruption.
+    for (const p of panels) expect(p.widthIn).toBeGreaterThan(0);
+    for (let i = 1; i < panels.length; i++) expect(panels[i]!.xStartIn).toBeGreaterThanOrEqual(panels[i - 1]!.xEndIn - 1e-6);
+    // The seat boundary itself is still exactly where the heel puts it.
+    expect(panels[0]!.xStartIn).toBeCloseTo(targetPanelWidthIn, 6);
+    expect(panels[0]!.leftHeightIn).toBeCloseTo(eaveHeightIn + heelHeightIn, 6);
+  });
+});
+
 describe("computeGableTiledRow — horizontal safety-gap absorption (Part B)", () => {
   it("reserves a dedicated GABLE_SAFETY_GAP_WIDTH_IN tile on a long run instead of evenly redistributing overflow", () => {
     // An explicit point snapped to the left end collapses the whole wall

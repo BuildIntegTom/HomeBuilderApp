@@ -71,6 +71,18 @@ const MIN_ANCHOR_GAP_IN = 1;
  * only the first (in input order) actually claims it — the second is
  * clamped back to just outside the snap threshold instead, so both points
  * stay distinct rather than silently colliding.
+ *
+ * If `heelHeightIn > 0`, each unclaimed (non-snapped) end's own corner
+ * anchor is then shifted inward by `targetPanelWidthIn` and up by
+ * `heelHeightIn` — modeling an energy-heel truss seat (the flat run below
+ * that point is the wall's own already-flat top, not a fabricated cap tile,
+ * so no anchor is added there, just the corner anchor's own position moved)
+ * — unless doing so on both unclaimed ends would make them cross (a wall
+ * too narrow for the seat(s) it would need), in which case the heel is
+ * skipped entirely and the corner(s) stay at the plain eave height. Any real
+ * point that would then fall inside an active seat zone is clamped out to
+ * that zone's own boundary, same "clamp instead of collide" treatment as
+ * the already-claimed-end case above.
  */
 interface ResolvedAnchors {
   anchors: RoofAnchor[];
@@ -78,7 +90,13 @@ interface ResolvedAnchors {
   rightSnapped: boolean;
 }
 
-function resolveAnchors(wallWidthIn: number, eaveHeightIn: number, points: RoofProfilePoint[]): ResolvedAnchors {
+function resolveAnchors(
+  wallWidthIn: number,
+  eaveHeightIn: number,
+  points: RoofProfilePoint[],
+  targetPanelWidthIn: number,
+  heelHeightIn: number,
+): ResolvedAnchors {
   let leftAnchor: RoofAnchor = { xIn: 0, heightIn: eaveHeightIn };
   let rightAnchor: RoofAnchor = { xIn: wallWidthIn, heightIn: eaveHeightIn };
   let leftClaimed = false;
@@ -104,6 +122,35 @@ function resolveAnchors(wallWidthIn: number, eaveHeightIn: number, points: RoofP
       else if (xIn > wallWidthIn - GABLE_SHED_SNAP_THRESHOLD_IN) xIn = wallWidthIn - GABLE_SHED_SNAP_THRESHOLD_IN;
     }
     internal.push({ xIn, heightIn: p.heightIn });
+  }
+
+  // Energy-heel truss seat (Tommy: "have the truss seat be the full panel
+  // width AND THEN go vertical for 6in") — on each unclaimed (non-shed)
+  // end, the wall's own already-flat top up to eaveHeightIn already IS the
+  // seat, so no cap tile is built over that stretch at all; the cap row's
+  // own corner anchor just shifts inward by one target panel width and up
+  // by heelHeightIn, so the first real cap tile starts flush there. Skipped
+  // if it wouldn't fit (a wall narrower than the seat(s) it would need) —
+  // falls back to today's flat-corner behavior rather than producing a
+  // squeezed/negative-width seat.
+  if (heelHeightIn > 0) {
+    const leftEligible = !leftClaimed;
+    const rightEligible = !rightClaimed;
+    const seatWidthNeededIn = (leftEligible ? targetPanelWidthIn : 0) + (rightEligible ? targetPanelWidthIn : 0);
+    const heelFits = seatWidthNeededIn > 0 && seatWidthNeededIn <= wallWidthIn;
+    if (heelFits) {
+      if (leftEligible) leftAnchor = { xIn: targetPanelWidthIn, heightIn: eaveHeightIn + heelHeightIn };
+      if (rightEligible) rightAnchor = { xIn: wallWidthIn - targetPanelWidthIn, heightIn: eaveHeightIn + heelHeightIn };
+      // A real point that would otherwise fall inside a now-active seat
+      // zone (e.g. dragged past the shed-snap threshold but still inside
+      // the seat) gets pushed out to that zone's own boundary — same
+      // "clamp instead of collide" treatment as the already-claimed-end
+      // case above.
+      for (const pt of internal) {
+        if (leftEligible && pt.xIn < leftAnchor.xIn) pt.xIn = leftAnchor.xIn;
+        if (rightEligible && pt.xIn > rightAnchor.xIn) pt.xIn = rightAnchor.xIn;
+      }
+    }
   }
 
   internal.sort((a, b) => a.xIn - b.xIn);
@@ -276,6 +323,17 @@ function tileRun(
  * decision itself is always made against the raw `GABLE_SHED_SNAP_THRESHOLD_IN`
  * (never inset-adjusted), so whether a given point snaps doesn't depend on
  * `insetIn` at all.
+ *
+ * `heelHeightIn` (default 0) models an energy-heel/raised-heel truss seat
+ * (Tommy: "have the truss seat be the full panel width AND THEN go vertical
+ * for 6in") — on each unclaimed (non-shed-snapped) end, no cap tile is built
+ * over the first `targetPanelWidthIn` from that corner (the wall's own
+ * already-flat top there already IS the seat — no separate fabricated riser
+ * piece), and the roofline's own first real cap tile starts flush at that
+ * point, `heelHeightIn` above the eave. See `resolveAnchors`'s own doc
+ * comment for the exact mechanics, including the narrow-wall fallback and
+ * the seat-zone point-clamp. Skipped entirely on a shed-snapped side, and
+ * on a wall too narrow to fit the seat(s) it would need.
  */
 export function computeGableTiledRow(
   wallWidthIn: number,
@@ -284,8 +342,9 @@ export function computeGableTiledRow(
   targetPanelWidthIn: number,
   insetIn = 0,
   includeSafetyGap = true,
+  heelHeightIn = 0,
 ): GableTiledPanel[] {
-  const { anchors, leftSnapped, rightSnapped } = resolveAnchors(wallWidthIn, eaveHeightIn, points);
+  const { anchors, leftSnapped, rightSnapped } = resolveAnchors(wallWidthIn, eaveHeightIn, points, targetPanelWidthIn, heelHeightIn);
 
   // A shed-snap anywhere kills the inset globally, not just on the snapped
   // side — matches the pre-existing single-peak behavior exactly (Tommy:

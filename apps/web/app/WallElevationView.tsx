@@ -126,6 +126,11 @@ export interface WallElevationViewProps {
    * same "truss bottom's own width" convention the Roof tab already uses.
    * See computeGableTiledRow's own `insetIn` param. */
   insetIn: number;
+  /** Energy-heel truss seat height (Tommy: "have the truss seat be the full
+   * panel width AND THEN go vertical for 6in (adjustable)") — the project's
+   * real heelHeightIn value; 0 disables it. See computeGableTiledRow's own
+   * `heelHeightIn` param. */
+  heelHeightIn: number;
   /** Whole-building second story toggle (Tommy: "the add lay[er] button
    * should be next to add gable end button") — a second entry point to the
    * exact same action as the 2D toolbar's "Add Second Story" button, just
@@ -185,6 +190,7 @@ export default function WallElevationView({
   onChangeGableProfilePositionIn,
   onGenerateShedRoof,
   insetIn,
+  heelHeightIn,
   secondStoryEnabled,
   onToggleSecondStory,
   onClose,
@@ -233,7 +239,9 @@ export default function WallElevationView({
   // itself. Mirrors page.tsx's own gableTilesByWallId capping exactly, so
   // this preview never disagrees with the real fabrication data.
   const capHeightIn = roofBaseHeightIn + maxGablePanelHeightIn;
-  const rawGablePanels = hasGableEnd ? computeGableTiledRow(wallWidthIn, roofBaseHeightIn, points, targetPanelWidthIn, insetIn, true) : [];
+  const rawGablePanels = hasGableEnd
+    ? computeGableTiledRow(wallWidthIn, roofBaseHeightIn, points, targetPanelWidthIn, insetIn, true, heelHeightIn)
+    : [];
   const gablePanels: (GableTiledPanel & { verticalGapHeightIn?: number })[] = rawGablePanels.map((p) => {
     const leftCappedIn = Math.min(p.leftHeightIn, capHeightIn);
     const rightCappedIn = Math.min(p.rightHeightIn, capHeightIn);

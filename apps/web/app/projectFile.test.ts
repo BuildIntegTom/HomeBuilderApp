@@ -46,6 +46,7 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     gableProfilePositionsInByWallId: {},
     maxGablePanelHeightIn: 96,
     trussPlateInsetIn: 5.5,
+    heelHeightIn: 6,
     roofCatcherBeamOffsetIn: 11.25,
     roofCatcherBeamShape: "Built-up 2-ply 2x12",
     octagonRingDiameterFt: 3,
@@ -139,53 +140,30 @@ describe("serializeProject / parseProjectFile round-trip", () => {
   });
 });
 
-describe("v15 -> v16 migration (bottomOfTrussMaxHeightFt/gablePeakPositionInByWallId -> roofline profile)", () => {
-  /** Builds a raw v15-shaped file (old single ridge height/peak position
-   * fields, none of the new profile fields) directly — bypassing
-   * serializeProject/ProjectState entirely, since a v15 caller by
+describe("v16 -> v17 migration (heelHeightIn)", () => {
+  /** Builds a raw v16-shaped file (no heelHeightIn field at all) directly —
+   * bypassing serializeProject/ProjectState entirely, since a v16 caller by
    * definition doesn't have the current TS types available. */
-  function makeV15File(overrides: { bottomOfTrussMaxHeightFt: number; gablePeakPositionInByWallId: Record<string, number> }) {
+  function makeV16File() {
     const currentState = serializeProject(makeState()).state;
-    const { roofProfileType: _drop1, roofProfilePointHeightsFt: _drop2, gableProfilePositionsInByWallId: _drop3, maxGablePanelHeightIn: _drop4, ...v15State } =
-      currentState;
+    const { heelHeightIn: _drop, ...v16State } = currentState;
     return {
-      schemaVersion: 15,
+      schemaVersion: 16,
       savedAt: new Date().toISOString(),
-      state: {
-        ...v15State,
-        bottomOfTrussMaxHeightFt: overrides.bottomOfTrussMaxHeightFt,
-        gablePeakPositionInByWallId: overrides.gablePeakPositionInByWallId,
-      },
+      state: v16State,
     };
   }
 
-  it("migrates the old ridge height into a length-1 (peaked) roofProfilePointHeightsFt", () => {
-    const result = parseProjectFile(JSON.stringify(makeV15File({ bottomOfTrussMaxHeightFt: 18, gablePeakPositionInByWallId: {} })));
+  it("migrates a v16 file's absent heelHeightIn to 0, preserving its exact existing roofline", () => {
+    const result = parseProjectFile(JSON.stringify(makeV16File()));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.roofProfileType).toBe("peaked");
-    expect(result.state.roofProfilePointHeightsFt).toEqual([18]);
-  });
-
-  it("migrates each wall's old single peak position into a length-1 positions array", () => {
-    const result = parseProjectFile(
-      JSON.stringify(makeV15File({ bottomOfTrussMaxHeightFt: 16, gablePeakPositionInByWallId: { AB: 120 } })),
-    );
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.state.gableProfilePositionsInByWallId).toEqual({ AB: [120] });
-  });
-
-  it("defaults maxGablePanelHeightIn to 96 (the pre-existing hardcoded fabrication cap)", () => {
-    const result = parseProjectFile(JSON.stringify(makeV15File({ bottomOfTrussMaxHeightFt: 16, gablePeakPositionInByWallId: {} })));
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.state.maxGablePanelHeightIn).toBe(96);
+    expect(result.state.heelHeightIn).toBe(0);
   });
 
   it("still rejects a version older than the one-version-back migration window", () => {
-    const v14File = { ...makeV15File({ bottomOfTrussMaxHeightFt: 16, gablePeakPositionInByWallId: {} }), schemaVersion: 14 };
-    const result = parseProjectFile(JSON.stringify(v14File));
+    const v15File = { ...makeV16File(), schemaVersion: 15 };
+    const result = parseProjectFile(JSON.stringify(v15File));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/version/i);

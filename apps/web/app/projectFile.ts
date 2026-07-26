@@ -17,14 +17,14 @@ import type { ViewerRole } from "./viewerRole";
  * a future incompatible version fails loudly (`parseProjectFile`) instead
  * of silently restoring a half-broken layout. One deliberate, bounded
  * exception: `parseProjectFile` also accepts the immediately-prior version
- * and migrates it forward. v15->v16: `bottomOfTrussMaxHeightFt`/
- * `gablePeakPositionInByWallId` (a single ridge height + single per-wall
- * peak position) were replaced by the generalized N-point roofline profile
- * (`roofProfileType`/`roofProfilePointHeightsFt`/
- * `gableProfilePositionsInByWallId`) — see the `schemaVersion === 15`
- * branch below for the lossless "1 point, same height/position" migration.
+ * and migrates it forward. v16->v17: added `heelHeightIn` (the energy-heel
+ * truss seat height — see computeGableTiledRow's own doc comment). A v16
+ * file has no opinion on this at all, so it migrates to 0 (preserving that
+ * project's exact existing roofline) rather than the new-project default of
+ * `gableHeelHeightDefaultIn.value` — retroactively defaulting an old
+ * project to a nonzero heel would silently change its roofline geometry.
  */
-export const PROJECT_FILE_VERSION = 16;
+export const PROJECT_FILE_VERSION = 17;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -83,6 +83,11 @@ export interface ProjectState {
    * filled by a real vertical safety-gap tile instead of silently clamped. */
   maxGablePanelHeightIn: number;
   trussPlateInsetIn: number;
+  /** Energy-heel (raised-heel) truss seat height (Tommy: "have the truss
+   * seat be the full panel width AND THEN go vertical for 6in
+   * (adjustable)") — 0 disables it. See computeGableTiledRow's own
+   * `heelHeightIn` param. */
+  heelHeightIn: number;
   roofCatcherBeamOffsetIn: number;
   roofCatcherBeamShape: RoofCatcherBeamShape;
   /** Octagon roof-catcher ring's outside diameter (ft) — only shown/used
@@ -176,6 +181,7 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "gableProfilePositionsInByWallId",
   "maxGablePanelHeightIn",
   "trussPlateInsetIn",
+  "heelHeightIn",
   "roofCatcherBeamOffsetIn",
   "roofCatcherBeamShape",
   "octagonRingDiameterFt",
@@ -193,13 +199,10 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "roofEnabled",
 ];
 
-/** The v15 shape's own required keys — same list as REQUIRED_STATE_KEYS but
- * with the 4 new roofline-profile fields swapped back for the 2 old fields
- * they replaced — used only to validate a v15 file before migrating it
- * forward (see parseProjectFile's `schemaVersion === 15` branch). */
-const V15_REQUIRED_STATE_KEYS: string[] = (REQUIRED_STATE_KEYS as string[])
-  .filter((k) => k !== "roofProfileType" && k !== "roofProfilePointHeightsFt" && k !== "gableProfilePositionsInByWallId" && k !== "maxGablePanelHeightIn")
-  .concat(["bottomOfTrussMaxHeightFt", "gablePeakPositionInByWallId"]);
+/** The v16 shape's own required keys — same list as REQUIRED_STATE_KEYS
+ * minus the one field new in v17 — used only to validate a v16 file before
+ * migrating it forward (see parseProjectFile's `heelHeightIn` migration). */
+const V16_REQUIRED_STATE_KEYS: string[] = (REQUIRED_STATE_KEYS as string[]).filter((k) => k !== "heelHeightIn");
 
 /** JSON has no Set type — `primaryCornerIds`/`gableEndWallIds`/
  * `checkedInteriorIds`/`checkedExteriorIds` round-trip as plain arrays. */
@@ -266,7 +269,7 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   }
   const state = file.state as Record<string, unknown>;
 
-  for (const key of isCurrentVersion ? REQUIRED_STATE_KEYS : V15_REQUIRED_STATE_KEYS) {
+  for (const key of isCurrentVersion ? REQUIRED_STATE_KEYS : V16_REQUIRED_STATE_KEYS) {
     if (!(key in state)) return { ok: false, error: `That file is missing the "${key}" field.` };
   }
   if (!Array.isArray(state.primaryCornerIds)) {
@@ -282,35 +285,21 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
     return { ok: false, error: '"checkedExteriorIds" should be a list of product ids.' };
   }
 
-  // v15 -> v16 migration: the old single ridge height
-  // (bottomOfTrussMaxHeightFt) + single per-wall peak position
-  // (gablePeakPositionInByWallId) become a 1-point "peaked" roofline
-  // profile — a lossless translation (a single peak is exactly what the
-  // old fields already described), same "not yet customized" (`null`)
-  // sentinel meaning the old absent-entry convention had.
-  let roofProfileType: "peaked" | "flat-top";
-  let roofProfilePointHeightsFt: number[];
-  let gableProfilePositionsInByWallId: Record<string, (number | null)[]>;
-  if (isCurrentVersion) {
-    roofProfileType = state.roofProfileType as "peaked" | "flat-top";
-    roofProfilePointHeightsFt = state.roofProfilePointHeightsFt as number[];
-    gableProfilePositionsInByWallId = state.gableProfilePositionsInByWallId as Record<string, (number | null)[]>;
-  } else {
-    roofProfileType = "peaked";
-    roofProfilePointHeightsFt = [state.bottomOfTrussMaxHeightFt as number];
-    const oldPositions = state.gablePeakPositionInByWallId as Record<string, number>;
-    gableProfilePositionsInByWallId = Object.fromEntries(Object.entries(oldPositions).map(([wallId, posIn]) => [wallId, [posIn]]));
-  }
-
+  // v16 -> v17 migration: heelHeightIn is a new field a v16 file has no
+  // opinion on at all — migrates to 0 (preserving that project's exact
+  // existing roofline) rather than the new-project default, since
+  // retroactively defaulting an old project to a nonzero heel would
+  // silently change its roofline geometry.
   return {
     ok: true,
     state: {
       ...(state as unknown as ProjectState),
       stories: state.stories as Story[],
-      roofProfileType,
-      roofProfilePointHeightsFt,
-      gableProfilePositionsInByWallId,
-      maxGablePanelHeightIn: isCurrentVersion ? (state.maxGablePanelHeightIn as number) : 96,
+      roofProfileType: state.roofProfileType as "peaked" | "flat-top",
+      roofProfilePointHeightsFt: state.roofProfilePointHeightsFt as number[],
+      gableProfilePositionsInByWallId: state.gableProfilePositionsInByWallId as Record<string, (number | null)[]>,
+      maxGablePanelHeightIn: state.maxGablePanelHeightIn as number,
+      heelHeightIn: isCurrentVersion ? (state.heelHeightIn as number) : 0,
       primaryCornerIds: new Set(state.primaryCornerIds as string[]),
       gableEndWallIds: new Set(state.gableEndWallIds as string[]),
       checkedInteriorIds: new Set(state.checkedInteriorIds as string[]),
