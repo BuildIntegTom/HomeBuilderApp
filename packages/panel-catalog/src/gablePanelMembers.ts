@@ -8,8 +8,6 @@ import {
   SKIN_THICKNESS_IN,
   buildGirtRows,
   buildNailer,
-  buildTrussWebBraces,
-  computeTrussWebPeakCount,
 } from "./panelMemberHelpers";
 
 const GABLE_GIRT_ROW_COUNT = 2; // same baseline as the Standard Panel core
@@ -109,38 +107,6 @@ function buildGableCornerStuds(widthIn: number, depthIn: number, leftStudSpanIn:
         notes: `${edgeLabels[side]} edge — angle-cut top (simplified to a plain box top, not the true bevel).`,
       });
     }
-  }
-  return members;
-}
-
-/**
- * Repeating "W-truss" web bracing (Tommy, from reference photos of a real
- * gable-end wall: "study these pictures... to see how i want the gable
- * panels bracing to be") between the flat bottom plate and the sloped top
- * plate, on BOTH wythes (Tommy: "braced panels might as well be on both
- * sides too" — applied here too, for the same reason). Peak count is
- * driven off the SHORTER edge's rise (the more conservative side,
- * whichever end that actually is), so every peak stays at or above the
- * minimum bracing angle even though the taller-edge side's peaks end up
- * taller/steeper — see `computeTrussWebPeakCount`.
- */
-function buildGableTrussBraces(widthIn: number, depthIn: number, leftHeightIn: number, rightHeightIn: number): PanelMember[] {
-  const bottomChordZIn = SKIN_THICKNESS_IN;
-  const topChordZAt = (xIn: number) => {
-    const t = widthIn > 0 ? xIn / widthIn : 0;
-    const leftZ = leftHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2;
-    const rightZ = rightHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2;
-    return leftZ + t * (rightZ - leftZ);
-  };
-  const shorterRiseIn = Math.min(topChordZAt(0), topChordZAt(widthIn)) - bottomChordZIn;
-  const peakCount = computeTrussWebPeakCount(widthIn, shorterRiseIn);
-
-  const members: PanelMember[] = [];
-  for (const [wythe, yIn] of [
-    ["ext", PLATE_2X4_THICKNESS_IN / 2],
-    ["int", depthIn - PLATE_2X4_THICKNESS_IN / 2],
-  ] as const) {
-    members.push(...buildTrussWebBraces(peakCount, widthIn, bottomChordZIn, topChordZAt, yIn, `truss_brace_${wythe}`));
   }
   return members;
 }
@@ -288,7 +254,6 @@ export function buildGablePanelMembers(
       `Rip at ${ripAngleDeg.toFixed(2)}deg, cut to ${ripLengthIn.toFixed(2)}in long.`,
     ),
     ...buildGirtRows(GABLE_GIRT_ROW_COUNT, widthIn, depthIn, shorterStudSpanIn),
-    ...buildGableTrussBraces(widthIn, depthIn, leftHeightIn, rightHeightIn),
   ];
   if (includeNailer) members.push(buildNailer(widthIn, Math.min(leftHeightIn, rightHeightIn)));
   return members;
@@ -323,9 +288,8 @@ export function buildGablePanelSchema(
         type: "deviation",
         text:
           "Trapezoidal envelope — edge stud angle cuts are simplified to plain boxes, not true beveled geometry. " +
-          "Girt rows/nailer use the shorter edge's stud span for vertical spacing, not the full slope. Truss web " +
-          "brace peak count is derived from the shorter edge's rise — the taller-edge side's peaks end up taller/" +
-          "steeper, not independently re-optimized for its own available rise.",
+          "Girt rows/nailer use the shorter edge's stud span for vertical spacing, not the full slope. No diagonal " +
+          "bracing — standard panel with an inclined top only, for the default construction.",
       },
       {
         type: "warning",
