@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { computeSharedRooflineBearingHeightIn } from "@building-integrity/panel-catalog";
 import { PROJECT_FILE_VERSION, parseProjectFile, serializeProject, type ProjectState } from "./projectFile";
 
 function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
@@ -143,116 +144,86 @@ describe("serializeProject / parseProjectFile round-trip", () => {
   });
 });
 
-describe("v20 -> v21 migration (midWallBeamsByStoryAndWallId: single beam -> array)", () => {
-  /** Builds a raw v20-shaped file (midWallBeamsByStoryAndWallId's own
-   * per-wall value swapped back to a single beam object — no id, no
-   * coverage range, exactly Stage 1's shape) directly from a real
-   * serialized current state. */
-  function makeV20File(
-    midWallBeamsByStoryAndWallId: Record<"ground" | "second", Record<string, { heightIn: number; sizeId: string }>>,
-    overrides: Partial<ProjectState> = {},
-  ) {
+describe("v21 -> v22 migration (roofProfilePointHeightsFt: absolute height -> rise above eave)", () => {
+  /** Builds a raw v21-shaped file (roofProfilePointHeightsFt still holding
+   * absolute heights) directly from a real serialized current state. */
+  function makeV21File(roofProfilePointHeightsFt: number[], overrides: Partial<ProjectState> = {}) {
     const currentState = serializeProject(makeState(overrides)).state;
     return {
-      schemaVersion: 20,
+      schemaVersion: 21,
       savedAt: new Date().toISOString(),
-      state: { ...currentState, midWallBeamsByStoryAndWallId },
+      state: { ...currentState, roofProfilePointHeightsFt },
     };
   }
 
-  it("migrates a ground-floor beam to a 1-element array with full-width coverage from baseWallSlots", () => {
+  it("subtracts the ground-floor eave height (no roof enabled) from a single-story file", () => {
+    // wallHeightFt: 10ft eave, roofEnabled: false -> no truss-plate bearing added.
+    const result = parseProjectFile(JSON.stringify(makeV21File([26], { wallHeightFt: 10, roofEnabled: false, stories: [{ id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: {} }] })));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.roofProfilePointHeightsFt[0]).toBeCloseTo(16, 6);
+  });
+
+  it("also subtracts the shared truss-plate bearing height when roofEnabled is true", () => {
+    const bearingFt = computeSharedRooflineBearingHeightIn() / 12;
     const result = parseProjectFile(
       JSON.stringify(
-        makeV20File({ ground: { AB: { heightIn: 60, sizeId: "9x2-lvl" } }, second: {} }, { baseWallSlots: { AB: [{ type: "standard", widthIn: 40 }, { type: "standard", widthIn: 40 }, { type: "standard", widthIn: 40 }] } }),
+        makeV21File([26], { wallHeightFt: 10, roofEnabled: true, stories: [{ id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: {} }] }),
       ),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const beams = result.state.midWallBeamsByStoryAndWallId.ground.AB;
-    expect(beams).toHaveLength(1);
-    expect(beams![0]).toMatchObject({ heightIn: 60, sizeId: "9x2-lvl", startSlotIndex: 0, endSlotIndex: 3 });
-    expect(typeof beams![0]!.id).toBe("string");
-    expect(beams![0]!.id.length).toBeGreaterThan(0);
+    expect(result.state.roofProfilePointHeightsFt[0]).toBeCloseTo(16 - bearingFt, 6);
   });
 
-  it("migrates a second-story beam's endSlotIndex from stories[1].wallSlots, NOT baseWallSlots (the swap trap)", () => {
+  it("sums ground + second story wall height for a 2-story file's eave (from stories[1], not stories[0])", () => {
     const result = parseProjectFile(
       JSON.stringify(
-        makeV20File(
-          { ground: {}, second: { AB: { heightIn: 30, sizeId: "2x10-dimensional" } } },
-          {
-            baseWallSlots: { AB: [{ type: "standard", widthIn: 40 }] }, // 1 slot — must NOT be used for the second-story beam
-            stories: [
-              { id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: { AB: [{ type: "standard", widthIn: 40 }] } },
-              {
-                id: "second",
-                label: "Second Story",
-                wallHeightFt: 9,
-                wallSlots: { AB: [{ type: "standard", widthIn: 40 }, { type: "standard", widthIn: 40 }] },
-              },
-            ],
-          },
-        ),
+        makeV21File([36], {
+          wallHeightFt: 10,
+          roofEnabled: false,
+          stories: [
+            { id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: {} },
+            { id: "second", label: "Second Story", wallHeightFt: 9, wallSlots: {} },
+          ],
+        }),
       ),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const beams = result.state.midWallBeamsByStoryAndWallId.second.AB;
-    expect(beams).toHaveLength(1);
-    expect(beams![0]).toMatchObject({ heightIn: 30, sizeId: "2x10-dimensional", startSlotIndex: 0, endSlotIndex: 2 });
+    // Absolute 36ft - (10+9)ft eave = 17ft rise.
+    expect(result.state.roofProfilePointHeightsFt[0]).toBeCloseTo(17, 6);
   });
 
-  it("migrates beams on both stories for the same wall id independently", () => {
+  it("migrates every point independently for a flat-top (2-point) profile", () => {
     const result = parseProjectFile(
       JSON.stringify(
-        makeV20File(
-          {
-            ground: { AB: { heightIn: 60, sizeId: "9x2-lvl" } },
-            second: { AB: { heightIn: 30, sizeId: "2x8-dimensional" } },
-          },
-          {
-            baseWallSlots: { AB: [{ type: "standard", widthIn: 40 }] },
-            stories: [
-              { id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: { AB: [{ type: "standard", widthIn: 40 }] } },
-              {
-                id: "second",
-                label: "Second Story",
-                wallHeightFt: 9,
-                wallSlots: { AB: [{ type: "standard", widthIn: 40 }, { type: "standard", widthIn: 40 }] },
-              },
-            ],
-          },
-        ),
+        makeV21File([25, 27], {
+          roofProfileType: "flat-top",
+          wallHeightFt: 10,
+          roofEnabled: false,
+          stories: [{ id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: {} }],
+        }),
       ),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.midWallBeamsByStoryAndWallId.ground.AB![0]).toMatchObject({ endSlotIndex: 1 });
-    expect(result.state.midWallBeamsByStoryAndWallId.second.AB![0]).toMatchObject({ endSlotIndex: 2 });
-    expect(result.state.midWallBeamsByStoryAndWallId.ground.AB![0]!.id).not.toBe(result.state.midWallBeamsByStoryAndWallId.second.AB![0]!.id);
-  });
-
-  it("migrates a wall with zero slots in that story to endSlotIndex: 0 without throwing", () => {
-    const result = parseProjectFile(
-      JSON.stringify(makeV20File({ ground: { XY: { heightIn: 60, sizeId: "9x2-lvl" } }, second: {} }, { baseWallSlots: {} })),
-    );
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.state.midWallBeamsByStoryAndWallId.ground.XY![0]).toMatchObject({ startSlotIndex: 0, endSlotIndex: 0 });
+    expect(result.state.roofProfilePointHeightsFt[0]).toBeCloseTo(15, 6);
+    expect(result.state.roofProfilePointHeightsFt[1]).toBeCloseTo(17, 6);
   });
 
   it("leaves every other field (e.g. boxBeamCoverageByWallId) untouched by this migration", () => {
     const result = parseProjectFile(
-      JSON.stringify(makeV20File({ ground: {}, second: {} }, { boxBeamCoverageByWallId: { AB: { startSlotIndex: 0, endSlotIndex: 2 } } })),
+      JSON.stringify(makeV21File([16], { boxBeamCoverageByWallId: { AB: { startSlotIndex: 0, endSlotIndex: 2 } } })),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.boxBeamCoverageByWallId).toEqual({ AB: { startSlotIndex: 0, endSlotIndex: 2 } });
   });
 
-  it("still rejects a version older than the one-version-back migration window (v19, 2 versions back)", () => {
-    const v19File = { ...makeV20File({ ground: {}, second: {} }), schemaVersion: 19 };
-    const result = parseProjectFile(JSON.stringify(v19File));
+  it("still rejects a version older than the one-version-back migration window (v20, 2 versions back)", () => {
+    const v20File = { ...makeV21File([16]), schemaVersion: 20 };
+    const result = parseProjectFile(JSON.stringify(v20File));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/version/i);

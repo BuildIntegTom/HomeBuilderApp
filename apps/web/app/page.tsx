@@ -540,6 +540,10 @@ export default function LayoutEditor() {
   // position (see gableProfilePositionsInByWallId below). Global (Roof
   // tab), same as the single ridge height it replaces.
   const [roofProfileType, setRoofProfileType] = useState<"peaked" | "flat-top">("peaked");
+  // Each entry is a RISE above the eave (ft), not an absolute height — see
+  // ProjectState's own roofProfilePointHeightsFt doc comment. A 16ft
+  // default rise always sits above the eave regardless of story count or
+  // box beam choice, unlike an absolute height would.
   const [roofProfilePointHeightsFt, setRoofProfilePointHeightsFt] = useState<number[]>([16]);
   const handleChangeRoofProfileType = (type: "peaked" | "flat-top") => {
     setRoofProfileType(type);
@@ -799,11 +803,14 @@ export default function LayoutEditor() {
         const isShedSnapped = (posIn: number | null) =>
           posIn !== null && (posIn < GABLE_SHED_SNAP_THRESHOLD_IN || posIn > wallLengthIn - GABLE_SHED_SNAP_THRESHOLD_IN);
         if (!isShedSnapped(oldPositionIn) && isShedSnapped(newPositionIn)) {
-          handleChangeRoofProfilePointHeightFt(pointIndex, Math.round((wallHeightFt + wall.lengthFt * (4 / 12)) * 12) / 12);
+          // A pure rise now (see roofProfilePointHeightsFt's own doc
+          // comment) — no eave/wallHeightFt term needed, unlike the old
+          // absolute-height formula this replaces.
+          handleChangeRoofProfilePointHeightFt(pointIndex, Math.round(wall.lengthFt * (4 / 12) * 12) / 12);
         }
       }
     },
-    [footprint, gableProfilePositionsInByWallId, wallHeightFt, handleChangeRoofProfilePointHeightFt],
+    [footprint, gableProfilePositionsInByWallId, handleChangeRoofProfilePointHeightFt],
   );
   // "add shed roof option next to gable end options to auto generate a 4/12
   // scenario of gable end shed roof" (Tommy) — snaps this wall's own first
@@ -817,7 +824,10 @@ export default function LayoutEditor() {
     // everywhere else) — a raw 4/12 pitch over an arbitrary wall length
     // is a repeating decimal in feet and would otherwise leak an ugly
     // value like 16.666666666666668 into the height input/diagrams below.
-    handleChangeRoofProfilePointHeightFt(0, Math.round((wallHeightFt + wall.lengthFt * (4 / 12)) * 12) / 12);
+    // A pure rise now (see roofProfilePointHeightsFt's own doc comment) —
+    // no eave/wallHeightFt term needed, unlike the old absolute-height
+    // formula this replaces.
+    handleChangeRoofProfilePointHeightFt(0, Math.round(wall.lengthFt * (4 / 12) * 12) / 12);
   };
 
   // Second story (Tommy: "add a second level of panels") — a real,
@@ -1996,7 +2006,7 @@ export default function LayoutEditor() {
   // system is even enabled (no roof-bearing member exists to sit atop).
   const gableEaveHeightIn = roofBaseHeightIn + (roofEnabled ? computeSharedRooflineBearingHeightIn() : 0);
   const gablePreviewLowEdgeHeightIn = gableEaveHeightIn;
-  const gablePreviewHighEdgeHeightIn = Math.max(...roofProfilePointHeightsFt.map((h) => h * 12), gablePreviewLowEdgeHeightIn);
+  const gablePreviewHighEdgeHeightIn = Math.max(...roofProfilePointHeightsFt.map((h) => gableEaveHeightIn + h * 12), gablePreviewLowEdgeHeightIn);
   // Real per-wall gable tiles (Tommy: fix "gable end always spawns to the
   // top" by making each tile a real PanelInstance, not one hardcoded
   // full-ridge-height preview) — same computeGableTiledRow call shape
@@ -2028,7 +2038,12 @@ export default function LayoutEditor() {
         const storedXIn = storedPositions[i];
         return {
           xIn: storedXIn ?? defaultXIn,
-          heightIn: heightFt * 12,
+          // heightFt is a RISE above the eave, not an absolute height (see
+          // roofProfilePointHeightsFt's own doc comment) — computeGableTiledRow
+          // still expects an absolute anchor in the same coordinate space
+          // as gableEaveHeightIn, so convert here at the call site rather
+          // than changing that function's own (still-absolute) contract.
+          heightIn: gableEaveHeightIn + heightFt * 12,
           isExplicitPosition: storedXIn != null,
         };
       });
@@ -3582,13 +3597,11 @@ export default function LayoutEditor() {
     // taller-edge height basis buildSafetyGapMembers itself is called with.
     // Any vertical-gap overflow filler (a real gable's rise exceeding the
     // 8ft panel cap) stacks additively on whichever tile it belongs to, so
-    // it's priced at that same tile's own rate. Clamped at 0: a wall's
-    // roofProfilePointHeightsFt is an ABSOLUTE anchor height (see
-    // computeGableTiledRow/resolveAnchors), not a rise above the eave — an
-    // unconfigured/low profile point can legitimately sit below the eave
-    // (e.g. a 2-story building's default 16ft "peak" is below its own
-    // eave), which would otherwise price as negative area for a panel that
-    // physically can't have negative height.
+    // it's priced at that same tile's own rate. Clamped at 0 as a pure
+    // defensive floor now that roofProfilePointHeightsFt is itself
+    // eave-relative (see its own doc comment) — a panel physically can't
+    // have negative height, so this only bites a degenerate/negative
+    // manually-typed rise, not the normal case.
     let gableRoofAreaSqFt = 0;
     let gableStandardAreaSqFt = 0;
     for (const tiles of Object.values(gableTilesByWallId)) {
@@ -4337,6 +4350,8 @@ export default function LayoutEditor() {
                   wall={elevationWall}
                   slots={overlayWallSlots[elevationWall.id] ?? []}
                   wallHeightFt={wallHeightFt}
+                  hasCornerStart={wallGeometryFor(elevationWall.id)?.hasCornerStart ?? true}
+                  hasCornerEnd={wallGeometryFor(elevationWall.id)?.hasCornerEnd ?? true}
                   secondStorySlots={secondStory?.wallSlots[elevationWall.id]}
                   secondStoryWallHeightFt={secondStory?.wallHeightFt}
                   onToggleOpening={handleToggleOpening}
@@ -4672,7 +4687,7 @@ export default function LayoutEditor() {
                   const runIn = roofProfilePointHeightsFt.length === 1 ? wallWidthIn / 2 : wallWidthIn / 3;
                   return (
                     <label key={i} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      {roofProfilePointHeightsFt.length === 1 ? "Ridge height (ft)" : `Point ${i + 1} height (ft)`}
+                      {roofProfilePointHeightsFt.length === 1 ? "Ridge rise above eave (ft)" : `Point ${i + 1} rise above eave (ft)`}
                       <input
                         type="number"
                         value={heightFt}
@@ -4685,7 +4700,7 @@ export default function LayoutEditor() {
                         onChange={(e) => {
                           const pitchIn12 = Number(e.target.value);
                           if (!pitchIn12) return;
-                          handleChangeRoofProfilePointHeightFt(i, Math.round(gableEaveHeightIn + runIn * (pitchIn12 / 12)) / 12);
+                          handleChangeRoofProfilePointHeightFt(i, Math.round(runIn * (pitchIn12 / 12)) / 12);
                         }}
                       >
                         <option value="">Or pick a slope…</option>
@@ -4699,9 +4714,9 @@ export default function LayoutEditor() {
                   );
                 })}
                 <p className={styles.note}>
-                  A picked slope computes this point&apos;s height from{" "}
+                  A picked slope computes this point&apos;s rise from{" "}
                   {pitchReferenceWall ? `wall ${pitchReferenceWall.id}'s own width` : "a 20ft reference width (no gable-end wall drawn yet)"}{" "}
-                  at the current eave height — the height field stays freely editable afterward either way.
+                  — the rise field stays freely editable afterward either way.
                 </p>
 
                 <label>
@@ -4817,7 +4832,7 @@ export default function LayoutEditor() {
                     {roofProfileType === "peaked" ? (
                       <p className={styles.note}>
                         Column Panel height at a roof-catcher-beam bearing point = ridge height minus this offset (
-                        {computeGableColumnHeightIn((roofProfilePointHeightsFt[0] ?? 0) * 12, roofCatcherBeamOffsetIn).toFixed(1)}
+                        {computeGableColumnHeightIn(gableEaveHeightIn + (roofProfilePointHeightsFt[0] ?? 0) * 12, roofCatcherBeamOffsetIn).toFixed(1)}
                         in at the current inputs) — see the Column Panel Shop Drawing page below.
                       </p>
                     ) : (

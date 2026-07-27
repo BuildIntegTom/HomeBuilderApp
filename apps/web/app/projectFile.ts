@@ -1,6 +1,6 @@
 import type { BoxBeamCoverage, Footprint, PanelSlot, Story } from "@building-integrity/geometry";
 import type { Season } from "@building-integrity/calc-engine";
-import { BOX_BEAM_SIZE_DEFAULT } from "@building-integrity/panel-catalog";
+import { BOX_BEAM_SIZE_DEFAULT, computeSharedRooflineBearingHeightIn } from "@building-integrity/panel-catalog";
 import type {
   BoxBeamSizeId,
   BracingStyle,
@@ -44,8 +44,18 @@ import type { MidWallBeam } from "./midWallBeam";
  * unchanged (present in both v20 and v21), so no REQUIRED_STATE_KEYS
  * carve-out is needed this time — unlike v18->v19/v19->v20, which each
  * added/renamed a top-level key.
+ * v21->v22: `roofProfilePointHeightsFt` changed from an ABSOLUTE height to
+ * a RISE above the eave — a v21 file's absolute height migrates losslessly
+ * by subtracting that project's own eave height (ground + second story
+ * wall height, plus the shared truss-plate bearing height if `roofEnabled`
+ * — see `computeSharedRooflineBearingHeightIn`), the same reference
+ * `gableEaveHeightIn` in page.tsx already computes. Fixes a real bug: the
+ * old absolute semantics meant an unconfigured default height could end up
+ * BELOW a tall building's own eave (e.g. a 2-story building's eave sits
+ * above the single-story-sane 16ft default), producing a roofline that
+ * dips below the eave instead of rising above it.
  */
-export const PROJECT_FILE_VERSION = 21;
+export const PROJECT_FILE_VERSION = 22;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -84,9 +94,14 @@ export interface ProjectState {
    * chopped off") — the roofline gable-end panels tile up to meet. Global
    * (Roof tab), same as the single ridge height it replaces. */
   roofProfileType: "peaked" | "flat-top";
-  /** One real height (ft) per profile point, index-matched to
+  /** One real RISE above the eave (ft), per profile point, index-matched to
    * `roofProfileType`'s own point count (length 1 for "peaked", 2 for
-   * "flat-top") — fully independent, not forced symmetric. */
+   * "flat-top") — fully independent, not forced symmetric. Relative to the
+   * eave (not an absolute height) so a project's own default/unconfigured
+   * profile always rises above whatever eave height that project actually
+   * has (ground + second story + shared truss-plate bearing height), no
+   * matter how many stories or what box beam is in play — see
+   * `PROJECT_FILE_VERSION`'s own v21->v22 doc comment. */
   roofProfilePointHeightsFt: number[];
   /** Per-wall along-wall position (inches from the wall's start corner) for
    * each profile point, index-matched the same way — Tommy: "drag wall
@@ -277,34 +292,24 @@ export function serializeProject(state: ProjectState): ProjectFile {
   };
 }
 
-function cumulativeOffsetsIn(slots: PanelSlot[]): number[] {
-  return slots.reduce<number[]>((acc, s) => [...acc, acc[acc.length - 1]! + s.widthIn], [0]);
-}
-
-/** v20->v21: a v20 file's single beam per wall migrates to a 1-element
- * array, given a fresh id and full-width coverage — preserving exactly
- * what a v20 beam always meant (Stage 1 had no partial coverage). Ground-
- * floor slot counts come from `baseWallSlots` (the real ground-floor
- * source of truth, per this file's own `stories[0]` doc comment above —
- * NOT `state.stories[0]`); second-story counts come from
- * `state.stories[1]?.wallSlots`. Getting these two backwards would
- * silently produce a wrong `endSlotIndex` for one story's migrated beams. */
-function migrateMidWallBeamsV20ToV21(
-  v20: Record<"ground" | "second", Record<string, { heightIn: number; sizeId: BoxBeamSizeId }>>,
-  groundWallSlots: Record<string, PanelSlot[]>,
-  secondWallSlots: Record<string, PanelSlot[]>,
-): Record<"ground" | "second", Record<string, MidWallBeam[]>> {
-  const migrateStory = (story: "ground" | "second", slotsByWallId: Record<string, PanelSlot[]>): Record<string, MidWallBeam[]> => {
-    const result: Record<string, MidWallBeam[]> = {};
-    for (const [wallId, beam] of Object.entries(v20[story] ?? {})) {
-      const offsetsIn = cumulativeOffsetsIn(slotsByWallId[wallId] ?? []);
-      result[wallId] = [
-        { id: crypto.randomUUID(), heightIn: beam.heightIn, sizeId: beam.sizeId, startSlotIndex: 0, endSlotIndex: offsetsIn.length - 1 },
-      ];
-    }
-    return result;
-  };
-  return { ground: migrateStory("ground", groundWallSlots), second: migrateStory("second", secondWallSlots) };
+/** v21->v22: a v21 file's absolute `roofProfilePointHeightsFt` migrates to
+ * a rise-above-the-eave by subtracting that same project's own eave height
+ * — ground + second story wall height (both in ft, from `wallHeightFt`/
+ * `stories[1]?.wallHeightFt`, NOT `stories[0]`, same "otherwise unused by
+ * the loader" caveat as this file's other migrations), plus the shared
+ * truss-plate bearing height when `roofEnabled` (see
+ * `computeSharedRooflineBearingHeightIn` — always the truss-plate's own
+ * height regardless of any per-wall box beam choice, matching page.tsx's
+ * own `gableEaveHeightIn`). */
+function migrateRoofProfilePointHeightsFtV21ToV22(
+  v21HeightsFt: number[],
+  wallHeightFt: number,
+  secondStoryWallHeightFt: number | undefined,
+  roofEnabled: boolean,
+): number[] {
+  const roofBaseHeightIn = (wallHeightFt + (secondStoryWallHeightFt ?? 0)) * 12;
+  const eaveHeightIn = roofBaseHeightIn + (roofEnabled ? computeSharedRooflineBearingHeightIn() : 0);
+  return v21HeightsFt.map((absoluteFt) => absoluteFt - eaveHeightIn / 12);
 }
 
 export type ParseProjectFileResult = { ok: true; state: ProjectState } | { ok: false; error: string };
@@ -341,9 +346,9 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   }
   const state = file.state as Record<string, unknown>;
 
-  // v20 (the one prior version this file also accepts) has the exact same
-  // top-level required keys as v21 — only midWallBeamsByStoryAndWallId's
-  // own INNER shape changed (see PROJECT_FILE_VERSION's own v20->v21 doc
+  // v21 (the one prior version this file also accepts) has the exact same
+  // top-level required keys as v22 — only roofProfilePointHeightsFt's own
+  // VALUES change meaning (see PROJECT_FILE_VERSION's own v21->v22 doc
   // comment), so one shared list covers both, unlike v18->v19/v19->v20
   // which each added/renamed a top-level key.
   for (const key of REQUIRED_STATE_KEYS) {
@@ -368,22 +373,23 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       ...(state as unknown as ProjectState),
       stories: state.stories as Story[],
       roofProfileType: state.roofProfileType as "peaked" | "flat-top",
-      roofProfilePointHeightsFt: state.roofProfilePointHeightsFt as number[],
+      // v21 -> v22 migration: a v21 file's absolute height becomes a rise
+      // above the eave (see migrateRoofProfilePointHeightsFtV21ToV22's own
+      // doc comment).
+      roofProfilePointHeightsFt: isCurrentVersion
+        ? (state.roofProfilePointHeightsFt as number[])
+        : migrateRoofProfilePointHeightsFtV21ToV22(
+            state.roofProfilePointHeightsFt as number[],
+            state.wallHeightFt as number,
+            (state.stories as Story[] | undefined)?.[1]?.wallHeightFt,
+            state.roofEnabled as boolean,
+          ),
       gableProfilePositionsInByWallId: state.gableProfilePositionsInByWallId as Record<string, (number | null)[]>,
       maxGablePanelHeightIn: state.maxGablePanelHeightIn as number,
       heelHeightIn: state.heelHeightIn as number,
       boxBeamCoverageByWallId: state.boxBeamCoverageByWallId as Record<string, BoxBeamCoverage>,
       boxBeamSizeId: (state.boxBeamSizeId as BoxBeamSizeId) ?? BOX_BEAM_SIZE_DEFAULT,
-      // v20 -> v21 migration: a v20 file's single beam per wall becomes a
-      // 1-element array with full-width coverage (see
-      // migrateMidWallBeamsV20ToV21's own doc comment).
-      midWallBeamsByStoryAndWallId: isCurrentVersion
-        ? (state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, MidWallBeam[]>>)
-        : migrateMidWallBeamsV20ToV21(
-            state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, { heightIn: number; sizeId: BoxBeamSizeId }>>,
-            (state.baseWallSlots as Record<string, PanelSlot[]>) ?? {},
-            (state.stories as Story[] | undefined)?.[1]?.wallSlots ?? {},
-          ),
+      midWallBeamsByStoryAndWallId: state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, MidWallBeam[]>>,
       primaryCornerIds: new Set(state.primaryCornerIds as string[]),
       gableEndWallIds: new Set(state.gableEndWallIds as string[]),
       checkedInteriorIds: new Set(state.checkedInteriorIds as string[]),

@@ -66,6 +66,18 @@ export interface WallElevationViewProps {
   wall: Wall;
   slots: PanelSlot[];
   wallHeightFt: number;
+  /** Whether THIS wall owns a real "corner" PanelSlot at its own start/end
+   * (Tommy: "you see all the panel surfaces on that wall — including the
+   * panelwidth side of the opposing wall for the walls that dont start of
+   * end with corner panels") — see cornerOwnership in
+   * packages/geometry/src/retile.ts: at a plain 90deg corner only the
+   * locally SHORTER of the two walls meeting there owns the corner panel,
+   * the longer one butts flush against it instead. False at either end
+   * means this wall's own slots stop `thicknessIn` short of that end's true
+   * corner, and a filler sliver (the neighboring wall's own corner panel,
+   * visible edge-on) is drawn in that gap instead. */
+  hasCornerStart: boolean;
+  hasCornerEnd: boolean;
   /** This wall's own second-story slots/height, if a second story exists
    * (Tommy: "each story's row for a given wall is independently clickable/
    * editable") — undefined when there's no second story, mirroring how
@@ -214,6 +226,8 @@ export default function WallElevationView({
   wall,
   slots,
   wallHeightFt,
+  hasCornerStart,
+  hasCornerEnd,
   secondStorySlots,
   secondStoryWallHeightFt,
   onToggleOpening,
@@ -262,6 +276,13 @@ export default function WallElevationView({
   } | null>(null);
 
   const wallWidthIn = wall.lengthFt * 12;
+  // A wall that doesn't own its own corner at an end has its real slots
+  // stop thicknessIn short of that end's true corner (see hasCornerStart/
+  // hasCornerEnd's own doc comment) — every along-wall position in this
+  // component is anchored off these two offsets rather than assuming
+  // content always starts flush at this wall's own true x=0.
+  const startOffsetIn = hasCornerStart ? 0 : thicknessIn;
+  const endOffsetIn = hasCornerEnd ? 0 : thicknessIn;
   const eaveHeightIn = wallHeightFt * 12;
   // The roofline's own base — the top of whichever story is tallest (just
   // the ground floor, or ground+second when a second story exists), PLUS
@@ -285,11 +306,13 @@ export default function WallElevationView({
   // — the shared source both a row's own rendering AND every drag-to-
   // adjust-coverage handle (Box Beam's, and now each Mid-Wall Bond Beam's
   // own) snaps to, so "the boundary always lands on a real panel edge" is
-  // automatic.
-  const groundOffsetsIn = slots.reduce<number[]>((acc, slot) => [...acc, acc[acc.length - 1]! + slot.widthIn], [0]);
+  // automatic. Seeded at startOffsetIn (not always 0) so a wall missing its
+  // own start corner still has every real slot land at its true along-wall
+  // position, not flush against this wall's own local x=0.
+  const groundOffsetsIn = slots.reduce<number[]>((acc, slot) => [...acc, acc[acc.length - 1]! + slot.widthIn], [startOffsetIn]);
   const secondStoryOffsetsIn = (secondStorySlots ?? []).reduce<number[]>(
     (acc, slot) => [...acc, acc[acc.length - 1]! + slot.widthIn],
-    [0],
+    [startOffsetIn],
   );
 
   // Mid-Wall Bond Beam — each slot can see a DIFFERENT band split now
@@ -325,12 +348,17 @@ export default function WallElevationView({
   );
   const isShedRoof = pointIsSnapped.some(Boolean);
 
+  // heightFt is a RISE above the eave, not an absolute height (see
+  // roofProfilePointHeightsFt's own doc comment) — computeGableTiledRow
+  // still expects an absolute anchor in the same coordinate space as
+  // roofBaseHeightIn, so convert here at the call site, mirroring
+  // page.tsx's own gableTilesByWallId resolution exactly.
   const points: RoofProfilePoint[] = roofProfilePointHeightsFt.map((heightFt, i) => ({
     xIn: resolvedPointXsIn[i]!,
-    heightIn: heightFt * 12,
+    heightIn: roofBaseHeightIn + heightFt * 12,
     isExplicitPosition: pointIsExplicit[i],
   }));
-  const maxProfileHeightIn = Math.max(...roofProfilePointHeightsFt.map((h) => h * 12), roofBaseHeightIn);
+  const maxProfileHeightIn = Math.max(...roofProfilePointHeightsFt.map((h) => roofBaseHeightIn + h * 12), roofBaseHeightIn);
 
   // Cap each tile's own edges at the real per-panel fabrication ceiling
   // (Tommy: "an ability to put a safety gap inbetween the truss bottom and
@@ -524,9 +552,9 @@ export default function WallElevationView({
   // opposite walls (drawn once per building corner, attributed to whichever
   // wall "owns" it, per the tiling convention), so a row's slots can
   // legitimately stop short of `wallWidthIn` at one or both ends. Each
-  // row's own top-plate line should reflect what's actually drawn in that
-  // row, not the wall's raw length, or it visibly runs past the last real
-  // panel.
+  // row's own top-plate line runs from startOffsetIn (not always 0 — see
+  // its own doc comment) to startOffsetIn + this raw run width, reflecting
+  // exactly what's actually drawn in that row.
   const rowRunWidthIn = (rowSlots: PanelSlot[]) => rowSlots.reduce((sum, s) => sum + s.widthIn, 0);
   const groundRunWidthIn = rowRunWidthIn(slots);
   const secondStoryRunWidthIn = secondStorySlots ? rowRunWidthIn(secondStorySlots) : 0;
@@ -555,7 +583,7 @@ export default function WallElevationView({
     heightOverrideForSlotBand?: (slotIndex: number, band: WallVerticalBand, isTopmostForSlot: boolean) => number,
   ) => {
     const rects = rowSlots.reduce<{ slot: PanelSlot; i: number; x0: number; x1: number }[]>((acc, slot, i) => {
-      const x0 = acc.length > 0 ? acc[acc.length - 1]!.x1 : 0;
+      const x0 = acc.length > 0 ? acc[acc.length - 1]!.x1 : startOffsetIn;
       acc.push({ slot, i, x0, x1: x0 + slot.widthIn });
       return acc;
     }, []);
@@ -636,6 +664,50 @@ export default function WallElevationView({
       }
     }
     return elements;
+  };
+
+  // At an end this wall doesn't own its own corner, the wall physically
+  // butts against the shorter neighboring wall's own corner panel instead
+  // (see hasCornerStart/hasCornerEnd's own doc comment) — that panel's
+  // narrow return face (thicknessIn deep) is what's actually visible here,
+  // not a gap. Drawn as a static reference sliver, not a real slot on this
+  // wall: no click handler, and not split into this wall's own mid-wall-
+  // bond-beam bands (the neighboring wall's own beam layout is independent
+  // and isn't looked up here) — always one plain full-height rect per row.
+  const renderAdjacentWallFiller = (floorHeightIn: number, ceilingHeightIn: number, story: "ground" | "second") => {
+    const heightIn = ceilingHeightIn - floorHeightIn;
+    if (heightIn <= 0) return null;
+    const sliver = (xStartIn: number, key: string) => (
+      <g key={key}>
+        <rect
+          x={xPx(xStartIn)}
+          y={yPx(ceilingHeightIn)}
+          width={thicknessIn * scaleX}
+          height={heightIn * PX_PER_IN}
+          fill={SLOT_COLORS.corner}
+          fillOpacity={0.35}
+          stroke="#666"
+          strokeWidth={1}
+          strokeDasharray="3 2"
+        />
+        <text
+          x={xPx(xStartIn + thicknessIn / 2)}
+          y={yPx((floorHeightIn + ceilingHeightIn) / 2)}
+          fontSize={7}
+          textAnchor="middle"
+          fill="#555"
+          transform={`rotate(-90 ${xPx(xStartIn + thicknessIn / 2)} ${yPx((floorHeightIn + ceilingHeightIn) / 2)})`}
+        >
+          adjacent wall
+        </text>
+      </g>
+    );
+    return (
+      <>
+        {!hasCornerStart && sliver(0, `${story}-adjacent-start`)}
+        {!hasCornerEnd && sliver(wallWidthIn - thicknessIn, `${story}-adjacent-end`)}
+      </>
+    );
   };
 
   return (
@@ -779,11 +851,12 @@ export default function WallElevationView({
             width (see groundRunWidthIn above), not the wall's raw
             geometric length. Always the ground floor's own height,
             regardless of whether a second story exists above it. */}
-        <line x1={LEFT_MARGIN_PX} y1={yPx(eaveHeightIn)} x2={xPx(groundRunWidthIn)} y2={yPx(eaveHeightIn)} stroke="#999" strokeDasharray="4 3" />
+        <line x1={xPx(startOffsetIn)} y1={yPx(eaveHeightIn)} x2={xPx(startOffsetIn + groundRunWidthIn)} y2={yPx(eaveHeightIn)} stroke="#999" strokeDasharray="4 3" />
         <text x={4} y={yPx(eaveHeightIn) + 4} fontSize={10} fill="#666">
           {eaveHeightIn}&quot;
         </text>
         {renderRow(slots, groundBandsPerSlot, 0, "ground")}
+        {renderAdjacentWallFiller(0, eaveHeightIn, "ground")}
 
         {/* Mid-Wall Bond Beams (ground floor) — one filled rect per beam
             at its own real position/coverage/thickness, each with its own
@@ -793,8 +866,8 @@ export default function WallElevationView({
             pattern as the Box Beam handles below). */}
         {midWallBeams.map((beam) => {
           const assemblyHeightIn = computeBoxBeamAssemblyHeightIn(beam.sizeId);
-          const startXIn = groundOffsetsIn[beam.startSlotIndex] ?? 0;
-          const endXIn = groundOffsetsIn[beam.endSlotIndex] ?? groundRunWidthIn;
+          const startXIn = groundOffsetsIn[beam.startSlotIndex] ?? startOffsetIn;
+          const endXIn = groundOffsetsIn[beam.endSlotIndex] ?? startOffsetIn + groundRunWidthIn;
           const midYIn = beam.heightIn + assemblyHeightIn / 2;
           return (
             <g key={beam.id}>
@@ -858,12 +931,16 @@ export default function WallElevationView({
           <>
             {computeRoofBearingSegments(secondStorySlots, boxBeamCoverage).map((seg, i) => {
               const segHeightIn = seg.kind === "box-beam" ? secondStoryHeightIn - boxBeamHeightDeltaIn : secondStoryHeightIn;
+              // seg.startXIn is relative to this wall's own first slot (see
+              // computeRoofBearingSegments's own doc comment) — offset by
+              // startOffsetIn to land at this wall's true along-wall
+              // position, same as every other along-wall value here.
               return (
                 <line
                   key={`second-top-${i}`}
-                  x1={xPx(seg.startXIn)}
+                  x1={xPx(startOffsetIn + seg.startXIn)}
                   y1={yPx(eaveHeightIn + segHeightIn)}
-                  x2={xPx(seg.startXIn + seg.lengthIn)}
+                  x2={xPx(startOffsetIn + seg.startXIn + seg.lengthIn)}
                   y2={yPx(eaveHeightIn + segHeightIn)}
                   stroke="#999"
                   strokeDasharray="4 3"
@@ -880,13 +957,14 @@ export default function WallElevationView({
                 ? bandHeightIn - boxBeamHeightDeltaIn
                 : bandHeightIn;
             })}
+            {renderAdjacentWallFiller(eaveHeightIn, eaveHeightIn + secondStoryHeightIn, "second")}
 
             {/* Mid-Wall Bond Beams (second story) — same shape as the
                 ground-floor ones above, offset by eaveHeightIn (absolute). */}
             {secondStoryMidWallBeams.map((beam) => {
               const assemblyHeightIn = computeBoxBeamAssemblyHeightIn(beam.sizeId);
-              const startXIn = secondStoryOffsetsIn[beam.startSlotIndex] ?? 0;
-              const endXIn = secondStoryOffsetsIn[beam.endSlotIndex] ?? secondStoryRunWidthIn;
+              const startXIn = secondStoryOffsetsIn[beam.startSlotIndex] ?? startOffsetIn;
+              const endXIn = secondStoryOffsetsIn[beam.endSlotIndex] ?? startOffsetIn + secondStoryRunWidthIn;
               const midYIn = eaveHeightIn + beam.heightIn + assemblyHeightIn / 2;
               return (
                 <g key={beam.id}>
@@ -947,7 +1025,7 @@ export default function WallElevationView({
             {boxBeamCoverage &&
               (["start", "end"] as const).map((handle) => {
                 const slotIndex = handle === "start" ? boxBeamCoverage.startSlotIndex : boxBeamCoverage.endSlotIndex;
-                const handleXIn = secondStoryOffsetsIn[slotIndex] ?? (handle === "start" ? 0 : secondStoryRunWidthIn);
+                const handleXIn = secondStoryOffsetsIn[slotIndex] ?? (handle === "start" ? startOffsetIn : startOffsetIn + secondStoryRunWidthIn);
                 const handleYIn = eaveHeightIn + secondStoryHeightIn - boxBeamHeightDeltaIn;
                 return (
                   <g
