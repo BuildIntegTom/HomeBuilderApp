@@ -18,6 +18,7 @@ export * from "./squareBalePanelMembers";
 export * from "./squareBaleCornerPanelMembers";
 export * from "./trussPlateMembers";
 export * from "./boxBeamMembers";
+export * from "./webBracedLintelMembers";
 export * from "./roofBearingAssembly";
 export * from "./roofCatcherBeamMembers";
 export * from "./octagonRingMembers";

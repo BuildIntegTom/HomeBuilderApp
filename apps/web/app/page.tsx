@@ -87,6 +87,7 @@ import {
   BOX_BEAM_SIZE_DEFAULT,
   BOX_BEAM_SIZE_OPTIONS,
   buildBoxBeamMembers,
+  buildWebBracedLintelMembers,
   buildBracedPanelMembers,
   buildColumnPanelMembers,
   buildCornerPanelMembers,
@@ -224,7 +225,13 @@ import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
 import { resolveBracedStyle } from "./bracedStyle";
-import { midWallBeamsToGeometry, type MidWallBeam } from "./midWallBeam";
+import {
+  LINTEL_MIN_HEIGHT_IN,
+  midWallBeamsToGeometry,
+  resolveMidWallBeamAssemblyHeightIn,
+  type MidWallBeam,
+  type MidWallBeamKind,
+} from "./midWallBeam";
 import PierFoundationDiagram from "./PierFoundationDiagram";
 import PlasterCoatEditor from "./PlasterCoatEditor";
 import {
@@ -716,13 +723,17 @@ export default function LayoutEditor() {
   const [midWallBeamsByStoryAndWallId, setMidWallBeamsByStoryAndWallId] = useState<
     Record<"ground" | "second", Record<string, MidWallBeam[]>>
   >({ ground: {}, second: {} });
-  const handleAddMidWallBeam = (story: "ground" | "second", wallId: string) => {
+  const handleAddMidWallBeam = (story: "ground" | "second", wallId: string, kind: MidWallBeamKind) => {
     const storyHeightFt = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
     const slotCount = (story === "ground" ? overlayWallSlots : (secondStory?.wallSlots ?? {}))[wallId]?.length ?? 0;
     const newBeam: MidWallBeam = {
       id: crypto.randomUUID(),
       heightIn: (storyHeightFt * 12) / 2,
-      sizeId: BOX_BEAM_SIZE_DEFAULT,
+      kind,
+      ...(kind === "box-beam"
+        ? { sizeId: BOX_BEAM_SIZE_DEFAULT }
+        : // Same visual starting height as the Box Beam default (10.5in), freely draggable afterward.
+          { lintelHeightIn: computeBoxBeamAssemblyHeightIn(BOX_BEAM_SIZE_DEFAULT) }),
       startSlotIndex: 0,
       endSlotIndex: slotCount,
     };
@@ -750,6 +761,8 @@ export default function LayoutEditor() {
     updateMidWallBeam(story, wallId, beamId, { heightIn });
   const handleChangeMidWallBeamSizeId = (story: "ground" | "second", wallId: string, beamId: string, sizeId: BoxBeamSizeId) =>
     updateMidWallBeam(story, wallId, beamId, { sizeId });
+  const handleChangeMidWallBeamLintelHeightIn = (story: "ground" | "second", wallId: string, beamId: string, lintelHeightIn: number) =>
+    updateMidWallBeam(story, wallId, beamId, { lintelHeightIn });
   const handleChangeMidWallBeamCoverage = (story: "ground" | "second", wallId: string, beamId: string, coverage: BoxBeamCoverage) =>
     updateMidWallBeam(story, wallId, beamId, coverage);
   // Ground floor's own beams, pre-resolved to geometry (sizeId ->
@@ -3209,7 +3222,7 @@ export default function LayoutEditor() {
     if (!footprint) return [];
     const groups = new Map<
       string,
-      { sizeId: BoxBeamSizeId; lengthIn: number; instances: { name: string }[] }
+      { kind: MidWallBeamKind; sizeId?: BoxBeamSizeId; lintelHeightIn?: number; lengthIn: number; instances: { name: string }[] }
     >();
     for (const story of stories) {
       const beams = midWallBeamsByStoryAndWallId[story.id];
@@ -3224,35 +3237,57 @@ export default function LayoutEditor() {
         for (const beam of wallBeams) {
           const lengthIn = Math.max(0, (offsetsIn[beam.endSlotIndex] ?? 0) - (offsetsIn[beam.startSlotIndex] ?? 0));
           if (lengthIn <= 0) continue;
-          const key = `${beam.sizeId}-${lengthIn.toFixed(3)}`;
+          // Lintel heights are continuous (not a discrete catalog id), so
+          // two different lintels will naturally group together far less
+          // often than two box beams sharing the same catalog size —
+          // expected, matches this app's general "a shop cuts by real
+          // dimensions" grouping convention.
+          const key = beam.kind === "box-beam" ? `box-beam-${beam.sizeId}-${lengthIn.toFixed(3)}` : `web-braced-lintel-${beam.lintelHeightIn!.toFixed(2)}-${lengthIn.toFixed(3)}`;
           const name = `Wall ${wall.id} (${direction}, ${story.label}, ${beam.heightIn.toFixed(1)}in)`;
           const existing = groups.get(key);
           if (existing) existing.instances.push({ name });
-          else groups.set(key, { sizeId: beam.sizeId, lengthIn, instances: [{ name }] });
+          else groups.set(key, { kind: beam.kind, sizeId: beam.sizeId, lintelHeightIn: beam.lintelHeightIn, lengthIn, instances: [{ name }] });
         }
       }
     }
 
-    return [...groups.entries()].map(([groupKey, { sizeId, lengthIn, instances }]) => {
-      const members = buildBoxBeamMembers(lengthIn, thicknessIn, sizeId);
+    return [...groups.entries()].map(([groupKey, { kind, sizeId, lintelHeightIn, lengthIn, instances }]) => {
+      const heightIn = kind === "box-beam" ? computeBoxBeamAssemblyHeightIn(sizeId) : (lintelHeightIn ?? LINTEL_MIN_HEIGHT_IN);
+      const members = kind === "box-beam" ? buildBoxBeamMembers(lengthIn, thicknessIn, sizeId) : buildWebBracedLintelMembers(lengthIn, thicknessIn, heightIn);
       const woodWeightKg = computeMemberSetWoodWeight(members).weightKg;
-      const vol = computeDensePackCelluloseVolume(lengthIn, thicknessIn, sizeId);
-      const fillWeight = computeInsulationWeight(vol.volumeFt3, densePackCelluloseDensityLbFt3.value);
-      const weightBreakdown: PanelWeightBreakdown = {
-        strawOnlyWeightKg: 0,
-        strawOnlyWeightLb: 0,
-        components: [
-          { label: "Wood (webs + plywood caps)", weightKg: woodWeightKg, weightLb: woodWeightKg * KG_TO_LB },
-          { label: "Dense-pack cellulose fill", weightKg: fillWeight.weightKg, weightLb: fillWeight.weightLb },
-        ],
-        totalModeledWeightKg: woodWeightKg + fillWeight.weightKg,
-        totalModeledWeightLb: woodWeightKg * KG_TO_LB + fillWeight.weightLb,
-      };
+      const weightBreakdown: PanelWeightBreakdown =
+        kind === "box-beam"
+          ? (() => {
+              const vol = computeDensePackCelluloseVolume(lengthIn, thicknessIn, sizeId);
+              const fillWeight = computeInsulationWeight(vol.volumeFt3, densePackCelluloseDensityLbFt3.value);
+              return {
+                strawOnlyWeightKg: 0,
+                strawOnlyWeightLb: 0,
+                components: [
+                  { label: "Wood (webs + plywood caps)", weightKg: woodWeightKg, weightLb: woodWeightKg * KG_TO_LB },
+                  { label: "Dense-pack cellulose fill", weightKg: fillWeight.weightKg, weightLb: fillWeight.weightLb },
+                ],
+                totalModeledWeightKg: woodWeightKg + fillWeight.weightKg,
+                totalModeledWeightLb: woodWeightKg * KG_TO_LB + fillWeight.weightLb,
+              };
+            })()
+          : {
+              // No fill component — a lintel is a solid framed + braced
+              // panel (like a window header), not an insulated cavity
+              // assembly the way a Box Beam is.
+              strawOnlyWeightKg: 0,
+              strawOnlyWeightLb: 0,
+              components: [{ label: "Wood (chords + W-braces + plywood caps)", weightKg: woodWeightKg, weightLb: woodWeightKg * KG_TO_LB }],
+              totalModeledWeightKg: woodWeightKg,
+              totalModeledWeightLb: woodWeightKg * KG_TO_LB,
+            };
       return {
         uniqueKey: `midwallbeam-${groupKey}`,
+        kind,
         sizeId,
+        lintelHeightIn,
         lengthIn,
-        heightIn: computeBoxBeamAssemblyHeightIn(sizeId),
+        heightIn,
         members,
         weightBreakdown,
         instances,
@@ -3354,9 +3389,10 @@ export default function LayoutEditor() {
           });
         }
         for (const group of midWallBondBeamFabricationGroups) {
+          const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Web Braced Lintel";
           pages.push({
             id: `shop-fab-${group.uniqueKey}`,
-            label: `Panel Fabrication: Box Beam ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
+            label: `Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
           });
         }
       }
@@ -4384,13 +4420,16 @@ export default function LayoutEditor() {
                   onToggleSecondStory={handleToggleSecondStory}
                   midWallBeams={midWallBeamsByStoryAndWallId.ground[elevationWall.id] ?? []}
                   secondStoryMidWallBeams={midWallBeamsByStoryAndWallId.second[elevationWall.id] ?? []}
-                  onAddMidWallBeam={(story) => handleAddMidWallBeam(story, elevationWall.id)}
+                  onAddMidWallBeam={(story, kind) => handleAddMidWallBeam(story, elevationWall.id, kind)}
                   onRemoveMidWallBeam={(story, beamId) => handleRemoveMidWallBeam(story, elevationWall.id, beamId)}
                   onChangeMidWallBeamHeight={(story, beamId, heightIn) =>
                     handleChangeMidWallBeamHeight(story, elevationWall.id, beamId, heightIn)
                   }
                   onChangeMidWallBeamSizeId={(story, beamId, sizeId) =>
                     handleChangeMidWallBeamSizeId(story, elevationWall.id, beamId, sizeId)
+                  }
+                  onChangeMidWallBeamLintelHeightIn={(story, beamId, lintelHeightIn) =>
+                    handleChangeMidWallBeamLintelHeightIn(story, elevationWall.id, beamId, lintelHeightIn)
                   }
                   onChangeMidWallBeamCoverage={(story, beamId, coverage) =>
                     handleChangeMidWallBeamCoverage(story, elevationWall.id, beamId, coverage)
@@ -6506,12 +6545,17 @@ export default function LayoutEditor() {
 
             {midWallBondBeamFabricationGroups.map((group) => {
               const noteId = `shop-fab-${group.uniqueKey}`;
-              const sizeLabel = BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === group.sizeId)!.label;
+              const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Web Braced Lintel";
+              const sizeLabel = group.kind === "box-beam" ? BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === group.sizeId)!.label : `${group.heightIn.toFixed(1)}in tall`;
+              const panelDescription =
+                group.kind === "box-beam"
+                  ? `Two ${sizeLabel} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`
+                  : `A W-braced lintel (${sizeLabel}) — the same flat-chord + repeating W-truss web construction a window header uses, on both wythes — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`;
               return (
                 <StickyNote
                   key={group.uniqueKey}
                   id={noteId}
-                  label={`Panel Fabrication: Box Beam ${group.lengthIn.toFixed(1)}in (${group.instances.length})`}
+                  label={`Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length})`}
                   isOpen={openNoteIds.has(noteId)}
                   isFullscreen={fullscreenNoteId === noteId}
                   cascadeIndex={noteOpenOrder.indexOf(noteId)}
@@ -6526,8 +6570,8 @@ export default function LayoutEditor() {
                     measured weight.
                   </p>
                   <PanelFabricationPage
-                    title={`Panel Fabrication — Box Beam (${sizeLabel})`}
-                    panelDescription={`Two ${sizeLabel} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`}
+                    title={`Panel Fabrication — ${kindLabel} (${sizeLabel})`}
+                    panelDescription={panelDescription}
                     widthIn={group.lengthIn}
                     heightIn={group.heightIn}
                     members={group.members}

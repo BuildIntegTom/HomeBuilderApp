@@ -16,7 +16,7 @@ import {
   type PanelSlotBox3D,
 } from "@building-integrity/geometry";
 import { allPanelInstances, combinedPanelLabel, type PanelInstance } from "./panelInstances";
-import { midWallBeamsToGeometry, type MidWallBeam } from "./midWallBeam";
+import { midWallBeamsToGeometry, resolveMidWallBeamAssemblyHeightIn, type MidWallBeam } from "./midWallBeam";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
 import PanelLabel from "./PanelLabel";
@@ -24,6 +24,7 @@ import {
   BOX_BEAM_SIZE_DEFAULT,
   bracingStyleToPatternMirror,
   buildBoxBeamMembers,
+  buildWebBracedLintelMembers,
   buildBracedPanelMembers,
   buildBuildingObj,
   buildColumnPanelMembers,
@@ -1107,8 +1108,11 @@ export default function Building3DView({
           const endXIn = offsetsIn[beam.endSlotIndex] ?? 0;
           const lengthIn = Math.max(0, endXIn - startXIn);
           if (lengthIn <= 0) continue;
-          const members = buildBoxBeamMembers(lengthIn, thicknessIn, beam.sizeId);
-          const assemblyHeightIn = computeBoxBeamAssemblyHeightIn(beam.sizeId);
+          const assemblyHeightIn = resolveMidWallBeamAssemblyHeightIn(beam);
+          const members =
+            beam.kind === "web-braced-lintel"
+              ? buildWebBracedLintelMembers(lengthIn, thicknessIn, assemblyHeightIn)
+              : buildBoxBeamMembers(lengthIn, thicknessIn, beam.sizeId);
           const offsetFt = startXIn / IN_PER_FT;
           result.push({
             wallId: wall.id,

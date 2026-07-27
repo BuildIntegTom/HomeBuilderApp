@@ -30,7 +30,14 @@ import {
 } from "@building-integrity/panel-catalog";
 import { computeOpeningGeometry } from "./openingGeometry";
 import { MemberElevationShapes } from "./MemberElevationShapes";
-import { midWallBeamsToGeometry, type MidWallBeam } from "./midWallBeam";
+import {
+  LINTEL_MIN_HEIGHT_IN,
+  LINTEL_ROOFLINE_SNAP_THRESHOLD_IN,
+  midWallBeamsToGeometry,
+  resolveMidWallBeamAssemblyHeightIn,
+  type MidWallBeam,
+  type MidWallBeamKind,
+} from "./midWallBeam";
 
 const CANVAS_WIDTH = 720;
 const PX_PER_IN = 1.6;
@@ -189,10 +196,14 @@ export interface WallElevationViewProps {
    * Box Beam already uses) and own size. */
   midWallBeams: MidWallBeam[];
   secondStoryMidWallBeams: MidWallBeam[];
-  onAddMidWallBeam: (story: "ground" | "second") => void;
+  onAddMidWallBeam: (story: "ground" | "second", kind: MidWallBeamKind) => void;
   onRemoveMidWallBeam: (story: "ground" | "second", beamId: string) => void;
   onChangeMidWallBeamHeight: (story: "ground" | "second", beamId: string, heightIn: number) => void;
   onChangeMidWallBeamSizeId: (story: "ground" | "second", beamId: string, sizeId: BoxBeamSizeId) => void;
+  /** Web-braced-lintel-only — a lintel's own real assembly height, directly
+   * user-adjustable via its own draggable top edge, unlike a box beam's
+   * catalog-picked sizeId. */
+  onChangeMidWallBeamLintelHeightIn: (story: "ground" | "second", beamId: string, lintelHeightIn: number) => void;
   onChangeMidWallBeamCoverage: (story: "ground" | "second", beamId: string, coverage: BoxBeamCoverage) => void;
   onClose: () => void;
 }
@@ -262,13 +273,14 @@ export default function WallElevationView({
   onRemoveMidWallBeam,
   onChangeMidWallBeamHeight,
   onChangeMidWallBeamSizeId,
+  onChangeMidWallBeamLintelHeightIn,
   onChangeMidWallBeamCoverage,
   onClose,
 }: WallElevationViewProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
   const [draggingBoxBeamHandle, setDraggingBoxBeamHandle] = useState<"start" | "end" | null>(null);
-  type MidWallBeamDragHandle = "height" | "coverage-start" | "coverage-end";
+  type MidWallBeamDragHandle = "height" | "lintel-top" | "coverage-start" | "coverage-end";
   const [midWallBeamDrag, setMidWallBeamDrag] = useState<{
     story: "ground" | "second";
     beamId: string;
@@ -464,11 +476,22 @@ export default function WallElevationView({
   // real height, not a slot index), mirroring the gable-point drag's own
   // shape above but inverting yPx (Y-axis) instead of xPx (X-axis).
   // Clamped into that story's own floor-relative [0, storyHeightIn] range.
+  // A lintel-kind beam additionally snaps its own TOP flush with the
+  // ceiling once dragging its bottom edge pushes that top within
+  // LINTEL_ROOFLINE_SNAP_THRESHOLD_IN of it (Tommy: "when a lintel panel
+  // is 6" or closer to the roof line, lets snap it into place as the
+  // tallest panel that fills that space") — the lintel's own height grows
+  // to close the gap rather than the bottom edge just stopping short of
+  // it; box-beam-kind beams never snap (unchanged clamp-only behavior).
   useEffect(() => {
     if (!midWallBeamDrag || midWallBeamDrag.handle !== "height") return;
     const { story, beamId } = midWallBeamDrag;
+    const beams = story === "ground" ? midWallBeams : secondStoryMidWallBeams;
+    const beam = beams.find((b) => b.id === beamId);
+    if (!beam) return;
     const storyFloorAbsIn = story === "ground" ? 0 : eaveHeightIn;
     const storyHeightIn = story === "ground" ? eaveHeightIn : secondStoryHeightIn;
+    const assemblyHeightIn = resolveMidWallBeamAssemblyHeightIn(beam);
     const handleMove = (e: MouseEvent) => {
       const svg = svgRef.current;
       if (!svg) return;
@@ -479,6 +502,12 @@ export default function WallElevationView({
       const absHeightIn = (svgHeightPx - BOTTOM_MARGIN_PX - localPy) / PX_PER_IN;
       const heightIn = Math.min(Math.max(absHeightIn - storyFloorAbsIn, 0), storyHeightIn);
       onChangeMidWallBeamHeight(story, beamId, heightIn);
+      if (beam.kind === "web-braced-lintel") {
+        const gapIn = storyHeightIn - (heightIn + assemblyHeightIn);
+        if (gapIn >= 0 && gapIn <= LINTEL_ROOFLINE_SNAP_THRESHOLD_IN) {
+          onChangeMidWallBeamLintelHeightIn(story, beamId, storyHeightIn - heightIn);
+        }
+      }
     };
     const handleUp = () => setMidWallBeamDrag(null);
     window.addEventListener("mousemove", handleMove);
@@ -487,13 +516,55 @@ export default function WallElevationView({
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
-  }, [midWallBeamDrag, svgHeightPx, eaveHeightIn, secondStoryHeightIn, onChangeMidWallBeamHeight]);
+  }, [
+    midWallBeamDrag,
+    midWallBeams,
+    secondStoryMidWallBeams,
+    svgHeightPx,
+    eaveHeightIn,
+    secondStoryHeightIn,
+    onChangeMidWallBeamHeight,
+    onChangeMidWallBeamLintelHeightIn,
+  ]);
+
+  // Web-braced-lintel-only: vertical drag of the lintel's own TOP edge —
+  // same continuous/unsnapped shape as the height drag above, but adjusts
+  // lintelHeightIn (holding the bottom edge fixed) instead. Snaps flush
+  // with the ceiling under the same LINTEL_ROOFLINE_SNAP_THRESHOLD_IN rule.
+  useEffect(() => {
+    if (!midWallBeamDrag || midWallBeamDrag.handle !== "lintel-top") return;
+    const { story, beamId } = midWallBeamDrag;
+    const beams = story === "ground" ? midWallBeams : secondStoryMidWallBeams;
+    const beam = beams.find((b) => b.id === beamId);
+    if (!beam || beam.kind !== "web-braced-lintel") return;
+    const storyFloorAbsIn = story === "ground" ? 0 : eaveHeightIn;
+    const storyHeightIn = story === "ground" ? eaveHeightIn : secondStoryHeightIn;
+    const handleMove = (e: MouseEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      if (rect.height === 0) return;
+      const pxPerScreenPx = svgHeightPx / rect.height;
+      const localPy = (e.clientY - rect.top) * pxPerScreenPx;
+      const absTopIn = (svgHeightPx - BOTTOM_MARGIN_PX - localPy) / PX_PER_IN;
+      const rawTopIn = Math.min(Math.max(absTopIn - storyFloorAbsIn, beam.heightIn + LINTEL_MIN_HEIGHT_IN), storyHeightIn);
+      const topIn = storyHeightIn - rawTopIn <= LINTEL_ROOFLINE_SNAP_THRESHOLD_IN ? storyHeightIn : rawTopIn;
+      onChangeMidWallBeamLintelHeightIn(story, beamId, topIn - beam.heightIn);
+    };
+    const handleUp = () => setMidWallBeamDrag(null);
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [midWallBeamDrag, midWallBeams, secondStoryMidWallBeams, svgHeightPx, eaveHeightIn, secondStoryHeightIn, onChangeMidWallBeamLintelHeightIn]);
 
   // Mid-Wall Bond Beam horizontal coverage drag — same shape as the Box
   // Beam coverage-handle drag above, snapping to the nearest real slot
   // boundary, just resolved against whichever beam/story is being dragged.
   useEffect(() => {
-    if (!midWallBeamDrag || midWallBeamDrag.handle === "height") return;
+    if (!midWallBeamDrag || (midWallBeamDrag.handle !== "coverage-start" && midWallBeamDrag.handle !== "coverage-end")) return;
     const { story, beamId, handle } = midWallBeamDrag;
     const beams = story === "ground" ? midWallBeams : secondStoryMidWallBeams;
     const beam = beams.find((b) => b.id === beamId);
@@ -751,12 +822,16 @@ export default function WallElevationView({
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>Mid-Wall Bond Beams (ground)</span>
-          <button type="button" onClick={() => onAddMidWallBeam("ground")} style={{ fontSize: 12 }}>
-            + Add Beam
+          <button type="button" onClick={() => onAddMidWallBeam("ground", "box-beam")} style={{ fontSize: 12 }}>
+            + Add Box Beam
+          </button>
+          <button type="button" onClick={() => onAddMidWallBeam("ground", "web-braced-lintel")} style={{ fontSize: 12 }}>
+            + Add Lintel
           </button>
           <span style={{ fontSize: 11, color: "#666" }}>
             Splits the row into stacked bands; drag the brown handle to reposition, the green handles to resize its
-            own coverage
+            own coverage. A lintel&apos;s own top edge (drag the blue handle) snaps flush with the roofline within{" "}
+            {LINTEL_ROOFLINE_SNAP_THRESHOLD_IN}in of it.
           </span>
         </div>
         {midWallBeams.map((beam) => (
@@ -773,13 +848,27 @@ export default function WallElevationView({
               />
               in
             </label>
-            <select value={beam.sizeId} onChange={(e) => onChangeMidWallBeamSizeId("ground", beam.id, e.target.value as BoxBeamSizeId)}>
-              {BOX_BEAM_SIZE_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            {beam.kind === "box-beam" ? (
+              <select value={beam.sizeId} onChange={(e) => onChangeMidWallBeamSizeId("ground", beam.id, e.target.value as BoxBeamSizeId)}>
+                {BOX_BEAM_SIZE_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+                Lintel tall
+                <input
+                  type="number"
+                  min={LINTEL_MIN_HEIGHT_IN}
+                  value={Math.round(beam.lintelHeightIn ?? LINTEL_MIN_HEIGHT_IN)}
+                  onChange={(e) => onChangeMidWallBeamLintelHeightIn("ground", beam.id, Math.max(LINTEL_MIN_HEIGHT_IN, Number(e.target.value)))}
+                  style={{ width: 60 }}
+                />
+                in
+              </label>
+            )}
             <span style={{ fontSize: 11, color: "#666" }}>
               slots {beam.startSlotIndex}–{beam.endSlotIndex}
             </span>
@@ -792,8 +881,11 @@ export default function WallElevationView({
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <span style={{ fontSize: 13, fontWeight: 600 }}>Mid-Wall Bond Beams (2nd story)</span>
-              <button type="button" onClick={() => onAddMidWallBeam("second")} style={{ fontSize: 12 }}>
-                + Add Beam
+              <button type="button" onClick={() => onAddMidWallBeam("second", "box-beam")} style={{ fontSize: 12 }}>
+                + Add Box Beam
+              </button>
+              <button type="button" onClick={() => onAddMidWallBeam("second", "web-braced-lintel")} style={{ fontSize: 12 }}>
+                + Add Lintel
               </button>
             </div>
             {secondStoryMidWallBeams.map((beam) => (
@@ -810,16 +902,30 @@ export default function WallElevationView({
                   />
                   in
                 </label>
-                <select
-                  value={beam.sizeId}
-                  onChange={(e) => onChangeMidWallBeamSizeId("second", beam.id, e.target.value as BoxBeamSizeId)}
-                >
-                  {BOX_BEAM_SIZE_OPTIONS.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                {beam.kind === "box-beam" ? (
+                  <select
+                    value={beam.sizeId}
+                    onChange={(e) => onChangeMidWallBeamSizeId("second", beam.id, e.target.value as BoxBeamSizeId)}
+                  >
+                    {BOX_BEAM_SIZE_OPTIONS.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+                    Lintel tall
+                    <input
+                      type="number"
+                      min={LINTEL_MIN_HEIGHT_IN}
+                      value={Math.round(beam.lintelHeightIn ?? LINTEL_MIN_HEIGHT_IN)}
+                      onChange={(e) => onChangeMidWallBeamLintelHeightIn("second", beam.id, Math.max(LINTEL_MIN_HEIGHT_IN, Number(e.target.value)))}
+                      style={{ width: 60 }}
+                    />
+                    in
+                  </label>
+                )}
                 <span style={{ fontSize: 11, color: "#666" }}>
                   slots {beam.startSlotIndex}–{beam.endSlotIndex}
                 </span>
@@ -865,7 +971,10 @@ export default function WallElevationView({
             and 2 coverage-drag handles (horizontal, snap-to-slot, same
             pattern as the Box Beam handles below). */}
         {midWallBeams.map((beam) => {
-          const assemblyHeightIn = computeBoxBeamAssemblyHeightIn(beam.sizeId);
+          const isLintel = beam.kind === "web-braced-lintel";
+          const assemblyHeightIn = resolveMidWallBeamAssemblyHeightIn(beam);
+          const fillColor = isLintel ? "#9fb8e0" : "#c9a26f";
+          const strokeColor = isLintel ? "#3a5a8a" : "#7a5a2e";
           const startXIn = groundOffsetsIn[beam.startSlotIndex] ?? startOffsetIn;
           const endXIn = groundOffsetsIn[beam.endSlotIndex] ?? startOffsetIn + groundRunWidthIn;
           const midYIn = beam.heightIn + assemblyHeightIn / 2;
@@ -876,12 +985,12 @@ export default function WallElevationView({
                 y={yPx(beam.heightIn + assemblyHeightIn)}
                 width={(endXIn - startXIn) * scaleX}
                 height={assemblyHeightIn * PX_PER_IN}
-                fill="#c9a26f"
-                stroke="#7a5a2e"
+                fill={fillColor}
+                stroke={strokeColor}
                 strokeWidth={1}
               />
-              <text x={xPx(startXIn) + 4} y={yPx(beam.heightIn) + 4} fontSize={9} fill="#7a5a2e">
-                {beam.heightIn.toFixed(1)}&quot; bond beam
+              <text x={xPx(startXIn) + 4} y={yPx(beam.heightIn) + 4} fontSize={9} fill={strokeColor}>
+                {beam.heightIn.toFixed(1)}&quot; {isLintel ? "lintel" : "bond beam"}
               </text>
               <g
                 style={{ cursor: "ns-resize" }}
@@ -895,12 +1004,23 @@ export default function WallElevationView({
                   y1={yPx(midYIn)}
                   x2={xPx(endXIn)}
                   y2={yPx(midYIn)}
-                  stroke="#7a5a2e"
+                  stroke={strokeColor}
                   strokeWidth={1}
                   strokeDasharray="2 2"
                 />
-                <circle cx={xPx((startXIn + endXIn) / 2)} cy={yPx(midYIn)} r={7} fill="#7a5a2e" stroke="#fff" strokeWidth={1.5} />
+                <circle cx={xPx((startXIn + endXIn) / 2)} cy={yPx(midYIn)} r={7} fill={strokeColor} stroke="#fff" strokeWidth={1.5} />
               </g>
+              {isLintel && (
+                <g
+                  style={{ cursor: "ns-resize" }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setMidWallBeamDrag({ story: "ground", beamId: beam.id, handle: "lintel-top" });
+                  }}
+                >
+                  <circle cx={xPx((startXIn + endXIn) / 2)} cy={yPx(beam.heightIn + assemblyHeightIn)} r={5} fill="#2c5c8a" stroke="#fff" strokeWidth={1.5} />
+                </g>
+              )}
               {(["coverage-start", "coverage-end"] as const).map((handle) => {
                 const hxIn = handle === "coverage-start" ? startXIn : endXIn;
                 return (
@@ -962,7 +1082,10 @@ export default function WallElevationView({
             {/* Mid-Wall Bond Beams (second story) — same shape as the
                 ground-floor ones above, offset by eaveHeightIn (absolute). */}
             {secondStoryMidWallBeams.map((beam) => {
-              const assemblyHeightIn = computeBoxBeamAssemblyHeightIn(beam.sizeId);
+              const isLintel = beam.kind === "web-braced-lintel";
+              const assemblyHeightIn = resolveMidWallBeamAssemblyHeightIn(beam);
+              const fillColor = isLintel ? "#9fb8e0" : "#c9a26f";
+              const strokeColor = isLintel ? "#3a5a8a" : "#7a5a2e";
               const startXIn = secondStoryOffsetsIn[beam.startSlotIndex] ?? startOffsetIn;
               const endXIn = secondStoryOffsetsIn[beam.endSlotIndex] ?? startOffsetIn + secondStoryRunWidthIn;
               const midYIn = eaveHeightIn + beam.heightIn + assemblyHeightIn / 2;
@@ -973,12 +1096,12 @@ export default function WallElevationView({
                     y={yPx(eaveHeightIn + beam.heightIn + assemblyHeightIn)}
                     width={(endXIn - startXIn) * scaleX}
                     height={assemblyHeightIn * PX_PER_IN}
-                    fill="#c9a26f"
-                    stroke="#7a5a2e"
+                    fill={fillColor}
+                    stroke={strokeColor}
                     strokeWidth={1}
                   />
-                  <text x={xPx(startXIn) + 4} y={yPx(eaveHeightIn + beam.heightIn) + 4} fontSize={9} fill="#7a5a2e">
-                    {beam.heightIn.toFixed(1)}&quot; bond beam
+                  <text x={xPx(startXIn) + 4} y={yPx(eaveHeightIn + beam.heightIn) + 4} fontSize={9} fill={strokeColor}>
+                    {beam.heightIn.toFixed(1)}&quot; {isLintel ? "lintel" : "bond beam"}
                   </text>
                   <g
                     style={{ cursor: "ns-resize" }}
@@ -992,12 +1115,30 @@ export default function WallElevationView({
                       y1={yPx(midYIn)}
                       x2={xPx(endXIn)}
                       y2={yPx(midYIn)}
-                      stroke="#7a5a2e"
+                      stroke={strokeColor}
                       strokeWidth={1}
                       strokeDasharray="2 2"
                     />
-                    <circle cx={xPx((startXIn + endXIn) / 2)} cy={yPx(midYIn)} r={7} fill="#7a5a2e" stroke="#fff" strokeWidth={1.5} />
+                    <circle cx={xPx((startXIn + endXIn) / 2)} cy={yPx(midYIn)} r={7} fill={strokeColor} stroke="#fff" strokeWidth={1.5} />
                   </g>
+                  {isLintel && (
+                    <g
+                      style={{ cursor: "ns-resize" }}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setMidWallBeamDrag({ story: "second", beamId: beam.id, handle: "lintel-top" });
+                      }}
+                    >
+                      <circle
+                        cx={xPx((startXIn + endXIn) / 2)}
+                        cy={yPx(eaveHeightIn + beam.heightIn + assemblyHeightIn)}
+                        r={5}
+                        fill="#2c5c8a"
+                        stroke="#fff"
+                        strokeWidth={1.5}
+                      />
+                    </g>
+                  )}
                   {(["coverage-start", "coverage-end"] as const).map((handle) => {
                     const hxIn = handle === "coverage-start" ? startXIn : endXIn;
                     return (
