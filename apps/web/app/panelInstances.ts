@@ -9,7 +9,12 @@ import {
   type MidWallBeamGeometry,
   type PanelSlot,
 } from "@building-integrity/geometry";
-import { computeRoughOpeningWidthIn, type BracePattern, type JackStudConfig } from "@building-integrity/panel-catalog";
+import {
+  computeRoughOpeningWidthIn,
+  computeStandardGirtRowCount,
+  type BracePattern,
+  type JackStudConfig,
+} from "@building-integrity/panel-catalog";
 
 /** Every real structural panel this app can name/count — header and sill
  * are derived from window/door slots (see allPanelInstances), not their
@@ -313,17 +318,31 @@ export function allPanelInstances(
             }
           }
         } else if (SIMPLE_NAMED_TYPES.has(slot.type)) {
+          // A Braced Panel's diagonal braces need a real middle girt row to
+          // anchor to (computeBracedGirtRowCount floors at 3 rows for
+          // exactly this reason, never scaling down for a short panel the
+          // way computeStandardGirtRowCount does) — fine for a normal,
+          // still-tall band next to a Mid-Wall Bond Beam, but not for a
+          // sliver band too short to even warrant a Standard Panel's own
+          // girt (Tommy: "a sliver too short to properly anchor a brace
+          // shouldn't fake one"). Only a band this short degrades to a
+          // plain "standard" instance instead (no bracing, no girt) — its
+          // own shear contribution drops from the project totals, matching
+          // Tommy's reasoning that the wall's real shear capacity already
+          // comes from its other, still-braced bands/runs.
+          const bracedDegradesToStandard =
+            slot.type === "braced" && heightOverrideIn !== undefined && computeStandardGirtRowCount(heightOverrideIn) === 0;
           pushInstance(
             direction,
             wall.id,
-            slot.type as NamedPanelType,
+            bracedDegradesToStandard ? "standard" : (slot.type as NamedPanelType),
             slot.widthIn,
             slotIndexInWall,
             undefined,
             undefined,
             undefined,
-            slot.type === "braced" ? slot.bracedPattern : undefined,
-            slot.type === "braced" ? slot.bracedMirrored : undefined,
+            slot.type === "braced" && !bracedDegradesToStandard ? slot.bracedPattern : undefined,
+            slot.type === "braced" && !bracedDegradesToStandard ? slot.bracedMirrored : undefined,
             undefined,
             undefined,
             undefined,

@@ -39,6 +39,7 @@ import {
   buildVerticalGapFillerMembers,
   computeBoxBeamAssemblyHeightIn,
   computeBoxBeamHeightDeltaIn,
+  computeStandardGirtRowCount,
   computeDoorRoughOpeningHeightIn,
   computeSharedRooflineBearingHeightIn,
   doorRoughOpeningSelectedHeightIn,
@@ -162,6 +163,15 @@ function membersForSlot(
   nailerOffsetIn: number,
   jackStudConfig: JackStudConfig,
   standardWidthIn: number,
+  // A Mid-Wall Bond Beam can split a "braced" slot into its own separate
+  // bands, each sized to `heightIn` above — a band too short to even
+  // warrant a Standard Panel's own girt (computeStandardGirtRowCount === 0)
+  // is also too short to properly anchor a diagonal brace's own required
+  // middle girt row (computeBracedGirtRowCount floors at 3, never scaling
+  // down), so it degrades to a plain "standard" instance instead — see
+  // panelInstances.ts's own doc comment on this same degrade. A still-tall
+  // band next to a beam keeps its real bracing unaffected.
+  isMidWallBandAffected: boolean,
 ): PanelMember[] | null {
   switch (slot.type) {
     case "standard":
@@ -169,6 +179,9 @@ function membersForSlot(
         ? buildSquareBalePanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, squareBaleStudConfig, nailerOffsetIn)
         : buildStandardPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer);
     case "braced": {
+      if (isMidWallBandAffected && computeStandardGirtRowCount(heightIn) === 0) {
+        return buildStandardPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer);
+      }
       const defaultStyle = bracingStyleToPatternMirror(bracingStyle);
       const style = resolveBracedStyle(slot, defaultStyle.pattern, defaultStyle.mirrored);
       return buildBracedPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored);
@@ -828,6 +841,7 @@ export default function Building3DView({
           nailerOffsetIn,
           jackStudConfig,
           standardWidthIn,
+          box.midWallBandIndex !== undefined,
         ),
       })),
     [
@@ -889,6 +903,7 @@ export default function Building3DView({
           nailerOffsetIn,
           jackStudConfig,
           standardWidthIn,
+          box.midWallBandIndex !== undefined,
         ),
       })),
     [

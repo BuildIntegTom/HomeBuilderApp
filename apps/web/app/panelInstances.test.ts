@@ -298,6 +298,61 @@ describe("allPanelInstances — midWallBeamsByWallId", () => {
   });
 });
 
+describe("allPanelInstances — a braced slot split by a Mid-Wall Bond Beam degrades to standard only for a band too short for a girt", () => {
+  const fp = buildRectangleFootprint(30, 20);
+  const wallSlots = {
+    AB: [{ type: "braced" as const, widthIn: 40, bracedPattern: "hatch" as const, bracedMirrored: true }],
+  };
+  // storyHeightIn 120: below-band [0,90] = 90in (well over 36, keeps bracing),
+  // above-band [101,120] = 19in (under 36, degrades).
+  const beam = { heightIn: 90, assemblyHeightIn: 11, startSlotIndex: 0, endSlotIndex: 1 };
+
+  it("degrades only the short above-band instance to 'standard', leaving the tall below-band instance braced", () => {
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, { AB: [beam] });
+    const ab = instances.filter((i) => i.wallId === "AB");
+    expect(ab.length).toBe(2);
+    const below = ab.find((i) => i.heightOverrideIn === 90)!;
+    const above = ab.find((i) => i.heightOverrideIn === 19)!;
+    expect(below.panelType).toBe("braced");
+    expect(below.bracedPattern).toBe("hatch");
+    expect(below.bracedMirrored).toBe(true);
+    expect(above.panelType).toBe("standard");
+    expect(above.bracedPattern).toBeUndefined();
+    expect(above.bracedMirrored).toBeUndefined();
+  });
+
+  it("still reports 'braced' with its pattern intact for a slot no beam covers", () => {
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, {
+      AB: [{ ...beam, startSlotIndex: 5, endSlotIndex: 6 }], // covers no real slot on this 1-slot wall
+    });
+    const ab = instances.filter((i) => i.wallId === "AB");
+    expect(ab.length).toBe(1);
+    expect(ab[0]!.panelType).toBe("braced");
+    expect(ab[0]!.bracedPattern).toBe("hatch");
+    expect(ab[0]!.bracedMirrored).toBe(true);
+  });
+
+  it("keeps both resulting bands braced when neither is short enough to degrade", () => {
+    // below [0,60] = 60in, above [71,120] = 49in — both well over 36in.
+    const tallBeam = { heightIn: 60, assemblyHeightIn: 11, startSlotIndex: 0, endSlotIndex: 1 };
+    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, { AB: [tallBeam] });
+    const ab = instances.filter((i) => i.wallId === "AB");
+    expect(ab.length).toBe(2);
+    for (const inst of ab) {
+      expect(inst.panelType).toBe("braced");
+      expect(inst.bracedPattern).toBe("hatch");
+    }
+  });
+
+  it("leaves an unaffected braced wall (no midWallBeamsByWallId arg at all) reporting 'braced' unchanged", () => {
+    const instances = allPanelInstances(fp, wallSlots, 40);
+    const ab = instances.filter((i) => i.wallId === "AB");
+    expect(ab.length).toBe(1);
+    expect(ab[0]!.panelType).toBe("braced");
+    expect(ab[0]!.bracedPattern).toBe("hatch");
+  });
+});
+
 describe("combinedPanelLabel", () => {
   it("returns a single instance's own name unchanged", () => {
     expect(combinedPanelLabel([{ name: "N-2", wallId: "AB", panelType: "standard", widthIn: 40, slotIndexInWall: 1 }])).toBe(
