@@ -104,7 +104,7 @@ function buildGableCornerStuds(widthIn: number, depthIn: number, leftStudSpanIn:
         position: { xIn: cornerXs[side]!, yIn, zIn: SKIN_THICKNESS_IN, rotationDeg: 0 },
         role: "stud",
         qty: 1,
-        notes: `${edgeLabels[side]} edge — angle-cut top (simplified to a plain box top, not the true bevel).`,
+        notes: `${edgeLabels[side]} edge — bottom is a square cut flush to the bottom plate; top is angle-cut flush to the underside of the sloped top plate (simplified to a plain box top here, not the true bevel).`,
       });
     }
   }
@@ -167,6 +167,29 @@ export function buildGablePanelMembers(
   const rightStudSpanIn = rightHeightIn - 2 * SKIN_THICKNESS_IN;
   const shorterStudSpanIn = Math.min(leftStudSpanIn, rightStudSpanIn);
   const { angleDeg: ripAngleDeg, lengthIn: ripLengthIn } = computeGableRipCallout(widthIn, leftHeightIn, rightHeightIn);
+  // The top plate 2x4s must run PARALLEL to the top skin (same roof pitch,
+  // just a shorter run since they're inset by PLATE_END_CLEARANCE_IN at
+  // each end, same as every other plate in this app) — so their own
+  // endpoint heights are read off the SAME roofline trend line the skin
+  // uses (leftHeightIn -> rightHeightIn over the full widthIn), evaluated
+  // at the plate's own inset x positions, not the skin's raw full-width
+  // edge heights (Tommy: "the top plate's 2x4's...don't seem to be in
+  // parallel with the plywood" — using the raw edge heights at an inset x
+  // made the plate's own rise/run steeper than the skin's real pitch).
+  const heightAtXIn = (xIn: number) => leftHeightIn + ((rightHeightIn - leftHeightIn) * xIn) / widthIn;
+  const platePeakLeftIn = heightAtXIn(PLATE_END_CLEARANCE_IN);
+  const platePeakRightIn = heightAtXIn(widthIn - PLATE_END_CLEARANCE_IN);
+  const { angleDeg: platePlumbCutAngleDeg, lengthIn: plateRipLengthIn } = computeGableRipCallout(
+    plateLengthIn,
+    platePeakLeftIn,
+    platePeakRightIn,
+  );
+  // A "plumb cut" at a sloped board's own end (where it butts a vertical
+  // corner stud) needs the saw angled by the SAME pitch angle as the rip
+  // itself (Tommy: "mitered plumb cut...flush to the studs") — the cut
+  // face's own extra length beyond a square cut, measured across the
+  // board's thickness, is thicknessIn / cos(angle).
+  const plumbCutEdgeLengthIn = (thicknessIn: number) => thicknessIn / Math.cos((ripAngleDeg * Math.PI) / 180);
 
   const members: PanelMember[] = [
     {
@@ -216,12 +239,12 @@ export function buildGablePanelMembers(
       PLATE_2X4_THICKNESS_IN,
       PLATE_2X4_WIDTH_IN,
       PLATE_END_CLEARANCE_IN,
-      leftHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
+      platePeakLeftIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
       widthIn - PLATE_END_CLEARANCE_IN,
-      rightHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
+      platePeakRightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
       PLATE_2X4_WIDTH_IN / 2,
       "plate",
-      "exterior-wythe edge — mitered to match the roof pitch, face-fastened to the top skin.",
+      `exterior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${plateRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.`,
     ),
     tiltedMember(
       "top_plate_2x4_int",
@@ -231,12 +254,12 @@ export function buildGablePanelMembers(
       PLATE_2X4_THICKNESS_IN,
       PLATE_2X4_WIDTH_IN,
       PLATE_END_CLEARANCE_IN,
-      leftHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
+      platePeakLeftIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
       widthIn - PLATE_END_CLEARANCE_IN,
-      rightHeightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
+      platePeakRightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
       depthIn - PLATE_2X4_WIDTH_IN / 2,
       "plate",
-      "interior-wythe edge — mitered to match the roof pitch, face-fastened to the top skin.",
+      `interior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${plateRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.`,
     ),
     tiltedMember(
       "top_plate_skin",
@@ -251,7 +274,7 @@ export function buildGablePanelMembers(
       rightHeightIn - SKIN_THICKNESS_IN / 2,
       depthIn / 2,
       "skin",
-      `Rip at ${ripAngleDeg.toFixed(2)}deg, cut to ${ripLengthIn.toFixed(2)}in long.`,
+      `Rip at ${ripAngleDeg.toFixed(2)}deg, cut to ${ripLengthIn.toFixed(2)}in long (point to butt). Panel-width edges are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the sheet's 0.75in thickness to a ${plumbCutEdgeLengthIn(SKIN_THICKNESS_IN).toFixed(2)}in cut edge.`,
     ),
     ...buildGirtRows(GABLE_GIRT_ROW_COUNT, widthIn, depthIn, shorterStudSpanIn),
   ];

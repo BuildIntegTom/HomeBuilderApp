@@ -109,6 +109,34 @@ describe("buildGablePanelMembers", () => {
     expect(topPlateExt.actualDimsIn.lengthIn).toBeGreaterThan(ripLengthIn - 6);
   });
 
+  it("keeps the top plate 2x4s truly parallel to the top skin (same tilt angle), just a shorter inset run", () => {
+    const members = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false);
+    const topSkin = members.find((m) => m.memberId === "top_plate_skin")!;
+    const topPlateExt = members.find((m) => m.memberId === "top_plate_2x4_ext")!;
+    const topPlateInt = members.find((m) => m.memberId === "top_plate_2x4_int")!;
+    expect(topPlateExt.position.tiltDeg).toBeCloseTo(topSkin.position.tiltDeg!, 6);
+    expect(topPlateInt.position.tiltDeg).toBeCloseTo(topSkin.position.tiltDeg!, 6);
+
+    // Also true for a mirrored (falling) slope and an asymmetric width.
+    const falling = buildGablePanelMembers(70, DEPTH_IN, HIGH_EDGE_IN, LOW_EDGE_IN, false);
+    const fallingSkin = falling.find((m) => m.memberId === "top_plate_skin")!;
+    const fallingPlate = falling.find((m) => m.memberId === "top_plate_2x4_ext")!;
+    expect(fallingPlate.position.tiltDeg).toBeCloseTo(fallingSkin.position.tiltDeg!, 6);
+  });
+
+  it("calls out the top plate's own rip angle/length and plumb-cut end note, matching the skin's pitch", () => {
+    const members = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false);
+    const { angleDeg: ripAngleDeg } = computeGableRipCallout(WIDTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN);
+    const topPlateExt = members.find((m) => m.memberId === "top_plate_2x4_ext")!;
+    expect(topPlateExt.notes).toContain(`${ripAngleDeg.toFixed(2)}deg`);
+    expect(topPlateExt.notes).toContain("plumb-cut");
+    expect(topPlateExt.notes).toContain("point to butt");
+
+    const topSkin = members.find((m) => m.memberId === "top_plate_skin")!;
+    expect(topSkin.notes).toContain("plumb-cut");
+    expect(topSkin.notes).toContain("point to butt");
+  });
+
   it("round-trips the top skin's tilt back to its known low/high edge endpoints", () => {
     const members = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false);
     const topSkin = members.find((m) => m.memberId === "top_plate_skin")!;
