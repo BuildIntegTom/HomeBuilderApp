@@ -2,7 +2,7 @@
 
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import type { TruckDims, TruckLoad } from "@building-integrity/geometry";
+import type { PanelStack, TruckDims, TruckLoad } from "@building-integrity/geometry";
 import type { NamedPanelType } from "./panelInstances";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import PanelLabel from "./PanelLabel";
@@ -35,6 +35,12 @@ export interface TruckLoad3DViewProps {
    * size instead of the shared stack footprint every panel used to borrow. */
   panelWidthById: Map<string, number>;
   panelHeightById: Map<string, number>;
+  /** Gap rendered between 2 stacked header/sill panels within the same
+   * stack (Tommy: "stacked together with a small gap") — never between a
+   * header/sill and a full panel, and never between 2 full panels, which
+   * stay flush. See `packages/panel-catalog/src/data.ts`'s
+   * `headerSillDunnageGapIn`. */
+  dunnageGapIn: number;
   displayName?: string;
 }
 
@@ -80,16 +86,42 @@ function TruckPanelLabel({
   );
 }
 
+function isHeaderOrSill(panelId: string, panelTypeById: Map<string, NamedPanelType>): boolean {
+  const t = panelTypeById.get(panelId);
+  return t === "header" || t === "sill";
+}
+
+/** Each panel's own center-Y offset within its stack, bottom to top,
+ * index 0 = the bottom-most panel — a running cumulative sum rather than a
+ * closed-form `index * thicknessIn` formula, since a `dunnageGapIn` gap now
+ * only applies between 2 CONSECUTIVE header/sill panels (Tommy: "stacked
+ * together with a small gap") — never between a header/sill and a full
+ * panel, and never between 2 full panels, which stay flush. */
+function computeCenterYFtFromBottom(stack: PanelStack, bufferIn: number, dunnageGapIn: number, panelTypeById: Map<string, NamedPanelType>): number[] {
+  const n = stack.panelIds.length;
+  const result: number[] = [];
+  let yCursorIn = bufferIn;
+  for (let indexFromBottom = 0; indexFromBottom < n; indexFromBottom++) {
+    const panelId = stack.panelIds[n - 1 - indexFromBottom]!;
+    result.push((yCursorIn + stack.thicknessIn / 2) / IN_PER_FT);
+    yCursorIn += stack.thicknessIn;
+    const nextUpId = stack.panelIds[n - 1 - (indexFromBottom + 1)];
+    if (nextUpId && isHeaderOrSill(panelId, panelTypeById) && isHeaderOrSill(nextUpId, panelTypeById)) yCursorIn += dunnageGapIn;
+  }
+  return result;
+}
+
 /**
  * One trailer's own load, rendered as simple flat-colored boxes — always
  * simplified (Tommy: "for these drawings, lets not see all the wooden
  * pieces... just appear as the primary 3D shapes that they are"), since a
  * full truckload of panels shown member-by-member would be unreadable
  * clutter. Renders `load.rows` exactly as `computeTruckLoads`/
- * `packRowsByWidth` packed them (a row can hold 2+ narrower stacks side by
- * side, Tommy: "its very very handy to be able to have 2 rows of panels"),
- * so the render can never drift out of sync with the real capacity
- * calculation.
+ * `packLanesWithLookahead` packed them — a row can hold 2+ narrower lanes
+ * side by side (Tommy: "its very very handy to be able to have 2 rows of
+ * panels"), and each lane can itself hold 2+ stacks packed one behind
+ * another via depth-backfill — so the render can never drift out of sync
+ * with the real capacity calculation.
  */
 export default function TruckLoad3DView({
   load,
@@ -99,19 +131,20 @@ export default function TruckLoad3DView({
   panelTypeById,
   panelWidthById,
   panelHeightById,
+  dunnageGapIn,
   displayName = "Truck",
 }: TruckLoad3DViewProps) {
   // Each row's own real depth (Tommy: "you can orient the panels however
-  // you want to make them space efficient") — mirrors computeTruckLoads's
-  // own row-packing, so a row of short header/sill stacks reserves only as
-  // much of the truck's length as its own tallest member actually needs
-  // instead of a fixed uniform depth for every row.
-  const rowHeightsIn = load.rows.map((row) => Math.max(...row.map((stack) => stack.heightIn)));
+  // you want to make them space efficient") — the deepest LANE in the row
+  // (see PanelLane's own depthIn, which already accounts for 2+ stacks
+  // packed one behind another within that lane via depth-backfill), not a
+  // fixed uniform depth for every row.
+  const rowDepthsIn = load.rows.map((row) => Math.max(...row.map((lane) => lane.depthIn)));
   const rowZStartsIn: number[] = [];
   let cumulativeZIn = bufferIn;
-  for (const rowHeightIn of rowHeightsIn) {
+  for (const rowDepthIn of rowDepthsIn) {
     rowZStartsIn.push(cumulativeZIn);
-    cumulativeZIn += rowHeightIn + bufferIn;
+    cumulativeZIn += rowDepthIn + bufferIn;
   }
 
   const truckWidthFt = truck.widthIn / IN_PER_FT;
@@ -145,34 +178,38 @@ export default function TruckLoad3DView({
             <meshBasicMaterial color={TRAILER_COLOR} wireframe />
           </mesh>
           {load.rows.map((row, rowIndex) => {
-            const rowHeightIn = rowHeightsIn[rowIndex]!;
             const rowZStartIn = rowZStartsIn[rowIndex]!;
-            const stackCenterZFt = (rowZStartIn + rowHeightIn / 2) / IN_PER_FT;
-            let stackXStartIn = bufferIn;
-            return row.map((stack) => {
-              const stackCenterXFt = (stackXStartIn + stack.widthIn / 2) / IN_PER_FT;
-              stackXStartIn += stack.widthIn + bufferIn;
-              const thicknessFt = stack.thicknessIn / IN_PER_FT;
-              return stack.panelIds.map((panelId, indexFromTop) => {
-                const indexFromBottom = stack.panelIds.length - 1 - indexFromTop;
-                const centerYFt = (bufferIn + (indexFromBottom + 0.5) * stack.thicknessIn) / IN_PER_FT;
-                const color = NAMED_PANEL_TYPE_COLORS[panelTypeById.get(panelId) ?? "standard"];
-                const widthFt = (panelWidthById.get(panelId) ?? stack.widthIn) / IN_PER_FT;
-                const depthFt = (panelHeightById.get(panelId) ?? panelHeightIn) / IN_PER_FT;
-                // Only the topmost panel of each stack ever has its own top
-                // face actually visible from above (Tommy: "the specific
-                // panel label... across all models") — every panel under it
-                // is hidden face-to-face there, though its front/right
-                // faces are still visible (see TruckPanelLabel's own doc
-                // comment).
-                const isTopOfStack = indexFromTop === 0;
-                return (
-                  <mesh key={panelId} position={[stackCenterXFt, centerYFt, stackCenterZFt]}>
-                    <boxGeometry args={[widthFt, thicknessFt, depthFt]} />
-                    <meshStandardMaterial color={color} />
-                    <TruckPanelLabel text={panelId} widthFt={widthFt} thicknessFt={thicknessFt} depthFt={depthFt} isTopOfStack={isTopOfStack} />
-                  </mesh>
-                );
+            let laneXStartIn = bufferIn;
+            return row.map((lane) => {
+              const laneCenterXFt = (laneXStartIn + lane.widthIn / 2) / IN_PER_FT;
+              laneXStartIn += lane.widthIn + bufferIn;
+              let stackZStartIn = rowZStartIn; // front of the lane; each stack sits behind the previous one
+              return lane.stacks.map((stack) => {
+                const stackCenterZFt = (stackZStartIn + stack.heightIn / 2) / IN_PER_FT;
+                stackZStartIn += stack.heightIn + bufferIn;
+                const thicknessFt = stack.thicknessIn / IN_PER_FT;
+                const centerYFtFromBottom = computeCenterYFtFromBottom(stack, bufferIn, dunnageGapIn, panelTypeById);
+                const n = stack.panelIds.length;
+                return stack.panelIds.map((panelId, indexFromTop) => {
+                  const centerYFt = centerYFtFromBottom[n - 1 - indexFromTop]!;
+                  const color = NAMED_PANEL_TYPE_COLORS[panelTypeById.get(panelId) ?? "standard"];
+                  const widthFt = (panelWidthById.get(panelId) ?? stack.widthIn) / IN_PER_FT;
+                  const depthFt = (panelHeightById.get(panelId) ?? panelHeightIn) / IN_PER_FT;
+                  // Only the topmost panel of each stack ever has its own top
+                  // face actually visible from above (Tommy: "the specific
+                  // panel label... across all models") — every panel under it
+                  // is hidden face-to-face there, though its front/right
+                  // faces are still visible (see TruckPanelLabel's own doc
+                  // comment).
+                  const isTopOfStack = indexFromTop === 0;
+                  return (
+                    <mesh key={panelId} position={[laneCenterXFt, centerYFt, stackCenterZFt]}>
+                      <boxGeometry args={[widthFt, thicknessFt, depthFt]} />
+                      <meshStandardMaterial color={color} />
+                      <TruckPanelLabel text={panelId} widthFt={widthFt} thicknessFt={thicknessFt} depthFt={depthFt} isTopOfStack={isTopOfStack} />
+                    </mesh>
+                  );
+                });
               });
             });
           })}

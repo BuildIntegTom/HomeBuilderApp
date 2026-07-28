@@ -1446,6 +1446,19 @@ export const shippingStackBufferIn: CatalogValue<number> = {
   note: "Tommy: \"always keep in mind a 3in buffer on all sides of each stack.\"",
 };
 
+/** Gap between 2 header/sill panels sharing a stack (Tommy: "header and
+ * sills for window RO's... can be stacked together with a small gap") —
+ * modeling a thin dunnage/blocking stick used to separate them for
+ * handling, never applied between 2 full-sized panels (which stay flush
+ * face-to-face) or between a header/sill and a full panel. */
+export const headerSillDunnageGapIn: CatalogValue<number> = {
+  value: 0.75,
+  status: "pending-BI-confirmation",
+  note:
+    "Placeholder gap between 2+ header/sill panels sharing a stack, modeling a thin dunnage/blocking stick used " +
+    "to separate them for handling — not yet a Building-Integrity-confirmed figure.",
+};
+
 /** Shipping cost = trucks (computed from the stacking calculation) x miles
  * (one-way, editable) x this rate (editable) — Tommy: "a changeable
  * equation for how many trucks x how many miles x a changeable dollars per

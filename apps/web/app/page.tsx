@@ -21,6 +21,7 @@ import {
   computeRoofBearingSegments,
   computeSillRunWidths,
   computeTruckLoads,
+  partitionLongHeaders,
   cornerOwnership as cornerOwnershipPure,
   dragWallBounded,
   editWallLength,
@@ -155,6 +156,7 @@ import {
   foundationFastenerSchedule,
   foundationTypes,
   gableHeelHeightDefaultIn,
+  headerSillDunnageGapIn,
   groundScrewProducts,
   groundScrewProductsStatus,
   looseDensePackDefaultThicknessIn,
@@ -2499,7 +2501,10 @@ export default function LayoutEditor() {
   // jack studs aren't part of `allInstances`, they're built separately
   // above), sorted purely by load order — chunkIntoStacksSmart (via
   // useCompatibilityStacking below) is what decides whether a header/sill
-  // gets diverted into its own stack, not this sort.
+  // gets diverted into its own stack, not this sort. Each ref's own `kind`
+  // (header/sill/other) is what lets truckLoads.ts apply the relaxed
+  // header/sill support rule and the never-bottom rule (see
+  // partitionLongHeaders/chunkIntoStacksSmart's own doc comments).
   const shippingCombinedPanelRefs = useMemo(
     () =>
       allInstances
@@ -2509,8 +2514,22 @@ export default function LayoutEditor() {
             (shippingLoadOrderIndex.get(`${a.wallId}:${a.slotIndexInWall}`) ?? 0) -
             (shippingLoadOrderIndex.get(`${b.wallId}:${b.slotIndexInWall}`) ?? 0),
         )
-        .map((inst) => ({ id: inst.name, widthIn: inst.widthIn, heightIn: shippingPanelHeightById.get(inst.name) })),
+        .map((inst) => ({
+          id: inst.name,
+          widthIn: inst.widthIn,
+          heightIn: shippingPanelHeightById.get(inst.name),
+          kind: inst.panelType === "header" ? ("header" as const) : inst.panelType === "sill" ? ("sill" as const) : ("other" as const),
+        })),
     [allInstances, shippingLoadOrderIndex, shippingPanelHeightById],
+  );
+
+  // Longer headers (Tommy: "longer headers should probably be stacked
+  // separately") never merge into the main run at all — see
+  // partitionLongHeaders's own doc comment for the footprint-bloat problem
+  // this also fixes.
+  const { mainRun: shippingMainRunRefs, longHeaders: shippingLongHeaderRefs } = useMemo(
+    () => partitionLongHeaders(shippingCombinedPanelRefs, standardWidthIn),
+    [shippingCombinedPanelRefs, standardWidthIn],
   );
 
   const selectedTruck = truckBedTypes.value.find((t) => t.id === selectedTruckBedId) ?? truckBedTypes.value[0]!;
@@ -2520,10 +2539,13 @@ export default function LayoutEditor() {
     heightIn: selectedTruck.interiorHeightIn,
   };
   const shippingGroups: PanelGroup[] = [
-    { panels: shippingCombinedPanelRefs, thicknessIn, defaultHeightIn: wallHeightFt * 12, useCompatibilityStacking: true },
+    { panels: shippingMainRunRefs, thicknessIn, defaultHeightIn: wallHeightFt * 12, useCompatibilityStacking: true },
+    { panels: shippingLongHeaderRefs, thicknessIn, defaultHeightIn: wallHeightFt * 12, useCompatibilityStacking: true },
     { panels: shippingJackStudRefs, thicknessIn: jackStudThicknessIn(jackStudConfig), defaultHeightIn: wallHeightFt * 12 },
   ];
-  const truckLoads = computeTruckLoads(shippingGroups, shippingTruckDims, shippingStackBufferIn.value);
+  const truckLoads = computeTruckLoads(shippingGroups, shippingTruckDims, shippingStackBufferIn.value, {
+    dunnageGapIn: headerSillDunnageGapIn.value,
+  });
   const shippingTruckCount = truckLoads.length;
   const shippingCost = shippingTruckCount * shippingMiles * shippingRatePerMile;
   const shippingPanelsPerStack = computePanelsPerStack(shippingTruckDims.heightIn, thicknessIn, shippingStackBufferIn.value);
@@ -6301,6 +6323,7 @@ export default function LayoutEditor() {
                       panelTypeById={shippingPanelTypeById}
                       panelWidthById={shippingPanelWidthById}
                       panelHeightById={shippingPanelHeightById}
+                      dunnageGapIn={headerSillDunnageGapIn.value}
                       displayName={`Truck ${i + 1} of ${shippingTruckCount}`}
                     />
                   ))}
@@ -6319,9 +6342,11 @@ export default function LayoutEditor() {
               `A ${shippingStackBufferIn.value}in buffer is kept clear on every side of every stack (Tommy) — shared between neighbors, so it's one gap between any two things (stack-to-stack or stack-to-wall), not doubled.`,
               'Loading order follows the point of least accessibility (Tommy: "the stack order must correlate to the point of least accessibility... that panel on the corner is the top of the first stack, and it\'s row stacked under it") — panels load starting at that corner, all the way around the footprint.',
               "A panel only stacks on top of another if it can safely support it — nothing gets loaded under something more than 10% bigger than itself, in width or height (Tommy: \"we cannot stack panels that are like 10% or more bigger than the top panel\"; a smaller panel can always sit on a bigger one, never the reverse). A header or sill that doesn't fit its neighbor splits into its own small stack right where it's needed in the load sequence — not batched separately at the end — and consecutive same-size ones (like 2 sills in a row) share one stack together.",
-              "Stacks pack row by row across the trailer's own width using each stack's own real width (Tommy: \"its very very handy to be able to have 2 rows of panels\") — 2 or more narrower stacks share a row whenever they both fit, rather than every stack being forced into one lane sized to the single widest stack anywhere.",
+              `Headers and sills within 10% of the panelization standard width (${standardWidthIn}in) of each other can share a stack with a ${headerSillDunnageGapIn.value}in gap between them (Tommy: "stacked together with a small gap") — full-sized panels stay flush, with no gap. A header/sill is never left as a stack's own bottom if it can be avoided (Tommy: "should not be the bottom of a stack") — it holds until a full panel arrives to cap it, and full panels can sit above or below one this way. Longer headers outside that 10% band ship in their own separate stacks instead of merging into the main run.`,
+              "Stacks pack row by row across the trailer's own width using each stack's own real width (Tommy: \"its very very handy to be able to have 2 rows of panels\") — 2 or more narrower stacks share a row whenever they both fit, rather than every stack being forced into one lane sized to the single widest stack anywhere. Within a row, a shallower stack's own leftover depth gets backfilled with another compatible stack instead of left empty, so a row of short header/sill stacks doesn't waste the trailer's own length.",
               "Jack studs ship as their own loose-lumber bundle (Tommy: \"jack studs can be piled up together and stacked 90 degrees hot dog rotation\") — thin sheets or 2x4 sticks piled face-to-face using their own real thickness, not the wall's own much thicker cross-section, so far more of them stack in the same trailer height.",
               shippingRatePerMileDefault.note ?? "",
+              headerSillDunnageGapIn.note ?? "",
               "3D views always render simplified flat-colored boxes (one per panel, colored by its panel type) rather than full member geometry — matches the \"Viewer: 3D Boxes\" state available in the main wall 3D view.",
             ].filter(Boolean)}
             role={role}
