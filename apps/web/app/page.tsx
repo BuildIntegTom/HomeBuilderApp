@@ -225,7 +225,7 @@ import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
 import { resolveBracedStyle } from "./bracedStyle";
-import { resolveGableProfilePoints } from "./gableProfilePoints";
+import { computeRiseFtForPitch, resolveGableProfilePoints, resolveHeelSeat, ROOF_PITCH_OPTIONS_IN12 } from "./gableProfilePoints";
 import {
   LINTEL_MIN_HEIGHT_IN,
   LINTEL_ROOFLINE_SNAP_THRESHOLD_IN,
@@ -285,11 +285,6 @@ const STRAW_BALE_WEIGHT_LB = 40;
 const KG_TO_LB = 2.20462;
 const LB_FT3_TO_KG_M3 = 16.018463;
 const FT3_TO_M3 = 0.0283168;
-// Roofline profile point height quick-picks (Tommy: "choose from 2/12...12/12
-// slopes") — a real, standalone range scoped to this control, kept separate
-// from the untouched decorative gallery's own HIGH_PERF_TRUSS_MIN/MAX_PITCH_IN12
-// even though the numeric range happens to coincide.
-const ROOF_PROFILE_PITCH_OPTIONS_IN12 = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 const ROOF_BEARING_STRUCTURAL_STATUS: PanelStructuralStatus = {
   status: "pending-BI-confirmation",
@@ -828,22 +823,32 @@ export default function LayoutEditor() {
     },
     [footprint, gableProfilePositionsInByWallId, handleChangeRoofProfilePointHeightFt],
   );
-  // "add shed roof option next to gable end options to auto generate a 4/12
-  // scenario of gable end shed roof" (Tommy) — snaps this wall's own first
-  // profile point to its start and sets the Roof tab's ridge height so the
-  // resulting single slope (spanning the wall's own full width) is a
-  // 4-in-12 pitch.
-  const handleGenerateShedRoof = (wall: Wall) => {
-    handleToggleGableEnd(wall.id, true);
-    handleChangeGableProfilePositionIn(wall.id, 0, 0);
-    // Round to the nearest inch (this app's finest dimension unit
-    // everywhere else) — a raw 4/12 pitch over an arbitrary wall length
-    // is a repeating decimal in feet and would otherwise leak an ugly
-    // value like 16.666666666666668 into the height input/diagrams below.
-    // A pure rise now (see roofProfilePointHeightsFt's own doc comment) —
-    // no eave/wallHeightFt term needed, unlike the old absolute-height
-    // formula this replaces.
-    handleChangeRoofProfilePointHeightFt(0, Math.round(wall.lengthFt * (4 / 12) * 12) / 12);
+  // Elevation sidebar's Shed/Centered Peak pitch dropdowns (Tommy: pick a
+  // standard pitch instead of typing a raw rise) — both snap the point's
+  // own position first (start edge for a shed run across the wall's full
+  // width; back to center for a centered peak, even if it had been dragged
+  // off), then set the height for that pitch over the resulting run.
+  // Shed applies to any profile point (generalizes the single fixed-4/12
+  // shed shortcut this replaces, including a flat-top's own point 0);
+  // Centered Peak only makes sense for a real single peak (pointIndex 0 of
+  // a "peaked" 1-point profile) — a flat-top point isn't a peak.
+  const handleSetShedPitch = (wall: Wall, pointIndex: number, pitchIn12: number) => {
+    handleChangeGableProfilePositionIn(wall.id, pointIndex, 0);
+    const wallWidthIn = wall.lengthFt * 12;
+    const seat = resolveHeelSeat(wallWidthIn, standardWidthIn, heelHeightIn, 1);
+    handleChangeRoofProfilePointHeightFt(
+      pointIndex,
+      computeRiseFtForPitch(pitchIn12, wallWidthIn - seat.runOffsetIn, seat.heelOffsetIn),
+    );
+  };
+  const handleSetCenteredPeakPitch = (wall: Wall, pitchIn12: number) => {
+    handleChangeGableProfilePositionIn(wall.id, 0, undefined);
+    const wallWidthIn = wall.lengthFt * 12;
+    const seat = resolveHeelSeat(wallWidthIn, standardWidthIn, heelHeightIn, 2);
+    handleChangeRoofProfilePointHeightFt(
+      0,
+      computeRiseFtForPitch(pitchIn12, wallWidthIn / 2 - seat.runOffsetIn, seat.heelOffsetIn),
+    );
   };
 
   // Second story (Tommy: "add a second level of panels") — a real,
@@ -1137,14 +1142,6 @@ export default function LayoutEditor() {
   );
 
   const elevationWall = footprint && elevationViewWallId ? (footprint.walls.find((w) => w.id === elevationViewWallId) ?? null) : null;
-
-  // The Roof tab's pitch-select is global (not tied to any one wall), so it
-  // needs some real wall width to turn a picked slope into a height —
-  // whichever wall's elevation is currently open, else the first
-  // gable-enabled wall, else just the first drawn wall. Falls back to a
-  // plain 20ft assumption only when nothing's been drawn yet at all.
-  const pitchReferenceWall =
-    elevationWall ?? (footprint ? (footprint.walls.find((w) => gableEndWallIds.has(w.id)) ?? footprint.walls[0] ?? null) : null);
 
   // The view-mode dial's cycle (Tommy: "cycle the wall view options...
   // starting at the top and going clockwise, and the wheel moves onto 3D
@@ -4448,22 +4445,55 @@ export default function LayoutEditor() {
                     />
                     in
                   </label>
-                  <button
-                    type="button"
-                    className={elevationStyles.actionButton}
-                    onClick={() => handleChangeGableProfilePositionIn(elevationWall.id, i, undefined)}
-                  >
-                    Center
-                  </button>
-                  {i === 0 && (
+                  {pointCount === 1 ? (
+                    <label className={elevationStyles.fieldRow}>
+                      Centered Peak
+                      <select
+                        className={elevationStyles.pitchSelect}
+                        value=""
+                        onChange={(e) => {
+                          const pitchIn12 = Number(e.target.value);
+                          if (pitchIn12) handleSetCenteredPeakPitch(elevationWall, pitchIn12);
+                        }}
+                        title="Re-centers this peak, then sets its own height so both sides share this pitch over half the wall's width"
+                      >
+                        <option value="">Pick a pitch…</option>
+                        {ROOF_PITCH_OPTIONS_IN12.map((p) => (
+                          <option key={p} value={p}>
+                            {p}/12
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
                     <button
                       type="button"
                       className={elevationStyles.actionButton}
-                      onClick={() => handleGenerateShedRoof(elevationWall)}
-                      title="Snaps this point to one end and sets its own height for a 4/12 pitch across this wall's full width"
+                      onClick={() => handleChangeGableProfilePositionIn(elevationWall.id, i, undefined)}
                     >
-                      Shed Roof (auto 4/12)
+                      Center
                     </button>
+                  )}
+                  {i === 0 && (
+                    <label className={elevationStyles.fieldRow}>
+                      Shed
+                      <select
+                        className={elevationStyles.pitchSelect}
+                        value=""
+                        onChange={(e) => {
+                          const pitchIn12 = Number(e.target.value);
+                          if (pitchIn12) handleSetShedPitch(elevationWall, i, pitchIn12);
+                        }}
+                        title="Snaps this point to the wall's start edge, then sets its own height for this pitch across the wall's full width"
+                      >
+                        <option value="">Pick a pitch…</option>
+                        {ROOF_PITCH_OPTIONS_IN12.map((p) => (
+                          <option key={p} value={p}>
+                            {p}/12
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                   )}
                   {pointIsSnapped[i] && <span className={elevationStyles.warningText}>Snapped to a shed (single slope) on this side</span>}
                 </div>
@@ -4958,41 +4988,22 @@ export default function LayoutEditor() {
                     : "Two independently-placeable top points (each with its own height and along-wall position, set per-wall in that wall's elevation view) — a triangle with the top chopped off."}
                 </p>
 
-                {roofProfilePointHeightsFt.map((heightFt, i) => {
-                  const wallWidthIn = pitchReferenceWall ? pitchReferenceWall.lengthFt * 12 : 240;
-                  const runIn = roofProfilePointHeightsFt.length === 1 ? wallWidthIn / 2 : wallWidthIn / 3;
-                  return (
-                    <label key={i} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      {roofProfilePointHeightsFt.length === 1 ? "Ridge rise above eave (ft)" : `Point ${i + 1} rise above eave (ft)`}
-                      <input
-                        type="number"
-                        value={heightFt}
-                        step={0.5}
-                        onChange={(e) => handleChangeRoofProfilePointHeightFt(i, Number(e.target.value))}
-                        style={{ width: 70 }}
-                      />
-                      <select
-                        value=""
-                        onChange={(e) => {
-                          const pitchIn12 = Number(e.target.value);
-                          if (!pitchIn12) return;
-                          handleChangeRoofProfilePointHeightFt(i, Math.round(runIn * (pitchIn12 / 12)) / 12);
-                        }}
-                      >
-                        <option value="">Or pick a slope…</option>
-                        {ROOF_PROFILE_PITCH_OPTIONS_IN12.map((p) => (
-                          <option key={p} value={p}>
-                            {p}/12
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  );
-                })}
+                {roofProfilePointHeightsFt.map((heightFt, i) => (
+                  <label key={i} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {roofProfilePointHeightsFt.length === 1 ? "Ridge rise above eave (ft)" : `Point ${i + 1} rise above eave (ft)`}
+                    <input
+                      type="number"
+                      value={heightFt}
+                      step={0.5}
+                      onChange={(e) => handleChangeRoofProfilePointHeightFt(i, Number(e.target.value))}
+                      style={{ width: 70 }}
+                    />
+                  </label>
+                ))}
                 <p className={styles.note}>
-                  A picked slope computes this point&apos;s rise from{" "}
-                  {pitchReferenceWall ? `wall ${pitchReferenceWall.id}'s own width` : "a 20ft reference width (no gable-end wall drawn yet)"}{" "}
-                  — the rise field stays freely editable afterward either way.
+                  For a real wall, pick a standard pitch (2/12-12/12) instead in that wall&apos;s own Elevation view —
+                  it computes the rise from that wall&apos;s own real width. The rise field here stays freely editable
+                  either way.
                 </p>
 
                 <label>

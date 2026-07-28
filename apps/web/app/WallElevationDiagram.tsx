@@ -27,7 +27,7 @@ import {
 } from "@building-integrity/panel-catalog";
 import { computeOpeningGeometry } from "./openingGeometry";
 import { MemberElevationShapes } from "./MemberElevationShapes";
-import { GABLE_SHED_SNAP_THRESHOLD_IN, resolveGableProfilePoints } from "./gableProfilePoints";
+import { GABLE_SHED_SNAP_THRESHOLD_IN, matchStandardPitchIn12, resolveGableProfilePoints } from "./gableProfilePoints";
 import {
   LINTEL_MIN_HEIGHT_IN,
   LINTEL_ROOFLINE_SNAP_THRESHOLD_IN,
@@ -1015,6 +1015,69 @@ export default function WallElevationDiagram({
               </g>
             );
           })}
+
+        {/* Per-side pitch summary — one label centered above each side's
+            own full run (left of the peak, right of it), showing the
+            real resulting slope as a plain degree figure, or the matching
+            "X/12" fraction once it happens to land exactly on one of the
+            Shed/Centered Peak dropdowns' own selectable pitches — additive
+            alongside the per-tile rip callouts above (Tommy: keep both).
+            Only meaningful for a real single peak (a flat-top profile has
+            no one peak for "each side" to mean anything). Run/rise for
+            each side is read off the OUTERMOST real tile's own anchor
+            (gablePanels' first/last entry), not re-derived from the raw
+            eave height — an energy-heel truss seat (heelHeightIn) excludes
+            a real flat zone from each unclaimed corner (see
+            computeGableTiledRow's own doc comment), so the true sloped run
+            is shorter than the wall's own raw half-width; reading it off
+            the already-correct tile anchors guarantees this can never
+            disagree with the per-tile labels above. Skips a side with no
+            real tile at all — the peak sitting exactly on that edge (a
+            shed on this side), nothing to summarize there. */}
+        {hasGableEnd &&
+          roofProfileType === "peaked" &&
+          points[0] &&
+          gablePanels.length > 0 &&
+          (() => {
+            const peakXIn = resolvedPointXsIn[0]!;
+            const peakHeightIn = points[0]!.heightIn;
+            const firstTile = gablePanels[0]!;
+            const lastTile = gablePanels[gablePanels.length - 1]!;
+            const sides = [
+              {
+                key: "left",
+                runIn: peakXIn - firstTile.xStartIn,
+                riseIn: peakHeightIn - firstTile.leftHeightIn,
+                midXIn: (firstTile.xStartIn + peakXIn) / 2,
+                midHeightIn: (firstTile.leftHeightIn + peakHeightIn) / 2,
+              },
+              {
+                key: "right",
+                runIn: lastTile.xEndIn - peakXIn,
+                riseIn: peakHeightIn - lastTile.rightHeightIn,
+                midXIn: (peakXIn + lastTile.xEndIn) / 2,
+                midHeightIn: (peakHeightIn + lastTile.rightHeightIn) / 2,
+              },
+            ];
+            return sides.map((side) => {
+              if (side.runIn <= 0) return null;
+              const rip = computeGableRipCallout(side.runIn, peakHeightIn - side.riseIn, peakHeightIn);
+              const matchedPitch = matchStandardPitchIn12(side.riseIn, side.runIn);
+              return (
+                <text
+                  key={side.key}
+                  x={xPx(side.midXIn)}
+                  y={yPx(side.midHeightIn) - 10}
+                  fontSize={11}
+                  fontWeight={700}
+                  textAnchor="middle"
+                  fill="#1f3a5f"
+                >
+                  {matchedPitch ? `${matchedPitch}/12` : `${rip.angleDeg.toFixed(1)}°`}
+                </text>
+              );
+            });
+          })()}
 
         {/* Vertical safety gap (Tommy: "an ability to put a safety gap
             inbetween the truss bottom and the gable end top") — the real
