@@ -42,7 +42,7 @@ export interface MidWallBeam {
  * box-beam's sizeId through the catalog (unchanged), a lintel's own
  * lintelHeightIn directly. The single choke point every consumer
  * (midWallBeamsToGeometry below, page.tsx's fabrication grouping/pricing,
- * WallElevationView.tsx's drag/render, Building3DView.tsx) should call
+ * WallElevationDiagram.tsx's drag/render, Building3DView.tsx) should call
  * instead of reading sizeId/lintelHeightIn directly. */
 export function resolveMidWallBeamAssemblyHeightIn(beam: MidWallBeam): number {
   return beam.kind === "web-braced-lintel" ? (beam.lintelHeightIn ?? LINTEL_MIN_HEIGHT_IN) : computeBoxBeamAssemblyHeightIn(beam.sizeId);
@@ -52,7 +52,7 @@ export function resolveMidWallBeamAssemblyHeightIn(beam: MidWallBeam): number {
  * resolveMidWallBeamAssemblyHeightIn) — the one place `MidWallBeam` (the
  * app-level, catalog-aware type) turns into `MidWallBeamGeometry` (the
  * geometry package's own catalog-agnostic input), so every consumer
- * (panelInstances.ts, WallElevationView.tsx, Building3DView.tsx) resolves
+ * (panelInstances.ts, WallElevationDiagram.tsx, Building3DView.tsx) resolves
  * sizes identically regardless of kind. */
 export function midWallBeamsToGeometry(beams: MidWallBeam[]): MidWallBeamGeometry[] {
   return beams.map((b) => ({

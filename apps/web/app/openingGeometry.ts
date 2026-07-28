@@ -22,7 +22,7 @@ export interface OpeningGeometry {
  * header, jack studs, and sill(s) actually sit — the real member 3D view
  * (Building3DView's `membersForSlot`), the simplified box 3D view
  * (`renderSimplifiedSlot`), and the 2D elevation views (WindowSizeDiagram,
- * WallElevationView) — one formula, so none of them can ever drift apart.
+ * WallElevationDiagram) — one formula, so none of them can ever drift apart.
  * Scalar-based rather than `PanelSlot`-based since not every caller has a
  * real `PanelSlot` object (WindowSizeDiagram only has individual scalar
  * props) — each caller resolves its own "this slot's effective sill/RO

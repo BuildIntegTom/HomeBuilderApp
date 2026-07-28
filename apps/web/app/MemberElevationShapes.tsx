@@ -28,7 +28,7 @@ export interface ProjectedShape {
  * mapping callbacks (rather than one shared pxPerIn+origin) — every current
  * caller's own mapping is a plain affine function, but callers differ in
  * offset (a window's own local frame vs. a whole wall's run) and can even
- * differ in X/Y scale (WallElevationView's scaleX shrinks below its fixed
+ * differ in X/Y scale (WallElevationDiagram's scaleX shrinks below its fixed
  * vertical PX_PER_IN once a wall exceeds its canvas width cap), so a shared
  * projector can't assume a single uniform scale — it just needs `xToPx`/
  * `zToPx` to be affine and `zToPx` to be Y-flipping (decreasing as zIn

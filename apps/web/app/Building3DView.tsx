@@ -938,7 +938,7 @@ export default function Building3DView({
   // — the same data the Panel Fabrication pages use). Each tile sits on TOP
   // of the roof-bearing member (when one exists), not at the raw eave line,
   // so the two don't interpenetrate — a real stacking interaction neither
-  // WallElevationView's own 2D SVG nor anything else resolves today, since
+  // WallElevationDiagram's own 2D SVG nor anything else resolves today, since
   // roof-bearing has never been drawn alongside gable anywhere until now.
   const gableRenderData = useMemo(() => {
     if (!footprint) return [];

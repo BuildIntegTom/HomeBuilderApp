@@ -159,7 +159,7 @@ export interface ProjectState {
    * when the footprint is an octagon (8 corners), see octagonRingMembers.ts. */
   octagonRingDiameterFt: OctagonRingDiameterFt;
   /** Wall ids with "Add Gable End" enabled in the elevation view — see
-   * WallElevationView.tsx. Capped at 2, and the 2nd must be
+   * page.tsx's elevationControls. Capped at 2, and the 2nd must be
    * areWallsOppositePair with the 1st (see gableEndToggleBlockReason in
    * page.tsx) — the roof-catcher beam's run is computed directly from these
    * 2 walls + gablePeakPositionInByWallId via computeRidgeLine, so no

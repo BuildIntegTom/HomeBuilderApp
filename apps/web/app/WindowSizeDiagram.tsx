@@ -76,7 +76,7 @@ export default function WindowSizeDiagram({
   // accurate relative proportions (thin jack studs vs. a wider sill/header)
   // only make visual sense if X and Y share one consistent scale. Falls
   // back to a smaller X-only scale (mirroring the same non-uniform-scale
-  // precedent WallElevationView already sets for long walls) only in the
+  // precedent WallElevationDiagram already sets for long walls) only in the
   // rare short-wall/wide-window case that would otherwise overflow the note.
   const windowWidthPxUncapped = windowWidthIn * pxPerInY;
   const windowWidthPx = Math.min(MAX_WINDOW_WIDTH_PX, Math.max(MIN_WINDOW_WIDTH_PX, windowWidthPxUncapped));

@@ -6,7 +6,6 @@ import {
   computeRoofBearingSegments,
   computeWallVerticalBandsForSlot,
   isSlotBoxBeamCovered,
-  GABLE_SHED_SNAP_THRESHOLD_IN,
   type BoxBeamCoverage,
   type GableTiledPanel,
   type PanelSlot,
@@ -16,9 +15,7 @@ import {
 } from "@building-integrity/geometry";
 import {
   buildOpeningAssemblyMembers,
-  BOX_BEAM_SIZE_OPTIONS,
   COLUMN_TOTAL_WIDTH_IN,
-  computeBoxBeamAssemblyHeightIn,
   computeBoxBeamHeightDeltaIn,
   computeGableColumnHeightIn,
   computeGableRipCallout,
@@ -30,13 +27,13 @@ import {
 } from "@building-integrity/panel-catalog";
 import { computeOpeningGeometry } from "./openingGeometry";
 import { MemberElevationShapes } from "./MemberElevationShapes";
+import { GABLE_SHED_SNAP_THRESHOLD_IN, resolveGableProfilePoints } from "./gableProfilePoints";
 import {
   LINTEL_MIN_HEIGHT_IN,
   LINTEL_ROOFLINE_SNAP_THRESHOLD_IN,
   midWallBeamsToGeometry,
   resolveMidWallBeamAssemblyHeightIn,
   type MidWallBeam,
-  type MidWallBeamKind,
 } from "./midWallBeam";
 
 const CANVAS_WIDTH = 720;
@@ -60,16 +57,7 @@ const GABLE_COLOR = "#9fb8e0";
 const GABLE_SAFETY_GAP_COLOR = "#e08a3c";
 const VERTICAL_GAP_COLOR = "#f0c08a";
 
-/** Default along-wall position for a profile point that hasn't been
- * explicitly customized — the single midpoint for a peaked (1-point)
- * profile, or a symmetric flat run spanning the middle third for a
- * flat-top (2-point) profile. Mirrors page.tsx's own gableTilesByWallId
- * resolution exactly, so this preview never disagrees with the real data. */
-function defaultPointXIn(pointIndex: number, pointCount: number, wallWidthIn: number): number {
-  return pointCount === 1 ? wallWidthIn / 2 : ((pointIndex + 1) * wallWidthIn) / 3;
-}
-
-export interface WallElevationViewProps {
+export interface WallElevationDiagramProps {
   wall: Wall;
   slots: PanelSlot[];
   wallHeightFt: number;
@@ -99,10 +87,6 @@ export interface WallElevationViewProps {
    * click here could mean, so every rendered panel is always clickable. */
   onToggleOpening: (story: "ground" | "second", wallId: string, slotIndex: number) => void;
   hasGableEnd: boolean;
-  /** True when this wall has at least one tile whose real roofline rise
-   * exceeds maxGablePanelHeightIn — it got a real vertical safety-gap
-   * filler above the (real 8ft max) Gable End Panel, rendered below. */
-  gableEndClamped: boolean;
   /** "peaked" = 1 real profile point (a ridge); "flat-top" = 2
    * independently-placed points. Global (Roof tab) — same type/height
    * every gable-enabled wall shares; only each point's own along-wall
@@ -141,14 +125,7 @@ export interface WallElevationViewProps {
    * for each profile point, index-matched to roofProfileType's own point
    * count. `null`/missing means "not yet customized" (auto-centered). */
   gableProfilePositionsIn: (number | null)[];
-  /** Non-null (and disables the checkbox) when turning "Add Gable End" ON
-   * for this wall would violate the 2-wall/opposite-pair guardrail — see
-   * gableEndToggleBlockReason in page.tsx. Ignored while hasGableEnd is
-   * already true (always allowed to turn back off). */
-  gableEndToggleBlockReason: string | null;
-  onToggleGableEnd: (enabled: boolean) => void;
   onChangeGableProfilePositionIn: (pointIndex: number, positionIn: number | undefined) => void;
-  onGenerateShedRoof: () => void;
   /** How far gable end panel material is pulled in from each of this
    * wall's two true corners (Tommy: "gabel end panels need to start at 5.5
    * inch from the sides") — the project's real trussPlateInsetIn value,
@@ -166,11 +143,8 @@ export interface WallElevationViewProps {
    * previous panel to grow back up to the roofline height") — undefined
    * means this wall uses a Truss Plate along its own full length. Slot-
    * index based (not raw inches) — see BoxBeamCoverage's own doc comment.
-   * Only shown/meaningful once `secondStoryEnabled`. */
+   * Only shown/meaningful once a second story exists. */
   boxBeamCoverage: BoxBeamCoverage | undefined;
-  /** The plain on/off checkbox — on = full-width coverage (every current
-   * slot), off = no coverage at all. */
-  onToggleBoxBeam: (enabled: boolean) => void;
   /** Drag-driven range adjustment — snapping to slot boundaries is handled
    * entirely by this component (it already has the real slot widths); the
    * caller just stores whatever range it's given (or clears it, via
@@ -180,60 +154,56 @@ export interface WallElevationViewProps {
    * (page.tsx's `boxBeamSizeId`) — used to compute how much shorter this
    * wall's own covered slots are built (see computeBoxBeamHeightDeltaIn). */
   boxBeamSizeId: BoxBeamSizeId;
-  /** Whole-building second story toggle (Tommy: "the add lay[er] button
-   * should be next to add gable end button") — a second entry point to the
-   * exact same action as the 2D toolbar's "Add Second Story" button, just
-   * reachable from here too. */
-  secondStoryEnabled: boolean;
-  onToggleSecondStory: () => void;
   /** This wall's own Mid-Wall Bond Beams — empty means this row renders
    * as one flat full-height run, same as before this feature existed.
    * Unlike boxBeamCoverage (second-story-only), a bond beam can exist on
-   * EITHER story, so ground and second are separate props/handlers rather
-   * than one story-agnostic pair. Stage 2: a wall can have multiple beams
-   * stacked at different heights, each with its own independent
-   * horizontal coverage range (same BoxBeamCoverage shape the roofline
-   * Box Beam already uses) and own size. */
+   * EITHER story, so ground and second are separate props rather than one
+   * story-agnostic pair. A wall can have multiple beams stacked at
+   * different heights, each with its own independent horizontal coverage
+   * range (same BoxBeamCoverage shape the roofline Box Beam already uses)
+   * and own size/kind. */
   midWallBeams: MidWallBeam[];
   secondStoryMidWallBeams: MidWallBeam[];
-  onAddMidWallBeam: (story: "ground" | "second", kind: MidWallBeamKind) => void;
-  onRemoveMidWallBeam: (story: "ground" | "second", beamId: string) => void;
   onChangeMidWallBeamHeight: (story: "ground" | "second", beamId: string, heightIn: number) => void;
-  onChangeMidWallBeamSizeId: (story: "ground" | "second", beamId: string, sizeId: BoxBeamSizeId) => void;
   /** Web-braced-lintel-only — a lintel's own real assembly height, directly
    * user-adjustable via its own draggable top edge, unlike a box beam's
    * catalog-picked sizeId. */
   onChangeMidWallBeamLintelHeightIn: (story: "ground" | "second", beamId: string, lintelHeightIn: number) => void;
   onChangeMidWallBeamCoverage: (story: "ground" | "second", beamId: string, coverage: BoxBeamCoverage) => void;
-  onClose: () => void;
 }
 
 /**
- * Per-wall face-on 2D view (X = position along the wall, Y = height) —
+ * Per-wall face-on 2D diagram (X = position along the wall, Y = height) —
  * Tommy: "an arrow button for each wall section, where we can see the whole
  * line up still in 2d view." Shows the existing ground-floor run (same
  * slots/colors as the plan view, read-only here — cycle panel types in the
- * Wall tab, not here) and, when "Add Gable End" is toggled on for this
- * wall, a tiled row of Gable End Panels above it rising to the Roof tab's
- * own profile point height(s) — either "peaked" (1 point, a ridge) or
- * "flat-top" (2 independently-placed points, Tommy: "a triangle shaped with
- * the top chopped off"). Each point's own along-wall position — "the
- * inside of the truss seat, and the bottom of the peak of the truss
- * outline" (Tommy) — can be dragged directly on the SVG, dragged via its
- * own slider, or typed as a distance from either end; dragging one within
- * GABLE_SHED_SNAP_THRESHOLD_IN of its own nearest end snaps that side to a
- * single-slope shed (see computeGableTiledRow). Unless snapped to a shed, a
- * Column Panel is centered under a "peaked" profile's own single point
- * (Tommy: "there is always a column panel centered under the peak — and
- * not there if its a shed roof") — shorter than a standard full-height
+ * Wall tab, not here) and, when this wall's own Gable End is on, a tiled row
+ * of Gable End Panels above it rising to the Roof tab's own profile point
+ * height(s) — either "peaked" (1 point, a ridge) or "flat-top" (2
+ * independently-placed points, Tommy: "a triangle shaped with the top
+ * chopped off"). Each point's own along-wall position — "the inside of the
+ * truss seat, and the bottom of the peak of the truss outline" (Tommy) —
+ * can be dragged directly on the SVG (its own slider/number-input controls
+ * live in the sidebar, see page.tsx's elevationControls); dragging one
+ * within GABLE_SHED_SNAP_THRESHOLD_IN of its own nearest end snaps that side
+ * to a single-slope shed (see computeGableTiledRow). Unless snapped to a
+ * shed, a Column Panel is centered under a "peaked" profile's own single
+ * point (Tommy: "there is always a column panel centered under the peak —
+ * and not there if its a shed roof") — shorter than a standard full-height
  * Column Panel by the roof-catcher-beam's own depth so its top can catch
  * the beam — but only when the roof system is structural-panel; a truss
  * roof needs no center support at all, and a "flat-top" profile has no
  * single peak for the beam/column system to reference at all (Tommy: "if
  * trusses, lets panelize the gable end panels with no center column. If
  * the roof is to be panels, we need a center beam and column panel").
+ *
+ * This component owns only the diagram itself and its own drag-interaction
+ * state — every other control (add/remove beam, toggle gable end, per-point
+ * position inputs, help text) lives in page.tsx's sidebar controls, which
+ * call the same handler props this component also uses directly (see
+ * page.tsx's elevationControls/renderMidWallBeamSection).
  */
-export default function WallElevationView({
+export default function WallElevationDiagram({
   wall,
   slots,
   wallHeightFt,
@@ -243,7 +213,6 @@ export default function WallElevationView({
   secondStoryWallHeightFt,
   onToggleOpening,
   hasGableEnd,
-  gableEndClamped,
   roofProfileType,
   roofProfilePointHeightsFt,
   roofBearingAssemblyHeightIn,
@@ -255,28 +224,18 @@ export default function WallElevationView({
   roofCatcherBeamOffsetIn,
   roofSystemTypeId,
   gableProfilePositionsIn,
-  gableEndToggleBlockReason,
-  onToggleGableEnd,
   onChangeGableProfilePositionIn,
-  onGenerateShedRoof,
   insetIn,
   heelHeightIn,
   boxBeamCoverage,
-  onToggleBoxBeam,
   onChangeBoxBeamCoverage,
   boxBeamSizeId,
-  secondStoryEnabled,
-  onToggleSecondStory,
   midWallBeams,
   secondStoryMidWallBeams,
-  onAddMidWallBeam,
-  onRemoveMidWallBeam,
   onChangeMidWallBeamHeight,
-  onChangeMidWallBeamSizeId,
   onChangeMidWallBeamLintelHeightIn,
   onChangeMidWallBeamCoverage,
-  onClose,
-}: WallElevationViewProps) {
+}: WallElevationDiagramProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
   const [draggingBoxBeamHandle, setDraggingBoxBeamHandle] = useState<"start" | "end" | null>(null);
@@ -328,8 +287,8 @@ export default function WallElevationView({
   );
 
   // Mid-Wall Bond Beam — each slot can see a DIFFERENT band split now
-  // (Stage 2: multiple beams, each with its own horizontal coverage
-  // range), so bands are computed per slot, not once for the whole row.
+  // (multiple beams, each with its own horizontal coverage range), so
+  // bands are computed per slot, not once for the whole row.
   // computeWallVerticalBandsForSlot's own bottom-to-top ordering means the
   // LAST band for a given slot is always the topmost one — the only one a
   // roofline Box Beam's own per-slot height reduction can ever apply
@@ -345,20 +304,11 @@ export default function WallElevationView({
   const groundBandsPerSlot = bandsPerSlot(slots.length, eaveHeightIn, midWallBeams);
   const secondBandsPerSlot = secondStorySlots ? bandsPerSlot(secondStorySlots.length, secondStoryHeightIn, secondStoryMidWallBeams) : [];
 
-  const pointCount = roofProfilePointHeightsFt.length;
-  const resolvedPointXsIn = roofProfilePointHeightsFt.map((_, i) => {
-    const stored = gableProfilePositionsIn[i];
-    return Math.min(Math.max(stored ?? defaultPointXIn(i, pointCount, wallWidthIn), 0), wallWidthIn);
-  });
-  // Snap decision is always against the raw wall ends, never inset-adjusted
-  // — whether a point snaps to a shed doesn't depend on insetIn (see
-  // computeGableTiledRow's own doc comment). Only an explicitly-positioned
-  // point (a real stored value, not the auto-default) can snap.
-  const pointIsExplicit = roofProfilePointHeightsFt.map((_, i) => gableProfilePositionsIn[i] != null);
-  const pointIsSnapped = resolvedPointXsIn.map(
-    (xIn, i) => pointIsExplicit[i] && (xIn < GABLE_SHED_SNAP_THRESHOLD_IN || xIn > wallWidthIn - GABLE_SHED_SNAP_THRESHOLD_IN),
+  const { pointCount, resolvedPointXsIn, pointIsExplicit, pointIsSnapped, isShedRoof } = resolveGableProfilePoints(
+    roofProfilePointHeightsFt,
+    gableProfilePositionsIn,
+    wallWidthIn,
   );
-  const isShedRoof = pointIsSnapped.some(Boolean);
 
   // heightFt is a RISE above the eave, not an absolute height (see
   // roofProfilePointHeightsFt's own doc comment) — computeGableTiledRow
@@ -782,170 +732,7 @@ export default function WallElevationView({
   };
 
   return (
-    <div style={{ border: "1px solid #ccc", padding: 12, borderRadius: 4 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <strong>Wall {wall.id} elevation</strong>
-        <button type="button" onClick={onClose} style={{ fontSize: 12 }}>
-          Close
-        </button>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 4 }}>
-        <label
-          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}
-          title={!hasGableEnd && gableEndToggleBlockReason ? gableEndToggleBlockReason : undefined}
-        >
-          <input
-            type="checkbox"
-            checked={hasGableEnd}
-            disabled={!hasGableEnd && !!gableEndToggleBlockReason}
-            onChange={(e) => onToggleGableEnd(e.target.checked)}
-          />
-          Add Gable End (tiles Gable End Panels up to the Roof tab&apos;s own profile height)
-        </label>
-        {secondStoryEnabled && (
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-            <input type="checkbox" checked={!!boxBeamCoverage} onChange={(e) => onToggleBoxBeam(e.target.checked)} />
-            Box Beam (replaces this wall&apos;s Truss Plate above the 2nd story row — that row is built shorter to
-            still reach the same roofline; drag the green handles below to cover just part of the run)
-          </label>
-        )}
-        <button
-          type="button"
-          onClick={onToggleSecondStory}
-          aria-pressed={secondStoryEnabled}
-          title="Stacks a second full pass of wall panels at this wall's own top-plate height (same action as the 2D toolbar's Add Second Story button)."
-          style={{ fontSize: 13 }}
-        >
-          {secondStoryEnabled ? "Remove Layer" : "Add Layer"}
-        </button>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Mid-Wall Bond Beams (ground)</span>
-          <button type="button" onClick={() => onAddMidWallBeam("ground", "box-beam")} style={{ fontSize: 12 }}>
-            + Add Box Beam
-          </button>
-          <button type="button" onClick={() => onAddMidWallBeam("ground", "web-braced-lintel")} style={{ fontSize: 12 }}>
-            + Add Lintel
-          </button>
-          <span style={{ fontSize: 11, color: "#666" }}>
-            Splits the row into stacked bands; drag the brown handle to reposition, the green handles to resize its
-            own coverage. A lintel&apos;s own top edge (drag the blue handle) snaps flush with the roofline within{" "}
-            {LINTEL_ROOFLINE_SNAP_THRESHOLD_IN}in of it.
-          </span>
-        </div>
-        {midWallBeams.map((beam) => (
-          <div key={beam.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", paddingLeft: 16 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
-              Height
-              <input
-                type="number"
-                min={0}
-                max={Math.round(eaveHeightIn)}
-                value={Math.round(beam.heightIn)}
-                onChange={(e) => onChangeMidWallBeamHeight("ground", beam.id, Number(e.target.value))}
-                style={{ width: 60 }}
-              />
-              in
-            </label>
-            {beam.kind === "box-beam" ? (
-              <select value={beam.sizeId} onChange={(e) => onChangeMidWallBeamSizeId("ground", beam.id, e.target.value as BoxBeamSizeId)}>
-                {BOX_BEAM_SIZE_OPTIONS.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
-                Lintel tall
-                <input
-                  type="number"
-                  min={LINTEL_MIN_HEIGHT_IN}
-                  value={Math.round(beam.lintelHeightIn ?? LINTEL_MIN_HEIGHT_IN)}
-                  onChange={(e) => onChangeMidWallBeamLintelHeightIn("ground", beam.id, Math.max(LINTEL_MIN_HEIGHT_IN, Number(e.target.value)))}
-                  style={{ width: 60 }}
-                />
-                in
-              </label>
-            )}
-            <span style={{ fontSize: 11, color: "#666" }}>
-              slots {beam.startSlotIndex}–{beam.endSlotIndex}
-            </span>
-            <button type="button" onClick={() => onRemoveMidWallBeam("ground", beam.id)} style={{ fontSize: 12 }}>
-              Remove
-            </button>
-          </div>
-        ))}
-        {secondStoryEnabled && (
-          <>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Mid-Wall Bond Beams (2nd story)</span>
-              <button type="button" onClick={() => onAddMidWallBeam("second", "box-beam")} style={{ fontSize: 12 }}>
-                + Add Box Beam
-              </button>
-              <button type="button" onClick={() => onAddMidWallBeam("second", "web-braced-lintel")} style={{ fontSize: 12 }}>
-                + Add Lintel
-              </button>
-            </div>
-            {secondStoryMidWallBeams.map((beam) => (
-              <div key={beam.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", paddingLeft: 16 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
-                  Height
-                  <input
-                    type="number"
-                    min={0}
-                    max={Math.round(secondStoryHeightIn)}
-                    value={Math.round(beam.heightIn)}
-                    onChange={(e) => onChangeMidWallBeamHeight("second", beam.id, Number(e.target.value))}
-                    style={{ width: 60 }}
-                  />
-                  in
-                </label>
-                {beam.kind === "box-beam" ? (
-                  <select
-                    value={beam.sizeId}
-                    onChange={(e) => onChangeMidWallBeamSizeId("second", beam.id, e.target.value as BoxBeamSizeId)}
-                  >
-                    {BOX_BEAM_SIZE_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
-                    Lintel tall
-                    <input
-                      type="number"
-                      min={LINTEL_MIN_HEIGHT_IN}
-                      value={Math.round(beam.lintelHeightIn ?? LINTEL_MIN_HEIGHT_IN)}
-                      onChange={(e) => onChangeMidWallBeamLintelHeightIn("second", beam.id, Math.max(LINTEL_MIN_HEIGHT_IN, Number(e.target.value)))}
-                      style={{ width: 60 }}
-                    />
-                    in
-                  </label>
-                )}
-                <span style={{ fontSize: 11, color: "#666" }}>
-                  slots {beam.startSlotIndex}–{beam.endSlotIndex}
-                </span>
-                <button type="button" onClick={() => onRemoveMidWallBeam("second", beam.id)} style={{ fontSize: 12 }}>
-                  Remove
-                </button>
-              </div>
-            ))}
-          </>
-        )}
-      </div>
-      {!hasGableEnd && gableEndToggleBlockReason && (
-        <p style={{ fontSize: 12, color: "#c0392b", marginTop: 0, marginBottom: 8 }}>{gableEndToggleBlockReason}</p>
-      )}
-      {hasGableEnd && gableEndClamped && (
-        <p style={{ fontSize: 12, color: "#a06a1f", marginTop: 0, marginBottom: 8 }}>
-          This wall&apos;s roofline rises higher than the {maxGablePanelHeightIn}in max a single Gable End Panel can
-          be built at — the real remainder is filled by a vertical safety-gap tile (shown below), not clipped.
-        </p>
-      )}
+    <div>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${svgWidthPx} ${svgHeightPx}`}
@@ -1160,9 +947,9 @@ export default function WallElevationView({
 
             {/* Box Beam coverage drag handles — one at each end of the
                 covered range, snapping to the nearest real slot boundary
-                (secondStoryOffsetsIn) as dragged. Only shown once the
-                checkbox is on; the plain on/off toggle above still fully
-                controls whether Box Beam applies at all. */}
+                (secondStoryOffsetsIn) as dragged. Only shown once Box Beam
+                coverage exists (the sidebar checkbox controls whether it
+                exists at all). */}
             {boxBeamCoverage &&
               (["start", "end"] as const).map((handle) => {
                 const slotIndex = handle === "start" ? boxBeamCoverage.startSlotIndex : boxBeamCoverage.endSlotIndex;
@@ -1327,80 +1114,6 @@ export default function WallElevationView({
             </g>
           ))}
       </svg>
-      {hasGableEnd &&
-        points.map((_, i) => (
-          <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", fontSize: 12, marginTop: 6 }}>
-            <span style={{ fontWeight: 600 }}>{pointCount === 1 ? "Peak" : `Point ${i + 1}`}</span>
-            <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              Position
-              <input
-                type="range"
-                min={0}
-                max={wallWidthIn}
-                step={1}
-                value={resolvedPointXsIn[i]}
-                onChange={(e) => onChangeGableProfilePositionIn(i, Number(e.target.value))}
-              />
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              From left end
-              <input
-                type="number"
-                min={0}
-                max={wallWidthIn}
-                value={Math.round(resolvedPointXsIn[i]!)}
-                onChange={(e) => onChangeGableProfilePositionIn(i, Number(e.target.value))}
-                style={{ width: 60 }}
-              />
-              in
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              From right end
-              <input
-                type="number"
-                min={0}
-                max={wallWidthIn}
-                value={Math.round(wallWidthIn - resolvedPointXsIn[i]!)}
-                onChange={(e) => onChangeGableProfilePositionIn(i, wallWidthIn - Number(e.target.value))}
-                style={{ width: 60 }}
-              />
-              in
-            </label>
-            <button type="button" onClick={() => onChangeGableProfilePositionIn(i, undefined)}>
-              Center
-            </button>
-            {i === 0 && (
-              <button
-                type="button"
-                onClick={onGenerateShedRoof}
-                title="Snaps this point to one end and sets its own height for a 4/12 pitch across this wall's full width"
-              >
-                Shed Roof (auto 4/12)
-              </button>
-            )}
-            {pointIsSnapped[i] && <span style={{ color: "#c0392b" }}>Snapped to a shed (single slope) on this side</span>}
-          </div>
-        ))}
-      <p style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
-        {hasGableEnd
-          ? `${gablePanels.length} Gable End Panel${gablePanels.length === 1 ? "" : "s"} (incl. any safety-gap tiles) tiled at ~${targetPanelWidthIn}in each, ` +
-            `rising from the ${roofBaseHeightIn}in eave to ${pointCount === 1 ? `the ${points[0]!.heightIn}in ridge` : "the flat-topped roofline above"}` +
-            (isShedRoof ? " (at least one side snapped to a single-slope shed)." : ".") +
-            " Each panel's rip angle/length is labeled above it. Drag a red marker, use its own slider, " +
-            "or type an exact distance from either end — dragging one within " +
-            `${GABLE_SHED_SNAP_THRESHOLD_IN}in of its own nearest end (shaded above) snaps that side to a shed roof. Use the Roof tab to change ` +
-            "profile heights/type, or the panel-width setting above to change the tiling." +
-            (showColumnPanel
-              ? ` A ${columnHeightIn.toFixed(1)}in Column Panel is centered under the peak, ${roofCatcherBeamOffsetIn}in ` +
-                "shorter than the ridge so its top can catch the roof-catcher beam (see the Roof tab)."
-              : roofProfileType === "flat-top"
-                ? " No Column Panel for a flat-topped roofline (no single peak for a beam to reference)."
-                : isShedRoof
-                  ? " No Column Panel for a shed roof (single slope, no peak to bear a beam under)."
-                  : " No Column Panel — Truss roof selected (Roof tab): trusses bear on a truss plate with no center support. Switch to a structural-panel roof for a beam-bearing Column Panel.")
-          : "Ground-floor run shown for reference (cycle panel types in the Wall tab, not here). Toggle \"Add Gable End\" " +
-            "above to preview a tiled row of Gable End Panels rising to the Roof tab's own profile height."}
-      </p>
     </div>
   );
 }
