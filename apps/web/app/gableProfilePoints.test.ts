@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  capGableTileHeights,
   computeRiseFtForPitch,
   GABLE_SHED_SNAP_THRESHOLD_IN,
   matchStandardPitchIn12,
@@ -108,6 +109,53 @@ describe("resolveHeelSeat", () => {
   it("falls back to zero offsets when the seat(s) needed wouldn't fit the wall", () => {
     // cornerCount=2 needs 2*40=80in of seat; a 60in wall can't fit it.
     expect(resolveHeelSeat(60, 40, 6, 2)).toEqual({ runOffsetIn: 0, heelOffsetIn: 0 });
+  });
+});
+
+describe("capGableTileHeights", () => {
+  it("passes true heights through untouched when the taller edge already fits under the cap", () => {
+    expect(capGableTileHeights(60, 90, 96)).toEqual({ leftEdgeHeightIn: 60, rightEdgeHeightIn: 90 });
+  });
+
+  it("stays sloped at the exact boundary — tallerIn === capHeightIn does not trigger flattening", () => {
+    expect(capGableTileHeights(60, 96, 96)).toEqual({ leftEdgeHeightIn: 60, rightEdgeHeightIn: 96 });
+  });
+
+  it("flattens both edges to the cap when both true edges are above it", () => {
+    // Both 100 and 110 exceed 96 -> flat at 96, gaps are each edge's own overflow.
+    const result = capGableTileHeights(100, 110, 96);
+    expect(result.leftEdgeHeightIn).toBe(96);
+    expect(result.rightEdgeHeightIn).toBe(96);
+    expect(result.verticalGapIn).toEqual({ leftIn: 4, rightIn: 14 });
+  });
+
+  it("flattens a straddling tile to its own shorter TRUE edge, not the cap — one gap is exactly 0", () => {
+    // Left (80) is under the 96 cap, right (110) is over it. Flattening to
+    // 80 (not 96) never makes the panel stick up past the true roofline on
+    // the left, where the roof is only 80in — flattening to 96 would.
+    const result = capGableTileHeights(80, 110, 96);
+    expect(result.leftEdgeHeightIn).toBe(80);
+    expect(result.rightEdgeHeightIn).toBe(80);
+    expect(result.verticalGapIn).toEqual({ leftIn: 0, rightIn: 30 });
+  });
+
+  it("straddling case, mirrored (right edge is the shorter true one)", () => {
+    const result = capGableTileHeights(110, 80, 96);
+    expect(result.leftEdgeHeightIn).toBe(80);
+    expect(result.rightEdgeHeightIn).toBe(80);
+    expect(result.verticalGapIn).toEqual({ leftIn: 30, rightIn: 0 });
+  });
+
+  it("an already-flat tile above the cap flattens to the cap itself, same as the general 2-edges-over case", () => {
+    expect(capGableTileHeights(120, 120, 96)).toEqual({
+      leftEdgeHeightIn: 96,
+      rightEdgeHeightIn: 96,
+      verticalGapIn: { leftIn: 24, rightIn: 24 },
+    });
+  });
+
+  it("an already-flat tile under the cap passes through with no gap", () => {
+    expect(capGableTileHeights(60, 60, 96)).toEqual({ leftEdgeHeightIn: 60, rightEdgeHeightIn: 60 });
   });
 });
 

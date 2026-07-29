@@ -8,6 +8,7 @@ import {
   SKIN_THICKNESS_IN,
   buildGirtRows,
   buildNailer,
+  tiltedMember,
 } from "./panelMemberHelpers";
 
 const GABLE_GIRT_ROW_COUNT = 2; // same baseline as the Standard Panel core
@@ -34,48 +35,6 @@ export function computeGableRipCallout(
   return {
     angleDeg: (Math.atan2(riseIn, widthIn) * 180) / Math.PI,
     lengthIn: Math.hypot(widthIn, riseIn),
-  };
-}
-
-/**
- * A tilted member running from (x1,z1) to (x2,z2) in the panel's own
- * width-height plane — reuses the exact same "diagonal" orientation +
- * tiltDeg convention as the Braced Panel's brace (see
- * `buildDiagonalBraces` in bracedPanelMembers.ts), so the 3D renderer and
- * OBJ exporter handle a gable's sloped top plate/skin identically to a
- * brace, with no new geometry primitive needed.
- */
-function tiltedMember(
-  memberId: string,
-  material: PanelMember["material"],
-  plySpec: string | null,
-  nominalSize: string | null,
-  thicknessIn: number,
-  crossWidthIn: number,
-  x1: number,
-  z1: number,
-  x2: number,
-  z2: number,
-  yIn: number,
-  role: PanelMember["role"],
-  notes: string,
-): PanelMember {
-  const centerX = (x1 + x2) / 2;
-  const centerZ = (z1 + z2) / 2;
-  const lengthIn = Math.hypot(x2 - x1, z2 - z1);
-  const tiltDeg = (Math.atan2(-(x1 - centerX), z1 - centerZ) * 180) / Math.PI;
-  return {
-    memberId,
-    material,
-    speciesGrade: material === "dimensional_lumber" ? LUMBER_SPECIES_GRADE : null,
-    plySpec,
-    nominalSize,
-    actualDimsIn: { thicknessIn, widthIn: crossWidthIn, lengthIn },
-    orientation: "diagonal",
-    position: { xIn: centerX, yIn, zIn: centerZ, rotationDeg: 0, tiltDeg },
-    role,
-    qty: 1,
-    notes,
   };
 }
 

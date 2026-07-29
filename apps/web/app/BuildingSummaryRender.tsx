@@ -27,7 +27,7 @@ export interface BuildingSummaryRenderProps {
       leftEdgeHeightIn: number;
       rightEdgeHeightIn: number;
       isSafetyGap?: boolean;
-      verticalGapHeightIn?: number;
+      verticalGapIn?: { leftIn: number; rightIn: number };
     }[]
   >;
   roofEnabled?: boolean;

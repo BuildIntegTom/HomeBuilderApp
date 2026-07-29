@@ -769,6 +769,51 @@ function retreatPoint(fromXIn: number, fromZIn: number, towardXIn: number, towar
 }
 
 /**
+ * A tilted member running from (x1,z1) to (x2,z2) in a panel's own
+ * width-height plane — "diagonal" orientation, center-anchored, rotated by
+ * `tiltDeg` around world Z (see `memberBoxSizeIn`/`memberLocalCornersIn`'s
+ * own "diagonal" handling). Originally the Gable End Panel's own private
+ * helper for its sloped top plate/skin (reusing the exact same convention
+ * the Braced Panel's brace already used); moved here so
+ * `buildVerticalGapFillerMembers` (a capped gable tile's own sloped filler,
+ * flush with the flat panel top below it) can build the same shape without
+ * duplicating this trig.
+ */
+export function tiltedMember(
+  memberId: string,
+  material: PanelMember["material"],
+  plySpec: string | null,
+  nominalSize: string | null,
+  thicknessIn: number,
+  crossWidthIn: number,
+  x1: number,
+  z1: number,
+  x2: number,
+  z2: number,
+  yIn: number,
+  role: PanelMember["role"],
+  notes: string,
+): PanelMember {
+  const centerX = (x1 + x2) / 2;
+  const centerZ = (z1 + z2) / 2;
+  const lengthIn = Math.hypot(x2 - x1, z2 - z1);
+  const tiltDeg = (Math.atan2(-(x1 - centerX), z1 - centerZ) * 180) / Math.PI;
+  return {
+    memberId,
+    material,
+    speciesGrade: material === "dimensional_lumber" ? LUMBER_SPECIES_GRADE : null,
+    plySpec,
+    nominalSize,
+    actualDimsIn: { thicknessIn, widthIn: crossWidthIn, lengthIn },
+    orientation: "diagonal",
+    position: { xIn: centerX, yIn, zIn: centerZ, rotationDeg: 0, tiltDeg },
+    role,
+    qty: 1,
+    notes,
+  };
+}
+
+/**
  * A continuous "W-truss" zigzag of `peakCount` triangular webs between a
  * flat bottom chord and a (possibly sloped) top chord — Tommy, from
  * reference photos of real straw-bale wall/gable bracing: repeating

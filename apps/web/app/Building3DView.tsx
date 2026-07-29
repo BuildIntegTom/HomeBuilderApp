@@ -586,7 +586,7 @@ interface Building3DViewProps {
       leftEdgeHeightIn: number;
       rightEdgeHeightIn: number;
       isSafetyGap?: boolean;
-      verticalGapHeightIn?: number;
+      verticalGapIn?: { leftIn: number; rightIn: number };
     }[]
   >;
   /** Whether the Roof system is in scope at all (page.tsx's own
@@ -982,13 +982,16 @@ export default function Building3DView({
           : buildGablePanelMembers(tile.widthIn, thicknessIn, leftLocalIn, rightLocalIn, includeNailer);
         // A vertical safety-gap filler (Tommy: "an ability to put a safety
         // gap inbetween the truss bottom and the gable end top") stacks
-        // directly above this tile's own capped high edge, up to the true
-        // roofline — additive, not a replacement.
-        if (tile.verticalGapHeightIn) {
+        // directly above this (now always flat, when a gap exists) tile's
+        // own top, up to the true roofline — additive, not a replacement.
+        // leftLocalIn === rightLocalIn whenever a gap exists
+        // (capGableTileHeights's own guarantee), so either works as the
+        // flat top's own Z-offset.
+        if (tile.verticalGapIn) {
           members.push(
-            ...buildVerticalGapFillerMembers(tile.widthIn, thicknessIn, tile.verticalGapHeightIn).map((m) => ({
+            ...buildVerticalGapFillerMembers(tile.widthIn, thicknessIn, tile.verticalGapIn.leftIn, tile.verticalGapIn.rightIn).map((m) => ({
               ...m,
-              position: { ...m.position, zIn: m.position.zIn + tallerLocalIn },
+              position: { ...m.position, zIn: m.position.zIn + leftLocalIn },
             })),
           );
         }
@@ -1003,7 +1006,7 @@ export default function Building3DView({
           heightFt: tallerLocalIn / IN_PER_FT,
           depthFt: thicknessIn / IN_PER_FT,
           isSafetyGap: !!tile.isSafetyGap,
-          verticalGapHeightFt: (tile.verticalGapHeightIn ?? 0) / IN_PER_FT,
+          verticalGapHeightFt: Math.max(tile.verticalGapIn?.leftIn ?? 0, tile.verticalGapIn?.rightIn ?? 0) / IN_PER_FT,
         });
       });
     }

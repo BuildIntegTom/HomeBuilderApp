@@ -101,3 +101,46 @@ export function matchStandardPitchIn12(riseIn: number, runIn: number): number | 
   if (rounded < ROOF_PITCH_OPTIONS_IN12[0]! || rounded > ROOF_PITCH_OPTIONS_IN12.at(-1)!) return null;
   return Math.abs(riseIn - (rounded / 12) * runIn) < 0.5 ? rounded : null;
 }
+
+export interface CappedGableTileHeights {
+  leftEdgeHeightIn: number;
+  rightEdgeHeightIn: number;
+  /** Present only when this tile got flattened by the cap — either field
+   * can be exactly 0 (see capGableTileHeights's own doc comment). */
+  verticalGapIn?: { leftIn: number; rightIn: number };
+}
+
+/** Caps one Gable End Panel tile's own edges to `capHeightIn` (Tommy:
+ * "gable panels...can be up to 8' tall") so every real panel is either
+ * fully parallel to the true roofline (untouched) or fully flat/horizontal
+ * — never a mixed quadrilateral with one edge capped and the other still
+ * sloped, which independently capping each edge (`Math.min` per side) used
+ * to produce whenever a tile's true roofline crossed the cap partway across
+ * its own width.
+ *
+ * If the tile's taller true edge already fits under the cap, both edges
+ * keep their true (possibly different) heights — a clean parallelogram
+ * matching the real roofline exactly, no filler needed.
+ *
+ * Otherwise the WHOLE tile flattens to `min(leftHeightIn, rightHeightIn,
+ * capHeightIn)` — the largest flat height that never exceeds either the
+ * true roofline on the shorter edge (flattening any higher would make the
+ * panel stick up past the real roof there) or the fabrication cap itself.
+ * The real remainder above that flat top is reported per edge
+ * (`verticalGapIn`) so a filler can be built flush with the flat panel top,
+ * reaching exactly to the true roofline on each side independently — a
+ * tile straddling the cap (one true edge under it, one over) flattens to
+ * its own shorter edge, so that side's own gap is exactly 0 and the other
+ * side's gap is the full difference: a clean triangular taper, not a
+ * uniform-height box. Shared by page.tsx's `gableTilesByWallId` and
+ * WallElevationDiagram's own preview so the 2 can never disagree. */
+export function capGableTileHeights(leftHeightIn: number, rightHeightIn: number, capHeightIn: number): CappedGableTileHeights {
+  const tallerIn = Math.max(leftHeightIn, rightHeightIn);
+  if (tallerIn <= capHeightIn) return { leftEdgeHeightIn: leftHeightIn, rightEdgeHeightIn: rightHeightIn };
+  const flatHeightIn = Math.min(leftHeightIn, rightHeightIn, capHeightIn);
+  return {
+    leftEdgeHeightIn: flatHeightIn,
+    rightEdgeHeightIn: flatHeightIn,
+    verticalGapIn: { leftIn: leftHeightIn - flatHeightIn, rightIn: rightHeightIn - flatHeightIn },
+  };
+}

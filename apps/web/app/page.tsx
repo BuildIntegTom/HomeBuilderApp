@@ -227,7 +227,7 @@ import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
 import { resolveBracedStyle } from "./bracedStyle";
-import { computeRiseFtForPitch, resolveGableProfilePoints, resolveHeelSeat, ROOF_PITCH_OPTIONS_IN12 } from "./gableProfilePoints";
+import { capGableTileHeights, computeRiseFtForPitch, resolveGableProfilePoints, resolveHeelSeat, ROOF_PITCH_OPTIONS_IN12 } from "./gableProfilePoints";
 import {
   LINTEL_MIN_HEIGHT_IN,
   LINTEL_ROOFLINE_SNAP_THRESHOLD_IN,
@@ -569,6 +569,12 @@ export default function LayoutEditor() {
   // difference (if any) between it and the true truss-bottom height is
   // filled by a real vertical safety-gap tile instead of silently clamped.
   const [maxGablePanelHeightIn, setMaxGablePanelHeightIn] = useState(96);
+  // Toggles the Elevation view's own draggable max-height line (Tommy: "a
+  // button that you highlight and then you can drag the line down on the
+  // editor") — an alternate, visual way to set the SAME maxGablePanelHeightIn
+  // above; not itself persisted (ephemeral UI mode, resets on wall switch —
+  // see the elevationViewWallId effect below).
+  const [adjustingGableMaxHeight, setAdjustingGableMaxHeight] = useState(false);
   const [trussPlateInsetIn, setTrussPlateInsetIn] = useState(trussPlateInsetDefaultIn.value);
   // Energy-heel truss seat (Tommy: "have the truss seat be the full panel
   // width AND THEN go vertical for 6in (adjustable)") — see
@@ -609,6 +615,11 @@ export default function LayoutEditor() {
   // (only one at a time).
   const [gableEndWallIds, setGableEndWallIds] = useState<Set<string>>(new Set());
   const [elevationViewWallId, setElevationViewWallId] = useState<string | null>(null);
+  // The max-height drag mode doesn't carry meaning across a wall switch —
+  // avoids it silently staying "on" against a different wall's own diagram.
+  useEffect(() => {
+    setAdjustingGableMaxHeight(false);
+  }, [elevationViewWallId]);
   // Which panel a click in Edit mode most recently landed on (2D or 3D —
   // both route through handleToggleOpening below) — drives the "Selected
   // Panel" note. Re-derived fresh from baseWallSlots on every render (see
@@ -2036,7 +2047,7 @@ export default function LayoutEditor() {
         xStartIn: number;
         leftEdgeHeightIn: number;
         rightEdgeHeightIn: number;
-        verticalGapHeightIn?: number;
+        verticalGapIn?: { leftIn: number; rightIn: number };
         isSafetyGap?: boolean;
       }[]
     > = {};
@@ -2068,23 +2079,21 @@ export default function LayoutEditor() {
       // so a real Gable End Panel is never built taller than
       // buildGablePanelMembers itself allows — the remainder (if any) is
       // absorbed by a real vertical safety-gap filler instead of silently
-      // clipping the panel short.
+      // clipping the panel short. capGableTileHeights guarantees every
+      // tile is either fully true-sloped or fully flat — never a mixed
+      // quadrilateral with one edge capped and the other still sloped
+      // (Tommy: gable panels should only ever be "parrelel with the slope,
+      // or being horizontal") — shared with WallElevationDiagram's own
+      // preview so the 2 can never disagree.
+      const capHeightIn = gableEaveHeightIn + maxGablePanelHeightIn;
       result[wall.id] = tiles.map((t) => {
-        // Cap each edge independently (preserving which one is really on
-        // the left vs right — see buildGablePanelMembers's own doc comment
-        // on why order matters) rather than min/max-ing them together,
-        // which would silently discard which side of a peak this tile is
-        // actually on and mirror it once built.
-        const capHeightIn = gableEaveHeightIn + maxGablePanelHeightIn;
-        const leftCappedIn = Math.min(t.leftHeightIn, capHeightIn);
-        const rightCappedIn = Math.min(t.rightHeightIn, capHeightIn);
-        const verticalGapHeightIn = Math.max(t.leftHeightIn - leftCappedIn, t.rightHeightIn - rightCappedIn);
+        const capped = capGableTileHeights(t.leftHeightIn, t.rightHeightIn, capHeightIn);
         return {
           widthIn: t.widthIn,
           xStartIn: t.xStartIn,
-          leftEdgeHeightIn: leftCappedIn,
-          rightEdgeHeightIn: rightCappedIn,
-          ...(verticalGapHeightIn > 1e-6 ? { verticalGapHeightIn } : {}),
+          leftEdgeHeightIn: capped.leftEdgeHeightIn,
+          rightEdgeHeightIn: capped.rightEdgeHeightIn,
+          ...(capped.verticalGapIn ? { verticalGapIn: capped.verticalGapIn } : {}),
           ...(t.isSafetyGap ? { isSafetyGap: true } : {}),
         };
       });
@@ -2109,7 +2118,7 @@ export default function LayoutEditor() {
   const gableEndClampedWallIds = useMemo(() => {
     const ids = new Set<string>();
     for (const [wallId, tiles] of Object.entries(gableTilesByWallId)) {
-      if (tiles.some((t) => t.verticalGapHeightIn !== undefined)) ids.add(wallId);
+      if (tiles.some((t) => t.verticalGapIn !== undefined)) ids.add(wallId);
     }
     return ids;
   }, [gableTilesByWallId]);
@@ -2360,12 +2369,20 @@ export default function LayoutEditor() {
       // top of whichever gable geometry this tile got — additive, not a
       // replacement, since both the real gable/gap piece AND its own real
       // roofline overflow get fabricated.
-      if (inst.panelType === "gable" && inst.verticalGapHeightIn) {
-        const localTallerIn = Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn;
+      if (inst.panelType === "gable" && inst.gableVerticalGapIn) {
+        // The panel below is always flat when a gap exists (capGableTileHeights's
+        // own guarantee), so leftEdgeHeightIn/rightEdgeHeightIn are equal —
+        // either works as the flat top's own local Z-offset.
+        const localFlatTopIn = (inst.leftEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn;
         members.push(
-          ...buildVerticalGapFillerMembers(inst.widthIn, thicknessIn, inst.verticalGapHeightIn).map((m) => ({
+          ...buildVerticalGapFillerMembers(
+            inst.widthIn,
+            thicknessIn,
+            inst.gableVerticalGapIn.leftIn,
+            inst.gableVerticalGapIn.rightIn,
+          ).map((m) => ({
             ...m,
-            position: { ...m.position, zIn: m.position.zIn + localTallerIn },
+            position: { ...m.position, zIn: m.position.zIn + localFlatTopIn },
           })),
         );
       }
@@ -2656,7 +2673,7 @@ export default function LayoutEditor() {
     leftEdgeHeightInOverride?: number,
     rightEdgeHeightInOverride?: number,
     isSafetyGapOverride?: boolean,
-    verticalGapHeightInOverride?: number,
+    verticalGapOverride?: { leftIn: number; rightIn: number },
     heightInOverride?: number,
   ) => {
     const heightIn = heightInOverride ?? wallHeightFt * 12;
@@ -2702,10 +2719,13 @@ export default function LayoutEditor() {
     // its own row's horizontal safety-gap sliver) — additive, not a
     // replacement, since both a real filled/framed piece AND its own real
     // overflow filler get fabricated.
-    if (panelTypeId === "gable" && verticalGapHeightInOverride) {
-      const filler = buildVerticalGapFillerMembers(widthIn, thicknessIn, verticalGapHeightInOverride).map((m) => ({
+    if (panelTypeId === "gable" && verticalGapOverride) {
+      // The panel below is always flat when a gap exists, so
+      // gableLeftLocalIn/gableRightLocalIn are equal — either works as the
+      // flat top's own local Z-offset.
+      const filler = buildVerticalGapFillerMembers(widthIn, thicknessIn, verticalGapOverride.leftIn, verticalGapOverride.rightIn).map((m) => ({
         ...m,
-        position: { ...m.position, zIn: m.position.zIn + Math.max(gableLeftLocalIn, gableRightLocalIn) },
+        position: { ...m.position, zIn: m.position.zIn + gableLeftLocalIn },
       }));
       return [...base, ...filler];
     }
@@ -2725,7 +2745,7 @@ export default function LayoutEditor() {
     leftEdgeHeightInOverride?: number,
     rightEdgeHeightInOverride?: number,
     isSafetyGapOverride?: boolean,
-    verticalGapHeightInOverride?: number,
+    verticalGapOverride?: { leftIn: number; rightIn: number },
     heightInOverride?: number,
   ): number | null => {
     const members = membersForPanelTypeId(
@@ -2739,7 +2759,7 @@ export default function LayoutEditor() {
       leftEdgeHeightInOverride,
       rightEdgeHeightInOverride,
       isSafetyGapOverride,
-      verticalGapHeightInOverride,
+      verticalGapOverride,
       heightInOverride,
     );
     return members ? computeFastenerWeight(members).totalWeightKg : null;
@@ -2763,7 +2783,7 @@ export default function LayoutEditor() {
     leftEdgeHeightInOverride?: number,
     rightEdgeHeightInOverride?: number,
     isSafetyGapOverride?: boolean,
-    verticalGapHeightInOverride?: number,
+    verticalGapOverride?: { leftIn: number; rightIn: number },
     heightInOverride?: number,
   ): number | null => {
     const members = membersForPanelTypeId(
@@ -2777,7 +2797,7 @@ export default function LayoutEditor() {
       leftEdgeHeightInOverride,
       rightEdgeHeightInOverride,
       isSafetyGapOverride,
-      verticalGapHeightInOverride,
+      verticalGapOverride,
       heightInOverride,
     );
     return members ? computeMemberSetWoodWeight(members).weightKg : null;
@@ -2884,7 +2904,7 @@ export default function LayoutEditor() {
                 inst.leftEdgeHeightIn,
                 inst.rightEdgeHeightIn,
                 inst.isSafetyGap,
-                inst.verticalGapHeightIn,
+                inst.gableVerticalGapIn,
                 inst.heightOverrideIn,
               ),
               fastenerWeightKg: fastenerWeightKgFor(
@@ -2898,7 +2918,7 @@ export default function LayoutEditor() {
                 inst.leftEdgeHeightIn,
                 inst.rightEdgeHeightIn,
                 inst.isSafetyGap,
-                inst.verticalGapHeightIn,
+                inst.gableVerticalGapIn,
                 inst.heightOverrideIn,
               ),
               hasClayPlaster,
@@ -2962,7 +2982,7 @@ export default function LayoutEditor() {
           inst.leftEdgeHeightIn,
           inst.rightEdgeHeightIn,
           inst.isSafetyGap,
-          inst.verticalGapHeightIn,
+          inst.gableVerticalGapIn,
           inst.heightOverrideIn,
         );
         if (members) accumulate(computeFastenerWeight(members).items);
@@ -3094,7 +3114,8 @@ export default function LayoutEditor() {
           (inst.leftEdgeHeightIn ?? 0).toFixed(3),
           (inst.rightEdgeHeightIn ?? 0).toFixed(3),
           String(!!inst.isSafetyGap),
-          (inst.verticalGapHeightIn ?? 0).toFixed(3),
+          (inst.gableVerticalGapIn?.leftIn ?? 0).toFixed(3),
+          (inst.gableVerticalGapIn?.rightIn ?? 0).toFixed(3),
         );
       }
       return parts.join("|");
@@ -3125,7 +3146,7 @@ export default function LayoutEditor() {
               first.leftEdgeHeightIn,
               first.rightEdgeHeightIn,
               first.isSafetyGap,
-              first.verticalGapHeightIn,
+              first.gableVerticalGapIn,
               first.heightOverrideIn,
             ) ?? [];
           return {
@@ -3666,7 +3687,13 @@ export default function LayoutEditor() {
       for (const t of tiles) {
         const localLeftIn = Math.max(0, t.leftEdgeHeightIn - gableEaveHeightIn);
         const localRightIn = Math.max(0, t.rightEdgeHeightIn - gableEaveHeightIn);
-        const overflowAreaSqFt = (t.widthIn / 12) * ((t.verticalGapHeightIn ?? 0) / 12);
+        // Trapezoid average of each edge's own real gap (either can be 0 —
+        // the common straddling-the-cap case, a triangular filler, not a
+        // uniform rectangle) — mirrors the base tile's own area formula
+        // just below, more accurate than the old single-flat-height guess
+        // now that the 2 edges can legitimately differ.
+        const overflowAreaSqFt =
+          (t.widthIn / 12) * (((t.verticalGapIn?.leftIn ?? 0) + (t.verticalGapIn?.rightIn ?? 0)) / 2 / 12);
         if (t.isSafetyGap) {
           gableStandardAreaSqFt += (t.widthIn / 12) * (Math.max(localLeftIn, localRightIn) / 12) + overflowAreaSqFt;
         } else {
@@ -4415,6 +4442,25 @@ export default function LayoutEditor() {
           be built at — the real remainder is filled by a vertical safety-gap tile (shown below), not clipped.
         </p>
       )}
+      {gableEndWallIds.has(elevationWall.id) && (
+        <>
+          <button
+            type="button"
+            className={elevationStyles.actionButton}
+            aria-pressed={adjustingGableMaxHeight}
+            onClick={() => setAdjustingGableMaxHeight((v) => !v)}
+            title="Drag the highlighted line below to set the max Gable End Panel height (in) — it snaps to whichever height makes the panel under it perfectly flat (its own shorter true edge), applies to every gable-enabled wall project-wide."
+          >
+            {adjustingGableMaxHeight ? "Done Adjusting Max Height" : "Adjust Max Height"}
+          </button>
+          {adjustingGableMaxHeight && (
+            <p className={elevationStyles.note}>
+              Drag the highlighted line on the diagram below — it snaps to the height that makes the panel under it
+              flat, one wall run at a time.
+            </p>
+          )}
+        </>
+      )}
       {gableEndWallIds.has(elevationWall.id) &&
         (() => {
           const wallWidthIn = elevationWall.lengthFt * 12;
@@ -4698,6 +4744,8 @@ export default function LayoutEditor() {
                   roofProfilePointHeightsFt={roofProfilePointHeightsFt}
                   roofBearingAssemblyHeightIn={roofEnabled ? computeSharedRooflineBearingHeightIn() : 0}
                   maxGablePanelHeightIn={maxGablePanelHeightIn}
+                  isAdjustingMaxGablePanelHeight={adjustingGableMaxHeight}
+                  onChangeMaxGablePanelHeightIn={setMaxGablePanelHeightIn}
                   targetPanelWidthIn={standardWidthIn}
                   thicknessIn={thicknessIn}
                   jackStudConfig={jackStudConfig}

@@ -105,9 +105,11 @@ export interface PanelInstance {
   isBoxBeamCovered?: boolean;
   /** Only set for "gable" instances whose real roofline rise exceeds the
    * project's own maxGablePanelHeightIn fabrication ceiling — the real
-   * remainder (above this tile's own taller edge) filled by a dedicated
-   * vertical safety-gap filler piece instead of clamped. */
-  verticalGapHeightIn?: number;
+   * remainder above this (now always flat) tile's own top, per edge
+   * independently (either can be 0 — see capGableTileHeights in
+   * gableProfilePoints.ts), filled by a dedicated sloped vertical
+   * safety-gap filler piece instead of clamped. */
+  gableVerticalGapIn?: { leftIn: number; rightIn: number };
   /** This instance's own real fabricated height, when it differs from the
    * flat per-story `wallHeightFt*12` every consumer otherwise assumes —
    * set only when this instance came from a wall split by a Mid-Wall Bond
@@ -171,7 +173,13 @@ export function allPanelInstances(
    * completely unaffected. */
   gableTilesByWallId?: Record<
     string,
-    { widthIn: number; leftEdgeHeightIn: number; rightEdgeHeightIn: number; isSafetyGap?: boolean; verticalGapHeightIn?: number }[]
+    {
+      widthIn: number;
+      leftEdgeHeightIn: number;
+      rightEdgeHeightIn: number;
+      isSafetyGap?: boolean;
+      verticalGapIn?: { leftIn: number; rightIn: number };
+    }[]
   >,
   /** Which slots of which walls have a Box Beam rather than a Truss Plate
    * (page.tsx's `boxBeamCoverageByWallId`) — only meaningful for a
@@ -220,7 +228,7 @@ export function allPanelInstances(
     leftEdgeHeightIn?: number,
     rightEdgeHeightIn?: number,
     isSafetyGap?: boolean,
-    verticalGapHeightIn?: number,
+    gableVerticalGapIn?: { leftIn: number; rightIn: number },
     isBoxBeamCovered?: boolean,
     heightOverrideIn?: number,
     midWallBandIndex?: number,
@@ -240,7 +248,7 @@ export function allPanelInstances(
       ...(leftEdgeHeightIn !== undefined && { leftEdgeHeightIn }),
       ...(rightEdgeHeightIn !== undefined && { rightEdgeHeightIn }),
       ...(isSafetyGap !== undefined && { isSafetyGap }),
-      ...(verticalGapHeightIn !== undefined && { verticalGapHeightIn }),
+      ...(gableVerticalGapIn !== undefined && { gableVerticalGapIn }),
       ...(isBoxBeamCovered !== undefined && { isBoxBeamCovered }),
       ...(heightOverrideIn !== undefined && { heightOverrideIn }),
       ...(midWallBandIndex !== undefined && { midWallBandIndex }),
@@ -380,7 +388,7 @@ export function allPanelInstances(
           tile.leftEdgeHeightIn,
           tile.rightEdgeHeightIn,
           tile.isSafetyGap,
-          tile.verticalGapHeightIn,
+          tile.verticalGapIn,
         );
       });
     }

@@ -19,6 +19,7 @@ import {
   computeBoxBeamHeightDeltaIn,
   computeGableColumnHeightIn,
   computeGableRipCallout,
+  GABLE_PANEL_MAX_HEIGHT_IN,
   sillDefaultHeightIn,
   standardWindowHeightDefaultIn,
   type BoxBeamSizeId,
@@ -27,7 +28,7 @@ import {
 } from "@building-integrity/panel-catalog";
 import { computeOpeningGeometry } from "./openingGeometry";
 import { MemberElevationShapes } from "./MemberElevationShapes";
-import { GABLE_SHED_SNAP_THRESHOLD_IN, matchStandardPitchIn12, resolveGableProfilePoints } from "./gableProfilePoints";
+import { capGableTileHeights, GABLE_SHED_SNAP_THRESHOLD_IN, matchStandardPitchIn12, resolveGableProfilePoints } from "./gableProfilePoints";
 import {
   LINTEL_MIN_HEIGHT_IN,
   LINTEL_ROOFLINE_SNAP_THRESHOLD_IN,
@@ -106,6 +107,14 @@ export interface WallElevationDiagramProps {
    * up to 8' tall") — a user-tunable threshold; any real rise above it
    * gets filled by a real vertical safety-gap tile instead of clipped. */
   maxGablePanelHeightIn: number;
+  /** Shows/activates the draggable max-height line below (Tommy: "a button
+   * that you highlight and then you can drag the line down on the
+   * editor") — toggled by a button in page.tsx's own sidebar; this
+   * component owns only the drag interaction itself. */
+  isAdjustingMaxGablePanelHeight: boolean;
+  /** Global (Tommy: "applies to all gable panels as its adjusted") — same
+   * setter the Roof tab's own plain number input already uses. */
+  onChangeMaxGablePanelHeightIn: (heightIn: number) => void;
   targetPanelWidthIn: number;
   thicknessIn: number;
   jackStudConfig: JackStudConfig;
@@ -217,6 +226,8 @@ export default function WallElevationDiagram({
   roofProfilePointHeightsFt,
   roofBearingAssemblyHeightIn,
   maxGablePanelHeightIn,
+  isAdjustingMaxGablePanelHeight,
+  onChangeMaxGablePanelHeightIn,
   targetPanelWidthIn,
   thicknessIn,
   jackStudConfig,
@@ -239,6 +250,7 @@ export default function WallElevationDiagram({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
   const [draggingBoxBeamHandle, setDraggingBoxBeamHandle] = useState<"start" | "end" | null>(null);
+  const [isDraggingMaxHeight, setIsDraggingMaxHeight] = useState(false);
   type MidWallBeamDragHandle = "height" | "lintel-top" | "coverage-start" | "coverage-end";
   const [midWallBeamDrag, setMidWallBeamDrag] = useState<{
     story: "ground" | "second";
@@ -324,21 +336,21 @@ export default function WallElevationDiagram({
 
   // Cap each tile's own edges at the real per-panel fabrication ceiling
   // (Tommy: "an ability to put a safety gap inbetween the truss bottom and
-  // the gable end top") — any real rise above it becomes a
-  // verticalGapHeightIn filler (rendered separately below) instead of
-  // being built into (or silently clipped from) the Gable End Panel
-  // itself. Mirrors page.tsx's own gableTilesByWallId capping exactly, so
-  // this preview never disagrees with the real fabrication data.
+  // the gable end top") via the SAME shared capGableTileHeights page.tsx's
+  // own gableTilesByWallId already uses, so this preview can never disagree
+  // with the real fabrication data (a 3rd independent re-derivation of this
+  // math used to exist here, which could — and did — drift). Any real rise
+  // above the cap becomes a verticalGapIn filler (rendered separately
+  // below) instead of being built into (or silently clipped from) the
+  // Gable End Panel itself — every tile ends up either fully true-sloped or
+  // fully flat, never a mixed quadrilateral.
   const capHeightIn = roofBaseHeightIn + maxGablePanelHeightIn;
   const rawGablePanels = hasGableEnd
     ? computeGableTiledRow(wallWidthIn, roofBaseHeightIn, points, targetPanelWidthIn, insetIn, true, heelHeightIn)
     : [];
-  const gablePanels: (GableTiledPanel & { verticalGapHeightIn?: number })[] = rawGablePanels.map((p) => {
-    const leftCappedIn = Math.min(p.leftHeightIn, capHeightIn);
-    const rightCappedIn = Math.min(p.rightHeightIn, capHeightIn);
-    const overflowIn = Math.max(p.leftHeightIn - leftCappedIn, p.rightHeightIn - rightCappedIn);
-    if (overflowIn <= 0) return p;
-    return { ...p, leftHeightIn: leftCappedIn, rightHeightIn: rightCappedIn, verticalGapHeightIn: overflowIn };
+  const gablePanels: (GableTiledPanel & { verticalGapIn?: { leftIn: number; rightIn: number } })[] = rawGablePanels.map((p) => {
+    const capped = capGableTileHeights(p.leftHeightIn, p.rightHeightIn, capHeightIn);
+    return { ...p, leftHeightIn: capped.leftEdgeHeightIn, rightHeightIn: capped.rightEdgeHeightIn, verticalGapIn: capped.verticalGapIn };
   });
   // A Column Panel only makes sense under a single, real peak — a
   // flat-topped profile has no one point for the roof-catcher beam to run
@@ -376,6 +388,50 @@ export default function WallElevationDiagram({
       window.removeEventListener("mouseup", handleUp);
     };
   }, [draggingPointIndex, svgWidthPx, scaleX, wallWidthIn, onChangeGableProfilePositionIn]);
+
+  // Max-height line drag (Tommy: "a button that you highlight and then you
+  // can drag the line down on the editor... it snaps to the height of each
+  // panel's shortest height when that panel is horizontal") — same
+  // cursor-Y-to-inches shape as the Mid-Wall Bond Beam height drag below,
+  // but ALWAYS snapped (not just clamped) to the nearest of this wall's own
+  // real tiles' own "shortest true edge" — the height at which that
+  // specific tile would become perfectly flat (see capGableTileHeights).
+  // Deliberately discrete, not continuous: free-form intermediate values
+  // would just recreate the mixed-angle problem this whole feature exists
+  // to avoid picking. Reads from rawGablePanels (the pre-cap tiles), not
+  // gablePanels, since candidates must reflect the wall's own true
+  // roofline, independent of whatever cap is currently being dragged.
+  useEffect(() => {
+    if (!isDraggingMaxHeight) return;
+    const candidatesIn = rawGablePanels.map((t) => Math.min(t.leftHeightIn, t.rightHeightIn) - roofBaseHeightIn);
+    const handleMove = (e: MouseEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      if (rect.height === 0) return;
+      const pxPerScreenPx = svgHeightPx / rect.height;
+      const localPy = (e.clientY - rect.top) * pxPerScreenPx;
+      const rawHeightIn = (svgHeightPx - BOTTOM_MARGIN_PX - localPy) / PX_PER_IN - roofBaseHeightIn;
+      if (candidatesIn.length === 0) return;
+      let nearestIn = candidatesIn[0]!;
+      let nearestDistIn = Math.abs(nearestIn - rawHeightIn);
+      for (const candidateIn of candidatesIn) {
+        const distIn = Math.abs(candidateIn - rawHeightIn);
+        if (distIn < nearestDistIn) {
+          nearestDistIn = distIn;
+          nearestIn = candidateIn;
+        }
+      }
+      onChangeMaxGablePanelHeightIn(Math.min(Math.max(nearestIn, 12), GABLE_PANEL_MAX_HEIGHT_IN));
+    };
+    const handleUp = () => setIsDraggingMaxHeight(false);
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [isDraggingMaxHeight, rawGablePanels, roofBaseHeightIn, svgHeightPx, onChangeMaxGablePanelHeightIn]);
 
   // Box Beam coverage handle drag — same shape as the gable-point drag
   // above, but snaps to the NEAREST real slot boundary (secondStoryOffsetsIn)
@@ -1081,17 +1137,22 @@ export default function WallElevationDiagram({
 
         {/* Vertical safety gap (Tommy: "an ability to put a safety gap
             inbetween the truss bottom and the gable end top") — the real
-            remainder between a capped Gable End Panel's own top and the
-            true roofline, filled by a real tile instead of clipped. */}
+            remainder between a capped (now always FLAT) Gable End Panel's
+            own top and the true roofline, filled by a real tile instead of
+            clipped. Each edge's own gap is added independently (never a
+            single uniform offset) so the top edge lands exactly on the true
+            roofline on both sides — the common straddling-the-cap case has
+            one edge's own gap at exactly 0, producing a clean triangular
+            taper rather than a rectangle that overshoots past the roof on
+            the side that needed no filler at all. */}
         {hasGableEnd &&
           gablePanels.map((p, i) => {
-            const gapIn = p.verticalGapHeightIn;
-            if (!gapIn) return null;
+            if (!p.verticalGapIn) return null;
             const points4 = [
               [xPx(p.xStartIn), yPx(p.leftHeightIn)],
               [xPx(p.xEndIn), yPx(p.rightHeightIn)],
-              [xPx(p.xEndIn), yPx(p.rightHeightIn + gapIn)],
-              [xPx(p.xStartIn), yPx(p.leftHeightIn + gapIn)],
+              [xPx(p.xEndIn), yPx(p.rightHeightIn + p.verticalGapIn.rightIn)],
+              [xPx(p.xStartIn), yPx(p.leftHeightIn + p.verticalGapIn.leftIn)],
             ]
               .map(([x, y]) => `${x},${y}`)
               .join(" ");
@@ -1176,6 +1237,38 @@ export default function WallElevationDiagram({
               </g>
             </g>
           ))}
+
+        {/* Draggable max-height line (Tommy: "a button that you highlight
+            and then you can drag the line down on the editor") — only
+            shown while the sidebar's own toggle button is active (see
+            isAdjustingMaxGablePanelHeight's own doc comment); the drag
+            itself always snaps to the height that makes some real tile on
+            THIS wall flat (see the useEffect above). */}
+        {hasGableEnd && isAdjustingMaxGablePanelHeight && (
+          <g>
+            <line
+              x1={xPx(0)}
+              y1={yPx(capHeightIn)}
+              x2={xPx(wallWidthIn)}
+              y2={yPx(capHeightIn)}
+              stroke="#2c7a4b"
+              strokeWidth={1}
+              strokeDasharray="4 3"
+            />
+            <text x={4} y={yPx(capHeightIn) - 4} fontSize={10} fill="#2c7a4b">
+              max {maxGablePanelHeightIn}in
+            </text>
+            <g
+              style={{ cursor: "ns-resize" }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setIsDraggingMaxHeight(true);
+              }}
+            >
+              <circle cx={xPx(wallWidthIn / 2)} cy={yPx(capHeightIn)} r={7} fill="#2c7a4b" stroke="#fff" strokeWidth={1.5} />
+            </g>
+          </g>
+        )}
       </svg>
     </div>
   );
