@@ -5110,8 +5110,8 @@ export default function LayoutEditor() {
                   eave — {gableHeelHeightDefaultIn.note} Set to 0 to disable.
                 </p>
 
-                <div role="group" aria-label="Bottom edge reference" className={styles.toolbar}>
-                  <span style={{ fontSize: 13, marginRight: 4 }}>Bottom edge reference:</span>
+                <div role="group" aria-label="Truss seat depth" className={styles.toolbar}>
+                  <span style={{ fontSize: 13, marginRight: 4 }}>Truss seat depth:</span>
                   {bearingEdgeReferenceOptions.map((opt) => (
                     <button
                       key={opt.id}
@@ -5123,10 +5123,20 @@ export default function LayoutEditor() {
                       {opt.label}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    aria-pressed={trussPlateInsetIn === thicknessIn}
+                    className={trussPlateInsetIn === thicknessIn ? styles.toolActive : styles.tool}
+                    onClick={() => setTrussPlateInsetIn(thicknessIn)}
+                    title="Sets the truss seat as deep as the wall panel's own real thickness, whatever that currently is."
+                  >
+                    Panel depth ({thicknessIn}in)
+                  </button>
                 </div>
                 <p className={styles.note}>
-                  How far the truss bottom / roof-catcher beam sits inset from the adjacent wall&apos;s primary
-                  (exterior/floor-plan-line) edge. {trussPlateInsetDefaultIn.note}
+                  How far the truss bottom / roof-catcher beam — and, following it, the Gable End Panel material
+                  itself — sits inset from the adjacent wall&apos;s primary (exterior/floor-plan-line) edge.{" "}
+                  {trussPlateInsetDefaultIn.note}
                 </p>
 
                 <p className={styles.pending}>{roofBearingMemberNote}</p>

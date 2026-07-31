@@ -1316,17 +1316,23 @@ export const gableHeelHeightDefaultIn: CatalogValue<number> = {
 
 /**
  * Preset choices for the bearing member's (truss bottom/roof-catcher beam)
- * "bottom edge reference" — Tommy: "the bottom edge reference should have an
- * option of being 1) on the primary edge 2) 3.5in in from the adjacent
- * walls primary edge or 3) default - 5.5in from adjacent walls primary
- * edge." Replaces free-typed inset values with these 3 named options (the
- * 5.5in default matches trussPlateInsetDefaultIn above); 3.5in is a single
- * 2x4's actual width, a plausible "one stud in" reference.
+ * own truss seat depth — Tommy: "select what depth of truss seat they want
+ * (3.5in, 5.5in, 9.5in, 11.25in, 11.75in, or panel depth)". Supersedes an
+ * earlier, narrower 3-option version of this same "bottom edge reference"
+ * concept (primary edge/3.5in/5.5in) with these standard truss-seat depths
+ * (the 5.5in entry still matches trussPlateInsetDefaultIn above, so the
+ * default selection is unchanged). "Panel depth" — the seat sitting exactly
+ * as deep as the wall panel's own thickness — is inherently dynamic (it
+ * tracks whatever thicknessIn the project is actually using), so it isn't a
+ * fixed entry here; the UI adds it as its own extra option alongside this
+ * list, resolved against the live thicknessIn value.
  */
 export const bearingEdgeReferenceOptions = [
-  { id: "primary-edge", label: "Primary edge (flush)", insetIn: 0 },
-  { id: "3.5in-in", label: "3.5in in", insetIn: 3.5 },
-  { id: "5.5in-in-default", label: "5.5in in (default)", insetIn: 5.5 },
+  { id: "3.5in", label: "3.5in", insetIn: 3.5 },
+  { id: "5.5in-default", label: "5.5in (default)", insetIn: 5.5 },
+  { id: "9.5in", label: "9.5in", insetIn: 9.5 },
+  { id: "11.25in", label: "11.25in", insetIn: 11.25 },
+  { id: "11.75in", label: "11.75in", insetIn: 11.75 },
 ] as const;
 
 export type BearingEdgeReferenceId = (typeof bearingEdgeReferenceOptions)[number]["id"];
