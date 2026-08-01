@@ -1,7 +1,15 @@
 import type { BoxBeamCoverage, Footprint, PanelSlot, Story, TrussDoublingStrategy } from "@building-integrity/geometry";
 import type { Season } from "@building-integrity/calc-engine";
-import { BOX_BEAM_SIZE_DEFAULT, ROOF_TRUSS_SPACING_DEFAULT_IN } from "@building-integrity/panel-catalog";
+import {
+  BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
+  BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
+  BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
+  BALE_FOUNDATION_GAP_DEFAULT_IN,
+  BOX_BEAM_SIZE_DEFAULT,
+  ROOF_TRUSS_SPACING_DEFAULT_IN,
+} from "@building-integrity/panel-catalog";
 import type {
+  BaleFoundationFieldSpacingIn,
   BoxBeamSizeId,
   BracingStyle,
   ClassicTrussTypeId,
@@ -100,6 +108,14 @@ export interface ProjectState {
   priceModifier: number;
   floorSystemId: string | null;
   perpendicular2x4Enabled: boolean;
+  /** Bale Foundation framing (Tommy: "the top framing member, bottom
+   * framing member, and gap to be ui changable"). Optional (not in
+   * REQUIRED_STATE_KEYS) so older project files, which predate this
+   * feature, still load — see parseProjectFile's own defaulting. */
+  baleFoundationTopDepthIn?: number;
+  baleFoundationBottomDepthIn?: number;
+  baleFoundationGapIn?: number;
+  baleFoundationFieldSpacingIn?: BaleFoundationFieldSpacingIn;
   roofSystemTypeId: RoofSystemType;
   /** "peaked" = 1 top point (a ridge); "flat-top" = 2 independently
    * adjustable top points (Tommy: "options for peaked trusses with 1 point
@@ -407,6 +423,11 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       highPerfTrussBearingShapeId: (state.highPerfTrussBearingShapeId as HighPerfTrussBearingShapeId | undefined) ?? "built-up-3ply-2x12",
       roofTrussSpacingIn: (state.roofTrussSpacingIn as RoofTrussSpacingIn | undefined) ?? ROOF_TRUSS_SPACING_DEFAULT_IN,
       roofTrussDoublingStrategy: (state.roofTrussDoublingStrategy as TrussDoublingStrategy | undefined) ?? "single",
+      baleFoundationTopDepthIn: (state.baleFoundationTopDepthIn as number | undefined) ?? BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
+      baleFoundationBottomDepthIn: (state.baleFoundationBottomDepthIn as number | undefined) ?? BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
+      baleFoundationGapIn: (state.baleFoundationGapIn as number | undefined) ?? BALE_FOUNDATION_GAP_DEFAULT_IN,
+      baleFoundationFieldSpacingIn:
+        (state.baleFoundationFieldSpacingIn as BaleFoundationFieldSpacingIn | undefined) ?? BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
       // v22 -> v23 migration: a v22 file's beams have no `kind` field —
       // every one meant "box-beam" (see migrateMidWallBeamsV22ToV23's own
       // doc comment).

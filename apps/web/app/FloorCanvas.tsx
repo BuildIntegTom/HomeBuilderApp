@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { FloorPanelRect, Footprint, JoistLayout, PierPosition } from "@building-integrity/geometry";
+import type { FieldFramingLine, FloorPanelRect, Footprint, JoistLayout, PerimeterRingSegment, PierPosition } from "@building-integrity/geometry";
 import {
   SCALE_PX_PER_FT,
   clientPointFromEvent,
@@ -19,6 +19,17 @@ export interface FloorCanvasProps {
   floorPanels: FloorPanelRect[];
   piers: PierPosition[];
   joistLayout?: JoistLayout | null;
+  /** Bale Foundation's own 2 concentric doubled rings (Ring A flush with
+   * the inside of the footprint, Ring B one panel-width further inward)
+   * plus the single field stacks beyond Ring B — see
+   * computeInsetPerimeterRing/computeFieldFramingLayout in
+   * packages/geometry/src/perimeterRing.ts. Undefined/null when the
+   * project isn't using the Bale Foundation floor system. */
+  baleFoundationRingA?: PerimeterRingSegment[] | null;
+  baleFoundationRingB?: PerimeterRingSegment[] | null;
+  baleFoundationRingAInner?: PerimeterRingSegment[] | null;
+  baleFoundationRingBInner?: PerimeterRingSegment[] | null;
+  baleFoundationFieldLayout?: FieldFramingLine[];
 }
 
 /** Read-only render of the floor panel grid — bays tiled pier-to-pier on
@@ -27,7 +38,18 @@ export interface FloorCanvasProps {
  * editor", so there's no separate spacing control here). Pier positions
  * are shown dimmed underneath, for reference, at the corners where 4
  * panels (or the perimeter) meet. Same Measure tool as FoundationCanvas. */
-export default function FloorCanvas({ footprint, offsetPx, floorPanels, piers, joistLayout }: FloorCanvasProps) {
+export default function FloorCanvas({
+  footprint,
+  offsetPx,
+  floorPanels,
+  piers,
+  joistLayout,
+  baleFoundationRingA,
+  baleFoundationRingB,
+  baleFoundationRingAInner,
+  baleFoundationRingBInner,
+  baleFoundationFieldLayout,
+}: FloorCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [isMeasuring, setIsMeasuring] = useState(false);
   const measureGestureRef = useRef(false);
@@ -157,6 +179,43 @@ export default function FloorCanvas({ footprint, offsetPx, floorPanels, piers, j
             strokeWidth={2}
           />
         ))}
+        {baleFoundationFieldLayout?.map((line) => (
+          <line
+            key={line.id}
+            x1={line.x1 * SCALE_PX_PER_FT + offsetPx.x}
+            y1={line.y1 * SCALE_PX_PER_FT + offsetPx.y}
+            x2={line.x2 * SCALE_PX_PER_FT + offsetPx.x}
+            y2={line.y2 * SCALE_PX_PER_FT + offsetPx.y}
+            stroke="#2f6f3e"
+            strokeWidth={2}
+          />
+        ))}
+        {[baleFoundationRingB, baleFoundationRingBInner].map((ring, ringIdx) =>
+          ring?.map((seg) => (
+            <line
+              key={`ring-b-${ringIdx}-${seg.wallId}`}
+              x1={seg.startPoint.x * SCALE_PX_PER_FT + offsetPx.x}
+              y1={seg.startPoint.y * SCALE_PX_PER_FT + offsetPx.y}
+              x2={seg.endPoint.x * SCALE_PX_PER_FT + offsetPx.x}
+              y2={seg.endPoint.y * SCALE_PX_PER_FT + offsetPx.y}
+              stroke="#2c5a8a"
+              strokeWidth={3}
+            />
+          )),
+        )}
+        {[baleFoundationRingA, baleFoundationRingAInner].map((ring, ringIdx) =>
+          ring?.map((seg) => (
+            <line
+              key={`ring-a-${ringIdx}-${seg.wallId}`}
+              x1={seg.startPoint.x * SCALE_PX_PER_FT + offsetPx.x}
+              y1={seg.startPoint.y * SCALE_PX_PER_FT + offsetPx.y}
+              x2={seg.endPoint.x * SCALE_PX_PER_FT + offsetPx.x}
+              y2={seg.endPoint.y * SCALE_PX_PER_FT + offsetPx.y}
+              stroke="#1f3a5f"
+              strokeWidth={3}
+            />
+          )),
+        )}
         {measureAnchor && measureEnd && (
           <>
             <line

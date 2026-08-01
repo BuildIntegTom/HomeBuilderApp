@@ -14,6 +14,7 @@ export * from "./jackStudMembers";
 export * from "./sillPanelMembers";
 export * from "./openingAssemblyMembers";
 export * from "./safetyGapMembers";
+export * from "./baleFoundationMembers";
 export * from "./squareBalePanelMembers";
 export * from "./squareBaleCornerPanelMembers";
 export * from "./trussPlateMembers";

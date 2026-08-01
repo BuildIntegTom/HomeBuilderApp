@@ -23,6 +23,7 @@ export * from "./gableTiledRow";
 export * from "./roofBearingSegments";
 export * from "./wallVerticalBands";
 export * from "./uniformPanelization";
+export * from "./perimeterRing";
 export * from "./ridgeLine";
 export * from "./trussLayout";
 export * from "./panelLoadOrder";

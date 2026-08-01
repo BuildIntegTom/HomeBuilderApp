@@ -5,6 +5,8 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, TransformControls } from "@react-three/drei";
 import type { Mesh } from "three";
 import {
+  computeFieldFramingLayout,
+  computeInsetPerimeterRing,
   computeRoofBearingSegments,
   computeWallVerticalBandsForSlot,
   isSlotBoxBeamCovered,
@@ -21,6 +23,14 @@ import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
 import PanelLabel from "./PanelLabel";
 import {
+  BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
+  BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
+  BALE_FOUNDATION_GAP_DEFAULT_IN,
+  BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
+  baleFoundationTopFaceZIn,
+  buildDoubledStackPair,
+  buildFramingStackMembers,
+  SUBFLOOR_DEPTH_DEFAULT_IN,
   BOX_BEAM_SIZE_DEFAULT,
   bracingStyleToPatternMirror,
   buildBoxBeamMembers,
@@ -569,6 +579,15 @@ interface Building3DViewProps {
    * opening assemblies (header/jack-studs/sill) via buildOpeningAssemblyMembers. */
   jackStudConfig: JackStudConfig;
   standardWidthIn: number;
+  /** Bale Foundation floor system (Tommy: "the default option is the
+   * double 2x6 + 1.5in gap 'bale foundation'") — Ring A/Ring B/field-stack
+   * geometry renders only when true, purely additive below the wall's own
+   * existing Z=0 (see baleFoundationTopFaceZIn in panel-catalog). */
+  isBaleFoundationFloor?: boolean;
+  baleFoundationTopDepthIn?: number;
+  baleFoundationBottomDepthIn?: number;
+  baleFoundationGapIn?: number;
+  baleFoundationFieldSpacingIn?: number;
   /** Real per-wall Gable End Panel tiles (page.tsx's own `gableTilesByWallId`
    * memo, already the single source of truth the Panel Fabrication pages
    * use) — each tile's `leftEdgeHeightIn`/`rightEdgeHeightIn` are absolute
@@ -732,6 +751,11 @@ export default function Building3DView({
   nailerOffsetIn = 0,
   jackStudConfig,
   standardWidthIn,
+  isBaleFoundationFloor = false,
+  baleFoundationTopDepthIn = BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
+  baleFoundationBottomDepthIn = BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
+  baleFoundationGapIn = BALE_FOUNDATION_GAP_DEFAULT_IN,
+  baleFoundationFieldSpacingIn = BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
   gableTilesByWallId = EMPTY_GABLE_TILES_BY_WALL_ID,
   roofEnabled = false,
   trussPlateInsetIn = 0,
@@ -1080,6 +1104,68 @@ export default function Building3DView({
     roofBaseHeightIn,
   ]);
 
+  // Bale Foundation's own rim rings + field stacks (Tommy: "the default
+  // option is the double 2x6 + 1.5in gap 'bale foundation'") — purely
+  // additive, anchored entirely below the wall's own existing Z=0 (see
+  // baleFoundationTopFaceZIn's own doc comment), so nothing about existing
+  // wall/roof placement changes. Each ring segment/field line becomes one
+  // positioned group, same "anchor at the segment's own start point,
+  // rotate by -rotationRad" convention roofBearingRenderData uses.
+  const baleFoundationRenderData = useMemo(() => {
+    if (!footprint || !isBaleFoundationFloor) return [];
+    const result: { id: string; anchorX: number; anchorZ: number; anchorYFt: number; rotationRad: number; members: PanelMember[] }[] = [];
+    const topFaceZIn = baleFoundationTopFaceZIn(SUBFLOOR_DEPTH_DEFAULT_IN);
+    const stackHeightIn = baleFoundationTopDepthIn + baleFoundationGapIn + baleFoundationBottomDepthIn;
+    const bottomZIn = topFaceZIn - stackHeightIn;
+    const anchorYFt = bottomZIn / IN_PER_FT;
+
+    const ringBInsetIn = thicknessIn + standardWidthIn;
+    const rings: { name: string; insetIn: number }[] = [
+      { name: "a", insetIn: thicknessIn },
+      { name: "b", insetIn: ringBInsetIn },
+    ];
+    for (const { name, insetIn } of rings) {
+      for (const seg of computeInsetPerimeterRing(footprint, insetIn, primaryCornerIds)) {
+        result.push({
+          id: `ring-${name}-${seg.wallId}`,
+          anchorX: seg.startPoint.x,
+          anchorZ: seg.startPoint.y,
+          anchorYFt,
+          rotationRad: seg.rotationRad,
+          members: buildDoubledStackPair(
+            `ring_${name}_${seg.wallId}`,
+            seg.lengthFt * IN_PER_FT,
+            baleFoundationTopDepthIn,
+            baleFoundationBottomDepthIn,
+            baleFoundationGapIn,
+          ),
+        });
+      }
+    }
+    for (const line of computeFieldFramingLayout(footprint, ringBInsetIn, baleFoundationFieldSpacingIn)) {
+      const lengthFt = Math.hypot(line.x2 - line.x1, line.y2 - line.y1);
+      result.push({
+        id: `field-${line.id}`,
+        anchorX: line.x1,
+        anchorZ: line.y1,
+        anchorYFt,
+        rotationRad: Math.atan2(line.y2 - line.y1, line.x2 - line.x1),
+        members: buildFramingStackMembers(`field_${line.id}`, lengthFt * IN_PER_FT, baleFoundationTopDepthIn, baleFoundationBottomDepthIn, baleFoundationGapIn),
+      });
+    }
+    return result;
+  }, [
+    footprint,
+    isBaleFoundationFloor,
+    thicknessIn,
+    standardWidthIn,
+    primaryCornerIds,
+    baleFoundationTopDepthIn,
+    baleFoundationBottomDepthIn,
+    baleFoundationGapIn,
+    baleFoundationFieldSpacingIn,
+  ]);
+
   // Mid-Wall Bond Beam's own member geometry, one per BEAM (either story,
   // a wall can have several) — mirrors roofBearingRenderData's own
   // pattern (wallAxis for X/Z placement, buildBoxBeamMembers for the
@@ -1248,6 +1334,16 @@ export default function Building3DView({
           worldXIn: anchorX * IN_PER_FT,
           worldZIn: anchorZ * IN_PER_FT,
           worldYIn: anchorYIn,
+          rotationRad,
+          members,
+        }),
+      ),
+      ...baleFoundationRenderData.map(
+        ({ id, anchorX, anchorZ, anchorYFt, rotationRad, members }): WorldPlacedPanel => ({
+          label: `balefoundation_${id}`,
+          worldXIn: anchorX * IN_PER_FT,
+          worldZIn: anchorZ * IN_PER_FT,
+          worldYIn: anchorYFt * IN_PER_FT,
           rotationRad,
           members,
         }),
@@ -1556,6 +1652,11 @@ export default function Building3DView({
               ) : (
                 <PanelMembersGroup members={members} />
               )}
+            </group>
+          ))}
+          {baleFoundationRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, members }) => (
+            <group key={`balefoundation-${id}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
+              <PanelMembersGroup members={members} />
             </group>
           ))}
           {!captureMode && <OrbitControls target={target} makeDefault enabled={!isDraggingHandle} />}

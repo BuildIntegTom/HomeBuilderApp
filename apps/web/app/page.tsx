@@ -9,9 +9,11 @@ import {
   buildOctagonFootprint,
   buildRectangleFootprint,
   collapseNearZeroWalls,
+  computeFieldFramingLayout,
   computeFloorPanelGrid,
   computeFootprintAreaSqFt,
   computeGableTiledRow,
+  computeInsetPerimeterRing,
   computeJoistLayout,
   GABLE_SHED_SNAP_THRESHOLD_IN,
   computePanelLoadOrder,
@@ -87,6 +89,17 @@ import {
   bracedPanelDisplayLabel,
   bracingStyleToPatternMirror,
   patternMirrorToBracingStyle,
+  BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
+  BALE_FOUNDATION_FIELD_SPACING_OPTIONS_IN,
+  BALE_FOUNDATION_GAP_BLOCKING_SPACING_IN,
+  BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
+  BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
+  BALE_FOUNDATION_GAP_DEFAULT_IN,
+  SUBFLOOR_DEPTH_DEFAULT_IN,
+  baleFoundationTopFaceZIn,
+  buildDoubledStackPair,
+  buildFramingStackMembers,
+  type BaleFoundationFieldSpacingIn,
   BOX_BEAM_SIZE_DEFAULT,
   BOX_BEAM_SIZE_OPTIONS,
   buildBoxBeamMembers,
@@ -112,6 +125,7 @@ import {
   jackStudThicknessIn,
   JACK_STUD_THICKNESS_IN,
   SAFETY_GAP_THICKNESS_IN,
+  PLATE_2X4_THICKNESS_IN,
   PLATE_2X4_WIDTH_IN,
   carbonFractionOfDryMass,
   COLUMN_TOTAL_WIDTH_IN,
@@ -225,6 +239,7 @@ import FloorAddOnLayerDiagram from "./FloorAddOnLayerDiagram";
 import FloorAssemblyDiagram from "./FloorAssemblyDiagram";
 import FloorCanvas from "./FloorCanvas";
 import FloorCornerDetailDiagram from "./FloorCornerDetailDiagram";
+import BaleFoundationCrossSectionDiagram from "./BaleFoundationCrossSectionDiagram";
 import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
@@ -525,14 +540,27 @@ export default function LayoutEditor() {
   // Fabricator/admin-only markup (Tommy) — public viewers see the base
   // material cost with no markup applied, regardless of this value.
   const [priceModifier, setPriceModifier] = useState(priceRates.totalModifier);
-  // Null until a floor-type button is clicked - "autogenerate when the
-  // button is clicked" (Tommy), not selected by default. Covers both the
-  // suspended-joist options and the Thermally Broken Slab floor option —
-  // mutually exclusive, so one state covers the whole button group.
-  const [floorSystemId, setFloorSystemId] = useState<(typeof floorJoistTypes)[number]["id"] | "thermal-slab" | null>(
-    null,
+  // Covers the suspended-joist options, the Thermally Broken Slab option,
+  // and the Bale Foundation rim/field framing system — mutually exclusive,
+  // so one state covers the whole button group. Bale Foundation is the
+  // real default (Tommy: "the default option is the double 2x6 + 1.5in
+  // gap 'bale foundation'"), unlike the other options which stay null
+  // until explicitly picked ("autogenerate when the button is clicked").
+  const [floorSystemId, setFloorSystemId] = useState<(typeof floorJoistTypes)[number]["id"] | "thermal-slab" | "bale-foundation" | null>(
+    "bale-foundation",
   );
   const [perpendicular2x4Enabled, setPerpendicular2x4Enabled] = useState(false);
+  // Bale Foundation framing (Tommy: "the top framing member, bottom
+  // framing member, and gap to be ui changable... single framing members
+  // span the rest of the space on a left bar selectable 16" or 24"
+  // spacing") — global per-project, same as every other floor/roof
+  // sizing control. Blocking spacing (every 3ft, inside the gap) is a
+  // fixed constant (BALE_FOUNDATION_GAP_BLOCKING_SPACING_IN), not in this
+  // list — Tommy only named these 4 as UI-changeable.
+  const [baleFoundationTopDepthIn, setBaleFoundationTopDepthIn] = useState(BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN);
+  const [baleFoundationBottomDepthIn, setBaleFoundationBottomDepthIn] = useState(BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN);
+  const [baleFoundationGapIn, setBaleFoundationGapIn] = useState(BALE_FOUNDATION_GAP_DEFAULT_IN);
+  const [baleFoundationFieldSpacingIn, setBaleFoundationFieldSpacingIn] = useState<BaleFoundationFieldSpacingIn>(BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN);
 
   // Roof is its own system (parallel to the Floor tab's joist catalog), not
   // a wall panel type — see the Roof tab below. Truss plate / box beam
@@ -1053,6 +1081,10 @@ export default function LayoutEditor() {
       highPerfTrussBearingShapeId,
       roofTrussSpacingIn,
       roofTrussDoublingStrategy,
+      baleFoundationTopDepthIn,
+      baleFoundationBottomDepthIn,
+      baleFoundationGapIn,
+      baleFoundationFieldSpacingIn,
       gableEndWallIds,
       stories,
       panelizationType,
@@ -1150,6 +1182,10 @@ export default function LayoutEditor() {
       setHighPerfTrussBearingShapeId(s.highPerfTrussBearingShapeId ?? "built-up-3ply-2x12");
       setRoofTrussSpacingIn(s.roofTrussSpacingIn ?? ROOF_TRUSS_SPACING_DEFAULT_IN);
       setRoofTrussDoublingStrategy(s.roofTrussDoublingStrategy ?? "single");
+      setBaleFoundationTopDepthIn(s.baleFoundationTopDepthIn ?? BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN);
+      setBaleFoundationBottomDepthIn(s.baleFoundationBottomDepthIn ?? BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN);
+      setBaleFoundationGapIn(s.baleFoundationGapIn ?? BALE_FOUNDATION_GAP_DEFAULT_IN);
+      setBaleFoundationFieldSpacingIn(s.baleFoundationFieldSpacingIn ?? BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN);
       setGableEndWallIds(s.gableEndWallIds);
       setSecondStory(s.stories[1] ?? null);
       setPanelizationType(s.panelizationType);
@@ -1226,9 +1262,10 @@ export default function LayoutEditor() {
     }
   };
 
-  const floorJoistTypeId = floorSystemId && floorSystemId !== "thermal-slab" ? floorSystemId : null;
+  const floorJoistTypeId = floorSystemId && floorSystemId !== "thermal-slab" && floorSystemId !== "bale-foundation" ? floorSystemId : null;
   const floorJoistType = floorJoistTypeId ? floorJoistTypes.find((t) => t.id === floorJoistTypeId)! : null;
   const isThermalSlabFloor = floorSystemId === "thermal-slab";
+  const isBaleFoundationFloor = floorSystemId === "bale-foundation";
   // "Show all detail pages" (Tommy, fabricator/admin only) previews the
   // floor-system detail pages even before a floor type/option is actually
   // selected on the Floor tab — using a representative catalog default for
@@ -1245,6 +1282,63 @@ export default function LayoutEditor() {
     [footprint, floorJoistType],
   );
   const fieldJoistDepthIn = thicknessIn - FIELD_JOIST_DEPTH_REDUCTION_IN;
+
+  // Bale Foundation rings (Tommy: "two of these framing members inside the
+  // primary footprint of the building, and then another two framing
+  // members insideof the width of the panel-width selected") — Ring A
+  // flush with the inside of the primary footprint (inset by thicknessIn),
+  // Ring B one panel-width further inward. Field stacks (single, not
+  // doubled) fill the rest of the interior span beyond Ring B.
+  const baleFoundationRingAInsetIn = thicknessIn;
+  const baleFoundationRingBInsetIn = thicknessIn + standardWidthIn;
+  const baleFoundationRingA = useMemo(
+    () => (footprint && isBaleFoundationFloor ? computeInsetPerimeterRing(footprint, baleFoundationRingAInsetIn, primaryCornerIds) : null),
+    [footprint, isBaleFoundationFloor, baleFoundationRingAInsetIn, primaryCornerIds],
+  );
+  const baleFoundationRingB = useMemo(
+    () => (footprint && isBaleFoundationFloor ? computeInsetPerimeterRing(footprint, baleFoundationRingBInsetIn, primaryCornerIds) : null),
+    [footprint, isBaleFoundationFloor, baleFoundationRingBInsetIn, primaryCornerIds],
+  );
+  // Each ring is a DOUBLED pair (2 stacks side by side, touching — see
+  // buildDoubledStackPair's own doc comment on the 0-gap default) — the
+  // "inner" sub-line is the same ring offset one board thickness further
+  // in, reusing computeInsetPerimeterRing rather than new offset math.
+  const baleFoundationRingAInner = useMemo(
+    () =>
+      footprint && isBaleFoundationFloor
+        ? computeInsetPerimeterRing(footprint, baleFoundationRingAInsetIn + PLATE_2X4_THICKNESS_IN, primaryCornerIds)
+        : null,
+    [footprint, isBaleFoundationFloor, baleFoundationRingAInsetIn, primaryCornerIds],
+  );
+  const baleFoundationRingBInner = useMemo(
+    () =>
+      footprint && isBaleFoundationFloor
+        ? computeInsetPerimeterRing(footprint, baleFoundationRingBInsetIn + PLATE_2X4_THICKNESS_IN, primaryCornerIds)
+        : null,
+    [footprint, isBaleFoundationFloor, baleFoundationRingBInsetIn, primaryCornerIds],
+  );
+  const baleFoundationFieldLayout = useMemo(
+    () =>
+      footprint && isBaleFoundationFloor
+        ? computeFieldFramingLayout(footprint, baleFoundationRingBInsetIn, baleFoundationFieldSpacingIn)
+        : [],
+    [footprint, isBaleFoundationFloor, baleFoundationRingBInsetIn, baleFoundationFieldSpacingIn],
+  );
+  const baleFoundationStackHeightIn = baleFoundationTopDepthIn + baleFoundationGapIn + baleFoundationBottomDepthIn;
+  // 8 boards per cross-section (2 rings x 2 doubled stacks x 2 boards each
+  // — Tommy: "my double double really means double double double") plus
+  // the single field stacks (2 boards each) beyond Ring B.
+  const baleFoundationBoardCount = baleFoundationRingA && baleFoundationRingB
+    ? baleFoundationRingA.length * 4 + baleFoundationRingB.length * 4 + baleFoundationFieldLayout.length * 2
+    : 0;
+  const baleFoundationLumberVolumeFt3 = baleFoundationRingA && baleFoundationRingB
+    ? (baleFoundationRingA.reduce((sum, seg) => sum + seg.lengthFt, 0) * 2 * (baleFoundationTopDepthIn + baleFoundationBottomDepthIn) * 1.5 +
+        baleFoundationRingB.reduce((sum, seg) => sum + seg.lengthFt, 0) * 2 * (baleFoundationTopDepthIn + baleFoundationBottomDepthIn) * 1.5 +
+        baleFoundationFieldLayout.reduce((sum, line) => sum + Math.hypot(line.x2 - line.x1, line.y2 - line.y1), 0) *
+          (baleFoundationTopDepthIn + baleFoundationBottomDepthIn) *
+          1.5) /
+      144
+    : 0;
 
   // Only concrete piers contribute embodied-carbon emissions here — the
   // helical-screw crawlspace is steel, not concrete, so it nets 0.
@@ -3452,6 +3546,9 @@ export default function LayoutEditor() {
         pages.push({ id: "detail-floor-addon", label: "Floor: Perpendicular 2x4 Add-On Layer" });
       }
     }
+    if (floorsEnabled && isBaleFoundationFloor) {
+      pages.push({ id: "detail-bale-foundation", label: "Floor: Bale Foundation" });
+    }
     if (floorsEnabled && docIsThermalSlabFloor) {
       pages.push({ id: "detail-floor-thermal-slab", label: "Floor: Thermally Broken Slab" });
     }
@@ -4037,6 +4134,15 @@ export default function LayoutEditor() {
 
       {floorsEnabled && (
         <div role="group" aria-label="Floor type" className={styles.toolbar}>
+          <button
+            type="button"
+            aria-pressed={isBaleFoundationFloor}
+            className={isBaleFoundationFloor ? styles.toolActive : styles.tool}
+            onClick={() => setFloorSystemId((was) => (was === "bale-foundation" ? null : "bale-foundation"))}
+            disabled={!footprint}
+          >
+            Bale Foundation
+          </button>
           {floorJoistTypes.map((t) => (
             <button
               key={t.id}
@@ -4842,6 +4948,78 @@ export default function LayoutEditor() {
       </div>
     ) : null;
 
+  // Floor tab's own Bale Foundation sidebar section (Tommy: "the top
+  // framing member, bottom framing member, and gap to be ui changable...
+  // single framing members span the rest of the space on a left bar
+  // selectable 16" or 24" spacing") — mirrors roofTrussControls' own
+  // persistent-sidebar pattern just above.
+  const baleFoundationControls =
+    editorTab === "floor" && isBaleFoundationFloor ? (
+      <div className={elevationStyles.panel}>
+        <strong>Bale foundation framing</strong>
+        <label>
+          Top framing member depth (in){" "}
+          <input
+            type="number"
+            value={baleFoundationTopDepthIn}
+            min={1.5}
+            step={0.25}
+            onChange={(e) => setBaleFoundationTopDepthIn(Math.max(0, Number(e.target.value)))}
+          />
+        </label>
+        <label>
+          Bottom framing member depth (in){" "}
+          <input
+            type="number"
+            value={baleFoundationBottomDepthIn}
+            min={1.5}
+            step={0.25}
+            onChange={(e) => setBaleFoundationBottomDepthIn(Math.max(0, Number(e.target.value)))}
+          />
+        </label>
+        <label>
+          Gap (in){" "}
+          <input
+            type="number"
+            value={baleFoundationGapIn}
+            min={0}
+            step={0.25}
+            onChange={(e) => setBaleFoundationGapIn(Math.max(0, Number(e.target.value)))}
+          />
+        </label>
+        <p className={styles.note}>
+          One framing stack = top board + this gap (with blocking every {BALE_FOUNDATION_GAP_BLOCKING_SPACING_IN}in) + bottom board, standing on
+          edge — {baleFoundationStackHeightIn.toFixed(2)}in tall total. The top board&apos;s own top face sits at the wall&apos;s toe-up bottom
+          minus the subfloor depth ({SUBFLOOR_DEPTH_DEFAULT_IN}in) — see the cross-section below.
+        </p>
+        <div role="group" aria-label="Field framing spacing" className={styles.toolbar}>
+          <span style={{ fontSize: 13, marginRight: 4 }}>Field spacing:</span>
+          {BALE_FOUNDATION_FIELD_SPACING_OPTIONS_IN.map((s) => (
+            <button
+              key={s}
+              type="button"
+              aria-pressed={baleFoundationFieldSpacingIn === s}
+              className={baleFoundationFieldSpacingIn === s ? styles.toolActive : styles.tool}
+              onClick={() => setBaleFoundationFieldSpacingIn(s)}
+            >
+              {s}in o.c.
+            </button>
+          ))}
+        </div>
+        <p className={styles.note}>
+          2 concentric doubled rings — one flush with the inside of the footprint, one a further panel-width ({standardWidthIn}in) inward — carry
+          the wall&apos;s own exterior/interior wythe loads. Single field stacks fill the rest of the interior span at the spacing above.
+        </p>
+        {footprint ? (
+          <p className={styles.note}>
+            {baleFoundationBoardCount} boards ({baleFoundationLumberVolumeFt3.toFixed(1)} ft3 total).
+          </p>
+        ) : (
+          <p className={styles.note}>Draw a footprint to see the real board count.</p>
+        )}
+      </div>
+    ) : null;
+
   return (
     <DocumentMetaProvider value={{ projectName, siteLabel: documentSiteLabel, date: documentDate }}>
     <div className={styles.page} ref={pageRef}>
@@ -4911,6 +5089,7 @@ export default function LayoutEditor() {
                 it depends on that anymore. */}
             {editorTab === "wall" && elevationWall && elevationControls}
             {editorTab === "roof" && roofTrussControls}
+            {editorTab === "floor" && baleFoundationControls}
             {editorTab === "wall" && !elevationWall && viewMode === "plan" && (
               <>
                 <div ref={setToolbarPortalNode} className={styles.toolbarPortalInline} />
@@ -5068,6 +5247,11 @@ export default function LayoutEditor() {
                   nailerOffsetIn={nailerOffsetIn}
                   jackStudConfig={jackStudConfig}
                   standardWidthIn={standardWidthIn}
+                  isBaleFoundationFloor={isBaleFoundationFloor}
+                  baleFoundationTopDepthIn={baleFoundationTopDepthIn}
+                  baleFoundationBottomDepthIn={baleFoundationBottomDepthIn}
+                  baleFoundationGapIn={baleFoundationGapIn}
+                  baleFoundationFieldSpacingIn={baleFoundationFieldSpacingIn}
                   compassRef={compassNeedleRef}
                   simplified={simplified3D}
                   showWraps={showWraps}
@@ -5096,6 +5280,11 @@ export default function LayoutEditor() {
                 floorPanels={floorPanels}
                 piers={pierGrid}
                 joistLayout={joistLayout}
+                baleFoundationRingA={baleFoundationRingA}
+                baleFoundationRingB={baleFoundationRingB}
+                baleFoundationRingAInner={baleFoundationRingAInner}
+                baleFoundationRingBInner={baleFoundationRingBInner}
+                baleFoundationFieldLayout={baleFoundationFieldLayout}
               />
             )}
             {editorTab === "roof" &&
@@ -6084,6 +6273,39 @@ export default function LayoutEditor() {
             </p>
           )}
         </StickyNote>
+
+        {isBaleFoundationFloor && (
+          <StickyNote
+            id="detail-bale-foundation"
+            label="Floor: Bale Foundation"
+            isOpen={openNoteIds.has("detail-bale-foundation")}
+            isFullscreen={fullscreenNoteId === "detail-bale-foundation"}
+            cascadeIndex={noteOpenOrder.indexOf("detail-bale-foundation")}
+            onClose={() => handleToggleNote("detail-bale-foundation")}
+            onToggleFullscreen={() => handleToggleNoteFullscreen("detail-bale-foundation")}
+            onPrint={() => handlePrintNote("detail-bale-foundation")}
+          >
+            <DetailGuidePage
+              title="Bale Foundation — Rim & Field Framing"
+              triggerCondition="Every design using the Bale Foundation floor system — the Floor tab's own default floor type."
+              diagram={
+                <BaleFoundationCrossSectionDiagram
+                  topDepthIn={baleFoundationTopDepthIn}
+                  bottomDepthIn={baleFoundationBottomDepthIn}
+                  gapIn={baleFoundationGapIn}
+                />
+              }
+              fastenerSchedule={[]}
+              notes={[
+                "2 concentric doubled rings (2 framing stacks side by side each) carry the wall's own exterior/interior wythe loads — one flush with the inside of the primary footprint, one a further panel-width inward. Single (non-doubled) stacks fill the rest of the interior span.",
+                `${baleFoundationBoardCount} boards total (${baleFoundationLumberVolumeFt3.toFixed(1)} ft3) at the current footprint/spacing.`,
+                "Gap fill material between the top and bottom boards isn't modeled yet — an open void in both 2D and 3D, to be flushed out later.",
+                "Wall panels still render at their existing floor line (Z=0) — this assembly is additive, extending downward from there; wall placement doesn't shift onto this new assembly's own top surface yet.",
+              ]}
+              role={role}
+            />
+          </StickyNote>
+        )}
 
         {docFloorJoistType && (
           <StickyNote
