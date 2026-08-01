@@ -21,6 +21,7 @@ import {
   computeRoofBearingSegments,
   computeSillRunWidths,
   computeTruckLoads,
+  computeTrussLayout,
   partitionLongHeaders,
   cornerOwnership as cornerOwnershipPure,
   dragWallBounded,
@@ -49,6 +50,7 @@ import {
   type RoofProfilePoint,
   type Story,
   type TruckDims,
+  type TrussDoublingStrategy,
   type Wall,
 } from "@building-integrity/geometry";
 import {
@@ -141,16 +143,14 @@ import {
   floorInsulationSequencingRule,
   floorJoistTypes,
   bearingEdgeReferenceOptions,
-  CLASSIC_TRUSS_DEFAULT_PITCH_IN12,
   CLASSIC_TRUSS_DISCLAIMER,
   CLASSIC_TRUSS_TYPES,
   buildEnergyHeelTrussSchema,
   buildParallelChordTrussSchema,
   HIGH_PERF_TRUSS_BEARING_SHAPES,
   HIGH_PERF_TRUSS_CAVITY_DEPTH_OPTIONS_IN,
-  HIGH_PERF_TRUSS_DEFAULT_SPAN_IN,
-  HIGH_PERF_TRUSS_MAX_PITCH_IN12,
-  HIGH_PERF_TRUSS_MIN_PITCH_IN12,
+  ROOF_TRUSS_SPACING_DEFAULT_IN,
+  ROOF_TRUSS_SPACING_OPTIONS_IN,
   floorLongSideBlockingNote,
   floorRimJoistDetail,
   foundationFastenerSchedule,
@@ -207,12 +207,14 @@ import {
   type ClassicTrussTypeId,
   type HighPerfTrussBearingShapeId,
   type HighPerfTrussCavityDepthIn,
+  type HighPerfTrussTypeId,
   type JackStudConfig,
   type OctagonRingDiameterFt,
   type PanelMember,
   type PanelStructuralStatus,
   type RoofCatcherBeamShape,
   type RoofSystemType,
+  type RoofTrussSpacingIn,
   type SeismicZone,
   type StudConfig,
   type WallAssemblyLayer,
@@ -257,8 +259,7 @@ import { DocumentMetaProvider } from "./DocumentMetaContext";
 import DrawingToolPen from "./DrawingToolPen";
 import EditorToolbar from "./EditorToolbar";
 import OctagonRingPreview from "./OctagonRingPreview";
-import TrussPreview from "./TrussPreview";
-import HighPerfTrussPreview, { type HighPerfTrussTypeId } from "./HighPerfTrussPreview";
+import RoofTrussLayoutView from "./RoofTrussLayoutView";
 import PanelLegend from "./PanelLegend";
 import { PANEL_TYPE_LABELS } from "./panelColors";
 import ProjectSummaryPage from "./ProjectSummaryPage";
@@ -588,24 +589,38 @@ export default function LayoutEditor() {
   // shape), independent of roofSystemTypeId.
   const [octagonRingDiameterFt, setOctagonRingDiameterFt] = useState<OctagonRingDiameterFt>(3);
 
-  // Classic Truss Reference gallery (Tommy: "model out some classic truss
-  // examples... this is a basic outline and estimate - refer to truss
-  // manufacturer for more details") — a standalone browsing selection, not
-  // tied to the project's own drawn footprint/roof, so (like
-  // elevationViewWallId) it doesn't round-trip in ProjectFile.
+  // Roof tab's own truss layout editor (Tommy: "i want to be able to design
+  // roof panels with this... the full 'panelized' layout") — which of the 8
+  // truss styles (6 classic + 2 high-performance) is driving the real
+  // project's own truss layout. Classic/high-perf keep their own separate
+  // id spaces (ClassicTrussTypeId vs HighPerfTrussTypeId) since each has
+  // its own catalog array; roofTrussCategory just says which one is
+  // currently active — a single flat button group in the sidebar sets both
+  // the category and the matching id together. Unlike the old "always
+  // available, independent of the project" reference-gallery framing this
+  // replaced, these ARE real per-project settings now, so they round-trip
+  // in ProjectFile (see roofTrussSpacingIn's own doc comment below).
+  const [roofTrussCategory, setRoofTrussCategory] = useState<"classic" | "high-perf">("classic");
   const [selectedClassicTrussId, setSelectedClassicTrussId] = useState<ClassicTrussTypeId>(CLASSIC_TRUSS_TYPES[0]!.id);
   const selectedClassicTruss = CLASSIC_TRUSS_TYPES.find((t) => t.id === selectedClassicTrussId)!;
 
   // High-Performance Truss (Tommy: "we are designing for a high performance
   // house here... each of these trusses should be able to meet a variety of
   // different slopes, 2/12 to 12/12... have them sit on the 2x12's that are
-  // up there (or 14in LVL)") — same standalone-reference pattern as the
-  // Classic Truss gallery above, but with real adjustable pitch/cavity-
-  // depth/bearing-shape controls instead of fixed illustrative defaults.
+  // up there (or 14in LVL)") — cavity-depth/bearing-shape controls, shown
+  // only when roofTrussCategory is "high-perf". Pitch always comes from the
+  // real resolved wall (roofTrussLayoutContext below), same as every
+  // classic truss style — no separate manual pitch override.
   const [highPerfTrussTypeId, setHighPerfTrussTypeId] = useState<HighPerfTrussTypeId>("energy-heel");
-  const [highPerfTrussPitchIn12, setHighPerfTrussPitchIn12] = useState(CLASSIC_TRUSS_DEFAULT_PITCH_IN12);
   const [highPerfTrussCavityDepthIn, setHighPerfTrussCavityDepthIn] = useState<HighPerfTrussCavityDepthIn>(18);
   const [highPerfTrussBearingShapeId, setHighPerfTrussBearingShapeId] = useState<HighPerfTrussBearingShapeId>(HIGH_PERF_TRUSS_BEARING_SHAPES[0]!.id);
+  // On-center truss spacing + sistering strategy (Tommy: "certain changable
+  // via ui variable such as spacing and doubles at the ends, or every
+  // member is a double stud") — global per-project, same as every other
+  // Roof tab setting (heelHeightIn, trussPlateInsetIn, etc.), feeding
+  // computeTrussLayout (packages/geometry/src/trussLayout.ts).
+  const [roofTrussSpacingIn, setRoofTrussSpacingIn] = useState<RoofTrussSpacingIn>(ROOF_TRUSS_SPACING_DEFAULT_IN);
+  const [roofTrussDoublingStrategy, setRoofTrussDoublingStrategy] = useState<TrussDoublingStrategy>("single");
 
   // Per-wall elevation view (Tommy: "an arrow button for each wall section,
   // where we can see the whole line up still in 2d view") — additive to the
@@ -1031,6 +1046,13 @@ export default function LayoutEditor() {
       roofCatcherBeamOffsetIn,
       roofCatcherBeamShape,
       octagonRingDiameterFt,
+      roofTrussCategory,
+      selectedClassicTrussId,
+      highPerfTrussTypeId,
+      highPerfTrussCavityDepthIn,
+      highPerfTrussBearingShapeId,
+      roofTrussSpacingIn,
+      roofTrussDoublingStrategy,
       gableEndWallIds,
       stories,
       panelizationType,
@@ -1121,6 +1143,13 @@ export default function LayoutEditor() {
       setRoofCatcherBeamOffsetIn(s.roofCatcherBeamOffsetIn);
       setRoofCatcherBeamShape(s.roofCatcherBeamShape);
       setOctagonRingDiameterFt(s.octagonRingDiameterFt);
+      setRoofTrussCategory(s.roofTrussCategory ?? "classic");
+      setSelectedClassicTrussId(s.selectedClassicTrussId ?? "king-post");
+      setHighPerfTrussTypeId(s.highPerfTrussTypeId ?? "energy-heel");
+      setHighPerfTrussCavityDepthIn(s.highPerfTrussCavityDepthIn ?? 18);
+      setHighPerfTrussBearingShapeId(s.highPerfTrussBearingShapeId ?? "built-up-3ply-2x12");
+      setRoofTrussSpacingIn(s.roofTrussSpacingIn ?? ROOF_TRUSS_SPACING_DEFAULT_IN);
+      setRoofTrussDoublingStrategy(s.roofTrussDoublingStrategy ?? "single");
       setGableEndWallIds(s.gableEndWallIds);
       setSecondStory(s.stories[1] ?? null);
       setPanelizationType(s.panelizationType);
@@ -2110,6 +2139,73 @@ export default function LayoutEditor() {
     trussPlateInsetIn,
     heelHeightIn,
   ]);
+
+  // Real span/pitch/run for the Roof tab's own truss layout editor (Tommy:
+  // "i want to see the full 'panelized' layout... paired with... the
+  // elevation views of gable end walls") — reads off the SAME real tiled
+  // geometry (gableTilesByWallId) and ridge-run math (computeRidgeLine)
+  // already used elsewhere, so a paired truss preview can never disagree
+  // with what that wall's own elevation view / roof-catcher-beam run
+  // already show. Only resolvable for a real "peaked" profile with exactly
+  // 2 (opposite) Gable End walls — a flat-topped roofline has no single
+  // peak/pitch for any of the 8 truss builders to model (see the plan's
+  // flat-top deferral), so this stays null there, and the Roof tab shows an
+  // instructional note instead of a canvas. The FIRST of the 2 gable walls
+  // is always the "primary" one — a real opposite pair shares the same
+  // length, and computeGableTiledRow/resolveGableProfilePoints already
+  // treat each wall's own roofline symmetrically, so either wall would
+  // resolve to the same span/pitch.
+  const roofTrussLayoutContext = useMemo(() => {
+    if (!footprint || roofProfileType !== "peaked" || gableEndWallIds.size !== 2) return null;
+    const gableWallIdsArr = [...gableEndWallIds];
+    const primaryGableWallId = gableWallIdsArr[0]!;
+    const primaryGableWall = footprint.walls.find((w) => w.id === primaryGableWallId);
+    const tiles = gableTilesByWallId[primaryGableWallId];
+    if (!primaryGableWall || !tiles || tiles.length === 0) return null;
+
+    const wallWidthIn = primaryGableWall.lengthFt * 12;
+    const { resolvedPointXsIn } = resolveGableProfilePoints(
+      roofProfilePointHeightsFt,
+      gableProfilePositionsInByWallId[primaryGableWallId] ?? [],
+      wallWidthIn,
+    );
+    const peakXIn = resolvedPointXsIn[0]!;
+    const peakHeightIn = gableEaveHeightIn + (roofProfilePointHeightsFt[0] ?? 0) * 12;
+    const firstTile = tiles[0]!;
+    const lastTile = tiles[tiles.length - 1]!;
+    // Real per-side rise/run, read off the outermost real tile's own
+    // anchor — same convention WallElevationDiagram's own per-side pitch
+    // labels use (see its own doc comment), so this can never disagree
+    // with what that wall's elevation view already shows. A side with
+    // (near) zero run means the peak sits right at that corner (a shed) —
+    // filtered out rather than divided by near-zero.
+    const sides = [
+      { runIn: peakXIn - firstTile.xStartIn, riseIn: peakHeightIn - firstTile.leftEdgeHeightIn },
+      { runIn: lastTile.xStartIn + lastTile.widthIn - peakXIn, riseIn: peakHeightIn - lastTile.rightEdgeHeightIn },
+    ].filter((s) => s.runIn > 1);
+    if (sides.length === 0) return null;
+
+    // Asymmetric peak (dragged off-center): a real prefab truss is a single
+    // symmetric unit, so this picks the steeper side's real pitch (a
+    // conservative choice — ensures adequate rise) rather than averaging or
+    // picking arbitrarily, and flags it so the editor can show a caveat.
+    const steepestSide = sides.reduce((a, b) => (b.riseIn / b.runIn > a.riseIn / a.runIn ? b : a));
+    const pitchIn12 = (steepestSide.riseIn * 12) / steepestSide.runIn;
+    const asymmetricNote =
+      sides.length === 2 && Math.abs(sides[0]!.riseIn / sides[0]!.runIn - sides[1]!.riseIn / sides[1]!.runIn) > 0.01
+        ? "This wall's roofline peak isn't centered — showing the steeper side's real pitch."
+        : null;
+
+    const peakPositionInByWallId: Record<string, number> = {};
+    for (const [wallId, positions] of Object.entries(gableProfilePositionsInByWallId)) {
+      const posIn = positions[0];
+      if (posIn != null) peakPositionInByWallId[wallId] = posIn;
+    }
+    const ridge = computeRidgeLine(footprint, gableWallIdsArr[0]!, gableWallIdsArr[1]!, peakPositionInByWallId);
+    if (!ridge || ridge.runIn <= 0) return null;
+
+    return { spanIn: wallWidthIn, runIn: ridge.runIn, pitchIn12, asymmetricNote };
+  }, [footprint, roofProfileType, gableEndWallIds, gableTilesByWallId, roofProfilePointHeightsFt, gableProfilePositionsInByWallId, gableEaveHeightIn]);
 
   // Which gable-enabled walls have at least one tile whose real roofline
   // rise exceeds maxGablePanelHeightIn (i.e. got a real vertical
@@ -3366,8 +3462,7 @@ export default function LayoutEditor() {
       if (stories.length === 1 || trussPlateWallLengthTotalIn > 0) {
         pages.push({ id: "detail-truss-plate", label: stories.length === 1 ? "Roof: Truss Plate (Single-Story)" : "Roof: Truss Plate" });
       }
-      pages.push({ id: "detail-classic-truss", label: "Classic Truss Reference" });
-      pages.push({ id: "detail-high-perf-truss", label: "High-Performance Truss" });
+      pages.push({ id: "detail-roof-truss-layout", label: "Roof: Truss Layout" });
       // Real per-wall roof-bearing Shop Fabrication pages — fabricator/
       // detailer documents, not public-facing (same gate panelFabricationGroups uses).
       if (role !== "public") {
@@ -4596,6 +4691,157 @@ export default function LayoutEditor() {
     </div>
   ) : null;
 
+  // One representative truss's own member geometry + peak height, at the
+  // real resolved span/pitch (roofTrussLayoutContext) — shared by the Roof
+  // tab's own live canvas and its PDF-exportable page below, so both always
+  // show the exact same truss. peakHeightInAt (classic) / overallDimensions
+  // .heightIn (high-perf schema builders) already encode each style's own
+  // ridge-height formula — not re-derived here.
+  const roofTrussBuiltMembers = useMemo(() => {
+    if (!roofTrussLayoutContext) return null;
+    const { spanIn, pitchIn12 } = roofTrussLayoutContext;
+    if (roofTrussCategory === "classic") {
+      return { members: selectedClassicTruss.build(spanIn, pitchIn12), peakHeightIn: selectedClassicTruss.peakHeightInAt(spanIn, pitchIn12) };
+    }
+    const schema =
+      highPerfTrussTypeId === "energy-heel"
+        ? buildEnergyHeelTrussSchema(spanIn, pitchIn12, highPerfTrussCavityDepthIn, highPerfTrussBearingShapeId)
+        : buildParallelChordTrussSchema(spanIn, pitchIn12, highPerfTrussCavityDepthIn, highPerfTrussBearingShapeId);
+    return { members: schema.members, peakHeightIn: schema.overallDimensions.heightIn };
+  }, [roofTrussLayoutContext, roofTrussCategory, selectedClassicTruss, highPerfTrussTypeId, highPerfTrussCavityDepthIn, highPerfTrussBearingShapeId]);
+
+  // Roof tab's own truss layout sidebar section (Tommy: "all the options on
+  // the left bar") — mirrors elevationControls' own persistent-sidebar
+  // pattern just above. A single flat button group covers all 8 styles (6
+  // classic + 2 high-performance); picking one sets both roofTrussCategory
+  // and that category's own id together.
+  const roofTrussControls =
+    editorTab === "roof" && roofSystemTypeId === "truss" ? (
+      <div className={elevationStyles.panel}>
+        <strong>Truss layout</strong>
+        <div role="group" aria-label="Truss style" className={styles.toolbar}>
+          {CLASSIC_TRUSS_TYPES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              aria-pressed={roofTrussCategory === "classic" && selectedClassicTrussId === t.id}
+              className={roofTrussCategory === "classic" && selectedClassicTrussId === t.id ? styles.toolActive : styles.tool}
+              onClick={() => {
+                setRoofTrussCategory("classic");
+                setSelectedClassicTrussId(t.id);
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            aria-pressed={roofTrussCategory === "high-perf" && highPerfTrussTypeId === "energy-heel"}
+            className={roofTrussCategory === "high-perf" && highPerfTrussTypeId === "energy-heel" ? styles.toolActive : styles.tool}
+            onClick={() => {
+              setRoofTrussCategory("high-perf");
+              setHighPerfTrussTypeId("energy-heel");
+            }}
+          >
+            Energy-Heel (Gable)
+          </button>
+          <button
+            type="button"
+            aria-pressed={roofTrussCategory === "high-perf" && highPerfTrussTypeId === "parallel-chord"}
+            className={roofTrussCategory === "high-perf" && highPerfTrussTypeId === "parallel-chord" ? styles.toolActive : styles.tool}
+            onClick={() => {
+              setRoofTrussCategory("high-perf");
+              setHighPerfTrussTypeId("parallel-chord");
+            }}
+          >
+            Parallel Chord (Shed)
+          </button>
+        </div>
+        <p className={styles.note}>{roofTrussCategory === "classic" ? selectedClassicTruss.description : CLASSIC_TRUSS_DISCLAIMER}</p>
+
+        {roofTrussCategory === "high-perf" && (
+          <>
+            <div role="group" aria-label="Insulation cavity depth" className={styles.toolbar}>
+              {HIGH_PERF_TRUSS_CAVITY_DEPTH_OPTIONS_IN.map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  aria-pressed={highPerfTrussCavityDepthIn === d}
+                  className={highPerfTrussCavityDepthIn === d ? styles.toolActive : styles.tool}
+                  onClick={() => setHighPerfTrussCavityDepthIn(d)}
+                >
+                  {d}in cavity
+                </button>
+              ))}
+            </div>
+            <div role="group" aria-label="Truss bearing member" className={styles.toolbar}>
+              {HIGH_PERF_TRUSS_BEARING_SHAPES.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  aria-pressed={highPerfTrussBearingShapeId === b.id}
+                  className={highPerfTrussBearingShapeId === b.id ? styles.toolActive : styles.tool}
+                  onClick={() => setHighPerfTrussBearingShapeId(b.id)}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div role="group" aria-label="Truss spacing" className={styles.toolbar}>
+          <span style={{ fontSize: 13, marginRight: 4 }}>Spacing:</span>
+          {ROOF_TRUSS_SPACING_OPTIONS_IN.map((s) => (
+            <button
+              key={s}
+              type="button"
+              aria-pressed={roofTrussSpacingIn === s}
+              className={roofTrussSpacingIn === s ? styles.toolActive : styles.tool}
+              onClick={() => setRoofTrussSpacingIn(s)}
+            >
+              {s}in o.c.
+            </button>
+          ))}
+        </div>
+
+        <div role="group" aria-label="Truss doubling" className={styles.toolbar}>
+          <span style={{ fontSize: 13, marginRight: 4 }}>Doubling:</span>
+          <button
+            type="button"
+            aria-pressed={roofTrussDoublingStrategy === "single"}
+            className={roofTrussDoublingStrategy === "single" ? styles.toolActive : styles.tool}
+            onClick={() => setRoofTrussDoublingStrategy("single")}
+          >
+            Single
+          </button>
+          <button
+            type="button"
+            aria-pressed={roofTrussDoublingStrategy === "doubled-ends"}
+            className={roofTrussDoublingStrategy === "doubled-ends" ? styles.toolActive : styles.tool}
+            onClick={() => setRoofTrussDoublingStrategy("doubled-ends")}
+          >
+            Doubled at Ends
+          </button>
+          <button
+            type="button"
+            aria-pressed={roofTrussDoublingStrategy === "doubled-all"}
+            className={roofTrussDoublingStrategy === "doubled-all" ? styles.toolActive : styles.tool}
+            onClick={() => setRoofTrussDoublingStrategy("doubled-all")}
+          >
+            Every Truss Doubled
+          </button>
+        </div>
+
+        {!roofTrussLayoutContext && (
+          <p className={styles.note}>
+            Select two opposite gable end walls from their Elevation views (Wall tab), with a Peaked roofline profile, to enable the truss layout
+            preview.
+          </p>
+        )}
+      </div>
+    ) : null;
+
   return (
     <DocumentMetaProvider value={{ projectName, siteLabel: documentSiteLabel, date: documentDate }}>
     <div className={styles.page} ref={pageRef}>
@@ -4664,6 +4910,7 @@ export default function LayoutEditor() {
                 presence/height still varies by tab/view, but nothing below
                 it depends on that anymore. */}
             {editorTab === "wall" && elevationWall && elevationControls}
+            {editorTab === "roof" && roofTrussControls}
             {editorTab === "wall" && !elevationWall && viewMode === "plan" && (
               <>
                 <div ref={setToolbarPortalNode} className={styles.toolbarPortalInline} />
@@ -4851,6 +5098,26 @@ export default function LayoutEditor() {
                 joistLayout={joistLayout}
               />
             )}
+            {editorTab === "roof" &&
+              (roofSystemTypeId !== "truss" ? (
+                <p className={styles.note}>Switch Roof System to Truss (Roof Tools, right sidebar) to use the truss layout editor.</p>
+              ) : roofTrussLayoutContext && roofTrussBuiltMembers ? (
+                <RoofTrussLayoutView
+                  trussMembers={roofTrussBuiltMembers.members}
+                  spanIn={roofTrussLayoutContext.spanIn}
+                  peakHeightIn={roofTrussBuiltMembers.peakHeightIn}
+                  runIn={roofTrussLayoutContext.runIn}
+                  spacingIn={roofTrussSpacingIn}
+                  doubling={roofTrussDoublingStrategy}
+                  roofBaseHeightIn={gableEaveHeightIn}
+                  note={roofTrussLayoutContext.asymmetricNote ?? undefined}
+                />
+              ) : (
+                <p className={styles.note}>
+                  Select two opposite gable end walls from their Elevation views (Wall tab), with a Peaked roofline profile, to see the truss
+                  layout here.
+                </p>
+              ))}
           </div>
 
           {footprint && (
@@ -6575,142 +6842,47 @@ export default function LayoutEditor() {
         </StickyNote>
 
         <StickyNote
-          id="detail-classic-truss"
-          label="Classic Truss Reference"
-          isOpen={openNoteIds.has("detail-classic-truss")}
-          isFullscreen={fullscreenNoteId === "detail-classic-truss"}
-          cascadeIndex={noteOpenOrder.indexOf("detail-classic-truss")}
-          onClose={() => handleToggleNote("detail-classic-truss")}
-          onToggleFullscreen={() => handleToggleNoteFullscreen("detail-classic-truss")}
-          onPrint={() => handlePrintNote("detail-classic-truss")}
+          id="detail-roof-truss-layout"
+          label="Roof: Truss Layout"
+          isOpen={openNoteIds.has("detail-roof-truss-layout")}
+          isFullscreen={fullscreenNoteId === "detail-roof-truss-layout"}
+          cascadeIndex={noteOpenOrder.indexOf("detail-roof-truss-layout")}
+          onClose={() => handleToggleNote("detail-roof-truss-layout")}
+          onToggleFullscreen={() => handleToggleNoteFullscreen("detail-roof-truss-layout")}
+          onPrint={() => handlePrintNote("detail-roof-truss-layout")}
         >
           <DetailGuidePage
-            title={`Classic Truss Reference — ${selectedClassicTruss.label}`}
-            triggerCondition="Always available — a standalone reference gallery of classic truss profiles, independent of this project's own drawn footprint/roof (see the Roof tab's Truss Plate for the actual roof-bearing member this app models)."
+            title={`Roof Truss Layout — ${roofTrussCategory === "classic" ? selectedClassicTruss.label : highPerfTrussTypeId === "energy-heel" ? "Energy-Heel (Gable)" : "Parallel Chord (Shed)"}`}
+            triggerCondition="Shown once this roof has exactly 2 opposite Gable End walls (Wall tab elevation views) and a Peaked roofline profile — style, spacing, and doubling are set in the Roof tab's own sidebar."
             diagram={
-              <>
-                <div role="group" aria-label="Classic truss type" className={styles.toolbar}>
-                  {CLASSIC_TRUSS_TYPES.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      aria-pressed={selectedClassicTrussId === t.id}
-                      className={selectedClassicTrussId === t.id ? styles.toolActive : styles.tool}
-                      onClick={() => setSelectedClassicTrussId(t.id)}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-                <TrussPreview trussType={selectedClassicTruss} />
-              </>
+              roofTrussLayoutContext && roofTrussBuiltMembers ? (
+                <RoofTrussLayoutView
+                  trussMembers={roofTrussBuiltMembers.members}
+                  spanIn={roofTrussLayoutContext.spanIn}
+                  peakHeightIn={roofTrussBuiltMembers.peakHeightIn}
+                  runIn={roofTrussLayoutContext.runIn}
+                  spacingIn={roofTrussSpacingIn}
+                  doubling={roofTrussDoublingStrategy}
+                  roofBaseHeightIn={gableEaveHeightIn}
+                  note={roofTrussLayoutContext.asymmetricNote ?? undefined}
+                />
+              ) : (
+                <p className={styles.note}>Not yet resolvable — see the trigger condition above.</p>
+              )
             }
             fastenerSchedule={[]}
             notes={[
               CLASSIC_TRUSS_DISCLAIMER,
-              selectedClassicTruss.description,
-              `Shown at a representative ${Math.round(selectedClassicTruss.defaultSpanIn / 12)}ft span — chords are 2x6, web/post members are 2x4, all a single ~1.5in-thick flat truss unit (no metal plate connectors modeled).`,
-              "Every chord/web angle-cut end is simplified to a straight tilted box, not true beveled geometry — same simplification as every other diagonal brace in this app.",
+              roofTrussCategory === "classic"
+                ? selectedClassicTruss.description
+                : "Energy/raised-heel truss for a deep, uncompressed insulation cavity out to the wall line (see cavity depth/bearing controls in the Roof tab).",
+              roofTrussLayoutContext
+                ? `Real span/pitch for this roof: ${(roofTrussLayoutContext.spanIn / 12).toFixed(1)}ft span at ${roofTrussLayoutContext.pitchIn12.toFixed(1)}/12 pitch, ${(roofTrussLayoutContext.runIn / 12).toFixed(1)}ft ridge run.`
+                : "Real span/pitch/run aren't resolvable yet for this roof.",
+              "Chords are 2x6, web/post members are 2x4, all a single ~1.5in-thick flat truss unit (no metal plate connectors modeled). Every chord/web angle-cut end is simplified to a straight tilted box, not true beveled geometry.",
             ]}
             role={role}
           />
-        </StickyNote>
-
-        <StickyNote
-          id="detail-high-perf-truss"
-          label="High-Performance Truss"
-          isOpen={openNoteIds.has("detail-high-perf-truss")}
-          isFullscreen={fullscreenNoteId === "detail-high-perf-truss"}
-          cascadeIndex={noteOpenOrder.indexOf("detail-high-perf-truss")}
-          onClose={() => handleToggleNote("detail-high-perf-truss")}
-          onToggleFullscreen={() => handleToggleNoteFullscreen("detail-high-perf-truss")}
-          onPrint={() => handlePrintNote("detail-high-perf-truss")}
-        >
-          {(() => {
-            const bearingShape = HIGH_PERF_TRUSS_BEARING_SHAPES.find((b) => b.id === highPerfTrussBearingShapeId)!;
-            const schema =
-              highPerfTrussTypeId === "energy-heel"
-                ? buildEnergyHeelTrussSchema(HIGH_PERF_TRUSS_DEFAULT_SPAN_IN, highPerfTrussPitchIn12, highPerfTrussCavityDepthIn, highPerfTrussBearingShapeId)
-                : buildParallelChordTrussSchema(HIGH_PERF_TRUSS_DEFAULT_SPAN_IN, highPerfTrussPitchIn12, highPerfTrussCavityDepthIn, highPerfTrussBearingShapeId);
-            return (
-              <DetailGuidePage
-                title={schema.displayName}
-                triggerCondition="Always available — a standalone, adjustable high-performance roof truss reference (energy/raised heel for a deep, uncompressed insulation cavity), independent of this project's own drawn footprint/roof."
-                diagram={
-                  <>
-                    <div role="group" aria-label="High-performance truss type" className={styles.toolbar}>
-                      <button
-                        type="button"
-                        aria-pressed={highPerfTrussTypeId === "energy-heel"}
-                        className={highPerfTrussTypeId === "energy-heel" ? styles.toolActive : styles.tool}
-                        onClick={() => setHighPerfTrussTypeId("energy-heel")}
-                      >
-                        Energy-Heel (Gable)
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={highPerfTrussTypeId === "parallel-chord"}
-                        className={highPerfTrussTypeId === "parallel-chord" ? styles.toolActive : styles.tool}
-                        onClick={() => setHighPerfTrussTypeId("parallel-chord")}
-                      >
-                        Parallel Chord (Shed)
-                      </button>
-                    </div>
-                    <label>
-                      Pitch{" "}
-                      <select value={highPerfTrussPitchIn12} onChange={(e) => setHighPerfTrussPitchIn12(Number(e.target.value))}>
-                        {Array.from({ length: HIGH_PERF_TRUSS_MAX_PITCH_IN12 - HIGH_PERF_TRUSS_MIN_PITCH_IN12 + 1 }, (_, i) => HIGH_PERF_TRUSS_MIN_PITCH_IN12 + i).map((p) => (
-                          <option key={p} value={p}>
-                            {p}/12
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div role="group" aria-label="Insulation cavity depth" className={styles.toolbar}>
-                      {HIGH_PERF_TRUSS_CAVITY_DEPTH_OPTIONS_IN.map((d) => (
-                        <button
-                          key={d}
-                          type="button"
-                          aria-pressed={highPerfTrussCavityDepthIn === d}
-                          className={highPerfTrussCavityDepthIn === d ? styles.toolActive : styles.tool}
-                          onClick={() => setHighPerfTrussCavityDepthIn(d)}
-                        >
-                          {formatLengthIn(d, unitSystem)} cavity
-                        </button>
-                      ))}
-                    </div>
-                    <div role="group" aria-label="Truss bearing member" className={styles.toolbar}>
-                      {HIGH_PERF_TRUSS_BEARING_SHAPES.map((b) => (
-                        <button
-                          key={b.id}
-                          type="button"
-                          aria-pressed={highPerfTrussBearingShapeId === b.id}
-                          className={highPerfTrussBearingShapeId === b.id ? styles.toolActive : styles.tool}
-                          onClick={() => setHighPerfTrussBearingShapeId(b.id)}
-                        >
-                          {b.label}
-                        </button>
-                      ))}
-                    </div>
-                    <HighPerfTrussPreview
-                      trussTypeId={highPerfTrussTypeId}
-                      spanIn={HIGH_PERF_TRUSS_DEFAULT_SPAN_IN}
-                      pitchIn12={highPerfTrussPitchIn12}
-                      cavityDepthIn={highPerfTrussCavityDepthIn}
-                      bearingShapeId={highPerfTrussBearingShapeId}
-                    />
-                  </>
-                }
-                fastenerSchedule={[]}
-                notes={[
-                  ...schema.notes.map((n) => n.text),
-                  `Shown at a representative ${Math.round(HIGH_PERF_TRUSS_DEFAULT_SPAN_IN / 12)}ft span — chords are 2x6, web/heel-post members are 2x4, matching the Classic Truss Reference gallery's own convention.`,
-                  `Bearing shown: ${bearingShape.label}, ${formatLengthIn(bearingShape.depthIn, unitSystem)} deep — this is a visualization only; it doesn't change the wall's own real roof-bearing member (see the Roof tab's Truss Plate/Box Beam).`,
-                ]}
-                role={role}
-              />
-            );
-          })()}
         </StickyNote>
 
         {role !== "public" && (

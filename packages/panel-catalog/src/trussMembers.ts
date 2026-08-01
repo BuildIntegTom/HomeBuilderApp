@@ -33,6 +33,15 @@ const WEB_DIMS = { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH
  * residential pitch, not derived from any real span table. */
 export const CLASSIC_TRUSS_DEFAULT_PITCH_IN12 = 6;
 
+/** On-center truss spacing presets for the Roof tab's truss layout editor
+ * — same "plain preset array" shape as OCTAGON_RING_DIAMETER_OPTIONS_FT
+ * (octagonRingMembers.ts). 24in is the common prefab-truss default; 16in/
+ * 19.2in match standard joist/rafter spacing for a shorter span or extra
+ * capacity. */
+export const ROOF_TRUSS_SPACING_OPTIONS_IN = [16, 19.2, 24] as const;
+export type RoofTrussSpacingIn = (typeof ROOF_TRUSS_SPACING_OPTIONS_IN)[number];
+export const ROOF_TRUSS_SPACING_DEFAULT_IN: RoofTrussSpacingIn = 24;
+
 /**
  * One member from (x1,z1) to (x2,z2) in the truss's own flat profile plane
  * — mirrors buildDiagonalBraces/buildTrussWebBraces's local `makeBrace`
@@ -300,11 +309,19 @@ export interface ClassicTrussTypeDef {
   description: string;
   defaultSpanIn: number;
   /** Ridge (or, for Queen Post, straining-beam) height at the default
-   * span/pitch — just for `overallDimensions`/camera framing, not fed back
-   * into the geometry itself (each builder derives its own peak height
-   * from spanIn/pitchIn12 directly). */
+   * span/pitch — just for `overallDimensions`/camera framing at the
+   * illustrative defaults. */
   peakHeightIn: number;
-  build: () => PanelMember[];
+  /** Same ridge/straining-beam height formula as `peakHeightIn` above, but
+   * evaluated at any real spanIn/pitchIn12 — used by the Roof tab's own
+   * truss layout editor (a real per-project span/pitch), while
+   * `peakHeightIn` stays fixed to the illustrative default. */
+  peakHeightInAt: (spanIn: number, pitchIn12: number) => number;
+  /** Defaults to this type's own illustrative span/pitch when called with
+   * no args (unchanged, historical reference-gallery behavior); the Roof
+   * tab's truss layout editor calls this with a real project span/pitch
+   * instead. */
+  build: (spanIn?: number, pitchIn12?: number) => PanelMember[];
 }
 
 /** The 6 classic truss types this reference gallery shows — id/label/
@@ -318,7 +335,8 @@ export const CLASSIC_TRUSS_TYPES: ClassicTrussTypeDef[] = [
     description: "The simplest classic truss — a single vertical post from mid-span up to the ridge. Short spans, historically ~16-24ft.",
     defaultSpanIn: KING_POST_DEFAULT_SPAN_IN,
     peakHeightIn: (KING_POST_DEFAULT_SPAN_IN / 2) * (CLASSIC_TRUSS_DEFAULT_PITCH_IN12 / 12),
-    build: () => buildKingPostTrussMembers(),
+    peakHeightInAt: (spanIn, pitchIn12) => (spanIn / 2) * (pitchIn12 / 12),
+    build: (spanIn, pitchIn12) => buildKingPostTrussMembers(spanIn, pitchIn12),
   },
   {
     id: "queen-post",
@@ -326,7 +344,8 @@ export const CLASSIC_TRUSS_TYPES: ClassicTrussTypeDef[] = [
     description: "Two vertical posts joined by a flat straining beam (a trapezoid, not a single peak) — spans further than a King Post.",
     defaultSpanIn: QUEEN_POST_DEFAULT_SPAN_IN,
     peakHeightIn: (QUEEN_POST_DEFAULT_SPAN_IN / 3) * (CLASSIC_TRUSS_DEFAULT_PITCH_IN12 / 12),
-    build: () => buildQueenPostTrussMembers(),
+    peakHeightInAt: (spanIn, pitchIn12) => (spanIn / 3) * (pitchIn12 / 12),
+    build: (spanIn, pitchIn12) => buildQueenPostTrussMembers(spanIn, pitchIn12),
   },
   {
     id: "fink",
@@ -334,7 +353,8 @@ export const CLASSIC_TRUSS_TYPES: ClassicTrussTypeDef[] = [
     description: "The common residential prefab shape — a repeating zigzag \"W\" web between the chords.",
     defaultSpanIn: FINK_TRUSS_DEFAULT_SPAN_IN,
     peakHeightIn: (FINK_TRUSS_DEFAULT_SPAN_IN / 2) * (CLASSIC_TRUSS_DEFAULT_PITCH_IN12 / 12),
-    build: () => buildFinkTrussMembers(),
+    peakHeightInAt: (spanIn, pitchIn12) => (spanIn / 2) * (pitchIn12 / 12),
+    build: (spanIn, pitchIn12) => buildFinkTrussMembers(spanIn, pitchIn12),
   },
   {
     id: "howe",
@@ -342,7 +362,8 @@ export const CLASSIC_TRUSS_TYPES: ClassicTrussTypeDef[] = [
     description: "Vertical web posts in tension, diagonal webs in compression leaning toward the ridge.",
     defaultSpanIn: HOWE_TRUSS_DEFAULT_SPAN_IN,
     peakHeightIn: (HOWE_TRUSS_DEFAULT_SPAN_IN / 2) * (CLASSIC_TRUSS_DEFAULT_PITCH_IN12 / 12),
-    build: () => buildHoweTrussMembers(),
+    peakHeightInAt: (spanIn, pitchIn12) => (spanIn / 2) * (pitchIn12 / 12),
+    build: (spanIn, pitchIn12) => buildHoweTrussMembers(spanIn, pitchIn12),
   },
   {
     id: "pratt",
@@ -350,7 +371,8 @@ export const CLASSIC_TRUSS_TYPES: ClassicTrussTypeDef[] = [
     description: "Howe's mirror image — diagonal webs in tension leaning toward the supports, vertical posts in compression.",
     defaultSpanIn: PRATT_TRUSS_DEFAULT_SPAN_IN,
     peakHeightIn: (PRATT_TRUSS_DEFAULT_SPAN_IN / 2) * (CLASSIC_TRUSS_DEFAULT_PITCH_IN12 / 12),
-    build: () => buildPrattTrussMembers(),
+    peakHeightInAt: (spanIn, pitchIn12) => (spanIn / 2) * (pitchIn12 / 12),
+    build: (spanIn, pitchIn12) => buildPrattTrussMembers(spanIn, pitchIn12),
   },
   {
     id: "scissor",
@@ -358,7 +380,12 @@ export const CLASSIC_TRUSS_TYPES: ClassicTrussTypeDef[] = [
     description: "A vaulted-ceiling profile — the bottom chord is 2 shallower-pitched ties that cross each other near mid-span.",
     defaultSpanIn: SCISSOR_TRUSS_DEFAULT_SPAN_IN,
     peakHeightIn: (SCISSOR_TRUSS_DEFAULT_SPAN_IN / 2) * (SCISSOR_TRUSS_DEFAULT_TOP_PITCH_IN12 / 12),
-    build: () => buildScissorTrussMembers(),
+    peakHeightInAt: (spanIn, pitchIn12) => (spanIn / 2) * (pitchIn12 / 12),
+    // Only one real pitch is fed in here (see the Roof tab's own resolved
+    // roofline pitch) — used as the top pitch; the bottom (vaulted) tie
+    // keeps its own illustrative default pitch, same as the reference
+    // gallery's own zero-arg call.
+    build: (spanIn, pitchIn12) => buildScissorTrussMembers(spanIn, pitchIn12, SCISSOR_TRUSS_DEFAULT_BOTTOM_PITCH_IN12),
   },
 ];
 
@@ -408,6 +435,8 @@ export function buildClassicTrussSchema(trussType: ClassicTrussTypeDef): PanelCo
 // 3-ply 2x12 roof-catcher beam or a single 1-3/4in x 14in LVL underneath
 // the truss for the 3D preview, matching Tommy's "have them sit on the
 // 2x12's that are up there (or 14in LVL)".
+
+export type HighPerfTrussTypeId = "energy-heel" | "parallel-chord";
 
 export const HIGH_PERF_TRUSS_MIN_PITCH_IN12 = 2;
 export const HIGH_PERF_TRUSS_MAX_PITCH_IN12 = 12;

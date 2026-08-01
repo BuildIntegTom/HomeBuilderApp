@@ -1,12 +1,17 @@
-import type { BoxBeamCoverage, Footprint, PanelSlot, Story } from "@building-integrity/geometry";
+import type { BoxBeamCoverage, Footprint, PanelSlot, Story, TrussDoublingStrategy } from "@building-integrity/geometry";
 import type { Season } from "@building-integrity/calc-engine";
-import { BOX_BEAM_SIZE_DEFAULT } from "@building-integrity/panel-catalog";
+import { BOX_BEAM_SIZE_DEFAULT, ROOF_TRUSS_SPACING_DEFAULT_IN } from "@building-integrity/panel-catalog";
 import type {
   BoxBeamSizeId,
   BracingStyle,
+  ClassicTrussTypeId,
+  HighPerfTrussBearingShapeId,
+  HighPerfTrussCavityDepthIn,
+  HighPerfTrussTypeId,
   OctagonRingDiameterFt,
   RoofCatcherBeamShape,
   RoofSystemType,
+  RoofTrussSpacingIn,
   SeismicZone,
   StudConfig,
 } from "@building-integrity/panel-catalog";
@@ -158,6 +163,19 @@ export interface ProjectState {
   /** Octagon roof-catcher ring's outside diameter (ft) — only shown/used
    * when the footprint is an octagon (8 corners), see octagonRingMembers.ts. */
   octagonRingDiameterFt: OctagonRingDiameterFt;
+  /** Roof tab's own truss layout editor (Tommy: "the full 'panelized'
+   * layout... spacing and doubles at the ends, or every member is a double
+   * stud") — which of the 8 truss styles (6 classic + 2 high-performance)
+   * is active, plus on-center spacing and sistering strategy. Optional
+   * (not in REQUIRED_STATE_KEYS) so older project files, which predate this
+   * feature, still load — see parseProjectFile's own defaulting. */
+  roofTrussCategory?: "classic" | "high-perf";
+  selectedClassicTrussId?: ClassicTrussTypeId;
+  highPerfTrussTypeId?: HighPerfTrussTypeId;
+  highPerfTrussCavityDepthIn?: HighPerfTrussCavityDepthIn;
+  highPerfTrussBearingShapeId?: HighPerfTrussBearingShapeId;
+  roofTrussSpacingIn?: RoofTrussSpacingIn;
+  roofTrussDoublingStrategy?: TrussDoublingStrategy;
   /** Wall ids with "Add Gable End" enabled in the elevation view — see
    * page.tsx's elevationControls. Capped at 2, and the 2nd must be
    * areWallsOppositePair with the 1st (see gableEndToggleBlockReason in
@@ -379,6 +397,16 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       heelHeightIn: state.heelHeightIn as number,
       boxBeamCoverageByWallId: state.boxBeamCoverageByWallId as Record<string, BoxBeamCoverage>,
       boxBeamSizeId: (state.boxBeamSizeId as BoxBeamSizeId) ?? BOX_BEAM_SIZE_DEFAULT,
+      // Optional — absent on any file saved before the truss layout editor
+      // existed (see ProjectState's own doc comment above), so every one
+      // defaults exactly the way page.tsx's own useState calls do.
+      roofTrussCategory: (state.roofTrussCategory as "classic" | "high-perf" | undefined) ?? "classic",
+      selectedClassicTrussId: (state.selectedClassicTrussId as ClassicTrussTypeId | undefined) ?? "king-post",
+      highPerfTrussTypeId: (state.highPerfTrussTypeId as HighPerfTrussTypeId | undefined) ?? "energy-heel",
+      highPerfTrussCavityDepthIn: (state.highPerfTrussCavityDepthIn as HighPerfTrussCavityDepthIn | undefined) ?? 18,
+      highPerfTrussBearingShapeId: (state.highPerfTrussBearingShapeId as HighPerfTrussBearingShapeId | undefined) ?? "built-up-3ply-2x12",
+      roofTrussSpacingIn: (state.roofTrussSpacingIn as RoofTrussSpacingIn | undefined) ?? ROOF_TRUSS_SPACING_DEFAULT_IN,
+      roofTrussDoublingStrategy: (state.roofTrussDoublingStrategy as TrussDoublingStrategy | undefined) ?? "single",
       // v22 -> v23 migration: a v22 file's beams have no `kind` field —
       // every one meant "box-beam" (see migrateMidWallBeamsV22ToV23's own
       // doc comment).
