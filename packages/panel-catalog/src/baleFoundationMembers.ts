@@ -126,3 +126,37 @@ export function buildDoubledStackPair(idPrefix: string, lengthIn: number, topDep
     })),
   ];
 }
+
+/** Nominal thickness for the steel mesh skin — a mesh has no meaningful
+ * "thickness" dimension really, this is just enough to render/export as a
+ * thin real box rather than a zero-volume plane. */
+export const STEEL_MESH_THICKNESS_IN = 0.125;
+
+/**
+ * Rodent/air-sealed bottom skin (Tommy: "an option to do rodent and air
+ * sealed steel clay bottom... basically just a skin for the bottom") —
+ * the galvanized welded wire mesh only (the `floorAssemblyLayers`
+ * "wire-mesh" entry in data.ts), spanning the whole footprint's own
+ * bounding box, not one panel — unlike `buildSkins` in
+ * panelMemberHelpers.ts, which builds a panel-LOCAL top/bottom face. The
+ * clay coating over this mesh isn't modeled as a 3D member, matching how
+ * every other plaster coating in this app (wall clay/lime plaster) is
+ * calculator-only with no 3D representation — see Plaster Master.
+ */
+export function buildFloorBottomSkinMembers(widthIn: number, depthIn: number): PanelMember[] {
+  return [
+    {
+      memberId: "floor_bottom_skin",
+      material: "wire_mesh",
+      speciesGrade: null,
+      plySpec: null,
+      nominalSize: null,
+      actualDimsIn: { thicknessIn: STEEL_MESH_THICKNESS_IN, widthIn: depthIn, lengthIn: widthIn },
+      orientation: "flat",
+      position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0 },
+      role: "skin",
+      qty: 1,
+      notes: "Galvanized welded wire mesh, stapled to the underside of the lowest framing member — rodent/pest barrier, 10mm max opening. The clay coat over it is calculator-only (see Plaster Master), not modeled here.",
+    },
+  ];
+}

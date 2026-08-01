@@ -1583,3 +1583,16 @@ export const plasterPriceDefaults = {
     note: "Mid-range for skilled natural-plaster labor — published rates for plastering generally run ~$30-100/hr depending on region and finish difficulty.",
   },
 };
+
+/** Bale Foundation's own rodent/air-sealed steel + clay bottom skin
+ * (Tommy: "an option to do rodent and air sealed steel clay bottom") —
+ * the mesh backing the clay layer described by the "wire-mesh"
+ * floorAssemblyLayers entry above, priced by the sqft since it's stapled
+ * across the whole floor-bottom area (same area the clay coats use). */
+export const steelMeshPriceDefaults = {
+  pricePerSqFt: {
+    value: 0.85,
+    status: "pending-BI-confirmation" as const,
+    note: "Galvanized welded wire mesh (hardware-cloth style, 10mm max opening — see floorMeshOpeningMaxMm), stapled to the underside of the floor framing as a rodent/pest barrier — typical $0.50-1.50/sqft for hardware-cloth/rat-wire rolls, not a Building-Integrity-confirmed figure.",
+  },
+};

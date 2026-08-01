@@ -18,6 +18,12 @@ export interface PlasterSideInputs {
 export interface PlasterInputsState {
   interior: PlasterSideInputs;
   exterior: PlasterSideInputs;
+  /** Bale Foundation's own rodent/air-sealed steel + clay bottom skin
+   * (Tommy: "basically just a skin for the bottom with a plaster master
+   * calculator") — same base/finish coat shape as interior/exterior so it
+   * reuses PlasterCoatEditor/computePlasterCoatResult unchanged, just fed
+   * the footprint's own plan-view area instead of a wall-perimeter area. */
+  floorBottom: PlasterSideInputs;
 }
 export type PlasterSide = keyof PlasterInputsState;
 export type PlasterCoat = keyof PlasterSideInputs;

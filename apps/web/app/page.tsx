@@ -98,7 +98,9 @@ import {
   SUBFLOOR_DEPTH_DEFAULT_IN,
   baleFoundationTopFaceZIn,
   buildDoubledStackPair,
+  buildFloorBottomSkinMembers,
   buildFramingStackMembers,
+  steelMeshPriceDefaults,
   type BaleFoundationFieldSpacingIn,
   BOX_BEAM_SIZE_DEFAULT,
   BOX_BEAM_SIZE_OPTIONS,
@@ -512,11 +514,16 @@ export default function LayoutEditor() {
       base: { thicknessIn: plasterCoatThicknessInDefaults.base.value, parts: { ...plasterMixPartsDefaults.baseCoat.value } },
       finish: { thicknessIn: plasterCoatThicknessInDefaults.finish.value, parts: { ...plasterMixPartsDefaults.finishCoatLime.value } },
     },
+    floorBottom: {
+      base: { thicknessIn: plasterCoatThicknessInDefaults.base.value, parts: { ...plasterMixPartsDefaults.baseCoat.value } },
+      finish: { thicknessIn: plasterCoatThicknessInDefaults.finish.value, parts: { ...plasterMixPartsDefaults.finishCoatClay.value } },
+    },
   });
   const [plasterSandPricePerCuYd, setPlasterSandPricePerCuYd] = useState(plasterPriceDefaults.sandPricePerCuYd.value);
   const [plasterClayPricePerBag, setPlasterClayPricePerBag] = useState(plasterPriceDefaults.clayPricePerBag.value);
   const [plasterLimePricePerBag, setPlasterLimePricePerBag] = useState(plasterPriceDefaults.limePricePerBag.value);
   const [plasterStrawPricePerCuFt, setPlasterStrawPricePerCuFt] = useState(plasterPriceDefaults.strawPricePerCuFt.value);
+  const [steelMeshPricePerSqFt, setSteelMeshPricePerSqFt] = useState(steelMeshPriceDefaults.pricePerSqFt.value);
   const [plasterLaborRatePerHour, setPlasterLaborRatePerHour] = useState(plasterPriceDefaults.laborRatePerHour.value);
   const [plasterFussyHoursExtra, setPlasterFussyHoursExtra] = useState(0);
   const updatePlasterCoatThickness = (side: PlasterSide, coat: PlasterCoat, thicknessIn: number) => {
@@ -561,6 +568,12 @@ export default function LayoutEditor() {
   const [baleFoundationBottomDepthIn, setBaleFoundationBottomDepthIn] = useState(BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN);
   const [baleFoundationGapIn, setBaleFoundationGapIn] = useState(BALE_FOUNDATION_GAP_DEFAULT_IN);
   const [baleFoundationFieldSpacingIn, setBaleFoundationFieldSpacingIn] = useState<BaleFoundationFieldSpacingIn>(BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN);
+  // Rodent/air-sealed steel + clay bottom skin (Tommy: "an option to do
+  // rodent and air sealed steel clay bottom which is a default option") —
+  // default ON, unlike every other Bale Foundation control above (which
+  // default to their own illustrative sizing but aren't themselves an
+  // on/off toggle). Only meaningful while isBaleFoundationFloor is true.
+  const [floorBottomSkinEnabled, setFloorBottomSkinEnabled] = useState(true);
 
   // Roof is its own system (parallel to the Floor tab's joist catalog), not
   // a wall panel type — see the Roof tab below. Truss plate / box beam
@@ -1085,6 +1098,7 @@ export default function LayoutEditor() {
       baleFoundationBottomDepthIn,
       baleFoundationGapIn,
       baleFoundationFieldSpacingIn,
+      floorBottomSkinEnabled,
       gableEndWallIds,
       stories,
       panelizationType,
@@ -1186,6 +1200,7 @@ export default function LayoutEditor() {
       setBaleFoundationBottomDepthIn(s.baleFoundationBottomDepthIn ?? BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN);
       setBaleFoundationGapIn(s.baleFoundationGapIn ?? BALE_FOUNDATION_GAP_DEFAULT_IN);
       setBaleFoundationFieldSpacingIn(s.baleFoundationFieldSpacingIn ?? BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN);
+      setFloorBottomSkinEnabled(s.floorBottomSkinEnabled ?? true);
       setGableEndWallIds(s.gableEndWallIds);
       setSecondStory(s.stories[1] ?? null);
       setPanelizationType(s.panelizationType);
@@ -2809,6 +2824,15 @@ export default function LayoutEditor() {
     limePricePerBag: plasterLimePricePerBag,
     strawPricePerCuFt: plasterStrawPricePerCuFt,
   };
+  // Bale Foundation's own rodent/air-sealed steel + clay bottom skin
+  // (Tommy: "default option to add to the bottom of the lowest floor
+  // framing member... basically just a skin for the bottom with a plaster
+  // master calculator") — reuses the exact same computePlasterCoatResult
+  // math as interior/exterior, just fed the footprint's own plan-view area
+  // (the floor's underside area) instead of a wall-perimeter area.
+  const hasSteelClaySkin = isBaleFoundationFloor && floorBottomSkinEnabled;
+  const plasterFloorBottomAreaSqFt = footprint ? computeFootprintAreaSqFt(footprint) : 0;
+  const steelMeshCost = hasSteelClaySkin ? plasterFloorBottomAreaSqFt * steelMeshPricePerSqFt : 0;
   const plasterSideResults = {
     interior: hasClayPlaster
       ? {
@@ -2822,6 +2846,12 @@ export default function LayoutEditor() {
           finish: computePlasterCoatResult(plasterInputs.exterior.finish, plasterNetAreaSqFt, plasterPrices),
         }
       : null,
+    floorBottom: hasSteelClaySkin
+      ? {
+          base: computePlasterCoatResult(plasterInputs.floorBottom.base, plasterFloorBottomAreaSqFt, plasterPrices),
+          finish: computePlasterCoatResult(plasterInputs.floorBottom.finish, plasterFloorBottomAreaSqFt, plasterPrices),
+        }
+      : null,
   };
   const plasterActiveSideCount = (hasClayPlaster ? 1 : 0) + (hasLimePlaster ? 1 : 0);
   const plasterLaborHoursPerSide = computePlasterLaborHours(
@@ -2831,11 +2861,24 @@ export default function LayoutEditor() {
     plasterLaborRatesRef.fieldHrsPerSqFt.value,
     plasterLaborRatesRef.edgeHrsPerSqFt.value,
   );
-  const plasterTotalLaborHrs = plasterLaborHoursPerSide.totalHrs * plasterActiveSideCount + plasterFussyHoursExtra;
+  // No rough openings in a floor's own underside — field rate only, no
+  // edge allowance, same computePlasterLaborHours formula with 0 openings.
+  const plasterFloorBottomLaborHours = computePlasterLaborHours(
+    plasterFloorBottomAreaSqFt,
+    0,
+    plasterLaborRatesRef.roughOpeningEdgeAllowanceSqFt.value,
+    plasterLaborRatesRef.fieldHrsPerSqFt.value,
+    plasterLaborRatesRef.edgeHrsPerSqFt.value,
+  );
+  const plasterTotalLaborHrs =
+    plasterLaborHoursPerSide.totalHrs * plasterActiveSideCount +
+    (hasSteelClaySkin ? plasterFloorBottomLaborHours.totalHrs : 0) +
+    plasterFussyHoursExtra;
   const plasterTotalLaborCost = computePlasterLaborCost(plasterTotalLaborHrs, plasterLaborRatePerHour);
   const plasterTotalMaterialCost =
     (plasterSideResults.interior ? plasterSideResults.interior.base.materialCost + plasterSideResults.interior.finish.materialCost : 0) +
-    (plasterSideResults.exterior ? plasterSideResults.exterior.base.materialCost + plasterSideResults.exterior.finish.materialCost : 0);
+    (plasterSideResults.exterior ? plasterSideResults.exterior.base.materialCost + plasterSideResults.exterior.finish.materialCost : 0) +
+    (plasterSideResults.floorBottom ? plasterSideResults.floorBottom.base.materialCost + plasterSideResults.floorBottom.finish.materialCost + steelMeshCost : 0);
   const plasterGrandTotalCost = plasterTotalMaterialCost + plasterTotalLaborCost;
 
   // Square Bale Panels: each "standard"-typed slot under this panelization
@@ -3586,7 +3629,7 @@ export default function LayoutEditor() {
       if (footprint && allInstances.length > 0) {
         pages.push({ id: "detail-shipping", label: "Shipping" });
       }
-      if (hasClayPlaster || hasLimePlaster) {
+      if (hasClayPlaster || hasLimePlaster || hasSteelClaySkin) {
         pages.push({ id: "detail-plaster-master", label: "Plaster Master" });
       }
       // Rough Opening Detail pages (Tommy: "We are going to make a Rough
@@ -3653,6 +3696,7 @@ export default function LayoutEditor() {
     footprint,
     hasClayPlaster,
     hasLimePlaster,
+    hasSteelClaySkin,
     floorsEnabled,
     roofEnabled,
     wallsEnabled,
@@ -5017,6 +5061,14 @@ export default function LayoutEditor() {
         ) : (
           <p className={styles.note}>Draw a footprint to see the real board count.</p>
         )}
+        <label className={elevationStyles.checkboxLabel}>
+          <input type="checkbox" checked={floorBottomSkinEnabled} onChange={(e) => setFloorBottomSkinEnabled(e.target.checked)} />
+          Rodent &amp; air-sealed steel + clay bottom skin
+        </label>
+        <p className={styles.note}>
+          Galvanized welded wire mesh stapled to the underside of the lowest framing member, with a clay coat over it — real
+          quantities/cost via the same Plaster Master calculator the wall finishes use. See the Plaster Master Detail Guide page.
+        </p>
       </div>
     ) : null;
 
@@ -5252,6 +5304,7 @@ export default function LayoutEditor() {
                   baleFoundationBottomDepthIn={baleFoundationBottomDepthIn}
                   baleFoundationGapIn={baleFoundationGapIn}
                   baleFoundationFieldSpacingIn={baleFoundationFieldSpacingIn}
+                  floorBottomSkinEnabled={hasSteelClaySkin}
                   compassRef={compassNeedleRef}
                   simplified={simplified3D}
                   showWraps={showWraps}
@@ -6912,7 +6965,7 @@ export default function LayoutEditor() {
         >
           <DetailGuidePage
             title="Plaster Master"
-            triggerCondition="Interior finish = Clay plaster and/or exterior finish = Lime plaster (Panelizer > Wall Assembly) — total plaster materials, purchase units, and price."
+            triggerCondition="Interior finish = Clay plaster and/or exterior finish = Lime plaster (Panelizer > Wall Assembly), and/or the Bale Foundation floor's own rodent/air-sealed steel + clay bottom skin (Floor tab) — total plaster materials, purchase units, and price."
             diagram={
               <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
                 <table className={styles.results} style={{ width: "100%", marginBottom: 8 }}>
@@ -6952,6 +7005,14 @@ export default function LayoutEditor() {
                         $ <input type="number" min="0" step="0.05" value={plasterStrawPricePerCuFt} onChange={(e) => setPlasterStrawPricePerCuFt(Number(e.target.value))} style={{ width: 56 }} /> /cu ft
                       </td>
                     </tr>
+                    {plasterSideResults.floorBottom && (
+                      <tr>
+                        <td>Steel mesh price</td>
+                        <td>
+                          $ <input type="number" min="0" step="0.05" value={steelMeshPricePerSqFt} onChange={(e) => setSteelMeshPricePerSqFt(Number(e.target.value))} style={{ width: 56 }} /> /sqft
+                        </td>
+                      </tr>
+                    )}
                     <tr>
                       <td>Labor rate</td>
                       <td>
@@ -7014,6 +7075,36 @@ export default function LayoutEditor() {
                   </div>
                 )}
 
+                {plasterSideResults.floorBottom && (
+                  <div style={{ marginBottom: 12 }}>
+                    <p style={{ fontWeight: 700, margin: "0 0 4px" }}>Floor Bottom — Rodent/Air-Sealed Steel + Clay Skin</p>
+                    <p style={{ fontSize: 13, margin: "0 0 4px" }}>
+                      {plasterFloorBottomAreaSqFt.toFixed(1)} sqft (the footprint's own plan-view area — the floor's underside) — steel mesh:{" "}
+                      ${steelMeshCost.toFixed(2)}
+                    </p>
+                    <PlasterCoatEditor
+                      title="Base Coat"
+                      coat={plasterInputs.floorBottom.base}
+                      onThicknessChange={(v) => updatePlasterCoatThickness("floorBottom", "base", v)}
+                      onPartChange={(part, v) => updatePlasterCoatPart("floorBottom", "base", part, v)}
+                      result={plasterSideResults.floorBottom.base}
+                    />
+                    <PlasterCoatEditor
+                      title="Finish Coat"
+                      coat={plasterInputs.floorBottom.finish}
+                      onThicknessChange={(v) => updatePlasterCoatThickness("floorBottom", "finish", v)}
+                      onPartChange={(part, v) => updatePlasterCoatPart("floorBottom", "finish", part, v)}
+                      result={plasterSideResults.floorBottom.finish}
+                    />
+                    <p style={{ fontSize: 13, margin: 0 }}>
+                      Floor bottom material subtotal:{" "}
+                      <strong>
+                        ${(plasterSideResults.floorBottom.base.materialCost + plasterSideResults.floorBottom.finish.materialCost + steelMeshCost).toFixed(2)}
+                      </strong>
+                    </p>
+                  </div>
+                )}
+
                 <table className={styles.results} style={{ width: "100%" }}>
                   <tbody>
                     <tr>
@@ -7026,6 +7117,7 @@ export default function LayoutEditor() {
                           {(plasterLaborHoursPerSide.edgeHrs * plasterActiveSideCount).toFixed(1)} edge (near {plasterRoughOpeningCount} rough opening
                           {plasterRoughOpeningCount === 1 ? "" : "s"}){plasterFussyHoursExtra > 0 ? ` + ${plasterFussyHoursExtra} fussy` : ""}, across {plasterActiveSideCount} active side
                           {plasterActiveSideCount === 1 ? "" : "s"}
+                          {hasSteelClaySkin ? ` + ${plasterFloorBottomLaborHours.totalHrs.toFixed(1)} floor bottom (field only, no rough openings)` : ""}
                         </span>
                       </td>
                     </tr>
@@ -7058,6 +7150,11 @@ export default function LayoutEditor() {
               "Labor hours: each rough opening gets a 15 sqft \"edge\" (trim/cutting-in) allowance carved out of the total area, billed at 0.04 hr/sqft (2x the 0.02 hr/sqft open \"field\" rate) — straight from the spreadsheet's own \"Time\" table, collapsed from a per-room breakdown into one whole-project estimate.",
               "The source spreadsheet has no pricing at all (materials/quantities only) — every $ default here (sand, clay, lime, straw, labor rate) is this app's own researched industry-typical placeholder, not a Building-Integrity-confirmed figure. All editable.",
               "Sand priced by the cu yd, clay/lime by the 50lb bag, chopped straw by the cu ft directly (the spreadsheet never gives chopped straw its own bag/bale purchase unit).",
+              ...(hasSteelClaySkin
+                ? [
+                    "Floor Bottom uses the footprint's own plan-view area (the floor's underside), not a wall-perimeter area — same base/finish coat math, just a different area source. The steel mesh backing it (real 3D member, rodent/pest barrier, 10mm max opening) is priced separately by the sqft; the clay coat over it isn't modeled as a 3D member, same as every other plaster coating in this app.",
+                  ]
+                : []),
             ]}
             role={role}
           />

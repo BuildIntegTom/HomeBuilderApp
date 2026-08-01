@@ -116,6 +116,11 @@ export interface ProjectState {
   baleFoundationBottomDepthIn?: number;
   baleFoundationGapIn?: number;
   baleFoundationFieldSpacingIn?: BaleFoundationFieldSpacingIn;
+  /** Rodent/air-sealed steel + clay bottom skin (Tommy: "a default option
+   * to add to the bottom of the lowest floor framing member") — default
+   * ON, optional for the same old-file-compat reason as the other Bale
+   * Foundation fields above. */
+  floorBottomSkinEnabled?: boolean;
   roofSystemTypeId: RoofSystemType;
   /** "peaked" = 1 top point (a ridge); "flat-top" = 2 independently
    * adjustable top points (Tommy: "options for peaked trusses with 1 point
@@ -428,6 +433,7 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       baleFoundationGapIn: (state.baleFoundationGapIn as number | undefined) ?? BALE_FOUNDATION_GAP_DEFAULT_IN,
       baleFoundationFieldSpacingIn:
         (state.baleFoundationFieldSpacingIn as BaleFoundationFieldSpacingIn | undefined) ?? BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
+      floorBottomSkinEnabled: (state.floorBottomSkinEnabled as boolean | undefined) ?? true,
       // v22 -> v23 migration: a v22 file's beams have no `kind` field —
       // every one meant "box-beam" (see migrateMidWallBeamsV22ToV23's own
       // doc comment).

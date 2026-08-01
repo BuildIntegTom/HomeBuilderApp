@@ -29,7 +29,9 @@ import {
   BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
   baleFoundationTopFaceZIn,
   buildDoubledStackPair,
+  buildFloorBottomSkinMembers,
   buildFramingStackMembers,
+  STEEL_MESH_THICKNESS_IN,
   SUBFLOOR_DEPTH_DEFAULT_IN,
   BOX_BEAM_SIZE_DEFAULT,
   bracingStyleToPatternMirror,
@@ -588,6 +590,10 @@ interface Building3DViewProps {
   baleFoundationBottomDepthIn?: number;
   baleFoundationGapIn?: number;
   baleFoundationFieldSpacingIn?: number;
+  /** Rodent/air-sealed steel bottom skin (Tommy: "a default option to add
+   * to the bottom of the lowest floor framing member") — only meaningful
+   * alongside isBaleFoundationFloor. */
+  floorBottomSkinEnabled?: boolean;
   /** Real per-wall Gable End Panel tiles (page.tsx's own `gableTilesByWallId`
    * memo, already the single source of truth the Panel Fabrication pages
    * use) — each tile's `leftEdgeHeightIn`/`rightEdgeHeightIn` are absolute
@@ -756,6 +762,7 @@ export default function Building3DView({
   baleFoundationBottomDepthIn = BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
   baleFoundationGapIn = BALE_FOUNDATION_GAP_DEFAULT_IN,
   baleFoundationFieldSpacingIn = BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
+  floorBottomSkinEnabled = false,
   gableTilesByWallId = EMPTY_GABLE_TILES_BY_WALL_ID,
   roofEnabled = false,
   trussPlateInsetIn = 0,
@@ -1153,6 +1160,22 @@ export default function Building3DView({
         members: buildFramingStackMembers(`field_${line.id}`, lengthFt * IN_PER_FT, baleFoundationTopDepthIn, baleFoundationBottomDepthIn, baleFoundationGapIn),
       });
     }
+    if (floorBottomSkinEnabled) {
+      const xs = footprint.corners.map((c) => c.point.x);
+      const zs = footprint.corners.map((c) => c.point.y);
+      const minX = Math.min(...xs);
+      const minZ = Math.min(...zs);
+      const widthFt = Math.max(...xs) - minX;
+      const depthFt = Math.max(...zs) - minZ;
+      result.push({
+        id: "floor-bottom-skin",
+        anchorX: minX,
+        anchorZ: minZ,
+        anchorYFt: (bottomZIn - STEEL_MESH_THICKNESS_IN) / IN_PER_FT,
+        rotationRad: 0,
+        members: buildFloorBottomSkinMembers(widthFt * IN_PER_FT, depthFt * IN_PER_FT),
+      });
+    }
     return result;
   }, [
     footprint,
@@ -1164,6 +1187,7 @@ export default function Building3DView({
     baleFoundationBottomDepthIn,
     baleFoundationGapIn,
     baleFoundationFieldSpacingIn,
+    floorBottomSkinEnabled,
   ]);
 
   // Mid-Wall Bond Beam's own member geometry, one per BEAM (either story,
