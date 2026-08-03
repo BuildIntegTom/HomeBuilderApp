@@ -7,6 +7,7 @@ import {
   BALE_FOUNDATION_GAP_DEFAULT_IN,
   BOX_BEAM_SIZE_DEFAULT,
   ROOF_TRUSS_SPACING_DEFAULT_IN,
+  standardPanelHeightIn,
 } from "@building-integrity/panel-catalog";
 import type {
   BaleFoundationFieldSpacingIn,
@@ -92,6 +93,12 @@ export interface ProjectState {
   thicknessIn: number;
   densityLbFt3: number;
   wallHeightFt: number;
+  /** A wall column taller than this auto-splits into stacked zones (Tommy:
+   * "panels should have a default max height of 10'... this option
+   * editable... in the panelizer tab"). Optional (not in
+   * REQUIRED_STATE_KEYS) so older project files, which predate this
+   * feature, still load — see parseProjectFile's own defaulting. */
+  maxPanelHeightIn?: number;
   includeNailer: boolean;
   /** Every interior/exterior finish AND product checked (Tommy: "change
    * those interior and exterior finishes to check boxes... a repertoire")
@@ -434,6 +441,7 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       baleFoundationFieldSpacingIn:
         (state.baleFoundationFieldSpacingIn as BaleFoundationFieldSpacingIn | undefined) ?? BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
       floorBottomSkinEnabled: (state.floorBottomSkinEnabled as boolean | undefined) ?? true,
+      maxPanelHeightIn: (state.maxPanelHeightIn as number | undefined) ?? standardPanelHeightIn.value,
       // v22 -> v23 migration: a v22 file's beams have no `kind` field —
       // every one meant "box-beam" (see migrateMidWallBeamsV22ToV23's own
       // doc comment).

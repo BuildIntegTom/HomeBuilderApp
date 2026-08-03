@@ -302,6 +302,17 @@ describe("getOpeningAnchors", () => {
     ];
     expect(getOpeningAnchors(slots)).toEqual([]);
   });
+
+  it("counts 'braced' slots toward beforeStandardCount right alongside 'standard' ones (bug regression: a braced slot preceding an opening used to be undercounted, anchoring the opening too early)", () => {
+    const slots: PanelSlot[] = [
+      { type: "corner", widthIn: 24 },
+      { type: "braced", widthIn: 40, bracedPattern: "chevron", bracedMirrored: false },
+      { type: "window", widthIn: 36 },
+      { type: "standard", widthIn: 40 },
+      { type: "corner", widthIn: 24 },
+    ];
+    expect(getOpeningAnchors(slots)).toEqual([{ beforeStandardCount: 1, type: "window", widthIn: 36 }]);
+  });
 });
 
 describe("retileWithOpenings", () => {

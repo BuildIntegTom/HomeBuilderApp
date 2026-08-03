@@ -1,4 +1,5 @@
-import type { BracePattern, PanelSlot } from "./types";
+import { getOpeningAnchors } from "./tiling";
+import type { BracePattern, PanelSlot, PanelSlotZone } from "./types";
 
 const BRACE_NEAR_CORNER_COUNT = 1;
 
@@ -171,6 +172,36 @@ export function applyBracedPlacement(
  * window/door/column) — a "standard" position is just as sticky as a
  * "braced" one, so a user reverting a panel back to plain standard stays
  * reverted through future retiles, not just braced choices.
+ *
+ * Also carries each matched slot's own `zones` through (a beam/max-height
+ * split column's own independently-typed bands — see PanelSlot.zones's own
+ * doc comment) — a fresh tiling/retile pass otherwise always builds a bare
+ * `{type, widthIn}` slot with no `zones` field at all, which would
+ * silently wipe a split column's upper-band data on every wall-length-edit/
+ * bump-out-driven retile.
+ *
+ * Ordinal-matching alone isn't quite enough, though: `newSlots` can have a
+ * *different number* of standard-family slots than `oldSlots` did, because
+ * a retile can turn a former standard/braced slot into a window/door/column
+ * (or vice versa) at some position in the *middle* of the wall, not just at
+ * the ends. Naively pairing `newMarkers[i]` with `oldMarkers[i]` by raw
+ * index doesn't account for that: every old marker *after* the converted
+ * position silently shifts one slot out of alignment against the new (now
+ * shorter-or-longer) family, and — if the family shrank — the trailing
+ * marker(s) fall off the end of `oldMarkers` and are simply never applied
+ * (this is what used to make a wall's *other*, untouched braced panel
+ * silently revert to "standard" after toggling a single unrelated panel
+ * into a window elsewhere on the same wall).
+ *
+ * The fix: track how many old standard-family entries a *newly-created*
+ * opening has consumed (`droppedOldMarkers`) and fold that into the index
+ * used to read `oldMarkers`, so later positions still line up correctly
+ * instead of shifting. An opening in `newSlots` only consumes an old marker
+ * when it's genuinely new at that position — `oldOpeningCountAtOrdinal`
+ * (built from `getOpeningAnchors(oldSlots)`, using that same standard-
+ * family ordinal convention) tells the walk when an opening already
+ * existed there in `oldSlots` too, in which case it was never part of the
+ * standard family to begin with and nothing needs dropping.
  */
 export function reconcileBracedPlacement(
   oldSlots: PanelSlot[] | undefined,
@@ -184,30 +215,59 @@ export function reconcileBracedPlacement(
     return applyBracedPlacement(newSlots, spacingIn, standardWidthIn, defaultPattern, defaultMirrored);
   }
 
-  const oldMarkers: { type: "standard" | "braced"; bracedPattern?: BracePattern; bracedMirrored?: boolean }[] = [];
+  const oldMarkers: { type: "standard" | "braced"; bracedPattern?: BracePattern; bracedMirrored?: boolean; zones?: PanelSlotZone[] }[] = [];
   for (const slot of oldSlots) {
     if (slot.type === "standard") {
-      oldMarkers.push({ type: "standard" });
+      oldMarkers.push({ type: "standard", zones: slot.zones });
     } else if (slot.type === "braced") {
-      oldMarkers.push({ type: "braced", bracedPattern: slot.bracedPattern, bracedMirrored: slot.bracedMirrored });
+      oldMarkers.push({ type: "braced", bracedPattern: slot.bracedPattern, bracedMirrored: slot.bracedMirrored, zones: slot.zones });
     }
+  }
+
+  // Old openings, keyed by their own standard-family ordinal (same
+  // convention `oldMarkers`' own index already uses) — lets the walk below
+  // tell an opening that already sat at this exact position in `oldSlots`
+  // (nothing to reconcile: it was never a standard-family member) apart
+  // from a brand-new one that just replaced a former standard/braced slot
+  // (that old marker must be dropped outright, not silently shifted onto
+  // whichever standard-family slot comes next).
+  const oldOpeningCountAtOrdinal = new Map<number, number>();
+  for (const anchor of getOpeningAnchors(oldSlots)) {
+    oldOpeningCountAtOrdinal.set(anchor.beforeStandardCount, (oldOpeningCountAtOrdinal.get(anchor.beforeStandardCount) ?? 0) + 1);
   }
 
   const reconciled = newSlots.map((s) => ({ ...s }));
   const eligibleIndices = new Set<number>();
-  let ordinal = 0;
+  let ordinal = 0; // new-side standard-family ordinal (count of "standard" slots seen so far in `reconciled`)
+  let droppedOldMarkers = 0; // old standard-family entries consumed by newly-created openings, not yet reflected in `ordinal`
   for (let i = 0; i < reconciled.length; i++) {
     const slot = reconciled[i]!;
+    if (slot.type === "window" || slot.type === "door" || slot.type === "column") {
+      const oldOrdinal = ordinal + droppedOldMarkers;
+      const remaining = oldOpeningCountAtOrdinal.get(oldOrdinal) ?? 0;
+      if (remaining > 0) {
+        // Already an opening at this exact position in oldSlots — never a
+        // standard-family member, so nothing to drop.
+        oldOpeningCountAtOrdinal.set(oldOrdinal, remaining - 1);
+      } else {
+        // A brand-new opening here — it replaced whatever standard-family
+        // slot used to occupy this position; drop that marker instead of
+        // letting every later marker shift onto it.
+        droppedOldMarkers++;
+      }
+      continue;
+    }
     // A fresh tiling/retile pass never itself produces a "braced" slot
     // (see tiling.ts) — only "standard" slots are candidates here.
     if (slot.type !== "standard") continue;
-    const marker = oldMarkers[ordinal];
+    const marker = oldMarkers[ordinal + droppedOldMarkers];
     if (marker) {
       slot.type = marker.type;
       if (marker.type === "braced") {
         slot.bracedPattern = marker.bracedPattern;
         slot.bracedMirrored = marker.bracedMirrored;
       }
+      slot.zones = marker.zones;
     } else {
       eligibleIndices.add(i);
     }

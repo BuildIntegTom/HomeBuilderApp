@@ -21,6 +21,7 @@ export * from "./pointInPolygon";
 export * from "./wallCompassDirection";
 export * from "./gableTiledRow";
 export * from "./roofBearingSegments";
+export * from "./panelSlotZones";
 export * from "./wallVerticalBands";
 export * from "./uniformPanelization";
 export * from "./perimeterRing";

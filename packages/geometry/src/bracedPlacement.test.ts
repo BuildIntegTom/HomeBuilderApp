@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SAFETY_PLYWOOD_BUFFER_IN, applyBracedPlacement, reconcileBracedPlacement, setWindowWidth } from "./bracedPlacement";
-import { tileWall } from "./tiling";
+import { getOpeningAnchors, retileWithOpenings, tileWall } from "./tiling";
 import type { PanelSlot } from "./types";
 
 describe("applyBracedPlacement", () => {
@@ -302,6 +302,91 @@ describe("reconcileBracedPlacement", () => {
       expect(newSlot.bracedPattern).toBe("hatch");
       expect(newSlot.bracedMirrored).toBe(true);
     }
+  });
+
+  // Regression coverage for 2 related retile/reconciliation bugs found while
+  // testing an unrelated beam/zone feature — both are pre-existing bugs in
+  // this older tiling/reconciliation code, not in the new feature itself.
+
+  it("BUG 1 regression: converting one standard slot into a window (mid-wall) must not silently drop a DIFFERENT, untouched braced panel elsewhere on the wall", () => {
+    // corner-braced-standard-standard-gap-braced-corner: 2 braced panels,
+    // one touching each corner, with 2 plain standards between the first
+    // brace and the gap.
+    const oldSlots: PanelSlot[] = [
+      { type: "corner", widthIn: 24 },
+      { type: "braced", widthIn: 48, bracedPattern: "chevron", bracedMirrored: false }, // touches start corner
+      { type: "standard", widthIn: 48 }, // this is the one about to be clicked into a window
+      { type: "standard", widthIn: 48 },
+      { type: "safety-gap", widthIn: 0.75 },
+      { type: "braced", widthIn: 48, bracedPattern: "hatch", bracedMirrored: true }, // touches end corner — never touched by the click
+      { type: "corner", widthIn: 24 },
+    ];
+    const wallLengthIn = oldSlots.reduce((sum, s) => sum + s.widthIn, 0); // 240.75
+
+    // Mirrors handleToggleOpening's own inline anchor-building convention
+    // (already correct per page.tsx: counts "standard" and "braced"
+    // together) — index 2 (family-ordinal 1, 1 braced precedes it) is
+    // becoming a window, so it's excluded from the anchors/family entirely.
+    const anchors = [{ beforeStandardCount: 1, type: "window" as const, widthIn: 48 }];
+
+    const retiled = retileWithOpenings(wallLengthIn, 48, 24, "end", true, true, anchors).slots;
+    const reconciled = reconcileBracedPlacement(oldSlots, retiled, 100_000, 48, "chevron", false);
+
+    // The untouched far-end brace must still be "braced" with its ORIGINAL
+    // pattern/mirror — not silently reverted to "standard" (the bug) nor
+    // re-seeded with the default pattern.
+    const braced = reconciled.filter((s) => s.type === "braced");
+    expect(braced.length).toBe(2);
+    expect(reconciled[reconciled.length - 2]).toEqual({
+      type: "braced",
+      widthIn: 48,
+      bracedPattern: "hatch",
+      bracedMirrored: true,
+    });
+    // The start-corner brace is untouched too.
+    expect(reconciled[1]).toEqual({
+      type: "braced",
+      widthIn: 48,
+      bracedPattern: "chevron",
+      bracedMirrored: false,
+    });
+    // And the window landed where anchored, between the 2 braced panels.
+    expect(reconciled.map((s) => s.type)).toEqual(["corner", "braced", "window", "standard", "safety-gap", "braced", "corner"]);
+  });
+
+  it("BUG 2 regression: resizing an existing window must not swap its visual order with a braced panel that precedes it", () => {
+    // Same wall shape as the BUG 1 test, but now already past that retile —
+    // the window already exists, with a braced panel BEFORE it in wall
+    // order (the corner-touching one) and a plain standard after.
+    const oldSlots: PanelSlot[] = [
+      { type: "corner", widthIn: 24 },
+      { type: "braced", widthIn: 48, bracedPattern: "chevron", bracedMirrored: false },
+      { type: "window", widthIn: 48 },
+      { type: "standard", widthIn: 48 },
+      { type: "safety-gap", widthIn: 0.75 },
+      { type: "standard", widthIn: 48 },
+      { type: "corner", widthIn: 24 },
+    ];
+    const wallLengthIn = oldSlots.reduce((sum, s) => sum + s.widthIn, 0); // 240.75
+
+    // Mirrors handleSetWindowWidth exactly: read anchors off the CURRENT
+    // slots, patch the window's own width, retile, then reconcile.
+    const anchors = getOpeningAnchors(oldSlots);
+    const windowAnchorIdx = anchors.findIndex((a) => a.type === "window");
+    anchors[windowAnchorIdx] = { ...anchors[windowAnchorIdx]!, widthIn: 60 };
+
+    const retiled = retileWithOpenings(wallLengthIn, 48, 24, "end", true, true, anchors).slots;
+    const reconciled = reconcileBracedPlacement(oldSlots, retiled, 100_000, 48, "chevron", false);
+
+    // The braced panel must still be BEFORE the window (its original wall
+    // order), not swapped to after it.
+    const bracedIdx = reconciled.findIndex((s) => s.type === "braced");
+    const windowIdx = reconciled.findIndex((s) => s.type === "window");
+    expect(bracedIdx).toBeGreaterThanOrEqual(0);
+    expect(windowIdx).toBeGreaterThan(bracedIdx);
+    expect(reconciled[bracedIdx]).toMatchObject({ bracedPattern: "chevron", bracedMirrored: false });
+    // The window's width was actually applied.
+    expect(reconciled[windowIdx]!.widthIn).toBe(60);
   });
 });
 

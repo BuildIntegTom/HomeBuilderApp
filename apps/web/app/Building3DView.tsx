@@ -5,10 +5,12 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, TransformControls } from "@react-three/drei";
 import type { Mesh } from "three";
 import {
+  applyZonesToSlot,
   computeFieldFramingLayout,
   computeInsetPerimeterRing,
   computeRoofBearingSegments,
-  computeWallVerticalBandsForSlot,
+  computeWallVerticalBandsForSlotWithMaxHeight,
+  effectiveZonesForSlot,
   isSlotBoxBeamCovered,
   panelSlotBoxes3D,
   wallAxis,
@@ -55,6 +57,7 @@ import {
   computeDoorRoughOpeningHeightIn,
   computeSharedRooflineBearingHeightIn,
   doorRoughOpeningSelectedHeightIn,
+  panelHeightInRange,
   sillDefaultHeightIn,
   sillHeaderHeightInRange,
   standardWindowHeightDefaultIn,
@@ -251,7 +254,7 @@ function membersForSlot(
  * the story `<group>`'s flat Y position, since a beam-affected wall's own
  * above-band box no longer starts at that story's own floor the way every
  * other box still does. `isTopmostBand` marks whichever band (the last
- * one, bottom-to-top — see computeWallVerticalBandsForSlot) actually
+ * one, bottom-to-top — see computeWallVerticalBandsForSlotWithMaxHeight) actually
  * reaches the story's own ceiling; a roofline Box Beam's own per-slot
  * height reduction (see secondStorySlotBoxes below) only ever applies
  * there, since that shortening always comes from the very top of the row
@@ -260,36 +263,59 @@ interface SplitPanelSlotBox3D extends PanelSlotBox3D {
   yOffsetFt: number;
   midWallBandIndex?: number;
   isTopmostBand: boolean;
+  /** Which of this slot's own independently-typed vertical zones (see
+   * PanelSlotZone) this box renders — undefined for an unsplit slot (a
+   * single real band). Real (0 = bottom-most) for any split slot, beam-
+   * driven or height-driven alike (Stride 2), index-matched to
+   * `midWallBandIndex`. */
+  zoneIndex?: number;
 }
 
-/** Splits every box on a beam-covered slot into its own real per-band
- * boxes — different slots of the SAME wall can see different band counts
- * now (each beam has its own horizontal coverage range), so bands are
- * computed per slot (via computeWallVerticalBandsForSlot), not once for
- * the whole wall. A slot not covered by any of that wall's beams (checked
- * directly, not just "this wall has beams somewhere") stays a single,
+/** Splits every box on a beam-covered OR max-height-split slot into its
+ * own real per-band boxes — different slots of the SAME wall can see
+ * different band counts now (each beam has its own horizontal coverage
+ * range, and a beam-free slot can independently auto-split by
+ * `maxPanelHeightIn`), so bands are computed per slot, not once for the
+ * whole wall. Stride 2: a beam-covered slot and a beam-free split slot go
+ * through the SAME zone-aware banding — every band gets its own real,
+ * independently-typed PanelSlotZone (falling back to
+ * `effectiveZonesForSlot`'s "standard" padding until something reconciles
+ * real zone data into `slot.zones`), instead of a beam-affected slot
+ * sharing one type across every band. Each split band gets a synthetic
+ * per-band `slot` (via applyZonesToSlot) so `membersForSlot`'s own type
+ * dispatch (which only ever reads a slot's top-level fields) builds the
+ * right member geometry for that zone. A slot with only 1 real band (no
+ * beam, short enough to fit under `maxPanelHeightIn`) stays a single,
  * unsplit box — same "unaffected = unchanged" contract Stage 1 had. */
 function splitForMidWallBeam(
   boxes: PanelSlotBox3D[],
   beamsByWallId: Record<string, MidWallBeam[]>,
   storyHeightIn: number,
+  maxPanelHeightIn: number,
 ): SplitPanelSlotBox3D[] {
   const result: SplitPanelSlotBox3D[] = [];
   const geomByWallId = new Map(Object.entries(beamsByWallId).map(([wallId, beams]) => [wallId, midWallBeamsToGeometry(beams)]));
   for (const box of boxes) {
-    const geom = geomByWallId.get(box.wallId);
-    const isAffected = geom?.some((b) => isSlotBoxBeamCovered(box.slotIndex, b)) ?? false;
-    if (!isAffected) {
+    const geom = geomByWallId.get(box.wallId) ?? [];
+    const bands = computeWallVerticalBandsForSlotWithMaxHeight(box.slotIndex, storyHeightIn, geom, maxPanelHeightIn, panelHeightInRange.minIn);
+    const isGenuinelyUnaffected = bands.length === 1 && bands[0]!.bottomIn === 0 && bands[0]!.topIn === storyHeightIn;
+    if (isGenuinelyUnaffected) {
       result.push({ ...box, yOffsetFt: 0, isTopmostBand: true });
       continue;
     }
-    const bands = computeWallVerticalBandsForSlot(box.slotIndex, storyHeightIn, geom!);
+    // bands.length === 0 (a beam consumes this slot's ENTIRE story
+    // height): pushes nothing — no real box exists there, not a phantom
+    // full-height one. 1 partial band or 2+ real bands: each gets its own
+    // real per-band box/zone below.
+    const zones = effectiveZonesForSlot(box.slot, bands.length);
     bands.forEach((band, i) => {
       result.push({
         ...box,
+        slot: applyZonesToSlot(box.slot, [zones[i]!]),
         yOffsetFt: band.bottomIn / IN_PER_FT,
         heightFt: (band.topIn - band.bottomIn) / IN_PER_FT,
         midWallBandIndex: band.bandIndex,
+        zoneIndex: i,
         isTopmostBand: i === bands.length - 1,
       });
     });
@@ -553,6 +579,11 @@ interface Building3DViewProps {
   footprint: Footprint | null;
   wallSlots: Record<string, PanelSlot[]>;
   wallHeightFt: number;
+  /** A wall column taller than this auto-splits into stacked, independently-
+   * typed zones (page.tsx's own `maxPanelHeightIn`) — only applied to a
+   * slot with NO covering Mid-Wall Bond Beam, same restriction
+   * allPanelInstances' own maxPanelHeightIn param already has (Stride 1). */
+  maxPanelHeightIn: number;
   thicknessIn: number;
   includeNailer: boolean;
   primaryCornerIds: Set<string>;
@@ -635,7 +666,7 @@ interface Building3DViewProps {
    * no entry renders exactly as before this feature existed. Bands are
    * computed internally per slot (each beam has its own horizontal
    * coverage range, so different slots of the same wall can see different
-   * band counts) via computeWallVerticalBandsForSlot, not pre-resolved by
+   * band counts) via computeWallVerticalBandsForSlotWithMaxHeight, not pre-resolved by
    * the caller. */
   midWallBeamsByWallId?: Record<string, MidWallBeam[]>;
   /** Same as `midWallBeamsByWallId`, for the second story. */
@@ -747,6 +778,7 @@ export default function Building3DView({
   footprint,
   wallSlots,
   wallHeightFt,
+  maxPanelHeightIn,
   thicknessIn,
   includeNailer,
   primaryCornerIds,
@@ -853,8 +885,8 @@ export default function Building3DView({
   // splitting it into two (a beam-covered slot now needs its own Y offset
   // too, not just its own height).
   const slotBoxes = useMemo(
-    () => splitForMidWallBeam(rawSlotBoxes, midWallBeamsByWallId, heightIn),
-    [rawSlotBoxes, midWallBeamsByWallId, heightIn],
+    () => splitForMidWallBeam(rawSlotBoxes, midWallBeamsByWallId, heightIn, maxPanelHeightIn),
+    [rawSlotBoxes, midWallBeamsByWallId, heightIn, maxPanelHeightIn],
   );
 
   const slotRenderData = useMemo(
@@ -905,7 +937,7 @@ export default function Building3DView({
   const secondStorySlotBoxes = useMemo(() => {
     if (!footprint || !secondStory) return [];
     const boxes = panelSlotBoxes3D(footprint, secondStory.wallSlots, thicknessIn, secondStory.wallHeightFt, primaryCornerIds);
-    const splitBoxes = splitForMidWallBeam(boxes, secondStoryMidWallBeamsByWallId, secondStory.wallHeightFt * IN_PER_FT);
+    const splitBoxes = splitForMidWallBeam(boxes, secondStoryMidWallBeamsByWallId, secondStory.wallHeightFt * IN_PER_FT, maxPanelHeightIn);
     if (Object.keys(boxBeamCoverageByWallId).length === 0) return splitBoxes;
     const heightDeltaFt = computeBoxBeamHeightDeltaIn(boxBeamSizeId) / IN_PER_FT;
     // Roofline Box Beam always shortens from the very top of the row — only
@@ -916,7 +948,7 @@ export default function Building3DView({
         ? { ...box, heightFt: box.heightFt - heightDeltaFt }
         : box,
     );
-  }, [footprint, secondStory, thicknessIn, primaryCornerIds, secondStoryMidWallBeamsByWallId, boxBeamCoverageByWallId, boxBeamSizeId]);
+  }, [footprint, secondStory, thicknessIn, primaryCornerIds, secondStoryMidWallBeamsByWallId, boxBeamCoverageByWallId, boxBeamSizeId, maxPanelHeightIn]);
   const secondStorySlotRenderData = useMemo(
     () =>
       secondStorySlotBoxes.map((box) => ({

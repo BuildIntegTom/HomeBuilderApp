@@ -9,6 +9,7 @@ export interface BuildingSummaryRenderProps {
   footprint: Footprint | null;
   wallSlots: Record<string, PanelSlot[]>;
   wallHeightFt: number;
+  maxPanelHeightIn: number;
   thicknessIn: number;
   includeNailer: boolean;
   primaryCornerIds: Set<string>;

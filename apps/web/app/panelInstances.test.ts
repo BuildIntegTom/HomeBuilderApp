@@ -201,28 +201,66 @@ describe("allPanelInstances — midWallBeamsByWallId", () => {
   };
   const fullWidthBeam = { heightIn: 60, assemblyHeightIn: 11, startSlotIndex: 0, endSlotIndex: 2 };
 
-  it("doubles every real instance on an affected wall — one per band — with the correct heightOverrideIn/midWallBandIndex", () => {
+  it("gives each band its own independent zone — only the bottom band keeps a slot's real type, an unreconciled upper band defaults to 'standard' instead of mirroring it", () => {
+    // This is the core Stride 2 fix: before, every band shared one copy of
+    // the slot's own type (a window would show a header+sill in BOTH
+    // bands, "the panel above/below a beam changes together"). Now only
+    // the bottom band (index 0) carries the slot's real data — an upper
+    // band with no reconciled PanelSlotZone of its own (see
+    // effectiveZonesForSlot) starts as a blank "standard", ready to be
+    // independently edited.
     const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, { AB: [fullWidthBeam] });
     const ab = instances.filter((i) => i.wallId === "AB");
-    // Per band: standard (slot 0) + header+sill (slot 1, window) = 3
-    // instances x 2 bands = 6 total.
-    expect(ab.length).toBe(6);
     const below = ab.filter((i) => i.midWallBandIndex === 0);
     const above = ab.filter((i) => i.midWallBandIndex === 1);
-    expect(below.length).toBe(3);
-    expect(above.length).toBe(3);
+    // Below: standard (slot 0, real) + header+sill (slot 1, real window) = 3.
+    // Above: standard (slot 0 — "standard" already matches the fallback) +
+    // standard (slot 1 — no real window data yet, defaults instead of
+    // duplicating header+sill) = 2.
+    expect(below.map((i) => i.panelType).sort()).toEqual(["header", "sill", "standard"]);
+    expect(above.map((i) => i.panelType).sort()).toEqual(["standard", "standard"]);
     for (const inst of below) expect(inst.heightOverrideIn).toBe(60);
     for (const inst of above) expect(inst.heightOverrideIn).toBe(49);
   });
 
-  it("shares the same slotIndexInWall between a slot's below-band and above-band instances", () => {
+  it("shares the same slotIndexInWall between a slot's below-band and above-band instances, without duplicating a window's header/sill into the upper band", () => {
     const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, { AB: [fullWidthBeam] });
-    const standardInstances = instances.filter((i) => i.wallId === "AB" && i.panelType === "standard");
-    expect(standardInstances.length).toBe(2);
-    expect(standardInstances[0]!.slotIndexInWall).toBe(standardInstances[1]!.slotIndexInWall);
+    const slot0Instances = instances.filter((i) => i.wallId === "AB" && i.slotIndexInWall === 0);
+    expect(slot0Instances.length).toBe(2);
+    expect(slot0Instances[0]!.slotIndexInWall).toBe(slot0Instances[1]!.slotIndexInWall);
     const headers = instances.filter((i) => i.wallId === "AB" && i.panelType === "header");
-    expect(headers.length).toBe(2);
-    expect(headers[0]!.slotIndexInWall).toBe(headers[1]!.slotIndexInWall);
+    // Only the bottom band's own real window zone produces a header (and
+    // sill) — the upper band has no reconciled window data of its own.
+    expect(headers.length).toBe(1);
+    expect(headers[0]!.slotIndexInWall).toBe(1);
+    expect(headers[0]!.midWallBandIndex).toBe(0);
+  });
+
+  it("gives each band its own real, independently-typed data once the slot's own zones[] carries it (e.g. after page.tsx's own reconciliation) — not a fallback", () => {
+    const zonedWallSlots = {
+      AB: [
+        {
+          type: "braced" as const,
+          widthIn: 40,
+          bracedPattern: "hatch" as const,
+          bracedMirrored: true,
+          zones: [
+            { type: "braced" as const, bracedPattern: "hatch" as const, bracedMirrored: true },
+            { type: "window" as const, heightIn: 36, sillHeightIn: 40 },
+          ],
+        },
+        { type: "window" as const, widthIn: 40 },
+      ],
+    };
+    const instances = allPanelInstances(fp, zonedWallSlots, 40, "plywood", undefined, undefined, 120, { AB: [fullWidthBeam] });
+    const ab = instances.filter((i) => i.wallId === "AB" && i.slotIndexInWall === 0);
+    const below = ab.find((i) => i.midWallBandIndex === 0)!;
+    const above = ab.find((i) => i.midWallBandIndex === 1)!;
+    expect(below.panelType).toBe("braced");
+    expect(below.bracedPattern).toBe("hatch");
+    expect(above.panelType).toBe("header");
+    expect(above.windowHeightIn).toBe(36);
+    expect(above.sillHeightIn).toBe(40);
   });
 
   it("leaves an unaffected slot with exactly 1 instance (undefined midWallBandIndex) when a beam covers only some slots", () => {
@@ -307,7 +345,7 @@ describe("allPanelInstances — a braced slot split by a Mid-Wall Bond Beam degr
   // above-band [101,120] = 19in (under 36, degrades).
   const beam = { heightIn: 90, assemblyHeightIn: 11, startSlotIndex: 0, endSlotIndex: 1 };
 
-  it("degrades only the short above-band instance to 'standard', leaving the tall below-band instance braced", () => {
+  it("leaves the tall below-band instance braced; the short above-band instance is 'standard' (no reconciled zone of its own yet — see the fallback test in the midWallBeamsByWallId describe block above)", () => {
     const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, { AB: [beam] });
     const ab = instances.filter((i) => i.wallId === "AB");
     expect(ab.length).toBe(2);
@@ -321,6 +359,30 @@ describe("allPanelInstances — a braced slot split by a Mid-Wall Bond Beam degr
     expect(above.bracedMirrored).toBeUndefined();
   });
 
+  it("still degrades a genuinely-braced short upper band (real zones[] data, not just the fallback) to 'standard'", () => {
+    const zonedWallSlots = {
+      AB: [
+        {
+          type: "braced" as const,
+          widthIn: 40,
+          bracedPattern: "hatch" as const,
+          bracedMirrored: true,
+          zones: [
+            { type: "braced" as const, bracedPattern: "hatch" as const, bracedMirrored: true },
+            { type: "braced" as const, bracedPattern: "hatch" as const, bracedMirrored: true },
+          ],
+        },
+      ],
+    };
+    const instances = allPanelInstances(fp, zonedWallSlots, 40, "plywood", undefined, undefined, 120, { AB: [beam] });
+    const ab = instances.filter((i) => i.wallId === "AB");
+    const below = ab.find((i) => i.heightOverrideIn === 90)!;
+    const above = ab.find((i) => i.heightOverrideIn === 19)!;
+    expect(below.panelType).toBe("braced");
+    expect(above.panelType).toBe("standard");
+    expect(above.bracedPattern).toBeUndefined();
+  });
+
   it("still reports 'braced' with its pattern intact for a slot no beam covers", () => {
     const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, {
       AB: [{ ...beam, startSlotIndex: 5, endSlotIndex: 6 }], // covers no real slot on this 1-slot wall
@@ -332,10 +394,28 @@ describe("allPanelInstances — a braced slot split by a Mid-Wall Bond Beam degr
     expect(ab[0]!.bracedMirrored).toBe(true);
   });
 
-  it("keeps both resulting bands braced when neither is short enough to degrade", () => {
+  it("keeps both resulting bands braced when neither is short enough to degrade, given real zones[] data for both", () => {
     // below [0,60] = 60in, above [71,120] = 49in — both well over 36in.
+    // Real zones[] for both bands (e.g. after page.tsx's own
+    // reconciliation) — without it, the upper band would default to
+    // "standard" via effectiveZonesForSlot's own fallback instead (see the
+    // fallback test above), not because it degraded.
     const tallBeam = { heightIn: 60, assemblyHeightIn: 11, startSlotIndex: 0, endSlotIndex: 1 };
-    const instances = allPanelInstances(fp, wallSlots, 40, "plywood", undefined, undefined, 120, { AB: [tallBeam] });
+    const zonedWallSlots = {
+      AB: [
+        {
+          type: "braced" as const,
+          widthIn: 40,
+          bracedPattern: "hatch" as const,
+          bracedMirrored: true,
+          zones: [
+            { type: "braced" as const, bracedPattern: "hatch" as const, bracedMirrored: true },
+            { type: "braced" as const, bracedPattern: "hatch" as const, bracedMirrored: true },
+          ],
+        },
+      ],
+    };
+    const instances = allPanelInstances(fp, zonedWallSlots, 40, "plywood", undefined, undefined, 120, { AB: [tallBeam] });
     const ab = instances.filter((i) => i.wallId === "AB");
     expect(ab.length).toBe(2);
     for (const inst of ab) {

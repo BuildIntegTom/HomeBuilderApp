@@ -9,12 +9,25 @@ import type { MidWallBeamGeometry } from "@building-integrity/geometry";
 export type MidWallBeamKind = "box-beam" | "web-braced-lintel";
 
 /** Within this distance of the roofline (that row's own ceiling), a
- * dragged lintel's own top edge snaps flush with the ceiling instead of
+ * dragged beam's own top edge snaps flush with the ceiling instead of
  * leaving a short standalone wall panel wedged above it — Tommy: "when a
  * li[n]tel panel is 6" or closer to the roof line, lets snap it into place
- * as the tallest panel that fills that space." Box-beam-kind beams never
- * snap — this is a lintel-only behavior. */
-export const LINTEL_ROOFLINE_SNAP_THRESHOLD_IN = 6;
+ * as the tallest panel that fills that space," generalized to box-beam
+ * kind too (Stride 3a). A lintel grows its own `lintelHeightIn` to close
+ * the gap (its own assembly height is user-adjustable); a box-beam has no
+ * such independent "grow the assembly" concept (its depth is fixed by
+ * `sizeId`), so it instead snaps `heightIn` itself — the whole beam slides
+ * up flush with the ceiling. See WallElevationDiagram.tsx's own height-drag
+ * effect for both. */
+export const MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN = 6;
+/** Within this distance of a covered window's own header bottom (= its RO's
+ * own top), a dragged beam's own bottom edge snaps flush with it instead of
+ * stopping just short — Tommy: "box beams, when their bottom is 3 inches
+ * from a door or window header's bottom, should snap to that." Once
+ * snapped, the header itself just shrinks to fit within its own band
+ * (rowWallHeightIn already stops exactly there — see
+ * computeWallVerticalBandsForSlot), no separate "push" logic needed. */
+export const MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN = 3;
 /** Floor for a lintel's own draggable height — a sane minimum so it can
  * never collapse to zero/negative, not a sourced spec. */
 export const LINTEL_MIN_HEIGHT_IN = 6;

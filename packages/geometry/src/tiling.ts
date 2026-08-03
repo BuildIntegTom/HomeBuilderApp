@@ -1,4 +1,4 @@
-import type { BracePattern, PanelSlot, PanelSlotType, WallEnd } from "./types";
+import type { BracePattern, PanelSlot, PanelSlotType, PanelSlotZone, WallEnd } from "./types";
 
 export interface TileWallResult {
   slots: PanelSlot[];
@@ -315,26 +315,59 @@ export function tileWall(
 }
 
 export interface OpeningAnchor {
-  /** How many 'standard'-type slots (including corner-touching ones) precede this opening in the plain sequence. */
+  /** How many 'standard'-family-type slots (including corner-touching ones,
+   * AND already-decided "braced" slots — see the doc comment below) precede
+   * this opening in the plain sequence. */
   beforeStandardCount: number;
   type: "window" | "door" | "column";
   widthIn: number;
+  /** This opening's own vertical/style fields, carried through a re-tile so
+   * they survive it instead of silently resetting to defaults — a
+   * pre-existing gap (window height/sill already reset on any width/wall-
+   * length edit) that would also wipe a beam/max-height-split slot's own
+   * independent zones the moment ANY opening on the wall triggers a
+   * re-tile. Undefined = no data to carry (a door/column never sets
+   * heightIn/sillHeightIn; zones absent = this opening was never split).
+   * Populated by `getOpeningAnchors` from an existing slot — a caller
+   * building a brand-new anchor from scratch just omits them. */
+  heightIn?: number;
+  sillHeightIn?: number;
+  zones?: PanelSlotZone[];
 }
 
 /**
  * Reads each window/door/column's position out of an existing (tiled)
- * slots array, as "how many standard slots come before it" — the anchor
- * used to put it back in roughly the same place after a re-tile. A Column
- * Panel is a fixed-width structural swap-in (not an opening), but shares
- * the same "reserve this width at this position" mechanism.
+ * slots array, as "how many standard-family slots come before it" — the
+ * anchor used to put it back in roughly the same place after a re-tile. A
+ * Column Panel is a fixed-width structural swap-in (not an opening), but
+ * shares the same "reserve this width at this position" mechanism.
+ *
+ * Counts "braced" slots toward `standardsSeen` right alongside "standard"
+ * ones — a braced panel occupies a real standard-family position on the
+ * wall just as much as a plain standard one does (this is also the
+ * convention `reconcileBracedPlacement`'s own ordinal-matching uses, and
+ * that `handleToggleOpening` in page.tsx's own inline anchor-building loop
+ * already independently used). Undercounting here (i.e. only counting
+ * "standard") used to anchor an opening too early whenever a "braced" slot
+ * preceded it — `retileWithOpenings` would then insert the opening before
+ * the position `reconcileBracedPlacement` later re-applies that braced
+ * marker to, visually swapping their left-right order after a retile (e.g.
+ * a window width edit via `handleSetWindowWidth`).
  */
 export function getOpeningAnchors(slots: PanelSlot[]): OpeningAnchor[] {
   const anchors: OpeningAnchor[] = [];
   let standardsSeen = 0;
   for (const slot of slots) {
     if (slot.type === "window" || slot.type === "door" || slot.type === "column") {
-      anchors.push({ beforeStandardCount: standardsSeen, type: slot.type, widthIn: slot.widthIn });
-    } else if (slot.type === "standard") {
+      anchors.push({
+        beforeStandardCount: standardsSeen,
+        type: slot.type,
+        widthIn: slot.widthIn,
+        heightIn: slot.heightIn,
+        sillHeightIn: slot.sillHeightIn,
+        zones: slot.zones,
+      });
+    } else if (slot.type === "standard" || slot.type === "braced") {
       standardsSeen++;
     }
   }
@@ -377,22 +410,30 @@ export function retileWithOpenings(
   const needsSafetyPanel = wallLengthIn > SAFETY_PANEL_MIN_WALL_LENGTH_IN;
   const plainMiddle = buildMiddle(Math.max(0, plainBudgetIn), standardWidthIn, gapEnd, allowBorrow, needsSafetyPanel);
 
+  // Carries heightIn/sillHeightIn/zones through unconditionally — undefined
+  // for any anchor built without them (a brand-new opening) is a no-op on
+  // the resulting PanelSlot, exactly as if the field were omitted.
+  const openingSlotFromAnchor = (o: OpeningAnchor): PanelSlot => ({
+    type: o.type,
+    widthIn: o.widthIn,
+    heightIn: o.heightIn,
+    sillHeightIn: o.sillHeightIn,
+    zones: o.zones,
+  });
   const sortedOpenings = [...openings].sort((a, b) => a.beforeStandardCount - b.beforeStandardCount);
   const middle: PanelSlot[] = [];
   let standardsSeen = 0;
   let openingIdx = 0;
   for (const slot of plainMiddle) {
     while (openingIdx < sortedOpenings.length && sortedOpenings[openingIdx]!.beforeStandardCount <= standardsSeen) {
-      const o = sortedOpenings[openingIdx]!;
-      middle.push({ type: o.type, widthIn: o.widthIn });
+      middle.push(openingSlotFromAnchor(sortedOpenings[openingIdx]!));
       openingIdx++;
     }
     middle.push(slot);
     if (slot.type === "standard") standardsSeen++;
   }
   while (openingIdx < sortedOpenings.length) {
-    const o = sortedOpenings[openingIdx]!;
-    middle.push({ type: o.type, widthIn: o.widthIn });
+    middle.push(openingSlotFromAnchor(sortedOpenings[openingIdx]!));
     openingIdx++;
   }
 

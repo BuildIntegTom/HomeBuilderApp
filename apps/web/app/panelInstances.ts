@@ -1,17 +1,21 @@
 import {
-  computeWallVerticalBandsForSlot,
+  computeWallVerticalBandsForSlotWithMaxHeight,
+  effectiveZonesForSlot,
   isSlotBoxBeamCovered,
   wallCompassDirection,
+  zoneFromSlot,
   computeSillRunWidths,
   type BoxBeamCoverage,
   type CompassDirection,
   type Footprint,
   type MidWallBeamGeometry,
   type PanelSlot,
+  type PanelSlotZone,
 } from "@building-integrity/geometry";
 import {
   computeRoughOpeningWidthIn,
   computeStandardGirtRowCount,
+  panelHeightInRange,
   type BracePattern,
   type JackStudConfig,
 } from "@building-integrity/panel-catalog";
@@ -200,16 +204,25 @@ export function allPanelInstances(
    * today's single instance per slot, completely unaffected. Since each
    * beam has its own horizontal range, different slots of the SAME wall
    * can see different band counts — recomputed per slot (not hoisted per
-   * wall) via computeWallVerticalBandsForSlot. A slot with N real bands
-   * re-runs (header/sill/simple type alike) once per band, each pass's
-   * instances getting heightOverrideIn/midWallBandIndex set to that
-   * band's own real height/identity. A window/door slot is therefore NOT
-   * specially excluded or reassigned to "whichever band it falls in" — it
-   * appears once per band, each sized against that band's own local
-   * height. Placing a beam so a window's own sill/RO height doesn't make
-   * sense for either band is the user's own responsibility (not
-   * validated). */
+   * wall) via computeWallVerticalBandsForSlotWithMaxHeight. A slot with N
+   * real bands re-runs (header/sill/simple type alike) once per band, each
+   * pass's instances getting heightOverrideIn/midWallBandIndex set to that
+   * band's own real height/identity, AND its own independent
+   * PanelSlotZone (see maxPanelHeightIn below) — a window/door zone is
+   * therefore NOT specially excluded or shared across bands; it appears
+   * once per band that's actually zoned "window"/"door", each sized
+   * against that band's own local height. */
   midWallBeamsByWallId?: Record<string, MidWallBeamGeometry[]>,
+  /** A wall column taller than this auto-splits into stacked, independently-
+   * typed zones (page.tsx's own `maxPanelHeightIn`) — combines with
+   * `midWallBeamsByWallId` above (Stride 2: both go through the same
+   * zone-aware banding now — a beam-affected slot's bands are each their
+   * own real PanelSlotZone, not a shared copy of the slot's own type).
+   * Omitted = beam bands (if any) still compute, just never further
+   * subdivided by height — exactly every pre-Stride-2 caller's behavior.
+   * Requires `storyHeightIn` to do anything, same as `midWallBeamsByWallId`
+   * above. */
+  maxPanelHeightIn?: number,
 ): PanelInstance[] {
   const instances: PanelInstance[] = [];
   const counters: Partial<Record<CompassDirection, number>> = {};
@@ -264,33 +277,71 @@ export function allPanelInstances(
       const slot = slots[slotIndexInWall]!;
       const isBoxBeamCovered = isSlotBoxBeamCovered(slotIndexInWall, boxBeamCoverage) || undefined;
       // Different slots of the SAME wall can see different band counts
-      // (each Mid-Wall Bond Beam has its own horizontal range) — recomputed
-      // per slot, not hoisted above this loop. A slot not covered by ANY of
-      // this wall's beams (checked directly, not just "this wall has some
-      // beams somewhere") runs exactly one pass, today's unmodified
-      // behavior — computeWallVerticalBandsForSlot itself would also
-      // return one full-height band for an uncovered slot, but calling it
-      // unconditionally would still set a (redundant but real)
-      // heightOverrideIn/midWallBandIndex on every instance on a wall that
-      // has ANY beam, even slots none of them actually cover.
-      const isMidWallBeamAffected = midWallBeams?.some((b) => isSlotBoxBeamCovered(slotIndexInWall, b)) ?? false;
+      // (each Mid-Wall Bond Beam has its own horizontal range, and a
+      // beam-free slot can independently auto-split by maxPanelHeightIn) —
+      // recomputed per slot, not hoisted above this loop. A slot affected
+      // by neither (no covering beam, tall enough to fit under
+      // maxPanelHeightIn as-is) runs exactly one pass, today's unmodified
+      // behavior.
+      //
+      // Stride 2: beam-affected and beam-free slots now go through the
+      // SAME zone-aware path — each band gets its own real PanelSlotZone
+      // (falling back to "standard" via effectiveZonesForSlot until
+      // something reconciles real data into slot.zones), instead of a
+      // beam-affected slot sharing one type across every band (the "panel
+      // above/below a beam changes together" bug this whole feature
+      // exists to fix). maxPanelHeightIn omitted = Infinity, i.e. real
+      // beam bands are still computed but never further subdivided —
+      // matches every pre-Stride-2 caller that never passed it.
+      let bandZonePairs: { band: { bandIndex: number; bottomIn: number; topIn: number } | undefined; zone: PanelSlotZone }[];
       const bands =
-        isMidWallBeamAffected && storyHeightIn !== undefined
-          ? computeWallVerticalBandsForSlot(slotIndexInWall, storyHeightIn, midWallBeams!)
-          : [undefined];
-      for (const band of bands) {
+        storyHeightIn !== undefined
+          ? computeWallVerticalBandsForSlotWithMaxHeight(
+              slotIndexInWall,
+              storyHeightIn,
+              midWallBeams ?? [],
+              maxPanelHeightIn ?? Infinity,
+              panelHeightInRange.minIn,
+            )
+          : undefined;
+      const isGenuinelyUnaffected =
+        bands === undefined || (bands.length === 1 && bands[0]!.bottomIn === 0 && bands[0]!.topIn === storyHeightIn);
+      if (isGenuinelyUnaffected) {
+        // No covering beam AND short enough to fit under maxPanelHeightIn
+        // as-is (or storyHeightIn wasn't given at all) — stays byte-
+        // identical to a plain, never-split slot: no heightOverrideIn/
+        // midWallBandIndex, straight off the slot's own top-level fields.
+        // Keeps a wall's UNAFFECTED slots completely unchanged even once
+        // ANOTHER slot on the same wall is split.
+        bandZonePairs = [{ band: undefined, zone: zoneFromSlot(slot) }];
+      } else if (bands!.length === 0) {
+        // A beam consumes this slot's ENTIRE story height — zero real
+        // panels here, not a phantom full-height one.
+        bandZonePairs = [];
+      } else {
+        // 1 partial band (a beam ate part of the height but left a real
+        // remainder) or 2+ real bands — either way every band gets its own
+        // real PanelSlotZone (Stride 2: beam-driven and height-driven
+        // splits share this same zone-aware path, instead of a beam-
+        // affected slot sharing one type across every band).
+        const zones = effectiveZonesForSlot(slot, bands!.length);
+        bandZonePairs = bands!.map((band, i) => ({ band, zone: zones[i]! }));
+      }
+      for (const pair of bandZonePairs) {
+        const band = pair.band;
+        const zone = pair.zone;
         const heightOverrideIn = band ? band.topIn - band.bottomIn : undefined;
         const midWallBandIndex = band?.bandIndex;
-        if (slot.type === "window" || slot.type === "door") {
+        if (zone.type === "window" || zone.type === "door") {
           pushInstance(
             direction,
             wall.id,
             "header",
             slot.widthIn,
             slotIndexInWall,
-            slot.type,
-            slot.type === "window" ? slot.heightIn : undefined,
-            slot.type === "window" ? slot.sillHeightIn : undefined,
+            zone.type,
+            zone.type === "window" ? zone.heightIn : undefined,
+            zone.type === "window" ? zone.sillHeightIn : undefined,
             undefined,
             undefined,
             undefined,
@@ -301,7 +352,7 @@ export function allPanelInstances(
             heightOverrideIn,
             midWallBandIndex,
           );
-          if (slot.type === "window") {
+          if (zone.type === "window") {
             const roWidthIn = computeRoughOpeningWidthIn(slot.widthIn, jackStudConfig);
             for (const sillWidthIn of computeSillRunWidths(roWidthIn, standardWidthIn)) {
               pushInstance(
@@ -310,9 +361,9 @@ export function allPanelInstances(
                 "sill",
                 sillWidthIn,
                 slotIndexInWall,
-                slot.type,
+                zone.type,
                 undefined,
-                slot.sillHeightIn,
+                zone.sillHeightIn,
                 undefined,
                 undefined,
                 undefined,
@@ -325,7 +376,7 @@ export function allPanelInstances(
               );
             }
           }
-        } else if (SIMPLE_NAMED_TYPES.has(slot.type)) {
+        } else if (SIMPLE_NAMED_TYPES.has(zone.type)) {
           // A Braced Panel's diagonal braces need a real middle girt row to
           // anchor to (computeBracedGirtRowCount floors at 3 rows for
           // exactly this reason, never scaling down for a short panel the
@@ -339,18 +390,18 @@ export function allPanelInstances(
           // Tommy's reasoning that the wall's real shear capacity already
           // comes from its other, still-braced bands/runs.
           const bracedDegradesToStandard =
-            slot.type === "braced" && heightOverrideIn !== undefined && computeStandardGirtRowCount(heightOverrideIn) === 0;
+            zone.type === "braced" && heightOverrideIn !== undefined && computeStandardGirtRowCount(heightOverrideIn) === 0;
           pushInstance(
             direction,
             wall.id,
-            bracedDegradesToStandard ? "standard" : (slot.type as NamedPanelType),
+            bracedDegradesToStandard ? "standard" : (zone.type as NamedPanelType),
             slot.widthIn,
             slotIndexInWall,
             undefined,
             undefined,
             undefined,
-            slot.type === "braced" && !bracedDegradesToStandard ? slot.bracedPattern : undefined,
-            slot.type === "braced" && !bracedDegradesToStandard ? slot.bracedMirrored : undefined,
+            zone.type === "braced" && !bracedDegradesToStandard ? zone.bracedPattern : undefined,
+            zone.type === "braced" && !bracedDegradesToStandard ? zone.bracedMirrored : undefined,
             undefined,
             undefined,
             undefined,

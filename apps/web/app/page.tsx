@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyUniformPanelization,
+  applyZonesToSlot,
   areWallsOppositePair,
   buildOctagonFootprint,
   buildRectangleFootprint,
@@ -24,6 +25,8 @@ import {
   computeSillRunWidths,
   computeTruckLoads,
   computeTrussLayout,
+  computeWallVerticalBandsForSlotWithMaxHeight,
+  effectiveZonesForSlot,
   partitionLongHeaders,
   cornerOwnership as cornerOwnershipPure,
   dragWallBounded,
@@ -38,17 +41,20 @@ import {
   nextPanelCycleState,
   pointAlongRidgeLine,
   reconcileBracedPlacement,
+  reconcilePanelSlotZones,
   retile as retilePure,
   retilePreservingOpenings as retilePreservingOpeningsPure,
   retileWithOpenings,
   wallCompassDirection,
   wallGeometryFor as wallGeometryForPure,
   isSlotBoxBeamCovered,
+  zoneFromSlot,
   type BoxBeamCoverage,
   type CornerId,
   type Footprint,
   type PanelGroup,
   type PanelSlot,
+  type PanelSlotZone,
   type RoofProfilePoint,
   type Story,
   type TruckDims,
@@ -249,7 +255,8 @@ import { resolveBracedStyle } from "./bracedStyle";
 import { capGableTileHeights, computeRiseFtForPitch, resolveGableProfilePoints, resolveHeelSeat, ROOF_PITCH_OPTIONS_IN12 } from "./gableProfilePoints";
 import {
   LINTEL_MIN_HEIGHT_IN,
-  LINTEL_ROOFLINE_SNAP_THRESHOLD_IN,
+  MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN,
+  MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN,
   midWallBeamsToGeometry,
   resolveMidWallBeamAssemblyHeightIn,
   type MidWallBeam,
@@ -455,6 +462,13 @@ export default function LayoutEditor() {
     Math.round((targetDensityKgM3.value / LB_FT3_TO_KG_M3) * 10) / 10,
   );
   const [wallHeightFt, setWallHeightFt] = useState(standardPanelHeightIn.value / 12);
+  // Max panel height (Tommy: "panels should have a default max height of
+  // 10'... so when a user selects for a wall taller than the selected max
+  // height, lets say 16' for example, it spawns a 10' panel and a 6'
+  // panel") — a wall column taller than this auto-splits into stacked
+  // zones (packages/geometry/src/wallVerticalBands.ts's own
+  // subdivideBandForMaxHeight), independent of any Mid-Wall Bond Beam.
+  const [maxPanelHeightIn, setMaxPanelHeightIn] = useState(standardPanelHeightIn.value);
   const [includeNailer, setIncludeNailer] = useState(false);
   // Square Bale Panel-only controls (Tommy: nailer "slide" along the wythe
   // + "double 2x4 studs, or double 2x6 studs" — see buildNailer/
@@ -682,7 +696,13 @@ export default function LayoutEditor() {
   // that note's isOpen check), so a stale wallId/slotIndex after a redraw
   // just fails to find a slot and the note stops rendering, rather than
   // showing the wrong panel.
-  const [selectedSlot, setSelectedSlot] = useState<{ wallId: string; slotIndex: number; story: "ground" | "second" } | null>(null);
+  // zoneIndex: which of this slot's own independently-typed vertical zones
+  // (see PanelSlotZone) is selected — 0 = bottom-most. Undefined means "the
+  // slot as a whole" (today's pre-zone behavior; also what a beam-affected
+  // slot's click always reports in Stride 1 — see handleToggleOpening).
+  const [selectedSlot, setSelectedSlot] = useState<{ wallId: string; slotIndex: number; story: "ground" | "second"; zoneIndex?: number } | null>(
+    null,
+  );
   // Feedback for the Selected Panel note's window-sill controls (number
   // input + WindowSizeDiagram's drag handle) — Tommy: "when a drag or the
   // number input gets clamped... show a brief inline note instead of
@@ -790,6 +810,34 @@ export default function LayoutEditor() {
   const [midWallBeamsByStoryAndWallId, setMidWallBeamsByStoryAndWallId] = useState<
     Record<"ground" | "second", Record<string, MidWallBeam[]>>
   >({ ground: {}, second: {} });
+  // Every beam-count/height/coverage change moves this wall's own band
+  // boundaries — reconciled here so each slot's own zones[] survives the
+  // change instead of falling back to effectiveZonesForSlot's dumb
+  // "standard" padding (Tommy: "make sure we can edit both panels above
+  // and below beams as their own independent ones"). oldBeams/newBeams are
+  // this wall's own MidWallBeam list immediately before/after the specific
+  // mutation being applied — resolved to real geometry the same way
+  // midWallBeamGeometryByWallId already does. Called from inside the same
+  // handler that also writes midWallBeamsByStoryAndWallId, mirroring
+  // reconcileBracedPlacement's own "old vs. new, both in this handler's own
+  // closure" precedent.
+  const reconcileWallZonesForBeamChange = (story: "ground" | "second", wallId: string, oldBeams: MidWallBeam[], newBeams: MidWallBeam[]) => {
+    const storyHeightIn = (story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt)) * 12;
+    const oldGeom = midWallBeamsToGeometry(oldBeams);
+    const newGeom = midWallBeamsToGeometry(newBeams);
+    setWallSlotsForStory(story, (prev) => {
+      const slots = prev[wallId];
+      if (!slots) return prev;
+      const nextSlots = slots.map((slot, i) => {
+        const oldBands = computeWallVerticalBandsForSlotWithMaxHeight(i, storyHeightIn, oldGeom, maxPanelHeightIn, panelHeightInRange.minIn);
+        const oldZones = effectiveZonesForSlot(slot, oldBands.length);
+        const newBands = computeWallVerticalBandsForSlotWithMaxHeight(i, storyHeightIn, newGeom, maxPanelHeightIn, panelHeightInRange.minIn);
+        const newZones = reconcilePanelSlotZones(oldBands, oldZones, newBands);
+        return applyZonesToSlot(slot, newZones);
+      });
+      return { ...prev, [wallId]: nextSlots };
+    });
+  };
   const handleAddMidWallBeam = (story: "ground" | "second", wallId: string, kind: MidWallBeamKind) => {
     const storyHeightFt = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
     const slotCount = (story === "ground" ? overlayWallSlots : (secondStory?.wallSlots ?? {}))[wallId]?.length ?? 0;
@@ -804,25 +852,31 @@ export default function LayoutEditor() {
       startSlotIndex: 0,
       endSlotIndex: slotCount,
     };
+    const oldBeams = midWallBeamsByStoryAndWallId[story][wallId] ?? [];
+    const newBeams = [...oldBeams, newBeam];
     setMidWallBeamsByStoryAndWallId((was) => ({
       ...was,
-      [story]: { ...was[story], [wallId]: [...(was[story][wallId] ?? []), newBeam] },
+      [story]: { ...was[story], [wallId]: newBeams },
     }));
+    reconcileWallZonesForBeamChange(story, wallId, oldBeams, newBeams);
   };
   const handleRemoveMidWallBeam = (story: "ground" | "second", wallId: string, beamId: string) => {
+    const oldBeams = midWallBeamsByStoryAndWallId[story][wallId] ?? [];
+    const newBeams = oldBeams.filter((b) => b.id !== beamId);
     setMidWallBeamsByStoryAndWallId((was) => ({
       ...was,
-      [story]: { ...was[story], [wallId]: (was[story][wallId] ?? []).filter((b) => b.id !== beamId) },
+      [story]: { ...was[story], [wallId]: newBeams },
     }));
+    reconcileWallZonesForBeamChange(story, wallId, oldBeams, newBeams);
   };
   const updateMidWallBeam = (story: "ground" | "second", wallId: string, beamId: string, patch: Partial<MidWallBeam>) => {
+    const oldBeams = midWallBeamsByStoryAndWallId[story][wallId] ?? [];
+    const newBeams = oldBeams.map((b) => (b.id === beamId ? { ...b, ...patch } : b));
     setMidWallBeamsByStoryAndWallId((was) => ({
       ...was,
-      [story]: {
-        ...was[story],
-        [wallId]: (was[story][wallId] ?? []).map((b) => (b.id === beamId ? { ...b, ...patch } : b)),
-      },
+      [story]: { ...was[story], [wallId]: newBeams },
     }));
+    reconcileWallZonesForBeamChange(story, wallId, oldBeams, newBeams);
   };
   const handleChangeMidWallBeamHeight = (story: "ground" | "second", wallId: string, beamId: string, heightIn: number) =>
     updateMidWallBeam(story, wallId, beamId, { heightIn });
@@ -1061,6 +1115,7 @@ export default function LayoutEditor() {
       thicknessIn,
       densityLbFt3,
       wallHeightFt,
+      maxPanelHeightIn,
       includeNailer,
       checkedInteriorIds,
       checkedExteriorIds,
@@ -1163,6 +1218,7 @@ export default function LayoutEditor() {
       setThicknessIn(s.thicknessIn);
       setDensityLbFt3(s.densityLbFt3);
       setWallHeightFt(s.wallHeightFt);
+      setMaxPanelHeightIn(s.maxPanelHeightIn ?? standardPanelHeightIn.value);
       setIncludeNailer(s.includeNailer);
       setCheckedInteriorIds(s.checkedInteriorIds);
       setCheckedExteriorIds(s.checkedExteriorIds);
@@ -1492,11 +1548,39 @@ export default function LayoutEditor() {
     }
   };
 
-  const handleToggleOpening = (story: "ground" | "second", wallId: Wall["id"], slotIndex: number) => {
+  const handleToggleOpening = (story: "ground" | "second", wallId: Wall["id"], slotIndex: number, zoneIndex?: number) => {
     const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
     const currentSlot = currentSlots[slotIndex];
     const geometry = wallGeometryFor(wallId);
     if (!currentSlot || !geometry) return;
+
+    // A non-bottom zone (zoneIndex >= 1) is purely a vertical-stacking
+    // concept (see PanelSlotZone) — it never affects this column's own
+    // shared widthIn (only the bottom zone, mirrored onto the slot's own
+    // top-level fields, does that — see applyZonesToSlot's own doc
+    // comment), so cycling it is always a direct in-place `zones[]`
+    // mutation, never the width-affecting retileWithOpenings dance below.
+    if (zoneIndex !== undefined && zoneIndex > 0) {
+      const zones = effectiveZonesForSlot(currentSlot, zoneIndex + 1);
+      const next = nextPanelCycleState(zones[zoneIndex]!);
+      if (!next) {
+        setSelectedSlot({ wallId, slotIndex, story, zoneIndex });
+        return;
+      }
+      const nextZones = zones.map((z, i) =>
+        i === zoneIndex ? { ...z, type: next.type, bracedPattern: next.bracedPattern, bracedMirrored: next.bracedMirrored } : z,
+      );
+      setWallSlotsForStory(story, (prev) => {
+        const slots = prev[wallId];
+        if (!slots || !slots[slotIndex]) return prev;
+        const nextSlots = slots.slice();
+        nextSlots[slotIndex] = applyZonesToSlot(nextSlots[slotIndex]!, nextZones);
+        return { ...prev, [wallId]: nextSlots };
+      });
+      setSelectedSlot(next.type === "standard" ? null : { wallId, slotIndex, story, zoneIndex });
+      return;
+    }
+
     const next = nextPanelCycleState(currentSlot);
     if (!next) {
       // corner/safety-gap: not cyclable, but still selectable for read-only
@@ -1517,12 +1601,20 @@ export default function LayoutEditor() {
         const slots = prev[wallId];
         if (!slots || !slots[slotIndex]) return prev;
         const nextSlots = slots.slice();
-        nextSlots[slotIndex] = {
-          ...nextSlots[slotIndex]!,
+        const targetSlot = nextSlots[slotIndex]!;
+        // A multi-zone slot's own zone-0 entry must stay mirrored onto
+        // these same top-level fields (applyZonesToSlot's own invariant) —
+        // a plain top-level spread here would silently desync them,
+        // leaving the bottom zone's stored type stale.
+        const nextZone0: PanelSlotZone = {
+          ...(targetSlot.zones?.[0] ?? zoneFromSlot(targetSlot)),
           type: next.type,
           bracedPattern: next.bracedPattern,
           bracedMirrored: next.bracedMirrored,
         };
+        nextSlots[slotIndex] = targetSlot.zones
+          ? applyZonesToSlot(targetSlot, [nextZone0, ...targetSlot.zones.slice(1)])
+          : { ...targetSlot, type: next.type, bracedPattern: next.bracedPattern, bracedMirrored: next.bracedMirrored };
         return { ...prev, [wallId]: nextSlots };
       });
       if (next.type === "standard") setSelectedSlot(null);
@@ -1545,7 +1637,14 @@ export default function LayoutEditor() {
     // panel's width comes from the same normal tiling math as a plain
     // standard one, so it needs to be excluded from `anchors` exactly like
     // "standard" already is.
-    const anchors: { beforeStandardCount: number; type: "window" | "door" | "column"; widthIn: number }[] = [];
+    const anchors: {
+      beforeStandardCount: number;
+      type: "window" | "door" | "column";
+      widthIn: number;
+      heightIn?: number;
+      sillHeightIn?: number;
+      zones?: PanelSlotZone[];
+    }[] = [];
     let standardsSeen = 0;
     currentSlots.forEach((slot, i) => {
       const type = i === slotIndex ? next.type : slot.type;
@@ -1554,6 +1653,12 @@ export default function LayoutEditor() {
           beforeStandardCount: standardsSeen,
           type,
           widthIn: type === "column" ? COLUMN_TOTAL_WIDTH_IN : slot.widthIn,
+          // The toggled slot itself (i === slotIndex) is transitioning INTO
+          // this type fresh — no prior window/column data of its own to
+          // carry. Every OTHER opening on this wall keeps its own
+          // heightIn/sillHeightIn/zones through this whole-wall retile
+          // (see getOpeningAnchors' own doc comment on this same gap).
+          ...(i !== slotIndex && { heightIn: slot.heightIn, sillHeightIn: slot.sillHeightIn, zones: slot.zones }),
         });
       } else if (type === "standard" || type === "braced") {
         standardsSeen++;
@@ -1678,15 +1783,34 @@ export default function LayoutEditor() {
     }));
   };
 
+  // Writes one field-set onto a specific zone of a slot (zoneIndex
+  // undefined/0 = the bottom zone, mirrored onto the slot's own top-level
+  // fields per applyZonesToSlot's own invariant) — the shared "direct
+  // per-slot field, no re-tiling" pattern every vertical-only edit
+  // (height/sill/braced-style) below uses, now zone-aware so a beam-free
+  // multi-zone slot's panels above/below stay independently editable.
+  // Skips the zones dance entirely for the overwhelmingly common case (an
+  // unsplit slot, edited at its own bottom/only zone) — same plain
+  // top-level spread as before this feature existed.
+  const updateSlotZoneField = (slot: PanelSlot, zoneIndex: number | undefined, patch: Partial<PanelSlotZone>): PanelSlot => {
+    if ((zoneIndex === undefined || zoneIndex === 0) && !slot.zones) {
+      return { ...slot, ...patch };
+    }
+    const idx = zoneIndex ?? 0;
+    const zones = effectiveZonesForSlot(slot, idx + 1);
+    const nextZones = zones.map((z, i) => (i === idx ? { ...z, ...patch } : z));
+    return applyZonesToSlot(slot, nextZones);
+  };
+
   // Unlike width, a window's height doesn't affect wall tiling at all
   // (Tommy: "i want each window individually adjustable") — just a direct
   // per-slot field update, no re-tiling needed.
-  const handleSetWindowHeight = (story: "ground" | "second", wallId: string, slotIndex: number, heightIn: number) => {
+  const handleSetWindowHeight = (story: "ground" | "second", wallId: string, slotIndex: number, heightIn: number, zoneIndex?: number) => {
     setWallSlotsForStory(story, (prev) => {
       const slots = prev[wallId];
       if (!slots || !slots[slotIndex]) return prev;
       const nextSlots = slots.slice();
-      nextSlots[slotIndex] = { ...nextSlots[slotIndex]!, heightIn };
+      nextSlots[slotIndex] = updateSlotZoneField(nextSlots[slotIndex]!, zoneIndex, { heightIn });
       return { ...prev, [wallId]: nextSlots };
     });
   };
@@ -1698,13 +1822,22 @@ export default function LayoutEditor() {
   // fast path alongside the full click-through cycle (Tommy: "include each
   // panel style for braced panels in the click-through cycle... allows the
   // user to change each panel").
-  const handleSetBracedStyle = (story: "ground" | "second", wallId: string, slotIndex: number, pattern: BracePattern, mirrored: boolean) => {
+  const handleSetBracedStyle = (
+    story: "ground" | "second",
+    wallId: string,
+    slotIndex: number,
+    pattern: BracePattern,
+    mirrored: boolean,
+    zoneIndex?: number,
+  ) => {
     setWallSlotsForStory(story, (prev) => {
       const slots = prev[wallId];
       const slot = slots?.[slotIndex];
-      if (!slots || !slot || slot.type !== "braced") return prev;
+      if (!slots || !slot) return prev;
+      const zone = zoneIndex !== undefined && zoneIndex > 0 ? effectiveZonesForSlot(slot, zoneIndex + 1)[zoneIndex] : zoneFromSlot(slot);
+      if (zone?.type !== "braced") return prev;
       const nextSlots = slots.slice();
-      nextSlots[slotIndex] = { ...slot, bracedPattern: pattern, bracedMirrored: mirrored };
+      nextSlots[slotIndex] = updateSlotZoneField(slot, zoneIndex, { bracedPattern: pattern, bracedMirrored: mirrored });
       return { ...prev, [wallId]: nextSlots };
     });
   };
@@ -1715,11 +1848,18 @@ export default function LayoutEditor() {
   // concern, orthogonal to the horizontal wall-tiling system. Clamped to
   // the mfr spec sheet's sill/lintel-height range, and further clamped so
   // the sill can't push the RO's top past the wall's own height.
-  const handleSetWindowSillHeight = (story: "ground" | "second", wallId: string, slotIndex: number, requestedSillHeightIn: number) => {
+  const handleSetWindowSillHeight = (
+    story: "ground" | "second",
+    wallId: string,
+    slotIndex: number,
+    requestedSillHeightIn: number,
+    zoneIndex?: number,
+  ) => {
     const slots = wallSlotsForStory(story)[wallId];
     const slot = slots?.[slotIndex];
     if (!slots || !slot) return;
-    const windowHeightIn = slot.heightIn ?? standardWindowHeightDefaultIn.value;
+    const zone = zoneIndex !== undefined && zoneIndex > 0 ? effectiveZonesForSlot(slot, zoneIndex + 1)[zoneIndex]! : zoneFromSlot(slot);
+    const windowHeightIn = zone.heightIn ?? standardWindowHeightDefaultIn.value;
     const effectiveWallHeightFt = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
     const maxSillHeightIn = effectiveWallHeightFt * 12 - windowHeightIn;
     const clampMaxIn = Math.min(sillHeaderHeightInRange.maxIn, maxSillHeightIn);
@@ -1734,7 +1874,7 @@ export default function LayoutEditor() {
     }
 
     const nextSlots = slots.slice();
-    nextSlots[slotIndex] = { ...nextSlots[slotIndex]!, sillHeightIn: clampedSillHeightIn };
+    nextSlots[slotIndex] = updateSlotZoneField(nextSlots[slotIndex]!, zoneIndex, { sillHeightIn: clampedSillHeightIn });
     setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: nextSlots }));
   };
 
@@ -2344,9 +2484,10 @@ export default function LayoutEditor() {
             undefined,
             wallHeightFt * 12,
             midWallBeamGeometryByWallId,
+            maxPanelHeightIn,
           )
         : [],
-    [footprint, overlayWallSlots, standardWidthIn, jackStudConfig, gableTilesByWallId, wallHeightFt, midWallBeamGeometryByWallId],
+    [footprint, overlayWallSlots, standardWidthIn, jackStudConfig, gableTilesByWallId, wallHeightFt, midWallBeamGeometryByWallId, maxPanelHeightIn],
   );
 
   // Door Rough Opening height (Tommy: "RO height for doors is almost
@@ -4291,6 +4432,22 @@ export default function LayoutEditor() {
         Default 10ft (120in) is Panel Set 1&apos;s confirmed standard panel height.
       </p>
       <label>
+        Max panel height (in){" "}
+        <input
+          type="number"
+          value={maxPanelHeightIn}
+          min={panelHeightInRange.minIn}
+          max={panelHeightInRange.maxIn}
+          onChange={(e) =>
+            setMaxPanelHeightIn(Math.min(Math.max(Number(e.target.value), panelHeightInRange.minIn), panelHeightInRange.maxIn))
+          }
+        />
+      </label>
+      <p className={styles.note}>
+        A wall column taller than this auto-splits into stacked panels (e.g. a 16ft wall at a 10ft max spawns a 10ft
+        panel + a 6ft panel), independent of any Mid-Wall Bond Beam — each stacked panel is independently editable.
+      </p>
+      <label>
         <input
           type="checkbox"
           checked={includeNailer}
@@ -4571,8 +4728,11 @@ export default function LayoutEditor() {
         {story === "ground" && (
           <p className={elevationStyles.helpText}>
             Splits the row into stacked bands; drag the brown handle to reposition, the green handles to resize its
-            own coverage. A lintel&apos;s own top edge (drag the blue handle) snaps flush with the roofline within{" "}
-            {LINTEL_ROOFLINE_SNAP_THRESHOLD_IN}in of it.
+            own coverage. Dragging a beam&apos;s bottom edge within {MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN}in of a
+            covered window&apos;s own header bottom snaps flush with it — its header then shrinks to fit above the
+            beam automatically. Dragging it (or, for a lintel, its own top edge — the blue handle) within{" "}
+            {MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN}in of the roofline instead snaps flush with THAT: a lintel
+            grows to close the gap, a box beam slides up.
           </p>
         )}
       </div>
@@ -5615,6 +5775,7 @@ export default function LayoutEditor() {
                   secondStorySlots={secondStory?.wallSlots[elevationWall.id]}
                   secondStoryWallHeightFt={secondStory?.wallHeightFt}
                   onToggleOpening={handleToggleOpening}
+                  maxPanelHeightIn={maxPanelHeightIn}
                   hasGableEnd={gableEndWallIds.has(elevationWall.id)}
                   roofProfileType={roofProfileType}
                   roofProfilePointHeightsFt={roofProfilePointHeightsFt}
@@ -5687,6 +5848,7 @@ export default function LayoutEditor() {
                   footprint={footprint}
                   wallSlots={overlayWallSlots}
                   wallHeightFt={wallHeightFt}
+                  maxPanelHeightIn={maxPanelHeightIn}
                   thicknessIn={thicknessIn}
                   includeNailer={includeNailer}
                   primaryCornerIds={primaryCornerIds}
@@ -5765,6 +5927,7 @@ export default function LayoutEditor() {
               footprint={footprint}
               wallSlots={overlayWallSlots}
               wallHeightFt={wallHeightFt}
+              maxPanelHeightIn={maxPanelHeightIn}
               thicknessIn={thicknessIn}
               includeNailer={includeNailer}
               primaryCornerIds={primaryCornerIds}
@@ -5873,32 +6036,37 @@ export default function LayoutEditor() {
           (() => {
             const slot = (selectedSlot.story === "ground" ? baseWallSlots : (secondStory?.wallSlots ?? {}))[selectedSlot.wallId]?.[selectedSlot.slotIndex];
             if (!slot) return null;
-            const { wallId, slotIndex, story } = selectedSlot;
+            const { wallId, slotIndex, story, zoneIndex } = selectedSlot;
             const effectiveWallHeightFt = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
-            const bracedStyle = slot.type === "braced" ? resolveBracedStyle(slot, defaultBracePattern, defaultBracedMirrored) : null;
+            // zoneIndex >= 1 targets a real independently-typed zone above
+            // this slot's own bottom (see PanelSlotZone) — zone 0/undefined
+            // is always exactly `zoneFromSlot(slot)`, since applyZonesToSlot
+            // keeps that zone mirrored onto the slot's own top-level fields.
+            const zone: PanelSlotZone = zoneIndex !== undefined && zoneIndex > 0 ? effectiveZonesForSlot(slot, zoneIndex + 1)[zoneIndex]! : zoneFromSlot(slot);
+            const bracedStyle = zone.type === "braced" ? resolveBracedStyle(zone, defaultBracePattern, defaultBracedMirrored) : null;
             return (
               <StickyNote
                 id="selected-panel"
-                label={`Panel: ${wallId} #${slotIndex} — ${PANEL_TYPE_LABELS[slot.type]}`}
+                label={`Panel: ${wallId} #${slotIndex}${zoneIndex ? ` (zone ${zoneIndex})` : ""} — ${PANEL_TYPE_LABELS[zone.type]}`}
                 isOpen
                 isFullscreen={fullscreenNoteId === "selected-panel"}
                 cascadeIndex={0}
                 onClose={() => setSelectedSlot(null)}
                 onToggleFullscreen={() => handleToggleNoteFullscreen("selected-panel")}
               >
-                {slot.type === "window" ? (
+                {zone.type === "window" ? (
                   <>
                     <WindowSizeDiagram
                       wallHeightFt={effectiveWallHeightFt}
                       windowWidthIn={slot.widthIn}
-                      sillHeightIn={slot.sillHeightIn ?? sillDefaultHeightIn.value}
-                      windowHeightIn={slot.heightIn ?? standardWindowHeightDefaultIn.value}
+                      sillHeightIn={zone.sillHeightIn ?? sillDefaultHeightIn.value}
+                      windowHeightIn={zone.heightIn ?? standardWindowHeightDefaultIn.value}
                       thicknessIn={thicknessIn}
                       jackStudConfig={jackStudConfig}
                       includeNailer={includeNailer}
                       standardWidthIn={standardWidthIn}
-                      onSetSillHeight={(v) => handleSetWindowSillHeight(story, wallId, slotIndex, v)}
-                      onSetWindowHeight={(v) => handleSetWindowHeight(story, wallId, slotIndex, v)}
+                      onSetSillHeight={(v) => handleSetWindowSillHeight(story, wallId, slotIndex, v, zoneIndex)}
+                      onSetWindowHeight={(v) => handleSetWindowHeight(story, wallId, slotIndex, v, zoneIndex)}
                     />
                     {sillClampNotice && (
                       <p className={styles.note} style={{ color: "#a67c00" }}>
@@ -5926,16 +6094,17 @@ export default function LayoutEditor() {
                       </p>
                     )}
                     <p className={styles.note}>
-                      Changing width can shift neighboring panels on this wall (the wall re-tiles around it); height
-                      and sill (above) never do — they're a purely vertical/Z-axis change.
+                      Changing width can shift neighboring panels on this wall (the wall re-tiles around it) — and,
+                      since width is shared by every zone stacked in this same column, every one of them; height and
+                      sill (above) never do — they&apos;re a purely vertical/Z-axis change, per zone.
                     </p>
                     <label style={{ display: "block" }}>
                       Height (preset){" "}
                       <select
                         id={`window-height-${wallId}-${slotIndex}`}
                         title="This window's own Rough Opening height (sill-top to header-bottom) — also draggable above"
-                        value={slot.heightIn ?? standardWindowHeightsIn.value[0]}
-                        onChange={(e) => handleSetWindowHeight(story, wallId, slotIndex, Number(e.target.value))}
+                        value={zone.heightIn ?? standardWindowHeightsIn.value[0]}
+                        onChange={(e) => handleSetWindowHeight(story, wallId, slotIndex, Number(e.target.value), zoneIndex)}
                       >
                         {standardWindowHeightsIn.value.map((h) => (
                           <option key={h} value={h}>
@@ -5950,16 +6119,16 @@ export default function LayoutEditor() {
                         type="number"
                         id={`window-sill-height-${wallId}-${slotIndex}`}
                         title="This window's own sill height (floor to Rough Opening bottom) — also draggable above and in the 3D Sill & Header tool"
-                        value={slot.sillHeightIn ?? sillHeaderHeightInRange.minIn}
+                        value={zone.sillHeightIn ?? sillHeaderHeightInRange.minIn}
                         min={sillHeaderHeightInRange.minIn}
                         max={sillHeaderHeightInRange.maxIn}
                         step={0.125}
                         style={{ width: 64 }}
-                        onChange={(e) => handleSetWindowSillHeight(story, wallId, slotIndex, Number(e.target.value))}
+                        onChange={(e) => handleSetWindowSillHeight(story, wallId, slotIndex, Number(e.target.value), zoneIndex)}
                       />
                     </label>
                   </>
-                ) : slot.type === "braced" && bracedStyle ? (
+                ) : zone.type === "braced" && bracedStyle ? (
                   <>
                     <p className={styles.note}>
                       {bracedPanelDisplayLabel(bracedStyle.pattern, bracedStyle.mirrored)}, {slot.widthIn.toFixed(1)}in wide.
@@ -5971,7 +6140,7 @@ export default function LayoutEditor() {
                       <select
                         id={`braced-pattern-${wallId}-${slotIndex}`}
                         value={bracedStyle.pattern}
-                        onChange={(e) => handleSetBracedStyle(story, wallId, slotIndex, e.target.value as BracePattern, bracedStyle.mirrored)}
+                        onChange={(e) => handleSetBracedStyle(story, wallId, slotIndex, e.target.value as BracePattern, bracedStyle.mirrored, zoneIndex)}
                       >
                         <option value="chevron">Chevron (&quot;&lt;&quot;)</option>
                         <option value="hatch">Hatch (&quot;/&quot;)</option>
@@ -5982,16 +6151,16 @@ export default function LayoutEditor() {
                         type="checkbox"
                         id={`braced-mirrored-${wallId}-${slotIndex}`}
                         checked={bracedStyle.mirrored}
-                        onChange={(e) => handleSetBracedStyle(story, wallId, slotIndex, bracedStyle.pattern, e.target.checked)}
+                        onChange={(e) => handleSetBracedStyle(story, wallId, slotIndex, bracedStyle.pattern, e.target.checked, zoneIndex)}
                       />{" "}
                       Mirrored ({bracedStyle.pattern === "chevron" ? '">"' : '"\\"'})
                     </label>
                   </>
                 ) : (
                   <p className={styles.note}>
-                    {PANEL_TYPE_LABELS[slot.type]} panel, {slot.widthIn.toFixed(1)}in wide.
-                    {slot.type === "column" ? " Column Panels are always fabricated at a fixed width, not adjustable here." : ""}
-                    {slot.type === "standard" || slot.type === "door"
+                    {PANEL_TYPE_LABELS[zone.type]} panel, {slot.widthIn.toFixed(1)}in wide.
+                    {zone.type === "column" ? " Column Panels are always fabricated at a fixed width, not adjustable here." : ""}
+                    {zone.type === "standard" || zone.type === "door"
                       ? " Click it again on the canvas to cycle its type."
                       : ""}
                   </p>

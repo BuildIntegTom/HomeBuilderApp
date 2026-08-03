@@ -88,6 +88,31 @@ export interface PanelSlot {
    * orientation (chevron points "<", hatch runs "/"); true = mirrored
    * (chevron points ">", hatch runs "\"). */
   bracedMirrored?: boolean;
+  /** Independent vertical zones within this column, bottom-to-top (Tommy:
+   * "the panels above and below a beam are their own unique panels" — and,
+   * separately, a wall taller than the project's own max panel height
+   * auto-splits the same way). Additive/optional — every horizontal/
+   * structural consumer of PanelSlot (retile, tiling, corner ownership,
+   * braced placement) only ever reads this slot's own top-level fields, so
+   * an absent `zones` is invisible to all of them; a real `zones` array
+   * always keeps `zones[0]` (the bottom-most zone) mirrored onto this
+   * slot's own top-level type/heightIn/sillHeightIn/bracedPattern/
+   * bracedMirrored/secondaryType (see panelSlotZones.ts's own
+   * zoneFromSlot/applyZonesToSlot), which is what makes that invisibility
+   * safe rather than just silently stale. */
+  zones?: PanelSlotZone[];
+}
+
+/** One independently-editable vertical zone of a PanelSlot column — same
+ * fields as PanelSlot's own per-zone data, minus widthIn (shared by every
+ * zone in the column) and minus `zones` itself (zones don't nest). */
+export interface PanelSlotZone {
+  type: PanelSlotType;
+  secondaryType?: PanelSlotType;
+  heightIn?: number;
+  sillHeightIn?: number;
+  bracedPattern?: BracePattern;
+  bracedMirrored?: boolean;
 }
 
 /**

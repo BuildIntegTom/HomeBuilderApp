@@ -4,11 +4,14 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   computeGableTiledRow,
   computeRoofBearingSegments,
-  computeWallVerticalBandsForSlot,
+  computeWallVerticalBandsForSlotWithMaxHeight,
+  effectiveZonesForSlot,
   isSlotBoxBeamCovered,
+  zoneFromSlot,
   type BoxBeamCoverage,
   type GableTiledPanel,
   type PanelSlot,
+  type PanelSlotZone,
   type RoofProfilePoint,
   type Wall,
   type WallVerticalBand,
@@ -20,6 +23,7 @@ import {
   computeGableColumnHeightIn,
   computeGableRipCallout,
   GABLE_PANEL_MAX_HEIGHT_IN,
+  panelHeightInRange,
   sillDefaultHeightIn,
   standardWindowHeightDefaultIn,
   type BoxBeamSizeId,
@@ -31,7 +35,8 @@ import { MemberElevationShapes } from "./MemberElevationShapes";
 import { capGableTileHeights, GABLE_SHED_SNAP_THRESHOLD_IN, matchStandardPitchIn12, resolveGableProfilePoints } from "./gableProfilePoints";
 import {
   LINTEL_MIN_HEIGHT_IN,
-  LINTEL_ROOFLINE_SNAP_THRESHOLD_IN,
+  MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN,
+  MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN,
   midWallBeamsToGeometry,
   resolveMidWallBeamAssemblyHeightIn,
   type MidWallBeam,
@@ -81,12 +86,25 @@ export interface WallElevationDiagramProps {
    * stacked above the ground row, below any gable row. */
   secondStorySlots: PanelSlot[] | undefined;
   secondStoryWallHeightFt: number | undefined;
-  /** Cycles one panel's type — same 3-arg contract Building3DView's own
-   * Edit tool already uses, so both surfaces share one story-aware handler
-   * in page.tsx. Unlike FootprintCanvas/Building3DView, this view has no
-   * separate "tool" state to gate clicking behind — there's nothing else a
-   * click here could mean, so every rendered panel is always clickable. */
-  onToggleOpening: (story: "ground" | "second", wallId: string, slotIndex: number) => void;
+  /** Cycles one panel's type — same story-aware handler Building3DView's own
+   * Edit tool also uses. Unlike FootprintCanvas/Building3DView, this view
+   * has no separate "tool" state to gate clicking behind — there's nothing
+   * else a click here could mean, so every rendered panel is always
+   * clickable.
+   *
+   * `zoneIndex`: which of this slot's own independently-typed vertical
+   * zones (see PanelSlotZone) was clicked — 0 = bottom-most, matching
+   * `PanelSlot.zones`' own ordering. Undefined for a slot with no real
+   * zone-of-its-own to target (not yet split, or a beam-affected slot,
+   * which still shares one type across every band in Stride 1 — see
+   * bandsAndZonesPerSlot's own doc comment). */
+  onToggleOpening: (story: "ground" | "second", wallId: string, slotIndex: number, zoneIndex?: number) => void;
+  /** A wall column taller than this auto-splits into stacked, independently
+   * editable zones (page.tsx's own `maxPanelHeightIn`) — only applied to a
+   * slot with NO covering Mid-Wall Bond Beam, same restriction
+   * allPanelInstances' own maxPanelHeightIn param already has (Stride 1;
+   * unifying with beam-affected slots is a later, separately-scoped pass). */
+  maxPanelHeightIn: number;
   hasGableEnd: boolean;
   /** "peaked" = 1 real profile point (a ridge); "flat-top" = 2
    * independently-placed points. Global (Roof tab) — same type/height
@@ -221,6 +239,7 @@ export default function WallElevationDiagram({
   secondStorySlots,
   secondStoryWallHeightFt,
   onToggleOpening,
+  maxPanelHeightIn,
   hasGableEnd,
   roofProfileType,
   roofProfilePointHeightsFt,
@@ -301,20 +320,36 @@ export default function WallElevationDiagram({
   // Mid-Wall Bond Beam — each slot can see a DIFFERENT band split now
   // (multiple beams, each with its own horizontal coverage range), so
   // bands are computed per slot, not once for the whole row.
-  // computeWallVerticalBandsForSlot's own bottom-to-top ordering means the
-  // LAST band for a given slot is always the topmost one — the only one a
+  // computeWallVerticalBandsForSlotWithMaxHeight's own bottom-to-top
+  // ordering means the LAST band for a given slot is always the topmost
+  // one — the only one a
   // roofline Box Beam's own per-slot height reduction can ever apply
   // within, since that shortening always comes from the very top of the
   // row regardless of how many bond beams also split it lower down.
-  const bandsPerSlot = (slotCount: number, storyHeightIn: number, beams: MidWallBeam[]): WallVerticalBand[][] => {
-    if (beams.length === 0) {
-      return Array.from({ length: slotCount }, () => [{ bandIndex: 0, bottomIn: 0, topIn: storyHeightIn }]);
-    }
-    const geom = midWallBeamsToGeometry(beams);
-    return Array.from({ length: slotCount }, (_, i) => computeWallVerticalBandsForSlot(i, storyHeightIn, geom));
+  //
+  // Stride 2: a beam-covered slot and a beam-free max-height-split slot go
+  // through the SAME zone-aware banding now — every band (beam-driven or
+  // height-driven alike) gets its own real, independently-typed
+  // PanelSlotZone (falling back to `effectiveZonesForSlot`'s "standard"
+  // padding until something reconciles real zone data into `slot.zones`),
+  // instead of a beam-affected slot sharing one type across every band
+  // (the "panel above/below a beam changes together" bug this feature
+  // exists to fix). Mirrors allPanelInstances' own per-slot banding
+  // exactly, so this diagram never disagrees with the named/counted panel
+  // list.
+  const bandsAndZonesPerSlot = (
+    rowSlots: PanelSlot[],
+    storyHeightIn: number,
+    beams: MidWallBeam[],
+  ): { bands: WallVerticalBand[]; zones: PanelSlotZone[] }[] => {
+    const geom = beams.length > 0 ? midWallBeamsToGeometry(beams) : [];
+    return rowSlots.map((slot, i) => {
+      const bands = computeWallVerticalBandsForSlotWithMaxHeight(i, storyHeightIn, geom, maxPanelHeightIn, panelHeightInRange.minIn);
+      return { bands, zones: effectiveZonesForSlot(slot, bands.length) };
+    });
   };
-  const groundBandsPerSlot = bandsPerSlot(slots.length, eaveHeightIn, midWallBeams);
-  const secondBandsPerSlot = secondStorySlots ? bandsPerSlot(secondStorySlots.length, secondStoryHeightIn, secondStoryMidWallBeams) : [];
+  const groundBandsAndZones = bandsAndZonesPerSlot(slots, eaveHeightIn, midWallBeams);
+  const secondBandsAndZones = secondStorySlots ? bandsAndZonesPerSlot(secondStorySlots, secondStoryHeightIn, secondStoryMidWallBeams) : [];
 
   const { pointCount, resolvedPointXsIn, pointIsExplicit, pointIsSnapped, isShedRoof } = resolveGableProfilePoints(
     roofProfilePointHeightsFt,
@@ -482,19 +517,33 @@ export default function WallElevationDiagram({
   // real height, not a slot index), mirroring the gable-point drag's own
   // shape above but inverting yPx (Y-axis) instead of xPx (X-axis).
   // Clamped into that story's own floor-relative [0, storyHeightIn] range.
-  // A lintel-kind beam additionally snaps its own TOP flush with the
-  // ceiling once dragging its bottom edge pushes that top within
-  // LINTEL_ROOFLINE_SNAP_THRESHOLD_IN of it (Tommy: "when a lintel panel
-  // is 6" or closer to the roof line, lets snap it into place as the
-  // tallest panel that fills that space") — the lintel's own height grows
-  // to close the gap rather than the bottom edge just stopping short of
-  // it; box-beam-kind beams never snap (unchanged clamp-only behavior).
+  // Two independent snaps can fire, in order:
+  // 1. (Stride 3b) If this beam covers a "window" slot, dragging its own
+  //    bottom edge within MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN of that
+  //    window's own RO-top (= its header's own bottom) snaps flush with it
+  //    — Tommy: "box beams, when their bottom is 3 inches from a door or
+  //    window header's bottom, should snap to that." No separate "push the
+  //    header" step needed afterward: that window's own band already stops
+  //    exactly at this beam's own bottom (computeWallVerticalBandsForSlot),
+  //    so its header (computeOpeningGeometry, sized against that band's own
+  //    height) already shrinks to fit within it, automatically.
+  // 2. (Stride 3a) Once the beam's own TOP is within
+  //    MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN of the ceiling, it snaps
+  //    flush with THAT instead (Tommy: "when a li[n]tel panel is 6" or
+  //    closer to the roof line, lets snap it into place as the tallest
+  //    panel that fills that space") — generalized from lintel-only to
+  //    box-beam too. A lintel's own height GROWS to close the gap (bottom
+  //    edge unmoved, since its own assembly height is independently user-
+  //    adjustable); a box-beam has no such concept (its depth is fixed by
+  //    sizeId), so it instead snaps `heightIn` itself — the whole beam
+  //    slides up flush with the ceiling.
   useEffect(() => {
     if (!midWallBeamDrag || midWallBeamDrag.handle !== "height") return;
     const { story, beamId } = midWallBeamDrag;
     const beams = story === "ground" ? midWallBeams : secondStoryMidWallBeams;
     const beam = beams.find((b) => b.id === beamId);
     if (!beam) return;
+    const rowSlots = story === "ground" ? slots : (secondStorySlots ?? []);
     const storyFloorAbsIn = story === "ground" ? 0 : eaveHeightIn;
     const storyHeightIn = story === "ground" ? eaveHeightIn : secondStoryHeightIn;
     const assemblyHeightIn = resolveMidWallBeamAssemblyHeightIn(beam);
@@ -506,12 +555,23 @@ export default function WallElevationDiagram({
       const pxPerScreenPx = svgHeightPx / rect.height;
       const localPy = (e.clientY - rect.top) * pxPerScreenPx;
       const absHeightIn = (svgHeightPx - BOTTOM_MARGIN_PX - localPy) / PX_PER_IN;
-      const heightIn = Math.min(Math.max(absHeightIn - storyFloorAbsIn, 0), storyHeightIn);
+      let heightIn = Math.min(Math.max(absHeightIn - storyFloorAbsIn, 0), storyHeightIn);
+      for (let i = beam.startSlotIndex; i < beam.endSlotIndex && i < rowSlots.length; i++) {
+        const slot = rowSlots[i];
+        if (!slot || slot.type !== "window") continue;
+        const roTopZIn = (slot.sillHeightIn ?? sillDefaultHeightIn.value) + (slot.heightIn ?? standardWindowHeightDefaultIn.value);
+        if (Math.abs(heightIn - roTopZIn) <= MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN) {
+          heightIn = roTopZIn;
+          break;
+        }
+      }
       onChangeMidWallBeamHeight(story, beamId, heightIn);
-      if (beam.kind === "web-braced-lintel") {
-        const gapIn = storyHeightIn - (heightIn + assemblyHeightIn);
-        if (gapIn >= 0 && gapIn <= LINTEL_ROOFLINE_SNAP_THRESHOLD_IN) {
+      const gapIn = storyHeightIn - (heightIn + assemblyHeightIn);
+      if (gapIn >= 0 && gapIn <= MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN) {
+        if (beam.kind === "web-braced-lintel") {
           onChangeMidWallBeamLintelHeightIn(story, beamId, storyHeightIn - heightIn);
+        } else {
+          onChangeMidWallBeamHeight(story, beamId, storyHeightIn - assemblyHeightIn);
         }
       }
     };
@@ -526,6 +586,8 @@ export default function WallElevationDiagram({
     midWallBeamDrag,
     midWallBeams,
     secondStoryMidWallBeams,
+    slots,
+    secondStorySlots,
     svgHeightPx,
     eaveHeightIn,
     secondStoryHeightIn,
@@ -536,7 +598,10 @@ export default function WallElevationDiagram({
   // Web-braced-lintel-only: vertical drag of the lintel's own TOP edge —
   // same continuous/unsnapped shape as the height drag above, but adjusts
   // lintelHeightIn (holding the bottom edge fixed) instead. Snaps flush
-  // with the ceiling under the same LINTEL_ROOFLINE_SNAP_THRESHOLD_IN rule.
+  // with the ceiling under the same MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN
+  // rule. Box-beam has no independent top-edge handle of its own (its depth
+  // is fixed by sizeId) — its own ceiling snap lives entirely in the height
+  // drag effect above.
   useEffect(() => {
     if (!midWallBeamDrag || midWallBeamDrag.handle !== "lintel-top") return;
     const { story, beamId } = midWallBeamDrag;
@@ -554,7 +619,7 @@ export default function WallElevationDiagram({
       const localPy = (e.clientY - rect.top) * pxPerScreenPx;
       const absTopIn = (svgHeightPx - BOTTOM_MARGIN_PX - localPy) / PX_PER_IN;
       const rawTopIn = Math.min(Math.max(absTopIn - storyFloorAbsIn, beam.heightIn + LINTEL_MIN_HEIGHT_IN), storyHeightIn);
-      const topIn = storyHeightIn - rawTopIn <= LINTEL_ROOFLINE_SNAP_THRESHOLD_IN ? storyHeightIn : rawTopIn;
+      const topIn = storyHeightIn - rawTopIn <= MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN ? storyHeightIn : rawTopIn;
       onChangeMidWallBeamLintelHeightIn(story, beamId, topIn - beam.heightIn);
     };
     const handleUp = () => setMidWallBeamDrag(null);
@@ -644,17 +709,21 @@ export default function WallElevationDiagram({
   // already share. Every other slot type (and doors — no sill to make the
   // distinction meaningful for) keeps a flat SLOT_COLORS rect. Shared by
   // both the ground row and the second-story row (Tommy: "each story's row
-  // for a given wall is independently clickable/editable"). `bandsForRow`
+  // for a given wall is independently clickable/editable"). `bandsAndZonesForRow`
   // is index-matched to `rowSlots` — different slots of the SAME row can
   // see different band counts now (each Mid-Wall Bond Beam has its own
-  // horizontal coverage), so the outer loop is band-index, not slot; a
-  // slot with no band at a given index simply isn't drawn there.
-  // `rowFloorHeightIn` is this row's own STORY floor only (0 for ground,
-  // the ground's own height for a second story) — each slot's own band
-  // supplies its own `bottomIn` on top of that.
+  // horizontal coverage, and a beam-free slot can independently auto-split
+  // by max panel height), so the outer loop is band-index, not slot; a
+  // slot with no band at a given index simply isn't drawn there. Each
+  // band's own rendered type/height/sill/braced-style comes from its own
+  // real `PanelSlotZone`, not the slot's shared top-level fields — this is
+  // what makes the panel above vs. below a beam (or a max-height split)
+  // independently editable. `rowFloorHeightIn` is this row's own STORY
+  // floor only (0 for ground, the ground's own height for a second story)
+  // — each slot's own band supplies its own `bottomIn` on top of that.
   const renderRow = (
     rowSlots: PanelSlot[],
-    bandsForRow: WallVerticalBand[][],
+    bandsAndZonesForRow: { bands: WallVerticalBand[]; zones: PanelSlotZone[] }[],
     rowFloorHeightIn: number,
     story: "ground" | "second",
     heightOverrideForSlotBand?: (slotIndex: number, band: WallVerticalBand, isTopmostForSlot: boolean) => number,
@@ -664,22 +733,31 @@ export default function WallElevationDiagram({
       acc.push({ slot, i, x0, x1: x0 + slot.widthIn });
       return acc;
     }, []);
-    const maxBandCount = Math.max(0, ...bandsForRow.map((b) => b.length));
+    const maxBandCount = Math.max(0, ...bandsAndZonesForRow.map((b) => b.bands.length));
     const elements: ReactNode[] = [];
     for (let bandIndex = 0; bandIndex < maxBandCount; bandIndex++) {
       for (const { slot, i, x0, x1 } of rects) {
-        const band = bandsForRow[i]?.[bandIndex];
-        if (!band) continue;
-        const isTopmostForSlot = bandIndex === bandsForRow[i]!.length - 1;
+        const entry = bandsAndZonesForRow[i];
+        const band = entry?.bands[bandIndex];
+        if (!band || !entry) continue;
+        const zone = entry.zones[bandIndex] ?? zoneFromSlot(slot);
+        // Every band now targets its own real zone by index (Stride 2 —
+        // beam-driven and height-driven bands are the same zone-aware
+        // system; see bandsAndZonesPerSlot's own doc comment). zoneIndex 0
+        // on a single-band (unsplit) slot behaves identically to omitting
+        // it — handleToggleOpening treats both as "the slot's own bottom/
+        // only zone."
+        const zoneIndexForClick = bandIndex;
+        const isTopmostForSlot = bandIndex === entry.bands.length - 1;
         const rowWallHeightIn = heightOverrideForSlotBand?.(i, band, isTopmostForSlot) ?? band.topIn - band.bottomIn;
         const localYPx = (localHeightIn: number) => yPx(rowFloorHeightIn + band.bottomIn + localHeightIn);
-        if (slot.type === "window") {
+        if (zone.type === "window") {
           const g = computeOpeningGeometry(
             false,
             slot.widthIn,
             rowWallHeightIn,
-            slot.sillHeightIn ?? sillDefaultHeightIn.value,
-            slot.heightIn ?? standardWindowHeightDefaultIn.value,
+            zone.sillHeightIn ?? sillDefaultHeightIn.value,
+            zone.heightIn ?? standardWindowHeightDefaultIn.value,
             jackStudConfig,
             targetPanelWidthIn,
           );
@@ -703,7 +781,11 @@ export default function WallElevationDiagram({
           const roGapTopPx = localYPx(g.roTopZIn);
           const roGapHeightPx = localYPx(g.sillHeightIn) - roGapTopPx;
           elements.push(
-            <g key={`${story}-${bandIndex}-${i}`} onClick={() => onToggleOpening(story, wall.id, i)} style={{ cursor: "pointer" }}>
+            <g
+              key={`${story}-${bandIndex}-${i}`}
+              onClick={() => onToggleOpening(story, wall.id, i, zoneIndexForClick)}
+              style={{ cursor: "pointer" }}
+            >
               <MemberElevationShapes members={members} xToPx={localXToPx} zToPx={localYPx} />
               <rect
                 x={roGapXPx}
@@ -722,13 +804,17 @@ export default function WallElevationDiagram({
           );
         } else {
           elements.push(
-            <g key={`${story}-${bandIndex}-${i}`} onClick={() => onToggleOpening(story, wall.id, i)} style={{ cursor: "pointer" }}>
+            <g
+              key={`${story}-${bandIndex}-${i}`}
+              onClick={() => onToggleOpening(story, wall.id, i, zoneIndexForClick)}
+              style={{ cursor: "pointer" }}
+            >
               <rect
                 x={xPx(x0)}
                 y={localYPx(rowWallHeightIn)}
                 width={(x1 - x0) * scaleX}
                 height={rowWallHeightIn * PX_PER_IN}
-                fill={SLOT_COLORS[slot.type]}
+                fill={SLOT_COLORS[zone.type]}
                 stroke="#666"
                 strokeWidth={1}
               />
@@ -804,7 +890,7 @@ export default function WallElevationDiagram({
         <text x={4} y={yPx(eaveHeightIn) + 4} fontSize={10} fill="#666">
           {eaveHeightIn}&quot;
         </text>
-        {renderRow(slots, groundBandsPerSlot, 0, "ground")}
+        {renderRow(slots, groundBandsAndZones, 0, "ground")}
         {renderAdjacentWallFiller(0, eaveHeightIn, "ground")}
 
         {/* Mid-Wall Bond Beams (ground floor) — one filled rect per beam
@@ -914,7 +1000,7 @@ export default function WallElevationDiagram({
               {eaveHeightIn + secondStoryHeightIn}&quot;
               {boxBeamCoverage ? ` (Box Beam sections ${boxBeamHeightDeltaIn.toFixed(2)}in shorter)` : ""}
             </text>
-            {renderRow(secondStorySlots, secondBandsPerSlot, eaveHeightIn, "second", (slotIndex, band, isTopmostForSlot) => {
+            {renderRow(secondStorySlots, secondBandsAndZones, eaveHeightIn, "second", (slotIndex, band, isTopmostForSlot) => {
               const bandHeightIn = band.topIn - band.bottomIn;
               return isTopmostForSlot && isSlotBoxBeamCovered(slotIndex, boxBeamCoverage)
                 ? bandHeightIn - boxBeamHeightDeltaIn
