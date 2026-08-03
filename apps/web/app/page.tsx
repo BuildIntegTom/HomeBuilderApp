@@ -5072,6 +5072,401 @@ export default function LayoutEditor() {
       </div>
     ) : null;
 
+  // Foundation Tools — moved here from the floating "editor-tools" note
+  // (Tommy: "lets move foundation tools right bar note into the foundation
+  // editors left bar"), same persistent-sidebar pattern as elevationControls.
+  const foundationControls =
+    editorTab === "foundation" ? (
+      <div className={elevationStyles.panel}>
+        <strong>Foundation Tools</strong>
+        {foundationType.usesPierGrid ? (
+          <>
+            <div role="group" aria-label="Foundation tool" className={styles.toolbar}>
+              <label>
+                Pier spacing{" "}
+                <select value={pierSpacingFt} onChange={(e) => setPierSpacingFt(Number(e.target.value))}>
+                  {pierSpacingOptionsFt.map((ft) => (
+                    <option key={ft} value={ft}>
+                      {ft} ft o.c.
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className={styles.note}>
+              {pierGrid.length} piers derived from the footprint above at max {pierSpacingFt}ft spacing ({foundationType.label}). See
+              Detail Guide Pages below for the full load path.
+            </p>
+          </>
+        ) : foundationType.loadPath.length > 0 ? (
+          <p className={styles.note}>{foundationType.label} doesn&apos;t use a pier grid — see the Detail Guide Pages section below for its construction detail.</p>
+        ) : (
+          <p className={styles.pending}>
+            {foundationType.label} doesn&apos;t use a pier grid, and its construction isn&apos;t modeled yet — {foundationType.vaporNote}
+          </p>
+        )}
+        {foundationType.loadPath.length > 0 && (
+          <button type="button" className={elevationStyles.actionButton} onClick={() => handleToggleNote("detail-foundation")}>
+            Open Foundation: {foundationType.label}
+          </button>
+        )}
+      </div>
+    ) : null;
+
+  // Floor Tools — moved here from the floating "editor-tools" note, plus
+  // buttons to open the floor-related Detail Guide pages (Tommy: "put those
+  // buttons to open the notes in the left bar... after the editor tool
+  // content"). Rendered regardless of which floor system is selected,
+  // unlike baleFoundationControls above (Bale Foundation-only editing
+  // controls) — this is general floor info + note-opening buttons.
+  const floorToolsControls =
+    editorTab === "floor" ? (
+      <div className={elevationStyles.panel}>
+        <strong>Floor Tools</strong>
+        <label className={elevationStyles.checkboxLabel}>
+          <input type="checkbox" checked={floorsEnabled} onChange={(e) => setFloorsEnabled(e.target.checked)} />
+          Floors
+        </label>
+        {foundationType.usesPierGrid ? (
+          <>
+            <p className={styles.note}>
+              {floorPanels.length} floor panels tiled pier-to-pier at max {pierSpacingFt}ft spacing — same spacing as the Foundation tab
+              (change it there, not here).
+            </p>
+            {joistLayout && (
+              <p className={styles.note}>
+                {joistLayout.joists.length} {floorJoistType!.label} joists running perpendicular to the longest walls (perimeter-to-perimeter,
+                or perimeter-to-beam over the piers). See the Detail Guide Pages below for the rim/thermal-break detail.
+              </p>
+            )}
+          </>
+        ) : isThermalSlabFloor ? (
+          <p className={styles.note}>
+            Thermally Broken Slab floor selected — the slab is both the foundation and the floor system, so there&apos;s no separate floor
+            panel/joist layout to draw. See the Detail Guide Pages below for the full thermal-break detail.
+          </p>
+        ) : foundationType.loadPath.length > 0 ? (
+          <p className={styles.note}>
+            {foundationType.label} doesn&apos;t use a pier grid, so there&apos;s no pier-to-pier floor panel bay to derive yet — see the
+            Detail Guide Pages below for its construction detail.
+          </p>
+        ) : (
+          <p className={styles.pending}>
+            {foundationType.label} doesn&apos;t use a pier grid, so there&apos;s no pier-to-pier floor panel bay to derive yet, and its
+            construction isn&apos;t modeled yet — {foundationType.vaporNote}
+          </p>
+        )}
+        <div role="group" aria-label="Floor Detail Guide pages" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {docFloorJoistType && (
+            <>
+              <button type="button" className={elevationStyles.actionButton} onClick={() => handleToggleNote("detail-floor")}>
+                Open Floor: {docFloorJoistType.label}
+              </button>
+              <button type="button" className={elevationStyles.actionButton} onClick={() => handleToggleNote("detail-floor-assembly")}>
+                Open Floor: Full Assembly
+              </button>
+              <button type="button" className={elevationStyles.actionButton} onClick={() => handleToggleNote("detail-floor-corner")}>
+                Open Floor: Corner &amp; Perimeter Sequencing
+              </button>
+              {docPerpendicular2x4Enabled && (
+                <button type="button" className={elevationStyles.actionButton} onClick={() => handleToggleNote("detail-floor-addon")}>
+                  Open Floor: Perpendicular 2x4 Add-On Layer
+                </button>
+              )}
+            </>
+          )}
+          {isBaleFoundationFloor && (
+            <button type="button" className={elevationStyles.actionButton} onClick={() => handleToggleNote("detail-bale-foundation")}>
+              Open Floor: Bale Foundation
+            </button>
+          )}
+          {docIsThermalSlabFloor && (
+            <button type="button" className={elevationStyles.actionButton} onClick={() => handleToggleNote("detail-floor-thermal-slab")}>
+              Open Floor: Thermally Broken Slab
+            </button>
+          )}
+        </div>
+      </div>
+    ) : null;
+
+  // Roof Tools — moved here from the floating "editor-tools" note (Tommy:
+  // "roof options under the roof truss plate and other similar options as
+  // well as the roof truss layout and similar pages into the left side bar
+  // of the roof editor at the bottom"), rendered after roofTrussControls.
+  const roofToolsControls =
+    editorTab === "roof" ? (
+      <div className={elevationStyles.panel}>
+        <strong>Roof Tools</strong>
+        <label className={elevationStyles.checkboxLabel}>
+          <input type="checkbox" checked={roofEnabled} onChange={(e) => setRoofEnabled(e.target.checked)} />
+          Roof
+        </label>
+        <p className={styles.note}>{roofSystemTypes.find((t) => t.id === roofSystemTypeId)!.description}</p>
+
+        <div role="group" aria-label="Roofline profile" className={styles.toolbar}>
+          <span style={{ fontSize: 13, marginRight: 4 }}>Roofline profile:</span>
+          <button
+            type="button"
+            aria-pressed={roofProfileType === "peaked"}
+            className={roofProfileType === "peaked" ? styles.toolActive : styles.tool}
+            onClick={() => handleChangeRoofProfileType("peaked")}
+          >
+            Peaked (1 point)
+          </button>
+          <button
+            type="button"
+            aria-pressed={roofProfileType === "flat-top"}
+            className={roofProfileType === "flat-top" ? styles.toolActive : styles.tool}
+            onClick={() => handleChangeRoofProfileType("flat-top")}
+          >
+            Flat-top (2 points)
+          </button>
+        </div>
+        <p className={styles.note}>
+          {roofProfileType === "peaked"
+            ? "A single ridge — a Gable End Panel's high edge rises to meet one top point."
+            : "Two independently-placeable top points (each with its own height and along-wall position, set per-wall in that wall's elevation view) — a triangle with the top chopped off."}
+        </p>
+
+        {roofProfilePointHeightsFt.map((heightFt, i) => (
+          <label key={i} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {roofProfilePointHeightsFt.length === 1 ? "Ridge rise above eave (ft)" : `Point ${i + 1} rise above eave (ft)`}
+            <input
+              type="number"
+              value={heightFt}
+              step={0.5}
+              onChange={(e) => handleChangeRoofProfilePointHeightFt(i, Number(e.target.value))}
+              style={{ width: 70 }}
+            />
+          </label>
+        ))}
+        <p className={styles.note}>
+          For a real wall, pick a standard pitch (2/12-12/12) instead in that wall&apos;s own Elevation view — it computes the rise from
+          that wall&apos;s own real width. The rise field here stays freely editable either way.
+        </p>
+
+        <label>
+          Max Gable End Panel height (in){" "}
+          <input
+            type="number"
+            value={maxGablePanelHeightIn}
+            min={12}
+            max={GABLE_PANEL_MAX_HEIGHT_IN}
+            step={1}
+            onChange={(e) => setMaxGablePanelHeightIn(Math.min(Number(e.target.value), GABLE_PANEL_MAX_HEIGHT_IN))}
+          />
+        </label>
+        <p className={styles.note}>
+          Any real roofline rise above this (up to a hard fabrication ceiling of {GABLE_PANEL_MAX_HEIGHT_IN}in per panel) is filled by a
+          real vertical safety-gap tile instead of clamped — see that wall&apos;s elevation view.
+        </p>
+
+        <label>
+          Heel height (in){" "}
+          <input
+            type="number"
+            value={heelHeightIn}
+            min={0}
+            max={15}
+            step={0.5}
+            onChange={(e) => setHeelHeightIn(Math.max(0, Number(e.target.value)))}
+          />
+        </label>
+        <p className={styles.note}>
+          Energy-heel (raised-heel) truss seat: at each end that isn&apos;t snapped to a shed, the roofline runs flat for one full panel
+          width from the corner, then starts the incline this much above the eave — {gableHeelHeightDefaultIn.note} Set to 0 to disable.
+        </p>
+
+        <div role="group" aria-label="Truss seat depth" className={styles.toolbar}>
+          <span style={{ fontSize: 13, marginRight: 4 }}>Truss seat depth:</span>
+          {bearingEdgeReferenceOptions.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              aria-pressed={trussPlateInsetIn === opt.insetIn}
+              className={trussPlateInsetIn === opt.insetIn ? styles.toolActive : styles.tool}
+              onClick={() => setTrussPlateInsetIn(opt.insetIn)}
+            >
+              {opt.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            aria-pressed={trussPlateInsetIn === thicknessIn}
+            className={trussPlateInsetIn === thicknessIn ? styles.toolActive : styles.tool}
+            onClick={() => setTrussPlateInsetIn(thicknessIn)}
+            title="Sets the truss seat as deep as the wall panel's own real thickness, whatever that currently is."
+          >
+            Panel depth ({thicknessIn}in)
+          </button>
+        </div>
+        <p className={styles.note}>
+          How far the truss bottom / roof-catcher beam — and, following it, the Gable End Panel material itself — sits inset from the
+          adjacent wall&apos;s primary (exterior/floor-plan-line) edge. {trussPlateInsetDefaultIn.note}
+        </p>
+
+        <p className={styles.pending}>{roofBearingMemberNote}</p>
+
+        {stories.length > 1 && (
+          <>
+            <label>
+              Box beam size{" "}
+              <select value={boxBeamSizeId} onChange={(e) => setBoxBeamSizeId(e.target.value as BoxBeamSizeId)}>
+                {BOX_BEAM_SIZE_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div role="group" aria-label="Box beam coverage" className={styles.toolbar}>
+              <span style={{ fontSize: 13, marginRight: 4 }}>Box beam coverage:</span>
+              <button type="button" onClick={() => handleSetBoxBeamRing(true)}>
+                Add to Every Wall (Ring)
+              </button>
+              <button type="button" onClick={() => handleSetBoxBeamRing(false)}>
+                Remove from Every Wall
+              </button>
+            </div>
+            <p className={styles.note}>
+              Toggle Box Beam per wall from that wall&apos;s own elevation view (Wall tab), or use the Ring buttons above for every wall at
+              once. A wall with Box Beam gets its own 2nd-story row of panels built shorter — by{" "}
+              {computeBoxBeamHeightDeltaIn(boxBeamSizeId).toFixed(2)}in for the selected size — so it still reaches the same roofline as a
+              wall using the shorter Truss Plate.
+            </p>
+          </>
+        )}
+
+        {roofSystemTypeId === "structural-panel" && (
+          <>
+            <label>
+              Roof-catcher-beam depth offset (in){" "}
+              <input
+                type="number"
+                value={roofCatcherBeamOffsetIn}
+                min={0}
+                step={0.25}
+                onChange={(e) => setRoofCatcherBeamOffsetIn(Number(e.target.value))}
+              />
+            </label>
+            <label>
+              Roof-catcher-beam shape{" "}
+              <select value={roofCatcherBeamShape} onChange={(e) => setRoofCatcherBeamShape(e.target.value as RoofCatcherBeamShape)}>
+                {roofCatcherBeamShapeOptions.map((shape) => (
+                  <option key={shape} value={shape}>
+                    {shape}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {roofProfileType === "peaked" ? (
+              <p className={styles.note}>
+                Column Panel height at a roof-catcher-beam bearing point = ridge height minus this offset (
+                {computeGableColumnHeightIn(gableEaveHeightIn + (roofProfilePointHeightsFt[0] ?? 0) * 12, roofCatcherBeamOffsetIn).toFixed(1)}
+                in at the current inputs) — see the Column Panel Shop Drawing page below.
+              </p>
+            ) : (
+              <p className={styles.note}>
+                No Column Panel or roof-catcher beam for a flat-topped roofline — those need a single real peak to bear on. Switch the
+                roofline profile above to Peaked to use them.
+              </p>
+            )}
+
+            {roofProfileType === "peaked" &&
+              (() => {
+                const gableWallIds = [...gableEndWallIds];
+                const peakPositionInByWallId: Record<string, number> = {};
+                for (const [wallId, positions] of Object.entries(gableProfilePositionsInByWallId)) {
+                  const posIn = positions[0];
+                  if (posIn != null) peakPositionInByWallId[wallId] = posIn;
+                }
+                const ridge =
+                  footprint && gableWallIds.length === 2
+                    ? computeRidgeLine(footprint, gableWallIds[0]!, gableWallIds[1]!, peakPositionInByWallId)
+                    : null;
+                if (!ridge) {
+                  return (
+                    <p className={styles.note}>
+                      Add Gable End to exactly 2 (opposite) walls — see that wall&apos;s elevation view (Wall tab&apos;s view-mode dial) —
+                      to compute a real roof-catcher-beam run from the footprint.
+                    </p>
+                  );
+                }
+                const segments = computeRoofCatcherBeamSegments(ridge.runIn);
+                const postPositionsIn = computeRoofCatcherBeamPostPositions(ridge.runIn);
+                const piers = footprint ? computePierGrid(footprint, pierSpacingFt) : [];
+                const postPoints = postPositionsIn.map((posIn) => pointAlongRidgeLine(ridge, posIn));
+                return (
+                  <p className={styles.note}>
+                    Run: {(ridge.runIn / 12).toFixed(1)}ft between {gableWallIds[0]} and {gableWallIds[1]}&apos;s Column Panels —{" "}
+                    {segments.length} built-up 3-ply 2x12 beam segment{segments.length === 1 ? "" : "s"} (
+                    {segments[0]!.spanIn.toFixed(1)}in each, max 144in/12ft).{" "}
+                    {postPoints.length === 0
+                      ? "No intermediate posts needed at this run."
+                      : `${postPoints.length} intermediate post${postPoints.length === 1 ? "" : "s"} at real ` +
+                        "footprint position " +
+                        postPoints
+                          .map((pt) => {
+                            const onPier = isPointNearPier(pt, piers);
+                            return `(${pt.x.toFixed(1)}, ${pt.y.toFixed(1)})${onPier ? "" : " — no pier here yet"}`;
+                          })
+                          .join(", ") +
+                        ` — cross-checked against the real pier grid (${pierSpacingFt}ft o.c.). Ideal scenario ` +
+                        "(Tommy): piers every 6ft, a post on every other one (12ft) — a post lands off-pier " +
+                        "whenever the run isn't a whole multiple of 2x the pier spacing, since segments are " +
+                        "evenly re-split rather than forced onto exact pier positions."}{" "}
+                    Post construction (size/material) isn&apos;t specified yet — only positions are modeled.
+                  </p>
+                );
+              })()}
+          </>
+        )}
+
+        {footprint && footprint.corners.length === 8 && (
+          <>
+            <div role="group" aria-label="Octagon ring outside diameter" className={styles.toolbar}>
+              <span style={{ fontSize: 13, marginRight: 4 }}>Octagon ring outside diameter:</span>
+              {OCTAGON_RING_DIAMETER_OPTIONS_FT.map((ft) => (
+                <button
+                  key={ft}
+                  type="button"
+                  aria-pressed={octagonRingDiameterFt === ft}
+                  className={octagonRingDiameterFt === ft ? styles.toolActive : styles.tool}
+                  onClick={() => setOctagonRingDiameterFt(ft)}
+                >
+                  {ft}ft
+                </button>
+              ))}
+            </div>
+            <OctagonRingPreview outsideDiameterFt={octagonRingDiameterFt} />
+            <p className={styles.note}>
+              8 mitered 1-3/4in x 14in LVL segments (on edge), one per compass direction, forming a closed ring — a compression ring near
+              the roof&apos;s apex for an octagon roof, sized independently of the building&apos;s own (much larger) footprint.
+              &quot;Outside diameter&quot; is the flat-to-flat distance across the ring (the standard way octagonal hardware/rings are
+              sized), not point-to-point across the corners. Miters (22.5deg at each of the 8 corners) are simplified to straight boxes
+              here, not true beveled geometry.
+            </p>
+          </>
+        )}
+
+        <div role="group" aria-label="Roof Detail Guide pages" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {(stories.length === 1 || trussPlateWallLengthTotalIn > 0) && (
+            <button type="button" className={elevationStyles.actionButton} onClick={() => handleToggleNote("detail-truss-plate")}>
+              Open Roof: Truss Plate
+            </button>
+          )}
+          <button type="button" className={elevationStyles.actionButton} onClick={() => handleToggleNote("detail-roof-truss-layout")}>
+            Open Roof: Truss Layout
+          </button>
+          {stories.length > 1 && boxBeamWallLengthTotalIn > 0 && (
+            <button type="button" className={elevationStyles.actionButton} onClick={() => handleToggleNote("detail-box-beam")}>
+              Open Box Beam
+            </button>
+          )}
+        </div>
+      </div>
+    ) : null;
+
   return (
     <DocumentMetaProvider value={{ projectName, siteLabel: documentSiteLabel, date: documentDate }}>
     <div className={styles.page} ref={pageRef}>
@@ -5140,8 +5535,11 @@ export default function LayoutEditor() {
                 presence/height still varies by tab/view, but nothing below
                 it depends on that anymore. */}
             {editorTab === "wall" && elevationWall && elevationControls}
-            {editorTab === "roof" && roofTrussControls}
+            {editorTab === "foundation" && foundationControls}
             {editorTab === "floor" && baleFoundationControls}
+            {editorTab === "floor" && floorToolsControls}
+            {editorTab === "roof" && roofTrussControls}
+            {editorTab === "roof" && roofToolsControls}
             {editorTab === "wall" && !elevationWall && viewMode === "plan" && (
               <>
                 <div ref={setToolbarPortalNode} className={styles.toolbarPortalInline} />
@@ -5465,335 +5863,6 @@ export default function LayoutEditor() {
                     Or switch to Drag Wall and drag a wall directly instead of
                     typing a length.
                   </p>
-                )}
-              </>
-            )}
-            {editorTab === "foundation" && (
-              <>
-                {foundationType.usesPierGrid ? (
-                  <>
-                    <div role="group" aria-label="Foundation tool" className={styles.toolbar}>
-                      <label>
-                        Pier spacing{" "}
-                        <select value={pierSpacingFt} onChange={(e) => setPierSpacingFt(Number(e.target.value))}>
-                          {pierSpacingOptionsFt.map((ft) => (
-                            <option key={ft} value={ft}>
-                              {ft} ft o.c.
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    <p className={styles.note}>
-                      {pierGrid.length} piers derived from the footprint above at max {pierSpacingFt}ft spacing (
-                      {foundationType.label}). See Detail Guide Pages below for the full load path.
-                    </p>
-                  </>
-                ) : foundationType.loadPath.length > 0 ? (
-                  <p className={styles.note}>
-                    {foundationType.label} doesn&apos;t use a pier grid — see the Detail Guide Pages section below for
-                    its construction detail.
-                  </p>
-                ) : (
-                  <p className={styles.pending}>
-                    {foundationType.label} doesn&apos;t use a pier grid, and its construction isn&apos;t modeled yet —
-                    {" "}
-                    {foundationType.vaporNote}
-                  </p>
-                )}
-              </>
-            )}
-            {editorTab === "floor" && (
-              <>
-                {foundationType.usesPierGrid ? (
-                  <>
-                    <p className={styles.note}>
-                      {floorPanels.length} floor panels tiled pier-to-pier at max {pierSpacingFt}ft spacing — same
-                      spacing as the Foundation tab (change it there, not here).
-                    </p>
-                    {joistLayout && (
-                      <p className={styles.note}>
-                        {joistLayout.joists.length} {floorJoistType!.label} joists running perpendicular to the
-                        longest walls (perimeter-to-perimeter, or perimeter-to-beam over the piers). See the Detail
-                        Guide Pages section below for the rim/thermal-break detail.
-                      </p>
-                    )}
-                  </>
-                ) : isThermalSlabFloor ? (
-                  <p className={styles.note}>
-                    Thermally Broken Slab floor selected — the slab is both the foundation and the floor system, so
-                    there&apos;s no separate floor panel/joist layout to draw. See the Detail Guide Pages section below
-                    for the full thermal-break detail.
-                  </p>
-                ) : foundationType.loadPath.length > 0 ? (
-                  <p className={styles.note}>
-                    {foundationType.label} doesn&apos;t use a pier grid, so there&apos;s no pier-to-pier floor panel
-                    bay to derive yet — see the Detail Guide Pages section below for its construction detail.
-                  </p>
-                ) : (
-                  <p className={styles.pending}>
-                    {foundationType.label} doesn&apos;t use a pier grid, so there&apos;s no pier-to-pier floor panel
-                    bay to derive yet, and its construction isn&apos;t modeled yet — {foundationType.vaporNote}
-                  </p>
-                )}
-              </>
-            )}
-            {editorTab === "roof" && (
-              <>
-                <p className={styles.note}>{roofSystemTypes.find((t) => t.id === roofSystemTypeId)!.description}</p>
-
-                <div role="group" aria-label="Roofline profile" className={styles.toolbar}>
-                  <span style={{ fontSize: 13, marginRight: 4 }}>Roofline profile:</span>
-                  <button
-                    type="button"
-                    aria-pressed={roofProfileType === "peaked"}
-                    className={roofProfileType === "peaked" ? styles.toolActive : styles.tool}
-                    onClick={() => handleChangeRoofProfileType("peaked")}
-                  >
-                    Peaked (1 point)
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={roofProfileType === "flat-top"}
-                    className={roofProfileType === "flat-top" ? styles.toolActive : styles.tool}
-                    onClick={() => handleChangeRoofProfileType("flat-top")}
-                  >
-                    Flat-top (2 points)
-                  </button>
-                </div>
-                <p className={styles.note}>
-                  {roofProfileType === "peaked"
-                    ? "A single ridge — a Gable End Panel's high edge rises to meet one top point."
-                    : "Two independently-placeable top points (each with its own height and along-wall position, set per-wall in that wall's elevation view) — a triangle with the top chopped off."}
-                </p>
-
-                {roofProfilePointHeightsFt.map((heightFt, i) => (
-                  <label key={i} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    {roofProfilePointHeightsFt.length === 1 ? "Ridge rise above eave (ft)" : `Point ${i + 1} rise above eave (ft)`}
-                    <input
-                      type="number"
-                      value={heightFt}
-                      step={0.5}
-                      onChange={(e) => handleChangeRoofProfilePointHeightFt(i, Number(e.target.value))}
-                      style={{ width: 70 }}
-                    />
-                  </label>
-                ))}
-                <p className={styles.note}>
-                  For a real wall, pick a standard pitch (2/12-12/12) instead in that wall&apos;s own Elevation view —
-                  it computes the rise from that wall&apos;s own real width. The rise field here stays freely editable
-                  either way.
-                </p>
-
-                <label>
-                  Max Gable End Panel height (in){" "}
-                  <input
-                    type="number"
-                    value={maxGablePanelHeightIn}
-                    min={12}
-                    max={GABLE_PANEL_MAX_HEIGHT_IN}
-                    step={1}
-                    onChange={(e) => setMaxGablePanelHeightIn(Math.min(Number(e.target.value), GABLE_PANEL_MAX_HEIGHT_IN))}
-                  />
-                </label>
-                <p className={styles.note}>
-                  Any real roofline rise above this (up to a hard fabrication ceiling of {GABLE_PANEL_MAX_HEIGHT_IN}in
-                  per panel) is filled by a real vertical safety-gap tile instead of clamped — see that wall&apos;s
-                  elevation view.
-                </p>
-
-                <label>
-                  Heel height (in){" "}
-                  <input
-                    type="number"
-                    value={heelHeightIn}
-                    min={0}
-                    max={15}
-                    step={0.5}
-                    onChange={(e) => setHeelHeightIn(Math.max(0, Number(e.target.value)))}
-                  />
-                </label>
-                <p className={styles.note}>
-                  Energy-heel (raised-heel) truss seat: at each end that isn&apos;t snapped to a shed, the roofline
-                  runs flat for one full panel width from the corner, then starts the incline this much above the
-                  eave — {gableHeelHeightDefaultIn.note} Set to 0 to disable.
-                </p>
-
-                <div role="group" aria-label="Truss seat depth" className={styles.toolbar}>
-                  <span style={{ fontSize: 13, marginRight: 4 }}>Truss seat depth:</span>
-                  {bearingEdgeReferenceOptions.map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      aria-pressed={trussPlateInsetIn === opt.insetIn}
-                      className={trussPlateInsetIn === opt.insetIn ? styles.toolActive : styles.tool}
-                      onClick={() => setTrussPlateInsetIn(opt.insetIn)}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    aria-pressed={trussPlateInsetIn === thicknessIn}
-                    className={trussPlateInsetIn === thicknessIn ? styles.toolActive : styles.tool}
-                    onClick={() => setTrussPlateInsetIn(thicknessIn)}
-                    title="Sets the truss seat as deep as the wall panel's own real thickness, whatever that currently is."
-                  >
-                    Panel depth ({thicknessIn}in)
-                  </button>
-                </div>
-                <p className={styles.note}>
-                  How far the truss bottom / roof-catcher beam — and, following it, the Gable End Panel material
-                  itself — sits inset from the adjacent wall&apos;s primary (exterior/floor-plan-line) edge.{" "}
-                  {trussPlateInsetDefaultIn.note}
-                </p>
-
-                <p className={styles.pending}>{roofBearingMemberNote}</p>
-
-                {stories.length > 1 && (
-                  <>
-                    <label>
-                      Box beam size{" "}
-                      <select value={boxBeamSizeId} onChange={(e) => setBoxBeamSizeId(e.target.value as BoxBeamSizeId)}>
-                        {BOX_BEAM_SIZE_OPTIONS.map((opt) => (
-                          <option key={opt.id} value={opt.id}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div role="group" aria-label="Box beam coverage" className={styles.toolbar}>
-                      <span style={{ fontSize: 13, marginRight: 4 }}>Box beam coverage:</span>
-                      <button type="button" onClick={() => handleSetBoxBeamRing(true)}>
-                        Add to Every Wall (Ring)
-                      </button>
-                      <button type="button" onClick={() => handleSetBoxBeamRing(false)}>
-                        Remove from Every Wall
-                      </button>
-                    </div>
-                    <p className={styles.note}>
-                      Toggle Box Beam per wall from that wall&apos;s own elevation view (Wall tab), or use the Ring
-                      buttons above for every wall at once. A wall with Box Beam gets its own 2nd-story row of panels
-                      built shorter — by {computeBoxBeamHeightDeltaIn(boxBeamSizeId).toFixed(2)}in for the selected
-                      size — so it still reaches the same roofline as a wall using the shorter Truss Plate.
-                    </p>
-                  </>
-                )}
-
-                {roofSystemTypeId === "structural-panel" && (
-                  <>
-                    <label>
-                      Roof-catcher-beam depth offset (in){" "}
-                      <input
-                        type="number"
-                        value={roofCatcherBeamOffsetIn}
-                        min={0}
-                        step={0.25}
-                        onChange={(e) => setRoofCatcherBeamOffsetIn(Number(e.target.value))}
-                      />
-                    </label>
-                    <label>
-                      Roof-catcher-beam shape{" "}
-                      <select
-                        value={roofCatcherBeamShape}
-                        onChange={(e) => setRoofCatcherBeamShape(e.target.value as RoofCatcherBeamShape)}
-                      >
-                        {roofCatcherBeamShapeOptions.map((shape) => (
-                          <option key={shape} value={shape}>
-                            {shape}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {roofProfileType === "peaked" ? (
-                      <p className={styles.note}>
-                        Column Panel height at a roof-catcher-beam bearing point = ridge height minus this offset (
-                        {computeGableColumnHeightIn(gableEaveHeightIn + (roofProfilePointHeightsFt[0] ?? 0) * 12, roofCatcherBeamOffsetIn).toFixed(1)}
-                        in at the current inputs) — see the Column Panel Shop Drawing page below.
-                      </p>
-                    ) : (
-                      <p className={styles.note}>
-                        No Column Panel or roof-catcher beam for a flat-topped roofline — those need a single real
-                        peak to bear on. Switch the roofline profile above to Peaked to use them.
-                      </p>
-                    )}
-
-                    {roofProfileType === "peaked" &&
-                      (() => {
-                        const gableWallIds = [...gableEndWallIds];
-                        const peakPositionInByWallId: Record<string, number> = {};
-                        for (const [wallId, positions] of Object.entries(gableProfilePositionsInByWallId)) {
-                          const posIn = positions[0];
-                          if (posIn != null) peakPositionInByWallId[wallId] = posIn;
-                        }
-                        const ridge =
-                          footprint && gableWallIds.length === 2
-                            ? computeRidgeLine(footprint, gableWallIds[0]!, gableWallIds[1]!, peakPositionInByWallId)
-                            : null;
-                        if (!ridge) {
-                          return (
-                            <p className={styles.note}>
-                              Add Gable End to exactly 2 (opposite) walls — see that wall&apos;s elevation view (Wall
-                              tab&apos;s view-mode dial) — to compute a real roof-catcher-beam run from the footprint.
-                            </p>
-                          );
-                        }
-                        const segments = computeRoofCatcherBeamSegments(ridge.runIn);
-                        const postPositionsIn = computeRoofCatcherBeamPostPositions(ridge.runIn);
-                        const piers = footprint ? computePierGrid(footprint, pierSpacingFt) : [];
-                        const postPoints = postPositionsIn.map((posIn) => pointAlongRidgeLine(ridge, posIn));
-                        return (
-                          <p className={styles.note}>
-                            Run: {(ridge.runIn / 12).toFixed(1)}ft between {gableWallIds[0]} and {gableWallIds[1]}
-                            &apos;s Column Panels — {segments.length} built-up 3-ply 2x12 beam segment
-                            {segments.length === 1 ? "" : "s"} ({segments[0]!.spanIn.toFixed(1)}in each, max 144in/12ft).{" "}
-                            {postPoints.length === 0
-                              ? "No intermediate posts needed at this run."
-                              : `${postPoints.length} intermediate post${postPoints.length === 1 ? "" : "s"} at real ` +
-                                "footprint position " +
-                                postPoints
-                                  .map((pt) => {
-                                    const onPier = isPointNearPier(pt, piers);
-                                    return `(${pt.x.toFixed(1)}, ${pt.y.toFixed(1)})${onPier ? "" : " — no pier here yet"}`;
-                                  })
-                                  .join(", ") +
-                                ` — cross-checked against the real pier grid (${pierSpacingFt}ft o.c.). Ideal scenario ` +
-                                "(Tommy): piers every 6ft, a post on every other one (12ft) — a post lands off-pier " +
-                                "whenever the run isn't a whole multiple of 2x the pier spacing, since segments are " +
-                                "evenly re-split rather than forced onto exact pier positions."}{" "}
-                            Post construction (size/material) isn&apos;t specified yet — only positions are modeled.
-                          </p>
-                        );
-                      })()}
-                  </>
-                )}
-
-                {footprint && footprint.corners.length === 8 && (
-                  <>
-                    <div role="group" aria-label="Octagon ring outside diameter" className={styles.toolbar}>
-                      <span style={{ fontSize: 13, marginRight: 4 }}>Octagon ring outside diameter:</span>
-                      {OCTAGON_RING_DIAMETER_OPTIONS_FT.map((ft) => (
-                        <button
-                          key={ft}
-                          type="button"
-                          aria-pressed={octagonRingDiameterFt === ft}
-                          className={octagonRingDiameterFt === ft ? styles.toolActive : styles.tool}
-                          onClick={() => setOctagonRingDiameterFt(ft)}
-                        >
-                          {ft}ft
-                        </button>
-                      ))}
-                    </div>
-                    <OctagonRingPreview outsideDiameterFt={octagonRingDiameterFt} />
-                    <p className={styles.note}>
-                      8 mitered 1-3/4in x 14in LVL segments (on edge), one per compass direction, forming a closed
-                      ring — a compression ring near the roof&apos;s apex for an octagon roof, sized independently of
-                      the building&apos;s own (much larger) footprint. &quot;Outside diameter&quot; is the flat-to-flat
-                      distance across the ring (the standard way octagonal hardware/rings are sized), not
-                      point-to-point across the corners. Miters (22.5deg at each of the 8 corners) are simplified to
-                      straight boxes here, not true beveled geometry.
-                    </p>
-                  </>
                 )}
               </>
             )}

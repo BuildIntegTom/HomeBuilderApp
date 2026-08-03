@@ -32,18 +32,21 @@ export default function SectionCarousel({ sections, openIds, onToggle, header, f
   return (
     <div className={`${styles.carousel} print-hidden-chrome`} role="group" aria-label="Sections">
       {header && <div className={styles.headerSlot}>{header}</div>}
-      {sections.map((s) => (
-        <button
-          key={s.id}
-          type="button"
-          title={s.label}
-          aria-pressed={openIds.has(s.id)}
-          className={openIds.has(s.id) ? styles.cardActive : styles.card}
-          onClick={() => onToggle(s.id)}
-        >
-          {s.label}
-        </button>
-      ))}
+      {sections.map((s) => {
+        // Shop Fabrication pages (Tommy: "color code all of the shop
+        // fabrication buttons... to a light green color with purple
+        // outline") — every real cut-list page uses this "shop"/"shop-fab-"
+        // id prefix (see relevantDetailPages in page.tsx), so the prefix
+        // alone reliably distinguishes them from every other section card.
+        const isShopFab = s.id.startsWith("shop");
+        const isOpen = openIds.has(s.id);
+        const className = isShopFab ? (isOpen ? styles.cardShopFabActive : styles.cardShopFab) : isOpen ? styles.cardActive : styles.card;
+        return (
+          <button key={s.id} type="button" title={s.label} aria-pressed={isOpen} className={className} onClick={() => onToggle(s.id)}>
+            {s.label}
+          </button>
+        );
+      })}
       {footer && <div className={styles.footerSlot}>{footer}</div>}
     </div>
   );
