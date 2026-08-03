@@ -16,6 +16,8 @@ import {
   computeRoughOpeningWidthIn,
   computeStandardGirtRowCount,
   panelHeightInRange,
+  sillDefaultHeightIn,
+  standardWindowHeightDefaultIn,
   type BracePattern,
   type JackStudConfig,
 } from "@building-integrity/panel-catalog";
@@ -183,6 +185,16 @@ export function allPanelInstances(
       rightEdgeHeightIn: number;
       isSafetyGap?: boolean;
       verticalGapIn?: { leftIn: number; rightIn: number };
+      /** This tile has been split into a window (Tommy: "add an option to
+       * click-edit gable end panels to become window gable end panels") —
+       * `leftEdgeHeightIn`/`rightEdgeHeightIn` above still describe the
+       * tile's own TRUE roofline edges; the split itself (reduced gable cap
+       * above the window's RO-top + jack studs/sill below it) happens in
+       * this function's own gable-tile loop, using `windowHeightIn`/
+       * `windowSillHeightIn` below. */
+      isWindow?: boolean;
+      windowHeightIn?: number;
+      windowSillHeightIn?: number;
     }[]
   >,
   /** Which slots of which walls have a Box Beam rather than a Truss Plate
@@ -223,6 +235,16 @@ export function allPanelInstances(
    * Requires `storyHeightIn` to do anything, same as `midWallBeamsByWallId`
    * above. */
   maxPanelHeightIn?: number,
+  /** The absolute reference every gable tile's own `leftEdgeHeightIn`/
+   * `rightEdgeHeightIn` (and, for a window tile, `windowHeightIn`/
+   * `windowSillHeightIn`) is measured against (page.tsx's own
+   * `gableEaveHeightIn`) — only needed to split a window tile's own reduced
+   * gable-cap heights (a plain gable tile needs nothing beyond its own
+   * edge heights already in scope). Omitted = a window tile still gets 2
+   * separate instances, just with `undefined` heights instead of the real
+   * split — every existing caller either has no gable tiles at all, or (if
+   * it does) has no window tiles either, so this is unreachable for them. */
+  gableEaveHeightIn?: number,
 ): PanelInstance[] {
   const instances: PanelInstance[] = [];
   const counters: Partial<Record<CompassDirection, number>> = {};
@@ -425,12 +447,53 @@ export function allPanelInstances(
     const gableTiles = gableTilesByWallId?.[wall.id];
     if (gableTiles) {
       gableTiles.forEach((tile, tileIndex) => {
+        const slotIndexInWall = -(tileIndex + 1);
+        if (tile.isWindow) {
+          // Gable window (Tommy: "add an option to click-edit gable end
+          // panels to become window gable end panels... this is just a
+          // small version of an inclined panel that should follow all of
+          // inclined panel dynamics. the only difference is that it uses
+          // the top of the RO below it as its slot. dont forget jack
+          // studs") — 2 real pieces sharing this one tile's own slot index
+          // (same "N header + sill(s) share a slotIndexInWall" convention a
+          // real wall window already uses): a reduced-height "gable" cap
+          // (still built via buildGablePanelMembers, just anchored at the
+          // window's own RO-top instead of the eave — no new shape) plus
+          // sill instance(s) below it, reusing 100% of the existing
+          // "sill" pricing/Shop-Drawing/shipping machinery. Jack studs are
+          // derived downstream from this cap instance the same way a real
+          // window's jack studs are derived from its own "header" instance
+          // (see page.tsx's shippingJackStudRefs, extended to also match a
+          // gable cap via sourceSlotType === "window").
+          const windowHeightIn = tile.windowHeightIn ?? standardWindowHeightDefaultIn.value;
+          const sillHeightIn = tile.windowSillHeightIn ?? sillDefaultHeightIn.value;
+          const roTopIn = gableEaveHeightIn !== undefined ? gableEaveHeightIn + sillHeightIn + windowHeightIn : undefined;
+          pushInstance(
+            direction,
+            wall.id,
+            "gable",
+            tile.widthIn,
+            slotIndexInWall,
+            "window",
+            tile.windowHeightIn,
+            tile.windowSillHeightIn,
+            undefined,
+            undefined,
+            roTopIn !== undefined ? Math.max(0, tile.leftEdgeHeightIn - roTopIn) : undefined,
+            roTopIn !== undefined ? Math.max(0, tile.rightEdgeHeightIn - roTopIn) : undefined,
+          );
+          const roWidthIn = computeRoughOpeningWidthIn(tile.widthIn, jackStudConfig);
+          for (const sillWidthIn of computeSillRunWidths(roWidthIn, standardWidthIn)) {
+            pushInstance(direction, wall.id, "sill", sillWidthIn, slotIndexInWall, "window", undefined, tile.windowSillHeightIn);
+          }
+          return;
+        }
         pushInstance(
           direction,
           wall.id,
           "gable",
           tile.widthIn,
-          -(tileIndex + 1),
+          slotIndexInWall,
           undefined,
           undefined,
           undefined,

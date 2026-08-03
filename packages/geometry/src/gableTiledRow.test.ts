@@ -410,6 +410,145 @@ describe("computeGableTiledRow — energy-heel truss seat (heelHeightIn)", () =>
   });
 });
 
+describe("computeGableTiledRow — panel-depth anchor mode (RoofBearingAnchorMode)", () => {
+  it("starts the roofline flush at the plain eave height, inset by insetIn from each corner (no height bump)", () => {
+    const wallWidthIn = 300;
+    const eaveHeightIn = 120;
+    const insetIn = 5.5;
+    const panels = computeGableTiledRow(wallWidthIn, eaveHeightIn, [{ xIn: 150, heightIn: 192 }], 40, insetIn, false, 0, "panel-depth");
+    expect(panels[0]!.xStartIn).toBeCloseTo(insetIn, 6);
+    expect(panels[0]!.leftHeightIn).toBeCloseTo(eaveHeightIn, 6);
+    const last = panels[panels.length - 1]!;
+    expect(last.xEndIn).toBeCloseTo(wallWidthIn - insetIn, 6);
+    expect(last.rightHeightIn).toBeCloseTo(eaveHeightIn, 6);
+  });
+
+  it("ignores heelHeightIn entirely under panel-depth mode", () => {
+    const withHeelArg = computeGableTiledRow(300, 120, [{ xIn: 150, heightIn: 192 }], 40, 5.5, false, 6, "panel-depth");
+    const withoutHeelArg = computeGableTiledRow(300, 120, [{ xIn: 150, heightIn: 192 }], 40, 5.5, false, 0, "panel-depth");
+    expect(withHeelArg).toEqual(withoutHeelArg);
+  });
+
+  it("skips the inset anchor globally once either side shed-snaps, mirroring the material inset's own global-kill rule", () => {
+    const wallWidthIn = 300;
+    const eaveHeightIn = 120;
+    const insetIn = 5.5;
+    const panels = computeGableTiledRow(
+      wallWidthIn,
+      eaveHeightIn,
+      [{ xIn: GABLE_SHED_SNAP_THRESHOLD_IN - 1, heightIn: 192, isExplicitPosition: true }],
+      40,
+      insetIn,
+      false,
+      0,
+      "panel-depth",
+    );
+    // Left end snapped to a shed at the true corner (x=0) — no inset either way.
+    expect(panels[0]!.xStartIn).toBeCloseTo(0, 6);
+    expect(panels[0]!.leftHeightIn).toBeCloseTo(192, 6);
+    // Right end is unclaimed, but the shed snap on the left still kills the
+    // inset globally (same as computeGableTiledRow's own material-inset
+    // rule) — no seat, panel material runs flush to the true right corner.
+    const last = panels[panels.length - 1]!;
+    expect(last.xEndIn).toBeCloseTo(wallWidthIn, 6);
+    expect(last.rightHeightIn).toBeCloseTo(eaveHeightIn, 6);
+  });
+
+  it("clamps a real point that would otherwise fall inside the inset seat zone out to the seat's own boundary", () => {
+    // An artificially large insetIn (past the shed-snap threshold) so a
+    // point that doesn't shed-snap can still land inside the seat zone —
+    // mirrors the equivalent heel-mode clamp test above.
+    const wallWidthIn = 300;
+    const eaveHeightIn = 120;
+    const insetIn = 30;
+    const panels = computeGableTiledRow(
+      wallWidthIn,
+      eaveHeightIn,
+      [{ xIn: 28, heightIn: 150, isExplicitPosition: true }],
+      40,
+      insetIn,
+      false,
+      0,
+      "panel-depth",
+    );
+    for (const p of panels) expect(p.widthIn).toBeGreaterThan(0);
+    for (let i = 1; i < panels.length; i++) expect(panels[i]!.xStartIn).toBeGreaterThanOrEqual(panels[i - 1]!.xEndIn - 1e-6);
+    expect(panels[0]!.xStartIn).toBeCloseTo(insetIn, 6);
+    expect(panels[0]!.leftHeightIn).toBeCloseTo(eaveHeightIn, 6);
+  });
+});
+
+describe("computeGableTiledRow — window reservations (GableWindowReservation)", () => {
+  it("inserts a window at its own ordinal position, shrinking the natural fill tiles to make room, total width unchanged", () => {
+    // Baseline (no window): 4 even 40in tiles — 2 per segment (peak at
+    // xIn=80 of a 160in wall). Reserve a 30in window at ordinal 1 (the 2nd
+    // tile, inside segment 0's own rising run).
+    const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false, 0, "truss-heel", [{ beforeTileCount: 1, widthIn: 30 }]);
+    expect(panels).toHaveLength(5);
+    const totalWidthIn = panels.reduce((sum, p) => sum + p.widthIn, 0);
+    expect(totalWidthIn).toBeCloseTo(160, 6);
+    const windowTile = panels.find((p) => p.isWindow);
+    expect(windowTile).toBeDefined();
+    expect(windowTile!.widthIn).toBeCloseTo(30, 6);
+    expect(windowTile!.xStartIn).toBeCloseTo(25, 6);
+    expect(windowTile!.xEndIn).toBeCloseTo(55, 6);
+    // Height at the window's own edges reads off the segment's true rising
+    // slope (eave 120 -> peak 192 over the 80in run), not the shrunk budget.
+    expect(windowTile!.leftHeightIn).toBeCloseTo(120 + (192 - 120) * (25 / 80), 6);
+    expect(windowTile!.rightHeightIn).toBeCloseTo(120 + (192 - 120) * (55 / 80), 6);
+    // No tile overlaps/gaps — contiguous left to right.
+    for (let i = 1; i < panels.length; i++) expect(panels[i]!.xStartIn).toBeCloseTo(panels[i - 1]!.xEndIn, 6);
+  });
+
+  it("localizes a global ordinal past the first segment's own natural tile count into the next segment", () => {
+    // Same wall/peak — ordinal 2 is the 1st tile of segment 1 (segment 0's
+    // own natural count is 2).
+    const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false, 0, "truss-heel", [{ beforeTileCount: 2, widthIn: 20 }]);
+    expect(panels).toHaveLength(5);
+    const totalWidthIn = panels.reduce((sum, p) => sum + p.widthIn, 0);
+    expect(totalWidthIn).toBeCloseTo(160, 6);
+    const windowTile = panels.find((p) => p.isWindow);
+    expect(windowTile!.xStartIn).toBeCloseTo(80, 6);
+    expect(windowTile!.xEndIn).toBeCloseTo(100, 6);
+    // Segment 0 (unaffected — no reservation lands there) stays exactly the
+    // untouched 2x40in baseline.
+    const beforeWindow = panels.filter((p) => p.xEndIn <= 80);
+    expect(beforeWindow).toHaveLength(2);
+    for (const p of beforeWindow) expect(p.widthIn).toBeCloseTo(40, 6);
+  });
+
+  it("carries heightIn/sillHeightIn through onto the resulting tile's windowHeightIn/windowSillHeightIn", () => {
+    const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false, 0, "truss-heel", [
+      { beforeTileCount: 1, widthIn: 30, heightIn: 48, sillHeightIn: 32 },
+    ]);
+    const windowTile = panels.find((p) => p.isWindow);
+    expect(windowTile!.windowHeightIn).toBe(48);
+    expect(windowTile!.windowSillHeightIn).toBe(32);
+  });
+
+  it("coexists with the safety-gap tile on a long run — total width still adds up, gap stays untouched", () => {
+    const wallWidthIn = 300;
+    const panels = computeGableTiledRow(wallWidthIn, 120, [{ xIn: 0, heightIn: 150, isExplicitPosition: true }], 40, 0, true, 0, "truss-heel", [
+      { beforeTileCount: 1, widthIn: 36 },
+    ]);
+    const totalWidthIn = panels.reduce((sum, p) => sum + p.widthIn, 0);
+    expect(totalWidthIn).toBeCloseTo(wallWidthIn, 6);
+    const gapPanels = panels.filter((p) => p.isSafetyGap);
+    expect(gapPanels).toHaveLength(1);
+    expect(gapPanels[0]!.widthIn).toBeCloseTo(GABLE_SAFETY_GAP_WIDTH_IN, 6);
+    const windowTile = panels.find((p) => p.isWindow);
+    expect(windowTile).toBeDefined();
+    expect(windowTile!.widthIn).toBeCloseTo(36, 6);
+    for (let i = 1; i < panels.length; i++) expect(panels[i]!.xStartIn).toBeCloseTo(panels[i - 1]!.xEndIn, 6);
+  });
+
+  it("is byte-identical to omitting the parameter entirely when no reservations are given", () => {
+    const withEmptyArray = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false, 0, "truss-heel", []);
+    const withoutParam = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false, 0, "truss-heel");
+    expect(withEmptyArray).toEqual(withoutParam);
+  });
+});
+
 describe("computeGableTiledRow — horizontal safety-gap absorption (Part B)", () => {
   it("reserves a dedicated GABLE_SAFETY_GAP_WIDTH_IN tile on a long run instead of evenly redistributing overflow", () => {
     // An explicit point snapped to the left end collapses the whole wall

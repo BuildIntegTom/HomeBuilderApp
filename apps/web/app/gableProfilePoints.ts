@@ -1,4 +1,4 @@
-import { GABLE_SHED_SNAP_THRESHOLD_IN } from "@building-integrity/geometry";
+import { GABLE_SHED_SNAP_THRESHOLD_IN, type RoofBearingAnchorMode } from "@building-integrity/geometry";
 
 export { GABLE_SHED_SNAP_THRESHOLD_IN };
 
@@ -76,13 +76,25 @@ export function computeRiseFtForPitch(pitchIn12: number, runIn: number, heelOffs
  * claimed by the point itself) or 2 for a Centered Peak pitch (a re-centered
  * peak's own position is never "explicit", so neither corner ever
  * shed-claims — see resolveAnchors). Returns zero offsets if heel is
- * disabled, or the wall is too narrow to fit the seat(s) needed. */
+ * disabled, or the wall is too narrow to fit the seat(s) needed.
+ *
+ * Under `anchorMode: "panel-depth"`, the same shape of check runs against
+ * `insetIn` instead — the run shortens by the truss's own seat depth rather
+ * than a full panel width, and `heelOffsetIn` always stays 0 (no riser),
+ * mirroring `resolveAnchors`'s own panel-depth branch exactly. */
 export function resolveHeelSeat(
   wallWidthIn: number,
   standardWidthIn: number,
   heelHeightIn: number,
   cornerCount: 1 | 2,
+  anchorMode: RoofBearingAnchorMode = "truss-heel",
+  insetIn = 0,
 ): { runOffsetIn: number; heelOffsetIn: number } {
+  if (anchorMode === "panel-depth") {
+    const seatWidthNeededIn = cornerCount * insetIn;
+    const insetFits = insetIn > 0 && seatWidthNeededIn > 0 && seatWidthNeededIn <= wallWidthIn;
+    return insetFits ? { runOffsetIn: insetIn, heelOffsetIn: 0 } : { runOffsetIn: 0, heelOffsetIn: 0 };
+  }
   const seatWidthNeededIn = cornerCount * standardWidthIn;
   const heelFits = heelHeightIn > 0 && seatWidthNeededIn > 0 && seatWidthNeededIn <= wallWidthIn;
   return heelFits ? { runOffsetIn: standardWidthIn, heelOffsetIn: heelHeightIn } : { runOffsetIn: 0, heelOffsetIn: 0 };

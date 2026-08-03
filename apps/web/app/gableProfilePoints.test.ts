@@ -110,6 +110,19 @@ describe("resolveHeelSeat", () => {
     // cornerCount=2 needs 2*40=80in of seat; a 60in wall can't fit it.
     expect(resolveHeelSeat(60, 40, 6, 2)).toEqual({ runOffsetIn: 0, heelOffsetIn: 0 });
   });
+
+  it("panel-depth mode: returns an insetIn-wide run offset with no heel bump", () => {
+    expect(resolveHeelSeat(240, 40, 6, 1, "panel-depth", 5.5)).toEqual({ runOffsetIn: 5.5, heelOffsetIn: 0 });
+  });
+
+  it("panel-depth mode: ignores heelHeightIn/standardWidthIn entirely", () => {
+    expect(resolveHeelSeat(240, 999, 999, 2, "panel-depth", 5.5)).toEqual({ runOffsetIn: 5.5, heelOffsetIn: 0 });
+  });
+
+  it("panel-depth mode: falls back to zero offsets when insetIn is 0 or the seat(s) wouldn't fit", () => {
+    expect(resolveHeelSeat(240, 40, 6, 1, "panel-depth", 0)).toEqual({ runOffsetIn: 0, heelOffsetIn: 0 });
+    expect(resolveHeelSeat(10, 40, 6, 2, "panel-depth", 5.5)).toEqual({ runOffsetIn: 0, heelOffsetIn: 0 });
+  });
 });
 
 describe("capGableTileHeights", () => {

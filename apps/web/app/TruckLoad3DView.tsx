@@ -1,8 +1,10 @@
 "use client";
 
+import * as THREE from "three";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { PanelStack, TruckDims, TruckLoad } from "@building-integrity/geometry";
+import { BOX_FACES } from "@building-integrity/panel-catalog";
 import type { NamedPanelType } from "./panelInstances";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import PanelLabel from "./PanelLabel";
@@ -35,6 +37,15 @@ export interface TruckLoad3DViewProps {
    * size instead of the shared stack footprint every panel used to borrow. */
   panelWidthById: Map<string, number>;
   panelHeightById: Map<string, number>;
+  /** Only present for `"gable"`-typed panels (Tommy: "gable end panels are
+   * still showing up as boxes instead of how an inclined/gable panel
+   * actually looks like... their trapezoidal shape should be carried to
+   * the... shipping truck logistics engine") — each edge's own real local
+   * rise in inches, mirroring `PanelInstance.leftEdgeHeightIn`/
+   * `rightEdgeHeightIn` already used by the main 3D view. Absent (or a
+   * missing entry) falls back to the plain flat-box rendering every other
+   * panel type already uses. */
+  panelGableEdgeHeightsById?: Map<string, { leftIn: number; rightIn: number }>;
   /** Gap rendered between 2 stacked header/sill panels within the same
    * stack (Tommy: "stacked together with a small gap") — never between a
    * header/sill and a full panel, and never between 2 full panels, which
@@ -86,6 +97,50 @@ function TruckPanelLabel({
   );
 }
 
+/** A gable panel's real sloped wedge shape (Tommy: "gable end panels are
+ * still showing up as boxes... their trapezoidal shape should be carried to
+ * the 3d box and shipping truck logistics engine") — same 8-corner +
+ * `BOX_FACES` topology `PanelMembersGroup`'s own `buildTrapezoidGeometry`
+ * already uses for a diagonal brace's beveled ends, built directly from the
+ * 2 edge heights rather than a `PanelMember` since this view renders one
+ * flat shape per panel, never member-by-member (see this file's own doc
+ * comment). Centered at the local origin, matching `<boxGeometry>`'s own
+ * centering, so it drops into the same `position={[laneCenterXFt, centerYFt,
+ * stackCenterZFt]}` every other panel already uses. `DoubleSide` is applied
+ * at the material for the same defensive reason `buildTrapezoidGeometry`
+ * uses it — `BOX_FACES`' winding was only ever validated against the OBJ
+ * format's own convention, not three.js' CCW-front-face one. */
+function buildGableWedgeGeometry(widthFt: number, thicknessFt: number, depthFt: number, leftHeightFt: number, rightHeightFt: number): THREE.BufferGeometry {
+  const hx = widthFt / 2;
+  const hy = thicknessFt / 2;
+  const z0 = -depthFt / 2;
+  const corners: [number, number, number][] = [
+    [-hx, -hy, z0],
+    [hx, -hy, z0],
+    [hx, hy, z0],
+    [-hx, hy, z0],
+    [-hx, -hy, z0 + leftHeightFt],
+    [hx, -hy, z0 + rightHeightFt],
+    [hx, hy, z0 + rightHeightFt],
+    [-hx, hy, z0 + leftHeightFt],
+  ];
+  const positions = new Float32Array(corners.length * 3);
+  corners.forEach(([x, y, z], i) => {
+    positions[i * 3] = x;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = z;
+  });
+  const indices: number[] = [];
+  for (const [a, b, c, d] of BOX_FACES) {
+    indices.push(a - 1, b - 1, c - 1, a - 1, c - 1, d - 1);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 function isHeaderOrSill(panelId: string, panelTypeById: Map<string, NamedPanelType>): boolean {
   const t = panelTypeById.get(panelId);
   return t === "header" || t === "sill";
@@ -131,6 +186,7 @@ export default function TruckLoad3DView({
   panelTypeById,
   panelWidthById,
   panelHeightById,
+  panelGableEdgeHeightsById,
   dunnageGapIn,
   displayName = "Truck",
 }: TruckLoad3DViewProps) {
@@ -202,10 +258,14 @@ export default function TruckLoad3DView({
                   // faces are still visible (see TruckPanelLabel's own doc
                   // comment).
                   const isTopOfStack = indexFromTop === 0;
+                  const gableEdges = panelGableEdgeHeightsById?.get(panelId);
+                  const wedgeGeometry = gableEdges
+                    ? buildGableWedgeGeometry(widthFt, thicknessFt, depthFt, gableEdges.leftIn / IN_PER_FT, gableEdges.rightIn / IN_PER_FT)
+                    : undefined;
                   return (
-                    <mesh key={panelId} position={[laneCenterXFt, centerYFt, stackCenterZFt]}>
-                      <boxGeometry args={[widthFt, thicknessFt, depthFt]} />
-                      <meshStandardMaterial color={color} />
+                    <mesh key={panelId} position={[laneCenterXFt, centerYFt, stackCenterZFt]} geometry={wedgeGeometry}>
+                      {!wedgeGeometry && <boxGeometry args={[widthFt, thicknessFt, depthFt]} />}
+                      <meshStandardMaterial color={color} side={wedgeGeometry ? THREE.DoubleSide : THREE.FrontSide} />
                       <TruckPanelLabel text={panelId} widthFt={widthFt} thicknessFt={thicknessFt} depthFt={depthFt} isTopOfStack={isTopOfStack} />
                     </mesh>
                   );

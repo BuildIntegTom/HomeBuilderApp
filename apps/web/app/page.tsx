@@ -55,6 +55,8 @@ import {
   type PanelGroup,
   type PanelSlot,
   type PanelSlotZone,
+  type GableWindowReservation,
+  type RoofBearingAnchorMode,
   type RoofProfilePoint,
   type Story,
   type TruckDims,
@@ -636,6 +638,15 @@ export default function LayoutEditor() {
   // width AND THEN go vertical for 6in (adjustable)") — see
   // computeGableTiledRow's own heelHeightIn doc comment for the mechanics.
   const [heelHeightIn, setHeelHeightIn] = useState(gableHeelHeightDefaultIn.value);
+  // Where the gable roofline's slope actually starts lifting off (Tommy:
+  // "the slope needs to be based on exactly where we expect the truss to
+  // lift off at - either at the panel depth OR... the truss heel height...
+  // flush with the top of the trusses or flush with the inside edge of
+  // them") — see computeGableTiledRow's/resolveAnchors' own
+  // RoofBearingAnchorMode doc comment for the mechanics. "truss-heel" is
+  // the pre-existing default (matches every gable wall built before this
+  // toggle existed, since heelHeightIn already defaults nonzero).
+  const [roofBearingAnchorMode, setRoofBearingAnchorMode] = useState<RoofBearingAnchorMode>("truss-heel");
   const [roofCatcherBeamOffsetIn, setRoofCatcherBeamOffsetIn] = useState(DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN);
   const [roofCatcherBeamShape, setRoofCatcherBeamShape] = useState<RoofCatcherBeamShape>(roofCatcherBeamShapeDefault);
   // Octagon roof-catcher ring (Tommy: "for octagon roofs, lets do an octagon
@@ -685,6 +696,16 @@ export default function LayoutEditor() {
   // (only one at a time).
   const [gableEndWallIds, setGableEndWallIds] = useState<Set<string>>(new Set());
   const [elevationViewWallId, setElevationViewWallId] = useState<string | null>(null);
+  // Gable end window panels (Tommy: "add an option to click-edit gable end
+  // panels to become window gable end panels, similarly splitting into two
+  // distinct panels") — anchored per wall the same way an opening on a
+  // normal wall is (see OpeningAnchor.beforeStandardCount): "how many
+  // non-safety-gap gable tiles precede this reservation," so a reservation
+  // survives an unrelated retile (roofline/heel/width change) instead of
+  // drifting or vanishing. GableWindowReservation's own field shape is
+  // reused directly (beforeTileCount/widthIn/heightIn/sillHeightIn) — no
+  // separate app-level anchor type needed, it's already exactly this.
+  const [gableWindowAnchorsByWallId, setGableWindowAnchorsByWallId] = useState<Record<string, GableWindowReservation[]>>({});
   // The max-height drag mode doesn't carry meaning across a wall switch —
   // avoids it silently staying "on" against a different wall's own diagram.
   useEffect(() => {
@@ -743,6 +764,45 @@ export default function LayoutEditor() {
       else next.delete(wallId);
       return next;
     });
+  };
+
+  // Gable end window panels (Tommy: "add an option to click-edit gable end
+  // panels to become window gable end panels, similarly splitting into two
+  // distinct panels") — click cycles plain <-> window, same "toggle, don't
+  // drag out a new one" shape nextPanelCycleState's own click-through gives
+  // every other slot type. `tileOrdinal` is "how many non-safety-gap gable
+  // tiles precede this one" (WallElevationDiagram computes this per
+  // rendered tile at click time, same anchor convention OpeningAnchor uses
+  // for a real wall opening). `naturalWidthIn` seeds a brand-new
+  // reservation's own default width — the tile's own current (unsplit)
+  // width, capped at the 4ft gable-window ceiling (Tommy: "window sizing
+  // options are similar to standard panels becoming window panel pairs
+  // except only up to 4ft wide").
+  const handleToggleGableWindow = (wallId: string, tileOrdinal: number, naturalWidthIn: number) => {
+    setGableWindowAnchorsByWallId((prev) => {
+      const existing = prev[wallId] ?? [];
+      const alreadyWindow = existing.some((w) => w.beforeTileCount === tileOrdinal);
+      const next = alreadyWindow
+        ? existing.filter((w) => w.beforeTileCount !== tileOrdinal)
+        : [...existing, { beforeTileCount: tileOrdinal, widthIn: Math.min(naturalWidthIn, panelWidthInRange.maxIn) }];
+      return { ...prev, [wallId]: next };
+    });
+  };
+
+  const handleSetGableWindowField = (
+    wallId: string,
+    tileOrdinal: number,
+    field: "widthIn" | "heightIn" | "sillHeightIn",
+    value: number,
+  ) => {
+    setGableWindowAnchorsByWallId((prev) => ({
+      ...prev,
+      [wallId]: (prev[wallId] ?? []).map((w) =>
+        w.beforeTileCount === tileOrdinal
+          ? { ...w, [field]: field === "widthIn" ? Math.min(Math.max(value, windowHeaderWidthInRange.minIn), panelWidthInRange.maxIn) : Math.max(0, value) }
+          : w,
+      ),
+    }));
   };
 
   // boxBeamCoverageByWallId tracks which walls have a Box Beam (rather than
@@ -958,7 +1018,7 @@ export default function LayoutEditor() {
   const handleSetShedPitch = (wall: Wall, pointIndex: number, pitchIn12: number) => {
     handleChangeGableProfilePositionIn(wall.id, pointIndex, 0);
     const wallWidthIn = wall.lengthFt * 12;
-    const seat = resolveHeelSeat(wallWidthIn, standardWidthIn, heelHeightIn, 1);
+    const seat = resolveHeelSeat(wallWidthIn, standardWidthIn, heelHeightIn, 1, roofBearingAnchorMode, trussPlateInsetIn);
     handleChangeRoofProfilePointHeightFt(
       pointIndex,
       computeRiseFtForPitch(pitchIn12, wallWidthIn - seat.runOffsetIn, seat.heelOffsetIn),
@@ -967,7 +1027,7 @@ export default function LayoutEditor() {
   const handleSetCenteredPeakPitch = (wall: Wall, pitchIn12: number) => {
     handleChangeGableProfilePositionIn(wall.id, 0, undefined);
     const wallWidthIn = wall.lengthFt * 12;
-    const seat = resolveHeelSeat(wallWidthIn, standardWidthIn, heelHeightIn, 2);
+    const seat = resolveHeelSeat(wallWidthIn, standardWidthIn, heelHeightIn, 2, roofBearingAnchorMode, trussPlateInsetIn);
     handleChangeRoofProfilePointHeightFt(
       0,
       computeRiseFtForPitch(pitchIn12, wallWidthIn / 2 - seat.runOffsetIn, seat.heelOffsetIn),
@@ -1133,9 +1193,11 @@ export default function LayoutEditor() {
       roofProfileType,
       roofProfilePointHeightsFt,
       gableProfilePositionsInByWallId,
+      gableWindowAnchorsByWallId,
       maxGablePanelHeightIn,
       trussPlateInsetIn,
       heelHeightIn,
+      roofBearingAnchorMode,
       boxBeamCoverageByWallId,
       boxBeamSizeId,
       midWallBeamsByStoryAndWallId,
@@ -1236,9 +1298,11 @@ export default function LayoutEditor() {
       setRoofProfileType(s.roofProfileType);
       setRoofProfilePointHeightsFt(s.roofProfilePointHeightsFt);
       setGableProfilePositionsInByWallId(s.gableProfilePositionsInByWallId);
+      setGableWindowAnchorsByWallId(s.gableWindowAnchorsByWallId ?? {});
       setMaxGablePanelHeightIn(s.maxGablePanelHeightIn);
       setTrussPlateInsetIn(s.trussPlateInsetIn);
       setHeelHeightIn(s.heelHeightIn);
+      setRoofBearingAnchorMode(s.roofBearingAnchorMode ?? "truss-heel");
       setBoxBeamCoverageByWallId(s.boxBeamCoverageByWallId);
       setBoxBeamSizeId(s.boxBeamSizeId);
       setMidWallBeamsByStoryAndWallId(s.midWallBeamsByStoryAndWallId);
@@ -2327,6 +2391,9 @@ export default function LayoutEditor() {
         rightEdgeHeightIn: number;
         verticalGapIn?: { leftIn: number; rightIn: number };
         isSafetyGap?: boolean;
+        isWindow?: boolean;
+        windowHeightIn?: number;
+        windowSillHeightIn?: number;
       }[]
     > = {};
     for (const wall of footprint.walls) {
@@ -2351,7 +2418,17 @@ export default function LayoutEditor() {
           isExplicitPosition: storedXIn != null,
         };
       });
-      const tiles = computeGableTiledRow(wallLengthIn, gableEaveHeightIn, points, standardWidthIn, trussPlateInsetIn, true, heelHeightIn);
+      const tiles = computeGableTiledRow(
+        wallLengthIn,
+        gableEaveHeightIn,
+        points,
+        standardWidthIn,
+        trussPlateInsetIn,
+        true,
+        heelHeightIn,
+        roofBearingAnchorMode,
+        gableWindowAnchorsByWallId[wall.id] ?? [],
+      );
       // The real high edge is capped to maxGablePanelHeightIn's own
       // fabrication ceiling (Tommy: "gable panels...can be up to 8' tall")
       // so a real Gable End Panel is never built taller than
@@ -2373,6 +2450,7 @@ export default function LayoutEditor() {
           rightEdgeHeightIn: capped.rightEdgeHeightIn,
           ...(capped.verticalGapIn ? { verticalGapIn: capped.verticalGapIn } : {}),
           ...(t.isSafetyGap ? { isSafetyGap: true } : {}),
+          ...(t.isWindow ? { isWindow: true, windowHeightIn: t.windowHeightIn, windowSillHeightIn: t.windowSillHeightIn } : {}),
         };
       });
     }
@@ -2382,11 +2460,13 @@ export default function LayoutEditor() {
     gableEndWallIds,
     gableProfilePositionsInByWallId,
     gableEaveHeightIn,
+    gableWindowAnchorsByWallId,
     roofProfilePointHeightsFt,
     maxGablePanelHeightIn,
     standardWidthIn,
     trussPlateInsetIn,
     heelHeightIn,
+    roofBearingAnchorMode,
   ]);
 
   // Real span/pitch/run for the Roof tab's own truss layout editor (Tommy:
@@ -2485,9 +2565,20 @@ export default function LayoutEditor() {
             wallHeightFt * 12,
             midWallBeamGeometryByWallId,
             maxPanelHeightIn,
+            gableEaveHeightIn,
           )
         : [],
-    [footprint, overlayWallSlots, standardWidthIn, jackStudConfig, gableTilesByWallId, wallHeightFt, midWallBeamGeometryByWallId, maxPanelHeightIn],
+    [
+      footprint,
+      overlayWallSlots,
+      standardWidthIn,
+      jackStudConfig,
+      gableTilesByWallId,
+      wallHeightFt,
+      midWallBeamGeometryByWallId,
+      maxPanelHeightIn,
+      gableEaveHeightIn,
+    ],
   );
 
   // Door Rough Opening height (Tommy: "RO height for doors is almost
@@ -2801,7 +2892,14 @@ export default function LayoutEditor() {
     const crossSectionWidthIn = jackStudConfig === "plywood" ? thicknessIn : PLATE_2X4_WIDTH_IN;
     const refs: { id: string; widthIn: number; heightIn: number }[] = [];
     for (const inst of allInstances) {
-      if (inst.panelType !== "header") continue;
+      // A gable window's own reduced-height "gable" cap plays the same
+      // "spans the opening, has jack studs below it" role a real header
+      // does (Tommy: "dont forget jack studs") — sourceSlotType==="window"
+      // is only ever set on a header OR a gable-window cap (see
+      // panelInstances.ts), so this one check covers both without needing
+      // a separate pass.
+      const isGableWindowCap = inst.panelType === "gable" && inst.sourceSlotType === "window";
+      if (inst.panelType !== "header" && !isGableWindowCap) continue;
       const spanIn = inst.sourceSlotType === "door" ? doorRoughOpeningHeightIn : (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value);
       for (let i = 0; i < studsPerOpening; i++) {
         refs.push({ id: `${inst.name}-JS${i + 1}`, widthIn: crossSectionWidthIn, heightIn: spanIn });
@@ -2836,13 +2934,41 @@ export default function LayoutEditor() {
             ? doorHeaderHeightIn
             : computeHeaderHeightIn(mainHeightIn, (inst.sillHeightIn ?? sillDefaultHeightIn.value) + (inst.windowHeightIn ?? standardWindowHeightDefaultIn.value)),
         );
+      } else if (inst.panelType === "gable") {
+        // A gable tile's own real built height is its rise above the eave
+        // (Tommy: "windows and column panels are not loading correctly...
+        // loading as big blocks" — same bug, unaddressed for gable until
+        // now: it was falling into the `mainHeightIn` catch-all below,
+        // the full flat wall height, instead of its own real short rise).
+        // Same formula panelFabricationGroups' own panelHeightInFor
+        // already uses for gable (line ~3460), so board-footage/pricing
+        // and shipping packing can never disagree.
+        map.set(inst.name, Math.max(inst.leftEdgeHeightIn ?? gableEaveHeightIn, inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn);
       } else {
         map.set(inst.name, mainHeightIn);
       }
     }
     for (const ref of shippingJackStudRefs) map.set(ref.id, ref.heightIn);
     return map;
-  }, [allInstances, wallHeightFt, doorHeaderHeightIn, shippingJackStudRefs]);
+  }, [allInstances, wallHeightFt, doorHeaderHeightIn, gableEaveHeightIn, shippingJackStudRefs]);
+
+  // Gable panels' own real sloped edges (Tommy: "gable end panels are still
+  // showing up as boxes... their trapezoidal shape should be carried to the
+  // 3d box and shipping truck logistics engine") — same local-rise formula
+  // shippingPanelHeightById's own "gable" branch above already uses, kept
+  // per-edge (not maxed together) so TruckLoad3DView can render the real
+  // slope instead of a flat-topped box.
+  const shippingGableEdgeHeightsById = useMemo(() => {
+    const map = new Map<string, { leftIn: number; rightIn: number }>();
+    for (const inst of allInstances) {
+      if (inst.panelType !== "gable") continue;
+      map.set(inst.name, {
+        leftIn: Math.max(0, (inst.leftEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn),
+        rightIn: Math.max(0, (inst.rightEdgeHeightIn ?? gableEaveHeightIn) - gableEaveHeightIn),
+      });
+    }
+    return map;
+  }, [allInstances, gableEaveHeightIn]);
 
   const shippingPanelWidthById = useMemo(() => {
     const map = new Map<string, number>();
@@ -5005,6 +5131,57 @@ export default function LayoutEditor() {
             </>
           );
         })()}
+      {gableEndWallIds.has(elevationWall.id) && (gableWindowAnchorsByWallId[elevationWall.id]?.length ?? 0) > 0 && (
+        <div className={elevationStyles.beamSection}>
+          <strong>Gable Windows</strong>
+          <p className={elevationStyles.note}>
+            Click a Gable End Panel tile below to turn it into a window (or click a window tile again to turn it back
+            into a plain panel). Width is capped at {panelWidthInRange.maxIn}in (4ft).
+          </p>
+          {gableWindowAnchorsByWallId[elevationWall.id]!.map((w) => (
+            <div key={w.beforeTileCount} className={elevationStyles.beamRow}>
+              <label className={elevationStyles.fieldRow}>
+                Width
+                <input
+                  type="number"
+                  min={windowHeaderWidthInRange.minIn}
+                  max={panelWidthInRange.maxIn}
+                  value={Math.round(w.widthIn)}
+                  onChange={(e) => handleSetGableWindowField(elevationWall.id, w.beforeTileCount, "widthIn", Number(e.target.value))}
+                />
+                in
+              </label>
+              <label className={elevationStyles.fieldRow}>
+                Height (RO)
+                <input
+                  type="number"
+                  min={12}
+                  value={Math.round(w.heightIn ?? standardWindowHeightDefaultIn.value)}
+                  onChange={(e) => handleSetGableWindowField(elevationWall.id, w.beforeTileCount, "heightIn", Number(e.target.value))}
+                />
+                in
+              </label>
+              <label className={elevationStyles.fieldRow}>
+                Sill height
+                <input
+                  type="number"
+                  min={0}
+                  value={Math.round(w.sillHeightIn ?? sillDefaultHeightIn.value)}
+                  onChange={(e) => handleSetGableWindowField(elevationWall.id, w.beforeTileCount, "sillHeightIn", Number(e.target.value))}
+                />
+                in
+              </label>
+              <button
+                type="button"
+                className={elevationStyles.actionButton}
+                onClick={() => handleToggleGableWindow(elevationWall.id, w.beforeTileCount, w.widthIn)}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       {!gableEndWallIds.has(elevationWall.id) && (
         <p className={elevationStyles.trailingNote}>
           Ground-floor run shown for reference (cycle panel types in the Wall tab, not here). Toggle &quot;Add Gable
@@ -5540,6 +5717,33 @@ export default function LayoutEditor() {
           width from the corner, then starts the incline this much above the eave — {gableHeelHeightDefaultIn.note} Set to 0 to disable.
         </p>
 
+        <div role="group" aria-label="Roofline anchor" className={styles.toolbar}>
+          <span style={{ fontSize: 13, marginRight: 4 }}>Roofline starts at:</span>
+          <button
+            type="button"
+            aria-pressed={roofBearingAnchorMode === "truss-heel"}
+            className={roofBearingAnchorMode === "truss-heel" ? styles.toolActive : styles.tool}
+            onClick={() => setRoofBearingAnchorMode("truss-heel")}
+            title="The roofline runs flat for one full panel width from each unclaimed corner, then rises Heel height above the eave — gable panels meet flush with the top of the trusses."
+          >
+            Truss heel height
+          </button>
+          <button
+            type="button"
+            aria-pressed={roofBearingAnchorMode === "panel-depth"}
+            className={roofBearingAnchorMode === "panel-depth" ? styles.toolActive : styles.tool}
+            onClick={() => setRoofBearingAnchorMode("panel-depth")}
+            title="The roofline rises flush at the plain eave height, starting right at the truss seat depth set below (no raised heel) — gable panels meet flush with the trusses' own inside edge."
+          >
+            Truss seat depth
+          </button>
+        </div>
+        <p className={styles.note}>
+          Where an unclaimed (non-shed) end&apos;s roofline slope actually starts lifting off (Tommy: &quot;flush with the top of the
+          trusses or flush with the inside edge of them&quot;) — Truss heel height uses the Heel height setting above; Truss seat depth
+          uses the truss bottom&apos;s own inset below instead, with no raised heel.
+        </p>
+
         <div role="group" aria-label="Truss seat depth" className={styles.toolbar}>
           <span style={{ fontSize: 13, marginRight: 4 }}>Truss seat depth:</span>
           {bearingEdgeReferenceOptions.map((opt) => (
@@ -5899,6 +6103,9 @@ export default function LayoutEditor() {
                   }
                   insetIn={trussPlateInsetIn}
                   heelHeightIn={heelHeightIn}
+                  roofBearingAnchorMode={roofBearingAnchorMode}
+                  gableWindowReservations={gableWindowAnchorsByWallId[elevationWall.id] ?? []}
+                  onToggleGableWindow={(tileOrdinal, naturalWidthIn) => handleToggleGableWindow(elevationWall.id, tileOrdinal, naturalWidthIn)}
                   boxBeamCoverage={boxBeamCoverageByWallId[elevationWall.id]}
                   onChangeBoxBeamCoverage={(coverage) => handleChangeBoxBeamCoverage(elevationWall.id, coverage)}
                   boxBeamSizeId={boxBeamSizeId}
@@ -7098,6 +7305,7 @@ export default function LayoutEditor() {
                       panelTypeById={shippingPanelTypeById}
                       panelWidthById={shippingPanelWidthById}
                       panelHeightById={shippingPanelHeightById}
+                      panelGableEdgeHeightsById={shippingGableEdgeHeightsById}
                       dunnageGapIn={headerSillDunnageGapIn.value}
                       displayName={`Truck ${i + 1} of ${shippingTruckCount}`}
                     />

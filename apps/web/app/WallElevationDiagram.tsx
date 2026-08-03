@@ -10,8 +10,10 @@ import {
   zoneFromSlot,
   type BoxBeamCoverage,
   type GableTiledPanel,
+  type GableWindowReservation,
   type PanelSlot,
   type PanelSlotZone,
+  type RoofBearingAnchorMode,
   type RoofProfilePoint,
   type Wall,
   type WallVerticalBand,
@@ -165,6 +167,20 @@ export interface WallElevationDiagramProps {
    * real heelHeightIn value; 0 disables it. See computeGableTiledRow's own
    * `heelHeightIn` param. */
   heelHeightIn: number;
+  /** Where the roofline slope actually starts lifting off — the project's
+   * real roofBearingAnchorMode value. See computeGableTiledRow's own
+   * RoofBearingAnchorMode doc comment. */
+  roofBearingAnchorMode: RoofBearingAnchorMode;
+  /** This wall's own gable window reservations (page.tsx's own
+   * gableWindowAnchorsByWallId[wall.id]) — see computeGableTiledRow's own
+   * `windowReservations` doc comment. */
+  gableWindowReservations: GableWindowReservation[];
+  /** Click-to-cycle a gable tile plain <-> window (Tommy: "add an option to
+   * click-edit gable end panels to become window gable end panels") —
+   * `tileOrdinal` is "how many non-safety-gap gable tiles precede this
+   * one," `naturalWidthIn` is the clicked tile's own current width (seeds
+   * a brand-new reservation's own default width). */
+  onToggleGableWindow: (tileOrdinal: number, naturalWidthIn: number) => void;
   /** This wall's own Box Beam coverage range, if any (Tommy: "options for
    * being a ring all the way around or just one section of the wall...
    * dragged shorter and snap to the edge of each panel, allowing the
@@ -258,6 +274,9 @@ export default function WallElevationDiagram({
   onChangeGableProfilePositionIn,
   insetIn,
   heelHeightIn,
+  roofBearingAnchorMode,
+  gableWindowReservations,
+  onToggleGableWindow,
   boxBeamCoverage,
   onChangeBoxBeamCoverage,
   boxBeamSizeId,
@@ -382,7 +401,17 @@ export default function WallElevationDiagram({
   // fully flat, never a mixed quadrilateral.
   const capHeightIn = roofBaseHeightIn + maxGablePanelHeightIn;
   const rawGablePanels = hasGableEnd
-    ? computeGableTiledRow(wallWidthIn, roofBaseHeightIn, points, targetPanelWidthIn, insetIn, true, heelHeightIn)
+    ? computeGableTiledRow(
+        wallWidthIn,
+        roofBaseHeightIn,
+        points,
+        targetPanelWidthIn,
+        insetIn,
+        true,
+        heelHeightIn,
+        roofBearingAnchorMode,
+        gableWindowReservations,
+      )
     : [];
   const gablePanels: (GableTiledPanel & { verticalGapIn?: { leftIn: number; rightIn: number } })[] = rawGablePanels.map((p) => {
     const capped = capGableTileHeights(p.leftHeightIn, p.rightHeightIn, capHeightIn);
@@ -1169,31 +1198,128 @@ export default function WallElevationDiagram({
         {/* Gable row — a distinct fill for the one dedicated safety-gap
             tile per segment (Tommy: "a safety gap in the run of gable end
             panels"), same GABLE_SAFETY_GAP_COLOR every real fabrication
-            page would show it in. */}
+            page would show it in. Every non-safety-gap tile is click-to-
+            toggle into a window (Tommy: "add an option to click-edit gable
+            end panels to become window gable end panels") — `ordinal`
+            (running, non-safety-gap tiles only) is the SAME "how many real
+            tiles precede this one" identity computeGableTiledRow's own
+            window-reservation ordinals use, so a click here always targets
+            the exact tile the user sees. A window tile splits into a lower
+            RO+jack-studs+sill (same real geometry/coloring a normal wall
+            window's own 2D rendering already uses) and an upper, smaller
+            gable cap — "just a small version of an inclined panel," not a
+            new shape (Tommy) — anchored at the window's own RO-top instead
+            of the eave. */}
         {hasGableEnd &&
-          gablePanels.map((p, i) => {
-            const points4 = [
-              [xPx(p.xStartIn), yPx(roofBaseHeightIn)],
-              [xPx(p.xEndIn), yPx(roofBaseHeightIn)],
-              [xPx(p.xEndIn), yPx(p.rightHeightIn)],
-              [xPx(p.xStartIn), yPx(p.leftHeightIn)],
-            ]
-              .map(([x, y]) => `${x},${y}`)
-              .join(" ");
-            const lowIn = Math.min(p.leftHeightIn, p.rightHeightIn);
-            const highIn = Math.max(p.leftHeightIn, p.rightHeightIn);
-            const rip = computeGableRipCallout(p.widthIn, lowIn, highIn);
-            return (
-              <g key={i}>
-                <polygon points={points4} fill={p.isSafetyGap ? GABLE_SAFETY_GAP_COLOR : GABLE_COLOR} stroke="#3a5a8a" strokeWidth={1} />
-                {!p.isSafetyGap && (
-                  <text x={xPx((p.xStartIn + p.xEndIn) / 2)} y={yPx(roofBaseHeightIn) - 6} fontSize={8} textAnchor="middle" fill="#333">
-                    {rip.angleDeg.toFixed(1)}&deg; / {rip.lengthIn.toFixed(0)}&quot;
+          (() => {
+            let ordinal = 0;
+            return gablePanels.map((p, i) => {
+              if (p.isSafetyGap) {
+                const points4 = [
+                  [xPx(p.xStartIn), yPx(roofBaseHeightIn)],
+                  [xPx(p.xEndIn), yPx(roofBaseHeightIn)],
+                  [xPx(p.xEndIn), yPx(p.rightHeightIn)],
+                  [xPx(p.xStartIn), yPx(p.leftHeightIn)],
+                ]
+                  .map(([x, y]) => `${x},${y}`)
+                  .join(" ");
+                return <polygon key={i} points={points4} fill={GABLE_SAFETY_GAP_COLOR} stroke="#3a5a8a" strokeWidth={1} />;
+              }
+              const thisOrdinal = ordinal;
+              ordinal++;
+              const toggle = () => onToggleGableWindow(thisOrdinal, p.widthIn);
+              if (!p.isWindow) {
+                const points4 = [
+                  [xPx(p.xStartIn), yPx(roofBaseHeightIn)],
+                  [xPx(p.xEndIn), yPx(roofBaseHeightIn)],
+                  [xPx(p.xEndIn), yPx(p.rightHeightIn)],
+                  [xPx(p.xStartIn), yPx(p.leftHeightIn)],
+                ]
+                  .map(([x, y]) => `${x},${y}`)
+                  .join(" ");
+                const lowIn = Math.min(p.leftHeightIn, p.rightHeightIn);
+                const highIn = Math.max(p.leftHeightIn, p.rightHeightIn);
+                const rip = computeGableRipCallout(p.widthIn, lowIn, highIn);
+                return (
+                  <g key={i} onClick={toggle} style={{ cursor: "pointer" }}>
+                    <polygon points={points4} fill={GABLE_COLOR} stroke="#3a5a8a" strokeWidth={1} />
+                    <text x={xPx((p.xStartIn + p.xEndIn) / 2)} y={yPx(roofBaseHeightIn) - 6} fontSize={8} textAnchor="middle" fill="#333">
+                      {rip.angleDeg.toFixed(1)}&deg; / {rip.lengthIn.toFixed(0)}&quot;
+                    </text>
+                  </g>
+                );
+              }
+              // Window tile — split render.
+              const windowHeightIn = p.windowHeightIn ?? standardWindowHeightDefaultIn.value;
+              const windowSillHeightIn = p.windowSillHeightIn ?? sillDefaultHeightIn.value;
+              const tileMaxLocalRiseIn = Math.max(p.leftHeightIn, p.rightHeightIn) - roofBaseHeightIn;
+              const g = computeOpeningGeometry(
+                false,
+                p.widthIn,
+                Math.max(tileMaxLocalRiseIn, windowSillHeightIn + windowHeightIn + 1),
+                windowSillHeightIn,
+                windowHeightIn,
+                jackStudConfig,
+                targetPanelWidthIn,
+              );
+              const members = buildOpeningAssemblyMembers(p.widthIn, thicknessIn, "window", jackStudConfig, g.sillHeightIn, g.jackStudSpanIn, 0, g.sillHeightIn, g.sillWidthsIn, includeNailer);
+              const jackStudMembers = members.filter((m) => m.role === "jack_stud");
+              const localXToPx = (xIn: number) => xPx(p.xStartIn + xIn);
+              const localYPx = (localHeightIn: number) => yPx(roofBaseHeightIn + localHeightIn);
+              const roGapXPx = localXToPx(g.jackThicknessIn);
+              const roGapWidthPx = localXToPx(p.widthIn - g.jackThicknessIn) - roGapXPx;
+              const roGapTopPx = localYPx(g.roTopZIn);
+              const roGapHeightPx = localYPx(g.sillHeightIn) - roGapTopPx;
+              const sillOffsetsIn = g.sillWidthsIn.reduce<number[]>((acc, w) => [...acc, acc[acc.length - 1]! + w], [g.jackThicknessIn]);
+              // Upper cap — same trapezoid as a plain tile, just floored at
+              // the window's own RO-top (roofBaseHeightIn + g.roTopZIn)
+              // instead of the true eave; clamped to >=0 so an edge the
+              // window already reaches all the way up to renders flush
+              // (zero-height on that side) instead of inverting.
+              const capFloorIn = roofBaseHeightIn + g.roTopZIn;
+              const capLeftIn = Math.max(capFloorIn, p.leftHeightIn);
+              const capRightIn = Math.max(capFloorIn, p.rightHeightIn);
+              const capPoints4 = [
+                [xPx(p.xStartIn), yPx(capFloorIn)],
+                [xPx(p.xEndIn), yPx(capFloorIn)],
+                [xPx(p.xEndIn), yPx(capRightIn)],
+                [xPx(p.xStartIn), yPx(capLeftIn)],
+              ]
+                .map(([x, y]) => `${x},${y}`)
+                .join(" ");
+              const capRip = computeGableRipCallout(p.widthIn, Math.min(capLeftIn, capRightIn) - capFloorIn, Math.max(capLeftIn, capRightIn) - capFloorIn);
+              return (
+                <g key={i} onClick={toggle} style={{ cursor: "pointer" }}>
+                  {g.sillWidthsIn.map((sillWidthIn, sillIdx) => (
+                    <rect
+                      key={sillIdx}
+                      x={localXToPx(sillOffsetsIn[sillIdx]!)}
+                      y={localYPx(g.sillHeightIn)}
+                      width={localXToPx(sillOffsetsIn[sillIdx]! + sillWidthIn) - localXToPx(sillOffsetsIn[sillIdx]!)}
+                      height={Math.max(0, localYPx(0) - localYPx(g.sillHeightIn))}
+                      fill={NAMED_PANEL_TYPE_COLORS.sill}
+                      stroke="#3a6a4a"
+                      strokeWidth={1}
+                    />
+                  ))}
+                  <MemberElevationShapes members={jackStudMembers} xToPx={localXToPx} zToPx={localYPx} />
+                  <rect
+                    x={roGapXPx}
+                    y={roGapTopPx}
+                    width={Math.max(0, roGapWidthPx)}
+                    height={Math.max(0, roGapHeightPx)}
+                    fill="none"
+                    stroke="#6fa0c9"
+                    strokeWidth={1}
+                  />
+                  <polygon points={capPoints4} fill={GABLE_COLOR} stroke="#3a5a8a" strokeWidth={1} />
+                  <text x={xPx((p.xStartIn + p.xEndIn) / 2)} y={yPx(capFloorIn) - 6} fontSize={8} textAnchor="middle" fill="#333">
+                    {capRip.angleDeg.toFixed(1)}&deg; / {capRip.lengthIn.toFixed(0)}&quot;
                   </text>
-                )}
-              </g>
-            );
-          })}
+                </g>
+              );
+            });
+          })()}
 
         {/* Per-side pitch summary — one label centered above each side's
             own full run (left of the peak, right of it), showing the

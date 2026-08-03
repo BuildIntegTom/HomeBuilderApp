@@ -10,6 +10,39 @@ export interface GableTiledPanel {
    * got absorbed into (see GABLE_SAFETY_GAP_WIDTH_IN) — never a real,
    * fabricated Gable End Panel. */
   isSafetyGap?: boolean;
+  /** True for a tile reserved by a `GableWindowReservation` (Tommy: "add an
+   * option to click-edit gable end panels to become window gable end
+   * panels") — this tile's own `leftHeightIn`/`rightHeightIn` are still the
+   * tile's full true roofline edges (its own local floor is flat at the
+   * eave, same as any other tile); a caller splits it into a lower window
+   * assembly (jack studs + sill, up to `windowHeightIn` above
+   * `windowSillHeightIn`) and an upper gable cap (a second, smaller
+   * buildGablePanelMembers call, anchored at the window's own RO-top
+   * instead of the eave). Never set alongside `isSafetyGap`. */
+  isWindow?: boolean;
+  /** Only set when `isWindow` — this window's own Rough Opening height
+   * (sill-top to the underside of the gable cap above it). */
+  windowHeightIn?: number;
+  /** Only set when `isWindow` — this window's own sill height (floor/eave
+   * to Rough Opening bottom). */
+  windowSillHeightIn?: number;
+}
+
+/** A gable tile reserved for a window (Tommy: "add an option to click-edit
+ * gable end panels to become window gable end panels, similarly splitting
+ * into two distinct panels") — anchored the same way `OpeningAnchor` in
+ * tiling.ts anchors a wall-slot opening: "how many non-safety-gap gable
+ * tiles precede this reservation," counted globally left-to-right across
+ * the WHOLE wall (every segment), not per-segment. `heightIn`/
+ * `sillHeightIn` ride along so the tiler can stamp them onto the resulting
+ * tile (see `GableTiledPanel.windowHeightIn`/`windowSillHeightIn`) — the
+ * tiler itself never reads them, purely a pass-through so a caller doesn't
+ * need a separate post-hoc ordinal re-match to reattach them. */
+export interface GableWindowReservation {
+  beforeTileCount: number;
+  widthIn: number;
+  heightIn?: number;
+  sillHeightIn?: number;
 }
 
 /** Tommy: "if the peak of gable end panels is less than 2', then snap the
@@ -51,6 +84,20 @@ interface RoofAnchor {
   xIn: number;
   heightIn: number;
 }
+
+/** Where an unclaimed (non-shed-snapped) end's roofline slope actually
+ * starts lifting off (Tommy: "the slope needs to be based on exactly where
+ * we expect the truss to lift off at - either at the panel depth OR... the
+ * truss heel height... flush with the top of the trusses or flush with the
+ * inside edge of them"). `"truss-heel"` is today's pre-existing behavior —
+ * a flat run for one full `targetPanelWidthIn` panel, then the slope starts
+ * `heelHeightIn` above the eave (an energy-heel truss seat). `"panel-depth"`
+ * is new — the slope starts flush at the eave height itself, but inset by
+ * `insetIn` (the same truss-bottom/panel-material inset `trussPlateInsetIn`
+ * already trims panel material by) instead of a full panel width, and with
+ * no height bump — modeling a truss that lifts off right at its own seat
+ * depth rather than riding a raised heel. */
+export type RoofBearingAnchorMode = "panel-depth" | "truss-heel";
 
 // A degenerate-input safety floor only (e.g. 2 profile points dragged to
 // the same spot) — not a meaningful design constraint, real usage should
@@ -96,6 +143,8 @@ function resolveAnchors(
   points: RoofProfilePoint[],
   targetPanelWidthIn: number,
   heelHeightIn: number,
+  anchorMode: RoofBearingAnchorMode,
+  insetIn: number,
 ): ResolvedAnchors {
   let leftAnchor: RoofAnchor = { xIn: 0, heightIn: eaveHeightIn };
   let rightAnchor: RoofAnchor = { xIn: wallWidthIn, heightIn: eaveHeightIn };
@@ -133,19 +182,43 @@ function resolveAnchors(
   // if it wouldn't fit (a wall narrower than the seat(s) it would need) —
   // falls back to today's flat-corner behavior rather than producing a
   // squeezed/negative-width seat.
-  if (heelHeightIn > 0) {
+  if (anchorMode === "truss-heel") {
+    if (heelHeightIn > 0) {
+      const leftEligible = !leftClaimed;
+      const rightEligible = !rightClaimed;
+      const seatWidthNeededIn = (leftEligible ? targetPanelWidthIn : 0) + (rightEligible ? targetPanelWidthIn : 0);
+      const heelFits = seatWidthNeededIn > 0 && seatWidthNeededIn <= wallWidthIn;
+      if (heelFits) {
+        if (leftEligible) leftAnchor = { xIn: targetPanelWidthIn, heightIn: eaveHeightIn + heelHeightIn };
+        if (rightEligible) rightAnchor = { xIn: wallWidthIn - targetPanelWidthIn, heightIn: eaveHeightIn + heelHeightIn };
+        // A real point that would otherwise fall inside a now-active seat
+        // zone (e.g. dragged past the shed-snap threshold but still inside
+        // the seat) gets pushed out to that zone's own boundary — same
+        // "clamp instead of collide" treatment as the already-claimed-end
+        // case above.
+        for (const pt of internal) {
+          if (leftEligible && pt.xIn < leftAnchor.xIn) pt.xIn = leftAnchor.xIn;
+          if (rightEligible && pt.xIn > rightAnchor.xIn) pt.xIn = rightAnchor.xIn;
+        }
+      }
+    }
+  } else {
+    // "panel-depth": same "does the seat fit" shape as truss-heel above,
+    // but the seat is `insetIn` wide (the truss bottom's own real seat
+    // depth, mirrors trussPlateInsetIn) instead of a full target panel
+    // width, and the anchor stays at the plain eave height — no riser,
+    // since the truss lifts off flush with its own seat rather than above
+    // a raised heel. Killed globally (same as the material inset's own
+    // shed-kill rule in computeGableTiledRow) once either end has snapped
+    // to a shed, not just locally on the snapped side.
+    const anchorInsetIn = leftClaimed || rightClaimed ? 0 : insetIn;
     const leftEligible = !leftClaimed;
     const rightEligible = !rightClaimed;
-    const seatWidthNeededIn = (leftEligible ? targetPanelWidthIn : 0) + (rightEligible ? targetPanelWidthIn : 0);
-    const heelFits = seatWidthNeededIn > 0 && seatWidthNeededIn <= wallWidthIn;
-    if (heelFits) {
-      if (leftEligible) leftAnchor = { xIn: targetPanelWidthIn, heightIn: eaveHeightIn + heelHeightIn };
-      if (rightEligible) rightAnchor = { xIn: wallWidthIn - targetPanelWidthIn, heightIn: eaveHeightIn + heelHeightIn };
-      // A real point that would otherwise fall inside a now-active seat
-      // zone (e.g. dragged past the shed-snap threshold but still inside
-      // the seat) gets pushed out to that zone's own boundary — same
-      // "clamp instead of collide" treatment as the already-claimed-end
-      // case above.
+    const seatWidthNeededIn = (leftEligible ? anchorInsetIn : 0) + (rightEligible ? anchorInsetIn : 0);
+    const insetFits = anchorInsetIn > 0 && seatWidthNeededIn <= wallWidthIn;
+    if (insetFits) {
+      if (leftEligible) leftAnchor = { xIn: anchorInsetIn, heightIn: eaveHeightIn };
+      if (rightEligible) rightAnchor = { xIn: wallWidthIn - anchorInsetIn, heightIn: eaveHeightIn };
       for (const pt of internal) {
         if (leftEligible && pt.xIn < leftAnchor.xIn) pt.xIn = leftAnchor.xIn;
         if (rightEligible && pt.xIn > rightAnchor.xIn) pt.xIn = rightAnchor.xIn;
@@ -274,6 +347,71 @@ function tileRun(
 }
 
 /**
+ * Tiles one segment's own run exactly like `tileRun`/`tileEvenly` already
+ * do, but with 0+ window reservations (already localized to this segment's
+ * own ordinal numbering — see `computeGableTiledRow`'s own global-to-local
+ * mapping) carved out first — mirrors `retileWithOpenings`'s own shape in
+ * tiling.ts: subtract every reservation's width from the plain budget,
+ * tile whatever's left exactly as before, then splice each reservation
+ * back in at its own ordinal position (walking `localWindows` in order,
+ * inserting one right before the plain tile that would otherwise be the
+ * Nth real, non-safety-gap tile). A plain tile's own position/edge-heights
+ * are recomputed from a running cursor rather than reused as-is, since
+ * `tileRun`'s own internal budget math was run against the SHRUNK range
+ * (`endIn - windowsTotalWidthIn`), not the segment's true absolute extent.
+ * A no-reservations call is byte-identical to calling `tileRun`/`tileEvenly`
+ * directly (same fallback either way), so every pre-existing caller stays
+ * unaffected.
+ */
+function tileRunWithWindows(
+  startIn: number,
+  endIn: number,
+  anchors: RoofAnchor[],
+  targetPanelWidthIn: number,
+  gapEnd: "start" | "end",
+  includeSafetyGap: boolean,
+  localWindows: { ordinal: number; widthIn: number; heightIn?: number; sillHeightIn?: number }[],
+): GableTiledPanel[] {
+  const plainTile = (a: number, b: number, anchors: RoofAnchor[]) =>
+    includeSafetyGap ? tileRun(a, b, anchors, targetPanelWidthIn, gapEnd) : tileEvenly(a, b, anchors, targetPanelWidthIn);
+  if (localWindows.length === 0) return plainTile(startIn, endIn, anchors);
+
+  const windowsTotalWidthIn = localWindows.reduce((sum, w) => sum + w.widthIn, 0);
+  const plainBudgetIn = Math.max(0, endIn - startIn - windowsTotalWidthIn);
+  const plainTiles = plainTile(startIn, startIn + plainBudgetIn, anchors);
+
+  const sortedWindows = [...localWindows].sort((a, b) => a.ordinal - b.ordinal);
+  const result: GableTiledPanel[] = [];
+  let realTileCount = 0; // non-safety-gap tiles placed so far
+  let windowIdx = 0;
+  let cursorIn = startIn;
+  const pushWindow = (w: (typeof sortedWindows)[number]) => {
+    result.push({
+      ...panel(cursorIn, cursorIn + w.widthIn, anchors),
+      isWindow: true,
+      ...(w.heightIn !== undefined && { windowHeightIn: w.heightIn }),
+      ...(w.sillHeightIn !== undefined && { windowSillHeightIn: w.sillHeightIn }),
+    });
+    cursorIn += w.widthIn;
+  };
+  for (const tile of plainTiles) {
+    while (windowIdx < sortedWindows.length && sortedWindows[windowIdx]!.ordinal <= realTileCount) {
+      pushWindow(sortedWindows[windowIdx]!);
+      windowIdx++;
+    }
+    const widthIn = tile.xEndIn - tile.xStartIn;
+    result.push({ ...panel(cursorIn, cursorIn + widthIn, anchors, tile.isSafetyGap) });
+    cursorIn += widthIn;
+    if (!tile.isSafetyGap) realTileCount++;
+  }
+  while (windowIdx < sortedWindows.length) {
+    pushWindow(sortedWindows[windowIdx]!);
+    windowIdx++;
+  }
+  return result;
+}
+
+/**
  * Tiles a wall's width into evenly-sized panels reading their heights off a
  * gable roofline defined by 0-2 real profile points (Tommy: a "peaked"
  * profile has 1 point — the ridge; a "flat-topped" profile has 2
@@ -333,7 +471,30 @@ function tileRun(
  * point, `heelHeightIn` above the eave. See `resolveAnchors`'s own doc
  * comment for the exact mechanics, including the narrow-wall fallback and
  * the seat-zone point-clamp. Skipped entirely on a shed-snapped side, and
- * on a wall too narrow to fit the seat(s) it would need.
+ * on a wall too narrow to fit the seat(s) it would need. Only used when
+ * `anchorMode` is `"truss-heel"` (the default, matching this function's
+ * pre-existing behavior) — under `"panel-depth"` mode, the slope instead
+ * starts flush at plain `eaveHeightIn`, inset by `insetIn` rather than a
+ * full panel width (Tommy: "the slope needs to be based on exactly where we
+ * expect the truss to lift off at - either at the panel depth OR... the
+ * truss heel height" — see `RoofBearingAnchorMode`/`resolveAnchors`).
+ *
+ * `windowReservations` (default none — Tommy: "add an option to click-edit
+ * gable end panels to become window gable end panels") carve out 0+ fixed-
+ * width window slots at their own anchored ordinal position, exactly the
+ * way `retileWithOpenings` in tiling.ts reserves a wall-slot opening —
+ * every OTHER tile re-flows around them, the wall's total width still adds
+ * up exactly. `beforeTileCount` is counted globally, left to right across
+ * every segment (rise, flat, fall) together, since that's how a user reads
+ * "the Nth tile" when clicking one on screen — resolved here via a 2-pass
+ * approach: first tile every segment with no windows at all (today's exact
+ * behavior) purely to learn each segment's own natural real-tile count,
+ * then walk the running global-ordinal offset to localize each reservation
+ * to whichever segment (and local ordinal within it) it actually falls in,
+ * then re-tile each segment for real via `tileRunWithWindows`. A
+ * reservation past the very last segment's own natural count clamps onto
+ * that segment's own tail instead of silently vanishing (mirrors
+ * `retileWithOpenings`'s own "extras append past the plain middle" case).
  */
 export function computeGableTiledRow(
   wallWidthIn: number,
@@ -343,8 +504,10 @@ export function computeGableTiledRow(
   insetIn = 0,
   includeSafetyGap = true,
   heelHeightIn = 0,
+  anchorMode: RoofBearingAnchorMode = "truss-heel",
+  windowReservations: GableWindowReservation[] = [],
 ): GableTiledPanel[] {
-  const { anchors, leftSnapped, rightSnapped } = resolveAnchors(wallWidthIn, eaveHeightIn, points, targetPanelWidthIn, heelHeightIn);
+  const { anchors, leftSnapped, rightSnapped } = resolveAnchors(wallWidthIn, eaveHeightIn, points, targetPanelWidthIn, heelHeightIn, anchorMode, insetIn);
 
   // A shed-snap anywhere kills the inset globally, not just on the snapped
   // side — matches the pre-existing single-peak behavior exactly (Tommy:
@@ -357,14 +520,55 @@ export function computeGableTiledRow(
   const usableStartIn = effectiveInsetIn;
   const usableEndIn = wallWidthIn - effectiveInsetIn;
 
-  const panels: GableTiledPanel[] = [];
+  const segments: { segStartIn: number; segEndIn: number; gapEnd: "start" | "end" }[] = [];
   for (let i = 0; i < anchors.length - 1; i++) {
-    const segStartIn = Math.max(anchors[i]!.xIn, usableStartIn);
-    const segEndIn = Math.min(anchors[i + 1]!.xIn, usableEndIn);
-    const gapEnd: "start" | "end" = i === 0 ? "start" : i === anchors.length - 2 ? "end" : "start";
-    panels.push(
-      ...(includeSafetyGap ? tileRun(segStartIn, segEndIn, anchors, targetPanelWidthIn, gapEnd) : tileEvenly(segStartIn, segEndIn, anchors, targetPanelWidthIn)),
-    );
+    segments.push({
+      segStartIn: Math.max(anchors[i]!.xIn, usableStartIn),
+      segEndIn: Math.min(anchors[i + 1]!.xIn, usableEndIn),
+      gapEnd: i === 0 ? "start" : i === anchors.length - 2 ? "end" : "start",
+    });
+  }
+
+  if (windowReservations.length === 0) {
+    const panels: GableTiledPanel[] = [];
+    for (const seg of segments) {
+      panels.push(
+        ...(includeSafetyGap
+          ? tileRun(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd)
+          : tileEvenly(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn)),
+      );
+    }
+    return panels;
+  }
+
+  const naturalCounts = segments.map(
+    (seg) =>
+      (includeSafetyGap
+        ? tileRun(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd)
+        : tileEvenly(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn)
+      ).filter((p) => !p.isSafetyGap).length,
+  );
+  const segmentWindows: { ordinal: number; widthIn: number; heightIn?: number; sillHeightIn?: number }[][] = segments.map(() => []);
+  let globalBase = 0;
+  for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+    for (const w of windowReservations) {
+      if (w.beforeTileCount >= globalBase && w.beforeTileCount < globalBase + naturalCounts[segIdx]!) {
+        segmentWindows[segIdx]!.push({ ordinal: w.beforeTileCount - globalBase, widthIn: w.widthIn, heightIn: w.heightIn, sillHeightIn: w.sillHeightIn });
+      }
+    }
+    globalBase += naturalCounts[segIdx]!;
+  }
+  const lastSegIdx = segments.length - 1;
+  for (const w of windowReservations) {
+    if (w.beforeTileCount >= globalBase) {
+      segmentWindows[lastSegIdx]!.push({ ordinal: Infinity, widthIn: w.widthIn, heightIn: w.heightIn, sillHeightIn: w.sillHeightIn });
+    }
+  }
+
+  const panels: GableTiledPanel[] = [];
+  for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+    const seg = segments[segIdx]!;
+    panels.push(...tileRunWithWindows(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd, includeSafetyGap, segmentWindows[segIdx]!));
   }
   return panels;
 }

@@ -1,4 +1,12 @@
-import type { BoxBeamCoverage, Footprint, PanelSlot, Story, TrussDoublingStrategy } from "@building-integrity/geometry";
+import type {
+  BoxBeamCoverage,
+  Footprint,
+  GableWindowReservation,
+  PanelSlot,
+  RoofBearingAnchorMode,
+  Story,
+  TrussDoublingStrategy,
+} from "@building-integrity/geometry";
 import type { Season } from "@building-integrity/calc-engine";
 import {
   BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
@@ -153,6 +161,15 @@ export interface ProjectState {
    * absent-entry convention had (an explicit `null` instead of an absent
    * array index, since JSON has no `undefined`). */
   gableProfilePositionsInByWallId: Record<string, (number | null)[]>;
+  /** Gable end window panels (Tommy: "add an option to click-edit gable end
+   * panels to become window gable end panels") — per-wall reservation list,
+   * anchored the same way an opening on a normal wall is (see
+   * computeGableTiledRow's own GableWindowReservation doc comment).
+   * Optional (not in REQUIRED_STATE_KEYS) so older project files, which
+   * predate this feature, still load — see parseProjectFile's own
+   * defaulting to an empty record (no gable windows), matching every such
+   * file's pre-existing behavior exactly. */
+  gableWindowAnchorsByWallId?: Record<string, GableWindowReservation[]>;
   /** A single gable panel can't be fabricated taller than
    * GABLE_PANEL_MAX_HEIGHT_IN (packages/panel-catalog) — this is a
    * user-tunable threshold AT OR BELOW that real physical ceiling; the
@@ -165,6 +182,13 @@ export interface ProjectState {
    * (adjustable)") — 0 disables it. See computeGableTiledRow's own
    * `heelHeightIn` param. */
   heelHeightIn: number;
+  /** Where the gable roofline's slope actually starts lifting off — see
+   * computeGableTiledRow's/resolveAnchors' own RoofBearingAnchorMode doc
+   * comment. Optional (not in REQUIRED_STATE_KEYS) so older project files,
+   * which predate this toggle, still load — see parseProjectFile's own
+   * defaulting to `"truss-heel"`, matching every such file's pre-existing
+   * behavior exactly. */
+  roofBearingAnchorMode?: RoofBearingAnchorMode;
   /** Which walls (and exactly which of their own 2nd-story slots) have a
    * Box Beam rather than a Truss Plate (Tommy: "options for being a ring
    * all the way around or just one section of the wall... dragged shorter
@@ -421,8 +445,16 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       roofProfileType: state.roofProfileType as "peaked" | "flat-top",
       roofProfilePointHeightsFt: state.roofProfilePointHeightsFt as number[],
       gableProfilePositionsInByWallId: state.gableProfilePositionsInByWallId as Record<string, (number | null)[]>,
+      // Optional — absent on any file saved before this feature existed, so
+      // every one defaults to no gable windows (the pre-existing behavior
+      // every such file was actually built with).
+      gableWindowAnchorsByWallId: (state.gableWindowAnchorsByWallId as Record<string, GableWindowReservation[]> | undefined) ?? {},
       maxGablePanelHeightIn: state.maxGablePanelHeightIn as number,
       heelHeightIn: state.heelHeightIn as number,
+      // Optional — absent on any file saved before this toggle existed, so
+      // every one defaults to "truss-heel" (the pre-existing behavior every
+      // such file was actually built with).
+      roofBearingAnchorMode: (state.roofBearingAnchorMode as RoofBearingAnchorMode | undefined) ?? "truss-heel",
       boxBeamCoverageByWallId: state.boxBeamCoverageByWallId as Record<string, BoxBeamCoverage>,
       boxBeamSizeId: (state.boxBeamSizeId as BoxBeamSizeId) ?? BOX_BEAM_SIZE_DEFAULT,
       // Optional — absent on any file saved before the truss layout editor

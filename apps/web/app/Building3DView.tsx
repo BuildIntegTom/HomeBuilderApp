@@ -643,6 +643,14 @@ interface Building3DViewProps {
       rightEdgeHeightIn: number;
       isSafetyGap?: boolean;
       verticalGapIn?: { leftIn: number; rightIn: number };
+      /** This tile has been split into a window (Tommy: "add an option to
+       * click-edit gable end panels to become window gable end panels...
+       * dont forget jack studs") — rendered as jack studs + sill below,
+       * and a reduced-height Gable End Panel cap above the window's own
+       * RO-top instead of one full-height tile. */
+      isWindow?: boolean;
+      windowHeightIn?: number;
+      windowSillHeightIn?: number;
     }[]
   >;
   /** Whether the Roof system is in scope at all (page.tsx's own
@@ -1040,9 +1048,56 @@ export default function Building3DView({
         const leftLocalIn = tile.leftEdgeHeightIn - gableEaveHeightIn;
         const rightLocalIn = tile.rightEdgeHeightIn - gableEaveHeightIn;
         const tallerLocalIn = Math.max(leftLocalIn, rightLocalIn);
-        const members = tile.isSafetyGap
-          ? buildSafetyGapMembers(thicknessIn, tallerLocalIn)
-          : buildGablePanelMembers(tile.widthIn, thicknessIn, leftLocalIn, rightLocalIn, includeNailer);
+        let members: PanelMember[];
+        if (tile.isWindow) {
+          // Gable window (Tommy: "add an option to click-edit gable end
+          // panels to become window gable end panels... this is just a
+          // small version of an inclined panel that should follow all of
+          // inclined panel dynamics. the only difference is that it uses
+          // the top of the RO below it as its slot. dont forget jack
+          // studs") — 2 pieces, both reused builders, no new shapes:
+          // jack studs + sill from buildOpeningAssemblyMembers (its own
+          // header discarded — the upper gable cap takes that structural
+          // role instead), plus a second, smaller buildGablePanelMembers
+          // call for the cap, shifted up by the window's own RO-top.
+          const windowHeightIn = tile.windowHeightIn ?? standardWindowHeightDefaultIn.value;
+          const windowSillHeightIn = tile.windowSillHeightIn ?? sillDefaultHeightIn.value;
+          const g = computeOpeningGeometry(
+            false,
+            tile.widthIn,
+            Math.max(tallerLocalIn, windowSillHeightIn + windowHeightIn + 1),
+            windowSillHeightIn,
+            windowHeightIn,
+            jackStudConfig,
+            standardWidthIn,
+          );
+          const lowerMembers = buildOpeningAssemblyMembers(
+            tile.widthIn,
+            thicknessIn,
+            "window",
+            jackStudConfig,
+            g.sillHeightIn,
+            g.jackStudSpanIn,
+            0,
+            g.sillHeightIn,
+            g.sillWidthsIn,
+            includeNailer,
+          ).filter((m) => !m.memberId.startsWith("header_"));
+          // Clamped so a window tall enough to reach one edge's own true
+          // roofline gets zero-height (flush) gable material on that side
+          // instead of an inverted/negative-height panel.
+          const capLeftLocalIn = Math.max(0, leftLocalIn - g.roTopZIn);
+          const capRightLocalIn = Math.max(0, rightLocalIn - g.roTopZIn);
+          const capMembers = buildGablePanelMembers(tile.widthIn, thicknessIn, capLeftLocalIn, capRightLocalIn, includeNailer).map((m) => ({
+            ...m,
+            position: { ...m.position, zIn: m.position.zIn + g.roTopZIn },
+          }));
+          members = [...lowerMembers, ...capMembers];
+        } else {
+          members = tile.isSafetyGap
+            ? buildSafetyGapMembers(thicknessIn, tallerLocalIn)
+            : buildGablePanelMembers(tile.widthIn, thicknessIn, leftLocalIn, rightLocalIn, includeNailer);
+        }
         // A vertical safety-gap filler (Tommy: "an ability to put a safety
         // gap inbetween the truss bottom and the gable end top") stacks
         // directly above this (now always flat, when a gap exists) tile's
@@ -1074,7 +1129,7 @@ export default function Building3DView({
       });
     }
     return result.map((r) => ({ ...r, anchorYFt: gableBaseYFt }));
-  }, [footprint, gableTilesByWallId, roofBaseHeightIn, roofEnabled, sharedRoofBearingHeightIn, thicknessIn, includeNailer]);
+  }, [footprint, gableTilesByWallId, roofBaseHeightIn, roofEnabled, sharedRoofBearingHeightIn, thicknessIn, includeNailer, jackStudConfig, standardWidthIn]);
 
   // 1-3 real roof-bearing (truss plate/box beam) segments per wall (see
   // computeRoofBearingSegments) — a wall with partial Box Beam coverage
