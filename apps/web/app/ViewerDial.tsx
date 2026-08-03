@@ -25,7 +25,7 @@ function stopLabel(stop: ViewerStop): string {
     case "3d-boxes":
       return "3D Boxes";
     case "3d-wraps":
-      return "3D Wraps";
+      return "Membranes";
   }
 }
 
@@ -43,9 +43,12 @@ export interface ViewerDialProps {
  * of the old single click-to-cycle button. Its cycle isn't fixed — the
  * caller supplies `stops`, which is 2D Floor Plan, then one "elevation"
  * stop per wall in the footprint (compass order, same as the wall list
- * already uses), then 3D Framed, then 3D Boxes, then 3D Wraps (Tommy: "3d
+ * already uses), then 3D Framed, then 3D Boxes, then Membranes (Tommy: "3d
  * model selected after box mode and is everything box mode is with a few
- * changes: panels not labeled, and the 3D models of the wraps appear").
+ * changes: panels not labeled, and the 3D models of the wraps appear" —
+ * labeled "3D Wraps" originally, renamed to "Membranes" per Tommy's later
+ * request; the internal `"3d-wraps"` stop kind is unchanged, just the
+ * user-facing label).
  * Landing on any stop swaps out the whole canvas area, same as the old
  * plan/3d toggle already did.
  */
@@ -67,7 +70,7 @@ export default function ViewerDial({ stops, value, onChange, disabled }: ViewerD
       className={styles.dial}
       role="group"
       aria-label="View mode"
-      title="Scroll or use the arrows to switch between 2D Floor Plan, each wall's elevation view, 3D Framed, 3D Boxes, and 3D Wraps"
+      title="Scroll or use the arrows to switch between 2D Floor Plan, each wall's elevation view, 3D Framed, 3D Boxes, and Membranes"
       onWheel={(e) => {
         if (disabled) return;
         e.preventDefault();

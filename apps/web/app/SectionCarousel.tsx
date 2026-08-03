@@ -38,9 +38,28 @@ export default function SectionCarousel({ sections, openIds, onToggle, header, f
         // outline") — every real cut-list page uses this "shop"/"shop-fab-"
         // id prefix (see relevantDetailPages in page.tsx), so the prefix
         // alone reliably distinguishes them from every other section card.
-        const isShopFab = s.id.startsWith("shop");
+        // "detail-box-beam" is its own single reference page (not grouped
+        // per-instance like the "shop-fab-*" ones), but Tommy still wants
+        // it treated as a fabrication page color-wise, so it's allowlisted
+        // alongside the prefix check.
+        const isShopFab = s.id.startsWith("shop") || s.id === "detail-box-beam";
+        // Rough Opening reference pages (Tommy: "recolor the door and
+        // window rough opening page buttons... to be light blue with blue
+        // border") — the 2 fixed ids relevantDetailPages ever pushes for
+        // these.
+        const isRoughOpening = s.id === "detail-door-ro" || s.id === "detail-window-ro";
         const isOpen = openIds.has(s.id);
-        const className = isShopFab ? (isOpen ? styles.cardShopFabActive : styles.cardShopFab) : isOpen ? styles.cardActive : styles.card;
+        const className = isShopFab
+          ? isOpen
+            ? styles.cardShopFabActive
+            : styles.cardShopFab
+          : isRoughOpening
+            ? isOpen
+              ? styles.cardRoughOpeningActive
+              : styles.cardRoughOpening
+            : isOpen
+              ? styles.cardActive
+              : styles.card;
         return (
           <button key={s.id} type="button" title={s.label} aria-pressed={isOpen} className={className} onClick={() => onToggle(s.id)}>
             {s.label}

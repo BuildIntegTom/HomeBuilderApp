@@ -111,6 +111,32 @@
   border-color: #5c2d78;
 }
 
+/* Rough Opening reference pages (Tommy: "recolor the door and window rough
+   opening page buttons in the right bar to be light blue with blue
+   boarder") — visually distinct the same way shop-fab pages are, just its
+   own color pair. */
+.cardRoughOpening,
+.cardRoughOpeningActive {
+  flex: 0 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+  background: #d9ecf9;
+  border: 2px solid #2f6fb8;
+  border-radius: 12px;
+  color: #1c3d5a;
+}
+
+.cardRoughOpeningActive {
+  background: #a8cdec;
+  border-color: #1c4f85;
+}
+
 @media (max-width: 600px) {
   .carousel {
     width: 88px;
@@ -121,7 +147,9 @@
   .card,
   .cardActive,
   .cardShopFab,
-  .cardShopFabActive {
+  .cardShopFabActive,
+  .cardRoughOpening,
+  .cardRoughOpeningActive {
     padding: 6px 5px;
     font-size: 10px;
     border-radius: 8px;

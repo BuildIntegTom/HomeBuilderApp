@@ -32,6 +32,7 @@ import {
 } from "@building-integrity/panel-catalog";
 import { computeOpeningGeometry } from "./openingGeometry";
 import { MemberElevationShapes } from "./MemberElevationShapes";
+import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { capGableTileHeights, GABLE_SHED_SNAP_THRESHOLD_IN, matchStandardPitchIn12, resolveGableProfilePoints } from "./gableProfilePoints";
 import {
   LINTEL_MIN_HEIGHT_IN,
@@ -773,6 +774,14 @@ export default function WallElevationDiagram({
             g.sillWidthsIn,
             includeNailer,
           );
+          // Header/sill render as flat colored boxes (Tommy: "change the 2d
+          // rendering of headers and sills to be 2d versions of their 3d
+          // counterparts: just boxes that are green and orange") — the same
+          // colors NAMED_PANEL_TYPE_COLORS already uses for them in the 3D
+          // simplified box view. Jack studs keep their real per-member
+          // MemberElevationShapes rendering (unaffected — filtered out of
+          // `members` here since header/sill no longer go through it).
+          const jackStudMembers = members.filter((m) => m.role === "jack_stud");
           const localXToPx = (xIn: number) => xPx(x0 + xIn);
           // The actual glazed opening — open, not filled by any member,
           // matching the 3D view, inset between the two jack studs.
@@ -780,13 +789,41 @@ export default function WallElevationDiagram({
           const roGapWidthPx = localXToPx(slot.widthIn - g.jackThicknessIn) - roGapXPx;
           const roGapTopPx = localYPx(g.roTopZIn);
           const roGapHeightPx = localYPx(g.sillHeightIn) - roGapTopPx;
+          // Each sill tile sits side by side, inset from the slot's own
+          // edges by one jack stud's thickness (same run computeSillRunWidths
+          // itself tiles), left to right.
+          const sillOffsetsIn = g.sillWidthsIn.reduce<number[]>(
+            (acc, w) => [...acc, acc[acc.length - 1]! + w],
+            [g.jackThicknessIn],
+          );
           elements.push(
             <g
               key={`${story}-${bandIndex}-${i}`}
               onClick={() => onToggleOpening(story, wall.id, i, zoneIndexForClick)}
               style={{ cursor: "pointer" }}
             >
-              <MemberElevationShapes members={members} xToPx={localXToPx} zToPx={localYPx} />
+              <rect
+                x={xPx(x0)}
+                y={localYPx(rowWallHeightIn)}
+                width={(x1 - x0) * scaleX}
+                height={Math.max(0, localYPx(g.roTopZIn) - localYPx(rowWallHeightIn))}
+                fill={NAMED_PANEL_TYPE_COLORS.header}
+                stroke="#8a6a3a"
+                strokeWidth={1}
+              />
+              {g.sillWidthsIn.map((sillWidthIn, sillIdx) => (
+                <rect
+                  key={sillIdx}
+                  x={localXToPx(sillOffsetsIn[sillIdx]!)}
+                  y={localYPx(g.sillHeightIn)}
+                  width={localXToPx(sillOffsetsIn[sillIdx]! + sillWidthIn) - localXToPx(sillOffsetsIn[sillIdx]!)}
+                  height={Math.max(0, localYPx(0) - localYPx(g.sillHeightIn))}
+                  fill={NAMED_PANEL_TYPE_COLORS.sill}
+                  stroke="#3a6a4a"
+                  strokeWidth={1}
+                />
+              ))}
+              <MemberElevationShapes members={jackStudMembers} xToPx={localXToPx} zToPx={localYPx} />
               <rect
                 x={roGapXPx}
                 y={roGapTopPx}

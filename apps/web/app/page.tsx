@@ -3755,6 +3755,22 @@ export default function LayoutEditor() {
         }
       }
     }
+    // Mid-Wall Bond Beam Shop Fabrication pages — independent of
+    // roofEnabled (a beam can exist on either story regardless of the roof
+    // system), placed here so every non-panel fabricator page (roof-
+    // bearing + mid-wall) clusters together, ahead of the per-panel-type
+    // entries further down (Tommy: "the other fabricator pages, lets make
+    // these non-panel fabricator pages appear at the top of the fabricator
+    // list").
+    if (wallsEnabled && role !== "public") {
+      for (const group of midWallBondBeamFabricationGroups) {
+        const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Web Braced Lintel";
+        pages.push({
+          id: `shop-fab-${group.uniqueKey}`,
+          label: `Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
+        });
+      }
+    }
     // Box Beam's own Detail Guide page — the same assembly whether it's a
     // roofline roof-bearing member (2-story only, roof concern) or a
     // Mid-Wall Bond Beam (either story, wall concern) — so it's gated on
@@ -3807,13 +3823,6 @@ export default function LayoutEditor() {
             label: `Panel Fabrication: ${label} ${group.widthIn}in (${group.instances.length} copies)`,
           });
         }
-        for (const group of midWallBondBeamFabricationGroups) {
-          const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Web Braced Lintel";
-          pages.push({
-            id: `shop-fab-${group.uniqueKey}`,
-            label: `Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
-          });
-        }
       }
     }
     return pages;
@@ -3844,9 +3853,6 @@ export default function LayoutEditor() {
     bracingStyle,
   ]);
 
-  const editorToolsLabel =
-    editorTab === "wall" ? "Wall Tools" : editorTab === "foundation" ? "Foundation Tools" : editorTab === "floor" ? "Floor Tools" : "Roof Tools";
-
   // Tommy: "are there any features or text that i may be missing?" — a
   // short per-tab pointer, mainly toward controls that live outside this
   // sidebar (Foundation/Floor/Roof keep almost all of their real inputs in
@@ -3854,9 +3860,12 @@ export default function LayoutEditor() {
   // all) — see PageFeaturesButton's own doc comment.
   const pageFeatures: Record<EditorTab, string[]> = {
     wall: [
-      "Draw: Rectangle or Octagon, then click-drag on the canvas. Add Second Story / Add Bump-out for more complex shapes.",
-      "Edit mode: click a panel to cycle its type (standard → window → door → column), click a corner to mark it least-accessible, or click a wall's own length label to type an exact size (Drag Wall to resize by dragging instead).",
-      "Switch to 3D (top toggle) for Orbit / Edit / Sill & Header tools.",
+      "Draw: Rectangle or Octagon, then click-drag on the canvas. Add Second Story / Add Bump-out for more complex shapes. Drawing a shape (or adding a bump-out) switches to Edit mode automatically.",
+      "Edit mode (plan view): click a panel to cycle its type (standard → window → door → column → standard). See the legend to the left for what each panel color means — a panel hashed orange over purple is a safety/gap panel combined with a corner brace (both roles, one panel). Panel labels are named by compass direction (N/NE/E/SE/S/SW/W/NW — up is treated as North).",
+      "On an all-right-angle footprint, click a corner marker to mark it least-accessible — safety/gap panels re-place to the far end of each wall (this also clears any openings you've placed, since re-tiling re-derives all slots). On a mitered footprint, every wall owns its own mitered corner panels — the left-most corner of each run is automatically the safety-oct-corner, no marker to set.",
+      "Click a wall's own length label to type an exact value (editing one wall resizes the whole rectangle, since opposite walls stay equal — on a mitered shape only the straight walls are editable this way), or switch to Drag Wall and drag a wall directly instead of typing a length.",
+      "Bump-out tool: drag along a wall to pick the span it attaches to, then drag outward (an addition) or inward (a notch) to set the depth. Drag Wall tool: drag a wall to move it — its 2 neighbor walls stretch or shrink to absorb the change, everything else stays fixed.",
+      "Switch to 3D (top toggle) for Orbit / Edit / Sill & Header tools — every wall panel, including window/door openings (header, jack studs, and sill), shows its real member geometry at its actual position and width. No roof surface yet.",
       "Use the view arrows (top-left) to open a wall's own elevation view — toggle \"Add Gable End\" or \"Add Layer\" (second story) per wall from there.",
       "Wall Assembly, Project Summary, Project Totals, Review Log, and every Detail Guide/Shop Drawing page live in the toggleable sections further down — not just this sidebar.",
     ],
@@ -3883,25 +3892,30 @@ export default function LayoutEditor() {
   // bottom SectionCarousel. `formalDocumentNoteIds` is the subset "Print
   // Packet" covers (the actual printable sheets — Project Summary + every
   // Detail Guide/Shop Drawing page — not the live editing panels like
-  // Wall Assembly/Project Totals/Review Log). "Windows" used to be one of
-  // these too, but its per-window controls moved into the click-driven
-  // "Selected Panel" note (see selectedSlot/handleToggleOpening) — not part
-  // of this carousel list at all, since its visibility is driven by
-  // selection state rather than being manually toggled open/closed. "Wall
-  // Tools" (Tommy:
-  // "wall tools sticky note should be a clickable option on the right tool
-  // bar") relabels itself to match whichever editor tab is active, same as
-  // it always has.
+  // Project Totals/Review Log). "Windows" used to be one of these too, but
+  // its per-window controls moved into the click-driven "Selected Panel"
+  // note (see selectedSlot/handleToggleOpening) — not part of this
+  // carousel list at all, since its visibility is driven by selection
+  // state rather than being manually toggled open/closed. The old "Wall
+  // Tools" note (relabeling itself per editor tab) is gone too — its
+  // Foundation/Floor/Roof branches were already dead once their own
+  // content moved into each tab's own left sidebar (see
+  // foundationControls/floorToolsControls/roofToolsControls), and its
+  // remaining Wall-tab content (Tommy: "Wall Tools info page content
+  // should be worked into the question mark") now lives in the "?"
+  // button's own pageFeatures.wall instead. "Wall Assembly" is gone from
+  // here too — its content moved into wallAssemblyControls, the Wall tab's
+  // own left sidebar while viewing the Membranes (3D Wraps) stop (Tommy:
+  // "work the contents of the Wall Assembly into the editor tab on the
+  // left when working on 3D Wraps").
   const allNoteSections = useMemo(
     () => [
-      { id: "editor-tools", label: editorToolsLabel },
-      { id: "wall-assembly", label: "Wall Assembly" },
       { id: "detail-summary", label: "Project Summary" },
       { id: "project-totals", label: "Project Totals" },
       { id: "review-log", label: "Review Log" },
       ...relevantDetailPages,
     ],
-    [editorToolsLabel, relevantDetailPages],
+    [relevantDetailPages],
   );
   const formalDocumentNoteIds = useMemo(
     () => new Set(["detail-summary", ...relevantDetailPages.map((p) => p.id)]),
@@ -5232,6 +5246,95 @@ export default function LayoutEditor() {
       </div>
     ) : null;
 
+  // Wall Assembly — moved here from the floating "Wall Assembly" note
+  // (Tommy: "work the contents of the Wall Assembly into the editor tab on
+  // the left when working on 3D Wraps"), same persistent-sidebar pattern as
+  // foundationControls/floorToolsControls. Only rendered while the Wall
+  // tab's own viewer is on the Membranes (formerly "3D Wraps") stop —
+  // `showWraps` — since that's the one place these checkboxes' own visual
+  // effect (wrapSkins in Building3DView) is actually visible; every other
+  // stop leaves this same state untouched but out of the way.
+  const wallAssemblyControls = (
+    <div className={elevationStyles.panel}>
+      <strong>Wall Assembly</strong>
+      <p className={styles.note}>
+        Check every finish/product this wall assembly actually uses — when several are checked on one side, the
+        perm-rating check below uses whichever is most vapor-restrictive as that side&apos;s effective layer.
+        Checking a product with a known coverage rule (Intello, Exto Seal, Tescon Vana) auto-computes how much of
+        it this building needs.
+      </p>
+      <fieldset>
+        <legend>Interior</legend>
+        {interiorLayers.map((l) => (
+          <label key={l.id} style={{ display: "block" }}>
+            <input
+              type="checkbox"
+              checked={checkedInteriorIds.has(l.id)}
+              onChange={(e) =>
+                setCheckedInteriorIds((was) => {
+                  const next = new Set(was);
+                  if (e.target.checked) next.add(l.id);
+                  else next.delete(l.id);
+                  return next;
+                })
+              }
+            />{" "}
+            {l.label}
+            {l.id === "exto-seal" && checkedInteriorIds.has("exto-seal") && (
+              <span className={styles.note}> — {extoSealLengthFt.toFixed(1)}ft needed (sill perimeter + 1ft/opening)</span>
+            )}
+            {l.id === "intello-plus" && checkedInteriorIds.has("intello-plus") && (
+              <span className={styles.note}>
+                {" "}
+                — {intelloCoverage.areaSqFt.toFixed(0)} sqft ({(intelloCoverage.areaSqFt - intelloRoofAreaSqFt).toFixed(0)} wall +{" "}
+                {intelloRoofAreaSqFt.toFixed(0)} roof, flat plan-view placeholder — not modeled roof slope)
+              </span>
+            )}
+            {l.id === "tescon-vana" && checkedInteriorIds.has("tescon-vana") && (
+              <span className={styles.note}>
+                {" "}
+                —{" "}
+                {checkedInteriorIds.has("intello-plus")
+                  ? `${intelloCoverage.seamLengthFt.toFixed(1)}ft of seams (fewest-seams layout)`
+                  : "Intello isn't checked, so no seams to tape yet"}
+              </span>
+            )}
+          </label>
+        ))}
+      </fieldset>
+      <fieldset>
+        <legend>Exterior</legend>
+        {exteriorLayers.map((l) => (
+          <label key={l.id} style={{ display: "block" }}>
+            <input
+              type="checkbox"
+              checked={checkedExteriorIds.has(l.id)}
+              onChange={(e) =>
+                setCheckedExteriorIds((was) => {
+                  const next = new Set(was);
+                  if (e.target.checked) next.add(l.id);
+                  else next.delete(l.id);
+                  return next;
+                })
+              }
+            />{" "}
+            {l.label}
+            {l.id === "exto-seal" && checkedExteriorIds.has("exto-seal") && (
+              <span className={styles.note}> — {extoSealLengthFt.toFixed(1)}ft needed (sill perimeter + 1ft/opening)</span>
+            )}
+          </label>
+        ))}
+      </fieldset>
+      <label>
+        Season{" "}
+        <select value={season} onChange={(e) => setSeason(e.target.value as Season)}>
+          <option value="winter">Winter</option>
+          <option value="summer">Summer</option>
+        </select>
+      </label>
+    </div>
+  );
+
   // Foundation Tools — moved here from the floating "editor-tools" note
   // (Tommy: "lets move foundation tools right bar note into the foundation
   // editors left bar"), same persistent-sidebar pattern as elevationControls.
@@ -5695,6 +5798,7 @@ export default function LayoutEditor() {
                 presence/height still varies by tab/view, but nothing below
                 it depends on that anymore. */}
             {editorTab === "wall" && elevationWall && elevationControls}
+            {editorTab === "wall" && !elevationWall && viewMode === "3d" && showWraps && wallAssemblyControls}
             {editorTab === "foundation" && foundationControls}
             {editorTab === "floor" && baleFoundationControls}
             {editorTab === "floor" && floorToolsControls}
@@ -5950,86 +6054,6 @@ export default function LayoutEditor() {
           )}
 
           <div className={styles.editorRightSpacer} aria-hidden="true" />
-
-          <StickyNote
-            id="editor-tools"
-            label={editorToolsLabel}
-            isOpen={openNoteIds.has("editor-tools")}
-            isFullscreen={fullscreenNoteId === "editor-tools"}
-            cascadeIndex={noteOpenOrder.indexOf("editor-tools")}
-            top={68}
-            left={256}
-            onClose={() => handleToggleNote("editor-tools")}
-            onToggleFullscreen={() => handleToggleNoteFullscreen("editor-tools")}
-            onPrint={() => handlePrintNote("editor-tools")}
-          >
-            {editorTab === "wall" && (
-              <>
-                <p className={styles.note}>
-                  Choose a shape, then click and drag on the canvas to draw the
-                  footprint. Drawing a shape (or adding a bump-out) switches to Edit
-                  mode automatically.{" "}
-                  {footprint && footprintIsAllRightAngles(footprint)
-                    ? "In Edit mode, click a corner marker to mark it least-accessible — safety/gap panels re-place to the far end of each wall (this also clears any openings you've placed, since re-tiling re-derives all slots)."
-                    : "Every wall owns its own mitered corner panels — the left-most corner of each run (standing outside the shell) is automatically the safety-oct-corner panel, so there's no corner marker to set here."}
-                </p>
-                {viewMode === "plan" && shapeTool === "bump-out" && (
-                  <p className={styles.note}>
-                    Drag along a wall to pick the span it attaches to, then drag
-                    outward (an addition) or inward (a notch) to set the depth.
-                  </p>
-                )}
-                {viewMode === "plan" && shapeTool === "drag-wall" && (
-                  <p className={styles.note}>
-                    Drag a wall to move it — its 2 neighbor walls stretch or
-                    shrink to absorb the change; everything else stays fixed.
-                    {footprint && !footprintIsAllRightAngles(footprint)
-                      ? " On an octagon, only the 4 straight walls can be dragged (the mitered corners can't)."
-                      : ""}
-                  </p>
-                )}
-                {viewMode === "3d" && (
-                  <p className={styles.note}>
-                    Drag to orbit, scroll to zoom — a rough bird&apos;s-eye starting
-                    angle, not a fixed camera. Every wall panel — including window/door
-                    openings (header, jack studs, and sill) — shows its real member
-                    geometry at its actual position and width. No roof surface yet.
-                  </p>
-                )}
-                {viewMode === "plan" && (
-                  <p className={styles.note}>
-                    {shapeTool === "edit"
-                      ? "Click a panel to cycle it: standard → window → door → column → standard."
-                      : "Switch to Edit mode, then click a panel to cycle it: standard → window → door → column → standard."}{" "}
-                    See the legend to the left for what each panel color means — a panel hashed
-                    orange over purple is a safety/gap panel combined with a corner brace (both
-                    roles, one panel). Panel labels are named by compass direction
-                    (N/NE/E/SE/S/SW/W/NW) — up is treated as North (no real site
-                    orientation set yet).{" "}
-                    {isBumpedOut ? (
-                      <>Red circle = least-accessible corner. Click a wall&apos;s
-                        length label to type an exact value — editing one wall moves
-                        its far corner and shifts the next wall to match, leaving
-                        the rest of the shape in place.</>
-                    ) : footprint?.corners.length === 4 ? (
-                      <>Red circle = least-accessible corner. Click a wall&apos;s
-                        length label to type an exact value (e.g. 40 or
-                        40&apos;-6&quot;) — editing one wall resizes the whole
-                        rectangle since opposite walls stay equal.</>
-                    ) : footprint && footprintIsAllRightAngles(footprint) ? (
-                      "Red circle = least-accessible corner."
-                    ) : (
-                      <>Click a straight wall&apos;s length label to resize it — the
-                        parallel wall changes to match. The 4 mitered corner walls
-                        aren&apos;t independently editable yet.</>
-                    )}{" "}
-                    Or switch to Drag Wall and drag a wall directly instead of
-                    typing a length.
-                  </p>
-                )}
-              </>
-            )}
-          </StickyNote>
         </div>
 
         {selectedSlot &&
@@ -6168,93 +6192,6 @@ export default function LayoutEditor() {
               </StickyNote>
             );
           })()}
-
-        <StickyNote
-          id="wall-assembly"
-          label="Wall Assembly"
-          isOpen={openNoteIds.has("wall-assembly")}
-          isFullscreen={fullscreenNoteId === "wall-assembly"}
-          cascadeIndex={noteOpenOrder.indexOf("wall-assembly")}
-          onClose={() => handleToggleNote("wall-assembly")}
-          onToggleFullscreen={() => handleToggleNoteFullscreen("wall-assembly")}
-          onPrint={() => handlePrintNote("wall-assembly")}
-        >
-          <p className={styles.note}>
-            Check every finish/product this wall assembly actually uses — when several are checked on one side, the
-            perm-rating check below uses whichever is most vapor-restrictive as that side&apos;s effective layer.
-            Checking a product with a known coverage rule (Intello, Exto Seal, Tescon Vana) auto-computes how much of
-            it this building needs.
-          </p>
-          <fieldset>
-            <legend>Interior</legend>
-            {interiorLayers.map((l) => (
-              <label key={l.id} style={{ display: "block" }}>
-                <input
-                  type="checkbox"
-                  checked={checkedInteriorIds.has(l.id)}
-                  onChange={(e) =>
-                    setCheckedInteriorIds((was) => {
-                      const next = new Set(was);
-                      if (e.target.checked) next.add(l.id);
-                      else next.delete(l.id);
-                      return next;
-                    })
-                  }
-                />{" "}
-                {l.label}
-                {l.id === "exto-seal" && checkedInteriorIds.has("exto-seal") && (
-                  <span className={styles.note}> — {extoSealLengthFt.toFixed(1)}ft needed (sill perimeter + 1ft/opening)</span>
-                )}
-                {l.id === "intello-plus" && checkedInteriorIds.has("intello-plus") && (
-                  <span className={styles.note}>
-                    {" "}
-                    — {intelloCoverage.areaSqFt.toFixed(0)} sqft ({(intelloCoverage.areaSqFt - intelloRoofAreaSqFt).toFixed(0)} wall +{" "}
-                    {intelloRoofAreaSqFt.toFixed(0)} roof, flat plan-view placeholder — not modeled roof slope)
-                  </span>
-                )}
-                {l.id === "tescon-vana" && checkedInteriorIds.has("tescon-vana") && (
-                  <span className={styles.note}>
-                    {" "}
-                    —{" "}
-                    {checkedInteriorIds.has("intello-plus")
-                      ? `${intelloCoverage.seamLengthFt.toFixed(1)}ft of seams (fewest-seams layout)`
-                      : "Intello isn't checked, so no seams to tape yet"}
-                  </span>
-                )}
-              </label>
-            ))}
-          </fieldset>
-          <fieldset>
-            <legend>Exterior</legend>
-            {exteriorLayers.map((l) => (
-              <label key={l.id} style={{ display: "block" }}>
-                <input
-                  type="checkbox"
-                  checked={checkedExteriorIds.has(l.id)}
-                  onChange={(e) =>
-                    setCheckedExteriorIds((was) => {
-                      const next = new Set(was);
-                      if (e.target.checked) next.add(l.id);
-                      else next.delete(l.id);
-                      return next;
-                    })
-                  }
-                />{" "}
-                {l.label}
-                {l.id === "exto-seal" && checkedExteriorIds.has("exto-seal") && (
-                  <span className={styles.note}> — {extoSealLengthFt.toFixed(1)}ft needed (sill perimeter + 1ft/opening)</span>
-                )}
-              </label>
-            ))}
-          </fieldset>
-          <label>
-            Season{" "}
-            <select value={season} onChange={(e) => setSeason(e.target.value as Season)}>
-              <option value="winter">Winter</option>
-              <option value="summer">Summer</option>
-            </select>
-          </label>
-        </StickyNote>
 
         <StickyNote
           id="detail-summary"
