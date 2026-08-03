@@ -203,6 +203,31 @@ export function applyBracedPlacement(
  * existed there in `oldSlots` too, in which case it was never part of the
  * standard family to begin with and nothing needs dropping.
  */
+/** Shifts `deltaIn` onto the nearest "standard"/"braced" slot that does NOT
+ * itself have a `lockedWidthIn` — same search-outward-then-inward shape
+ * `applyBracedPlacement`'s own `shedWidthToNearestStandard` already uses,
+ * just also skipping any OTHER locked slot (shedding onto one would
+ * silently corrupt a second user-dragged width the moment two locked
+ * slots happen to sit near each other). No-op (wall's total length ends up
+ * off by `deltaIn`) if every standard-family slot on the run is locked —
+ * same rare, not-silently-hidden edge case `shedWidthToNearestStandard`
+ * itself already accepts. */
+function shedWidthToNearestUnlocked(slots: PanelSlot[], fromIndex: number, deltaIn: number) {
+  const isUnlockedStandardFamily = (s: PanelSlot) => (s.type === "standard" || s.type === "braced") && s.lockedWidthIn === undefined;
+  for (let i = fromIndex + 1; i < slots.length; i++) {
+    if (isUnlockedStandardFamily(slots[i]!)) {
+      slots[i]!.widthIn = Math.max(0, slots[i]!.widthIn + deltaIn);
+      return;
+    }
+  }
+  for (let i = fromIndex - 1; i >= 0; i--) {
+    if (isUnlockedStandardFamily(slots[i]!)) {
+      slots[i]!.widthIn = Math.max(0, slots[i]!.widthIn + deltaIn);
+      return;
+    }
+  }
+}
+
 export function reconcileBracedPlacement(
   oldSlots: PanelSlot[] | undefined,
   newSlots: PanelSlot[],
@@ -215,12 +240,24 @@ export function reconcileBracedPlacement(
     return applyBracedPlacement(newSlots, spacingIn, standardWidthIn, defaultPattern, defaultMirrored);
   }
 
-  const oldMarkers: { type: "standard" | "braced"; bracedPattern?: BracePattern; bracedMirrored?: boolean; zones?: PanelSlotZone[] }[] = [];
+  const oldMarkers: {
+    type: "standard" | "braced";
+    bracedPattern?: BracePattern;
+    bracedMirrored?: boolean;
+    zones?: PanelSlotZone[];
+    lockedWidthIn?: number;
+  }[] = [];
   for (const slot of oldSlots) {
     if (slot.type === "standard") {
-      oldMarkers.push({ type: "standard", zones: slot.zones });
+      oldMarkers.push({ type: "standard", zones: slot.zones, lockedWidthIn: slot.lockedWidthIn });
     } else if (slot.type === "braced") {
-      oldMarkers.push({ type: "braced", bracedPattern: slot.bracedPattern, bracedMirrored: slot.bracedMirrored, zones: slot.zones });
+      oldMarkers.push({
+        type: "braced",
+        bracedPattern: slot.bracedPattern,
+        bracedMirrored: slot.bracedMirrored,
+        zones: slot.zones,
+        lockedWidthIn: slot.lockedWidthIn,
+      });
     }
   }
 
@@ -268,13 +305,35 @@ export function reconcileBracedPlacement(
         slot.bracedMirrored = marker.bracedMirrored;
       }
       slot.zones = marker.zones;
+      slot.lockedWidthIn = marker.lockedWidthIn;
     } else {
       eligibleIndices.add(i);
     }
     ordinal++;
   }
 
-  return applyBracedPlacement(reconciled, spacingIn, standardWidthIn, defaultPattern, defaultMirrored, eligibleIndices);
+  const result = applyBracedPlacement(reconciled, spacingIn, standardWidthIn, defaultPattern, defaultMirrored, eligibleIndices);
+
+  // Re-force every carried-through locked width back to its own exact
+  // value (Tommy: "when you click and drag a panel... it shrinks one panel
+  // and adds it to another" — a fresh tiling pass just gave this slot
+  // whatever width the ordinary budget math computed, ignoring the lock
+  // entirely) and shed the resulting delta onto the nearest still-unlocked
+  // standard-family neighbor, so the wall's total length still adds up
+  // exactly — same "fixed-width slot sheds its own delta to a neighbor"
+  // shape `applyBracedPlacement`'s own corner-brace-combining rule already
+  // uses, just for a user-dragged width instead of a combined safety-gap
+  // panel.
+  for (let i = 0; i < result.length; i++) {
+    const slot = result[i]!;
+    if (slot.lockedWidthIn === undefined) continue;
+    const deltaIn = slot.widthIn - slot.lockedWidthIn;
+    if (Math.abs(deltaIn) < 1e-9) continue;
+    slot.widthIn = slot.lockedWidthIn;
+    shedWidthToNearestUnlocked(result, i, deltaIn);
+  }
+
+  return result;
 }
 
 export function setWindowWidth(slots: PanelSlot[], index: number, widthIn: number): PanelSlot[] {

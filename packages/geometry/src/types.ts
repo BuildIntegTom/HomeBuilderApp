@@ -101,6 +101,19 @@ export interface PanelSlot {
    * zoneFromSlot/applyZonesToSlot), which is what makes that invisibility
    * safe rather than just silently stale. */
   zones?: PanelSlotZone[];
+  /** This slot's own explicitly user-dragged width (Tommy: "when you click
+   * and drag a panel, it moves, snapping... to other panels' edges" — a
+   * standard/braced slot's own widthIn is normally always freshly re-
+   * derived by the tiling engine on every retile; this is the one
+   * exception, a fixed-width reservation that survives an unrelated retile
+   * elsewhere on the wall instead of resetting back to the tiling engine's
+   * own computed width. Only ever set on a "standard" or "braced" slot —
+   * see reconcileBracedPlacement, which is what re-applies it (forcing
+   * `widthIn` back to this value and shedding the difference to the
+   * nearest still-unlocked standard-family neighbor) after every retile.
+   * Undefined = today's exact behavior, a slot's width is always whatever
+   * the tiling engine currently computes. */
+  lockedWidthIn?: number;
 }
 
 /** One independently-editable vertical zone of a PanelSlot column — same

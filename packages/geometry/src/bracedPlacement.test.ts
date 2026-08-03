@@ -304,6 +304,65 @@ describe("reconcileBracedPlacement", () => {
     }
   });
 
+  it("carries a locked width through an unrelated retile, shedding the delta to the nearest unlocked neighbor", () => {
+    // Simulates: the user dragged the boundary between the 2nd and 3rd
+    // standard panels, shrinking one to 30in and growing its neighbor to
+    // 50in (combined span unchanged) — both committed with lockedWidthIn.
+    const oldSlots: PanelSlot[] = [
+      { type: "corner", widthIn: 24 },
+      { type: "standard", widthIn: 40 },
+      { type: "standard", widthIn: 30, lockedWidthIn: 30 },
+      { type: "standard", widthIn: 50 },
+      { type: "standard", widthIn: 40 },
+      { type: "corner", widthIn: 24 },
+    ];
+    // An unrelated retile of the same wall geometry regenerates uniform
+    // 40in standards, as if nothing had ever been dragged.
+    const newSlots: PanelSlot[] = [
+      { type: "corner", widthIn: 24 },
+      { type: "standard", widthIn: 40 },
+      { type: "standard", widthIn: 40 },
+      { type: "standard", widthIn: 40 },
+      { type: "standard", widthIn: 40 },
+      { type: "corner", widthIn: 24 },
+    ];
+    const reconciled = reconcileBracedPlacement(oldSlots, newSlots, 100_000, 40, "chevron", false);
+    const standardFamily = reconciled.filter((s) => s.type === "standard" || s.type === "braced");
+    expect(standardFamily[1]!.widthIn).toBeCloseTo(30, 6);
+    expect(standardFamily[1]!.lockedWidthIn).toBe(30);
+    // Total width across the whole row is unchanged from the locked state
+    // — the +10in delta went to a neighbor, not lost.
+    const totalWidthIn = reconciled.reduce((sum, s) => sum + s.widthIn, 0);
+    const oldTotalWidthIn = oldSlots.reduce((sum, s) => sum + s.widthIn, 0);
+    expect(totalWidthIn).toBeCloseTo(oldTotalWidthIn, 6);
+  });
+
+  it("preserves 2 adjacent locked widths independently, without either shedding onto the other", () => {
+    const oldSlots: PanelSlot[] = [
+      { type: "corner", widthIn: 24 },
+      { type: "standard", widthIn: 40 },
+      { type: "standard", widthIn: 25, lockedWidthIn: 25 },
+      { type: "standard", widthIn: 25, lockedWidthIn: 25 },
+      { type: "standard", widthIn: 70 },
+      { type: "corner", widthIn: 24 },
+    ];
+    const newSlots: PanelSlot[] = [
+      { type: "corner", widthIn: 24 },
+      { type: "standard", widthIn: 46 },
+      { type: "standard", widthIn: 46 },
+      { type: "standard", widthIn: 46 },
+      { type: "standard", widthIn: 46 },
+      { type: "corner", widthIn: 24 },
+    ];
+    const reconciled = reconcileBracedPlacement(oldSlots, newSlots, 100_000, 40, "chevron", false);
+    const standardFamily = reconciled.filter((s) => s.type === "standard" || s.type === "braced");
+    expect(standardFamily[1]!.widthIn).toBeCloseTo(25, 6);
+    expect(standardFamily[2]!.widthIn).toBeCloseTo(25, 6);
+    const totalWidthIn = reconciled.reduce((sum, s) => sum + s.widthIn, 0);
+    const newTotalWidthIn = newSlots.reduce((sum, s) => sum + s.widthIn, 0);
+    expect(totalWidthIn).toBeCloseTo(newTotalWidthIn, 6);
+  });
+
   // Regression coverage for 2 related retile/reconciliation bugs found while
   // testing an unrelated beam/zone feature — both are pre-existing bugs in
   // this older tiling/reconciliation code, not in the new feature itself.

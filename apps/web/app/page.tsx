@@ -1612,6 +1612,30 @@ export default function LayoutEditor() {
     }
   };
 
+  // Panel drag-resize commit (Tommy: "when you click and drag a panel, it
+  // moves... shrinks one panel and adds it to another") — a direct two-
+  // slot patch, called continuously during the drag (see
+  // WallElevationDiagram's own drag effect), NOT a retile: both slots get
+  // their new widthIn AND lockedWidthIn set together, so the width sticks
+  // through a later unrelated retile (see reconcileBracedPlacement, which
+  // is what re-applies a locked width after any such retile).
+  const handleDragResizePanels = (story: "ground" | "second", wallId: string, leftSlotIndex: number, leftWidthIn: number, rightWidthIn: number) => {
+    setWallSlotsForStory(story, (prev) => {
+      const slots = prev[wallId];
+      const left = slots?.[leftSlotIndex];
+      const right = slots?.[leftSlotIndex + 1];
+      if (!slots || !left || !right) return prev;
+      const nextSlots = slots.map((s, i) =>
+        i === leftSlotIndex
+          ? { ...s, widthIn: leftWidthIn, lockedWidthIn: leftWidthIn }
+          : i === leftSlotIndex + 1
+            ? { ...s, widthIn: rightWidthIn, lockedWidthIn: rightWidthIn }
+            : s,
+      );
+      return { ...prev, [wallId]: nextSlots };
+    });
+  };
+
   const handleToggleOpening = (story: "ground" | "second", wallId: Wall["id"], slotIndex: number, zoneIndex?: number) => {
     const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
     const currentSlot = currentSlots[slotIndex];
@@ -6120,6 +6144,7 @@ export default function LayoutEditor() {
                   onChangeMidWallBeamCoverage={(story, beamId, coverage) =>
                     handleChangeMidWallBeamCoverage(story, elevationWall.id, beamId, coverage)
                   }
+                  onDragResizePanels={handleDragResizePanels}
                 />
               ) : viewMode === "plan" ? (
                 <FootprintCanvas

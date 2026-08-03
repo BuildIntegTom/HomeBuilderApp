@@ -65,6 +65,14 @@ const SLOT_COLORS: Record<PanelSlot["type"], string> = {
 const GABLE_COLOR = "#9fb8e0";
 const GABLE_SAFETY_GAP_COLOR = "#e08a3c";
 const VERTICAL_GAP_COLOR = "#f0c08a";
+// Panel drag-resize (Tommy: "when you click and drag a panel, it moves,
+// snapping (when within 2 inches along the drag) to other panels' edges...
+// otherwise, it shrinks one panel and adds it to another, snapping to when
+// a shrinking panel becomes 2' at which point it snaps there for plus or
+// minus 2 inches and then switches spots").
+const PANEL_DRAG_FLOOR_IN = 24;
+const PANEL_DRAG_SNAP_TOLERANCE_IN = 2;
+const PANEL_DRAG_HANDLE_HALF_WIDTH_PX = 4;
 
 export interface WallElevationDiagramProps {
   wall: Wall;
@@ -214,6 +222,14 @@ export interface WallElevationDiagramProps {
    * catalog-picked sizeId. */
   onChangeMidWallBeamLintelHeightIn: (story: "ground" | "second", beamId: string, lintelHeightIn: number) => void;
   onChangeMidWallBeamCoverage: (story: "ground" | "second", beamId: string, coverage: BoxBeamCoverage) => void;
+  /** Commits a panel drag-resize tick directly (Tommy: "when you click and
+   * drag a panel, it moves... shrinks one panel and adds it to another") —
+   * a direct two-slot patch (widthIn + lockedWidthIn on both
+   * `leftSlotIndex` and `leftSlotIndex + 1`), not a retile — called
+   * continuously during the drag, same "patch parent state directly, no
+   * retile until mouseup" shape every other drag handler here already
+   * uses. */
+  onDragResizePanels: (story: "ground" | "second", wallId: string, leftSlotIndex: number, leftWidthIn: number, rightWidthIn: number) => void;
 }
 
 /**
@@ -285,6 +301,7 @@ export default function WallElevationDiagram({
   onChangeMidWallBeamHeight,
   onChangeMidWallBeamLintelHeightIn,
   onChangeMidWallBeamCoverage,
+  onDragResizePanels,
 }: WallElevationDiagramProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
@@ -296,6 +313,17 @@ export default function WallElevationDiagram({
     beamId: string;
     handle: MidWallBeamDragHandle;
   } | null>(null);
+  // Panel drag-resize (Tommy: "when you click and drag a panel, it moves,
+  // snapping... to other panels' edges... otherwise, it shrinks one panel
+  // and adds it to another, snapping to when a shrinking panel becomes 2'
+  // at which point it snaps there... and then switches spots") — the
+  // shared boundary between `leftSlotIndex` and `leftSlotIndex + 1`.
+  // `leftSlotIndex` itself can advance mid-drag (role handoff — see the
+  // drag effect below), so this is re-read fresh every render rather than
+  // captured once at mousedown.
+  const [draggingPanelBoundary, setDraggingPanelBoundary] = useState<{ story: "ground" | "second"; leftSlotIndex: number } | null>(
+    null,
+  );
 
   const wallWidthIn = wall.lengthFt * 12;
   // A wall that doesn't own its own corner at an end has its real slots
@@ -719,6 +747,72 @@ export default function WallElevationDiagram({
     onChangeMidWallBeamCoverage,
   ]);
 
+  // Panel drag-resize — continuous, inch-based, NOT slot-snapped (unlike
+  // the Box Beam/Mid-Wall Bond Beam coverage drags above, which always jump
+  // to the nearest real slot boundary): this needs free positioning, not
+  // always-exact. `leftSlotIndex`/`leftSlotIndex+1` are the CURRENTLY
+  // active pair, re-derived fresh every time this effect (re-)runs — a
+  // mid-drag role handoff (see below) changes `draggingPanelBoundary`
+  // itself, which re-triggers this same effect with the new pair.
+  useEffect(() => {
+    if (!draggingPanelBoundary) return;
+    const { story, leftSlotIndex } = draggingPanelBoundary;
+    const rowSlots = story === "ground" ? slots : (secondStorySlots ?? []);
+    const offsetsIn = story === "ground" ? groundOffsetsIn : secondStoryOffsetsIn;
+    const isPanel = (s: PanelSlot | undefined) => !!s && (s.type === "standard" || s.type === "braced");
+    const left = rowSlots[leftSlotIndex];
+    const right = rowSlots[leftSlotIndex + 1];
+    if (!isPanel(left) || !isPanel(right)) return;
+    const pairStartIn = offsetsIn[leftSlotIndex]!;
+    const pairEndIn = offsetsIn[leftSlotIndex + 2]!;
+    const combinedWidthIn = pairEndIn - pairStartIn;
+    const handleMove = (e: MouseEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const pxPerScreenPx = svgWidthPx / rect.width;
+      const localPx = (e.clientX - rect.left) * pxPerScreenPx;
+      const cursorIn = (localPx - LEFT_MARGIN_PX) / scaleX;
+      const rawBoundaryIn = Math.min(Math.max(cursorIn, pairStartIn), pairEndIn);
+      let leftWidthIn = rawBoundaryIn - pairStartIn;
+      let rightWidthIn = pairEndIn - rawBoundaryIn;
+      // Floor + role handoff (Tommy: "it shrinks one panel and adds it to
+      // another, snapping to when a shrinking panel becomes 2' at which
+      // point it snaps there for plus or minus 2 inches and then switches
+      // spots") — within PANEL_DRAG_SNAP_TOLERANCE_IN of the floor, snap
+      // exactly to it; the other side absorbs the rest.
+      if (leftWidthIn <= PANEL_DRAG_FLOOR_IN + PANEL_DRAG_SNAP_TOLERANCE_IN) {
+        leftWidthIn = PANEL_DRAG_FLOOR_IN;
+        rightWidthIn = combinedWidthIn - PANEL_DRAG_FLOOR_IN;
+      } else if (rightWidthIn <= PANEL_DRAG_FLOOR_IN + PANEL_DRAG_SNAP_TOLERANCE_IN) {
+        rightWidthIn = PANEL_DRAG_FLOOR_IN;
+        leftWidthIn = combinedWidthIn - PANEL_DRAG_FLOOR_IN;
+      }
+      onDragResizePanels(story, wall.id, leftSlotIndex, leftWidthIn, rightWidthIn);
+      // "Switches spots" — once the cursor has moved past whichever side
+      // just floored, the ACTIVE pair hands off to the next one out (the
+      // just-floored slot becomes the new pair's OTHER member, free to
+      // grow again as dragging continues — see this effect's own re-run
+      // once `draggingPanelBoundary` changes). Skipped when there's no
+      // eligible neighbor to hand off to (a corner/opening/column sits
+      // there instead) — dragging simply stops affecting anything further,
+      // per Tommy's confirmed "stop at the boundary" answer.
+      if (cursorIn < pairStartIn && leftSlotIndex > 0 && isPanel(rowSlots[leftSlotIndex - 1])) {
+        setDraggingPanelBoundary({ story, leftSlotIndex: leftSlotIndex - 1 });
+      } else if (cursorIn > pairEndIn && isPanel(rowSlots[leftSlotIndex + 2])) {
+        setDraggingPanelBoundary({ story, leftSlotIndex: leftSlotIndex + 1 });
+      }
+    };
+    const handleUp = () => setDraggingPanelBoundary(null);
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [draggingPanelBoundary, slots, secondStorySlots, groundOffsetsIn, secondStoryOffsetsIn, svgWidthPx, scaleX, wall.id, onDragResizePanels]);
+
   // A wall's own `slots` don't always cover its full geometric length —
   // for a plain rectangle, corner panels are only stored on one pair of
   // opposite walls (drawn once per building corner, attributed to whichever
@@ -891,6 +985,38 @@ export default function WallElevationDiagram({
           );
         }
       }
+    }
+
+    // Panel drag-resize hit-zones (Tommy: "when you click and drag a
+    // panel, it moves...") — a thin strip centered on the shared boundary
+    // between 2 ADJACENT standard/braced slots only (Tommy's confirmed
+    // answer: dragging stops cleanly at any other boundary type — corner/
+    // safety-gap/window/door/column — rather than resizing an opening), so
+    // the strip only exists where a drag is actually legal and never
+    // competes with a window/door/corner slot's own whole-body onClick.
+    // Spans the row's own full height (every band together, not just one)
+    // — a slot's widthIn is shared across all its bands.
+    const rowMaxHeightIn = Math.max(0, ...bandsAndZonesForRow.flatMap((e) => e.bands.map((b) => b.topIn)));
+    const isDraggablePanel = (s: PanelSlot) => s.type === "standard" || s.type === "braced";
+    for (let i = 0; i < rects.length - 1; i++) {
+      const leftRect = rects[i]!;
+      const rightRect = rects[i + 1]!;
+      if (!isDraggablePanel(leftRect.slot) || !isDraggablePanel(rightRect.slot)) continue;
+      elements.push(
+        <rect
+          key={`drag-${story}-${i}`}
+          x={xPx(leftRect.x1) - PANEL_DRAG_HANDLE_HALF_WIDTH_PX}
+          y={yPx(rowFloorHeightIn + rowMaxHeightIn)}
+          width={PANEL_DRAG_HANDLE_HALF_WIDTH_PX * 2}
+          height={rowMaxHeightIn * PX_PER_IN}
+          fill="transparent"
+          style={{ cursor: "ew-resize", pointerEvents: "all" }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            setDraggingPanelBoundary({ story, leftSlotIndex: i });
+          }}
+        />,
+      );
     }
     return elements;
   };
