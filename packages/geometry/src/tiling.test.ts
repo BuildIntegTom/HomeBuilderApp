@@ -248,13 +248,15 @@ describe("tileWall", () => {
 });
 
 describe("nextPanelCycleState", () => {
-  it("cycles standard -> window -> door -> column -> chevron -> mirrored chevron -> hatch -> mirrored hatch -> standard", () => {
+  it("cycles standard -> window -> door -> column -> big-header -> chevron -> mirrored chevron -> hatch -> mirrored hatch -> standard", () => {
     let state = nextPanelCycleState({ type: "standard" });
     expect(state).toEqual({ type: "window" });
     state = nextPanelCycleState(state!);
     expect(state).toEqual({ type: "door" });
     state = nextPanelCycleState(state!);
     expect(state).toEqual({ type: "column" });
+    state = nextPanelCycleState(state!);
+    expect(state).toEqual({ type: "big-header" });
     state = nextPanelCycleState(state!);
     expect(state).toEqual({ type: "braced", bracedPattern: "chevron", bracedMirrored: false });
     state = nextPanelCycleState(state!);

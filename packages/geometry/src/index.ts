@@ -29,3 +29,4 @@ export * from "./ridgeLine";
 export * from "./trussLayout";
 export * from "./panelLoadOrder";
 export * from "./truckLoads";
+export * from "./floorMembraneOpacityBands";

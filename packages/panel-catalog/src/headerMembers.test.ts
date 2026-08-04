@@ -4,9 +4,8 @@ import {
   buildDoorHeaderSchema,
   buildWindowHeaderMembers,
   buildWindowHeaderSchema,
-  headerWebRiseIn,
 } from "./headerMembers";
-import { computeTrussWebPeakCount, memberBoxSizeIn, SKIN_THICKNESS_IN } from "./panelMemberHelpers";
+import { memberBoxSizeIn, SKIN_THICKNESS_IN } from "./panelMemberHelpers";
 
 const DEPTH_IN = 15.5;
 
@@ -55,21 +54,18 @@ describe("buildDoorHeaderMembers", () => {
 });
 
 describe("buildWindowHeaderMembers", () => {
-  it("uses more peaks for a wide window than a narrow one, at the same height", () => {
+  it("always has exactly 1 peak regardless of width, on both wythes — same cap as a door header now (Tommy: 'cap every header at 1 V, auto-upgrade past that')", () => {
     const narrow = buildWindowHeaderMembers(30, DEPTH_IN, 18);
     const wide = buildWindowHeaderMembers(240, DEPTH_IN, 18);
     const narrowPeaks = narrow.filter((m) => m.role === "brace" && m.memberId.includes("_ext_") && m.memberId.includes("_rise")).length;
     const widePeaks = wide.filter((m) => m.role === "brace" && m.memberId.includes("_ext_") && m.memberId.includes("_rise")).length;
-    expect(widePeaks).toBeGreaterThan(narrowPeaks);
+    expect(narrowPeaks).toBe(1);
+    expect(widePeaks).toBe(1);
   });
 
-  it("matches computeTrussWebPeakCount's own prediction", () => {
-    const widthIn = 96;
-    const heightIn = 14;
-    const expectedPeaks = computeTrussWebPeakCount(widthIn, headerWebRiseIn(heightIn));
-    const members = buildWindowHeaderMembers(widthIn, DEPTH_IN, heightIn);
-    const extRises = members.filter((m) => m.role === "brace" && m.memberId.includes("_ext_") && m.memberId.includes("_rise"));
-    expect(extRises).toHaveLength(expectedPeaks);
+  it("still gives exactly 1 peak even for a very wide window opening", () => {
+    const members = buildWindowHeaderMembers(240, DEPTH_IN, 14);
+    expect(members.filter((m) => m.role === "brace")).toHaveLength(4); // 1 peak x (rise+fall) x (ext+int)
   });
 });
 

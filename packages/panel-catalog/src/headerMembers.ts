@@ -9,17 +9,21 @@ import {
   buildHeaderTrussWebBraces,
   computeBraceEndCutAngleDeg,
   computeTrussWebAngleDeg,
-  computeTrussWebPeakCount,
 } from "./panelMemberHelpers";
 
-// Tommy: "i believe the math with the triangle parts of the headers cannot
-// go outside the range of 30-45 degrees" — TRUSS_WEB_MIN_ANGLE_DEG (30) is
-// shared with the gable/braced-panel bracing; this is the header-specific
-// upper bound, used only to flag (not force) an out-of-range result — a
-// door's peak count is always exactly 1 regardless of the angle that
-// produces, per Tommy's own spec, so it can't be corrected by adding peaks
-// the way a window header's can.
-const HEADER_MAX_ANGLE_DEG = 45;
+/**
+ * Tommy: "i believe the math with the triangle parts of the headers cannot
+ * go outside the range of 30-45 degrees" — TRUSS_WEB_MIN_ANGLE_DEG (30) is
+ * shared with the gable/braced-panel bracing; this is the header-specific
+ * upper bound. Every header (door AND window — see `buildHeaderMembers`'s
+ * own doc comment) is now capped at exactly 1 peak regardless of the angle
+ * that produces; a window/door whose single-peak angle falls outside this
+ * range doesn't get more peaks added anymore — its own slot auto-upgrades
+ * to a Big Header instead (see apps/web/app/bigHeaderAutoUpgrade.ts, which
+ * imports this constant directly). Exported so that trigger can reuse the
+ * exact same threshold rather than duplicating it.
+ */
+export const HEADER_MAX_ANGLE_DEG = 45;
 
 /**
  * Top + bottom chord 2x4s, on both wythes (Tommy: "window and door headers
@@ -130,20 +134,25 @@ export function headerWebRiseIn(heightIn: number): number {
 /**
  * Shared construction behind both header variants (Tommy: "there are long
  * headers and door headers... door headers just have one upside down V as
- * a brace") — top/bottom chords plus a repeating W-truss web (see
- * `buildTrussWebBraces`) between them, on both wythes. A door header
- * always gets exactly 1 peak regardless of the resulting angle; a window
- * ("long") header gets as many peaks as `computeTrussWebPeakCount` says it
- * needs to keep every web segment at or above the 30deg minimum.
+ * a brace") — top/bottom chords plus a single-peak W-truss web (see
+ * `buildTrussWebBraces`) between them, on both wythes. BOTH door and
+ * window headers are now always exactly 1 peak (Tommy: "cap every header
+ * at 1 V, auto-upgrade past that") — a window header used to get as many
+ * peaks as `computeTrussWebPeakCount` said it needed to keep every web
+ * segment at or above the 30deg minimum; a width/height combo that would
+ * have needed more than 1 peak to satisfy that (or that pushes the single
+ * peak's own angle past HEADER_MAX_ANGLE_DEG) no longer widens the header
+ * itself — that opening's own SLOT auto-upgrades to a Big Header instead
+ * (see apps/web/app/bigHeaderAutoUpgrade.ts), which reuses the same
+ * multi-peak math this function used to have (see bigHeaderMembers.ts).
  */
-function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number, isDoor: boolean): PanelMember[] {
+function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
   // The web bears against each chord's own 2x4 face (see buildHeaderChords
   // — the 2x4 is the inner member, the plywood cap is outer), one skin
   // thickness inboard of the header's own outer face on each side.
   const bottomChordTopZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const topChordBottomZIn = heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
-  const riseIn = headerWebRiseIn(heightIn);
-  const peakCount = isDoor ? 1 : computeTrussWebPeakCount(widthIn, riseIn);
+  const peakCount = 1;
 
   const members: PanelMember[] = [...buildHeaderChords(widthIn, depthIn, heightIn), ...buildHeaderEndCaps(widthIn, depthIn, heightIn)];
   for (const [wythe, yIn] of [
@@ -159,12 +168,12 @@ function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number, 
 
 /** Door Header: always exactly 1 peak ("one upside down V"), on both wythes. */
 export function buildDoorHeaderMembers(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
-  return buildHeaderMembers(widthIn, depthIn, heightIn, true);
+  return buildHeaderMembers(widthIn, depthIn, heightIn);
 }
 
-/** Window ("long") Header: repeating peaks, however many keep every web segment >= 30deg, on both wythes. */
+/** Window Header: also always exactly 1 peak now — see `buildHeaderMembers`'s own doc comment. */
 export function buildWindowHeaderMembers(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
-  return buildHeaderMembers(widthIn, depthIn, heightIn, false);
+  return buildHeaderMembers(widthIn, depthIn, heightIn);
 }
 
 function angleNote(widthIn: number, heightIn: number, peakCount: number): { type: "warning"; text: string } | null {
@@ -243,7 +252,7 @@ export function buildDoorHeaderSchema(widthIn: number, depthIn: number, heightIn
 }
 
 export function buildWindowHeaderSchema(widthIn: number, depthIn: number, heightIn: number): PanelComponentSchema {
-  const peakCount = computeTrussWebPeakCount(widthIn, headerWebRiseIn(heightIn));
+  const peakCount = 1;
   const members = buildWindowHeaderMembers(widthIn, depthIn, heightIn);
   const notes: PanelComponentSchema["notes"] = [
     {
@@ -254,7 +263,7 @@ export function buildWindowHeaderSchema(widthIn: number, depthIn: number, height
     },
     {
       type: "warning",
-      text: `${peakCount} truss web peak${peakCount === 1 ? "" : "s"} at this opening's width/height, chosen so every web segment stays at or above the ${TRUSS_WEB_MIN_ANGLE_DEG}deg minimum bracing angle.`,
+      text: `${peakCount} truss web peak at this opening's width/height — every header is now capped at 1 peak; a width/height combo that can't stay within ${TRUSS_WEB_MIN_ANGLE_DEG}-${HEADER_MAX_ANGLE_DEG}deg at 1 peak auto-upgrades that opening to a Big Header instead of adding more peaks.`,
     },
   ];
   const cutAngle = braceCutAngleNote(members);

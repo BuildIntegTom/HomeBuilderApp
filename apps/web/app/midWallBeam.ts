@@ -2,23 +2,26 @@ import { computeBoxBeamAssemblyHeightIn, type BoxBeamSizeId } from "@building-in
 import type { MidWallBeamGeometry } from "@building-integrity/geometry";
 
 /** "box-beam" = the original insulated Box Beam (dense-pack cellulose
- * cavity, sized from the 5-size catalog); "web-braced-lintel" = Tommy:
+ * cavity, sized from the 5-size catalog); "big-header-beam" = Tommy:
  * "elongated header panels that have W bracing" — a solid framed + braced
  * panel like a window header, with its own continuously user-adjustable
- * height instead of a discrete catalog size. */
-export type MidWallBeamKind = "box-beam" | "web-braced-lintel";
+ * height instead of a discrete catalog size. Originally called
+ * "web-braced-lintel", renamed to "Big Header (Mid-Wall Beam)" to avoid
+ * clashing with the separate opening-spanning Big Header panel type — see
+ * the Review Log. */
+export type MidWallBeamKind = "box-beam" | "big-header-beam";
 
 /** Within this distance of the roofline (that row's own ceiling), a
  * dragged beam's own top edge snaps flush with the ceiling instead of
  * leaving a short standalone wall panel wedged above it — Tommy: "when a
  * li[n]tel panel is 6" or closer to the roof line, lets snap it into place
  * as the tallest panel that fills that space," generalized to box-beam
- * kind too (Stride 3a). A lintel grows its own `lintelHeightIn` to close
- * the gap (its own assembly height is user-adjustable); a box-beam has no
- * such independent "grow the assembly" concept (its depth is fixed by
- * `sizeId`), so it instead snaps `heightIn` itself — the whole beam slides
- * up flush with the ceiling. See WallElevationDiagram.tsx's own height-drag
- * effect for both. */
+ * kind too (Stride 3a). A Big Header grows its own `bigHeaderBeamHeightIn`
+ * to close the gap (its own assembly height is user-adjustable); a box-beam
+ * has no such independent "grow the assembly" concept (its depth is fixed
+ * by `sizeId`), so it instead snaps `heightIn` itself — the whole beam
+ * slides up flush with the ceiling. See WallElevationDiagram.tsx's own
+ * height-drag effect for both. */
 export const MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN = 6;
 /** Within this distance of a covered window's own header bottom (= its RO's
  * own top), a dragged beam's own bottom edge snaps flush with it instead of
@@ -28,9 +31,9 @@ export const MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN = 6;
  * (rowWallHeightIn already stops exactly there — see
  * computeWallVerticalBandsForSlot), no separate "push" logic needed. */
 export const MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN = 3;
-/** Floor for a lintel's own draggable height — a sane minimum so it can
- * never collapse to zero/negative, not a sourced spec. */
-export const LINTEL_MIN_HEIGHT_IN = 6;
+/** Floor for a Big Header beam's own draggable height — a sane minimum so
+ * it can never collapse to zero/negative, not a sourced spec. */
+export const BIG_HEADER_BEAM_MIN_HEIGHT_IN = 6;
 
 export interface MidWallBeam {
   id: string;
@@ -40,10 +43,10 @@ export interface MidWallBeam {
   kind: MidWallBeamKind;
   /** Meaningful only when kind === "box-beam". */
   sizeId?: BoxBeamSizeId;
-  /** Meaningful only when kind === "web-braced-lintel" — this lintel's own
+  /** Meaningful only when kind === "big-header-beam" — this beam's own
    * real assembly height, directly user-adjustable (its own draggable top
    * edge) rather than picked from a catalog. */
-  lintelHeightIn?: number;
+  bigHeaderBeamHeightIn?: number;
   /** This beam's own horizontal coverage, in slot indices within its
    * wall's own PanelSlot[] array — same half-open-range convention as the
    * roofline Box Beam's own BoxBeamCoverage. */
@@ -52,13 +55,15 @@ export interface MidWallBeam {
 }
 
 /** Resolves a beam's own real assembly height regardless of kind — a
- * box-beam's sizeId through the catalog (unchanged), a lintel's own
- * lintelHeightIn directly. The single choke point every consumer
+ * box-beam's sizeId through the catalog (unchanged), a Big Header's own
+ * bigHeaderBeamHeightIn directly. The single choke point every consumer
  * (midWallBeamsToGeometry below, page.tsx's fabrication grouping/pricing,
  * WallElevationDiagram.tsx's drag/render, Building3DView.tsx) should call
- * instead of reading sizeId/lintelHeightIn directly. */
+ * instead of reading sizeId/bigHeaderBeamHeightIn directly. */
 export function resolveMidWallBeamAssemblyHeightIn(beam: MidWallBeam): number {
-  return beam.kind === "web-braced-lintel" ? (beam.lintelHeightIn ?? LINTEL_MIN_HEIGHT_IN) : computeBoxBeamAssemblyHeightIn(beam.sizeId);
+  return beam.kind === "big-header-beam"
+    ? (beam.bigHeaderBeamHeightIn ?? BIG_HEADER_BEAM_MIN_HEIGHT_IN)
+    : computeBoxBeamAssemblyHeightIn(beam.sizeId);
 }
 
 /** Resolves each beam's own real assemblyHeightIn (via

@@ -26,6 +26,15 @@ export interface GableTiledPanel {
   /** Only set when `isWindow` — this window's own sill height (floor/eave
    * to Rough Opening bottom). */
   windowSillHeightIn?: number;
+  /** True for the auto-centered structural Column Panel reserved under a
+   * single-peak roofline's own ridge (Tommy: "the panelizer will spawn a
+   * column panel centered under the peak... a flat top that is 12in down
+   * from the peak" — spawned when a gable wall is in "panels/beam" mode,
+   * see `computeGableTiledRow`'s own `columnReservationWidthIn` param).
+   * Unlike a window, this tile is NEVER sloped — `leftHeightIn` and
+   * `rightHeightIn` are always equal (the flat top), and it's always
+   * centered on the peak rather than anchored to a user-clicked ordinal. */
+  isColumn?: boolean;
 }
 
 /** A gable tile reserved for a window (Tommy: "add an option to click-edit
@@ -63,6 +72,11 @@ export const GABLE_SAFETY_GAP_WIDTH_IN = 0.75;
  * per-segment here rather than per-wall, consistent with every other part
  * of this tiler already treating each rise/flat/fall segment independently. */
 export const GABLE_SAFETY_GAP_MIN_RUN_LENGTH_IN = 144;
+
+/** How far below the true peak height the structural Column Panel's own
+ * flat top sits (Tommy: "it has a flat top that is 12in down from the
+ * peak") — see `computeGableTiledRow`'s own `columnReservationWidthIn`. */
+export const GABLE_COLUMN_FLAT_TOP_DROP_IN = 12;
 
 /** A real, user-placed profile point — the roofline's own "top" (a single
  * peak, or one of a flat-topped run's 2 shoulders) — fully independent in
@@ -495,6 +509,23 @@ function tileRunWithWindows(
  * reservation past the very last segment's own natural count clamps onto
  * that segment's own tail instead of silently vanishing (mirrors
  * `retileWithOpenings`'s own "extras append past the plain middle" case).
+ *
+ * `columnReservationWidthIn` (default none — Tommy: "panels/beam" mode
+ * spawns "a column panel centered under the peak") reserves a fixed-width,
+ * always-centered structural Column Panel tile — unlike a window, it's
+ * never anchored to a user-clicked ordinal. Only applies to a genuine
+ * single-peak, non-shed roofline (`anchors` resolves to exactly
+ * `[eave, peak, eave]`, i.e. `points.length === 1` and neither end
+ * shed-snapped) — a flat-topped profile or a shed has no single peak to
+ * center under, so the reservation is silently skipped (same "not every
+ * wall gets one" tolerance a too-narrow wall already gets below). Shrinks
+ * both segments meeting at the peak by half the column's own width from
+ * their shared boundary — the same shape `insetIn` already uses at the
+ * wall's own two TRUE outer corners, just applied at this internal one —
+ * so the column tile fills the gap between them instead of displacing an
+ * ordinal the way a window reservation does. Skipped (falls back to a
+ * plain, un-reserved roofline) if the wall is too narrow for the column to
+ * fit within the peak's own segment pair.
  */
 export function computeGableTiledRow(
   wallWidthIn: number,
@@ -506,6 +537,7 @@ export function computeGableTiledRow(
   heelHeightIn = 0,
   anchorMode: RoofBearingAnchorMode = "truss-heel",
   windowReservations: GableWindowReservation[] = [],
+  columnReservationWidthIn?: number,
 ): GableTiledPanel[] {
   const { anchors, leftSnapped, rightSnapped } = resolveAnchors(wallWidthIn, eaveHeightIn, points, targetPanelWidthIn, heelHeightIn, anchorMode, insetIn);
 
@@ -529,14 +561,37 @@ export function computeGableTiledRow(
     });
   }
 
+  let columnTile: GableTiledPanel | null = null;
+  if (columnReservationWidthIn !== undefined && anchors.length === 3) {
+    const peakAnchor = anchors[1]!;
+    const halfWidthIn = columnReservationWidthIn / 2;
+    const columnStartIn = peakAnchor.xIn - halfWidthIn;
+    const columnEndIn = peakAnchor.xIn + halfWidthIn;
+    if (columnStartIn >= segments[0]!.segStartIn && columnEndIn <= segments[1]!.segEndIn) {
+      segments[0]!.segEndIn = columnStartIn;
+      segments[1]!.segStartIn = columnEndIn;
+      const flatTopHeightIn = peakAnchor.heightIn - GABLE_COLUMN_FLAT_TOP_DROP_IN;
+      columnTile = {
+        xStartIn: columnStartIn,
+        xEndIn: columnEndIn,
+        widthIn: columnReservationWidthIn,
+        leftHeightIn: flatTopHeightIn,
+        rightHeightIn: flatTopHeightIn,
+        isColumn: true,
+      };
+    }
+  }
+
   if (windowReservations.length === 0) {
     const panels: GableTiledPanel[] = [];
-    for (const seg of segments) {
+    for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+      const seg = segments[segIdx]!;
       panels.push(
         ...(includeSafetyGap
           ? tileRun(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd)
           : tileEvenly(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn)),
       );
+      if (segIdx === 0 && columnTile) panels.push(columnTile);
     }
     return panels;
   }
@@ -569,6 +624,7 @@ export function computeGableTiledRow(
   for (let segIdx = 0; segIdx < segments.length; segIdx++) {
     const seg = segments[segIdx]!;
     panels.push(...tileRunWithWindows(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd, includeSafetyGap, segmentWindows[segIdx]!));
+    if (segIdx === 0 && columnTile) panels.push(columnTile);
   }
   return panels;
 }

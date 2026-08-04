@@ -1,6 +1,16 @@
 import type { PanelMember } from "./componentSchema";
 import { LUMBER_SPECIES_GRADE, PLATE_2X4_THICKNESS_IN } from "./panelMemberHelpers";
 
+/** Mirrors packages/geometry/src/floorMembraneOpacityBands.ts's own
+ * `FloorMembraneBandPlan` — declared locally rather than imported, since
+ * this package has no dependency on packages/geometry (same reason
+ * `BracePattern` is duplicated the other direction — see its own doc
+ * comment in packages/geometry/src/types.ts). Kept in sync by hand. */
+export interface FloorMembraneBandPlan {
+  axis: "width" | "depth";
+  nearIsMax: boolean;
+}
+
 /**
  * "Bale foundation" floor framing (Tommy) — a perimeter rim built from
  * FRAMING STACKS: a top board + a small gap (with periodic blocking inside
@@ -142,21 +152,63 @@ export const STEEL_MESH_THICKNESS_IN = 0.125;
  * clay coating over this mesh isn't modeled as a 3D member, matching how
  * every other plaster coating in this app (wall clay/lime plaster) is
  * calculator-only with no 3D representation — see Plaster Master.
+ *
+ * `bandPlan` (Tommy: "it's hard to see the floor framing... dividing the
+ * space into one side being opaque and the other side being 75% opaque
+ * followed by 50%") splits the skin into 3 equal parallel bands along
+ * whichever bounding-box dimension `computeFloorMembraneOpacityBands`
+ * picked, each at its own opacity (1 / 0.75 / 0.5, nearest to farthest
+ * from the least-accessible-corner marker) via `opacityOverride` — see
+ * PanelMembersGroup.tsx, which reads it ahead of the material's own
+ * default. Omitted (today's exact behavior) = one uniform, fully-opaque
+ * member, same as before this feature existed.
  */
-export function buildFloorBottomSkinMembers(widthIn: number, depthIn: number): PanelMember[] {
-  return [
-    {
-      memberId: "floor_bottom_skin",
+export function buildFloorBottomSkinMembers(widthIn: number, depthIn: number, bandPlan?: FloorMembraneBandPlan): PanelMember[] {
+  if (!bandPlan) {
+    return [
+      {
+        memberId: "floor_bottom_skin",
+        material: "wire_mesh",
+        speciesGrade: null,
+        plySpec: null,
+        nominalSize: null,
+        actualDimsIn: { thicknessIn: STEEL_MESH_THICKNESS_IN, widthIn: depthIn, lengthIn: widthIn },
+        orientation: "flat",
+        position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0 },
+        role: "skin",
+        qty: 1,
+        notes: "Galvanized welded wire mesh, stapled to the underside of the lowest framing member — rodent/pest barrier, 10mm max opening. The clay coat over it is calculator-only (see Plaster Master), not modeled here.",
+      },
+    ];
+  }
+
+  const OPACITIES_NEAR_TO_FAR = [1, 0.75, 0.5];
+  const orderedOpacities = bandPlan.nearIsMax ? [...OPACITIES_NEAR_TO_FAR].reverse() : OPACITIES_NEAR_TO_FAR;
+  const isWidthAxis = bandPlan.axis === "width";
+  const splitLengthIn = isWidthAxis ? widthIn : depthIn;
+  const bandSizeIn = splitLengthIn / 3;
+  return orderedOpacities.map((opacity, i) => {
+    const offsetIn = i * bandSizeIn;
+    return {
+      memberId: `floor_bottom_skin_band_${i}`,
       material: "wire_mesh",
       speciesGrade: null,
       plySpec: null,
       nominalSize: null,
-      actualDimsIn: { thicknessIn: STEEL_MESH_THICKNESS_IN, widthIn: depthIn, lengthIn: widthIn },
+      actualDimsIn: {
+        thicknessIn: STEEL_MESH_THICKNESS_IN,
+        widthIn: isWidthAxis ? depthIn : bandSizeIn,
+        lengthIn: isWidthAxis ? bandSizeIn : widthIn,
+      },
       orientation: "flat",
-      position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0 },
+      position: { xIn: isWidthAxis ? offsetIn : 0, yIn: 0, zIn: isWidthAxis ? 0 : offsetIn, rotationDeg: 0 },
       role: "skin",
       qty: 1,
-      notes: "Galvanized welded wire mesh, stapled to the underside of the lowest framing member — rodent/pest barrier, 10mm max opening. The clay coat over it is calculator-only (see Plaster Master), not modeled here.",
-    },
-  ];
+      opacityOverride: opacity,
+      notes:
+        "Galvanized welded wire mesh, stapled to the underside of the lowest framing member — rodent/pest barrier, 10mm max opening. " +
+        `Rendered at ${Math.round(opacity * 100)}% opacity (band ${i + 1} of 3, radiating from the least-accessible-corner marker) so the ` +
+        "real framing underneath stays visible. The clay coat over it is calculator-only (see Plaster Master), not modeled here.",
+    };
+  });
 }

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  bigHeaderBeamWidthInRange,
   columnMinWidthIn,
   cornerPanelWidthIn,
-  lintelWidthInRange,
   panelHeightInRange,
   panelThicknessInRange,
   panelWidthInRange,
@@ -34,9 +34,9 @@ describe("panel size-limit ranges", () => {
     expect(cornerPanelWidthIn.value).toBeGreaterThanOrEqual(columnMinWidthIn);
   });
 
-  it("lintelWidthInRange matches the mfr spec sheet (400-3000mm)", () => {
-    expect(lintelWidthInRange.minIn).toBeCloseTo(15.75, 3);
-    expect(lintelWidthInRange.maxIn).toBeCloseTo(118.125, 3);
+  it("bigHeaderBeamWidthInRange matches the mfr spec sheet (400-3000mm)", () => {
+    expect(bigHeaderBeamWidthInRange.minIn).toBeCloseTo(15.75, 3);
+    expect(bigHeaderBeamWidthInRange.maxIn).toBeCloseTo(118.125, 3);
   });
 
   it("sillHeaderHeightInRange matches the mfr spec sheet (424-850mm) and the sill default already fits", () => {
@@ -51,7 +51,7 @@ describe("panel size-limit ranges", () => {
   });
 
   it("every range has a real, non-inverted min/max", () => {
-    for (const range of [panelThicknessInRange, panelWidthInRange, panelHeightInRange, lintelWidthInRange, sillHeaderHeightInRange]) {
+    for (const range of [panelThicknessInRange, panelWidthInRange, panelHeightInRange, bigHeaderBeamWidthInRange, sillHeaderHeightInRange]) {
       expect(range.minIn).toBeLessThan(range.maxIn);
     }
   });

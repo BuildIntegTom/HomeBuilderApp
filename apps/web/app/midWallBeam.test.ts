@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { computeBoxBeamAssemblyHeightIn } from "@building-integrity/panel-catalog";
 import {
-  LINTEL_MIN_HEIGHT_IN,
+  BIG_HEADER_BEAM_MIN_HEIGHT_IN,
   midWallBeamsToGeometry,
   resolveMidWallBeamAssemblyHeightIn,
   type MidWallBeam,
@@ -20,9 +20,9 @@ describe("midWallBeamsToGeometry", () => {
     ]);
   });
 
-  it("resolves a web-braced-lintel's own lintelHeightIn directly, not through the box-beam catalog", () => {
+  it("resolves a big-header-beam's own bigHeaderBeamHeightIn directly, not through the box-beam catalog", () => {
     const beams: MidWallBeam[] = [
-      { id: "c", heightIn: 40, kind: "web-braced-lintel", lintelHeightIn: 14, startSlotIndex: 0, endSlotIndex: 2 },
+      { id: "c", heightIn: 40, kind: "big-header-beam", bigHeaderBeamHeightIn: 14, startSlotIndex: 0, endSlotIndex: 2 },
     ];
     expect(midWallBeamsToGeometry(beams)).toEqual([{ heightIn: 40, assemblyHeightIn: 14, startSlotIndex: 0, endSlotIndex: 2 }]);
   });
@@ -38,13 +38,13 @@ describe("resolveMidWallBeamAssemblyHeightIn", () => {
     expect(resolveMidWallBeamAssemblyHeightIn(beam)).toBe(computeBoxBeamAssemblyHeightIn("11.25x2-lvl"));
   });
 
-  it("web-braced-lintel kind returns lintelHeightIn directly", () => {
-    const beam: MidWallBeam = { id: "b", heightIn: 0, kind: "web-braced-lintel", lintelHeightIn: 22, startSlotIndex: 0, endSlotIndex: 1 };
+  it("big-header-beam kind returns bigHeaderBeamHeightIn directly", () => {
+    const beam: MidWallBeam = { id: "b", heightIn: 0, kind: "big-header-beam", bigHeaderBeamHeightIn: 22, startSlotIndex: 0, endSlotIndex: 1 };
     expect(resolveMidWallBeamAssemblyHeightIn(beam)).toBe(22);
   });
 
-  it("web-braced-lintel with lintelHeightIn undefined falls back to LINTEL_MIN_HEIGHT_IN", () => {
-    const beam: MidWallBeam = { id: "c", heightIn: 0, kind: "web-braced-lintel", startSlotIndex: 0, endSlotIndex: 1 };
-    expect(resolveMidWallBeamAssemblyHeightIn(beam)).toBe(LINTEL_MIN_HEIGHT_IN);
+  it("big-header-beam with bigHeaderBeamHeightIn undefined falls back to BIG_HEADER_BEAM_MIN_HEIGHT_IN", () => {
+    const beam: MidWallBeam = { id: "c", heightIn: 0, kind: "big-header-beam", startSlotIndex: 0, endSlotIndex: 1 };
+    expect(resolveMidWallBeamAssemblyHeightIn(beam)).toBe(BIG_HEADER_BEAM_MIN_HEIGHT_IN);
   });
 });

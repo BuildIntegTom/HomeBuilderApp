@@ -7,6 +7,7 @@ import type { Mesh } from "three";
 import {
   applyZonesToSlot,
   computeFieldFramingLayout,
+  computeFloorMembraneOpacityBands,
   computeInsetPerimeterRing,
   computeRoofBearingSegments,
   computeWallVerticalBandsForSlotWithMaxHeight,
@@ -15,6 +16,7 @@ import {
   panelSlotBoxes3D,
   wallAxis,
   type BoxBeamCoverage,
+  type CornerId,
   type Footprint,
   type PanelSlot,
   type PanelSlotBox3D,
@@ -38,7 +40,9 @@ import {
   BOX_BEAM_SIZE_DEFAULT,
   bracingStyleToPatternMirror,
   buildBoxBeamMembers,
-  buildWebBracedLintelMembers,
+  buildBigHeaderBeamMembers,
+  buildBigHeaderMembers,
+  bigHeaderDefaultHeightIn,
   buildBracedPanelMembers,
   buildBuildingObj,
   buildColumnPanelMembers,
@@ -203,6 +207,14 @@ function membersForSlot(
     }
     case "column":
       return buildColumnPanelMembers(thicknessIn, heightIn, includeNailer);
+    case "big-header":
+      return buildBigHeaderMembers(
+        slot.widthIn,
+        thicknessIn,
+        slot.heightIn ?? bigHeaderDefaultHeightIn.value,
+        slot.includeSillOnBigHeader ?? false,
+        jackStudConfig,
+      );
     case "corner":
     case "safety-oct-corner":
       // Square Bale Panels' corner is a wider, asymmetric-stud construction
@@ -625,6 +637,13 @@ interface Building3DViewProps {
    * to the bottom of the lowest floor framing member") — only meaningful
    * alongside isBaleFoundationFloor. */
   floorBottomSkinEnabled?: boolean;
+  /** Site-wide "least accessible corner" marker (page.tsx's own
+   * `leastAccessibleCorner`) — the floor bottom skin's 3 opacity bands
+   * (Tommy: "dividing the space into one side being opaque and the other
+   * side being 75% opaque followed by 50%") radiate from this corner's own
+   * resolved point. Missing/no match on `footprint.corners` falls back to
+   * the bounding box's own min corner. */
+  leastAccessibleCorner?: CornerId;
   /** Real per-wall Gable End Panel tiles (page.tsx's own `gableTilesByWallId`
    * memo, already the single source of truth the Panel Fabrication pages
    * use) — each tile's `leftEdgeHeightIn`/`rightEdgeHeightIn` are absolute
@@ -651,6 +670,11 @@ interface Building3DViewProps {
       isWindow?: boolean;
       windowHeightIn?: number;
       windowSillHeightIn?: number;
+      /** The auto-centered structural Column Panel reserved under a
+       * single-peak roofline (Tommy: "panels/beam" mode) — rendered as a
+       * real Column Panel via buildColumnPanelMembers, not the sloped
+       * Gable End Panel shape every other tile uses. */
+      isColumn?: boolean;
     }[]
   >;
   /** Whether the Roof system is in scope at all (page.tsx's own
@@ -803,6 +827,7 @@ export default function Building3DView({
   baleFoundationGapIn = BALE_FOUNDATION_GAP_DEFAULT_IN,
   baleFoundationFieldSpacingIn = BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
   floorBottomSkinEnabled = false,
+  leastAccessibleCorner,
   gableTilesByWallId = EMPTY_GABLE_TILES_BY_WALL_ID,
   roofEnabled = false,
   trussPlateInsetIn = 0,
@@ -1049,7 +1074,15 @@ export default function Building3DView({
         const rightLocalIn = tile.rightEdgeHeightIn - gableEaveHeightIn;
         const tallerLocalIn = Math.max(leftLocalIn, rightLocalIn);
         let members: PanelMember[];
-        if (tile.isWindow) {
+        if (tile.isColumn) {
+          // Real, fabricable structural Column Panel (Tommy: "panels/beam"
+          // mode) — reuses the SAME builder a normal ground-level column
+          // already uses, just at this tile's own local height (flat top,
+          // leftLocalIn === rightLocalIn by construction — see
+          // computeGableTiledRow's own columnReservationWidthIn doc
+          // comment) instead of a full story height.
+          members = buildColumnPanelMembers(thicknessIn, tallerLocalIn, includeNailer);
+        } else if (tile.isWindow) {
           // Gable window (Tommy: "add an option to click-edit gable end
           // panels to become window gable end panels... this is just a
           // small version of an inclined panel that should follow all of
@@ -1252,15 +1285,19 @@ export default function Building3DView({
       const zs = footprint.corners.map((c) => c.point.y);
       const minX = Math.min(...xs);
       const minZ = Math.min(...zs);
-      const widthFt = Math.max(...xs) - minX;
-      const depthFt = Math.max(...zs) - minZ;
+      const maxX = Math.max(...xs);
+      const maxZ = Math.max(...zs);
+      const widthFt = maxX - minX;
+      const depthFt = maxZ - minZ;
+      const nearPoint = footprint.corners.find((c) => c.id === leastAccessibleCorner)?.point ?? { x: minX, y: minZ };
+      const bandPlan = computeFloorMembraneOpacityBands(minX, maxX, minZ, maxZ, nearPoint);
       result.push({
         id: "floor-bottom-skin",
         anchorX: minX,
         anchorZ: minZ,
         anchorYFt: (bottomZIn - STEEL_MESH_THICKNESS_IN) / IN_PER_FT,
         rotationRad: 0,
-        members: buildFloorBottomSkinMembers(widthFt * IN_PER_FT, depthFt * IN_PER_FT),
+        members: buildFloorBottomSkinMembers(widthFt * IN_PER_FT, depthFt * IN_PER_FT, bandPlan),
       });
     }
     return result;
@@ -1275,6 +1312,7 @@ export default function Building3DView({
     baleFoundationGapIn,
     baleFoundationFieldSpacingIn,
     floorBottomSkinEnabled,
+    leastAccessibleCorner,
   ]);
 
   // Mid-Wall Bond Beam's own member geometry, one per BEAM (either story,
@@ -1325,8 +1363,8 @@ export default function Building3DView({
           if (lengthIn <= 0) continue;
           const assemblyHeightIn = resolveMidWallBeamAssemblyHeightIn(beam);
           const members =
-            beam.kind === "web-braced-lintel"
-              ? buildWebBracedLintelMembers(lengthIn, thicknessIn, assemblyHeightIn)
+            beam.kind === "big-header-beam"
+              ? buildBigHeaderBeamMembers(lengthIn, thicknessIn, assemblyHeightIn)
               : buildBoxBeamMembers(lengthIn, thicknessIn, beam.sizeId);
           const offsetFt = startXIn / IN_PER_FT;
           result.push({

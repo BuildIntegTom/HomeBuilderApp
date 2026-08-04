@@ -84,6 +84,15 @@ export interface PanelMember {
   role: MemberRole;
   qty: number;
   notes?: string;
+  /** Overrides this ONE member's own render opacity, ahead of whatever
+   * PanelMembersGroup.tsx's MATERIAL_OPACITY map would otherwise use for
+   * its material (Tommy: floor bottom membrane opacity "dividing the
+   * space into one side being opaque and the other side being 75%
+   * opaque followed by 50%") — needed since several same-material
+   * members (e.g. the floor bottom skin's own 3 bands) can each need a
+   * DIFFERENT opacity, which a material-keyed map alone can't express.
+   * Undefined = today's exact behavior, purely material-driven. */
+  opacityOverride?: number;
 }
 
 export interface ComponentNote {

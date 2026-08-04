@@ -38,7 +38,8 @@ export type PanelSlotType =
   | "window"
   | "door"
   | "braced"
-  | "column";
+  | "column"
+  | "big-header";
 
 /** Declared locally rather than imported from panel-catalog's own
  * `BracePattern` — `packages/geometry` doesn't depend on
@@ -114,6 +115,12 @@ export interface PanelSlot {
    * Undefined = today's exact behavior, a slot's width is always whatever
    * the tiling engine currently computes. */
   lockedWidthIn?: number;
+  /** Only meaningful for "big-header" slots (Tommy: "2 with the option to
+   * have a sill under it as an option in the left bar but default not") —
+   * a Big Header normally has no sill (it can span double doors, large
+   * openings, conditioned garages), but a sill panel can be opted in
+   * underneath it. Undefined/false = no sill, the default. */
+  includeSillOnBigHeader?: boolean;
 }
 
 /** One independently-editable vertical zone of a PanelSlot column — same

@@ -79,6 +79,9 @@ import type { MidWallBeam } from "./midWallBeam";
  * v22->v23: each `MidWallBeam` gained a `kind` field ("box-beam" |
  * "web-braced-lintel") plus `lintelHeightIn` — Tommy: a second Mid-Wall
  * Bond Beam construction, "elongated header panels that have W bracing."
+ * (That kind was later renamed "big-header-beam"/`bigHeaderBeamHeightIn` —
+ * see remapLegacyBigHeaderBeamKind's own doc comment — but this entry
+ * describes the schema as it stood at v22->v23, not current naming.)
  * A v22 file's beams have no `kind` at all — every one of them meant
  * "box-beam" (the only kind that existed), so migration is a straight
  * per-beam `kind: "box-beam"` stamp, `sizeId` passing through unchanged —
@@ -235,6 +238,15 @@ export interface ProjectState {
    * 2 walls + gablePeakPositionInByWallId via computeRidgeLine, so no
    * separate run-length field needs to round-trip here. */
   gableEndWallIds: Set<string>;
+  /** Which of `gableEndWallIds` are in "panels/beam" mode (Tommy: gable end
+   * config is "the determining factor" for roof options) — `roofSystemTypeId`
+   * above is now DERIVED from this at runtime rather than independently set,
+   * but still round-trips here for a legacy-file migration fallback (see
+   * parseProjectFile: an old save with `roofSystemTypeId === "structural-panel"`
+   * and no entry here defaults every one of its own `gableEndWallIds` into
+   * this set instead of silently losing that choice). Optional (not in
+   * REQUIRED_STATE_KEYS) — older project files predate this field. */
+  gableStructuralPanelWallIds?: Set<string>;
   /** Every real story, ground floor first (page.tsx's own `stories` memo —
    * see the Story type's own doc comment). Only `stories[1]` (if present)
    * round-trips as genuinely independent data here; `stories[0]` is
@@ -344,9 +356,10 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
 export interface ProjectFile {
   schemaVersion: number;
   savedAt: string;
-  state: Omit<ProjectState, "primaryCornerIds" | "gableEndWallIds" | "checkedInteriorIds" | "checkedExteriorIds"> & {
+  state: Omit<ProjectState, "primaryCornerIds" | "gableEndWallIds" | "gableStructuralPanelWallIds" | "checkedInteriorIds" | "checkedExteriorIds"> & {
     primaryCornerIds: string[];
     gableEndWallIds: string[];
+    gableStructuralPanelWallIds?: string[];
     checkedInteriorIds: string[];
     checkedExteriorIds: string[];
   };
@@ -360,6 +373,7 @@ export function serializeProject(state: ProjectState): ProjectFile {
       ...state,
       primaryCornerIds: [...state.primaryCornerIds],
       gableEndWallIds: [...state.gableEndWallIds],
+      gableStructuralPanelWallIds: state.gableStructuralPanelWallIds ? [...state.gableStructuralPanelWallIds] : undefined,
       checkedInteriorIds: [...state.checkedInteriorIds],
       checkedExteriorIds: [...state.checkedExteriorIds],
       // Every save is written post-migration, regardless of whether the
@@ -380,6 +394,34 @@ function migrateMidWallBeamsV22ToV23(
   const migrateStory = (beamsByWallId: Record<string, Omit<MidWallBeam, "kind">[]>): Record<string, MidWallBeam[]> =>
     Object.fromEntries(Object.entries(beamsByWallId).map(([wallId, beams]) => [wallId, beams.map((b) => ({ ...b, kind: "box-beam" as const }))]));
   return { ground: migrateStory(v22.ground ?? {}), second: migrateStory(v22.second ?? {}) };
+}
+
+/**
+ * Value-only remap (no `PROJECT_FILE_VERSION` bump — the shape hasn't
+ * changed, just the string a beam's own `kind`/height field uses): a file
+ * saved before the Mid-Wall Bond Beam's "Web Braced Lintel" kind was
+ * renamed "Big Header (Mid-Wall Beam)" still has `kind: "web-braced-lintel"`
+ * and `lintelHeightIn` in its raw JSON (both old identifiers — see the
+ * Review Log). Applied unconditionally (both the current-version and
+ * v22-migrated branches), since even a file saved moments before this
+ * rename shipped is otherwise indistinguishable from a current one.
+ */
+function remapLegacyBigHeaderBeamKind(
+  beamsByStoryAndWallId: Record<"ground" | "second", Record<string, MidWallBeam[]>>,
+): Record<"ground" | "second", Record<string, MidWallBeam[]>> {
+  const remapStory = (beamsByWallId: Record<string, MidWallBeam[]>): Record<string, MidWallBeam[]> =>
+    Object.fromEntries(
+      Object.entries(beamsByWallId).map(([wallId, beams]) => [
+        wallId,
+        beams.map((b) => {
+          const raw = b as MidWallBeam & { lintelHeightIn?: number };
+          if ((raw.kind as string) !== "web-braced-lintel") return b;
+          const { lintelHeightIn, ...rest } = raw;
+          return { ...rest, kind: "big-header-beam" as const, bigHeaderBeamHeightIn: lintelHeightIn };
+        }),
+      ]),
+    );
+  return { ground: remapStory(beamsByStoryAndWallId.ground ?? {}), second: remapStory(beamsByStoryAndWallId.second ?? {}) };
 }
 
 export type ParseProjectFileResult = { ok: true; state: ProjectState } | { ok: false; error: string };
@@ -476,14 +518,28 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       maxPanelHeightIn: (state.maxPanelHeightIn as number | undefined) ?? standardPanelHeightIn.value,
       // v22 -> v23 migration: a v22 file's beams have no `kind` field —
       // every one meant "box-beam" (see migrateMidWallBeamsV22ToV23's own
-      // doc comment).
-      midWallBeamsByStoryAndWallId: isCurrentVersion
-        ? (state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, MidWallBeam[]>>)
-        : migrateMidWallBeamsV22ToV23(
-            state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, Omit<MidWallBeam, "kind">[]>>,
-          ),
+      // doc comment). Then remapLegacyBigHeaderBeamKind fixes up any
+      // "web-braced-lintel" kind left over from before that rename,
+      // regardless of which branch produced it.
+      midWallBeamsByStoryAndWallId: remapLegacyBigHeaderBeamKind(
+        isCurrentVersion
+          ? (state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, MidWallBeam[]>>)
+          : migrateMidWallBeamsV22ToV23(
+              state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, Omit<MidWallBeam, "kind">[]>>,
+            ),
+      ),
       primaryCornerIds: new Set(state.primaryCornerIds as string[]),
       gableEndWallIds: new Set(state.gableEndWallIds as string[]),
+      // Optional — absent on any file saved before roofSystemTypeId became
+      // derived from this. A legacy file that was saved in
+      // "structural-panel" mode defaults every one of its own
+      // gableEndWallIds into this set instead of silently losing that
+      // choice; otherwise (or on a fresh v-current save) it's exactly
+      // what was actually saved.
+      gableStructuralPanelWallIds: new Set(
+        (state.gableStructuralPanelWallIds as string[] | undefined) ??
+          (state.roofSystemTypeId === "structural-panel" ? (state.gableEndWallIds as string[]) : []),
+      ),
       checkedInteriorIds: new Set(state.checkedInteriorIds as string[]),
       checkedExteriorIds: new Set(state.checkedExteriorIds as string[]),
     },

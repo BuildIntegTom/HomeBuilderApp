@@ -35,6 +35,7 @@ export type NamedPanelType =
   | "header"
   | "sill"
   | "column"
+  | "big-header"
   | "gable"
   | "jack-stud";
 
@@ -140,6 +141,7 @@ const SIMPLE_NAMED_TYPES = new Set<PanelSlot["type"]>([
   "braced",
   "safety-gap",
   "column",
+  "big-header",
 ]);
 
 /**
@@ -195,6 +197,13 @@ export function allPanelInstances(
       isWindow?: boolean;
       windowHeightIn?: number;
       windowSillHeightIn?: number;
+      /** This tile is the auto-centered structural Column Panel reserved
+       * under a single-peak roofline (Tommy: "panels/beam" mode) — pushed
+       * as a real `"column"` instance (reusing 100% of the existing
+       * Column Panel pricing/Shop-Drawing/3D machinery), not a "gable"
+       * one, since it's flat-topped and structurally a Column Panel, not
+       * a sloped Gable End Panel. */
+      isColumn?: boolean;
     }[]
   >,
   /** Which slots of which walls have a Box Beam rather than a Truss Plate
@@ -448,6 +457,23 @@ export function allPanelInstances(
     if (gableTiles) {
       gableTiles.forEach((tile, tileIndex) => {
         const slotIndexInWall = -(tileIndex + 1);
+        if (tile.isColumn) {
+          pushInstance(
+            direction,
+            wall.id,
+            "column",
+            tile.widthIn,
+            slotIndexInWall,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            tile.leftEdgeHeightIn,
+            tile.rightEdgeHeightIn,
+          );
+          return;
+        }
         if (tile.isWindow) {
           // Gable window (Tommy: "add an option to click-edit gable end
           // panels to become window gable end panels... this is just a

@@ -22,6 +22,15 @@ const MATERIAL_OPACITY: Partial<Record<PanelMember["material"], number>> = {
   wood_fiber_board: 0.55,
 };
 
+/** A member's own `opacityOverride` (Tommy: floor bottom membrane
+ * "dividing the space into one side being opaque and the other side
+ * being 75% opaque followed by 50%") wins over its material's own
+ * default — several same-material members can each need a different
+ * opacity, which MATERIAL_OPACITY alone can't express. */
+function resolveOpacity(member: PanelMember): number | undefined {
+  return member.opacityOverride ?? MATERIAL_OPACITY[member.material];
+}
+
 /**
  * A true beveled-end trapezoid prism (Tommy: "trapezoid cuts" — a diagonal
  * brace's real plumb+level end cuts, not a plain tilted box) — the first
@@ -81,8 +90,8 @@ export default function PanelMembersGroup({ members, colorOverride }: PanelMembe
             <mesh key={member.memberId} geometry={buildTrapezoidGeometry(member)}>
               <meshStandardMaterial
                 color={colorOverride ?? MATERIAL_COLOR[member.material]}
-                transparent={MATERIAL_OPACITY[member.material] !== undefined}
-                opacity={MATERIAL_OPACITY[member.material] ?? 1}
+                transparent={resolveOpacity(member) !== undefined}
+                opacity={resolveOpacity(member) ?? 1}
                 side={THREE.DoubleSide}
               />
             </mesh>
@@ -113,8 +122,8 @@ export default function PanelMembersGroup({ members, colorOverride }: PanelMembe
             <boxGeometry args={sizeFt} />
             <meshStandardMaterial
               color={colorOverride ?? MATERIAL_COLOR[member.material]}
-              transparent={MATERIAL_OPACITY[member.material] !== undefined}
-              opacity={MATERIAL_OPACITY[member.material] ?? 1}
+              transparent={resolveOpacity(member) !== undefined}
+              opacity={resolveOpacity(member) ?? 1}
             />
           </mesh>
         );

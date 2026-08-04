@@ -319,7 +319,7 @@ export interface OpeningAnchor {
    * AND already-decided "braced" slots — see the doc comment below) precede
    * this opening in the plain sequence. */
   beforeStandardCount: number;
-  type: "window" | "door" | "column";
+  type: "window" | "door" | "column" | "big-header";
   widthIn: number;
   /** This opening's own vertical/style fields, carried through a re-tile so
    * they survive it instead of silently resetting to defaults — a
@@ -333,6 +333,9 @@ export interface OpeningAnchor {
   heightIn?: number;
   sillHeightIn?: number;
   zones?: PanelSlotZone[];
+  /** Meaningful only when `type === "big-header"` — see
+   * `PanelSlot.includeSillOnBigHeader`'s own doc comment. */
+  includeSillOnBigHeader?: boolean;
 }
 
 /**
@@ -358,7 +361,7 @@ export function getOpeningAnchors(slots: PanelSlot[]): OpeningAnchor[] {
   const anchors: OpeningAnchor[] = [];
   let standardsSeen = 0;
   for (const slot of slots) {
-    if (slot.type === "window" || slot.type === "door" || slot.type === "column") {
+    if (slot.type === "window" || slot.type === "door" || slot.type === "column" || slot.type === "big-header") {
       anchors.push({
         beforeStandardCount: standardsSeen,
         type: slot.type,
@@ -366,6 +369,7 @@ export function getOpeningAnchors(slots: PanelSlot[]): OpeningAnchor[] {
         heightIn: slot.heightIn,
         sillHeightIn: slot.sillHeightIn,
         zones: slot.zones,
+        includeSillOnBigHeader: slot.includeSillOnBigHeader,
       });
     } else if (slot.type === "standard" || slot.type === "braced") {
       standardsSeen++;
@@ -419,6 +423,7 @@ export function retileWithOpenings(
     heightIn: o.heightIn,
     sillHeightIn: o.sillHeightIn,
     zones: o.zones,
+    includeSillOnBigHeader: o.includeSillOnBigHeader,
   });
   const sortedOpenings = [...openings].sort((a, b) => a.beforeStandardCount - b.beforeStandardCount);
   const middle: PanelSlot[] = [];
@@ -467,19 +472,19 @@ export interface PanelCycleState {
 /**
  * The full click-through panel-type cycle (Tommy: "I want to be able to
  * include each panel style for braced panels in the click-through cycle
- * for panel type selections"): standard -> window -> door -> column -> all
- * 4 braced styles (chevron, mirrored chevron, hatch, mirrored hatch) ->
- * back to standard. Corner and safety-gap slots aren't cyclable at all
- * (returns null), same as before this cycle grew to include braced
- * styles.
+ * for panel type selections"): standard -> window -> door -> column ->
+ * big-header -> all 4 braced styles (chevron, mirrored chevron, hatch,
+ * mirrored hatch) -> back to standard. Corner and safety-gap slots aren't
+ * cyclable at all (returns null), same as before this cycle grew to
+ * include braced styles.
  *
  * Pure "what's next" decision only — doesn't touch `widthIn` or retile
  * anything itself. The caller (`handleToggleOpening` in page.tsx) uses
  * this to decide whether the transition needs a full retile (any
- * transition into or out of window/door/column, since those reserve their
- * own width) or is a simple in-place field mutation (every other
- * transition, including entering/leaving the braced-style block, which
- * never changes a slot's width). Supersedes the old 3-stop
+ * transition into or out of window/door/column/big-header, since those
+ * reserve their own width) or is a simple in-place field mutation (every
+ * other transition, including entering/leaving the braced-style block,
+ * which never changes a slot's width). Supersedes the old 3-stop
  * standard->window->door->standard cycle this function used to be (it had
  * no way to represent column or braced at all, and nothing outside its own
  * tests ever called it).
@@ -493,6 +498,8 @@ export function nextPanelCycleState(current: PanelCycleState): PanelCycleState |
     case "door":
       return { type: "column" };
     case "column":
+      return { type: "big-header" };
+    case "big-header":
       return { type: "braced", bracedPattern: "chevron", bracedMirrored: false };
     case "braced":
       if (current.bracedPattern === "chevron" && current.bracedMirrored === false) {

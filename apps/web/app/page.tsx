@@ -17,6 +17,7 @@ import {
   computeGableTiledRow,
   computeInsetPerimeterRing,
   computeJoistLayout,
+  GABLE_COLUMN_FLAT_TOP_DROP_IN,
   GABLE_SHED_SNAP_THRESHOLD_IN,
   computePanelLoadOrder,
   computePanelsPerStack,
@@ -115,7 +116,8 @@ import {
   BOX_BEAM_SIZE_DEFAULT,
   BOX_BEAM_SIZE_OPTIONS,
   buildBoxBeamMembers,
-  buildWebBracedLintelMembers,
+  buildBigHeaderBeamMembers,
+  buildBigHeaderMembers,
   buildBracedPanelMembers,
   buildColumnPanelMembers,
   buildCornerPanelMembers,
@@ -141,10 +143,13 @@ import {
   PLATE_2X4_WIDTH_IN,
   carbonFractionOfDryMass,
   COLUMN_TOTAL_WIDTH_IN,
+  bigHeaderWidthInRange,
+  bigHeaderHeightInRange,
+  bigHeaderDefaultWidthIn,
+  bigHeaderDefaultHeightIn,
   computeBoxBeamAssemblyHeightIn,
   computeBoxBeamHeightDeltaIn,
   computeDensePackCelluloseVolume,
-  computeGableColumnHeightIn,
   computePlywoodAreaSqFt,
   computeRoofBearingAssemblyHeightIn,
   computeRoofCatcherBeamPostPositions,
@@ -256,9 +261,10 @@ import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
 import { resolveBracedStyle } from "./bracedStyle";
+import { shouldAutoUpgradeToBigHeader } from "./bigHeaderAutoUpgrade";
 import { capGableTileHeights, computeRiseFtForPitch, resolveGableProfilePoints, resolveHeelSeat, ROOF_PITCH_OPTIONS_IN12 } from "./gableProfilePoints";
 import {
-  LINTEL_MIN_HEIGHT_IN,
+  BIG_HEADER_BEAM_MIN_HEIGHT_IN,
   MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN,
   MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN,
   midWallBeamsToGeometry,
@@ -379,6 +385,21 @@ const PHASE2_ASSUMPTIONS = [
     label: "Box Beam/Truss Plate/Mid-Wall Bond Beam pricing",
     status: "pending-BI-confirmation" as const,
     note: "These are linear members, not flat wall panels, so there's no real width x wall-height face to price — priced at the roof rate ($42/sqft placeholder) using each piece's own covered length x its own assembly's cross-sectional height as a stand-in face area.",
+  },
+  {
+    label: "Mid-Wall Bond Beam \"Web Braced Lintel\" renamed to \"Big Header (Mid-Wall Beam)\"",
+    status: "pending-BI-confirmation" as const,
+    note: "Pure terminology rename (kind: \"web-braced-lintel\" -> \"big-header-beam\") to avoid clashing with the new opening-spanning Big Header panel type — no geometry or behavior change. Existing saved projects are remapped on load.",
+  },
+  {
+    label: "Big Header structural estimating",
+    status: "pending-BI-confirmation" as const,
+    note: "Geometry only (rotated-stud chords + multi-peak W-truss brace + 2 jack studs, per Tommy's own spec) — no fastener schedule or real load/shear estimate exists yet for this assembly, unlike the bearing/shear placeholders already computed for Standard/Braced panels above.",
+  },
+  {
+    label: "Big Header Shop Drawing / Material Totals pricing not yet wired",
+    status: "pending-BI-confirmation" as const,
+    note: "A Big Header panel renders correctly in the 2D elevation and live 3D view and is fully editable (width/height/sill) from its own Selected Panel note, but doesn't yet have its own Panel Fabrication/Shop Drawing detail page or a Material Totals price rate the way Column/Standard/Braced panels do — flagged for a follow-up pass.",
   },
 ];
 
@@ -597,8 +618,8 @@ export default function LayoutEditor() {
   // a wall panel type — see the Roof tab below. Truss plate / box beam
   // geometry itself is flagged to model later (Tommy); these are just the
   // inset/height/offset numbers that feed the Gable End Panel + Column
-  // Panel previews.
-  const [roofSystemTypeId, setRoofSystemTypeId] = useState<RoofSystemType>("truss");
+  // Panel previews. roofSystemTypeId itself is declared further down,
+  // derived from gableStructuralPanelWallIds (see its own doc comment).
   // The roofline gable-end panels tile up to meet (Tommy: "options for
   // peaked trusses with 1 point on the top, or two points to make a
   // triangle shaped with the top chopped off") — "peaked" has 1 real
@@ -697,6 +718,16 @@ export default function LayoutEditor() {
   // elevationViewWallId is which wall's elevation view is currently open
   // (only one at a time).
   const [gableEndWallIds, setGableEndWallIds] = useState<Set<string>>(new Set());
+  // Which gable-end wall(s) are in "panels/beam" mode — a subset of
+  // gableEndWallIds (Tommy: "the gable end panels [should] be the
+  // determining factor for roof options... layout of trusses needs to
+  // take into account... if the gable panels are under or next to [the
+  // trusses]"). roofSystemTypeId (below) is DERIVED from this instead of
+  // its own independent Roof-tab setting — gable config is now the single
+  // source of truth for whether the roof bears on real structural columns
+  // or open truss framing.
+  const [gableStructuralPanelWallIds, setGableStructuralPanelWallIds] = useState<Set<string>>(new Set());
+  const roofSystemTypeId: RoofSystemType = gableStructuralPanelWallIds.size > 0 ? "structural-panel" : "truss";
   const [elevationViewWallId, setElevationViewWallId] = useState<string | null>(null);
   // Gable end window panels (Tommy: "add an option to click-edit gable end
   // panels to become window gable end panels, similarly splitting into two
@@ -762,11 +793,138 @@ export default function LayoutEditor() {
     if (enabled && gableEndToggleBlockReason(wallId)) return;
     setGableEndWallIds((was) => {
       const next = new Set(was);
+      if (enabled) {
+        next.add(wallId);
+        // Auto-pair the geometric opposite wall (Tommy: "when the user
+        // adds a gable end, the opposing wall also spawns one") — only
+        // when this is the very first gable end on the footprint; adding
+        // a 2nd already requires it to BE the opposite wall
+        // (gableEndToggleBlockReason above), so there's nothing left to
+        // auto-pair there.
+        if (was.size === 0 && footprint) {
+          const thisWall = footprint.walls.find((w) => w.id === wallId);
+          const opposite = thisWall && footprint.walls.find((w) => w.id !== wallId && areWallsOppositePair(thisWall, w, footprint));
+          if (opposite) next.add(opposite.id);
+        }
+      } else {
+        next.delete(wallId);
+      }
+      return next;
+    });
+    if (!enabled) {
+      setGableStructuralPanelWallIds((was) => {
+        if (!was.has(wallId)) return was;
+        const next = new Set(was);
+        next.delete(wallId);
+        return next;
+      });
+    }
+  };
+  // Only the genuinely shorter dimension's 2 walls ever show the
+  // panels/beam toggle (Tommy: "this button only appears o[n] the two
+  // shorter sides of the 4 elevations") — the wall's own length must be
+  // the minimum among every wall on the footprint.
+  const isShorterDimensionWall = (wallId: string): boolean => {
+    if (!footprint || footprint.walls.length === 0) return false;
+    const wall = footprint.walls.find((w) => w.id === wallId);
+    if (!wall) return false;
+    const minLengthFt = Math.min(...footprint.walls.map((w) => w.lengthFt));
+    return wall.lengthFt <= minLengthFt + 1e-6;
+  };
+  const handleToggleGableStructuralPanel = (wallId: string, enabled: boolean) => {
+    setGableStructuralPanelWallIds((was) => {
+      const next = new Set(was);
       if (enabled) next.add(wallId);
       else next.delete(wallId);
       return next;
     });
+    // Only makes sense under a single real peak — a flat-topped profile has
+    // no one point for either column to center under (same gate
+    // computeGableTiledRow's own columnReservationWidthIn uses).
+    if (!enabled || roofProfileType !== "peaked") return;
+    const wall = footprint?.walls.find((w) => w.id === wallId);
+    if (!wall) return;
+    // Auto-place a centered main-level Column Panel (Tommy: "1 panel on
+    // the main level centered with edges flush to the one above it") — its
+    // top edge lands flush with the gable column's own bottom edge with no
+    // extra alignment math, since a normal full-height panel already
+    // reaches the eave, exactly where the gable column begins. Targets
+    // whichever story sits directly under the roofline (the top-most real
+    // story). Excludes the first/last standard-family ordinal — mirrors
+    // Stride 1's own default-window seeding, never at a corner-adjacent
+    // brace position; skipped entirely if there's no safe non-corner
+    // candidate (a wall with fewer than 3 standard-family slots).
+    const topStory: "ground" | "second" = stories.length > 1 ? "second" : "ground";
+    const currentSlots = wallSlotsForStory(topStory)[wallId] ?? [];
+    const standardFamilyIndices = currentSlots
+      .map((_, i) => i)
+      .filter((i) => currentSlots[i]!.type === "standard" || currentSlots[i]!.type === "braced");
+    if (standardFamilyIndices.length < 3) return;
+    const geometry = wallGeometryFor(wallId);
+    if (!geometry) return;
+    // Picks whichever candidate ordinal's ACTUAL post-retile center lands
+    // nearest the wall's real peak X — not a pre-retile estimate.
+    // retileWithOpenings rebuilds every standard-family slot's own width
+    // fresh around whatever the full anchor set (this wall's existing
+    // openings plus the new column) leaves in budget, so a width computed
+    // from the slots as they stood BEFORE inserting this reservation can't
+    // reliably predict where the column actually ends up — this tries
+    // every viable ordinal for real and keeps whichever result is
+    // genuinely closest, which is what actually makes it land "flush with"
+    // the gable column above it (itself always centered on this same real
+    // peak position — see computeGableTiledRow's own
+    // columnReservationWidthIn). Measured from the wall's own TRUE
+    // starting corner (x=0, computeGableTiledRow's own origin) — this
+    // story's own slots only start there when this wall owns its start
+    // corner; otherwise they start `thicknessIn` in (the neighbor's own
+    // corner panel fills that initial sliver instead — see
+    // WallElevationDiagram's own startOffsetIn, which this mirrors).
+    const wallLengthIn = wall.lengthFt * 12;
+    const { resolvedPointXsIn } = resolveGableProfilePoints(roofProfilePointHeightsFt, gableProfilePositionsInByWallId[wallId] ?? [], wallLengthIn);
+    const peakXIn = resolvedPointXsIn[0] ?? wallLengthIn / 2;
+    const startOffsetIn = geometry.hasCornerStart ? 0 : thicknessIn;
+    const existingAnchors = getOpeningAnchors(currentSlots);
+    const candidateOrdinals: number[] = [];
+    for (let ordinal = 1; ordinal < standardFamilyIndices.length - 1; ordinal++) candidateOrdinals.push(ordinal);
+    if (candidateOrdinals.length === 0) return;
+
+    let bestSlots: PanelSlot[] | null = null;
+    let bestDistanceIn = Infinity;
+    for (const ordinal of candidateOrdinals) {
+      const anchors = [...existingAnchors, { beforeStandardCount: ordinal, type: "column" as const, widthIn: COLUMN_TOTAL_WIDTH_IN }];
+      const trialSlots = retileWithOpenings(
+        geometry.lengthIn,
+        standardWidthIn,
+        cornerWidthInForTiling,
+        geometry.gapEnd,
+        geometry.hasCornerStart,
+        geometry.hasCornerEnd,
+        anchors,
+        geometry.allowBorrow,
+      ).slots;
+      let cursorIn = startOffsetIn;
+      let distanceIn = Infinity;
+      for (const s of trialSlots) {
+        if (s.type === "column" && Math.abs(s.widthIn - COLUMN_TOTAL_WIDTH_IN) < 0.01) {
+          distanceIn = Math.min(distanceIn, Math.abs(cursorIn + s.widthIn / 2 - peakXIn));
+        }
+        cursorIn += s.widthIn;
+      }
+      if (distanceIn < bestDistanceIn) {
+        bestDistanceIn = distanceIn;
+        bestSlots = trialSlots;
+      }
+    }
+    if (!bestSlots) return;
+    const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(bestSlots, geometry.gapEnd) : bestSlots;
+    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    setWallSlotsForStory(topStory, (prev) => ({ ...prev, [wallId]: finalSlots }));
   };
+  // Tommy: "make the default that... when the user adds a gable end, the
+  // opposing wall also spawns one, and they are symmetrical and parallel
+  // to each other and move together" — default ON; a sidebar toggle lets
+  // the user break the link back to independent per-wall editing.
+  const [gableMirrorLinked, setGableMirrorLinked] = useState(true);
 
   // Gable end window panels (Tommy: "add an option to click-edit gable end
   // panels to become window gable end panels, similarly splitting into two
@@ -910,7 +1068,7 @@ export default function LayoutEditor() {
       ...(kind === "box-beam"
         ? { sizeId: BOX_BEAM_SIZE_DEFAULT }
         : // Same visual starting height as the Box Beam default (10.5in), freely draggable afterward.
-          { lintelHeightIn: computeBoxBeamAssemblyHeightIn(BOX_BEAM_SIZE_DEFAULT) }),
+          { bigHeaderBeamHeightIn: computeBoxBeamAssemblyHeightIn(BOX_BEAM_SIZE_DEFAULT) }),
       startSlotIndex: 0,
       endSlotIndex: slotCount,
     };
@@ -944,8 +1102,8 @@ export default function LayoutEditor() {
     updateMidWallBeam(story, wallId, beamId, { heightIn });
   const handleChangeMidWallBeamSizeId = (story: "ground" | "second", wallId: string, beamId: string, sizeId: BoxBeamSizeId) =>
     updateMidWallBeam(story, wallId, beamId, { sizeId });
-  const handleChangeMidWallBeamLintelHeightIn = (story: "ground" | "second", wallId: string, beamId: string, lintelHeightIn: number) =>
-    updateMidWallBeam(story, wallId, beamId, { lintelHeightIn });
+  const handleChangeMidWallBeamBigHeaderHeightIn = (story: "ground" | "second", wallId: string, beamId: string, bigHeaderBeamHeightIn: number) =>
+    updateMidWallBeam(story, wallId, beamId, { bigHeaderBeamHeightIn });
   const handleChangeMidWallBeamCoverage = (story: "ground" | "second", wallId: string, beamId: string, coverage: BoxBeamCoverage) =>
     updateMidWallBeam(story, wallId, beamId, coverage);
   // Ground floor's own beams, pre-resolved to geometry (sizeId ->
@@ -982,6 +1140,21 @@ export default function LayoutEditor() {
         const arr = [...(next[wallId] ?? [])];
         arr[pointIndex] = newPositionIn;
         next[wallId] = arr;
+
+        // Mirror onto the paired gable wall (Tommy: "they are symmetrical
+        // and parallel to each other and move together") — reflected
+        // since the opposite wall runs the opposite direction along its
+        // own (same) length. Only when linked and both gable ends exist.
+        if (gableMirrorLinked && wall && gableEndWallIds.size === 2 && gableEndWallIds.has(wallId)) {
+          const otherWallId = [...gableEndWallIds].find((id) => id !== wallId);
+          if (otherWallId) {
+            const wallLengthIn = wall.lengthFt * 12;
+            const mirroredPositionIn = newPositionIn === null ? null : wallLengthIn - newPositionIn;
+            const otherArr = [...(next[otherWallId] ?? [])];
+            otherArr[pointIndex] = mirroredPositionIn;
+            next[otherWallId] = otherArr;
+          }
+        }
         return next;
       });
 
@@ -1006,7 +1179,7 @@ export default function LayoutEditor() {
         }
       }
     },
-    [footprint, gableProfilePositionsInByWallId, handleChangeRoofProfilePointHeightFt],
+    [footprint, gableProfilePositionsInByWallId, handleChangeRoofProfilePointHeightFt, gableMirrorLinked, gableEndWallIds],
   );
   // Elevation sidebar's Shed/Centered Peak pitch dropdowns (Tommy: pick a
   // standard pitch instead of typing a raw rise) — both snap the point's
@@ -1225,6 +1398,7 @@ export default function LayoutEditor() {
       baleFoundationFieldSpacingIn,
       floorBottomSkinEnabled,
       gableEndWallIds,
+      gableStructuralPanelWallIds,
       stories,
       panelizationType,
       timberFrameCurtainPanelType,
@@ -1302,7 +1476,6 @@ export default function LayoutEditor() {
       setPriceModifier(s.priceModifier);
       setFloorSystemId(s.floorSystemId as typeof floorSystemId);
       setPerpendicular2x4Enabled(s.perpendicular2x4Enabled);
-      setRoofSystemTypeId(s.roofSystemTypeId);
       setRoofProfileType(s.roofProfileType);
       setRoofProfilePointHeightsFt(s.roofProfilePointHeightsFt);
       setGableProfilePositionsInByWallId(s.gableProfilePositionsInByWallId);
@@ -1330,6 +1503,7 @@ export default function LayoutEditor() {
       setBaleFoundationFieldSpacingIn(s.baleFoundationFieldSpacingIn ?? BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN);
       setFloorBottomSkinEnabled(s.floorBottomSkinEnabled ?? true);
       setGableEndWallIds(s.gableEndWallIds);
+      setGableStructuralPanelWallIds(s.gableStructuralPanelWallIds ?? new Set());
       setSecondStory(s.stories[1] ?? null);
       setPanelizationType(s.panelizationType);
       setTimberFrameCurtainPanelType(s.timberFrameCurtainPanelType);
@@ -1730,7 +1904,7 @@ export default function LayoutEditor() {
   // an opening was leaving the rest of the wall protruding past the drawn
   // box instead of auto-adjusting the standard count and gap/borrowed
   // panel sizing) — see `retileWithOpenings`.
-  const isOpeningType = (type: PanelSlot["type"]) => type === "window" || type === "door" || type === "column";
+  const isOpeningType = (type: PanelSlot["type"]) => type === "window" || type === "door" || type === "column" || type === "big-header";
 
   // Openings keep their left-to-right order through retileWithOpenings even
   // though slot *indices* can shift (filler standard/safety-gap panels
@@ -1807,6 +1981,42 @@ export default function LayoutEditor() {
       );
       return { ...prev, [wallId]: nextSlots };
     });
+  };
+
+  // Real per-instance header height for a window/door slot on a given
+  // story — same formula the real rendering pipeline uses
+  // (membersForPanelTypeId's own header branch), for the common (unsplit)
+  // case: this story's own full wall height. Doesn't account for a max-
+  // panel-height zone split (a Mid-Wall Bond Beam covering this same
+  // column) — a known gap, since correctly resolving that needs the same
+  // zone-banding pipeline Building3DView/allPanelInstances already run at
+  // render time, not something worth re-deriving for a quick per-edit
+  // check.
+  const resolveHeaderHeightIn = (story: "ground" | "second", slot: PanelSlot): number => {
+    const storyWallHeightIn = (story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt)) * 12;
+    if (slot.type === "door") {
+      const roHeightIn = computeDoorRoughOpeningHeightIn(doorRoughOpeningSelectedHeightIn.value, toeUpHeightIn.value);
+      return computeHeaderHeightIn(storyWallHeightIn, roHeightIn);
+    }
+    const windowSillHeightIn = slot.sillHeightIn ?? sillDefaultHeightIn.value;
+    const windowRoHeightIn = slot.heightIn ?? standardWindowHeightDefaultIn.value;
+    return computeHeaderHeightIn(storyWallHeightIn, windowSillHeightIn + windowRoHeightIn);
+  };
+
+  // Applied after every width/height-affecting window/door mutation (see
+  // callers below) — a no-op unless that specific slot's own single-peak
+  // angle now falls outside range. Same width carries over; heightIn is
+  // reset to the Big Header default (a window/door's own heightIn means
+  // its Rough Opening height, a completely different quantity from a Big
+  // Header's own total assembly height — carrying the old value over would
+  // be meaningless, possibly even outside bigHeaderHeightInRange).
+  const applyBigHeaderAutoUpgrade = (story: "ground" | "second", slots: PanelSlot[], index: number): PanelSlot[] => {
+    const slot = slots[index];
+    if (!slot || (slot.type !== "window" && slot.type !== "door")) return slots;
+    if (!shouldAutoUpgradeToBigHeader(slot.widthIn, resolveHeaderHeightIn(story, slot))) return slots;
+    return slots.map((s, i) =>
+      i === index ? { ...s, type: "big-header" as const, heightIn: bigHeaderDefaultHeightIn.value, includeSillOnBigHeader: false } : s,
+    );
   };
 
   const handleToggleOpening = (story: "ground" | "second", wallId: Wall["id"], slotIndex: number, zoneIndex?: number) => {
@@ -1900,26 +2110,44 @@ export default function LayoutEditor() {
     // "standard" already is.
     const anchors: {
       beforeStandardCount: number;
-      type: "window" | "door" | "column";
+      type: "window" | "door" | "column" | "big-header";
       widthIn: number;
       heightIn?: number;
       sillHeightIn?: number;
       zones?: PanelSlotZone[];
+      includeSillOnBigHeader?: boolean;
     }[] = [];
     let standardsSeen = 0;
     currentSlots.forEach((slot, i) => {
       const type = i === slotIndex ? next.type : slot.type;
-      if (type === "window" || type === "door" || type === "column") {
+      if (type === "window" || type === "door" || type === "column" || type === "big-header") {
         anchors.push({
           beforeStandardCount: standardsSeen,
           type,
-          widthIn: type === "column" ? COLUMN_TOTAL_WIDTH_IN : slot.widthIn,
+          // Column and Big Header are both fixed/default-width reservations
+          // when freshly toggled in (Big Header's own width isn't fixed
+          // like Column's, but a plain standard/braced slot's own current
+          // widthIn is almost always below bigHeaderWidthInRange's own
+          // 48in floor, so it needs its own sane default too, not whatever
+          // narrow width the slot it's replacing happened to have).
+          widthIn:
+            type === "column"
+              ? COLUMN_TOTAL_WIDTH_IN
+              : type === "big-header" && i === slotIndex
+                ? bigHeaderDefaultWidthIn.value
+                : slot.widthIn,
+          heightIn: type === "big-header" && i === slotIndex ? bigHeaderDefaultHeightIn.value : undefined,
           // The toggled slot itself (i === slotIndex) is transitioning INTO
           // this type fresh — no prior window/column data of its own to
           // carry. Every OTHER opening on this wall keeps its own
           // heightIn/sillHeightIn/zones through this whole-wall retile
           // (see getOpeningAnchors' own doc comment on this same gap).
-          ...(i !== slotIndex && { heightIn: slot.heightIn, sillHeightIn: slot.sillHeightIn, zones: slot.zones }),
+          ...(i !== slotIndex && {
+            heightIn: slot.heightIn,
+            sillHeightIn: slot.sillHeightIn,
+            zones: slot.zones,
+            includeSillOnBigHeader: slot.includeSillOnBigHeader,
+          }),
         });
       } else if (type === "standard" || type === "braced") {
         standardsSeen++;
@@ -1969,6 +2197,13 @@ export default function LayoutEditor() {
     if (openingOrdinal !== null) {
       const newIndex = findNthOpeningIndex(finalSlots, openingOrdinal);
       setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex, story });
+      // Freshly toggling into "window"/"door" can itself already exceed the
+      // single-peak angle allowance (e.g. clicking a standard panel wide
+      // enough that even a fresh default-height window header can't stay
+      // in range) — check right away, not just on a later resize.
+      if (newIndex !== -1 && (next.type === "window" || next.type === "door")) {
+        finalSlots = applyBigHeaderAutoUpgrade(story, finalSlots, newIndex);
+      }
     } else if (next.type === "braced") {
       const newIndex = findNthStandardFamilyIndex(finalSlots, precedingStandardFamilyCount);
       setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex, story });
@@ -2040,7 +2275,7 @@ export default function LayoutEditor() {
     setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex, story });
     setWallSlotsForStory(story, (prev) => ({
       ...prev,
-      [wallId]: finalSlots,
+      [wallId]: newIndex === -1 ? finalSlots : applyBigHeaderAutoUpgrade(story, finalSlots, newIndex),
     }));
   };
 
@@ -2072,8 +2307,117 @@ export default function LayoutEditor() {
       if (!slots || !slots[slotIndex]) return prev;
       const nextSlots = slots.slice();
       nextSlots[slotIndex] = updateSlotZoneField(nextSlots[slotIndex]!, zoneIndex, { heightIn });
+      // Only the bottom/only zone (zoneIndex undefined or 0) carries the
+      // slot's own top-level type the auto-upgrade acts on — a non-bottom
+      // zone's own type lives in its own zones[] entry, a separate concept
+      // the click-cycle already handles independently.
+      if (zoneIndex === undefined || zoneIndex === 0) {
+        return { ...prev, [wallId]: applyBigHeaderAutoUpgrade(story, nextSlots, slotIndex) };
+      }
       return { ...prev, [wallId]: nextSlots };
     });
+  };
+
+  // Same shape as handleSetWindowWidth — a Big Header's own width IS a
+  // reserved-width change, so it needs the full retileWithOpenings dance
+  // too, just clamped to bigHeaderWidthInRange instead. Uses isOpeningType
+  // (window|door|column|big-header) for the ordinal, matching
+  // getOpeningAnchors' own anchor order exactly.
+  const handleSetBigHeaderWidth = (story: "ground" | "second", wallId: string, slotIndex: number, requestedWidthIn: number) => {
+    const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
+    const geometry = wallGeometryFor(wallId);
+    if (!geometry) return;
+    const widthIn = Math.min(Math.max(requestedWidthIn, bigHeaderWidthInRange.minIn), bigHeaderWidthInRange.maxIn);
+    const precedingOpenings = currentSlots.slice(0, slotIndex).filter((s) => isOpeningType(s.type)).length;
+    const anchors = getOpeningAnchors(currentSlots).map((a) => (a.type === "column" ? { ...a, widthIn: COLUMN_TOTAL_WIDTH_IN } : a));
+    if (!anchors[precedingOpenings]) return;
+    anchors[precedingOpenings] = { ...anchors[precedingOpenings]!, widthIn };
+
+    const slots = retileWithOpenings(
+      geometry.lengthIn,
+      standardWidthIn,
+      cornerWidthInForTiling,
+      geometry.gapEnd,
+      geometry.hasCornerStart,
+      geometry.hasCornerEnd,
+      anchors,
+      geometry.allowBorrow,
+    ).slots;
+    const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
+    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    const newIndex = findNthOpeningIndex(finalSlots, precedingOpenings);
+    setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex, story });
+    setWallSlotsForStory(story, (prev) => ({
+      ...prev,
+      [wallId]: finalSlots,
+    }));
+  };
+
+  // Unlike width, a Big Header's height doesn't affect wall tiling at all —
+  // same direct per-slot field update as handleSetWindowHeight, clamped to
+  // bigHeaderHeightInRange.
+  const handleSetBigHeaderHeight = (story: "ground" | "second", wallId: string, slotIndex: number, requestedHeightIn: number) => {
+    const heightIn = Math.min(Math.max(requestedHeightIn, bigHeaderHeightInRange.minIn), bigHeaderHeightInRange.maxIn);
+    setWallSlotsForStory(story, (prev) => {
+      const slots = prev[wallId];
+      if (!slots || !slots[slotIndex]) return prev;
+      const nextSlots = slots.slice();
+      nextSlots[slotIndex] = { ...nextSlots[slotIndex]!, heightIn };
+      return { ...prev, [wallId]: nextSlots };
+    });
+  };
+
+  // Tommy: "2 with the option to have a sill under it as an option in the
+  // left bar but default not" — a pure per-slot boolean, no re-tiling
+  // (same shape as handleSetBigHeaderHeight).
+  const handleSetIncludeSillOnBigHeader = (story: "ground" | "second", wallId: string, slotIndex: number, includeSillOnBigHeader: boolean) => {
+    setWallSlotsForStory(story, (prev) => {
+      const slots = prev[wallId];
+      if (!slots || !slots[slotIndex]) return prev;
+      const nextSlots = slots.slice();
+      nextSlots[slotIndex] = { ...nextSlots[slotIndex]!, includeSillOnBigHeader };
+      return { ...prev, [wallId]: nextSlots };
+    });
+  };
+
+  // Dedicated left-bar spawn button (Tommy: "i like how the mid-wall bond
+  // beam can be spawned in with the bottons on the left so lets keep
+  // that") — reserves a new "big-header" PanelSlot centered among this
+  // wall's own standard-family ordinals, at the catalog default width/
+  // height, via the same retileWithOpenings mechanism every opening uses.
+  // Not tied to any external reference point (unlike the gable Column
+  // Panel's own peak-aligned placement), so a plain middle-ordinal pick is
+  // enough — no "try every candidate" search needed here.
+  const handleAddBigHeaderPanel = (story: "ground" | "second", wallId: string) => {
+    const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
+    const geometry = wallGeometryFor(wallId);
+    if (!geometry) return;
+    const standardFamilyCount = currentSlots.filter((s) => s.type === "standard" || s.type === "braced").length;
+    if (standardFamilyCount === 0) return;
+    const ordinal = Math.floor(standardFamilyCount / 2);
+    const existingAnchors = getOpeningAnchors(currentSlots).map((a) => (a.type === "column" ? { ...a, widthIn: COLUMN_TOTAL_WIDTH_IN } : a));
+    const anchors = [
+      ...existingAnchors,
+      {
+        beforeStandardCount: ordinal,
+        type: "big-header" as const,
+        widthIn: bigHeaderDefaultWidthIn.value,
+        heightIn: bigHeaderDefaultHeightIn.value,
+      },
+    ];
+    const slots = retileWithOpenings(
+      geometry.lengthIn,
+      standardWidthIn,
+      cornerWidthInForTiling,
+      geometry.gapEnd,
+      geometry.hasCornerStart,
+      geometry.hasCornerEnd,
+      anchors,
+      geometry.allowBorrow,
+    ).slots;
+    const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
+    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: finalSlots }));
   };
 
   // Same "direct per-slot field, no re-tiling" pattern as
@@ -2599,6 +2943,7 @@ export default function LayoutEditor() {
         isWindow?: boolean;
         windowHeightIn?: number;
         windowSillHeightIn?: number;
+        isColumn?: boolean;
       }[]
     > = {};
     for (const wall of footprint.walls) {
@@ -2633,6 +2978,7 @@ export default function LayoutEditor() {
         heelHeightIn,
         roofBearingAnchorMode,
         gableWindowAnchorsByWallId[wall.id] ?? [],
+        gableStructuralPanelWallIds.has(wall.id) ? COLUMN_TOTAL_WIDTH_IN : undefined,
       );
       // The real high edge is capped to maxGablePanelHeightIn's own
       // fabrication ceiling (Tommy: "gable panels...can be up to 8' tall")
@@ -2656,6 +3002,7 @@ export default function LayoutEditor() {
           ...(capped.verticalGapIn ? { verticalGapIn: capped.verticalGapIn } : {}),
           ...(t.isSafetyGap ? { isSafetyGap: true } : {}),
           ...(t.isWindow ? { isWindow: true, windowHeightIn: t.windowHeightIn, windowSillHeightIn: t.windowSillHeightIn } : {}),
+          ...(t.isColumn ? { isColumn: true } : {}),
         };
       });
     }
@@ -3970,7 +4317,7 @@ export default function LayoutEditor() {
     if (!footprint) return [];
     const groups = new Map<
       string,
-      { kind: MidWallBeamKind; sizeId?: BoxBeamSizeId; lintelHeightIn?: number; lengthIn: number; instances: { name: string }[] }
+      { kind: MidWallBeamKind; sizeId?: BoxBeamSizeId; bigHeaderBeamHeightIn?: number; lengthIn: number; instances: { name: string }[] }
     >();
     for (const story of stories) {
       const beams = midWallBeamsByStoryAndWallId[story.id];
@@ -3985,23 +4332,26 @@ export default function LayoutEditor() {
         for (const beam of wallBeams) {
           const lengthIn = Math.max(0, (offsetsIn[beam.endSlotIndex] ?? 0) - (offsetsIn[beam.startSlotIndex] ?? 0));
           if (lengthIn <= 0) continue;
-          // Lintel heights are continuous (not a discrete catalog id), so
-          // two different lintels will naturally group together far less
+          // Big Header heights are continuous (not a discrete catalog id),
+          // so two different beams will naturally group together far less
           // often than two box beams sharing the same catalog size —
           // expected, matches this app's general "a shop cuts by real
           // dimensions" grouping convention.
-          const key = beam.kind === "box-beam" ? `box-beam-${beam.sizeId}-${lengthIn.toFixed(3)}` : `web-braced-lintel-${beam.lintelHeightIn!.toFixed(2)}-${lengthIn.toFixed(3)}`;
+          const key =
+            beam.kind === "box-beam"
+              ? `box-beam-${beam.sizeId}-${lengthIn.toFixed(3)}`
+              : `big-header-beam-${beam.bigHeaderBeamHeightIn!.toFixed(2)}-${lengthIn.toFixed(3)}`;
           const name = `Wall ${wall.id} (${direction}, ${story.label}, ${beam.heightIn.toFixed(1)}in)`;
           const existing = groups.get(key);
           if (existing) existing.instances.push({ name });
-          else groups.set(key, { kind: beam.kind, sizeId: beam.sizeId, lintelHeightIn: beam.lintelHeightIn, lengthIn, instances: [{ name }] });
+          else groups.set(key, { kind: beam.kind, sizeId: beam.sizeId, bigHeaderBeamHeightIn: beam.bigHeaderBeamHeightIn, lengthIn, instances: [{ name }] });
         }
       }
     }
 
-    return [...groups.entries()].map(([groupKey, { kind, sizeId, lintelHeightIn, lengthIn, instances }]) => {
-      const heightIn = kind === "box-beam" ? computeBoxBeamAssemblyHeightIn(sizeId) : (lintelHeightIn ?? LINTEL_MIN_HEIGHT_IN);
-      const members = kind === "box-beam" ? buildBoxBeamMembers(lengthIn, thicknessIn, sizeId) : buildWebBracedLintelMembers(lengthIn, thicknessIn, heightIn);
+    return [...groups.entries()].map(([groupKey, { kind, sizeId, bigHeaderBeamHeightIn, lengthIn, instances }]) => {
+      const heightIn = kind === "box-beam" ? computeBoxBeamAssemblyHeightIn(sizeId) : (bigHeaderBeamHeightIn ?? BIG_HEADER_BEAM_MIN_HEIGHT_IN);
+      const members = kind === "box-beam" ? buildBoxBeamMembers(lengthIn, thicknessIn, sizeId) : buildBigHeaderBeamMembers(lengthIn, thicknessIn, heightIn);
       const woodWeightKg = computeMemberSetWoodWeight(members).weightKg;
       const weightBreakdown: PanelWeightBreakdown =
         kind === "box-beam"
@@ -4020,7 +4370,7 @@ export default function LayoutEditor() {
               };
             })()
           : {
-              // No fill component — a lintel is a solid framed + braced
+              // No fill component — a Big Header is a solid framed + braced
               // panel (like a window header), not an insulated cavity
               // assembly the way a Box Beam is.
               strawOnlyWeightKg: 0,
@@ -4033,7 +4383,7 @@ export default function LayoutEditor() {
         uniqueKey: `midwallbeam-${groupKey}`,
         kind,
         sizeId,
-        lintelHeightIn,
+        bigHeaderBeamHeightIn,
         lengthIn,
         heightIn,
         members,
@@ -4095,7 +4445,7 @@ export default function LayoutEditor() {
     // list").
     if (wallsEnabled && role !== "public") {
       for (const group of midWallBondBeamFabricationGroups) {
-        const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Web Braced Lintel";
+        const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Big Header (Mid-Wall Beam)";
         pages.push({
           id: `shop-fab-${group.uniqueKey}`,
           label: `Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
@@ -4715,15 +5065,18 @@ export default function LayoutEditor() {
         <div role="group" aria-label="Roof system type" className={styles.toolbar}>
           {roofSystemTypes.map((t) => (
             <label key={t.id} title={t.description}>
-              <input
-                type="checkbox"
-                checked={roofSystemTypeId === t.id}
-                onChange={() => setRoofSystemTypeId(t.id)}
-              />{" "}
+              <input type="checkbox" checked={roofSystemTypeId === t.id} disabled readOnly />{" "}
               {t.label}
             </label>
           ))}
         </div>
+      )}
+      {roofEnabled && (
+        <p className={styles.note}>
+          Now determined by each Gable End wall&apos;s own "Panels/beam" toggle in that wall&apos;s Elevation view sidebar (Tommy: gable
+          config is "the determining factor" for roof options) — structural-panel as soon as any gable wall is in panels/beam mode,
+          truss otherwise.
+        </p>
       )}
 
       {wallsEnabled && (
@@ -5063,9 +5416,9 @@ export default function LayoutEditor() {
           <button
             type="button"
             className={elevationStyles.actionButton}
-            onClick={() => handleAddMidWallBeam(story, wallId, "web-braced-lintel")}
+            onClick={() => handleAddMidWallBeam(story, wallId, "big-header-beam")}
           >
-            + Add Lintel
+            + Add Big Header (Mid-Wall)
           </button>
         </div>
         {story === "ground" && (
@@ -5073,8 +5426,8 @@ export default function LayoutEditor() {
             Splits the row into stacked bands; drag the brown handle to reposition, the green handles to resize its
             own coverage. Dragging a beam&apos;s bottom edge within {MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN}in of a
             covered window&apos;s own header bottom snaps flush with it — its header then shrinks to fit above the
-            beam automatically. Dragging it (or, for a lintel, its own top edge — the blue handle) within{" "}
-            {MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN}in of the roofline instead snaps flush with THAT: a lintel
+            beam automatically. Dragging it (or, for a Big Header, its own top edge — the blue handle) within{" "}
+            {MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN}in of the roofline instead snaps flush with THAT: a Big Header
             grows to close the gap, a box beam slides up.
           </p>
         )}
@@ -5106,13 +5459,18 @@ export default function LayoutEditor() {
             </select>
           ) : (
             <label className={elevationStyles.fieldRow}>
-              Lintel tall
+              Big Header tall
               <input
                 type="number"
-                min={LINTEL_MIN_HEIGHT_IN}
-                value={Math.round(beam.lintelHeightIn ?? LINTEL_MIN_HEIGHT_IN)}
+                min={BIG_HEADER_BEAM_MIN_HEIGHT_IN}
+                value={Math.round(beam.bigHeaderBeamHeightIn ?? BIG_HEADER_BEAM_MIN_HEIGHT_IN)}
                 onChange={(e) =>
-                  handleChangeMidWallBeamLintelHeightIn(story, wallId, beam.id, Math.max(LINTEL_MIN_HEIGHT_IN, Number(e.target.value)))
+                  handleChangeMidWallBeamBigHeaderHeightIn(
+                    story,
+                    wallId,
+                    beam.id,
+                    Math.max(BIG_HEADER_BEAM_MIN_HEIGHT_IN, Number(e.target.value)),
+                  )
                 }
               />
               in
@@ -5182,6 +5540,22 @@ export default function LayoutEditor() {
           midWallBeamsByStoryAndWallId.second[elevationWall.id] ?? [],
           (secondStory?.wallHeightFt ?? wallHeightFt) * 12,
         )}
+      <div className={elevationStyles.toggleRow}>
+        <button type="button" className={elevationStyles.actionButton} onClick={() => handleAddBigHeaderPanel("ground", elevationWall.id)}>
+          + Add Big Header
+        </button>
+        {stories.length > 1 && (
+          <button type="button" className={elevationStyles.actionButton} onClick={() => handleAddBigHeaderPanel("second", elevationWall.id)}>
+            + Add Big Header (2nd story)
+          </button>
+        )}
+        <p className={elevationStyles.helpText}>
+          A standalone header + 2 jack studs unit (no rough opening below it needed) — {bigHeaderHeightInRange.minIn / 12}
+          -{bigHeaderHeightInRange.maxIn / 12}ft tall, {bigHeaderWidthInRange.minIn / 12}-{bigHeaderWidthInRange.maxIn / 12}
+          ft wide, no sill by default. Also reachable by clicking through a standard/braced panel&apos;s own type cycle,
+          or automatically when a window/door header&apos;s single brace angle falls out of range.
+        </p>
+      </div>
       {!gableEndWallIds.has(elevationWall.id) && gableEndToggleBlockReason(elevationWall.id) && (
         <p className={elevationStyles.warningText}>{gableEndToggleBlockReason(elevationWall.id)}</p>
       )}
@@ -5210,6 +5584,49 @@ export default function LayoutEditor() {
           )}
         </>
       )}
+      {gableEndWallIds.has(elevationWall.id) && isShorterDimensionWall(elevationWall.id) && (
+        <div className={elevationStyles.toggleRow}>
+          <label className={elevationStyles.checkboxLabel}>
+            <input
+              type="checkbox"
+              checked={gableStructuralPanelWallIds.has(elevationWall.id)}
+              onChange={(e) => handleToggleGableStructuralPanel(elevationWall.id, e.target.checked)}
+            />
+            Panels/beam (spawns a real Column Panel centered under the peak, on both the gable tile and the main wall
+            level below it, instead of open truss framing)
+          </label>
+        </div>
+      )}
+      {gableEndWallIds.size === 2 && (
+        <div className={elevationStyles.toggleRow}>
+          <label className={elevationStyles.checkboxLabel}>
+            <input type="checkbox" checked={gableMirrorLinked} onChange={(e) => setGableMirrorLinked(e.target.checked)} />
+            Mirror gable ends together (roofline edits on this wall also move the opposite gable wall's own — turn off
+            to edit each independently)
+          </label>
+        </div>
+      )}
+      <div role="group" aria-label="Roofline anchor" className={styles.toolbar}>
+        <span style={{ fontSize: 13, marginRight: 4 }}>Roofline starts at:</span>
+        <button
+          type="button"
+          aria-pressed={roofBearingAnchorMode === "truss-heel"}
+          className={roofBearingAnchorMode === "truss-heel" ? styles.toolActive : styles.tool}
+          onClick={() => setRoofBearingAnchorMode("truss-heel")}
+          title="The roofline runs flat for one full panel width from each unclaimed corner, then rises Heel height above the eave — gable panels meet flush with the top of the trusses."
+        >
+          Truss heel height
+        </button>
+        <button
+          type="button"
+          aria-pressed={roofBearingAnchorMode === "panel-depth"}
+          className={roofBearingAnchorMode === "panel-depth" ? styles.toolActive : styles.tool}
+          onClick={() => setRoofBearingAnchorMode("panel-depth")}
+          title="The roofline rises flush at the plain eave height, starting right at the truss seat depth set below (no raised heel) — gable panels meet flush with the trusses' own inside edge."
+        >
+          Truss seat depth
+        </button>
+      </div>
       {gableEndWallIds.has(elevationWall.id) &&
         (() => {
           const wallWidthIn = elevationWall.lengthFt * 12;
@@ -5219,8 +5636,8 @@ export default function LayoutEditor() {
             wallWidthIn,
           );
           const singlePeakHeightIn = gableEaveHeightIn + (roofProfilePointHeightsFt[0] ?? 0) * 12;
-          const showColumnPanel = roofProfileType === "peaked" && !isShedRoof && roofSystemTypeId === "structural-panel";
-          const columnHeightIn = computeGableColumnHeightIn(singlePeakHeightIn, roofCatcherBeamOffsetIn);
+          const showColumnPanel = roofProfileType === "peaked" && !isShedRoof && gableStructuralPanelWallIds.has(elevationWall.id);
+          const columnHeightIn = singlePeakHeightIn - GABLE_COLUMN_FLAT_TOP_DROP_IN;
           const tileCount = (gableTilesByWallId[elevationWall.id] ?? []).length;
           const ridgeHeightIn = gableEaveHeightIn + (roofProfilePointHeightsFt[0] ?? 0) * 12;
           return (
@@ -5324,13 +5741,14 @@ export default function LayoutEditor() {
                   `${GABLE_SHED_SNAP_THRESHOLD_IN}in of its own nearest end (shaded above) snaps that side to a shed roof. Use the Roof tab to change ` +
                   "profile heights/type, or the panel-width setting above to change the tiling." +
                   (showColumnPanel
-                    ? ` A ${columnHeightIn.toFixed(1)}in Column Panel is centered under the peak, ${roofCatcherBeamOffsetIn}in ` +
-                      "shorter than the ridge so its top can catch the roof-catcher beam (see the Roof tab)."
+                    ? ` A ${columnHeightIn.toFixed(1)}in Column Panel is centered under the peak, ${GABLE_COLUMN_FLAT_TOP_DROP_IN}in ` +
+                      "shorter than the ridge so its top can catch the roof-catcher beam — a matching Column Panel is also on the main wall " +
+                      "level below, flush with its own bottom edge."
                     : roofProfileType === "flat-top"
                       ? " No Column Panel for a flat-topped roofline (no single peak for a beam to reference)."
                       : isShedRoof
                         ? " No Column Panel for a shed roof (single slope, no peak to bear a beam under)."
-                        : " No Column Panel — Truss roof selected (Roof tab): trusses bear on a truss plate with no center support. Switch to a structural-panel roof for a beam-bearing Column Panel.")}
+                        : " No Column Panel — this wall's own \"Panels/beam\" toggle above is off (open truss framing instead).")}
               </p>
             </>
           );
@@ -5922,31 +6340,11 @@ export default function LayoutEditor() {
           width from the corner, then starts the incline this much above the eave — {gableHeelHeightDefaultIn.note} Set to 0 to disable.
         </p>
 
-        <div role="group" aria-label="Roofline anchor" className={styles.toolbar}>
-          <span style={{ fontSize: 13, marginRight: 4 }}>Roofline starts at:</span>
-          <button
-            type="button"
-            aria-pressed={roofBearingAnchorMode === "truss-heel"}
-            className={roofBearingAnchorMode === "truss-heel" ? styles.toolActive : styles.tool}
-            onClick={() => setRoofBearingAnchorMode("truss-heel")}
-            title="The roofline runs flat for one full panel width from each unclaimed corner, then rises Heel height above the eave — gable panels meet flush with the top of the trusses."
-          >
-            Truss heel height
-          </button>
-          <button
-            type="button"
-            aria-pressed={roofBearingAnchorMode === "panel-depth"}
-            className={roofBearingAnchorMode === "panel-depth" ? styles.toolActive : styles.tool}
-            onClick={() => setRoofBearingAnchorMode("panel-depth")}
-            title="The roofline rises flush at the plain eave height, starting right at the truss seat depth set below (no raised heel) — gable panels meet flush with the trusses' own inside edge."
-          >
-            Truss seat depth
-          </button>
-        </div>
         <p className={styles.note}>
           Where an unclaimed (non-shed) end&apos;s roofline slope actually starts lifting off (Tommy: &quot;flush with the top of the
-          trusses or flush with the inside edge of them&quot;) — Truss heel height uses the Heel height setting above; Truss seat depth
-          uses the truss bottom&apos;s own inset below instead, with no raised heel.
+          trusses or flush with the inside edge of them&quot;) is a single project-wide setting, now controlled from any Gable End
+          wall&apos;s own Elevation view sidebar (&quot;Roofline starts at&quot;) instead of here — Truss heel height uses the Heel
+          height setting above; Truss seat depth uses the truss bottom&apos;s own inset below instead, with no raised heel.
         </p>
 
         <div role="group" aria-label="Truss seat depth" className={styles.toolbar}>
@@ -6033,9 +6431,9 @@ export default function LayoutEditor() {
             </label>
             {roofProfileType === "peaked" ? (
               <p className={styles.note}>
-                Column Panel height at a roof-catcher-beam bearing point = ridge height minus this offset (
-                {computeGableColumnHeightIn(gableEaveHeightIn + (roofProfilePointHeightsFt[0] ?? 0) * 12, roofCatcherBeamOffsetIn).toFixed(1)}
-                in at the current inputs) — see the Column Panel Shop Drawing page below.
+                A gable wall with its own "Panels/beam" toggle on (Elevation view sidebar) gets a real Column Panel centered under the
+                peak, {GABLE_COLUMN_FLAT_TOP_DROP_IN}in shorter than the ridge so its top can catch the roof-catcher beam — see the Column
+                Panel Shop Drawing page below.
               </p>
             ) : (
               <p className={styles.note}>
@@ -6409,6 +6807,52 @@ export default function LayoutEditor() {
                             Mirrored ({bracedStyle.pattern === "chevron" ? '">"' : '"\\"'})
                           </label>
                         </>
+                      ) : zone.type === "big-header" ? (
+                        <>
+                          <p className={styles.note}>
+                            A standalone header + 2 jack studs unit, not tied to any opening below it — usable for
+                            double doors, large openings, or conditioned garages. Its chords are rotated 90deg from a
+                            standard panel&apos;s own stud orientation (3.5in face shows in elevation, not 1.5in), with
+                            the same multi-peak W-truss bracing a wide window header used to use. No sill by default.
+                          </p>
+                          <label style={{ display: "block", marginTop: 6 }}>
+                            Width{" "}
+                            <input
+                              type="number"
+                              id={`big-header-width-${wallId}-${slotIndex}`}
+                              value={slot.widthIn}
+                              min={bigHeaderWidthInRange.minIn}
+                              max={bigHeaderWidthInRange.maxIn}
+                              step={0.125}
+                              style={{ width: 64 }}
+                              onChange={(e) => handleSetBigHeaderWidth(story, wallId, slotIndex, Number(e.target.value))}
+                            />
+                            &quot; ({bigHeaderWidthInRange.minIn / 12}-{bigHeaderWidthInRange.maxIn / 12}ft)
+                          </label>
+                          <label style={{ display: "block" }}>
+                            Height{" "}
+                            <input
+                              type="number"
+                              id={`big-header-height-${wallId}-${slotIndex}`}
+                              value={slot.heightIn ?? bigHeaderDefaultHeightIn.value}
+                              min={bigHeaderHeightInRange.minIn}
+                              max={bigHeaderHeightInRange.maxIn}
+                              step={0.125}
+                              style={{ width: 64 }}
+                              onChange={(e) => handleSetBigHeaderHeight(story, wallId, slotIndex, Number(e.target.value))}
+                            />
+                            &quot; ({bigHeaderHeightInRange.minIn / 12}-{bigHeaderHeightInRange.maxIn / 12}ft)
+                          </label>
+                          <label style={{ display: "block" }}>
+                            <input
+                              type="checkbox"
+                              id={`big-header-sill-${wallId}-${slotIndex}`}
+                              checked={slot.includeSillOnBigHeader ?? false}
+                              onChange={(e) => handleSetIncludeSillOnBigHeader(story, wallId, slotIndex, e.target.checked)}
+                            />{" "}
+                            Include a sill underneath
+                          </label>
+                        </>
                       ) : (
                         <p className={styles.note}>
                           {PANEL_TYPE_LABELS[zone.type]} panel, {slot.widthIn.toFixed(1)}in wide.
@@ -6452,8 +6896,7 @@ export default function LayoutEditor() {
                   thicknessIn={thicknessIn}
                   jackStudConfig={jackStudConfig}
                   includeNailer={includeNailer}
-                  roofCatcherBeamOffsetIn={roofCatcherBeamOffsetIn}
-                  roofSystemTypeId={roofSystemTypeId}
+                  hasStructuralColumnPanel={gableStructuralPanelWallIds.has(elevationWall.id)}
                   gableProfilePositionsIn={gableProfilePositionsInByWallId[elevationWall.id] ?? []}
                   onChangeGableProfilePositionIn={(pointIndex, positionIn) =>
                     handleChangeGableProfilePositionIn(elevationWall.id, pointIndex, positionIn)
@@ -6471,8 +6914,8 @@ export default function LayoutEditor() {
                   onChangeMidWallBeamHeight={(story, beamId, heightIn) =>
                     handleChangeMidWallBeamHeight(story, elevationWall.id, beamId, heightIn)
                   }
-                  onChangeMidWallBeamLintelHeightIn={(story, beamId, lintelHeightIn) =>
-                    handleChangeMidWallBeamLintelHeightIn(story, elevationWall.id, beamId, lintelHeightIn)
+                  onChangeMidWallBeamBigHeaderHeightIn={(story, beamId, bigHeaderBeamHeightIn) =>
+                    handleChangeMidWallBeamBigHeaderHeightIn(story, elevationWall.id, beamId, bigHeaderBeamHeightIn)
                   }
                   onChangeMidWallBeamCoverage={(story, beamId, coverage) =>
                     handleChangeMidWallBeamCoverage(story, elevationWall.id, beamId, coverage)
@@ -6535,6 +6978,7 @@ export default function LayoutEditor() {
                   baleFoundationGapIn={baleFoundationGapIn}
                   baleFoundationFieldSpacingIn={baleFoundationFieldSpacingIn}
                   floorBottomSkinEnabled={hasSteelClaySkin}
+                  leastAccessibleCorner={leastAccessibleCorner}
                   compassRef={compassNeedleRef}
                   simplified={simplified3D}
                   showWraps={showWraps}
@@ -7972,12 +8416,12 @@ export default function LayoutEditor() {
 
             {midWallBondBeamFabricationGroups.map((group) => {
               const noteId = `shop-fab-${group.uniqueKey}`;
-              const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Web Braced Lintel";
+              const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Big Header (Mid-Wall Beam)";
               const sizeLabel = group.kind === "box-beam" ? BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === group.sizeId)!.label : `${group.heightIn.toFixed(1)}in tall`;
               const panelDescription =
                 group.kind === "box-beam"
                   ? `Two ${sizeLabel} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`
-                  : `A W-braced lintel (${sizeLabel}) — the same flat-chord + repeating W-truss web construction a window header uses, on both wythes — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`;
+                  : `A Big Header (${sizeLabel}) — the same flat-chord + repeating W-truss web construction a window header uses, on both wythes — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`;
               return (
                 <StickyNote
                   key={group.uniqueKey}

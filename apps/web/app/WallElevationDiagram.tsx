@@ -23,7 +23,6 @@ import {
   buildOpeningAssemblyMembers,
   COLUMN_TOTAL_WIDTH_IN,
   computeBoxBeamHeightDeltaIn,
-  computeGableColumnHeightIn,
   computeGableRipCallout,
   GABLE_PANEL_MAX_HEIGHT_IN,
   panelHeightInRange,
@@ -31,14 +30,13 @@ import {
   standardWindowHeightDefaultIn,
   type BoxBeamSizeId,
   type JackStudConfig,
-  type RoofSystemType,
 } from "@building-integrity/panel-catalog";
 import { computeOpeningGeometry } from "./openingGeometry";
 import { MemberElevationShapes } from "./MemberElevationShapes";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { capGableTileHeights, GABLE_SHED_SNAP_THRESHOLD_IN, matchStandardPitchIn12, resolveGableProfilePoints } from "./gableProfilePoints";
 import {
-  LINTEL_MIN_HEIGHT_IN,
+  BIG_HEADER_BEAM_MIN_HEIGHT_IN,
   MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN,
   MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN,
   midWallBeamsToGeometry,
@@ -61,6 +59,7 @@ const SLOT_COLORS: Record<PanelSlot["type"], string> = {
   window: "#8fc7e8",
   door: "#7a4a2b",
   column: "#4a90a4",
+  "big-header": "#e85d9c",
 };
 
 const GABLE_COLOR = "#9fb8e0";
@@ -149,17 +148,15 @@ export interface WallElevationDiagramProps {
   thicknessIn: number;
   jackStudConfig: JackStudConfig;
   includeNailer: boolean;
-  /** Beam-depth allowance under the peak — see computeGableColumnHeightIn. */
-  roofCatcherBeamOffsetIn: number;
-  /** Truss roofs bear on a truss plate with no center support (Tommy: "if
-   * trusses, lets panelize the gable end panels with no center column");
-   * only a structural-panel roof needs the center Column Panel + roof-
-   * catcher beam it bears on (Tommy: "if the roof is to be panels, we need
-   * a center beam and column panel"). Also only meaningful for a "peaked"
-   * profile — a flat-topped roofline has no single peak for a beam to run
-   * to/from (see computeRidgeLine's own single-peak assumption); no Column
-   * Panel renders for a flat-top profile regardless of roof system. */
-  roofSystemTypeId: RoofSystemType;
+  /** This specific wall's own membership in gableStructuralPanelWallIds
+   * (Tommy: "panels/beam" mode) — reserves a real, centered structural
+   * Column Panel tile in the gable row (see computeGableTiledRow's own
+   * columnReservationWidthIn param) with a flat top GABLE_COLUMN_FLAT_TOP_DROP_IN
+   * below the peak, instead of open truss framing. Only ever reserved for a
+   * genuine single-peak, non-shed roofline — computeGableTiledRow itself
+   * silently skips it otherwise (a flat-topped roofline has no single peak
+   * to center under). */
+  hasStructuralColumnPanel: boolean;
   /** This wall's own real position (inches from the wall's start corner)
    * for each profile point, index-matched to roofProfileType's own point
    * count. `null`/missing means "not yet customized" (auto-centered). */
@@ -218,10 +215,10 @@ export interface WallElevationDiagramProps {
   midWallBeams: MidWallBeam[];
   secondStoryMidWallBeams: MidWallBeam[];
   onChangeMidWallBeamHeight: (story: "ground" | "second", beamId: string, heightIn: number) => void;
-  /** Web-braced-lintel-only — a lintel's own real assembly height, directly
+  /** Big-header-beam-only — this beam's own real assembly height, directly
    * user-adjustable via its own draggable top edge, unlike a box beam's
    * catalog-picked sizeId. */
-  onChangeMidWallBeamLintelHeightIn: (story: "ground" | "second", beamId: string, lintelHeightIn: number) => void;
+  onChangeMidWallBeamBigHeaderHeightIn: (story: "ground" | "second", beamId: string, bigHeaderBeamHeightIn: number) => void;
   onChangeMidWallBeamCoverage: (story: "ground" | "second", beamId: string, coverage: BoxBeamCoverage) => void;
   /** Commits a panel drag-resize tick directly (Tommy: "when you click and
    * drag a panel, it moves... shrinks one panel and adds it to another") —
@@ -290,8 +287,7 @@ export default function WallElevationDiagram({
   thicknessIn,
   jackStudConfig,
   includeNailer,
-  roofCatcherBeamOffsetIn,
-  roofSystemTypeId,
+  hasStructuralColumnPanel,
   gableProfilePositionsIn,
   onChangeGableProfilePositionIn,
   insetIn,
@@ -305,7 +301,7 @@ export default function WallElevationDiagram({
   midWallBeams,
   secondStoryMidWallBeams,
   onChangeMidWallBeamHeight,
-  onChangeMidWallBeamLintelHeightIn,
+  onChangeMidWallBeamBigHeaderHeightIn,
   onChangeMidWallBeamCoverage,
   onDragResizePanels,
   toolbarPortalTarget,
@@ -351,7 +347,7 @@ export default function WallElevationDiagram({
   const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
   const [draggingBoxBeamHandle, setDraggingBoxBeamHandle] = useState<"start" | "end" | null>(null);
   const [isDraggingMaxHeight, setIsDraggingMaxHeight] = useState(false);
-  type MidWallBeamDragHandle = "height" | "lintel-top" | "coverage-start" | "coverage-end";
+  type MidWallBeamDragHandle = "height" | "big-header-beam-top" | "coverage-start" | "coverage-end";
   const [midWallBeamDrag, setMidWallBeamDrag] = useState<{
     story: "ground" | "second";
     beamId: string;
@@ -483,19 +479,13 @@ export default function WallElevationDiagram({
         heelHeightIn,
         roofBearingAnchorMode,
         gableWindowReservations,
+        hasStructuralColumnPanel ? COLUMN_TOTAL_WIDTH_IN : undefined,
       )
     : [];
   const gablePanels: (GableTiledPanel & { verticalGapIn?: { leftIn: number; rightIn: number } })[] = rawGablePanels.map((p) => {
     const capped = capGableTileHeights(p.leftHeightIn, p.rightHeightIn, capHeightIn);
     return { ...p, leftHeightIn: capped.leftEdgeHeightIn, rightHeightIn: capped.rightEdgeHeightIn, verticalGapIn: capped.verticalGapIn };
   });
-  // A Column Panel only makes sense under a single, real peak — a
-  // flat-topped profile has no one point for the roof-catcher beam to run
-  // to/from (computeRidgeLine assumes exactly one peak per wall).
-  const showColumnPanel = hasGableEnd && roofProfileType === "peaked" && !isShedRoof && roofSystemTypeId === "structural-panel";
-  const singlePeakHeightIn = points[0]?.heightIn ?? roofBaseHeightIn;
-  const columnHeightIn = computeGableColumnHeightIn(singlePeakHeightIn, roofCatcherBeamOffsetIn);
-
   const maxHeightIn = hasGableEnd ? maxProfileHeightIn : roofBaseHeightIn;
   const svgWidthPx = Math.min(CANVAS_WIDTH, LEFT_MARGIN_PX + wallWidthIn * PX_PER_IN + 24);
   const scaleX = (svgWidthPx - LEFT_MARGIN_PX - 24) / wallWidthIn;
@@ -633,11 +623,11 @@ export default function WallElevationDiagram({
   //    MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN of the ceiling, it snaps
   //    flush with THAT instead (Tommy: "when a li[n]tel panel is 6" or
   //    closer to the roof line, lets snap it into place as the tallest
-  //    panel that fills that space") — generalized from lintel-only to
-  //    box-beam too. A lintel's own height GROWS to close the gap (bottom
-  //    edge unmoved, since its own assembly height is independently user-
-  //    adjustable); a box-beam has no such concept (its depth is fixed by
-  //    sizeId), so it instead snaps `heightIn` itself — the whole beam
+  //    panel that fills that space") — generalized from big-header-beam-only
+  //    to box-beam too. A Big Header's own height GROWS to close the gap
+  //    (bottom edge unmoved, since its own assembly height is independently
+  //    user-adjustable); a box-beam has no such concept (its depth is fixed
+  //    by sizeId), so it instead snaps `heightIn` itself — the whole beam
   //    slides up flush with the ceiling.
   useEffect(() => {
     if (!midWallBeamDrag || midWallBeamDrag.handle !== "height") return;
@@ -670,8 +660,8 @@ export default function WallElevationDiagram({
       onChangeMidWallBeamHeight(story, beamId, heightIn);
       const gapIn = storyHeightIn - (heightIn + assemblyHeightIn);
       if (gapIn >= 0 && gapIn <= MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN) {
-        if (beam.kind === "web-braced-lintel") {
-          onChangeMidWallBeamLintelHeightIn(story, beamId, storyHeightIn - heightIn);
+        if (beam.kind === "big-header-beam") {
+          onChangeMidWallBeamBigHeaderHeightIn(story, beamId, storyHeightIn - heightIn);
         } else {
           onChangeMidWallBeamHeight(story, beamId, storyHeightIn - assemblyHeightIn);
         }
@@ -694,22 +684,22 @@ export default function WallElevationDiagram({
     eaveHeightIn,
     secondStoryHeightIn,
     onChangeMidWallBeamHeight,
-    onChangeMidWallBeamLintelHeightIn,
+    onChangeMidWallBeamBigHeaderHeightIn,
   ]);
 
-  // Web-braced-lintel-only: vertical drag of the lintel's own TOP edge —
-  // same continuous/unsnapped shape as the height drag above, but adjusts
-  // lintelHeightIn (holding the bottom edge fixed) instead. Snaps flush
-  // with the ceiling under the same MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN
+  // Big-header-beam-only: vertical drag of the beam's own TOP edge — same
+  // continuous/unsnapped shape as the height drag above, but adjusts
+  // bigHeaderBeamHeightIn (holding the bottom edge fixed) instead. Snaps
+  // flush with the ceiling under the same MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN
   // rule. Box-beam has no independent top-edge handle of its own (its depth
   // is fixed by sizeId) — its own ceiling snap lives entirely in the height
   // drag effect above.
   useEffect(() => {
-    if (!midWallBeamDrag || midWallBeamDrag.handle !== "lintel-top") return;
+    if (!midWallBeamDrag || midWallBeamDrag.handle !== "big-header-beam-top") return;
     const { story, beamId } = midWallBeamDrag;
     const beams = story === "ground" ? midWallBeams : secondStoryMidWallBeams;
     const beam = beams.find((b) => b.id === beamId);
-    if (!beam || beam.kind !== "web-braced-lintel") return;
+    if (!beam || beam.kind !== "big-header-beam") return;
     const storyFloorAbsIn = story === "ground" ? 0 : eaveHeightIn;
     const storyHeightIn = story === "ground" ? eaveHeightIn : secondStoryHeightIn;
     const handleMove = (e: MouseEvent) => {
@@ -720,9 +710,9 @@ export default function WallElevationDiagram({
       const pxPerScreenPx = svgHeightPx / rect.height;
       const localPy = (e.clientY - rect.top) * pxPerScreenPx;
       const absTopIn = (svgHeightPx - BOTTOM_MARGIN_PX - localPy) / PX_PER_IN;
-      const rawTopIn = Math.min(Math.max(absTopIn - storyFloorAbsIn, beam.heightIn + LINTEL_MIN_HEIGHT_IN), storyHeightIn);
+      const rawTopIn = Math.min(Math.max(absTopIn - storyFloorAbsIn, beam.heightIn + BIG_HEADER_BEAM_MIN_HEIGHT_IN), storyHeightIn);
       const topIn = storyHeightIn - rawTopIn <= MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN ? storyHeightIn : rawTopIn;
-      onChangeMidWallBeamLintelHeightIn(story, beamId, topIn - beam.heightIn);
+      onChangeMidWallBeamBigHeaderHeightIn(story, beamId, topIn - beam.heightIn);
     };
     const handleUp = () => setMidWallBeamDrag(null);
     window.addEventListener("mousemove", handleMove);
@@ -731,7 +721,7 @@ export default function WallElevationDiagram({
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
-  }, [midWallBeamDrag, midWallBeams, secondStoryMidWallBeams, svgHeightPx, eaveHeightIn, secondStoryHeightIn, onChangeMidWallBeamLintelHeightIn]);
+  }, [midWallBeamDrag, midWallBeams, secondStoryMidWallBeams, svgHeightPx, eaveHeightIn, secondStoryHeightIn, onChangeMidWallBeamBigHeaderHeightIn]);
 
   // Mid-Wall Bond Beam horizontal coverage drag — same shape as the Box
   // Beam coverage-handle drag above, snapping to the nearest real slot
@@ -1181,10 +1171,10 @@ export default function WallElevationDiagram({
             and 2 coverage-drag handles (horizontal, snap-to-slot, same
             pattern as the Box Beam handles below). */}
         {midWallBeams.map((beam) => {
-          const isLintel = beam.kind === "web-braced-lintel";
+          const isBigHeaderBeam = beam.kind === "big-header-beam";
           const assemblyHeightIn = resolveMidWallBeamAssemblyHeightIn(beam);
-          const fillColor = isLintel ? "#9fb8e0" : "#c9a26f";
-          const strokeColor = isLintel ? "#3a5a8a" : "#7a5a2e";
+          const fillColor = isBigHeaderBeam ? "#9fb8e0" : "#c9a26f";
+          const strokeColor = isBigHeaderBeam ? "#3a5a8a" : "#7a5a2e";
           const startXIn = groundOffsetsIn[beam.startSlotIndex] ?? startOffsetIn;
           const endXIn = groundOffsetsIn[beam.endSlotIndex] ?? startOffsetIn + groundRunWidthIn;
           const midYIn = beam.heightIn + assemblyHeightIn / 2;
@@ -1200,7 +1190,7 @@ export default function WallElevationDiagram({
                 strokeWidth={1}
               />
               <text x={xPx(startXIn) + 4} y={yPx(beam.heightIn) + 4} fontSize={9} fill={strokeColor}>
-                {beam.heightIn.toFixed(1)}&quot; {isLintel ? "lintel" : "bond beam"}
+                {beam.heightIn.toFixed(1)}&quot; {isBigHeaderBeam ? "big header" : "bond beam"}
               </text>
               <g
                 style={{ cursor: "ns-resize" }}
@@ -1220,12 +1210,12 @@ export default function WallElevationDiagram({
                 />
                 <circle cx={xPx((startXIn + endXIn) / 2)} cy={yPx(midYIn)} r={7} fill={strokeColor} stroke="#fff" strokeWidth={1.5} />
               </g>
-              {isLintel && (
+              {isBigHeaderBeam && (
                 <g
                   style={{ cursor: "ns-resize" }}
                   onMouseDown={(e) => {
                     e.preventDefault();
-                    setMidWallBeamDrag({ story: "ground", beamId: beam.id, handle: "lintel-top" });
+                    setMidWallBeamDrag({ story: "ground", beamId: beam.id, handle: "big-header-beam-top" });
                   }}
                 >
                   <circle cx={xPx((startXIn + endXIn) / 2)} cy={yPx(beam.heightIn + assemblyHeightIn)} r={5} fill="#2c5c8a" stroke="#fff" strokeWidth={1.5} />
@@ -1292,10 +1282,10 @@ export default function WallElevationDiagram({
             {/* Mid-Wall Bond Beams (second story) — same shape as the
                 ground-floor ones above, offset by eaveHeightIn (absolute). */}
             {secondStoryMidWallBeams.map((beam) => {
-              const isLintel = beam.kind === "web-braced-lintel";
+              const isBigHeaderBeam = beam.kind === "big-header-beam";
               const assemblyHeightIn = resolveMidWallBeamAssemblyHeightIn(beam);
-              const fillColor = isLintel ? "#9fb8e0" : "#c9a26f";
-              const strokeColor = isLintel ? "#3a5a8a" : "#7a5a2e";
+              const fillColor = isBigHeaderBeam ? "#9fb8e0" : "#c9a26f";
+              const strokeColor = isBigHeaderBeam ? "#3a5a8a" : "#7a5a2e";
               const startXIn = secondStoryOffsetsIn[beam.startSlotIndex] ?? startOffsetIn;
               const endXIn = secondStoryOffsetsIn[beam.endSlotIndex] ?? startOffsetIn + secondStoryRunWidthIn;
               const midYIn = eaveHeightIn + beam.heightIn + assemblyHeightIn / 2;
@@ -1311,7 +1301,7 @@ export default function WallElevationDiagram({
                     strokeWidth={1}
                   />
                   <text x={xPx(startXIn) + 4} y={yPx(eaveHeightIn + beam.heightIn) + 4} fontSize={9} fill={strokeColor}>
-                    {beam.heightIn.toFixed(1)}&quot; {isLintel ? "lintel" : "bond beam"}
+                    {beam.heightIn.toFixed(1)}&quot; {isBigHeaderBeam ? "big header" : "bond beam"}
                   </text>
                   <g
                     style={{ cursor: "ns-resize" }}
@@ -1331,12 +1321,12 @@ export default function WallElevationDiagram({
                     />
                     <circle cx={xPx((startXIn + endXIn) / 2)} cy={yPx(midYIn)} r={7} fill={strokeColor} stroke="#fff" strokeWidth={1.5} />
                   </g>
-                  {isLintel && (
+                  {isBigHeaderBeam && (
                     <g
                       style={{ cursor: "ns-resize" }}
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        setMidWallBeamDrag({ story: "second", beamId: beam.id, handle: "lintel-top" });
+                        setMidWallBeamDrag({ story: "second", beamId: beam.id, handle: "big-header-beam-top" });
                       }}
                     >
                       <circle
@@ -1439,6 +1429,28 @@ export default function WallElevationDiagram({
                   .map(([x, y]) => `${x},${y}`)
                   .join(" ");
                 return <polygon key={i} points={points4} fill={GABLE_SAFETY_GAP_COLOR} stroke="#3a5a8a" strokeWidth={1} />;
+              }
+              // Structural Column Panel — auto-managed (see
+              // gableStructuralPanelWallIds in page.tsx), never user-click-
+              // toggleable, and never counted toward `ordinal` — it isn't
+              // part of computeGableTiledRow's own window-ordinal numbering
+              // (the column reservation already shrank the segments window
+              // ordinals are counted against, before this tile was spliced
+              // in), so skipping it here keeps a click on any LATER tile
+              // targeting the exact position that same numbering expects.
+              if (p.isColumn) {
+                return (
+                  <rect
+                    key={i}
+                    x={xPx(p.xStartIn)}
+                    y={yPx(p.leftHeightIn)}
+                    width={(p.xEndIn - p.xStartIn) * scaleX}
+                    height={yPx(roofBaseHeightIn) - yPx(p.leftHeightIn)}
+                    fill={SLOT_COLORS.column}
+                    stroke="#2c5a66"
+                    strokeWidth={1}
+                  />
+                );
               }
               const thisOrdinal = ordinal;
               ordinal++;
@@ -1622,29 +1634,6 @@ export default function WallElevationDiagram({
               .join(" ");
             return <polygon key={`gap-${i}`} points={points4} fill={VERTICAL_GAP_COLOR} stroke="#a06a1f" strokeWidth={1} strokeDasharray="3 2" />;
           })}
-
-        {/* Column Panel, centered under a "peaked" profile's own single
-            point — bears the roof-catcher beam, so it's shorter than a
-            full-height Column Panel by the beam's own depth
-            (roofCatcherBeamOffsetIn). Not shown for a shed roof (single
-            slope, no peak to bear a beam under) or a flat-top profile (no
-            single peak at all). */}
-        {showColumnPanel && (
-          <g>
-            <rect
-              x={xPx(resolvedPointXsIn[0]! - COLUMN_TOTAL_WIDTH_IN / 2)}
-              y={yPx(columnHeightIn)}
-              width={COLUMN_TOTAL_WIDTH_IN * scaleX}
-              height={columnHeightIn * PX_PER_IN}
-              fill={SLOT_COLORS.column}
-              stroke="#2c5a66"
-              strokeWidth={1}
-            />
-            <text x={xPx(resolvedPointXsIn[0]!)} y={yPx(columnHeightIn / 2)} fontSize={8} textAnchor="middle" fill="#fff">
-              Column
-            </text>
-          </g>
-        )}
 
         {/* One reference line + draggable handle per real profile point. */}
         {hasGableEnd &&

@@ -13,6 +13,9 @@ export const PANEL_TYPE_COLORS: Record<PanelSlot["type"], string> = {
   window: "#8fc7e8",
   door: "#7a4a2b",
   column: "#4a90a4",
+  // Tommy: "a unique color maybe pink for 2d box views" — distinct from
+  // every other panel-type color already in use.
+  "big-header": "#e85d9c",
 };
 
 export const PANEL_TYPE_LABELS: Record<PanelSlot["type"], string> = {
@@ -24,6 +27,7 @@ export const PANEL_TYPE_LABELS: Record<PanelSlot["type"], string> = {
   column: "Column",
   window: "Window",
   door: "Door",
+  "big-header": "Big Header",
 };
 
 // Tommy: "lets make safety gaps the second to last label slot - right
@@ -33,6 +37,7 @@ export const PANEL_LEGEND_ORDER: PanelSlot["type"][] = [
   "safety-oct-corner",
   "braced",
   "column",
+  "big-header",
   "window",
   "door",
   "safety-gap",
@@ -51,6 +56,7 @@ export const NAMED_PANEL_TYPE_COLORS: Record<NamedPanelType, string> = {
   braced: PANEL_TYPE_COLORS.braced,
   "safety-gap": PANEL_TYPE_COLORS["safety-gap"],
   column: PANEL_TYPE_COLORS.column,
+  "big-header": PANEL_TYPE_COLORS["big-header"],
   header: "#c9a63f",
   sill: "#6fa87a",
   gable: "#9fb8e0",

@@ -82,11 +82,41 @@ export const columnMinWidthIn = 16.75;
 // already satisfied today: Column's real built width (COLUMN_TOTAL_WIDTH_IN,
 // see columnPanelMembers.ts) is 25.5in, comfortably above this floor.
 
-export const lintelWidthInRange: CatalogRange = {
+export const bigHeaderBeamWidthInRange: CatalogRange = {
   minIn: 15.75,
   maxIn: 118.125,
   status: "confirmed",
-  note: "400-3000mm on the mfr spec sheet (15¾\"-118⅛\"), translated 1:1 — no conflict with any existing default (door/window widths are well under this ceiling).",
+  note: "400-3000mm on the mfr spec sheet (15¾\"-118⅛\"), translated 1:1 — no conflict with any existing default (door/window widths are well under this ceiling). Renamed from lintelWidthInRange when the Mid-Wall Bond Beam's own \"Web Braced Lintel\" kind became \"Big Header (Mid-Wall Beam)\" — see the Review Log.",
+};
+
+/** The opening-spanning Big Header PANEL type (distinct from
+ * `bigHeaderBeamWidthInRange` above, the Mid-Wall Bond Beam's own "Big
+ * Header (Mid-Wall Beam)" kind) — Tommy: "they are default 2' tall and 8'
+ * wide and both of those are adjustable from 2' to 4' and 4' to 12'."
+ * Spawned via the click-cycle wheel, a dedicated left-bar button, or
+ * auto-upgraded from a window/door header whose single-peak brace angle
+ * would fall outside range — see headerMembers.ts's own HEADER_MAX_ANGLE_DEG. */
+export const bigHeaderWidthInRange: CatalogRange = {
+  minIn: 48,
+  maxIn: 144,
+  status: "pending-BI-confirmation",
+  note: "Tommy's own stated range (4ft-12ft) — not mfr-sourced.",
+};
+export const bigHeaderHeightInRange: CatalogRange = {
+  minIn: 24,
+  maxIn: 48,
+  status: "pending-BI-confirmation",
+  note: "Tommy's own stated range (2ft-4ft) — not mfr-sourced.",
+};
+export const bigHeaderDefaultWidthIn: CatalogValue<number> = {
+  value: 96,
+  status: "pending-BI-confirmation",
+  note: "Tommy: \"default 2' tall and 8' wide.\"",
+};
+export const bigHeaderDefaultHeightIn: CatalogValue<number> = {
+  value: 24,
+  status: "pending-BI-confirmation",
+  note: "Tommy: \"default 2' tall and 8' wide.\"",
 };
 
 export const sillHeaderHeightInRange: CatalogRange = {
@@ -252,7 +282,7 @@ export const windowHeaderWidthInRange: CatalogRange = {
   minIn: 24,
   maxIn: 120,
   status: "pending-BI-confirmation",
-  note: "Tommy: window headers 'can be however wide up to 10 ft wide.' Floor matches today's smallest reachable window width; the 120in (10ft) ceiling is Tommy's own stated spec, not mfr-sourced like lintelWidthInRange's 118.125in.",
+  note: "Tommy: window headers 'can be however wide up to 10 ft wide.' Floor matches today's smallest reachable window width; the 120in (10ft) ceiling is Tommy's own stated spec, not mfr-sourced like bigHeaderBeamWidthInRange's 118.125in.",
 };
 
 /** 5 standard window heights (Tommy: "an option for 5 different standard

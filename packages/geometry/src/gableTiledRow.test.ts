@@ -599,3 +599,50 @@ describe("computeGableTiledRow — horizontal safety-gap absorption (Part B)", (
     expect(gapPanels).toHaveLength(3);
   });
 });
+
+describe("computeGableTiledRow — structural Column Panel reservation (columnReservationWidthIn)", () => {
+  const COLUMN_WIDTH_IN = 25.5;
+
+  it("reserves a flat-topped column centered on the peak, GABLE_COLUMN_FLAT_TOP_DROP_IN (12in) below it", () => {
+    const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false, 0, "truss-heel", [], COLUMN_WIDTH_IN);
+    const column = panels.find((p) => p.isColumn);
+    expect(column).toBeDefined();
+    expect(column!.xStartIn).toBeCloseTo(80 - COLUMN_WIDTH_IN / 2, 6);
+    expect(column!.xEndIn).toBeCloseTo(80 + COLUMN_WIDTH_IN / 2, 6);
+    expect(column!.widthIn).toBeCloseTo(COLUMN_WIDTH_IN, 6);
+    expect(column!.leftHeightIn).toBeCloseTo(192 - 12, 6);
+    // Flat top — never sloped, unlike every other real gable tile.
+    expect(column!.rightHeightIn).toBe(column!.leftHeightIn);
+  });
+
+  it("shrinks its 2 neighboring tiles to make room, keeping the wall's total tiled width exact", () => {
+    const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false, 0, "truss-heel", [], COLUMN_WIDTH_IN);
+    const totalWidthIn = panels.reduce((sum, p) => sum + p.widthIn, 0);
+    expect(totalWidthIn).toBeCloseTo(160, 6);
+    // Sorted left-to-right, every tile's own xEndIn should exactly meet the
+    // next tile's own xStartIn — no gap, no overlap, column included.
+    const sorted = [...panels].sort((a, b) => a.xStartIn - b.xStartIn);
+    for (let i = 1; i < sorted.length; i++) {
+      expect(sorted[i]!.xStartIn).toBeCloseTo(sorted[i - 1]!.xEndIn, 6);
+    }
+  });
+
+  it("never reserves a column for a flat-topped (2-point) profile — no single peak to center under", () => {
+    const points: RoofProfilePoint[] = [
+      { xIn: 53, heightIn: 180 },
+      { xIn: 107, heightIn: 180 },
+    ];
+    const panels = computeGableTiledRow(160, 120, points, 40, 0, false, 0, "truss-heel", [], COLUMN_WIDTH_IN);
+    expect(panels.some((p) => p.isColumn)).toBe(false);
+  });
+
+  it("skips the reservation on a wall too narrow for the column to fit, falling back to a plain roofline", () => {
+    const panels = computeGableTiledRow(20, 120, [{ xIn: 10, heightIn: 150 }], 40, 0, false, 0, "truss-heel", [], COLUMN_WIDTH_IN);
+    expect(panels.some((p) => p.isColumn)).toBe(false);
+  });
+
+  it("omitting columnReservationWidthIn entirely reserves nothing (today's exact behavior)", () => {
+    const panels = computeGableTiledRow(160, 120, [{ xIn: 80, heightIn: 192 }], 40, 0, false);
+    expect(panels.some((p) => p.isColumn)).toBe(false);
+  });
+});
