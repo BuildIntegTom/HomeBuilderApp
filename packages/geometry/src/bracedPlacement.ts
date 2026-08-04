@@ -1,7 +1,8 @@
 import { getOpeningAnchors } from "./tiling";
-import type { BracePattern, PanelSlot, PanelSlotZone } from "./types";
+import type { BracePattern, PanelSlot, PanelSlotType, PanelSlotZone } from "./types";
 
 const BRACE_NEAR_CORNER_COUNT = 1;
+const ADDITIONAL_ROW_BRACE_NEAR_CORNER_COUNT = 2;
 
 /** Tommy: safety panels are the standard width plus a 3/4in plywood
  * buffer glued on to guard against install mistakes — see
@@ -149,6 +150,98 @@ export function applyBracedPlacement(
       slot.bracedPattern = defaultPattern;
       slot.bracedMirrored = defaultMirrored;
       cumulativeIn -= spacingIn; // carry any excess forward instead of discarding it
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Same 2-rule shape as `applyBracedPlacement`, but for a freshly-appearing
+ * UPPER zone (Tommy: "when a wall is 16ft tall and then a shorter than
+ * standard height additional row spawns: at least the ends +50%... need to
+ * be braced") — doubled near-corner count (`ADDITIONAL_ROW_BRACE_NEAR_
+ * CORNER_COUNT = 2` instead of 1), and Rule 2's periodic hit claims 2
+ * consecutive eligible slots ("every other pair") instead of 1.
+ *
+ * Operates on one wall's own zone-1-and-above row, not the wall's flat
+ * `PanelSlot[]` (see `applyBracedPlacement` for that) — `zoneSlots[i]` is
+ * slot `i`'s own zone at this level (`undefined` where that column has no
+ * real zone this high, treated as an implicit "standard" placeholder,
+ * same convention `effectiveZonesForSlot`'s own render-time padding
+ * uses). `parentSlotTypes`/`parentWidthsIn` are the row's own top-level
+ * slot data — a zone has no independent notion of its own column being a
+ * corner or how wide it is (`PanelSlotZone` has no `widthIn` of its own,
+ * see its own doc comment), so corner/safety-oct-corner exclusion (never
+ * a brace candidate, and a periodic-spacing reset point, exactly
+ * mirroring `applyBracedPlacement`'s own corner handling) and Rule 2's
+ * distance accumulation both read from the parent row instead.
+ *
+ * `eligibleIndices` (undefined = everything eligible) restricts which
+ * "standard"-zone positions this pass may promote — the caller
+ * (`reconcileWallZonesForHeightChange` in page.tsx) computes this from
+ * which columns just gained a genuinely NEW zone at this level, the same
+ * "don't re-decide an already-settled position" precedent
+ * `reconcileBracedPlacement` follows for zone 0.
+ */
+export function applyAdditionalRowBracedPattern(
+  zoneSlots: (PanelSlotZone | undefined)[],
+  parentSlotTypes: PanelSlotType[],
+  parentWidthsIn: number[],
+  spacingIn: number,
+  defaultPattern: BracePattern,
+  defaultMirrored: boolean,
+  eligibleIndices?: Set<number>,
+): PanelSlotZone[] {
+  const result: PanelSlotZone[] = zoneSlots.map((z) => ({ ...(z ?? { type: "standard" as const }) }));
+  const isEligible = (i: number) => eligibleIndices === undefined || eligibleIndices.has(i);
+  const isCornerParent = (i: number) => parentSlotTypes[i] === "corner" || parentSlotTypes[i] === "safety-oct-corner";
+
+  const markNearestBraceable = (start: number, step: number, count: number) => {
+    let marked = 0;
+    for (let i = start; i >= 0 && i < result.length && marked < count; i += step) {
+      if (isCornerParent(i)) continue; // no real brace candidate here at all — walk straight past
+      const zone = result[i]!;
+      if (zone.type === "braced") {
+        marked++;
+      } else if (zone.type === "standard") {
+        if (!isEligible(i)) break;
+        zone.type = "braced";
+        zone.bracedPattern = defaultPattern;
+        zone.bracedMirrored = defaultMirrored;
+        marked++;
+      }
+    }
+  };
+  markNearestBraceable(0, 1, ADDITIONAL_ROW_BRACE_NEAR_CORNER_COUNT);
+  markNearestBraceable(result.length - 1, -1, ADDITIONAL_ROW_BRACE_NEAR_CORNER_COUNT);
+
+  let cumulativeIn = 0;
+  for (let i = 0; i < result.length; i++) {
+    if (isCornerParent(i) || result[i]!.type === "braced") {
+      cumulativeIn = 0;
+      continue;
+    }
+    cumulativeIn += parentWidthsIn[i] ?? 0;
+    if (cumulativeIn < spacingIn || result[i]!.type !== "standard" || !isEligible(i)) continue;
+    result[i]!.type = "braced";
+    result[i]!.bracedPattern = defaultPattern;
+    result[i]!.bracedMirrored = defaultMirrored;
+    cumulativeIn -= spacingIn;
+    // Claim one more consecutive eligible slot as this same brace event's
+    // own pair-mate ("every other pair") — walks past an opening/locked-
+    // standard slot without giving up (same "doesn't reset the shear
+    // requirement" precedent Rule 2's own reset condition above follows),
+    // stopping at the next corner or at an already-braced slot (which
+    // already counts as a real brace, satisfying the pair on its own).
+    for (let j = i + 1; j < result.length && !isCornerParent(j); j++) {
+      if (result[j]!.type === "braced") break;
+      if (result[j]!.type === "standard" && isEligible(j)) {
+        result[j]!.type = "braced";
+        result[j]!.bracedPattern = defaultPattern;
+        result[j]!.bracedMirrored = defaultMirrored;
+        break;
+      }
     }
   }
 

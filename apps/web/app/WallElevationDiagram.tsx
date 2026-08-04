@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   computeGableTiledRow,
   computeRoofBearingSegments,
@@ -230,6 +231,11 @@ export interface WallElevationDiagramProps {
    * retile until mouseup" shape every other drag handler here already
    * uses. */
   onDragResizePanels: (story: "ground" | "second", wallId: string, leftSlotIndex: number, leftWidthIn: number, rightWidthIn: number) => void;
+  /** Same portal mechanism FootprintCanvas's own Pan/Zoom/Reset row uses
+   * (Tommy: "include the pan/zoom in/out/reset pieces found in the plan
+   * view editor in the foundation and elevation editors") — when supplied,
+   * the compact icon row renders there instead of inline above the SVG. */
+  toolbarPortalTarget?: HTMLDivElement | null;
 }
 
 /**
@@ -302,8 +308,46 @@ export default function WallElevationDiagram({
   onChangeMidWallBeamLintelHeightIn,
   onChangeMidWallBeamCoverage,
   onDragResizePanels,
+  toolbarPortalTarget,
 }: WallElevationDiagramProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  // Pan/zoom view (Tommy: "include the pan/zoom in/out/reset pieces found
+  // in the plan view editor in the foundation and elevation editors") — a
+  // plain CSS transform on a wrapper div around the SVG, not a viewBox
+  // change, so every EXISTING drag handler in this file keeps working with
+  // no changes: each already derives its own scale ratio fresh per event
+  // from the SVG's real (possibly CSS-scaled) rendered width vs. its fixed
+  // internal svgWidthPx (see `pxPerScreenPx` throughout), which stays
+  // correct under any zoom/pan an ancestor applies. While `isPanning` is
+  // on, a transparent overlay rect (rendered last, on top of everything)
+  // captures the drag instead of touching any of those handlers — nothing
+  // else needs to know pan mode exists at all.
+  const [viewOffset, setViewOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [viewScale, setViewScale] = useState(1);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panDragging, setPanDragging] = useState(false);
+  const panStartRef = useRef<{ clientX: number; clientY: number; viewOffset: { x: number; y: number } } | null>(null);
+  const zoomIn = () => setViewScale((s) => Math.min(3, s * 1.25));
+  const zoomOut = () => setViewScale((s) => Math.max(0.25, s / 1.25));
+  const resetView = () => {
+    setViewOffset({ x: 0, y: 0 });
+    setViewScale(1);
+  };
+  useEffect(() => {
+    if (!panDragging) return;
+    const handleMove = (e: MouseEvent) => {
+      const start = panStartRef.current;
+      if (!start) return;
+      setViewOffset({ x: start.viewOffset.x + (e.clientX - start.clientX), y: start.viewOffset.y + (e.clientY - start.clientY) });
+    };
+    const handleUp = () => setPanDragging(false);
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [panDragging]);
   const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
   const [draggingBoxBeamHandle, setDraggingBoxBeamHandle] = useState<"start" | "end" | null>(null);
   const [isDraggingMaxHeight, setIsDraggingMaxHeight] = useState(false);
@@ -1065,15 +1109,60 @@ export default function WallElevationDiagram({
     );
   };
 
+  // Same compact icon buttons FootprintCanvas's own Pan/Zoom/Reset row
+  // uses, byte-identical styling/labels so the control feels like the same
+  // piece of UI everywhere it appears.
+  const iconButtonStyle = (active: boolean): CSSProperties => ({
+    fontSize: 15,
+    lineHeight: 1,
+    padding: "6px 9px",
+    borderRadius: 6,
+    border: active ? "1px solid #4a90d9" : "1px solid #ccc",
+    background: active ? "#4a90d9" : "#fff",
+    color: active ? "#fff" : "#333",
+    cursor: "pointer",
+  });
+  const viewingToolbar = (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <button
+        type="button"
+        title="Pan: drag the canvas to pan around"
+        aria-pressed={isPanning}
+        onClick={() => setIsPanning((p) => !p)}
+        style={iconButtonStyle(isPanning)}
+      >
+        🍳
+      </button>
+      <button type="button" title="Zoom out" onClick={zoomOut} style={iconButtonStyle(false)}>
+        🔍−
+      </button>
+      <span style={{ fontSize: 11, color: "#555", minWidth: 28, textAlign: "center" }}>{Math.round(viewScale * 100)}%</span>
+      <button type="button" title="Zoom in" onClick={zoomIn} style={iconButtonStyle(false)}>
+        🔍+
+      </button>
+      <button
+        type="button"
+        title="Reset pan and zoom to the default view"
+        onClick={resetView}
+        style={{ ...iconButtonStyle(false), fontSize: 12, padding: "6px 10px" }}
+      >
+        Reset
+      </button>
+    </div>
+  );
+
   return (
     <div>
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${svgWidthPx} ${svgHeightPx}`}
-        style={{ width: "100%", maxWidth: svgWidthPx, height: "auto", background: "#fafafa" }}
-        role="img"
-        aria-label={`Elevation view of wall ${wall.id}`}
-      >
+      {toolbarPortalTarget ? createPortal(viewingToolbar, toolbarPortalTarget) : viewingToolbar}
+      <div style={{ width: "100%", maxWidth: svgWidthPx, overflow: "hidden" }}>
+        <div style={{ transform: `translate(${viewOffset.x}px, ${viewOffset.y}px) scale(${viewScale})`, transformOrigin: "0 0" }}>
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${svgWidthPx} ${svgHeightPx}`}
+            style={{ width: "100%", maxWidth: svgWidthPx, height: "auto", background: "#fafafa", cursor: isPanning ? "grab" : undefined }}
+            role="img"
+            aria-label={`Elevation view of wall ${wall.id}`}
+          >
         {/* Ground top-plate line — spans only the ground row's own actual
             width (see groundRunWidthIn above), not the wall's raw
             geometric length. Always the ground floor's own height,
@@ -1644,7 +1733,29 @@ export default function WallElevationDiagram({
             </g>
           </g>
         )}
-      </svg>
+        {/* Pan-mode overlay (Tommy: "include the pan/zoom... pieces found
+            in the plan view editor") — rendered last (on top of every
+            other element), so while Pan is active it captures the drag
+            instead of any of the gable/beam/panel-resize handlers above,
+            with no changes needed to any of them. Absent entirely
+            otherwise, so it can never intercept a click when Pan is off. */}
+        {isPanning && (
+          <rect
+            x={0}
+            y={0}
+            width={svgWidthPx}
+            height={svgHeightPx}
+            fill="transparent"
+            style={{ cursor: "grab", pointerEvents: "all" }}
+            onMouseDown={(e) => {
+              panStartRef.current = { clientX: e.clientX, clientY: e.clientY, viewOffset: { ...viewOffset } };
+              setPanDragging(true);
+            }}
+          />
+        )}
+          </svg>
+        </div>
+      </div>
     </div>
   );
 }

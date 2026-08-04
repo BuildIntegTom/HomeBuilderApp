@@ -208,6 +208,90 @@ describe("retilePreservingOpenings", () => {
   });
 });
 
+describe("openingSeed (default door/window on a freshly-panelized wall)", () => {
+  it("seeds exactly 1 door + 1 window on a fresh East-facing wall, never at either corner-touching position", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED, { randomFn: () => 0 });
+    const bc = slots["BC"]!; // BC faces East (see wallCompassDirection.test.ts)
+    expect(bc.filter((s) => s.type === "door").length).toBe(1);
+    expect(bc.filter((s) => s.type === "window").length).toBe(1);
+    // Rule 1 still braces a panel touching each corner — proves the door/
+    // window didn't steal a corner-touching position.
+    expect(bc.filter((s) => s.type === "braced" || s.secondaryType === "braced").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("seeds only a window (no door) on a fresh North-facing wall", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED, { randomFn: () => 0 });
+    const ab = slots["AB"]!; // AB faces North
+    expect(ab.filter((s) => s.type === "door").length).toBe(0);
+    expect(ab.filter((s) => s.type === "window").length).toBe(1);
+  });
+
+  it("seeds no default openings at all when openingSeed is omitted (today's exact behavior)", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    for (const wall of fp.walls) {
+      expect(slots[wall.id]!.some((s) => s.type === "window" || s.type === "door")).toBe(false);
+    }
+  });
+
+  it("skips seeding (and doesn't crash) on a wall too short for any standard slot", () => {
+    // Both ends want a corner (24in each) on a 36in wall — resolveCorners
+    // merges them into one corner panel spanning the whole wall, with no
+    // standard-family slot at all for a default opening to claim.
+    const tinyFp: Footprint = {
+      corners: [
+        { id: "X", point: { x: 0, y: 0 } },
+        { id: "Y", point: { x: 3, y: 0 } },
+      ],
+      walls: [{ id: "XY", startCorner: "X", endCorner: "Y", lengthFt: 3 }],
+    };
+    const slots = retile(tinyFp, "X", new Set(["X", "Y"]), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED, {
+      randomFn: () => 0,
+    });
+    expect(slots["XY"]).toEqual([{ type: "corner", widthIn: 36 }]);
+  });
+
+  it("seeds a default window on a wall with no old counterpart when openingSeed is supplied (retilePreservingOpenings)", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const nextSlots = retilePreservingOpenings(
+      fp,
+      "A",
+      primary,
+      STANDARD_WIDTH_IN,
+      CORNER_PANEL_WIDTH_IN,
+      THICKNESS_IN,
+      {},
+      BRACED_SEED,
+      { randomFn: () => 0 },
+    );
+    expect(nextSlots["AB"]!.some((s) => s.type === "window")).toBe(true);
+  });
+
+  it("never re-seeds a wall whose old slots are being preserved", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const nextSlots = retilePreservingOpenings(
+      fp,
+      "A",
+      primary,
+      STANDARD_WIDTH_IN,
+      CORNER_PANEL_WIDTH_IN,
+      THICKNESS_IN,
+      plainSlots,
+      BRACED_SEED,
+      { randomFn: () => 0 },
+    );
+    expect(nextSlots["AB"]!.some((s) => s.type === "window" || s.type === "door")).toBe(false);
+  });
+});
+
 describe("wallGeometryFor", () => {
   it("returns geometry for an existing wall and null for a nonexistent one", () => {
     const fp = buildRectangleFootprint(30, 20);

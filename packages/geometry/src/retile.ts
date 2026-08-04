@@ -1,7 +1,8 @@
 import { computeGapEnd, computeSafetyEnd } from "./gapPlacement";
 import { cornerTurnAngleRad, footprintIsAllRightAngles, isConvexCorner, isRightAngleCorner } from "./cornerAngle";
 import { reconcileBracedPlacement } from "./bracedPlacement";
-import { getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall } from "./tiling";
+import { getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall, type OpeningAnchor } from "./tiling";
+import { wallCompassDirection } from "./wallCompassDirection";
 import type { BracePattern, CornerId, Footprint, PanelSlot, Wall, WallEnd } from "./types";
 
 /** The project's seismic-zone-driven suggestion for brand-new braced-panel
@@ -15,6 +16,59 @@ export interface BracedSeed {
   spacingIn: number;
   defaultPattern: BracePattern;
   defaultMirrored: boolean;
+}
+
+/** A fresh wall's own soft-default door/window suggestion (Tommy: "one
+ * window on every row of slots... one door on the first level of the
+ * east, south, and west faces") — bundled the same way `BracedSeed` is,
+ * purely to seed brand-new wall positions; an existing wall's own
+ * openings are never touched, same "already decided" precedent
+ * `reconcileBracedPlacement` follows at the per-panel level. `randomFn`
+ * defaults to `Math.random` — injectable for deterministic tests.
+ * Omitted entirely (undefined) = today's exact behavior, no default
+ * openings at all. */
+export interface OpeningSeed {
+  randomFn?: () => number;
+}
+
+/**
+ * A fresh wall's own default door/window pick (Tommy's own confirmed
+ * scope): every wall gets 1 default window; a wall facing exactly East,
+ * South, or West (via `wallCompassDirection`) also gets 1 default door.
+ * Only ever called on a wall with no prior slots (see `retile`/
+ * `tileOneWallPreservingOpenings`'s own `oldSlots === undefined` branch) —
+ * `plainSlots` is `tileWall`'s own freshly-tiled output, so every
+ * non-corner/gap slot is still plain "standard" here; bracing itself
+ * hasn't been decided yet (that's `reconcileBracedPlacement`'s job,
+ * called afterward), so it simply routes around whatever this reserves.
+ *
+ * Candidate positions exclude the first/last standard-family ordinal —
+ * Rule 1 in `applyBracedPlacement` always claims those for the mandatory
+ * corner-touching brace, and Tommy's own confirmed answer is that a
+ * default opening may only take a periodic MID-RUN brace's spot, never a
+ * corner one. A wall with fewer than 3 standard slots has no eligible
+ * non-corner candidate at all — no default opening is seeded for it.
+ */
+function seedDefaultOpenings(plainSlots: PanelSlot[], wall: Wall, fp: Footprint, randomFn: () => number): OpeningAnchor[] {
+  const standardSlotIndices: number[] = [];
+  plainSlots.forEach((slot, slotIndex) => {
+    if (slot.type === "standard") standardSlotIndices.push(slotIndex);
+  });
+  const candidateOrdinals: number[] = [];
+  for (let ordinal = 1; ordinal < standardSlotIndices.length - 1; ordinal++) candidateOrdinals.push(ordinal);
+
+  const anchors: OpeningAnchor[] = [];
+  const take = (type: "door" | "window") => {
+    if (candidateOrdinals.length === 0) return;
+    const pickAt = Math.floor(randomFn() * candidateOrdinals.length);
+    const ordinal = candidateOrdinals.splice(pickAt, 1)[0]!;
+    anchors.push({ beforeStandardCount: ordinal, type, widthIn: plainSlots[standardSlotIndices[ordinal]!]!.widthIn });
+  };
+
+  const facing = wallCompassDirection(wall, fp);
+  if (facing === "E" || facing === "S" || facing === "W") take("door");
+  take("window");
+  return anchors;
 }
 
 export interface CornerEndOwnership {
@@ -146,18 +200,26 @@ export function retile(
   cornerPanelWidthIn: number,
   thicknessIn: number,
   bracedSeed: BracedSeed,
+  openingSeed?: OpeningSeed,
 ): Record<string, PanelSlot[]> {
   const next: Record<string, PanelSlot[]> = {};
   const ownership = cornerOwnership(fp, primary, thicknessIn);
   const mitered = isMiteredShape(fp);
+  const randomFn = openingSeed?.randomFn ?? Math.random;
   for (const wall of fp.walls) {
     const gapEnd = gapEndFor(fp, wall, leastAccessible);
     const { start, end } = ownership[wall.id]!;
     const lengthIn = wall.lengthFt * 12 - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
     // Octagon (and other mitered shapes) never borrow-and-split a standard
     // panel for the gap — Tommy: no standard-safety panels for octagons.
-    const slots = tileWall(lengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, start.hasCorner, end.hasCorner, !mitered)
+    const plainSlots = tileWall(lengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, start.hasCorner, end.hasCorner, !mitered)
       .slots;
+    const seedAnchors = openingSeed ? seedDefaultOpenings(plainSlots, wall, fp, randomFn) : [];
+    const slots =
+      seedAnchors.length > 0
+        ? retileWithOpenings(lengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, start.hasCorner, end.hasCorner, seedAnchors, !mitered)
+            .slots
+        : plainSlots;
     const seeded = reconcileBracedPlacement(
       undefined,
       slots,
@@ -185,9 +247,16 @@ function tileOneWallPreservingOpenings(
   hasCornerStart: boolean,
   hasCornerEnd: boolean,
   allowBorrow: boolean,
+  wall: Wall,
+  fp: Footprint,
+  openingSeed?: OpeningSeed,
 ): PanelSlot[] {
   if (!oldSlots) {
-    return tileWall(wallLengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, hasCornerStart, hasCornerEnd, allowBorrow)
+    const plainSlots = tileWall(wallLengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, hasCornerStart, hasCornerEnd, allowBorrow)
+      .slots;
+    const seedAnchors = openingSeed ? seedDefaultOpenings(plainSlots, wall, fp, openingSeed.randomFn ?? Math.random) : [];
+    if (seedAnchors.length === 0) return plainSlots;
+    return retileWithOpenings(wallLengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, hasCornerStart, hasCornerEnd, seedAnchors, allowBorrow)
       .slots;
   }
   return retileWithOpenings(
@@ -225,6 +294,7 @@ export function retilePreservingOpenings(
   thicknessIn: number,
   oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined>,
   bracedSeed: BracedSeed,
+  openingSeed?: OpeningSeed,
 ): Record<string, PanelSlot[]> {
   const next: Record<string, PanelSlot[]> = {};
   const ownership = cornerOwnership(fp, primary, thicknessIn);
@@ -243,6 +313,9 @@ export function retilePreservingOpenings(
       start.hasCorner,
       end.hasCorner,
       !mitered,
+      wall,
+      fp,
+      openingSeed,
     );
     // Preserves this wall's own prior braced-panel decisions (type, style,
     // mirror) by position, seeding only genuinely new standard-slot

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { SAFETY_PLYWOOD_BUFFER_IN, applyBracedPlacement, reconcileBracedPlacement, setWindowWidth } from "./bracedPlacement";
+import {
+  SAFETY_PLYWOOD_BUFFER_IN,
+  applyAdditionalRowBracedPattern,
+  applyBracedPlacement,
+  reconcileBracedPlacement,
+  setWindowWidth,
+} from "./bracedPlacement";
 import { getOpeningAnchors, retileWithOpenings, tileWall } from "./tiling";
-import type { PanelSlot } from "./types";
+import type { PanelSlot, PanelSlotType, PanelSlotZone } from "./types";
 
 describe("applyBracedPlacement", () => {
   it("places exactly 1 braced panel touching each corner, then periodic braced panels every `spacing` along the plain run, stamped with the default pattern/mirror", () => {
@@ -232,6 +238,89 @@ describe("applyBracedPlacement", () => {
       expect(result[2]!.widthIn).toBeCloseTo(40, 6);
       expect(result[3]!.type).toBe("braced");
     });
+  });
+});
+
+describe("applyAdditionalRowBracedPattern", () => {
+  const standardZones = (count: number): PanelSlotZone[] => Array.from({ length: count }, () => ({ type: "standard" as const }));
+  const standardParentTypes = (count: number): PanelSlotType[] => Array.from({ length: count }, () => "standard" as const);
+
+  it("braces the first 2 and last 2 eligible slots (doubled corner count) with huge spacing so rule 2 never fires", () => {
+    const result = applyAdditionalRowBracedPattern(standardZones(8), standardParentTypes(8), Array(8).fill(40), 100_000, "chevron", false);
+    expect(result.map((z) => z.type)).toEqual(["braced", "braced", "standard", "standard", "standard", "standard", "braced", "braced"]);
+    for (const z of result) {
+      if (z.type !== "braced") continue;
+      expect(z.bracedPattern).toBe("chevron");
+      expect(z.bracedMirrored).toBe(false);
+    }
+  });
+
+  it("walks straight past a corner/safety-oct-corner PARENT column without ever bracing it, finding the first 2 real standard-parent zones inward instead", () => {
+    const parentTypes: PanelSlotType[] = ["corner", "standard", "standard", "standard", "standard", "standard", "standard", "safety-oct-corner"];
+    // Zone content at the corner-parent positions is deliberately "standard"
+    // here too, to prove the skip is driven by `parentSlotTypes`, not by
+    // this zone's own (possibly stale/padded) type.
+    const zoneSlots = standardZones(8);
+    const result = applyAdditionalRowBracedPattern(zoneSlots, parentTypes, Array(8).fill(40), 100_000, "chevron", false);
+    expect(result.map((z) => z.type)).toEqual(["standard", "braced", "braced", "standard", "standard", "braced", "braced", "standard"]);
+  });
+
+  it("claims 2 consecutive eligible slots per periodic hit (\"every other pair\"), recurring along the plain run", () => {
+    // 20 slots, 20in each (400in total run), spacing 90: rule 1 claims
+    // indices 0-1 and 18-19; the periodic rule then fires every 90in of
+    // accumulated width across the remaining plain run, claiming a pair
+    // each time (traced by hand against the function's own carry/reset
+    // behavior — a pair's 2nd slot resets the cumulative distance same as
+    // rule 1's own braces do, so the leftover after a hit isn't carried
+    // past the pair's own 2nd slot).
+    const result = applyAdditionalRowBracedPattern(standardZones(20), standardParentTypes(20), Array(20).fill(20), 90, "chevron", false);
+    expect(result.map((z) => z.type)).toEqual([
+      "braced",
+      "braced",
+      "standard",
+      "standard",
+      "standard",
+      "standard",
+      "braced",
+      "braced",
+      "standard",
+      "standard",
+      "standard",
+      "standard",
+      "braced",
+      "braced",
+      "standard",
+      "standard",
+      "standard",
+      "standard",
+      "braced",
+      "braced",
+    ]);
+  });
+
+  it("never promotes a position outside eligibleIndices, and the walk stops entirely at the first ineligible slot it reaches", () => {
+    const eligible = new Set([2, 3]); // excludes both ends
+    const result = applyAdditionalRowBracedPattern(standardZones(6), standardParentTypes(6), Array(6).fill(40), 100_000, "chevron", false, eligible);
+    expect(result.map((z) => z.type)).toEqual(["standard", "standard", "standard", "standard", "standard", "standard"]);
+  });
+
+  it("recognizes an already-braced slot as satisfying the near-corner requirement without re-marking it", () => {
+    const zoneSlots: PanelSlotZone[] = [
+      { type: "braced", bracedPattern: "hatch", bracedMirrored: true },
+      { type: "standard" },
+      { type: "standard" },
+      { type: "standard" },
+    ];
+    const result = applyAdditionalRowBracedPattern(zoneSlots, standardParentTypes(4), Array(4).fill(40), 100_000, "chevron", false);
+    expect(result[0]).toEqual({ type: "braced", bracedPattern: "hatch", bracedMirrored: true });
+    expect(result[1]!.type).toBe("braced");
+    expect(result[1]!.bracedPattern).toBe("chevron");
+  });
+
+  it("treats an undefined zone entry as an implicit standard placeholder", () => {
+    const zoneSlots: (PanelSlotZone | undefined)[] = [undefined, undefined, undefined, undefined];
+    const result = applyAdditionalRowBracedPattern(zoneSlots, standardParentTypes(4), Array(4).fill(40), 100_000, "chevron", false);
+    expect(result.map((z) => z.type)).toEqual(["braced", "braced", "braced", "braced"]);
   });
 });
 

@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  applyAdditionalRowBracedPattern,
   applyUniformPanelization,
   applyZonesToSlot,
   areWallsOppositePair,
@@ -56,6 +57,7 @@ import {
   type PanelSlot,
   type PanelSlotZone,
   type GableWindowReservation,
+  type OpeningSeed,
   type RoofBearingAnchorMode,
   type RoofProfilePoint,
   type Story,
@@ -1120,6 +1122,12 @@ export default function LayoutEditor() {
   const pageRef = useRef<HTMLDivElement>(null);
   const [toolbarPortalNode, setToolbarPortalNode] = useState<HTMLDivElement | null>(null);
   const [toolbarSecondaryPortalNode, setToolbarSecondaryPortalNode] = useState<HTMLDivElement | null>(null);
+  // Same portal mechanism, one each for FoundationCanvas's and
+  // WallElevationDiagram's own Pan/Zoom/Reset row (Tommy: "include the
+  // pan/zoom in/out/reset pieces found in the plan view editor in the
+  // foundation and elevation editors").
+  const [foundationToolbarPortalNode, setFoundationToolbarPortalNode] = useState<HTMLDivElement | null>(null);
+  const [elevationToolbarPortalNode, setElevationToolbarPortalNode] = useState<HTMLDivElement | null>(null);
   const [isOsFullscreen, setIsOsFullscreen] = useState(false);
 
   // Static SE bird's-eye render for the Project Summary page (Tommy: "a
@@ -1493,6 +1501,158 @@ export default function LayoutEditor() {
   const { pattern: defaultBracePattern, mirrored: defaultBracedMirrored } = bracingStyleToPatternMirror(bracingStyle);
   const bracedSeed = { spacingIn, defaultPattern: defaultBracePattern, defaultMirrored: defaultBracedMirrored };
 
+  // Closes an existing gap: only a Mid-Wall Bond Beam change actually
+  // persisted zone reconciliation into state before this (see
+  // reconcileWallZonesForBeamChange above) — a maxPanelHeightIn or
+  // wall-height change only ever produced a fresh zone through
+  // effectiveZonesForSlot's per-render fallback, never written back until
+  // a user manually clicked it. `old*`/`new*` are the pre/post-change
+  // values of whichever one input actually changed for THIS one wall —
+  // `Number.POSITIVE_INFINITY` as `oldMaxHeightIn` forces a single
+  // (un-split) old band always, letting a caller simulate "this wall had
+  // no zone data yet" for a genuinely brand-new wall (see
+  // `reconcileNewWallZones` below) without a separate code path.
+  const reconcileOneWallZonesForHeightChange = (
+    story: "ground" | "second",
+    wallId: string,
+    slots: PanelSlot[],
+    oldMaxHeightIn: number,
+    newMaxHeightIn: number,
+    oldWallHeightFt: number,
+    newWallHeightFt: number,
+  ): PanelSlot[] => {
+    const geom = midWallBeamsToGeometry(midWallBeamsByStoryAndWallId[story][wallId] ?? []);
+    const oldStoryHeightIn = oldWallHeightFt * 12;
+    const newStoryHeightIn = newWallHeightFt * 12;
+    // Which columns just gained a genuinely NEW zone-1 (Tommy: "a shorter
+    // than standard height additional row spawns") — the same "only seed
+    // a position that wasn't already decided" precedent
+    // reconcileBracedPlacement follows for zone 0.
+    const newlyEligibleZone1Indices = new Set<number>();
+    const perSlotZones = slots.map((slot, i) => {
+      const oldBands = computeWallVerticalBandsForSlotWithMaxHeight(i, oldStoryHeightIn, geom, oldMaxHeightIn, panelHeightInRange.minIn);
+      const oldZones = effectiveZonesForSlot(slot, oldBands.length);
+      const newBands = computeWallVerticalBandsForSlotWithMaxHeight(i, newStoryHeightIn, geom, newMaxHeightIn, panelHeightInRange.minIn);
+      const newZones = reconcilePanelSlotZones(oldBands, oldZones, newBands);
+      if (oldBands.length < 2 && newBands.length >= 2) newlyEligibleZone1Indices.add(i);
+      return { slot, newZones };
+    });
+
+    if (newlyEligibleZone1Indices.size > 0) {
+      const parentSlotTypes = perSlotZones.map(({ slot }) => slot.type);
+      const parentWidthsIn = perSlotZones.map(({ slot }) => slot.widthIn);
+      let zone1: (PanelSlotZone | undefined)[] = perSlotZones.map(({ newZones }) => newZones[1]);
+
+      // A wall that already has a ground-zone (Stride 1) window gets a 2nd
+      // one in its own newly-appearing upper zone — one per zone (Tommy:
+      // "one window on every row of slots... one more if greater than
+      // 16ft wall") — picked before the bracing pass below runs, same
+      // "window claims its spot first, bracing routes around it" order
+      // Stride 1's own seedDefaultOpenings uses.
+      const hasGroundWindow = perSlotZones.some(({ newZones }) => newZones[0]?.type === "window");
+      if (hasGroundWindow) {
+        const candidateIndices: number[] = [];
+        zone1.forEach((z, i) => {
+          if (!newlyEligibleZone1Indices.has(i)) return;
+          if (parentSlotTypes[i] === "corner" || parentSlotTypes[i] === "safety-oct-corner") return;
+          if ((z?.type ?? "standard") !== "standard") return;
+          candidateIndices.push(i);
+        });
+        // Excludes the first/last 2 — mirrors the doubled near-corner
+        // brace count this same zone level uses (see
+        // applyAdditionalRowBracedPattern), same "never at a
+        // corner-touching position" rule Stride 1 already follows.
+        const windowCandidates = candidateIndices.slice(2, -2);
+        if (windowCandidates.length > 0) {
+          const pick = windowCandidates[Math.floor(Math.random() * windowCandidates.length)]!;
+          zone1 = zone1.map((z, i) => (i === pick ? { type: "window" as const } : z));
+        }
+      }
+
+      const bracedZone1 = applyAdditionalRowBracedPattern(
+        zone1,
+        parentSlotTypes,
+        parentWidthsIn,
+        spacingIn,
+        defaultBracePattern,
+        defaultBracedMirrored,
+        newlyEligibleZone1Indices,
+      );
+      perSlotZones.forEach((entry, i) => {
+        entry.newZones = entry.newZones.map((z, zi) => (zi === 1 ? bracedZone1[i]! : z));
+      });
+    }
+
+    return perSlotZones.map(({ slot, newZones }) => applyZonesToSlot(slot, newZones));
+  };
+
+  // Loops every wall of `story` (unlike reconcileOneWallZonesForHeightChange,
+  // which only ever touches one) — a height/max-height change moves every
+  // wall's own band boundaries at once. Used by the 3 named setters below,
+  // and by handleDraw (every wall there is genuinely brand-new, so
+  // Infinity-as-old-max is correct for all of them at once — see that
+  // call site).
+  const reconcileWallZonesForHeightChange = (
+    story: "ground" | "second",
+    oldMaxHeightIn: number,
+    newMaxHeightIn: number,
+    oldWallHeightFt: number,
+    newWallHeightFt: number,
+  ) => {
+    setWallSlotsForStory(story, (prev) => {
+      const next: Record<string, PanelSlot[]> = {};
+      for (const [wallId, slots] of Object.entries(prev)) {
+        next[wallId] = reconcileOneWallZonesForHeightChange(story, wallId, slots, oldMaxHeightIn, newMaxHeightIn, oldWallHeightFt, newWallHeightFt);
+      }
+      return next;
+    });
+  };
+
+  // A single genuinely brand-new wall (no prior slots at all — a
+  // bump-out's own new jog wall) can itself already be tall enough for
+  // 2+ zones. Deliberately per-wall, NOT the blanket
+  // reconcileWallZonesForHeightChange above — most walls in a bump-out
+  // DO have prior slots (preserved via retilePreservingOpenings), and
+  // forcing Infinity-as-old-max on THEM would wrongly treat their real,
+  // already-decided upper-zone data as brand new and re-seed over it.
+  const reconcileNewWallZones = (story: "ground" | "second", wallId: string) => {
+    const wallHeightFtForStory = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
+    setWallSlotsForStory(story, (prev) => {
+      const slots = prev[wallId];
+      if (!slots) return prev;
+      const nextSlots = reconcileOneWallZonesForHeightChange(
+        story,
+        wallId,
+        slots,
+        Number.POSITIVE_INFINITY,
+        maxPanelHeightIn,
+        wallHeightFtForStory,
+        wallHeightFtForStory,
+      );
+      return { ...prev, [wallId]: nextSlots };
+    });
+  };
+
+  const handleSetWallHeightFt = (nextFt: number) => {
+    const oldFt = wallHeightFt;
+    setWallHeightFt(nextFt);
+    reconcileWallZonesForHeightChange("ground", maxPanelHeightIn, maxPanelHeightIn, oldFt, nextFt);
+  };
+  const handleSetSecondStoryWallHeightFt = (nextFt: number) => {
+    const oldFt = secondStory?.wallHeightFt ?? wallHeightFt;
+    setSecondStory((prev) => (prev ? { ...prev, wallHeightFt: nextFt } : prev));
+    reconcileWallZonesForHeightChange("second", maxPanelHeightIn, maxPanelHeightIn, oldFt, nextFt);
+  };
+  const handleSetMaxPanelHeightIn = (rawNextIn: number) => {
+    const oldMaxHeightIn = maxPanelHeightIn;
+    const nextMaxHeightIn = Math.min(Math.max(rawNextIn, panelHeightInRange.minIn), panelHeightInRange.maxIn);
+    setMaxPanelHeightIn(nextMaxHeightIn);
+    reconcileWallZonesForHeightChange("ground", oldMaxHeightIn, nextMaxHeightIn, wallHeightFt, wallHeightFt);
+    if (secondStory) {
+      reconcileWallZonesForHeightChange("second", oldMaxHeightIn, nextMaxHeightIn, secondStory.wallHeightFt, secondStory.wallHeightFt);
+    }
+  };
+
   // `cornerOwnership`/`retile`/`wallGeometryFor` (imported above) are pure
   // functions from the geometry package — corner-ownership rules,
   // safety/gap-panel placement, per-wall tiling (see
@@ -1505,8 +1665,14 @@ export default function LayoutEditor() {
   // `cornerPanelWidthIn`/`bracedSeed` — every call site below already
   // expects the closure-capturing signature these provide.
   const cornerOwnership = (fp: Footprint, primary: Set<string>) => cornerOwnershipPure(fp, primary, thicknessIn);
+  // `{}` (default randomFn = Math.random) — Tommy's own confirmed soft
+  // default: every freshly-tiled wall gets 1 default window, plus 1
+  // default door on an East/South/West-facing wall. See retile.ts's own
+  // `seedDefaultOpenings` doc comment for why this only ever affects a
+  // wall with no prior slots to preserve.
+  const openingSeed: OpeningSeed = {};
   const retile = (fp: Footprint, leastAccessible: CornerId, primary: Set<string>): Record<string, PanelSlot[]> =>
-    retilePure(fp, leastAccessible, primary, standardWidthIn, cornerWidthInForTiling, thicknessIn, bracedSeed);
+    retilePure(fp, leastAccessible, primary, standardWidthIn, cornerWidthInForTiling, thicknessIn, bracedSeed, openingSeed);
   // Same as `retile` above, but preserves each wall's existing openings —
   // see retile.ts's own doc comment. `oldSlotsByNewWallId` resolves the
   // old-to-new wall correlation; for an id-stable operation (dragWall,
@@ -1526,6 +1692,7 @@ export default function LayoutEditor() {
       thicknessIn,
       oldSlotsByNewWallId,
       bracedSeed,
+      openingSeed,
     );
   const wallGeometryFor = (wallId: string) =>
     footprint ? wallGeometryForPure(footprint, wallId, primaryCornerIds, leastAccessibleCorner, thicknessIn) : null;
@@ -1551,6 +1718,12 @@ export default function LayoutEditor() {
     // second-story data existed for the old one (see the `secondStory`
     // state's own doc comment on why incremental edits don't resync it).
     setSecondStory(null);
+    // A wall can already be tall enough for 2+ zones on its very first
+    // draw, not just after a later height/max-height edit — every wall
+    // here is genuinely brand-new (a fresh footprint has no prior slots
+    // at all), so the blanket Infinity-as-old-max form is correct for all
+    // of them at once.
+    reconcileWallZonesForHeightChange("ground", Number.POSITIVE_INFINITY, maxPanelHeightIn, wallHeightFt, wallHeightFt);
   };
 
   // Re-tiles the whole wall from scratch around its openings (Tommy: resizing
@@ -2093,6 +2266,14 @@ export default function LayoutEditor() {
     setLeastAccessibleCorner(nextLeastAccessible);
     setBaseWallSlots(retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId));
     setShapeTool("edit");
+    // Only the bump-out's own new jog wall(s) (no old counterpart at all)
+    // can be freshly seeded here — every OTHER wall keeps its real,
+    // possibly already-decided upper-zone data via retilePreservingOpenings
+    // above, so reconcileNewWallZones (per-wall, not the blanket
+    // reconcileWallZonesForHeightChange) is what's safe to call per wall.
+    for (const w of fp.walls) {
+      if (oldSlotsByNewWallId[w.id] === undefined) reconcileNewWallZones("ground", w.id);
+    }
   };
 
   // Drags one wall perpendicular to itself — its 2 neighbor walls absorb
@@ -4589,7 +4770,7 @@ export default function LayoutEditor() {
           min={panelHeightInRange.minIn / 12}
           max={panelHeightInRange.maxIn / 12}
           title={`Possible panel height: ${formatLengthIn(panelHeightInRange.minIn, unitSystem)}-${formatLengthIn(panelHeightInRange.maxIn, unitSystem)}`}
-          onChange={(e) => setWallHeightFt(Number(e.target.value))}
+          onChange={(e) => handleSetWallHeightFt(Number(e.target.value))}
         />
       </label>
       <p className={styles.note}>
@@ -4602,9 +4783,7 @@ export default function LayoutEditor() {
           value={maxPanelHeightIn}
           min={panelHeightInRange.minIn}
           max={panelHeightInRange.maxIn}
-          onChange={(e) =>
-            setMaxPanelHeightIn(Math.min(Math.max(Number(e.target.value), panelHeightInRange.minIn), panelHeightInRange.maxIn))
-          }
+          onChange={(e) => handleSetMaxPanelHeightIn(Number(e.target.value))}
         />
       </label>
       <p className={styles.note}>
@@ -4960,6 +5139,7 @@ export default function LayoutEditor() {
           Close
         </button>
       </div>
+      <div ref={setElevationToolbarPortalNode} className={styles.toolbarPortalInline} />
       <div className={elevationStyles.toggleRow}>
         <label
           className={elevationStyles.checkboxLabel}
@@ -5543,6 +5723,7 @@ export default function LayoutEditor() {
     editorTab === "foundation" ? (
       <div className={elevationStyles.panel}>
         <strong>Foundation Tools</strong>
+        <div ref={setFoundationToolbarPortalNode} className={styles.toolbarPortalInline} />
         {foundationType.usesPierGrid ? (
           <>
             <div role="group" aria-label="Foundation tool" className={styles.toolbar}>
@@ -6045,7 +6226,7 @@ export default function LayoutEditor() {
                   onToggleSecondStory={handleToggleSecondStory}
                   secondStoryDisabled={!footprint}
                   secondStoryWallHeightFt={stories[1]?.wallHeightFt ?? 10}
-                  onSecondStoryWallHeightChange={(ft) => setSecondStory((prev) => (prev ? { ...prev, wallHeightFt: ft } : prev))}
+                  onSecondStoryWallHeightChange={handleSetSecondStoryWallHeightFt}
                   stories={stories}
                   viewedStoryId={effectiveViewedStoryId}
                   onChangeViewedStoryId={setViewedStoryId}
@@ -6297,6 +6478,7 @@ export default function LayoutEditor() {
                     handleChangeMidWallBeamCoverage(story, elevationWall.id, beamId, coverage)
                   }
                   onDragResizePanels={handleDragResizePanels}
+                  toolbarPortalTarget={elevationToolbarPortalNode}
                 />
               ) : viewMode === "plan" ? (
                 <FootprintCanvas
@@ -6372,7 +6554,7 @@ export default function LayoutEditor() {
                 />
               ))}
             {editorTab === "foundation" && foundationType.usesPierGrid && (
-              <FoundationCanvas footprint={footprint} offsetPx={offsetPx} piers={pierGrid} />
+              <FoundationCanvas footprint={footprint} offsetPx={offsetPx} piers={pierGrid} toolbarPortalTarget={foundationToolbarPortalNode} />
             )}
             {editorTab === "floor" && foundationType.usesPierGrid && (
               <FloorCanvas
