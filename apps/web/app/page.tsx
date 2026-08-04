@@ -6087,7 +6087,159 @@ export default function LayoutEditor() {
                 </button>
               </div>
             )}
-            <PageFeaturesButton features={pageFeatures[editorTab]} />
+            {/* Region 4 (bottom-pinned, Tommy: "when you click on a panel
+                or other 2d or 3d element, the [popup]... appears at the
+                bottom of the left bar above the question mark") — this
+                whole group (the Selected Panel note, when one is picked,
+                plus the "?" features button) is pushed to the very bottom
+                of the sidebar's own flex column via marginTop: "auto",
+                with the note docked directly above the button. */}
+            <div style={{ marginTop: "auto", width: "100%", display: "flex", flexDirection: "column", gap: 8 }}>
+              {selectedSlot &&
+                (() => {
+                  const slot = (selectedSlot.story === "ground" ? baseWallSlots : (secondStory?.wallSlots ?? {}))[selectedSlot.wallId]?.[
+                    selectedSlot.slotIndex
+                  ];
+                  if (!slot) return null;
+                  const { wallId, slotIndex, story, zoneIndex } = selectedSlot;
+                  const effectiveWallHeightFt = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
+                  // zoneIndex >= 1 targets a real independently-typed zone
+                  // above this slot's own bottom (see PanelSlotZone) — zone
+                  // 0/undefined is always exactly zoneFromSlot(slot), since
+                  // applyZonesToSlot keeps that zone mirrored onto the
+                  // slot's own top-level fields.
+                  const zone: PanelSlotZone =
+                    zoneIndex !== undefined && zoneIndex > 0 ? effectiveZonesForSlot(slot, zoneIndex + 1)[zoneIndex]! : zoneFromSlot(slot);
+                  const bracedStyle = zone.type === "braced" ? resolveBracedStyle(zone, defaultBracePattern, defaultBracedMirrored) : null;
+                  return (
+                    <StickyNote
+                      id="selected-panel"
+                      label={`Panel: ${wallId} #${slotIndex}${zoneIndex ? ` (zone ${zoneIndex})` : ""} — ${PANEL_TYPE_LABELS[zone.type]}`}
+                      isOpen
+                      isFullscreen={fullscreenNoteId === "selected-panel"}
+                      cascadeIndex={0}
+                      docked
+                      onClose={() => setSelectedSlot(null)}
+                      onToggleFullscreen={() => handleToggleNoteFullscreen("selected-panel")}
+                    >
+                      {zone.type === "window" ? (
+                        <>
+                          <WindowSizeDiagram
+                            wallHeightFt={effectiveWallHeightFt}
+                            windowWidthIn={slot.widthIn}
+                            sillHeightIn={zone.sillHeightIn ?? sillDefaultHeightIn.value}
+                            windowHeightIn={zone.heightIn ?? standardWindowHeightDefaultIn.value}
+                            thicknessIn={thicknessIn}
+                            jackStudConfig={jackStudConfig}
+                            includeNailer={includeNailer}
+                            standardWidthIn={standardWidthIn}
+                            onSetSillHeight={(v) => handleSetWindowSillHeight(story, wallId, slotIndex, v, zoneIndex)}
+                            onSetWindowHeight={(v) => handleSetWindowHeight(story, wallId, slotIndex, v, zoneIndex)}
+                          />
+                          {sillClampNotice && (
+                            <p className={styles.note} style={{ color: "#a67c00" }}>
+                              {sillClampNotice}
+                            </p>
+                          )}
+                          <label style={{ display: "block", marginTop: 6 }}>
+                            Width{" "}
+                            <input
+                              type="number"
+                              id={`window-size-${wallId}-${slotIndex}`}
+                              title="However wide, up to 10ft — the header's own truss web bracing angle adds/removes peaks in pairs to stay within its 30-45deg range as width changes"
+                              value={slot.widthIn}
+                              min={windowHeaderWidthInRange.minIn}
+                              max={windowHeaderWidthInRange.maxIn}
+                              step={0.125}
+                              style={{ width: 64 }}
+                              onChange={(e) => handleSetWindowWidth(story, wallId, slotIndex, Number(e.target.value))}
+                            />
+                            &quot;
+                          </label>
+                          {windowWidthClampNotice && (
+                            <p className={styles.note} style={{ color: "#a67c00" }}>
+                              {windowWidthClampNotice}
+                            </p>
+                          )}
+                          <p className={styles.note}>
+                            Changing width can shift neighboring panels on this wall (the wall re-tiles around it) —
+                            and, since width is shared by every zone stacked in this same column, every one of them;
+                            height and sill (above) never do — they&apos;re a purely vertical/Z-axis change, per zone.
+                          </p>
+                          <label style={{ display: "block" }}>
+                            Height (preset){" "}
+                            <select
+                              id={`window-height-${wallId}-${slotIndex}`}
+                              title="This window's own Rough Opening height (sill-top to header-bottom) — also draggable above"
+                              value={zone.heightIn ?? standardWindowHeightsIn.value[0]}
+                              onChange={(e) => handleSetWindowHeight(story, wallId, slotIndex, Number(e.target.value), zoneIndex)}
+                            >
+                              {standardWindowHeightsIn.value.map((h) => (
+                                <option key={h} value={h}>
+                                  {formatLengthIn(h, unitSystem)} tall
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label style={{ display: "block" }}>
+                            Sill height{" "}
+                            <input
+                              type="number"
+                              id={`window-sill-height-${wallId}-${slotIndex}`}
+                              title="This window's own sill height (floor to Rough Opening bottom) — also draggable above and in the 3D Sill & Header tool"
+                              value={zone.sillHeightIn ?? sillHeaderHeightInRange.minIn}
+                              min={sillHeaderHeightInRange.minIn}
+                              max={sillHeaderHeightInRange.maxIn}
+                              step={0.125}
+                              style={{ width: 64 }}
+                              onChange={(e) => handleSetWindowSillHeight(story, wallId, slotIndex, Number(e.target.value), zoneIndex)}
+                            />
+                          </label>
+                        </>
+                      ) : zone.type === "braced" && bracedStyle ? (
+                        <>
+                          <p className={styles.note}>
+                            {bracedPanelDisplayLabel(bracedStyle.pattern, bracedStyle.mirrored)}, {slot.widthIn.toFixed(1)}in wide. Click
+                            it again on the canvas to cycle through every style (then back to Standard), or pick one
+                            directly below.
+                          </p>
+                          <label style={{ display: "block" }}>
+                            Pattern{" "}
+                            <select
+                              id={`braced-pattern-${wallId}-${slotIndex}`}
+                              value={bracedStyle.pattern}
+                              onChange={(e) =>
+                                handleSetBracedStyle(story, wallId, slotIndex, e.target.value as BracePattern, bracedStyle.mirrored, zoneIndex)
+                              }
+                            >
+                              <option value="chevron">Chevron (&quot;&lt;&quot;)</option>
+                              <option value="hatch">Hatch (&quot;/&quot;)</option>
+                            </select>
+                          </label>
+                          <label style={{ display: "block" }}>
+                            <input
+                              type="checkbox"
+                              id={`braced-mirrored-${wallId}-${slotIndex}`}
+                              checked={bracedStyle.mirrored}
+                              onChange={(e) =>
+                                handleSetBracedStyle(story, wallId, slotIndex, bracedStyle.pattern, e.target.checked, zoneIndex)
+                              }
+                            />{" "}
+                            Mirrored ({bracedStyle.pattern === "chevron" ? '">"' : '"\\"'})
+                          </label>
+                        </>
+                      ) : (
+                        <p className={styles.note}>
+                          {PANEL_TYPE_LABELS[zone.type]} panel, {slot.widthIn.toFixed(1)}in wide.
+                          {zone.type === "column" ? " Column Panels are always fabricated at a fixed width, not adjustable here." : ""}
+                          {zone.type === "standard" || zone.type === "door" ? " Click it again on the canvas to cycle its type." : ""}
+                        </p>
+                      )}
+                    </StickyNote>
+                  );
+                })()}
+              <PageFeaturesButton features={pageFeatures[editorTab]} />
+            </div>
           </div>
 
           <div className={styles.editorCanvasLayer}>
@@ -6287,143 +6439,6 @@ export default function LayoutEditor() {
 
           <div className={styles.editorRightSpacer} aria-hidden="true" />
         </div>
-
-        {selectedSlot &&
-          (() => {
-            const slot = (selectedSlot.story === "ground" ? baseWallSlots : (secondStory?.wallSlots ?? {}))[selectedSlot.wallId]?.[selectedSlot.slotIndex];
-            if (!slot) return null;
-            const { wallId, slotIndex, story, zoneIndex } = selectedSlot;
-            const effectiveWallHeightFt = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
-            // zoneIndex >= 1 targets a real independently-typed zone above
-            // this slot's own bottom (see PanelSlotZone) — zone 0/undefined
-            // is always exactly `zoneFromSlot(slot)`, since applyZonesToSlot
-            // keeps that zone mirrored onto the slot's own top-level fields.
-            const zone: PanelSlotZone = zoneIndex !== undefined && zoneIndex > 0 ? effectiveZonesForSlot(slot, zoneIndex + 1)[zoneIndex]! : zoneFromSlot(slot);
-            const bracedStyle = zone.type === "braced" ? resolveBracedStyle(zone, defaultBracePattern, defaultBracedMirrored) : null;
-            return (
-              <StickyNote
-                id="selected-panel"
-                label={`Panel: ${wallId} #${slotIndex}${zoneIndex ? ` (zone ${zoneIndex})` : ""} — ${PANEL_TYPE_LABELS[zone.type]}`}
-                isOpen
-                isFullscreen={fullscreenNoteId === "selected-panel"}
-                cascadeIndex={0}
-                onClose={() => setSelectedSlot(null)}
-                onToggleFullscreen={() => handleToggleNoteFullscreen("selected-panel")}
-              >
-                {zone.type === "window" ? (
-                  <>
-                    <WindowSizeDiagram
-                      wallHeightFt={effectiveWallHeightFt}
-                      windowWidthIn={slot.widthIn}
-                      sillHeightIn={zone.sillHeightIn ?? sillDefaultHeightIn.value}
-                      windowHeightIn={zone.heightIn ?? standardWindowHeightDefaultIn.value}
-                      thicknessIn={thicknessIn}
-                      jackStudConfig={jackStudConfig}
-                      includeNailer={includeNailer}
-                      standardWidthIn={standardWidthIn}
-                      onSetSillHeight={(v) => handleSetWindowSillHeight(story, wallId, slotIndex, v, zoneIndex)}
-                      onSetWindowHeight={(v) => handleSetWindowHeight(story, wallId, slotIndex, v, zoneIndex)}
-                    />
-                    {sillClampNotice && (
-                      <p className={styles.note} style={{ color: "#a67c00" }}>
-                        {sillClampNotice}
-                      </p>
-                    )}
-                    <label style={{ display: "block", marginTop: 6 }}>
-                      Width{" "}
-                      <input
-                        type="number"
-                        id={`window-size-${wallId}-${slotIndex}`}
-                        title="However wide, up to 10ft — the header's own truss web bracing angle adds/removes peaks in pairs to stay within its 30-45deg range as width changes"
-                        value={slot.widthIn}
-                        min={windowHeaderWidthInRange.minIn}
-                        max={windowHeaderWidthInRange.maxIn}
-                        step={0.125}
-                        style={{ width: 64 }}
-                        onChange={(e) => handleSetWindowWidth(story, wallId, slotIndex, Number(e.target.value))}
-                      />
-                      &quot;
-                    </label>
-                    {windowWidthClampNotice && (
-                      <p className={styles.note} style={{ color: "#a67c00" }}>
-                        {windowWidthClampNotice}
-                      </p>
-                    )}
-                    <p className={styles.note}>
-                      Changing width can shift neighboring panels on this wall (the wall re-tiles around it) — and,
-                      since width is shared by every zone stacked in this same column, every one of them; height and
-                      sill (above) never do — they&apos;re a purely vertical/Z-axis change, per zone.
-                    </p>
-                    <label style={{ display: "block" }}>
-                      Height (preset){" "}
-                      <select
-                        id={`window-height-${wallId}-${slotIndex}`}
-                        title="This window's own Rough Opening height (sill-top to header-bottom) — also draggable above"
-                        value={zone.heightIn ?? standardWindowHeightsIn.value[0]}
-                        onChange={(e) => handleSetWindowHeight(story, wallId, slotIndex, Number(e.target.value), zoneIndex)}
-                      >
-                        {standardWindowHeightsIn.value.map((h) => (
-                          <option key={h} value={h}>
-                            {formatLengthIn(h, unitSystem)} tall
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label style={{ display: "block" }}>
-                      Sill height{" "}
-                      <input
-                        type="number"
-                        id={`window-sill-height-${wallId}-${slotIndex}`}
-                        title="This window's own sill height (floor to Rough Opening bottom) — also draggable above and in the 3D Sill & Header tool"
-                        value={zone.sillHeightIn ?? sillHeaderHeightInRange.minIn}
-                        min={sillHeaderHeightInRange.minIn}
-                        max={sillHeaderHeightInRange.maxIn}
-                        step={0.125}
-                        style={{ width: 64 }}
-                        onChange={(e) => handleSetWindowSillHeight(story, wallId, slotIndex, Number(e.target.value), zoneIndex)}
-                      />
-                    </label>
-                  </>
-                ) : zone.type === "braced" && bracedStyle ? (
-                  <>
-                    <p className={styles.note}>
-                      {bracedPanelDisplayLabel(bracedStyle.pattern, bracedStyle.mirrored)}, {slot.widthIn.toFixed(1)}in wide.
-                      Click it again on the canvas to cycle through every style (then back to Standard), or pick one
-                      directly below.
-                    </p>
-                    <label style={{ display: "block" }}>
-                      Pattern{" "}
-                      <select
-                        id={`braced-pattern-${wallId}-${slotIndex}`}
-                        value={bracedStyle.pattern}
-                        onChange={(e) => handleSetBracedStyle(story, wallId, slotIndex, e.target.value as BracePattern, bracedStyle.mirrored, zoneIndex)}
-                      >
-                        <option value="chevron">Chevron (&quot;&lt;&quot;)</option>
-                        <option value="hatch">Hatch (&quot;/&quot;)</option>
-                      </select>
-                    </label>
-                    <label style={{ display: "block" }}>
-                      <input
-                        type="checkbox"
-                        id={`braced-mirrored-${wallId}-${slotIndex}`}
-                        checked={bracedStyle.mirrored}
-                        onChange={(e) => handleSetBracedStyle(story, wallId, slotIndex, bracedStyle.pattern, e.target.checked, zoneIndex)}
-                      />{" "}
-                      Mirrored ({bracedStyle.pattern === "chevron" ? '">"' : '"\\"'})
-                    </label>
-                  </>
-                ) : (
-                  <p className={styles.note}>
-                    {PANEL_TYPE_LABELS[zone.type]} panel, {slot.widthIn.toFixed(1)}in wide.
-                    {zone.type === "column" ? " Column Panels are always fabricated at a fixed width, not adjustable here." : ""}
-                    {zone.type === "standard" || zone.type === "door"
-                      ? " Click it again on the canvas to cycle its type."
-                      : ""}
-                  </p>
-                )}
-              </StickyNote>
-            );
-          })()}
 
         <StickyNote
           id="detail-summary"

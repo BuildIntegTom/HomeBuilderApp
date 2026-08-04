@@ -15,6 +15,16 @@ export interface StickyNoteProps {
   onToggleFullscreen: () => void;
   onPrint?: () => void;
   children: ReactNode;
+  /** Renders in normal document flow, sized to its parent's own width,
+   * instead of the usual floating/draggable overlay (Tommy: "when you
+   * click on a panel or other 2d or 3d element, the [popup]... appears at
+   * the bottom of the left bar above the question mark") — for a note a
+   * caller wants docked inline in a fixed layout slot rather than floating
+   * wherever it last cascaded/was dragged to. Not draggable while docked
+   * (there's nowhere to drag it to). Still expands to the same full-
+   * viewport `isFullscreen` overlay as any other note — docked only
+   * changes the NON-fullscreen presentation. */
+  docked?: boolean;
 }
 
 /**
@@ -59,6 +69,7 @@ export default function StickyNote({
   onToggleFullscreen,
   onPrint,
   children,
+  docked = false,
 }: StickyNoteProps) {
   // Default spawn point sits just below the sticky TopBar — Tommy: "sticky
   // notes to spawn directly below/stuck to the top bar - sometimes it
@@ -94,7 +105,7 @@ export default function StickyNote({
   if (!isOpen) return null;
 
   const handleHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (isFullscreen) return;
+    if (isFullscreen || docked) return;
     if ((e.target as HTMLElement).closest("button")) return;
     dragOriginRef.current = {
       pointerX: e.clientX,
@@ -105,13 +116,15 @@ export default function StickyNote({
     setDragging(true);
   };
 
+  const dockedNotFullscreen = docked && !isFullscreen;
+
   return (
     <div
       id={id}
-      className={`${styles.note} ${isFullscreen ? styles.noteFullscreen : ""} documentSection`}
-      style={isFullscreen ? undefined : { top: dragPos?.top ?? baseTop, left: dragPos?.left ?? baseLeft }}
+      className={`${styles.note} ${isFullscreen ? styles.noteFullscreen : dockedNotFullscreen ? styles.noteDocked : ""} documentSection`}
+      style={isFullscreen || dockedNotFullscreen ? undefined : { top: dragPos?.top ?? baseTop, left: dragPos?.left ?? baseLeft }}
     >
-      <div className={styles.header} onPointerDown={handleHeaderPointerDown}>
+      <div className={styles.header} style={docked && !isFullscreen ? { cursor: "default" } : undefined} onPointerDown={handleHeaderPointerDown}>
         <span className={styles.label}>{label}</span>
         <div className={styles.headerButtons}>
           {onPrint && (
