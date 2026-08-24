@@ -4488,6 +4488,14 @@ export default function LayoutEditor() {
       if (footprint && allInstances.length > 0) {
         pages.push({ id: "detail-shipping", label: "Shipping" });
       }
+      // Engineer role's own reference card — real vapor-openness/permeance
+      // (already computed for Project Totals below) plus the real
+      // confirmed straw target moisture, consolidated in one place. No
+      // R-value/fire-resistance row: no such spec data exists anywhere in
+      // the catalog yet, so none is shown (see Engineer Lens plan).
+      if (role === "engineer") {
+        pages.push({ id: "detail-assembly-performance", label: "Assembly Performance" });
+      }
       if (hasClayPlaster || hasLimePlaster || hasSteelClaySkin) {
         pages.push({ id: "detail-plaster-master", label: "Plaster Master" });
       }
@@ -7366,6 +7374,57 @@ export default function LayoutEditor() {
             </ul>
           )}
         </StickyNote>
+
+        {role === "engineer" && (
+          <StickyNote
+            id="detail-assembly-performance"
+            label="Assembly Performance"
+            isOpen={openNoteIds.has("detail-assembly-performance")}
+            isFullscreen={fullscreenNoteId === "detail-assembly-performance"}
+            cascadeIndex={noteOpenOrder.indexOf("detail-assembly-performance")}
+            onClose={() => handleToggleNote("detail-assembly-performance")}
+            onToggleFullscreen={() => handleToggleNoteFullscreen("detail-assembly-performance")}
+            onPrint={() => handlePrintNote("detail-assembly-performance")}
+          >
+            <table className={styles.results}>
+              <tbody>
+                <tr>
+                  <td>Assembly permeance ({season})</td>
+                  <td>
+                    {permResult.computable
+                      ? `${permResult.permTotal!.toFixed(2)} perm`
+                      : "not computable — one or both finishes lack a numeric perm rating"}
+                  </td>
+                </tr>
+                <tr>
+                  <td>Vapor-openness rule</td>
+                  <td className={vaporCheck.passes === false ? styles.fail : undefined}>
+                    {vaporCheck.computable
+                      ? vaporCheck.passes
+                        ? "PASS — exterior is more vapor-open than interior"
+                        : "FAIL — exterior is not more vapor-open than interior"
+                      : "not computable — one or both finishes lack a numeric perm rating"}
+                  </td>
+                </tr>
+                <tr>
+                  <td>Target moisture content (install)</td>
+                  <td>
+                    {(strawMoistureContent.standard * 100).toFixed(0)}% (standard)
+                    <br />
+                    <span className={styles.note}>
+                      Sensitivity range {(strawMoistureContent.min * 100).toFixed(0)}%–
+                      {(strawMoistureContent.max * 100).toFixed(0)}%. {strawMoistureContent.note}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p className={styles.note}>
+              Fire-resistance rating and R-value aren&apos;t shown — no test/spec data exists in the catalog yet
+              for either.
+            </p>
+          </StickyNote>
+        )}
 
         <StickyNote
           id="detail-foundation"
