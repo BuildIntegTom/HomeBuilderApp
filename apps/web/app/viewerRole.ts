@@ -1,4 +1,4 @@
-export type ViewerRole = "public" | "fabricator" | "admin";
+export type ViewerRole = "public" | "fabricator" | "admin" | "engineer";
 
 export interface RoleDisclaimer {
   label: string;
@@ -21,5 +21,9 @@ export const roleDisclaimers: Record<ViewerRole, RoleDisclaimer> = {
   admin: {
     label: "Admin",
     text: "Internal admin view — fabricator proposal, not yet engineer-stamped. Catalog status shown inline throughout.",
+  },
+  engineer: {
+    label: "Engineer",
+    text: "Engineering review view — Building Integrity first-pass structural estimates shown for reference; verify against a licensed engineer's own calculations before stamping or construction.",
   },
 };

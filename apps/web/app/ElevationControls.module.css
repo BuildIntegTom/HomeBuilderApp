@@ -171,3 +171,48 @@
   background: #fff;
   color: #333;
 }
+
+/* Engineer role's own per-wall structural summary card — same "white card
+   on the blue-gray panel" language as .beamSection/.pointRow above. */
+.structuralSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid #ccd6e0;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.structuralRow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.structuralRowHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.structuralValue {
+  font-weight: 600;
+}
+
+/* The app never marks a first-pass NDS estimate "confirmed" (see the
+   Review Log) — this pill is deliberately the only status these figures
+   ever carry. */
+.pendingPill {
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #fff;
+  background: #a67c00;
+  border-radius: 999px;
+  padding: 2px 8px;
+}

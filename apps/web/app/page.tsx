@@ -4077,14 +4077,16 @@ export default function LayoutEditor() {
     [cornerPanelMembers3D, wallHeightFt],
   );
 
-  // Whole-project estimated totals (Tommy: replace the Review Log's flat
-  // "shear/load capacity: not yet modeled" line with these) — bearing is a
-  // flat per-panel figure (computeStudPackBearingCapacityLb takes no
+  // Shared bearing/shear reduction over an arbitrary instance subset —
+  // factored out so the exact same math powers both the whole-project
+  // totals below AND the Engineer role's own per-wall structural summary
+  // card (see elevationControls) without duplicating the formula. Bearing
+  // is a flat per-panel figure (computeStudPackBearingCapacityLb takes no
   // width), summed across every instance with real stud-pack geometry;
   // shear is summed per actual braced instance at ITS OWN tiled width
   // (braced panels aren't all the same size — computePanelSizeShares can
   // give them different widths), not the globally-selected standardWidthIn.
-  const estimatedTotalBearingLb = useMemo(() => {
+  const summarizeBearingAndShear = (instances: PanelInstance[]) => {
     const perTypeBearingLb: Partial<Record<string, number>> = {
       standard: estimatedStudPackBearingLb,
       braced: estimatedStudPackBearingLb,
@@ -4092,23 +4094,42 @@ export default function LayoutEditor() {
       corner: estimatedCornerBuiltUpBearingLb,
       "safety-oct-corner": estimatedCornerBuiltUpBearingLb,
     };
-    return allInstances.reduce((sum, inst) => sum + (perTypeBearingLb[inst.panelType] ?? 0), 0);
-  }, [allInstances, estimatedStudPackBearingLb, estimatedColumnBuiltUpBearingLb, estimatedCornerBuiltUpBearingLb]);
+    const bearingLb = instances.reduce((sum, inst) => sum + (perTypeBearingLb[inst.panelType] ?? 0), 0);
+    const eligiblePanelCount = instances.filter((inst) => BEARING_ELIGIBLE_TYPES.has(inst.panelType)).length;
+    const bracedInstances = instances.filter((inst) => inst.panelType === "braced");
+    const shearLb = bracedInstances.reduce((sum, inst) => {
+      const style = resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored);
+      return (
+        sum +
+        computeBracedPanelShearCapacityLb(
+          buildBracedPanelMembers(inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, style.pattern, style.mirrored),
+        )
+      );
+    }, 0);
+    return { bearingLb, eligiblePanelCount, shearLb, bracedPanelCount: bracedInstances.length };
+  };
+
+  // Whole-project estimated totals (Tommy: replace the Review Log's flat
+  // "shear/load capacity: not yet modeled" line with these).
+  const estimatedTotalBearingLb = useMemo(
+    () => summarizeBearingAndShear(allInstances).bearingLb,
+    [allInstances, estimatedStudPackBearingLb, estimatedColumnBuiltUpBearingLb, estimatedCornerBuiltUpBearingLb],
+  );
   const estimatedTotalShearLb = useMemo(
-    () =>
-      allInstances
-        .filter((inst) => inst.panelType === "braced")
-        .reduce((sum, inst) => {
-          const style = resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored);
-          return (
-            sum +
-            computeBracedPanelShearCapacityLb(
-              buildBracedPanelMembers(inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, style.pattern, style.mirrored),
-            )
-          );
-        }, 0),
+    () => summarizeBearingAndShear(allInstances).shearLb,
     [allInstances, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored],
   );
+
+  // Engineer role's own per-wall structural summary (see elevationControls'
+  // own "engineer" section below) — same summarizeBearingAndShear reduction,
+  // scoped to just the currently-viewed wall's own instances instead of the
+  // whole footprint. Only computed when actually needed (engineer role +
+  // a wall selected in Elevation view) to avoid extra work for every other
+  // role/view.
+  const elevationWallBearingAndShear = useMemo(() => {
+    if (role !== "engineer" || !elevationWall) return null;
+    return summarizeBearingAndShear(allInstances.filter((inst) => inst.wallId === elevationWall.id));
+  }, [role, elevationWall, allInstances, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored, estimatedStudPackBearingLb, estimatedColumnBuiltUpBearingLb, estimatedCornerBuiltUpBearingLb]);
 
   // Per-unique-panel Shop Fabrication pages (Tommy: "if there's exact
   // copies of panels we can group those up" — same principle already used
@@ -5498,6 +5519,47 @@ export default function LayoutEditor() {
         </button>
       </div>
       <div ref={setElevationToolbarPortalNode} className={styles.toolbarPortalInline} />
+      {role === "engineer" && elevationWallBearingAndShear && (
+        <div className={elevationStyles.structuralSection}>
+          <span className={elevationStyles.sectionLabel}>Estimated Structural Capacity — Wall {elevationWall.id}</span>
+          <div className={elevationStyles.structuralRow}>
+            <div className={elevationStyles.structuralRowHead}>
+              <span>Bearing</span>
+              <span className={elevationStyles.structuralValue}>
+                {Math.round(elevationWallBearingAndShear.bearingLb).toLocaleString()} lb
+              </span>
+            </div>
+            <p className={elevationStyles.helpText}>
+              Across {elevationWallBearingAndShear.eligiblePanelCount} bearing-eligible panel
+              {elevationWallBearingAndShear.eligiblePanelCount === 1 ? "" : "s"} on this wall — Building
+              Integrity&apos;s own first-pass NDS estimate (double stud pack), not a licensed engineer&apos;s
+              calculation.
+            </p>
+            <span className={elevationStyles.pendingPill}>Pending BI Confirmation</span>
+          </div>
+          <div className={elevationStyles.structuralRow}>
+            <div className={elevationStyles.structuralRowHead}>
+              <span>Shear (racking)</span>
+              <span className={elevationStyles.structuralValue}>
+                {elevationWallBearingAndShear.bracedPanelCount === 0
+                  ? "No braced panels on this wall"
+                  : `${Math.round(elevationWallBearingAndShear.shearLb).toLocaleString()} lb`}
+              </span>
+            </div>
+            {elevationWallBearingAndShear.bracedPanelCount > 0 && (
+              <>
+                <p className={elevationStyles.helpText}>
+                  Across {elevationWallBearingAndShear.bracedPanelCount} braced panel
+                  {elevationWallBearingAndShear.bracedPanelCount === 1 ? "" : "s"} on this wall — Building
+                  Integrity&apos;s own first-pass NDS estimate (diagonal brace), not a licensed engineer&apos;s
+                  calculation.
+                </p>
+                <span className={elevationStyles.pendingPill}>Pending BI Confirmation</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       <div className={elevationStyles.toggleRow}>
         <label
           className={elevationStyles.checkboxLabel}
