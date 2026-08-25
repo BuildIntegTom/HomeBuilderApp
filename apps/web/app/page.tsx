@@ -5584,6 +5584,7 @@ export default function LayoutEditor() {
         </button>
       </div>
       <div ref={setElevationToolbarPortalNode} className={styles.toolbarPortalInline} />
+      <PanelLegend />
       {role === "engineer" && elevationWallBearingAndShear && (
         <div className={elevationStyles.structuralSection}>
           <span className={elevationStyles.sectionLabel}>Estimated Structural Capacity — Wall {elevationWall.id}</span>

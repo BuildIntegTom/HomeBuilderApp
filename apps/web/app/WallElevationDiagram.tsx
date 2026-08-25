@@ -362,6 +362,11 @@ export default function WallElevationDiagram({
   // on, a transparent overlay rect (rendered last, on top of everything)
   // captures the drag instead of touching any of those handlers — nothing
   // else needs to know pan mode exists at all.
+  // Own local toggle, independent of FootprintCanvas's own same-named
+  // showPanelLabels state (Tommy: keep this local rather than lifting a
+  // shared toggle into page.tsx) — same "Panel ID Visibility" concept, just
+  // not wired together.
+  const [showPanelLabels, setShowPanelLabels] = useState(true);
   const [viewOffset, setViewOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [viewScale, setViewScale] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
@@ -969,7 +974,7 @@ export default function WallElevationDiagram({
         const panelLabel = combinedPanelLabel(
           instancesForSlotBand(instancesBySlot, wall.id, i, isGenuinelyUnaffectedBand ? undefined : band.bandIndex),
         );
-        if (panelLabel) {
+        if (panelLabel && showPanelLabels) {
           const labelXPx = xPx((x0 + x1) / 2);
           const labelYPx = localYPx(rowWallHeightIn) + 12;
           elements.push(
@@ -1215,6 +1220,15 @@ export default function WallElevationDiagram({
         style={{ ...iconButtonStyle(false), fontSize: 12, padding: "6px 10px" }}
       >
         Reset
+      </button>
+      <button
+        type="button"
+        title="Show or hide the panel ID labels drawn on each panel"
+        aria-pressed={showPanelLabels}
+        onClick={() => setShowPanelLabels((v) => !v)}
+        style={{ ...iconButtonStyle(showPanelLabels), fontSize: 12, padding: "6px 10px" }}
+      >
+        🏷️ ID
       </button>
     </div>
   );
