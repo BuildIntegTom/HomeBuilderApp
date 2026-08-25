@@ -64,6 +64,44 @@ const SLOT_COLORS: Record<PanelSlot["type"], string> = {
   "big-header": "#e85d9c",
 };
 
+// Small line-icon SVGs for the pan/zoom/ID toolbar — matches the Stitch
+// mockup's icon style (small outlined glyphs, not emoji) without pulling in
+// a new icon-font dependency. FootprintCanvas.tsx keeps its own byte-
+// identical copy of these same three pan/zoom icons, same "each file keeps
+// its own small copy" convention this file already uses elsewhere.
+const ICON_PROPS = { viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+const PanIcon = () => (
+  <svg {...ICON_PROPS}>
+    <polyline points="5 9 2 12 5 15" />
+    <polyline points="9 5 12 2 15 5" />
+    <polyline points="15 19 12 22 9 19" />
+    <polyline points="19 9 22 12 19 15" />
+    <line x1="2" y1="12" x2="22" y2="12" />
+    <line x1="12" y1="2" x2="12" y2="22" />
+  </svg>
+);
+const ZoomOutIcon = () => (
+  <svg {...ICON_PROPS}>
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    <line x1="8" y1="11" x2="14" y2="11" />
+  </svg>
+);
+const ZoomInIcon = () => (
+  <svg {...ICON_PROPS}>
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    <line x1="11" y1="8" x2="11" y2="14" />
+    <line x1="8" y1="11" x2="14" y2="11" />
+  </svg>
+);
+const TagIcon = () => (
+  <svg {...ICON_PROPS}>
+    <path d="M12 2H2v10l9.29 9.29a1 1 0 0 0 1.41 0l7.29-7.29a1 1 0 0 0 0-1.41L12 2Z" />
+    <circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 const GABLE_COLOR = "#9fb8e0";
 const GABLE_SAFETY_GAP_COLOR = "#e08a3c";
 const VERTICAL_GAP_COLOR = "#f0c08a";
@@ -1204,14 +1242,14 @@ export default function WallElevationDiagram({
         onClick={() => setIsPanning((p) => !p)}
         style={iconButtonStyle(isPanning)}
       >
-        🍳
+        <PanIcon />
       </button>
       <button type="button" title="Zoom out" onClick={zoomOut} style={iconButtonStyle(false)}>
-        🔍−
+        <ZoomOutIcon />
       </button>
       <span style={{ fontSize: 11, color: "#555", minWidth: 28, textAlign: "center" }}>{Math.round(viewScale * 100)}%</span>
       <button type="button" title="Zoom in" onClick={zoomIn} style={iconButtonStyle(false)}>
-        🔍+
+        <ZoomInIcon />
       </button>
       <button
         type="button"
@@ -1226,9 +1264,16 @@ export default function WallElevationDiagram({
         title="Show or hide the panel ID labels drawn on each panel"
         aria-pressed={showPanelLabels}
         onClick={() => setShowPanelLabels((v) => !v)}
-        style={{ ...iconButtonStyle(showPanelLabels), fontSize: 12, padding: "6px 10px" }}
+        style={{
+          ...iconButtonStyle(showPanelLabels),
+          fontSize: 12,
+          padding: "6px 10px",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+        }}
       >
-        🏷️ ID
+        <TagIcon /> ID
       </button>
     </div>
   );

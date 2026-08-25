@@ -56,6 +56,36 @@ import { PANEL_TYPE_COLORS as SLOT_COLORS } from "./panelColors";
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 480;
 
+// Small line-icon SVGs for the pan/zoom toolbar — byte-identical copy of
+// WallElevationDiagram.tsx's own same icons, same "each file keeps its own
+// small copy" convention already used for other small shared helpers.
+const ICON_PROPS = { viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+const PanIcon = () => (
+  <svg {...ICON_PROPS}>
+    <polyline points="5 9 2 12 5 15" />
+    <polyline points="9 5 12 2 15 5" />
+    <polyline points="15 19 12 22 9 19" />
+    <polyline points="19 9 22 12 19 15" />
+    <line x1="2" y1="12" x2="22" y2="12" />
+    <line x1="12" y1="2" x2="12" y2="22" />
+  </svg>
+);
+const ZoomOutIcon = () => (
+  <svg {...ICON_PROPS}>
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    <line x1="8" y1="11" x2="14" y2="11" />
+  </svg>
+);
+const ZoomInIcon = () => (
+  <svg {...ICON_PROPS}>
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    <line x1="11" y1="8" x2="11" y2="14" />
+    <line x1="8" y1="11" x2="14" y2="11" />
+  </svg>
+);
+
 // A combined slot (e.g. safety-gap + braced near a corner, Tommy: "have
 // multiple types of panels be represented in a particular panel... safety
 // panel should be hashed orange so you can see both colors") renders its
@@ -714,16 +744,16 @@ export default function FootprintCanvas({
         }
         style={iconButtonStyle(isPanning)}
       >
-        🍳
+        <PanIcon />
       </button>
       <button type="button" title="Zoom out" onClick={zoomOut} style={iconButtonStyle(false)}>
-        🔍−
+        <ZoomOutIcon />
       </button>
       <span style={{ fontSize: 11, color: "#555", minWidth: 28, textAlign: "center" }}>
         {Math.round(viewScale * 100)}%
       </span>
       <button type="button" title="Zoom in" onClick={zoomIn} style={iconButtonStyle(false)}>
-        🔍+
+        <ZoomInIcon />
       </button>
       <button
         type="button"

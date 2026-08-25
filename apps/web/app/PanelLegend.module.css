@@ -7,7 +7,17 @@
   padding: 8px 10px;
   background: #fff;
   border: 1px solid #ccd6e0;
-  border-radius: 8px;
+  border-radius: var(--elevation-radius-sm);
+}
+
+/* Elevation view's own floating treatment (page.tsx's .legendDock
+   positions it) — translucent + blurred over the canvas, matching the
+   Stitch mockup's "bottom-left translucent legend card." */
+.legendOverlay {
+  width: auto;
+  background: rgba(249, 249, 249, 0.8);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .row {

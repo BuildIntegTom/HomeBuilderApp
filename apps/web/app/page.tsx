@@ -5584,7 +5584,6 @@ export default function LayoutEditor() {
         </button>
       </div>
       <div ref={setElevationToolbarPortalNode} className={styles.toolbarPortalInline} />
-      <PanelLegend />
       {role === "engineer" && elevationWallBearingAndShear && (
         <div className={elevationStyles.structuralSection}>
           <span className={elevationStyles.sectionLabel}>Estimated Structural Capacity — Wall {elevationWall.id}</span>
@@ -7085,6 +7084,11 @@ export default function LayoutEditor() {
             {editorTab === "wall" && (
               <div className={styles.compassDock}>
                 <CompassWidget ref={compassNeedleRef} />
+              </div>
+            )}
+            {editorTab === "wall" && elevationWall && (
+              <div className={styles.legendDock}>
+                <PanelLegend variant="overlay" />
               </div>
             )}
             {editorTab === "wall" &&

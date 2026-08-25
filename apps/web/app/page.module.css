@@ -136,6 +136,16 @@
   z-index: 50;
 }
 
+/* Elevation view's own floating panel-color legend — same overlay pattern
+   as .compassDock above (out of flow, against .editorCanvasLayer's own
+   box), just bottom-left and one z-index tier below the compass. */
+.legendDock {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 40;
+}
+
 .editorCanvasLayer {
   position: relative;
   flex: 1 1 auto;

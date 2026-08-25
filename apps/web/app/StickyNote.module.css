@@ -47,6 +47,12 @@
   max-width: 100%;
   max-height: 45vh;
   box-shadow: none;
+  /* Scoped override — `docked` currently has exactly one consumer app-wide
+     (the Elevation view's "Selected Panel" note), so this only affects
+     that one note; every other/floating note keeps .note's 8px above. If
+     a second `docked` note ever appears, re-check this still makes sense
+     for it too. */
+  border-radius: 4px;
 }
 
 .header {

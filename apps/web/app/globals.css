@@ -19,6 +19,15 @@
      state) measures itself against, so nothing can drift out of sync with
      the bar's actual height again. */
   --topbar-height: 56px;
+  /* Elevation-view visual restyle tokens (2026-08) — scoped to the Wall >
+     Elevation editor restyle, not an app-wide design-token system. Mirrors
+     part 1 ui stitch/code.html's tailwind.config. */
+  --elevation-radius-sm: 4px;
+  --elevation-radius-lg: 8px;
+  --elevation-space-xs: 4px;
+  --elevation-space-sm: 8px;
+  --elevation-space-md: 12px;
+  --elevation-space-lg: 16px;
 }
 
 html {
