@@ -216,3 +216,48 @@
   border-radius: 999px;
   padding: 2px 8px;
 }
+
+/* Per-wall attributed review notes — the same gold/cream "sticky note"
+   family StickyNote.module.css/SectionCarousel.module.css use for
+   reference/output content, deliberately distinct from the neutral
+   blue-gray "instrument" panel these notes sit inside (they're authored
+   reference content, not an editing tool). */
+.reviewNote {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #f2e8c9;
+  border-top: 2px solid #b8901f;
+  border-radius: 0 0 6px 6px;
+  padding: 8px;
+}
+
+.reviewNoteText {
+  font-size: 12px;
+  font-style: italic;
+  color: #4a3f1f;
+  margin: 0;
+}
+
+.reviewNoteFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+.reviewNoteAuthor {
+  font-size: 11px;
+  color: #7a6a3a;
+}
+
+.noteTextarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 6px 8px;
+  resize: vertical;
+}

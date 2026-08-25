@@ -34,6 +34,7 @@ import type {
 } from "@building-integrity/panel-catalog";
 import type { ViewerRole } from "./viewerRole";
 import type { MidWallBeam } from "./midWallBeam";
+import type { WallReviewNote } from "./wallReviewNotes";
 
 /**
  * Save/Load a project file — Tommy: "a saveable file that the user or
@@ -293,6 +294,14 @@ export interface ProjectState {
   wallsEnabled: boolean;
   floorsEnabled: boolean;
   roofEnabled: boolean;
+  /** Engineer role's own per-wall attributed notes (Tommy's Engineer Lens
+   * mockup: a free-text note signed "- Eng. Smith") — see
+   * wallReviewNotes.ts's own doc comment on why this is a separate concept
+   * from reviewLog. Optional (not in REQUIRED_STATE_KEYS) so older project
+   * files, which predate this feature, still load — see parseProjectFile's
+   * own defaulting to an empty array (no notes), matching every such
+   * file's pre-existing behavior exactly. */
+  wallReviewNotes?: WallReviewNote[];
 }
 
 const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
@@ -516,6 +525,10 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
         (state.baleFoundationFieldSpacingIn as BaleFoundationFieldSpacingIn | undefined) ?? BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
       floorBottomSkinEnabled: (state.floorBottomSkinEnabled as boolean | undefined) ?? true,
       maxPanelHeightIn: (state.maxPanelHeightIn as number | undefined) ?? standardPanelHeightIn.value,
+      // Optional — absent on any file saved before this feature existed, so
+      // every one defaults to no notes (the pre-existing behavior every
+      // such file was actually built with).
+      wallReviewNotes: (state.wallReviewNotes as WallReviewNote[] | undefined) ?? [],
       // v22 -> v23 migration: a v22 file's beams have no `kind` field —
       // every one meant "box-beam" (see migrateMidWallBeamsV22ToV23's own
       // doc comment). Then remapLegacyBigHeaderBeamKind fixes up any

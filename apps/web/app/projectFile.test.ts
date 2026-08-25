@@ -95,6 +95,7 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     wallsEnabled: true,
     floorsEnabled: false,
     roofEnabled: false,
+    wallReviewNotes: [{ id: "note-1", wallId: "AB", author: "Eng. Smith", note: "Confirm rim joist connection detailing." }],
     ...overrides,
   };
 }

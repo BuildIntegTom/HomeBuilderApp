@@ -272,6 +272,7 @@ import {
   type MidWallBeam,
   type MidWallBeamKind,
 } from "./midWallBeam";
+import type { WallReviewNote } from "./wallReviewNotes";
 import PierFoundationDiagram from "./PierFoundationDiagram";
 import PlasterCoatEditor from "./PlasterCoatEditor";
 import {
@@ -575,6 +576,28 @@ export default function LayoutEditor() {
     }));
   };
   const [role, setRole] = useState<ViewerRole>("fabricator");
+  // Engineer role's own per-wall attributed notes (Tommy's Engineer Lens
+  // mockup: a free-text note signed "- Eng. Smith") — see
+  // wallReviewNotes.ts's own doc comment for why this is separate from
+  // reviewLog. draftNoteAuthor/draftNoteText hold whatever's currently
+  // being typed into the "add a note" form, shared across whichever wall
+  // is open (reset on submit, not persisted per-wall — the overwhelmingly
+  // common case is writing one note then moving on).
+  const [wallReviewNotes, setWallReviewNotes] = useState<WallReviewNote[]>([]);
+  const [draftNoteAuthor, setDraftNoteAuthor] = useState("");
+  const [draftNoteText, setDraftNoteText] = useState("");
+  const handleAddWallReviewNote = (wallId: string) => {
+    if (!draftNoteText.trim()) return;
+    setWallReviewNotes((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), wallId, author: draftNoteAuthor.trim() || "Unnamed", note: draftNoteText.trim() },
+    ]);
+    setDraftNoteAuthor("");
+    setDraftNoteText("");
+  };
+  const handleRemoveWallReviewNote = (id: string) => {
+    setWallReviewNotes((prev) => prev.filter((n) => n.id !== id));
+  };
   // Fabricator/admin-only (Tommy) — shows every Detail Guide/Shop Drawing
   // page regardless of the existing "relevant to current design" filter.
   const [showAllDetailPages, setShowAllDetailPages] = useState(false);
@@ -1410,6 +1433,7 @@ export default function LayoutEditor() {
       wallsEnabled,
       floorsEnabled,
       roofEnabled,
+      wallReviewNotes,
     };
     const blob = new Blob([JSON.stringify(serializeProject(state), null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -1515,6 +1539,7 @@ export default function LayoutEditor() {
       setWallsEnabled(s.wallsEnabled);
       setFloorsEnabled(s.floorsEnabled);
       setRoofEnabled(s.roofEnabled);
+      setWallReviewNotes(s.wallReviewNotes ?? []);
     });
   };
 
@@ -5566,6 +5591,52 @@ export default function LayoutEditor() {
               </>
             )}
           </div>
+        </div>
+      )}
+      {role === "engineer" && (
+        <div className={elevationStyles.structuralSection}>
+          <span className={elevationStyles.sectionLabel}>Review Notes — Wall {elevationWall.id}</span>
+          {wallReviewNotes.filter((n) => n.wallId === elevationWall.id).length === 0 ? (
+            <p className={elevationStyles.helpText}>No notes yet on this wall.</p>
+          ) : (
+            wallReviewNotes
+              .filter((n) => n.wallId === elevationWall.id)
+              .map((n) => (
+                <div key={n.id} className={elevationStyles.reviewNote}>
+                  <p className={elevationStyles.reviewNoteText}>&quot;{n.note}&quot;</p>
+                  <div className={elevationStyles.reviewNoteFooter}>
+                    <span className={elevationStyles.reviewNoteAuthor}>- {n.author}</span>
+                    <button type="button" className={elevationStyles.actionButton} onClick={() => handleRemoveWallReviewNote(n.id)}>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))
+          )}
+          <label className={elevationStyles.fieldRow}>
+            Author
+            <input
+              type="text"
+              value={draftNoteAuthor}
+              onChange={(e) => setDraftNoteAuthor(e.target.value)}
+              placeholder="e.g. Eng. Smith"
+            />
+          </label>
+          <textarea
+            className={elevationStyles.noteTextarea}
+            value={draftNoteText}
+            onChange={(e) => setDraftNoteText(e.target.value)}
+            placeholder="Add a note for this wall..."
+            rows={3}
+          />
+          <button
+            type="button"
+            className={elevationStyles.actionButton}
+            onClick={() => handleAddWallReviewNote(elevationWall.id)}
+            disabled={!draftNoteText.trim()}
+          >
+            Add Note
+          </button>
         </div>
       )}
       <div className={elevationStyles.toggleRow}>
