@@ -32,8 +32,10 @@ import {
   type JackStudConfig,
 } from "@building-integrity/panel-catalog";
 import { computeOpeningGeometry } from "./openingGeometry";
+import { formatFeetInches } from "./canvasGeometry";
 import { MemberElevationShapes } from "./MemberElevationShapes";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
+import { combinedPanelLabel, type PanelInstance } from "./panelInstances";
 import { capGableTileHeights, GABLE_SHED_SNAP_THRESHOLD_IN, matchStandardPitchIn12, resolveGableProfilePoints } from "./gableProfilePoints";
 import {
   BIG_HEADER_BEAM_MIN_HEIGHT_IN,
@@ -46,7 +48,7 @@ import {
 
 const CANVAS_WIDTH = 720;
 const PX_PER_IN = 1.6;
-const TOP_MARGIN_PX = 24;
+const TOP_MARGIN_PX = 44; // 24 base + ~20 for the "Overall Width" dimension callout
 const BOTTOM_MARGIN_PX = 36;
 const LEFT_MARGIN_PX = 48;
 
@@ -78,6 +80,14 @@ export interface WallElevationDiagramProps {
   wall: Wall;
   slots: PanelSlot[];
   wallHeightFt: number;
+  /** This wall's own real named panel instances (page.tsx's own
+   * `allInstances`/`secondStoryAllInstances`, filtered here by wallId) —
+   * lets each rendered rect show the same real compass-based ID (e.g.
+   * "N-3", merged as "N-3+4+5" for a window's header+sills) Plan View and
+   * the 3D view already show for that exact slot, instead of inventing a
+   * second ID scheme just for this view. */
+  allInstances: PanelInstance[];
+  secondStoryAllInstances: PanelInstance[];
   /** Whether THIS wall owns a real "corner" PanelSlot at its own start/end
    * (Tommy: "you see all the panel surfaces on that wall — including the
    * panelwidth side of the opposing wall for the walls that dont start of
@@ -235,6 +245,38 @@ export interface WallElevationDiagramProps {
   toolbarPortalTarget?: HTMLDivElement | null;
 }
 
+/** Same grouping Building3DView's own groupInstancesBySlot uses (this file
+ * re-derives it locally rather than sharing a util, matching that file's own
+ * convention of one small per-consumer copy). */
+function groupInstancesBySlot(instances: PanelInstance[]): Map<string, PanelInstance[]> {
+  const map = new Map<string, PanelInstance[]>();
+  for (const inst of instances) {
+    const key = `${inst.wallId}-${inst.slotIndexInWall}`;
+    const existing = map.get(key);
+    if (existing) existing.push(inst);
+    else map.set(key, [inst]);
+  }
+  return map;
+}
+
+/** Same band-aware narrowing Building3DView's own instancesForBox uses — a
+ * Mid-Wall Bond Beam-affected slot shares one wallId+slotIndex key across
+ * its stacked-band instances (same convention a window's header+sill
+ * already use), so `midWallBandIndex` narrows the lookup to just the one
+ * band this rendered rect belongs to. `undefined` (a genuinely unaffected
+ * slot — see allPanelInstances' own isGenuinelyUnaffected) returns every
+ * instance for that key unfiltered. */
+function instancesForSlotBand(
+  instancesBySlot: Map<string, PanelInstance[]>,
+  wallId: string,
+  slotIndex: number,
+  midWallBandIndex: number | undefined,
+): PanelInstance[] {
+  const all = instancesBySlot.get(`${wallId}-${slotIndex}`) ?? [];
+  if (midWallBandIndex === undefined) return all;
+  return all.filter((i) => i.midWallBandIndex === midWallBandIndex);
+}
+
 /**
  * Per-wall face-on 2D diagram (X = position along the wall, Y = height) —
  * Tommy: "an arrow button for each wall section, where we can see the whole
@@ -270,6 +312,8 @@ export default function WallElevationDiagram({
   wall,
   slots,
   wallHeightFt,
+  allInstances,
+  secondStoryAllInstances,
   hasCornerStart,
   hasCornerEnd,
   secondStorySlots,
@@ -438,6 +482,9 @@ export default function WallElevationDiagram({
   };
   const groundBandsAndZones = bandsAndZonesPerSlot(slots, eaveHeightIn, midWallBeams);
   const secondBandsAndZones = secondStorySlots ? bandsAndZonesPerSlot(secondStorySlots, secondStoryHeightIn, secondStoryMidWallBeams) : [];
+
+  const groundInstancesBySlot = groupInstancesBySlot(allInstances);
+  const secondStoryInstancesBySlot = groupInstancesBySlot(secondStoryAllInstances);
 
   const { pointCount, resolvedPointXsIn, pointIsExplicit, pointIsSnapped, isShedRoof } = resolveGableProfilePoints(
     roofProfilePointHeightsFt,
@@ -884,8 +931,17 @@ export default function WallElevationDiagram({
     bandsAndZonesForRow: { bands: WallVerticalBand[]; zones: PanelSlotZone[] }[],
     rowFloorHeightIn: number,
     story: "ground" | "second",
+    /** This row's own flat nominal story height (eaveHeightIn for ground,
+     * secondStoryHeightIn for second) — needed only to tell a genuinely
+     * unaffected slot (1 band spanning the whole story) apart from a real
+     * single PARTIAL band left over after a beam ate part of the height;
+     * both have bands.length === 1, but only the latter has a real
+     * midWallBandIndex on its own PanelInstance (see allPanelInstances' own
+     * isGenuinelyUnaffected). */
+    storyHeightIn: number,
     heightOverrideForSlotBand?: (slotIndex: number, band: WallVerticalBand, isTopmostForSlot: boolean) => number,
   ) => {
+    const instancesBySlot = story === "ground" ? groundInstancesBySlot : secondStoryInstancesBySlot;
     const rects = rowSlots.reduce<{ slot: PanelSlot; i: number; x0: number; x1: number }[]>((acc, slot, i) => {
       const x0 = acc.length > 0 ? acc[acc.length - 1]!.x1 : startOffsetIn;
       acc.push({ slot, i, x0, x1: x0 + slot.widthIn });
@@ -909,6 +965,28 @@ export default function WallElevationDiagram({
         const isTopmostForSlot = bandIndex === entry.bands.length - 1;
         const rowWallHeightIn = heightOverrideForSlotBand?.(i, band, isTopmostForSlot) ?? band.topIn - band.bottomIn;
         const localYPx = (localHeightIn: number) => yPx(rowFloorHeightIn + band.bottomIn + localHeightIn);
+        const isGenuinelyUnaffectedBand = entry.bands.length === 1 && entry.bands[0]!.bottomIn === 0 && entry.bands[0]!.topIn === storyHeightIn;
+        const panelLabel = combinedPanelLabel(
+          instancesForSlotBand(instancesBySlot, wall.id, i, isGenuinelyUnaffectedBand ? undefined : band.bandIndex),
+        );
+        if (panelLabel) {
+          const labelXPx = xPx((x0 + x1) / 2);
+          const labelYPx = localYPx(rowWallHeightIn) + 12;
+          elements.push(
+            <text
+              key={`label-${story}-${bandIndex}-${i}`}
+              x={labelXPx}
+              y={labelYPx}
+              fontSize={7}
+              fontWeight={600}
+              textAnchor="middle"
+              fill="#333"
+              transform={`rotate(-90 ${labelXPx} ${labelYPx})`}
+            >
+              {panelLabel}
+            </text>,
+          );
+        }
         if (zone.type === "window") {
           const g = computeOpeningGeometry(
             false,
@@ -1153,6 +1231,21 @@ export default function WallElevationDiagram({
             role="img"
             aria-label={`Elevation view of wall ${wall.id}`}
           >
+        {/* "Overall Width" dimension callout — this wall's own true
+            lengthFt (not groundRunWidthIn, which can stop short at an end
+            this wall doesn't own its own corner at), formatted the same
+            way every other wall-length label in the app already is. Drawn
+            above maxHeightIn (TOP_MARGIN_PX was bumped for exactly this)
+            so it never collides with gable/roofline content also sharing
+            this SVG. */}
+        <g>
+          <line x1={xPx(0)} y1={8} x2={xPx(wallWidthIn)} y2={8} stroke="#666" strokeWidth={1} />
+          <line x1={xPx(0)} y1={4} x2={xPx(0)} y2={12} stroke="#666" strokeWidth={1} />
+          <line x1={xPx(wallWidthIn)} y1={4} x2={xPx(wallWidthIn)} y2={12} stroke="#666" strokeWidth={1} />
+          <text x={xPx(wallWidthIn / 2)} y={7} fontSize={9} fontWeight={600} textAnchor="middle" fill="#444">
+            Overall Width: {formatFeetInches(wall.lengthFt)}
+          </text>
+        </g>
         {/* Ground top-plate line — spans only the ground row's own actual
             width (see groundRunWidthIn above), not the wall's raw
             geometric length. Always the ground floor's own height,
@@ -1161,7 +1254,14 @@ export default function WallElevationDiagram({
         <text x={4} y={yPx(eaveHeightIn) + 4} fontSize={10} fill="#666">
           {eaveHeightIn}&quot;
         </text>
-        {renderRow(slots, groundBandsAndZones, 0, "ground")}
+        {/* F.F.L (Finish Floor Line) — the ground row's own y=0 baseline is
+            already the real reference every wall height in the app
+            measures from; this just labels it. */}
+        <line x1={xPx(0)} y1={yPx(0)} x2={xPx(wallWidthIn)} y2={yPx(0)} stroke="#666" strokeWidth={1.5} />
+        <text x={xPx(wallWidthIn) + 4} y={yPx(0) + 3} fontSize={9} fontWeight={600} fill="#444">
+          F.F.L
+        </text>
+        {renderRow(slots, groundBandsAndZones, 0, "ground", eaveHeightIn)}
         {renderAdjacentWallFiller(0, eaveHeightIn, "ground")}
 
         {/* Mid-Wall Bond Beams (ground floor) — one filled rect per beam
@@ -1271,7 +1371,7 @@ export default function WallElevationDiagram({
               {eaveHeightIn + secondStoryHeightIn}&quot;
               {boxBeamCoverage ? ` (Box Beam sections ${boxBeamHeightDeltaIn.toFixed(2)}in shorter)` : ""}
             </text>
-            {renderRow(secondStorySlots, secondBandsAndZones, eaveHeightIn, "second", (slotIndex, band, isTopmostForSlot) => {
+            {renderRow(secondStorySlots, secondBandsAndZones, eaveHeightIn, "second", secondStoryHeightIn, (slotIndex, band, isTopmostForSlot) => {
               const bandHeightIn = band.topIn - band.bottomIn;
               return isTopmostForSlot && isSlotBoxBeamCovered(slotIndex, boxBeamCoverage)
                 ? bandHeightIn - boxBeamHeightDeltaIn

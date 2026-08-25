@@ -1139,6 +1139,16 @@ export default function LayoutEditor() {
       ),
     [midWallBeamsByStoryAndWallId.ground],
   );
+  // Same derivation, second story — feeds secondStoryAllInstances below
+  // (Elevation-view panel ID labels need named instances for both stories,
+  // same as Building3DView's own groundInstancesBySlot/secondStoryInstancesBySlot).
+  const secondStoryMidWallBeamGeometryByWallId = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(midWallBeamsByStoryAndWallId.second).map(([wallId, beams]) => [wallId, midWallBeamsToGeometry(beams)]),
+      ),
+    [midWallBeamsByStoryAndWallId.second],
+  );
   // midWallBeamWallLengthTotalIn lives further down, right after `stories`
   // is declared — it needs to read `stories` inside a useMemo callback
   // that runs synchronously during THIS render, unlike the deferred
@@ -3156,6 +3166,28 @@ export default function LayoutEditor() {
       maxPanelHeightIn,
       gableEaveHeightIn,
     ],
+  );
+
+  // Second story's own named instances (Elevation-view panel ID labels) —
+  // gable tiles/box-beam coverage omitted, same as Building3DView's own
+  // secondStoryInstancesBySlot (Building3DView.tsx:1416-1435): gable tiles
+  // live only on the ground-facing roofline, and box-beam coverage doesn't
+  // affect a panel's own compass name.
+  const secondStoryAllInstances = useMemo(
+    () =>
+      footprint && secondStory
+        ? allPanelInstances(
+            footprint,
+            secondStory.wallSlots,
+            standardWidthIn,
+            jackStudConfig,
+            undefined,
+            undefined,
+            secondStory.wallHeightFt * 12,
+            secondStoryMidWallBeamGeometryByWallId,
+          )
+        : [],
+    [footprint, secondStory, standardWidthIn, jackStudConfig, secondStoryMidWallBeamGeometryByWallId],
   );
 
   // Door Rough Opening height (Tommy: "RO height for doors is almost
@@ -6831,6 +6863,42 @@ export default function LayoutEditor() {
                   const zone: PanelSlotZone =
                     zoneIndex !== undefined && zoneIndex > 0 ? effectiveZonesForSlot(slot, zoneIndex + 1)[zoneIndex]! : zoneFromSlot(slot);
                   const bracedStyle = zone.type === "braced" ? resolveBracedStyle(zone, defaultBracePattern, defaultBracedMirrored) : null;
+                  // Material Specs — only for panel types that actually build
+                  // real dimensional-lumber stud framing around a straw
+                  // cavity (same real criterion BEARING_ELIGIBLE_TYPES
+                  // already uses — a corner panel is built identically to a
+                  // column panel, see cornerPanelMembers.ts). Deliberately
+                  // excludes safety-gap: buildSafetyGapMembers shows it's
+                  // "no studs, plates, or girts at all — just one 3/4in
+                  // plywood sheet," so neither value would be real there.
+                  const densityLbFt3Confirmed = Math.round((targetDensityKgM3.value / LB_FT3_TO_KG_M3) * 10) / 10;
+                  const framingSizeLabel = isSquareBalePanelization
+                    ? (
+                        {
+                          "single-2x4": "Single 2x4 Studs",
+                          "double-2x4": "Double 2x4 Studs",
+                          "double-2x6": "Double 2x6 Studs",
+                        } satisfies Record<StudConfig, string>
+                      )[squareBaleStudConfig]
+                    : `2x4 Nominal (${PLATE_2X4_THICKNESS_IN}in x ${PLATE_2X4_WIDTH_IN}in actual)`;
+                  const materialSpecsSection = BEARING_ELIGIBLE_TYPES.has(zone.type) ? (
+                    <div className={elevationStyles.structuralSection}>
+                      <span className={elevationStyles.sectionLabel}>Material Specs</span>
+                      <div className={elevationStyles.structuralRow}>
+                        <div className={elevationStyles.structuralRowHead}>
+                          <span>Straw Density</span>
+                          <span className={elevationStyles.structuralValue}>{densityLbFt3Confirmed} lb/ft&sup3;</span>
+                        </div>
+                        <span className={elevationStyles.confirmedPill}>Confirmed</span>
+                      </div>
+                      <div className={elevationStyles.structuralRow}>
+                        <div className={elevationStyles.structuralRowHead}>
+                          <span>Framing Size</span>
+                          <span className={elevationStyles.structuralValue}>{framingSizeLabel}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null;
                   return (
                     <StickyNote
                       id="selected-panel"
@@ -6947,6 +7015,7 @@ export default function LayoutEditor() {
                             />{" "}
                             Mirrored ({bracedStyle.pattern === "chevron" ? '">"' : '"\\"'})
                           </label>
+                          {materialSpecsSection}
                         </>
                       ) : zone.type === "big-header" ? (
                         <>
@@ -6995,11 +7064,14 @@ export default function LayoutEditor() {
                           </label>
                         </>
                       ) : (
-                        <p className={styles.note}>
-                          {PANEL_TYPE_LABELS[zone.type]} panel, {slot.widthIn.toFixed(1)}in wide.
-                          {zone.type === "column" ? " Column Panels are always fabricated at a fixed width, not adjustable here." : ""}
-                          {zone.type === "standard" || zone.type === "door" ? " Click it again on the canvas to cycle its type." : ""}
-                        </p>
+                        <>
+                          <p className={styles.note}>
+                            {PANEL_TYPE_LABELS[zone.type]} panel, {slot.widthIn.toFixed(1)}in wide.
+                            {zone.type === "column" ? " Column Panels are always fabricated at a fixed width, not adjustable here." : ""}
+                            {zone.type === "standard" || zone.type === "door" ? " Click it again on the canvas to cycle its type." : ""}
+                          </p>
+                          {materialSpecsSection}
+                        </>
                       )}
                     </StickyNote>
                   );
@@ -7020,6 +7092,8 @@ export default function LayoutEditor() {
                   wall={elevationWall}
                   slots={overlayWallSlots[elevationWall.id] ?? []}
                   wallHeightFt={wallHeightFt}
+                  allInstances={allInstances}
+                  secondStoryAllInstances={secondStoryAllInstances}
                   hasCornerStart={wallGeometryFor(elevationWall.id)?.hasCornerStart ?? true}
                   hasCornerEnd={wallGeometryFor(elevationWall.id)?.hasCornerEnd ?? true}
                   secondStorySlots={secondStory?.wallSlots[elevationWall.id]}

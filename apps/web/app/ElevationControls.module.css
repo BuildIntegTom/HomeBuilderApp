@@ -203,8 +203,8 @@
 }
 
 /* The app never marks a first-pass NDS estimate "confirmed" (see the
-   Review Log) — this pill is deliberately the only status these figures
-   ever carry. */
+   Review Log) — every structural-capacity figure gets this pill, never
+   .confirmedPill below. */
 .pendingPill {
   align-self: flex-start;
   font-size: 10px;
@@ -213,6 +213,22 @@
   text-transform: uppercase;
   color: #fff;
   background: #a67c00;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+/* Reserved for a value that genuinely carries a catalog `status:
+   "confirmed"` (e.g. targetDensityKgM3) — unlike .pendingPill above, this
+   is NOT a default/safe choice for new content; most figures in this app
+   are first-pass estimates and belong under .pendingPill instead. */
+.confirmedPill {
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #fff;
+  background: #2e7d4f;
   border-radius: 999px;
   padding: 2px 8px;
 }
