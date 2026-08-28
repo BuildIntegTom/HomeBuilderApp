@@ -216,3 +216,41 @@
     font-size: 11px;
   }
 }
+
+/* Print: unwrap the fullscreen editor shell so printed sheets sit at the
+   real top of the page box and can actually paginate.
+
+   On screen this app is a permanently-fullscreen editor: `.page` is a
+   100vh clipping box and `.main` is a fixed-position layer pinned 56px
+   (--topbar-height) below the top of the viewport, with every StickyNote
+   living inside it. Neither had any print reset, so on paper a
+   fixed-position ancestor is laid out against the page area and pushed
+   every printed sheet 56px down it — wasting 0.58in of every page and
+   shifting the whole document — while `.page`'s `height: 100vh` +
+   `overflow: hidden` is one more unfragmentable clipping box in the
+   ancestor chain, in the same family as the StickyNote wrapper's own
+   `overflow: hidden` (see globals.css). A clipping ancestor is what stops
+   an over-length sheet from flowing onto a second page instead of being
+   cut off, so this block is part of what makes print output non-lossy, not
+   just better aligned.
+
+   Verified that nothing else in between reintroduces a clip: `.editorSection`
+   and SectionCarousel are siblings of the notes and carry
+   print-hidden-chrome.
+
+   Screen appearance is untouched; this only applies inside @media print. */
+@media print {
+  .page {
+    /* display: block for the same reason globals.css un-flexes <body>:
+       packet exports are multi-page and flex fragmentation is Chrome's
+       weakest print path. */
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  .main {
+    position: static;
+    inset: auto;
+  }
+}

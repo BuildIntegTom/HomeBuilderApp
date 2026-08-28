@@ -14,10 +14,12 @@
 }
 
 /* Starts below the TopBar (--topbar-height), not the true viewport top —
-   NOT the same as `inset: 0`. This note is a descendant of .editorSection
-   (page.module.css), which clips to its own box via `overflow: hidden`;
-   that box itself only spans from --topbar-height down (it lives inside
-   .main, which starts there too), so an `inset: 0` fullscreen note had its
+   NOT the same as `inset: 0`. This note lives inside .main
+   (page.module.css), which spans from --topbar-height down; the floating
+   notes are SIBLINGS of .editorSection, not descendants of it (an older
+   version of this comment claimed otherwise — page.module.css's print
+   block has the accurate account). Because .main starts below the bar, an
+   `inset: 0` fullscreen note had its
    own header — with the only exit-fullscreen button — clipped clean off
    the top, behind the TopBar, with no way to get back out (Tommy: "the top
    of it disappears under the top bar... impossible to minimize a note once

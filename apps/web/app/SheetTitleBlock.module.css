@@ -181,17 +181,68 @@
   }
 }
 
-/* Print pagination fix (Tommy: "if it spills over to needing more than one
-   page, then additional pages are made for that content") — on screen,
-   .sheet is a fixed-shape box (aspect-ratio/min-height) and .content
-   scrolls its own overflow; on paper there's no scrollbar, so content
-   taller than that fixed box was silently cut off instead of flowing to a
-   second printed page. Resetting the shape to auto/visible here lets the
-   browser's native print pagination take over — this is the actual
-   overflow-clipping culprit (not the StickyNote wrapper one layer up,
-   which globals.css's print rules already correctly neutralize via
-   height:auto!important on [data-print-target]). Screen appearance is
-   untouched; this only applies inside @media print. */
+/* Print (spec, "Print / PDF export — paged-media rules"). On screen .sheet
+   is a fixed-shape box (aspect-ratio/min-height) whose .content scrolls its
+   own overflow; on paper there is no scrollbar, so the shape is released
+   and the scroll containers are neutralized. That is all this block does —
+   it deliberately does NOT constrain .sheet's height.
+
+   Why no height cap. An earlier revision of this block sized .sheet to the
+   exact page box (8in letter / 10.5in tabloid, derived from globals.css's
+   @page rules) so the frame and title-block strip could never fragment and
+   redraw themselves on a second page — Tommy: "it puts it on two pages and
+   it's duplicated." It worked for that, and it was wrong anyway:
+   box-sizing: border-box closed the frame exactly at the page boundary
+   while the overflow painted into the unprintable margin, so an
+   over-length sheet came out as a complete, correctly-proportioned, fully
+   framed page that just ended mid-table with nothing on it indicating
+   anything was missing. Uncapped, the bottom border simply never gets
+   drawn, which at least looks truncated. Silent loss on a shop drawing is
+   the one failure this document must not have, so loud-and-wrong wins over
+   quiet-and-missing.
+
+   `break-inside: avoid` is deliberately absent for the same reason: it
+   would force an over-length sheet whole onto one page and clip it. Left
+   fragmentable, the content survives onto page 2. That is also why
+   globals.css's `overflow: visible !important` on the StickyNote wrapper
+   matters — until that landed, .note's `overflow: hidden` made these
+   sheets monolithic and unfragmentable, so nothing could flow to a second
+   page at all.
+
+   The real duplicate-frame answer is Tommy's decision: numbered
+   continuation sheets — every page a real framed sheet with its own title
+   block, reading "Sheet 2 of 3" (SheetTitleBlock already takes
+   sheetNumber/sheetCount from DocumentMetaContext). That is separate work,
+   not yet built; until it is, an over-length sheet fragments with a
+   repeated frame — ugly, but non-lossy by reasoning rather than by
+   observation: nobody has yet run a real browser print against this, and
+   .documentSectionBody and .sheet are both still flex containers, which is
+   the weakest corner of Chrome's print engine. Treat "it fragments
+   cleanly" as reasoned, not verified.
+
+   Fabrication sheets, the ones Tommy actually reported, come in UNDER a
+   letter page — but only by ~12-22px in the tightest measured case
+   (braced chevron, 8 cut rows, no plaster), and they go over as soon as
+   ONE plaster coat is selected or the "Also used at" list wraps to a
+   second line (~24 instances, or ~6 for corner panels, whose names carry
+   a "(safety-oct-corner)" suffix). So: under, not comfortably under.
+   Hiding the screen-only intro blurb and the sticky-note chrome (see
+   page.tsx and globals.css) is what fixed his bug, not any height math
+   here — and shaving a few more px here would not buy a margin worth
+   relying on.
+
+   overflow stays VISIBLE on .sheet/.content/.titleZone. Do not "fix"
+   overflow by reintroducing overflow: hidden or a height cap — both trade
+   a visible bug for silent data loss.
+
+   Correction to the comment this replaces: it claimed the StickyNote
+   wrapper one layer up was "already correctly neutralize[d]" by globals.css
+   via height: auto !important. That was false — globals.css reset
+   display/position/inset/width/height/max-height/box-shadow but never
+   `overflow` or `max-width`. Both are fixed in globals.css's shared print
+   block, where they belong (they affect every printed section).
+
+   Screen appearance is untouched; all of this is inside @media print. */
 @media print {
   .sheet {
     aspect-ratio: auto;
@@ -209,7 +260,9 @@
 
   /* Same "never split awkwardly across a page boundary" treatment
      PanelFabricationPage.module.css/ShopDrawingPage.module.css already give
-     their own .diagram — the print-relevant twin of this zone. */
+     their own .diagram — the print-relevant twin of this zone. Scoped to
+     this one small zone on purpose: a diagram is genuinely unsplittable,
+     whereas the sheet as a whole must stay fragmentable (see above). */
   .diagramZone {
     overflow: visible;
     break-inside: avoid;

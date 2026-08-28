@@ -4760,6 +4760,17 @@ export default function LayoutEditor() {
     const needsOpening = [...ids].some((id) => !openNoteIds.has(id));
     const doExport = () => {
       for (const id of ids) document.getElementById(id)?.setAttribute("data-print-target", "true");
+      // Mark the LAST target in document order, so the packet's "no page
+      // break after the final section" print rule (globals.css) has an
+      // explicit element to match. That rule used to try to find it in CSS
+      // with `:last-of-type`, which matches the last element of its element
+      // *type* among its siblings -- not the last element matching the rest
+      // of the selector. Sticky notes are `div`s among many other sibling
+      // `div`s emitted from several separate `.map()` groups, so it never
+      // matched and every packet export ended with a trailing blank page.
+      // querySelectorAll returns document order.
+      const printTargets = document.querySelectorAll("[data-print-target]");
+      printTargets[printTargets.length - 1]?.setAttribute("data-print-last", "true");
       document.body.setAttribute("data-print-mode", "packet");
       window.print();
       if (needsOpening) setOpenNoteIds(wasOpen);
@@ -4786,6 +4797,9 @@ export default function LayoutEditor() {
       document.body.removeAttribute("data-print-mode");
       for (const section of document.querySelectorAll("[data-print-target]")) {
         section.removeAttribute("data-print-target");
+      }
+      for (const section of document.querySelectorAll("[data-print-last]")) {
+        section.removeAttribute("data-print-last");
       }
     };
     window.addEventListener("afterprint", onAfterPrint);
@@ -8612,7 +8626,13 @@ export default function LayoutEditor() {
                   onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
                   onPrint={() => handlePrintNote(noteId)}
                 >
-                  <p className={styles.note}>
+                  {/* Screen-only orientation text: on paper it just pushes the framed
+                      sheet down the page. Opt-in `print-hidden-chrome` rather
+                      than blanket-hiding styles.note -- several of its other
+                      uses are honest caveats that SHOULD print (spec open item:
+                      "Print audit of the other sections' styles.note
+                      paragraphs"). */}
+                  <p className={`${styles.note} print-hidden-chrome`}>
                     Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with
                     a to-scale lettered elevation, a materials cut list, which placed panels are copies of this one,
                     and a weight checker with a blank line for the shop&apos;s own measured weight.
@@ -8664,7 +8684,13 @@ export default function LayoutEditor() {
                   onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
                   onPrint={() => handlePrintNote(noteId)}
                 >
-                  <p className={styles.note}>
+                  {/* Screen-only orientation text: on paper it just pushes the framed
+                      sheet down the page. Opt-in `print-hidden-chrome` rather
+                      than blanket-hiding styles.note -- several of its other
+                      uses are honest caveats that SHOULD print (spec open item:
+                      "Print audit of the other sections' styles.note
+                      paragraphs"). */}
+                  <p className={`${styles.note} print-hidden-chrome`}>
                     Fabricator/detailer document — one sheet per unique wall length (walls sharing a length grouped
                     together), with a to-scale lettered elevation, a materials cut list, which walls this segment is
                     used on, and a weight checker with a blank line for the shop&apos;s own measured weight.
@@ -8705,7 +8731,13 @@ export default function LayoutEditor() {
                   onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
                   onPrint={() => handlePrintNote(noteId)}
                 >
-                  <p className={styles.note}>
+                  {/* Screen-only orientation text: on paper it just pushes the framed
+                      sheet down the page. Opt-in `print-hidden-chrome` rather
+                      than blanket-hiding styles.note -- several of its other
+                      uses are honest caveats that SHOULD print (spec open item:
+                      "Print audit of the other sections' styles.note
+                      paragraphs"). */}
+                  <p className={`${styles.note} print-hidden-chrome`}>
                     Fabricator/detailer document — one sheet per unique size + wall length (walls/stories sharing
                     both grouped together), with a to-scale lettered elevation, a materials cut list, which
                     walls this segment is used on, and a weight checker with a blank line for the shop&apos;s own

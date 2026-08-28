@@ -124,9 +124,21 @@ export default function StickyNote({
       className={`${styles.note} ${isFullscreen ? styles.noteFullscreen : dockedNotFullscreen ? styles.noteDocked : ""} documentSection`}
       style={isFullscreen || dockedNotFullscreen ? undefined : { top: dragPos?.top ?? baseTop, left: dragPos?.left ?? baseLeft }}
     >
-      <div className={styles.header} style={docked && !isFullscreen ? { cursor: "default" } : undefined} onPointerDown={handleHeaderPointerDown}>
+      {/* The header BAR still prints, deliberately; only its buttons are
+          chrome. For a note that renders no SheetTitleBlock (Review Log,
+          Project Totals, Assembly Performance -- all of which expose a
+          working print button), `label` is the printed document's only
+          title, so hiding the whole header left the Review Log printing as
+          a bare <ul> with nothing saying what it was. globals.css strips
+          the bar's own background/border/grab cursor in print so the label
+          reads as a plain heading. */}
+      <div
+        className={`${styles.header} documentSectionHeader`}
+        style={docked && !isFullscreen ? { cursor: "default" } : undefined}
+        onPointerDown={handleHeaderPointerDown}
+      >
         <span className={styles.label}>{label}</span>
-        <div className={styles.headerButtons}>
+        <div className={`${styles.headerButtons} print-hidden-chrome`}>
           {onPrint && (
             <button type="button" title="Print this section" className={styles.headerButton} onClick={onPrint}>
               🖶
@@ -145,7 +157,13 @@ export default function StickyNote({
           </button>
         </div>
       </div>
-      <div className={styles.body}>{children}</div>
+      {/* `documentSectionBody` is a plain global class (like
+          `documentSection` above) so globals.css's shared print block can
+          neutralize this box's screen-only `overflow-y: auto` + padding
+          without reaching into this module's hashed class names. A
+          scrolling box is unfragmentable in paged media -- the browser clips
+          it instead of flowing it onto the next page. */}
+      <div className={`${styles.body} documentSectionBody`}>{children}</div>
     </div>
   );
 }

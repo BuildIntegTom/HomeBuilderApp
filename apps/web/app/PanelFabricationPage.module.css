@@ -60,4 +60,38 @@
   .table tr {
     break-inside: avoid;
   }
+
+  /* .pendingCell sets only `color` — so on screen AND on paper it inherits
+     the 16px UA default, on a sheet where nothing else is above 14px. That
+     one paragraph inlines the catalog's STRUCTURAL_PENDING_NOTE twice
+     (load-bearing + shear), which at 16px runs ~9 lines / ~166px on a
+     standard panel and ~11 lines / ~202px on a braced one (braced's own
+     shearValue.note prepends ~200 chars ahead of STRUCTURAL_PENDING_NOTE,
+     see data.ts) — taller than the entire cut-list table either way, and
+     the single largest reason a common fabrication sheet overran a letter
+     page by ~0.2in. .sheet is
+     deliberately NOT height-capped (see SheetTitleBlock.module.css), so
+     that overrun is not clipped — it fragments, redrawing the frame and
+     title block on page 2, which is the exact symptom Tommy reported.
+     Keeping the sheet under one page is what prevents it. 11px matches the
+     title block's own .metaRow/.disclaimer, takes the paragraph to ~6
+     lines (standard) / ~8 lines (braced), and recovers ~90-120px.
+
+     Scoped to `p.pendingCell` on purpose, not the bare class: the class is
+     also on the weight checker's inline <span>not modeled</span>, where
+     shrinking it buys ~2px, puts 11px text beside 13px numbers in the same
+     column, and de-emphasizes a pending-status marker — the opposite of
+     what the paragraph below is being kept legible for.
+
+     Print-only on purpose: this is a paged-media sizing fix, not a
+     redesign of how the note reads on screen.
+
+     This paragraph must never be hidden with print-hidden-chrome. It
+     carries loadBearingCapacity.note and shearValue.note, both
+     `pending-BI-confirmation` — dropping it off the printed shop sheet
+     would take a pending structural disclosure off the one artifact that
+     reaches the shop floor. Shrink it; don't remove it. */
+  p.pendingCell {
+    font-size: 11px;
+  }
 }

@@ -107,25 +107,94 @@ a {
     display: none !important;
   }
 
+  /* Packet exports are multi-page by construction, and flex fragmentation
+     is the weakest path in Chrome's print engine. Neither of these needs to
+     be a flex container on paper — the layout they build is a screen-only
+     fullscreen editor shell (see page.module.css's own print block, which
+     un-fixes .main and un-clips .page for the same reason). */
+  body {
+    display: block;
+  }
+
   body[data-print-mode] .documentSection {
     display: none !important;
   }
 
+  /* Turns the targeted sticky note back into a plain static document block.
+     Three kinds of reset here, and all are shared infrastructure — they
+     apply to EVERY printed section, not just the fabrication sheets:
+
+     1. Geometry/flow: the fixed-position, size-capped floating card becomes
+        a normal full-width static block. `max-width` matters as much as
+        `width` here: `.note`'s screen cap is `calc(100vw - 48px)`, and in
+        paged media `vw` resolves against the page area — so without this
+        reset the sheet printed 960px wide on a 1008px letter page,
+        left-aligned, with a 0.5in right gutter against 0.25in everywhere
+        else, and a narrower text column that wrapped more than it should.
+     2. Un-scrolling it: `.note` is `overflow: hidden` and `.body` is
+        `overflow-y: auto` (StickyNote.module.css). A clipping or scrolling
+        box is monolithic in paged media — the browser cannot fragment it
+        across pages, so it clips the overflow instead and content silently
+        disappears off the bottom of the sheet. `height: auto` alone does
+        NOT fix that (an earlier comment in SheetTitleBlock.module.css
+        claimed it did; it didn't, and that's how a clipped cut list
+        survived). This is also what lets an over-length sheet flow onto a
+        second page at all. Any new scrolling container anywhere in the app
+        needs the same print reset.
+     3. De-chroming it: the yellow/gold card (background, border, radius)
+        and the body's screen padding are editor UI, not document. */
   body[data-print-mode] .documentSection[data-print-target] {
     display: block !important;
     position: static !important;
     inset: auto !important;
     width: 100% !important;
+    max-width: none !important;
     height: auto !important;
     max-height: none !important;
     box-shadow: none !important;
+    overflow: visible !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* The note's header bar. Its 🖶/⤢/× buttons are hidden in StickyNote.tsx
+     via print-hidden-chrome, but the bar itself — and specifically its
+     `label` — stays: for a section that renders no SheetTitleBlock (Review
+     Log, Project Totals, Assembly Performance), that label is the printed
+     document's ONLY title, and hiding the whole header made the Review Log
+     print as a bare <ul> of engineer-review items with nothing identifying
+     it. So the bar keeps its text and loses its chrome: the cream/gold
+     editor styling and the grab cursor, leaving a plain heading. */
+  body[data-print-mode] .documentSection[data-print-target] .documentSectionHeader {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 0 8px !important;
+    cursor: default !important;
+  }
+
+  /* The note's scrollable content area. Marked with a plain global class in
+     StickyNote.tsx (same trick as `documentSection` itself) so these shared
+     print rules don't have to reach into another file's hashed CSS-module
+     names. */
+  body[data-print-mode] .documentSection[data-print-target] .documentSectionBody {
+    overflow: visible !important;
+    padding: 0 !important;
   }
 
   body[data-print-mode="packet"] .documentSection[data-print-target] {
     break-after: page;
   }
 
-  body[data-print-mode="packet"] .documentSection[data-print-target]:last-of-type {
+  /* "Don't page-break after the LAST section" — marked imperatively in
+     document order by handleExportSelectedPdf (page.tsx), not selected in
+     CSS. `:last-of-type` was the original approach and was simply wrong:
+     it matches the last element of its element *type* among its siblings,
+     not the last element matching the rest of the selector. Sticky notes
+     are `div`s among many other sibling `div`s, emitted from several
+     separate `.map()` groups, so nothing ever matched and every packet
+     export ended with a trailing blank page. */
+  body[data-print-mode="packet"] .documentSection[data-print-target][data-print-last] {
     break-after: auto;
   }
 }
