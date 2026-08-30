@@ -214,11 +214,16 @@
    block, reading "Sheet 2 of 3" (SheetTitleBlock already takes
    sheetNumber/sheetCount from DocumentMetaContext). That is separate work,
    not yet built; until it is, an over-length sheet fragments with a
-   repeated frame — ugly, but non-lossy by reasoning rather than by
-   observation: nobody has yet run a real browser print against this, and
-   .documentSectionBody and .sheet are both still flex containers, which is
-   the weakest corner of Chrome's print engine. Treat "it fragments
-   cleanly" as reasoned, not verified.
+   repeated frame — ugly, but non-lossy. Be precise about what has
+   actually been checked (Chromium, 2026-08-28): the print RULES are
+   verified live — every @media print block was force-applied to the DOM
+   and computed styles read back, confirming the sticky-note chrome is
+   hidden, the header label survives, and the overflow / max-width /
+   position resets all land. PAGINATION is NOT verified: page breaks,
+   fragmentation, and the packet blank-page fix are only observable in a
+   real print preview. .documentSectionBody and .sheet are both still
+   flex containers — the weakest corner of Chrome's print engine — so
+   treat "it fragments cleanly" as reasoned, not observed.
 
    Fabrication sheets, the ones Tommy actually reported, come in UNDER a
    letter page — but only by ~12-22px in the tightest measured case
