@@ -201,7 +201,10 @@ export function buildFloorBottomSkinMembers(widthIn: number, depthIn: number, ba
         lengthIn: isWidthAxis ? bandSizeIn : widthIn,
       },
       orientation: "flat",
-      position: { xIn: isWidthAxis ? offsetIn : 0, yIn: 0, zIn: isWidthAxis ? 0 : offsetIn, rotationDeg: 0 },
+      // Member space: xIn = width, yIn = depth, zIn = height up (see MemberPosition
+      // in componentSchema.ts). The bands tile ACROSS the floor, so the offset goes in
+      // xIn or yIn depending on the axis; zIn stays 0 so all 3 sit on one plane.
+      position: { xIn: isWidthAxis ? offsetIn : 0, yIn: isWidthAxis ? 0 : offsetIn, zIn: 0, rotationDeg: 0 },
       role: "skin",
       qty: 1,
       opacityOverride: opacity,

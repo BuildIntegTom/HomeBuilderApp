@@ -108,16 +108,21 @@ export const BOX_FACES: [number, number, number, number][] = [
 ];
 
 /**
- * One member's 8 corners in its panel's own local space — X=width,
- * Y=height(up), Z=depth. For a true beveled brace (`position.
- * trapezoidCornersIn` present — see `computeBraceTrapezoidCornersIn`), the
+ * One member's 8 corners in VIEW SPACE (Y-up: X=width, Y=height up,
+ * Z=depth) — the space the 3D renderer and the .obj file use, NOT the
+ * member space its `position` fields are authored in (see `MemberPosition`
+ * in componentSchema.ts, where Y=depth and Z=height up). This function is
+ * where that swap happens (`position.zIn` -> Y, `position.yIn` -> Z); no
+ * builder should be writing view-space coordinates itself.
+ *
+ * For a true beveled brace (`position.trapezoidCornersIn` present — see `computeBraceTrapezoidCornersIn`), the
  * 4 already-absolute panel-space (X,Z) corners are used directly as both
  * depth faces (`Y = position.yIn +- thicknessIn/2`, the same depth span
  * every diagonal brace already occupies) — no rotation math needed, since
  * they're already the real cut shape. Every other member: min-corner at
  * (0,0,0) for every orientation except "diagonal" (center-anchored,
- * rotated by `tiltDeg` around world Z, matching the 3D renderer's
- * `rotation.z`). Shared by `buildPanelObj`/`buildBuildingObj`
+ * rotated by `tiltDeg` around view-space Z — the same rotation `tiltDeg`
+ * describes as member-space Y, matching the 3D renderer's `rotation.z`). Shared by `buildPanelObj`/`buildBuildingObj`
  * (panelObjExport.ts, one panel at a time / placed in world space) and
  * `PanelMembersGroup.tsx` (the on-screen 3D renderer) — one function, so
  * the downloadable .obj can never visually disagree with what's on screen.

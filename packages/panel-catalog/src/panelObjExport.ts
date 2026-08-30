@@ -63,7 +63,8 @@ export interface WorldPlacedPanel {
 /**
  * Combines every panel of a whole building into one Wavefront OBJ file —
  * each panel's members (or placeholder blob) transformed from its own
- * local space into world space (rotate around Y by `-rotationRad`,
+ * view space (Y-up — what `memberLocalCornersIn` returns, NOT the member
+ * space its `position` fields are authored in) into world space (rotate around Y by `-rotationRad`,
  * matching the 3D renderer's `rotation={[0, -rotationRad, 0]}` on that
  * panel's group, then translate by `worldXIn`/`worldZIn`) before being
  * written out, all sharing one global vertex count so face indices stay

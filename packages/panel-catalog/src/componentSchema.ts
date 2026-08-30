@@ -43,15 +43,36 @@ export interface PanelSpacePoint2D {
   zIn: number;
 }
 
+/**
+ * A member's placement in MEMBER SPACE (the authoring convention every
+ * builder in packages/panel-catalog/src writes, Z-up):
+ *   xIn = WIDTH, along the panel/assembly's length, from its own min-corner
+ *   yIn = DEPTH, through the wall, 0 at the exterior face
+ *   zIn = HEIGHT, UP, 0 at the bottom face
+ * This is NOT the space the renderer and the OBJ file use. `memberLocalCornersIn`
+ * (panelMemberHelpers.ts) converts to VIEW SPACE (Y-up: world X = member X,
+ * world Y = member Z, world Z = member Y), and that swap happens there and in
+ * PanelMembersGroup.tsx only — a builder never writes view-space coordinates.
+ * Reasoning about "up" means zIn; reasoning about "through the wall" means yIn.
+ * See "3D Member Geometry — the two axis spaces" in building_integrity_app_spec.md;
+ * writing a depth offset into zIn is exactly the floor-band bug logged there.
+ *
+ * All three are the member's MIN-CORNER (not its center) for every orientation
+ * except "diagonal" — see `tiltDeg` below and `memberBoxSizeIn` in
+ * panelMemberHelpers.ts.
+ */
 export interface MemberPosition {
-  /** Min-corner (not center) for every orientation except "diagonal" —
-   * see `tiltDeg` below and `memberBoxSizeIn` in panelMemberHelpers.ts. */
+  /** Width, along the panel's own length. */
   xIn: number;
+  /** Depth, through the wall (0 = exterior face). */
   yIn: number;
+  /** Height, up from the bottom face — never a depth offset. */
   zIn: number;
   rotationDeg: number;
-  /** Rotation (degrees) around the Y axis, tilting the member within the
-   * X-Z plane — used only for "diagonal" orientation members (e.g. a
+  /** Rotation (degrees) around the member-space Y (depth) axis, tilting
+   * the member within the member-space X-Z plane — the same rotation is
+   * "around view-space Z" once converted, which is how the renderer and
+   * `memberLocalCornersIn` describe it — used only for "diagonal" orientation members (e.g. a
    * braced panel's angled brace). When set, `xIn`/`yIn`/`zIn` above are
    * the member's CENTER point, not its min-corner (a rotated box has no
    * single natural corner to anchor on) — the one exception to the

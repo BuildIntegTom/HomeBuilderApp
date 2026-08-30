@@ -36,9 +36,11 @@ function resolveOpacity(member: PanelMember): number | undefined {
  * brace's real plumb+level end cuts, not a plain tilted box) — the first
  * non-box member geometry in this app. `memberLocalCornersIn` (shared with
  * the OBJ exporter, so the downloadable file and the on-screen view can
- * never disagree) already returns the 8 corners in this component's own
- * local-space convention (X=width, Y=height up, Z=depth) — this just
- * converts to feet and wires them into a `BufferGeometry` using the same
+ * never disagree) already returns the 8 corners in VIEW SPACE (Y-up:
+ * X=width, Y=height up, Z=depth) — not the MEMBER SPACE its `position`
+ * fields are authored in (X=width, Y=depth, Z=height up, see
+ * `MemberPosition` in componentSchema.ts). This just converts to feet and
+ * wires them into a `BufferGeometry` using the same
  * `BOX_FACES` topology (each quad face split into 2 triangles). `DoubleSide`
  * is used defensively — `BOX_FACES`' winding was only ever validated
  * against the OBJ format's own face convention, not against three.js'
@@ -74,13 +76,16 @@ export interface PanelMembersGroupProps {
   colorOverride?: string;
 }
 
-/** Renders one box mesh per member, in the panel's own local space — X=width
- * from its own min-corner, Y=height up from 0, Z=depth from its exterior
- * face at 0. Shared by StandardPanel3DView.tsx (a panel viewed alone, at the
- * scene origin) and Building3DView.tsx (many panels placed around a whole
- * footprint, each wrapped in its own positioned/rotated `<group>` — since
- * this renders purely in local space, it composes correctly either way
- * without knowing which context it's in). */
+/** Renders one box mesh per member, in VIEW SPACE (Y-up) — X=width from the
+ * panel's own min-corner, Y=height up from 0, Z=depth from its exterior face
+ * at 0. That is the render/export space, NOT the MEMBER SPACE a builder
+ * authors `position` in (X=width, Y=depth, Z=height up — see `MemberPosition`
+ * in componentSchema.ts); the swap between them happens here and in
+ * `memberLocalCornersIn`, nowhere else. Shared by StandardPanel3DView.tsx (a
+ * panel viewed alone, at the scene origin) and Building3DView.tsx (many panels
+ * placed around a whole footprint, each wrapped in its own positioned/rotated
+ * `<group>` — since this renders purely in the panel's own local frame, it
+ * composes correctly either way without knowing which context it's in). */
 export default function PanelMembersGroup({ members, colorOverride }: PanelMembersGroupProps) {
   return (
     <>
