@@ -1,5 +1,5 @@
 import { standardPanelBom, standardPanelHeightIn } from "./data";
-import type { PanelMember, PanelSpacePoint2D } from "./componentSchema";
+import type { PanelMember, PanelSpacePoint2D, PlanSpacePoint2D } from "./componentSchema";
 
 /**
  * Shared cross-section constants + member builders behind both
@@ -107,6 +107,196 @@ export const BOX_FACES: [number, number, number, number][] = [
   [5, 6, 7, 8], // +Z face
 ];
 
+/** Coincidence/degeneracy tolerance for a plan-polygon ring, in inches —
+ * same order as `SQUARE_TOLERANCE_IN` below, and used the same way: ring
+ * points come from exact arithmetic (a clip against a straight band
+ * boundary), so floating-point noise never approaches this, and a real
+ * geometric feature is never this small. Purely numerical; not a
+ * real-world building value. */
+const POLYGON_TOLERANCE_IN = 1e-6;
+
+/** Twice the signed area of a plan ring (the shoelace sum) — positive is
+ * counter-clockwise in member-space plan coordinates. */
+function planRingSignedArea2X(ring: PlanSpacePoint2D[]): number {
+  let sum = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]!;
+    const b = ring[(i + 1) % ring.length]!;
+    sum += a.xIn * b.yIn - b.xIn * a.yIn;
+  }
+  return sum;
+}
+
+function triangleCross(ax: number, ay: number, bx: number, by: number, cx: number, cy: number): number {
+  return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+}
+
+/**
+ * Inside-OR-ON test for a CCW triangle. Inclusive deliberately: an L-shaped
+ * ring's reflex vertex can land exactly on a candidate ear's own edge (an L
+ * whose notch corner sits on the chord between two other corners does this
+ * on the very first clip), and treating that as "not inside" lets an ear be
+ * clipped straight across the notch — a cap that covers the bounding shape
+ * instead of the real one, silently. Matches how every production ear
+ * clipper (earcut and friends) writes this test.
+ */
+function pointInOrOnTriangle(px: number, py: number, ax: number, ay: number, bx: number, by: number, cx: number, cy: number): boolean {
+  const d1 = triangleCross(ax, ay, bx, by, px, py);
+  const d2 = triangleCross(bx, by, cx, cy, px, py);
+  const d3 = triangleCross(cx, cy, ax, ay, px, py);
+  return d1 >= -POLYGON_TOLERANCE_IN && d2 >= -POLYGON_TOLERANCE_IN && d3 >= -POLYGON_TOLERANCE_IN;
+}
+
+/**
+ * Ear-clipping triangulation of a simple (non-self-intersecting) plan ring,
+ * CONCAVE OR CONVEX — returns triangles as index triples into the ring
+ * array, each wound counter-clockwise in plan space regardless of which way
+ * the input ring itself is wound (self-normalizing, the same way
+ * `computeBraceTrapezoidCornersIn` normalizes its own winding).
+ *
+ * Private to this file and hand-rolled rather than pulled in: this package
+ * deliberately has no dependency on `packages/geometry` (see
+ * `FloorMembraneBandPlan`'s own note), neither package has a triangulator
+ * today, and both are dependency-free — so nothing is being duplicated and
+ * no npm package is being added for ~40 lines.
+ *
+ * Duplicate and collinear vertices are dropped first (within
+ * `POLYGON_TOLERANCE_IN`), so a band boundary landing exactly on a footprint
+ * vertex doesn't produce zero-area triangles. Dropped vertices still EXIST
+ * in the member's corner array — they simply sit on an edge of the
+ * triangulated cap, which covers the same region either way.
+ *
+ * If no ear can be found (only reachable for a self-intersecting ring, which
+ * no caller can produce), it falls back to a fan over the remaining vertices
+ * rather than looping forever — a visibly wrong cap beats a hung render.
+ */
+function earClipRingTriangles(ring: PlanSpacePoint2D[]): [number, number, number][] {
+  // Working list of ORIGINAL indices, with duplicates and collinear points removed.
+  const kept: number[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const p = ring[i]!;
+    const prev = kept.length > 0 ? ring[kept[kept.length - 1]!]! : undefined;
+    if (prev && Math.hypot(p.xIn - prev.xIn, p.yIn - prev.yIn) <= POLYGON_TOLERANCE_IN) continue;
+    kept.push(i);
+  }
+  while (kept.length > 2) {
+    const first = ring[kept[0]!]!;
+    const last = ring[kept[kept.length - 1]!]!;
+    if (Math.hypot(first.xIn - last.xIn, first.yIn - last.yIn) <= POLYGON_TOLERANCE_IN) kept.pop();
+    else break;
+  }
+  // Collinear pass — a vertex whose two neighbours' cross product vanishes
+  // adds no shape, and would otherwise be clipped as a zero-area ear.
+  for (let pass = 0; pass < kept.length && kept.length > 3; pass++) {
+    let removedAny = false;
+    for (let i = 0; i < kept.length && kept.length > 3; i++) {
+      const a = ring[kept[(i - 1 + kept.length) % kept.length]!]!;
+      const b = ring[kept[i]!]!;
+      const c = ring[kept[(i + 1) % kept.length]!]!;
+      if (Math.abs(triangleCross(a.xIn, a.yIn, b.xIn, b.yIn, c.xIn, c.yIn)) <= POLYGON_TOLERANCE_IN) {
+        kept.splice(i, 1);
+        i--;
+        removedAny = true;
+      }
+    }
+    if (!removedAny) break;
+  }
+  if (kept.length < 3) return [];
+
+  // Ear clipping assumes one known orientation; normalize to CCW, then emit
+  // every triangle CCW so callers get one predictable sense.
+  const workRing = kept.map((i) => ring[i]!);
+  const isCcw = planRingSignedArea2X(workRing) > 0;
+  const work = isCcw ? [...kept] : [...kept].reverse();
+
+  const triangles: [number, number, number][] = [];
+  let guard = work.length * work.length + 8;
+  while (work.length > 3 && guard-- > 0) {
+    let clipped = false;
+    for (let i = 0; i < work.length; i++) {
+      const ai = work[(i - 1 + work.length) % work.length]!;
+      const bi = work[i]!;
+      const ci = work[(i + 1) % work.length]!;
+      const a = ring[ai]!;
+      const b = ring[bi]!;
+      const c = ring[ci]!;
+      if (triangleCross(a.xIn, a.yIn, b.xIn, b.yIn, c.xIn, c.yIn) <= POLYGON_TOLERANCE_IN) continue; // reflex or degenerate
+      let blocked = false;
+      for (const oi of work) {
+        if (oi === ai || oi === bi || oi === ci) continue;
+        const o = ring[oi]!;
+        if (pointInOrOnTriangle(o.xIn, o.yIn, a.xIn, a.yIn, b.xIn, b.yIn, c.xIn, c.yIn)) {
+          blocked = true;
+          break;
+        }
+      }
+      if (blocked) continue;
+      triangles.push([ai, bi, ci]);
+      work.splice(i, 1);
+      clipped = true;
+      break;
+    }
+    if (!clipped) break; // no ear found — fall through to the fan below
+  }
+  if (work.length === 3) {
+    triangles.push([work[0]!, work[1]!, work[2]!]);
+  } else if (work.length > 3) {
+    for (let i = 1; i < work.length - 1; i++) triangles.push([work[0]!, work[i]!, work[i + 1]!]);
+  }
+  return triangles;
+}
+
+/**
+ * One member's face topology, as 1-indexed references into the corner array
+ * `memberLocalCornersIn` returns for that SAME member — the companion to
+ * `BOX_FACES`, which it returns verbatim for every member without
+ * `position.planPolygonCornersIn` (i.e. every plain box and every trapezoid
+ * prism: both are "2 rings of 4 corners", which that fixed table already
+ * describes exactly).
+ *
+ * For an n-gon prism (`planPolygonCornersIn` — the floor bottom skin's
+ * footprint-shaped opacity bands) the corner array is 2n long, so a fixed
+ * table can't describe it: this returns n side quads plus ear-clipped
+ * triangle caps. Winding is normalized off the ring's own shoelace sign so
+ * faces point outward either way, and NO face ever has more than 4 vertices
+ * — the same tris-and-quads-only guarantee today's `.obj` already makes.
+ *
+ * Both consumers (`panelObjExport.ts` and `PanelMembersGroup.tsx`) call this
+ * instead of reaching for `BOX_FACES` directly, which EXTENDS the "the
+ * downloadable file can never visually disagree with what's on screen"
+ * invariant `memberLocalCornersIn` established: corners and topology now
+ * both come from one shared place, instead of corners shared and topology
+ * assumed identically in two files.
+ */
+export function memberFaceIndices(member: PanelMember): number[][] {
+  const ring = member.position.planPolygonCornersIn;
+  if (!ring || member.position.trapezoidCornersIn) return BOX_FACES;
+  const n = ring.length;
+  if (n < 3) return [];
+
+  const faces: number[][] = [];
+  // Side quads: bottom-ring edge i->i+1, then up to the top ring and back.
+  // This order faces outward for a CLOCKWISE plan ring, so a counter-
+  // clockwise one is reversed. The CAPS need no such correction — their
+  // winding comes from the ear clipper, which normalizes independently of
+  // how the ring itself was handed in.
+  const ringIsCcw = planRingSignedArea2X(ring) > 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const quad = [i + 1, j + 1, j + 1 + n, i + 1 + n];
+    faces.push(ringIsCcw ? quad.reverse() : quad);
+  }
+  // `earClipRingTriangles` always returns CCW-in-plan triangles: on the
+  // BOTTOM ring that already points down (-Y in view space), and the top cap
+  // is the same triangle reversed so it points up. Same "one ring forward,
+  // the other reversed" convention as `BOX_FACES`' own [4,3,2,1] / [5,6,7,8].
+  const triangles = earClipRingTriangles(ring);
+  for (const [a, b, c] of triangles) faces.push([a + 1, b + 1, c + 1]);
+  for (const [a, b, c] of triangles) faces.push([c + 1 + n, b + 1 + n, a + 1 + n]);
+
+  return faces;
+}
+
 /**
  * One member's 8 corners in VIEW SPACE (Y-up: X=width, Y=height up,
  * Z=depth) — the space the 3D renderer and the .obj file use, NOT the
@@ -128,13 +318,27 @@ export const BOX_FACES: [number, number, number, number][] = [
  * the downloadable .obj can never visually disagree with what's on screen.
  */
 export function memberLocalCornersIn(member: PanelMember): [number, number, number][] {
-  const { trapezoidCornersIn } = member.position;
+  const { trapezoidCornersIn, planPolygonCornersIn } = member.position;
   if (trapezoidCornersIn) {
     const halfThicknessIn = member.actualDimsIn.thicknessIn / 2;
     const centerDepthIn = member.position.yIn;
     const near: [number, number, number][] = trapezoidCornersIn.map((c) => [c.xIn, c.zIn, centerDepthIn - halfThicknessIn]);
     const far: [number, number, number][] = trapezoidCornersIn.map((c) => [c.xIn, c.zIn, centerDepthIn + halfThicknessIn]);
     return [...near, ...far];
+  }
+
+  // An n-gon PRISM (the floor bottom skin's footprint-shaped bands): the
+  // ring is a member-space PLAN (X-Y) polygon, so member-Y is DEPTH and
+  // becomes view-space Z, while `position.zIn` is HEIGHT and becomes
+  // view-space Y — the same one swap this function performs for every other
+  // member. 2n corners: the whole bottom ring, then the whole top ring one
+  // thickness above it, so `memberFaceIndices`' `i <-> i + n` pairing holds.
+  if (planPolygonCornersIn) {
+    const bottomYIn = member.position.zIn;
+    const topYIn = bottomYIn + member.actualDimsIn.thicknessIn;
+    const bottom: [number, number, number][] = planPolygonCornersIn.map((c) => [c.xIn, bottomYIn, c.yIn]);
+    const top: [number, number, number][] = planPolygonCornersIn.map((c) => [c.xIn, topYIn, c.yIn]);
+    return [...bottom, ...top];
   }
 
   const sizeIn = memberBoxSizeIn(member);

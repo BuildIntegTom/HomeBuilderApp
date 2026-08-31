@@ -1,7 +1,7 @@
 "use client";
 
 import * as THREE from "three";
-import { BOX_FACES, memberBoxSizeIn, memberLocalCornersIn, type PanelMember } from "@building-integrity/panel-catalog";
+import { memberBoxSizeIn, memberFaceIndices, memberLocalCornersIn, type PanelMember } from "@building-integrity/panel-catalog";
 
 const IN_PER_FT = 12;
 
@@ -32,21 +32,28 @@ function resolveOpacity(member: PanelMember): number | undefined {
 }
 
 /**
- * A true beveled-end trapezoid prism (Tommy: "trapezoid cuts" — a diagonal
- * brace's real plumb+level end cuts, not a plain tilted box) — the first
- * non-box member geometry in this app. `memberLocalCornersIn` (shared with
- * the OBJ exporter, so the downloadable file and the on-screen view can
- * never disagree) already returns the 8 corners in VIEW SPACE (Y-up:
- * X=width, Y=height up, Z=depth) — not the MEMBER SPACE its `position`
- * fields are authored in (X=width, Y=depth, Z=height up, see
- * `MemberPosition` in componentSchema.ts). This just converts to feet and
- * wires them into a `BufferGeometry` using the same
- * `BOX_FACES` topology (each quad face split into 2 triangles). `DoubleSide`
- * is used defensively — `BOX_FACES`' winding was only ever validated
- * against the OBJ format's own face convention, not against three.js'
- * CCW-front-face convention specifically, so this guards against an
- * invisible (backface-culled) mesh if that winding turns out reversed. */
-function buildTrapezoidGeometry(member: PanelMember): THREE.BufferGeometry {
+ * Any member whose real shape isn't a box — a true beveled-end trapezoid
+ * prism (Tommy: "trapezoid cuts" — a diagonal brace's real plumb+level end
+ * cuts, not a plain tilted box), or an n-gon prism (the floor bottom skin's
+ * footprint-shaped opacity bands, whose ring is the building's own outline
+ * clipped into a band, so it has as many corners as the building does).
+ *
+ * Both corners AND topology come from the same two shared helpers the OBJ
+ * exporter uses — `memberLocalCornersIn` and `memberFaceIndices` — so the
+ * downloadable file and the on-screen view can never disagree about either.
+ * The corners arrive already in VIEW SPACE (Y-up: X=width, Y=height up,
+ * Z=depth), not the MEMBER SPACE the `position` fields are authored in
+ * (X=width, Y=depth, Z=height up, see `MemberPosition` in
+ * componentSchema.ts); this just converts to feet and wires them into a
+ * `BufferGeometry`.
+ *
+ * Faces are fan-triangulated (`i0, ij, ij+1`) rather than assumed to be
+ * quads — `memberFaceIndices` emits triangle caps as well as quad sides,
+ * and never anything larger than a quad. `DoubleSide` is used defensively:
+ * this winding was only ever validated against the OBJ format's own face
+ * convention, not against three.js' CCW-front-face convention specifically,
+ * so this guards against an invisible (backface-culled) mesh. */
+function buildPrismGeometry(member: PanelMember): THREE.BufferGeometry {
   const corners = memberLocalCornersIn(member);
   const positions = new Float32Array(corners.length * 3);
   corners.forEach(([x, y, z], i) => {
@@ -55,8 +62,10 @@ function buildTrapezoidGeometry(member: PanelMember): THREE.BufferGeometry {
     positions[i * 3 + 2] = z / IN_PER_FT;
   });
   const indices: number[] = [];
-  for (const [a, b, c, d] of BOX_FACES) {
-    indices.push(a - 1, b - 1, c - 1, a - 1, c - 1, d - 1);
+  for (const face of memberFaceIndices(member)) {
+    for (let i = 1; i < face.length - 1; i++) {
+      indices.push(face[0]! - 1, face[i]! - 1, face[i + 1]! - 1);
+    }
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -90,9 +99,9 @@ export default function PanelMembersGroup({ members, colorOverride }: PanelMembe
   return (
     <>
       {members.map((member) => {
-        if (member.position.trapezoidCornersIn) {
+        if (member.position.trapezoidCornersIn || member.position.planPolygonCornersIn) {
           return (
-            <mesh key={member.memberId} geometry={buildTrapezoidGeometry(member)}>
+            <mesh key={member.memberId} geometry={buildPrismGeometry(member)}>
               <meshStandardMaterial
                 color={colorOverride ?? MATERIAL_COLOR[member.material]}
                 transparent={resolveOpacity(member) !== undefined}

@@ -1,0 +1,6 @@
+# The OBJ golden fixture is a byte-for-byte record of what the exporter
+# writes, and the exporter always joins lines with "\n". With core.autocrlf
+# on (the default on Windows), a checkout would rewrite it to CRLF and the
+# golden comparison would fail for a reason that has nothing to do with the
+# exporter. Never let git touch its line endings.
+packages/panel-catalog/src/objGolden.fixture.obj -text

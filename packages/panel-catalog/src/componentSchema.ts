@@ -43,6 +43,17 @@ export interface PanelSpacePoint2D {
   zIn: number;
 }
 
+/** A point in a member's own PLAN (X-Y) plane — member-X = width, member-Y
+ * = depth (see `MemberPosition` below). Deliberately a separate type from
+ * `PanelSpacePoint2D`, which is the ELEVATION (X-Z) plane: a floor plate
+ * extruded upward and a beveled brace extruded through the wall are
+ * genuinely different extrusions, and one overloaded `{xIn, ...}` type
+ * would make the plane a matter of guesswork at every call site. */
+export interface PlanSpacePoint2D {
+  xIn: number;
+  yIn: number;
+}
+
 /**
  * A member's placement in MEMBER SPACE (the authoring convention every
  * builder in packages/panel-catalog/src writes, Z-up):
@@ -89,6 +100,31 @@ export interface MemberPosition {
    * `computeBraceEndCutAngleDeg`, shear-capacity estimates, and any note
    * text that doesn't know about trapezoids). */
   trapezoidCornersIn?: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D];
+  /** An arbitrary n-gon PRISM's plan ring (member-space X-Y, absolute,
+   * perimeter order, no repeated first point) — extruded UPWARD from
+   * `position.zIn` by `actualDimsIn.thicknessIn`, so `zIn` is the prism's
+   * bottom face, the same min-corner rule every other "flat" member
+   * follows. Built for the floor bottom skin, whose real shape is the
+   * building's own footprint polygon clipped into opacity bands, not the
+   * footprint's bounding rectangle.
+   *
+   * This is a DIFFERENT PLANE from `trapezoidCornersIn` above, which is the
+   * member-space ELEVATION (X-Z) plane extruded through depth — hence a
+   * second field rather than a widened first one. The two are mutually
+   * EXCLUSIVE; `memberLocalCornersIn` checks the trapezoid first, so a
+   * member carrying both silently renders as a trapezoid. No builder may
+   * set both.
+   *
+   * When present, this OVERRIDES the plain box shape both
+   * `PanelMembersGroup.tsx` and `panelObjExport.ts` would otherwise derive
+   * from the position/dims — and unlike a box or a trapezoid prism, such a
+   * member has 2n corners, not 8, and its faces come from
+   * `memberFaceIndices` rather than `BOX_FACES`. `position.xIn`/`yIn` are
+   * NOT added to these points (they are already absolute); `actualDimsIn`'s
+   * `widthIn`/`lengthIn` are the ring's own plan bounding box, kept
+   * populated for consumers that read dims, same caveat
+   * `trapezoidCornersIn` already carries. */
+  planPolygonCornersIn?: PlanSpacePoint2D[];
 }
 
 export interface PanelMember {

@@ -1,5 +1,5 @@
 import type { PanelMember } from "./componentSchema";
-import { BOX_FACES, memberLocalCornersIn } from "./panelMemberHelpers";
+import { BOX_FACES, memberFaceIndices, memberLocalCornersIn } from "./panelMemberHelpers";
 
 const HEADER_LINES = [
   "# Reference-only export — not engineered, not for construction.",
@@ -30,10 +30,15 @@ export function buildPanelObj(members: PanelMember[], displayName: string): stri
     for (const [x, y, z] of corners) {
       lines.push(`v ${x.toFixed(4)} ${y.toFixed(4)} ${z.toFixed(4)}`);
     }
-    for (const face of BOX_FACES) {
+    for (const face of memberFaceIndices(member)) {
       lines.push(`f ${face.map((i) => i + vertexCount).join(" ")}`);
     }
-    vertexCount += 8;
+    // Advanced by this member's OWN corner count, never a hard-coded 8 — an
+    // n-gon prism member (the floor bottom skin's footprint-shaped bands)
+    // emits 2n vertices, and a fixed 8 would leave every later `f` line in
+    // the file pointing at an earlier member's vertices: a silently corrupt
+    // .obj that still opens, not an error.
+    vertexCount += corners.length;
     lines.push("");
   }
 
@@ -91,10 +96,11 @@ export function buildBuildingObj(panels: WorldPlacedPanel[], displayName: string
           const [wx, wy, wz] = toWorld(corner);
           lines.push(`v ${wx.toFixed(4)} ${wy.toFixed(4)} ${wz.toFixed(4)}`);
         }
-        for (const face of BOX_FACES) {
+        for (const face of memberFaceIndices(member)) {
           lines.push(`f ${face.map((i) => i + vertexCount).join(" ")}`);
         }
-        vertexCount += 8;
+        // See buildPanelObj: this member's own corner count, not a fixed 8.
+        vertexCount += localCorners.length;
         lines.push("");
       }
     } else if (panel.blobSizeIn) {
@@ -114,10 +120,13 @@ export function buildBuildingObj(panels: WorldPlacedPanel[], displayName: string
         const [wx, wy, wz] = toWorld(corner);
         lines.push(`v ${wx.toFixed(4)} ${wy.toFixed(4)} ${wz.toFixed(4)}`);
       }
+      // The placeholder blob is a literal 8-corner box, so BOX_FACES is
+      // exactly right here — but the count still reads off the array rather
+      // than repeating the 8, so this branch can't drift from the two above.
       for (const face of BOX_FACES) {
         lines.push(`f ${face.map((i) => i + vertexCount).join(" ")}`);
       }
-      vertexCount += 8;
+      vertexCount += localCorners.length;
       lines.push("");
     }
   }

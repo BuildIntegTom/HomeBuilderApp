@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildBuildingObj, buildPanelObj, type WorldPlacedPanel } from "./panelObjExport";
 import type { PanelMember } from "./componentSchema";
+import { goldenMembers, goldenPanels } from "./objGoldenFixture";
 
 function makeMember(overrides: Partial<PanelMember>): PanelMember {
   return {
@@ -265,5 +268,98 @@ describe("buildBuildingObj", () => {
     const obj = buildBuildingObj([], "Whole Building");
     expect(obj).toContain("# Building Integrity — Whole Building");
     expect(obj).toMatch(/reference-only/i);
+  });
+});
+
+describe("OBJ golden fixture", () => {
+  /**
+   * Byte-for-byte proof that adding n-gon prism support (`memberFaceIndices`
+   * + `vertexCount += corners.length`) changed NOTHING for any member shape
+   * that existed before it. `objGolden.fixture.obj` was captured from the
+   * exporter before that change and must never be regenerated — regenerating
+   * it turns this test into a tautology. If it fails, the exporter's output
+   * for ordinary boxes and trapezoid braces moved, which is a regression, not
+   * a fixture that needs updating.
+   *
+   * Read from disk rather than inlined so the 46KB of expected output doesn't
+   * drown the surrounding assertions, and compared as raw text (not parsed)
+   * so vertex formatting, group names, blank lines and face ordering are all
+   * in scope.
+   */
+  it("reproduces the pre-n-gon exporter output byte for byte", () => {
+    const expected = readFileSync(fileURLToPath(new URL("./objGolden.fixture.obj", import.meta.url)), "utf8");
+    const actual = [buildPanelObj(goldenMembers(), "Golden Panel"), buildBuildingObj(goldenPanels(), "Golden Building")].join("\n");
+    expect(actual).toBe(expected);
+  });
+});
+
+describe("n-gon prism members in the OBJ stream", () => {
+  const hexRing = [
+    { xIn: 0, yIn: 0 },
+    { xIn: 10, yIn: 0 },
+    { xIn: 14, yIn: 6 },
+    { xIn: 10, yIn: 12 },
+    { xIn: 0, yIn: 12 },
+    { xIn: -4, yIn: 6 },
+  ];
+
+  function polyMember(memberId: string): PanelMember {
+    return makeMember({
+      memberId,
+      material: "wire_mesh",
+      actualDimsIn: { thicknessIn: 0.125, widthIn: 12, lengthIn: 18 },
+      position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0, planPolygonCornersIn: hexRing },
+    });
+  }
+
+  /** The regression this guards is silent: a member that emits 2n vertices
+   * while the exporter advances a hard-coded 8 produces a file that still
+   * opens, with every later face pointing at an earlier member's vertices. */
+  it("advances the global vertex count by each member's own corner count, not a fixed 8", () => {
+    const obj = buildPanelObj([makeMember({ memberId: "box_before" }), polyMember("poly"), makeMember({ memberId: "box_after" })], "Mixed");
+    const { vertices, faces } = parseObj(obj);
+    expect(vertices).toHaveLength(8 + 12 + 8);
+    // Walk the file in order: no face may reference a vertex that hasn't
+    // been written yet, and the last box's faces must land in 21..28.
+    const lines = obj.split("\n");
+    let seen = 0;
+    for (const line of lines) {
+      if (line.startsWith("v ")) seen++;
+      if (line.startsWith("f ")) {
+        for (const idx of line.slice(2).trim().split(/\s+/).map(Number)) {
+          expect(idx).toBeGreaterThanOrEqual(1);
+          expect(idx).toBeLessThanOrEqual(seen);
+        }
+      }
+    }
+    const lastBoxFaces = faces.slice(-6);
+    for (const f of lastBoxFaces) {
+      expect(Math.min(...f)).toBeGreaterThanOrEqual(21);
+      expect(Math.max(...f)).toBeLessThanOrEqual(28);
+    }
+  });
+
+  it("keeps the same guarantee in a whole-building file, across placed panels and placeholder blobs", () => {
+    const panels: WorldPlacedPanel[] = [
+      { label: "p0", worldXIn: 0, worldZIn: 0, rotationRad: 0, members: [polyMember("poly")] },
+      { label: "p1", worldXIn: 40, worldZIn: 0, rotationRad: Math.PI / 2, members: null, blobSizeIn: { widthIn: 40, heightIn: 120, depthIn: 15.5 } },
+      { label: "p2", worldXIn: 80, worldZIn: 0, rotationRad: 0, members: [polyMember("poly2"), makeMember({ memberId: "box" })] },
+    ];
+    const obj = buildBuildingObj(panels, "Mixed Building");
+    expect(parseObj(obj).vertices).toHaveLength(12 + 8 + 12 + 8);
+    let seen = 0;
+    for (const line of obj.split("\n")) {
+      if (line.startsWith("v ")) seen++;
+      if (line.startsWith("f ")) {
+        for (const idx of line.slice(2).trim().split(/\s+/).map(Number)) expect(idx).toBeLessThanOrEqual(seen);
+      }
+    }
+  });
+
+  it("emits only triangles and quads for an n-gon prism, same as every box today", () => {
+    const { faces } = parseObj(buildPanelObj([polyMember("poly")], "Poly"));
+    expect(faces).toHaveLength(6 + 2 * 4); // 6 side quads + 4 triangles per cap
+    for (const f of faces) expect(f.length).toBeGreaterThanOrEqual(3);
+    for (const f of faces) expect(f.length).toBeLessThanOrEqual(4);
   });
 });

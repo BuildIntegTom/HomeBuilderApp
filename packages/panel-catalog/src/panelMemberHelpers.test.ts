@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
-import type { PanelMember, PanelSpacePoint2D } from "./componentSchema";
+import type { PanelMember, PanelSpacePoint2D, PlanSpacePoint2D } from "./componentSchema";
 import {
+  BOX_FACES,
   braceLongestEdgeIn,
   buildHeaderTrussWebBraces,
   buildNailer,
@@ -14,6 +15,8 @@ import {
   computeTrussWebPeakCount,
   describeBraceEndCuts,
   memberBoxSizeIn,
+  memberFaceIndices,
+  memberLocalCornersIn,
   PLATE_2X4_WIDTH_IN,
   SKIN_THICKNESS_IN,
   type HeaderBraceEndTarget,
@@ -522,5 +525,187 @@ describe("buildNailer", () => {
     const centered = buildNailer(40, 120);
     const slid = buildNailer(40, 120, 6);
     expect(slid.position.xIn).toBeCloseTo(centered.position.xIn + 6, 6);
+  });
+});
+
+describe("memberFaceIndices / plan-polygon prism members", () => {
+  function polygonMember(ring: PlanSpacePoint2D[], overrides: Partial<PanelMember> = {}): PanelMember {
+    return {
+      memberId: "poly",
+      material: "wire_mesh",
+      speciesGrade: null,
+      plySpec: null,
+      nominalSize: null,
+      actualDimsIn: { thicknessIn: 0.125, widthIn: 10, lengthIn: 10 },
+      orientation: "flat",
+      position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0, planPolygonCornersIn: ring },
+      role: "skin",
+      qty: 1,
+      ...overrides,
+    };
+  }
+
+  /** Plan-space (X-Y) shoelace of a ring — the same normalization
+   * `memberFaceIndices` does internally, recomputed here independently. */
+  function planArea2x(ring: PlanSpacePoint2D[]): number {
+    let sum = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i]!;
+      const b = ring[(i + 1) % ring.length]!;
+      sum += a.xIn * b.yIn - b.xIn * a.yIn;
+    }
+    return sum;
+  }
+
+  const square: PlanSpacePoint2D[] = [
+    { xIn: 0, yIn: 0 },
+    { xIn: 10, yIn: 0 },
+    { xIn: 10, yIn: 10 },
+    { xIn: 0, yIn: 10 },
+  ];
+  /** An L, i.e. one genuinely reflex (concave) vertex at (5,5). */
+  const lShape: PlanSpacePoint2D[] = [
+    { xIn: 0, yIn: 0 },
+    { xIn: 10, yIn: 0 },
+    { xIn: 10, yIn: 5 },
+    { xIn: 5, yIn: 5 },
+    { xIn: 5, yIn: 10 },
+    { xIn: 0, yIn: 10 },
+  ];
+
+  it("returns BOX_FACES verbatim for every member that has no plan polygon", () => {
+    const plain = polygonMember(square, { position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0 } });
+    expect(memberFaceIndices(plain)).toBe(BOX_FACES);
+    for (const m of buildStandardPanelMembers(40, 15.5, 120, false)) {
+      expect(memberFaceIndices(m)).toBe(BOX_FACES);
+    }
+  });
+
+  it("lets trapezoidCornersIn win when a member carries both (the builders must never set both)", () => {
+    const trapezoid = computeBraceTrapezoidCornersIn(0, 0, 40, 60, 3.5, 0, 60);
+    const both = polygonMember(square, {
+      position: { xIn: 0, yIn: 1, zIn: 0, rotationDeg: 0, trapezoidCornersIn: trapezoid, planPolygonCornersIn: square },
+    });
+    expect(memberFaceIndices(both)).toBe(BOX_FACES);
+    expect(memberLocalCornersIn(both)).toHaveLength(8);
+  });
+
+  it("extrudes a plan ring UPWARD from position.zIn by thicknessIn, treating ring Y as view-space depth", () => {
+    const member = polygonMember(lShape, {
+      position: { xIn: 0, yIn: 0, zIn: -3, rotationDeg: 0, planPolygonCornersIn: lShape },
+    });
+    const corners = memberLocalCornersIn(member);
+    expect(corners).toHaveLength(12);
+    // Bottom ring first, then the top ring — the i <-> i+n pairing the side
+    // quads assume.
+    lShape.forEach((p, i) => {
+      expect(corners[i]).toEqual([p.xIn, -3, p.yIn]);
+      expect(corners[i + lShape.length]).toEqual([p.xIn, -3 + 0.125, p.yIn]);
+    });
+  });
+
+  it("does not add position.xIn/yIn to the ring — plan corners are already absolute", () => {
+    const member = polygonMember(square, {
+      position: { xIn: 100, yIn: 50, zIn: 0, rotationDeg: 0, planPolygonCornersIn: square },
+    });
+    const xs = memberLocalCornersIn(member).map(([x]) => x);
+    expect(Math.max(...xs)).toBe(10);
+  });
+
+  it("emits n side quads plus n-2 triangles per cap, and never a face with more than 4 vertices", () => {
+    for (const ring of [square, lShape]) {
+      const faces = memberFaceIndices(polygonMember(ring));
+      const n = ring.length;
+      expect(faces.filter((f) => f.length === 4)).toHaveLength(n);
+      expect(faces.filter((f) => f.length === 3)).toHaveLength(2 * (n - 2));
+      for (const f of faces) expect(f.length).toBeLessThanOrEqual(4);
+    }
+  });
+
+  it("references every corner index exactly once or more, always within 1..2n", () => {
+    const faces = memberFaceIndices(polygonMember(lShape));
+    const n = lShape.length;
+    for (const f of faces) {
+      for (const i of f) {
+        expect(i).toBeGreaterThanOrEqual(1);
+        expect(i).toBeLessThanOrEqual(2 * n);
+      }
+    }
+    expect(new Set(faces.flat()).size).toBe(2 * n);
+  });
+
+  it("triangulates a concave ring into n-2 triangles whose areas sum to the ring's own area", () => {
+    // Acceptance criterion for the ear clipper itself: the caps must cover
+    // exactly the polygon, no more (which an overlapping fan would) and no
+    // less (which a fan across a reflex vertex would).
+    const faces = memberFaceIndices(polygonMember(lShape));
+    const n = lShape.length;
+    const bottomTris = faces.filter((f) => f.length === 3 && f.every((i) => i <= n));
+    expect(bottomTris).toHaveLength(n - 2);
+    let area = 0;
+    for (const [a, b, c] of bottomTris) {
+      const p = lShape[a! - 1]!;
+      const q = lShape[b! - 1]!;
+      const r = lShape[c! - 1]!;
+      area += Math.abs((q.xIn - p.xIn) * (r.yIn - p.yIn) - (q.yIn - p.yIn) * (r.xIn - p.xIn)) / 2;
+    }
+    expect(area).toBeCloseTo(Math.abs(planArea2x(lShape)) / 2, 6);
+    expect(area).toBeCloseTo(75, 6); // 10x10 minus the 5x5 bite
+  });
+
+  it("produces the same face count for a ring and its own reversal (winding self-normalizes)", () => {
+    const forward = memberFaceIndices(polygonMember(lShape));
+    const reversed = memberFaceIndices(polygonMember([...lShape].reverse()));
+    expect(reversed).toHaveLength(forward.length);
+    expect(planArea2x(lShape)).toBe(-planArea2x([...lShape].reverse()));
+  });
+
+  it("orients cap faces outward — bottom normals point down, top up — for either ring winding", () => {
+    for (const ring of [lShape, [...lShape].reverse()]) {
+      const member = polygonMember(ring);
+      const corners = memberLocalCornersIn(member);
+      const n = ring.length;
+      for (const face of memberFaceIndices(member)) {
+        if (face.length !== 3) continue;
+        const [p, q, r] = face.map((i) => corners[i - 1]!);
+        const u = [q![0] - p![0], q![1] - p![1], q![2] - p![2]];
+        const v = [r![0] - p![0], r![1] - p![1], r![2] - p![2]];
+        const normalY = u[2]! * v[0]! - u[0]! * v[2]!;
+        const isTopCap = face.every((i) => i > n);
+        expect(Math.sign(normalY)).toBe(isTopCap ? 1 : -1);
+      }
+    }
+  });
+
+  it("drops duplicate and collinear ring points rather than emitting zero-area cap triangles", () => {
+    // A band boundary landing exactly on a footprint vertex produces both.
+    const withNoise: PlanSpacePoint2D[] = [
+      { xIn: 0, yIn: 0 },
+      { xIn: 5, yIn: 0 }, // collinear midpoint
+      { xIn: 10, yIn: 0 },
+      { xIn: 10, yIn: 0 }, // exact duplicate
+      { xIn: 10, yIn: 10 },
+      { xIn: 0, yIn: 10 },
+    ];
+    const faces = memberFaceIndices(polygonMember(withNoise));
+    expect(memberLocalCornersIn(polygonMember(withNoise))).toHaveLength(2 * withNoise.length);
+    const bottomTris = faces.filter((f) => f.length === 3 && f.every((i) => i <= withNoise.length));
+    expect(bottomTris).toHaveLength(2); // the clean square's 4-2, not 6-2
+    let area = 0;
+    for (const [a, b, c] of bottomTris) {
+      const p = withNoise[a! - 1]!;
+      const q = withNoise[b! - 1]!;
+      const r = withNoise[c! - 1]!;
+      area += Math.abs((q.xIn - p.xIn) * (r.yIn - p.yIn) - (q.yIn - p.yIn) * (r.xIn - p.xIn)) / 2;
+    }
+    expect(area).toBeCloseTo(100, 6);
+  });
+
+  it("returns no faces for a degenerate ring of fewer than 3 points", () => {
+    const stub: PlanSpacePoint2D[] = [
+      { xIn: 0, yIn: 0 },
+      { xIn: 1, yIn: 1 },
+    ];
+    expect(memberFaceIndices(polygonMember(stub))).toEqual([]);
   });
 });
