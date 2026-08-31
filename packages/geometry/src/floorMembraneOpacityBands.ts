@@ -5,9 +5,12 @@ export type FloorMembraneAxis = "width" | "depth";
 export interface FloorMembraneBandPlan {
   /** Which of the floor's own bounding-box dimensions to split into 3
    * parallel bands — whichever is longer (more room for 3 visually
-   * distinct bands). "width" is the X extent, "depth" is the Y extent —
-   * same convention `buildFloorBottomSkinMembers`'s own `widthIn`/`depthIn`
-   * params already use. */
+   * distinct bands). "width" is the X extent, "depth" is the Y extent, in
+   * the footprint's own plan coordinates — the same convention
+   * `computeFloorSkinPieces` clips against. (This used to cite
+   * `buildFloorBottomSkinMembers`'s `widthIn`/`depthIn` params; those were
+   * deleted when the skin became footprint-shaped and the builder started
+   * taking already-clipped `FloorSkinPiece`s instead.) */
   axis: FloorMembraneAxis;
   /** True when the near (least-accessible-corner) end sits at this axis's
    * own MAX rather than MIN — tells the caller which end the fully-opaque

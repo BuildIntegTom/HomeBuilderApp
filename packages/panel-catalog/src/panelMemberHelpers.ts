@@ -155,8 +155,9 @@ function pointInOrOnTriangle(px: number, py: number, ax: number, ay: number, bx:
  * `computeBraceTrapezoidCornersIn` normalizes its own winding).
  *
  * Private to this file and hand-rolled rather than pulled in: this package
- * deliberately has no dependency on `packages/geometry` (see
- * `FloorMembraneBandPlan`'s own note), neither package has a triangulator
+ * deliberately has no dependency on `packages/geometry` (the same reason
+ * `BracePattern` in that package's `types.ts` is duplicated rather than
+ * imported — see its own note), neither package has a triangulator
  * today, and both are dependency-free — so nothing is being duplicated and
  * no npm package is being added for ~40 lines.
  *
@@ -166,9 +167,15 @@ function pointInOrOnTriangle(px: number, py: number, ax: number, ay: number, bx:
  * in the member's corner array — they simply sit on an edge of the
  * triangulated cap, which covers the same region either way.
  *
- * If no ear can be found (only reachable for a self-intersecting ring, which
- * no caller can produce), it falls back to a fan over the remaining vertices
- * rather than looping forever — a visibly wrong cap beats a hung render.
+ * If no ear can be found, it falls back to a fan over the remaining vertices
+ * rather than looping forever. Do NOT read that as unreachable: callers CAN
+ * hand this a non-simple ring — `clipRingToHalfPlane` produces one when a
+ * footprint edge lies exactly on a band boundary (see the Open Item). What
+ * saves those cases in practice is the collinear/duplicate removal above,
+ * which resolves the back-tracking before clipping starts; 12k fuzzed rings
+ * found no cap the fan got wrong. Note the fallback's failure mode is a
+ * SILENTLY wrong cap on a translucent member, not a visible one — so if a
+ * ring ever does reach it, fix the ring upstream rather than the fan.
  */
 function earClipRingTriangles(ring: PlanSpacePoint2D[]): [number, number, number][] {
   // Working list of ORIGINAL indices, with duplicates and collinear points removed.
