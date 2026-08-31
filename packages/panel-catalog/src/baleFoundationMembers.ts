@@ -1,15 +1,5 @@
-import type { PanelMember } from "./componentSchema";
+import type { PanelMember, PlanSpacePoint2D } from "./componentSchema";
 import { LUMBER_SPECIES_GRADE, PLATE_2X4_THICKNESS_IN } from "./panelMemberHelpers";
-
-/** Mirrors packages/geometry/src/floorMembraneOpacityBands.ts's own
- * `FloorMembraneBandPlan` — declared locally rather than imported, since
- * this package has no dependency on packages/geometry (same reason
- * `BracePattern` is duplicated the other direction — see its own doc
- * comment in packages/geometry/src/types.ts). Kept in sync by hand. */
-export interface FloorMembraneBandPlan {
-  axis: "width" | "depth";
-  nearIsMax: boolean;
-}
 
 /**
  * "Bale foundation" floor framing (Tommy) — a perimeter rim built from
@@ -142,76 +132,95 @@ export function buildDoubledStackPair(idPrefix: string, lengthIn: number, topDep
  * thin real box rather than a zero-volume plane. */
 export const STEEL_MESH_THICKNESS_IN = 0.125;
 
+/** One connected piece of the bottom skin, already shaped and placed —
+ * `computeFloorMembraneBandPolygons` in `@building-integrity/geometry`
+ * produces these (in feet, footprint coordinates); the caller converts to
+ * member-space inches. */
+export interface FloorSkinPiece {
+  /** 0 = the fully-opaque band, NEAREST the least-accessible-corner marker.
+   * Undefined = one uniform, fully-opaque skin with no `opacityOverride` at
+   * all — the behavior from before the bands existed. The near-to-far
+   * ordering is resolved upstream in `computeFloorMembraneBandPolygons`, so
+   * there is deliberately no `nearIsMax` reversal left in this file. */
+  bandIndex?: number;
+  /** >0 only where a notch cuts one band into disconnected pieces. */
+  pieceIndex: number;
+  /** This piece's real plan ring in MEMBER SPACE (X = width, Y = depth),
+   * inches, absolute, perimeter order. */
+  cornersIn: PlanSpacePoint2D[];
+}
+
+/** Indexed directly by `FloorSkinPiece.bandIndex` — index 0 IS the band
+ * nearest the marker (Tommy: "dividing the space into one side being opaque
+ * and the other side being 75% opaque followed by 50%"). Render-only
+ * values; nothing structural or dimensional depends on them. */
+const OPACITIES_NEAR_TO_FAR = [1, 0.75, 0.5];
+
 /**
  * Rodent/air-sealed bottom skin (Tommy: "an option to do rodent and air
  * sealed steel clay bottom... basically just a skin for the bottom") —
  * the galvanized welded wire mesh only (the `floorAssemblyLayers`
- * "wire-mesh" entry in data.ts), spanning the whole footprint's own
- * bounding box, not one panel — unlike `buildSkins` in
- * panelMemberHelpers.ts, which builds a panel-LOCAL top/bottom face. The
- * clay coating over this mesh isn't modeled as a 3D member, matching how
- * every other plaster coating in this app (wall clay/lime plaster) is
- * calculator-only with no 3D representation — see Plaster Master.
+ * "wire-mesh" entry in data.ts), spanning the whole FOOTPRINT, not one
+ * panel — unlike `buildSkins` in panelMemberHelpers.ts, which builds a
+ * panel-LOCAL top/bottom face. The clay coating over this mesh isn't
+ * modeled as a 3D member, matching how every other plaster coating in this
+ * app (wall clay/lime plaster) is calculator-only with no 3D representation
+ * — see Plaster Master.
  *
- * `bandPlan` (Tommy: "it's hard to see the floor framing... dividing the
- * space into one side being opaque and the other side being 75% opaque
- * followed by 50%") splits the skin into 3 equal parallel bands along
- * whichever bounding-box dimension `computeFloorMembraneOpacityBands`
- * picked, each at its own opacity (1 / 0.75 / 0.5, nearest to farthest
- * from the least-accessible-corner marker) via `opacityOverride` — see
- * PanelMembersGroup.tsx, which reads it ahead of the material's own
- * default. Omitted (today's exact behavior) = one uniform, fully-opaque
- * member, same as before this feature existed.
+ * Each piece becomes an n-gon PRISM member (`planPolygonCornersIn`), so the
+ * skin is the building's own outline rather than its bounding rectangle
+ * (Tommy: "lets make that the same size as the footprint") — on an octagon,
+ * a bump-out or a notch the old box members hung out past the real floor.
+ * `zIn` stays 0 on every piece, which is what keeps them all coplanar:
+ * `zIn` is HEIGHT in member space and there is no legitimate reason for
+ * this builder to write a depth offset into it.
+ *
+ * Several pieces can share one `bandIndex` (a notch splitting a band in
+ * two); they all get that band's opacity via `opacityOverride`, which
+ * PanelMembersGroup.tsx reads ahead of the material's own default.
+ *
+ * `actualDimsIn` carries each piece's own plan BOUNDING BOX as
+ * `lengthIn`/`widthIn` — the same caveat `trapezoidCornersIn` already
+ * carries: the real rendered shape comes from the corners, and the dims are
+ * there for any consumer that reads dims. Nothing aggregates `wire_mesh`
+ * dims today; mesh quantity/cost comes from `computeFootprintAreaSqFt`.
  */
-export function buildFloorBottomSkinMembers(widthIn: number, depthIn: number, bandPlan?: FloorMembraneBandPlan): PanelMember[] {
-  if (!bandPlan) {
-    return [
-      {
-        memberId: "floor_bottom_skin",
-        material: "wire_mesh",
-        speciesGrade: null,
-        plySpec: null,
-        nominalSize: null,
-        actualDimsIn: { thicknessIn: STEEL_MESH_THICKNESS_IN, widthIn: depthIn, lengthIn: widthIn },
-        orientation: "flat",
-        position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0 },
-        role: "skin",
-        qty: 1,
-        notes: "Galvanized welded wire mesh, stapled to the underside of the lowest framing member — rodent/pest barrier, 10mm max opening. The clay coat over it is calculator-only (see Plaster Master), not modeled here.",
-      },
-    ];
-  }
-
-  const OPACITIES_NEAR_TO_FAR = [1, 0.75, 0.5];
-  const orderedOpacities = bandPlan.nearIsMax ? [...OPACITIES_NEAR_TO_FAR].reverse() : OPACITIES_NEAR_TO_FAR;
-  const isWidthAxis = bandPlan.axis === "width";
-  const splitLengthIn = isWidthAxis ? widthIn : depthIn;
-  const bandSizeIn = splitLengthIn / 3;
-  return orderedOpacities.map((opacity, i) => {
-    const offsetIn = i * bandSizeIn;
+export function buildFloorBottomSkinMembers(pieces: FloorSkinPiece[]): PanelMember[] {
+  return pieces.map((piece) => {
+    const xs = piece.cornersIn.map((c) => c.xIn);
+    const ys = piece.cornersIn.map((c) => c.yIn);
+    const minXIn = Math.min(...xs);
+    const minYIn = Math.min(...ys);
+    const banded = piece.bandIndex !== undefined;
+    const opacity = banded ? OPACITIES_NEAR_TO_FAR[piece.bandIndex!] : undefined;
     return {
-      memberId: `floor_bottom_skin_band_${i}`,
+      memberId: banded ? `floor_bottom_skin_band_${piece.bandIndex}_${piece.pieceIndex}` : "floor_bottom_skin",
       material: "wire_mesh",
       speciesGrade: null,
       plySpec: null,
       nominalSize: null,
       actualDimsIn: {
         thicknessIn: STEEL_MESH_THICKNESS_IN,
-        widthIn: isWidthAxis ? depthIn : bandSizeIn,
-        lengthIn: isWidthAxis ? bandSizeIn : widthIn,
+        widthIn: Math.max(...ys) - minYIn,
+        lengthIn: Math.max(...xs) - minXIn,
       },
       orientation: "flat",
-      // Member space: xIn = width, yIn = depth, zIn = height up (see MemberPosition
-      // in componentSchema.ts). The bands tile ACROSS the floor, so the offset goes in
-      // xIn or yIn depending on the axis; zIn stays 0 so all 3 sit on one plane.
-      position: { xIn: isWidthAxis ? offsetIn : 0, yIn: isWidthAxis ? 0 : offsetIn, zIn: 0, rotationDeg: 0 },
+      // Member space: xIn = width, yIn = depth, zIn = height up (see
+      // MemberPosition in componentSchema.ts). xIn/yIn are this piece's own
+      // plan min-corner, matching `actualDimsIn`' bounding box — the real
+      // geometry is `planPolygonCornersIn`, whose points are already
+      // absolute and are NOT offset by them. zIn stays 0 on every piece so
+      // all bands sit on one horizontal plane.
+      position: { xIn: minXIn, yIn: minYIn, zIn: 0, rotationDeg: 0, planPolygonCornersIn: piece.cornersIn },
       role: "skin",
       qty: 1,
-      opacityOverride: opacity,
+      ...(opacity !== undefined ? { opacityOverride: opacity } : {}),
       notes:
         "Galvanized welded wire mesh, stapled to the underside of the lowest framing member — rodent/pest barrier, 10mm max opening. " +
-        `Rendered at ${Math.round(opacity * 100)}% opacity (band ${i + 1} of 3, radiating from the least-accessible-corner marker) so the ` +
-        "real framing underneath stays visible. The clay coat over it is calculator-only (see Plaster Master), not modeled here.",
+        (banded
+          ? `Rendered at ${Math.round(opacity! * 100)}% opacity (band ${piece.bandIndex! + 1} of 3, radiating from the least-accessible-corner marker) so the real framing underneath stays visible. `
+          : "") +
+        "The clay coat over it is calculator-only (see Plaster Master), not modeled here.",
     };
   });
 }

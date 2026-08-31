@@ -7,7 +7,7 @@ import type { Mesh } from "three";
 import {
   applyZonesToSlot,
   computeFieldFramingLayout,
-  computeFloorMembraneOpacityBands,
+  computeFloorMembraneBandPolygons,
   computeInsetPerimeterRing,
   computeRoofBearingSegments,
   computeWallVerticalBandsForSlotWithMaxHeight,
@@ -1285,19 +1285,25 @@ export default function Building3DView({
       const zs = footprint.corners.map((c) => c.point.y);
       const minX = Math.min(...xs);
       const minZ = Math.min(...zs);
-      const maxX = Math.max(...xs);
-      const maxZ = Math.max(...zs);
-      const widthFt = maxX - minX;
-      const depthFt = maxZ - minZ;
       const nearPoint = footprint.corners.find((c) => c.id === leastAccessibleCorner)?.point ?? { x: minX, y: minZ };
-      const bandPlan = computeFloorMembraneOpacityBands(minX, maxX, minZ, maxZ, nearPoint);
+      // The skin is the FOOTPRINT POLYGON clipped into opacity bands, not
+      // the footprint's bounding box (Tommy: "lets make that the same size
+      // as the footprint") — so a bump-out, notch or octagon no longer
+      // overhangs the real floor. Each piece's ring maps straight into
+      // member space (X = width, Y = depth) off the same min-corner anchor
+      // this group is already placed at.
+      const pieces = computeFloorMembraneBandPolygons(footprint, nearPoint).map((piece) => ({
+        bandIndex: piece.bandIndex,
+        pieceIndex: piece.pieceIndex,
+        cornersIn: piece.polygon.map((p) => ({ xIn: (p.x - minX) * IN_PER_FT, yIn: (p.y - minZ) * IN_PER_FT })),
+      }));
       result.push({
         id: "floor-bottom-skin",
         anchorX: minX,
         anchorZ: minZ,
         anchorYFt: (bottomZIn - STEEL_MESH_THICKNESS_IN) / IN_PER_FT,
         rotationRad: 0,
-        members: buildFloorBottomSkinMembers(widthFt * IN_PER_FT, depthFt * IN_PER_FT, bandPlan),
+        members: buildFloorBottomSkinMembers(pieces),
       });
     }
     return result;

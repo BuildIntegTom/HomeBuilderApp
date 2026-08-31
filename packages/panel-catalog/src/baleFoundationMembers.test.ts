@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildFloorBottomSkinMembers, STEEL_MESH_THICKNESS_IN } from "./baleFoundationMembers";
-import type { PanelMember } from "./componentSchema";
+import { buildFloorBottomSkinMembers, STEEL_MESH_THICKNESS_IN, type FloorSkinPiece } from "./baleFoundationMembers";
+import type { PanelMember, PlanSpacePoint2D } from "./componentSchema";
 import { memberLocalCornersIn } from "./panelMemberHelpers";
 
 /** View-space (Y-up) height extent of one member, via the same corner
@@ -13,10 +13,10 @@ function viewSpaceYExtentIn(member: PanelMember): [number, number] {
 
 /** The member's view-space min corner [x, y, z] — i.e. which axis a band
  * actually tiles along once converted. The Y extent alone cannot catch a
- * width/depth swap: writing the offset to `xIn` in the depth branch would
- * leave all three bands perfectly coplanar in Y while stacking them on top
- * of one another in Z. These lower bounds catch every wrong-axis variant,
- * not just the one that lifted the bands off the floor. */
+ * width/depth swap: writing a band's offset into the wrong plan axis would
+ * leave every band perfectly coplanar in Y while stacking them on top of one
+ * another in Z. These lower bounds catch every wrong-axis variant, not just
+ * the one that lifted the bands off the floor. */
 function viewSpaceMinCornerIn(member: PanelMember): [number, number, number] {
   const corners = memberLocalCornersIn(member);
   return [
@@ -26,79 +26,98 @@ function viewSpaceMinCornerIn(member: PanelMember): [number, number, number] {
   ];
 }
 
+/** An axis-aligned rectangular piece, i.e. what a plain rectangular
+ * footprint's own bands still are. */
+function rectPiece(bandIndex: number | undefined, pieceIndex: number, x0: number, y0: number, x1: number, y1: number): FloorSkinPiece {
+  return {
+    bandIndex,
+    pieceIndex,
+    cornersIn: [
+      { xIn: x0, yIn: y0 },
+      { xIn: x1, yIn: y0 },
+      { xIn: x1, yIn: y1 },
+      { xIn: x0, yIn: y1 },
+    ],
+  };
+}
+
+/** 3 bands tiling a 480 x 240 floor along the WIDTH axis. */
+function widthAxisBands(): FloorSkinPiece[] {
+  return [rectPiece(0, 0, 0, 0, 160, 240), rectPiece(1, 0, 160, 0, 320, 240), rectPiece(2, 0, 320, 0, 480, 240)];
+}
+
+/** 3 bands tiling a 240 x 480 floor along the DEPTH axis — the branch that
+ * once shipped broken (bands lifted into the air instead of tiled across
+ * the floor), so it is asserted at the same standard as the width one. */
+function depthAxisBands(): FloorSkinPiece[] {
+  return [rectPiece(0, 0, 0, 0, 240, 160), rectPiece(1, 0, 0, 160, 240, 320), rectPiece(2, 0, 0, 320, 240, 480)];
+}
+
 describe("buildFloorBottomSkinMembers", () => {
-  it("returns one full-footprint member when no bandPlan is given", () => {
-    const members = buildFloorBottomSkinMembers(480, 240);
+  it("returns one uniform, fully-opaque member when a piece carries no bandIndex", () => {
+    const members = buildFloorBottomSkinMembers([rectPiece(undefined, 0, 0, 0, 480, 240)]);
     expect(members).toHaveLength(1);
+    expect(members[0]!.memberId).toBe("floor_bottom_skin");
     expect(members[0]!.material).toBe("wire_mesh");
     expect(members[0]!.opacityOverride).toBeUndefined();
     expect(members[0]!.actualDimsIn).toEqual({ thicknessIn: STEEL_MESH_THICKNESS_IN, widthIn: 240, lengthIn: 480 });
-    expect(members[0]!.position).toEqual({ xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0 });
+    expect(members[0]!.position.zIn).toBe(0);
   });
 
-  it("splits into 3 equal bands along the width axis, opaque nearest the marker", () => {
-    const members = buildFloorBottomSkinMembers(480, 240, { axis: "width", nearIsMax: false });
+  it("assigns opacity straight off bandIndex — 0 is the opaque band, nearest the marker", () => {
+    const members = buildFloorBottomSkinMembers(widthAxisBands());
     expect(members).toHaveLength(3);
     expect(members.map((m) => m.opacityOverride)).toEqual([1, 0.75, 0.5]);
-    members.forEach((m) => {
-      expect(m.actualDimsIn.widthIn).toBe(240);
-      expect(m.actualDimsIn.lengthIn).toBeCloseTo(160, 6);
-      expect(m.position.yIn).toBe(0);
-      expect(m.position.zIn).toBe(0);
-    });
-    expect(members.map((m) => m.position.xIn)).toEqual([0, 160, 320]);
+    expect(members.map((m) => m.memberId)).toEqual([
+      "floor_bottom_skin_band_0_0",
+      "floor_bottom_skin_band_1_0",
+      "floor_bottom_skin_band_2_0",
+    ]);
+    // The note's prose and the id index now agree: both count from the
+    // marker. (Before, under nearIsMax the id said band_0 for the band
+    // FARTHEST from the marker while the note claimed it radiated from it.)
+    expect(members[0]!.notes).toContain("band 1 of 3");
+    expect(members[0]!.notes).toContain("100% opacity");
+    expect(members[2]!.notes).toContain("band 3 of 3");
+    expect(members[2]!.notes).toContain("50% opacity");
   });
 
-  it("reverses band order when the marker sits at the axis max", () => {
-    const members = buildFloorBottomSkinMembers(480, 240, { axis: "width", nearIsMax: true });
-    expect(members.map((m) => m.opacityOverride)).toEqual([0.5, 0.75, 1]);
+  it("takes its real shape from the ring, not from a bounding box — an L piece stays an L", () => {
+    const lRing: PlanSpacePoint2D[] = [
+      { xIn: 0, yIn: 0 },
+      { xIn: 120, yIn: 0 },
+      { xIn: 120, yIn: 60 },
+      { xIn: 60, yIn: 60 },
+      { xIn: 60, yIn: 120 },
+      { xIn: 0, yIn: 120 },
+    ];
+    const [member] = buildFloorBottomSkinMembers([{ bandIndex: 0, pieceIndex: 0, cornersIn: lRing }]);
+    expect(member!.position.planPolygonCornersIn).toEqual(lRing);
+    expect(member!.position.trapezoidCornersIn).toBeUndefined(); // never both
+    const corners = memberLocalCornersIn(member!);
+    expect(corners).toHaveLength(2 * lRing.length);
+    // The reflex corner is really in the geometry — a bounding box has no
+    // vertex at (60, 60).
+    expect(corners.some(([x, , z]) => x === 60 && z === 60)).toBe(true);
+    // actualDimsIn is still the piece's plan bounding box, for consumers
+    // that read dims rather than corners.
+    expect(member!.actualDimsIn).toEqual({ thicknessIn: STEEL_MESH_THICKNESS_IN, widthIn: 120, lengthIn: 120 });
   });
 
-  it("splits into 3 equal bands along the depth axis instead", () => {
-    const members = buildFloorBottomSkinMembers(240, 480, { axis: "depth", nearIsMax: false });
-    expect(members).toHaveLength(3);
-    expect(members.map((m) => m.opacityOverride)).toEqual([1, 0.75, 0.5]);
-    members.forEach((m) => {
-      expect(m.actualDimsIn.lengthIn).toBe(240);
-      expect(m.actualDimsIn.widthIn).toBeCloseTo(160, 6);
-      expect(m.position.xIn).toBe(0);
-      // zIn is HEIGHT in member space — a depth-axis band that writes its
-      // offset here floats above the floor instead of tiling across it.
-      expect(m.position.zIn).toBe(0);
-    });
-    expect(members.map((m) => m.position.yIn)).toEqual([0, 160, 320]);
-  });
-
-  it("keeps depth-axis band positions unchanged when the marker sits at the axis max", () => {
-    const members = buildFloorBottomSkinMembers(240, 480, { axis: "depth", nearIsMax: true });
-    expect(members.map((m) => m.opacityOverride)).toEqual([0.5, 0.75, 1]);
-    expect(members.map((m) => m.position.yIn)).toEqual([0, 160, 320]);
-    members.forEach((m) => expect(m.position.zIn).toBe(0));
-  });
-
-  it("covers the full span with no gap or overlap between bands", () => {
-    const members = buildFloorBottomSkinMembers(500, 300, { axis: "width", nearIsMax: false });
-    let cursor = 0;
-    for (const m of members) {
-      expect(m.position.xIn).toBeCloseTo(cursor, 6);
-      cursor += m.actualDimsIn.lengthIn;
-    }
-    expect(cursor).toBeCloseTo(500, 6);
-  });
-
-  it("covers the full depth span with no gap or overlap between bands", () => {
-    const members = buildFloorBottomSkinMembers(300, 500, { axis: "depth", nearIsMax: false });
-    let cursor = 0;
-    for (const m of members) {
-      expect(m.position.yIn).toBeCloseTo(cursor, 6);
-      // A depth-axis band runs its full width along X and its band size along Y.
-      cursor += m.actualDimsIn.widthIn;
-    }
-    expect(cursor).toBeCloseTo(500, 6);
+  it("gives every piece of one band that band's own opacity, with distinct ids", () => {
+    const split = [rectPiece(0, 0, 0, 0, 100, 160), rectPiece(0, 1, 200, 0, 300, 160), rectPiece(1, 0, 0, 160, 300, 320)];
+    const members = buildFloorBottomSkinMembers(split);
+    expect(members.map((m) => m.opacityOverride)).toEqual([1, 1, 0.75]);
+    expect(members.map((m) => m.memberId)).toEqual([
+      "floor_bottom_skin_band_0_0",
+      "floor_bottom_skin_band_0_1",
+      "floor_bottom_skin_band_1_0",
+    ]);
+    expect(new Set(members.map((m) => m.memberId)).size).toBe(3);
   });
 
   it("puts every depth-axis band on one horizontal plane in view space", () => {
-    const members = buildFloorBottomSkinMembers(240, 480, { axis: "depth", nearIsMax: false });
+    const members = buildFloorBottomSkinMembers(depthAxisBands());
     const extents = members.map(viewSpaceYExtentIn);
     extents.forEach(([minY, maxY]) => {
       expect(minY).toBeCloseTo(0, 6);
@@ -107,13 +126,14 @@ describe("buildFloorBottomSkinMembers", () => {
     expect(extents[1]).toEqual(extents[0]);
     expect(extents[2]).toEqual(extents[0]);
     // ...and tiles along view-space Z, the depth axis. Without this, an
-    // offset mistakenly written to `xIn` would still pass every check above.
+    // offset mistakenly written to the X axis would still pass every check
+    // above.
     expect(members.map((m) => viewSpaceMinCornerIn(m)[2])).toEqual([0, 160, 320]);
     expect(members.map((m) => viewSpaceMinCornerIn(m)[0])).toEqual([0, 0, 0]);
   });
 
   it("puts every width-axis band on one horizontal plane in view space", () => {
-    const members = buildFloorBottomSkinMembers(480, 240, { axis: "width", nearIsMax: false });
+    const members = buildFloorBottomSkinMembers(widthAxisBands());
     const extents = members.map(viewSpaceYExtentIn);
     // Asserted absolutely, not just mutually — same standard as the depth case.
     extents.forEach(([minY, maxY]) => {
@@ -127,15 +147,33 @@ describe("buildFloorBottomSkinMembers", () => {
     expect(members.map((m) => viewSpaceMinCornerIn(m)[2])).toEqual([0, 0, 0]);
   });
 
-  it("degrades gracefully on a very shallow depth-axis footprint", () => {
-    const members = buildFloorBottomSkinMembers(240, 1.5, { axis: "depth", nearIsMax: false });
-    expect(members).toHaveLength(3);
-    members.forEach((m) => {
-      expect(Number.isFinite(m.position.yIn)).toBe(true);
-      expect(m.position.yIn).toBeGreaterThanOrEqual(0);
+  it("stays coplanar for irregular, disconnected pieces too — zIn is height, never a depth offset", () => {
+    const irregular: FloorSkinPiece[] = [
+      { bandIndex: 0, pieceIndex: 0, cornersIn: [{ xIn: 0, yIn: 0 }, { xIn: 90, yIn: 30 }, { xIn: 40, yIn: 110 }] },
+      { bandIndex: 0, pieceIndex: 1, cornersIn: [{ xIn: 300, yIn: 200 }, { xIn: 380, yIn: 210 }, { xIn: 350, yIn: 260 }] },
+      rectPiece(1, 0, 0, 160, 240, 320),
+    ];
+    const members = buildFloorBottomSkinMembers(irregular);
+    for (const m of members) {
       expect(m.position.zIn).toBe(0);
-      expect(m.actualDimsIn.widthIn).toBeCloseTo(0.5, 6);
-    });
-    expect(members.map((m) => m.position.yIn)).toEqual([0, 0.5, 1]);
+      const [minY, maxY] = viewSpaceYExtentIn(m);
+      expect(minY).toBeCloseTo(0, 6);
+      expect(maxY).toBeCloseTo(STEEL_MESH_THICKNESS_IN, 6);
+    }
+  });
+
+  it("covers the full span with no gap or overlap between adjacent bands", () => {
+    const members = buildFloorBottomSkinMembers(widthAxisBands());
+    let cursor = 0;
+    for (const m of members) {
+      const xs = memberLocalCornersIn(m).map(([x]) => x);
+      expect(Math.min(...xs)).toBeCloseTo(cursor, 6);
+      cursor = Math.max(...xs);
+    }
+    expect(cursor).toBeCloseTo(480, 6);
+  });
+
+  it("returns nothing at all for an empty piece list", () => {
+    expect(buildFloorBottomSkinMembers([])).toEqual([]);
   });
 });
