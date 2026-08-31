@@ -41,13 +41,41 @@ export interface PerimeterRingSegment {
  * same simplification applies directly). Mitered (non-90deg) corners are
  * left unextended too, same scope cut as `wallBoxes3D` — box/board
  * geometry can't perfectly miter a non-90deg joint.
+ *
+ * WHICH WAY IS INWARD: the +90deg rotation of each wall's own direction
+ * vector, for every wall, with no side test. That follows from the single
+ * winding order every footprint in this app is built and maintained in
+ * (corners clockwise on screen, Y increasing downward — see
+ * `buildRectangleFootprint`/`buildOctagonFootprint`), which makes the
+ * inward normal a global property of the polygon rather than a per-wall
+ * question; it is the exact negation of `bumpOut.ts`'s `outwardNormal`,
+ * whose doc comment carries the full argument. This replaced a
+ * vertex-averaged-centroid side test — the same heuristic `bumpOut.ts` was
+ * fixed to abandon (regression test at bumpOut.test.ts:204). A vertex
+ * average sits inside the convex hull, so it can never fall outside a hull
+ * wall, but a notch's tightly clustered new corners drag it far enough to
+ * land on the WRONG side of some *other* notch's wall — and that wall's
+ * whole ring segment then got offset outward, into open air outside the
+ * building (Tommy, on the bale foundation's floor framing: "i see the floor
+ * framing on bump outs has a similar problem - and also is spawned wrong").
+ * Reversed winding is not handled. It holds for every footprint this app
+ * renders today — `buildRectangleFootprint`, `buildOctagonFootprint`,
+ * `insertBumpOut`, `dragWallBounded`/`dragWallWithCollapse` all preserve
+ * it, and `dragWallBounded` refuses any self-intersecting offset — but do
+ * NOT read that as "cannot happen". `editWallLength` has no validity guard
+ * at all (only MIN_WALL_LENGTH_FT on the edited wall), and shortening a
+ * bumped-out shape enough can invert the signed area from a value typed
+ * straight into the UI. Deliberately not defended against here: on such a
+ * footprint `bumpOut.ts`'s `outwardNormal` and `dragWall.ts`'s drag axis
+ * are wrong in exactly the same way, so normalizing only this function
+ * would trade a coherently-broken app for an incoherent one and hide the
+ * real defect, which is the missing guard. Tracked as an Open Item.
+ * Project load is a sixth path no producer covers — `parseProjectFile`
+ * casts without deep validation — safe in practice since files this app
+ * writes are always positively wound. Asserted in perimeterRing.test.ts.
  */
 export function computeInsetPerimeterRing(footprint: Footprint, insetIn: number, primaryCornerIds: Set<string>): PerimeterRingSegment[] {
   const insetFt = insetIn / 12;
-  const centroid = {
-    x: footprint.corners.reduce((sum, c) => sum + c.point.x, 0) / footprint.corners.length,
-    y: footprint.corners.reduce((sum, c) => sum + c.point.y, 0) / footprint.corners.length,
-  };
 
   // At each reflex right-angle corner, exactly one of the 2 meeting walls
   // gets its length extended by insetFt at that end — mirrors
@@ -84,11 +112,14 @@ export function computeInsetPerimeterRing(footprint: Footprint, insetIn: number,
     const dz = end.y - start.y;
     const length = Math.hypot(dx, dz) || 1;
     const dir = { x: dx / length, y: dz / length };
-    const perp = { x: -dir.y, y: dir.x };
+    // Inward is the +90deg rotation of the wall's own direction vector,
+    // unconditionally: the exact negation of bumpOut.ts's `outwardNormal`
+    // ({ x: dir.y, y: -dir.x }), and the same expression dragWall.ts uses
+    // for its own drag axis. See the doc comment above for why no per-wall
+    // side test is needed.
+    const inward = { x: -dir.y, y: dir.x };
     const exteriorMidX = (start.x + end.x) / 2;
     const exteriorMidZ = (start.y + end.y) / 2;
-    const pointsInward = perp.x * (centroid.x - exteriorMidX) + perp.y * (centroid.y - exteriorMidZ) >= 0;
-    const inward = pointsInward ? perp : { x: -perp.x, y: -perp.y };
 
     const extStart = startExtensionFt[wall.id]!;
     const extEnd = endExtensionFt[wall.id]!;
