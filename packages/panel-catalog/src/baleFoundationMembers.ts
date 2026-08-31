@@ -5,12 +5,14 @@ import { LUMBER_SPECIES_GRADE, PLATE_2X4_THICKNESS_IN } from "./panelMemberHelpe
  * "Bale foundation" floor framing (Tommy) — a perimeter rim built from
  * FRAMING STACKS: a top board + a small gap (with periodic blocking inside
  * it) + a bottom board, standing on edge — e.g. 2x6 (5.5in) + 1.5in gap +
- * 2x6 (5.5in) = 12.5in tall. Two concentric doubled rings (Ring A flush
- * with the inside of the primary footprint, Ring B one panel-width further
- * inward — see perimeterRing.ts's computeInsetPerimeterRing) carry the
- * wall's own exterior/interior wythe loads; single (non-doubled) stacks
- * fill the rest of the interior span at a selectable o.c. spacing (see
- * computeFieldFramingLayout). Every board here is oriented "on edge"
+ * 2x6 (5.5in) = 12.5in tall. Two doubled rings BRACKET the wall above,
+ * one under each wythe (Ring A flush with the wall's exterior face, Ring B
+ * flush with its interior face — baleFoundationRingPlan.ts owns that
+ * placement rule, perimeterRing.ts's computeInsetPerimeterRing the tracing),
+ * carrying the wall's own exterior/interior wythe loads; single
+ * (non-doubled) stacks fill the interior span inboard of Ring B at a
+ * selectable o.c. spacing (see computeFieldFramingLayout). Every board
+ * here is oriented "on edge"
  * (orientation: "horizontal", rotationDeg 0 — memberBoxSizeIn's own doc
  * comment flags this exact case as "kept for a future member that
  * genuinely stands on edge"), unlike Truss Plate/Box Beam's flat-lying

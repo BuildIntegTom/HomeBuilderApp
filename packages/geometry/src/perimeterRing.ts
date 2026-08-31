@@ -151,8 +151,9 @@ export interface FieldFramingLine {
 /**
  * Single (non-doubled) framing-stack centerlines filling the interior span
  * beyond a footprint's own bounding box inset by `insetIn` on every side —
- * the bale foundation's field members, beyond the doubled Ring A/Ring B
- * perimeter (see baleFoundationMembers.ts). Same axis choice and "ceil to
+ * the bale foundation's field members, inboard of the doubled Ring A/Ring B
+ * perimeter that brackets the wall (see baleFoundationRingPlan.ts, which
+ * owns the `insetIn` this is called with). Same axis choice and "ceil to
  * whole bays no larger than spacingIn, then evenly redistribute" rule as
  * `computeJoistLayout` (joistLayout.ts) — this is that same function
  * generalized with an inward inset, not a new algorithm; `computeJoistLayout`

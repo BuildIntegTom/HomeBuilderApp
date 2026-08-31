@@ -15,6 +15,7 @@ export * from "./sillPanelMembers";
 export * from "./openingAssemblyMembers";
 export * from "./safetyGapMembers";
 export * from "./baleFoundationMembers";
+export * from "./baleFoundationRingPlan";
 export * from "./squareBalePanelMembers";
 export * from "./squareBaleCornerPanelMembers";
 export * from "./trussPlateMembers";

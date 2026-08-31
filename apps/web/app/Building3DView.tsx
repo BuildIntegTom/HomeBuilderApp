@@ -31,6 +31,7 @@ import {
   BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
   BALE_FOUNDATION_GAP_DEFAULT_IN,
   BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
+  baleFoundationRingPlan,
   baleFoundationTopFaceZIn,
   buildDoubledStackPair,
   buildFloorBottomSkinMembers,
@@ -1246,12 +1247,13 @@ export default function Building3DView({
     const bottomZIn = topFaceZIn - stackHeightIn;
     const anchorYFt = bottomZIn / IN_PER_FT;
 
-    const ringBInsetIn = thicknessIn + standardWidthIn;
-    const rings: { name: string; insetIn: number }[] = [
-      { name: "a", insetIn: thicknessIn },
-      { name: "b", insetIn: ringBInsetIn },
-    ];
-    for (const { name, insetIn } of rings) {
+    // Both ring insets, the doubled-pair width, and where the field
+    // stacks start come from ONE shared derivation, which the 2D
+    // FloorCanvas feed in page.tsx reads too — see this app's own history
+    // of those two copies drifting apart. baleFoundationRingPlan carries
+    // the bracket-the-wall rule and its interpretations.
+    const ringPlan = baleFoundationRingPlan(thicknessIn);
+    for (const { name, insetIn } of ringPlan.rings) {
       for (const seg of computeInsetPerimeterRing(footprint, insetIn, primaryCornerIds)) {
         result.push({
           id: `ring-${name}-${seg.wallId}`,
@@ -1269,7 +1271,7 @@ export default function Building3DView({
         });
       }
     }
-    for (const line of computeFieldFramingLayout(footprint, ringBInsetIn, baleFoundationFieldSpacingIn)) {
+    for (const line of computeFieldFramingLayout(footprint, ringPlan.fieldInsetIn, baleFoundationFieldSpacingIn)) {
       const lengthFt = Math.hypot(line.x2 - line.x1, line.y2 - line.y1);
       result.push({
         id: `field-${line.id}`,
@@ -1311,7 +1313,6 @@ export default function Building3DView({
     footprint,
     isBaleFoundationFloor,
     thicknessIn,
-    standardWidthIn,
     primaryCornerIds,
     baleFoundationTopDepthIn,
     baleFoundationBottomDepthIn,

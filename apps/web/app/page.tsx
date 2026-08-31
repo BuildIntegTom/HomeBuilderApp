@@ -107,6 +107,7 @@ import {
   BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
   BALE_FOUNDATION_GAP_DEFAULT_IN,
   SUBFLOOR_DEPTH_DEFAULT_IN,
+  baleFoundationRingPlan,
   baleFoundationTopFaceZIn,
   buildDoubledStackPair,
   buildFloorBottomSkinMembers,
@@ -1635,60 +1636,63 @@ export default function LayoutEditor() {
   );
   const fieldJoistDepthIn = thicknessIn - FIELD_JOIST_DEPTH_REDUCTION_IN;
 
-  // Bale Foundation rings (Tommy: "two of these framing members inside the
-  // primary footprint of the building, and then another two framing
-  // members insideof the width of the panel-width selected") — Ring A
-  // flush with the inside of the primary footprint (inset by thicknessIn),
-  // Ring B one panel-width further inward. Field stacks (single, not
-  // doubled) fill the rest of the interior span beyond Ring B.
-  const baleFoundationRingAInsetIn = thicknessIn;
-  const baleFoundationRingBInsetIn = thicknessIn + standardWidthIn;
-  const baleFoundationRingA = useMemo(
-    () => (footprint && isBaleFoundationFloor ? computeInsetPerimeterRing(footprint, baleFoundationRingAInsetIn, primaryCornerIds) : null),
-    [footprint, isBaleFoundationFloor, baleFoundationRingAInsetIn, primaryCornerIds],
-  );
-  const baleFoundationRingB = useMemo(
-    () => (footprint && isBaleFoundationFloor ? computeInsetPerimeterRing(footprint, baleFoundationRingBInsetIn, primaryCornerIds) : null),
-    [footprint, isBaleFoundationFloor, baleFoundationRingBInsetIn, primaryCornerIds],
-  );
-  // Each ring is a DOUBLED pair (2 stacks side by side, touching — see
-  // buildDoubledStackPair's own doc comment on the 0-gap default) — the
-  // "inner" sub-line is the same ring offset one board thickness further
-  // in, reusing computeInsetPerimeterRing rather than new offset math.
-  const baleFoundationRingAInner = useMemo(
+  // Bale Foundation rings — the two doubled rings BRACKET the wall (Tommy:
+  // "these two large pieces (or LVL's if thats selected) are flush with the
+  // exterior and interior of the panel wall"): Ring A's outboard face on the
+  // wall's exterior face, Ring B's inboard face on its interior face. Every
+  // inset comes from baleFoundationRingPlan — the SAME derivation
+  // Building3DView's baleFoundationRenderData reads, so the 2D canvas and
+  // the 3D preview cannot drift apart about where a ring is (they were two
+  // independent copies of this arithmetic before, and had). Each ring is a
+  // DOUBLED pair (2 stacks side by side, touching — see
+  // buildDoubledStackPair's own doc comment on the 0-gap default), so its
+  // "inner" sub-line is the same ring offset one board thickness further in,
+  // reusing computeInsetPerimeterRing rather than new offset math. Single
+  // field stacks fill the interior span inboard of the inner ring.
+  const baleFoundationPlan = useMemo(() => baleFoundationRingPlan(thicknessIn), [thicknessIn]);
+  const baleFoundationRings = useMemo(
     () =>
       footprint && isBaleFoundationFloor
-        ? computeInsetPerimeterRing(footprint, baleFoundationRingAInsetIn + PLATE_2X4_THICKNESS_IN, primaryCornerIds)
+        ? baleFoundationPlan.rings.map((ring) => ({
+            name: ring.name,
+            outer: computeInsetPerimeterRing(footprint, ring.insetIn, primaryCornerIds),
+            inner: computeInsetPerimeterRing(footprint, ring.innerInsetIn, primaryCornerIds),
+          }))
         : null,
-    [footprint, isBaleFoundationFloor, baleFoundationRingAInsetIn, primaryCornerIds],
+    [footprint, isBaleFoundationFloor, baleFoundationPlan, primaryCornerIds],
   );
-  const baleFoundationRingBInner = useMemo(
-    () =>
-      footprint && isBaleFoundationFloor
-        ? computeInsetPerimeterRing(footprint, baleFoundationRingBInsetIn + PLATE_2X4_THICKNESS_IN, primaryCornerIds)
-        : null,
-    [footprint, isBaleFoundationFloor, baleFoundationRingBInsetIn, primaryCornerIds],
-  );
+  // A collapsed plan (a wall too thin to hold two rings — see
+  // baleFoundationRingPlan) carries ring "a" only, so a missing "b" is a
+  // real state here, not a failure to compute one.
+  const baleFoundationRingA = baleFoundationRings?.find((r) => r.name === "a") ?? null;
+  const baleFoundationRingB = baleFoundationRings?.find((r) => r.name === "b") ?? null;
   const baleFoundationFieldLayout = useMemo(
     () =>
       footprint && isBaleFoundationFloor
-        ? computeFieldFramingLayout(footprint, baleFoundationRingBInsetIn, baleFoundationFieldSpacingIn)
+        ? computeFieldFramingLayout(footprint, baleFoundationPlan.fieldInsetIn, baleFoundationFieldSpacingIn)
         : [],
-    [footprint, isBaleFoundationFloor, baleFoundationRingBInsetIn, baleFoundationFieldSpacingIn],
+    [footprint, isBaleFoundationFloor, baleFoundationPlan, baleFoundationFieldSpacingIn],
   );
   const baleFoundationStackHeightIn = baleFoundationTopDepthIn + baleFoundationGapIn + baleFoundationBottomDepthIn;
-  // 8 boards per cross-section (2 rings x 2 doubled stacks x 2 boards each
-  // — Tommy: "my double double really means double double double") plus
-  // the single field stacks (2 boards each) beyond Ring B.
-  const baleFoundationBoardCount = baleFoundationRingA && baleFoundationRingB
-    ? baleFoundationRingA.length * 4 + baleFoundationRingB.length * 4 + baleFoundationFieldLayout.length * 2
+  // One stack's own cross-section: its top + bottom boards, each one board
+  // thickness wide — read off the same plan the insets come from, never a
+  // literal, so a material change moves the quantities and the geometry
+  // together.
+  const baleFoundationStackCrossSectionIn2 =
+    (baleFoundationTopDepthIn + baleFoundationBottomDepthIn) * baleFoundationPlan.boardThicknessIn;
+  // 4 boards per ring per cross-section (2 doubled stacks x 2 boards each
+  // — Tommy: "my double double really means double double double"), over
+  // however many rings the plan has, plus the single field stacks (2 boards
+  // each) inboard of the inner ring.
+  const baleFoundationBoardCount = baleFoundationRings
+    ? baleFoundationRings.reduce((sum, ring) => sum + ring.outer.length * 4, 0) + baleFoundationFieldLayout.length * 2
     : 0;
-  const baleFoundationLumberVolumeFt3 = baleFoundationRingA && baleFoundationRingB
-    ? (baleFoundationRingA.reduce((sum, seg) => sum + seg.lengthFt, 0) * 2 * (baleFoundationTopDepthIn + baleFoundationBottomDepthIn) * 1.5 +
-        baleFoundationRingB.reduce((sum, seg) => sum + seg.lengthFt, 0) * 2 * (baleFoundationTopDepthIn + baleFoundationBottomDepthIn) * 1.5 +
+  const baleFoundationLumberVolumeFt3 = baleFoundationRings
+    ? (baleFoundationRings.reduce((sum, ring) => sum + ring.outer.reduce((s, seg) => s + seg.lengthFt, 0), 0) *
+        2 *
+        baleFoundationStackCrossSectionIn2 +
         baleFoundationFieldLayout.reduce((sum, line) => sum + Math.hypot(line.x2 - line.x1, line.y2 - line.y1), 0) *
-          (baleFoundationTopDepthIn + baleFoundationBottomDepthIn) *
-          1.5) /
+          baleFoundationStackCrossSectionIn2) /
       144
     : 0;
 
@@ -6211,8 +6215,9 @@ export default function LayoutEditor() {
           ))}
         </div>
         <p className={styles.note}>
-          2 concentric doubled rings — one flush with the inside of the footprint, one a further panel-width ({standardWidthIn}in) inward — carry
-          the wall&apos;s own exterior/interior wythe loads. Single field stacks fill the rest of the interior span at the spacing above.
+          2 concentric doubled rings bracket the wall, one under each wythe — the outer flush with the wall&apos;s exterior face, the inner
+          flush with its interior face, leaving a {(thicknessIn - baleFoundationPlan.ringWidthIn).toFixed(1)}in clear span between them at the
+          current {thicknessIn}in panel depth. Single field stacks fill the interior span inboard of the inner ring, at the spacing above.
         </p>
         {footprint ? (
           <p className={styles.note}>
@@ -7241,10 +7246,10 @@ export default function LayoutEditor() {
                 floorPanels={floorPanels}
                 piers={pierGrid}
                 joistLayout={joistLayout}
-                baleFoundationRingA={baleFoundationRingA}
-                baleFoundationRingB={baleFoundationRingB}
-                baleFoundationRingAInner={baleFoundationRingAInner}
-                baleFoundationRingBInner={baleFoundationRingBInner}
+                baleFoundationRingA={baleFoundationRingA?.outer ?? null}
+                baleFoundationRingB={baleFoundationRingB?.outer ?? null}
+                baleFoundationRingAInner={baleFoundationRingA?.inner ?? null}
+                baleFoundationRingBInner={baleFoundationRingB?.inner ?? null}
                 baleFoundationFieldLayout={baleFoundationFieldLayout}
               />
             )}
@@ -7683,7 +7688,7 @@ export default function LayoutEditor() {
               }
               fastenerSchedule={[]}
               notes={[
-                "2 concentric doubled rings (2 framing stacks side by side each) carry the wall's own exterior/interior wythe loads — one flush with the inside of the primary footprint, one a further panel-width inward. Single (non-doubled) stacks fill the rest of the interior span.",
+                "2 concentric doubled rings (2 framing stacks side by side each) bracket the wall, one under each wythe — the outer ring's outboard face flush with the wall's exterior face, the inner ring's inboard face flush with its interior face. Single (non-doubled) stacks fill the interior span inboard of the inner ring.",
                 `${baleFoundationBoardCount} boards total (${baleFoundationLumberVolumeFt3.toFixed(1)} ft3) at the current footprint/spacing.`,
                 "Gap fill material between the top and bottom boards isn't modeled yet — an open void in both 2D and 3D, to be flushed out later.",
                 "Wall panels still render at their existing floor line (Z=0) — this assembly is additive, extending downward from there; wall placement doesn't shift onto this new assembly's own top surface yet.",

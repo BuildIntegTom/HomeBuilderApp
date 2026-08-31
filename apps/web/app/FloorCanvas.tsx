@@ -19,12 +19,15 @@ export interface FloorCanvasProps {
   floorPanels: FloorPanelRect[];
   piers: PierPosition[];
   joistLayout?: JoistLayout | null;
-  /** Bale Foundation's own 2 concentric doubled rings (Ring A flush with
-   * the inside of the footprint, Ring B one panel-width further inward)
-   * plus the single field stacks beyond Ring B — see
-   * computeInsetPerimeterRing/computeFieldFramingLayout in
-   * packages/geometry/src/perimeterRing.ts. Undefined/null when the
-   * project isn't using the Bale Foundation floor system. */
+  /** Bale Foundation's own 2 doubled rings BRACKETING the wall above —
+   * Ring A under the exterior wythe (its outboard face on the wall's
+   * exterior face), Ring B under the interior wythe (its inboard face on
+   * the wall's interior face) — plus the single field stacks inboard of
+   * Ring B. Placement comes from baleFoundationRingPlan; the segments
+   * themselves from computeInsetPerimeterRing/computeFieldFramingLayout in
+   * packages/geometry/src/perimeterRing.ts. Ring B is null on a collapsed
+   * plan (a wall too thin to hold two rings). Undefined/null throughout
+   * when the project isn't using the Bale Foundation floor system. */
   baleFoundationRingA?: PerimeterRingSegment[] | null;
   baleFoundationRingB?: PerimeterRingSegment[] | null;
   baleFoundationRingAInner?: PerimeterRingSegment[] | null;

@@ -11,8 +11,9 @@ import type { Footprint, Point } from "./types";
 const allPrimary = (fp: Footprint) => new Set(fp.corners.map((c) => c.id));
 // A doubled 2x4 ring's own width (2 x PLATE_2X4_THICKNESS_IN). Hardcoded
 // because packages/geometry is dependency-free by design and can't import
-// the catalog. Not itself one of the live insets — those are 15.5/17/55.5/57
-// today, and 0/1.5/12.5/14 after the Stage 2 placement fix.
+// the catalog. Only a representative inset for these direction tests — the
+// live ones (0/1.5 and 12.5/14 at the 15.5in default) come from
+// baleFoundationRingPlan in packages/panel-catalog.
 const RING_INSET_IN = 3;
 
 /**
