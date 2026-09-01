@@ -43,7 +43,7 @@ describe("computeMemberSetWoodWeight", () => {
 
   it("gives a braced panel more wood weight than a standard panel at the same dimensions (real brace/connector geometry, not the flat same-BOM assumption)", () => {
     const standard = computeMemberSetWoodWeight(buildStandardPanelMembers(40, 15.5, 120, false));
-    const braced = computeMemberSetWoodWeight(buildBracedPanelMembers(40, 15.5, 120, false, "chevron"));
+    const braced = computeMemberSetWoodWeight(buildBracedPanelMembers(40, 15.5, 120, false, "chevron", false));
     expect(braced.weightLb).toBeGreaterThan(standard.weightLb);
   });
 

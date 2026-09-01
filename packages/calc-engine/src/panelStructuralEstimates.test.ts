@@ -94,7 +94,7 @@ describe("computeBracedPanelShearCapacityLb", () => {
   });
 
   it("computes a positive shear capacity for a real braced panel's brace members", () => {
-    const members = buildBracedPanelMembers(40, 15.5, 120, false, "chevron");
+    const members = buildBracedPanelMembers(40, 15.5, 120, false, "chevron", false);
     const shearLb = computeBracedPanelShearCapacityLb(members);
     expect(shearLb).toBeGreaterThan(0);
   });

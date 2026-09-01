@@ -110,7 +110,6 @@ import {
   baleFoundationRingPlan,
   baleFoundationTopFaceZIn,
   buildDoubledStackPair,
-  buildFloorBottomSkinMembers,
   buildFramingStackMembers,
   steelMeshPriceDefaults,
   type BaleFoundationFieldSpacingIn,

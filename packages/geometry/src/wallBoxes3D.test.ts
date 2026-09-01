@@ -84,3 +84,51 @@ describe("wallBoxes3D", () => {
     expect(byId["70"]!.lengthFt).toBeCloseTo(20, 6);
   });
 });
+
+describe("inward side (winding order, not a vertex-averaged centroid)", () => {
+  const THICKNESS_IN = 15.5;
+
+  /** Signed depth of a box's centre from its own wall line, measured along
+   * the winding perpendicular. Positive = the box sits inward, which is the
+   * only correct answer for every wall of every footprint. Reads the real
+   * returned geometry rather than any internal flag. */
+  function centreDepthFt(fp: Footprint, wallId: string): number {
+    const box = wallBoxes3D(fp, THICKNESS_IN, 9, allPrimary(fp)).find((b) => b.wallId === wallId)!;
+    const wall = fp.walls.find((w) => w.id === wallId)!;
+    const a = fp.corners.find((c) => c.id === wall.startCorner)!.point;
+    const b = fp.corners.find((c) => c.id === wall.endCorner)!.point;
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const perp = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+    return (box.centerX - (a.x + b.x) / 2) * perp.x + (box.centerZ - (a.y + b.y) / 2) * perp.y;
+  }
+
+  // The defect this replaced: a vertex average always lies inside the convex
+  // hull, so it can never misjudge a HULL wall — every rectangle and octagon
+  // was always fine. Only a notch can drag it across some other wall's own
+  // perpendicular, and that wall's box then built outward, off the building.
+  it("puts every wall's box inward on a notched footprint, not just hull walls", () => {
+    const { footprint } = insertBumpOut(buildRectangleFootprint(30, 20), "AB", 5, 20, -6, allPrimary(buildRectangleFootprint(30, 20)));
+    for (const wall of footprint.walls) {
+      expect(centreDepthFt(footprint, wall.id)).toBeCloseTo(THICKNESS_IN / 24, 6);
+    }
+  });
+
+  // The positive-depth twin was ALWAYS correct, even under the old centroid
+  // test — so it cannot stand in for the case above. Kept so nobody "verifies"
+  // the notch bug with a bump-out, fails to reproduce, and reverts the fix.
+  it("does the same on a true outward bump-out", () => {
+    const rect = buildRectangleFootprint(30, 20);
+    const { footprint } = insertBumpOut(rect, "AB", 5, 20, 6, allPrimary(rect));
+    for (const wall of footprint.walls) {
+      expect(centreDepthFt(footprint, wall.id)).toBeCloseTo(THICKNESS_IN / 24, 6);
+    }
+  });
+
+  it("is unchanged on the convex shapes the old heuristic already got right", () => {
+    for (const fp of [buildRectangleFootprint(30, 20), buildRectangleFootprint(8, 60)]) {
+      for (const wall of fp.walls) {
+        expect(centreDepthFt(fp, wall.id)).toBeCloseTo(THICKNESS_IN / 24, 6);
+      }
+    }
+  });
+});

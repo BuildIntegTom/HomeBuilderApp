@@ -66,10 +66,6 @@ export function wallBoxes3D(
   primaryCornerIds: Set<string>,
 ): WallBox3D[] {
   const thicknessFt = thicknessIn / 12;
-  const centroid = {
-    x: footprint.corners.reduce((sum, c) => sum + c.point.x, 0) / footprint.corners.length,
-    y: footprint.corners.reduce((sum, c) => sum + c.point.y, 0) / footprint.corners.length,
-  };
 
   // At each reflex right-angle corner, exactly one of the 2 meeting walls
   // gets its length extended by thicknessFt at that end — never both,
@@ -106,11 +102,20 @@ export function wallBoxes3D(
     const dz = end.y - start.y;
     const length = Math.hypot(dx, dz) || 1;
     const dir = { x: dx / length, y: dz / length };
-    const perp = { x: -dir.y, y: dir.x };
+    // Inward is a global property of the polygon's winding order, not a
+    // per-wall question — see computeInsetPerimeterRing's own "WHICH WAY IS
+    // INWARD" note, which carries the full argument. This replaced a
+    // vertex-averaged-centroid side test: a vertex average sits inside the
+    // convex hull so it never misjudges a hull wall, but a notch's clustered
+    // corners drag it onto the WRONG side of some other wall, whose box then
+    // got built outward — off the building entirely. Verified here before
+    // deleting: on a 30x20 rect notched by insertBumpOut("AB", 5, 20, -6),
+    // the old code put walls "12" and "34" at -0.6458ft where every other
+    // wall was +0.6458ft. (A true outward bump-out, +6, was correct on all
+    // eight walls — don't try to reproduce it with a positive depth.)
     const exteriorMidX = (start.x + end.x) / 2;
     const exteriorMidZ = (start.y + end.y) / 2;
-    const pointsInward = perp.x * (centroid.x - exteriorMidX) + perp.y * (centroid.y - exteriorMidZ) >= 0;
-    const inward = pointsInward ? perp : { x: -perp.x, y: -perp.y };
+    const inward = { x: -dir.y, y: dir.x };
 
     const extStart = startExtensionFt[wall.id]!;
     const extEnd = endExtensionFt[wall.id]!;
