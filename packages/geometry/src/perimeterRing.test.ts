@@ -5,7 +5,13 @@ import { insertBumpOut } from "./bumpOut";
 import { dragWallBounded, dragWallWithCollapse } from "./dragWall";
 import { editWallLength } from "./editWallLength";
 import { isPointInPolygon } from "./pointInPolygon";
-import { computeInsetPerimeterRing, type PerimeterRingSegment } from "./perimeterRing";
+import {
+  computeFieldFramingLayout,
+  computeInsetFootprintPolygon,
+  computeInsetPerimeterRing,
+  type FieldFramingLine,
+  type PerimeterRingSegment,
+} from "./perimeterRing";
 import type { Footprint, Point } from "./types";
 
 const allPrimary = (fp: Footprint) => new Set(fp.corners.map((c) => c.id));
@@ -243,5 +249,305 @@ describe("the winding-order invariant the inward direction relies on", () => {
         expect(signedArea2x(dragWallWithCollapse(current.footprint, wall.id, offsetFt, current.primaryCornerIds).footprint)).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+/**
+ * The EXACT pre-fix field layout — lines run straight across the footprint's
+ * inset BOUNDING BOX — kept here for the same reason `legacyCentroidRing` is:
+ * "unchanged on a rectangle" and "fixed on a notched footprint" then both get
+ * asserted against the real old behavior instead of hand-copied numbers. Ids
+ * carry the new `-0` span suffix so the rectangle comparison is about
+ * geometry, not about the id scheme.
+ */
+function legacyBoundingBoxFieldLayout(footprint: Footprint, insetIn: number, spacingIn: number): FieldFramingLine[] {
+  const corners = footprint.corners.map((c) => c.point);
+  const insetFt = insetIn / 12;
+  const minX = Math.min(...corners.map((p) => p.x)) + insetFt;
+  const maxX = Math.max(...corners.map((p) => p.x)) - insetFt;
+  const minY = Math.min(...corners.map((p) => p.y)) + insetFt;
+  const maxY = Math.max(...corners.map((p) => p.y)) - insetFt;
+  const width = maxX - minX;
+  const depth = maxY - minY;
+  const spacingFt = spacingIn / 12;
+  if (width <= 0 || depth <= 0) return [];
+  const lines: FieldFramingLine[] = [];
+  if (width >= depth) {
+    const segments = Math.max(1, Math.ceil(width / spacingFt));
+    const step = width / segments;
+    for (let i = 0; i <= segments; i++) {
+      const x = minX + i * step;
+      lines.push({ id: `field-${i}-0`, x1: x, y1: minY, x2: x, y2: maxY });
+    }
+  } else {
+    const segments = Math.max(1, Math.ceil(depth / spacingFt));
+    const step = depth / segments;
+    for (let i = 0; i <= segments; i++) {
+      const y = minY + i * step;
+      lines.push({ id: `field-${i}-0`, x1: minX, y1: y, x2: maxX, y2: y });
+    }
+  }
+  return lines;
+}
+
+/**
+ * Real-geometry check, the same shape as `segmentSamplesOutside` above and for
+ * the same reason: ask the FOOTPRINT POLYGON ITSELF whether each sampled point
+ * along an emitted span is inside it. Deliberately NOT a re-read of the inset
+ * the layout was built from — a span running through a notch carries exactly
+ * the same inset as a correct one, and only its position gives it away. (The
+ * floor-membrane band bug survived ~900 tests precisely because the test
+ * asserted the field the builder had just written.)
+ *
+ * Unlike the ring version, span ENDPOINTS are sampled too: every point of the
+ * inward-offset polygon is `insetFt` clear of the exterior, so a correct
+ * span's ends are STRICTLY inside the footprint, never on its boundary.
+ */
+function fieldSamplesOutside(fp: Footprint, lines: FieldFramingLine[]): string[] {
+  const polygon = polygonOf(fp);
+  const outside: string[] = [];
+  for (const line of lines) {
+    for (let t = 0; t <= 1.0001; t += 0.05) {
+      const p = { x: line.x1 + (line.x2 - line.x1) * t, y: line.y1 + (line.y2 - line.y1) * t };
+      if (!isPointInPolygon(p, polygon)) {
+        outside.push(`${line.id}@t=${t.toFixed(2)}`);
+        break;
+      }
+    }
+  }
+  return outside;
+}
+
+const totalFieldLengthFt = (lines: FieldFramingLine[]) => lines.reduce((sum, l) => sum + Math.hypot(l.x2 - l.x1, l.y2 - l.y1), 0);
+
+/** A 30x20 rectangle with a 14ft-tall notch cut 10ft into the LEFT wall — the
+ * one shape in this file where a single field line genuinely comes back as two
+ * disjoint spans. The field lines run vertically (width >= depth), so only a
+ * notch entering from a wall PARALLEL to them can cut one in half; a notch off
+ * the top or bottom wall just shortens lines from one end. */
+function sideNotchFootprint() {
+  const rect = buildRectangleFootprint(30, 20);
+  return insertBumpOut(rect, "DA", 6, 14, -10, allPrimary(rect));
+}
+
+/** A 30x20 rectangle with a 15ft x 8ft notch out of the bottom-right — Tommy's
+ * "floor framing on bump outs" case in its simplest form. */
+function lShapeFootprint() {
+  const rect = buildRectangleFootprint(30, 20);
+  return insertBumpOut(rect, "CD", 15, 30, -8, allPrimary(rect));
+}
+
+/** Two notches off the top wall. */
+function uShapeFootprint() {
+  const rect = buildRectangleFootprint(30, 20);
+  const first = insertBumpOut(rect, "AB", 4, 10, -8, allPrimary(rect));
+  const topRight = first.footprint.walls.find((w) => {
+    const s = first.footprint.corners.find((c) => c.id === w.startCorner)!.point;
+    const e = first.footprint.corners.find((c) => c.id === w.endCorner)!.point;
+    return s.y === 0 && e.y === 0 && e.x - s.x > 12;
+  })!;
+  return insertBumpOut(first.footprint, topRight.id, 4, 12, -8, first.primaryCornerIds);
+}
+
+/** A TRUE outward addition (positive depth) — behaves differently from a
+ * notch: it grows the bounding box rather than hollowing it, so the old code
+ * ran lines across ground the building doesn't cover on either side of the
+ * bump. */
+function outwardBumpFootprint() {
+  const rect = buildRectangleFootprint(30, 20);
+  return insertBumpOut(rect, "AB", 5, 15, 6, allPrimary(rect));
+}
+
+const FIELD_INSET_IN = 15.5; // the 15.5in default panel thickness; see baleFoundationRingPlan
+const FIELD_SPACING_IN = 16;
+
+describe("computeInsetFootprintPolygon", () => {
+  it("is the rectangle's own inset box, corner for corner", () => {
+    const fp = buildRectangleFootprint(30, 20);
+    const poly = computeInsetFootprintPolygon(fp, 6); // 0.5ft
+    const xs = poly.map((p) => p.x);
+    const ys = poly.map((p) => p.y);
+    expect(poly).toHaveLength(4);
+    expect(Math.min(...xs)).toBeCloseTo(0.5, 9);
+    expect(Math.max(...xs)).toBeCloseTo(29.5, 9);
+    expect(Math.min(...ys)).toBeCloseTo(0.5, 9);
+    expect(Math.max(...ys)).toBeCloseTo(19.5, 9);
+  });
+
+  it("keeps every vertex strictly inside the footprint, on notched and mitered shapes alike", () => {
+    const shapes = [
+      buildRectangleFootprint(30, 20),
+      buildOctagonFootprint(30, 20),
+      lShapeFootprint().footprint,
+      uShapeFootprint().footprint,
+      sideNotchFootprint().footprint,
+      outwardBumpFootprint().footprint,
+    ];
+    for (const fp of shapes) {
+      for (const insetIn of [RING_INSET_IN, 12.5, FIELD_INSET_IN]) {
+        const poly = computeInsetFootprintPolygon(fp, insetIn);
+        expect(poly.length).toBe(fp.walls.length);
+        for (const vertex of poly) expect(isPointInPolygon(vertex, polygonOf(fp))).toBe(true);
+      }
+    }
+  });
+});
+
+describe("computeFieldFramingLayout follows the polygon, not the bounding box", () => {
+  it("is an exact no-op on a rectangle", () => {
+    for (const fp of [buildRectangleFootprint(30, 20), buildRectangleFootprint(20, 30), buildRectangleFootprint(48, 24)]) {
+      for (const spacingIn of [16, 24]) {
+        for (const insetIn of [14, FIELD_INSET_IN, 15.75]) {
+          expect(computeFieldFramingLayout(fp, insetIn, spacingIn)).toEqual(legacyBoundingBoxFieldLayout(fp, insetIn, spacingIn));
+        }
+      }
+    }
+  });
+
+  it("keeps every span inside the footprint on every shape the app can draw", () => {
+    const shapes: [string, Footprint][] = [
+      ["rectangle", buildRectangleFootprint(30, 20)],
+      ["tall rectangle", buildRectangleFootprint(20, 30)],
+      ["octagon", buildOctagonFootprint(30, 20)],
+      ["octagon square", buildOctagonFootprint(30, 30)],
+      ["L (notch)", lShapeFootprint().footprint],
+      ["U (two notches)", uShapeFootprint().footprint],
+      ["side notch", sideNotchFootprint().footprint],
+      ["outward bump-out", outwardBumpFootprint().footprint],
+    ];
+    for (const [name, fp] of shapes) {
+      for (const spacingIn of [16, 24]) {
+        const lines = computeFieldFramingLayout(fp, FIELD_INSET_IN, spacingIn);
+        expect(lines.length, name).toBeGreaterThan(0);
+        expect(fieldSamplesOutside(fp, lines), `${name} @ ${spacingIn}in`).toEqual([]);
+      }
+    }
+  });
+
+  it("documents the bug being fixed: the bounding-box layout ran spans through open air", () => {
+    // Every notched shape had spans outside the building; the outward
+    // bump-out did too, on the ground either side of the bump; and so did the
+    // OCTAGON, whose mitered corners the bounding box overhangs — that one is
+    // not a bump-out at all, and nobody had reported it.
+    const broken = [
+      lShapeFootprint().footprint,
+      uShapeFootprint().footprint,
+      sideNotchFootprint().footprint,
+      outwardBumpFootprint().footprint,
+      buildOctagonFootprint(30, 20),
+    ];
+    for (const fp of broken) {
+      expect(fieldSamplesOutside(fp, legacyBoundingBoxFieldLayout(fp, FIELD_INSET_IN, FIELD_SPACING_IN)).length).toBeGreaterThan(0);
+    }
+    // The rectangle is the one shape a bounding box describes exactly, which
+    // is why this shipped and stayed invisible.
+    const rect = buildRectangleFootprint(30, 20);
+    expect(fieldSamplesOutside(rect, legacyBoundingBoxFieldLayout(rect, FIELD_INSET_IN, FIELD_SPACING_IN))).toEqual([]);
+  });
+
+  it("cuts a single line into several separately-identified spans across a side notch", () => {
+    const { footprint } = sideNotchFootprint();
+    const lines = computeFieldFramingLayout(footprint, FIELD_INSET_IN, FIELD_SPACING_IN);
+    const spansPerLine = new Map<string, number>();
+    for (const line of lines) {
+      const index = line.id.slice(0, line.id.lastIndexOf("-"));
+      spansPerLine.set(index, (spansPerLine.get(index) ?? 0) + 1);
+    }
+    expect([...spansPerLine.values()].filter((n) => n > 1).length).toBeGreaterThan(0);
+    // The notch runs y 6..14, so a split line's two spans stop 15.5in short of it.
+    const split = lines.filter((l) => l.id.startsWith("field-0-"));
+    expect(split).toHaveLength(2);
+    expect(split[0]!.y2).toBeCloseTo(6 - FIELD_INSET_IN / 12, 9);
+    expect(split[1]!.y1).toBeCloseTo(14 + FIELD_INSET_IN / 12, 9);
+  });
+
+  it("gives every span a unique id — these are React keys AND OBJ group labels", () => {
+    // A collision here doesn't throw. It silently merges two framing stacks
+    // into one exported group and corrupts React reconciliation.
+    const shapes = [
+      buildRectangleFootprint(30, 20),
+      buildOctagonFootprint(30, 20),
+      lShapeFootprint().footprint,
+      uShapeFootprint().footprint,
+      sideNotchFootprint().footprint,
+      outwardBumpFootprint().footprint,
+    ];
+    for (const fp of shapes) {
+      for (const spacingIn of [16, 24]) {
+        const ids = computeFieldFramingLayout(fp, FIELD_INSET_IN, spacingIn).map((l) => l.id);
+        expect(new Set(ids).size).toBe(ids.length);
+      }
+    }
+  });
+
+  it("never emits a zero-length span, including where a notch lands exactly on a line position", () => {
+    // 30ft wide, inset 15.5in -> 27.417ft of field at 16in bays -> 21 bays of
+    // 1.3056ft. Sweep a notch edge across a whole bay so it lands exactly on a
+    // line position, and either side of it.
+    const rect = buildRectangleFootprint(30, 20);
+    const step = (30 - (2 * FIELD_INSET_IN) / 12) / 21;
+    for (let k = 0; k <= 8; k++) {
+      const notchStartFt = FIELD_INSET_IN / 12 + 5 * step + (k * step) / 8;
+      const { footprint } = insertBumpOut(rect, "CD", 30 - (notchStartFt + 8), 30 - notchStartFt, -8, allPrimary(rect));
+      const lines = computeFieldFramingLayout(footprint, FIELD_INSET_IN, FIELD_SPACING_IN);
+      for (const line of lines) expect(Math.hypot(line.x2 - line.x1, line.y2 - line.y1)).toBeGreaterThan(0);
+      expect(fieldSamplesOutside(footprint, lines)).toEqual([]);
+      expect(new Set(lines.map((l) => l.id)).size).toBe(lines.length);
+    }
+  });
+
+  it("drops field lumber on a notched footprint and holds it exactly on a rectangle", () => {
+    const rect = buildRectangleFootprint(30, 20);
+    expect(totalFieldLengthFt(computeFieldFramingLayout(rect, FIELD_INSET_IN, FIELD_SPACING_IN))).toBe(
+      totalFieldLengthFt(legacyBoundingBoxFieldLayout(rect, FIELD_INSET_IN, FIELD_SPACING_IN)),
+    );
+    const notched = [
+      lShapeFootprint().footprint,
+      uShapeFootprint().footprint,
+      sideNotchFootprint().footprint,
+      outwardBumpFootprint().footprint,
+      buildOctagonFootprint(30, 20),
+    ];
+    for (const fp of notched) {
+      const after = totalFieldLengthFt(computeFieldFramingLayout(fp, FIELD_INSET_IN, FIELD_SPACING_IN));
+      const before = totalFieldLengthFt(legacyBoundingBoxFieldLayout(fp, FIELD_INSET_IN, FIELD_SPACING_IN));
+      expect(after).toBeLessThan(before);
+    }
+  });
+});
+
+describe("regression: a self-intersecting inset polygon must not frame through open air", () => {
+  // computeInsetFootprintPolygon's miter offset self-intersects once a feature
+  // is narrower than 2 x insetIn (2.58ft at the 15.5in default) — BELOW
+  // insertBumpOut's own 2ft MARGIN_FT, so the UI can reach it. An inverted
+  // loop can read as inside by ray parity, which put a full-height stack
+  // straight through a 1ft notch: the exact defect stage 3 removes. Guarded by
+  // re-clipping every span against the real footprint.
+  const FIELD_INSET_IN = 15.5;
+  const SPACING_IN = 16;
+
+  function thinNotchFootprint(): Footprint {
+    const rect = buildRectangleFootprint(30, 20);
+    const once = insertBumpOut(rect, "AB", 3, 13, -8, allPrimary(rect)).footprint;
+    // The remainder wall left by that notch is ~3ft; notching it 1..3 is
+    // snap-reachable and leaves a feature far narrower than the inset.
+    const shortWall = once.walls.reduce((a, b) => (a.lengthFt <= b.lengthFt ? a : b));
+    return insertBumpOut(once, shortWall.id, 1, 3, -6, allPrimary(once)).footprint;
+  }
+
+  it("emits no field span outside the footprint on a sub-inset notch", () => {
+    const fp = thinNotchFootprint();
+    const polygon = fp.corners.map((c) => c.point);
+    const lines = computeFieldFramingLayout(fp, FIELD_INSET_IN, SPACING_IN);
+    for (const line of lines) {
+      for (const t of [0.05, 0.25, 0.5, 0.75, 0.95]) {
+        const p = { x: line.x1 + (line.x2 - line.x1) * t, y: line.y1 + (line.y2 - line.y1) * t };
+        expect(isPointInPolygon(p, polygon)).toBe(true);
+      }
+    }
+  });
+
+  it("still frames the sane part of that footprint rather than bailing out", () => {
+    expect(computeFieldFramingLayout(thinNotchFootprint(), FIELD_INSET_IN, SPACING_IN).length).toBeGreaterThan(0);
   });
 });

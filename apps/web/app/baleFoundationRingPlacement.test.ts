@@ -16,6 +16,7 @@ import {
   baleFoundationRingPlan,
   buildBuildingObj,
   buildDoubledStackPair,
+  buildFramingStackMembers,
   looseDensePackThicknessOptionsIn,
   type WorldPlacedPanel,
 } from "@building-integrity/panel-catalog";
@@ -301,5 +302,62 @@ describe("bale foundation ring placement (world space)", () => {
       // wall thickness plus a panel WIDTH.
       expect(plan.fieldInsetIn).toBeLessThan(thicknessIn + 1);
     }
+  });
+});
+
+/**
+ * Field framing as Building3DView's `baleFoundationRenderData` emits it into
+ * the OBJ export — the group label is `balefoundation_field-<line.id>` and the
+ * member-id prefix is `field_<line.id>`, so `FieldFramingLine.id` is the ONLY
+ * thing keeping two separate stacks apart in the exported file.
+ */
+function fieldPanels(fp: Footprint, thicknessIn: number): WorldPlacedPanel[] {
+  const plan = baleFoundationRingPlan(thicknessIn);
+  return computeFieldFramingLayout(fp, plan.fieldInsetIn, BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN).map((line) => ({
+    label: `balefoundation_field-${line.id}`,
+    worldXIn: line.x1 * IN_PER_FT,
+    worldZIn: line.y1 * IN_PER_FT,
+    worldYIn: -20,
+    rotationRad: Math.atan2(line.y2 - line.y1, line.x2 - line.x1),
+    members: buildFramingStackMembers(
+      `field_${line.id}`,
+      Math.hypot(line.x2 - line.x1, line.y2 - line.y1) * IN_PER_FT,
+      BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
+      BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
+      BALE_FOUNDATION_GAP_DEFAULT_IN,
+    ),
+  }));
+}
+
+describe("bale foundation field framing reaches the export as separate stacks", () => {
+  // A notch cut into the LEFT wall, i.e. perpendicular to the vertical field
+  // lines — the shape where one line genuinely becomes two disjoint spans, and
+  // therefore the only one that can expose an id collision.
+  const sideNotch = insertBumpOut(buildRectangleFootprint(30, 20), "DA", 6, 14, -10, allPrimary(buildRectangleFootprint(30, 20)));
+
+  it("writes one OBJ group per member, with no two stacks silently merged", () => {
+    // The failure mode this exists for does NOT throw: duplicate ids make
+    // buildBuildingObj write two stacks under one `g` name, which reads as a
+    // valid file and quietly loses lumber. Counting `g` lines against distinct
+    // `g` names is what catches it.
+    for (const thicknessIn of THICKNESS_OPTIONS_IN) {
+      const panels = fieldPanels(sideNotch.footprint, thicknessIn);
+      expect(panels.length).toBeGreaterThan(0);
+      const groupLines = buildBuildingObj(panels, "test")
+        .split("\n")
+        .filter((l) => l.startsWith("g "));
+      expect(groupLines.length).toBeGreaterThan(0);
+      expect(new Set(groupLines).size).toBe(groupLines.length);
+      // ...and the panel labels themselves, which are also React keys in the
+      // 3D group list and in FloorCanvas.
+      expect(new Set(panels.map((p) => p.label)).size).toBe(panels.length);
+    }
+  });
+
+  it("puts at least one line's two spans in the export as two separate stacks", () => {
+    const panels = fieldPanels(sideNotch.footprint, 15.5);
+    const splitLabels = panels.map((p) => p.label).filter((label) => label.startsWith("balefoundation_field-field-0-"));
+    expect(splitLabels).toHaveLength(2);
+    expect(new Set(splitLabels).size).toBe(2);
   });
 });

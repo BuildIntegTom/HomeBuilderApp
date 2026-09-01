@@ -18,6 +18,7 @@ export * from "./pierGrid";
 export * from "./floorPanelGrid";
 export * from "./joistLayout";
 export * from "./pointInPolygon";
+export * from "./clipSegmentToPolygon";
 export * from "./wallCompassDirection";
 export * from "./gableTiledRow";
 export * from "./roofBearingSegments";

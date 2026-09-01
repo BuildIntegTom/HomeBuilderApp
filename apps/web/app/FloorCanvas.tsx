@@ -27,7 +27,12 @@ export interface FloorCanvasProps {
    * themselves from computeInsetPerimeterRing/computeFieldFramingLayout in
    * packages/geometry/src/perimeterRing.ts. Ring B is null on a collapsed
    * plan (a wall too thin to hold two rings). Undefined/null throughout
-   * when the project isn't using the Bale Foundation floor system. */
+   * when the project isn't using the Bale Foundation floor system.
+   *
+   * A field "line" is one SPAN, not one bay: on a notched footprint a bay
+   * can be cut into several disjoint spans, each its own entry with its own
+   * `field-<line>-<span>` id. That id is the React key below, so the span
+   * index in it is load-bearing, not decoration. */
   baleFoundationRingA?: PerimeterRingSegment[] | null;
   baleFoundationRingB?: PerimeterRingSegment[] | null;
   baleFoundationRingAInner?: PerimeterRingSegment[] | null;

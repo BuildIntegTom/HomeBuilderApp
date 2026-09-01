@@ -1,3 +1,4 @@
+import { clipSegmentToPolygon } from "./clipSegmentToPolygon";
 import { cornerTurnAngleRad, isConvexCorner, isRightAngleCorner } from "./cornerAngle";
 import type { Footprint, Point } from "./types";
 
@@ -140,7 +141,103 @@ export function computeInsetPerimeterRing(footprint: Footprint, insetIn: number,
   });
 }
 
+/** Walls in ring order, following endCorner -> startCorner, starting from
+ * `walls[0]`. Returns null if the chain doesn't close over every wall
+ * exactly once — `footprint.walls` array order is NOT guaranteed to be ring
+ * order, and every consumer that needs a polygon needs the ring order. */
+function orderedWallCycle(footprint: Footprint): string[] | null {
+  if (footprint.walls.length < 3) return null;
+  const byStart = new Map(footprint.walls.map((w) => [w.startCorner, w]));
+  const first = footprint.walls[0]!;
+  const order: string[] = [first.id];
+  const seen = new Set<string>([first.id]);
+  let current = first;
+  for (let i = 1; i < footprint.walls.length; i++) {
+    const next = byStart.get(current.endCorner);
+    if (!next || seen.has(next.id)) return null;
+    order.push(next.id);
+    seen.add(next.id);
+    current = next;
+  }
+  return byStart.get(current.endCorner)?.id === first.id ? order : null;
+}
+
+/**
+ * The footprint offset inward by `insetIn` as a CLOSED POLYGON, mitered at
+ * every corner — the region a member has to stay inside to be `insetIn` clear
+ * of every exterior wall.
+ *
+ * Built ENTIRELY out of `computeInsetPerimeterRing`'s own output rather than
+ * a second offsetter: each ring segment already lies on its wall's
+ * inward-offset line (that function owns the winding-based inward direction
+ * and its whole argument), so the offset polygon's vertices are just the
+ * intersections of consecutive segments' infinite lines. That intersection is
+ * also what turns the ring's per-wall approximations into an exact polygon:
+ * at a convex corner the two segments merely overlap and at a reflex one they
+ * are extended by a fixed amount, but both of those move where a segment
+ * STOPS along its line, never the line itself.
+ *
+ * `primaryCornerIds` is passed as empty for the same reason — it only picks
+ * WHICH of two walls absorbs a reflex corner's extension, which is a
+ * stopping-point decision.
+ *
+ * Returns [] if the walls don't form a single closed cycle. LIMITATION, and
+ * it is REACHABLE — do not repeat the earlier claim that it isn't: a miter
+ * offset self-intersects once a feature is narrower than 2 x insetIn, which
+ * at the 15.5in default is 2.58ft, BELOW `insertBumpOut`'s own MARGIN_FT of
+ * 2ft. Its degenerate-span fallback (`a = max(1, mid-1)`, `b = min(L-1,
+ * mid+1)`) produces sub-2ft features on any wall under 4ft, and
+ * `snapSpanPointFt` snaps a short wall to {0, 2, L-2, L}, landing on them.
+ * Worked repro: rect 30x20, insertBumpOut("AB", 3, 13, -8), then bump the
+ * resulting 3ft wall at 1..3 by -6 — the offset polygon gets a vertex at
+ * x = -0.29, outside the building. Outward thin arms fail SAFE (the reversed
+ * loop reads as outside, so the arm merely gets no framing); inward thin
+ * features fail UNSAFE once a leg is under ~one inset. A straight-skeleton
+ * offset is not built here; `computeFieldFramingLayout` instead re-clips
+ * against the real footprint, which kills the whole class for its own use.
+ * Any NEW caller of this function needs that guard too.
+ */
+export function computeInsetFootprintPolygon(footprint: Footprint, insetIn: number): Point[] {
+  const order = orderedWallCycle(footprint);
+  if (!order) return [];
+  const segments = new Map(computeInsetPerimeterRing(footprint, insetIn, new Set<string>()).map((s) => [s.wallId, s]));
+  // Direction taken from the segment's own two endpoints, NOT from
+  // cos/sin(rotationRad): atan2-then-cos of a vertical wall returns 6.1e-17
+  // instead of 0, which would put every derived vertex an ulp off and cost
+  // the exact no-op on an axis-aligned rectangle for nothing.
+  const lines = order.map((wallId) => {
+    const seg = segments.get(wallId)!;
+    const vx = seg.endPoint.x - seg.startPoint.x;
+    const vy = seg.endPoint.y - seg.startPoint.y;
+    const len = Math.hypot(vx, vy) || 1;
+    return { px: seg.centerX, py: seg.centerZ, dx: vx / len, dy: vy / len };
+  });
+
+  const polygon: Point[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const a = lines[i]!;
+    const b = lines[(i + 1) % lines.length]!;
+    // Both directions are unit vectors, so denom is sin(angle between them) —
+    // this is a parallelism tolerance in radians, purely numerical.
+    const denom = a.dx * b.dy - a.dy * b.dx;
+    if (Math.abs(denom) <= 1e-12) {
+      // Consecutive walls parallel (a collinear pair, i.e. a 180deg "corner"):
+      // both offset lines are the same line, so any point on it is the joint.
+      polygon.push({ x: b.px, y: b.py });
+      continue;
+    }
+    const t = ((b.px - a.px) * b.dy - (b.py - a.py) * b.dx) / denom;
+    polygon.push({ x: a.px + a.dx * t, y: a.py + a.dy * t });
+  }
+  return polygon;
+}
+
 export interface FieldFramingLine {
+  /** `field-${lineIndex}-${spanIndex}`. The span index is NOT decoration: one
+   * line can be cut into several disjoint spans by a notch, and this id is
+   * used as a React key in FloorCanvas AND as a member-id / OBJ group-label
+   * prefix in Building3DView — where a collision would not throw, it would
+   * silently merge two separate framing stacks into one exported group. */
   id: string;
   x1: number;
   y1: number;
@@ -150,15 +247,35 @@ export interface FieldFramingLine {
 
 /**
  * Single (non-doubled) framing-stack centerlines filling the interior span
- * beyond a footprint's own bounding box inset by `insetIn` on every side —
- * the bale foundation's field members, inboard of the doubled Ring A/Ring B
- * perimeter that brackets the wall (see baleFoundationRingPlan.ts, which
- * owns the `insetIn` this is called with). Same axis choice and "ceil to
- * whole bays no larger than spacingIn, then evenly redistribute" rule as
- * `computeJoistLayout` (joistLayout.ts) — this is that same function
- * generalized with an inward inset, not a new algorithm; `computeJoistLayout`
- * itself is left untouched (unrelated existing callers depend on its
- * exact no-inset signature).
+ * inboard of `insetIn` — the bale foundation's field members, inboard of the
+ * doubled Ring A/Ring B perimeter that brackets the wall (see
+ * baleFoundationRingPlan.ts, which owns the `insetIn` this is called with).
+ *
+ * Each line is CLIPPED TO THE INWARD-OFFSET FOOTPRINT POLYGON, not run
+ * straight across the footprint's inset bounding box (Tommy, seeing the
+ * bounding-box version live: "i see the floor framing on bump outs has a
+ * similar problem" — the same defect the floor bottom skin had). On an L or a
+ * U the old lines ran through the notch, i.e. through open air outside the
+ * building; now only the parts genuinely inside the building survive, and one
+ * line can come back as SEVERAL disjoint spans, which is why the id carries a
+ * span index.
+ *
+ * WHAT STAYS BOUNDING-BOX DERIVED, deliberately: which axis the lines run
+ * along, and where each line sits along that axis. "Which way is this building
+ * longer" is exactly what a bounding box measures, the bays stay evenly spaced
+ * across the whole building instead of restarting per arm of an L, and it is
+ * what makes this an exact no-op on a rectangle. Same split as
+ * `computeFloorMembraneBandPolygons`, which kept its band axis bounding-box
+ * derived while making the band SHAPES follow the polygon.
+ *
+ * Same axis choice and "ceil to whole bays no larger than spacingIn, then
+ * evenly redistribute" rule as `computeJoistLayout` (joistLayout.ts) — this
+ * is that same function generalized with an inward inset and a polygon clip.
+ * `computeJoistLayout` has the identical bounding-box defect and is
+ * deliberately NOT fixed here: it is a different floor type (suspended
+ * joists), nobody has reported it, and unrelated existing callers depend on
+ * its exact no-inset signature. `clipSegmentToPolygon` would drop straight
+ * into it when someone does want that.
  */
 export function computeFieldFramingLayout(footprint: Footprint, insetIn: number, spacingIn: number): FieldFramingLine[] {
   const corners = footprint.corners.map((c) => c.point);
@@ -172,20 +289,48 @@ export function computeFieldFramingLayout(footprint: Footprint, insetIn: number,
   const spacingFt = spacingIn / 12;
   if (width <= 0 || depth <= 0) return [];
 
+  // The inset polygon is contained in the inset bounding box by construction
+  // (every one of its points is >= insetFt clear of the exterior), so a line
+  // spanning the box edge to edge cannot miss any part of it.
+  const clipPolygon = computeInsetFootprintPolygon(footprint, insetIn);
+
   const lines: FieldFramingLine[] = [];
+  const pushClipped = (index: number, x1: number, y1: number, x2: number, y2: number) => {
+    // No usable polygon (walls that don't form a closed cycle) — fall back to
+    // the unclipped line rather than silently framing nothing.
+    if (clipPolygon.length < 3) {
+      lines.push({ id: `field-${index}-0`, x1, y1, x2, y2 });
+      return;
+    }
+    // Second clip against the REAL footprint, not just the inset polygon.
+    // The miter offset self-intersects once a feature is narrower than
+    // 2 x insetIn, and an inverted loop can read as inside by ray parity —
+    // which puts a full-height stack straight through a narrow notch, the
+    // exact defect this whole stage exists to remove. Reachable from the UI:
+    // insertBumpOut's degenerate-span fallback yields sub-2ft features on any
+    // wall under 4ft, and snapSpanPointFt lands on them. Free on every sane
+    // shape (a span inside a sane inset polygon is inside the footprint by
+    // construction), so it is a guard, not a second algorithm.
+    clipSegmentToPolygon({ x: x1, y: y1 }, { x: x2, y: y2 }, clipPolygon)
+      .flatMap((span) => clipSegmentToPolygon(span.start, span.end, corners))
+      .forEach((span, spanIndex) => {
+        lines.push({ id: `field-${index}-${spanIndex}`, x1: span.start.x, y1: span.start.y, x2: span.end.x, y2: span.end.y });
+      });
+  };
+
   if (width >= depth) {
     const segments = Math.max(1, Math.ceil(width / spacingFt));
     const step = width / segments;
     for (let i = 0; i <= segments; i++) {
       const x = minX + i * step;
-      lines.push({ id: `field-${i}`, x1: x, y1: minY, x2: x, y2: maxY });
+      pushClipped(i, x, minY, x, maxY);
     }
   } else {
     const segments = Math.max(1, Math.ceil(depth / spacingFt));
     const step = depth / segments;
     for (let i = 0; i <= segments; i++) {
       const y = minY + i * step;
-      lines.push({ id: `field-${i}`, x1: minX, y1: y, x2: maxX, y2: y });
+      pushClipped(i, minX, y, maxX, y);
     }
   }
   return lines;

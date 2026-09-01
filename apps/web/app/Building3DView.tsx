@@ -1271,6 +1271,11 @@ export default function Building3DView({
         });
       }
     }
+    // One entry per SPAN, not per bay — computeFieldFramingLayout clips each
+    // bay to the footprint polygon, so a notch can cut one bay into several
+    // disjoint stacks. `line.id` already carries the span index, which is what
+    // keeps this group id (and the OBJ `g` label built from it below) unique;
+    // without it two stacks would silently export as one group.
     for (const line of computeFieldFramingLayout(footprint, ringPlan.fieldInsetIn, baleFoundationFieldSpacingIn)) {
       const lengthFt = Math.hypot(line.x2 - line.x1, line.y2 - line.y1);
       result.push({
