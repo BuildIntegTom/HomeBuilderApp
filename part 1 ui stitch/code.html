@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Building Integrity - Shop Drawings</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        @font-face {
+            font-family: 'Geist';
+            src: url('https://cdn.jsdelivr.net/fontsource/fonts/geist-sans@latest/latin-400-normal.woff2') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Geist';
+            src: url('https://cdn.jsdelivr.net/fontsource/fonts/geist-sans@latest/latin-600-normal.woff2') format('woff2');
+            font-weight: 600;
+            font-style: normal;
+        }
+        @font-face {
+            font-family: 'Geist';
+            src: url('https://cdn.jsdelivr.net/fontsource/fonts/geist-sans@latest/latin-700-normal.woff2') format('woff2');
+            font-weight: 700;
+            font-style: normal;
+        }
+        
+        .material-symbols-outlined {
+            font-family: 'Material Symbols Outlined';
+            font-weight: normal;
+            font-style: normal;
+            font-size: 24px;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            -webkit-font-feature-settings: 'liga';
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .fill-1 {
+            font-variation-settings: 'FILL' 1;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface": "#f9f9f9",
+                      "on-tertiary": "#ffffff",
+                      "surface-container-highest": "#e2e2e2",
+                      "standard-panel": "#d9c9a3",
+                      "warning-red": "#c0392b",
+                      "on-background": "#1a1c1c",
+                      "on-surface-variant": "#43474d",
+                      "tertiary": "#312300",
+                      "braced-panel": "#b06fc9",
+                      "window-panel": "#8fc7e8",
+                      "tertiary-fixed": "#ffdf97",
+                      "on-primary-container": "#89a8ca",
+                      "background": "#f9f9f9",
+                      "door-panel": "#7a4a2b",
+                      "header-gold": "#c9a63f",
+                      "sill-green": "#6fa87a",
+                      "surface-container-high": "#e8e8e8",
+                      "inverse-primary": "#aacaed",
+                      "outline-variant": "#c3c7ce",
+                      "error-container": "#ffdad6",
+                      "inverse-surface": "#2f3131",
+                      "on-secondary-container": "#004375",
+                      "on-error-container": "#93000a",
+                      "corner-panel": "#8a8a8a",
+                      "primary": "#002743",
+                      "surface-variant": "#e2e2e2",
+                      "gable-blue": "#9fb8e0",
+                      "outline": "#73777e",
+                      "on-tertiary-container": "#c99f2f",
+                      "on-secondary-fixed-variant": "#00497e",
+                      "surface-container-low": "#f3f3f3",
+                      "surface-dim": "#dadada",
+                      "instrument-bg": "#eef2f6",
+                      "pending-amber": "#a67c00",
+                      "border": "#cccccc",
+                      "secondary-fixed": "#d2e4ff",
+                      "secondary-container": "#6fb2fd",
+                      "on-tertiary-fixed": "#251a00",
+                      "error": "#ba1a1a",
+                      "column-panel": "#4a90a4",
+                      "inverse-on-surface": "#f0f1f1",
+                      "tertiary-fixed-dim": "#eec14e",
+                      "secondary": "#0061a5",
+                      "on-secondary": "#ffffff",
+                      "primary-fixed": "#cfe5ff",
+                      "surface-bright": "#f9f9f9",
+                      "header-pink": "#e85d9c",
+                      "surface-tint": "#426180",
+                      "surface-container": "#eeeeee",
+                      "instrument-border": "#ccd6e0",
+                      "on-surface": "#1a1c1c",
+                      "safety-gap": "#e08a3c",
+                      "primary-fixed-dim": "#aacaed",
+                      "sticky-note-fill": "#f2e8c9",
+                      "on-primary": "#ffffff",
+                      "primary-container": "#1c3d5a",
+                      "ink": "#333333",
+                      "on-primary-fixed": "#001d34",
+                      "on-tertiary-fixed-variant": "#5a4300",
+                      "muted": "#777777",
+                      "on-error": "#ffffff",
+                      "on-secondary-fixed": "#001c37",
+                      "surface-container-lowest": "#ffffff",
+                      "tertiary-container": "#4b3800",
+                      "on-primary-fixed-variant": "#294967",
+                      "secondary-fixed-dim": "#a0caff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "topbar-height": "56px",
+                      "stack-sm": "8px",
+                      "stack-md": "12px",
+                      "sidebar-width": "240px",
+                      "stack-lg": "16px",
+                      "canvas-padding": "24px",
+                      "tray-width": "170px",
+                      "stack-xs": "4px"
+              },
+              "fontFamily": {
+                      "caption-tiny": [
+                              "Geist"
+                      ],
+                      "body-lg": [
+                              "Geist"
+                      ],
+                      "label-sm": [
+                              "Geist"
+                      ],
+                      "headline-md": [
+                              "Geist"
+                      ],
+                      "body-md": [
+                              "Geist"
+                      ],
+                      "label-xs": [
+                              "Geist"
+                      ],
+                      "display-h1": [
+                              "Geist"
+                      ]
+              },
+              "fontSize": {
+                      "caption-tiny": [
+                              "9px",
+                              {
+                                      "lineHeight": "12px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-lg": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-md": [
+                              "13px",
+                              {
+                                      "lineHeight": "18px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-xs": [
+                              "11px",
+                              {
+                                      "lineHeight": "14px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display-h1": [
+                              "28px",
+                              {
+                                      "lineHeight": "36px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+</head>
+<body class="bg-surface text-on-surface h-full font-body-md overflow-hidden">
+<!-- TopNavBar -->
+<header class="bg-surface dark:bg-surface-container-high text-primary dark:text-primary-fixed border-b border-instrument-border fixed top-0 w-full z-50 h-topbar-height flex items-center px-canvas-padding justify-between">
+<div class="flex items-center gap-stack-lg">
+<h1 class="font-display-h1 text-display-h1 text-header-gold dark:text-tertiary-fixed-dim">Building Integrity</h1>
+<nav class="hidden md:flex items-center h-full ml-stack-lg">
+<a class="h-full flex items-center px-stack-md text-primary dark:text-primary-fixed border-b-2 border-primary font-headline-md text-headline-md hover:bg-surface-variant dark:hover:bg-surface-container-highest transition-colors opacity-80 scale-95" href="#">Wall</a>
+<a class="h-full flex items-center px-stack-md text-on-surface-variant dark:text-outline font-headline-md text-headline-md hover:bg-surface-variant dark:hover:bg-surface-container-highest transition-colors" href="#">Foundation</a>
+<a class="h-full flex items-center px-stack-md text-on-surface-variant dark:text-outline font-headline-md text-headline-md hover:bg-surface-variant dark:hover:bg-surface-container-highest transition-colors" href="#">Floor</a>
+<a class="h-full flex items-center px-stack-md text-on-surface-variant dark:text-outline font-headline-md text-headline-md hover:bg-surface-variant dark:hover:bg-surface-container-highest transition-colors" href="#">Roof</a>
+</nav>
+</div>
+<div class="flex items-center gap-stack-md">
+<button class="bg-instrument-bg border border-instrument-border text-on-surface px-stack-md py-stack-xs rounded font-label-sm text-label-sm hover:bg-surface-variant transition-colors">Role Switcher</button>
+<div class="flex items-center gap-stack-xs">
+<button class="p-stack-xs rounded hover:bg-surface-variant transition-colors text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<button class="p-stack-xs rounded hover:bg-surface-variant transition-colors text-on-surface-variant">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+</div>
+</div>
+</header>
+<!-- SideNavBar -->
+<aside class="bg-instrument-bg dark:bg-surface-container-low text-secondary dark:text-secondary-fixed border-r border-instrument-border fixed left-0 top-topbar-height h-[calc(100vh-56px)] w-sidebar-width flex flex-col z-40 py-stack-lg hidden md:flex">
+<div class="px-stack-md mb-stack-lg flex items-center gap-stack-md">
+<div class="w-10 h-10 rounded bg-surface-variant flex items-center justify-center border border-instrument-border overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A small, stylized avatar image of a project lead construction worker wearing a yellow hardhat and safety vest, set against a neutral gray background in a flat, modern vector illustration style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHte5SEyZ9Fm1izzwg1Lucv_6_jhDMgHynH36W7gSnzRae_iEy9kwnTlxb5mD55Vyu7t17I5CUmYZn2pGK_T2ydx_Fc8ORLGK-TsxXFmrfxxlPTVM3ZYb_z_2xP_GIpsPD56MrmEKPr2mI2qp4tAt7eWuVXpvWLBJCb6UdVhVz33fasyf3uohYckbpB_AhrdZ31KLh9w9kQiIwvuZtAqtP98bJKuILJWSveus_-ZjrBxcmjv79xT4eGQ"/>
+</div>
+<div>
+<h2 class="font-headline-md text-headline-md text-primary truncate">Project Alpha</h2>
+<p class="font-label-xs text-label-xs text-on-surface-variant truncate">V1.0.4-Stable</p>
+</div>
+</div>
+<div class="px-stack-md mb-stack-lg">
+<button class="w-full bg-primary text-on-primary font-label-sm text-label-sm py-stack-sm rounded hover:bg-primary-container hover:text-on-primary-container transition-colors border border-primary flex items-center justify-center gap-stack-xs">
+<span class="material-symbols-outlined text-[16px]">add</span> New Panel
+            </button>
+</div>
+<nav class="flex-1 flex flex-col gap-stack-xs font-label-sm text-label-sm">
+<a class="text-on-surface-variant dark:text-outline-variant mx-2 px-stack-md py-stack-sm flex items-center gap-stack-sm hover:bg-surface-container-high dark:hover:bg-surface-container-highest rounded" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="grid_on">grid_on</span> 2D View
+            </a>
+<a class="bg-primary-container text-on-primary-container rounded-lg mx-2 px-stack-md py-stack-sm flex items-center gap-stack-sm hover:bg-surface-container-high dark:hover:bg-surface-container-highest translate-x-1 transition-transform" href="#">
+<span class="material-symbols-outlined text-[20px] fill-1" data-icon="vertical_align_center">vertical_align_center</span> Elevation
+            </a>
+<a class="text-on-surface-variant dark:text-outline-variant mx-2 px-stack-md py-stack-sm flex items-center gap-stack-sm hover:bg-surface-container-high dark:hover:bg-surface-container-highest rounded" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="view_in_ar">view_in_ar</span> 3D View
+            </a>
+<a class="text-on-surface-variant dark:text-outline-variant mx-2 px-stack-md py-stack-sm flex items-center gap-stack-sm hover:bg-surface-container-high dark:hover:bg-surface-container-highest rounded" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="construction">construction</span> Tools
+            </a>
+<a class="text-on-surface-variant dark:text-outline-variant mx-2 px-stack-md py-stack-sm flex items-center gap-stack-sm hover:bg-surface-container-high dark:hover:bg-surface-container-highest rounded" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="list_alt">list_alt</span> Legends
+            </a>
+</nav>
+<div class="mt-auto flex flex-col gap-stack-xs font-label-sm text-label-sm pt-stack-md border-t border-instrument-border mx-stack-md">
+<a class="text-on-surface-variant dark:text-outline-variant px-stack-md py-stack-sm flex items-center gap-stack-sm hover:bg-surface-container-high dark:hover:bg-surface-container-highest rounded" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="settings">settings</span> Settings
+            </a>
+<a class="text-on-surface-variant dark:text-outline-variant px-stack-md py-stack-sm flex items-center gap-stack-sm hover:bg-surface-container-high dark:hover:bg-surface-container-highest rounded" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="contact_support">contact_support</span> Support
+            </a>
+</div>
+</aside>
+<!-- Main Canvas Area -->
+<main class="ml-0 md:ml-sidebar-width mt-topbar-height h-[calc(100vh-56px)] bg-surface relative flex justify-center items-center overflow-auto p-canvas-padding pb-[40px]">
+<!-- Technical 2D Canvas (Wall Elevation A) -->
+<div class="relative w-full max-w-5xl aspect-[2/1] border border-instrument-border bg-white flex flex-col justify-end p-stack-lg shadow-sm">
+<!-- Wall Assembly -->
+<div class="w-full h-3/4 flex gap-1 items-end relative">
+<!-- Dimensions overlay -->
+<div class="absolute -top-6 left-0 w-full flex justify-between text-muted font-caption-tiny text-caption-tiny">
+<span class="border-l border-muted pl-1 h-2"></span>
+<span>Overall Width: 24'-0"</span>
+<span class="border-r border-muted pr-1 h-2"></span>
+</div>
+<!-- Panels -->
+<div class="h-full w-1/12 bg-corner-panel border border-ink flex items-center justify-center text-on-surface font-caption-tiny text-caption-tiny relative group cursor-pointer hover:opacity-90">
+<span class="rotate-90">C1</span>
+</div>
+<div class="h-full w-2/12 bg-standard-panel border border-ink flex items-center justify-center text-on-surface font-caption-tiny text-caption-tiny relative group cursor-pointer hover:opacity-90">
+<span class="rotate-90">S1</span>
+</div>
+<div class="h-full w-2/12 bg-standard-panel border border-ink flex items-center justify-center text-on-surface font-caption-tiny text-caption-tiny relative group cursor-pointer hover:opacity-90">
+<span class="rotate-90">S2</span>
+</div>
+<!-- Window section -->
+<div class="h-full w-3/12 flex flex-col justify-end gap-1">
+<div class="h-1/4 w-full bg-header-pink border border-ink flex items-center justify-center text-on-surface font-caption-tiny text-caption-tiny">H1</div>
+<div class="h-2/4 w-full bg-window-panel border border-ink flex items-center justify-center text-on-surface font-caption-tiny text-caption-tiny opacity-70">W1</div>
+<div class="h-1/4 w-full bg-standard-panel border border-ink flex items-center justify-center text-on-surface font-caption-tiny text-caption-tiny">S3</div>
+</div>
+<div class="h-full w-2/12 bg-standard-panel border border-ink flex items-center justify-center text-on-surface font-caption-tiny text-caption-tiny relative group cursor-pointer hover:opacity-90">
+<span class="rotate-90">S4</span>
+</div>
+<div class="h-full w-1/12 bg-corner-panel border border-ink flex items-center justify-center text-on-surface font-caption-tiny text-caption-tiny relative group cursor-pointer hover:opacity-90">
+<span class="rotate-90">C2</span>
+</div>
+</div>
+<!-- Floor plate indication -->
+<div class="w-full h-4 bg-instrument-border mt-1 relative">
+<div class="absolute -left-6 top-0 h-full flex items-center text-muted font-caption-tiny text-caption-tiny">
+                    F.F.L
+                 </div>
+</div>
+<!-- Legend overlay -->
+<div class="absolute bottom-4 left-4 bg-surface/80 p-stack-sm border border-instrument-border rounded backdrop-blur-sm shadow-sm flex flex-col gap-stack-xs">
+<h4 class="font-label-xs text-label-xs text-primary mb-1">Wall 'A' Elevation</h4>
+<div class="flex items-center gap-stack-xs font-caption-tiny text-caption-tiny"><span class="w-3 h-3 bg-standard-panel border border-ink inline-block"></span> Standard Panel</div>
+<div class="flex items-center gap-stack-xs font-caption-tiny text-caption-tiny"><span class="w-3 h-3 bg-corner-panel border border-ink inline-block"></span> Corner Panel</div>
+<div class="flex items-center gap-stack-xs font-caption-tiny text-caption-tiny"><span class="w-3 h-3 bg-window-panel border border-ink inline-block opacity-70"></span> Window Opening</div>
+<div class="flex items-center gap-stack-xs font-caption-tiny text-caption-tiny"><span class="w-3 h-3 bg-header-pink border border-ink inline-block"></span> Header</div>
+</div>
+</div>
+<!-- Sticky Note: Floating Panel Fabrication Details -->
+<div class="absolute top-8 right-8 w-72 bg-sticky-note-fill border-t-2 border-[#b8901f] shadow-[0_4px_12px_rgba(0,0,0,0.1)] p-stack-md flex flex-col z-20 cursor-move rounded-b" id="fabrication-note">
+<div class="flex justify-between items-start mb-stack-md border-b border-[#d8cdb2] pb-stack-sm">
+<h3 class="font-headline-md text-headline-md text-tertiary">Panel Fabrication Details</h3>
+<span class="material-symbols-outlined text-muted text-[18px] cursor-pointer hover:text-ink">close</span>
+</div>
+<div class="flex flex-col gap-stack-sm">
+<div class="flex justify-between items-center bg-white/50 px-stack-sm py-1 rounded">
+<span class="font-label-sm text-label-sm text-ink">Type</span>
+<span class="font-body-md text-body-md text-ink">Standard Panel (S1)</span>
+</div>
+<div class="flex justify-between items-center bg-white/50 px-stack-sm py-1 rounded">
+<span class="font-label-sm text-label-sm text-ink">Dimensions</span>
+<span class="font-body-md text-body-md text-ink">48" W x 96" H</span>
+</div>
+<div class="flex flex-col bg-white/50 px-stack-sm py-2 rounded gap-1 mt-2">
+<span class="font-label-sm text-label-sm text-ink mb-1">Material Specs</span>
+<div class="flex justify-between items-center">
+<span class="font-body-md text-body-md text-muted">Straw Density</span>
+<div class="flex items-center gap-stack-xs">
+<span class="font-body-md text-body-md text-ink">105kg/m³</span>
+<span class="px-1.5 py-0.5 rounded-full border border-sill-green bg-sill-green/10 text-sill-green font-caption-tiny text-caption-tiny flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px]">check_circle</span> Confirmed
+                            </span>
+</div>
+</div>
+<div class="flex justify-between items-center mt-1">
+<span class="font-body-md text-body-md text-muted">Framing Size</span>
+<div class="flex items-center gap-stack-xs">
+<span class="font-body-md text-body-md text-ink">2x6 Nominal</span>
+<span class="px-1.5 py-0.5 rounded-full bg-pending-amber text-on-tertiary font-caption-tiny text-caption-tiny flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px]">pending</span> Pending BI
+                            </span>
+</div>
+</div>
+</div>
+<div class="mt-stack-md pt-stack-sm border-t border-[#d8cdb2]">
+<p class="font-caption-tiny text-caption-tiny text-muted italic leading-tight">Fabricator proposal — Building Integrity. Not yet engineer-stamped; do not construct from this document alone.</p>
+<div class="mt-stack-sm font-label-xs text-label-xs text-ink flex items-end gap-2">
+                        Prepared by: <span class="border-b border-ink flex-1 inline-block h-4"></span>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="bg-warning-red dark:bg-error-container text-on-tertiary dark:text-on-error-container fixed bottom-0 left-0 w-full z-50 flex justify-center items-center py-1 px-4 shadow-lg">
+<div class="flex items-center justify-between w-full max-w-7xl font-caption-tiny text-caption-tiny">
+<span class="font-label-xs text-label-xs font-bold">Building Integrity © 2024 | Data Provenance: BI Confirmation Required</span>
+<div class="flex gap-stack-md">
+<a class="opacity-90 hover:opacity-100 transition-opacity" href="#">Privacy Policy</a>
+<a class="opacity-90 hover:opacity-100 transition-opacity" href="#">Legal Disclaimer</a>
+<a class="opacity-90 hover:opacity-100 transition-opacity" href="#">Engineering Specs</a>
+</div>
+</div>
+</footer>
+<script>
+        // Simple drag functionality for the sticky note
+        const note = document.getElementById('fabrication-note');
+        let isDragging = false;
+        let currentX;
+        let currentY;
+        let initialX;
+        let initialY;
+        let xOffset = 0;
+        let yOffset = 0;
+
+        note.addEventListener('mousedown', dragStart);
+        document.addEventListener('mouseup', dragEnd);
+        document.addEventListener('mousemove', drag);
+
+        function dragStart(e) {
+            initialX = e.clientX - xOffset;
+            initialY = e.clientY - yOffset;
+
+            if (e.target === note || e.target.parentNode === note || e.target.closest('.border-b')) {
+                isDragging = true;
+            }
+        }
+
+        function dragEnd(e) {
+            initialX = currentX;
+            initialY = currentY;
+            isDragging = false;
+        }
+
+        function drag(e) {
+            if (isDragging) {
+                e.preventDefault();
+                currentX = e.clientX - initialX;
+                currentY = e.clientY - initialY;
+                xOffset = currentX;
+                yOffset = currentY;
+                setTranslate(currentX, currentY, note);
+            }
+        }
+
+        function setTranslate(xPos, yPos, el) {
+            el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
+        }
+    </script>
+</body></html>

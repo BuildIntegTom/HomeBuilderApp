@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Building Integrity - Engineer Lens</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts: Geist -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Configuration -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-error-container": "#93000a",
+                    "surface-dim": "#dadada",
+                    "surface-container-low": "#f3f3f3",
+                    "on-tertiary": "#ffffff",
+                    "header-gold": "#c9a63f",
+                    "error-container": "#ffdad6",
+                    "on-secondary-container": "#004375",
+                    "on-tertiary-container": "#c99f2f",
+                    "primary-container": "#1c3d5a",
+                    "surface-container-lowest": "#ffffff",
+                    "on-error": "#ffffff",
+                    "instrument-border": "#ccd6e0",
+                    "gable-blue": "#9fb8e0",
+                    "warning-red": "#c0392b",
+                    "ink": "#333333",
+                    "on-surface": "#1a1c1c",
+                    "secondary": "#0061a5",
+                    "tertiary-fixed": "#ffdf97",
+                    "on-primary-fixed": "#001d34",
+                    "surface-variant": "#e2e2e2",
+                    "secondary-fixed": "#d2e4ff",
+                    "on-background": "#1a1c1c",
+                    "tertiary-container": "#4b3800",
+                    "surface": "#f9f9f9",
+                    "primary-fixed": "#cfe5ff",
+                    "outline-variant": "#c3c7ce",
+                    "instrument-bg": "#eef2f6",
+                    "error": "#ba1a1a",
+                    "on-primary": "#ffffff",
+                    "surface-container": "#eeeeee",
+                    "sticky-note-fill": "#f2e8c9",
+                    "column-panel": "#4a90a4",
+                    "on-secondary": "#ffffff",
+                    "tertiary": "#312300",
+                    "primary-fixed-dim": "#aacaed",
+                    "window-panel": "#8fc7e8",
+                    "primary": "#002743",
+                    "inverse-surface": "#2f3131",
+                    "outline": "#73777e",
+                    "on-primary-container": "#89a8ca",
+                    "door-panel": "#7a4a2b",
+                    "tertiary-fixed-dim": "#eec14e",
+                    "inverse-on-surface": "#f0f1f1",
+                    "secondary-container": "#6fb2fd",
+                    "safety-gap": "#e08a3c",
+                    "surface-container-high": "#e8e8e8",
+                    "standard-panel": "#d9c9a3",
+                    "on-secondary-fixed": "#001c37",
+                    "background": "#f9f9f9",
+                    "secondary-fixed-dim": "#a0caff",
+                    "corner-panel": "#8a8a8a",
+                    "sill-green": "#6fa87a",
+                    "on-primary-fixed-variant": "#294967",
+                    "border": "#cccccc",
+                    "on-tertiary-fixed-variant": "#5a4300",
+                    "surface-container-highest": "#e2e2e2",
+                    "on-tertiary-fixed": "#251a00",
+                    "surface-bright": "#f9f9f9",
+                    "inverse-primary": "#aacaed",
+                    "surface-tint": "#426180",
+                    "pending-amber": "#a67c00",
+                    "muted": "#777777",
+                    "header-pink": "#e85d9c",
+                    "on-secondary-fixed-variant": "#00497e",
+                    "on-surface-variant": "#43474d",
+                    "braced-panel": "#b06fc9"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "stack-md": "12px",
+                    "tray-width": "220px",
+                    "stack-xs": "4px",
+                    "stack-lg": "16px",
+                    "canvas-padding": "24px",
+                    "topbar-height": "56px",
+                    "stack-sm": "8px",
+                    "sidebar-width": "240px"
+            },
+            "fontFamily": {
+                    "label-xs": ["Geist"],
+                    "caption-tiny": ["Geist"],
+                    "body-md": ["Geist"],
+                    "display-h1": ["Geist"],
+                    "body-lg": ["Geist"],
+                    "headline-md": ["Geist"],
+                    "label-sm": ["Geist"]
+            },
+            "fontSize": {
+                    "label-xs": ["11px", {"lineHeight": "14px", "fontWeight": "600"}],
+                    "caption-tiny": ["9px", {"lineHeight": "12px", "fontWeight": "400"}],
+                    "body-md": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                    "display-h1": ["28px", {"lineHeight": "36px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-lg": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-md": ["16px", {"lineHeight": "24px", "fontWeight": "600"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "600"}]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .material-symbols-outlined[data-weight="fill"] {
+            font-variation-settings: 'FILL' 1;
+        }
+        
+        /* Ambient shadow for sticky notes */
+        .ambient-shadow {
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Floating shadow for panels */
+        .floating-shadow {
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15), 0 4px 10px rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background h-screen overflow-hidden flex flex-col font-body-md">
+<!-- TopNavBar -->
+<header class="bg-surface text-primary font-headline-md fixed top-0 w-full z-50 h-topbar-height flex items-center px-canvas-padding justify-between border-b border-instrument-border">
+<!-- Brand -->
+<div class="flex items-center gap-4">
+<span class="font-display-h1 text-display-h1 text-header-gold">Building Integrity</span>
+</div>
+<!-- Navigation Links -->
+<nav class="hidden md:flex items-center gap-8 h-full">
+<a class="h-full flex items-center text-primary border-b-2 border-primary font-bold" href="#">Wall</a>
+<a class="h-full flex items-center text-on-surface-variant hover:bg-surface-variant transition-colors px-2" href="#">Foundation</a>
+<a class="h-full flex items-center text-on-surface-variant hover:bg-surface-variant transition-colors px-2" href="#">Floor</a>
+<a class="h-full flex items-center text-on-surface-variant hover:bg-surface-variant transition-colors px-2" href="#">Roof</a>
+</nav>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-4">
+<!-- Role Switcher -->
+<div class="flex items-center bg-surface-container-high rounded p-1 border border-instrument-border">
+<span class="font-label-sm text-label-sm px-2 text-on-surface-variant">Role:</span>
+<button class="bg-primary text-on-primary font-label-sm text-label-sm px-3 py-1 rounded">Engineer</button>
+</div>
+<button class="text-on-surface-variant hover:bg-surface-variant transition-colors p-2 rounded-full">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<button class="text-on-surface-variant hover:bg-surface-variant transition-colors p-2 rounded-full">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+</div>
+</header>
+<!-- Main Workspace Area -->
+<div class="flex flex-1 mt-topbar-height mb-[24px]"> <!-- mb-6 for footer -->
+<!-- SideNavBar -->
+<aside class="bg-instrument-bg text-secondary fixed left-0 top-topbar-height h-[calc(100vh-56px-24px)] w-sidebar-width flex flex-col z-40 py-stack-lg border-r border-instrument-border">
+<!-- Header -->
+<div class="px-stack-lg mb-stack-lg">
+<h2 class="font-headline-md text-headline-md text-primary">Project Alpha</h2>
+<p class="font-label-xs text-label-xs text-on-surface-variant mt-1">V1.0.4-Stable</p>
+<div class="flex items-center gap-2 mt-3">
+<div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container font-bold">PL</div>
+<span class="font-label-xs text-label-xs">Project Lead</span>
+</div>
+</div>
+<div class="px-stack-lg mb-stack-lg">
+<button class="w-full bg-primary text-on-primary font-label-sm text-label-sm py-2 rounded flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                    New Panel
+                </button>
+</div>
+<!-- Tabs -->
+<nav class="flex-1 flex flex-col gap-1 overflow-y-auto">
+<a class="flex items-center gap-3 py-2 px-3 text-on-surface-variant mx-2 rounded hover:bg-surface-container-high transition-colors font-label-sm text-label-sm" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="grid_on">grid_on</span>
+                    2D View
+                </a>
+<a class="flex items-center gap-3 py-2 px-3 bg-primary-container text-on-primary-container rounded-lg mx-2 translate-x-1 transition-transform font-label-sm text-label-sm font-bold" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="vertical_align_center">vertical_align_center</span>
+                    Elevation
+                </a>
+<a class="flex items-center gap-3 py-2 px-3 text-on-surface-variant mx-2 rounded hover:bg-surface-container-high transition-colors font-label-sm text-label-sm" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="view_in_ar">view_in_ar</span>
+                    3D View
+                </a>
+<a class="flex items-center gap-3 py-2 px-3 text-on-surface-variant mx-2 rounded hover:bg-surface-container-high transition-colors font-label-sm text-label-sm" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="construction">construction</span>
+                    Tools
+                </a>
+<a class="flex items-center gap-3 py-2 px-3 text-on-surface-variant mx-2 rounded hover:bg-surface-container-high transition-colors font-label-sm text-label-sm" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="list_alt">list_alt</span>
+                    Legends
+                </a>
+</nav>
+<!-- Footer Tabs -->
+<div class="mt-auto border-t border-instrument-border pt-stack-md flex flex-col gap-1">
+<a class="flex items-center gap-3 py-2 px-3 text-on-surface-variant mx-2 rounded hover:bg-surface-container-high transition-colors font-label-sm text-label-sm" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="settings">settings</span>
+                    Settings
+                </a>
+<a class="flex items-center gap-3 py-2 px-3 text-on-surface-variant mx-2 rounded hover:bg-surface-container-high transition-colors font-label-sm text-label-sm" href="#">
+<span class="material-symbols-outlined text-[20px]" data-icon="contact_support">contact_support</span>
+                    Support
+                </a>
+</div>
+</aside>
+<!-- Canvas Area -->
+<main class="ml-sidebar-width flex-1 bg-surface-container-lowest relative overflow-hidden" style="margin-right: var(--spacing-tray-width);">
+<!-- CAD Visualization Background -->
+<div class="absolute inset-0 bg-cover bg-center opacity-80 mix-blend-multiply" data-alt="A highly detailed, technical CAD drawing of a wall elevation constructed from pre-fabricated straw panels. The background is a clean, bright white canvas typical of modern architectural software. Overlaid on the structural panels are precise, glowing stress heatmaps—vibrant red hotspots indicating high shear points and smooth blue gradients tracing downward load paths. The aesthetic is rigorous, analytical, and distinctly technical, utilizing the 'Tactile-Technical Modernism' style with sharp geometric precision." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBIzMSRGWRWM6ultJrjEoo70t2e-adZ9V6nbyb7X9ail39sYppsXDG_B89Kwbr-sNnnx2Q1QPexVKp2kTCXevuEuCpIYvfCijqE0tybdG8G5LzuVp3XTp3Z6w8Ll_9bCAfSGYV_fh70MZAH-BbnbnOPuOA3RDVjZ_SgM6RQBDinjAY23SV1Vkofc5rLhPppbjSLxAxmIna4w3bgiJuf_85wuYBVMDErbA7XmPJSjeqh9CRzECjg6JchYA')"></div>
+<!-- Grid Overlay -->
+<div class="absolute inset-0 bg-[linear-gradient(to_right,#eef2f6_1px,transparent_1px),linear-gradient(to_bottom,#eef2f6_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none mix-blend-multiply"></div>
+<!-- Floating Panel (Level 3): Structural Analysis -->
+<div class="absolute left-stack-lg top-stack-lg w-72 bg-surface-container-lowest border border-instrument-border floating-shadow rounded-lg p-stack-md z-10 flex flex-col gap-stack-md">
+<div class="flex items-center justify-between border-b border-instrument-border pb-2">
+<h3 class="font-headline-md text-headline-md text-primary flex items-center gap-2">
+<span class="material-symbols-outlined text-[20px]">analytics</span>
+                        Structural Analysis
+                    </h3>
+<button class="text-on-surface-variant hover:text-primary"><span class="material-symbols-outlined text-[18px]">drag_indicator</span></button>
+</div>
+<!-- Calculation Item 1 -->
+<div class="bg-surface rounded p-2 border border-surface-variant">
+<div class="flex justify-between items-center mb-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Wind Load (Lateral)</span>
+<span class="font-label-sm text-label-sm font-bold text-ink">45 psf</span>
+</div>
+<!-- Data Provenance Chip: Confirmed -->
+<div class="inline-flex items-center gap-1 border border-sill-green text-sill-green rounded-full px-2 py-0.5 mt-1 bg-[#f0f9f3]">
+<span class="material-symbols-outlined text-[12px] font-bold">check_circle</span>
+<span class="font-caption-tiny text-caption-tiny font-bold uppercase tracking-wide">Confirmed</span>
+</div>
+</div>
+<!-- Calculation Item 2 -->
+<div class="bg-surface rounded p-2 border border-surface-variant">
+<div class="flex justify-between items-center mb-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Dead Load (Vertical)</span>
+<span class="font-label-sm text-label-sm font-bold text-ink">1,200 plf</span>
+</div>
+<!-- Data Provenance Chip: Pending -->
+<div class="inline-flex items-center gap-1 bg-pending-amber text-on-tertiary rounded-full px-2 py-0.5 mt-1">
+<span class="material-symbols-outlined text-[12px] font-bold" data-weight="fill">warning</span>
+<span class="font-caption-tiny text-caption-tiny font-bold uppercase tracking-wide">Pending Eng. Stamp</span>
+</div>
+</div>
+<!-- Calculation Item 3 -->
+<div class="bg-surface rounded p-2 border border-surface-variant">
+<div class="flex justify-between items-center mb-1">
+<span class="font-label-sm text-label-sm text-on-surface-variant">Shear Max</span>
+<span class="font-label-sm text-label-sm font-bold text-ink">380 plf</span>
+</div>
+<div class="w-full bg-surface-container-high h-1.5 rounded-full mt-2 overflow-hidden">
+<div class="bg-warning-red h-full w-[85%]"></div>
+</div>
+<p class="font-caption-tiny text-caption-tiny text-warning-red mt-1 text-right">85% Capacity</p>
+</div>
+</div>
+<!-- Canvas Tool Controls (Bottom Right of Canvas) -->
+<div class="absolute bottom-stack-lg right-stack-lg flex bg-instrument-bg border border-instrument-border rounded p-1 gap-1 shadow-sm">
+<button class="p-1.5 rounded hover:bg-surface-variant text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">zoom_in</span></button>
+<button class="p-1.5 rounded hover:bg-surface-variant text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">zoom_out</span></button>
+<div class="w-px bg-instrument-border mx-1"></div>
+<button class="p-1.5 rounded hover:bg-surface-variant text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">layers</span></button>
+</div>
+</main>
+<!-- Right Tray (Sticky Notes) -->
+<aside class="fixed right-0 top-topbar-height h-[calc(100vh-56px-24px)] w-tray-width bg-surface border-l border-instrument-border p-stack-md flex flex-col gap-stack-md overflow-y-auto z-30">
+<h3 class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-2">Reference Docs</h3>
+<!-- Sticky Note Card 1: UL Testing -->
+<div class="bg-sticky-note-fill border-t-2 border-tertiary-fixed ambient-shadow p-stack-sm relative">
+<div class="absolute -top-3 left-1/2 -translate-x-1/2 w-6 h-2 bg-red-400 opacity-60 rotate-2"></div> <!-- Tape effect -->
+<h4 class="font-headline-md text-headline-md text-tertiary mb-2">UL Testing Readiness</h4>
+<div class="space-y-3">
+<div>
+<span class="font-label-xs text-label-xs text-tertiary opacity-80 block">Fire Resistance</span>
+<div class="flex items-baseline gap-2">
+<span class="font-body-md text-body-md font-bold text-ink">Target: 1 hr</span>
+<span class="font-caption-tiny text-caption-tiny text-sill-green font-bold bg-[#e6f4ea] px-1 rounded">On Track</span>
+</div>
+</div>
+<div>
+<span class="font-label-xs text-label-xs text-tertiary opacity-80 block">Thermal Performance</span>
+<div class="flex justify-between items-center border-b border-[#d8cdb2] pb-1">
+<span class="font-body-md text-body-md text-ink">R-Value</span>
+<span class="font-body-md text-body-md font-bold text-ink">R-35</span>
+</div>
+</div>
+<div>
+<span class="font-label-xs text-label-xs text-tertiary opacity-80 block">Moisture Probe</span>
+<div class="flex items-center gap-2 mt-1">
+<span class="material-symbols-outlined text-[16px] text-primary">water_drop</span>
+<span class="font-body-md text-body-md text-ink">14% (Acceptable)</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Sticky Note Card 2: Notes -->
+<div class="bg-sticky-note-fill border-t-2 border-tertiary-fixed ambient-shadow p-stack-sm mt-4 relative rotate-1">
+<div class="absolute -top-2 right-4 w-5 h-2 bg-blue-300 opacity-60 -rotate-3"></div>
+<h4 class="font-label-sm text-label-sm text-tertiary font-bold mb-1">Review Log</h4>
+<p class="font-caption-tiny text-caption-tiny text-tertiary italic leading-relaxed">
+                    "Ensure rim joist connection detailing accounts for accumulated load from upper level. Requires fabricator sign-off on custom bracket B-4."
+                </p>
+<div class="mt-2 text-right">
+<span class="font-caption-tiny text-caption-tiny text-tertiary opacity-70">- Eng. Smith</span>
+</div>
+</div>
+</aside>
+</div>
+<!-- Footer / Legal Banner -->
+<footer class="fixed bottom-0 left-0 w-full z-50 flex justify-center items-center py-1 px-4 bg-warning-red text-on-tertiary shadow-lg h-[24px]">
+<div class="flex items-center gap-4 w-full justify-between max-w-[1400px]">
+<span class="font-label-xs text-label-xs font-bold uppercase tracking-widest opacity-90">Engineered Scope View</span>
+<span class="font-caption-tiny text-caption-tiny uppercase font-bold tracking-widest">Building Integrity © 2024 | Data Provenance: BI Confirmation Required — FABRICATION PENDING FINAL STAMP</span>
+<div class="flex gap-4">
+<a class="font-caption-tiny text-caption-tiny opacity-90 hover:opacity-100 hover:underline" href="#">Privacy Policy</a>
+<a class="font-caption-tiny text-caption-tiny opacity-90 hover:opacity-100 hover:underline" href="#">Legal Disclaimer</a>
+</div>
+</div>
+</footer>
+</body></html>
