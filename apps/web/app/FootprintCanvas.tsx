@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Stage, Layer, Rect, Circle, Text, Group, Line, Arrow } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
@@ -38,9 +38,9 @@ import {
   formatFeetInches,
   nearestPointOnSegments,
   octagonPreviewPoints,
-  parseLengthFt,
   pickWallByDragDirection,
   projectOntoWallFt,
+  resolveLengthEntry,
   signedDepthFt,
   signedPerpOffsetFt,
   snapOctagonBoxPx,
@@ -217,6 +217,10 @@ export default function FootprintCanvas({
   const dragStartRef = useRef<DragPoint | null>(null);
   const [editingWallId, setEditingWallId] = useState<Wall["id"] | null>(null);
   const [editingValue, setEditingValue] = useState("");
+  const [editInvalid, setEditInvalid] = useState(false);
+  // `aria-describedby` rather than a live region — the hint changes on
+  // every keystroke and a live region would read each half-typed value out.
+  const wallLengthHintId = useId();
   const [dragCurrent, setDragCurrent] = useState<DragPoint | null>(null);
 
   // Keyed the same way computeSlotRects identifies a slot (wallId +
@@ -694,17 +698,35 @@ export default function FootprintCanvas({
   const startEditingWall = (wall: Wall) => {
     setEditingWallId(wall.id);
     setEditingValue(formatFeetInches(wall.lengthFt));
+    setEditInvalid(false);
   };
 
-  const commitEdit = () => {
-    if (editingWallId) {
-      const parsed = parseLengthFt(editingValue);
-      if (parsed !== null) {
-        onEditWallLength(editingWallId, parsed);
-      }
+  /**
+   * This is the FEET-domain field, so a bare `47 5/8` here means 47 feet
+   * plus ⅝ of an inch, not 47.625in — the whole number keeps the field's
+   * unit, the fraction is always inches. That reading is a factor of twelve
+   * away from the alternative, which is why `editHint` renders the resolved
+   * value live above the field before anything commits.
+   *
+   * Returns false when the entry couldn't be parsed. It used to be
+   * `if (parsed !== null)` with no `else`, so an unparseable entry just
+   * closed the editor with no feedback at all and the wall silently kept
+   * its old length.
+   */
+  const commitEdit = (): boolean => {
+    if (!editingWallId) return true;
+    const resolved = resolveLengthEntry(editingValue, "ft");
+    if (resolved.value === null) {
+      setEditInvalid(true);
+      return false;
     }
+    onEditWallLength(editingWallId, resolved.value);
     setEditingWallId(null);
+    setEditInvalid(false);
+    return true;
   };
+
+  const editHint = editingWallId ? resolveLengthEntry(editingValue, "ft") : null;
 
   const editingWall = footprint?.walls.find((w) => w.id === editingWallId) ?? null;
   const editingPos =
@@ -1111,26 +1133,76 @@ export default function FootprintCanvas({
           )}
         </Layer>
         </Stage>
+        {editingPos && editHint && (
+          <span
+            id={wallLengthHintId}
+            style={{
+              position: "absolute",
+              left: editingPos.x * viewScale + viewOffset.x - 105 * viewScale,
+              top: editingPos.y * viewScale + viewOffset.y - 26 * viewScale,
+              // Wide enough for the longest thing it can say, which is the
+              // failure state plus its way out.
+              width: 210 * viewScale,
+              fontSize: 11 * viewScale,
+              textAlign: "center",
+              pointerEvents: "none",
+              whiteSpace: "nowrap",
+              color: editHint.value === null ? "#c0392b" : "#555",
+            }}
+          >
+            {editHint.hint}
+            {editHint.value === null ? " (Esc to cancel)" : ""}
+          </span>
+        )}
         {editingPos && (
           <input
             autoFocus
+            type="text"
+            inputMode="text"
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={editInvalid || undefined}
+            aria-describedby={wallLengthHintId}
+            aria-label="Wall length"
             value={editingValue}
-            onChange={(e) => setEditingValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitEdit();
-              if (e.key === "Escape") setEditingWallId(null);
+            onChange={(e) => {
+              setEditingValue(e.target.value);
+              setEditInvalid(false);
             }}
-            onBlur={commitEdit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitEdit();
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setEditingWallId(null);
+                setEditInvalid(false);
+              }
+            }}
+            onBlur={() => {
+              // Never closes on an unparseable entry — the editor stays
+              // open and red with the typed text intact, and the wall keeps
+              // its old length. Focus is deliberately NOT forced back: an
+              // autoFocused overlay the caret can't leave is a trap, and a
+              // visible failure was the requirement, not an inescapable
+              // one. The hint above says "Esc to cancel" for the way out.
+              commitEdit();
+            }}
             style={{
+              ...(editInvalid ? { outline: "2px solid #c0392b" } : null),
               // This overlay is a plain HTML element (not drawn by Konva),
               // so it doesn't automatically track the Stage's pan/zoom
               // transform the way canvas content does — apply the same
               // viewOffset/viewScale here so it stays aligned with the
               // wall label underneath it at any pan/zoom level.
               position: "absolute",
-              left: editingPos.x * viewScale + viewOffset.x - 30 * viewScale,
+              left: editingPos.x * viewScale + viewOffset.x - 42 * viewScale,
               top: editingPos.y * viewScale + viewOffset.y - 9 * viewScale,
-              width: 60 * viewScale,
+              // Wider than the 60 it used to be: the seed value now carries
+              // a fraction (`24'-3⅝"`), and a value the user can't fully
+              // read is a value they can't check before committing.
+              width: 84 * viewScale,
               fontSize: 12 * viewScale,
               textAlign: "center",
             }}

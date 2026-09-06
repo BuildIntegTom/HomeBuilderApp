@@ -1,6 +1,8 @@
 "use client";
 
 import { panelHeightInRange } from "@building-integrity/panel-catalog";
+import { formatFeetInches } from "./canvasGeometry";
+import LengthInput from "./LengthInput";
 import styles from "./DrawingToolPen.module.css";
 
 export type ShapeTool = "rectangle" | "octagon" | "bump-out" | "drag-wall" | "edit";
@@ -97,15 +99,20 @@ export default function DrawingToolPen({
       </button>
       {secondStoryEnabled && (
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "0 4px" }}>
-          Wall height (ft)
-          <input
-            type="number"
+          {/* The direct sibling of the ground floor's own wall-height
+              field. It was left as a type="number" in the first pass, so
+              `10 5/8` gave 10'-0 5/8" on the ground floor and 0 here — the
+              worst kind of inconsistency, since the field that works
+              teaches the user to trust the one that doesn't. Feet domain,
+              so it carries its own units and the "(ft)" is gone. */}
+          Wall height
+          <LengthInput
             value={secondStoryWallHeightFt}
-            step={0.5}
-            min={panelHeightInRange.minIn / 12}
-            max={panelHeightInRange.maxIn / 12}
-            style={{ width: 56 }}
-            onChange={(e) => onSecondStoryWallHeightChange(Number(e.target.value))}
+            domain="ft"
+            ariaLabel="Second story wall height"
+            title={`Possible panel height: ${formatFeetInches(panelHeightInRange.minIn / 12)}-${formatFeetInches(panelHeightInRange.maxIn / 12)}`}
+            style={{ width: 70 }}
+            onCommit={onSecondStoryWallHeightChange}
           />
         </label>
       )}

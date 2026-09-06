@@ -1,8 +1,11 @@
 import type * as React from "react";
+import { EIGHTHS_GLYPHS, formatImperialFractionIn } from "@building-integrity/calc-engine";
 import {
   cornerTurnAngleRad,
   footprintIsAllRightAngles,
   outwardNormal,
+  roundToEighthIn,
+  toEighths,
   type Footprint,
   type PanelSlot,
   type Wall,
@@ -515,24 +518,314 @@ export function wallLabelPosition(wall: Wall, corners: Footprint["corners"], off
   return { x: midPx.x + perp.x * clear, y: midPx.y + perp.y * clear };
 }
 
-/** e.g. 40.5 -> "40'-6\"" */
+/**
+ * e.g. 40.5 -> `40'-6"`, 24.302083 -> `24'-3⅝"`.
+ *
+ * This used to do `Math.round(ft * 12)` — nearest WHOLE INCH — which made
+ * it the coarsest formatter in the app: it is the footprint canvas's wall
+ * label, the inline wall-length editor's seed value, the elevation's
+ * "Overall Width" and the measure-tool readout, so a 24'-3⅝" wall read
+ * back as `24'-4"`. Tommy chose feet-inches-eighths (`24'-3⅝"`) for long
+ * lengths on 2026-08-30, so the fraction part is now carried through.
+ *
+ * Still rounds to the nearest 1/8in rather than refusing to lie about a
+ * non-eighth — that honesty upgrade is Stage 1b for
+ * `formatImperialFractionIn` and this formatter follows it there. Nearest
+ * eighth is already strictly better than the nearest inch it replaces.
+ *
+ * Decomposition is done in whole eighths (integers) rather than in floats
+ * so that `parseLengthFt(formatFeetInches(v)) === v` bit-identically for
+ * any `v` that is a whole eighth of an inch — the round-trip Stage 1's
+ * invariant leans on.
+ */
 export function formatFeetInches(ft: number): string {
-  const totalInches = Math.round(ft * 12);
-  const feet = Math.floor(totalInches / 12);
-  const inches = totalInches % 12;
-  return `${feet}'-${inches}"`;
+  const totalEighths = toEighths(ft * 12);
+  const sign = totalEighths < 0 ? "-" : "";
+  const absEighths = Math.abs(totalEighths);
+  const feet = Math.floor(absEighths / EIGHTHS_PER_FT);
+  const inchEighths = absEighths % EIGHTHS_PER_FT;
+  const inches = Math.floor(inchEighths / 8);
+  const glyph = EIGHTHS_GLYPHS[inchEighths % 8] ?? "";
+  return `${sign}${feet}'-${inches}${glyph}"`;
 }
 
-/** Accepts "40'-6\"", "40' 6", plain decimal feet ("40.5"), etc. Returns null if unparseable. */
-export function parseLengthFt(input: string): number | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  const feetInches = trimmed.match(/^(\d+(?:\.\d+)?)\s*'\s*-?\s*(\d+(?:\.\d+)?)?\s*"?$/);
-  if (feetInches) {
-    const feet = parseFloat(feetInches[1]!);
-    const inches = feetInches[2] ? parseFloat(feetInches[2]) : 0;
-    return feet + inches / 12;
+/** 96 — eighths of an inch in a foot. Named so the decomposition above
+ * reads as a unit conversion rather than a magic number. */
+const EIGHTHS_PER_FT = 96;
+
+/** Which unit a field's *bare whole number* is written in. The fraction is
+ * never in this unit — see `tokenizeLength`. */
+export type LengthDomain = "in" | "ft";
+
+/** Inverted from the formatter's own glyph table rather than retyped, so
+ * the parser accepts exactly the glyphs `formatImperialFractionIn` emits —
+ * and so a glyph the formatter never emits (`⅓`, `⅔`, `⅕`) is rejected
+ * rather than silently misread as some nearby eighth. */
+const EIGHTHS_BY_GLYPH = new Map<string, number>(
+  Object.entries(EIGHTHS_GLYPHS)
+    .filter(([, glyph]) => glyph.length > 0)
+    .map(([eighths, glyph]) => [glyph, Number(eighths)] as const),
+);
+
+/** None of the eighth glyphs are regex metacharacters, so they go straight
+ * into a character class. */
+const GLYPH_CLASS = `[${[...EIGHTHS_BY_GLYPH.keys()].join("")}]`;
+
+/** A plain unsigned decimal. Deliberately no exponent form: `1e3` in a wall
+ * -length field is far more likely to be a typo than a request for 1000ft,
+ * and the old `parseFloat` fallback would have accepted it silently. */
+const NUMBER_SRC = String.raw`\d+(?:\.\d+)?|\.\d+`;
+
+/**
+ * `whole? separator? fraction?` — every part optional, so the caller has to
+ * reject the all-empty match itself. Groups: 1 whole, 2 numerator, 3
+ * denominator, 4 glyph.
+ *
+ * The separator is `[\s-]*` because a shop user writes the same value as
+ * `47 5/8`, `47-5/8` or `47⅝`. A leading `-` has already been consumed as a
+ * sign by then, so the hyphen here is unambiguously a separator.
+ */
+const INCH_EXPR = new RegExp(
+  `^(${NUMBER_SRC})?(?:[\\s-]*(?:(\\d+)\\s*/\\s*(\\d+)|(${GLYPH_CLASS})))?$`,
+);
+
+const PLAIN_NUMBER = new RegExp(`^(?:${NUMBER_SRC})$`);
+
+interface LengthTokens {
+  sign: 1 | -1;
+  /** Feet, if the input actually wrote a `'`. Null means "no feet mark",
+   * which is what makes the field's own domain matter. */
+  feet: number | null;
+  /** The whole number in front of the fraction. Its unit depends on the
+   * domain and on `hasInchMark`; the fraction's never does. */
+  whole: number;
+  /** Always INCHES (Tommy, 2026-08-30: "the fractions should always be
+   * considered a fraction of an inch"). Not yet snapped to the grid — any
+   * denominator parses, and the snap happens on commit. */
+  fractionIn: number;
+  hasInchMark: boolean;
+}
+
+/**
+ * The one tokenizer behind `parseLengthIn` and `parseLengthFt`. Splits an
+ * imperial length into sign / feet / whole / fraction without deciding what
+ * unit the whole number is in — that is the domain wrapper's job.
+ *
+ * Returns null for anything it doesn't recognise. That matters: the code
+ * this replaces fell through to `parseFloat`, so `47 5/8` came back as
+ * **47** and `24'-3 5/8"` as **24**, silently, with the fraction (and three
+ * inches) thrown away.
+ */
+function tokenizeLength(input: string): LengthTokens | null {
+  let rest = input.trim();
+  if (!rest) return null;
+
+  let sign: 1 | -1 = 1;
+  const signMatch = rest.match(/^([+-])\s*/);
+  if (signMatch) {
+    sign = signMatch[1] === "-" ? -1 : 1;
+    rest = rest.slice(signMatch[0].length);
   }
-  const plain = parseFloat(trimmed);
-  return Number.isFinite(plain) ? plain : null;
+
+  let feet: number | null = null;
+  const footMark = rest.indexOf("'");
+  if (footMark >= 0) {
+    const feetText = rest.slice(0, footMark).trim();
+    if (!PLAIN_NUMBER.test(feetText)) return null;
+    feet = parseFloat(feetText);
+    rest = rest.slice(footMark + 1).trim();
+    // Belt and braces — `INCH_EXPR` has no `'` in it, so a second foot mark
+    // already fails to match. Kept explicit because relying on that is
+    // relying on a non-obvious property of a regex two screens away.
+    if (rest.includes("'")) return null;
+    // `24'-3` — the hyphen separates feet from inches, same character the
+    // whole/fraction separator uses.
+    rest = rest.replace(/^-\s*/, "");
+  }
+
+  let hasInchMark = false;
+  if (rest.endsWith('"')) {
+    hasInchMark = true;
+    rest = rest.slice(0, -1).trim();
+  }
+
+  if (!rest) {
+    // `24'` or `24'-` — feet with nothing after them. A bare `"` or a lone
+    // sign has no number at all and is not a length.
+    if (feet === null) return null;
+    return { sign, feet, whole: 0, fractionIn: 0, hasInchMark };
+  }
+
+  const match = rest.match(INCH_EXPR);
+  if (!match) return null;
+  const [, wholeText, numeratorText, denominatorText, glyph] = match;
+  // Every part of INCH_EXPR is optional, so it also matches the empty
+  // string. That case is already caught by the `!rest` guard above; this is
+  // here so the invariant is stated where the groups are read.
+  if (wholeText === undefined && numeratorText === undefined && glyph === undefined) return null;
+
+  let fractionIn = 0;
+  if (glyph !== undefined) {
+    fractionIn = EIGHTHS_BY_GLYPH.get(glyph)! / 8;
+  } else if (numeratorText !== undefined) {
+    const denominator = Number(denominatorText);
+    // "5/0" is not a length. Note this is now SUBSUMED by parseInDomain's
+    // Number.isFinite check (5/0 is Infinity, 0/0 is NaN, and both fail
+    // it), so a mutation harness cannot kill this line — it is kept
+    // deliberately, because a zero denominator is a fact about the grammar
+    // rather than an accident of IEEE arithmetic, and this is where the
+    // grammar is decided. Don't delete either guard on the grounds that
+    // the other one covers it.
+    if (denominator === 0) return null;
+    fractionIn = Number(numeratorText) / denominator;
+  }
+
+  return {
+    sign,
+    feet,
+    whole: wholeText === undefined ? 0 : parseFloat(wholeText),
+    fractionIn,
+    hasInchMark,
+  };
+}
+
+/**
+ * The shared body of `parseLengthIn` and `parseLengthFt`: tokenize, resolve
+ * against the field's domain, and refuse anything that isn't a finite
+ * number.
+ */
+function parseInDomain(input: string, domain: LengthDomain): number | null {
+  const tokens = tokenizeLength(input);
+  if (tokens === null) return null;
+  const value = resolveTokens(tokens, domain);
+  // A number long enough to overflow a double (400 digits of "9") gets
+  // through the grammar intact and `parseFloat`s to Infinity, and Infinity
+  // survives every arithmetic step below. An unbuildable wall is not a
+  // parse; it is garbage, and garbage returns null so the field goes red
+  // instead of committing `Infinity` or rendering `= Infinity'-NaN"`.
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * **The fraction is always inches; the whole number takes the field's own
+ * unit.** Tommy, 2026-08-30: *"fractions when entered like 47 5/8 - the
+ * fractions should always be considered a fraction of an inch."* So in an
+ * inch field `47 5/8` is 47.625in, and in the feet-domain wall-length field
+ * it is 47ft + ⅝in.
+ *
+ * ⚠ **That second reading is an unconfirmed factor-of-twelve assumption**
+ * (47'-0⅝" vs 3'-11⅝") — see the spec's Open Items. It is taken literally
+ * from Tommy's words and has not been demonstrated to him on the actual
+ * field, which is why `resolveLengthEntry`'s live hint is part of this
+ * stage rather than a later nicety: he sees the resolved number before it
+ * commits.
+ *
+ * **An explicit unit mark wins over the field's domain**, so `24'-3⅝"` and
+ * `3"` mean the same thing typed into either kind of field. The two halves
+ * of that rule have very different standing and are stated separately on
+ * purpose:
+ *
+ * - **The `'` half is settled and load-bearing.** A feet mark names both
+ *   units outright, the spec's grammar table gives `24'-3 5/8"` exactly
+ *   this reading, and `formatFeetInches`' own output round-trips through
+ *   it.
+ * - **The `"` half is an unratified judgement call and is load-bearing for
+ *   nothing.** Deleting `tokens.hasInchMark ||` below breaks exactly one
+ *   test — the override's own — and no round-trip: `formatFeetInches`
+ *   always emits a `'` (so the feet branch above already has it), and
+ *   `formatLengthForDomain(v, "in")` emits no unit mark at all, so the
+ *   inch-domain round-trip rides on `domain === "in"`. The spec's grammar
+ *   table lists `47 5/8"` on the SAME ROW as `47 5/8`, which reads at
+ *   least as naturally as the trailing quote being decoration.
+ *
+ *   So this creates a SECOND factor-of-twelve reading, sitting right next
+ *   to the first: in the wall-length field `47 5/8` is 47'-0⅝" but
+ *   `47 5/8"` is 3'-11⅝". The live hint is the mitigation and the flip is
+ *   one line either way. Tommy has to type both strings into that field
+ *   once — logged in the spec's Open Items, not decided here.
+ */
+function resolveTokens(tokens: LengthTokens, domain: LengthDomain): number {
+  if (tokens.feet !== null) {
+    const totalIn = tokens.feet * 12 + tokens.whole + tokens.fractionIn;
+    return tokens.sign * (domain === "ft" ? totalIn / 12 : totalIn);
+  }
+  if (tokens.hasInchMark || domain === "in") {
+    const totalIn = tokens.whole + tokens.fractionIn;
+    return tokens.sign * (domain === "ft" ? totalIn / 12 : totalIn);
+  }
+  // Bare entry in a feet field: whole is feet, fraction is still inches.
+  return tokens.sign * (tokens.whole + tokens.fractionIn / 12);
+}
+
+/**
+ * Parses an imperial length typed into an INCH-domain field (window width,
+ * sill height, max panel height...). Returns the value in inches, NOT yet
+ * snapped to the 1/8in grid — the snap belongs on commit
+ * (`resolveLengthEntry`), so `47 5/16` parses exactly and then commits as
+ * `47⅜"`.
+ *
+ * Accepts `47 5/8`, `47-5/8`, `47 5/8"`, `5/8`, `⅝`, `47⅝`, `24'-3 5/8"`,
+ * `47.625` and `47`. Anything else returns null.
+ */
+export function parseLengthIn(input: string): number | null {
+  return parseInDomain(input, "in");
+}
+
+/**
+ * The feet-domain twin of `parseLengthIn`, same grammar, same tokenizer —
+ * `40.5` is still 40.5 FEET, and `47 5/8` is 47 feet plus ⅝ of an inch.
+ */
+export function parseLengthFt(input: string): number | null {
+  return parseInDomain(input, "ft");
+}
+
+/**
+ * Snaps a typed value onto the 1/8in shop grid in whichever unit the field
+ * works in. Feet go through inches and back rather than being snapped to
+ * 1/96 ft directly: 1/96 is not representable in binary, but every eighth
+ * of an inch is, so `roundToEighthIn(ft * 12) / 12` reproduces exactly the
+ * float a caller gets from `inches / 12`.
+ */
+export function snapLengthToEighthIn(value: number, domain: LengthDomain): number {
+  return domain === "ft" ? roundToEighthIn(value * 12) / 12 : roundToEighthIn(value);
+}
+
+/**
+ * How a committed value is written back into its own field once the user
+ * stops editing — a fraction, not a decimal, so `47 5/16` visibly becomes
+ * `47⅜` the moment it commits and the user is never shown one number while
+ * another is stored.
+ *
+ * No unit mark: every one of these fields already has its unit in the
+ * label or in the text immediately after it, and the feet-domain form
+ * carries its own `'` and `"` anyway.
+ */
+export function formatLengthForDomain(value: number, domain: LengthDomain): string {
+  return domain === "ft" ? formatFeetInches(value) : formatImperialFractionIn(value, "");
+}
+
+/** What a field shows beside itself when what's typed isn't a length. The
+ * failed parse needs somewhere honest to live — before this stage an
+ * unparseable entry was a silent no-op with no feedback at all. */
+export const UNRECOGNIZED_LENGTH_HINT = "= —, unrecognized";
+
+export interface LengthEntry {
+  /** The value that would be committed, in the field's own unit, already
+   * snapped to the grid. Null means "don't commit anything". */
+  value: number | null;
+  /** The live resolved hint, e.g. `= 47'-0⅝"`. */
+  hint: string;
+}
+
+/**
+ * Parse + snap + describe, in one call, so the hint a field shows while the
+ * user types is computed by the same code path that commits — the user can
+ * never be shown one number and have another stored.
+ */
+export function resolveLengthEntry(input: string, domain: LengthDomain): LengthEntry {
+  const parsed = domain === "ft" ? parseLengthFt(input) : parseLengthIn(input);
+  if (parsed === null) return { value: null, hint: UNRECOGNIZED_LENGTH_HINT };
+  const value = snapLengthToEighthIn(parsed, domain);
+  const hint = domain === "ft" ? formatFeetInches(value) : formatImperialFractionIn(value);
+  return { value, hint: `= ${hint}` };
 }

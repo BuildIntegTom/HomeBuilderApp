@@ -250,6 +250,8 @@ import {
   type StudConfig,
   type WallAssemblyLayer,
 } from "@building-integrity/panel-catalog";
+import { formatFeetInches } from "./canvasGeometry";
+import LengthInput from "./LengthInput";
 import ConcreteBlockStemWallDiagram from "./ConcreteBlockStemWallDiagram";
 import DetailGuidePage from "./DetailGuidePage";
 import FloorAddOnLayerDiagram from "./FloorAddOnLayerDiagram";
@@ -358,12 +360,17 @@ function mostRestrictiveLayer(layers: WallAssemblyLayer[], checkedIds: Set<strin
   return rated.reduce((most, l) => (permOf(l) < permOf(most) ? l : most));
 }
 
-/** A trailer's own length runs tens of feet — too long for the imperial
- * 1/8in-fraction convention (formatLengthIn) to read naturally, so imperial
- * shows whole feet instead; metric still always shows mm (Tommy: "for
- * metric, make to the nearest mm"). */
+/** A trailer's own length runs tens of feet — too long for the plain
+ * inch-fraction convention (formatLengthIn) to read naturally, so imperial
+ * uses the feet-inches form (`48'-0"`); metric still always shows mm
+ * (Tommy: "for metric, make to the nearest mm").
+ *
+ * This used to print decimal feet (`48.0ft`), which made it the app's one
+ * long-length outlier — the same trailer read one way here and another way
+ * on the footprint canvas. Tommy settled it on 2026-08-30: long lengths are
+ * feet-inches-eighths everywhere, this site named explicitly. */
 function formatTrailerLengthIn(valueIn: number, unitSystem: "imperial" | "metric"): string {
-  return unitSystem === "metric" ? formatLengthIn(valueIn, unitSystem) : `${(valueIn / 12).toFixed(1)}ft`;
+  return unitSystem === "metric" ? formatLengthIn(valueIn, unitSystem) : formatFeetInches(valueIn / 12);
 }
 
 const PHASE2_ASSUMPTIONS = [
@@ -5186,13 +5193,16 @@ export default function LayoutEditor() {
         <>
       <label>
         Standard width (in){" "}
-        <input
-          type="number"
+        {/* Was a bare type="number" with no `step` and no parse-on-commit,
+            so it happily stored an off-grid width like 40.3 — the tiler is
+            safe against that now, but the stored setting still needs to be
+            on the 1/8in grid. */}
+        <LengthInput
           value={standardWidthIn}
-          min={panelWidthInRange.minIn}
-          max={panelWidthInRange.maxIn}
+          domain="in"
+          ariaLabel="Standard width in inches"
           title={`Possible panel width: ${formatLengthIn(panelWidthInRange.minIn, unitSystem)}-${formatLengthIn(panelWidthInRange.maxIn, unitSystem)}`}
-          onChange={(e) => setStandardWidthIn(Number(e.target.value))}
+          onCommit={setStandardWidthIn}
         />
       </label>
       <label>
@@ -5219,14 +5229,17 @@ export default function LayoutEditor() {
         />
       </label>
       <label>
-        Wall height (ft){" "}
-        <input
-          type="number"
+        Wall height{" "}
+        {/* The one FEET-domain field in this group, so it reads back as
+            `10'-0"` and the "(ft)" in the label would now be redundant.
+            A bare `10 5/8` typed here is 10ft + ⅝in — the live hint spells
+            that out before it commits. */}
+        <LengthInput
           value={wallHeightFt}
-          min={panelHeightInRange.minIn / 12}
-          max={panelHeightInRange.maxIn / 12}
+          domain="ft"
+          ariaLabel="Wall height"
           title={`Possible panel height: ${formatLengthIn(panelHeightInRange.minIn, unitSystem)}-${formatLengthIn(panelHeightInRange.maxIn, unitSystem)}`}
-          onChange={(e) => handleSetWallHeightFt(Number(e.target.value))}
+          onCommit={handleSetWallHeightFt}
         />
       </label>
       <p className={styles.note}>
@@ -5234,12 +5247,11 @@ export default function LayoutEditor() {
       </p>
       <label>
         Max panel height (in){" "}
-        <input
-          type="number"
+        <LengthInput
           value={maxPanelHeightIn}
-          min={panelHeightInRange.minIn}
-          max={panelHeightInRange.maxIn}
-          onChange={(e) => handleSetMaxPanelHeightIn(Number(e.target.value))}
+          domain="in"
+          ariaLabel="Max panel height in inches"
+          onCommit={handleSetMaxPanelHeightIn}
         />
       </label>
       <p className={styles.note}>
@@ -5413,10 +5425,11 @@ export default function LayoutEditor() {
           {includeNailer && (
             <label>
               Nailer slide offset from center (in){" "}
-              <input
-                type="number"
+              <LengthInput
                 value={nailerOffsetIn}
-                onChange={(e) => setNailerOffsetIn(Number(e.target.value))}
+                domain="in"
+                ariaLabel="Nailer slide offset from center, in inches"
+                onCommit={setNailerOffsetIn}
               />
             </label>
           )}
@@ -5443,12 +5456,12 @@ export default function LayoutEditor() {
             </button>
             <label>
               Panel width (in){" "}
-              <input
-                type="number"
+              <LengthInput
                 value={timberFrameCurtainWidthIn}
-                min={1}
-                step={1}
-                onChange={(e) => setTimberFrameCurtainWidthIn(Number(e.target.value))}
+                domain="in"
+                ariaLabel="Timber frame curtain panel width in inches"
+                title="At least 1in — advisory, nothing clamps this"
+                onCommit={setTimberFrameCurtainWidthIn}
               />
             </label>
           </div>
@@ -5539,12 +5552,18 @@ export default function LayoutEditor() {
         <div key={beam.id} className={elevationStyles.beamRow}>
           <label className={elevationStyles.fieldRow}>
             Height
-            <input
-              type="number"
-              min={0}
-              max={Math.round(storyHeightIn)}
-              value={Math.round(beam.heightIn)}
-              onChange={(e) => handleChangeMidWallBeamHeight(story, wallId, beam.id, Number(e.target.value))}
+            {/* The removed max={storyHeightIn} was advisory only — a number
+                input's max never blocked a typed value, and there is no form
+                and no :invalid styling here — so the bound moves into the
+                tooltip rather than quietly becoming enforcement it never
+                was. */}
+            <LengthInput
+              value={beam.heightIn}
+              domain="in"
+              ariaLabel="Mid-wall beam height in inches"
+              title={`Height above this story's floor — the story itself is ${formatFeetInches(storyHeightIn / 12)} tall`}
+              style={{ width: 60, flex: "0 0 auto" }}
+              onCommit={(next) => handleChangeMidWallBeamHeight(story, wallId, beam.id, next)}
             />
             in
           </label>
@@ -5563,16 +5582,17 @@ export default function LayoutEditor() {
           ) : (
             <label className={elevationStyles.fieldRow}>
               Big Header tall
-              <input
-                type="number"
-                min={BIG_HEADER_BEAM_MIN_HEIGHT_IN}
-                value={Math.round(beam.bigHeaderBeamHeightIn ?? BIG_HEADER_BEAM_MIN_HEIGHT_IN)}
-                onChange={(e) =>
+              <LengthInput
+                value={beam.bigHeaderBeamHeightIn ?? BIG_HEADER_BEAM_MIN_HEIGHT_IN}
+                domain="in"
+                ariaLabel="Big Header beam height in inches"
+                style={{ width: 60, flex: "0 0 auto" }}
+                onCommit={(next) =>
                   handleChangeMidWallBeamBigHeaderHeightIn(
                     story,
                     wallId,
                     beam.id,
-                    Math.max(BIG_HEADER_BEAM_MIN_HEIGHT_IN, Number(e.target.value)),
+                    Math.max(BIG_HEADER_BEAM_MIN_HEIGHT_IN, next),
                   )
                 }
               />
@@ -5849,23 +5869,25 @@ export default function LayoutEditor() {
                   </label>
                   <label className={elevationStyles.fieldRow}>
                     From left end
-                    <input
-                      type="number"
-                      min={0}
-                      max={wallWidthIn}
-                      value={Math.round(resolvedPointXsIn[i]!)}
-                      onChange={(e) => handleChangeGableProfilePositionIn(elevationWall.id, i, Number(e.target.value))}
+                    <LengthInput
+                      value={resolvedPointXsIn[i]!}
+                      domain="in"
+                      ariaLabel={`Gable profile point ${i + 1} distance from the left end, in inches`}
+                      title={`0 to ${formatLengthIn(wallWidthIn, unitSystem)} along the wall — advisory, nothing clamps this`}
+                      style={{ width: 60, flex: "0 0 auto" }}
+                      onCommit={(next) => handleChangeGableProfilePositionIn(elevationWall.id, i, next)}
                     />
                     in
                   </label>
                   <label className={elevationStyles.fieldRow}>
                     From right end
-                    <input
-                      type="number"
-                      min={0}
-                      max={wallWidthIn}
-                      value={Math.round(wallWidthIn - resolvedPointXsIn[i]!)}
-                      onChange={(e) => handleChangeGableProfilePositionIn(elevationWall.id, i, wallWidthIn - Number(e.target.value))}
+                    <LengthInput
+                      value={wallWidthIn - resolvedPointXsIn[i]!}
+                      domain="in"
+                      ariaLabel={`Gable profile point ${i + 1} distance from the right end, in inches`}
+                      title={`0 to ${formatLengthIn(wallWidthIn, unitSystem)} along the wall — advisory, nothing clamps this`}
+                      style={{ width: 60, flex: "0 0 auto" }}
+                      onCommit={(next) => handleChangeGableProfilePositionIn(elevationWall.id, i, wallWidthIn - next)}
                     />
                     in
                   </label>
@@ -5954,32 +5976,35 @@ export default function LayoutEditor() {
             <div key={w.beforeTileCount} className={elevationStyles.beamRow}>
               <label className={elevationStyles.fieldRow}>
                 Width
-                <input
-                  type="number"
-                  min={windowHeaderWidthInRange.minIn}
-                  max={panelWidthInRange.maxIn}
-                  value={Math.round(w.widthIn)}
-                  onChange={(e) => handleSetGableWindowField(elevationWall.id, w.beforeTileCount, "widthIn", Number(e.target.value))}
+                <LengthInput
+                  value={w.widthIn}
+                  domain="in"
+                  ariaLabel="Gable window width in inches"
+                  style={{ width: 60, flex: "0 0 auto" }}
+                  onCommit={(next) => handleSetGableWindowField(elevationWall.id, w.beforeTileCount, "widthIn", next)}
                 />
                 in
               </label>
               <label className={elevationStyles.fieldRow}>
                 Height (RO)
-                <input
-                  type="number"
-                  min={12}
-                  value={Math.round(w.heightIn ?? standardWindowHeightDefaultIn.value)}
-                  onChange={(e) => handleSetGableWindowField(elevationWall.id, w.beforeTileCount, "heightIn", Number(e.target.value))}
+                <LengthInput
+                  value={w.heightIn ?? standardWindowHeightDefaultIn.value}
+                  domain="in"
+                  ariaLabel="Gable window rough-opening height in inches"
+                  title="At least 12in — advisory; the handler only enforces a floor of 0"
+                  style={{ width: 60, flex: "0 0 auto" }}
+                  onCommit={(next) => handleSetGableWindowField(elevationWall.id, w.beforeTileCount, "heightIn", next)}
                 />
                 in
               </label>
               <label className={elevationStyles.fieldRow}>
                 Sill height
-                <input
-                  type="number"
-                  min={0}
-                  value={Math.round(w.sillHeightIn ?? sillDefaultHeightIn.value)}
-                  onChange={(e) => handleSetGableWindowField(elevationWall.id, w.beforeTileCount, "sillHeightIn", Number(e.target.value))}
+                <LengthInput
+                  value={w.sillHeightIn ?? sillDefaultHeightIn.value}
+                  domain="in"
+                  ariaLabel="Gable window sill height in inches"
+                  style={{ width: 60, flex: "0 0 auto" }}
+                  onCommit={(next) => handleSetGableWindowField(elevationWall.id, w.beforeTileCount, "sillHeightIn", next)}
                 />
                 in
               </label>
@@ -6166,32 +6191,31 @@ export default function LayoutEditor() {
         <strong>Bale foundation framing</strong>
         <label>
           Top framing member depth (in){" "}
-          <input
-            type="number"
+          <LengthInput
             value={baleFoundationTopDepthIn}
-            min={1.5}
-            step={0.25}
-            onChange={(e) => setBaleFoundationTopDepthIn(Math.max(0, Number(e.target.value)))}
+            domain="in"
+            ariaLabel="Bale foundation top framing member depth in inches"
+            title="At least 1.5in — advisory; the handler only enforces a floor of 0"
+            onCommit={(next) => setBaleFoundationTopDepthIn(Math.max(0, next))}
           />
         </label>
         <label>
           Bottom framing member depth (in){" "}
-          <input
-            type="number"
+          <LengthInput
             value={baleFoundationBottomDepthIn}
-            min={1.5}
-            step={0.25}
-            onChange={(e) => setBaleFoundationBottomDepthIn(Math.max(0, Number(e.target.value)))}
+            domain="in"
+            ariaLabel="Bale foundation bottom framing member depth in inches"
+            title="At least 1.5in — advisory; the handler only enforces a floor of 0"
+            onCommit={(next) => setBaleFoundationBottomDepthIn(Math.max(0, next))}
           />
         </label>
         <label>
           Gap (in){" "}
-          <input
-            type="number"
+          <LengthInput
             value={baleFoundationGapIn}
-            min={0}
-            step={0.25}
-            onChange={(e) => setBaleFoundationGapIn(Math.max(0, Number(e.target.value)))}
+            domain="in"
+            ariaLabel="Bale foundation framing stack gap in inches"
+            onCommit={(next) => setBaleFoundationGapIn(Math.max(0, next))}
           />
         </label>
         <p className={styles.note}>
@@ -6484,13 +6508,16 @@ export default function LayoutEditor() {
 
         {roofProfilePointHeightsFt.map((heightFt, i) => (
           <label key={i} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            {roofProfilePointHeightsFt.length === 1 ? "Ridge rise above eave (ft)" : `Point ${i + 1} rise above eave (ft)`}
-            <input
-              type="number"
+            {/* Feet domain, so the value now reads back carrying its own
+                units and the "(ft)" this label used to end with would be
+                contradicting it. */}
+            {roofProfilePointHeightsFt.length === 1 ? "Ridge rise above eave" : `Point ${i + 1} rise above eave`}
+            <LengthInput
               value={heightFt}
-              step={0.5}
-              onChange={(e) => handleChangeRoofProfilePointHeightFt(i, Number(e.target.value))}
-              style={{ width: 70 }}
+              domain="ft"
+              ariaLabel={roofProfilePointHeightsFt.length === 1 ? "Ridge rise above eave" : `Point ${i + 1} rise above eave`}
+              onCommit={(next) => handleChangeRoofProfilePointHeightFt(i, next)}
+              style={{ width: 80 }}
             />
           </label>
         ))}
@@ -6501,13 +6528,12 @@ export default function LayoutEditor() {
 
         <label>
           Max Gable End Panel height (in){" "}
-          <input
-            type="number"
+          <LengthInput
             value={maxGablePanelHeightIn}
-            min={12}
-            max={GABLE_PANEL_MAX_HEIGHT_IN}
-            step={1}
-            onChange={(e) => setMaxGablePanelHeightIn(Math.min(Number(e.target.value), GABLE_PANEL_MAX_HEIGHT_IN))}
+            domain="in"
+            ariaLabel="Max Gable End Panel height in inches"
+            title={`At least 12in (advisory); the ${GABLE_PANEL_MAX_HEIGHT_IN}in fabrication ceiling above is enforced`}
+            onCommit={(next) => setMaxGablePanelHeightIn(Math.min(next, GABLE_PANEL_MAX_HEIGHT_IN))}
           />
         </label>
         <p className={styles.note}>
@@ -6517,13 +6543,12 @@ export default function LayoutEditor() {
 
         <label>
           Heel height (in){" "}
-          <input
-            type="number"
+          <LengthInput
             value={heelHeightIn}
-            min={0}
-            max={15}
-            step={0.5}
-            onChange={(e) => setHeelHeightIn(Math.max(0, Number(e.target.value)))}
+            domain="in"
+            ariaLabel="Truss heel height in inches"
+            title="Up to 15in — advisory; the handler only enforces a floor of 0"
+            onCommit={(next) => setHeelHeightIn(Math.max(0, next))}
           />
         </label>
         <p className={styles.note}>
@@ -6602,12 +6627,12 @@ export default function LayoutEditor() {
           <>
             <label>
               Roof-catcher-beam depth offset (in){" "}
-              <input
-                type="number"
+              <LengthInput
                 value={roofCatcherBeamOffsetIn}
-                min={0}
-                step={0.25}
-                onChange={(e) => setRoofCatcherBeamOffsetIn(Number(e.target.value))}
+                domain="in"
+                ariaLabel="Roof-catcher-beam depth offset in inches"
+                title="0 or more — advisory, nothing clamps this"
+                onCommit={setRoofCatcherBeamOffsetIn}
               />
             </label>
             <label>
@@ -6949,16 +6974,14 @@ export default function LayoutEditor() {
                           )}
                           <label style={{ display: "block", marginTop: 6 }}>
                             Width{" "}
-                            <input
-                              type="number"
+                            <LengthInput
                               id={`window-size-${wallId}-${slotIndex}`}
                               title="However wide, up to 10ft — the header's own truss web bracing angle adds/removes peaks in pairs to stay within its 30-45deg range as width changes"
                               value={slot.widthIn}
-                              min={windowHeaderWidthInRange.minIn}
-                              max={windowHeaderWidthInRange.maxIn}
-                              step={0.125}
+                              domain="in"
+                              ariaLabel="Window width in inches"
                               style={{ width: 64 }}
-                              onChange={(e) => handleSetWindowWidth(story, wallId, slotIndex, Number(e.target.value))}
+                              onCommit={(next) => handleSetWindowWidth(story, wallId, slotIndex, next)}
                             />
                             &quot;
                           </label>
@@ -6989,16 +7012,14 @@ export default function LayoutEditor() {
                           </label>
                           <label style={{ display: "block" }}>
                             Sill height{" "}
-                            <input
-                              type="number"
+                            <LengthInput
                               id={`window-sill-height-${wallId}-${slotIndex}`}
                               title="This window's own sill height (floor to Rough Opening bottom) — also draggable above and in the 3D Sill & Header tool"
                               value={zone.sillHeightIn ?? sillHeaderHeightInRange.minIn}
-                              min={sillHeaderHeightInRange.minIn}
-                              max={sillHeaderHeightInRange.maxIn}
-                              step={0.125}
+                              domain="in"
+                              ariaLabel="Window sill height in inches"
                               style={{ width: 64 }}
-                              onChange={(e) => handleSetWindowSillHeight(story, wallId, slotIndex, Number(e.target.value), zoneIndex)}
+                              onCommit={(next) => handleSetWindowSillHeight(story, wallId, slotIndex, next, zoneIndex)}
                             />
                           </label>
                         </>
@@ -7045,29 +7066,25 @@ export default function LayoutEditor() {
                           </p>
                           <label style={{ display: "block", marginTop: 6 }}>
                             Width{" "}
-                            <input
-                              type="number"
+                            <LengthInput
                               id={`big-header-width-${wallId}-${slotIndex}`}
                               value={slot.widthIn}
-                              min={bigHeaderWidthInRange.minIn}
-                              max={bigHeaderWidthInRange.maxIn}
-                              step={0.125}
+                              domain="in"
+                              ariaLabel="Big Header width in inches"
                               style={{ width: 64 }}
-                              onChange={(e) => handleSetBigHeaderWidth(story, wallId, slotIndex, Number(e.target.value))}
+                              onCommit={(next) => handleSetBigHeaderWidth(story, wallId, slotIndex, next)}
                             />
                             &quot; ({bigHeaderWidthInRange.minIn / 12}-{bigHeaderWidthInRange.maxIn / 12}ft)
                           </label>
                           <label style={{ display: "block" }}>
                             Height{" "}
-                            <input
-                              type="number"
+                            <LengthInput
                               id={`big-header-height-${wallId}-${slotIndex}`}
                               value={slot.heightIn ?? bigHeaderDefaultHeightIn.value}
-                              min={bigHeaderHeightInRange.minIn}
-                              max={bigHeaderHeightInRange.maxIn}
-                              step={0.125}
+                              domain="in"
+                              ariaLabel="Big Header height in inches"
                               style={{ width: 64 }}
-                              onChange={(e) => handleSetBigHeaderHeight(story, wallId, slotIndex, Number(e.target.value))}
+                              onCommit={(next) => handleSetBigHeaderHeight(story, wallId, slotIndex, next)}
                             />
                             &quot; ({bigHeaderHeightInRange.minIn / 12}-{bigHeaderHeightInRange.maxIn / 12}ft)
                           </label>

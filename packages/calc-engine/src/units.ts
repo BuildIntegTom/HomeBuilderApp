@@ -10,7 +10,17 @@ export function mmToIn(valueMm: number): number {
   return valueMm / MM_PER_IN;
 }
 
-const EIGHTHS_GLYPHS: Record<number, string> = {
+/**
+ * The seven eighth glyphs this app emits, keyed by their numerator over 8.
+ *
+ * Exported because the **parser is the inverse of this formatter** and has
+ * to accept exactly the glyphs the formatter produces — no more (a `⅓` or
+ * `⅔` is not on the grid and is rejected rather than misread) and no fewer
+ * (otherwise `formatImperialFractionIn`'s own output would not round-trip).
+ * The parser inverts this map programmatically instead of keeping a second
+ * copy, so the two can't drift apart.
+ */
+export const EIGHTHS_GLYPHS: Readonly<Record<number, string>> = {
   0: "",
   1: "⅛",
   2: "¼",

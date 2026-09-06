@@ -1,18 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { buildRectangleFootprint, buildOctagonFootprint } from "@building-integrity/geometry";
+import { formatImperialFractionIn } from "@building-integrity/calc-engine";
 import {
   SCALE_PX_PER_FT,
+  UNRECOGNIZED_LENGTH_HINT,
   computeSlotRects,
   cornerMarkerPosition,
   findNearestWall,
   findNearestWallCandidates,
   formatFeetInches,
+  formatLengthForDomain,
   nearestPointOnSegments,
   parseLengthFt,
+  parseLengthIn,
   pickWallByDragDirection,
   projectOntoWallFt,
+  resolveLengthEntry,
   signedDepthFt,
   signedPerpOffsetFt,
+  snapLengthToEighthIn,
   snapOctagonBoxPx,
   snapSpanPointFt,
   wallAndPanelSnapLines,
@@ -33,6 +39,287 @@ describe("formatFeetInches / parseLengthFt round-trip", () => {
     expect(parseLengthFt("40.5")).toBeCloseTo(40.5, 6);
     expect(parseLengthFt("")).toBeNull();
     expect(parseLengthFt("not a number")).toBeNull();
+  });
+
+  // The formatter used to do Math.round(ft * 12) — nearest WHOLE INCH — so
+  // this exact wall read back as `24'-4"`, a bigger precision loss than any
+  // decimal site in the app.
+  it("carries eighths instead of rounding to the nearest whole inch", () => {
+    expect(formatFeetInches(291.625 / 12)).toBe("24'-3⅝\"");
+    expect(formatFeetInches(40.5)).toBe("40'-6\"");
+    expect(formatFeetInches(0)).toBe("0'-0\"");
+    expect(formatFeetInches(-18 / 12)).toBe("-1'-6\"");
+  });
+
+  // Format and parse are inverses, so they are swept as a pair rather than
+  // spot-checked. `toBe`, not `toBeCloseTo`: an eighth is exactly
+  // representable in binary and Stage 1's sum invariant leans on that, so
+  // "approximately round-trips" would pass on precisely the bug this
+  // stage exists to remove.
+  it("round-trips every eighth from 96in to 720in bit-identically", () => {
+    const mismatches: string[] = [];
+    for (let eighths = 96 * 8; eighths <= 720 * 8; eighths++) {
+      const ft = eighths / 8 / 12;
+      const back = parseLengthFt(formatFeetInches(ft));
+      if (back !== ft) mismatches.push(`${formatFeetInches(ft)}: ${back} !== ${ft}`);
+    }
+    expect(mismatches).toEqual([]);
+  });
+});
+
+describe("parseLengthIn / formatImperialFractionIn round-trip", () => {
+  it("round-trips every eighth from 0in to 120in bit-identically", () => {
+    const mismatches: string[] = [];
+    for (let eighths = 0; eighths <= 120 * 8; eighths++) {
+      const valueIn = eighths / 8;
+      const back = parseLengthIn(formatImperialFractionIn(valueIn));
+      if (back !== valueIn) mismatches.push(`${formatImperialFractionIn(valueIn)}: ${back} !== ${valueIn}`);
+    }
+    expect(mismatches).toEqual([]);
+  });
+
+  it("round-trips negatives, which the formatter also emits", () => {
+    for (const valueIn of [-0.125, -3.625, -47.875]) {
+      expect(parseLengthIn(formatImperialFractionIn(valueIn))).toBe(valueIn);
+    }
+  });
+});
+
+describe("fraction grammar", () => {
+  it("accepts whole + fraction in all three separator forms", () => {
+    expect(parseLengthIn("47 5/8")).toBe(47.625);
+    expect(parseLengthIn("47-5/8")).toBe(47.625);
+    expect(parseLengthIn("47 5/8\"")).toBe(47.625);
+  });
+
+  it("accepts a bare fraction", () => {
+    expect(parseLengthIn("5/8")).toBe(0.625);
+    expect(parseLengthIn("5/8\"")).toBe(0.625);
+  });
+
+  it("accepts the glyphs formatImperialFractionIn itself emits", () => {
+    expect(parseLengthIn("47⅝")).toBe(47.625);
+    expect(parseLengthIn("⅝")).toBe(0.625);
+    expect(parseLengthIn("12⅛")).toBe(12.125);
+    expect(parseLengthIn("12¼")).toBe(12.25);
+    expect(parseLengthIn("12⅜")).toBe(12.375);
+    expect(parseLengthIn("12½")).toBe(12.5);
+    expect(parseLengthIn("12¾")).toBe(12.75);
+    expect(parseLengthIn("12⅞")).toBe(12.875);
+  });
+
+  it("accepts feet + inches + optional fraction", () => {
+    expect(parseLengthFt("24'-3 5/8\"")).toBe(291.625 / 12);
+    expect(parseLengthFt("24' 3⅝")).toBe(291.625 / 12);
+    expect(parseLengthFt("24'3\"")).toBe(291 / 12);
+    expect(parseLengthFt("24'")).toBe(24);
+  });
+
+  it("leaves the existing decimal and whole forms alone", () => {
+    expect(parseLengthIn("47.625")).toBe(47.625);
+    expect(parseLengthIn("47")).toBe(47);
+    expect(parseLengthFt("40.5")).toBe(40.5);
+    expect(parseLengthFt("40")).toBe(40);
+  });
+
+  it("returns null for anything else", () => {
+    const rejected = [
+      "",
+      "   ",
+      "not a number",
+      "47.5/8",
+      "5 8",
+      "-",
+      "\"",
+      "'3\"", // a foot mark with no number in front of it
+      "1e3", // the old parseFloat fallback would have read this as 1000
+      "47\"\"",
+      "24'6'",
+      "a24'3\"", // junk before the feet number
+      "2 4'3\"", // two numbers where the feet go
+    ];
+    for (const bad of rejected) {
+      expect(parseLengthIn(bad)).toBeNull();
+      expect(parseLengthFt(bad)).toBeNull();
+    }
+  });
+});
+
+// Tommy, 2026-08-30: "the fractions should always be considered a fraction
+// of an inch". The whole number keeps the field's own unit; the fraction
+// never does. Getting this backwards in the feet-domain field is a
+// FACTOR-OF-TWELVE error (47'-0⅝" vs 3'-11⅝"), which is why it has its own
+// named test and why the field shows a live hint before committing.
+describe("the fraction is always inches", () => {
+  it("reads 47 5/8 in an inch-domain field as 47.625in", () => {
+    expect(parseLengthIn("47 5/8")).toBe(47.625);
+  });
+
+  it("reads 47 5/8 in the feet-domain wall-length field as 47ft + ⅝in", () => {
+    expect(parseLengthFt("47 5/8")).toBe(47 + 0.625 / 12);
+    expect(parseLengthFt("47 5/8")! * 12).toBeCloseTo(564.625, 9);
+  });
+
+  it("gives a bare fraction in a feet field the same reading", () => {
+    expect(parseLengthFt("5/8")).toBe(0.625 / 12);
+  });
+
+  // An explicit unit mark wins over the field's own domain, which is what
+  // makes a fully-written form mean the same thing in either kind of
+  // field. NOTE: this is an implementation judgement the spec does not
+  // settle — see resolveTokens' doc comment.
+  it("lets an explicit unit mark override the field's domain", () => {
+    expect(parseLengthFt("24'-3 5/8\"")).toBe(291.625 / 12);
+    expect(parseLengthFt("3\"")).toBe(0.25);
+    expect(parseLengthIn("2'")).toBe(24);
+  });
+});
+
+describe("regressions: the three ways typed fractions used to be destroyed", () => {
+  // 1. parseLengthFt fell through to parseFloat, which reads "47 5/8" as 47.
+  it("no longer drops the fraction on the parseFloat fallback", () => {
+    expect(parseFloat("47 5/8")).toBe(47); // the old behaviour, pinned
+    expect(parseLengthIn("47 5/8")).toBe(47.625);
+    expect(parseLengthFt("47 5/8")).not.toBe(47);
+  });
+
+  // 2. The feet-inches branch had no fraction slot, so "24'-3 5/8\"" missed
+  //    it and also fell through to parseFloat -> 24, losing 3⅝ inches.
+  it("no longer loses three inches and five eighths on a feet-inches entry", () => {
+    expect(parseFloat("24'-3 5/8\"")).toBe(24); // the old behaviour, pinned
+    expect(parseLengthFt("24'-3 5/8\"")).toBe(291.625 / 12);
+    expect(parseLengthFt("24'-3 5/8\"")).toBeCloseTo(24.3020833, 7);
+  });
+
+  // 3. The inch-domain fields were <input type="number">, which cannot hold
+  //    "47 5/8" at all: the browser refuses the text, e.target.value comes
+  //    back "", and Number("") is 0 — so a typed fraction ZEROED the
+  //    dimension. Those fields are now type="text" and commit through
+  //    resolveLengthEntry, which is the value this asserts. (The DOM half
+  //    can't be exercised here — vitest runs without a browser — so the
+  //    old `Number("")` result is pinned alongside it to keep the reason
+  //    the field type had to change visible.)
+  it("no longer zeroes an inch-domain field when a fraction is typed", () => {
+    expect(Number("")).toBe(0); // what a number input handed the old onChange
+    expect(resolveLengthEntry("47 5/8", "in").value).toBe(47.625);
+    expect(resolveLengthEntry("47 5/8", "in").value).not.toBe(0);
+  });
+});
+
+describe("fraction parsing edge cases", () => {
+  it("handles zero, signs and negatives", () => {
+    expect(parseLengthIn("0")).toBe(0);
+    expect(parseLengthIn("-3 1/2")).toBe(-3.5);
+    expect(parseLengthIn("+3 1/2")).toBe(3.5);
+    expect(parseLengthFt("-3 1/2")).toBe(-(3 + 0.5 / 12));
+    expect(parseLengthFt("-1'-6\"")).toBe(-1.5);
+  });
+
+  it("accepts any denominator, improper included, and rejects a zero one", () => {
+    expect(parseLengthIn("9/8")).toBe(1.125);
+    expect(parseLengthIn("5/1")).toBe(5);
+    expect(parseLengthIn("47 5/16")).toBe(47.3125);
+    expect(parseLengthIn("3/32")).toBe(0.09375);
+    expect(parseLengthIn("5/0")).toBeNull();
+  });
+
+  // A 400-digit number satisfies the grammar and parseFloats to Infinity.
+  // Without the finite check it committed Infinity into an inch field and
+  // rendered "= Infinity'-NaN\"" as the hint of a feet field.
+  it("rejects numbers too large to be a real length", () => {
+    const huge = "9".repeat(400);
+    expect(parseLengthIn(huge)).toBeNull();
+    expect(parseLengthFt(huge)).toBeNull();
+    expect(parseLengthFt(`${huge}'6"`)).toBeNull();
+    expect(parseLengthIn(`47 ${huge}/8`)).toBeNull();
+    expect(resolveLengthEntry(huge, "in").value).toBeNull();
+    expect(resolveLengthEntry(huge, "ft").hint).toBe(UNRECOGNIZED_LENGTH_HINT);
+  });
+
+  it("rejects fraction glyphs the formatter never emits", () => {
+    expect(parseLengthIn("⅓")).toBeNull();
+    expect(parseLengthIn("⅔")).toBeNull();
+    expect(parseLengthIn("⅕")).toBeNull();
+    expect(parseLengthIn("2⅔")).toBeNull();
+    expect(parseLengthIn("¾")).toBe(0.75); // ...but ¾ IS one of the eight
+  });
+
+  it("tolerates whitespace variants", () => {
+    expect(parseLengthIn("  47   5 / 8  ")).toBe(47.625);
+    expect(parseLengthFt("  24 '  -  3 5/8 \"  ")).toBe(291.625 / 12);
+  });
+});
+
+describe("snapLengthToEighthIn", () => {
+  it("snaps inches round-half-up onto the grid", () => {
+    expect(snapLengthToEighthIn(47.3125, "in")).toBe(47.375);
+    expect(snapLengthToEighthIn(40.3, "in")).toBe(40.25);
+    expect(snapLengthToEighthIn(47.625, "in")).toBe(47.625);
+  });
+
+  it("snaps feet to the nearest 1/8in without disturbing a value already on it", () => {
+    expect(snapLengthToEighthIn(40.5, "ft")).toBe(40.5);
+    expect(snapLengthToEighthIn(291.625 / 12, "ft")).toBe(291.625 / 12);
+    expect(snapLengthToEighthIn(10.001, "ft")).toBe(10);
+  });
+});
+
+describe("formatLengthForDomain (what a committed value reads back as)", () => {
+  it("writes an inch-domain value back as a fraction with no unit mark", () => {
+    expect(formatLengthForDomain(47.375, "in")).toBe("47⅜");
+    expect(formatLengthForDomain(40, "in")).toBe("40");
+    expect(formatLengthForDomain(0.625, "in")).toBe("⅝");
+  });
+
+  it("writes a feet-domain value back in feet-inches, which carries its own marks", () => {
+    expect(formatLengthForDomain(10, "ft")).toBe("10'-0\"");
+    expect(formatLengthForDomain(291.625 / 12, "ft")).toBe("24'-3⅝\"");
+  });
+
+  // The redisplay has to round-trip, or committing a value would move it.
+  it("round-trips through the parser in both domains", () => {
+    for (const valueIn of [0, 0.125, 40, 47.375, 119.875]) {
+      expect(parseLengthIn(formatLengthForDomain(valueIn, "in"))).toBe(valueIn);
+    }
+    for (let eighths = 96 * 8; eighths <= 200 * 8; eighths += 7) {
+      const ft = eighths / 8 / 12;
+      expect(parseLengthFt(formatLengthForDomain(ft, "ft"))).toBe(ft);
+    }
+  });
+});
+
+describe("resolveLengthEntry (the live resolved hint)", () => {
+  it("shows the resolved value for every grammar row", () => {
+    expect(resolveLengthEntry("47 5/8", "in").hint).toBe("= 47⅝\"");
+    expect(resolveLengthEntry("47-5/8", "in").hint).toBe("= 47⅝\"");
+    expect(resolveLengthEntry("5/8", "in").hint).toBe("= ⅝\"");
+    expect(resolveLengthEntry("47⅝", "in").hint).toBe("= 47⅝\"");
+    expect(resolveLengthEntry("47.625", "in").hint).toBe("= 47⅝\"");
+    expect(resolveLengthEntry("47", "in").hint).toBe("= 47\"");
+    expect(resolveLengthEntry("24'-3 5/8\"", "ft").hint).toBe("= 24'-3⅝\"");
+    expect(resolveLengthEntry("40.5", "ft").hint).toBe("= 40'-6\"");
+  });
+
+  // The factor-of-twelve case, shown to the user before it commits.
+  it("spells the feet-domain reading out in full", () => {
+    const entry = resolveLengthEntry("47 5/8", "ft");
+    expect(entry.hint).toBe("= 47'-0⅝\"");
+    expect(entry.value).toBe(47 + 0.625 / 12);
+  });
+
+  it("snaps an off-grid denominator and shows what will actually be stored", () => {
+    const entry = resolveLengthEntry("47 5/16", "in");
+    expect(entry.value).toBe(47.375);
+    expect(entry.hint).toBe("= 47⅜\"");
+  });
+
+  it("gives a failed parse somewhere honest to live", () => {
+    for (const bad of ["", "   ", "banana", "5/0", "⅔"]) {
+      const entry = resolveLengthEntry(bad, "in");
+      expect(entry.value).toBeNull();
+      expect(entry.hint).toBe(UNRECOGNIZED_LENGTH_HINT);
+    }
+    expect(UNRECOGNIZED_LENGTH_HINT).toBe("= —, unrecognized");
   });
 });
 
