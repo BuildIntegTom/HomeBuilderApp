@@ -1,4 +1,5 @@
 import type { Corner, Footprint, Point } from "./types";
+import { quantizeFootprint } from "./eighths";
 
 /**
  * The consistent winding order every footprint in this app is built and
@@ -185,5 +186,8 @@ export function insertBumpOut(
     if (p.isPrimary) nextPrimaryCornerIds.add(String(i));
   });
 
-  return { footprint: { corners, walls }, primaryCornerIds: nextPrimaryCornerIds };
+  // Every new corner the jog introduces lands on the 1/8in grid, so the
+  // bump-out's own walls (and the two remainder segments it leaves behind on
+  // the original wall) all have exact-eighth lengths to tile against.
+  return { footprint: quantizeFootprint({ corners, walls }), primaryCornerIds: nextPrimaryCornerIds };
 }

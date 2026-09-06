@@ -1,3 +1,4 @@
+import { distributeEighths, fromEighths, toEighths } from "./eighths";
 import type { PanelSlot } from "./types";
 
 /** Slot types considered plain wall infill — eligible to be replaced by a
@@ -18,12 +19,20 @@ function isInfillType(slot: PanelSlot): boolean {
 /** Tiles a total width into uniform-width slots of `uniformType` — same
  * "ceil'd, evenly re-split" rule as computeJoistLayout/computeGableTiledRow
  * (a width that doesn't divide evenly still gets a uniform pitch, not a
- * short leftover panel). */
+ * short leftover panel).
+ *
+ * "Uniform" is now uniform to within one 1/8in: `distributeEighths` gives
+ * every slot a whole number of eighths and the run still sums to
+ * `totalWidthIn` exactly, where the old even division landed on
+ * sixteenths (and finer) whenever the run didn't divide cleanly. A shop
+ * cannot read the 1/8in difference off a cut list; it can read a run that
+ * doesn't add up to its wall. */
 function tileUniformRun(totalWidthIn: number, uniformType: "standard" | "braced", uniformWidthIn: number): PanelSlot[] {
   if (totalWidthIn <= 0) return [];
   const count = Math.max(1, Math.round(totalWidthIn / uniformWidthIn));
-  const widthIn = totalWidthIn / count;
-  return Array.from({ length: count }, () => ({ type: uniformType, widthIn }));
+  return distributeEighths(toEighths(totalWidthIn), count)
+    .filter((eighths) => eighths > 0)
+    .map((eighths) => ({ type: uniformType, widthIn: fromEighths(eighths) }));
 }
 
 /**

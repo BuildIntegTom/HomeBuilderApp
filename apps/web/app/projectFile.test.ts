@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { PROJECT_FILE_VERSION, parseProjectFile, serializeProject, type ProjectState } from "./projectFile";
-import type { MidWallBeam } from "./midWallBeam";
 
 function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
   return {
@@ -161,70 +160,213 @@ describe("serializeProject / parseProjectFile round-trip", () => {
   });
 });
 
-describe("v22 -> v23 migration (MidWallBeam: gains a kind field)", () => {
-  /** Builds a raw v22-shaped file (every beam missing its own `kind` field
-   * entirely) directly from a real serialized current state. */
-  function makeV22File(
-    midWallBeamsByStoryAndWallId: Record<"ground" | "second", Record<string, Omit<MidWallBeam, "kind">[]>>,
-    overrides: Partial<ProjectState> = {},
-  ) {
+describe("v23 -> v24 migration (every stored length onto the 1/8in grid)", () => {
+  /** A real 30x20 rectangle, so corner ownership and butt-joint insets are
+   * the genuine ones rather than a degenerate 2-corner fixture's.
+   *
+   * Wall AB here loses its corner at BOTH ends to its two shorter neighbours,
+   * so `wallGeometryFor(...).lengthIn` is 360 - 2 x 15.5 = **329in**. Worth
+   * stating outright, because the file's OTHER fixture — `makeState()`'s
+   * default two-corner footprint — gives wall AB a length of **240in** with no
+   * insets at all, and the two are easy to confuse when reading a residual. */
+  const rectangleFootprint = {
+    corners: [
+      { id: "A", point: { x: 0, y: 0 } },
+      { id: "B", point: { x: 30, y: 0 } },
+      { id: "C", point: { x: 30, y: 20 } },
+      { id: "D", point: { x: 0, y: 20 } },
+    ],
+    walls: [
+      { id: "AB", startCorner: "A", endCorner: "B", lengthFt: 30 },
+      { id: "BC", startCorner: "B", endCorner: "C", lengthFt: 20 },
+      { id: "CD", startCorner: "C", endCorner: "D", lengthFt: 30 },
+      { id: "DA", startCorner: "D", endCorner: "A", lengthFt: 20 },
+    ],
+  };
+
+  /** Builds a raw v23-shaped file. v23 and v24 have the identical SHAPE —
+   * v23->v24 changes only values — so a v23 file is a current serialization
+   * with the version number rolled back. */
+  function makeV23File(overrides: Partial<ProjectState> = {}) {
     const currentState = serializeProject(makeState(overrides)).state;
-    return {
-      schemaVersion: 22,
-      savedAt: new Date().toISOString(),
-      state: { ...currentState, midWallBeamsByStoryAndWallId },
-    };
+    return { schemaVersion: 23, savedAt: new Date().toISOString(), state: currentState };
   }
 
-  it("stamps kind: 'box-beam' onto a v22 beam, preserving sizeId and every other field", () => {
+  /** Wall AB of the rectangle above loses a corner at each end to its two
+   * shorter neighbours, so its tiled length is 360 - 2 x thickness. These
+   * widths sum to exactly that, but two of them sit on a SIXTEENTH — the
+   * literal output of the pre-fix `(standardWidthIn + remainderIn) / 2`. */
+  const offGridSlots = [
+    { type: "standard" as const, widthIn: 23.5625 },
+    { type: "standard" as const, widthIn: 23.5625 },
+    { type: "standard" as const, widthIn: 281.875 },
+  ];
+
+  function loadWithOffGridWall(extraOverrides: Partial<ProjectState> = {}) {
+    const file = makeV23File({
+      footprint: rectangleFootprint,
+      primaryCornerIds: new Set(["A", "B", "C", "D"]),
+      leastAccessibleCorner: "A",
+      thicknessIn: 15.5,
+      baseWallSlots: { AB: offGridSlots },
+      stories: [{ id: "ground" as const, label: "Ground Floor", wallHeightFt: 10, wallSlots: { AB: offGridSlots } }],
+      ...extraOverrides,
+    });
+    return parseProjectFile(JSON.stringify(file));
+  }
+
+  it("puts every slot width on the 1/8in grid, summing exactly to the wall's own length", () => {
+    const result = loadWithOffGridWall();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const repaired = result.state.baseWallSlots.AB!;
+    for (const slot of repaired) {
+      expect(Math.abs(slot.widthIn * 8 - Math.round(slot.widthIn * 8))).toBeLessThan(1e-9);
+      expect(slot.widthIn).toBeGreaterThanOrEqual(0);
+    }
+    // Integer eighths, not toBeCloseTo — a tolerance would pass on exactly the
+    // defect this migration exists to repair.
+    const sumEighths = repaired.reduce((sum, slot) => sum + Math.round(slot.widthIn * 8), 0);
+    expect(sumEighths).toBe(Math.round((30 * 12 - 2 * 15.5) * 8));
+  });
+
+  it("repairs the second story's own wallSlots too, not just baseWallSlots", () => {
+    const result = loadWithOffGridWall();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    for (const slot of result.state.stories[0]!.wallSlots.AB!) {
+      expect(Math.abs(slot.widthIn * 8 - Math.round(slot.widthIn * 8))).toBeLessThan(1e-9);
+    }
+  });
+
+  it("is a REPAIR, not a re-tile — slot count, order and types all survive", () => {
+    const result = loadWithOffGridWall();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const repaired = result.state.baseWallSlots.AB!;
+    expect(repaired).toHaveLength(offGridSlots.length);
+    expect(repaired.map((s) => s.type)).toEqual(offGridSlots.map((s) => s.type));
+    // Nothing moved more than its own rounding plus one eighth.
+    repaired.forEach((slot, i) => {
+      expect(Math.abs(slot.widthIn - offGridSlots[i]!.widthIn)).toBeLessThanOrEqual(1 / 16 + 0.125);
+    });
+  });
+
+  it("keeps a manual panel-mover adjustment (lockedWidthIn), repairing it onto the grid", () => {
+    // The whole reason this is a repair rather than a re-tile: a re-tile would
+    // discard this.
+    const locked = [
+      { type: "standard" as const, widthIn: 23.5625, lockedWidthIn: 23.5625 },
+      { type: "standard" as const, widthIn: 23.5625 },
+      { type: "standard" as const, widthIn: 281.875 },
+    ];
+    const result = loadWithOffGridWall({ baseWallSlots: { AB: locked } });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.baseWallSlots.AB![0]!.lockedWidthIn).toBe(23.625);
+  });
+
+  it("snaps footprint corners onto the grid and recomputes wall lengths from them", () => {
+    const drifted = {
+      corners: [
+        { id: "A", point: { x: 0, y: 0 } },
+        { id: "B", point: { x: 30.007, y: 0 } },
+        { id: "C", point: { x: 30.007, y: 20.004 } },
+        { id: "D", point: { x: 0, y: 20.004 } },
+      ],
+      walls: [
+        { id: "AB", startCorner: "A", endCorner: "B", lengthFt: 30.007 },
+        { id: "BC", startCorner: "B", endCorner: "C", lengthFt: 20.004 },
+        { id: "CD", startCorner: "C", endCorner: "D", lengthFt: 30.007 },
+        { id: "DA", startCorner: "D", endCorner: "A", lengthFt: 20.004 },
+      ],
+    };
+    const result = parseProjectFile(JSON.stringify(makeV23File({ footprint: drifted, baseWallSlots: {}, stories: [] })));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    for (const wall of result.state.footprint!.walls) {
+      expect(Math.abs(wall.lengthFt * 12 * 8 - Math.round(wall.lengthFt * 12 * 8))).toBeLessThan(1e-9);
+    }
+  });
+
+  it("does not stretch a wall whose slots were never a tiling of it", () => {
+    // The guard, on `rectangleFootprint` (so the target is 329in — see that
+    // fixture's own comment): two 40in panels totalling 80in is not a
+    // rounding residual of a 329in wall, so the repair works against the
+    // wall's own stored total instead of inventing 249in of panel width.
+    const result = loadWithOffGridWall({
+      baseWallSlots: { AB: [{ type: "standard", widthIn: 40 }, { type: "standard", widthIn: 40 }] },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.baseWallSlots.AB!.map((s) => s.widthIn)).toEqual([40, 40]);
+  });
+
+  /** Wall AB of `rectangleFootprint`, exactly as `tileWall(329, 40, 25.5,
+   * ...)` produces it: 10 slots summing to precisely 329in, every width
+   * already a whole eighth. */
+  const genuinelyTiledSlots = [
+    { type: "standard" as const, widthIn: 40 },
+    { type: "standard" as const, widthIn: 40 },
+    { type: "standard" as const, widthIn: 40 },
+    { type: "standard" as const, widthIn: 40 },
+    { type: "standard" as const, widthIn: 40 },
+    { type: "standard" as const, widthIn: 40 },
+    { type: "standard" as const, widthIn: 24.125 },
+    { type: "standard" as const, widthIn: 24.125 },
+    { type: "safety-gap" as const, widthIn: 0.75 },
+    { type: "standard" as const, widthIn: 40 },
+  ];
+
+  it("is a true no-op on a genuinely tiled wall — the residual is zero, not merely guarded", () => {
+    // This is the one that actually exercises the NO-OP branch. Every other
+    // round-trip in this file uses makeState()'s degenerate 2-corner footprint
+    // (80in of slots on a 240in wall), so they reach the same unchanged result
+    // via the GUARD instead, and would keep passing if the no-op path broke.
     const result = parseProjectFile(
       JSON.stringify(
-        makeV22File({
-          ground: { AB: [{ id: "beam-1", heightIn: 60, sizeId: "9x2-lvl", startSlotIndex: 0, endSlotIndex: 3 }] },
-          second: {},
+        makeV23File({
+          footprint: rectangleFootprint,
+          primaryCornerIds: new Set(["A", "B", "C", "D"]),
+          leastAccessibleCorner: "A",
+          thicknessIn: 15.5,
+          baseWallSlots: { AB: genuinelyTiledSlots },
+          stories: [{ id: "ground" as const, label: "Ground Floor", wallHeightFt: 10, wallSlots: { AB: genuinelyTiledSlots } }],
         }),
       ),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.midWallBeamsByStoryAndWallId.ground.AB).toEqual([
-      { id: "beam-1", heightIn: 60, sizeId: "9x2-lvl", kind: "box-beam", startSlotIndex: 0, endSlotIndex: 3 },
-    ]);
+    // The precondition that makes this the no-op branch rather than the guard:
+    // the stored widths already sum to the wall's own tiled length.
+    expect(genuinelyTiledSlots.reduce((sum, s) => sum + s.widthIn, 0)).toBe(329);
+    expect(result.state.baseWallSlots.AB).toEqual(genuinelyTiledSlots);
+    expect(result.state.stories[0]!.wallSlots.AB).toEqual(genuinelyTiledSlots);
   });
 
-  it("migrates multiple beams on the same wall, and beams on both stories, independently", () => {
-    const result = parseProjectFile(
-      JSON.stringify(
-        makeV22File({
-          ground: {
-            AB: [
-              { id: "beam-1", heightIn: 20, sizeId: "9x2-lvl", startSlotIndex: 0, endSlotIndex: 2 },
-              { id: "beam-2", heightIn: 60, sizeId: "2x12-dimensional", startSlotIndex: 0, endSlotIndex: 2 },
-            ],
-          },
-          second: { AB: [{ id: "beam-3", heightIn: 30, sizeId: "2x8-dimensional", startSlotIndex: 0, endSlotIndex: 2 }] },
-        }),
-      ),
-    );
+  it("leaves an already-quantized current-version file completely alone", () => {
+    const state = makeState();
+    const result = parseProjectFile(JSON.stringify(serializeProject(state)));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.midWallBeamsByStoryAndWallId.ground.AB).toHaveLength(2);
-    expect(result.state.midWallBeamsByStoryAndWallId.ground.AB!.every((b) => b.kind === "box-beam")).toBe(true);
-    expect(result.state.midWallBeamsByStoryAndWallId.second.AB![0]!.kind).toBe("box-beam");
+    expect(result.state.baseWallSlots).toEqual(state.baseWallSlots);
+    expect(result.state.stories).toEqual(state.stories);
   });
 
-  it("leaves every other field (e.g. boxBeamCoverageByWallId) untouched by this migration", () => {
-    const result = parseProjectFile(
-      JSON.stringify(makeV22File({ ground: {}, second: {} }, { boxBeamCoverageByWallId: { AB: { startSlotIndex: 0, endSlotIndex: 2 } } })),
-    );
+  it("passes a v23 beam through untouched — v23->v24 changes no beam field", () => {
+    const beams = {
+      ground: { AB: [{ id: "beam-1", heightIn: 60, sizeId: "9x2-lvl" as const, kind: "box-beam" as const, startSlotIndex: 0, endSlotIndex: 3 }] },
+      second: {},
+    };
+    const result = parseProjectFile(JSON.stringify(makeV23File({ midWallBeamsByStoryAndWallId: beams })));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.boxBeamCoverageByWallId).toEqual({ AB: { startSlotIndex: 0, endSlotIndex: 2 } });
+    expect(result.state.midWallBeamsByStoryAndWallId.ground.AB).toEqual(beams.ground.AB);
   });
 
-  it("still rejects a version older than the one-version-back migration window (v21, 2 versions back)", () => {
-    const v21File = { ...makeV22File({ ground: {}, second: {} }), schemaVersion: 21 };
-    const result = parseProjectFile(JSON.stringify(v21File));
+  it("now rejects v22, which has fallen out of the one-version-back window", () => {
+    const v22File = { ...makeV23File(), schemaVersion: 22 };
+    const result = parseProjectFile(JSON.stringify(v22File));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/version/i);

@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@building-integrity/geometry": "*",
     "@building-integrity/panel-catalog": "*"
   }
 }

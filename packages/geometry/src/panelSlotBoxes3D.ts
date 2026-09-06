@@ -1,4 +1,5 @@
 import { cornerOwnership } from "./retile";
+import { wallFabricationLengthIn } from "./eighths";
 import type { Footprint, PanelSlot } from "./types";
 
 /**
@@ -71,8 +72,13 @@ export function panelSlotBoxes3D(
     const rotationRad = Math.atan2(dz, dx);
 
     const { start: startOwn, end: endOwn } = ownership[wall.id]!;
+    // `wallFabricationLengthIn`, not `lengthFt * 12` — the same accessor
+    // `retile()` uses. These two have to be the SAME number: on an octagon's
+    // 45deg wall the tiled slots sum to the snapped (grid) length, so reading
+    // the unsnapped one here would leave the rescale below silently absorbing
+    // a real model-vs-render disagreement instead of only float slop.
     const lengthIn =
-      wall.lengthFt * 12 - startOwn.insetAmount - endOwn.insetAmount + startOwn.extraLengthIn + endOwn.extraLengthIn;
+      wallFabricationLengthIn(wall) - startOwn.insetAmount - endOwn.insetAmount + startOwn.extraLengthIn + endOwn.extraLengthIn;
     // Inset moves the tiling start INWARD (this wall doesn't own the
     // corner there); extraLengthIn moves it OUTWARD (this wall's corner
     // panel reaches past its raw endpoint to close a reflex gap) — same

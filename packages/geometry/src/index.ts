@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./eighths";
 export * from "./footprint";
 export * from "./footprintArea";
 export * from "./octagon";

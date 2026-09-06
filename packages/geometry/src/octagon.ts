@@ -1,3 +1,4 @@
+import { quantizeFootprint } from "./eighths";
 import type { Corner, Footprint } from "./types";
 import { MIN_DIMENSION_FT } from "./footprint";
 
@@ -16,6 +17,20 @@ const CLIP_RATIO = 1 - 1 / Math.SQRT2;
  * straight sides and the 4 diagonal clips — owns its own corner panels at
  * both ends (Tommy: octagon corners are mitered, each wall contributes its
  * own 24" corner panel), unlike the rectangle's short/long asymmetric rule.
+ *
+ * **The octagon is the one shape the 1/8in grid cannot fully contain, and
+ * that is mathematics rather than a bug to fix.** `quantizeFootprint` puts
+ * all 8 corners on the grid (so repeated edits don't drift, and the 4
+ * straight sides come out as exact eighths), but a 45deg wall between two
+ * grid points has an irrational length — no rounding rule makes both the
+ * corners and the diagonals exact. Snapping the clip corners also moves
+ * them by up to 1/16in, so the 8 sides are no longer bit-identically equal
+ * (the tests here assert that at 1/16in rather than at 1e-6 for exactly
+ * this reason). The residual is absorbed at the mitered corner joint, which
+ * is what the safety/gap panel is for. Deliberately NOT done: distorting
+ * the octagon to force grid-exact diagonals, which would break the
+ * equal-side shape `snapOctagonBoxPx` exists to preserve. See
+ * `wallFabricationLengthIn`.
  */
 export function buildOctagonFootprint(widthFt: number, depthFt: number): Footprint {
   const width = Math.max(widthFt, MIN_DIMENSION_FT);
@@ -46,5 +61,5 @@ export function buildOctagonFootprint(widthFt: number, depthFt: number): Footpri
     };
   });
 
-  return { corners, walls };
+  return quantizeFootprint({ corners, walls });
 }

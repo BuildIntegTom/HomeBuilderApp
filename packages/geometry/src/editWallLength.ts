@@ -1,5 +1,6 @@
 import type { Footprint, Point } from "./types";
 import { wallDirection } from "./cornerAngle";
+import { quantizeFootprint } from "./eighths";
 
 const MIN_WALL_LENGTH_FT = 1;
 
@@ -33,6 +34,10 @@ const MIN_WALL_LENGTH_FT = 1;
  * A no-op (returns `footprint` unchanged) if `wallId` doesn't exist or is
  * the last wall before the loop closes back onto itself in a way that
  * leaves no distinct "next" wall (a malformed/open wall list).
+ *
+ * The moved corners land on the 1/8in grid (`quantizeFootprint`), so a
+ * typed length is stored as the nearest eighth of an inch rather than as an
+ * arbitrary float — and the wall's tiled panels can then sum to it exactly.
  */
 export function editWallLength(footprint: Footprint, wallId: string, newLengthFt: number): Footprint {
   const wall = footprint.walls.find((w) => w.id === wallId);
@@ -62,5 +67,5 @@ export function editWallLength(footprint: Footprint, wallId: string, newLengthFt
     return { ...w, lengthFt: Math.hypot(end.x - start.x, end.y - start.y) };
   });
 
-  return { corners, walls };
+  return quantizeFootprint({ corners, walls });
 }

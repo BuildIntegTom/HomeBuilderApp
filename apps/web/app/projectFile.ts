@@ -1,3 +1,4 @@
+import { quantizeFootprint, repairWallToEighths, toEighths, wallGeometryFor } from "@building-integrity/geometry";
 import type {
   BoxBeamCoverage,
   Footprint,
@@ -87,9 +88,21 @@ import type { WallReviewNote } from "./wallReviewNotes";
  * "box-beam" (the only kind that existed), so migration is a straight
  * per-beam `kind: "box-beam"` stamp, `sizeId` passing through unchanged —
  * no cross-field lookups needed, the simplest migration in this file's
- * history so far.
+ * history so far. (That migration is gone as of v24 — v22 is now two
+ * versions back and is rejected, per the one-version-back window.)
+ * v23->v24: every stored length is quantized onto the 1/8in grid, so that a
+ * wall's panel widths sum EXACTLY to the wall's own length (Tommy: "we must
+ * remain absolutely precise on total lengths of wall segments being exactly
+ * the same as the addition of all the panels"). Deliberately a load-time
+ * REPAIR, not a re-tile: a re-tile would be a couple of lines shorter and
+ * would throw away every manual panel-mover adjustment in the file, which is
+ * real user work. Footprint corners snap via the same `quantizeFootprint` the
+ * geometry ops now use; each slot width rounds independently and the residual
+ * is shed round-robin over the standard/braced slots only, widest first — see
+ * `repairStateToEighths`. Silent, with no Review Log entry: 1/8in is a shop
+ * precision convention, not a building value, and nothing provisional moves.
  */
-export const PROJECT_FILE_VERSION = 23;
+export const PROJECT_FILE_VERSION = 24;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -393,18 +406,6 @@ export function serializeProject(state: ProjectState): ProjectFile {
   };
 }
 
-/** v22->v23: a v22 file's `MidWallBeam`s have no `kind` field — every one
- * of them meant "box-beam" (the only kind that existed then), so this
- * just stamps that kind onto every beam, on both stories, leaving
- * `sizeId`/`heightIn`/coverage untouched. */
-function migrateMidWallBeamsV22ToV23(
-  v22: Record<"ground" | "second", Record<string, Omit<MidWallBeam, "kind">[]>>,
-): Record<"ground" | "second", Record<string, MidWallBeam[]>> {
-  const migrateStory = (beamsByWallId: Record<string, Omit<MidWallBeam, "kind">[]>): Record<string, MidWallBeam[]> =>
-    Object.fromEntries(Object.entries(beamsByWallId).map(([wallId, beams]) => [wallId, beams.map((b) => ({ ...b, kind: "box-beam" as const }))]));
-  return { ground: migrateStory(v22.ground ?? {}), second: migrateStory(v22.second ?? {}) };
-}
-
 /**
  * Value-only remap (no `PROJECT_FILE_VERSION` bump — the shape hasn't
  * changed, just the string a beam's own `kind`/height field uses): a file
@@ -431,6 +432,78 @@ function remapLegacyBigHeaderBeamKind(
       ]),
     );
   return { ground: remapStory(beamsByStoryAndWallId.ground ?? {}), second: remapStory(beamsByStoryAndWallId.second ?? {}) };
+}
+
+/**
+ * v23 -> v24: puts every stored length on the 1/8in grid.
+ *
+ * Per wall: snap the footprint corners, then round each slot width to eighths
+ * independently and shed the residual one eighth at a time, round-robin over
+ * the standard/braced slots only, widest first (see `repairWallToEighths`).
+ * Fixed-width slots — corner, safety-gap, and the openings — keep their own
+ * rounding; they are already eighth-exact in every file this app has written.
+ * Applied to `baseWallSlots` and to every story's `wallSlots`. Gable rows are
+ * NOT touched here because they are not stored: `computeGableTiledRow` derives
+ * them on every render, so they land on the grid the moment the file loads.
+ *
+ * **Which length a wall is repaired against, and the guard on it.** The target
+ * is `wallGeometryFor(...).lengthIn` — the exact length the tiling engine
+ * itself uses, corner-ownership insets and all — because that is what the next
+ * re-tile will measure against and therefore what the invariant is stated in.
+ * But a wall whose stored widths are off that target by more than one eighth
+ * PER SLOT was never a tiling of this wall in the first place (hand-edited
+ * state, a synthetic fixture, or a footprint/slots pair that drifted apart
+ * some other way). Silently stretching such a wall to a length it was never
+ * built at would be a real geometry change wearing a rounding repair's
+ * clothes, so those walls are instead repaired against their own stored total:
+ * still every-width-a-whole-eighth, but without inventing width that was not
+ * there.
+ *
+ * The threshold is one eighth per slot. Deliberately NOT derived from
+ * per-slot rounding alone (half an eighth each): `quantizeFootprint` also
+ * moves the WALL's own length, by an amount independent of how many slots it
+ * has, and on an octagon diagonal that term dominates. The justification is
+ * empirical instead, which is the stronger claim anyway — measured across
+ * legacy octagons at 8, 12, 20 and 40ft, every one of the eight walls
+ * (including the 8ft case where both corners merge) came out with a residual
+ * of 0 or 1 eighth. So a real file sits an order of magnitude inside the
+ * threshold, and the guard only ever fires on state the tiler never produced.
+ *
+ * Deliberately UNCONDITIONAL rather than gated on the file's version. It is a
+ * true no-op on an already-quantized file (`repairWallToEighths` returns the
+ * same array reference), and it is the standing safety net the spec asks for
+ * if some future code path ever produces an off-grid width. The cost of that
+ * choice, stated rather than hidden: a Stage 2 input-snapping bug would be
+ * repaired at load instead of showing up as a visible long fraction.
+ *
+ * That cost is currently zero, which is why unconditional wins today: the
+ * "visible long fraction" signal DOES NOT EXIST YET — `formatImperialFractionIn`
+ * still rounds to the nearest eighth silently, by design, until Stage 1b makes
+ * it honest. **Revisit when 1b lands**: at that point either version-gate this
+ * repair, or have it warn on the dev console when it actually changes a
+ * CURRENT-version file, so a Stage 2 escape stays visible instead of being
+ * quietly absorbed here.
+ */
+function repairStateToEighths(state: ProjectState): ProjectState {
+  if (!state.footprint) return state;
+  const footprint = quantizeFootprint(state.footprint);
+
+  const repairWall = (slots: PanelSlot[], wallId: string): PanelSlot[] => {
+    const ownTotalIn = slots.reduce((sum, slot) => sum + Math.max(0, toEighths(slot.widthIn)), 0) / 8;
+    const geometry = wallGeometryFor(footprint, wallId, state.primaryCornerIds, state.leastAccessibleCorner, state.thicknessIn);
+    if (!geometry) return repairWallToEighths(slots, ownTotalIn); // no such wall any more
+    const residualEighths = Math.abs(toEighths(geometry.lengthIn) - toEighths(ownTotalIn));
+    return repairWallToEighths(slots, residualEighths <= slots.length ? geometry.lengthIn : ownTotalIn);
+  };
+  const repairAll = (byWallId: Record<string, PanelSlot[]>): Record<string, PanelSlot[]> =>
+    Object.fromEntries(Object.entries(byWallId ?? {}).map(([wallId, slots]) => [wallId, repairWall(slots ?? [], wallId)]));
+
+  return {
+    ...state,
+    footprint,
+    baseWallSlots: repairAll(state.baseWallSlots),
+    stories: (state.stories ?? []).map((story) => ({ ...story, wallSlots: repairAll(story.wallSlots) })),
+  };
 }
 
 export type ParseProjectFileResult = { ok: true; state: ProjectState } | { ok: false; error: string };
@@ -467,11 +540,11 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   }
   const state = file.state as Record<string, unknown>;
 
-  // v22 (the one prior version this file also accepts) has the exact same
-  // top-level required keys as v23 — only midWallBeamsByStoryAndWallId's
-  // own per-beam shape gains a field (see PROJECT_FILE_VERSION's own
-  // v22->v23 doc comment), so one shared list covers both, unlike
-  // v18->v19/v19->v20 which each added/renamed a top-level key.
+  // v23 (the one prior version this file also accepts) has the exact same
+  // top-level required keys AND the exact same shape as v24 — v23->v24
+  // changes only the VALUES (every length snaps onto the 1/8in grid; see
+  // repairStateToEighths), not the schema — so one shared list covers both,
+  // unlike v18->v19/v19->v20 which each added/renamed a top-level key.
   for (const key of REQUIRED_STATE_KEYS) {
     if (!(key in state)) return { ok: false, error: `That file is missing the "${key}" field.` };
   }
@@ -488,9 +561,11 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
     return { ok: false, error: '"checkedExteriorIds" should be a list of product ids.' };
   }
 
+  // Every load — v23 or v24 — ends by going through the 1/8in quantization
+  // repair; see repairStateToEighths for why it is unconditional.
   return {
     ok: true,
-    state: {
+    state: repairStateToEighths({
       ...(state as unknown as ProjectState),
       stories: state.stories as Story[],
       roofProfileType: state.roofProfileType as "peaked" | "flat-top",
@@ -529,17 +604,13 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       // every one defaults to no notes (the pre-existing behavior every
       // such file was actually built with).
       wallReviewNotes: (state.wallReviewNotes as WallReviewNote[] | undefined) ?? [],
-      // v22 -> v23 migration: a v22 file's beams have no `kind` field —
-      // every one meant "box-beam" (see migrateMidWallBeamsV22ToV23's own
-      // doc comment). Then remapLegacyBigHeaderBeamKind fixes up any
-      // "web-braced-lintel" kind left over from before that rename,
-      // regardless of which branch produced it.
+      // Both accepted versions (v23 and v24) already carry each beam's own
+      // `kind` — v23->v24 changes no beam field at all — so there is no
+      // per-version branch here any more. remapLegacyBigHeaderBeamKind still
+      // fixes up any "web-braced-lintel" kind left over from before that
+      // rename, which is a value remap rather than a version migration.
       midWallBeamsByStoryAndWallId: remapLegacyBigHeaderBeamKind(
-        isCurrentVersion
-          ? (state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, MidWallBeam[]>>)
-          : migrateMidWallBeamsV22ToV23(
-              state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, Omit<MidWallBeam, "kind">[]>>,
-            ),
+        state.midWallBeamsByStoryAndWallId as Record<"ground" | "second", Record<string, MidWallBeam[]>>,
       ),
       primaryCornerIds: new Set(state.primaryCornerIds as string[]),
       gableEndWallIds: new Set(state.gableEndWallIds as string[]),
@@ -555,6 +626,6 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       ),
       checkedInteriorIds: new Set(state.checkedInteriorIds as string[]),
       checkedExteriorIds: new Set(state.checkedExteriorIds as string[]),
-    },
+    }),
   };
 }

@@ -646,3 +646,109 @@ describe("computeGableTiledRow — structural Column Panel reservation (columnRe
     expect(panels.some((p) => p.isColumn)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The 1/8in grid invariant, for the gable row.
+//
+// Note what the sum is measured against here. A gable row deliberately does
+// NOT span the wall corner to corner — `insetIn` clears the truss seat and a
+// raised heel suppresses the first panel width at each end — so "the panels
+// sum to the wall" is the wrong statement for this tiler. The right one is
+// that the panels are CONTIGUOUS: every tile is a whole eighth, each tile
+// starts exactly where the previous one ended, and the widths sum exactly to
+// the span the row actually covers. Integer eighths, not `toBeCloseTo` — a
+// tolerance would pass on the even-split defect this is guarding.
+// ---------------------------------------------------------------------------
+describe("computeGableTiledRow on the 1/8in grid", () => {
+  function collectGableViolations(panels: ReturnType<typeof computeGableTiledRow>, label: string, violations: string[]): void {
+    if (panels.length === 0) return;
+    let sumEighths = 0;
+    let expectedStartEighths = Math.round(panels[0]!.xStartIn * 8);
+    const spanStartEighths = expectedStartEighths;
+    for (const p of panels) {
+      if (Math.abs(p.widthIn * 8 - Math.round(p.widthIn * 8)) >= 1e-9) {
+        violations.push(`${label}: width ${p.widthIn} is not a whole eighth`);
+      }
+      if (p.widthIn < 0) violations.push(`${label}: width ${p.widthIn} is negative`);
+      if (Math.abs(p.widthIn - (p.xEndIn - p.xStartIn)) >= 1e-9) {
+        violations.push(`${label}: widthIn ${p.widthIn} disagrees with its own xStart/xEnd`);
+      }
+      if (Math.round(p.xStartIn * 8) !== expectedStartEighths) {
+        violations.push(`${label}: gap/overlap at x=${p.xStartIn}, expected ${expectedStartEighths / 8}`);
+      }
+      expectedStartEighths = Math.round(p.xEndIn * 8);
+      sumEighths += Math.round(p.widthIn * 8);
+    }
+    const spanEighths = Math.round(panels[panels.length - 1]!.xEndIn * 8) - spanStartEighths;
+    if (sumEighths !== spanEighths) {
+      violations.push(`${label}: tiles sum to ${sumEighths} eighths, span is ${spanEighths} eighths`);
+    }
+  }
+
+  it("keeps every tile a whole eighth, contiguous, summing exactly to the span covered", () => {
+    const violations: string[] = [];
+    for (let eighths = 120 * 8; eighths <= 480 * 8; eighths += 1) {
+      const wallWidthIn = eighths / 8;
+      const points: RoofProfilePoint[] = [{ xIn: wallWidthIn / 2, heightIn: 96, isExplicitPosition: true }];
+      for (const includeSafetyGap of [true, false]) {
+        collectGableViolations(
+          computeGableTiledRow(wallWidthIn, 0, points, 40, 0, includeSafetyGap),
+          `peak ${wallWidthIn} gap=${includeSafetyGap}`,
+          violations,
+        );
+      }
+      // With the 5.5in truss-plate inset and a 6in raised heel — both whole
+      // eighths, and both real defaults, so the row's own start/end land off
+      // the wall's corners.
+      collectGableViolations(
+        computeGableTiledRow(wallWidthIn, 0, points, 40, 5.5, true, 6),
+        `peak ${wallWidthIn} inset+heel`,
+        violations,
+      );
+    }
+    expect(violations.slice(0, 10)).toEqual([]);
+  });
+
+  it("holds for a flat-topped (2-point) profile and for a reserved column tile", () => {
+    const violations: string[] = [];
+    for (let eighths = 200 * 8; eighths <= 480 * 8; eighths++) {
+      const wallWidthIn = eighths / 8;
+      const shoulders: RoofProfilePoint[] = [
+        { xIn: wallWidthIn * 0.3, heightIn: 84, isExplicitPosition: true },
+        { xIn: wallWidthIn * 0.7, heightIn: 84, isExplicitPosition: true },
+      ];
+      collectGableViolations(
+        computeGableTiledRow(wallWidthIn, 0, shoulders, 40, 5.5, true),
+        `flat-top ${wallWidthIn}`,
+        violations,
+      );
+      const peak: RoofProfilePoint[] = [{ xIn: wallWidthIn / 2, heightIn: 96, isExplicitPosition: true }];
+      collectGableViolations(
+        computeGableTiledRow(wallWidthIn, 0, peak, 40, 5.5, true, 0, "truss-heel", [], 25.5),
+        `column ${wallWidthIn}`,
+        violations,
+      );
+    }
+    expect(violations.slice(0, 10)).toEqual([]);
+  });
+
+  it("holds with 1-3 gable window reservations carved out", () => {
+    const violations: string[] = [];
+    for (let eighths = 240 * 8; eighths <= 480 * 8; eighths++) {
+      const wallWidthIn = eighths / 8;
+      const peak: RoofProfilePoint[] = [{ xIn: wallWidthIn / 2, heightIn: 96, isExplicitPosition: true }];
+      for (let windowCount = 1; windowCount <= 3; windowCount++) {
+        const reservations = Array.from({ length: windowCount }, (_, i) => ({
+          beforeTileCount: i,
+          widthIn: 30, // 240 eighths
+        }));
+        collectGableViolations(
+          computeGableTiledRow(wallWidthIn, 0, peak, 40, 5.5, true, 0, "truss-heel", reservations),
+          `windows ${windowCount} @ ${wallWidthIn}`,
+          violations,
+        );
+      }
+    }
+    expect(violations.slice(0, 10)).toEqual([]);
+  });
+});

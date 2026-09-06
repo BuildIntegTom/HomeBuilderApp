@@ -1,3 +1,4 @@
+import { distributeEighths, fromEighths, roundToEighthIn, toEighths } from "./eighths";
 import type { BracePattern, PanelSlot, PanelSlotType, PanelSlotZone, WallEnd } from "./types";
 
 export interface TileWallResult {
@@ -30,8 +31,15 @@ const SAFETY_PANEL_MIN_WALL_LENGTH_IN = 144;
  */
 function buildEvenMiddle(budgetLengthIn: number, standardWidthIn: number): PanelSlot[] {
   const count = Math.max(1, Math.ceil(budgetLengthIn / standardWidthIn));
-  const widthEachIn = budgetLengthIn / count;
-  return Array.from({ length: count }, () => ({ type: "standard" as const, widthIn: widthEachIn }));
+  // "Evenly" now means "as evenly as the 1/8in grid allows": siblings can
+  // differ by one eighth so that every width IS a whole eighth and the run
+  // still sums to the budget exactly (see `distributeEighths`). Zero-eighth
+  // parts are dropped for the same reason `buildMiddle` guards a zero
+  // budget — a zero-width slot renders invisibly but still counts as a real
+  // panel instance and price line.
+  return distributeEighths(toEighths(budgetLengthIn), count)
+    .filter((eighths) => eighths > 0)
+    .map((eighths) => ({ type: "standard" as const, widthIn: fromEighths(eighths) }));
 }
 
 /**
@@ -48,9 +56,40 @@ function buildEvenMiddle(budgetLengthIn: number, standardWidthIn: number): Panel
  */
 export function computeSillRunWidths(roWidthIn: number, standardWidthIn: number): number[] {
   if (roWidthIn <= 0) return [];
-  const count = Math.max(1, Math.ceil(roWidthIn / standardWidthIn));
-  const widthEachIn = roWidthIn / count;
-  return Array.from({ length: count }, () => widthEachIn);
+  // Snapped for the same reason buildMiddle snaps it: an off-grid cap of
+  // 40.3in would let this emit a 40.375in sill, i.e. a panel wider than the
+  // cap. See gridStandardWidthIn.
+  const count = Math.max(1, Math.ceil(roWidthIn / gridStandardWidthIn(standardWidthIn)));
+  return distributeEighths(toEighths(roWidthIn), count)
+    .filter((eighths) => eighths > 0)
+    .map(fromEighths);
+}
+
+/**
+ * The project's standard-panel width, snapped onto the 1/8in grid before
+ * anything is built from it.
+ *
+ * This is a user-typed project setting, not a catalog constant — it can and
+ * does arrive off-grid. Without this snap the invariant was CONDITIONAL on
+ * the caller: `computePlainSizing` quantized the width for its own
+ * arithmetic, but `buildPlainMiddle` emitted the raw value verbatim for every
+ * full-width panel, so `tileWall(360, 40.3, ...)` produced five 40.3in panels
+ * and overran a 360in wall by 0.3in. (It survived the sweep twice over: every
+ * swept width was already on-grid, and `Math.round(40.3 * 8)` happens to make
+ * the eighths-sum come out exactly right, so only the whole-eighth predicate
+ * would ever have fired.)
+ *
+ * **Floor, not round-half-up** — deliberately the one place in this pass that
+ * does not use `roundToEighthIn`. `standardWidthIn` is a CAP (Tommy: "the
+ * default auto spawn should be capped at the standard width"), and rounding a
+ * cap upward would hand the shop panels wider than the cap that was asked for
+ * — a typed 16.7 would become 16.75. Flooring can only ever be conservative.
+ * Once typed entry snaps on commit (Stage 0/2) the value arriving here is
+ * already on-grid and floor and round agree, so this only bites on exactly the
+ * un-snapped input it exists to defend against.
+ */
+function gridStandardWidthIn(standardWidthIn: number): number {
+  return fromEighths(Math.max(1, Math.floor(standardWidthIn * 8)));
 }
 
 interface PlainSizing {
@@ -88,6 +127,18 @@ interface PlainSizing {
  * wide unrendered gap around the real board; see `SAFETY_GAP_WIDTH_IN`'s
  * comment.)
  *
+ * **The split is uneven by one eighth when the budget is an odd number of
+ * eighths, and that is the whole point of the 1/8in grid.** The old
+ * `(standardWidthIn + remainderIn) / 2` landed on a SIXTEENTH whenever
+ * `standardWidthIn + remainderIn` was an odd count of eighths — 47.125in
+ * (377 eighths) halved to 23.5625in twice, which displayed at nearest-1/8
+ * reads 23-5/8 + 23-5/8 = 47-1/4 against a 47-1/8 budget. Now the pair is
+ * 189 + 188 eighths (23-5/8 + 23-1/2), both whole eighths, summing to the
+ * budget exactly. Which of the two absorbs the extra eighth is
+ * `distributeEighths`' deliberately arbitrary but FIXED lowest-index rule
+ * — see its own doc comment; nobody has decided that the wider panel
+ * belongs on a particular side.
+ *
  * `allowBorrow` no longer changes this function's math — every wall now
  * gets the same fixed-width gap regardless of shape — but the parameter is
  * kept so `tileWall`/`retileWithOpenings` callers (mitered vs. non-mitered
@@ -99,29 +150,58 @@ function computePlainSizing(
   allowBorrow = true,
 ): PlainSizing {
   void allowBorrow; // kept for call-site compatibility — see doc comment above
-  const availableForStandardsIn = Math.max(0, budgetLengthIn - SAFETY_GAP_WIDTH_IN);
-  const rawStandardCount = Math.max(0, Math.floor(availableForStandardsIn / standardWidthIn));
-  const remainderIn = availableForStandardsIn - rawStandardCount * standardWidthIn;
+  // Integer eighths from here down: every quantity below is a COUNT of
+  // 1/8in, never a decimal inch, so "the parts sum to the budget" is an
+  // integer identity rather than a float hope.
+  const budgetEighths = Math.max(0, toEighths(budgetLengthIn));
+  const standardEighths = Math.max(1, toEighths(standardWidthIn));
+  // The gap is always exactly SAFETY_GAP_WIDTH_IN — except on a budget too
+  // small to hold even that, where it clamps to whatever there is. That
+  // case is only reachable through `retileWithOpenings` (openings eating
+  // all but a sliver of a >12ft wall's middle), and it used to overflow the
+  // wall by up to 3/4in; clamping is what keeps the sum exact there. It
+  // does NOT change SAFETY_GAP_WIDTH_IN, which is untouched at 0.75.
+  //
+  // KNOWN, DELIBERATE INCONSISTENCY in that degenerate case, written down
+  // rather than left to be discovered: `buildSafetyGapMembers` still emits a
+  // full 0.75in plywood board into the clamped slot, so the model briefly
+  // asserts a safety gap narrower than the board it stands for, against the
+  // spec's confirmed "standard panel width minus 3/4in" detail. Chosen over
+  // dropping the slot entirely, which would turn the sliver into a phantom
+  // sub-inch standard panel — a real (priced, fabricated) panel instance,
+  // which is worse than a too-narrow gap. BOM and fabrication output are
+  // unaffected: the gap's BOM width is zeroed and its members key off
+  // SAFETY_GAP_THICKNESS_IN, not off this slot's width.
+  const gapEighths = Math.min(toEighths(SAFETY_GAP_WIDTH_IN), budgetEighths);
+  const availableEighths = budgetEighths - gapEighths;
+  const rawStandardCount = Math.floor(availableEighths / standardEighths);
+  const remainderEighths = availableEighths - rawStandardCount * standardEighths;
 
   let standardCount = rawStandardCount;
-  let resizedWidthsIn: number[];
+  let resizedEighths: number[];
 
   if (rawStandardCount === 0) {
     // Not even one full standard panel fits alongside the gap — the whole
     // leftover becomes a single resized standard panel (0 if there's
     // none). Already under standardWidthIn by construction — not part of
     // the "shop doesn't want an oversized panel" problem, left untouched.
-    standardCount = availableForStandardsIn > 0 ? 1 : 0;
-    resizedWidthsIn = [availableForStandardsIn];
-  } else if (remainderIn > 0) {
-    const eachIn = (standardWidthIn + remainderIn) / 2;
-    resizedWidthsIn = [eachIn, eachIn];
+    standardCount = availableEighths > 0 ? 1 : 0;
+    resizedEighths = [availableEighths];
+  } else if (remainderEighths > 0) {
+    // remainderEighths < standardEighths by construction, so each half is
+    // at most standardEighths — the "never hand the shop an oversized
+    // panel" rule survives the switch to an uneven split.
+    resizedEighths = distributeEighths(standardEighths + remainderEighths, 2);
     standardCount += 1; // the split adds one extra panel to the run
   } else {
-    resizedWidthsIn = [standardWidthIn]; // exact fit — nothing to split
+    resizedEighths = [standardEighths]; // exact fit — nothing to split
   }
 
-  return { standardCount, gapWidthIn: SAFETY_GAP_WIDTH_IN, resizedWidthsIn };
+  return {
+    standardCount,
+    gapWidthIn: fromEighths(gapEighths),
+    resizedWidthsIn: resizedEighths.map(fromEighths),
+  };
 }
 
 /**
@@ -182,11 +262,15 @@ function buildMiddle(
   needsSafetyPanel: boolean,
 ): PanelSlot[] {
   if (budgetLengthIn <= 0) return [];
+  // Snapped ONCE here so that every downstream consumer sees the same
+  // grid-exact width — including buildPlainMiddle, which emits it verbatim
+  // for each full-width panel. See gridStandardWidthIn.
+  const widthIn = gridStandardWidthIn(standardWidthIn);
   if (!needsSafetyPanel) {
-    return buildEvenMiddle(budgetLengthIn, standardWidthIn);
+    return buildEvenMiddle(budgetLengthIn, widthIn);
   }
-  const sizing = computePlainSizing(budgetLengthIn, standardWidthIn, allowBorrow);
-  return buildPlainMiddle(sizing, standardWidthIn, gapEnd);
+  const sizing = computePlainSizing(budgetLengthIn, widthIn, allowBorrow);
+  return buildPlainMiddle(sizing, widthIn, gapEnd);
 }
 
 interface ResolvedCorners {
@@ -231,14 +315,21 @@ function resolveCorners(
   hasCornerStart: boolean,
   hasCornerEnd: boolean,
 ): ResolvedCorners {
-  const fixedEndsIn = (hasCornerStart ? cornerWidthIn : 0) + (hasCornerEnd ? cornerWidthIn : 0);
+  // cornerWidthIn is already a whole eighth in the catalog (25.5in) — this
+  // only defends against a caller passing something else, and it keeps the
+  // merged/clamped branches (which derive their width from wallLengthIn)
+  // on the grid alongside everything else.
+  const cornerEighths = Math.max(0, toEighths(cornerWidthIn));
+  const wallEighths = Math.max(0, toEighths(wallLengthIn));
+  const fixedEndsIn = fromEighths((hasCornerStart ? cornerEighths : 0) + (hasCornerEnd ? cornerEighths : 0));
   if (hasCornerStart && hasCornerEnd && wallLengthIn < fixedEndsIn) {
-    return { merged: { type: "corner", widthIn: Math.max(0, wallLengthIn) }, cornerStart: null, cornerEnd: null, fixedEndsIn };
+    return { merged: { type: "corner", widthIn: fromEighths(wallEighths) }, cornerStart: null, cornerEnd: null, fixedEndsIn };
   }
+  const clampedCornerIn = fromEighths(Math.min(cornerEighths, wallEighths));
   return {
     merged: null,
-    cornerStart: hasCornerStart ? { type: "corner", widthIn: Math.min(cornerWidthIn, wallLengthIn) } : null,
-    cornerEnd: hasCornerEnd ? { type: "corner", widthIn: Math.min(cornerWidthIn, wallLengthIn) } : null,
+    cornerStart: hasCornerStart ? { type: "corner", widthIn: clampedCornerIn } : null,
+    cornerEnd: hasCornerEnd ? { type: "corner", widthIn: clampedCornerIn } : null,
     fixedEndsIn,
   };
 }
@@ -290,6 +381,19 @@ function resolveCorners(
  * If the wall owns corners at both ends but is too short to fit them
  * without overlapping, they're merged into a single corner panel spanning
  * the wall's whole length instead — see `resolveCorners`.
+ *
+ * **The sum invariant:** the returned slot widths are every one a whole
+ * number of 1/8in and they add up EXACTLY to `roundToEighthIn(wallLengthIn)`
+ * (Tommy: "we must remain absolutely precise on total lengths of wall
+ * segments being exactly the same as the addition of all the panels").
+ * `wallLengthIn` is snapped on the way in rather than trusted: callers
+ * should already be passing `wallFabricationLengthIn(wall)` (less any
+ * butt-joint inset, itself a whole-eighth thickness), so this is a no-op
+ * for them, but a wall length is exactly the kind of value that arrives
+ * off a drag gesture and the guarantee has to hold unconditionally to be
+ * worth anything. For an octagon's 45deg walls the snap is a real (<=1/16in)
+ * move — see `wallFabricationLengthIn` for why that is a mathematical
+ * exception rather than a defect.
  */
 export function tileWall(
   wallLengthIn: number,
@@ -300,13 +404,14 @@ export function tileWall(
   hasCornerEnd = true,
   allowBorrow = true,
 ): TileWallResult {
-  const corners = resolveCorners(wallLengthIn, cornerWidthIn, hasCornerStart, hasCornerEnd);
+  const gridLengthIn = roundToEighthIn(wallLengthIn);
+  const corners = resolveCorners(gridLengthIn, cornerWidthIn, hasCornerStart, hasCornerEnd);
   if (corners.merged) {
     return { slots: [corners.merged] };
   }
 
-  const middleLengthIn = Math.max(0, wallLengthIn - corners.fixedEndsIn);
-  const needsSafetyPanel = wallLengthIn > SAFETY_PANEL_MIN_WALL_LENGTH_IN;
+  const middleLengthIn = Math.max(0, gridLengthIn - corners.fixedEndsIn);
+  const needsSafetyPanel = gridLengthIn > SAFETY_PANEL_MIN_WALL_LENGTH_IN;
   const middle = buildMiddle(middleLengthIn, standardWidthIn, gapEnd, allowBorrow, needsSafetyPanel);
 
   return {
@@ -403,15 +508,21 @@ export function retileWithOpenings(
   openings: OpeningAnchor[],
   allowBorrow = true,
 ): TileWallResult {
-  const corners = resolveCorners(wallLengthIn, cornerWidthIn, hasCornerStart, hasCornerEnd);
+  // Same grid snap tileWall does, for the same reason — plus each
+  // opening's own reserved width, so the plain budget left over for
+  // standards is itself a whole number of eighths. A window typed as
+  // 47-5/8in is already on the grid; one that isn't gets snapped here
+  // rather than pushing every panel on the wall off it.
+  const gridLengthIn = roundToEighthIn(wallLengthIn);
+  const corners = resolveCorners(gridLengthIn, cornerWidthIn, hasCornerStart, hasCornerEnd);
   if (corners.merged) {
     return { slots: [corners.merged] };
   }
 
-  const middleLengthIn = wallLengthIn - corners.fixedEndsIn;
-  const openingsTotalWidthIn = openings.reduce((sum, o) => sum + o.widthIn, 0);
+  const middleLengthIn = gridLengthIn - corners.fixedEndsIn;
+  const openingsTotalWidthIn = openings.reduce((sum, o) => sum + roundToEighthIn(o.widthIn), 0);
   const plainBudgetIn = middleLengthIn - openingsTotalWidthIn;
-  const needsSafetyPanel = wallLengthIn > SAFETY_PANEL_MIN_WALL_LENGTH_IN;
+  const needsSafetyPanel = gridLengthIn > SAFETY_PANEL_MIN_WALL_LENGTH_IN;
   const plainMiddle = buildMiddle(Math.max(0, plainBudgetIn), standardWidthIn, gapEnd, allowBorrow, needsSafetyPanel);
 
   // Carries heightIn/sillHeightIn/zones through unconditionally — undefined
@@ -419,7 +530,7 @@ export function retileWithOpenings(
   // the resulting PanelSlot, exactly as if the field were omitted.
   const openingSlotFromAnchor = (o: OpeningAnchor): PanelSlot => ({
     type: o.type,
-    widthIn: o.widthIn,
+    widthIn: roundToEighthIn(o.widthIn),
     heightIn: o.heightIn,
     sillHeightIn: o.sillHeightIn,
     zones: o.zones,

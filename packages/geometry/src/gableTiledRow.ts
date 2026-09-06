@@ -1,3 +1,5 @@
+import { distributeEighths, fromEighths, toEighths } from "./eighths";
+
 export interface GableTiledPanel {
   xStartIn: number;
   xEndIn: number;
@@ -286,14 +288,21 @@ function panel(xStartIn: number, xEndIn: number, anchors: RoofAnchor[], isSafety
  * not a short leftover panel. Returns no panels for a non-positive run
  * width (e.g. fully consumed by an inset). */
 function tileEvenly(startIn: number, endIn: number, anchors: RoofAnchor[], targetPanelWidthIn: number): GableTiledPanel[] {
-  const runWidthIn = endIn - startIn;
-  if (runWidthIn <= 0) return [];
-  const panelCount = Math.max(1, Math.ceil(runWidthIn / targetPanelWidthIn));
-  const panelWidthIn = runWidthIn / panelCount;
+  // Integer eighths, same as tiling.ts: the run's two ends snap to the
+  // 1/8in grid and the widths are distributed over it, so every tile is a
+  // whole eighth and the tiles still span the run exactly. The old even
+  // division put an entire gable row on sixteenths (or worse) the moment a
+  // run didn't divide cleanly by the target width.
+  const startEighths = toEighths(startIn);
+  const runEighths = toEighths(endIn) - startEighths;
+  if (runEighths <= 0) return [];
+  const panelCount = Math.max(1, Math.ceil(fromEighths(runEighths) / targetPanelWidthIn));
   const panels: GableTiledPanel[] = [];
-  for (let i = 0; i < panelCount; i++) {
-    const xStartIn = startIn + i * panelWidthIn;
-    panels.push(panel(xStartIn, xStartIn + panelWidthIn, anchors));
+  let cursorEighths = startEighths;
+  for (const widthEighths of distributeEighths(runEighths, panelCount)) {
+    if (widthEighths <= 0) continue;
+    panels.push(panel(fromEighths(cursorEighths), fromEighths(cursorEighths + widthEighths), anchors));
+    cursorEighths += widthEighths;
   }
   return panels;
 }
@@ -318,45 +327,38 @@ function tileRun(
   targetPanelWidthIn: number,
   gapEnd: "start" | "end",
 ): GableTiledPanel[] {
-  const runWidthIn = endIn - startIn;
-  if (runWidthIn <= 0) return [];
-  if (runWidthIn <= GABLE_SAFETY_GAP_MIN_RUN_LENGTH_IN) return tileEvenly(startIn, endIn, anchors, targetPanelWidthIn);
+  const startEighths = toEighths(startIn);
+  const runEighths = toEighths(endIn) - startEighths;
+  if (runEighths <= 0) return [];
+  if (fromEighths(runEighths) <= GABLE_SAFETY_GAP_MIN_RUN_LENGTH_IN) return tileEvenly(startIn, endIn, anchors, targetPanelWidthIn);
 
-  const budgetIn = runWidthIn - GABLE_SAFETY_GAP_WIDTH_IN;
-  const wholePanelCount = Math.floor(budgetIn / targetPanelWidthIn);
+  const gapEighths = toEighths(GABLE_SAFETY_GAP_WIDTH_IN);
+  const targetEighths = Math.max(1, toEighths(targetPanelWidthIn));
+  const budgetEighths = runEighths - gapEighths;
+  const wholePanelCount = Math.floor(budgetEighths / targetEighths);
   if (wholePanelCount < 1) return tileEvenly(startIn, endIn, anchors, targetPanelWidthIn);
 
-  const leftoverIn = budgetIn - wholePanelCount * targetPanelWidthIn;
-  const splitTotalIn = targetPanelWidthIn + leftoverIn;
-  const halfSplitIn = splitTotalIn / 2;
+  const leftoverEighths = budgetEighths - wholePanelCount * targetEighths;
+  // The same uneven split tiling.ts's computePlainSizing now does — the two
+  // halves differ by at most one eighth, both are whole eighths, and they
+  // still sum to targetEighths + leftoverEighths exactly. Laid out in the
+  // array order distributeEighths returns (extra eighth to the lowest
+  // index), matching buildPlainMiddle's own convention.
+  const splitEighths = distributeEighths(targetEighths + leftoverEighths, 2);
   const farPanelCount = wholePanelCount - 1; // full-width panels, away from the gap
+  const farEighths = Array.from({ length: farPanelCount }, () => targetEighths);
+
+  const widthsEighths = gapEnd === "start"
+    ? [gapEighths, ...splitEighths, ...farEighths]
+    : [...farEighths, ...splitEighths, gapEighths];
+  const gapIndex = gapEnd === "start" ? 0 : widthsEighths.length - 1;
 
   const panels: GableTiledPanel[] = [];
-  if (gapEnd === "start") {
-    let x = startIn;
-    panels.push(panel(x, x + GABLE_SAFETY_GAP_WIDTH_IN, anchors, true));
-    x += GABLE_SAFETY_GAP_WIDTH_IN;
-    panels.push(panel(x, x + halfSplitIn, anchors));
-    x += halfSplitIn;
-    panels.push(panel(x, x + halfSplitIn, anchors));
-    x += halfSplitIn;
-    for (let i = 0; i < farPanelCount; i++) {
-      panels.push(panel(x, x + targetPanelWidthIn, anchors));
-      x += targetPanelWidthIn;
-    }
-  } else {
-    let x = endIn;
-    panels.unshift(panel(x - GABLE_SAFETY_GAP_WIDTH_IN, x, anchors, true));
-    x -= GABLE_SAFETY_GAP_WIDTH_IN;
-    panels.unshift(panel(x - halfSplitIn, x, anchors));
-    x -= halfSplitIn;
-    panels.unshift(panel(x - halfSplitIn, x, anchors));
-    x -= halfSplitIn;
-    for (let i = 0; i < farPanelCount; i++) {
-      panels.unshift(panel(x - targetPanelWidthIn, x, anchors));
-      x -= targetPanelWidthIn;
-    }
-  }
+  let cursorEighths = startEighths;
+  widthsEighths.forEach((widthEighths, i) => {
+    panels.push(panel(fromEighths(cursorEighths), fromEighths(cursorEighths + widthEighths), anchors, i === gapIndex));
+    cursorEighths += widthEighths;
+  });
   return panels;
 }
 
@@ -390,32 +392,38 @@ function tileRunWithWindows(
     includeSafetyGap ? tileRun(a, b, anchors, targetPanelWidthIn, gapEnd) : tileEvenly(a, b, anchors, targetPanelWidthIn);
   if (localWindows.length === 0) return plainTile(startIn, endIn, anchors);
 
-  const windowsTotalWidthIn = localWindows.reduce((sum, w) => sum + w.widthIn, 0);
-  const plainBudgetIn = Math.max(0, endIn - startIn - windowsTotalWidthIn);
-  const plainTiles = plainTile(startIn, startIn + plainBudgetIn, anchors);
+  // Every window's reserved width is snapped to the grid before it is
+  // subtracted, so the plain budget left for real tiles is itself a whole
+  // number of eighths — otherwise one off-grid window would push every
+  // other tile in the segment off the grid with it.
+  const startEighths = toEighths(startIn);
+  const windowsTotalEighths = localWindows.reduce((sum, w) => sum + Math.max(0, toEighths(w.widthIn)), 0);
+  const plainBudgetEighths = Math.max(0, toEighths(endIn) - startEighths - windowsTotalEighths);
+  const plainTiles = plainTile(startIn, fromEighths(startEighths + plainBudgetEighths), anchors);
 
   const sortedWindows = [...localWindows].sort((a, b) => a.ordinal - b.ordinal);
   const result: GableTiledPanel[] = [];
   let realTileCount = 0; // non-safety-gap tiles placed so far
   let windowIdx = 0;
-  let cursorIn = startIn;
+  let cursorEighths = startEighths;
   const pushWindow = (w: (typeof sortedWindows)[number]) => {
+    const widthEighths = Math.max(0, toEighths(w.widthIn));
     result.push({
-      ...panel(cursorIn, cursorIn + w.widthIn, anchors),
+      ...panel(fromEighths(cursorEighths), fromEighths(cursorEighths + widthEighths), anchors),
       isWindow: true,
       ...(w.heightIn !== undefined && { windowHeightIn: w.heightIn }),
       ...(w.sillHeightIn !== undefined && { windowSillHeightIn: w.sillHeightIn }),
     });
-    cursorIn += w.widthIn;
+    cursorEighths += widthEighths;
   };
   for (const tile of plainTiles) {
     while (windowIdx < sortedWindows.length && sortedWindows[windowIdx]!.ordinal <= realTileCount) {
       pushWindow(sortedWindows[windowIdx]!);
       windowIdx++;
     }
-    const widthIn = tile.xEndIn - tile.xStartIn;
-    result.push({ ...panel(cursorIn, cursorIn + widthIn, anchors, tile.isSafetyGap) });
-    cursorIn += widthIn;
+    const widthEighths = toEighths(tile.xEndIn - tile.xStartIn);
+    result.push({ ...panel(fromEighths(cursorEighths), fromEighths(cursorEighths + widthEighths), anchors, tile.isSafetyGap) });
+    cursorEighths += widthEighths;
     if (!tile.isSafetyGap) realTileCount++;
   }
   while (windowIdx < sortedWindows.length) {
@@ -552,11 +560,19 @@ export function computeGableTiledRow(
   const usableStartIn = effectiveInsetIn;
   const usableEndIn = wallWidthIn - effectiveInsetIn;
 
+  // Segment boundaries are snapped to the 1/8in grid HERE rather than
+  // inside the tilers, so that consecutive segments provably share an
+  // identical boundary value and the tiles stay contiguous across it. An
+  // anchor x is derived from a dragged profile point or an inset, so it is
+  // exactly the sort of value that arrives off the grid; moving it by at
+  // most 1/16in changes no roofline height a shop could measure (heights
+  // are still sampled off the true, unsnapped anchors).
+  const snapIn = (valueIn: number) => fromEighths(toEighths(valueIn));
   const segments: { segStartIn: number; segEndIn: number; gapEnd: "start" | "end" }[] = [];
   for (let i = 0; i < anchors.length - 1; i++) {
     segments.push({
-      segStartIn: Math.max(anchors[i]!.xIn, usableStartIn),
-      segEndIn: Math.min(anchors[i + 1]!.xIn, usableEndIn),
+      segStartIn: snapIn(Math.max(anchors[i]!.xIn, usableStartIn)),
+      segEndIn: snapIn(Math.min(anchors[i + 1]!.xIn, usableEndIn)),
       gapEnd: i === 0 ? "start" : i === anchors.length - 2 ? "end" : "start",
     });
   }
@@ -564,9 +580,14 @@ export function computeGableTiledRow(
   let columnTile: GableTiledPanel | null = null;
   if (columnReservationWidthIn !== undefined && anchors.length === 3) {
     const peakAnchor = anchors[1]!;
-    const halfWidthIn = columnReservationWidthIn / 2;
-    const columnStartIn = peakAnchor.xIn - halfWidthIn;
-    const columnEndIn = peakAnchor.xIn + halfWidthIn;
+    // Centered to within one eighth rather than exactly: the column's own
+    // width stays exactly what was asked for, and its two edges stay on the
+    // grid, which is what the two segments either side of it need. An odd
+    // number of eighths therefore sits 1/16in off the true peak.
+    const columnWidthEighths = Math.max(0, toEighths(columnReservationWidthIn));
+    const columnStartEighths = toEighths(peakAnchor.xIn) - Math.floor(columnWidthEighths / 2);
+    const columnStartIn = fromEighths(columnStartEighths);
+    const columnEndIn = fromEighths(columnStartEighths + columnWidthEighths);
     if (columnStartIn >= segments[0]!.segStartIn && columnEndIn <= segments[1]!.segEndIn) {
       segments[0]!.segEndIn = columnStartIn;
       segments[1]!.segStartIn = columnEndIn;
@@ -574,7 +595,7 @@ export function computeGableTiledRow(
       columnTile = {
         xStartIn: columnStartIn,
         xEndIn: columnEndIn,
-        widthIn: columnReservationWidthIn,
+        widthIn: fromEighths(columnWidthEighths),
         leftHeightIn: flatTopHeightIn,
         rightHeightIn: flatTopHeightIn,
         isColumn: true,

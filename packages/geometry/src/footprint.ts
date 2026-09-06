@@ -1,3 +1,4 @@
+import { quantizeFootprint } from "./eighths";
 import type { Corner, Footprint } from "./types";
 
 export const MIN_DIMENSION_FT = 8;
@@ -6,6 +7,11 @@ export const MIN_DIMENSION_FT = 8;
  * A-B-C-D going clockwise from the origin: A=(0,0), B=(width,0),
  * C=(width,depth), D=(0,depth). Walls: AB/CD run along the width, BC/DA
  * run along the depth.
+ *
+ * Returned through `quantizeFootprint`, so every corner sits on the 1/8in
+ * grid and every wall length is an exact eighth — the precondition for the
+ * panels on a wall summing exactly to that wall. A no-op for the whole-foot
+ * dimensions the shape tools normally produce.
  */
 export function buildRectangleFootprint(widthFt: number, depthFt: number): Footprint {
   const width = Math.max(widthFt, MIN_DIMENSION_FT);
@@ -18,7 +24,7 @@ export function buildRectangleFootprint(widthFt: number, depthFt: number): Footp
     { id: "D", point: { x: 0, y: depth } },
   ];
 
-  return {
+  return quantizeFootprint({
     corners,
     walls: [
       { id: "AB", startCorner: "A", endCorner: "B", lengthFt: width },
@@ -26,5 +32,5 @@ export function buildRectangleFootprint(widthFt: number, depthFt: number): Footp
       { id: "CD", startCorner: "C", endCorner: "D", lengthFt: width },
       { id: "DA", startCorner: "D", endCorner: "A", lengthFt: depth },
     ],
-  };
+  });
 }

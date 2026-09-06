@@ -1,4 +1,5 @@
 import type { Corner, Footprint, Point, Wall } from "./types";
+import { quantizeFootprint } from "./eighths";
 import { wallDirection } from "./cornerAngle";
 import { isSelfIntersecting } from "./polygonValidity";
 
@@ -62,6 +63,13 @@ function tightenBound(bound: { lo: number; hi: number }, coefficient: number, rh
  * A no-op (returns `footprint` unchanged) if `wallId` doesn't exist, or if
  * it doesn't have two distinct neighbor walls (a malformed/open wall list,
  * or a degenerate 2-wall loop).
+ *
+ * The dragged corners land on the 1/8in grid (`quantizeFootprint`) — a drag
+ * is the single biggest source of off-grid corner coordinates, and snapping
+ * here also means `dragWallBounded`'s scan/bisect verifies
+ * `isSelfIntersecting` against the same quantized geometry it ultimately
+ * returns, rather than against an unrounded one that could round back into
+ * a crossing.
  */
 export function dragWall(footprint: Footprint, wallId: string, offsetFt: number): Footprint {
   const wall = footprint.walls.find((w) => w.id === wallId);
@@ -101,7 +109,7 @@ export function dragWall(footprint: Footprint, wallId: string, offsetFt: number)
     return { ...w, lengthFt: Math.hypot(end.x - start.x, end.y - start.y) };
   });
 
-  return { corners, walls };
+  return quantizeFootprint({ corners, walls });
 }
 
 const SAFETY_SCAN_STEPS = 40;
@@ -233,7 +241,7 @@ export function collapseNearZeroWalls(footprint: Footprint, primaryCornerIds: Se
     if (primary.has(c.id)) nextPrimary.add(String(i));
   });
 
-  return { footprint: { corners: renumbered, walls: wallsFromCorners(renumbered) }, primaryCornerIds: nextPrimary };
+  return { footprint: quantizeFootprint({ corners: renumbered, walls: wallsFromCorners(renumbered) }), primaryCornerIds: nextPrimary };
 }
 
 function wallsFromCorners(corners: Corner[]): Wall[] {

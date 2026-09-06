@@ -3,6 +3,7 @@ import { cornerTurnAngleRad, footprintIsAllRightAngles, isConvexCorner, isRightA
 import { reconcileBracedPlacement } from "./bracedPlacement";
 import { getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall, type OpeningAnchor } from "./tiling";
 import { wallCompassDirection } from "./wallCompassDirection";
+import { wallFabricationLengthIn } from "./eighths";
 import type { BracePattern, CornerId, Footprint, PanelSlot, Wall, WallEnd } from "./types";
 
 /** The project's seismic-zone-driven suggestion for brand-new braced-panel
@@ -209,7 +210,7 @@ export function retile(
   for (const wall of fp.walls) {
     const gapEnd = gapEndFor(fp, wall, leastAccessible);
     const { start, end } = ownership[wall.id]!;
-    const lengthIn = wall.lengthFt * 12 - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+    const lengthIn = wallFabricationLengthIn(wall) - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
     // Octagon (and other mitered shapes) never borrow-and-split a standard
     // panel for the gap — Tommy: no standard-safety panels for octagons.
     const plainSlots = tileWall(lengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, start.hasCorner, end.hasCorner, !mitered)
@@ -302,7 +303,7 @@ export function retilePreservingOpenings(
   for (const wall of fp.walls) {
     const gapEnd = gapEndFor(fp, wall, leastAccessible);
     const { start, end } = ownership[wall.id]!;
-    const lengthIn = wall.lengthFt * 12 - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+    const lengthIn = wallFabricationLengthIn(wall) - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
     const oldSlots = oldSlotsByNewWallId[wall.id];
     const slots = tileOneWallPreservingOpenings(
       oldSlots,
@@ -358,7 +359,11 @@ export function wallGeometryFor(
   if (!wall) return null;
   const { start, end } = cornerOwnership(footprint, primaryCornerIds, thicknessIn)[wall.id]!;
   const gapEnd = gapEndFor(footprint, wall, leastAccessibleCorner);
-  const lengthIn = wall.lengthFt * 12 - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+  // `wallFabricationLengthIn`, not `lengthFt * 12`: the tiled length has to
+  // be a whole number of eighths or the panels can never sum to it. Both
+  // adjustments are wall thicknesses (14 / 15.5 / 15.75in), all themselves
+  // whole eighths, so the result stays on the grid.
+  const lengthIn = wallFabricationLengthIn(wall) - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
   const allowBorrow = !isMiteredShape(footprint);
   return { hasCornerStart: start.hasCorner, hasCornerEnd: end.hasCorner, gapEnd, lengthIn, allowBorrow };
 }

@@ -62,3 +62,48 @@ describe("applyUniformPanelization", () => {
     expect(applyUniformPanelization([], "standard", 36)).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The 1/8in grid invariant, for the alternate panelization types (Timber Frame
+// Curtain / Square Bale Panels). Same contract as tiling.ts's own sweep, and
+// the same warning: the sum assertion compares INTEGER counts of eighths.
+// `toBeCloseTo` would pass on exactly the defect this exists to catch.
+// ---------------------------------------------------------------------------
+describe("applyUniformPanelization on the 1/8in grid", () => {
+  it("keeps every re-tiled slot a whole eighth, summing exactly to the wall it replaced", () => {
+    const violations: string[] = [];
+    // Square Bale's own 39in, Timber Frame Curtain's 36in, and the two catalog
+    // range ends, against every eighth of infill run from 12in to 400in.
+    for (const uniformWidthIn of [15.75, 36, 39, 48]) {
+      for (let eighths = 12 * 8; eighths <= 400 * 8; eighths++) {
+        const runWidthIn = eighths / 8;
+        const slots: PanelSlot[] = [
+          { type: "corner", widthIn: 25.5 },
+          { type: "standard", widthIn: runWidthIn },
+          { type: "safety-gap", widthIn: 0.75 },
+          { type: "corner", widthIn: 25.5 },
+        ];
+        const wallEighths = slots.reduce((sum, s) => sum + Math.round(s.widthIn * 8), 0);
+        const result = applyUniformPanelization(slots, "standard", uniformWidthIn);
+        let sumEighths = 0;
+        for (const slot of result) {
+          if (Math.abs(slot.widthIn * 8 - Math.round(slot.widthIn * 8)) >= 1e-9) {
+            violations.push(`${uniformWidthIn}/${runWidthIn}: ${slot.widthIn} is not a whole eighth`);
+          }
+          if (slot.widthIn < 0) violations.push(`${uniformWidthIn}/${runWidthIn}: ${slot.widthIn} is negative`);
+          sumEighths += Math.round(slot.widthIn * 8);
+        }
+        if (sumEighths !== wallEighths) {
+          violations.push(`${uniformWidthIn}/${runWidthIn}: sums to ${sumEighths} eighths, wall is ${wallEighths}`);
+        }
+      }
+    }
+    expect(violations.slice(0, 10)).toEqual([]);
+  });
+
+  it("splits an odd-eighth run unevenly rather than landing on sixteenths", () => {
+    // 47.125in (377 eighths) into 2: the pre-fix even split gave 23.5625 twice.
+    const result = applyUniformPanelization([{ type: "standard", widthIn: 47.125 }], "standard", 23.5);
+    expect(result.map((s) => s.widthIn)).toEqual([23.625, 23.5]);
+  });
+});
