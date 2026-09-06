@@ -720,40 +720,40 @@ function parseInDomain(input: string, domain: LengthDomain): number | null {
  * stage rather than a later nicety: he sees the resolved number before it
  * commits.
  *
- * **An explicit unit mark wins over the field's domain**, so `24'-3⅝"` and
- * `3"` mean the same thing typed into either kind of field. The two halves
- * of that rule have very different standing and are stated separately on
- * purpose:
+ * **A FOOT mark wins over the field's domain; a trailing inch mark does
+ * not.** Settled by Tommy 2026-09-06, asked directly and answered
+ * "it should always read as 47' and 5/8"":
  *
- * - **The `'` half is settled and load-bearing.** A feet mark names both
- *   units outright, the spec's grammar table gives `24'-3 5/8"` exactly
- *   this reading, and `formatFeetInches`' own output round-trips through
- *   it.
- * - **The `"` half is an unratified judgement call and is load-bearing for
- *   nothing.** Deleting `tokens.hasInchMark ||` below breaks exactly one
- *   test — the override's own — and no round-trip: `formatFeetInches`
- *   always emits a `'` (so the feet branch above already has it), and
- *   `formatLengthForDomain(v, "in")` emits no unit mark at all, so the
- *   inch-domain round-trip rides on `domain === "in"`. The spec's grammar
- *   table lists `47 5/8"` on the SAME ROW as `47 5/8`, which reads at
- *   least as naturally as the trailing quote being decoration.
+ * - **`'` names both units outright.** `24'-3 5/8"` means 24ft 3⅝in typed
+ *   into either kind of field, the spec's grammar table gives it exactly
+ *   that reading, and `formatFeetInches`' own output round-trips through
+ *   it. Load-bearing — do not remove.
+ * - **A trailing `"` is decoration.** In the wall-length field `47 5/8`
+ *   and `47 5/8"` are the SAME value, 47'-0⅝". The whole number always
+ *   takes the field's own unit; the fraction is always inches; the quote
+ *   changes nothing. An earlier draft made the quote flip the whole number
+ *   to inches, which put a second factor-of-twelve reading directly beside
+ *   the first — two strings one character apart meaning 47 feet and 3 feet.
+ *   It was load-bearing for nothing (removing it broke exactly one test,
+ *   its own, and no round-trip), and it contradicted the spec's grammar
+ *   table, which lists `47 5/8"` on the SAME ROW as `47 5/8`.
  *
- *   So this creates a SECOND factor-of-twelve reading, sitting right next
- *   to the first: in the wall-length field `47 5/8` is 47'-0⅝" but
- *   `47 5/8"` is 3'-11⅝". The live hint is the mitigation and the flip is
- *   one line either way. Tommy has to type both strings into that field
- *   once — logged in the spec's Open Items, not decided here.
+ * The consequence to keep in mind: `3"` in a feet-domain field is 3 FEET,
+ * not 3 inches. That falls out of "the whole number is always the field's
+ * unit" and is the price of having one rule instead of two. Write `0'-3"`
+ * — or just use an inch-domain field — to mean three inches.
  */
 function resolveTokens(tokens: LengthTokens, domain: LengthDomain): number {
   if (tokens.feet !== null) {
     const totalIn = tokens.feet * 12 + tokens.whole + tokens.fractionIn;
     return tokens.sign * (domain === "ft" ? totalIn / 12 : totalIn);
   }
-  if (tokens.hasInchMark || domain === "in") {
-    const totalIn = tokens.whole + tokens.fractionIn;
-    return tokens.sign * (domain === "ft" ? totalIn / 12 : totalIn);
+  if (domain === "in") {
+    return tokens.sign * (tokens.whole + tokens.fractionIn);
   }
-  // Bare entry in a feet field: whole is feet, fraction is still inches.
+  // Feet field, no foot mark: the whole number is feet whether or not a
+  // trailing `"` was typed (see above — the quote is decoration), and the
+  // fraction is still inches.
   return tokens.sign * (tokens.whole + tokens.fractionIn / 12);
 }
 

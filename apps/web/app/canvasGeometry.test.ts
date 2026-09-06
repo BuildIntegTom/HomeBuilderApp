@@ -168,10 +168,25 @@ describe("the fraction is always inches", () => {
   // makes a fully-written form mean the same thing in either kind of
   // field. NOTE: this is an implementation judgement the spec does not
   // settle — see resolveTokens' doc comment.
-  it("lets an explicit unit mark override the field's domain", () => {
+  it("lets a FOOT mark override the field's domain", () => {
     expect(parseLengthFt("24'-3 5/8\"")).toBe(291.625 / 12);
-    expect(parseLengthFt("3\"")).toBe(0.25);
     expect(parseLengthIn("2'")).toBe(24);
+  });
+
+  // Settled by Tommy 2026-09-06, asked directly: "it should always read as
+  // 47' and 5/8"". The whole number always takes the field's own unit and a
+  // trailing quote changes nothing — otherwise two strings one character
+  // apart would mean 47 feet and 3 feet, a second factor-of-twelve trap
+  // right beside the first.
+  it("treats a trailing inch mark as decoration, not an override", () => {
+    expect(parseLengthFt("47 5/8\"")).toBe(parseLengthFt("47 5/8"));
+    expect(parseLengthFt("47 5/8\"")).toBe(47 + 0.625 / 12);
+    // The price of one rule instead of two: in a feet field the whole
+    // number is feet even when a quote is typed. Write 0'-3" for 3 inches.
+    expect(parseLengthFt("3\"")).toBe(3);
+    // An inch-domain field is unaffected either way.
+    expect(parseLengthIn("47 5/8\"")).toBe(47.625);
+    expect(parseLengthIn("47 5/8")).toBe(47.625);
   });
 });
 
