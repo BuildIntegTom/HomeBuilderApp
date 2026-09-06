@@ -380,6 +380,171 @@ Deliberately staged, because the risk profile of each part is completely differe
 ## Roles
 Public/homeowner vs. Fabricator login — different disclaimer treatment. Square Bale mode: lighter reference/layout mode only, not the full calculation engine.
 
+**This section describes the *viewer-role* axis only** (which disclaimer prints, what's shown). The separate *permission* axis — guest / member / company admin / platform admin — arrived with the backend design and is deliberately a different thing. See "Backend, Accounts & Project Sharing" below; the two must never be merged.
+
+---
+
+## Backend, Accounts & Project Sharing (2026-09-06) — decided, nothing built
+
+Origin: Tommy's friend Fonz told him he needs a backend, specifically a MySQL relational database, to store projects for coworkers. Tommy's own goal, his words: *"organize projects in folders that are accessable over the cloud... you open the app as a regular user, and then have the option along the top bar to log into a Member or Admin,"* and *"I want to make any particular design savable, and reachable to another Member on any computer where they can log in."* Every decision below came from interviewing Tommy directly. **Nothing here is built.**
+
+A published plan artifact exists for discussion with Fonz (`https://claude.ai/code/artifact/0ab3627b-fd52-4fb1-a58e-256b1c91297c`). **This spec is authoritative; that page is a snapshot.**
+
+### Starting position — verified against the code, not assumed
+
+- **There is no backend at all.** No route handlers anywhere under `apps/web/app`, no server code, no database, no auth dependency. `next.config.ts` sets only `reactStrictMode: false` — it is *not* a static export, so route handlers are available whenever they're wanted.
+- **A project saves by downloading JSON and loads by uploading it.** `handleSaveProject` (`page.tsx:1377-1455`) builds a `Blob` and clicks an `<a download="building-integrity-project.json">`; `handleLoadFileSelected` reads a file the user picked. Both buttons live in `TopBar.tsx:119-126`.
+- **`page.tsx` is `"use client"`** and the whole editor runs in the browser.
+- **`viewerRole.ts` already anticipates this**, and says so: *"There's no real login yet — this is a local 'viewing as' toggle."*
+- **The app is served from `home-builder-app-web.vercel.app` and embedded by iframe** in Tommy's Squarespace/Google Sites page. That is a cross-origin iframe, which is a real constraint on how sign-in can work — see Open Items.
+
+### The framing: the design is a document, not a hundred rows
+
+Fonz is right that this needs a database, and right about roughly what it stores. **The database stores the filing cabinet — companies, users, projects, folders, versions, permissions. Each saved plan is one JSON document inside it.**
+
+A project already serializes to exactly one versioned document (`PROJECT_FILE_VERSION` is 23; `parseProjectFile` refuses unknown versions and accepts exactly one prior version, migrating it forward). Shredding that document into relational tables — a `walls` table, a `panel_slots` table, a `mid_wall_beams` table — would mean a schema migration every time a feature lands. This log's own history is the argument: seven schema versions in a few months, several of them real data reshapes (v18→v19's box-beam coverage, v21→v22's roofline rise). Those were single-file migrations. As relational schema they would each have been a database migration plus a backfill.
+
+**Record this explicitly, because it is why the MySQL-vs-Postgres question turned out to be the small decision.** Once the design is a document, the database's job is small and stable, and the interesting question becomes which platform enforces the permission rules — not which one models a wall panel.
+
+### Accounts
+
+1. **Individual accounts belonging to a company** — not one shared company credential. Gives per-person attribution on saved versions, revocation of one person without rotating a shared password, and per-person levels.
+2. **Email + password, with reset.**
+3. **Invite-only. Company admins invite; nobody self-registers.**
+4. **"User" is not a signed-in state.** This revises Tommy's original three-level description ("regular user → Member → Admin"). The real ladder is **guest (not signed in) → member (has an account)**. Anyone can open the app, design a building, and download files. **Signing in is what grants cloud saving, the folder tree, collaboration, and the consortium view** — it does not unlock the editor, which is already fully open.
+5. **Guest work stays download-only, exactly as today.** No anonymous cloud storage, no "save and we'll email you a link."
+6. **Leavers: access revoked, their work stays with the company, their name stays on versions they saved.** Attribution is history, not access.
+7. **Two-factor: optional for everyone, encouraged.** **Accepted risk, recorded rather than buried: the platform admin account can read every company, and under this decision it is one password away from everything.** Tommy chose this knowingly. Not for relitigation here; the narrow follow-up question (should platform admin specifically be the one account where 2FA is mandatory?) is in Open Items.
+
+### Roles — two axes that must never be merged
+
+This is the single most important structural decision in the section, because merging them is the obvious-looking mistake.
+
+| | **Permission** | **Viewer role** |
+|---|---|---|
+| Values | guest / member / company admin / platform admin, plus two cross-cutting states (invited collaborator, seed-collaborator browsing) | the existing `ViewerRole`: public / fabricator / engineer / admin |
+| What it controls | what data the server will send you, and what you may write | which disclaimer prints and what the document shows |
+| Enforced | **server-side** | client-side presentation only |
+| Who can change it | company admin / platform admin, via invites and grants | **anyone, freely, including guests** |
+
+8. **Permission is server-enforced** and is the real security boundary.
+9. **Viewer role stays a free presentation toggle available to anyone.** Tommy: *"the architect, fabricator, engineer, ect is all available to see through the Role Selector button."* **It is not a security level and must never be used as one.** The one place today's code leans on it for anything money-shaped — `effectivePriceModifier = role === "public" ? 1 : priceModifier` (`page.tsx:4814`) — is a *display* convention on your own project, and is not, and must not become, the mechanism behind the cost redaction in the consortium rules below.
+   - **Consequence to implement, not to infer:** `role` is stored inside the project document (`ProjectState.role`, and it is in `REQUIRED_STATE_KEYS`, so it cannot simply be dropped without a version bump). When a project is opened **from the cloud**, the viewer's own current toggle wins; the document's stored `role` is ignored on load rather than applied. Otherwise opening a colleague's project silently re-skins your whole session.
+
+### Storage
+
+10. **Every save creates a new version. Nothing is overwritten. Append-only.**
+11. **Two people saving the same project both get their save kept, as separate versions. No locking, no merge.** The version list *is* the reconciliation UI.
+    - **One cheap addition, proposed here rather than instructed by Tommy** — see Open Items: each version records its `parent_version_id`, so the app can tell you your save was based on a version that is no longer the head and show that plainly. This adds no merging and no locking; it only stops the second person's work from disappearing quietly into a list.
+12. **Fixed folders per company: Current Projects / Past Projects / Proposals.** No nesting, no custom folders.
+13. **Archive, never delete.** Members move projects between the three folders. **Only platform admin can permanently delete anything**, including company folders.
+14. **Local file save/load stays permanently, alongside cloud saving.** It is the escape hatch, and it is how guests work. The existing Save/Load buttons do not go away or become sign-in-gated.
+
+### The consortium — the unusual part
+
+15. **This is not standard multi-tenancy.** Companies own their own trees, but there is a **shared read layer** across all of them. **Membership in the app is the trust boundary.** Tommy: *"if you're logging into this app - you are in the club and welcome here is what everyone is doing."*
+16. **Companies today:** Building Integrity, Rare Forms, New Frameworks, The Seed Collaborative. More expected.
+17. **The Seed Collaborative is both a company and the consortium.** It has its own folder tree like anyone else, and other companies carry a membership flag pointing at it.
+18. **Seed Collaborative projects follow exactly the same rules as any company's.** Its members will design projects and hand them off to other companies; nothing about its own tree is special-cased.
+19. **"View as Seed Collaborator" is togglable by any signed-in person.** No per-company opt-in switch. **State this plainly to every new company before they join: a company cannot join without its projects becoming browsable by every other member company. There is no join-but-stay-private state.**
+20. **Browsing another company: design yes, money no.** Panels, quantities, drawings, details, assemblies — but not their price modifier or margin.
+21. **The cost hiding must be real, not cosmetic — the server strips cost fields before sending.** This is the one place server-side logic is genuinely required, and the reason is specific: a price modifier is **another company's commercial information**, not the app's own arithmetic. Contrast deliberately with 22 below.
+22. **Formulas are not secret. No server-side calculation engine.** The editor stays entirely client-side and exactly as fast as it is now. **This is the single biggest scope reduction in the whole design** — the alternative (a server that recomputes takeoffs so the client never sees the inputs) would have meant porting `packages/calc-engine` to run in two places and keeping them in sync forever.
+
+#### What "strip cost fields" actually means — the bounded exception to 22
+
+21 and 22 pull against each other, and the seam has to be written down or it will be implemented as a client-side `if`.
+
+- **The server has to understand exactly one thing about the document: which of its fields are money.** Everything else stays opaque. This is a small, explicit **redaction list keyed to `PROJECT_FILE_VERSION`**, not a server that parses the design.
+- **Today that list is one field: `priceModifier`.** Verified: it is the only money-shaped key in `ProjectState`. The seven Plaster Master / shipping price fields (`shippingRatePerMile`, the four `plaster*Price*`, `steelMeshPricePerSqFt`, `plasterLaborRatePerHour` — `page.tsx:539, 562-567`) are `useState` only and **do not round-trip through save/load at all today.** That is a separate latent bug (edit a plaster price, save, reload, your edit is gone), and it matters here because **the day they are added to `ProjectState` they become redaction targets.**
+- **Therefore the redactor is tested against `ProjectState`'s own key list**, and fails when a key exists that the redactor has not classified as money-or-not. A silently unclassified new field is exactly how the first leak happens.
+- **The redactor fails closed on an unknown schema version.** A document whose `schemaVersion` the redaction list doesn't cover is **not served cross-company at all**, rather than served on the hope that nothing money-shaped was added.
+- **A redacted document carries an explicit marker, not a plausible substitute.** Do **not** let the client fall back to the 1.3 default or to `1` — that shows a browsing company a confident, wrong number. The redacted document says so, and the UI shows "—" with a note that cost is not shown for another company's project. This is the same rule this log already applies to silent rounding and to `confirmed` flags on researched values: **a silent substitution is worse than a visible gap.**
+- **What is not hidden, and cannot be:** the catalog's own list rates ($28/$36/$42 per sqft) live in the app's code and are visible to everyone by design. A browser can therefore compute an unmodified price. That is the app's arithmetic, not the other company's margin, and 20 asks for the modifier to be hidden — which this does exactly.
+
+#### Export rules, and an honest limit
+
+23. **View-only browsers can export drawings and PDFs, but not the project file or the OBJ.** The intent is that view-only cannot become "take a copy and continue it as mine."
+    - **Flagged rather than smoothed over: this one cannot be made real the way 21 can.** The PDF path *is* the browser's own Print/Save-as-PDF of a client-rendered DOM, and the 3D view is rendered from the same in-memory state, so **the document must reach the browser in order to draw the drawings at all.** Blocking the Save-Project and Export-OBJ buttons is deliberate friction and a terms-of-use line, not a technical guarantee. Redaction is a guarantee; export blocking is a speed bump. **Do not describe it to a joining company as anything stronger.** The only design that would make it real is server-side rendering of the drawings, which contradicts 22 and costs far more than it buys.
+24. **A deliberate handoff is different from passive browsing: an invited collaborator sees everything, costs included** — no redaction, full export.
+25. **Handoff means shared access to the same project, not a fork.** One project, one version history, both companies. **This is why ownership must be modelled separately from access** — `projects.company_id` (who owns it, whose folder tree it appears in, whose backup includes it) is a different fact from a row in `collaborators`.
+26. **Collaboration invitations work both directions:** a project can invite a member in, and a browser can request to be let in (`collab_requests`).
+27. **Creating a new company: company admins at any member company, plus platform admin.** The creator names the company and invites its first admin by email; **the creator gets no standing access to the company they created** — creating is not joining.
+28. **When a company leaves, their designs stay visible.** Only platform admin can delete company folders.
+
+### Backups
+
+29. **Each company admin can download a complete backup of their own company's projects and versions** — Tommy's stated use case is a USB stick. Platform admin can back up everything.
+    - **Record the reasoning, because this reverses Tommy's first answer and the reversal will otherwise be re-broken later.** He originally said every company admin could back up *all* companies. That was withdrawn once it was pointed out that it hands every admin a complete, editable, cost-bearing copy of designs that rule 23 specifically prevents them from exporting one at a time — a backup button that quietly outranks the export rule. **A backup may never contain more than its owner could already export by hand.**
+    - **The rule that makes that generalize:** a company backup contains projects the company **owns** (28) plus projects it has been **granted collaborator access to** (24, where full export is already allowed), and **excludes everything visible only through consortium browsing** (20/23).
+
+### Platform
+
+30. **Supabase (Postgres + auth + row-level security).** Chosen because the permission rules here are intricate *and* cross company boundaries, so writing them once in the database beats re-deriving them in every route that touches a project. MySQL has no row-level security and weaker JSON handling; both matter for this shape of problem.
+    - **Honest caveat, recorded because it is easy to over-trust RLS: row-level security governs whether you can see a *project*, not whether you can see a *field inside it*.** The cost redaction in 21 is application logic on any platform. RLS decides *whether* the row is served; the redactor decides *what the served document contains*. Two different mechanisms, both required.
+    - This does not change the deployment story: Vercel keeps serving the app, and Supabase is called from it.
+
+### Data model
+
+Validated against the real `ProjectState` and `DocumentMetaContext` rather than transcribed.
+
+| Table | Holds | Notes |
+|---|---|---|
+| `companies` | name, seed-member flag, `created_by` | see the flag caveat below |
+| `users` | email, password hash, name | Supabase Auth owns the credential; the profile row carries the display name that appears on versions |
+| `memberships` | user ↔ company, level `member \| admin` | many-to-many by construction — see Open Items on whether one person may belong to two companies |
+| `projects` | owning company, folder (`current \| past \| proposals`), name | the **listing** record; mutable |
+| `project_versions` | project, author, timestamp, optional label, **the JSON document**, `parent_version_id` | **append-only, never updated, never deleted except by platform admin** |
+| `collaborators` | per-project grant to a user or a company | full access incl. costs (24); a *grant*, distinct from ownership (25) |
+| `collab_requests` | a browser asking to be let into a project | the other direction of 26 |
+| `invites` | email, company, level, token, expiry | invite-only (3); also the path a new company's first admin arrives by (27) |
+
+**`companies.is_seed_member` has no behavior today, and that is worth saying out loud.** Under 19, browsing is available to every signed-in person and every member company is browsable, so the flag is currently always true and gates nothing. Keep it as a reserved column if Tommy wants it for the record, but **do not write permission logic against it** — a column that is always true is a permission rule nobody has tested the false branch of. If a non-consortium company is ever onboarded, that is a new decision with its own spec entry, not a flag flip.
+
+#### Project name / site / date — where they live when the row and the document disagree
+
+The prompt asked this specifically. Verified in the code:
+
+- **`projectName` lives inside the document** (`ProjectState.projectName`, in `REQUIRED_STATE_KEYS`).
+- **`siteLabel` is derived at render** from `zipCode`: `documentSiteLabel = zipCode.trim() ? \`Zip ${zipCode.trim()}\` : "Site not set"` (`page.tsx:5468`).
+- **`date` is `new Date()` at render time** (`page.tsx:5469`) — **always today, never the save date.** `ProjectFile.savedAt` exists but is never read back into the UI.
+
+Decisions:
+
+- **Name: `projects.name` is authoritative for the folder tree; the document is authoritative for the printed sheet.** The row is set from the document's `projectName` on first save and updated on every subsequent save. Renaming in the tree writes back into the *next* version's document rather than mutating past versions. When an old version's document and the row disagree, that is correct and not a bug: **the tree shows what the project is called now, a printed sheet shows what it was called when that version was saved.** Rows are mutable; versions are not.
+- **Site: stays in the document only.** No `site` column. `zipCode` is a design input (it drives seismic zone and shipping distance), not filing-cabinet metadata, and duplicating it onto the row creates a second source of truth for something that already has one.
+- **Date: `project_versions.created_at` becomes the authoritative save date**, and when a cloud version is opened the title block should date from it rather than from `new Date()`.
+  - **This is a real pre-existing defect, flagged not folded in:** today a project reopened next year prints next year's date in its title block, and a printed set is supposed to be a snapshot. It is fixable independently of any of this (read `ProjectFile.savedAt`), it is small, and it is listed in Open Items rather than being absorbed into the backend work.
+
+### Permission matrix
+
+Rows are permission states (never viewer roles). "Own" = a project owned by a company you are a member of.
+
+| | Use editor | Download local file | Cloud save (new version) | See own company tree | Browse other companies | See their costs | Export their file / OBJ | Move between folders | Invite users | Create company | Grant collaborators | Permanent delete | Backup |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Guest** | yes | yes | no | no | no | — | — | no | no | no | no | no |
+| **Member** | yes | yes | own | own | yes | **no** | **no** | own | no | no | own projects | no | no |
+| **Company admin** | yes | yes | own | own | yes | **no** | **no** | own | own company | yes (27) | own projects | no | **own company only (29)** |
+| **Invited collaborator** (cross-cutting) | yes | yes | that project | — | — | **yes, that project** | **yes, that project** | no | no | no | no | no | that project counts as own (29) |
+| **Seed-collaborator browsing** (cross-cutting; any signed-in user) | yes | yes | no | — | yes | **no** | **no** | no | no | no | no | no |
+| **Platform admin** | yes | yes | yes | all | yes | yes | yes | yes | yes | yes | yes | **yes** | everything |
+
+Two readings that must survive implementation: **a member browsing another company is a *browser*, not a member of that company** — the row that applies is "seed-collaborator browsing," not "member." And **an invited collaborator's access is scoped to the one project**, not to the inviting company.
+
+### Build order
+
+Tommy has seen and agreed this. **Each stage is usable alone**, which is the point — none of them is a foundation-only stage that ships nothing.
+
+1. **Accounts and companies.** Sign in/out, invites, memberships, company admin. The app gains a real identity and nothing else changes. *(Usable alone: nothing to save yet, but the top-bar sign-in Tommy described exists and works.)*
+2. **Cloud projects and versions.** The three folders, save-as-new-version, the version list, open-from-cloud. Local save/load untouched alongside it. *(This is the stage that delivers Tommy's actual sentence — "reachable to another Member on any computer where they can log in.")*
+3. **Collaboration.** `collaborators`, invitations, requests, shared access to one project (24-26). Supersedes the older "in-app inbox" line in the Handoff section above — this *is* the handoff mechanism.
+4. **Consortium browsing.** The cross-company read layer, the cost redactor, the export restrictions (19-23). **The redactor is the highest-risk single piece of the whole design** and deliberately does not ship before there is anything to browse.
+5. **Platform admin.** Cross-company visibility, permanent delete, full backup.
+
+Backups (29) ride with the stage that makes them meaningful: company backup with stage 2, platform backup with stage 5.
+
+**Flags check: clean, and confirmed rather than assumed.** This section introduces **no real-world building values at all** — no fastener spacing, no load, no density, no dimension, no cost figure. No `CatalogValue`, `CatalogRange`, or `PanelStructuralStatus` is in scope, and `data.ts` is not touched. Nothing new reaches the Review Log. **It does touch the `pending-BI-confirmation` convention in exactly one indirect way, and only in the direction of strengthening it:** the redaction rule adopts the same principle the flag convention exists for — a plausible substituted number (a defaulted price modifier shown to a browsing company) is worse than a visible gap, for the same reason a researched value marked `confirmed` is worse than one marked pending. Any dollar figure this work causes to be *displayed* is an existing catalog value, still carrying whatever status it already has. The coder re-runs the 6-point check against the actual diff.
+
 ---
 
 ## Provisional Values — the `status` flag convention
@@ -461,7 +626,20 @@ Things that are interpreted or unresolved but aren't a single flaggable number:
 - **Should fabrication sheets be imperial-only?** The 1/8in grid is exact in imperial and provably cannot sum exactly in metric at nearest-mm. Current plan is a note on metric fabrication output saying the imperial value is authoritative. Blocking the metric toggle on fabrication sheets outright would be cleaner but is a bigger UX call than Tommy asked for.
 - **The 1/8in grid stops at wall panelization this pass — deliberately.** The same even-split defect exists in `computeJoistLayout`, `computeFieldFramingLayout` (`perimeterRing.ts`), `floorPanelGrid.ts`, and `trussLayout.ts`, which all divide a span into equal pieces. Not folded in: Tommy asked about drawing tools, bump-out, panel movers, and the panelizer. `distributeEighths` is directly reusable when it's wanted.
 - **The vertical invariant is the same problem, not yet spec'd.** `computeWallVerticalBandsForSlot` splits a wall's height into bands around mid-wall beams; "the bands sum to the wall height" is the same guarantee as "the panels sum to the wall length," and beam height/top drags are in the Stage 2 snap list, but the band arithmetic itself hasn't been audited for the same halving defect. Worth doing right after Stage 1.
-- Single nearest fabricator vs. broadcast to a few for handoff
+- Single nearest fabricator vs. broadcast to a few for handoff — **partially answerable now:** the backend's collaboration grants (decisions 24-26) are the mechanism either answer would use. The routing policy question is still Tommy's.
 - Detail page numbering scheme
+
+### Open Items — Backend, Accounts & Project Sharing
+- **⚠ Sign-in inside a cross-origin iframe. This is the biggest technical unknown in the whole backend design, and it is not a design question.** The app is served from `home-builder-app-web.vercel.app` and embedded by iframe into Tommy's Squarespace/Google Sites page. Browsers partition and increasingly block third-party storage and cookies in exactly that position, and an OAuth-style redirect cannot navigate the parent page. Sign-in may need a popup window, the Storage Access API, or a custom domain on Tommy's own site so the iframe is same-site. **Prove this works in the real embed before building stage 1 on top of it** — a sign-in that works on the bare Vercel URL and fails in the embed is a discovery worth making in an afternoon rather than after stage 2.
+- **⚠ Does consortium browsing include the Proposals folder?** Two decisions collide and Tommy may not have connected them. Decision 12 makes Proposals one of the three fixed folders; decision 19 makes every folder browsable by every member company from the day a company joins. **Proposals is the folder most likely to hold a live bid.** Cost redaction (20/21) mitigates but does not remove it — the *existence* of a proposal, and who it is for, is itself commercial information. Options: browse all three folders (as currently written), or exclude Proposals from the shared read layer. Not decided here; it changes a rule Tommy has to be comfortable telling a joining company.
+- **Can one person be a member of two companies?** Tommy said "individual accounts belonging to a company," singular; the `memberships` table is many-to-many and this is likely to come up immediately, since someone at Building Integrity is plausibly also a member of The Seed Collaborative. If yes, the UI needs an active-company switcher and "own company" in the permission matrix becomes "any company you're a member of." Schema supports it either way; the question is whether the UI should.
+- **Should platform admin be the one account where 2FA is mandatory?** Decision 7 makes 2FA optional for everyone and Tommy accepted the platform-admin risk knowingly. This is the narrow follow-up, not a reopening: making it mandatory on that single account costs one person a small inconvenience and removes the "one password away from everything" exposure.
+- **`parent_version_id` and the "you weren't editing the head" warning — proposed here, not instructed by Tommy.** Decision 11 says no locking and no merging, which stands. This only records what each save was based on so the app can *tell* the second person their sibling exists. Confirm he wants it before it's built; if not, drop the column.
+- **Title-block date is always today — pre-existing bug, deliberately not folded in.** `documentDate` is `new Date()` at render (`page.tsx:5469`), so reopening a saved project prints today's date, not the save date. `ProjectFile.savedAt` is written on every save and never read back. A printed set is meant to be a snapshot. Fixable independently of the backend (read `savedAt`; a cloud version reads `project_versions.created_at`), and small.
+- **The seven Plaster Master / shipping price fields don't round-trip — pre-existing bug with a backend consequence.** `shippingRatePerMile` and the six `plaster*`/`steelMesh*` price fields (`page.tsx:539, 562-567`) are `useState` only and are absent from `ProjectState`, so editing them and saving silently loses the edit. Worth fixing on its own merits. **The backend consequence: the moment they enter `ProjectState` they become cost-redaction targets** — which is precisely why the redactor is spec'd to be tested against `ProjectState`'s key list rather than against a hand-written field list.
+- **View-only export blocking is friction, not a guarantee — decide how to say so.** Recorded in decision 23: the document must reach the browser to draw the drawings, so blocking Save-Project and Export-OBJ is a terms-of-use line rather than a technical control. Cost redaction *is* real; this is not. Tommy should decide the wording a joining company actually sees, because overstating it once is worse than never claiming it.
+- **`companies.is_seed_member` gates nothing today.** Under decision 19 every member company is browsable and every signed-in person can browse, so the flag is always true. Keep it reserved if wanted, but no permission logic should branch on it until a non-consortium company is a real case with its own spec entry.
+- **Backup format.** Decision 29 says "a complete backup for a USB stick" and nothing about shape. A zip of one JSON per version plus a manifest is the obvious answer and needs ten seconds of Tommy's confirmation, mostly so the manifest carries what he'd actually want to find on that stick a year later (company, project, folder, version, author, date).
+- **Signing in must not discard unsaved guest work.** Decision 5 keeps guests download-only, and the natural flow is "design something, then sign in to save it." A sign-in that navigates or remounts the editor loses the design. Called out here because it interacts directly with whatever the iframe sign-in mechanism turns out to be.
 - **Still pending from Tommy:** structural elements pre-engineering guide, panel parameters, and Base Set drawings (unless "For Baleheads Only" turns out to cover this)
 - **Code-level provisional values** — tracked separately as `pending-BI-confirmation` flags in the catalog rather than as bullets here; see "Provisional Values" above for the full list and the flags check.
