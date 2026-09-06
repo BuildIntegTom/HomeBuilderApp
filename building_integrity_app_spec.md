@@ -719,7 +719,13 @@ Only chrome gets tokens, so the count that matters is far smaller than 650.
 
 **What Stage 1 must do, and no more:** add a nullable `theme` JSON column to `companies` so the data model carries it, and define the chrome token layer in `globals.css` with today's Building Integrity values as the defaults — so nothing changes visually and new code has tokens to reach for. Migrating existing chrome colours onto tokens is opportunistic afterwards, never a Stage 1 task.
 
-**Open:** whether the theme follows the *owning company of the project being viewed* or the *company you are acting as*. Those differ constantly under the consortium model — browsing New Frameworks' tree while acting as Building Integrity. Needs Tommy before any theming is switched on; not before Stage 1.
+**Decided (2026-09-06): the theme follows the company you are ACTING AS**, not the owning company of the project on screen. Browsing New Frameworks' tree while acting as Building Integrity shows Building Integrity's colours throughout.
+
+**Useful consequence, and a reason to prefer this reading beyond Tommy having chosen it:** the theme becomes a second, ambient indicator of which company you are acting as. The spec already requires the switcher to be always visible because the failure it prevents is saving into the wrong company's folder; a whole-interface colour shift reinforces that far more strongly than a label does. Under the alternative reading the colours would change as you browsed between companies, which would have made them noise rather than signal — actively working against the switcher.
+
+It also means the colour never encodes *whose work you are looking at*, so nothing about theming can be mistaken for a permission or ownership cue. Ownership is shown, not coloured.
+
+**One narrow exception to settle before theming ships: the title block.** A printed sheet is a document about who produced it, not about who pressed print. If chrome tokens are applied blindly, the same fabrication sheet would carry different branding depending on which company the person printing it happened to be acting as — and the block already renders a fixed "Building Integrity" wordmark today. The likely answer is that the title block follows the project's **owning** company (or stays fixed) while every other surface follows acting-as, but it needs deciding rather than inheriting. Not a Stage 1 concern; a Stage 2 one, when projects have owners.
 
 **The genuinely open question is one: the backup file format.** Everything else below is either answered, a recorded rejection, or a known implementation caveat that does not need a decision before a coder starts.
 
