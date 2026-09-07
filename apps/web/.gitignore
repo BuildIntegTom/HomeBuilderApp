@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...and this one is opted in: it documents the variable names and contains no
+# secrets. Without the exception, .env* would hide it.
+!.env.example
 
 # vercel
 .vercel

@@ -1,0 +1,182 @@
+/* The always-visible acting-as control, plus the account button next to it.
+   Colours come from the chrome token layer in globals.css — this is new chrome,
+   so it reaches for the tokens rather than adding more hardcoded hex. Existing
+   components are NOT being migrated; that is opportunistic later work. */
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The acting-as company is legible at all times, not only while being changed
+   — that is the whole reason this control exists. */
+.actingAs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 10px;
+  border: 1px solid var(--bi-outline);
+  border-radius: 6px;
+  background: var(--bi-surface-container-low);
+  white-space: nowrap;
+}
+
+.actingAsLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--bi-on-surface-muted);
+  text-transform: uppercase;
+}
+
+.actingAsSelect {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bi-on-surface);
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  max-width: 220px;
+}
+
+.actingAsSelect:disabled {
+  cursor: default;
+  /* A single entitlement still shows its company by name at full contrast —
+     the control stays legible rather than greying out into furniture. */
+  color: var(--bi-on-surface);
+  opacity: 1;
+}
+
+/* Signed out, or signed in with no memberships: the slot keeps its place in the
+   bar so the acting-as company never moves around. */
+.actingAsStatic {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bi-on-surface-variant);
+}
+
+.button {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid var(--bi-button-outline);
+  background: var(--bi-button-surface);
+  color: var(--bi-button-label);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.buttonActive {
+  composes: button;
+  background: var(--bi-button-active-surface);
+  border-color: var(--bi-button-active-outline);
+  color: var(--bi-button-active-label);
+}
+
+.notice {
+  font-size: 11px;
+  color: var(--bi-on-surface-muted);
+  margin: 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bi-on-surface-variant);
+}
+
+.input {
+  font-size: 13px;
+  font-weight: 400;
+  padding: 6px 8px;
+  border: 1px solid var(--bi-outline);
+  border-radius: 4px;
+  background: var(--bi-surface-container-lowest);
+  color: var(--bi-on-surface);
+}
+
+.primaryButton {
+  composes: button;
+  background: var(--bi-secondary);
+  border-color: var(--bi-secondary);
+  color: var(--bi-on-secondary);
+  font-weight: 600;
+}
+
+.linkButton {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--bi-secondary);
+  text-decoration: underline;
+  cursor: pointer;
+  text-align: left;
+}
+
+.error {
+  font-size: 12px;
+  color: var(--bi-error);
+  margin: 0;
+}
+
+.ok {
+  font-size: 12px;
+  color: var(--bi-on-surface-variant);
+  margin: 0;
+}
+
+.sectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bi-primary);
+  margin: 14px 0 6px;
+}
+
+.list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--bi-divider);
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+}
+
+.rowSub {
+  font-size: 11px;
+  color: var(--bi-on-surface-muted);
+}
+
+.inviteLink {
+  font-size: 11px;
+  font-family: var(--font-geist-mono), monospace;
+  word-break: break-all;
+  padding: 6px;
+  border: 1px dashed var(--bi-outline);
+  border-radius: 4px;
+  background: var(--bi-surface-container-low);
+}

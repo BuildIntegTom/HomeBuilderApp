@@ -1,0 +1,38 @@
+/* The two standalone pages an email link lands on. Deliberately plain: they are
+   not the editor, they are arrived at from a mailbox, and they exist for about
+   twenty seconds. Chrome tokens only. */
+
+.page {
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  color: var(--bi-on-surface);
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--bi-primary);
+  margin-bottom: 6px;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: var(--bi-on-surface-variant);
+  margin-bottom: 20px;
+}
+
+.card {
+  border: 1px solid var(--bi-outline-variant);
+  border-radius: 8px;
+  background: var(--bi-surface-container-lowest);
+  padding: 20px;
+}
+
+.back {
+  display: inline-block;
+  margin-top: 18px;
+  font-size: 13px;
+  color: var(--bi-secondary);
+  text-decoration: underline;
+}

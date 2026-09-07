@@ -28,6 +28,118 @@
   --elevation-space-sm: 8px;
   --elevation-space-md: 12px;
   --elevation-space-lg: 16px;
+
+  /* ------------------------------------------------------------------
+     CHROME TOKENS — the themeable layer, and only the themeable layer.
+
+     Tommy asked (2026-09-06) for per-company colour schemes, the Seed
+     Collaborative's being a light green palette. That is NOT built and is
+     deliberately not built here; the whole job of this block is to make
+     sure Stage 1 does not preclude it. Two things exist for it: a nullable
+     `theme` jsonb column on `companies`, and these names.
+
+     Nothing changes visually. Every value below is the colour the app
+     already renders today, lifted from the component that renders it, so
+     migrating a rule onto a token is a no-op by construction. The existing
+     ~188 CSS and ~462 TSX hardcoded colours are NOT migrated — that is
+     opportunistic later work, one component at a time, not a Stage 1 task.
+     New chrome (the account control) reaches for these instead of adding
+     more hex.
+
+     WHAT MUST NEVER GET A TOKEN — the distinction that makes theming
+     tractable at all:
+
+       Chrome         top bar, sticky notes, panels, buttons, title block.
+                      Company identity. Should re-skin.
+       Drawing        member colours by role, material colours, the floor
+       semantics      opacity bands, the pending-amber confidence chip, the
+                      review-log red. These ENCODE MEANING. A stud must not
+                      change colour because a Seed Collaborative member is
+                      looking at it, and a fabrication sheet must read
+                      identically to whoever opens it.
+
+     So panelColors.ts, bracedStyle.ts, the opacity bands, `#a67c00`
+     (pending-BI-confirmation amber) and `#a33` (review-log red) stay
+     hardcoded on purpose. If you find yourself adding `--bi-standard-panel`,
+     stop.
+
+     NAMING: this follows the Material-style vocabulary already written down
+     in `part 1 ui stitch/DESIGN.md` and `part 2 ui stitch/DESIGN.md`
+     (identical palettes) — surface / surface-container-* / on-surface /
+     outline / primary / secondary — rather than inventing a third scheme.
+     The one departure is the `--bi-` prefix, for two reasons: it does not
+     collide with the pre-existing `--background`/`--foreground` above, and
+     it makes "is this token themeable?" answerable with one grep.
+
+     Where a DESIGN.md value and the app's actual rendered value disagree
+     (its surface is #f9f9f9, the app paints #fafafa), THE APP WINS. These
+     have to be what is on screen today or the first migration would be a
+     silent restyle.
+     ------------------------------------------------------------------ */
+
+  /* Surfaces. */
+  --bi-surface: #fafafa;                    /* page.module.css .page */
+  --bi-surface-container-lowest: #ffffff;   /* top bar, cards, title block */
+  --bi-surface-container-low: #f3f3f3;
+  --bi-surface-container: #eeeeee;
+  --bi-surface-container-high: #e8e8e8;
+  --bi-surface-container-highest: #e2e2e2;
+
+  /* Text on those surfaces. */
+  --bi-on-surface: #111111;
+  --bi-on-surface-variant: #555555;
+  --bi-on-surface-muted: #777777;
+  --bi-ink: #333333;                        /* button labels today */
+
+  /* Lines. */
+  --bi-outline: #cccccc;                    /* control borders */
+  --bi-outline-variant: #dddddd;            /* panel edges */
+  --bi-divider: #eeeeee;                    /* table rules */
+
+  /* Brand. Navy and blue are the two colours the chrome is actually built
+     from; a company theme would replace this pair first. */
+  --bi-primary: #1c3d5a;
+  --bi-on-primary: #ffffff;
+  --bi-secondary: #4a90d9;
+  --bi-on-secondary: #ffffff;
+
+  /* Form-error text. NOT the review-log red (#a33), which is a drawing
+     semantic and stays where it is — this one is for "that password did not
+     work", which is chrome. Value from the shared DESIGN.md palette, since
+     the app has no existing chrome error colour to preserve. */
+  --bi-error: #ba1a1a;
+
+  /* Top bar. */
+  --bi-topbar-surface: #ffffff;
+  --bi-topbar-border: var(--bi-primary);
+  --bi-topbar-shadow: rgba(0, 0, 0, 0.12);
+
+  /* Buttons. */
+  --bi-button-surface: #ffffff;
+  --bi-button-outline: var(--bi-outline);
+  --bi-button-label: var(--bi-ink);
+  --bi-button-active-surface: var(--bi-secondary);
+  --bi-button-active-outline: var(--bi-secondary);
+  --bi-button-active-label: var(--bi-on-secondary);
+
+  /* Sticky notes — the "reference material" family. */
+  --bi-note-surface: #fffef8;
+  --bi-note-outline: #b8901f;
+  --bi-note-header-surface: #f2e8c9;
+  --bi-note-header-label: var(--bi-primary);
+
+  /* Instrument panels — toolbars and editing furniture. */
+  --bi-instrument-surface: #eef2f6;
+  --bi-instrument-outline: #ccd6e0;
+
+  /* Title block. Chrome per the spec's own list, even though it prints. */
+  --bi-titleblock-surface: #ffffff;
+  --bi-titleblock-rule: #000000;
+  --bi-titleblock-label: #555555;
+  --bi-titleblock-value: #111111;
+  --bi-titleblock-heading: var(--bi-primary);
+  --bi-titleblock-badge-surface: var(--bi-primary);
+  --bi-titleblock-badge-label: #ffffff;
 }
 
 html {

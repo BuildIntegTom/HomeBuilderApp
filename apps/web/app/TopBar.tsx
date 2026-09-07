@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import StickyNote from "./StickyNote";
 import UnitSystemSwitch from "./UnitSystemSwitch";
+import AccountControl from "./auth/AccountControl";
 import styles from "./TopBar.module.css";
 
 export interface TopBarProps {
@@ -146,6 +147,15 @@ export default function TopBar({
         >
           Panelizer {openDropdown === "panelizer" ? "▲" : "▼"}
         </button>
+
+        {/* The acting-as switcher and the sign-in state. Deliberately at the
+            far end of the bar, as far from the Role Selector at the other end
+            as the row allows: those are the two axes that must never be
+            merged, and sitting them side by side is how someone starts
+            reading one as a level of the other. Permission is server-enforced;
+            the Role Selector is a free presentation toggle available to
+            everyone including guests, and neither reads the other. */}
+        <AccountControl />
       </div>
 
       <StickyNote
