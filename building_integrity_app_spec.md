@@ -701,6 +701,18 @@ Things that are interpreted or unresolved but aren't a single flaggable number:
 - Single nearest fabricator vs. broadcast to a few for handoff — **partially answerable now:** the backend's collaboration grants (decisions 24-26) are the mechanism either answer would use. The routing policy question is still Tommy's.
 - Detail page numbering scheme
 
+### Three platform admins, one per founding company (2026-09-07)
+
+Tommy: *"i want to have 3 platform admins that can reach all companies - me from building integrity, ace from new frameworks, and greg from rare forms."*
+
+**No schema or code change.** `user_profiles.is_platform_admin` already carries this; three platform admins is three rows set the same way the README bootstraps the first. Each also holds an ordinary membership at their own company, so each has two entitlements: their company by membership, and everything by platform admin.
+
+**The consequence to state plainly, because it is a real change and not a side effect.** Decision: consortium browsing is *design yes, money no* — another company sees your panels and drawings but not your price modifier or margin. **Platform admin bypasses that.** So Ace sees Building Integrity's and Rare Forms' margins, Greg sees Building Integrity's and New Frameworks', and Tommy sees all three. That is defensible for three co-owners of a co-operative, and it is what Tommy asked for — but it means the money boundary now holds between *companies* and not between *these three people*. Anyone reading "your margin stays yours" should understand it as "yours and the three platform admins'".
+
+**It also triples the 2FA exposure.** Two-factor is optional by Tommy's twice-confirmed decision, and the accepted risk recorded there was one password standing in front of every company's data. It is now three, held by three people at three companies. The decision stands; the risk statement needs the corrected number, and this is the change that most argues for revisiting it.
+
+**Open — what "certain toggles" means.** Tommy: *"we three with that platform admin tag should be able to have access to everything with certain toggles."* A platform admin can already act as any company through the existing switcher. Whether he wants anything beyond that — a way to *drop* platform privilege and browse as an ordinary member to see what others see, an audit trail of platform-admin access, or a per-area toggle — is not specified and nothing was built for it. Ask before building.
+
 ### Open Items — Backend, Accounts & Project Sharing
 
 - **⚠ How long is an invite good for? Picked, not decided — needs Tommy.** Decision 3 makes the app invite-only and the build talks throughout about a "valid, unexpired invite token", but no window is named anywhere in this log. Stage 1 shipped with `INVITE_EXPIRY_DAYS = 14` in `apps/web/app/auth/inviteToken.ts` — long enough that someone gets round to it, short enough that a forwarded email is not still live a year later. **That is a guess wearing a constant's clothes**, and it is recorded here because a code comment is not where this project keeps unresolved decisions. Changing it is one edit; the invites already in flight keep the expiry they were minted with.
