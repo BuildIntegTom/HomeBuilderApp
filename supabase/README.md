@@ -62,7 +62,8 @@ Stage 2's `projects` and `project_versions`, Stage 3's `collaborators` and
      from auth.users u
      left join public.user_profiles p on p.id = u.id
     where lower(u.email) in (
-      'tommy.fieser@gmail.com',
+      'tommy@buildinteg.com',      -- Building Integrity
+      'virgil@buildinteg.com',     -- Building Integrity
       'ace@REPLACE-ME',            -- New Frameworks
       'greg@REPLACE-ME'            -- Rare Forms
     );
@@ -76,7 +77,7 @@ Stage 2's `projects` and `project_versions`, Stage 3's `collaborators` and
    select count(*) from auth.users where email is null;
    ```
 
-   Expect **three rows** from (b) — one per platform admin — each with a
+   Expect **four rows** from (b) — one per platform admin — each with a
    non-null `profile_id`. A row with a null `profile_id` means the trigger did
    not fire for that account and the bootstrap below will silently skip them.
    `true` from (a) and `0` from (c) before you go on.
@@ -86,22 +87,24 @@ Stage 2's `projects` and `project_versions`, Stage 3's `collaborators` and
    delete them. If they are real, the profile row needs an email that
    `auth.users` does not have, which is a decision about what identity means
    here rather than a line of SQL — ask before inventing a placeholder address.
-5. Make the three platform admins. There is no self-service path to this and
+5. Make the four platform admins. There is no self-service path to this and
    deliberately isn't one: a trigger refuses any change to the flag from anyone
    who is not already a platform admin, and at this point nobody is. So the
    first one is set from the SQL editor, with the operator opt-in that
    `is_privileged_caller()` looks for.
 
-   There are three: Tommy at Building Integrity, Ace at New Frameworks, Greg at
-   Rare Forms (spec, "Three platform admins, one per founding company"). Each
-   also holds an ordinary admin membership at their own company, so each has two
-   entitlements — their company by membership, everything by platform admin.
+   There are four: Tommy and Virgil at Building Integrity, Ace at New
+   Frameworks, Greg at Rare Forms (spec, "Platform admins"). Each also holds an
+   ordinary admin membership at their own company, so each has two entitlements
+   — their company by membership, everything by platform admin. Building
+   Integrity has two; that is deliberate, not a duplicate.
 
    **Know what you are granting.** Consortium browsing is deliberately *design
    yes, money no*. Platform admin bypasses that, so all three see every
-   company's price modifier and margin. Tommy confirmed that is intended for
-   three co-owners; it does mean "your margin stays yours" reads as "yours and
-   the three platform admins'". Say so when you hand out the tag.
+   company's price modifier and margin. Tommy confirmed that is intended; it
+   does mean "your margin stays yours" reads as "yours and the four platform
+   admins'". Say so when you hand out the tag — Ace and Greg agreed to a set
+   that has since grown by one.
 
    You need an account first, which means an invite, which means a company
    admin — so bootstrap in this order:
@@ -111,20 +114,21 @@ Stage 2's `projects` and `project_versions`, Stage 3's `collaborators` and
    --    (Authentication → Users → Add user). That fires the trigger that
    --    creates your profile row.
    --
-   -- a) Create ALL THREE auth users through the Supabase dashboard
+   -- a) Create ALL FOUR auth users through the Supabase dashboard
    --    (Authentication → Users → Add user). That fires the trigger that
-   --    creates each profile row. Do all three before running (b).
+   --    creates each profile row. Do all four before running (b).
    --
    -- b) Then, in the SQL editor, as ONE transaction. Written as a values list
-   --    rather than three copies so the three cannot drift apart, and so a
-   --    typo in one email fails the whole block instead of half-applying:
+   --    rather than four copies so they cannot drift apart, and so a typo in
+   --    one email fails the whole block instead of half-applying it:
    begin;
    set local app.operator = 'on';
 
    with admins(email, company) as (values
-     ('tommy.fieser@gmail.com', 'Building Integrity'),
-     ('ace@REPLACE-ME',         'New Frameworks'),
-     ('greg@REPLACE-ME',        'Rare Forms')
+     ('tommy@buildinteg.com',  'Building Integrity'),
+     ('virgil@buildinteg.com', 'Building Integrity'),
+     ('ace@REPLACE-ME',        'New Frameworks'),
+     ('greg@REPLACE-ME',       'Rare Forms')
    )
    insert into public.memberships (user_id, company_id, level)
    select u.id, c.id, 'admin'
@@ -135,12 +139,13 @@ Stage 2's `projects` and `project_versions`, Stage 3's `collaborators` and
 
    update public.user_profiles set is_platform_admin = true
     where lower(email) in (
-      'tommy.fieser@gmail.com',
+      'tommy@buildinteg.com',
+      'virgil@buildinteg.com',
       'ace@REPLACE-ME',
       'greg@REPLACE-ME'
     );
 
-   -- Confirm BEFORE committing. Expect exactly three rows, each
+   -- Confirm BEFORE committing. Expect exactly four rows, each
    -- is_platform_admin = true with the right company. Both statements above
    -- are silent no-ops on an email that does not match, so an empty or short
    -- result here is the only warning you get.
@@ -151,7 +156,7 @@ Stage 2's `projects` and `project_versions`, Stage 3's `collaborators` and
     where p.is_platform_admin
     order by c.name;
 
-   commit;   -- or: rollback;  if the select above is not three correct rows
+   commit;   -- or: rollback;  if the select above is not four correct rows
    ```
 
    `set local app.operator = 'on'` is the whole escape hatch. It is deliberately
