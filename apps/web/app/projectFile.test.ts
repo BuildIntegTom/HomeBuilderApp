@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PROJECT_FILE_VERSION, parseProjectFile, serializeProject, type ProjectState } from "./projectFile";
+import { resolveTitleBlockDate, titleBlockDateLabel } from "./titleBlockDate";
 
 function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
   return {
@@ -370,6 +371,71 @@ describe("v23 -> v24 migration (every stored length onto the 1/8in grid)", () =>
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/version/i);
+  });
+});
+
+describe("savedAt -> title-block date", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("a file saved at T and reloaded later resolves to T, not the load time", () => {
+    const savedAtT = new Date("2025-03-14T12:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(savedAtT);
+    const raw = JSON.stringify(serializeProject(makeState()));
+
+    vi.setSystemTime(new Date("2026-09-13T15:00:00.000Z"));
+    const result = parseProjectFile(raw);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.savedAt).toBe(savedAtT.toISOString());
+
+    const resolved = resolveTitleBlockDate({ localFile: { savedAt: result.savedAt }, now: new Date() });
+    expect(resolved.source).toBe("local-file");
+    expect(resolved.date?.getTime()).toBe(savedAtT.getTime());
+  });
+
+  it("carries savedAt through a v23 file that goes through the v23 -> v24 repair", () => {
+    const file = { ...serializeProject(makeState()), schemaVersion: PROJECT_FILE_VERSION - 1, savedAt: "2025-01-02T12:00:00.000Z" };
+    const result = parseProjectFile(JSON.stringify(file));
+    if (!result.ok) throw new Error(result.error);
+    expect(result.savedAt).toBe("2025-01-02T12:00:00.000Z");
+  });
+
+  /** Load a file, then resolve its title-block date exactly as page.tsx does. */
+  function loadAndLabel(file: object) {
+    const result = parseProjectFile(JSON.stringify(file));
+    if (!result.ok) throw new Error(result.error);
+    const resolved = resolveTitleBlockDate({ localFile: { savedAt: result.savedAt }, now: new Date("2026-09-13T15:00:00.000Z") });
+    return { result, resolved, label: titleBlockDateLabel(resolved) };
+  }
+
+  it('still loads a file with no savedAt, and its sheet prints "Date not recorded" rather than today', () => {
+    const { savedAt: _dropped, ...withoutSavedAt } = serializeProject(makeState());
+    const { result, resolved, label } = loadAndLabel(withoutSavedAt);
+    expect(result.savedAt).toBeUndefined();
+    expect(resolved.source).toBe("local-file-unrecorded");
+    expect(label).toBe("Date not recorded");
+  });
+
+  it("still loads a file whose savedAt is not a string, and prints Date not recorded", () => {
+    const { result, label } = loadAndLabel({ ...serializeProject(makeState()), savedAt: 12345 });
+    expect(result.savedAt).toBeUndefined();
+    expect(label).toBe("Date not recorded");
+  });
+
+  it.each([["2025"], ["0"], ["not a date"], ["2025-02-30"], ["2025-03-14T12:00:00"]])(
+    'loads a file with hand-written savedAt "%s" and prints Date not recorded',
+    (savedAt) => {
+      const { result, resolved, label } = loadAndLabel({ ...serializeProject(makeState()), savedAt });
+      expect(result.savedAt).toBe(savedAt);
+      expect(resolved.source).toBe("local-file-unrecorded");
+      expect(label).toBe("Date not recorded");
+    },
+  );
+
+  it('loads a file with hand-written date-only savedAt "2025-03-14" as that local calendar day', () => {
+    const { resolved } = loadAndLabel({ ...serializeProject(makeState()), savedAt: "2025-03-14" });
+    expect(resolved.source).toBe("local-file");
+    expect([resolved.date?.getFullYear(), resolved.date?.getMonth(), resolved.date?.getDate()]).toEqual([2025, 2, 14]);
   });
 });
 

@@ -555,15 +555,15 @@ Validated against the real `ProjectState` and `DocumentMetaContext` rather than 
 The prompt asked this specifically. Verified in the code:
 
 - **`projectName` lives inside the document** (`ProjectState.projectName`, in `REQUIRED_STATE_KEYS`).
-- **`siteLabel` is derived at render** from `zipCode`: `documentSiteLabel = zipCode.trim() ? \`Zip ${zipCode.trim()}\` : "Site not set"` (`page.tsx:5468`).
-- **`date` is `new Date()` at render time** (`page.tsx:5469`) — **always today, never the save date.** `ProjectFile.savedAt` exists but is never read back into the UI.
+- **`siteLabel` is derived at render** from `zipCode`: `documentSiteLabel = zipCode.trim() ? \`Zip ${zipCode.trim()}\` : "Site not set"` (`page.tsx`, beside `documentDate`).
+- **`date` is resolved by `resolveTitleBlockDate` (`titleBlockDate.ts`)** from the last loaded or saved file's `ProjectFile.savedAt`, falling back to today only for a never-saved design. *(Stage 0, shipped 2026-09-13; previously `new Date()` at render, always today.)*
 
 Decisions:
 
 - **Name: `projects.name` is authoritative for the folder tree; the document is authoritative for the printed sheet.** The row is set from the document's `projectName` on first save and updated on every subsequent save. Renaming in the tree writes back into the *next* version's document rather than mutating past versions. When an old version's document and the row disagree, that is correct and not a bug: **the tree shows what the project is called now, a printed sheet shows what it was called when that version was saved.** Rows are mutable; versions are not.
 - **Site: stays in the document only.** No `site` column. `zipCode` is a design input (it drives seismic zone and shipping distance), not filing-cabinet metadata, and duplicating it onto the row creates a second source of truth for something that already has one.
 - **Date: a printed sheet shows the date the design was saved, not the date it was printed. Decided by Tommy 2026-09-06 — this is now a decision, no longer a flagged defect.**
-  - **The bug it fixes:** `documentDate` is `new Date()` at render (`page.tsx:5469`), so **every printed sheet claims today**. Reopen a project a year later and the title block dates it a year late. A printed set is a snapshot of a design at a moment; dating it "whenever you happened to hit print" makes the date worse than useless, because it looks authoritative.
+  - **The bug it fixes:** `documentDate` **was** `new Date()` at render, so **every printed sheet claimed today** (fixed in Stage 0). Reopen a project a year later and the title block dates it a year late. A printed set is a snapshot of a design at a moment; dating it "whenever you happened to hit print" makes the date worse than useless, because it looks authoritative.
   - **Resolution order for the title-block date:**
 
 | Case | Date shown | Source |
@@ -571,6 +571,11 @@ Decisions:
 | Cloud version opened | that version's save time | `project_versions.created_at` — authoritative for cloud projects |
 | Local file loaded (**including every guest**) | that file's save time | **`ProjectFile.savedAt`, which is already written on every save and has never once been read** — this decision is what finally reads it |
 | Never saved (fresh design in the editor) | today | genuinely is today's work; nothing to be wrong about |
+
+  - **Saving locally counts as a save:** Save Project sets the title-block date to the downloaded file's own `savedAt` (one timestamp, not two). The browser does not report a cancelled download, so a cancelled Save still moves the date. *Accepted by Tommy 2026-09-13.*
+  - **A loaded file with no usable `savedAt` prints "Date not recorded"**, never today. Today is reserved for a design that was never saved or loaded. *Decided by Tommy 2026-09-13.*
+  - **What counts as usable:** a full ISO date-time with `Z` or `±HH:MM` (used as-is), or `YYYY-MM-DD` (read as that local calendar day). Anything else is not recorded, including a bare year, numbers, a date-time with no zone, and impossible dates. Every file the app writes is in the first form. The Stage 2 cloud `created_at` goes through the same rule.
+  - **No autosave or New Project path exists today.** Load is the only action that replaces the whole project. Drawing a new footprint over a loaded file keeps that file's date.
 
   - **A guest has no version row, so `savedAt` is the whole answer for them** — and since guests are download-only (5), the local-file row is the *normal* path for a large share of printed output, not an edge case.
   - **Buildable now, with no backend at all.** The local-file and never-saved rows need only `ProjectFile.savedAt` and `page.tsx`; the cloud row needs Stage 2. **Ship the first two immediately** — that alone fixes the defect for every user the app has today, since today every user is on the local path.
@@ -606,7 +611,7 @@ Tommy has seen and agreed this. **Each stage is usable alone**, which is the poi
 
 **There is no Stage 0 any more.** The iframe sign-in spike — previously a go/no-go gate and named here as the biggest technical unknown in the plan — is deleted, because the iframe itself is gone (see "Starting position" above). **The largest single risk in this design is gone, and it was retired by a product fact rather than by engineering.**
 
-0. **Title-block save date (no backend required).** The local-file and never-saved rows of the date table above: read `ProjectFile.savedAt`, stop calling `new Date()` at render. **Numbered zero because it needs nothing from any other stage and fixes the defect for every user the app currently has.** The cloud row follows in Stage 2.
+0. **Title-block save date (no backend required).** The local-file and never-saved rows of the date table above: read `ProjectFile.savedAt`, stop calling `new Date()` at render. **Numbered zero because it needs nothing from any other stage and fixes the defect for every user the app currently has.** The cloud row follows in Stage 2. **Shipped 2026-09-13** (`titleBlockDate.ts`). Its fixed cloud-then-local precedence is replaced by the last-save-wins rule in Stage 2B (see the Stage 2 plan).
 1. **Accounts and companies.** Sign in/out, invites, memberships, default company, company admin, **and the always-visible acting-as switcher including the Seed toggle**. The app gains a real identity and nothing else changes. *(Usable alone: nothing to save yet, but the top-bar sign-in Tommy described exists and works.)*
 2. **Cloud projects and versions.** The three folders, save-as-new-version, the version list, open-from-cloud, the divergence notice (11), and the cloud row of the date table. Local save/load untouched alongside it. *(This is the stage that delivers Tommy's actual sentence — "reachable to another Member on any computer where they can log in.")* **Planned 2026-09-13, not built — see "Stage 2 plan — Cloud projects and versions" below, sub-stages 2A–2D, and its Open Items.**
 3. **Collaboration.** `collaborators`, invitations, requests, shared access to one project (24-26). Supersedes the older "in-app inbox" line in the Handoff section above — this *is* the handoff mechanism. **It is also what makes the "edit an existing Seed project" case work**, so it is a prerequisite for Stage 4 being coherent rather than an independent feature.
@@ -817,7 +822,7 @@ The editor holds one piece of new client state, `cloudContext`. It is either `nu
 
 #### The cloud row of the date table — and the rule that replaces Stage 0's precedence
 
-**Requirement added 2026-09-13, from the Stage 0 review.** Stage 0 ships `resolveTitleBlockDate({ cloudVersionCreatedAt?, loadedFileSavedAt?, now })` in `apps/web/app/titleBlockDate.ts` (branch `stage0-save-date`, not merged when this was written). Its precedence is fixed: **cloud, then local file, then today.** That is correct for Stage 0, where the cloud input is never set, but it breaks as soon as Stage 2 sets it:
+**Requirement added 2026-09-13, from the Stage 0 review.** Stage 0 shipped `resolveTitleBlockDate({ cloudVersionCreatedAt?, localFile?: { savedAt }, now })` in `apps/web/app/titleBlockDate.ts`, with a strict timestamp parser and a `local-file-unrecorded` source that prints "Date not recorded". Its precedence is fixed: **cloud, then local file, then today.** That is correct for Stage 0, where the cloud input is never set, but it breaks as soon as Stage 2 sets it:
 - **Open a cloud version, then Load Project a local file from 2025.** The cloud date still wins, so the sheet dates a 2025 design with the cloud version's save time.
 - **Open a cloud version, then Save Project locally.** The same problem: the sheet shows the cloud version's time, not the save just made.
 
@@ -825,7 +830,7 @@ In both cases the sheet shows a confident, wrong date, which is exactly the defe
 
 **The rule for Stage 2: the last action that saved or replaced the design sets the date.** It does not matter which kind of action it was.
 
-- **One state value, replacing the two separate inputs:** `titleBlockSave: { savedAt: string; source: "local-file" | "cloud-version" } | null`. `null` means never saved or loaded this session, so the sheet shows today.
+- **One state value, replacing the two separate inputs:** `titleBlockSave: { savedAt: string | undefined; source: "local-file" | "cloud-version" } | null`. `null` means never saved or loaded this session, so the sheet shows today. **A present value whose `savedAt` is missing or unusable prints "Date not recorded"** (Stage 0, Tommy 2026-09-13) — it must never collapse to `null` and show today.
 - **Four writers, and nothing else writes it:**
 
 | Action | Sets `savedAt` to | `source` |

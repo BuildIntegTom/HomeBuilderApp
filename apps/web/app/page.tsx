@@ -285,6 +285,7 @@ import {
   type PlasterSide,
 } from "./plasterTypes";
 import { parseProjectFile, serializeProject, type ProjectState } from "./projectFile";
+import { resolveTitleBlockDate, titleBlockDateLabel } from "./titleBlockDate";
 import RubbleTrenchDiagram from "./RubbleTrenchDiagram";
 import ShopDrawingPage from "./ShopDrawingPage";
 import PlanViewPage from "./PlanViewPage";
@@ -1326,6 +1327,14 @@ export default function LayoutEditor() {
 
   const loadInputRef = useRef<HTMLInputElement>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // The project file most recently loaded OR saved this session, carrying its
+  // `savedAt` — the title block's "as of last save" date (see
+  // titleBlockDate.ts). null = never saved or loaded, so the title block
+  // shows today; a file whose savedAt is missing or unusable shows "Date not
+  // recorded". Only a successful Load or Save writes it; editing (including
+  // drawing a new footprint) does not — spec: edited-since-load deliberately
+  // keeps the old save date.
+  const [localFile, setLocalFile] = useState<{ savedAt: string | undefined } | null>(null);
 
   // The editor is now permanently the full-viewport backdrop (Tommy: "the
   // editor section really is the whole screen"), so it no longer needs its
@@ -1453,7 +1462,14 @@ export default function LayoutEditor() {
       roofEnabled,
       wallReviewNotes,
     };
-    const blob = new Blob([JSON.stringify(serializeProject(state), null, 2)], { type: "application/json" });
+    // One timestamp for both: the downloaded file's savedAt IS what the title
+    // block now shows, rather than a second `new Date()` a moment apart.
+    const projectFile = serializeProject(state);
+    // Known and accepted (Tommy, 2026-09-13): the browser does not report a
+    // cancelled download, so a cancelled Save still moves the title-block
+    // date to this save time even though no file was written.
+    setLocalFile({ savedAt: projectFile.savedAt });
+    const blob = new Blob([JSON.stringify(projectFile, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -1473,6 +1489,7 @@ export default function LayoutEditor() {
         return;
       }
       setLoadError(null);
+      setLocalFile({ savedAt: result.savedAt });
       const s = result.state;
       setEditorTab(s.editorTab);
       setViewMode(s.viewMode);
@@ -5480,7 +5497,10 @@ export default function LayoutEditor() {
   );
 
   const documentSiteLabel = zipCode.trim() ? `Zip ${zipCode.trim()}` : "Site not set";
-  const documentDate = new Date().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  // Saved date, not print date (spec: Backend > Project name / site / date).
+  // Stage 2 adds `cloudVersionCreatedAt` here; `now` only wins when nothing
+  // has been saved or loaded.
+  const documentDate = titleBlockDateLabel(resolveTitleBlockDate({ localFile: localFile ?? undefined, now: new Date() }));
 
   // Project Summary page content (Tommy: "the first page is the project
   // summary page with all the totals for cost, all materials... do a full

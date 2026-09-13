@@ -506,7 +506,11 @@ function repairStateToEighths(state: ProjectState): ProjectState {
   };
 }
 
-export type ParseProjectFileResult = { ok: true; state: ProjectState } | { ok: false; error: string };
+/** `savedAt` is passed through as the raw string (undefined when absent or not
+ * a string) and deliberately NOT validated here: a file with a missing or
+ * damaged timestamp is still a loadable design, so it must not be rejected.
+ * `resolveTitleBlockDate` decides what an unusable value prints as. */
+export type ParseProjectFileResult = { ok: true; state: ProjectState; savedAt: string | undefined } | { ok: false; error: string };
 
 /**
  * Validates just enough to reject something that clearly isn't one of our
@@ -565,6 +569,7 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   // repair; see repairStateToEighths for why it is unconditional.
   return {
     ok: true,
+    savedAt: typeof file.savedAt === "string" ? file.savedAt : undefined,
     state: repairStateToEighths({
       ...(state as unknown as ProjectState),
       stories: state.stories as Story[],
