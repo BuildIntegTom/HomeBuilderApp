@@ -5,6 +5,7 @@ import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import StickyNote from "./StickyNote";
 import UnitSystemSwitch from "./UnitSystemSwitch";
 import AccountControl from "./auth/AccountControl";
+import { EDITOR_TAB_LABEL, editorTabsInScope, type EditorTab } from "./editorTabs";
 import { clampMenuLeft, roleControlLabel, roleOptions, settingsMenuHasAdminGroup } from "./topBarMenus";
 import styles from "./TopBar.module.css";
 
@@ -19,6 +20,12 @@ export interface TopBarProps {
   onLoadProjectClick: () => void;
   siteContent: ReactNode;
   panelizerContent: ReactNode;
+  /** The same `editorTab` state EditorTabDial is driven by — one source of
+   * truth, two presentations. */
+  editorTab: EditorTab;
+  onEditorTabChange: (tab: EditorTab) => void;
+  /** Panelizer's keyhole, exactly as passed to EditorTabDial. */
+  enabledTabs: EditorTab[];
 }
 
 type OpenMenu = "project" | "site" | "panelizer" | "role" | "settings" | null;
@@ -45,12 +52,21 @@ function GearIcon() {
  * Sticky top-of-screen chrome, in three zones (spec: "Top Bar & App Chrome —
  * the Stitch reorganisation").
  *
- * - LEFT, identity & document: the (Stage 2) wordmark slot, then the acting-as
- *   / sign-in control, then Project ▾ (Save, Load, Site Properties, Panelizer —
- *   the things that change the building or the file).
- * - MIDDLE, scope: empty this stage. `EditorTabDial` keeps the job.
+ * - LEFT, identity & document: the wordmark (1200px and up), then the
+ *   acting-as / sign-in control, then Project ▾ (Save, Load, Site Properties,
+ *   Panelizer — the things that change the building or the file).
+ * - MIDDLE, scope: Wall / Foundation / Floor / Roof (1200px and up). Below
+ *   that, EditorTabDial in the sidebar is the tab control. Both are driven by
+ *   the same state, and one CSS condition flips them, so exactly one shows.
  * - RIGHT, presentation: Role ▾ and ⚙ Settings (units and Admin Options — the
- *   things that change only how you look at it).
+ *   things that change only how you look at it). No help icon: there is
+ *   nothing for it to open yet, and the spec forbids an icon that opens nothing.
+ *
+ * WHY 1200 AND NOT `md`. The spec first put the nav at 768px. Measured with
+ * four companies, the bar at 768 has 34px spare with the company name at its
+ * 220px; the wordmark and nav need ~380px more. Showing them there would have
+ * crushed the acting-as company name — the one thing this bar exists to keep
+ * legible. Tommy moved them to 1200 (2026-09-13).
  *
  * WHY THE ACCOUNT CONTROL IS ON THE LEFT. This bar used to be one nowrap row
  * needing ~1400px, scrolled with `overflow-x: auto`, with the account control
@@ -86,6 +102,9 @@ export default function TopBar({
   onLoadProjectClick,
   siteContent,
   panelizerContent,
+  editorTab,
+  onEditorTabChange,
+  enabledTabs,
 }: TopBarProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [fullscreenMenu, setFullscreenMenu] = useState<OpenMenu>(null);
@@ -144,8 +163,11 @@ export default function TopBar({
     <div className={styles.bar}>
       <div className={styles.row}>
         <div className={styles.zoneLeft}>
-          {/* Wordmark slot — Stage 2. Deliberately not rendered as an empty
-              element: with no content it would still cost a flex gap. */}
+          {/* Text, not an image: no logo asset exists (SheetTitleBlock renders a
+              text wordmark too). Brand navy via --bi-primary — NOT Stitch's
+              header-gold, which is a panel semantic in its own palette. Hidden
+              below 1200px, where its width belongs to the company name. */}
+          <span className={styles.wordmark}>Building Integrity</span>
 
           {/* Returns null with no AuthProvider (tests mount the editor that
               way); it is a direct child so a null leaves no gap behind. */}
@@ -162,9 +184,21 @@ export default function TopBar({
           </button>
         </div>
 
-        {/* Middle — scope. Empty in Stage 1 (hidden by `:empty`, so it costs
-            no gap); EditorTabDial in the sidebar keeps the job. */}
-        <div className={styles.zoneMiddle} />
+        {/* Scope. display: none below 1200px (EditorTabDial has the job there),
+            so it is out of the accessibility tree too and never doubles up. */}
+        <nav className={styles.zoneMiddle} aria-label="Editor">
+          {editorTabsInScope(enabledTabs).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={tab === editorTab ? styles.navTabActive : styles.navTab}
+              aria-current={tab === editorTab ? "true" : undefined}
+              onClick={() => onEditorTabChange(tab)}
+            >
+              {EDITOR_TAB_LABEL[tab]}
+            </button>
+          ))}
+        </nav>
 
         <div className={styles.zoneRight}>
           <button

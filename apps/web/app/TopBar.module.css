@@ -1,25 +1,41 @@
-/* Breakpoints for the top bar. Two numbers, and do not add a third
-   (spec: "Top Bar & App Chrome — the Stitch reorganisation", Breakpoint hygiene):
+/* Breakpoints for the top bar (spec: "Top Bar & App Chrome — the Stitch
+   reorganisation", Breakpoint hygiene, and Tommy's 2026-09-13 decisions). The
+   bar changes at exactly these widths; do not add another:
 
-     768px  `md`. Below it (written `max-width: 767px`) the bar sheds: tighter
-            controls, carets dropped, and AccountControl drops its "ACTING AS"
-            caption word (AccountControl.module.css). Stage 2's Wall/Foundation/
-            Floor/Roof nav will appear in the middle zone at and above it, with
-            EditorTabDial keeping the job below it.
-     600px  The app's existing narrow breakpoint (page.module.css,
-            EditorTabDial.module.css, SectionCarousel.module.css). NOT used by
-            the top bar: shedding here left the caption showing while the
-            company name was already truncated between ~601 and 700px.
+     1200px  At and above (`min-width: 1200px`): the wordmark and the Wall/
+             Foundation/Floor/Roof nav show, EditorTabDial hides
+             (EditorToolbar.module.css), and the acting-as company name may grow
+             past 220px (AccountControl.module.css). Below it the bar is exactly
+             Stage 1's. Written as ONE condition that shows one thing and hides
+             the other, rather than a max-width/min-width pair, so there is no
+             width — fractional ones under browser zoom included — where nav and
+             dial both show or neither does.
+             Why not 768, where the spec first put the nav: measured with four
+             companies, the bar at 768 had 34px spare with the name at 220px, and
+             the wordmark + nav need ~380px. They would have crushed the name.
+      768px  `md`. Below it (written `max-width: 767px`) the bar sheds: tighter
+             controls, carets dropped, and AccountControl drops its "ACTING AS"
+             caption word (AccountControl.module.css).
+   Not a breakpoint, but the floor: at 360px the bar must still fit with no
+   horizontal scroll. Nothing changes there; it is the width it is tested at.
 
-   Shed order, down to a 360px floor: nav tabs (Stage 2) -> "ACTING AS" caption
-   -> wordmark text (Stage 2) -> help icon (not built). NEVER shed: the
-   acting-as company name, Project, Role, and the settings icon. When space
-   still runs out, the company name truncates with an ellipsis and a title.
+   600px is the app's existing narrow breakpoint (page.module.css,
+   EditorTabDial.module.css, SectionCarousel.module.css). NOT used by the top
+   bar: shedding there left the caption showing while the company name was
+   already truncated between ~601 and 700px.
 
-   The old 900px rule went with the scrolling row it modified.
+   Shed order, narrowing: nav tabs + wordmark (below 1200) -> "ACTING AS"
+   caption (below 768). NEVER shed: the acting-as company name, Project, Role,
+   and the settings icon. When space still runs out, the company name truncates
+   with an ellipsis and a title. No help icon exists to shed.
 
-   Stage 1 moves things and does not restyle: the hardcoded colours below are
-   today's look, unchanged. Migrating them onto --bi-* tokens is Stage 2. */
+   Colours read from the --bi-* chrome tokens in globals.css. Every token's
+   default is the exact hex this file hardcoded before. Chrome only: nothing
+   here is a drawing semantic.
+
+   Type follows the Geist roles in the Stitch DESIGN.md (the bar inherits Geist
+   from page.module.css's .page): wordmark headline-md, controls body-md,
+   nav tabs per the measured choice noted on .navTab, menu titles label-sm. */
 
 .bar {
   position: fixed;
@@ -37,17 +53,20 @@
   box-sizing: border-box;
   height: var(--topbar-height);
   padding: 0 20px;
-  background: #fff;
-  border-bottom: 2px solid #1c3d5a;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  background: var(--bi-topbar-surface);
+  border-bottom: 2px solid var(--bi-topbar-border);
+  box-shadow: 0 2px 6px var(--bi-topbar-shadow);
 }
 
 /* No overflow-x. The row fits by construction; a scroller here is what turned
    a layout bug into a hidden sign-in control, and (by forcing overflow-y to
-   auto) what once clipped nested popovers into the bar's height. */
+   auto) what once clipped nested popovers into the bar's height.
+   `align-self: stretch` makes the row the bar's full inner height so the nav's
+   active underline can sit at the bottom edge; every zone still centres. */
 .row {
   display: flex;
   align-items: center;
+  align-self: stretch;
   gap: 10px;
   width: 100%;
   min-width: 0;
@@ -63,16 +82,19 @@
   min-width: 0;
 }
 
-/* Scope. Empty in Stage 1, and an empty flex item would still cost a gap. */
-.zoneMiddle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 1 auto;
-  min-width: 0;
+/* headline-md. Hidden below 1200px. */
+.wordmark {
+  display: none;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--bi-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.zoneMiddle:empty {
+/* Scope. Hidden below 1200px, where EditorTabDial is the tab control. */
+.zoneMiddle {
   display: none;
 }
 
@@ -85,23 +107,27 @@
   margin-left: auto;
 }
 
+/* body-md (13px / 400 / 18px). Explicit line-height so every text control —
+   including AccountControl's own button — lands on the same outer height. */
 .tool,
 .toolActive {
   padding: 6px 14px;
   font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
   border-radius: 6px;
-  border: 1px solid #ccc;
-  background: #fff;
-  color: #333;
+  border: 1px solid var(--bi-button-outline);
+  background: var(--bi-button-surface);
+  color: var(--bi-button-label);
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .toolActive {
-  background: #4a90d9;
-  border-color: #4a90d9;
-  color: #fff;
+  background: var(--bi-button-active-surface);
+  border-color: var(--bi-button-active-outline);
+  color: var(--bi-button-active-label);
 }
 
 .iconTool {
@@ -111,8 +137,9 @@
   justify-content: center;
   padding: 6px 8px;
   line-height: 0;
-  /* Same outer height as the text buttons beside it. */
-  min-height: 30px;
+  /* Same outer height as the text buttons beside it: 18px line + 12px
+     padding + 2px border. */
+  min-height: 32px;
 }
 
 .iconToolActive {
@@ -122,7 +149,51 @@
   justify-content: center;
   padding: 6px 8px;
   line-height: 0;
-  min-height: 30px;
+  min-height: 32px;
+}
+
+/* Stitch's header nav: full-height text tabs, the current one in brand navy
+   with a 2px underline. Buttons, not links — switching tabs is state, not
+   navigation.
+   Type role body-lg (14px / 400 / 20px), chosen by measurement at exactly
+   1200px with all four tabs, four companies and "Role: Fabricator":
+     label-sm    12px/600  nav 246px, company name 270px (full label)
+     body-lg     14px/400  nav 254px, company name 270px (full label)  <- this
+     headline-md 16px/600  nav 292px, company name 242px (suffix cut)
+   body-lg is the largest role that keeps "(platform admin)" readable at the
+   boundary. The active tab is marked by colour and underline, not weight, so
+   switching tabs never changes the nav's width. */
+.navTab,
+.navTabActive {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  color: var(--bi-on-surface-variant);
+  background: transparent;
+  border: none;
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.navTab:hover {
+  background: var(--bi-surface-container);
+}
+
+.navTab:focus-visible,
+.navTabActive:focus-visible {
+  outline: 2px solid var(--bi-secondary);
+  outline-offset: -2px;
+}
+
+.navTabActive {
+  color: var(--bi-primary);
+  border-bottom-color: var(--bi-primary);
 }
 
 /* Inside the menus' StickyNotes. */
@@ -163,19 +234,22 @@
   gap: 6px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--bi-divider);
 }
 
+/* label-sm. */
 .menuSectionTitle {
   font-size: 12px;
   font-weight: 600;
-  color: #1c3d5a;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+  color: var(--bi-primary);
   margin: 0;
 }
 
 .dropdownNote {
   font-size: 11px;
-  color: #777;
+  color: var(--bi-on-surface-muted);
   margin: 0;
 }
 
@@ -206,5 +280,32 @@
   /* Decorative; aria-expanded already carries open/closed. */
   .caret {
     display: none;
+  }
+}
+
+/* Wide: wordmark + nav, and the company name's room to grow. The nav never
+   shrinks and the right zone keeps its content width, so when space runs
+   short it is the left zone (and inside it, only the company name) that
+   gives — growth can never push a control off-screen. The nav's auto margins
+   centre it in whatever space is left between the two outer zones. */
+@media (min-width: 1200px) {
+  .wordmark {
+    display: block;
+  }
+
+  .zoneLeft {
+    flex: 0 1 auto;
+  }
+
+  .zoneMiddle {
+    display: flex;
+    align-items: stretch;
+    align-self: stretch;
+    flex: 0 0 auto;
+    margin: 0 auto;
+  }
+
+  .zoneRight {
+    margin-left: 0;
   }
 }

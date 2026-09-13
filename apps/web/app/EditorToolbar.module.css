@@ -20,3 +20,15 @@
     gap: 6px;
   }
 }
+
+/* At 1200px and up the top bar's Wall/Foundation/Floor/Roof nav is the tab
+   control, so the dial (this toolbar's only content) goes. This is the SAME
+   query that shows the nav in TopBar.module.css, flipping the two in opposite
+   directions — one condition, so there is no width (fractional ones under
+   browser zoom included) where both or neither show. Sidebar Region 3 moves up
+   when this hides; that happens at a breakpoint, never mid-use. */
+@media (min-width: 1200px) {
+  .bar {
+    display: none;
+  }
+}

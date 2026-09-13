@@ -49,6 +49,24 @@
   text-overflow: ellipsis;
 }
 
+/* Tommy, 2026-09-13: on wide screens use the spare room so the "(platform
+   admin)" / "(consortium)" tag is readable — it is what tells acting-as-Seed
+   apart from belonging to Seed. At 1200px and up the cap rises from 220px to
+   just above the longest real label's rendered width; the select still has
+   `min-width: 0`, so if the row is short it is still the one thing that gives.
+   Below 1200px the 220px cap above is unchanged from Stage 1.
+   280px: "The Seed Collaborative (platform admin)", the longest real label,
+   measured at 270px rendered (13px/600 Geist, including the select's arrow)
+   in headless Chrome on 2026-09-13, plus 10px so a slightly wider font
+   rasterisation does not re-truncate it. A layout measurement, not a building
+   value. A longer company name than today's will truncate here as it does below
+   1200 — re-measure if one arrives. */
+@media (min-width: 1200px) {
+  .actingAsSelect {
+    max-width: 280px;
+  }
+}
+
 .actingAsSelect:disabled {
   cursor: default;
   /* A single entitlement still shows its company by name at full contrast —
@@ -68,9 +86,12 @@
   text-overflow: ellipsis;
 }
 
+/* body-md, with the same explicit 18px line-height as TopBar's .tool so this
+   button matches Project / Role / ⚙ in height (measured 29px vs 32px without). */
 .button {
   padding: 6px 14px;
   font-size: 13px;
+  line-height: 18px;
   border-radius: 6px;
   border: 1px solid var(--bi-button-outline);
   background: var(--bi-button-surface);

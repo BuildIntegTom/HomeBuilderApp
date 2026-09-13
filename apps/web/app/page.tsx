@@ -6768,6 +6768,9 @@ export default function LayoutEditor() {
           onLoadProjectClick={() => loadInputRef.current?.click()}
           siteContent={siteContent}
           panelizerContent={panelizerContent}
+          editorTab={editorTab}
+          onEditorTabChange={setEditorTab}
+          enabledTabs={enabledEditorTabs}
         />
       </div>
       <input

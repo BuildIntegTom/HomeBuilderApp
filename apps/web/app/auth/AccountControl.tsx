@@ -1,14 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import StickyNote from "../StickyNote";
+import { clampMenuLeft } from "../topBarMenus";
 import AccountPanel from "./AccountPanel";
 import SignInForm from "./SignInForm";
 import { useOptionalAuth } from "./AuthProvider";
 import styles from "./AccountControl.module.css";
-
-const NOTE_WIDTH_PX = 420;
-const VIEWPORT_MARGIN_PX = 12;
 
 /**
  * The acting-as switcher, and the sign-in state next to it.
@@ -37,6 +35,18 @@ export default function AccountControl() {
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
 
+  // Same rule as TopBar's own menus, from the same function: a note opened wide
+  // and then the window narrowed must not be left anchored off the right edge.
+  // Only ever moves it left. Declared before the no-provider early return below
+  // so the hook order never changes between renders.
+  useEffect(() => {
+    if (!open) return;
+    const onResize = () =>
+      setPosition((was) => (was ? { ...was, left: clampMenuLeft(was.left, window.innerWidth) } : was));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [open]);
+
   // The editor renders fine with no provider (and its tests mount it that way).
   // No provider means no accounts, which reads the same as signed out.
   if (!auth) return null;
@@ -50,11 +60,7 @@ export default function AccountControl() {
       const next = !was;
       if (next) {
         const rect = button.getBoundingClientRect();
-        const maxLeft = window.innerWidth - NOTE_WIDTH_PX - VIEWPORT_MARGIN_PX;
-        setPosition({
-          top: rect.bottom + 8,
-          left: Math.min(rect.left, Math.max(VIEWPORT_MARGIN_PX, maxLeft)),
-        });
+        setPosition({ top: rect.bottom + 8, left: clampMenuLeft(rect.left, window.innerWidth) });
       } else {
         setFullscreen(false);
       }

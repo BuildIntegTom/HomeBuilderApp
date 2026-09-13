@@ -1,16 +1,9 @@
 "use client";
 
+import { EDITOR_TAB_LABEL, editorTabsInScope, type EditorTab } from "./editorTabs";
 import styles from "./EditorTabDial.module.css";
 
-export type EditorTab = "wall" | "foundation" | "floor" | "roof";
-
-const TAB_ORDER: EditorTab[] = ["wall", "foundation", "floor", "roof"];
-const TAB_LABEL: Record<EditorTab, string> = {
-  wall: "Wall",
-  foundation: "Foundation",
-  floor: "Floor",
-  roof: "Roof",
-};
+export type { EditorTab };
 
 export interface EditorTabDialProps {
   value: EditorTab;
@@ -20,8 +13,8 @@ export interface EditorTabDialProps {
    * to what editor tools are needed for this user's project") gate
    * Wall/Floor/Roof; Foundation has no such checkbox, so it's always
    * included by the caller. Cycling (chevrons/wheel) skips anything not in
-   * this list. Falls back to the full TAB_ORDER if it's ever empty, so the
-   * dial never gets stuck with nothing to show. */
+   * this list. Falls back to every tab if it's ever empty, so the dial never
+   * gets stuck with nothing to show. */
   enabledTabs: EditorTab[];
 }
 
@@ -32,9 +25,15 @@ export interface EditorTabDialProps {
  * with up/down chevrons and mouse-wheel support both cycling through
  * Wall → Foundation → Floor → Roof → (wrap), skipping whichever of those
  * Panelizer's own checkboxes have currently ruled out of scope.
+ *
+ * Below 1200px this is the tab control; at 1200px and up the top bar's nav
+ * takes over and EditorToolbar hides it (spec: "Top Bar & App Chrome", Tommy's
+ * 2026-09-13 decision). Same state, same `editorTabs.ts` definition, so the two
+ * can never disagree. Demoted, not deleted: whether it survives at desktop width
+ * is still Tommy's call.
  */
 export default function EditorTabDial({ value, onChange, enabledTabs }: EditorTabDialProps) {
-  const cycleOrder = enabledTabs.length > 0 ? TAB_ORDER.filter((t) => enabledTabs.includes(t)) : TAB_ORDER;
+  const cycleOrder = editorTabsInScope(enabledTabs);
   const index = Math.max(0, cycleOrder.indexOf(value));
   const step = (delta: number) => {
     const next = (index + delta + cycleOrder.length) % cycleOrder.length;
@@ -55,7 +54,7 @@ export default function EditorTabDial({ value, onChange, enabledTabs }: EditorTa
       <button type="button" className={styles.chevron} title="Previous editor" onClick={() => step(-1)}>
         ▲
       </button>
-      <div className={styles.current}>{TAB_LABEL[value]}</div>
+      <div className={styles.current}>{EDITOR_TAB_LABEL[value]}</div>
       <button type="button" className={styles.chevron} title="Next editor" onClick={() => step(1)}>
         ▼
       </button>
