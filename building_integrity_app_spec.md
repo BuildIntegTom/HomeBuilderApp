@@ -429,6 +429,7 @@ A project already serializes to exactly one versioned document (`PROJECT_FILE_VE
 - **Editing an *existing* Seed project requires an invitation on that project**, exactly like every other cross-company case (24-26). Deliberately consistent with the rest of the model rather than a special case for the consortium.
   - **⚠ Inference, flagged as such and needing Tommy's yes: the creator of a Seed-tree project must keep access to it.** Taken literally, "create freely" plus "editing an existing Seed project needs an invitation" means you lose your own work the instant you save it, which cannot be what he means. **The coherent reading: creating a project in another company's tree grants the creator a standing collaborator grant on that project.** Ownership still lands with the Seed Collaborative (`projects.company_id`), so it is Seed's project in Seed's tree — the creator simply holds a grant on it, using machinery that already exists for 24-26. Confirm before building; do not silently pick the other reading.
 - **The switcher is visible at all times, not buried in a menu.** The failure mode it exists to prevent is saving a project into the wrong company's folder tree, which is silent, plausible, and only noticed later by someone else. It belongs in the top bar next to the sign-in state, showing the acting-as company by name at all times — not only while being changed. **This matters more now than it did as a plain switcher**, because the control also changes whether you are looking at one company or at all of them.
+  - **Stage 1 shipped this control but the top bar broke the guarantee, 2026-09-13.** The bar is one `nowrap` row needing 1407px with the account control last in it, so in Tommy's own 710px viewport it sat 677px off-screen — present in the DOM, unreachable in practice. **"Visible at all times" is a layout requirement, not just a component requirement**, and it is now the reason the top bar is being restructured rather than restyled. See "Top Bar & App Chrome — the Stitch reorganisation."
 - **What "acting as" governs:** which company a **new project is created under** (the one that actually loses work if it is wrong); which **folder tree** is shown; whether the **shared read layer** is visible at all; which company's **admin powers** apply, if you are an admin of one company and a plain member of another; which company a **backup** covers (29).
 - **Saving into an existing project is still governed by that project's own ownership and grants, not by the switcher.** If you hold access to a project, you can save to it; flipping the switcher does not revoke access to a project you already hold, and does not grant access to one you do not.
 
@@ -618,6 +619,153 @@ Backups (29) ride with the stage that makes them meaningful: company backup with
 
 ---
 
+## Top Bar & App Chrome — the Stitch reorganisation (2026-09-13) — SPEC'D, nothing built
+
+Two things arrived at the same answer: a real overflow bug that hides the sign-in control, and the Stitch mockups (`part 1 ui stitch/` and `part 2 ui stitch/`, each holding `code.html`, `screen.png` and a **byte-identical** `DESIGN.md`). **Stitch's header is not a restyle of today's bar — it is structurally smaller, and that is what fixes the bug.** Recorded as one decision so the fix is not improvised twice.
+
+### The bug, measured
+
+`TopBar.module.css`'s `.row` is a single `flex-wrap: nowrap` row with `overflow-x: auto`. Measured on the live site: **the row needs 1407px**. In a **710px** viewport it overflows by **697px**, and because `AccountControl` is the **last child in the row**, it is the first thing to fall off — **677px past the right edge**. Tommy could not find how to sign in; that is why.
+
+**This is not merely inconvenient, it breaks a decision already made.** The backend section requires the acting-as company to be *"visible at all times, not buried in a menu,"* because the failure it prevents — saving a project into the wrong company's folder tree — is silent, plausible, and noticed later by someone else. **A control you must scroll sideways to find does not satisfy that.** `AccountControl.tsx`'s own doc comment already claims "always visible"; today the CSS makes that claim false.
+
+Two smaller things fall out with it:
+
+- **`overflow-x: auto` is itself a trap and goes away.** Per the CSS spec, setting one axis to a non-`visible` value forces the other to `auto`; that already caused one shipped bug (nested popovers clipped into the bar's 56px height — see `TopBar.tsx`'s doc comment and the `StickyNote` pattern that replaced them). Once the bar fits by construction the scroller has no job left, and removing it converts a future overflow from **silent off-screen content** into **visible breakage**. Same principle this log applies to silent rounding and to cost redaction: a visible gap beats a plausible-looking nothing.
+- **There is no responsive story today.** The one rule, `@media (max-width: 900px) { .row { justify-content: flex-start } }`, changes the alignment of a row that already does not fit. Nothing collapses at any width.
+
+### Evidence the design was drawn against this app, not at it
+
+Worth stating because it changes how much of Stitch to take literally. **Three of its spacing tokens are already the app's own numbers:** `topbar-height: 56px` = `--topbar-height: 56px` in `globals.css`; `sidebar-width: 240px` = `.editorSidebar`'s `flex: 0 0 240px`; `tray-width: 170px` = `SectionCarousel.module.css`'s `width: 170px` and `.editorRightSpacer`'s matching 170px. Backend Stage 1 also landed the **chrome token layer** in `globals.css` using DESIGN.md's own Material-style vocabulary (`surface`, `surface-container-lowest`…`highest`, `on-surface`, `outline`, `primary`, `secondary`) under a `--bi-` prefix, with today's rendered values as defaults so nothing moved visually. **This pass is what starts consuming that layer.**
+
+**The hard rule from the theming decision is unchanged and governs everything below: chrome re-skins, drawing semantics never do.** Member colours by role, material colours, the floor opacity bands, `pending-amber`, the review-log red encode meaning. A stud must not change colour because of who is looking.
+
+### The decision this pass turns on — where the account / acting-as control lives
+
+The Stitch mockups predate auth and have no such control, so there is nothing to copy. **Decision: the header becomes three zones, and the account control lives in the LEFT zone, immediately after the wordmark.**
+
+| Zone | Contents | Shrink behaviour |
+|---|---|---|
+| **Left — identity & document** | Wordmark · **Project ▾** · **Acting as ▾ / Sign in** | never sheds; truncates before it disappears |
+| **Middle — scope** | Wall · Foundation · Floor · Roof | sheds whole, below `md` |
+| **Right — presentation** | **Role: ▾** · ⚙ settings · ? help | sheds only the help icon |
+
+**Why left, stated as reasons rather than taste:**
+
+1. **It is the only placement that cannot reproduce the bug.** In an LTR overflow the rightmost content falls off first. Today's control is last in the row; that is the entire cause. Putting it first makes it the last thing that could ever be lost.
+2. **It keeps the two role axes at opposite ends, and now for a structural reason rather than by luck.** `TopBar.tsx` already sites them apart deliberately ("those are the two axes that must never be merged, and sitting them side by side is how someone starts reading one as a level of the other"). Under the zone model the separation stops being a seating chart and becomes a taxonomy: **permission lives in the identity zone, presentation lives in the presentation zone.** Stitch puts `Role:` on the right; if the account control went right too, they would be adjacent dropdowns — the exact conflation the spec forbids.
+3. **The theme decision already points this way.** The theme follows the company you are **acting as**, so eventually the whole interface colour is an ambient acting-as indicator. Sitting the company name against the wordmark makes brand + company read as one identity block, which is what the colour shift will reinforce.
+4. **It is the document-header convention, not the SaaS convention.** This app's own printed output puts the producing party at top-left (`SheetTitleBlock`'s wordmark). The on-screen header matching that is coherent.
+
+**The cost, accepted:** account-at-top-right is the more common web convention, and the wordmark is no longer flush against an empty left margin. Judged smaller than any of the four reasons above.
+
+**Rejected, with reasons — recorded so they are not re-proposed:**
+
+- **Absorbed into the ⚙ settings icon.** Directly violates "visible at all times, not buried in a menu." Not a trade-off; a contradiction of a decision already taken. **Do not build this even as an interim.**
+- **Right end, after `Role:` (the conventional spot).** Two failures: it sits the permission axis against the presentation axis as visually-matched dropdowns, and it re-creates the exact geometry that produced this bug — last-in-row, first-to-fall. Survivable with a non-shrinking right zone, but it is the placement with the worst failure mode for no gain beyond familiarity.
+- **Its own fixed element outside the header** (a floating chip). No home in either mockup; adds a fourth fixed chrome layer competing with the canvas, the sidebar and the tray in a permanently-fullscreen editor; and it detaches identity from the one place users look for it.
+
+**Visual distinctness is a requirement, not a preference.** The acting-as control keeps its bordered chip (`--bi-surface-container-low`, uppercase "ACTING AS" caption, company by name). The viewer-role control takes Stitch's filled pill on `surface-container-high` and reads **"Role: Engineer"** — never bare "Engineer", which next to a company name reads as a job title or a permission level. The open role menu carries one line of prose: *changes which disclaimer prints; it is not a permission.* They must not become two matched dropdowns.
+
+### Where the rest of today's bar goes
+
+The split that decides it: **the Project menu holds things that change the building or the file. Settings holds things that change only how you look at it.**
+
+| Today | Goes to | Why |
+|---|---|---|
+| Save Project · Load Project | **Project ▾** (left) | It is the file. Stage 2's cloud save / open / version history joins the same menu rather than needing a new home. |
+| Site Properties | **Project ▾** | Zip, seismic zone, foundation type, pier spacing are design inputs that change the building — not preferences. |
+| Panelizer | **Project ▾** | Holds the "keyhole" checkboxes that gate which editor tabs exist, plus panel width/thickness/density/wall height. Burying the project's core parameters under a gear icon would be wrong. |
+| Imperial / Metric | **⚙ Settings** | Display-only by explicit decision (*"the unit toggle is display-only and never changes stored geometry"*), so it is a viewer preference. See Open Items — Tommy may want it back on the bar surface. |
+| Admin Options (Show All Detail Pages) | **⚙ Settings**, still gated on `role !== "public"` | Tied to the viewer role, which is presentation. |
+| Public/Fabricator/Admin/Engineer (4 buttons) | **Role: ▾** (one control) | This is Stitch's structural answer to the overflow: four buttons become one. |
+
+Each menu keeps opening as a real `StickyNote`, exactly as today — that pattern exists because the old nested popovers were clipped by `.row`'s overflow, and a `position: fixed` note escapes the overflow context. **No new popover mechanism.**
+
+**The ⚙ and ? buttons are icon-only and therefore need real accessible names** (`aria-label`), and a `title`. **Use inline SVG, not Material Symbols** — Stitch's markup pulls a Google webfont, which adds a network dependency, a FOUT, and a licensing question for a two-icon need. **The help icon has no content to show today**; see Open Items. Do not ship an icon that opens nothing.
+
+### The editor tabs, and what happens to `EditorTabDial`
+
+**Decision: the Wall/Foundation/Floor/Roof nav moves into the header's middle zone at `md` and up; `EditorTabDial` is kept and becomes the below-`md` form.** Not deleted.
+
+- Both are controlled by the same `editorTab` state in `page.tsx` — one source of truth, two presentations, **never both visible at once and never neither.**
+- The header nav must honour the **same `enabledTabs` keyhole** the dial does (Panelizer's checkboxes gate Wall/Floor/Roof; Foundation is always included by the caller). A ruled-out tab is **absent from the nav**, not shown-and-inert.
+- Keeping the dial is what makes the below-`md` story possible at all — Stitch marks its own nav `hidden md:flex` and simply offers nothing in its place. **Tommy's own 710px viewport is below `md`**, so his everyday case is the one Stitch leaves empty.
+- `EditorToolbar.tsx` is the dial's only wrapper and is Region 2 of the sidebar's documented three-region layout. Hiding it at `md` and up shifts Region 3 upward — acceptable, because that happens at a breakpoint rather than during use, so Region 1's "height never varies" property survives.
+- **Reversible.** If Tommy wants the dial gone entirely, it is a deletion at one call site, and the reverse (dial always visible, nav never) is the same size. Logged in Open Items.
+
+### The responsive story — an explicit shed order
+
+The bar must fit, without horizontal scroll, at every width down to **360px**. What sheds, in order:
+
+1. **The nav tabs**, below `md` (768px) → `EditorTabDial` appears in the sidebar.
+2. **The "ACTING AS" caption word.** The company name stays.
+3. **The wordmark text** → nothing (no logo asset exists in the app today; `SheetTitleBlock` renders a text wordmark too). The Project menu takes the leftmost position.
+4. **The help icon.**
+5. **Nothing else.** The acting-as company name, the Project menu, the `Role:` control and the ⚙ icon are **never shed at any width.** If it still does not fit, the company name truncates with an ellipsis plus a `title` — **truncated but present beats absent**, which is the entire lesson of this bug.
+
+**Breakpoint hygiene:** the app already has 900px (TopBar) and 600px (`page.module.css`, `EditorTabDial`). Stitch implies `md` = 768px. The 900px rule is deleted with the row it modifies; **do not invent a fourth number**, and write the two that remain in one commented block at the top of `TopBar.module.css`. Reconciling 768 vs 600 app-wide is out of scope this pass.
+
+### Departures from the mockups, deliberate
+
+A coder copying `code.html` would reintroduce shipped bugs. Named so they do not:
+
+- **`dark:` variants are NOT adopted.** `part 1 ui stitch/code.html` carries them throughout. `globals.css` documents killing the boilerplate `prefers-color-scheme: dark` query after Tommy reported invisible button labels on a phone: *"This app has no actual dark theme (every component hardcodes light colors)."* Reintroducing dark classes reproduces that bug exactly.
+- **The side panels stay flex children; they do not become `position: fixed`.** Stitch's `aside`s are fixed with `main` offset by margins. `page.module.css` says the opposite deliberately: *"both side columns are real flex layout space now, not absolutely-positioned overlays, so the canvas never renders underneath them."* Same visual result, and the app's version already survived the problem the mockup's version invites.
+- **The sidebar does not disappear below `md`.** Stitch marks it `hidden md:flex`; the app narrows it to 64px at ≤600px, deliberately, so the tools stay reachable. Keep the app's behaviour.
+- **The tray is not new work.** Part 2's 170px right `aside` is `SectionCarousel`, already built and already 170px. Part 1 has no tray, which is a difference between mockups rather than a decision to make. **Scope: the tray is re-skinned at most, never rebuilt.**
+- **The wordmark must not use `header-gold`.** Stitch paints it `text-header-gold` (`#c9a63f`) — which in that same DESIGN.md is a **panel semantic** colour, sitting among `standard-panel`, `corner-panel`, `braced-panel`. Using it for the brand couples the wordmark to the header-panel colour, so re-theming one would move the other. **Use `--bi-primary` (navy), or add a dedicated `--bi-wordmark`.**
+- **Mockup copy is not content.** "Project Alpha", "V1.0.4-Stable", "PL / Project Lead", "Building Integrity © 2024" are lorem. None of it ships.
+- **`--topbar-height` stays exactly 56px.** `.main`, `SectionCarousel`, and `StickyNote`'s default spawn point *and* fullscreen state all measure against it. A bar that renders 57px tall drifts all four.
+
+### The footer legal bar — deferred, and why
+
+Stitch adds a fixed footer on `warning-red` carrying "Engineered Scope View", a provenance line, and Privacy Policy / Legal Disclaimer links. The app has no footer today. **Not in this pass.** It is a good idea with three unresolved dependencies, none of which are layout:
+
+1. **There are no Privacy Policy or Legal Disclaimer documents.** Those are real legal texts; they are not mine to draft and not the coder's to stub. Needs Tommy.
+2. **It costs canvas height in a permanently-fullscreen editor, and four things measure against the top bar only.** A footer needs a matching `--footer-height` consumed by `.main`, `SectionCarousel`, `StickyNote`'s spawn point and its fullscreen state, or it overlaps them. That is the same drift class `--topbar-height` was introduced to end.
+3. **The disclaimer strings do not fit.** `roleDisclaimers[role].text` runs to ~200 characters for `engineer`, and DESIGN.md's own rule is that legal text never drops below 11px. Stitch's footer is 24px tall. So either the footer carries a short badge with the full text staying where it is, or it is taller than the mockup. A real decision, not a CSS detail.
+
+**Hard rule whenever it does land: the footer renders `roleDisclaimers[role].text` verbatim. Those strings are the app's legal posture and may be relocated but never reworded.** Editing one is a legal change wearing a layout change's clothes. Its red is **chrome** (a banner), so it may take `--bi-error`; it is not the review-log red, which encodes meaning and stays hardcoded.
+
+### Staging — the bug fix ships alone
+
+**Stage 1 — Overflow and the account control.** The three zones, the non-shrinking left and right, the shed order, four role buttons → one `Role:` control, Project and ⚙ menus, `overflow-x: auto` removed, `AccountControl` pinned in the left zone. **This is the whole bug fix and it is shippable on its own.** No wordmark, no nav, no restyle.
+**Stage 2 — The Stitch header shape.** Wordmark, the Wall/Foundation/Floor/Roof nav in the middle zone, `EditorTabDial` demoted to below-`md`, `TopBar.module.css`'s hardcoded hex migrated onto the existing `--bi-*` tokens, Geist type roles applied to the bar.
+**Stage 3 — Footer, and the rest of the chrome.** Blocked on the three footer questions above; the sidebar and tray re-skin rides here. Nothing in Stage 3 is urgent.
+
+**Explicitly not in scope for any of the three:** the sidebar's *contents*, the tray's *contents*, the canvas, `ViewerDial`, per-company theme *values* (only the token layer is consumed), and any change to `viewerRole.ts`'s strings.
+
+**Flags check: expected clean, verified against the code rather than assumed.** No `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is in scope; `data.ts` is not touched; no fastener spacing, load, density, dimension or cost figure moves; nothing new reaches the Review Log. Every number in this section (56px, 240px, 170px, 768px, 600px, 360px) is a layout measurement, not a building value. The one thing to watch: `roleDisclaimers` text is legal-posture content — it may be **relocated or re-presented, never edited** — and the redaction-adjacent principle applies to the bar as much as to the server, in that a control which is present-but-off-screen is the UI equivalent of a plausible substituted number. The coder re-runs the 6-point check against the actual diff.
+
+### Handoff — Stage 1 (TO DO; delete this subsection once built)
+
+**Scope, one sentence:** restructure `TopBar` into three zones so the bar fits without horizontal scroll at 360px and up, collapsing the four viewer-role buttons into one `Role:` control and the remaining menus into **Project ▾** and **⚙ Settings**, with `AccountControl` pinned in the left zone beside the (Stage 2) wordmark.
+
+**Files/packages likely affected:** `apps/web/app/TopBar.tsx`, `apps/web/app/TopBar.module.css`, `apps/web/app/page.tsx` (only the `<TopBar …>` call site and any prop reshuffle), `apps/web/app/auth/AccountControl.module.css` (shed rules for the caption word only — the component's logic is untouched). `apps/web/app/globals.css` only if a token is genuinely missing. **No package under `packages/` is touched.** **Read `apps/web/AGENTS.md` first — Next.js 16.2.10, breaking changes; check `node_modules/next/dist/docs/` before writing.**
+
+**Acceptance criteria:**
+1. At **710px** (Tommy's measured viewport) the header has **zero horizontal overflow** and `AccountControl`'s bounding rect is **fully inside the viewport**. Same at 1920, 1280, 1024, 768, 640, 360.
+2. `.row`'s `overflow-x: auto` is gone, and no ancestor of the bar reintroduces a non-`visible` overflow on either axis.
+3. Computed header height is **exactly 56px**, matching `--topbar-height`, at every width above.
+4. The viewer-role control reads **"Role: <label>"**, offers all four `roleDisclaimers` entries, and the selected role's `text` is still reachable (tooltip on the control, and/or per-option inside the open menu). **The strings themselves are unchanged.**
+5. The acting-as company is legible by name at every width down to 360px — truncated with an ellipsis and a `title` if necessary, **never hidden, never behind ⚙**.
+6. Project ▾ contains Save Project, Load Project, Site Properties, Panelizer. ⚙ contains the unit switch and, when `role !== "public"`, Admin Options.
+7. Every menu still opens as a `StickyNote` and opens **fully on screen at 710px** — the existing `maxLeft` clamp in `TopBar.tsx` and `AccountControl.tsx` still applies from the buttons' new positions.
+8. The bar still renders inside `print-hidden-chrome`; nothing new prints.
+
+**Edge cases worth testing:**
+- **No `AuthProvider`** — `AccountControl` returns `null` (tests mount it this way). The left zone must not collapse or leave a gap.
+- **Signed out**, **signed in with one entitlement** (select is `disabled` but full-contrast), and **signed in with four**, including the longest real label: `"The Seed Collaborative (platform admin)"`.
+- **`role === "public"`** — ⚙ must not render an empty group, a stray divider, or a heading with nothing under it.
+- **Exactly at 768px and at 767px** — exactly one of {header nav, `EditorTabDial`} is present. Never both, never neither. (Stage 2 makes this live; Stage 1 should not make it impossible.)
+- **Panelizer keyhole:** with Floor unchecked, Floor is absent from the nav — not present-but-disabled.
+- **A menu opened, then the window narrowed** across a breakpoint: the note must not be left anchored off-screen.
+
+**Not in scope for Stage 1:** the wordmark, the Wall/Foundation/Floor/Roof nav, any colour or typography change (Stage 1 keeps today's look and only moves things), the footer, the sidebar, the tray, the help icon, `dark:` anything.
+
+---
+
 ## Provisional Values — the `status` flag convention
 
 Every spec-derived number in `packages/panel-catalog/src/data.ts` is wrapped in a `CatalogValue<T>`, `CatalogRange`, or `PanelStructuralStatus` carrying `status: "confirmed" | "pending-BI-confirmation"` plus a `note` tracing back to its source. This is the machine-readable half of this decisions log: **the log says what was decided, the flag says how solid it is.**
@@ -698,6 +846,12 @@ Things that are interpreted or unresolved but aren't a single flaggable number:
 - **Should fabrication sheets be imperial-only?** The 1/8in grid is exact in imperial and provably cannot sum exactly in metric at nearest-mm. Current plan is a note on metric fabrication output saying the imperial value is authoritative. Blocking the metric toggle on fabrication sheets outright would be cleaner but is a bigger UX call than Tommy asked for.
 - **The 1/8in grid stops at wall panelization this pass — deliberately.** The same even-split defect exists in `computeJoistLayout`, `computeFieldFramingLayout` (`perimeterRing.ts`), `floorPanelGrid.ts`, and `trussLayout.ts`, which all divide a span into equal pieces. Not folded in: Tommy asked about drawing tools, bump-out, panel movers, and the panelizer. `distributeEighths` is directly reusable when it's wanted.
 - **The vertical invariant is the same problem, not yet spec'd.** `computeWallVerticalBandsForSlot` splits a wall's height into bands around mid-wall beams; "the bands sum to the wall height" is the same guarantee as "the panels sum to the wall length," and beam height/top drags are in the Stage 2 snap list, but the band arithmetic itself hasn't been audited for the same halving defect. Worth doing right after Stage 1.
+- **⚠ Does the Imperial/Metric switch really go inside the ⚙ menu?** The top-bar reorg puts it there on the principle that the unit toggle is display-only. But it is a deliberate piece of delight — a physical-looking switch with a synthesized click (`UnitSystemSwitch.tsx`, `useSwitchSound.ts`) built because Tommy asked for it to "look like an actual switch" — and burying it may simply annoy him. It costs roughly 150px on the bar surface, and it is the one item that goes back first if he wants it. The component itself is unchanged either way. **Tommy's call; default is "inside ⚙" until he says otherwise.**
+- **What does the ⚙ / ? pair actually look like, and does the help icon have anything to show?** Stitch specifies a settings icon and a help icon. Settings has real contents. **Help has none — the app has no help content today.** Candidates if Tommy wants one: the reference-only posture, the Detail Guide index, a "what do these roles mean" note. **Do not ship an icon that opens nothing**; omit it until there is content. Also his call whether to accept the Material Symbols look (a Google webfont) rather than the inline SVG the spec defaults to.
+- **Does `EditorTabDial` survive at desktop width, or is the header nav the only tab control?** Spec'd as: nav at `md` and up, dial below `md`, same state, never both. The alternative readings are "dial always, nav never" (keeps a control Tommy specifically designed — *"a scroll menu that rolls up or down"*) and "nav always, dial deleted" (matches Stitch exactly, leaves nothing below `md`). Both are one call site. **Worth Tommy looking at the live Stage 2 build before anyone deletes the dial.**
+- **The footer legal bar — three questions before it can be built** (see the Top Bar section): there are no Privacy Policy or Legal Disclaimer documents to link to; a fixed footer needs a `--footer-height` consumed by `.main`, `SectionCarousel` and `StickyNote`'s spawn *and* fullscreen states or it overlaps them; and `roleDisclaimers.engineer.text` is ~200 characters against a 24px, 11px-minimum strip. **Whichever way it goes, the disclaimer strings are relocated verbatim, never reworded.**
+- **Breakpoint reconciliation.** The app will carry `md` = 768px (top bar, new) alongside 600px (`page.module.css`, `EditorTabDial`); the 900px rule dies with the row it modifies. Two numbers is tolerable and picking one app-wide is a bigger UX call than the overflow fix. Worth doing in a later sweep, not folded in.
+- **Visual confirmation of the top-bar fix at Tommy's own viewport.** The bug was found by him failing to find the sign-in control at 710px. Automated width assertions can prove zero overflow; only Tommy confirms the bar reads as one thing rather than three zones of unrelated buttons. Same pass should check the longest acting-as label and the 360px floor on an actual phone.
 - Single nearest fabricator vs. broadcast to a few for handoff — **partially answerable now:** the backend's collaboration grants (decisions 24-26) are the mechanism either answer would use. The routing policy question is still Tommy's.
 - Detail page numbering scheme
 
@@ -743,6 +897,8 @@ Tommy (2026-09-06): each company should be able to carry its own colour scheme, 
 Only chrome gets tokens, so the count that matters is far smaller than 650.
 
 **What Stage 1 must do, and no more:** add a nullable `theme` JSON column to `companies` so the data model carries it, and define the chrome token layer in `globals.css` with today's Building Integrity values as the defaults — so nothing changes visually and new code has tokens to reach for. Migrating existing chrome colours onto tokens is opportunistic afterwards, never a Stage 1 task.
+
+**First consumer, 2026-09-13:** the top-bar reorganisation's Stage 2 migrates `TopBar.module.css`'s hardcoded hex onto `--bi-*`. One caution surfaced there and it belongs here too: **Stitch paints its wordmark `header-gold` (`#c9a63f`), which is a panel semantic in its own palette** — chrome borrowing a drawing-semantic colour couples the brand to the header-panel colour, so re-theming one would move the other. The rule runs both directions.
 
 **Decided (2026-09-06): the theme follows the company you are ACTING AS**, not the owning company of the project on screen. Browsing New Frameworks' tree while acting as Building Integrity shows Building Integrity's colours throughout.
 
