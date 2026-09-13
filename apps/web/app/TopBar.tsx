@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import StickyNote from "./StickyNote";
 import UnitSystemSwitch from "./UnitSystemSwitch";
 import AccountControl from "./auth/AccountControl";
+import { clampMenuLeft, roleControlLabel, roleOptions, settingsMenuHasAdminGroup } from "./topBarMenus";
 import styles from "./TopBar.module.css";
 
 export interface TopBarProps {
@@ -20,39 +21,59 @@ export interface TopBarProps {
   panelizerContent: ReactNode;
 }
 
-type OpenDropdown = "site" | "panelizer" | "admin" | null;
+type OpenMenu = "project" | "site" | "panelizer" | "role" | "settings" | null;
 
-// Matches StickyNote.module.css's own `.note` width — used to keep a
-// dropdown's spawn point from running off the right edge of the screen
-// (Tommy: "the panel standards tab opens to the right of the drop down,
-// since its on the right side of the tool bar this is often pushed out of
-// the screen, lets turn this to spawn more left").
-const NOTE_WIDTH_PX = 420;
-const VIEWPORT_MARGIN_PX = 12;
+/** Icon-only, so the button carries a real aria-label and title. Inline SVG
+ * rather than a Material Symbols webfont: no network dependency, no FOUT, no
+ * licensing question for a one-icon need. */
+function GearIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path
+        d="M8 1.2v1.9M8 12.9v1.9M1.2 8h1.9M12.9 8h1.9M3.2 3.2l1.35 1.35M11.45 11.45l1.35 1.35M12.8 3.2l-1.35 1.35M4.55 11.45L3.2 12.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+      />
+      <circle cx="8" cy="8" r="4.1" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <circle cx="8" cy="8" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
 
 /**
- * Sticky top-of-screen chrome (Tommy: "Viewing as section at the very top
- * of ... a window bar that always stays at the top of the screen... lets
- * try to fit all the top bar stuff in one row") — a fixed single-row bar:
- * Viewing-as (short Public/Fabricator/Admin labels) + the admin/fabricator
- * "show all detail pages" dropdown, then Save/Load, Site Properties, the
- * unit switch, and Panelizer (formerly "Panel Standards" — Tommy: "under
- * Panelizer lets add three check boxes"), left to right in one
- * `justify-content: space-between` row instead of two stacked rows.
+ * Sticky top-of-screen chrome, in three zones (spec: "Top Bar & App Chrome —
+ * the Stitch reorganisation").
  *
- * Each dropdown button opens its content as a real `StickyNote` (Tommy:
- * "when i click panel standards, it wants to load that menu inside of the
- * top bar - i want it to come out like another sticky note") instead of an
- * absolutely-positioned popover nested inside `.row` — that old popover
- * pattern got clipped by `.row`'s `overflow-x: auto` (which forces
- * `overflow-y` to `auto` too, per the CSS spec, once only one axis is set
- * to a non-`visible` value), squashing the panel's content into the bar's
- * own 56px height instead of floating below it. A StickyNote is
- * `position: fixed`, so it escapes that overflow context entirely, and
- * comes with the same drag/close/fullscreen behavior every other note has.
- * Opens positioned just under whichever button was clicked (captured via
- * the click event's own target, not a ref, since only one can be open at a
- * time).
+ * - LEFT, identity & document: the (Stage 2) wordmark slot, then the acting-as
+ *   / sign-in control, then Project ▾ (Save, Load, Site Properties, Panelizer —
+ *   the things that change the building or the file).
+ * - MIDDLE, scope: empty this stage. `EditorTabDial` keeps the job.
+ * - RIGHT, presentation: Role ▾ and ⚙ Settings (units and Admin Options — the
+ *   things that change only how you look at it).
+ *
+ * WHY THE ACCOUNT CONTROL IS ON THE LEFT. This bar used to be one nowrap row
+ * needing ~1400px, scrolled with `overflow-x: auto`, with the account control
+ * last in it. In Tommy's 710px viewport it sat ~700px off-screen: present in
+ * the DOM, unfindable in practice. The acting-as company has to be visible at
+ * all times because the failure it prevents (saving into the wrong company's
+ * folder tree) is silent. In an LTR overflow the rightmost content falls off
+ * first, so first-in-row is the only placement that structurally cannot
+ * reproduce that. It also keeps the two role axes at opposite ends: permission
+ * lives in the identity zone, the viewer role in the presentation zone. They
+ * must never read as two levels of one thing.
+ *
+ * WHY THERE IS NO SCROLLER. The bar fits by construction down to 360px: the
+ * left zone is the only thing allowed to shrink, and inside it only the
+ * acting-as company name does (ellipsis + title). If a future change breaks
+ * that, it should break visibly, not slide a control silently off-screen.
+ * Truncated-with-a-tooltip beats absent.
+ *
+ * Every menu opens as a real `StickyNote`, as before: the old nested popovers
+ * were clipped by the row's overflow (setting one axis non-`visible` forces
+ * the other to `auto`), and a `position: fixed` note escapes any overflow
+ * context. Only one note from this bar is open at a time; each opens just
+ * under whichever control opened it, clamped to stay on screen.
  */
 export default function TopBar({
   role,
@@ -66,145 +87,206 @@ export default function TopBar({
   siteContent,
   panelizerContent,
 }: TopBarProps) {
-  const [openDropdown, setOpenDropdown] = useState<OpenDropdown>(null);
-  const [fullscreenDropdown, setFullscreenDropdown] = useState<OpenDropdown>(null);
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const [fullscreenMenu, setFullscreenMenu] = useState<OpenMenu>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
-  const toggleDropdown = (which: OpenDropdown, buttonEl: HTMLButtonElement) => {
-    setOpenDropdown((was) => {
-      const next = was === which ? null : which;
-      if (next) {
-        const rect = buttonEl.getBoundingClientRect();
-        // Clamped so a button near the bar's right edge (Panelizer, the
-        // last one) still opens fully on-screen instead of spilling off
-        // the right side — anchors further left as needed, never further
-        // right than the button's own left edge.
-        const maxLeft = window.innerWidth - NOTE_WIDTH_PX - VIEWPORT_MARGIN_PX;
-        setDropdownPos({ top: rect.bottom + 8, left: Math.min(rect.left, Math.max(VIEWPORT_MARGIN_PX, maxLeft)) });
-      } else if (fullscreenDropdown === which) {
-        setFullscreenDropdown(null);
-      }
-      return next;
-    });
+  const openMenuUnder = (which: Exclude<OpenMenu, null>, anchor: HTMLElement) => {
+    const rect = anchor.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 8, left: clampMenuLeft(rect.left, window.innerWidth) });
+    setFullscreenMenu(null);
+    setOpenMenu(which);
   };
+
+  const toggleMenu = (which: Exclude<OpenMenu, null>, button: HTMLButtonElement) => {
+    if (openMenu === which) {
+      setOpenMenu(null);
+      setFullscreenMenu(null);
+    } else {
+      openMenuUnder(which, button);
+    }
+  };
+
+  const closeMenu = () => {
+    setOpenMenu(null);
+    setFullscreenMenu(null);
+  };
+
+  // A menu opened wide and then the window narrowed must not be left anchored
+  // off the right edge. Only ever moves the note left, so widening again leaves
+  // it where it is rather than jumping.
+  useEffect(() => {
+    if (!openMenu) return;
+    const onResize = () =>
+      setMenuPos((was) => (was ? { ...was, left: clampMenuLeft(was.left, window.innerWidth) } : was));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [openMenu]);
+
+  const caret = (which: OpenMenu) => (
+    <span className={styles.caret} aria-hidden="true">
+      {" "}
+      {openMenu === which ? "▲" : "▼"}
+    </span>
+  );
+
+  const noteProps = (which: Exclude<OpenMenu, null>) => ({
+    isOpen: openMenu === which,
+    isFullscreen: fullscreenMenu === which,
+    cascadeIndex: 0,
+    top: menuPos?.top ?? 68,
+    left: menuPos?.left ?? 24,
+    onClose: closeMenu,
+    onToggleFullscreen: () => setFullscreenMenu((was) => (was === which ? null : which)),
+  });
 
   return (
     <div className={styles.bar}>
       <div className={styles.row}>
-        <div className={styles.roleGroup} role="group" aria-label="Viewing as">
-          {(Object.keys(roleDisclaimers) as ViewerRole[]).map((r) => (
+        <div className={styles.zoneLeft}>
+          {/* Wordmark slot — Stage 2. Deliberately not rendered as an empty
+              element: with no content it would still cost a flex gap. */}
+
+          {/* Returns null with no AuthProvider (tests mount the editor that
+              way); it is a direct child so a null leaves no gap behind. */}
+          <AccountControl />
+
+          <button
+            type="button"
+            title="Save, load, site properties and panelizer — things that change the building or the file"
+            className={openMenu === "project" ? styles.toolActive : styles.tool}
+            aria-expanded={openMenu === "project"}
+            onClick={(e) => toggleMenu("project", e.currentTarget)}
+          >
+            Project{caret("project")}
+          </button>
+        </div>
+
+        {/* Middle — scope. Empty in Stage 1 (hidden by `:empty`, so it costs
+            no gap); EditorTabDial in the sidebar keeps the job. */}
+        <div className={styles.zoneMiddle} />
+
+        <div className={styles.zoneRight}>
+          <button
+            type="button"
+            title={roleDisclaimers[role].text}
+            className={openMenu === "role" ? styles.toolActive : styles.tool}
+            aria-expanded={openMenu === "role"}
+            onClick={(e) => toggleMenu("role", e.currentTarget)}
+          >
+            {roleControlLabel(role)}
+            {caret("role")}
+          </button>
+
+          <button
+            type="button"
+            aria-label="Settings"
+            title="Settings — units and display options"
+            className={openMenu === "settings" ? styles.iconToolActive : styles.iconTool}
+            aria-expanded={openMenu === "settings"}
+            onClick={(e) => toggleMenu("settings", e.currentTarget)}
+          >
+            <GearIcon />
+          </button>
+        </div>
+      </div>
+
+      <StickyNote id="project-note" label="Project" {...noteProps("project")}>
+        <div className={styles.menuList}>
+          <button
+            type="button"
+            title="Download every input on this page as one JSON file"
+            className={styles.menuItem}
+            onClick={() => {
+              closeMenu();
+              onSaveProject();
+            }}
+          >
+            Save Project
+          </button>
+          <button
+            type="button"
+            title="Load a previously saved project JSON file"
+            className={styles.menuItem}
+            onClick={() => {
+              closeMenu();
+              onLoadProjectClick();
+            }}
+          >
+            Load Project
+          </button>
+          <button
+            type="button"
+            title="Zip code, seismic zone, foundation type, pier spacing"
+            className={styles.menuItem}
+            onClick={(e) => openMenuUnder("site", e.currentTarget)}
+          >
+            Site Properties
+          </button>
+          <button
+            type="button"
+            title="Which editor tools this project needs, panel-construction style, and panel width/thickness/density/wall height"
+            className={styles.menuItem}
+            onClick={(e) => openMenuUnder("panelizer", e.currentTarget)}
+          >
+            Panelizer
+          </button>
+        </div>
+      </StickyNote>
+
+      <StickyNote id="site-properties-note" label="Site Properties" {...noteProps("site")}>
+        {siteContent}
+      </StickyNote>
+
+      <StickyNote id="panelizer-note" label="Panelizer" {...noteProps("panelizer")}>
+        {panelizerContent}
+      </StickyNote>
+
+      <StickyNote id="role-note" label="Role" {...noteProps("role")}>
+        <p className={styles.dropdownNote}>Changes which disclaimer prints; it is not a permission.</p>
+        <div className={styles.menuList} role="group" aria-label="Viewing as">
+          {roleOptions.map((r) => (
             <button
               key={r}
               type="button"
               title={roleDisclaimers[r].text}
-              className={role === r ? styles.toolActive : styles.tool}
+              className={role === r ? styles.menuItemActive : styles.menuItem}
               aria-pressed={role === r}
-              onClick={() => onRoleChange(r)}
+              onClick={() => {
+                onRoleChange(r);
+                closeMenu();
+              }}
             >
-              {roleDisclaimers[r].label}
+              <span className={styles.menuItemLabel} data-role-option-label="">
+                {roleDisclaimers[r].label}
+              </span>
+              {/* Verbatim. These strings are the app's legal posture: they
+                  may be relocated, never reworded. */}
+              <span className={styles.roleOptionText}>{roleDisclaimers[r].text}</span>
             </button>
           ))}
         </div>
-        {role !== "public" && (
-          <button
-            type="button"
-            title="Admin/fabricator options"
-            className={openDropdown === "admin" ? styles.toolActive : styles.tool}
-            aria-expanded={openDropdown === "admin"}
-            onClick={(e) => toggleDropdown("admin", e.currentTarget)}
-          >
-            Admin Options {openDropdown === "admin" ? "▲" : "▼"}
-          </button>
-        )}
+      </StickyNote>
 
-        <div className={styles.projectFileGroup} role="group" aria-label="Project file">
-          <button type="button" title="Download every input on this page as one JSON file" className={styles.tool} onClick={onSaveProject}>
-            Save Project
-          </button>
-          <button type="button" title="Load a previously saved project JSON file" className={styles.tool} onClick={onLoadProjectClick}>
-            Load Project
-          </button>
-        </div>
-
-        <button
-          type="button"
-          title="Zip code, seismic zone, foundation type, pier spacing"
-          className={openDropdown === "site" ? styles.toolActive : styles.tool}
-          aria-expanded={openDropdown === "site"}
-          onClick={(e) => toggleDropdown("site", e.currentTarget)}
-        >
-          Site Properties {openDropdown === "site" ? "▲" : "▼"}
-        </button>
-
+      <StickyNote id="settings-note" label="Settings" {...noteProps("settings")}>
         <UnitSystemSwitch value={unitSystem} onChange={onUnitSystemChange} />
-
-        <button
-          type="button"
-          title="Which editor tools this project needs, panel-construction style, and panel width/thickness/density/wall height"
-          className={openDropdown === "panelizer" ? styles.toolActive : styles.tool}
-          aria-expanded={openDropdown === "panelizer"}
-          onClick={(e) => toggleDropdown("panelizer", e.currentTarget)}
-        >
-          Panelizer {openDropdown === "panelizer" ? "▲" : "▼"}
-        </button>
-
-        {/* The acting-as switcher and the sign-in state. Deliberately at the
-            far end of the bar, as far from the Role Selector at the other end
-            as the row allows: those are the two axes that must never be
-            merged, and sitting them side by side is how someone starts
-            reading one as a level of the other. Permission is server-enforced;
-            the Role Selector is a free presentation toggle available to
-            everyone including guests, and neither reads the other. */}
-        <AccountControl />
-      </div>
-
-      <StickyNote
-        id="admin-options-note"
-        label="Admin Options"
-        isOpen={openDropdown === "admin"}
-        isFullscreen={fullscreenDropdown === "admin"}
-        cascadeIndex={0}
-        top={dropdownPos?.top ?? 68}
-        left={dropdownPos?.left ?? 24}
-        onClose={() => setOpenDropdown(null)}
-        onToggleFullscreen={() => setFullscreenDropdown((was) => (was === "admin" ? null : "admin"))}
-      >
-        <label>
-          <input type="checkbox" checked={showAllDetailPages} onChange={(e) => onShowAllDetailPagesChange(e.target.checked)} />{" "}
-          Show All Detail Pages
-        </label>
-        <p className={styles.dropdownNote}>
-          Shows every Detail Guide and Shop Drawing page regardless of whether it applies to the current design. Off
-          by default.
-        </p>
-      </StickyNote>
-
-      <StickyNote
-        id="site-properties-note"
-        label="Site Properties"
-        isOpen={openDropdown === "site"}
-        isFullscreen={fullscreenDropdown === "site"}
-        cascadeIndex={0}
-        top={dropdownPos?.top ?? 68}
-        left={dropdownPos?.left ?? 24}
-        onClose={() => setOpenDropdown(null)}
-        onToggleFullscreen={() => setFullscreenDropdown((was) => (was === "site" ? null : "site"))}
-      >
-        {siteContent}
-      </StickyNote>
-
-      <StickyNote
-        id="panelizer-note"
-        label="Panelizer"
-        isOpen={openDropdown === "panelizer"}
-        isFullscreen={fullscreenDropdown === "panelizer"}
-        cascadeIndex={0}
-        top={dropdownPos?.top ?? 68}
-        left={dropdownPos?.left ?? 24}
-        onClose={() => setOpenDropdown(null)}
-        onToggleFullscreen={() => setFullscreenDropdown((was) => (was === "panelizer" ? null : "panelizer"))}
-      >
-        {panelizerContent}
+        {settingsMenuHasAdminGroup(role) && (
+          <div className={styles.menuSection}>
+            <h3 className={styles.menuSectionTitle}>Admin Options</h3>
+            <label>
+              <input
+                type="checkbox"
+                checked={showAllDetailPages}
+                onChange={(e) => onShowAllDetailPagesChange(e.target.checked)}
+              />{" "}
+              Show All Detail Pages
+            </label>
+            <p className={styles.dropdownNote}>
+              Shows every Detail Guide and Shop Drawing page regardless of whether it applies to the current design.
+              Off by default.
+            </p>
+          </div>
+        )}
       </StickyNote>
     </div>
   );

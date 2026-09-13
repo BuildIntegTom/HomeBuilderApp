@@ -1,3 +1,26 @@
+/* Breakpoints for the top bar. Two numbers, and do not add a third
+   (spec: "Top Bar & App Chrome — the Stitch reorganisation", Breakpoint hygiene):
+
+     768px  `md`. Below it (written `max-width: 767px`) the bar sheds: tighter
+            controls, carets dropped, and AccountControl drops its "ACTING AS"
+            caption word (AccountControl.module.css). Stage 2's Wall/Foundation/
+            Floor/Roof nav will appear in the middle zone at and above it, with
+            EditorTabDial keeping the job below it.
+     600px  The app's existing narrow breakpoint (page.module.css,
+            EditorTabDial.module.css, SectionCarousel.module.css). NOT used by
+            the top bar: shedding here left the caption showing while the
+            company name was already truncated between ~601 and 700px.
+
+   Shed order, down to a 360px floor: nav tabs (Stage 2) -> "ACTING AS" caption
+   -> wordmark text (Stage 2) -> help icon (not built). NEVER shed: the
+   acting-as company name, Project, Role, and the settings icon. When space
+   still runs out, the company name truncates with an ellipsis and a title.
+
+   The old 900px rule went with the scrolling row it modified.
+
+   Stage 1 moves things and does not restyle: the hardcoded colours below are
+   today's look, unchanged. Migrating them onto --bi-* tokens is Stage 2. */
+
 .bar {
   position: fixed;
   top: 0;
@@ -5,30 +28,61 @@
   right: 0;
   z-index: 100;
   display: flex;
-  padding: 8px 20px;
+  align-items: center;
+  /* Exactly --topbar-height, by declaration rather than by whichever child
+     happens to be tallest. .main, SectionCarousel, and StickyNote's spawn
+     point and fullscreen state all measure against it. (Before Stage 1 the
+     height was content-driven, so the unit switch set it at 56px, and an
+     overflowing row's scrollbar pushed it to 71px.) */
+  box-sizing: border-box;
+  height: var(--topbar-height);
+  padding: 0 20px;
   background: #fff;
   border-bottom: 2px solid #1c3d5a;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 
+/* No overflow-x. The row fits by construction; a scroller here is what turned
+   a layout bug into a hidden sign-in control, and (by forcing overflow-y to
+   auto) what once clipped nested popovers into the bar's height. */
 .row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   width: 100%;
-  flex-wrap: nowrap;
-  overflow-x: auto;
+  min-width: 0;
 }
 
-.roleGroup {
+/* Identity & document. The only zone allowed to shrink; inside it, only the
+   acting-as company name actually does. */
+.zoneLeft {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.projectFileGroup {
+/* Scope. Empty in Stage 1, and an empty flex item would still cost a gap. */
+.zoneMiddle {
   display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.zoneMiddle:empty {
+  display: none;
+}
+
+/* Presentation. Never shrinks: Role and the settings icon are never shed. */
+.zoneRight {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .tool,
@@ -41,6 +95,7 @@
   color: #333;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .toolActive {
@@ -49,14 +104,107 @@
   color: #fff;
 }
 
+.iconTool {
+  composes: tool;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  line-height: 0;
+  /* Same outer height as the text buttons beside it. */
+  min-height: 30px;
+}
+
+.iconToolActive {
+  composes: toolActive;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  line-height: 0;
+  min-height: 30px;
+}
+
+/* Inside the menus' StickyNotes. */
+.menuList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.menuItem {
+  composes: tool;
+  text-align: left;
+  white-space: normal;
+}
+
+.menuItemActive {
+  composes: toolActive;
+  text-align: left;
+  white-space: normal;
+}
+
+.menuItemLabel {
+  display: block;
+  font-weight: 600;
+}
+
+.roleOptionText {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.35;
+  opacity: 0.85;
+}
+
+.menuSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+
+.menuSectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1c3d5a;
+  margin: 0;
+}
+
 .dropdownNote {
   font-size: 11px;
   color: #777;
   margin: 0;
 }
 
-@media (max-width: 900px) {
-  .row {
-    justify-content: flex-start;
+/* Tightening here is not cosmetic: every pixel saved goes to the acting-as
+   company name, the only thing in the bar that shrinks. */
+@media (max-width: 767px) {
+  .bar {
+    padding: 0 8px;
+  }
+
+  .row,
+  .zoneLeft,
+  .zoneRight {
+    gap: 4px;
+  }
+
+  .row .tool,
+  .row .toolActive {
+    padding: 6px 7px;
+    font-size: 12px;
+  }
+
+  .row .iconTool,
+  .row .iconToolActive {
+    padding: 6px 6px;
+  }
+
+  /* Decorative; aria-expanded already carries open/closed. */
+  .caret {
+    display: none;
   }
 }

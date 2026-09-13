@@ -619,7 +619,7 @@ Backups (29) ride with the stage that makes them meaningful: company backup with
 
 ---
 
-## Top Bar & App Chrome — the Stitch reorganisation (2026-09-13) — SPEC'D, nothing built
+## Top Bar & App Chrome — the Stitch reorganisation (2026-09-13) — Stage 1 BUILT (overflow fix); Stages 2–3 SPEC'D, not built
 
 Two things arrived at the same answer: a real overflow bug that hides the sign-in control, and the Stitch mockups (`part 1 ui stitch/` and `part 2 ui stitch/`, each holding `code.html`, `screen.png` and a **byte-identical** `DESIGN.md`). **Stitch's header is not a restyle of today's bar — it is structurally smaller, and that is what fixes the bug.** Recorded as one decision so the fix is not improvised twice.
 
@@ -646,7 +646,7 @@ The Stitch mockups predate auth and have no such control, so there is nothing to
 
 | Zone | Contents | Shrink behaviour |
 |---|---|---|
-| **Left — identity & document** | Wordmark · **Project ▾** · **Acting as ▾ / Sign in** | never sheds; truncates before it disappears |
+| **Left — identity & document** | Wordmark · **Acting as ▾ / Sign in** · **Project ▾** | never sheds; truncates before it disappears |
 | **Middle — scope** | Wall · Foundation · Floor · Roof | sheds whole, below `md` |
 | **Right — presentation** | **Role: ▾** · ⚙ settings · ? help | sheds only the help icon |
 
@@ -699,12 +699,12 @@ Each menu keeps opening as a real `StickyNote`, exactly as today — that patter
 The bar must fit, without horizontal scroll, at every width down to **360px**. What sheds, in order:
 
 1. **The nav tabs**, below `md` (768px) → `EditorTabDial` appears in the sidebar.
-2. **The "ACTING AS" caption word.** The company name stays.
-3. **The wordmark text** → nothing (no logo asset exists in the app today; `SheetTitleBlock` renders a text wordmark too). The Project menu takes the leftmost position.
+2. **The "ACTING AS" caption word.** The company name stays. **It goes below `md` (`max-width: 767px`), together with the carets and the tighter padding — before the company name loses any width.** Stage 1 first shed at 600px, and between ~601 and 700px the name was cut to "The See…" while the caption still showed: the order above, inverted. Corrected in review, 2026-09-13.
+3. **The wordmark text** → nothing (no logo asset exists in the app today; `SheetTitleBlock` renders a text wordmark too). The acting-as / sign-in control takes the leftmost position, with Project ▾ after it. *(Corrected 2026-09-13: this line and the zone table above both put Project first, contradicting the decision they sit under — account control immediately after the wordmark. Stage 1 was built account-first and review confirmed that as the right reading.)*
 4. **The help icon.**
 5. **Nothing else.** The acting-as company name, the Project menu, the `Role:` control and the ⚙ icon are **never shed at any width.** If it still does not fit, the company name truncates with an ellipsis plus a `title` — **truncated but present beats absent**, which is the entire lesson of this bug.
 
-**Breakpoint hygiene:** the app already has 900px (TopBar) and 600px (`page.module.css`, `EditorTabDial`). Stitch implies `md` = 768px. The 900px rule is deleted with the row it modifies; **do not invent a fourth number**, and write the two that remain in one commented block at the top of `TopBar.module.css`. Reconciling 768 vs 600 app-wide is out of scope this pass.
+**Breakpoint hygiene:** the app already has 900px (TopBar) and 600px (`page.module.css`, `EditorTabDial`). Stitch implies `md` = 768px. The 900px rule is deleted with the row it modifies; **do not invent a fourth number**, and write the two that remain in one commented block at the top of `TopBar.module.css`. Reconciling 768 vs 600 app-wide is out of scope this pass. **As built in Stage 1, the top bar uses only 768** (as `max-width: 767px`); 600 stays where it already was, outside the bar.
 
 ### Departures from the mockups, deliberate
 
@@ -731,38 +731,12 @@ Stitch adds a fixed footer on `warning-red` carrying "Engineered Scope View", a 
 ### Staging — the bug fix ships alone
 
 **Stage 1 — Overflow and the account control.** The three zones, the non-shrinking left and right, the shed order, four role buttons → one `Role:` control, Project and ⚙ menus, `overflow-x: auto` removed, `AccountControl` pinned in the left zone. **This is the whole bug fix and it is shippable on its own.** No wordmark, no nav, no restyle.
-**Stage 2 — The Stitch header shape.** Wordmark, the Wall/Foundation/Floor/Roof nav in the middle zone, `EditorTabDial` demoted to below-`md`, `TopBar.module.css`'s hardcoded hex migrated onto the existing `--bi-*` tokens, Geist type roles applied to the bar.
+**Stage 2 — The Stitch header shape.** Wordmark, the Wall/Foundation/Floor/Roof nav in the middle zone, `EditorTabDial` demoted to below-`md`, `TopBar.module.css`'s hardcoded hex migrated onto the existing `--bi-*` tokens, Geist type roles applied to the bar. **Also:** `AccountControl.tsx` still carries its own copy of the menu-position clamp (`NOTE_WIDTH_PX` / `maxLeft`) rather than `clampMenuLeft` from `topBarMenus.ts`, and does not re-clamp its note on window resize the way `TopBar` now does. Left alone in Stage 1 because that component's logic was out of scope; fold it in here.
 **Stage 3 — Footer, and the rest of the chrome.** Blocked on the three footer questions above; the sidebar and tray re-skin rides here. Nothing in Stage 3 is urgent.
 
 **Explicitly not in scope for any of the three:** the sidebar's *contents*, the tray's *contents*, the canvas, `ViewerDial`, per-company theme *values* (only the token layer is consumed), and any change to `viewerRole.ts`'s strings.
 
 **Flags check: expected clean, verified against the code rather than assumed.** No `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is in scope; `data.ts` is not touched; no fastener spacing, load, density, dimension or cost figure moves; nothing new reaches the Review Log. Every number in this section (56px, 240px, 170px, 768px, 600px, 360px) is a layout measurement, not a building value. The one thing to watch: `roleDisclaimers` text is legal-posture content — it may be **relocated or re-presented, never edited** — and the redaction-adjacent principle applies to the bar as much as to the server, in that a control which is present-but-off-screen is the UI equivalent of a plausible substituted number. The coder re-runs the 6-point check against the actual diff.
-
-### Handoff — Stage 1 (TO DO; delete this subsection once built)
-
-**Scope, one sentence:** restructure `TopBar` into three zones so the bar fits without horizontal scroll at 360px and up, collapsing the four viewer-role buttons into one `Role:` control and the remaining menus into **Project ▾** and **⚙ Settings**, with `AccountControl` pinned in the left zone beside the (Stage 2) wordmark.
-
-**Files/packages likely affected:** `apps/web/app/TopBar.tsx`, `apps/web/app/TopBar.module.css`, `apps/web/app/page.tsx` (only the `<TopBar …>` call site and any prop reshuffle), `apps/web/app/auth/AccountControl.module.css` (shed rules for the caption word only — the component's logic is untouched). `apps/web/app/globals.css` only if a token is genuinely missing. **No package under `packages/` is touched.** **Read `apps/web/AGENTS.md` first — Next.js 16.2.10, breaking changes; check `node_modules/next/dist/docs/` before writing.**
-
-**Acceptance criteria:**
-1. At **710px** (Tommy's measured viewport) the header has **zero horizontal overflow** and `AccountControl`'s bounding rect is **fully inside the viewport**. Same at 1920, 1280, 1024, 768, 640, 360.
-2. `.row`'s `overflow-x: auto` is gone, and no ancestor of the bar reintroduces a non-`visible` overflow on either axis.
-3. Computed header height is **exactly 56px**, matching `--topbar-height`, at every width above.
-4. The viewer-role control reads **"Role: <label>"**, offers all four `roleDisclaimers` entries, and the selected role's `text` is still reachable (tooltip on the control, and/or per-option inside the open menu). **The strings themselves are unchanged.**
-5. The acting-as company is legible by name at every width down to 360px — truncated with an ellipsis and a `title` if necessary, **never hidden, never behind ⚙**.
-6. Project ▾ contains Save Project, Load Project, Site Properties, Panelizer. ⚙ contains the unit switch and, when `role !== "public"`, Admin Options.
-7. Every menu still opens as a `StickyNote` and opens **fully on screen at 710px** — the existing `maxLeft` clamp in `TopBar.tsx` and `AccountControl.tsx` still applies from the buttons' new positions.
-8. The bar still renders inside `print-hidden-chrome`; nothing new prints.
-
-**Edge cases worth testing:**
-- **No `AuthProvider`** — `AccountControl` returns `null` (tests mount it this way). The left zone must not collapse or leave a gap.
-- **Signed out**, **signed in with one entitlement** (select is `disabled` but full-contrast), and **signed in with four**, including the longest real label: `"The Seed Collaborative (platform admin)"`.
-- **`role === "public"`** — ⚙ must not render an empty group, a stray divider, or a heading with nothing under it.
-- **Exactly at 768px and at 767px** — exactly one of {header nav, `EditorTabDial`} is present. Never both, never neither. (Stage 2 makes this live; Stage 1 should not make it impossible.)
-- **Panelizer keyhole:** with Floor unchecked, Floor is absent from the nav — not present-but-disabled.
-- **A menu opened, then the window narrowed** across a breakpoint: the note must not be left anchored off-screen.
-
-**Not in scope for Stage 1:** the wordmark, the Wall/Foundation/Floor/Roof nav, any colour or typography change (Stage 1 keeps today's look and only moves things), the footer, the sidebar, the tray, the help icon, `dark:` anything.
 
 ---
 
@@ -852,6 +826,8 @@ Things that are interpreted or unresolved but aren't a single flaggable number:
 - **The footer legal bar — three questions before it can be built** (see the Top Bar section): there are no Privacy Policy or Legal Disclaimer documents to link to; a fixed footer needs a `--footer-height` consumed by `.main`, `SectionCarousel` and `StickyNote`'s spawn *and* fullscreen states or it overlaps them; and `roleDisclaimers.engineer.text` is ~200 characters against a 24px, 11px-minimum strip. **Whichever way it goes, the disclaimer strings are relocated verbatim, never reworded.**
 - **Breakpoint reconciliation.** The app will carry `md` = 768px (top bar, new) alongside 600px (`page.module.css`, `EditorTabDial`); the 900px rule dies with the row it modifies. Two numbers is tolerable and picking one app-wide is a bigger UX call than the overflow fix. Worth doing in a later sweep, not folded in.
 - **Visual confirmation of the top-bar fix at Tommy's own viewport.** The bug was found by him failing to find the sign-in control at 710px. Automated width assertions can prove zero overflow; only Tommy confirms the bar reads as one thing rather than three zones of unrelated buttons. Same pass should check the longest acting-as label and the 360px floor on an actual phone.
+- **⚠ The acting-as suffix — "(platform admin)" / "(consortium)" — is cut off at every width, 1920 included.** `.actingAsSelect`'s `max-width: 220px` predates the top-bar work, and it truncates "The Seed Collaborative (platform admin)" to "The Seed Collaborative (p…" even on a wide screen. The suffix is exactly the part that tells *acting as* Seed apart from *belonging to* Seed, and not realising you are browsing as the consortium is a failure this spec names in the backend section's acting-as switcher. Options raised in review, not decided: a wider cap on wide viewports, or putting the suffix before the name so it is the part that survives truncation. **Tommy's call.**
+- **⚠ On a touch screen a truncated company name cannot be expanded.** The top bar's truncation fallback is an ellipsis plus a `title`, and a phone has no hover, so the `title` does nothing. With one entitlement the select is `disabled`, so a name cut to "Buildi…" can never be read in full on a phone. With several, the native picker does show the full names. The top-bar requirement ("legible by name … truncated with an ellipsis and a `title` if necessary") is met as written, but only thinly on a phone. **Tommy's call.**
 - Single nearest fabricator vs. broadcast to a few for handoff — **partially answerable now:** the backend's collaboration grants (decisions 24-26) are the mechanism either answer would use. The routing policy question is still Tommy's.
 - Detail page numbering scheme
 

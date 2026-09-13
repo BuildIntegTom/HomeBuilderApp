@@ -82,13 +82,19 @@ export default function AccountControl() {
           Acting as
         </span>
         {!signedIn || entitlements.length === 0 ? (
-          <span className={styles.actingAsStatic}>
+          <span
+            className={styles.actingAsStatic}
+            title={loading ? undefined : signedIn ? "No company" : "Not signed in"}
+          >
             {loading ? "…" : signedIn ? "No company" : "Not signed in"}
           </span>
         ) : (
           <select
             className={styles.actingAsSelect}
             aria-labelledby="acting-as-label"
+            // The name may be truncated on a narrow bar; the full name is
+            // always one hover away. Truncated-with-a-title beats absent.
+            title={session.actingAsCompanyId ? label(session.actingAsCompanyId) : undefined}
             value={session.actingAsCompanyId ?? ""}
             // A single entitlement still renders its company name at full
             // contrast — legible, not hidden, not greyed into furniture.
@@ -117,7 +123,13 @@ export default function AccountControl() {
         aria-expanded={open}
         onClick={(event) => openPanel(event.currentTarget)}
       >
-        {signedIn ? "Account" : "Sign in"} {open ? "▲" : "▼"}
+        {signedIn ? "Account" : "Sign in"}
+        {/* Decorative (aria-expanded carries open/closed); dropped on a narrow
+            top bar so the width goes to the company name instead. */}
+        <span className={styles.caret} aria-hidden="true">
+          {" "}
+          {open ? "▲" : "▼"}
+        </span>
       </button>
 
       <StickyNote

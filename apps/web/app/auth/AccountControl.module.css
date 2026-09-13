@@ -3,10 +3,14 @@
    so it reaches for the tokens rather than adding more hardcoded hex. Existing
    components are NOT being migrated; that is opportunistic later work. */
 
+/* `min-width: 0` down the chain (.group -> .actingAs -> the name) is what lets
+   the company name be the one thing in the top bar's left zone that shrinks,
+   rather than the whole bar overflowing. See TopBar.module.css. */
 .group {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 /* The acting-as company is legible at all times, not only while being changed
@@ -20,6 +24,7 @@
   border-radius: 6px;
   background: var(--bi-surface-container-low);
   white-space: nowrap;
+  min-width: 0;
 }
 
 .actingAsLabel {
@@ -39,6 +44,9 @@
   padding: 2px 0;
   cursor: pointer;
   max-width: 220px;
+  /* Truncates rather than disappears; the full name is in its title. */
+  min-width: 0;
+  text-overflow: ellipsis;
 }
 
 .actingAsSelect:disabled {
@@ -55,6 +63,9 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--bi-on-surface-variant);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .button {
@@ -66,6 +77,49 @@
   color: var(--bi-button-label);
   cursor: pointer;
   white-space: nowrap;
+  /* Sign in is never shed: it is the control this whole fix is for. */
+  flex-shrink: 0;
+}
+
+/* Top bar shed step, below `md` (max-width: 767px); the full order is written
+   out in TopBar.module.css. The "ACTING AS" caption word goes BEFORE the company
+   name loses any width. This step first sat at 600px, and between ~601 and 700px
+   the name was cut to "The See…" while the caption and carets still showed —
+   the shed order backwards. The company name stays. The select is still named
+   by the caption — aria-labelledby resolves a referenced element's text even
+   while it is display: none. */
+@media (max-width: 767px) {
+  .actingAsLabel {
+    display: none;
+  }
+
+  /* Every pixel reclaimed here goes to the company name, which is the one
+     thing in the bar allowed to shrink. At 360px with the longest role label
+     it was otherwise cut to a single letter. */
+  .group {
+    gap: 4px;
+  }
+
+  .actingAs {
+    padding: 4px 4px 4px 6px;
+  }
+
+  .actingAsSelect,
+  .actingAsStatic {
+    font-size: 12px;
+  }
+
+  /* Scoped to the bar's own button: .primaryButton in the sign-in form also
+     composes .button and must keep its size inside the note. */
+  .group > .button,
+  .group > .buttonActive {
+    padding: 6px 7px;
+    font-size: 12px;
+  }
+
+  .caret {
+    display: none;
+  }
 }
 
 .buttonActive {
