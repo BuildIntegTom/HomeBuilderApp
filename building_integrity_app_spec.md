@@ -608,7 +608,7 @@ Tommy has seen and agreed this. **Each stage is usable alone**, which is the poi
 
 0. **Title-block save date (no backend required).** The local-file and never-saved rows of the date table above: read `ProjectFile.savedAt`, stop calling `new Date()` at render. **Numbered zero because it needs nothing from any other stage and fixes the defect for every user the app currently has.** The cloud row follows in Stage 2.
 1. **Accounts and companies.** Sign in/out, invites, memberships, default company, company admin, **and the always-visible acting-as switcher including the Seed toggle**. The app gains a real identity and nothing else changes. *(Usable alone: nothing to save yet, but the top-bar sign-in Tommy described exists and works.)*
-2. **Cloud projects and versions.** The three folders, save-as-new-version, the version list, open-from-cloud, the divergence notice (11), and the cloud row of the date table. Local save/load untouched alongside it. *(This is the stage that delivers Tommy's actual sentence — "reachable to another Member on any computer where they can log in.")*
+2. **Cloud projects and versions.** The three folders, save-as-new-version, the version list, open-from-cloud, the divergence notice (11), and the cloud row of the date table. Local save/load untouched alongside it. *(This is the stage that delivers Tommy's actual sentence — "reachable to another Member on any computer where they can log in.")* **Planned 2026-09-13, not built — see "Stage 2 plan — Cloud projects and versions" below, sub-stages 2A–2D, and its Open Items.**
 3. **Collaboration.** `collaborators`, invitations, requests, shared access to one project (24-26). Supersedes the older "in-app inbox" line in the Handoff section above — this *is* the handoff mechanism. **It is also what makes the "edit an existing Seed project" case work**, so it is a prerequisite for Stage 4 being coherent rather than an independent feature.
 4. **Consortium browsing.** Acting as the Seed Collaborative, the cross-company read layer, the cost redactor, the export restrictions (19-23). **The redactor is the highest-risk single piece of the whole design** and deliberately does not ship before there is anything to browse.
 5. **Platform admin.** Cross-company visibility, permanent delete, full backup, and the case-by-case departing-company judgement (28).
@@ -616,6 +616,476 @@ Tommy has seen and agreed this. **Each stage is usable alone**, which is the poi
 Backups (29) ride with the stage that makes them meaningful: company backup with stage 2, platform backup with stage 5.
 
 **Flags check: clean, and confirmed rather than assumed.** This section introduces **no real-world building values at all** — no fastener spacing, no load, no density, no dimension, no cost figure. No `CatalogValue`, `CatalogRange`, or `PanelStructuralStatus` is in scope, and `data.ts` is not touched. Nothing new reaches the Review Log. **It does touch the `pending-BI-confirmation` convention in exactly one indirect way, and only in the direction of strengthening it:** the redaction rule adopts the same principle the flag convention exists for — a plausible substituted number (a defaulted price modifier shown to a browsing company) is worse than a visible gap, for the same reason a researched value marked `confirmed` is worse than one marked pending. Any dollar figure this work causes to be *displayed* is an existing catalog value, still carrying whatever status it already has. The coder re-runs the 6-point check against the actual diff.
+
+### Stage 2 plan — Cloud projects and versions (2026-09-13) — APPROVED BY TOMMY 2026-09-13 (all Open Item defaults accepted), NOT BUILT
+
+Provenance: Tommy approved starting Stage 2 on 2026-09-13 and asked to review the plan before any code is written. This plan builds on what is actually live, which was read directly rather than assumed:
+- Stage 1 as deployed: `supabase/migrations/0001`–`0005`, `seed.sql`, `stage1_rls.test.sql`, `serverSession.ts`, `actingAs.ts`, `AuthProvider.tsx` and the `api/` routes.
+- `projectFile.ts` at **`PROJECT_FILE_VERSION = 24`**. The Framing paragraph's "23" predates the 1/8in grid.
+
+**Nothing decided above is reopened.** Planning in detail turned up four places where a decision was underspecified or collides with the code. Each is marked ⚠ inline and listed in this plan's Open Items; none is settled quietly.
+
+#### Gate: finish the Stage 1 ordinary-account check first
+
+Stage 1's hand test (`supabase/README.md`, "Hand-testing", steps 5–10) has **still not been run as an ordinary member.** Tommy passes every check as a platform admin, and both serious Stage 1 defects were invisible from that account. **Sub-stage 2B is the first time company design data reaches ordinary members through a new path, so the Stage 1 check must be done before 2B deploys.** 2A (schema only) may be applied before it, because nothing reads the new tables yet.
+
+#### Where the document lives — a JSONB column on the version row (recommended)
+
+**Size: estimated, not measured.**
+- No real project files exist to measure. The repo and the session scratchpad were both searched on 2026-09-13; only test fixtures exist.
+- **Estimate from `ProjectState`:** slot arrays are stored up to three times (`baseWallSlots`, `stories[0].wallSlots`, `stories[1].wallSlots`), at roughly 100–200 bytes per slot, more when it carries `zones`.
+  - A 4-wall single-story rectangle comes to roughly 10–20 KB.
+  - A two-story octagon with openings and bond beams comes to roughly 50–100 KB.
+  - Everything else in the document is a few KB.
+- Postgres TOAST-compresses JSONB values over about 2 KB, and this repetitive structure compresses well.
+- **Arithmetic, not a forecast:** 2,000 versions at 30 KB is about 60 MB. 10,000 versions at 100 KB is about 1 GB. Compare these against the Supabase plan's database quota; this log does not state that quota from memory.
+- **The coder records `pg_column_size(document)` for the first real saves**, and this paragraph gets the measured figure.
+
+**Why a column, not Supabase Storage:**
+1. **One write, one transaction.** The version row and its document land together or not at all. Storage would mean two writes, one to the object store and one to the row, which can fail independently and leave either an orphaned file or a row pointing at nothing.
+2. **One permission system.** The document is covered by the same RLS policy as its row. Storage has its own separate policy system, and it would have to mirror every rule here and stay in step with it. That is exactly what decision 30 chose Supabase to avoid.
+3. **Append-only is one trigger.** An object store has its own overwrite and delete paths, each needing its own guard.
+
+**Backup consequence, stated because it decides this:** documents in a column are inside Supabase's database backups. Files in Storage are, to the best of this log's knowledge, **not** inside a database backup; only their metadata rows are. Confirm that against the current Supabase docs before ever moving documents to Storage.
+
+**Revisit trigger:** move documents to Storage only if the median version exceeds about 1 MB, or the database approaches the plan quota. Listing queries must **name their columns and never select `document`**, so the folder tree stays cheap however large the documents get.
+
+**⚠ Document size ceiling: 4 MB. This is picked, not decided (Open Item).** Vercel functions cap request and response bodies at about 4.5 MB (the coder confirms the current limit, and Next 16's route body handling, in `node_modules/next/dist/docs/`). A larger document could not reach the database through a route anyway, so the database refuses anything over 4 MB with a readable error. It is an administrative guard, not a building value.
+
+#### Schema — migration `0006_stage2_projects_and_versions.sql`
+
+**Safe on the live database, by construction:**
+- It creates two tables, their helpers, triggers and policies.
+- It **alters no Stage 1 table and touches no existing row.**
+- The whole file is wrapped in `begin; … commit;`, so a failure part-way applies nothing.
+- It is re-runnable: `create table if not exists`, `create or replace function`, and `drop policy if exists` before each `create policy`.
+- Tommy pastes it into the SQL editor exactly as he did 0001–0005.
+
+**`projects`:** the listing record. Mutable, but only in the ways listed.
+
+| Column | Type / constraint | Why |
+|---|---|---|
+| `id` | uuid pk, `gen_random_uuid()` | |
+| `company_id` | uuid not null, FK `companies(id)` **on delete restrict** | Ownership (25): whose tree it appears in and whose backup includes it. Immutable below privileged caller. `restrict`, not `cascade`, because companies leaving keep their designs (28) and a company delete must never silently take projects with it. |
+| `folder` | text not null default `'current'`, check in (`current`,`past`,`proposals`) | Status label only (12). The one column a member may change. |
+| `name` | text not null default `''` | **System-maintained** mirror of the head document's `state.projectName`. No client writes it directly; see name sync. Empty renders as *(untitled)* in the tree: a visible gap, not a substituted name. |
+| `head_version_number` | integer not null default 0 | The latest version's number. System-maintained. `0` exists only inside `create_project`'s own transaction. |
+| `created_by` | uuid, FK `auth.users` on delete set null | Immutable. |
+| `created_at` / `updated_at` | timestamptz not null default `now()` | `updated_at` = last save; set by the version trigger, used for sorting. |
+
+Index `(company_id, folder, updated_at desc)`. **No uniqueness on name.** Two "Smith House" projects are legal; ids tell them apart.
+
+**`project_versions`:** append-only (10). Enforced by the database, not the UI.
+
+| Column | Type / constraint | Why |
+|---|---|---|
+| `id` | uuid pk | |
+| `project_id` | uuid not null, FK `projects(id)` on delete cascade | Cascade is only reachable by a platform admin deleting a whole project. |
+| `version_number` | integer not null; unique `(project_id, version_number)` | **Assigned by the trigger; any client value is overwritten.** |
+| `parent_version_id` | uuid null, FK `project_versions(id)` (no action); check `parent_version_id <> id`; check `(version_number = 1) = (parent_version_id is null)` | The version the author had open when they started (11). Version 1 has no parent; every later version must name one. |
+| `kind` | text not null default `'save'`, check in (`save`,`rename`) | Lets the version list show a rename as a rename. |
+| `label` | text null, check length 1–200 | Optional note typed at save time. |
+| `author_id` | uuid, FK `auth.users` on delete set null | **Overwritten with `auth.uid()`**, never trusted from the client. |
+| `author_name` | text not null | **A snapshot, taken by the trigger at save time**: `display_name`, falling back to email. See the leaver note below. |
+| `created_at` | timestamptz not null | **Overwritten with `now()`.** This is the title-block date for cloud projects, so the browser clock is not trusted. |
+| `schema_version` | integer not null | Copied from `document->>'schemaVersion'` by the trigger. The version list can then flag unopenable versions without downloading documents, and Stage 4's redactor (keyed to schema version) needs it. |
+| `document` | jsonb not null | The `ProjectFile` exactly as `serializeProject` writes it, stored minified. |
+
+Indexes: the unique pair above, `(parent_version_id)`, `(author_id)`.
+
+**⚠ Why `author_name` is a snapshot. This is a real defect the plan avoids, not a nicety.** Decision 6 says a leaver's name stays on their versions. But `user_profiles_select` (0002) only shows a profile to someone who **shares a company** with that person. Revoke a leaver's membership, and every remaining colleague loses the ability to read their profile, so a join-on-read version list would show a blank author the moment attribution matters most. The snapshot makes decision 6 true.
+
+**Triggers.** All are `SECURITY DEFINER` with `set search_path = public`, matching 0001.
+
+1. **`prepare_project_version`, BEFORE INSERT.** In this order:
+   - Refuse unless `can_write_project(new.project_id)`, with one uniform 42501 error. The same message for "no such project" and "not yours" means the error cannot be used to probe whether an id exists.
+   - Lock the project row `for update`. **This serialises concurrent saves** on one project, so version numbers cannot collide and "head before this save" is exact.
+   - Set `version_number` to head + 1, `created_at` to `now()`, `author_id` to `auth.uid()`, and `author_name` from `user_profiles`.
+   - Validate the document:
+     - it must be an object, with `state` an object and `schemaVersion` an integer;
+     - its text length must be ≤ 4 MB;
+     - a non-null `parent_version_id` must belong to **the same project**.
+     Violations raise 23514 with a readable message.
+2. **`apply_project_version_head`, AFTER INSERT.** Sets the project's `head_version_number`, `updated_at` to the version's `created_at`, and `name` to `document #>> '{state,projectName}'` (or `''`).
+3. **`refuse_project_version_change`, BEFORE UPDATE OR DELETE.**
+   - **UPDATE is refused for everyone**, platform admin and operator included. Decision 10 says never updated, not "updated by the powerful".
+   - **DELETE is refused unless the caller is privileged *and* `pg_trigger_depth() > 1`**, meaning it is arriving as the cascade from a platform admin deleting the whole project.
+   - A direct single-version delete is refused even for platform admin in Stage 2. It would leave `head_version_number` stale and break a `parent_version_id` chain. That operation belongs to Stage 5 and needs its own design.
+4. **`guard_project_columns`, BEFORE UPDATE on `projects`.** Same shape as `guard_membership_self_update`.
+   - `company_id`, `created_by` and `created_at` are immutable below a privileged caller. Transferring ownership is not an operation this system has yet.
+   - `name`, `head_version_number` and `updated_at` may change **only when `pg_trigger_depth() > 1`**, meaning only from trigger 2. A client cannot set a trigger depth, so this is unspoofable from PostgREST.
+   - `folder` is left to the update policy.
+
+**Helpers.** `SECURITY DEFINER`, `stable`, execute revoked from `public` and `anon` and granted to `authenticated`, exactly as 0002's grant loop does.
+- `can_read_project(uuid)`: the project exists and `is_member_of(company_id) or is_platform_admin()`.
+- `can_write_project(uuid)`: **identical in Stage 2, deliberately defined separately.** Stage 3 adds collaborator grants to both. Stage 4 adds browsing to *neither*; see "Across companies".
+
+**RPCs.** `SECURITY INVOKER`, so every policy below still applies to the caller. They exist for atomicity, not privilege, which is the opposite reason from 0003/0005's definer functions, and the comment says so. Execute is revoked from `public` and `anon` and granted to `authenticated`.
+- `create_project(p_company_id, p_folder, p_document, p_label)`: inserts the project row, then version 1 with a null parent, in one call. Returns project id, version id, number and `created_at`.
+- `save_project_version(p_project_id, p_parent_version_id, p_document, p_label)`: inserts one version. Returns version id, number, `created_at`, `head_before` (= new number − 1) and `diverged` (the parent's number ≠ `head_before`).
+- `rename_project(p_project_id, p_name)`: appends a `kind = 'rename'` version whose document is the head document with only `state.projectName` replaced (`jsonb_set`), and whose parent is the head. Name length 1–200. This touches one key the same way the Stage 4 redactor will touch one key; it is not the server parsing the design (22).
+- `insert … returning` inside these is safe from the trap 0005 documents: `projects_select` reads only the row's own `company_id` and never looks the row up, and `can_read_project` on versions reads a project row written by an *earlier* statement.
+
+**Grants.** Supabase's default privileges grant broad rights on new `public` tables to `anon` and `authenticated`, so 0006 starts by revoking everything and then grants exactly:
+- `projects`: `select`, `insert`, `update`, `delete` to `authenticated`.
+- `project_versions`: `select`, `insert`, `delete` to `authenticated`, **with no `update` grant at all** (belt to trigger 3's braces).
+- Nothing to `anon`.
+
+RLS is enabled on both, not FORCE (same reasoning as 0002). **Both get 0004's restrictive `meets_required_aal()` policy**, so an enrolled second factor gates project reads exactly as it gates companies.
+
+**Policies, mapped to the permission matrix.** In the database, "own" means **any company you hold a membership in** (the matrix's own definition). Which of those trees you are *looking at* is the acting-as filter, applied in the route. The security boundary never depends on the acting-as cookie; the acting-as check exists to stop wrong-folder saves (see "Acting-as").
+
+| Matrix row | `projects` | `project_versions` |
+|---|---|---|
+| **Guest** | No grant to `anon`: nothing. | Nothing. |
+| **Member, acting as own company:** see tree, create, edit, move | `select`: `is_member_of(company_id) or is_platform_admin()` · `insert` with check: same, **and** `created_by = auth.uid()`, `head_version_number = 0` · `update` using/check: same (trigger 4 narrows it to `folder`) | `select`: `can_read_project(project_id)` · `insert` with check: `can_write_project(project_id)` (trigger 1 also enforces it) · no update policy |
+| **Company admin, acting as own company** | Same as member in the database. Backup is gated in the route; see "Company backup" for why that is honest. | Same. |
+| **Acting as the Seed Collaborative via the consortium entitlement** (read-only Seed tree, create yes, edit with grant) | **Nothing in Stage 2.** `is_member_of(Seed)` is false, so no rows, and create is refused. ⚠ See Open Items. | Nothing. |
+| **A Seed Collaborative member, acting as Seed** | The member row, over Seed's own projects. No other company's rows (browsing is Stage 4). | Same. |
+| **Invited collaborator** | Stage 3. `collaborators` does not exist yet. | Stage 3. |
+| **Platform admin** | All rows · `delete`: `is_platform_admin()`, whole project | All rows · `delete` policy `is_platform_admin()`, but trigger 3 allows it only as the project cascade |
+
+#### Across companies before Stage 4 — nothing at all
+
+**Stage 2's policies give no read of any kind on a project owned by a company you are not a member of.** Platform admins are the exception, and that is already accepted and recorded under "Platform admins".
+- There is no browse set, no redacted view and no metadata-only listing.
+- **Because the cost redactor does not exist yet, this is what keeps every `priceModifier` inside its own company.** It is asserted directly in the RLS test.
+
+**A constraint for Stage 4, recorded now so the easy path is not taken:** browsing must **not** be added by widening `project_versions_select`. RLS decides whether a row is served, not what the document inside contains (decision 30's caveat). A widened policy would hand browsers the raw document, margin included, straight from PostgREST using the publishable key that ships in the bundle. Cross-company documents must arrive only through the redactor's path.
+
+#### Save flow
+
+The editor holds one piece of new client state, `cloudContext`. It is either `null` or `{ projectId, companyId, companyName, baseVersionId, baseVersionNumber, baseCreatedAt }`. **Base** means the version this editor state started from.
+
+- **Save to cloud, with no cloud project open** (`cloudContext === null`): opens the save dialog.
+  - The dialog shows **"New project in *Building Integrity* › [Current Projects ▾]"**. The company is read-only, taken from the *verified* acting-as company. The folder defaults to Current Projects. There is an optional note, and the name is shown as the editor's project-name field.
+  - Submitting calls `create_project`, and `cloudContext` becomes the new project at v1.
+- **Save to cloud, with a cloud project open:** one click. `save_project_version` is called with `parent = baseVersionId`.
+  - On success, **base moves to the new version**. Your own consecutive saves never trigger the divergence notice.
+  - The title-block date becomes the server's `created_at`.
+- **Save as new cloud project…** is always available when signed in. It is the dialog path again, into the acting-as company. The new project's v1 has no parent: a copy made within your own company is not a handoff (25) and records no lineage.
+- **⚠ Load Project (a local file) clears `cloudContext`.** Otherwise a local file loaded while a cloud project was open would be appended into that unrelated cloud project on the next cloud save. This is silent, plausible, and exactly the class of failure the switcher exists for. The same applies to any "start a fresh design" action.
+- **Name sync, per the decided rule.** Every save sets `projects.name` from the document (trigger 2). The editor's existing project-name field *is* the name.
+  - **⚠ Renaming in the tree is `rename_project`: it appends a version.** A row-only rename would be reverted by the very next save, because the row takes its name from the document. Appending a version is the only reading under which both halves of the decision ("row follows document" and "rename writes into the next version") hold (Open Item).
+  - If the renamed project is open in your own editor, the client also updates its name field. Base moves to the rename version only if base was head; otherwise base stays put and the notice will explain on your next save.
+  - Past versions keep their old name, so a sheet printed from v3 shows v3's name. That is correct, as decided.
+- **What is stored:** `serializeProject(state)` unchanged, cost fields included. This is your own company's project, and nothing crosses a company line in Stage 2.
+
+#### Opening a version, and older app versions
+
+- **Open** fetches one version's document, runs it through `parseProjectFile` unchanged, and applies it with the same setters `handleLoadFileSelected` uses.
+  - **The coder extracts those ~60 setters into one shared apply function** rather than copying them.
+  - **One difference, already decided (Roles, 9):** a cloud open **ignores the document's `role`** and keeps the viewer's own toggle.
+- **Schema outcomes.** `parseProjectFile` deliberately accepts only the current version and the one before it.
+
+| Document `schemaVersion` | What happens |
+|---|---|
+| = current | Opens. |
+| = current − 1 | Opens via the existing migration. The next save writes it in the current format. |
+| **< current − 1** | **⚠ Refused, visibly.** "Version 3 was saved by an older version of the app (file format 22) and can't be opened by this one." A **Download this version's file** button hands over the untouched JSON, so nothing is lost. The version list shows the same badge from the `schema_version` column without downloading. |
+| > current | "This version was saved by a newer version of the app. Reload the page to open it." This is a real case: pushing to `main` auto-deploys, so an open tab can be a release behind. |
+
+- **⚠ This collides with append-only history over time.** Every two schema bumps, the oldest cloud versions become unopenable in-app. Stored versions are permanent, but the reading window is two versions wide. The plan does not quietly widen `parseProjectFile`'s window, because that is a standing maintenance cost on every future bump. It is an Open Item.
+- A stale tab **saving** an older-format document is accepted. It is stored with its own `schema_version`, and the current app opens it via the one-back migration.
+
+#### The divergence notice (11)
+
+- **Detection:** the database answers it inside the save, under the project-row lock. `diverged = (parent's version_number ≠ head_before)`. There is no separate pre-save check and no polling; the base version id the client already holds is the whole input.
+- **The notice appears after the save has succeeded. It never blocks, never asks first, and never offers to undo.** Both versions are kept. It is a non-modal note that stays until dismissed:
+  > **Saved as version 8.** While you had this project open, 1 other version was saved: **version 7 by Virgil, 2:14 pm**. You started from version 6. Both are kept; nothing was overwritten. **[Open version history]**
+  - With more than one intervening version: "3 other versions were saved, the latest by Virgil at 2:14 pm."
+  - If an intervening version was a rename and your save changed the name back: "…including a rename to 'Smith Residence'. Your save set the name back to 'Smith House'."
+- **It ships in 2B, not 2C.** In 2B there is no version list yet, so without the notice a colleague's concurrent save would not merely "disappear quietly into a list"; it would be invisible altogether.
+
+#### Folders (12, 13)
+
+- Three fixed folders per company. **Moving** is an `update … set folder` through the route. It changes nothing about who can see the project and creates no version.
+- The route checks the affected row count, because an RLS-denied UPDATE is silent (0002's own note). Zero rows means 404.
+- **Archive, never delete:** Past Projects *is* the archive. There is no archived flag and **no delete control anywhere in the Stage 2 UI**, for anyone.
+- Permanent delete is enforced now at the database level (platform admin, whole project only). Its UI is Stage 5.
+
+#### Acting-as: which company a new project belongs to, and switching mid-project
+
+- **A new project belongs to the verified acting-as company**, resolved server-side by `loadSession` from the cookie, exactly as Stage 1 resolves it.
+  - The client also sends `expectedCompanyId`, the company its dialog displayed. **A mismatch returns 409**: "You're now acting as Rare Forms (changed in another tab). Nothing was saved." The acting-as cookie is per-browser, not per-tab, so a switch in one tab silently retargets another. The 409 turns that into a visible refusal instead of a wrong-folder save.
+  - Allowed entitlement sources: `membership` and `platform-admin`. A `consortium` source gets 403 with a plain message. ⚠ See Open Items.
+- **Switching company with a cloud project open: the project stays open and keeps saving to its own project.** Saving into an existing project is governed by that project's ownership, not by the switcher (already decided).
+  - The folder tree reloads for the new company.
+  - The Project ▾ status line reads "Owned by Building Integrity. You're acting as Rare Forms; saves still go to this project."
+  - Save as new cloud project targets the new acting-as company, and its dialog names it.
+- **Access lost mid-session** (membership revoked): the save returns 403. The message offers **Download project file** with the editor state untouched, so work is never stranded.
+
+#### The cloud row of the date table — and the rule that replaces Stage 0's precedence
+
+**Requirement added 2026-09-13, from the Stage 0 review.** Stage 0 ships `resolveTitleBlockDate({ cloudVersionCreatedAt?, loadedFileSavedAt?, now })` in `apps/web/app/titleBlockDate.ts` (branch `stage0-save-date`, not merged when this was written). Its precedence is fixed: **cloud, then local file, then today.** That is correct for Stage 0, where the cloud input is never set, but it breaks as soon as Stage 2 sets it:
+- **Open a cloud version, then Load Project a local file from 2025.** The cloud date still wins, so the sheet dates a 2025 design with the cloud version's save time.
+- **Open a cloud version, then Save Project locally.** The same problem: the sheet shows the cloud version's time, not the save just made.
+
+In both cases the sheet shows a confident, wrong date, which is exactly the defect the date decision exists to fix.
+
+**The rule for Stage 2: the last action that saved or replaced the design sets the date.** It does not matter which kind of action it was.
+
+- **One state value, replacing the two separate inputs:** `titleBlockSave: { savedAt: string; source: "local-file" | "cloud-version" } | null`. `null` means never saved or loaded this session, so the sheet shows today.
+- **Four writers, and nothing else writes it:**
+
+| Action | Sets `savedAt` to | `source` |
+|---|---|---|
+| **Load Project** (local file) | that file's `ProjectFile.savedAt` | `local-file` |
+| **Save Project** (local download) | the `savedAt` just written into the file | `local-file` |
+| **Open from cloud** (any version) | that version's `created_at` | `cloud-version` |
+| **Save to cloud** / **Save as new cloud project** / **Rename** of the project open in your editor | the new version's `created_at` **as returned by the database**, never the browser clock | `cloud-version` |
+
+- **Precedence disappears.** Whichever writer ran last has already overwritten the value, so the resolver has nothing to rank.
+- **The resolver's interface changes in Stage 2 (2B)**, to roughly `resolveTitleBlockDate({ lastSave, now })`. It returns `lastSave.savedAt` with its `source`, or `now` with source `today`. Stage 0's tests for the timestamp parsing and the today fallback carry over. Its cloud-over-local precedence test is replaced by two regression tests, one for each break above.
+- **A failed or refused action writes nothing.** Examples: a rejected Load, a 409 or 403 on a cloud save, an out-of-window version that could not be opened. The date stays with whatever the design on screen actually came from.
+- For cloud projects, the document's own `savedAt` (the browser clock) is ignored. The date table says `created_at` is authoritative, and the Open-from-cloud writer reads the column, not the document.
+- **Consistency with the date table:** the table's three rows still hold. This rule is how they resolve when one session touches both paths, which the table did not address. **The date-decision paragraphs above are not changed by this plan.**
+- **Drawing or editing after a load keeps the loaded date.** For example, drawing a whole new footprint over a loaded file leaves the title block on that file's save date. The existing "edited-since-load reads as 'as of last save'" rule already covers this. It is recorded here because a completely redrawn building is the case where that rule is most likely to surprise someone; see Open Item 7.
+
+#### Company backup (29) — concrete shape
+
+**Who can use it:** a company admin (membership level `admin` at the acting-as company) or a platform admin acting as that company.
+
+**What it covers:** every version of every project **owned** by that company.
+- Collaborator-granted projects join in Stage 3, as 29 requires.
+- The platform-wide backup is Stage 5.
+- Nothing visible only through browsing can be included, because Stage 2 has no browsing.
+
+**What it is:** one `.zip`, built **in the browser**.
+- The route pages versions to the browser (by count and by bytes, each page under the body limit), and the browser writes the zip.
+- This keeps the backup clear of serverless time and size limits.
+- It needs a zip dependency; `fflate` is suggested (small, no dependencies), and the coder confirms.
+- The route reads with the admin's own session through RLS. **It never uses the service role.**
+
+**Layout:**
+- `manifest.json`, containing:
+  - `company` (id, name), `exportedAt`, `exportedBy`, and the app's `PROJECT_FILE_VERSION`;
+  - per version: project id, current project name, folder, `ownership: "owned"` (so Stage 3 can add `"granted"` without a format change), version number, kind, label, author name, `created_at`, `parent_version_id`, `schema_version`, and a SHA-256 of the file.
+- `projects/<folder>/<project-name-slug>--<project-id>/v0007--2026-09-13T1402Z.json`, each **the untouched stored `ProjectFile`**. Any version in the schema window loads straight back through **Load Project**.
+
+**Honest limit, stated the way 23's export note is:** admin-only backup is a **convenience boundary, not a security one**. Any member can already open every version of their company's projects one at a time, so a determined member could script the same download. 29's real concern, a backup outranking the export rule by carrying other companies' work, cannot arise in Stage 2, and the test proves it.
+
+#### UI — the Project ▾ menu, and nothing new on the bar
+
+The Project ▾ note (`TopBar.tsx`) gains groups. Existing items keep their exact labels and behaviour:
+
+1. **Status line** (only when a cloud project is open): "*Smith House* · v7 · Building Integrity › Current Projects", plus the acting-as mismatch line above when it applies.
+2. **This computer:** **Save Project** and **Load Project**, **unchanged, never sign-in-gated** (14).
+3. **Cloud · *acting-as company*** (signed in only):
+   - **Save to cloud**
+   - **Save as new cloud project…**
+   - **Open from cloud…**
+   - **Version history** (only while a cloud project is open)
+   - For a **guest**, the group is replaced by one line, "Sign in to save projects to the cloud", which opens the existing account control and gates nothing. With **no backend configured**, the group is absent.
+4. **Site Properties** and **Panelizer**, unchanged.
+
+The notes behind those menu items:
+- **Open from cloud** is a `StickyNote` titled with the acting-as company.
+  - Three tabs: Current Projects, Past Projects, Proposals.
+  - Rows sorted by last save, each reading "*name* · v7 · Virgil · 2 hours ago", with actions **Open**, **Versions**, **Move to…** and **Rename**.
+  - Acting as the Seed Collaborative through the consortium entitlement, the note says in words that Seed's folders open in a later stage. It shows no create action and no empty tree dressed up as a real one.
+- **Version history** is a `StickyNote`, newest first.
+  - Each row: number, "Saved" or "Renamed to '…'", author name, date and time, label.
+  - Markers for **latest** and **you started from this one**, the out-of-window badge where it applies, and **Open**.
+- **Download company backup…** lives in the account control's company-admin section, beside the people list and invite form. It is not in Project ▾, because it is about the company rather than this file.
+- **No new top-bar element.** The bar was measured with 34px to spare at 768px (see "Tommy's decisions, 2026-09-13"), and adding to it re-creates the overflow bug. ⚠ See Open Items.
+
+#### Routes
+
+New routes live under `apps/web/app/api/projects/` and follow Stage 1's conventions:
+- Each starts with `requireSession()`, uses the session's JWT-bound client so RLS is the access control, and uses `readJsonBody` and `errorResponse`.
+- **No route in Stage 2 imports `createSupabaseAdminClient`.**
+- 2FA is covered by the restrictive policies, as it is for Stage 1's tables.
+
+| Route | Does |
+|---|---|
+| `GET /api/projects?folder=` | Lists the verified acting-as company's projects. No `document`. |
+| `POST /api/projects` | `{ expectedCompanyId, folder, label?, document }` → `create_project`. Returns 409 on acting-as mismatch, 403 on a consortium entitlement. |
+| `PATCH /api/projects/[id]` | `{ folder }`. Zero rows → 404. |
+| `POST /api/projects/[id]/rename` | `{ name }` → `rename_project`. |
+| `GET /api/projects/[id]/versions` | Version metadata only. |
+| `POST /api/projects/[id]/versions` | `{ parentVersionId, label?, document }` → `save_project_version`. Returns the version, plus `diverged` and the intervening versions' number, author and time. |
+| `GET /api/projects/[id]/versions/[versionId]` | One version with its document. Unreadable and nonexistent are the same 404. |
+| `GET /api/companies/[id]/backup?after=&limit=` | Paged versions with documents. Route-gated to company admin or platform admin via `requireEntitlement`. |
+
+The routes check only that `document` is an object with an integer `schemaVersion` and an object `state`. **No deep validation and no redaction on the server** (22).
+
+#### Staging — four sub-stages, each shippable
+
+- **2A — Schema, RLS and tests. No app change.**
+  - Contents: `0006`, `supabase/tests/stage2_rls.test.sql`, and README updates (a Stage 2 section, read-only pre-flight and post-flight queries, "run 0006 after 0005").
+  - Ships when the test passes locally with mutation checks and Tommy has pasted 0006 and run the post-flight queries.
+  - **This is the one foundation-only step, deliberately.** It is the same order Stage 1 used, and it is safe to apply ahead of the app because nothing reads these tables.
+- **2B — Save to cloud, open from cloud, folders, divergence notice.**
+  - Contents: the routes except versions-list, rename and backup; the Project ▾ cloud group and status line; the save dialog; Open from cloud with folder tabs and **Move to…**; head-only open; role ignored on open; schema outcomes; `cloudContext` cleared by Load Project; acting-as 409 and switching behaviour; the **last-save-wins** title-block date (a single `titleBlockSave` value written by all four save and replace actions, with `resolveTitleBlockDate`'s interface changed to match).
+  - **Usable alone: this is Tommy's sentence.** Save on one computer, sign in on another, open it.
+  - Gates: the Stage 1 ordinary-account check is done, and Stage 0 is merged.
+- **2C — Version history and rename.**
+  - Contents: the version history note, opening any version, the out-of-window badge and raw download, and rename from the tree.
+  - Usable alone: the list becomes the reconciliation UI (11).
+- **2D — Company backup.**
+  - Contents: the backup route, browser zip assembly, manifest, and the account-control entry.
+  - Usable alone: the USB stick.
+
+#### Tests — `supabase/tests/stage2_rls.test.sql` (local or staging only, never the live project)
+
+The harness is Stage 1's, unchanged:
+- `local_shim.sql`, then 0001–0006, then **`stage1_rls.test.sql` again (it must still pass)**, then this file.
+- One transaction ending in `ROLLBACK`, with `pg_temp.assert` and `pg_temp.act_as`.
+- The same refuse-to-run guard, extended to also refuse when any `projects` row exists. **Live has memberships, so the guard already refuses there. Nothing in `supabase/tests/` is ever pointed at the live project.**
+
+Fixtures are Stage 1's people plus **frank, an ordinary member of Rare Forms** (the second company). Every assertion runs **without** the operator opt-in, as ordinary users unless the assertion is about platform admin.
+
+1. **Create.** bob (ordinary BI member) creates a BI project.
+   - Version 1 has `version_number = 1` and a null parent.
+   - `author_id` is bob; `author_name` is set.
+   - The project's `name` equals the document's `projectName`.
+2. **Spoofing is overwritten, not trusted.** bob inserts with `author_id` = alice, `created_at` = 2001, and `version_number` = 99. The stored row says bob, now, 2.
+3. **Wrong company.** bob cannot create in Rare Forms, or in the Seed Collaborative, with 42501. dave (Seed member) can create in Seed.
+4. **Nothing crosses companies: the margin assertion.**
+   - frank sees 0 BI projects and 0 BI versions.
+   - carol (non-member company) sees 0.
+   - From bob's session, `count(*)` of versions whose document carries `priceModifier` equals the number of BI versions only.
+   - bob cannot read dave's Seed project.
+5. **Append-only.**
+   - UPDATE of a version's `document`, `label` or `created_at` raises: as bob, as alice (company admin), as pat (platform admin), and from a direct connection with the operator opt-in.
+   - `has_table_privilege('authenticated', 'public.project_versions', 'update')` is false.
+6. **Delete.**
+   - A direct version DELETE is 0 rows for bob. It raises for pat (a single-version delete is not a Stage 2 operation).
+   - Project DELETE is 0 rows for bob and alice.
+   - For pat, it deletes 1 project and cascades its versions.
+7. **Columns.**
+   - bob PATCHing `name`, `head_version_number`, `company_id` or `created_by` raises 42501.
+   - bob changing `folder` affects 1 row.
+   - frank changing a BI project's folder affects 0 rows.
+   - `folder = 'archive'` raises 23514.
+8. **Lineage.** Each of these is refused:
+   - a parent from another project;
+   - a null parent on a project with versions;
+   - a non-null parent on version 1;
+   - a parent version belonging to a project the caller cannot read.
+9. **Divergence.**
+   - bob saves from v1 (→ v2, `diverged = false`).
+   - alice saves from v1 (→ v3, `diverged = true`, `head_before = 2`).
+   - bob saves from v2 (→ v4, `diverged = true`).
+   - bob saves from v4 (→ v5, `diverged = false`).
+10. **Rename.**
+    - bob renames: a `kind = 'rename'` version appears, only `state.projectName` differs from its parent's document, every earlier document is byte-identical, and the row name is updated.
+    - frank's rename of a BI project raises.
+    - A following save of an old-name document sets the row name back.
+11. **Leaver attribution.**
+    - An operator removes bob's BI membership. bob now sees 0 BI projects.
+    - alice still reads bob's name on his versions, even though `user_profiles_select` no longer shows her bob's profile.
+12. **Two-factor.** bob with a verified factor at aal1 reads 0 projects and 0 versions; at aal2 he reads them again.
+13. **Grants.**
+    - `anon` has no privilege on either table.
+    - `authenticated` has no `truncate` on either.
+    - `anon` cannot execute any new helper or RPC; `authenticated` can.
+14. **Validation.** Refused: a non-object document, a missing `schemaVersion`, and a document over 4 MB.
+
+**Mutation checks before calling 2A done**, each of which must fail the suite:
+- disable RLS on `project_versions`;
+- make `can_read_project` return true;
+- drop trigger 3;
+- drop the `author_name` snapshot (join on read instead);
+- remove the project-row lock.
+
+#### Hand-test checklist — the live app, as an ordinary member and a second company
+
+**Accounts:**
+- **T:** Tommy (platform admin).
+- **M:** the Stage 1 ordinary Building Integrity member, **not a platform admin**.
+- **R:** a new ordinary member of **Rare Forms**, invited by Tommy to an address he controls. **Not Greg**, who is a platform admin and would pass everything.
+
+Steps marked "as M" or "as R" must not be done as T; platform admin passes every check.
+
+0. **After pasting 0006 (2A):** run the README's read-only post-flight queries:
+   - both tables exist with RLS on;
+   - `anon` holds nothing;
+   - no update grant on versions;
+   - existing companies and memberships unchanged.
+1. **As M:** draw a design and Save to cloud. The dialog says Building Integrity › Current Projects. Sign in as M **on a second computer or browser**, open it from the cloud, and confirm the design is identical and the title block shows the save time.
+2. **As R:** Open from cloud lists nothing of Building Integrity's. Paste M's version URL (`/api/projects/<id>/versions/<vid>`) into R's browser and confirm 404 and no document. **This is the "no margins cross-company before Stage 4" check.**
+3. **As M, then T at the same time:** both open v1, M saves, then T saves. T gets the notice naming M's version, nobody is blocked, and both versions are in history.
+4. **As M:** change the viewer role, then open a cloud version. The role is unchanged.
+5. **As M:** Load Project an older local file while a cloud project is open, and confirm **the title block switches to that file's date**. Save Project locally and confirm the date becomes now. Then Save to cloud: the dialog asks for a **new** project instead of appending.
+6. **As M, two tabs:** switch to The Seed Collaborative in tab B. In tab A, try Save as new cloud project and get the "changed in another tab, nothing saved" refusal. In tab B, the cloud note says Seed's folders come later and offers no create. The project already open in tab A still saves to Building Integrity.
+7. **As M:** move a project to Past Projects, confirm T sees the move and R still sees nothing. Confirm there is no delete control anywhere.
+8. **As M (2C):** rename from the tree. History shows "Renamed to …", and opening the previous version prints the old name.
+9. **As M (2D):** there is no backup entry. **T promotes M to company admin; as M, not T:** download the backup, open `manifest.json`, and load one version file with plain Load Project.
+10. **Signed out:** Save Project and Load Project behave exactly as today. The cloud group shows only the sign-in line.
+11. **As T:** revoke R's Rare Forms membership. R's tree empties on the next request. Revoke and restore a BI test member, and confirm their name stays on their versions.
+
+Anything that behaves differently for M or R than for T is worth stopping on, even if T's version looks right.
+
+#### Coder handoff — to-do, one block per sub-stage
+
+- **2A.**
+  - Scope: migration 0006 and its RLS test, exactly as specified above.
+  - Files: `supabase/migrations/0006_stage2_projects_and_versions.sql`, `supabase/tests/stage2_rls.test.sql`, `supabase/README.md`.
+  - Acceptance: both test files pass locally; all five mutation checks fail the suite; the file is one transaction and re-runnable; no Stage 1 object is altered.
+  - Edge cases: concurrent saves; the cascade-versus-direct delete depth check; `insert … returning` under RLS.
+  - Not in scope: any app code.
+- **2B.**
+  - Scope: save, open and folder moves in the live app.
+  - Files: `apps/web/app/api/projects/**`, `TopBar.tsx` (Project ▾ groups), a new cloud notes component, `page.tsx` (shared apply function, `cloudContext`, Load Project clearing it, cloud date input), `projectFile.ts` (untouched unless the shared apply lives beside it).
+  - Acceptance: hand-test steps 1–7 and 10 pass **as M and R**; local Save/Load unchanged byte-for-byte; no route imports the admin client.
+  - Also: `titleBlockDate.ts` (interface change to one `lastSave` input) and its tests, including regression tests for "cloud open then local Load" and "cloud open then local Save".
+  - Edge cases: stale tab (newer or older schema); 403 mid-session keeps editor state; an empty `projectName`; a refused save or open leaves the date unchanged.
+  - Not in scope: version list, rename, backup.
+- **2C.**
+  - Scope: version history and rename.
+  - Files: versions-list and rename routes, the history note.
+  - Acceptance: step 8; the out-of-window badge and raw download.
+  - Edge cases: renaming the project open in your own editor while base ≠ head.
+  - Not in scope: deleting versions.
+- **2D.**
+  - Scope: company backup.
+  - Files: backup route, zip assembly, account-control entry.
+  - Acceptance: step 9; manifest fields as listed; files reload through Load Project.
+  - Edge cases: a company with zero projects; a single page near the body limit.
+  - Not in scope: platform backup, granted projects, restore.
+
+**The coder re-runs the 6-point flags check against each diff.**
+
+#### Not in scope for Stage 2
+
+- Collaborators, grants and requests (Stage 3).
+- Creating in Seed's tree through the consortium entitlement (Stage 3, pending the creator-grant inference).
+- Browsing and the redactor (Stage 4).
+- Permanent-delete UI, single-version delete, and platform backup (Stage 5).
+- An unsaved-changes warning before opening over current work (Load Project has none today either).
+- Autosave, search, restore-from-backup.
+- Widening `parseProjectFile`'s version window.
+- Title-block branding by owning company (theming is not applied to the title block yet).
+
+#### Noticed while planning — not Stage 2 work, recorded so it is not lost
+
+- **Stage 1's grants may include `TRUNCATE` for `authenticated`.** 0002 revokes from `anon` and grants four privileges to `authenticated`, but does not revoke Supabase's default broad grant first. TRUNCATE bypasses RLS. It is unreachable through PostgREST, which issues no TRUNCATE, so this is defence in depth rather than a hole. Check `has_table_privilege('authenticated','public.memberships','truncate')` in the 2A post-flight, and if true, revoke it in a small follow-up.
+- **Cloud versions inherit the plaster and shipping price round-trip bug** (see "What strip cost fields actually means"). Those seven prices are not in `ProjectState`, so a colleague opening your cloud project sees defaults, exactly as a local file does today. Not fixed here. When it is fixed, those fields become redaction targets.
+
+#### Open Items — Stage 2 (Tommy's decisions; each has a recommended default)
+
+**Answered by Tommy 2026-09-13: all seven defaults accepted as written** — *"Your recommendations for all these things are great, let's roll with them."* Each item below is now a decision, not an open question; the ⚠ marks are kept only so the reasoning stays findable. The 4 MB ceiling (5) remains a picked number that Tommy accepted, not a measured one.
+
+1. **⚠ Old cloud versions become unopenable after two file-format bumps.** Default: show them honestly ("saved by an older app version") with a raw-file download, and do not widen `parseProjectFile`'s one-back window now. The alternative, keeping every migration forever, is a real cost on every future schema change.
+2. **⚠ Creating a project while acting as the Seed Collaborative without being a Seed member waits for Stage 3.** Without the `collaborators` table, the creator could not reopen their own project after saving it once. Default: defer, and answer the creator-grant inference (under "The company switcher") when Stage 3 is planned.
+3. **⚠ Renaming from the tree adds a version marked "Renamed".** Default: yes. A rename that only touches the listing is undone by the next save, because the listing takes its name from the document.
+4. **Backup format.** Default: the zip described under "Company backup". Accepting it closes the standing backup-format item, and confirms that admin-only backup is a convenience gate rather than a security one.
+5. **⚠ Document size ceiling: 4 MB, picked, not decided.** Default: 4 MB, just under Vercel's request limit. Recorded here rather than wrapped in a `CatalogValue`, for the same reason as `INVITE_EXPIRY_DAYS`.
+6. **No always-visible "which cloud project is open" indicator on the top bar.** Default: status lives in Project ▾ only. Reconsider after using it, because the bar has about 34px spare at 768px.
+7. **Small: a redrawn building keeps the loaded file's date.** Load a file, draw a completely new footprint without saving, and the sheet still shows the old file's save date. The decided "as of last save" meaning already covers this. Default: leave it as decided. If it bites in practice, the cheap fix is the unsaved-changes marker that decision already calls a nicety, not a change to the date rule.
+
+#### Flags check: clean, confirmed against the code rather than assumed
+
+1–4. **Clean.** No real-world building number is introduced or moved: no fastener spacing, load, density, dimension or cost figure. No `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is in scope, and `data.ts` is not touched.
+
+5. **Clean.** Nothing new reaches the Review Log.
+
+6. **Clean.** Nothing pending is treated as settled.
+   - The document stores the existing `priceModifier` and catalog-derived values unchanged, each keeping whatever status it already carries.
+   - The only new numbers are administrative: the 4 MB ceiling (flagged above as picked), backup page sizes, and layout measurements already recorded in the Top Bar section. Like `INVITE_EXPIRY_DAYS`, they are deliberately kept off the engineer's review list.
+   - **The one principle this plan leans on is the flag convention's own:** "saved by an older app version" instead of a silently failed open, *(untitled)* instead of a substituted name, and a 409 instead of a silently retargeted save. A visible gap beats a plausible substitute.
 
 ---
 
@@ -916,7 +1386,7 @@ It also means the colour never encodes *whose work you are looking at*, so nothi
 
 **The genuinely open question is one: the backup file format.** Everything else below is either answered, a recorded rejection, or a known implementation caveat that does not need a decision before a coder starts.
 
-- **⚠ Backup format and manifest — the one open decision.** Decision 29 says "a complete backup for a USB stick" and nothing about shape. A zip of one JSON per version plus a manifest is the obvious answer and needs about ten seconds of Tommy's confirmation, mostly so the manifest carries what he would actually want to find on that stick a year later (company, project, folder, version, author, date). Blocks nothing until Stage 2.
+- **⚠ Backup format and manifest — the one open decision.** Decision 29 says "a complete backup for a USB stick" and nothing about shape. A zip of one JSON per version plus a manifest is the obvious answer and needs about ten seconds of Tommy's confirmation, mostly so the manifest carries what he would actually want to find on that stick a year later (company, project, folder, version, author, date). Blocks nothing until Stage 2. **2026-09-13: the Stage 2 plan proposes a concrete default** (a zip built in the browser, one untouched `ProjectFile` per version, and a `manifest.json` with those fields plus schema version, parent version and a checksum). See "Stage 2 plan — Company backup" and its Open Item 4. It still needs Tommy's yes before this item closes.
 
 **Needs Tommy's yes, but is an inference rather than a question he was asked.**
 - **⚠ Does the creator of a Seed-tree project keep access to it?** "Create freely, but editing an existing Seed project needs an invitation" taken literally means you lose your own work the moment you save it. **The coherent reading — creating in another company's tree grants the creator a standing collaborator grant on that project — is written into the spec above and flagged there as an inference.** Confirm before Stage 3/4; the alternative reading is not plausible but should be ruled out by him rather than by us.
