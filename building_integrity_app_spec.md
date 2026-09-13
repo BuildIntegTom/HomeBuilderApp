@@ -619,7 +619,7 @@ Backups (29) ride with the stage that makes them meaningful: company backup with
 
 ---
 
-## Top Bar & App Chrome — the Stitch reorganisation (2026-09-13) — Stage 1 BUILT (overflow fix); Stage 2 BUILT (wordmark + nav at 1200px, name grows — see Tommy's 2026-09-13 decisions); Stage 3 SPEC'D, not built
+## Top Bar & App Chrome — the Stitch reorganisation (2026-09-13) — Stage 1 BUILT (overflow fix); Stage 2 BUILT (wordmark + nav at 1200px, name grows — see Tommy's 2026-09-13 decisions); Stage 3 BUILT (footer — role disclaimer, no policy links yet; sidebar/tray re-skin not done)
 
 Two things arrived at the same answer: a real overflow bug that hides the sign-in control, and the Stitch mockups (`part 1 ui stitch/` and `part 2 ui stitch/`, each holding `code.html`, `screen.png` and a **byte-identical** `DESIGN.md`). **Stitch's header is not a restyle of today's bar — it is structurally smaller, and that is what fixes the bug.** Recorded as one decision so the fix is not improvised twice.
 
@@ -726,7 +726,7 @@ A coder copying `code.html` would reintroduce shipped bugs. Named so they do not
    - **Tab type role, chosen by measurement at exactly 1200px** with all four tabs enabled, four companies, "Role: Fabricator": label-sm (12px/600) — nav 246px, name 270px, full label; **body-lg (14px/400) — nav 254px, name 270px, full label — chosen**; headline-md (16px/600, Stitch's own header role) — nav 292px, name 242px, above 220 but cutting "(platform admin)" at the boundary. body-lg is the largest role that keeps the full label readable at 1200. The current tab is marked by navy text and a 2px underline, not by weight, so switching tabs never changes the bar's width.
 2. **The acting-as company name grows at 1200px and up.** Tommy: use the spare room so the "(platform admin)" / "(consortium)" tag is readable — it is what tells acting-as-Seed apart from belonging to Seed. Below 1200 the 220px cap is unchanged. At 1200 and up the cap is **280px**: "The Seed Collaborative (platform admin)", the longest real label, renders at 270px (13px/600 Geist, including the select's arrow), plus 10px. The nav, Project, Role and ⚙ do not shrink; only the name can give, so growth can never push a control off-screen. A longer company name than today's truncates at 280px and needs re-measuring. Layout measurements, not building values.
 
-### The footer legal bar — deferred, and why
+### The footer legal bar — built 2026-09-13 without the policy links (originally deferred; reasons kept below)
 
 Stitch adds a fixed footer on `warning-red` carrying "Engineered Scope View", a provenance line, and Privacy Policy / Legal Disclaimer links. The app has no footer today. **Not in this pass.** It is a good idea with three unresolved dependencies, none of which are layout:
 
@@ -736,11 +736,32 @@ Stitch adds a fixed footer on `warning-red` carrying "Engineered Scope View", a 
 
 **Hard rule whenever it does land: the footer renders `roleDisclaimers[role].text` verbatim. Those strings are the app's legal posture and may be relocated but never reworded.** Editing one is a legal change wearing a layout change's clothes. Its red is **chrome** (a banner), so it may take `--bi-error`; it is not the review-log red, which encodes meaning and stays hardcoded.
 
+**As built (Stage 3, 2026-09-13).** How each of the three blockers was handled:
+
+1. **Policy links: not built.** No Privacy Policy or Legal Disclaimer page and no `#` links. `AppFooter.tsx` has a commented slot at the right end of the strip for them. Waiting on Tommy's documents (Open Items).
+2. **Height: `--footer-height: 24px`** (`globals.css`), the Stitch footer's own height. It is used everywhere `--topbar-height` measures the top edge: `.main`'s `bottom` (`page.module.css`), `SectionCarousel`'s `bottom`, `StickyNote`'s `.noteFullscreen` `bottom`, and the **spawn state** through an inline `max-height: min(75vh, calc(100vh - spawnTop - var(--footer-height) - 12px))` in `StickyNote.tsx`. Before this, a note spawned low on a short viewport ran under the bottom edge. The cap follows the spawn position, not the drag position, so a note does not resize while being dragged.
+3. **Disclaimer length: solved in layout, not text.** The footer renders `roleDisclaimers[role]` by reference (`footerDisclaimer.ts`, with a test that the object and strings are identical). The strip is one line at 11px (the floor), and the text is the only thing that shrinks, ending in an ellipsis. **The whole strip is a button:**
+   - its accessible name and `title` are the full text
+   - clicking, tapping, or Enter opens the full wrapped text in a panel that grows **upward** from the strip; the strip or Escape closes it.
+
+   The strip never changes height, so `--footer-height` stays constant. The footer's z-index (600) sits above a fullscreen note (500); otherwise the upward panel would open underneath one.
+
+**Colour.** New chrome tokens `--bi-footer-surface: var(--bi-error)` and `--bi-footer-label: var(--bi-on-error)`. `--bi-on-error: #ffffff` is also new, from DESIGN.md's `on-error`. Stitch's `warning-red` (#c0392b) is **not** used: DESIGN.md lists it next to `pending-amber` and the panel colours, which is the semantic family. `error-container` was only its `dark:` variant, and `dark:` is not adopted. `#a33` is untouched. The footer is wrapped in `print-hidden-chrome`, like the top bar.
+
+**Verified in headless Chrome** at 1920, 1280, 1200, 1199, 768, 710, 600 and 360 (900px tall), four companies, every role:
+- **Layout:** zero page overflow on both axes; top bar 56px; footer 24px and fully on-screen.
+- **Nothing under the footer:** `.main`, the tray, six cascaded spawned notes, and a fullscreen note all end at or above its top edge. At 600 and 360 the spawn cap engaged, with notes stopping 12px above the footer.
+- **Disclaimer text:** verbatim in the strip, its `title`, and the expanded panel. The panel is on-screen, needs no scrolling, and is not covered, including over a fullscreen note. It tracks role changes.
+- **Top bar name width:** unchanged from Stage 2 (270px at ≥1200; 220px from 1199 to 600; 71.9px for Fabricator at 360).
+- **Print:** the footer renders nothing under print emulation. A print-targeted note's layout is identical with and without both Stage 3 changes (footer node removed, inline max-height cleared).
+
+The engineer text truncates at 768 and below; the other three roles truncate only at 600 and below.
+
 ### Staging — the bug fix ships alone
 
 **Stage 1 — Overflow and the account control.** The three zones, the non-shrinking left and right, the shed order, four role buttons → one `Role:` control, Project and ⚙ menus, `overflow-x: auto` removed, `AccountControl` pinned in the left zone. **This is the whole bug fix and it is shippable on its own.** No wordmark, no nav, no restyle.
 **Stage 2 — The Stitch header shape.** Wordmark, the Wall/Foundation/Floor/Roof nav in the middle zone, `EditorTabDial` demoted to below-1200px (was below-`md`; see Tommy's 2026-09-13 decisions), `TopBar.module.css`'s hardcoded hex migrated onto the existing `--bi-*` tokens, Geist type roles applied to the bar. **Built 2026-09-13**, per Tommy's decisions above: wordmark and nav at 1200px and up, `EditorTabDial` below, one shared `editorTabs.ts`; the company name's cap rises to 280px at 1200px and up; `TopBar.module.css` on the `--bi-*` tokens (no visual change); Geist roles (wordmark headline-md, controls body-md, tabs body-lg by measurement, menu titles label-sm); `AccountControl.tsx` uses `clampMenuLeft` and re-clamps its note on resize. No help icon (nothing to open). **Verified in headless Chrome** at 1920, 1440, 1280, 1200, 1199, 1024, 768, 767, 710, 640, 600 and 360, signed out and with four companies, all four roles, all four scope tabs enabled: zero page and row overflow, header 56px, account control inside the viewport, exactly one of nav/dial with tabs in sync from either, every menu on-screen, company name 220px from 1199 to 600 and identical to Stage 1 at 360, and the full "The Seed Collaborative (platform admin)" (270px) at every width from 1200 up. Still for Tommy on the live build: whether the dial should survive at desktop width (Open Items).
-**Stage 3 — Footer, and the rest of the chrome.** Blocked on the three footer questions above; the sidebar and tray re-skin rides here. Nothing in Stage 3 is urgent.
+**Stage 3 — Footer, and the rest of the chrome.** Blocked on the three footer questions above; the sidebar and tray re-skin rides here. Nothing in Stage 3 is urgent. **Footer built 2026-09-13** (see "As built" under the footer legal bar above): role disclaimer verbatim, `--footer-height` consumed by all four bottom-edge consumers, no policy links. **Not done in that pass:** the Privacy Policy / Legal Disclaimer links (awaiting Tommy's documents), and the sidebar and tray re-skin, which was not part of the footer handoff.
 
 **Explicitly not in scope for any of the three:** the sidebar's *contents*, the tray's *contents*, the canvas, `ViewerDial`, per-company theme *values* (only the token layer is consumed), and any change to `viewerRole.ts`'s strings.
 
@@ -796,6 +817,7 @@ Things that are interpreted or unresolved but aren't a single flaggable number:
 ---
 
 ## Open Items
+- **Footer Privacy Policy and Legal Disclaimer links await Tommy's documents.** The Stage 3 footer shipped without them on purpose: those are real legal texts, not ours to draft, and a link to a placeholder page or `#` was ruled out. `AppFooter.tsx` has a commented slot at the right end of the strip. When the documents exist, add the links as a non-shrinking group there so the disclaimer text is still the only thing that truncates, and re-measure at 360px.
 - **Confirm:** is "For Baleheads Only" Building Integrity's own engineering (possibly earlier company name)?
 - Metal hanger model for the jack stud beam connection — needs sizing to actual load
 - Fastener for attaching safety/gap panel's ½" plywood skin

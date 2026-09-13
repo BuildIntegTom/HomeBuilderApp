@@ -1,0 +1,91 @@
+/* The app footer (Stage 3 of the Stitch chrome reorganisation). See
+   AppFooter.tsx for why it is shaped this way.
+
+   Colour: --bi-footer-surface / --bi-footer-label (globals.css), which
+   default to --bi-error / --bi-on-error. The red is CHROME, a banner. It is
+   deliberately not Stitch's `warning-red` (which DESIGN.md lists beside
+   pending-amber and the panel colours, the semantic family) and never the
+   review-log red #a33, which is a drawing semantic and stays hardcoded.
+
+   Type: label-xs (11px/600) for the role label, 11px/400 for the text. 11px
+   is DESIGN.md's floor for legal text; do not go below it to make more of
+   the disclaimer fit. */
+
+.footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 600;
+  box-sizing: border-box;
+  /* Exactly --footer-height, by declaration. .main, SectionCarousel, and
+     StickyNote's spawn max-height and fullscreen state all measure against
+     it. */
+  height: var(--footer-height);
+  display: flex;
+  align-items: stretch;
+  background: var(--bi-footer-surface);
+  color: var(--bi-footer-label);
+}
+
+.strip {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  line-height: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.strip:focus-visible {
+  outline: 2px solid var(--bi-footer-label);
+  outline-offset: -3px;
+}
+
+.label {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+/* The only thing in the footer allowed to shrink. Ellipsis is visual only;
+   the full string stays in the DOM (accessible name, title, expand panel). */
+.text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+}
+
+.caret {
+  flex: 0 0 auto;
+}
+
+/* The full text, wrapped, growing upward out of the strip. Capped to the
+   space between the bars so even a very short viewport can scroll it. */
+.fullText {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  box-sizing: border-box;
+  max-height: calc(100vh - var(--topbar-height) - var(--footer-height));
+  overflow-y: auto;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--bi-footer-label);
+  background: var(--bi-footer-surface);
+  color: var(--bi-footer-label);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 400;
+  white-space: normal;
+}

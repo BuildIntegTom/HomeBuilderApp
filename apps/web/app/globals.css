@@ -19,6 +19,14 @@
      state) measures itself against, so nothing can drift out of sync with
      the bar's actual height again. */
   --topbar-height: 56px;
+  /* AppFooter's rendered height — the bottom-edge twin of --topbar-height
+     (Stage 3 of the Stitch chrome reorganisation). Every fixed-position UI
+     that used to run to the viewport bottom measures against it instead:
+     .main (page.module.css), SectionCarousel, StickyNote's fullscreen state,
+     and StickyNote's spawn max-height (inline, StickyNote.tsx). Miss one and
+     the footer overlaps it. 24px is the Stitch footer's own height; its text
+     sits at the 11px legal floor. */
+  --footer-height: 24px;
   /* Elevation-view visual restyle tokens (2026-08) — scoped to the Wall >
      Elevation editor restyle, not an app-wide design-token system. Mirrors
      part 1 ui stitch/code.html's tailwind.config. */
@@ -108,6 +116,13 @@
      work", which is chrome. Value from the shared DESIGN.md palette, since
      the app has no existing chrome error colour to preserve. */
   --bi-error: #ba1a1a;
+  --bi-on-error: #ffffff;                   /* DESIGN.md on-error */
+
+  /* Footer (AppFooter) — a chrome banner, so it re-skins. Deliberately not
+     Stitch's `warning-red`, which DESIGN.md lists beside pending-amber and the
+     panel colours, and never the review-log red #a33. */
+  --bi-footer-surface: var(--bi-error);
+  --bi-footer-label: var(--bi-on-error);
 
   /* Top bar. */
   --bi-topbar-surface: #ffffff;

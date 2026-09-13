@@ -23,13 +23,14 @@
    own header — with the only exit-fullscreen button — clipped clean off
    the top, behind the TopBar, with no way to get back out (Tommy: "the top
    of it disappears under the top bar... impossible to minimize a note once
-   it is maximized"). */
+   it is maximized"). Ends above the AppFooter (--footer-height) for the
+   same reason at the other edge: the note's bottom must not sit under it. */
 .noteFullscreen {
   position: fixed;
   top: var(--topbar-height);
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: var(--footer-height);
   z-index: 500;
   width: 100%;
   max-width: none;

@@ -304,6 +304,7 @@ import SectionCarousel from "./SectionCarousel";
 import SlabFoundationDiagram from "./SlabFoundationDiagram";
 import StickyNote from "./StickyNote";
 import TopBar from "./TopBar";
+import AppFooter from "./AppFooter";
 import ViewerDial, { type ViewerStop } from "./ViewerDial";
 import WindowSizeDiagram from "./WindowSizeDiagram";
 import { roleDisclaimers, type ViewerRole } from "./viewerRole";
@@ -8867,6 +8868,12 @@ export default function LayoutEditor() {
           }
         />
       </main>
+      {/* Screen chrome only, like the TopBar wrapper above: printed sheets
+          carry the role disclaimer in their own SheetTitleBlock. Last in the
+          DOM so keyboard order reaches the editor before the footer. */}
+      <div className="print-hidden-chrome">
+        <AppFooter role={role} />
+      </div>
     </div>
     </DocumentMetaProvider>
   );

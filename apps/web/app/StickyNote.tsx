@@ -56,6 +56,12 @@ export interface StickyNoteProps {
 // notable place where everything else spawns").
 const TOPBAR_HEIGHT_PX = 56;
 const NOTE_SPAWN_MARGIN_PX = 12;
+// The bottom edge needs no JS mirror: a note's spawn max-height is an inline
+// CSS calc() that reads globals.css's --footer-height directly, so a note
+// spawned low on a short viewport stops NOTE_SPAWN_MARGIN_PX above the
+// AppFooter instead of running under it. Never taller than .note's 75vh.
+const spawnMaxHeight = (spawnTopPx: number) =>
+  `min(75vh, calc(100vh - ${spawnTopPx}px - var(--footer-height) - ${NOTE_SPAWN_MARGIN_PX}px))`;
 
 export default function StickyNote({
   id,
@@ -122,7 +128,13 @@ export default function StickyNote({
     <div
       id={id}
       className={`${styles.note} ${isFullscreen ? styles.noteFullscreen : dockedNotFullscreen ? styles.noteDocked : ""} documentSection`}
-      style={isFullscreen || dockedNotFullscreen ? undefined : { top: dragPos?.top ?? baseTop, left: dragPos?.left ?? baseLeft }}
+      style={
+        isFullscreen || dockedNotFullscreen
+          ? undefined
+          : // max-height follows the SPAWN top, not the drag position, so a
+            // note does not resize itself while being dragged.
+            { top: dragPos?.top ?? baseTop, left: dragPos?.left ?? baseLeft, maxHeight: spawnMaxHeight(baseTop) }
+      }
     >
       {/* The header BAR still prints, deliberately; only its buttons are
           chrome. For a note that renders no SheetTitleBlock (Review Log,

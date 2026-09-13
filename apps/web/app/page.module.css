@@ -19,7 +19,8 @@
   top: var(--topbar-height);
   left: 0;
   right: 0;
-  bottom: 0;
+  /* Stops at the footer, not the viewport bottom (--footer-height). */
+  bottom: var(--footer-height);
 }
 
 .main h1 {
