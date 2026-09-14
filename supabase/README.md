@@ -631,6 +631,12 @@ Two things still apply:
 - **The Stage 1 rule above is unchanged.** You still cannot delete someone who
   is the sole admin of a company (see "Deleting a person from the Supabase
   dashboard").
+- **You also cannot delete someone who founded a company.** This is Stage 1
+  behaviour, not Stage 2: `companies.created_by` references `auth.users` with
+  `on delete set null`, and Stage 1's guard refuses changing a company's
+  creator, so the deletion aborts with `42501: a company's creator cannot be
+  changed`. Found in the 2A review; recorded as a spec Open Item. Ordinary
+  savers and people who only issued invites delete fine.
 - **Deleting an account is not how leavers are normally handled.** Decision 6:
   remove their memberships. They lose access on the next request and their name
   stays on their versions either way.

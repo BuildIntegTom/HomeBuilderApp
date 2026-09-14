@@ -675,8 +675,8 @@ Stage 1's hand test (`supabase/README.md`, "Hand-testing", steps 5–10) has **s
 | `folder` | text not null default `'current'`, check in (`current`,`past`,`proposals`) | Status label only (12). The one column a member may change. |
 | `name` | text not null default `''` | **System-maintained** mirror of the head document's `state.projectName`. No client writes it directly; see name sync. Empty renders as *(untitled)* in the tree: a visible gap, not a substituted name. |
 | `head_version_number` | integer not null default 0 | The latest version's number. System-maintained. `0` exists only inside `create_project`'s own transaction. |
-| `created_by` | uuid, FK `auth.users` on delete set null | Immutable. |
-| `created_at` / `updated_at` | timestamptz not null default `now()` | `updated_at` = last save; set by the version trigger, used for sorting. |
+| `created_by` | uuid, **no foreign key** | Immutable. Must equal the caller on insert. Not an FK: `on delete set null` would be an UPDATE the column guard refuses, which blocked deleting the account (review 2026-09-13; Open Item 8). |
+| `created_at` / `updated_at` | timestamptz not null default `now()` | `updated_at` = last save; set by the version trigger, used for sorting. **Both forced to `now()` on insert by `projects_stamp_insert`** (as are `name` → `''` and `head_version_number` → 0), so a direct insert cannot backdate a project. |
 
 Index `(company_id, folder, updated_at desc)`. **No uniqueness on name.** Two "Smith House" projects are legal; ids tell them apart.
 
@@ -690,7 +690,7 @@ Index `(company_id, folder, updated_at desc)`. **No uniqueness on name.** Two "S
 | `parent_version_id` | uuid null, FK `project_versions(id)` (no action); check `parent_version_id <> id`; check `(version_number = 1) = (parent_version_id is null)` | The version the author had open when they started (11). Version 1 has no parent; every later version must name one. |
 | `kind` | text not null default `'save'`, check in (`save`,`rename`) | Lets the version list show a rename as a rename. |
 | `label` | text null, check length 1–200 | Optional note typed at save time. |
-| `author_id` | uuid, FK `auth.users` on delete set null | **Overwritten with `auth.uid()`**, never trusted from the client. |
+| `author_id` | uuid, **no foreign key** | **Overwritten with `auth.uid()`**, never trusted from the client. Not an FK: `on delete set null` would be an UPDATE, which append-only refuses for everyone. Attribution is carried by `author_name` (Open Item 8). |
 | `author_name` | text not null | **A snapshot, taken by the trigger at save time**: `display_name`, falling back to email. See the leaver note below. |
 | `created_at` | timestamptz not null | **Overwritten with `now()`.** This is the title-block date for cloud projects, so the browser clock is not trusted. |
 | `schema_version` | integer not null | Copied from `document->>'schemaVersion'` by the trigger. The version list can then flag unopenable versions without downloading documents, and Stage 4's redactor (keyed to schema version) needs it. |
@@ -720,6 +720,8 @@ Indexes: the unique pair above, `(parent_version_id)`, `(author_id)`.
    - `company_id`, `created_by` and `created_at` are immutable below a privileged caller. Transferring ownership is not an operation this system has yet.
    - `name`, `head_version_number` and `updated_at` may change **only when `pg_trigger_depth() > 1`**, meaning only from trigger 2. A client cannot set a trigger depth, so this is unspoofable from PostgREST.
    - `folder` is left to the update policy.
+5. **`refuse_project_truncate`, BEFORE TRUNCATE on both tables** (added in review, 2026-09-13). Row triggers do not fire on TRUNCATE, so without this the owner could empty `project_versions` and append-only would not hold. Refused for everyone.
+6. **`stamp_new_project`, BEFORE INSERT on `projects`** (added in review). Forces `created_at`/`updated_at` to `now()`, `name` to `''` and `head_version_number` to 0, whatever the client sends.
 
 **Helpers.** `SECURITY DEFINER`, `stable`, execute revoked from `public` and `anon` and granted to `authenticated`, exactly as 0002's grant loop does.
 - `can_read_project(uuid)`: the project exists and `is_member_of(company_id) or is_platform_admin()`.
@@ -734,7 +736,8 @@ Indexes: the unique pair above, `(parent_version_id)`, `(author_id)`.
 **Grants.** Supabase's default privileges grant broad rights on new `public` tables to `anon` and `authenticated`, so 0006 starts by revoking everything and then grants exactly:
 - `projects`: `select`, `insert`, `update`, `delete` to `authenticated`.
 - `project_versions`: `select`, `insert`, `delete` to `authenticated`, **with no `update` grant at all** (belt to trigger 3's braces).
-- Nothing to `anon`.
+- Nothing to `anon`, and **nothing to `service_role`** either (revoked from `anon`, `authenticated` and `service_role`; the app's only `service_role` use is `auth.admin` in the invite-accept route).
+- **Follow-up `0007`** revokes `truncate, references, trigger` on the four Stage 1 tables from `authenticated`. Not a live exposure (PostgREST has no TRUNCATE), so it is defence in depth, kept out of 0006 so 0006 alters no Stage 1 object.
 
 RLS is enabled on both, not FORCE (same reasoning as 0002). **Both get 0004's restrictive `meets_required_aal()` policy**, so an enrolled second factor gates project reads exactly as it gates companies.
 
@@ -1080,6 +1083,11 @@ Anything that behaves differently for M or R than for T is worth stopping on, ev
 5. **⚠ Document size ceiling: 4 MB, picked, not decided.** Default: 4 MB, just under Vercel's request limit. Recorded here rather than wrapped in a `CatalogValue`, for the same reason as `INVITE_EXPIRY_DAYS`.
 6. **No always-visible "which cloud project is open" indicator on the top bar.** Default: status lives in Project ▾ only. Reconsider after using it, because the bar has about 34px spare at 768px.
 7. **Small: a redrawn building keeps the loaded file's date.** Load a file, draw a completely new footprint without saving, and the sheet still shows the old file's save date. The decided "as of last save" meaning already covers this. Default: leave it as decided. If it bites in practice, the cheap fix is the unsaved-changes marker that decision already calls a nicety, not a change to the date rule.
+
+**Added in the 2A review (2026-09-13), after Tommy's acceptance above:**
+
+8. **Account deletion leaves dangling uuids — built this way, pending Tommy's sign-off before he pastes 0006.** `author_id` and `created_by` have no foreign key, so deleting an auth user leaves them pointing at no one. Attribution survives through the `author_name` snapshot, and nothing grants access through either column. Rejected: `on delete restrict`, which makes anyone who ever saved undeletable; a trigger exception on versions, which breaks "never updated". **Stage 3 must know:** if the creator-grant inference (Open Item 2) ever grants access by `created_by`, that column is a plain uuid that may name a deleted account. Revisit if a later stage joins versions to live accounts (such as a Stage 5 audit view); that join must tolerate missing users.
+9. **Stage 1, found in passing: a person who founded a company cannot be deleted.** `companies.created_by` is an FK with `on delete set null`, and Stage 1's guard refuses changing a company's creator, so the delete aborts (`42501: a company's creator cannot be changed`). Not caused by Stage 2. Default: leave it until someone actually needs deleting, and fix it the same way as 8 (drop the FK) if so. Recorded in `supabase/README.md`.
 
 #### Flags check: clean, confirmed against the code rather than assumed
 
