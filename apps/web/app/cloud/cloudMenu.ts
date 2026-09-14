@@ -38,6 +38,8 @@ export type CloudMenu =
       saveToCloud: boolean;
       saveAsNew: boolean;
       openFromCloud: boolean;
+      /** Stage 2C: only while a cloud project is open. */
+      versionHistory: boolean;
     };
 
 export const SIGN_IN_PROMPT = "Sign in to save projects to the cloud";
@@ -49,7 +51,15 @@ export function buildCloudMenu(input: CloudMenuInput): CloudMenu {
   if (!input.signedIn) return { kind: "sign-in-prompt", text: SIGN_IN_PROMPT };
 
   if (input.mfaPending) {
-    return { kind: "signed-in", heading: "Cloud", message: MFA_PENDING_MESSAGE, saveToCloud: false, saveAsNew: false, openFromCloud: false };
+    return {
+      kind: "signed-in",
+      heading: "Cloud",
+      message: MFA_PENDING_MESSAGE,
+      saveToCloud: false,
+      saveAsNew: false,
+      openFromCloud: false,
+      versionHistory: false,
+    };
   }
 
   const { actingAs } = input;
@@ -69,6 +79,9 @@ export function buildCloudMenu(input: CloudMenuInput): CloudMenu {
     saveToCloud: input.cloudProjectOpen || canCreate,
     saveAsNew: canCreate,
     openFromCloud: actingAs !== null,
+    // Governed by the open project, like Save to cloud, not by the switcher.
+    // If access to it was lost, the history's own 404 says so.
+    versionHistory: input.cloudProjectOpen,
   };
 }
 
@@ -90,6 +103,19 @@ export function cloudStatusLines(
     lines.push(`Owned by ${cloudContext.companyName}. You're acting as ${actingAs.companyName}; saves still go to this project.`);
   }
   return lines;
+}
+
+/**
+ * "Sep 12, 2026, 2:14 pm" for a Version history row: every version shows
+ * exactly when it was saved, not only how long ago. A date the strict parser
+ * rejects says so rather than printing a substitute.
+ */
+export function absoluteSaveTime(createdAt: string): string {
+  const date = parseSaveTimestamp(createdAt);
+  if (!date) return "date not recorded";
+  const day = date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }).toLowerCase();
+  return `${day}, ${time}`;
 }
 
 /** "2 hours ago" for a folder row. A date the strict parser rejects says so. */

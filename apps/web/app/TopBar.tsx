@@ -288,7 +288,7 @@ export default function TopBar({
           <div className={styles.menuSection} role="group" aria-label={cloud.menu.heading}>
             <h3 className={styles.menuSectionTitle}>{cloud.menu.heading}</h3>
             {cloud.menu.message && <p className={styles.dropdownNote}>{cloud.menu.message}</p>}
-            {(cloud.menu.saveToCloud || cloud.menu.saveAsNew || cloud.menu.openFromCloud) && (
+            {(cloud.menu.saveToCloud || cloud.menu.saveAsNew || cloud.menu.openFromCloud || cloud.menu.versionHistory) && (
               <div className={styles.menuList}>
                 {cloud.menu.saveToCloud && (
                   <button
@@ -325,7 +325,7 @@ export default function TopBar({
                 {cloud.menu.openFromCloud && (
                   <button
                     type="button"
-                    title="Open the latest version of a project saved in the cloud"
+                    title="Open a project saved in the cloud, or any of its earlier versions"
                     className={styles.menuItem}
                     onClick={() => {
                       closeMenu();
@@ -333,6 +333,20 @@ export default function TopBar({
                     }}
                   >
                     Open from cloud…
+                  </button>
+                )}
+                {/* Stage 2C. Inside this note, not on the bar. */}
+                {cloud.menu.versionHistory && (
+                  <button
+                    type="button"
+                    title="Every saved version of the cloud project that is open: who saved it and when. Any of them can be opened."
+                    className={styles.menuItem}
+                    onClick={() => {
+                      closeMenu();
+                      cloud.onVersionHistory();
+                    }}
+                  >
+                    Version history
                   </button>
                 )}
               </div>

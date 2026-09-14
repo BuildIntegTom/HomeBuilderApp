@@ -15,6 +15,15 @@ import type { CloudContext, CloudFolder } from "./cloudTypes";
  *   cloud-create Save to cloud (new) /
  *                Save as new project   -> returned created_at, context = new v1
  *   cloud-save   Save to cloud (open)  -> returned created_at, base moves
+ *   cloud-rename Rename from the tree  -> returned created_at, base moves,
+ *                of the project open      ONLY when base was head (2C; see
+ *                in this editor           renameOutcome)
+ *
+ * OPENING AN OLDER VERSION (2C) is an ordinary cloud-open: base becomes that
+ * version, so the next Save to cloud names it as the parent and the database
+ * reports the save as diverged. `latestKnownVersionNumber` remembers the head
+ * seen at open time, so the notice can say "you started from an older version"
+ * rather than "someone saved while you had it open".
  *
  * `cloud-refused` exists so a refused or failed action is an explicit no-op
  * rather than an absent branch: it writes nothing.
@@ -54,7 +63,13 @@ interface VersionFacts {
   createdAt: string;
 }
 
-export type CloudOpenAction = { type: "cloud-open"; sentAtGeneration: number; version: VersionFacts };
+export type CloudOpenAction = {
+  type: "cloud-open";
+  sentAtGeneration: number;
+  /** `headVersionNumber` is the project's head as the open read it: newer than
+   * `versionNumber` when an older version was opened. */
+  version: VersionFacts & { headVersionNumber: number };
+};
 export type CloudCreateAction = { type: "cloud-create"; sentAtGeneration: number; result: VersionFacts };
 export type CloudSaveAction = {
   type: "cloud-save";
@@ -65,6 +80,14 @@ export type CloudSaveAction = {
   parentVersionId: string;
   result: { versionId: string; versionNumber: number; createdAt: string };
 };
+/** Stage 2C: a rename from the tree succeeded. It appended `result`, a copy of
+ * the head at that moment (always `versionNumber - 1`) with a new name. */
+export type CloudRenameAction = {
+  type: "cloud-rename";
+  sentAtGeneration: number;
+  projectId: string;
+  result: { versionId: string; versionNumber: number; createdAt: string };
+};
 
 export type DocumentSessionAction =
   | { type: "local-load"; savedAt: string | undefined }
@@ -72,6 +95,7 @@ export type DocumentSessionAction =
   | CloudOpenAction
   | CloudCreateAction
   | CloudSaveAction
+  | CloudRenameAction
   | { type: "cloud-moved"; projectId: string; folder: CloudFolder }
   /** A REAL account change: a different account signed in, or an explicit
    * sign-out. Not a transient signed-out reading (see trackSignedInAccount). */
@@ -110,6 +134,37 @@ export function answerIsCurrent(state: DocumentSession, action: CloudOpenAction 
   return Boolean(ctx && ctx.projectId === action.projectId && ctx.baseVersionId === action.parentVersionId);
 }
 
+/**
+ * What a successful rename means for THIS editor (spec, "Name sync"):
+ *
+ *   not-open-here  another project was renamed: nothing here changes.
+ *   late           the renamed project is open, but the design was replaced
+ *                  while the rename was in flight: a late answer writes
+ *                  nothing, not even the name field.
+ *   base-moved     base WAS head, so the rename version is exactly base with a
+ *                  new name: base moves to it and the date becomes its
+ *                  created_at, as for a save.
+ *   base-stays     base was NOT head (an older version was opened, or someone
+ *                  saved meanwhile). The rename copied someone else's head, not
+ *                  the design on screen, so base stays put and the DATE DOES
+ *                  NOT MOVE: the date says when the design on screen was saved,
+ *                  and this rename did not save it. The editor's name field
+ *                  still takes the new name, so the next save keeps it; the
+ *                  divergence notice explains that save.
+ *
+ * The rename's parent is always `versionNumber - 1` (rename_project copies the
+ * head under the project-row lock), and version numbers are unique within a
+ * project, so comparing numbers is comparing versions.
+ */
+export type RenameOutcome = "not-open-here" | "late" | "base-moved" | "base-stays";
+
+export function renameOutcome(state: DocumentSession, action: CloudRenameAction): RenameOutcome {
+  const ctx = state.cloudContext;
+  if (!ctx || ctx.projectId !== action.projectId) return "not-open-here";
+  if (action.sentAtGeneration !== state.designGeneration) return "late";
+  return ctx.baseVersionNumber === action.result.versionNumber - 1 ? "base-moved" : "base-stays";
+}
+
 export function documentSessionReducer(state: DocumentSession, action: DocumentSessionAction): DocumentSession {
   switch (action.type) {
     case "local-load":
@@ -126,6 +181,7 @@ export function documentSessionReducer(state: DocumentSession, action: DocumentS
     case "cloud-create": {
       if (!answerIsCurrent(state, action)) return state;
       const v = action.type === "cloud-open" ? action.version : action.result;
+      const latestKnown = action.type === "cloud-open" ? Math.max(action.version.headVersionNumber, v.versionNumber) : v.versionNumber;
       return {
         cloudContext: {
           projectId: v.projectId,
@@ -135,6 +191,7 @@ export function documentSessionReducer(state: DocumentSession, action: DocumentS
           baseVersionId: v.versionId,
           baseVersionNumber: v.versionNumber,
           baseCreatedAt: v.createdAt,
+          latestKnownVersionNumber: latestKnown,
         },
         titleBlockSave: { savedAt: v.createdAt, source: "cloud-version" },
         designGeneration: generationAfter(state.designGeneration, action),
@@ -151,6 +208,24 @@ export function documentSessionReducer(state: DocumentSession, action: DocumentS
           baseVersionId: action.result.versionId,
           baseVersionNumber: action.result.versionNumber,
           baseCreatedAt: action.result.createdAt,
+          // The notice for this save has just named everything in between.
+          latestKnownVersionNumber: action.result.versionNumber,
+        },
+        titleBlockSave: { savedAt: action.result.createdAt, source: "cloud-version" },
+      };
+    }
+
+    case "cloud-rename": {
+      if (renameOutcome(state, action) !== "base-moved") return state;
+      const ctx = state.cloudContext!;
+      return {
+        ...state,
+        cloudContext: {
+          ...ctx,
+          baseVersionId: action.result.versionId,
+          baseVersionNumber: action.result.versionNumber,
+          baseCreatedAt: action.result.createdAt,
+          latestKnownVersionNumber: Math.max(ctx.latestKnownVersionNumber, action.result.versionNumber),
         },
         titleBlockSave: { savedAt: action.result.createdAt, source: "cloud-version" },
       };

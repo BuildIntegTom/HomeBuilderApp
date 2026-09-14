@@ -156,3 +156,58 @@
   align-items: center;
   gap: 8px;
 }
+
+/* Stage 2C: Version history and rename. */
+
+.rowHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.marker {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--bi-outline-variant);
+  background: var(--bi-surface-container);
+  color: var(--bi-on-surface-variant);
+  white-space: nowrap;
+}
+
+.markerBase {
+  composes: marker;
+  border-color: var(--bi-primary);
+  color: var(--bi-primary);
+}
+
+.badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--bi-error);
+  color: var(--bi-error);
+  background: var(--bi-surface-container-lowest);
+  align-self: flex-start;
+}
+
+.rowLabel {
+  margin: 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--bi-on-surface-variant);
+  overflow-wrap: anywhere;
+}
+
+.renameForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.renameForm .input {
+  flex: 1 1 160px;
+}

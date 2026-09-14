@@ -1,20 +1,32 @@
 import { readJsonBody } from "@/app/auth/serverSession";
 import { NO_STORE, cloudErrorResponse, requireCloudSession } from "@/app/cloud/cloudRouteSession";
-import { saveVersion } from "@/app/cloud/projectRouteLogic";
+import { listVersions, saveVersion } from "@/app/cloud/projectRouteLogic";
 
 /**
+ * GET  /api/projects/[id]/versions — Version history (Stage 2C). Metadata
+ *      only: number, kind, label, author name, time, schema version, parent.
+ *      `document` is never selected. Unreadable and nonexistent are the same
+ *      404, so another company's project id cannot be probed.
  * POST /api/projects/[id]/versions — { parentVersionId, label?, document }
- * -> save_project_version. Returns the new version plus `diverged` and the
- * intervening versions' number, author and time, for the divergence notice.
+ *      -> save_project_version. Returns the new version plus `diverged` and the
+ *      intervening versions' number, author and time, for the divergence notice.
  *
- * No acting-as check: saving into an existing project is governed by that
- * project's ownership, not by the switcher (spec, "Acting-as"). The database
- * decides, under the project-row lock.
- *
- * The version LIST (GET) is Stage 2C and deliberately not here.
+ * No acting-as check on either: an existing project is governed by its own
+ * ownership, not by the switcher (spec, "Acting-as"). RLS decides.
  *
  * Next.js 16: `context.params` is a Promise.
  */
+export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await context.params;
+    const session = await requireCloudSession();
+    const result = await listVersions(session.supabase, id);
+    return Response.json(result, { headers: NO_STORE });
+  } catch (error) {
+    return cloudErrorResponse(error);
+  }
+}
+
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;

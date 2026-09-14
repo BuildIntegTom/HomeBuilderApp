@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Entitlement } from "../auth/actingAs";
 import {
   DOCUMENT_TOO_LARGE_MESSAGE,
+  NAME_LENGTH_MESSAGE,
   NO_COMPANY_MESSAGE,
   actingAsChangedMessage,
   consortiumLaterStageMessage,
@@ -10,9 +11,14 @@ import {
   type CloudProjectRow,
   type CloudVersionResponse,
   type CreateProjectResponse,
+  PROJECT_NAME_MAX_CHARS,
+  type CloudVersionKind,
+  type CloudVersionRow,
   type InterveningVersion,
   type ListProjectsResponse,
+  type ListVersionsResponse,
   type MoveProjectResponse,
+  type RenameProjectResponse,
   type SaveVersionResponse,
 } from "./cloudTypes";
 
@@ -49,6 +55,7 @@ export const SAVE_ACCESS_LOST_MESSAGE =
 export const LIST_REFUSED_MESSAGE =
   "Couldn't list this company's projects. Your access may have changed; reload the page and try again.";
 export const INVALID_ID_MESSAGE = "That request named something that isn't a valid id. Nothing was saved or changed.";
+export const RENAME_NOT_FOUND_MESSAGE = "That project doesn't exist, or you can't rename it. Nothing was changed.";
 
 export type Body = Record<string, unknown>;
 
@@ -142,7 +149,15 @@ function readFolder(value: unknown, fallback?: CloudFolder): CloudFolder {
   return value;
 }
 
-type Operation = "list" | "create" | "save" | "move" | "read";
+/** 2C adds `history` (the version list) and `rename`. */
+type Operation = "list" | "create" | "save" | "move" | "read" | "history" | "rename";
+
+/** The 404 each path-id operation gives, whatever the cause. */
+function notFoundFor(operation: Operation): ProjectRouteError {
+  if (operation === "read") return new ProjectRouteError(404, VERSION_NOT_FOUND_MESSAGE);
+  if (operation === "rename") return new ProjectRouteError(404, RENAME_NOT_FOUND_MESSAGE);
+  return new ProjectRouteError(404, PROJECT_NOT_FOUND_MESSAGE);
+}
 
 /**
  * Database errors, as the person should read them. The codes are the ones 0006
@@ -158,12 +173,20 @@ export function mapProjectDbError(error: DbError, operation: Operation): Project
     case "PGRST116": // .single() with no row
       if (operation === "list") return new ProjectRouteError(403, LIST_REFUSED_MESSAGE);
       if (operation === "create" || operation === "save") return new ProjectRouteError(400, INVALID_ID_MESSAGE);
-      return new ProjectRouteError(404, operation === "read" ? VERSION_NOT_FOUND_MESSAGE : PROJECT_NOT_FOUND_MESSAGE);
+      return notFoundFor(operation);
     case "42501":
       if (operation === "list") return new ProjectRouteError(403, LIST_REFUSED_MESSAGE);
       if (operation === "create") return new ProjectRouteError(403, "You can't create a project in that company. Nothing was saved.");
       if (operation === "save") return new ProjectRouteError(403, SAVE_ACCESS_LOST_MESSAGE);
-      return new ProjectRouteError(404, operation === "read" ? VERSION_NOT_FOUND_MESSAGE : PROJECT_NOT_FOUND_MESSAGE);
+      // move, read, history, rename: "not yours" reads the same as "no such
+      // project" (rename_project raises one 42501 for both), so it cannot be
+      // used to probe whether an id exists.
+      return notFoundFor(operation);
+    case "22023":
+      // rename_project's name-length check. The route checks first; this is
+      // the backstop for a name the database trims differently.
+      if (operation === "rename") return new ProjectRouteError(400, NAME_LENGTH_MESSAGE);
+      return null;
     case "23514":
       if (/byte limit/.test(message)) return new ProjectRouteError(413, DOCUMENT_TOO_LARGE_MESSAGE);
       if (/label_check/.test(message)) return new ProjectRouteError(400, "A note can be at most 200 characters. Nothing was saved.");
@@ -375,6 +398,137 @@ export async function moveProject(db: SupabaseClient, projectIdParam: string, bo
   if (error) fail(error, "move");
   if (!data || data.length === 0) throw new ProjectRouteError(404, PROJECT_NOT_FOUND_MESSAGE);
   return { projectId, folder };
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/projects/[id]/versions — Stage 2C, Version history
+// ---------------------------------------------------------------------------
+
+interface VersionListRecord {
+  id: string;
+  version_number: number;
+  parent_version_id: string | null;
+  kind: CloudVersionKind;
+  label: string | null;
+  author_name: string;
+  created_at: string;
+  schema_version: number;
+}
+
+/** Named columns. `document` is NEVER in this list. */
+export const VERSION_LIST_COLUMNS = "id, version_number, parent_version_id, kind, label, author_name, created_at, schema_version";
+
+export async function listVersions(db: SupabaseClient, projectIdParam: string): Promise<ListVersionsResponse> {
+  // Unreadable, nonexistent and malformed are the same 404.
+  const projectId = requirePathId(projectIdParam, PROJECT_NOT_FOUND_MESSAGE);
+
+  const { data: project, error: projectError } = await db
+    .from("projects")
+    .select("id, company_id, name, folder, head_version_number")
+    .eq("id", projectId)
+    .maybeSingle();
+  if (projectError) fail(projectError, "history");
+  if (!project) throw new ProjectRouteError(404, PROJECT_NOT_FOUND_MESSAGE);
+  const p = project as { id: string; company_id: string; name: string; folder: CloudFolder; head_version_number: number };
+
+  const { data: rows, error } = await db
+    .from("project_versions")
+    .select(VERSION_LIST_COLUMNS)
+    .eq("project_id", projectId)
+    .order("version_number", { ascending: false });
+  if (error) fail(error, "history");
+  const records = (rows ?? []) as VersionListRecord[];
+
+  // "Renamed to '…'" needs the name each rename carries, which lives only in
+  // its document. One JSON-path extract, for RENAME ROWS ONLY, so the
+  // database reads no save's document to draw this list; the document itself
+  // never leaves the database. The id is the validated path id, passed with
+  // .eq(), never spliced into a filter string. If it fails the rows still say
+  // "Renamed", without a name: a visible gap, not a substituted one.
+  const renamedTo = new Map<string, string>();
+  if (records.some((r) => r.kind === "rename")) {
+    try {
+      const { data: names, error: namesError } = await db
+        .from("project_versions")
+        .select("id, project_name:document->state->>projectName")
+        .eq("project_id", projectId)
+        .eq("kind", "rename");
+      if (!namesError) {
+        for (const n of (names ?? []) as { id: string; project_name: string | null }[]) renamedTo.set(n.id, n.project_name ?? "");
+      }
+    } catch {
+      // Enrichment only; the list stands without it.
+    }
+  }
+
+  const { data: company } = await db.from("companies").select("name").eq("id", p.company_id).maybeSingle();
+
+  const numberById = new Map(records.map((r) => [r.id, r.version_number]));
+  const versions: CloudVersionRow[] = records.map((r) => ({
+    versionId: r.id,
+    versionNumber: r.version_number,
+    parentVersionId: r.parent_version_id,
+    parentVersionNumber: r.parent_version_id ? (numberById.get(r.parent_version_id) ?? null) : null,
+    kind: r.kind,
+    label: r.label,
+    authorName: r.author_name,
+    createdAt: r.created_at,
+    schemaVersion: r.schema_version,
+    renamedTo: r.kind === "rename" ? (renamedTo.get(r.id) ?? null) : null,
+  }));
+
+  // A save can land between the two reads; the newest row is then the head.
+  const headVersionNumber = Math.max(p.head_version_number, versions[0]?.versionNumber ?? 0);
+
+  return {
+    projectId: p.id,
+    companyId: p.company_id,
+    companyName: (company as { name: string } | null)?.name ?? "",
+    projectName: p.name,
+    folder: p.folder,
+    headVersionNumber,
+    versions,
+    notListedCount: Math.max(0, headVersionNumber - versions.length),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/projects/[id]/rename — Stage 2C
+// ---------------------------------------------------------------------------
+
+/** 1–200 characters after trimming, counted as the database counts them
+ * (code points, `char_length`). */
+export function readProjectName(body: Body): string {
+  const value = body.name;
+  if (typeof value !== "string") throw new ProjectRouteError(400, NAME_LENGTH_MESSAGE);
+  const trimmed = value.trim();
+  const length = [...trimmed].length;
+  if (length < 1 || length > PROJECT_NAME_MAX_CHARS) throw new ProjectRouteError(400, NAME_LENGTH_MESSAGE);
+  return trimmed;
+}
+
+/**
+ * Renaming appends a `kind = 'rename'` version (Open Item 3): a row-only
+ * rename would be undone by the next save, because the row takes its name
+ * from the head document. One RPC, which copies the head under the
+ * project-row lock and replaces only `state.projectName`.
+ */
+export async function renameProject(db: SupabaseClient, projectIdParam: string, body: Body): Promise<RenameProjectResponse> {
+  const projectId = requirePathId(projectIdParam, RENAME_NOT_FOUND_MESSAGE);
+  const name = readProjectName(body);
+
+  const { data, error } = await db.rpc("rename_project", { p_project_id: projectId, p_name: name }).single();
+  if (error) fail(error, "rename");
+  const row = data as { version_id: string; version_number: number; created_at: string };
+
+  return {
+    projectId,
+    name,
+    versionId: row.version_id,
+    versionNumber: row.version_number,
+    createdAt: row.created_at,
+    renamedFromVersionNumber: row.version_number - 1,
+  };
 }
 
 // ---------------------------------------------------------------------------

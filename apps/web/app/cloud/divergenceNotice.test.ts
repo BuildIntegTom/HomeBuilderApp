@@ -128,3 +128,80 @@ describe("divergenceNotice", () => {
     expect(notice.detail).toContain("Your save set the name back to '(untitled)'.");
   });
 });
+
+describe("divergenceNotice — 2C: the save started from an older version that was opened on purpose", () => {
+  it("latestKnown equal to base keeps the 2B wording exactly", () => {
+    const input = { versionNumber: 8, diverged: true, headBefore: 7, baseVersionNumber: 6, intervening: [v(7, "Virgil", "t7")], savedProjectName: "Smith House", formatTime };
+    expect(divergenceNotice({ ...input, latestKnownVersionNumber: 6 })).toEqual(divergenceNotice(input));
+  });
+
+  it("does NOT claim versions that already existed were saved 'while you had this project open'", () => {
+    // v3 opened from Version history while v7 was the latest; nobody saved since.
+    const notice = divergenceNotice({
+      versionNumber: 8,
+      diverged: true,
+      headBefore: 7,
+      baseVersionNumber: 3,
+      latestKnownVersionNumber: 7,
+      intervening: [v(4, "Tommy", "t7"), v(5, "Tommy", "t7"), v(6, "Virgil", "t8"), v(7, "Virgil", "t9")],
+      savedProjectName: "Smith House",
+      formatTime,
+    });
+    expect(notice.headline).toBe("Saved as version 8.");
+    expect(notice.detail).toBe(
+      "It starts from version 3, which you opened, not from version 7, the latest when you opened it, so it doesn't build on versions 4–7. Every version is kept; nothing was overwritten.",
+    );
+    expect(notice.detail).not.toMatch(/While you had this project open/);
+  });
+
+  it("names versions saved AFTER the open the 2B way", () => {
+    const notice = divergenceNotice({
+      versionNumber: 9,
+      diverged: true,
+      headBefore: 8,
+      baseVersionNumber: 6,
+      latestKnownVersionNumber: 7,
+      intervening: [v(7, "Tommy", "t7"), v(8, "Virgil", "t8")],
+      savedProjectName: "Smith House",
+      formatTime,
+    });
+    expect(notice.detail).toBe(
+      "It starts from version 6, which you opened, not from version 7, the latest when you opened it, so it doesn't build on version 7. Since you opened it, 1 other version was saved: version 8 by Virgil, 2:20 pm. Every version is kept; nothing was overwritten.",
+    );
+  });
+
+  it("with only one other version in all, says 'Both are kept'", () => {
+    const notice = divergenceNotice({
+      versionNumber: 8,
+      diverged: true,
+      headBefore: 7,
+      baseVersionNumber: 6,
+      latestKnownVersionNumber: 7,
+      intervening: [v(7, "Virgil", "t7")],
+      savedProjectName: "Smith House",
+      formatTime,
+    });
+    expect(notice.detail).toMatch(/doesn't build on version 7\. Both are kept; nothing was overwritten\.$/);
+  });
+
+  it("says when a rename in the skipped versions was set back, naming the version", () => {
+    const notice = divergenceNotice({
+      versionNumber: 6,
+      diverged: true,
+      headBefore: 5,
+      baseVersionNumber: 3,
+      latestKnownVersionNumber: 5,
+      intervening: [v(4, "Virgil", "t7", { kind: "rename", projectName: "Smith Residence" }), v(5, "Virgil", "t8", { projectName: "Smith Residence" })],
+      savedProjectName: "Smith House",
+      formatTime,
+    });
+    expect(notice.detail).toContain("Your save set the name back to 'Smith House' (version 4 had renamed it to 'Smith Residence').");
+  });
+
+  it("counts later saves from the numbers if the rows couldn't be read back", () => {
+    const notice = divergenceNotice({ versionNumber: 10, diverged: true, headBefore: 9, baseVersionNumber: 3, latestKnownVersionNumber: 7, intervening: [], savedProjectName: "", formatTime });
+    expect(notice.detail).toBe(
+      "It starts from version 3, which you opened, not from version 7, the latest when you opened it, so it doesn't build on versions 4–7. Since you opened it, 2 other versions were saved. Every version is kept; nothing was overwritten.",
+    );
+  });
+});

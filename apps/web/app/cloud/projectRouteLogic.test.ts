@@ -4,22 +4,26 @@ import { fileURLToPath } from "node:url";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 import type { Entitlement } from "../auth/actingAs";
-import { DOCUMENT_TOO_LARGE_MESSAGE, NO_COMPANY_MESSAGE } from "./cloudTypes";
+import { DOCUMENT_TOO_LARGE_MESSAGE, NAME_LENGTH_MESSAGE, NO_COMPANY_MESSAGE } from "./cloudTypes";
 import {
   INVALID_ID_MESSAGE,
   LIST_REFUSED_MESSAGE,
   PROJECT_NOT_FOUND_MESSAGE,
   ProjectRouteError,
+  RENAME_NOT_FOUND_MESSAGE,
   SAVE_ACCESS_LOST_MESSAGE,
+  VERSION_LIST_COLUMNS,
   VERSION_NOT_FOUND_MESSAGE,
   checkCreateTarget,
   createProject,
   getVersion,
   isUuid,
   listProjects,
+  listVersions,
   mapProjectDbError,
   moveProject,
   readLabel,
+  renameProject,
   saveVersion,
   validateProjectDocument,
 } from "./projectRouteLogic";
@@ -507,6 +511,165 @@ describe("getVersion — GET /api/projects/[id]/versions/[versionId]", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Stage 2C
+// ---------------------------------------------------------------------------
+
+describe("listVersions — GET /api/projects/[id]/versions", () => {
+  const PROJECT = { id: P1, company_id: BI_ID, name: "Smith Residence", folder: "current", head_version_number: 4 };
+  const ROWS = [
+    { id: V4, version_number: 4, parent_version_id: V2, kind: "save", label: "from v2", author_name: "Tommy", created_at: CREATED_AT, schema_version: 24 },
+    { id: V3, version_number: 3, parent_version_id: V2, kind: "rename", label: null, author_name: "Virgil", created_at: CREATED_AT, schema_version: 24 },
+    { id: V2, version_number: 2, parent_version_id: V1, kind: "save", label: null, author_name: "M", created_at: CREATED_AT, schema_version: 23 },
+    { id: V1, version_number: 1, parent_version_id: null, kind: "save", label: null, author_name: "M", created_at: CREATED_AT, schema_version: 22 },
+  ];
+  const isRenameNames = (call: Call) => call.ops.some(([op, args]) => op === "eq" && args[0] === "kind");
+
+  const standard = (over: { names?: Reply; versions?: Reply; project?: Reply } = {}) =>
+    fakeDb((call) => {
+      if (call.name === "projects") return over.project ?? { data: PROJECT };
+      if (call.name === "companies") return { data: { name: "Building Integrity" } };
+      if (call.name === "project_versions" && isRenameNames(call)) return over.names ?? { data: [{ id: V3, project_name: "Smith Residence" }] };
+      if (call.name === "project_versions") return over.versions ?? { data: ROWS };
+      return {};
+    });
+
+  it("returns every version newest first with author, time, kind, label and schema version", async () => {
+    const { db } = standard();
+    const result = await listVersions(db, P1);
+    expect(result).toMatchObject({ projectId: P1, companyId: BI_ID, companyName: "Building Integrity", projectName: "Smith Residence", folder: "current", headVersionNumber: 4, notListedCount: 0 });
+    expect(result.versions).toEqual([
+      { versionId: V4, versionNumber: 4, parentVersionId: V2, parentVersionNumber: 2, kind: "save", label: "from v2", authorName: "Tommy", createdAt: CREATED_AT, schemaVersion: 24, renamedTo: null },
+      { versionId: V3, versionNumber: 3, parentVersionId: V2, parentVersionNumber: 2, kind: "rename", label: null, authorName: "Virgil", createdAt: CREATED_AT, schemaVersion: 24, renamedTo: "Smith Residence" },
+      { versionId: V2, versionNumber: 2, parentVersionId: V1, parentVersionNumber: 1, kind: "save", label: null, authorName: "M", createdAt: CREATED_AT, schemaVersion: 23, renamedTo: null },
+      { versionId: V1, versionNumber: 1, parentVersionId: null, parentVersionNumber: null, kind: "save", label: null, authorName: "M", createdAt: CREATED_AT, schemaVersion: 22, renamedTo: null },
+    ]);
+  });
+
+  it("NEVER selects document: the list names its columns, and the rename-name read extracts one key from rename rows only", async () => {
+    const { db, calls } = standard();
+    await listVersions(db, P1);
+    const versionCalls = calls.filter((c) => c.name === "project_versions");
+    expect(versionCalls).toHaveLength(2);
+    const [list, names] = [versionCalls.find((c) => !isRenameNames(c))!, versionCalls.find(isRenameNames)!];
+    const listColumns = String(opArgs(list, "select")?.[0]).split(",").map((c) => c.trim());
+    expect(listColumns).toEqual(["id", "version_number", "parent_version_id", "kind", "label", "author_name", "created_at", "schema_version"]);
+    expect(VERSION_LIST_COLUMNS).not.toMatch(/document/);
+    expect(opArgs(list, "eq")).toEqual(["project_id", P1]);
+    expect(opArgs(list, "order")).toEqual(["version_number", { ascending: false }]);
+    const nameColumns = String(opArgs(names, "select")?.[0]).split(",").map((c) => c.trim());
+    expect(nameColumns).toEqual(["id", "project_name:document->state->>projectName"]);
+    expect(names.ops.filter(([op]) => op === "eq").map(([, a]) => a)).toEqual([["project_id", P1], ["kind", "rename"]]);
+    // Nothing filters with a spliced string built from the path id.
+    expect(calls.some((c) => c.ops.some(([op]) => op === "or"))).toBe(false);
+  });
+
+  it("makes no rename-name read when there are no renames", async () => {
+    const { db, calls } = standard({ versions: { data: ROWS.filter((r) => r.kind === "save") } });
+    await listVersions(db, P1);
+    expect(calls.filter((c) => c.name === "project_versions")).toHaveLength(1);
+  });
+
+  it("a failing rename-name read leaves the list standing, with the rename's name as a visible gap", async () => {
+    const { db } = standard({ names: { error: { code: "XX000", message: "boom" } } });
+    const result = await listVersions(db, P1);
+    expect(result.versions.find((v) => v.kind === "rename")?.renamedTo).toBeNull();
+    expect(result.versions).toHaveLength(4);
+  });
+
+  it("says how many versions are not listed when the API row cap cut the list short", async () => {
+    const { db } = standard({ project: { data: { ...PROJECT, head_version_number: 1003 } }, versions: { data: ROWS.slice(0, 2).map((r, i) => ({ ...r, version_number: 1003 - i })) } });
+    const result = await listVersions(db, P1);
+    expect(result).toMatchObject({ headVersionNumber: 1003, notListedCount: 1001 });
+  });
+
+  it("a save landing between the two reads makes the newest row the head, not a negative gap", async () => {
+    const { db } = standard({ project: { data: { ...PROJECT, head_version_number: 3 } } });
+    await expect(listVersions(db, P1)).resolves.toMatchObject({ headVersionNumber: 4, notListedCount: 0 });
+  });
+
+  it("unreadable, nonexistent and malformed are the same 404, and malformed never reaches the database", async () => {
+    const none = fakeDb(() => ({ data: null }));
+    const a = await rejection(listVersions(none.db, P1));
+    const refused = fakeDb(() => ({ error: { code: "42501", message: "permission denied" } }));
+    const b = await rejection(listVersions(refused.db, P1));
+    const malformed = fakeDb(() => ({}));
+    const c = await rejection(listVersions(malformed.db, `${P1},and(id.neq.0)`));
+    for (const e of [a, b, c]) expect(e).toMatchObject({ status: 404, message: PROJECT_NOT_FOUND_MESSAGE });
+    expect(malformed.calls).toHaveLength(0);
+  });
+});
+
+describe("renameProject — POST /api/projects/[id]/rename", () => {
+  const renamed = () =>
+    fakeDb((call) => (call.kind === "rpc" ? { data: { version_id: V4, version_number: 8, created_at: CREATED_AT } } : {}));
+
+  it("calls rename_project once with the trimmed name, and reports the version it copied", async () => {
+    const { db, calls } = renamed();
+    await expect(renameProject(db, P1, { name: "  Smith Residence \t" })).resolves.toEqual({
+      projectId: P1,
+      name: "Smith Residence",
+      versionId: V4,
+      versionNumber: 8,
+      createdAt: CREATED_AT,
+      renamedFromVersionNumber: 7,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ kind: "rpc", name: "rename_project", args: { p_project_id: P1, p_name: "Smith Residence" }, terminal: "single" });
+    // Never a row-only rename: a direct update of projects.name would be undone by the next save.
+    expect(calls.some((c) => c.name === "projects")).toBe(false);
+  });
+
+  it("refuses an empty, blank, non-string or over-200-character name before touching the database", async () => {
+    for (const body of [{}, { name: "" }, { name: "   " }, { name: 42 }, { name: "n".repeat(201) }]) {
+      const { db, calls } = renamed();
+      expect(await rejection(renameProject(db, P1, body))).toMatchObject({ status: 400, message: NAME_LENGTH_MESSAGE });
+      expect(calls).toHaveLength(0);
+    }
+    const { db } = renamed();
+    await expect(renameProject(db, P1, { name: "n".repeat(200) })).resolves.toMatchObject({ versionNumber: 8 });
+    // Counted as code points, as char_length counts them.
+    await expect(renameProject(renamed().db, P1, { name: "🏠".repeat(200) })).resolves.toMatchObject({ versionNumber: 8 });
+  });
+
+  it("a malformed path id is a 404 that never reaches the database", async () => {
+    for (const id of MALFORMED_IDS) {
+      const { db, calls } = renamed();
+      expect(await rejection(renameProject(db, id, { name: "Smith" }))).toMatchObject({ status: 404, message: RENAME_NOT_FOUND_MESSAGE });
+      expect(calls).toHaveLength(0);
+    }
+  });
+
+  it("another company's project (42501) reads the same as a missing one", async () => {
+    const { db } = fakeDb(() => ({ error: { code: "42501", message: "project not found, or you cannot save to it" } }));
+    expect(await rejection(renameProject(db, P1, { name: "Frank's Now" }))).toMatchObject({ status: 404, message: RENAME_NOT_FOUND_MESSAGE });
+  });
+
+  it("maps the database's own name-length refusal (22023) to the same 400", async () => {
+    const { db } = fakeDb(() => ({ error: { code: "22023", message: "a project name must be 1 to 200 characters" } }));
+    expect(await rejection(renameProject(db, P1, { name: "ok" }))).toMatchObject({ status: 400, message: NAME_LENGTH_MESSAGE });
+  });
+});
+
+describe("mapProjectDbError — 2C operations", () => {
+  it("history and rename give 404 for 42501, 22P02 and PGRST116, with their own messages", () => {
+    for (const code of ["42501", "22P02", "PGRST116"]) {
+      expect(mapProjectDbError({ code }, "history")).toMatchObject({ status: 404, message: PROJECT_NOT_FOUND_MESSAGE });
+      expect(mapProjectDbError({ code }, "rename")).toMatchObject({ status: 404, message: RENAME_NOT_FOUND_MESSAGE });
+    }
+  });
+
+  it("22023 is only a rename's name-length refusal; elsewhere it stays unmapped", () => {
+    expect(mapProjectDbError({ code: "22023" }, "rename")).toMatchObject({ status: 400 });
+    expect(mapProjectDbError({ code: "22023" }, "save")).toBeNull();
+  });
+
+  it("leaves 2B's mappings as they were", () => {
+    expect(mapProjectDbError({ code: "42501" }, "read")).toMatchObject({ status: 404, message: VERSION_NOT_FOUND_MESSAGE });
+    expect(mapProjectDbError({ code: "42501" }, "move")).toMatchObject({ status: 404, message: PROJECT_NOT_FOUND_MESSAGE });
+  });
+});
+
 describe("the project routes", () => {
   const apiDir = join(dirname(fileURLToPath(import.meta.url)), "..", "api", "projects");
   const files = (dir: string): string[] =>
@@ -515,11 +678,25 @@ describe("the project routes", () => {
       return statSync(path).isDirectory() ? files(path) : [path];
     });
 
-  it("exist for 2B, and not for the 2C/2D routes", () => {
+  it("exist for 2B and 2C (version list, rename), and not for 2D's backup", () => {
     const routes = files(apiDir).map((p) => p.slice(apiDir.length).replace(/\\/g, "/"));
-    expect(routes.sort()).toEqual(["/[id]/route.ts", "/[id]/versions/[versionId]/route.ts", "/[id]/versions/route.ts", "/route.ts"]);
+    expect(routes.sort()).toEqual([
+      "/[id]/rename/route.ts",
+      "/[id]/route.ts",
+      "/[id]/versions/[versionId]/route.ts",
+      "/[id]/versions/route.ts",
+      "/route.ts",
+    ]);
     const versions = readFileSync(join(apiDir, "[id]", "versions", "route.ts"), "utf8");
-    expect(versions).not.toMatch(/export async function GET/);
+    expect(versions).toMatch(/export async function GET/);
+    expect(versions).toMatch(/export async function POST/);
+    const rename = readFileSync(join(apiDir, "[id]", "rename", "route.ts"), "utf8");
+    expect(rename).toMatch(/export async function POST/);
+    expect(rename).not.toMatch(/export async function (GET|PATCH|DELETE)/);
+  });
+
+  it("have no DELETE anywhere (decision 13)", () => {
+    for (const path of files(apiDir)) expect(readFileSync(path, "utf8"), path).not.toMatch(/export async function DELETE/);
   });
 
   it("never import the admin (service-role) client", () => {

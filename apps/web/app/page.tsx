@@ -1610,6 +1610,7 @@ export default function LayoutEditor() {
     readDocumentSession,
     dispatch: dispatchDocumentSession,
     editorProjectName: projectName,
+    setEditorProjectName: setProjectName,
     buildProjectFile: () => serializeProject(buildProjectState()),
     applyCloudState: (state) => {
       // An open replaces the design exactly as a Load does, so a stale Load

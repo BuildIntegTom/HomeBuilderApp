@@ -613,7 +613,7 @@ Tommy has seen and agreed this. **Each stage is usable alone**, which is the poi
 
 0. **Title-block save date (no backend required).** The local-file and never-saved rows of the date table above: read `ProjectFile.savedAt`, stop calling `new Date()` at render. **Numbered zero because it needs nothing from any other stage and fixes the defect for every user the app currently has.** The cloud row follows in Stage 2. **Shipped 2026-09-13** (`titleBlockDate.ts`). Its fixed cloud-then-local precedence is replaced by the last-save-wins rule in Stage 2B (see the Stage 2 plan).
 1. **Accounts and companies.** Sign in/out, invites, memberships, default company, company admin, **and the always-visible acting-as switcher including the Seed toggle**. The app gains a real identity and nothing else changes. *(Usable alone: nothing to save yet, but the top-bar sign-in Tommy described exists and works.)*
-2. **Cloud projects and versions.** The three folders, save-as-new-version, the version list, open-from-cloud, the divergence notice (11), and the cloud row of the date table. Local save/load untouched alongside it. *(This is the stage that delivers Tommy's actual sentence — "reachable to another Member on any computer where they can log in.")* **Planned 2026-09-13. 2A BUILT and applied to live 2026-09-14; 2B BUILT (not yet deployed; gated on the Stage 1 ordinary-account check); 2C and 2D not built — see "Stage 2 plan — Cloud projects and versions" below, sub-stages 2A–2D, and its Open Items.**
+2. **Cloud projects and versions.** The three folders, save-as-new-version, the version list, open-from-cloud, the divergence notice (11), and the cloud row of the date table. Local save/load untouched alongside it. *(This is the stage that delivers Tommy's actual sentence — "reachable to another Member on any computer where they can log in.")* **Planned 2026-09-13. 2A BUILT and applied to live 2026-09-14; 2B BUILT, DEPLOYED and hand-tested live 2026-09-14 (as an ordinary member M and a Rare Forms member R: save and open across windows, company isolation, the divergence notice, the two-tab refusal); 2C BUILT 2026-09-14 on branch `stage2c-version-history` (not merged or deployed); 2D not built — see "Stage 2 plan — Cloud projects and versions" below, sub-stages 2A–2D, and its Open Items.**
 3. **Collaboration.** `collaborators`, invitations, requests, shared access to one project (24-26). Supersedes the older "in-app inbox" line in the Handoff section above — this *is* the handoff mechanism. **It is also what makes the "edit an existing Seed project" case work**, so it is a prerequisite for Stage 4 being coherent rather than an independent feature.
 4. **Consortium browsing.** Acting as the Seed Collaborative, the cross-company read layer, the cost redactor, the export restrictions (19-23). **The redactor is the highest-risk single piece of the whole design** and deliberately does not ship before there is anything to browse.
 5. **Platform admin.** Cross-company visibility, permanent delete, full backup, and the case-by-case departing-company judgement (28).
@@ -622,7 +622,7 @@ Backups (29) ride with the stage that makes them meaningful: company backup with
 
 **Flags check: clean, and confirmed rather than assumed.** This section introduces **no real-world building values at all** — no fastener spacing, no load, no density, no dimension, no cost figure. No `CatalogValue`, `CatalogRange`, or `PanelStructuralStatus` is in scope, and `data.ts` is not touched. Nothing new reaches the Review Log. **It does touch the `pending-BI-confirmation` convention in exactly one indirect way, and only in the direction of strengthening it:** the redaction rule adopts the same principle the flag convention exists for — a plausible substituted number (a defaulted price modifier shown to a browsing company) is worse than a visible gap, for the same reason a researched value marked `confirmed` is worse than one marked pending. Any dollar figure this work causes to be *displayed* is an existing catalog value, still carrying whatever status it already has. The coder re-runs the 6-point check against the actual diff.
 
-### Stage 2 plan — Cloud projects and versions (2026-09-13) — APPROVED BY TOMMY 2026-09-13 (all Open Item defaults accepted) — **2A BUILT and applied to live 2026-09-14** (0006 + 0007, every post-flight check matched); **2B BUILT (not yet deployed; gated on the Stage 1 ordinary-account check)**; 2C, 2D not built
+### Stage 2 plan — Cloud projects and versions (2026-09-13) — APPROVED BY TOMMY 2026-09-13 (all Open Item defaults accepted) — **2A BUILT and applied to live 2026-09-14** (0006 + 0007, every post-flight check matched); **2B BUILT, DEPLOYED and hand-tested live 2026-09-14 (as an ordinary member M and a Rare Forms member R: save and open across windows, company isolation, the divergence notice, the two-tab refusal)**; **2C BUILT 2026-09-14 (branch `stage2c-version-history`, not merged or deployed)**; 2D not built
 
 Provenance: Tommy approved starting Stage 2 on 2026-09-13 and asked to review the plan before any code is written. This plan builds on what is actually live, which was read directly rather than assumed:
 - Stage 1 as deployed: `supabase/migrations/0001`–`0005`, `seed.sql`, `stage1_rls.test.sql`, `serverSession.ts`, `actingAs.ts`, `AuthProvider.tsx` and the `api/` routes.
@@ -780,6 +780,12 @@ The editor holds one piece of new client state, `cloudContext`. It is either `nu
 - **Name sync, per the decided rule.** Every save sets `projects.name` from the document (trigger 2). The editor's existing project-name field *is* the name.
   - **⚠ Renaming in the tree is `rename_project`: it appends a version.** A row-only rename would be reverted by the very next save, because the row takes its name from the document. Appending a version is the only reading under which both halves of the decision ("row follows document" and "rename writes into the next version") hold (Open Item).
   - If the renamed project is open in your own editor, the client also updates its name field. Base moves to the rename version only if base was head; otherwise base stays put and the notice will explain on your next save.
+  - *(As built in 2C.)* **The title-block date moves with base, not with the rename.**
+    - When base was head, the rename version is exactly base with a new name, so the date becomes its `created_at`, as for a save.
+    - When base was not head (an older version was opened, or a colleague saved meanwhile), the rename copied someone else's head, not the design on screen. **The date stays**, because this rename did not save the design on screen. The name field still takes the new name, so the next save keeps it.
+    - "Base was head" is decided by number: a rename's parent is always its number − 1, because `rename_project` copies the head under the project-row lock.
+    - A rename whose answer lands after the design was replaced (the generation moved) writes nothing, not even the name field.
+    - Save to cloud is disabled while a rename is in flight, so a save cannot name a base that the rename is about to move.
   - Past versions keep their old name, so a sheet printed from v3 shows v3's name. That is correct, as decided.
 - **What is stored:** `serializeProject(state)` unchanged, cost fields included. This is your own company's project, and nothing crosses a company line in Stage 2.
 
@@ -801,6 +807,13 @@ The editor holds one piece of new client state, `cloudContext`. It is either `nu
 - A stale tab **saving** an older-format document is accepted. It is stored with its own `schema_version`, and the current app opens it via the one-back migration.
 - *(As built in 2B.)* **Open is head-only, but the list can be stale.** If a newer version was saved after the folder list loaded, the open still proceeds and a notice says: "A newer version (v9) was saved after this list loaded. You opened v7." It names no one, because the newer save may have been your own, in another tab.
 - *(As built in 2B.)* **An open whose answer arrives after the design was replaced is not applied.** If a Load, another Open or a Save as new replaced the design while the version was downloading, the document is not put on screen, and the note says: "Smith House wasn't opened: the design on screen was replaced while it was loading. Open it again if you still want it."
+- *(As built in 2C.)* **Opening any version.** Version history's Open and the tree's Open are one code path (`openVersion` in `useCloudProjects.tsx`). It has the same generation guard, the same `cloud-open` date writer (the version's `created_at`), the same schema outcomes, and ignores role in the same way.
+  - **Base becomes the version opened.** So **the next Save to cloud saves a new version whose parent is that older version.** The database reports that save as diverged; nothing is overwritten and nothing is blocked.
+  - Opening a version older than the head leaves a notice that says what the next save will do, before it happens: "You opened version 3 of Smith House, saved by Virgil on Sep 12, 2026, 2:14 pm. The latest is version 7. Save to cloud will add a new version that starts from version 3; versions 4–7 stay exactly as they are."
+  - `cloudContext` gains `latestKnownVersionNumber`: the head seen when base was set. It lets the save notice tell "you started from an older version" apart from "someone saved while you had it open" (see the divergence notice).
+  - **Out-of-window versions** carry a badge in the list and offer **Download this version's file** instead of Open. That means older than current − 1, newer than current, or with no recorded format.
+    - The download fetches the untouched stored document. It changes nothing on screen, so it writes no date.
+    - A newer-format version gets the download too. 2B's open refusal for it offers none; the list's badge says to reload.
 
 #### The divergence notice (11)
 
@@ -813,7 +826,13 @@ The editor holds one piece of new client state, `cloudContext`. It is either `nu
     - An intervening rename that this save set back. One version: "…1 other version was saved: version 7 by Virgil, 2:14 pm, a rename to 'Smith Residence'. Your save set the name back to 'Smith House'. You started from version 6. Both are kept; nothing was overwritten." More than one: "…3 other versions were saved, the latest by Virgil at 2:31 pm, including a rename to 'Smith Residence'. Your save set the name back to 'Smith House'. …" A rename the save kept is not mentioned. An empty name prints as '(untitled)'.
     - If the intervening rows could not be read back, the count still comes from the numbers, with no author: "While you had this project open, 2 other versions were saved. You started from version 6. Every version is kept; nothing was overwritten."
     - With no divergence, the notice is just "Saved as version 5."
-  - **The [Open version history] link arrives with 2C.** 2B's notice has no link, because there is no list to open.
+  - *(As built in 2C.)* **[Open version history]** is a button on every diverged save notice, on the older-version open notice, and on the rename notice.
+  - *(As built in 2C.)* **A save that started from an older version opened on purpose** must not say "while you had this project open", because those versions already existed when it was opened. ("Older" here means base is older than the head seen at open.)
+    - Its text: "Saved as version 8. It starts from version 3, which you opened, not from version 7, the latest when you opened it, so it doesn't build on versions 4–7. Every version is kept; nothing was overwritten."
+    - Versions saved after the open are then named the 2B way: "Since you opened it, 1 other version was saved: version 8 by Virgil, 2:20 pm."
+    - A set-back rename in either range reads: "Your save set the name back to 'Smith Residence' (version 6 had renamed it to 'Smith House')."
+    - "Both are kept" only when there is exactly one other version.
+    - When base was the head at open, the 2B texts above are unchanged.
   - **A save whose answer no longer describes the design on screen** is still reported as saved, never as if the design on screen were that version:
     - The design was replaced while it was in flight (a Load, an Open, a Save as new): "Saved as version 1 of Smith House in Building Integrity › Current Projects. The design on screen was replaced while that save was in progress, so this editor is not attached to that project; the design you see now was not changed."
     - The design was not replaced, but a newer save from this editor had already moved the base on: "Saved as version 4, but a newer save from this editor had already moved on; your editor stays on version 5."
@@ -855,7 +874,7 @@ In both cases the sheet shows a confident, wrong date, which is exactly the defe
 | **Load Project** (local file) | that file's `ProjectFile.savedAt` | `local-file` |
 | **Save Project** (local download) | the `savedAt` just written into the file | `local-file` |
 | **Open from cloud** (any version) | that version's `created_at` | `cloud-version` |
-| **Save to cloud** / **Save as new cloud project** / **Rename** of the project open in your editor | the new version's `created_at` **as returned by the database**, never the browser clock | `cloud-version` |
+| **Save to cloud** / **Save as new cloud project** / **Rename** of the project open in your editor *(2C: only when base was head; see "Name sync")* | the new version's `created_at` **as returned by the database**, never the browser clock | `cloud-version` |
 
 - **Precedence disappears.** Whichever writer ran last has already overwritten the value, so the resolver has nothing to rank.
 - **The resolver's interface changes in Stage 2 (2B)**, to roughly `resolveTitleBlockDate({ lastSave, now })`. It returns `lastSave.savedAt` with its `source`, or `now` with source `today`. Stage 0's tests for the timestamp parsing and the today fallback carry over. Its cloud-over-local precedence test is replaced by two regression tests, one for each break above.
@@ -920,6 +939,14 @@ The notes behind those menu items:
 - **Version history** is a `StickyNote`, newest first.
   - Each row: number, "Saved" or "Renamed to '…'", author name, date and time, label.
   - Markers for **latest** and **you started from this one**, the out-of-window badge where it applies, and **Open**.
+  - *(As built in 2C.)* Each row prints:
+    - the author, and the calendar date **and** time ("Virgil · Sep 12, 2026, 2:14 pm");
+    - the note, if any;
+    - "started from v3", when a save's parent is not the version just before it.
+  - *(As built in 2C.)* Every row is listed. A `kind = 'rename'` row is labelled, never skipped or collapsed (`supabase/README.md`: `kind` is not proof that only the name changed). A rename whose name could not be read back says just "Renamed".
+  - *(As built in 2C.)* It is reached three ways: **Versions** on each tree row; Project ▾ → **Version history** (inside the note, not on the bar) while a cloud project is open; and a notice's [Open version history].
+  - *(As built in 2C.)* **Rename** on a tree row opens an inline name field. A blank name is refused in words without a request, and an unchanged name sends nothing.
+  - *(As built in 2C.)* If the API's row cap cuts the list short, the summary line says how many older versions are not listed. The cap is Supabase's `max_rows`; confirm its value in the dashboard, not from this log.
 - **Download company backup…** lives in the account control's company-admin section, beside the people list and invite form. It is not in Project ▾, because it is about the company rather than this file.
 - **No new top-bar element.** The bar was measured with 34px to spare at 768px (see "Tommy's decisions, 2026-09-13"), and adding to it re-creates the overflow bug. ⚠ See Open Items.
 
@@ -935,8 +962,8 @@ New routes live under `apps/web/app/api/projects/` and follow Stage 1's conventi
 | `GET /api/projects?folder=` | Lists the verified acting-as company's projects. No `document`. *(As built in 2B.)* Each row also carries its head version's id and author name, from a second query that selects named columns only. That query's `or=(and(...))` filter is built only from values the database just returned, never from request input. Open is head-only, so the row's head version id is what Open requests. |
 | `POST /api/projects` | `{ expectedCompanyId, folder, label?, document }` → `create_project`. Returns 409 on acting-as mismatch, 403 on a consortium entitlement. |
 | `PATCH /api/projects/[id]` | `{ folder }`. Zero rows → 404. |
-| `POST /api/projects/[id]/rename` | `{ name }` → `rename_project`. |
-| `GET /api/projects/[id]/versions` | Version metadata only. |
+| `POST /api/projects/[id]/rename` | `{ name }` → `rename_project`. *(As built in 2C.)* The name is trimmed and must be 1–200 code points (as `char_length` counts), checked before any query. Returns the new version plus `renamedFromVersionNumber` (always its number − 1). A project you cannot write, a missing one and a malformed id are the same 404: "That project doesn't exist, or you can't rename it. Nothing was changed." The database's 22023 is a 400. |
+| `GET /api/projects/[id]/versions` | Version metadata only. *(As built in 2C.)* Reads the project row first; unreadable, nonexistent and malformed are one 404. Then named columns only, newest first: id, number, parent, kind, label, author name, `created_at`, schema version. **`document` is never selected.** A rename's name lives only in its document, so a second read extracts `document->state->>projectName` **for `kind = 'rename'` rows only**, and no save's document is read to draw the list. If that read fails, the row says "Renamed" with no name. Also returns `notListedCount` = head − rows returned. |
 | `POST /api/projects/[id]/versions` | `{ parentVersionId, label?, document }` → `save_project_version`. Returns the version, plus `diverged` and the intervening versions' number, author and time. |
 | `GET /api/projects/[id]/versions/[versionId]` | One version with its document. Unreadable and nonexistent are the same 404. |
 | `GET /api/companies/[id]/backup?after=&limit=` | Paged versions with documents. Route-gated to company admin or platform admin via `requireEntitlement`. |
@@ -965,6 +992,7 @@ The routes check only that `document` is an object with an integer `schemaVersio
 - **2C — Version history and rename.**
   - Contents: the version history note, opening any version, the out-of-window badge and raw download, and rename from the tree.
   - Usable alone: the list becomes the reconciliation UI (11).
+  - *(Built 2026-09-14 on branch `stage2c-version-history`; not merged or deployed. Hand-test step 8 is its acceptance.)*
 - **2D — Company backup.**
   - Contents: the backup route, browser zip assembly, manifest, and the account-control entry.
   - Usable alone: the USB stick.
@@ -1054,7 +1082,27 @@ Steps marked "as M" or "as R" must not be done as T; platform admin passes every
    - **5a. As M, not T:** start Save as new cloud project, and before it finishes, Load Project a local file. The editor shows the loaded file with its date and no cloud status line. The notice says the new project was saved but the design on screen was replaced. The next Save to cloud asks for a new project.
 6. **As M, not T, two tabs:** switch to The Seed Collaborative in tab B. In tab A, **without reloading it**, try Save as new cloud project and get the "changed in another tab, nothing saved" refusal. (A reloaded tab A already shows Seed and gets the consortium message instead.) In tab B, the cloud note says Seed's folders come later and offers no create. The project already open in tab A still saves to Building Integrity.
 7. **As M, not T:** move a project to Past Projects, confirm T sees the move and R still sees nothing. Confirm there is no delete control anywhere.
-8. **As M (2C):** rename from the tree. History shows "Renamed to …", and opening the previous version prints the old name.
+8. **(2C) As M, not T:**
+   - **8a.** Open from cloud → **Versions** on a project with at least three versions. Every row shows who saved it and the date and time. The newest is marked latest. There is no delete control.
+   - **8b.** Use the tree's **Open** on that project **immediately before** renaming, so your editor is on its latest version (if you opened it earlier and a colleague has saved since, the rename correctly keeps your older base and this step will look like a failure). Then **Rename** it from the tree.
+     - History shows "Renamed to …" as the newest row.
+     - The Project ▾ status line moves to that version.
+     - The title block shows the new name and today's date.
+   - **8c.** From history, **Open** a version from before the rename.
+     - The title block prints the **old name** and **that version's save date**.
+     - The notice names the latest version and says the next save starts from this one.
+   - **8d.** Save to cloud.
+     - **Expected, not a failure:** the version you opened in 8c is from before 8b's rename, so this save writes the **old name back**. The notice adds "Your save set the name back to '…' (version N had renamed it to '…')", and the tree's name reverts.
+     - The notice says the save starts from the version you opened and doesn't build on the later ones. It says nothing about versions saved "while you had this project open".
+     - Its **Open version history** button shows the new version marked latest, with "you started from this one" and "started from v…".
+     - In a second browser, as M, confirm both the rename and the new version are listed, and that both are attributed to M.
+   - **8e.** 8d's save moved your editor to the new latest version, so first go back: from **Version history**, **Open** a version older than the latest again (as in 8c). Then Open from cloud → **Rename**.
+     - The status line stays on that older version.
+     - The **date does not change** (Tommy, 2026-09-14: "as built is fine").
+     - The project name field takes the new name.
+     - The notice says your editor stays on that version.
+   - **8f.** If any version was saved before the last file-format bump (format older than the app's current − 1), check two things. Its row carries the older-app badge. **Download this version's file** hands over a JSON that plain Load Project refuses with the file-format message. If no such version exists yet, note that and skip.
+   - **8g. As R, not T:** in R's browser, open M's `/api/projects/<id>/versions` URL, then POST to `/api/projects/<id>/rename` from the console. With R signed in to the app in that tab, run for example: `fetch('/api/projects/<id>/rename', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"name":"x"}' }).then(r => r.status)`, so the console prints the status (otherwise it only shows in the Network tab). Both return 404 with no version data, and M's history gains no row.
 9. **As M (2D):** there is no backup entry. **T promotes M to company admin; as M, not T:** download the backup, open `manifest.json`, and load one version file with plain Load Project.
 10. **Signed out:** Save Project and Load Project behave exactly as today. The cloud group shows only the sign-in line.
 11. **As T:** revoke R's Rare Forms membership. R's tree empties on the next request. Revoke and restore a BI test member, and confirm their name stays on their versions.
@@ -1087,6 +1135,13 @@ Anything that behaves differently for M or R than for T is worth stopping on, ev
   - Acceptance: step 8; the out-of-window badge and raw download.
   - Edge cases: renaming the project open in your own editor while base ≠ head.
   - Not in scope: deleting versions.
+  - *(As built.)* Files:
+    - Routes: `api/projects/[id]/versions/route.ts` (GET added) and `api/projects/[id]/rename/route.ts`.
+    - Route logic: `cloud/projectRouteLogic.ts` (`listVersions`, `renameProject`).
+    - Editor state: `cloud/documentSession.ts` (`cloud-rename`, `renameOutcome`, `latestKnownVersionNumber`).
+    - Editor UI and wording: `cloud/versionHistory.ts`, `cloud/divergenceNotice.ts`, `cloud/useCloudProjects.tsx`.
+    - `TopBar.tsx`: one item inside the Project note. `page.tsx`: passes the name setter.
+    - **The edge case resolved as:** base stays, the date stays, and the name field takes the new name.
 - **2D.**
   - Scope: company backup.
   - Files: backup route, zip assembly, account-control entry.
@@ -1139,6 +1194,10 @@ Anything that behaves differently for M or R than for T is worth stopping on, ev
    - The document stores the existing `priceModifier` and catalog-derived values unchanged, each keeping whatever status it already carries.
    - The only new numbers are administrative: the 4 MB ceiling (flagged above as picked), backup page sizes, and layout measurements already recorded in the Top Bar section. Like `INVITE_EXPIRY_DAYS`, they are deliberately kept off the engineer's review list.
    - **The one principle this plan leans on is the flag convention's own:** "saved by an older app version" instead of a silently failed open, *(untitled)* instead of a substituted name, and a 409 instead of a silently retargeted save. A visible gap beats a plausible substitute.
+   - *(2C, re-run against its diff: clean.)*
+     - No building value is introduced, and no `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is touched. `data.ts` is untouched, and nothing new reaches the Review Log.
+     - The only new number is administrative: the 200-character name limit, which is 0006's own check (`PROJECT_NAME_MAX_CHARS`).
+     - Out-of-window versions, unreadable rename names, a blank author and a history cut short by the row cap are each shown as a visible gap, never a substitute.
 
 ---
 

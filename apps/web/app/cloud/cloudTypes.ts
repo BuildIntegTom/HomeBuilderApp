@@ -35,6 +35,16 @@ export interface CloudContext {
   baseVersionId: string;
   baseVersionNumber: number;
   baseCreatedAt: string;
+  /**
+   * Stage 2C. The newest version number this editor KNEW existed when base was
+   * last set: the project's head at the moment a version was opened, or the
+   * version a save or create just wrote. Equal to `baseVersionNumber` unless an
+   * older version was opened on purpose (from Version history, or a stale
+   * list). It is what lets the divergence notice tell "you started from an
+   * older version you chose" apart from "someone saved while you had it open",
+   * which 2B's wording would otherwise claim for both.
+   */
+  latestKnownVersionNumber: number;
 }
 
 /** `projects.name` is empty when the document had no name. Shown as a visible
@@ -117,6 +127,72 @@ export interface CloudVersionResponse {
   authorName: string;
   document: unknown;
 }
+
+export type CloudVersionKind = "save" | "rename";
+
+/** One row of Version history. Metadata only: the route never selects
+ * `document`. */
+export interface CloudVersionRow {
+  versionId: string;
+  versionNumber: number;
+  parentVersionId: string | null;
+  /** The parent's number when the parent is in this list, else null. */
+  parentVersionNumber: number | null;
+  kind: CloudVersionKind;
+  label: string | null;
+  authorName: string;
+  createdAt: string;
+  schemaVersion: number;
+  /**
+   * For a `kind = 'rename'` row, the name that version carries, or null when
+   * it could not be read back. Null on every save row.
+   *
+   * NOT PROOF THAT ONLY THE NAME CHANGED (supabase/README.md, "Two things the
+   * app stages must know"): a client inserting directly can mark any version
+   * `rename`. The history labels the row and never skips, collapses or
+   * trust-diffs it.
+   */
+  renamedTo: string | null;
+}
+
+export interface ListVersionsResponse {
+  projectId: string;
+  companyId: string;
+  companyName: string;
+  /** The project's current name (the head document's). */
+  projectName: string;
+  folder: CloudFolder;
+  headVersionNumber: number;
+  /** Newest first. */
+  versions: CloudVersionRow[];
+  /**
+   * How many of the project's versions this list does not include. Versions
+   * are numbered 1..head with no gaps (a single version cannot be deleted in
+   * Stage 2), so a shorter list means the API's row cap cut it off, and the
+   * history says so instead of looking complete.
+   */
+  notListedCount: number;
+}
+
+export interface RenameProjectResponse {
+  projectId: string;
+  /** The name as stored (trimmed). */
+  name: string;
+  versionId: string;
+  versionNumber: number;
+  createdAt: string;
+  /**
+   * The version the rename copied: always the head at the moment of the
+   * rename, which rename_project locks, so always `versionNumber - 1`.
+   */
+  renamedFromVersionNumber: number;
+}
+
+/** `rename_project`'s own check (0006): 1–200 characters after trimming. An
+ * administrative limit, not a building value. */
+export const PROJECT_NAME_MAX_CHARS = 200;
+
+export const NAME_LENGTH_MESSAGE = `A project name must be 1 to ${PROJECT_NAME_MAX_CHARS} characters. Nothing was changed.`;
 
 /**
  * The database refuses a document whose `document::text` exceeds 4 MB (0006,

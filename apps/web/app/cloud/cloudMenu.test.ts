@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { MFA_PENDING_MESSAGE, SIGN_IN_PROMPT, buildCloudMenu, cloudStatusLines, relativeSaveTime, type CloudMenuInput } from "./cloudMenu";
+import {
+  MFA_PENDING_MESSAGE,
+  SIGN_IN_PROMPT,
+  absoluteSaveTime,
+  buildCloudMenu,
+  cloudStatusLines,
+  relativeSaveTime,
+  type CloudMenuInput,
+} from "./cloudMenu";
 import { NO_COMPANY_MESSAGE, type CloudContext } from "./cloudTypes";
 
 const BI = { companyId: "bi", companyName: "Building Integrity", source: "membership" as const };
@@ -37,6 +45,7 @@ describe("buildCloudMenu", () => {
       saveToCloud: false,
       saveAsNew: false,
       openFromCloud: false,
+      versionHistory: false,
     });
     expect(NO_COMPANY_MESSAGE).toMatch(/aren't a member of any company/);
     expect(NO_COMPANY_MESSAGE).toMatch(/Save Project still downloads/);
@@ -55,7 +64,17 @@ describe("buildCloudMenu", () => {
       saveToCloud: true,
       saveAsNew: true,
       openFromCloud: true,
+      versionHistory: false,
     });
+  });
+
+  it("2C: Version history is offered only while a cloud project is open, whatever the switcher says", () => {
+    expect(buildCloudMenu({ ...base, cloudProjectOpen: true })).toMatchObject({ versionHistory: true });
+    expect(buildCloudMenu({ ...base, actingAs: SEED_CONSORTIUM, cloudProjectOpen: true })).toMatchObject({ versionHistory: true });
+    // Membership revoked mid-session: still offered, so its 404 can say so.
+    expect(buildCloudMenu({ ...base, actingAs: null, cloudProjectOpen: true })).toMatchObject({ versionHistory: true });
+    expect(buildCloudMenu({ ...base, mfaPending: true, cloudProjectOpen: true })).toMatchObject({ versionHistory: false });
+    expect(buildCloudMenu({ ...base, signedIn: false, actingAs: null, cloudProjectOpen: true })).toEqual({ kind: "sign-in-prompt", text: SIGN_IN_PROMPT });
   });
 
   it("a platform admin acting as any company can create there", () => {
@@ -86,6 +105,7 @@ describe("cloudStatusLines", () => {
     baseVersionId: "v7",
     baseVersionNumber: 7,
     baseCreatedAt: "2026-09-14T13:00:00+00:00",
+    latestKnownVersionNumber: 7,
   };
 
   it("is empty with no cloud project open", () => {
@@ -128,5 +148,18 @@ describe("relativeSaveTime", () => {
 
   it("says a date the strict parser rejects is not recorded", () => {
     expect(relativeSaveTime("2026-09-14 13:00:00", now)).toBe("date not recorded");
+  });
+});
+
+describe("absoluteSaveTime (2C: every history row says exactly when)", () => {
+  it("prints the calendar date AND the time, never only 'ago'", () => {
+    const text = absoluteSaveTime("2026-09-12T14:14:00.123456+00:00");
+    expect(text).toMatch(/2026/);
+    expect(text).toMatch(/\d{1,2}:\d{2}/);
+    expect(text).not.toMatch(/ago/);
+  });
+
+  it("says a date the strict parser rejects is not recorded, rather than substituting one", () => {
+    expect(absoluteSaveTime("not a date")).toBe("date not recorded");
   });
 });

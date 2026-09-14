@@ -6,9 +6,11 @@ import {
   createDocumentSessionMirror,
   documentSessionReducer,
   generationAfter,
+  renameOutcome,
   trackSignedInAccount,
   type CloudCreateAction,
   type CloudOpenAction,
+  type CloudRenameAction,
   type CloudSaveAction,
   type DocumentSession,
   type DocumentSessionAction,
@@ -23,7 +25,7 @@ const CLOUD_V4 = "2026-09-14T14:59:00.654321+00:00";
 const openV3 = (sentAtGeneration = 0): CloudOpenAction => ({
   type: "cloud-open",
   sentAtGeneration,
-  version: { projectId: "p1", companyId: "bi", companyName: "Building Integrity", folder: "current", versionId: "v3", versionNumber: 3, createdAt: CLOUD_V3 },
+  version: { projectId: "p1", companyId: "bi", companyName: "Building Integrity", folder: "current", versionId: "v3", versionNumber: 3, createdAt: CLOUD_V3, headVersionNumber: 3 },
 });
 
 const createP2 = (sentAtGeneration: number): CloudCreateAction => ({
@@ -44,6 +46,116 @@ const loadOld: DocumentSessionAction = { type: "local-load", savedAt: OLD_FILE_2
 
 const run = (...actions: DocumentSessionAction[]): DocumentSession => actions.reduce(documentSessionReducer, INITIAL_DOCUMENT_SESSION);
 const dateOf = (session: DocumentSession) => resolveTitleBlockDate({ lastSave: session.titleBlockSave, now: NOW });
+
+// --- Stage 2C fixtures ------------------------------------------------------
+const CLOUD_V3_OLD = "2026-08-01T08:00:00.000000+00:00";
+const CLOUD_RENAME = "2026-09-14T14:30:00.111111+00:00";
+
+/** v3 opened from Version history while v7 is the head. */
+const openOlderV3 = (sentAtGeneration = 0): CloudOpenAction => ({
+  type: "cloud-open",
+  sentAtGeneration,
+  version: { projectId: "p1", companyId: "bi", companyName: "Building Integrity", folder: "current", versionId: "v3", versionNumber: 3, createdAt: CLOUD_V3_OLD, headVersionNumber: 7 },
+});
+
+const renameTo = (sentAtGeneration: number, versionNumber: number, projectId = "p1"): CloudRenameAction => ({
+  type: "cloud-rename",
+  sentAtGeneration,
+  projectId,
+  result: { versionId: `v${versionNumber}`, versionNumber, createdAt: CLOUD_RENAME },
+});
+
+describe("2C: opening an older version goes through the same guard and date writer as Open", () => {
+  it("base becomes the OLD version, the date is its created_at, and the head it saw is remembered", () => {
+    const session = run(openOlderV3());
+    expect(session.cloudContext).toMatchObject({ projectId: "p1", baseVersionId: "v3", baseVersionNumber: 3, baseCreatedAt: CLOUD_V3_OLD, latestKnownVersionNumber: 7 });
+    expect(session.titleBlockSave).toEqual({ savedAt: CLOUD_V3_OLD, source: "cloud-version" });
+    expect(session.designGeneration).toBe(1);
+  });
+
+  it("the next Save to cloud names the old version as its parent, applies, and moves base to the new version", () => {
+    const opened = run(openOlderV3());
+    // The editor sends parentVersionId = cloudContext.baseVersionId.
+    expect(opened.cloudContext?.baseVersionId).toBe("v3");
+    const save = saveFrom(1, "v3", 8);
+    expect(answerIsCurrent(opened, save)).toBe(true);
+    const saved = documentSessionReducer(opened, save);
+    expect(saved.cloudContext).toMatchObject({ baseVersionId: "v8", baseVersionNumber: 8, latestKnownVersionNumber: 8 });
+    expect(saved.titleBlockSave).toEqual({ savedAt: CLOUD_V4, source: "cloud-version" });
+  });
+
+  it("an older-version open that lands after a Load writes nothing: no context, the file's date", () => {
+    const session = run(loadOld, openOlderV3(0));
+    expect(session.cloudContext).toBeNull();
+    expect(dateOf(session).date?.toISOString()).toBe(OLD_FILE_2025);
+  });
+
+  it("a head open never records a head older than the version itself", () => {
+    const stale: CloudOpenAction = { ...openV3(), version: { ...openV3().version, headVersionNumber: 2 } };
+    expect(run(stale).cloudContext?.latestKnownVersionNumber).toBe(3);
+  });
+
+  it("create sets latestKnown to v1", () => {
+    expect(run(createP2(0)).cloudContext?.latestKnownVersionNumber).toBe(1);
+  });
+});
+
+describe("2C: rename from the tree", () => {
+  it("renaming a project that is NOT open here changes nothing at all", () => {
+    const opened = run(openV3());
+    const action = renameTo(1, 9, "p2");
+    expect(renameOutcome(opened, action)).toBe("not-open-here");
+    expect(documentSessionReducer(opened, action)).toBe(opened);
+    expect(renameOutcome(INITIAL_DOCUMENT_SESSION, action)).toBe("not-open-here");
+  });
+
+  it("base WAS head: base moves to the rename version and the date becomes its created_at", () => {
+    const opened = run(openV3()); // v3, head 3
+    const action = renameTo(1, 4);
+    expect(renameOutcome(opened, action)).toBe("base-moved");
+    const renamed = documentSessionReducer(opened, action);
+    expect(renamed.cloudContext).toMatchObject({ baseVersionId: "v4", baseVersionNumber: 4, baseCreatedAt: CLOUD_RENAME, latestKnownVersionNumber: 4 });
+    expect(renamed.titleBlockSave).toEqual({ savedAt: CLOUD_RENAME, source: "cloud-version" });
+    expect(renamed.designGeneration).toBe(opened.designGeneration);
+  });
+
+  it("base was NOT head (the handoff's edge case): base stays put and the date does not move", () => {
+    const opened = run(openOlderV3()); // v3, head 7
+    const action = renameTo(1, 8);
+    expect(renameOutcome(opened, action)).toBe("base-stays");
+    const renamed = documentSessionReducer(opened, action);
+    expect(renamed).toBe(opened);
+    expect(renamed.cloudContext).toMatchObject({ baseVersionId: "v3", latestKnownVersionNumber: 7 });
+    expect(dateOf(renamed).date?.toISOString()).toBe(new Date(CLOUD_V3_OLD).toISOString());
+  });
+
+  it("base not head because a colleague saved meanwhile: base stays too", () => {
+    // v3 open as head; someone saved v4; the rename copies v4 into v5.
+    expect(renameOutcome(run(openV3()), renameTo(1, 5))).toBe("base-stays");
+  });
+
+  it("a late rename answer (the design was replaced in flight) writes nothing, even if the same project is open again", () => {
+    // Rename sent at generation 1; the project is then re-opened (generation 2).
+    const reopened = run(openV3(0), openV3(1));
+    const action = renameTo(1, 4);
+    expect(renameOutcome(reopened, action)).toBe("late");
+    expect(documentSessionReducer(reopened, action)).toBe(reopened);
+  });
+
+  it("a rename after a Load finds no project open here", () => {
+    const loaded = run(openV3(0), loadOld);
+    expect(renameOutcome(loaded, renameTo(1, 4))).toBe("not-open-here");
+    expect(documentSessionReducer(loaded, renameTo(1, 4))).toBe(loaded);
+  });
+
+  it("rename never moves the generation, and the mirror agrees with the reducer", () => {
+    expect(generationAfter(4, renameTo(4, 9))).toBe(4);
+    const actions: DocumentSessionAction[] = [openV3(0), renameTo(1, 4), saveFrom(1, "v4", 5), openOlderV3(1), renameTo(2, 9)];
+    const mirror = createDocumentSessionMirror();
+    for (const a of actions) mirror.apply(a);
+    expect(mirror.read()).toEqual(run(...actions));
+  });
+});
 
 describe("title-block date: last save wins (the two Stage 0 regressions)", () => {
   it("REGRESSION: open a cloud version, then Load an old local file -> the sheet shows that file's date", () => {
@@ -134,6 +246,7 @@ describe("documentSessionReducer", () => {
       baseVersionId: "v3",
       baseVersionNumber: 3,
       baseCreatedAt: CLOUD_V3,
+      latestKnownVersionNumber: 3,
     });
     expect(dateOf(session)).toEqual({ source: "cloud-version", date: new Date("2026-09-10T09:30:00.123Z") });
   });
