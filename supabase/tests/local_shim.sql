@@ -10,9 +10,14 @@
 -- Supabase's own definition of auth.uid() (read the `sub` claim out of
 -- `request.jwt.claims`) and only the auth.users columns this schema touches.
 --
--- What it does NOT reproduce: Supabase's GoTrue auth service, MFA factor
--- tables, email delivery, or the exact privileges Supabase grants by default.
--- A green run here proves the POLICY LOGIC, not the hosted configuration.
+-- What it DOES reproduce, since Stage 2: Supabase's default privileges on the
+-- public schema (see below), so grant assertions cannot pass vacuously.
+--
+-- What it does NOT reproduce: Supabase's GoTrue auth service, the full MFA
+-- factor table, email delivery, Supabase's own internal roles
+-- (supabase_auth_admin and friends), or any hosted setting beyond those
+-- default privileges. A green run here proves the POLICY LOGIC, not the hosted
+-- configuration.
 
 -- Roles are cluster-wide, not per-database, so this has to tolerate a second
 -- run against a second database on the same instance.
@@ -35,6 +40,21 @@ exception when duplicate_object then null;
 end $shim$;
 
 grant usage on schema public to anon, authenticated, service_role;
+
+-- Supabase's DEFAULT PRIVILEGES on the public schema, reproduced (added for
+-- Stage 2). On a hosted project, every table and function the `postgres` role
+-- creates in `public` is granted to anon, authenticated and service_role —
+-- ALL on tables, which includes TRUNCATE, REFERENCES and TRIGGER. Without this
+-- line a local run starts from Postgres's stricter defaults, so an assertion
+-- like "anon holds nothing on project_versions" passes whether or not the
+-- migration revoked anything. With it, the migration's revokes have to be real.
+--
+-- Must run BEFORE the migrations: default privileges apply to objects created
+-- afterwards, by the role that ran this (the local superuser, standing in for
+-- `postgres`).
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
 
 create schema if not exists auth;
 grant usage on schema auth to anon, authenticated, service_role;
