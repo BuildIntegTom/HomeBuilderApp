@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import StickyNote from "../StickyNote";
 import { clampMenuLeft } from "../topBarMenus";
+import { useCompanyBackup } from "../cloud/useCompanyBackup";
 import AccountPanel from "./AccountPanel";
 import SignInForm from "./SignInForm";
 import { useOptionalAuth } from "./AuthProvider";
@@ -39,6 +40,10 @@ export default function AccountControl() {
   const [fullscreen, setFullscreen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  // Stage 2D. Held here, not in AccountPanel: the note unmounts the panel when
+  // it closes, and closing it must not kill a backup in progress. Called before
+  // the no-provider early return below, so the hook order never changes.
+  const backup = useCompanyBackup(auth?.session.actingAsCompanyId ?? null);
 
   // Same rule as TopBar's own menus, from the same function: a note opened wide
   // and then the window narrowed must not be left anchored off the right edge.
@@ -182,7 +187,7 @@ export default function AccountControl() {
           </p>
         )}
         {switchError && <p className={styles.error}>{switchError}</p>}
-        {signedIn ? <AccountPanel /> : <SignInForm onDone={() => setOpen(false)} />}
+        {signedIn ? <AccountPanel backup={backup} /> :<SignInForm onDone={() => setOpen(false)} />}
       </StickyNote>
     </div>
   );

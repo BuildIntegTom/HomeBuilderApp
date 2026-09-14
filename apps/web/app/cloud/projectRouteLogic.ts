@@ -149,8 +149,11 @@ function readFolder(value: unknown, fallback?: CloudFolder): CloudFolder {
   return value;
 }
 
-/** 2C adds `history` (the version list) and `rename`. */
-type Operation = "list" | "create" | "save" | "move" | "read" | "history" | "rename";
+export const BACKUP_REFUSED_MESSAGE =
+  "Couldn't read this company's projects for the backup. Your access may have changed; reload the page and try again. No file was saved.";
+
+/** 2C adds `history` (the version list) and `rename`; 2D adds `backup`. */
+export type Operation = "list" | "create" | "save" | "move" | "read" | "history" | "rename" | "backup";
 
 /** The 404 each path-id operation gives, whatever the cause. */
 function notFoundFor(operation: Operation): ProjectRouteError {
@@ -171,10 +174,12 @@ export function mapProjectDbError(error: DbError, operation: Operation): Project
   switch (error.code) {
     case "22P02": // not a uuid (the routes check up front; this is the backstop)
     case "PGRST116": // .single() with no row
+      if (operation === "backup") return new ProjectRouteError(403, BACKUP_REFUSED_MESSAGE);
       if (operation === "list") return new ProjectRouteError(403, LIST_REFUSED_MESSAGE);
       if (operation === "create" || operation === "save") return new ProjectRouteError(400, INVALID_ID_MESSAGE);
       return notFoundFor(operation);
     case "42501":
+      if (operation === "backup") return new ProjectRouteError(403, BACKUP_REFUSED_MESSAGE);
       if (operation === "list") return new ProjectRouteError(403, LIST_REFUSED_MESSAGE);
       if (operation === "create") return new ProjectRouteError(403, "You can't create a project in that company. Nothing was saved.");
       if (operation === "save") return new ProjectRouteError(403, SAVE_ACCESS_LOST_MESSAGE);

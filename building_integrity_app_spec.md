@@ -613,7 +613,7 @@ Tommy has seen and agreed this. **Each stage is usable alone**, which is the poi
 
 0. **Title-block save date (no backend required).** The local-file and never-saved rows of the date table above: read `ProjectFile.savedAt`, stop calling `new Date()` at render. **Numbered zero because it needs nothing from any other stage and fixes the defect for every user the app currently has.** The cloud row follows in Stage 2. **Shipped 2026-09-13** (`titleBlockDate.ts`). Its fixed cloud-then-local precedence is replaced by the last-save-wins rule in Stage 2B (see the Stage 2 plan).
 1. **Accounts and companies.** Sign in/out, invites, memberships, default company, company admin, **and the always-visible acting-as switcher including the Seed toggle**. The app gains a real identity and nothing else changes. *(Usable alone: nothing to save yet, but the top-bar sign-in Tommy described exists and works.)*
-2. **Cloud projects and versions.** The three folders, save-as-new-version, the version list, open-from-cloud, the divergence notice (11), and the cloud row of the date table. Local save/load untouched alongside it. *(This is the stage that delivers Tommy's actual sentence — "reachable to another Member on any computer where they can log in.")* **Planned 2026-09-13. 2A BUILT and applied to live 2026-09-14; 2B BUILT, DEPLOYED and hand-tested live 2026-09-14 (as an ordinary member M and a Rare Forms member R: save and open across windows, company isolation, the divergence notice, the two-tab refusal); 2C BUILT 2026-09-14 on branch `stage2c-version-history` (not merged or deployed); 2D not built — see "Stage 2 plan — Cloud projects and versions" below, sub-stages 2A–2D, and its Open Items.**
+2. **Cloud projects and versions.** The three folders, save-as-new-version, the version list, open-from-cloud, the divergence notice (11), and the cloud row of the date table. Local save/load untouched alongside it. *(This is the stage that delivers Tommy's actual sentence — "reachable to another Member on any computer where they can log in.")* **Planned 2026-09-13. 2A BUILT and applied to live 2026-09-14; 2B BUILT, DEPLOYED and hand-tested live 2026-09-14 (as an ordinary member M and a Rare Forms member R: save and open across windows, company isolation, the divergence notice, the two-tab refusal); 2C BUILT, DEPLOYED and hand-tested live 2026-09-14 (steps 8a–8e matched; 8f had no out-of-window version to test, 8g skipped as already covered by the 2B cross-company check); 2D BUILT 2026-09-14 on branch `stage2d-company-backup` (not merged or deployed; approved by Tommy to go live once reviewed) — see "Stage 2 plan — Cloud projects and versions" below, sub-stages 2A–2D, and its Open Items.**
 3. **Collaboration.** `collaborators`, invitations, requests, shared access to one project (24-26). Supersedes the older "in-app inbox" line in the Handoff section above — this *is* the handoff mechanism. **It is also what makes the "edit an existing Seed project" case work**, so it is a prerequisite for Stage 4 being coherent rather than an independent feature.
 4. **Consortium browsing.** Acting as the Seed Collaborative, the cross-company read layer, the cost redactor, the export restrictions (19-23). **The redactor is the highest-risk single piece of the whole design** and deliberately does not ship before there is anything to browse.
 5. **Platform admin.** Cross-company visibility, permanent delete, full backup, and the case-by-case departing-company judgement (28).
@@ -622,7 +622,7 @@ Backups (29) ride with the stage that makes them meaningful: company backup with
 
 **Flags check: clean, and confirmed rather than assumed.** This section introduces **no real-world building values at all** — no fastener spacing, no load, no density, no dimension, no cost figure. No `CatalogValue`, `CatalogRange`, or `PanelStructuralStatus` is in scope, and `data.ts` is not touched. Nothing new reaches the Review Log. **It does touch the `pending-BI-confirmation` convention in exactly one indirect way, and only in the direction of strengthening it:** the redaction rule adopts the same principle the flag convention exists for — a plausible substituted number (a defaulted price modifier shown to a browsing company) is worse than a visible gap, for the same reason a researched value marked `confirmed` is worse than one marked pending. Any dollar figure this work causes to be *displayed* is an existing catalog value, still carrying whatever status it already has. The coder re-runs the 6-point check against the actual diff.
 
-### Stage 2 plan — Cloud projects and versions (2026-09-13) — APPROVED BY TOMMY 2026-09-13 (all Open Item defaults accepted) — **2A BUILT and applied to live 2026-09-14** (0006 + 0007, every post-flight check matched); **2B BUILT, DEPLOYED and hand-tested live 2026-09-14 (as an ordinary member M and a Rare Forms member R: save and open across windows, company isolation, the divergence notice, the two-tab refusal)**; **2C BUILT 2026-09-14 (branch `stage2c-version-history`, not merged or deployed)**; 2D not built
+### Stage 2 plan — Cloud projects and versions (2026-09-13) — APPROVED BY TOMMY 2026-09-13 (all Open Item defaults accepted) — **2A BUILT and applied to live 2026-09-14** (0006 + 0007, every post-flight check matched); **2B BUILT, DEPLOYED and hand-tested live 2026-09-14 (as an ordinary member M and a Rare Forms member R: save and open across windows, company isolation, the divergence notice, the two-tab refusal)**; **2C BUILT, DEPLOYED and hand-tested live 2026-09-14 (steps 8a–8e matched)**; **2D BUILT 2026-09-14 (branch `stage2d-company-backup`, not merged or deployed; Tommy approved putting it live once reviewed: "yes please lets make it live when you are done")**
 
 Provenance: Tommy approved starting Stage 2 on 2026-09-13 and asked to review the plan before any code is written. This plan builds on what is actually live, which was read directly rather than assumed:
 - Stage 1 as deployed: `supabase/migrations/0001`–`0005`, `seed.sql`, `stage1_rls.test.sql`, `serverSession.ts`, `actingAs.ts`, `AuthProvider.tsx` and the `api/` routes.
@@ -914,6 +914,37 @@ In both cases the sheet shows a confident, wrong date, which is exactly the defe
 
 **Honest limit, stated the way 23's export note is:** admin-only backup is a **convenience boundary, not a security one**. Any member can already open every version of their company's projects one at a time, so a determined member could script the same download. 29's real concern, a backup outranking the export rule by carrying other companies' work, cannot arise in Stage 2, and the test proves it.
 
+**As built in 2D (2026-09-14).**
+- **Who gets the entry, and whom the route accepts: the same people as the people list (`isAdminHere`).** That is a company admin of the acting-as company, or a platform admin acting as any company, because the policies let platform admins read every company. The entry is **Download company backup…** in the account panel, under the people list and invite form. Nothing is added to the top bar, which still fits at 360, 768 and 1200.
+- **The route checks the verified acting-as company, not `requireEntitlement`.** The company in the path must be the acting-as company, and the caller must be a company admin there (membership level `admin`) or a platform admin.
+  - This is narrower than the Routes table's `requireEntitlement`, because the acting-as company is itself resolved from the entitlements. (`requireEntitlement` keeps its one caller, `/api/acting-as`.)
+  - A different company in the path is a 409, as for a create: "You're now acting as … (changed in another tab). The backup stopped; no file was saved."
+  - An ordinary member, or someone acting through the consortium, gets 403. A malformed company id gets 404.
+- **Every `projects` read filters by `company_id`.** RLS lets a platform admin read every company's projects, so without the filter a platform admin's backup of one company would carry the others'. Checked on local PostgreSQL 17.4: a platform admin sees 3 projects unfiltered and 2 filtered.
+- **Paging.**
+  - Order: projects by id, then versions by number. `after` is `<project id>:<version number>` of the last version received, validated as a uuid and an integer. Every filter is `.eq()` or `.gt()`; nothing from the request is spliced into an `or=` string.
+  - Size: a page holds at most 50 versions (25 by default) and at most 4,000,000 bytes of JSON, and always at least one version.
+  - Reads: version metadata by named columns; documents one version at a time, so a page stops before the version that would take it over the budget.
+  - A single version over 4,400,000 bytes is sent without its document and marked `too-large`. 0006's 4 MB ceiling should make that unreachable.
+  - The first page also returns the project count, the server time (the manifest's `exportedAt`) and the exporting account.
+- **Saves during a backup.** A save on a project the backup has not finished is included. One on a project it has already passed is not ("as of when that project was read"). Nor is a project created mid-backup whose id sorts before the cursor.
+- **Zip: `fflate` 0.8.3, pinned exactly in `apps/web/package.json`.** It was already installed through `@types/three`, so the lock file gains one line. The browser compresses each file as it arrives and holds only the compressed chunks. The file is made only after the whole backup has succeeded.
+- **Files.** `projects/<folder>/<name-slug>--<project-id>/v0007--2026-09-13T1402Z.json`, each `JSON.stringify(document, null, 2)`, the same call Save Project makes.
+  - Key order is jsonb's rather than the original file's; `parseProjectFile` does not depend on it.
+  - Slugs are lower-case ASCII: accents are folded, anything else becomes a hyphen, the length is at most 60 characters, and an empty slug is "untitled". So a path has no Windows-forbidden character, trailing dot or space, or bare device name.
+  - The project id keeps same-named projects apart. A duplicate path would get "-2" rather than overwrite a file.
+  - A project renamed or moved during the backup keeps the directory it had when the backup reached it.
+- **Manifest keys are camelCase**, like `ProjectFile`'s:
+  - Top level: `format`, `formatVersion`, `company`, `exportedAt`, `exportedBy` (id, email, name), `appProjectFileVersion`, `projectCount`, `versionCount`, `outsideFileFormatWindowCount` and `notes`.
+  - Per version: `path`, `projectId`, `projectName`, `folder`, `ownership: "owned"`, `versionNumber`, `kind`, `label`, `authorName`, `createdAt`, `parentVersionId`, `schemaVersion`, `fileFormat`, `opensWithLoadProject` and `sha256`.
+- **Out-of-window versions** are included raw, with `opensWithLoadProject: false` and `fileFormat` set to `too-old`, `too-new` or `unreadable`. They are counted in `outsideFileFormatWindowCount`.
+- **Failure produces no file, never a partial one.**
+  - A page is retried twice on a network error or a 5xx, and not at all on a refusal.
+  - The backup stops, with a message naming the cause and "No file was saved; try again.", if a page still fails, if a version arrives marked `too-large` or `missing`, or if a project's version numbers are not 1 to head without gaps.
+  - So the manifest carries no error list: a zip that exists is complete.
+- **Progress and cancel.** The panel shows "Downloaded 37 versions from 3 of 12 projects (2.1 MB)…" and a **Cancel backup** button. The runner lives in `AccountControl`, so closing the Account note does not stop it. Switching company does, and says so.
+- **A version file loaded with Load Project dates its title block from its own `savedAt`, not from `createdAt`.** `savedAt` is the saving browser's clock, and a rename copies the previous version's. The manifest's notes say so. The files are left untouched, as the plan requires.
+
 #### UI — the Project ▾ menu, and nothing new on the bar
 
 The Project ▾ note (`TopBar.tsx`) gains groups. Existing items keep their exact labels and behaviour:
@@ -966,7 +997,7 @@ New routes live under `apps/web/app/api/projects/` and follow Stage 1's conventi
 | `GET /api/projects/[id]/versions` | Version metadata only. *(As built in 2C.)* Reads the project row first; unreadable, nonexistent and malformed are one 404. Then named columns only, newest first: id, number, parent, kind, label, author name, `created_at`, schema version. **`document` is never selected.** A rename's name lives only in its document, so a second read extracts `document->state->>projectName` **for `kind = 'rename'` rows only**, and no save's document is read to draw the list. If that read fails, the row says "Renamed" with no name. Also returns `notListedCount` = head − rows returned. |
 | `POST /api/projects/[id]/versions` | `{ parentVersionId, label?, document }` → `save_project_version`. Returns the version, plus `diverged` and the intervening versions' number, author and time. |
 | `GET /api/projects/[id]/versions/[versionId]` | One version with its document. Unreadable and nonexistent are the same 404. |
-| `GET /api/companies/[id]/backup?after=&limit=` | Paged versions with documents. Route-gated to company admin or platform admin via `requireEntitlement`. |
+| `GET /api/companies/[id]/backup?after=&limit=` | Paged versions with documents. Route-gated to company admin or platform admin. *(As built in 2D: gated on the verified acting-as company rather than `requireEntitlement`, and paged by project id then version number; see "Company backup".)* |
 
 The routes check only that `document` is an object with an integer `schemaVersion` and an object `state`. **No deep validation and no redaction on the server** (22).
 
@@ -992,10 +1023,11 @@ The routes check only that `document` is an object with an integer `schemaVersio
 - **2C — Version history and rename.**
   - Contents: the version history note, opening any version, the out-of-window badge and raw download, and rename from the tree.
   - Usable alone: the list becomes the reconciliation UI (11).
-  - *(Built 2026-09-14 on branch `stage2c-version-history`; not merged or deployed. Hand-test step 8 is its acceptance.)*
+  - *(Built and deployed 2026-09-14; hand-tested live 2026-09-14, steps 8a–8e matched. Hand-test step 8 is its acceptance.)*
 - **2D — Company backup.**
   - Contents: the backup route, browser zip assembly, manifest, and the account-control entry.
   - Usable alone: the USB stick.
+  - *(Built 2026-09-14 on branch `stage2d-company-backup`; not merged or deployed. Hand-test step 9 is its acceptance.)*
 
 #### Tests — `supabase/tests/stage2_rls.test.sql` (local or staging only, never the live project)
 
@@ -1103,7 +1135,12 @@ Steps marked "as M" or "as R" must not be done as T; platform admin passes every
      - The notice says your editor stays on that version.
    - **8f.** If any version was saved before the last file-format bump (format older than the app's current − 1), check two things. Its row carries the older-app badge. **Download this version's file** hands over a JSON that plain Load Project refuses with the file-format message. If no such version exists yet, note that and skip.
    - **8g. As R, not T:** in R's browser, open M's `/api/projects/<id>/versions` URL, then POST to `/api/projects/<id>/rename` from the console. With R signed in to the app in that tab, run for example: `fetch('/api/projects/<id>/rename', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"name":"x"}' }).then(r => r.status)`, so the console prints the status (otherwise it only shows in the Network tab). Both return 404 with no version data, and M's history gains no row.
-9. **As M (2D):** there is no backup entry. **T promotes M to company admin; as M, not T:** download the backup, open `manifest.json`, and load one version file with plain Load Project.
+9. **(2D) Company backup.** M must be an ordinary member of Building Integrity for 9d. *(Simplified in the 2D review: the earlier draft promoted M through the console and relied on remembering to demote them; cancel and retry are covered by unit tests and the Chrome harness instead.)*
+   - **9a. As T, acting as Building Integrity:** open Account ▾. Under the people list is "Building Integrity — backup". Press **Download company backup…**. When it finishes, the line reads "Backup saved as company-backup--building-integrity--….zip: N versions of M projects…", and the zip is in Downloads. A small backup can finish before the progress line is readable; that is fine.
+   - **9b. As T:** in File Explorer, right-click the zip, choose **Extract All**, and open `manifest.json` in Notepad. It names Building Integrity, and `exportedBy` shows T's email. Then Project ▾ → **Load Project**, and pick a file from the extracted `projects` folder whose manifest entry says `"opensWithLoadProject": true`. The design opens, and the title block shows that version's project name. Its date comes from the file's own `savedAt`, so it can differ from the manifest's `createdAt`; that is expected.
+   - **9c. As T:** open `/api/session` in the address bar and copy `actingAsCompanyId`. This is the Building Integrity id.
+   - **9d. As M, not T:** open Account ▾: there is no backup section. Open `/api/companies/<Building Integrity id>/backup` in the address bar. It shows `{"error":"Only a company admin of Building Integrity can download its backup."}` and no `versions`.
+   - **9e. As R, not T:** open Account ▾: there is no backup section. Open `/api/companies/<Building Integrity id>/backup` in the address bar. It shows the "You're now acting as Rare Forms (changed in another tab). The backup stopped; no file was saved." refusal and no `versions`.
 10. **Signed out:** Save Project and Load Project behave exactly as today. The cloud group shows only the sign-in line.
 11. **As T:** revoke R's Rare Forms membership. R's tree empties on the next request. Revoke and restore a BI test member, and confirm their name stays on their versions.
 12. **As `tommy.fieser@gmail.com`, not T** (signed in, no company membership today): Project ▾ shows the Cloud heading with the no-company line, and no cloud save or open item. Save Project and Load Project work.
@@ -1148,6 +1185,14 @@ Anything that behaves differently for M or R than for T is worth stopping on, ev
   - Acceptance: step 9; manifest fields as listed; files reload through Load Project.
   - Edge cases: a company with zero projects; a single page near the body limit.
   - Not in scope: platform backup, granted projects, restore.
+  - *(As built.)* Files:
+    - Route: `api/companies/[id]/backup/route.ts`.
+    - Route logic: `cloud/backupRouteLogic.ts` (`checkBackupAccess`, `readBackupPage`). `cloud/projectRouteLogic.ts` gains the `backup` error mapping.
+    - Browser: `cloud/companyBackup.ts` (file names, manifest, completeness, the page loop) and `cloud/backupZip.ts` (fflate).
+    - UI: `cloud/useCompanyBackup.ts`, held by `auth/AccountControl.tsx`, and `cloud/CompanyBackupSection.tsx`, rendered by `auth/AccountPanel.tsx`.
+    - `cloud/cloudTypes.ts`: the page shape. `apps/web/package.json` and `package-lock.json`: `fflate` 0.8.3.
+    - No migration.
+  - *(As built.)* **The edge cases resolved as:** a company with zero projects is a zip holding only `manifest.json`; a single page near the body limit holds one version, alone, under 4.5 MB.
 
 **The coder re-runs the 6-point flags check against each diff.**
 
@@ -1198,6 +1243,15 @@ Anything that behaves differently for M or R than for T is worth stopping on, ev
      - No building value is introduced, and no `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is touched. `data.ts` is untouched, and nothing new reaches the Review Log.
      - The only new number is administrative: the 200-character name limit, which is 0006's own check (`PROJECT_NAME_MAX_CHARS`).
      - Out-of-window versions, unreadable rename names, a blank author and a history cut short by the row cap are each shown as a visible gap, never a substitute.
+   - *(2D, re-run against its diff: clean.)*
+     - No building value is introduced, and no `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is touched. `data.ts` is untouched, and nothing new reaches the Review Log.
+     - The only new numbers are administrative, and none is a building value:
+       - page sizes (25 by default, 50 at most);
+       - the 4,000,000-byte page budget and the 4,400,000-byte single-version guard;
+       - the 60-character slug cap;
+       - two retries.
+     - Cost fields such as `priceModifier` travel inside the company's own documents, unchanged, exactly as a version download already carries them. The backup covers only projects the company owns.
+     - A failed page, a version that could not be included, and a gap in version numbers each stop the backup with a message. None produces a zip that looks complete: a visible failure, never a silent substitute.
 
 ---
 

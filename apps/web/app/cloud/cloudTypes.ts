@@ -221,6 +221,54 @@ export function consortiumLaterStageMessage(companyName: string): string {
   return `You're acting as ${companyName} through the consortium. Its folders open in a later stage, so there's nothing to list here and you can't create a project in it yet.`;
 }
 
+// ---------------------------------------------------------------------------
+// Stage 2D: company backup. GET /api/companies/[id]/backup?after=&limit=
+// ---------------------------------------------------------------------------
+
+/**
+ * Why one version could not be put in a page. Either makes the whole backup
+ * fail in the browser: a backup must never look complete when it is not.
+ * - `too-large`: the version alone would not fit under the platform's response
+ *   limit. 0006's 4 MB ceiling should make this unreachable; it is a guard.
+ * - `missing`: its metadata was listed but its document could not be read back.
+ */
+export type BackupOmission = "too-large" | "missing";
+
+/** One version of one project the company owns, with its stored document. */
+export interface BackupVersionEntry {
+  projectId: string;
+  /** The project's name as it was when this page read the project row. */
+  projectName: string;
+  folder: CloudFolder;
+  /** The project's head when this page read it; used to prove nothing was skipped. */
+  projectHeadVersionNumber: number;
+  versionId: string;
+  versionNumber: number;
+  parentVersionId: string | null;
+  kind: CloudVersionKind;
+  label: string | null;
+  authorName: string;
+  createdAt: string;
+  schemaVersion: number;
+  /** The stored `ProjectFile`, untouched. Null only when `omitted` says why. */
+  document: unknown;
+  omitted: BackupOmission | null;
+}
+
+export interface BackupPageResponse {
+  company: { id: string; name: string };
+  exportedBy: { id: string; email: string; displayName: string };
+  /** The server's clock when this page was read. The first page's is the backup's `exportedAt`. */
+  serverTime: string;
+  /** How many projects the company owns: on the first page only, otherwise null. */
+  projectCount: number | null;
+  /** Ordered by project id, then version number. */
+  versions: BackupVersionEntry[];
+  /** Pass back as `after` for the next page. Null when `done`. */
+  nextAfter: string | null;
+  done: boolean;
+}
+
 export function actingAsChangedMessage(companyName: string): string {
   return `You're now acting as ${companyName} (changed in another tab). Nothing was saved.`;
 }

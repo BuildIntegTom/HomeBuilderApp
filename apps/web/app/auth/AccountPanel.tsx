@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import CompanyBackupSection from "../cloud/CompanyBackupSection";
+import type { CompanyBackupController } from "../cloud/useCompanyBackup";
 import { useAuth } from "./AuthProvider";
 import type { CompanyInviteSummary, CompanyMemberSummary } from "./types";
 import styles from "./AccountControl.module.css";
@@ -21,7 +23,7 @@ interface EnrolState {
  * switcher. The UI hides what does not apply, and every call below is refused
  * by an RLS policy as well if the UI is wrong or bypassed.
  */
-export default function AccountPanel() {
+export default function AccountPanel({ backup }: { backup: CompanyBackupController }) {
   const { session, signOut, refresh } = useAuth();
   const user = session.user;
 
@@ -359,6 +361,16 @@ export default function AccountPanel() {
               </ul>
             </>
           )}
+
+          {/* Stage 2D. The same gate as the people list (isAdminHere): a company
+              admin here, or a platform admin acting as this company, which is
+              exactly who GET /api/companies/[id]/backup accepts. A convenience
+              gate, not a security one (Open Item 4). */}
+          <CompanyBackupSection
+            backup={backup}
+            companyId={companyId}
+            companyName={session.actingAsCompanyName ?? ""}
+          />
         </>
       )}
 
