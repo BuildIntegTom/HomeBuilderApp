@@ -37,6 +37,14 @@ export default function AccountPanel() {
   const [newCompanyName, setNewCompanyName] = useState("");
   const [newCompanyAdminEmail, setNewCompanyAdminEmail] = useState("");
   const [founded, setFounded] = useState<{ name: string; url: string } | null>(null);
+  // Your own display name. Empty means "no name": saved versions then show
+  // your email instead (0006 snapshots the name at save time, so a change
+  // applies to versions saved afterwards, not to earlier ones).
+  const savedDisplayName = user?.displayName ?? "";
+  const [nameDraft, setNameDraft] = useState(savedDisplayName);
+  useEffect(() => {
+    setNameDraft(savedDisplayName);
+  }, [savedDisplayName]);
 
   // A platform admin administers the people of whichever company they are acting
   // as: the memberships and invites policies are `is_company_admin(company_id)
@@ -157,6 +165,25 @@ export default function AccountPanel() {
     }
   };
 
+  const saveName = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      await call("/api/profile", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ displayName: nameDraft }),
+      });
+      setNotice(
+        nameDraft.trim()
+          ? "Name saved. It will appear on versions you save from now on."
+          : "Name cleared. Versions you save from now on will show your email.",
+      );
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save your name");
+    }
+  };
+
   const withdrawInvite = async (inviteId: string) => {
     try {
       await call(`/api/invites/${inviteId}`, { method: "DELETE" });
@@ -173,6 +200,30 @@ export default function AccountPanel() {
         <div className={styles.rowSub}>{user.email}</div>
         {user.isPlatformAdmin && <div className={styles.rowSub}>Platform admin</div>}
       </div>
+
+      <form className={styles.form} onSubmit={saveName}>
+        <label className={styles.field}>
+          Your name
+          <input
+            className={styles.input}
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            placeholder={user.email}
+            maxLength={100}
+            autoComplete="name"
+          />
+        </label>
+        <p className={styles.notice}>
+          Shown on the versions you save to the cloud. Leave it blank to show your email instead.
+        </p>
+        <button
+          className={styles.button}
+          type="submit"
+          disabled={nameDraft.trim() === savedDisplayName.trim()}
+        >
+          Save name
+        </button>
+      </form>
 
       {session.mfaPending && (
         <p className={styles.error}>
