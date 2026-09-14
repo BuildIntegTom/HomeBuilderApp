@@ -286,6 +286,8 @@ import {
 } from "./plasterTypes";
 import { parseProjectFile, serializeProject, type ProjectState } from "./projectFile";
 import { resolveTitleBlockDate, titleBlockDateLabel } from "./titleBlockDate";
+import { useDocumentSession } from "./cloud/useDocumentSession";
+import { useCloudProjects } from "./cloud/useCloudProjects";
 import RubbleTrenchDiagram from "./RubbleTrenchDiagram";
 import ShopDrawingPage from "./ShopDrawingPage";
 import PlanViewPage from "./PlanViewPage";
@@ -1327,14 +1329,17 @@ export default function LayoutEditor() {
 
   const loadInputRef = useRef<HTMLInputElement>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // The project file most recently loaded OR saved this session, carrying its
-  // `savedAt` — the title block's "as of last save" date (see
-  // titleBlockDate.ts). null = never saved or loaded, so the title block
-  // shows today; a file whose savedAt is missing or unusable shows "Date not
-  // recorded". Only a successful Load or Save writes it; editing (including
-  // drawing a new footprint) does not — spec: edited-since-load deliberately
-  // keeps the old save date.
-  const [localFile, setLocalFile] = useState<{ savedAt: string | undefined } | null>(null);
+  // Where the design on screen came from (Stage 2B): the cloud project it
+  // belongs to, if any, and `titleBlockSave` — the title block's "as of last
+  // save" date. LAST SAVE WINS: Load Project, Save Project, Open from cloud and
+  // Save to cloud each overwrite it, and nothing else does (see
+  // cloud/documentSession.ts and titleBlockDate.ts). null = never saved or
+  // loaded, so the title block shows today; a present value with an unusable
+  // date shows "Date not recorded". Editing (including drawing a new
+  // footprint) writes nothing — spec: edited-since-load keeps the old date.
+  // One dispatch advances both rendered state and a synchronous mirror, so a
+  // late cloud answer is checked against the latest dispatch, not last frame's.
+  const { documentSession, dispatchDocumentSession, readDocumentSession } = useDocumentSession();
 
   // The editor is now permanently the full-viewport backdrop (Tommy: "the
   // editor section really is the whole screen"), so it no longer needs its
@@ -1391,7 +1396,9 @@ export default function LayoutEditor() {
   // that shapes the design, bundled into one downloadable JSON file and
   // restorable from one, so a design can be handed off or resumed later
   // without redrawing/re-selecting anything.
-  const handleSaveProject = () => {
+  // The design as one ProjectState. Save Project and Save to cloud both
+  // serialize exactly this, so the cloud document is the local file's document.
+  const buildProjectState = (): ProjectState => {
     const state: ProjectState = {
       editorTab,
       viewMode,
@@ -1462,13 +1469,18 @@ export default function LayoutEditor() {
       roofEnabled,
       wallReviewNotes,
     };
+    return state;
+  };
+
+  const handleSaveProject = () => {
+    const state = buildProjectState();
     // One timestamp for both: the downloaded file's savedAt IS what the title
     // block now shows, rather than a second `new Date()` a moment apart.
     const projectFile = serializeProject(state);
     // Known and accepted (Tommy, 2026-09-13): the browser does not report a
     // cancelled download, so a cancelled Save still moves the title-block
     // date to this save time even though no file was written.
-    setLocalFile({ savedAt: projectFile.savedAt });
+    dispatchDocumentSession({ type: "local-save", savedAt: projectFile.savedAt });
     const blob = new Blob([JSON.stringify(projectFile, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -1478,6 +1490,99 @@ export default function LayoutEditor() {
     URL.revokeObjectURL(url);
   };
 
+  // ONE apply for every action that replaces the whole design: Load Project
+  // and Open from cloud (spec: "extract those setters into one shared apply
+  // function rather than copying them"). The only difference between the two
+  // callers is the viewer role — a cloud open ignores the document's `role`
+  // and keeps the viewer's own toggle (Roles, decision 9), because opening a
+  // colleague's project must not silently re-skin your session.
+  const applyProjectState = (s: ProjectState, { applyRole }: { applyRole: boolean }) => {
+    setEditorTab(s.editorTab);
+    setViewMode(s.viewMode);
+    setShapeTool(s.shapeTool);
+    setFootprint(s.footprint);
+    setIsBumpedOut(s.isBumpedOut);
+    setPrimaryCornerIds(s.primaryCornerIds);
+    setOffsetPx(s.offsetPx);
+    // Old saves (predating braced state becoming real stored data) have
+    // zero "braced" slots in baseWallSlots — run the one-time seed pass
+    // per wall so they come back looking exactly as they would have
+    // rendered pre-change (the old derived-overlay system, using this
+    // same file's own seismicZone/bracingStyle). Newer saves (already
+    // carrying real per-slot braced state) pass through untouched — see
+    // bracedStateSeeded's own doc comment in projectFile.ts.
+    if (s.bracedStateSeeded) {
+      setBaseWallSlots(s.baseWallSlots);
+    } else {
+      const { pattern: loadDefaultPattern, mirrored: loadDefaultMirrored } = bracingStyleToPatternMirror(s.bracingStyle);
+      const loadSpacingIn = seismicBracedPanelSpacingFt[s.seismicZone] * 12;
+      const seeded: Record<string, PanelSlot[]> = {};
+      for (const [wallId, slots] of Object.entries(s.baseWallSlots)) {
+        seeded[wallId] = reconcileBracedPlacement(undefined, slots, loadSpacingIn, s.standardWidthIn, loadDefaultPattern, loadDefaultMirrored);
+      }
+      setBaseWallSlots(seeded);
+    }
+    setLeastAccessibleCorner(s.leastAccessibleCorner);
+    setStandardWidthIn(s.standardWidthIn);
+    setThicknessIn(s.thicknessIn);
+    setDensityLbFt3(s.densityLbFt3);
+    setWallHeightFt(s.wallHeightFt);
+    setMaxPanelHeightIn(s.maxPanelHeightIn ?? standardPanelHeightIn.value);
+    setIncludeNailer(s.includeNailer);
+    setCheckedInteriorIds(s.checkedInteriorIds);
+    setCheckedExteriorIds(s.checkedExteriorIds);
+    setSeason(s.season);
+    setSeismicZone(s.seismicZone);
+    setFoundationTypeId(s.foundationTypeId as typeof foundationTypeId);
+    setPierSpacingFt(s.pierSpacingFt);
+    setZipCode(s.zipCode);
+    if (applyRole) setRole(s.role);
+    setUnitSystem(s.unitSystem);
+    setPriceModifier(s.priceModifier);
+    setFloorSystemId(s.floorSystemId as typeof floorSystemId);
+    setPerpendicular2x4Enabled(s.perpendicular2x4Enabled);
+    setRoofProfileType(s.roofProfileType);
+    setRoofProfilePointHeightsFt(s.roofProfilePointHeightsFt);
+    setGableProfilePositionsInByWallId(s.gableProfilePositionsInByWallId);
+    setGableWindowAnchorsByWallId(s.gableWindowAnchorsByWallId ?? {});
+    setMaxGablePanelHeightIn(s.maxGablePanelHeightIn);
+    setTrussPlateInsetIn(s.trussPlateInsetIn);
+    setHeelHeightIn(s.heelHeightIn);
+    setRoofBearingAnchorMode(s.roofBearingAnchorMode ?? "truss-heel");
+    setBoxBeamCoverageByWallId(s.boxBeamCoverageByWallId);
+    setBoxBeamSizeId(s.boxBeamSizeId);
+    setMidWallBeamsByStoryAndWallId(s.midWallBeamsByStoryAndWallId);
+    setRoofCatcherBeamOffsetIn(s.roofCatcherBeamOffsetIn);
+    setRoofCatcherBeamShape(s.roofCatcherBeamShape);
+    setOctagonRingDiameterFt(s.octagonRingDiameterFt);
+    setRoofTrussCategory(s.roofTrussCategory ?? "classic");
+    setSelectedClassicTrussId(s.selectedClassicTrussId ?? "king-post");
+    setHighPerfTrussTypeId(s.highPerfTrussTypeId ?? "energy-heel");
+    setHighPerfTrussCavityDepthIn(s.highPerfTrussCavityDepthIn ?? 18);
+    setHighPerfTrussBearingShapeId(s.highPerfTrussBearingShapeId ?? "built-up-3ply-2x12");
+    setRoofTrussSpacingIn(s.roofTrussSpacingIn ?? ROOF_TRUSS_SPACING_DEFAULT_IN);
+    setRoofTrussDoublingStrategy(s.roofTrussDoublingStrategy ?? "single");
+    setBaleFoundationTopDepthIn(s.baleFoundationTopDepthIn ?? BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN);
+    setBaleFoundationBottomDepthIn(s.baleFoundationBottomDepthIn ?? BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN);
+    setBaleFoundationGapIn(s.baleFoundationGapIn ?? BALE_FOUNDATION_GAP_DEFAULT_IN);
+    setBaleFoundationFieldSpacingIn(s.baleFoundationFieldSpacingIn ?? BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN);
+    setFloorBottomSkinEnabled(s.floorBottomSkinEnabled ?? true);
+    setGableEndWallIds(s.gableEndWallIds);
+    setGableStructuralPanelWallIds(s.gableStructuralPanelWallIds ?? new Set());
+    setSecondStory(s.stories[1] ?? null);
+    setPanelizationType(s.panelizationType);
+    setTimberFrameCurtainPanelType(s.timberFrameCurtainPanelType);
+    setTimberFrameCurtainWidthIn(s.timberFrameCurtainWidthIn);
+    setNailerOffsetIn(s.nailerOffsetIn);
+    setSquareBaleStudConfig(s.squareBaleStudConfig);
+    setBracingStyle(s.bracingStyle);
+    setProjectName(s.projectName);
+    setWallsEnabled(s.wallsEnabled);
+    setFloorsEnabled(s.floorsEnabled);
+    setRoofEnabled(s.roofEnabled);
+    setWallReviewNotes(s.wallReviewNotes ?? []);
+  };
+
   const handleLoadFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same filename later
@@ -1485,98 +1590,35 @@ export default function LayoutEditor() {
     file.text().then((raw) => {
       const result = parseProjectFile(raw);
       if (!result.ok) {
+        // A rejected Load writes nothing: the date and any cloud project stay.
         setLoadError(result.error);
         return;
       }
       setLoadError(null);
-      setLocalFile({ savedAt: result.savedAt });
-      const s = result.state;
-      setEditorTab(s.editorTab);
-      setViewMode(s.viewMode);
-      setShapeTool(s.shapeTool);
-      setFootprint(s.footprint);
-      setIsBumpedOut(s.isBumpedOut);
-      setPrimaryCornerIds(s.primaryCornerIds);
-      setOffsetPx(s.offsetPx);
-      // Old saves (predating braced state becoming real stored data) have
-      // zero "braced" slots in baseWallSlots — run the one-time seed pass
-      // per wall so they come back looking exactly as they would have
-      // rendered pre-change (the old derived-overlay system, using this
-      // same file's own seismicZone/bracingStyle). Newer saves (already
-      // carrying real per-slot braced state) pass through untouched — see
-      // bracedStateSeeded's own doc comment in projectFile.ts.
-      if (s.bracedStateSeeded) {
-        setBaseWallSlots(s.baseWallSlots);
-      } else {
-        const { pattern: loadDefaultPattern, mirrored: loadDefaultMirrored } = bracingStyleToPatternMirror(s.bracingStyle);
-        const loadSpacingIn = seismicBracedPanelSpacingFt[s.seismicZone] * 12;
-        const seeded: Record<string, PanelSlot[]> = {};
-        for (const [wallId, slots] of Object.entries(s.baseWallSlots)) {
-          seeded[wallId] = reconcileBracedPlacement(undefined, slots, loadSpacingIn, s.standardWidthIn, loadDefaultPattern, loadDefaultMirrored);
-        }
-        setBaseWallSlots(seeded);
-      }
-      setLeastAccessibleCorner(s.leastAccessibleCorner);
-      setStandardWidthIn(s.standardWidthIn);
-      setThicknessIn(s.thicknessIn);
-      setDensityLbFt3(s.densityLbFt3);
-      setWallHeightFt(s.wallHeightFt);
-      setMaxPanelHeightIn(s.maxPanelHeightIn ?? standardPanelHeightIn.value);
-      setIncludeNailer(s.includeNailer);
-      setCheckedInteriorIds(s.checkedInteriorIds);
-      setCheckedExteriorIds(s.checkedExteriorIds);
-      setSeason(s.season);
-      setSeismicZone(s.seismicZone);
-      setFoundationTypeId(s.foundationTypeId as typeof foundationTypeId);
-      setPierSpacingFt(s.pierSpacingFt);
-      setZipCode(s.zipCode);
-      setRole(s.role);
-      setUnitSystem(s.unitSystem);
-      setPriceModifier(s.priceModifier);
-      setFloorSystemId(s.floorSystemId as typeof floorSystemId);
-      setPerpendicular2x4Enabled(s.perpendicular2x4Enabled);
-      setRoofProfileType(s.roofProfileType);
-      setRoofProfilePointHeightsFt(s.roofProfilePointHeightsFt);
-      setGableProfilePositionsInByWallId(s.gableProfilePositionsInByWallId);
-      setGableWindowAnchorsByWallId(s.gableWindowAnchorsByWallId ?? {});
-      setMaxGablePanelHeightIn(s.maxGablePanelHeightIn);
-      setTrussPlateInsetIn(s.trussPlateInsetIn);
-      setHeelHeightIn(s.heelHeightIn);
-      setRoofBearingAnchorMode(s.roofBearingAnchorMode ?? "truss-heel");
-      setBoxBeamCoverageByWallId(s.boxBeamCoverageByWallId);
-      setBoxBeamSizeId(s.boxBeamSizeId);
-      setMidWallBeamsByStoryAndWallId(s.midWallBeamsByStoryAndWallId);
-      setRoofCatcherBeamOffsetIn(s.roofCatcherBeamOffsetIn);
-      setRoofCatcherBeamShape(s.roofCatcherBeamShape);
-      setOctagonRingDiameterFt(s.octagonRingDiameterFt);
-      setRoofTrussCategory(s.roofTrussCategory ?? "classic");
-      setSelectedClassicTrussId(s.selectedClassicTrussId ?? "king-post");
-      setHighPerfTrussTypeId(s.highPerfTrussTypeId ?? "energy-heel");
-      setHighPerfTrussCavityDepthIn(s.highPerfTrussCavityDepthIn ?? 18);
-      setHighPerfTrussBearingShapeId(s.highPerfTrussBearingShapeId ?? "built-up-3ply-2x12");
-      setRoofTrussSpacingIn(s.roofTrussSpacingIn ?? ROOF_TRUSS_SPACING_DEFAULT_IN);
-      setRoofTrussDoublingStrategy(s.roofTrussDoublingStrategy ?? "single");
-      setBaleFoundationTopDepthIn(s.baleFoundationTopDepthIn ?? BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN);
-      setBaleFoundationBottomDepthIn(s.baleFoundationBottomDepthIn ?? BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN);
-      setBaleFoundationGapIn(s.baleFoundationGapIn ?? BALE_FOUNDATION_GAP_DEFAULT_IN);
-      setBaleFoundationFieldSpacingIn(s.baleFoundationFieldSpacingIn ?? BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN);
-      setFloorBottomSkinEnabled(s.floorBottomSkinEnabled ?? true);
-      setGableEndWallIds(s.gableEndWallIds);
-      setGableStructuralPanelWallIds(s.gableStructuralPanelWallIds ?? new Set());
-      setSecondStory(s.stories[1] ?? null);
-      setPanelizationType(s.panelizationType);
-      setTimberFrameCurtainPanelType(s.timberFrameCurtainPanelType);
-      setTimberFrameCurtainWidthIn(s.timberFrameCurtainWidthIn);
-      setNailerOffsetIn(s.nailerOffsetIn);
-      setSquareBaleStudConfig(s.squareBaleStudConfig);
-      setBracingStyle(s.bracingStyle);
-      setProjectName(s.projectName);
-      setWallsEnabled(s.wallsEnabled);
-      setFloorsEnabled(s.floorsEnabled);
-      setRoofEnabled(s.roofEnabled);
-      setWallReviewNotes(s.wallReviewNotes ?? []);
+      // Also clears the cloud project: a local file is not a version of it,
+      // and must never be appended into it by the next Save to cloud.
+      dispatchDocumentSession({ type: "local-load", savedAt: result.savedAt });
+      applyProjectState(result.state, { applyRole: true });
     });
   };
+
+  // Stage 2B: Save to cloud, Open from cloud and folders (Project ▾ only —
+  // nothing new on the bar). The document it saves is Save Project's, built the
+  // same way; the design it opens is applied with the same setters as Load.
+  const cloud = useCloudProjects({
+    documentSession,
+    readDocumentSession,
+    dispatch: dispatchDocumentSession,
+    editorProjectName: projectName,
+    buildProjectFile: () => serializeProject(buildProjectState()),
+    applyCloudState: (state) => {
+      // An open replaces the design exactly as a Load does, so a stale Load
+      // error must not stay on screen over it.
+      setLoadError(null);
+      applyProjectState(state, { applyRole: false });
+    },
+    downloadProjectFile: () => handleSaveProject(),
+  });
 
   const interior = mostRestrictiveLayer(interiorLayers, checkedInteriorIds, season) ?? UNRATED_SENTINEL;
   const exterior = mostRestrictiveLayer(exteriorLayers, checkedExteriorIds, season) ?? { ...UNRATED_SENTINEL, side: "exterior" as const };
@@ -5500,7 +5542,7 @@ export default function LayoutEditor() {
   // Saved date, not print date (spec: Backend > Project name / site / date).
   // Stage 2 adds `cloudVersionCreatedAt` here; `now` only wins when nothing
   // has been saved or loaded.
-  const documentDate = titleBlockDateLabel(resolveTitleBlockDate({ localFile: localFile ?? undefined, now: new Date() }));
+  const documentDate = titleBlockDateLabel(resolveTitleBlockDate({ lastSave: documentSession.titleBlockSave, now: new Date() }));
 
   // Project Summary page content (Tommy: "the first page is the project
   // summary page with all the totals for cost, all materials... do a full
@@ -6779,6 +6821,7 @@ export default function LayoutEditor() {
     <div className={styles.page} ref={pageRef}>
       <div className="print-hidden-chrome">
         <TopBar
+          cloud={cloud.menuModel}
           role={role}
           onRoleChange={setRole}
           showAllDetailPages={showAllDetailPages}
@@ -6801,6 +6844,9 @@ export default function LayoutEditor() {
         onChange={handleLoadFileSelected}
         style={{ display: "none" }}
       />
+      {/* Stage 2B's notes: save dialog, Open from cloud, and the save notice.
+          Chrome, so never printed. */}
+      <div className="print-hidden-chrome">{cloud.notes}</div>
       <main className={styles.main}>
         <div className={`${styles.editorSection} print-hidden-chrome`}>
           <div className={styles.editorSidebar}>

@@ -388,7 +388,7 @@ describe("savedAt -> title-block date", () => {
     if (!result.ok) throw new Error(result.error);
     expect(result.savedAt).toBe(savedAtT.toISOString());
 
-    const resolved = resolveTitleBlockDate({ localFile: { savedAt: result.savedAt }, now: new Date() });
+    const resolved = resolveTitleBlockDate({ lastSave: { savedAt: result.savedAt, source: "local-file" }, now: new Date() });
     expect(resolved.source).toBe("local-file");
     expect(resolved.date?.getTime()).toBe(savedAtT.getTime());
   });
@@ -404,7 +404,7 @@ describe("savedAt -> title-block date", () => {
   function loadAndLabel(file: object) {
     const result = parseProjectFile(JSON.stringify(file));
     if (!result.ok) throw new Error(result.error);
-    const resolved = resolveTitleBlockDate({ localFile: { savedAt: result.savedAt }, now: new Date("2026-09-13T15:00:00.000Z") });
+    const resolved = resolveTitleBlockDate({ lastSave: { savedAt: result.savedAt, source: "local-file" }, now: new Date("2026-09-13T15:00:00.000Z") });
     return { result, resolved, label: titleBlockDateLabel(resolved) };
   }
 

@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import StickyNote from "../StickyNote";
 import { clampMenuLeft } from "../topBarMenus";
 import AccountPanel from "./AccountPanel";
 import SignInForm from "./SignInForm";
 import { useOptionalAuth } from "./AuthProvider";
 import styles from "./AccountControl.module.css";
+
+/** Dispatched on `window` to open this control's note from elsewhere — the
+ * Project ▾ menu's guest line. A window event, not a context, so the control
+ * stays the one owner of its own open state. */
+export const OPEN_ACCOUNT_CONTROL_EVENT = "bi:open-account-control";
 
 /**
  * The acting-as switcher, and the sign-in state next to it.
@@ -46,6 +51,22 @@ export default function AccountControl() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [open]);
+
+  // The Project ▾ menu's "Sign in to save projects to the cloud" line opens this
+  // control rather than a second sign-in form. It gates nothing: local Save and
+  // Load work either way.
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const onOpenRequest = () => {
+      const button = buttonRef.current;
+      if (!button) return;
+      const rect = button.getBoundingClientRect();
+      setPosition({ top: rect.bottom + 8, left: clampMenuLeft(rect.left, window.innerWidth) });
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_ACCOUNT_CONTROL_EVENT, onOpenRequest);
+    return () => window.removeEventListener(OPEN_ACCOUNT_CONTROL_EVENT, onOpenRequest);
+  }, []);
 
   // The editor renders fine with no provider (and its tests mount it that way).
   // No provider means no accounts, which reads the same as signed out.
@@ -124,6 +145,7 @@ export default function AccountControl() {
       </div>
 
       <button
+        ref={buttonRef}
         type="button"
         className={open ? styles.buttonActive : styles.button}
         aria-expanded={open}

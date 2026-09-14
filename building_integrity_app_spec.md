@@ -613,7 +613,7 @@ Tommy has seen and agreed this. **Each stage is usable alone**, which is the poi
 
 0. **Title-block save date (no backend required).** The local-file and never-saved rows of the date table above: read `ProjectFile.savedAt`, stop calling `new Date()` at render. **Numbered zero because it needs nothing from any other stage and fixes the defect for every user the app currently has.** The cloud row follows in Stage 2. **Shipped 2026-09-13** (`titleBlockDate.ts`). Its fixed cloud-then-local precedence is replaced by the last-save-wins rule in Stage 2B (see the Stage 2 plan).
 1. **Accounts and companies.** Sign in/out, invites, memberships, default company, company admin, **and the always-visible acting-as switcher including the Seed toggle**. The app gains a real identity and nothing else changes. *(Usable alone: nothing to save yet, but the top-bar sign-in Tommy described exists and works.)*
-2. **Cloud projects and versions.** The three folders, save-as-new-version, the version list, open-from-cloud, the divergence notice (11), and the cloud row of the date table. Local save/load untouched alongside it. *(This is the stage that delivers Tommy's actual sentence — "reachable to another Member on any computer where they can log in.")* **Planned 2026-09-13, not built — see "Stage 2 plan — Cloud projects and versions" below, sub-stages 2A–2D, and its Open Items.**
+2. **Cloud projects and versions.** The three folders, save-as-new-version, the version list, open-from-cloud, the divergence notice (11), and the cloud row of the date table. Local save/load untouched alongside it. *(This is the stage that delivers Tommy's actual sentence — "reachable to another Member on any computer where they can log in.")* **Planned 2026-09-13. 2A BUILT and applied to live 2026-09-14; 2B BUILT (not yet deployed; gated on the Stage 1 ordinary-account check); 2C and 2D not built — see "Stage 2 plan — Cloud projects and versions" below, sub-stages 2A–2D, and its Open Items.**
 3. **Collaboration.** `collaborators`, invitations, requests, shared access to one project (24-26). Supersedes the older "in-app inbox" line in the Handoff section above — this *is* the handoff mechanism. **It is also what makes the "edit an existing Seed project" case work**, so it is a prerequisite for Stage 4 being coherent rather than an independent feature.
 4. **Consortium browsing.** Acting as the Seed Collaborative, the cross-company read layer, the cost redactor, the export restrictions (19-23). **The redactor is the highest-risk single piece of the whole design** and deliberately does not ship before there is anything to browse.
 5. **Platform admin.** Cross-company visibility, permanent delete, full backup, and the case-by-case departing-company judgement (28).
@@ -622,7 +622,7 @@ Backups (29) ride with the stage that makes them meaningful: company backup with
 
 **Flags check: clean, and confirmed rather than assumed.** This section introduces **no real-world building values at all** — no fastener spacing, no load, no density, no dimension, no cost figure. No `CatalogValue`, `CatalogRange`, or `PanelStructuralStatus` is in scope, and `data.ts` is not touched. Nothing new reaches the Review Log. **It does touch the `pending-BI-confirmation` convention in exactly one indirect way, and only in the direction of strengthening it:** the redaction rule adopts the same principle the flag convention exists for — a plausible substituted number (a defaulted price modifier shown to a browsing company) is worse than a visible gap, for the same reason a researched value marked `confirmed` is worse than one marked pending. Any dollar figure this work causes to be *displayed* is an existing catalog value, still carrying whatever status it already has. The coder re-runs the 6-point check against the actual diff.
 
-### Stage 2 plan — Cloud projects and versions (2026-09-13) — APPROVED BY TOMMY 2026-09-13 (all Open Item defaults accepted) — **2A BUILT and applied to live 2026-09-14** (0006 + 0007, every post-flight check matched); 2B, 2C, 2D not built
+### Stage 2 plan — Cloud projects and versions (2026-09-13) — APPROVED BY TOMMY 2026-09-13 (all Open Item defaults accepted) — **2A BUILT and applied to live 2026-09-14** (0006 + 0007, every post-flight check matched); **2B BUILT (not yet deployed; gated on the Stage 1 ordinary-account check)**; 2C, 2D not built
 
 Provenance: Tommy approved starting Stage 2 on 2026-09-13 and asked to review the plan before any code is written. This plan builds on what is actually live, which was read directly rather than assumed:
 - Stage 1 as deployed: `supabase/migrations/0001`–`0005`, `seed.sql`, `stage1_rls.test.sql`, `serverSession.ts`, `actingAs.ts`, `AuthProvider.tsx` and the `api/` routes.
@@ -655,7 +655,9 @@ Stage 1's hand test (`supabase/README.md`, "Hand-testing", steps 5–10) has **s
 
 **Revisit trigger:** move documents to Storage only if the median version exceeds about 1 MB, or the database approaches the plan quota. Listing queries must **name their columns and never select `document`**, so the folder tree stays cheap however large the documents get.
 
-**⚠ Document size ceiling: 4 MB. This is picked, not decided (Open Item).** Vercel functions cap request and response bodies at about 4.5 MB (the coder confirms the current limit, and Next 16's route body handling, in `node_modules/next/dist/docs/`). A larger document could not reach the database through a route anyway, so the database refuses anything over 4 MB with a readable error. It is an administrative guard, not a building value.
+**⚠ Document size ceiling: 4 MB. This is picked, not decided (Open Item).** Vercel functions cap request and response bodies at about 4.5 MB. A larger document could not reach the database through a route anyway, so the database refuses anything over 4 MB with a readable error. It is an administrative guard, not a building value.
+- *(Confirmed in 2B against `node_modules/next/dist/docs/`.)* Next 16 sets no body limit for route handlers. Server Actions default to 1 MB, which does not apply to routes. `proxyClientMaxBodySize` applies only to requests that pass through `proxy.ts`, and it truncates the body silently rather than refusing it; it does not apply here, because `proxy.ts`'s matcher excludes `/api`. **Vercel's ~4.5 MB is therefore the binding limit.**
+- The database measures `document::text`, which is longer than the minified JSON the app sends, so "too large" is a real outcome with its own message ("This project is too large to save to the cloud (the limit is 4 MB). Nothing was saved. Download project file keeps a copy on this computer."). The client refuses without sending a minified document already over 4 MB, and a platform 413 that arrives without a JSON body maps to the same message.
 
 #### Schema — migration `0006_stage2_projects_and_versions.sql`
 
@@ -763,7 +765,9 @@ RLS is enabled on both, not FORCE (same reasoning as 0002). **Both get 0004's re
 
 #### Save flow
 
-The editor holds one piece of new client state, `cloudContext`. It is either `null` or `{ projectId, companyId, companyName, baseVersionId, baseVersionNumber, baseCreatedAt }`. **Base** means the version this editor state started from.
+The editor holds one piece of new client state, `cloudContext`. It is either `null` or `{ projectId, companyId, companyName, folder, baseVersionId, baseVersionNumber, baseCreatedAt }`. **Base** means the version this editor state started from. `folder` is carried so the Project ▾ status line can name it without another request.
+
+*(As built in 2B.)* `cloudContext` lives on a `DocumentSession` together with `titleBlockSave` and **`designGeneration`**, which sits beside `cloudContext` and is **not** part of it. `designGeneration` counts replacements of the design on screen: it is bumped by **Load Project, an Open from cloud that is applied, a Save as new / first Save to cloud that is applied, and a real account change** (below), and **not** by Save Project, Save to cloud into the open project, or a folder move. Every cloud request records the generation it was sent at, and its answer is applied only if the generation still matches (see "The cloud row of the date table"). The pre-apply check reads a synchronous copy of the session, advanced by the same reducer at dispatch time, because rendered state lags a dispatch by up to a frame.
 
 - **Save to cloud, with no cloud project open** (`cloudContext === null`): opens the save dialog.
   - The dialog shows **"New project in *Building Integrity* › [Current Projects ▾]"**. The company is read-only, taken from the *verified* acting-as company. The folder defaults to Current Projects. There is an optional note, and the name is shown as the editor's project-name field.
@@ -795,14 +799,24 @@ The editor holds one piece of new client state, `cloudContext`. It is either `nu
 
 - **⚠ This collides with append-only history over time.** Every two schema bumps, the oldest cloud versions become unopenable in-app. Stored versions are permanent, but the reading window is two versions wide. The plan does not quietly widen `parseProjectFile`'s window, because that is a standing maintenance cost on every future bump. It is an Open Item.
 - A stale tab **saving** an older-format document is accepted. It is stored with its own `schema_version`, and the current app opens it via the one-back migration.
+- *(As built in 2B.)* **Open is head-only, but the list can be stale.** If a newer version was saved after the folder list loaded, the open still proceeds and a notice says: "A newer version (v9) was saved after this list loaded. You opened v7." It names no one, because the newer save may have been your own, in another tab.
+- *(As built in 2B.)* **An open whose answer arrives after the design was replaced is not applied.** If a Load, another Open or a Save as new replaced the design while the version was downloading, the document is not put on screen, and the note says: "Smith House wasn't opened: the design on screen was replaced while it was loading. Open it again if you still want it."
 
 #### The divergence notice (11)
 
 - **Detection:** the database answers it inside the save, under the project-row lock. `diverged = (parent's version_number ≠ head_before)`. There is no separate pre-save check and no polling; the base version id the client already holds is the whole input.
 - **The notice appears after the save has succeeded. It never blocks, never asks first, and never offers to undo.** Both versions are kept. It is a non-modal note that stays until dismissed:
   > **Saved as version 8.** While you had this project open, 1 other version was saved: **version 7 by Virgil, 2:14 pm**. You started from version 6. Both are kept; nothing was overwritten. **[Open version history]**
-  - With more than one intervening version: "3 other versions were saved, the latest by Virgil at 2:14 pm."
-  - If an intervening version was a rename and your save changed the name back: "…including a rename to 'Smith Residence'. Your save set the name back to 'Smith House'."
+  - **As built (2B), the exact texts.** "Both are kept" belongs to the one-version form only.
+    - One intervening version: "Saved as version 8. While you had this project open, 1 other version was saved: version 7 by Virgil, 2:14 pm. You started from version 6. Both are kept; nothing was overwritten."
+    - More than one: "Saved as version 10. While you had this project open, 3 other versions were saved, the latest by Virgil at 2:31 pm. You started from version 6. Every version is kept; nothing was overwritten."
+    - An intervening rename that this save set back. One version: "…1 other version was saved: version 7 by Virgil, 2:14 pm, a rename to 'Smith Residence'. Your save set the name back to 'Smith House'. You started from version 6. Both are kept; nothing was overwritten." More than one: "…3 other versions were saved, the latest by Virgil at 2:31 pm, including a rename to 'Smith Residence'. Your save set the name back to 'Smith House'. …" A rename the save kept is not mentioned. An empty name prints as '(untitled)'.
+    - If the intervening rows could not be read back, the count still comes from the numbers, with no author: "While you had this project open, 2 other versions were saved. You started from version 6. Every version is kept; nothing was overwritten."
+    - With no divergence, the notice is just "Saved as version 5."
+  - **The [Open version history] link arrives with 2C.** 2B's notice has no link, because there is no list to open.
+  - **A save whose answer no longer describes the design on screen** is still reported as saved, never as if the design on screen were that version:
+    - The design was replaced while it was in flight (a Load, an Open, a Save as new): "Saved as version 1 of Smith House in Building Integrity › Current Projects. The design on screen was replaced while that save was in progress, so this editor is not attached to that project; the design you see now was not changed."
+    - The design was not replaced, but a newer save from this editor had already moved the base on: "Saved as version 4, but a newer save from this editor had already moved on; your editor stays on version 5."
 - **It ships in 2B, not 2C.** In 2B there is no version list yet, so without the notice a colleague's concurrent save would not merely "disappear quietly into a list"; it would be invisible altogether.
 
 #### Folders (12, 13)
@@ -846,6 +860,14 @@ In both cases the sheet shows a confident, wrong date, which is exactly the defe
 - **Precedence disappears.** Whichever writer ran last has already overwritten the value, so the resolver has nothing to rank.
 - **The resolver's interface changes in Stage 2 (2B)**, to roughly `resolveTitleBlockDate({ lastSave, now })`. It returns `lastSave.savedAt` with its `source`, or `now` with source `today`. Stage 0's tests for the timestamp parsing and the today fallback carry over. Its cloud-over-local precedence test is replaced by two regression tests, one for each break above.
 - **A failed or refused action writes nothing.** Examples: a rejected Load, a 409 or 403 on a cloud save, an out-of-window version that could not be opened. The date stays with whatever the design on screen actually came from.
+- *(As built in 2B.)* **Rules the table did not cover:**
+  - **Save Project keeps the open cloud project.** Only Load Project, and a real account change, detach it; Open from cloud and Save as new cloud project *replace* it with the project just opened or created.
+  - **Known and accepted (2B review):** if tab B signs out and signs in as another member of the *same* company, tab A (which has not re-read the session) can still save into its open project; the version is attributed to the new account by `auth.uid()`. RLS permits it, attribution is honest, and nothing crosses companies.
+  - **A late answer writes nothing.** A create, open or save answer whose `designGeneration` no longer matches (a Load, an Open or a Save as new replaced the design while it was in flight) sets no cloud project and no date. An opened document is not even applied to the editor.
+  - **A real account change** is a different non-null account appearing, or an explicit sign-out through the app. It detaches the cloud project and voids answers still in flight, but **keeps the date**, because it does not replace the design on screen.
+  - **A transient signed-out reading does neither.** `/api/session` answers a guest whenever `getUser` errors (a network blip, an expired token), and the editor re-reads the session after every 401/403. That reading does not detach, and when the same account comes back the project is still attached. Detaching there would make the next Save to cloud offer a new project and invite a duplicate.
+  - **A local Save does not void an in-flight cloud save.** Both describe the same design; whichever completes last sets the date. Sheets print the day, so the ordering only shows across midnight.
+  - **An unusable `created_at` also prints "Date not recorded"**, never today.
 - For cloud projects, the document's own `savedAt` (the browser clock) is ignored. The date table says `created_at` is authoritative, and the Open-from-cloud writer reads the column, not the document.
 - **Consistency with the date table:** the table's three rows still hold. This rule is how they resolve when one session touches both paths, which the table did not address. **The date-decision paragraphs above are not changed by this plan.**
 - **Drawing or editing after a load keeps the loaded date.** For example, drawing a whole new footprint over a loaded file leaves the title block on that file's save date. The existing "edited-since-load reads as 'as of last save'" rule already covers this. It is recorded here because a completely redrawn building is the case where that rule is most likely to surprise someone; see Open Item 7.
@@ -885,6 +907,9 @@ The Project ▾ note (`TopBar.tsx`) gains groups. Existing items keep their exac
    - **Open from cloud…**
    - **Version history** (only while a cloud project is open)
    - For a **guest**, the group is replaced by one line, "Sign in to save projects to the cloud", which opens the existing account control and gates nothing. With **no backend configured**, the group is absent.
+   - *(As built in 2B.)* **Signed in with no company membership:** a "Cloud" heading, no save or open items, and one line: "You're signed in, but you aren't a member of any company yet, so there's no company to save a cloud project into. Ask a company admin for an invite. Save Project still downloads the file to this computer." If a cloud project is still open (a membership revoked mid-session), Save to cloud stays, so its 403 and the Download project file offer can show.
+   - *(As built in 2B.)* **While a second factor is pending:** a "Cloud" heading, no items, and the line "Enter your two-factor code (Account ▾) to use cloud projects." The routes answer 401 "Enter your two-factor code (Account ▾) before using cloud projects" in that state. **Both are messages, not the gate:** the gate is 0004's restrictive aal RLS policy on both tables, which already refuses that session's reads and writes.
+   - *(As built in 2B.)* **Acting as The Seed Collaborative through the consortium:** no create item, and a line saying its folders open in a later stage. Save to cloud stays only while a project owned elsewhere is open.
 4. **Site Properties** and **Panelizer**, unchanged.
 
 The notes behind those menu items:
@@ -907,7 +932,7 @@ New routes live under `apps/web/app/api/projects/` and follow Stage 1's conventi
 
 | Route | Does |
 |---|---|
-| `GET /api/projects?folder=` | Lists the verified acting-as company's projects. No `document`. |
+| `GET /api/projects?folder=` | Lists the verified acting-as company's projects. No `document`. *(As built in 2B.)* Each row also carries its head version's id and author name, from a second query that selects named columns only. That query's `or=(and(...))` filter is built only from values the database just returned, never from request input. Open is head-only, so the row's head version id is what Open requests. |
 | `POST /api/projects` | `{ expectedCompanyId, folder, label?, document }` → `create_project`. Returns 409 on acting-as mismatch, 403 on a consortium entitlement. |
 | `PATCH /api/projects/[id]` | `{ folder }`. Zero rows → 404. |
 | `POST /api/projects/[id]/rename` | `{ name }` → `rename_project`. |
@@ -917,6 +942,15 @@ New routes live under `apps/web/app/api/projects/` and follow Stage 1's conventi
 | `GET /api/companies/[id]/backup?after=&limit=` | Paged versions with documents. Route-gated to company admin or platform admin via `requireEntitlement`. |
 
 The routes check only that `document` is an object with an integer `schemaVersion` and an object `state`. **No deep validation and no redaction on the server** (22).
+
+*(As built in 2B.)* **Ids and error codes.**
+- **Ids are checked as uuids after authentication** (`requireSession` runs first), before any query. Any hex uuid is accepted, not only v4, since seeded rows need not be random.
+  - A malformed **path** id (project or version) gets **404**, with the same message as not found.
+  - A missing or malformed **body** id (`expectedCompanyId`, `parentVersionId`) gets **400**.
+- **The 22P02 backstop**, for a malformed id that still reached Postgres: **400** for create and save, **404** for move and read, **403** for the list.
+- **A 42501 on the list** gets its own message: "Couldn't list this company's projects. Your access may have changed; reload the page and try again." It is never "That project version doesn't exist".
+- **Other 42501s:** a create is 403; a save is 403 with the Download project file offer; a move or read is 404.
+- **23514:** the 4 MB refusal is 413 with its own message; the note, folder and lineage checks each have a readable message that names no constraint.
 
 #### Staging — four sub-stages, each shippable
 
@@ -1012,17 +1046,23 @@ Steps marked "as M" or "as R" must not be done as T; platform admin passes every
    - `anon` holds nothing;
    - no update grant on versions;
    - existing companies and memberships unchanged.
-1. **As M:** draw a design and Save to cloud. The dialog says Building Integrity › Current Projects. Sign in as M **on a second computer or browser**, open it from the cloud, and confirm the design is identical and the title block shows the save time.
-2. **As R:** Open from cloud lists nothing of Building Integrity's. Paste M's version URL (`/api/projects/<id>/versions/<vid>`) into R's browser and confirm 404 and no document. **This is the "no margins cross-company before Stage 4" check.**
+1. **As M, not T:** draw a design and Save to cloud. The dialog says Building Integrity › Current Projects. Sign in as M **on a second computer or browser**, open it from the cloud, and confirm the design is identical and the title block shows the save date. To see it, open a sheet that has a title block, such as Project Summary.
+2. **As R, not T:** Open from cloud lists nothing of Building Integrity's. Paste M's version URL (`/api/projects/<id>/versions/<vid>`) into R's browser and confirm 404 and no document. **This is the "no margins cross-company before Stage 4" check.**
 3. **As M, then T at the same time:** both open v1, M saves, then T saves. T gets the notice naming M's version, nobody is blocked, and both versions are in history.
-4. **As M:** change the viewer role, then open a cloud version. The role is unchanged.
-5. **As M:** Load Project an older local file while a cloud project is open, and confirm **the title block switches to that file's date**. Save Project locally and confirm the date becomes now. Then Save to cloud: the dialog asks for a **new** project instead of appending.
-6. **As M, two tabs:** switch to The Seed Collaborative in tab B. In tab A, try Save as new cloud project and get the "changed in another tab, nothing saved" refusal. In tab B, the cloud note says Seed's folders come later and offers no create. The project already open in tab A still saves to Building Integrity.
-7. **As M:** move a project to Past Projects, confirm T sees the move and R still sees nothing. Confirm there is no delete control anywhere.
+4. **As M, not T:** change the viewer role, then open a cloud version. The role is unchanged.
+5. **As M, not T:** Load Project an older local file while a cloud project is open, and confirm **the title block switches to that file's date**. Save Project locally and confirm the date becomes now. Then Save to cloud: the dialog asks for a **new** project instead of appending.
+   - **5a. As M, not T:** start Save as new cloud project, and before it finishes, Load Project a local file. The editor shows the loaded file with its date and no cloud status line. The notice says the new project was saved but the design on screen was replaced. The next Save to cloud asks for a new project.
+6. **As M, not T, two tabs:** switch to The Seed Collaborative in tab B. In tab A, **without reloading it**, try Save as new cloud project and get the "changed in another tab, nothing saved" refusal. (A reloaded tab A already shows Seed and gets the consortium message instead.) In tab B, the cloud note says Seed's folders come later and offers no create. The project already open in tab A still saves to Building Integrity.
+7. **As M, not T:** move a project to Past Projects, confirm T sees the move and R still sees nothing. Confirm there is no delete control anywhere.
 8. **As M (2C):** rename from the tree. History shows "Renamed to …", and opening the previous version prints the old name.
 9. **As M (2D):** there is no backup entry. **T promotes M to company admin; as M, not T:** download the backup, open `manifest.json`, and load one version file with plain Load Project.
 10. **Signed out:** Save Project and Load Project behave exactly as today. The cloud group shows only the sign-in line.
 11. **As T:** revoke R's Rare Forms membership. R's tree empties on the next request. Revoke and restore a BI test member, and confirm their name stays on their versions.
+12. **As `tommy.fieser@gmail.com`, not T** (signed in, no company membership today): Project ▾ shows the Cloud heading with the no-company line, and no cloud save or open item. Save Project and Load Project work.
+13. **As M, not T, two tabs, with a cloud project open in tab A** (corrected in the final 2B review: the app's only sign-out is Sign out, which always detaches, so the "same account" and "different account" cases must be driven from a second tab):
+    - **Same account comes back.** Sign out in tab B. In tab A, press Save to cloud: it is refused with **Download project file**, and the status line stays. Sign in as M again (in either tab), then Save to cloud in tab A: it saves a new version instead of asking for a new project.
+    - **Explicit sign-out.** In tab A, use the app's Sign out. The status line disappears and the title-block date is unchanged. After signing back in, Save to cloud asks for a new project.
+    - **Different account.** With a project open in tab A, sign out in tab B and sign in there as **R**. In tab A, press Save to cloud: after the refusal, the status line disappears and the date is unchanged.
 
 Anything that behaves differently for M or R than for T is worth stopping on, even if T's version looks right.
 

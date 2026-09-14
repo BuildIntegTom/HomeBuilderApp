@@ -7,9 +7,13 @@ import UnitSystemSwitch from "./UnitSystemSwitch";
 import AccountControl from "./auth/AccountControl";
 import { EDITOR_TAB_LABEL, editorTabsInScope, type EditorTab } from "./editorTabs";
 import { clampMenuLeft, roleControlLabel, roleOptions, settingsMenuHasAdminGroup } from "./topBarMenus";
+import type { CloudMenuModel } from "./cloud/useCloudProjects";
 import styles from "./TopBar.module.css";
 
 export interface TopBarProps {
+  /** Stage 2B: the Project ▾ status line and cloud group. Absent (undefined)
+   * renders the menu exactly as before. Nothing new goes on the bar itself. */
+  cloud?: CloudMenuModel;
   role: ViewerRole;
   onRoleChange: (role: ViewerRole) => void;
   showAllDetailPages: boolean;
@@ -92,6 +96,7 @@ function GearIcon() {
  * under whichever control opened it, clamped to stay on screen.
  */
 export default function TopBar({
+  cloud,
   role,
   onRoleChange,
   showAllDetailPages,
@@ -226,6 +231,20 @@ export default function TopBar({
       </div>
 
       <StickyNote id="project-note" label="Project" {...noteProps("project")}>
+        {/* Stage 2B. Only while a cloud project is open: what it is, and (if the
+            switcher points elsewhere) that saves still go to it. */}
+        {cloud && cloud.statusLines.length > 0 && (
+          <div className={styles.cloudStatus} data-cloud-status="">
+            {cloud.statusLines.map((line, i) => (
+              <p key={i} className={i === 0 ? styles.cloudStatusLine : styles.dropdownNote}>
+                {line}
+              </p>
+            ))}
+          </div>
+        )}
+        {cloud && cloud.menu.kind !== "absent" && <h3 className={styles.menuSectionTitle}>This computer</h3>}
+        {/* Save Project and Load Project: unchanged, and never sign-in-gated
+            (decision 14). Guests stay download-only. */}
         <div className={styles.menuList}>
           <button
             type="button"
@@ -249,6 +268,78 @@ export default function TopBar({
           >
             Load Project
           </button>
+        </div>
+        {cloud && cloud.menu.kind === "sign-in-prompt" && (
+          <div className={styles.menuSection}>
+            <button
+              type="button"
+              title="Opens the account control. Save Project and Load Project work without signing in."
+              className={styles.menuItem}
+              onClick={() => {
+                closeMenu();
+                cloud.onSignIn();
+              }}
+            >
+              {cloud.menu.text}
+            </button>
+          </div>
+        )}
+        {cloud && cloud.menu.kind === "signed-in" && (
+          <div className={styles.menuSection} role="group" aria-label={cloud.menu.heading}>
+            <h3 className={styles.menuSectionTitle}>{cloud.menu.heading}</h3>
+            {cloud.menu.message && <p className={styles.dropdownNote}>{cloud.menu.message}</p>}
+            {(cloud.menu.saveToCloud || cloud.menu.saveAsNew || cloud.menu.openFromCloud) && (
+              <div className={styles.menuList}>
+                {cloud.menu.saveToCloud && (
+                  <button
+                    type="button"
+                    title={
+                      cloud.statusLines.length > 0
+                        ? "Save a new version of the cloud project that is open"
+                        : "Save this design as a new project in the company you are acting as"
+                    }
+                    className={styles.menuItem}
+                    disabled={cloud.busy}
+                    onClick={() => {
+                      closeMenu();
+                      cloud.onSaveToCloud();
+                    }}
+                  >
+                    {cloud.busy ? "Saving to cloud…" : "Save to cloud"}
+                  </button>
+                )}
+                {cloud.menu.saveAsNew && (
+                  <button
+                    type="button"
+                    title="Save a copy as a separate new project in the company you are acting as"
+                    className={styles.menuItem}
+                    disabled={cloud.busy}
+                    onClick={() => {
+                      closeMenu();
+                      cloud.onSaveAsNew();
+                    }}
+                  >
+                    Save as new cloud project…
+                  </button>
+                )}
+                {cloud.menu.openFromCloud && (
+                  <button
+                    type="button"
+                    title="Open the latest version of a project saved in the cloud"
+                    className={styles.menuItem}
+                    onClick={() => {
+                      closeMenu();
+                      cloud.onOpenFromCloud();
+                    }}
+                  >
+                    Open from cloud…
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        <div className={`${styles.menuList} ${cloud && cloud.menu.kind !== "absent" ? styles.menuListAfterSection : ""}`}>
           <button
             type="button"
             title="Zip code, seismic zone, foundation type, pier spacing"

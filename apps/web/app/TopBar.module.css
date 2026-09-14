@@ -253,6 +253,39 @@
   margin: 0;
 }
 
+/* Stage 2B, inside the Project note only — nothing here is on the bar. */
+.cloudStatus {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--bi-outline-variant);
+  border-radius: 6px;
+  background: var(--bi-surface-container-low);
+}
+
+.cloudStatusLine {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--bi-on-surface);
+  overflow-wrap: anywhere;
+}
+
+/* Site Properties / Panelizer, separated from the cloud group above them. */
+.menuListAfterSection {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--bi-divider);
+}
+
+.menuItem:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* Tightening here is not cosmetic: every pixel saved goes to the acting-as
    company name, the only thing in the bar that shrinks. */
 @media (max-width: 767px) {

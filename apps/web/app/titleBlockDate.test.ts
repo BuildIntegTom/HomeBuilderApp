@@ -36,45 +36,50 @@ const UNUSABLE_SAVED_AT: [string, unknown][] = [
 
 describe("resolveTitleBlockDate", () => {
   it("uses a loaded file's savedAt, not today", () => {
-    const resolved = resolveTitleBlockDate({ localFile: { savedAt: SAVED_2025 }, now: NOW });
+    const resolved = resolveTitleBlockDate({ lastSave: { savedAt: SAVED_2025, source: "local-file" }, now: NOW });
     expect(resolved.source).toBe("local-file");
     expect(resolved.date?.toISOString()).toBe(SAVED_2025);
   });
 
   it("uses today for a design that has never been saved or loaded", () => {
-    const resolved = resolveTitleBlockDate({ now: NOW });
+    const resolved = resolveTitleBlockDate({ lastSave: null, now: NOW });
     expect(resolved.source).toBe("today");
     expect(resolved.date?.getTime()).toBe(NOW.getTime());
     expect(titleBlockDateLabel(resolved)).toBe(formatTitleBlockDate(NOW));
   });
 
   it.each(UNUSABLE_SAVED_AT)("a loaded file whose savedAt is %s prints exactly \"Date not recorded\", not today", (_label, savedAt) => {
-    const resolved = resolveTitleBlockDate({ localFile: { savedAt: savedAt as string | undefined }, now: NOW });
+    const resolved = resolveTitleBlockDate({ lastSave: { savedAt: savedAt as string | undefined, source: "local-file" }, now: NOW });
     expect(resolved.source).toBe("local-file-unrecorded");
     expect(resolved.date).toBeUndefined();
     expect(titleBlockDateLabel(resolved)).toBe("Date not recorded");
   });
 
-  it("lets a cloud version's created_at take precedence over a local savedAt", () => {
-    const resolved = resolveTitleBlockDate({ cloudVersionCreatedAt: CLOUD_2024, localFile: { savedAt: SAVED_2025 }, now: NOW });
+  it.each(UNUSABLE_SAVED_AT)("a cloud version whose created_at is %s also prints \"Date not recorded\", never today", (_label, createdAt) => {
+    const resolved = resolveTitleBlockDate({ lastSave: { savedAt: createdAt as string | undefined, source: "cloud-version" }, now: NOW });
+    expect(resolved.source).toBe("cloud-version-unrecorded");
+    expect(titleBlockDateLabel(resolved)).toBe("Date not recorded");
+  });
+
+  it("uses a cloud version's created_at", () => {
+    const resolved = resolveTitleBlockDate({ lastSave: { savedAt: CLOUD_2024, source: "cloud-version" }, now: NOW });
     expect(resolved.source).toBe("cloud-version");
     expect(resolved.date?.toISOString()).toBe(CLOUD_2024);
   });
 
-  it("lets a cloud version's created_at take precedence over a local file with no usable date", () => {
-    const resolved = resolveTitleBlockDate({ cloudVersionCreatedAt: CLOUD_2024, localFile: { savedAt: undefined }, now: NOW });
+  it("accepts PostgREST's created_at exactly as PostgreSQL 17.4 (UTC) serialises it", () => {
+    // Captured from the local 0006 harness: to_json(timestamptz) in a UTC session.
+    const resolved = resolveTitleBlockDate({ lastSave: { savedAt: "2026-09-14T13:05:41.611591+00:00", source: "cloud-version" }, now: NOW });
     expect(resolved.source).toBe("cloud-version");
+    expect(resolved.date?.toISOString()).toBe("2026-09-14T13:05:41.611Z");
   });
 
-  it("accepts PostgREST's +00:00 timestamptz form for the cloud value", () => {
-    const resolved = resolveTitleBlockDate({ cloudVersionCreatedAt: "2024-11-02T12:00:00.123456+00:00", now: NOW });
-    expect(resolved.source).toBe("cloud-version");
-    expect(resolved.date?.toISOString()).toBe("2024-11-02T12:00:00.123Z");
-  });
-
-  it("falls through an unusable cloud value to the local file, or to today with no local file", () => {
-    expect(resolveTitleBlockDate({ cloudVersionCreatedAt: "garbage", localFile: { savedAt: SAVED_2025 }, now: NOW }).source).toBe("local-file");
-    expect(resolveTitleBlockDate({ cloudVersionCreatedAt: "garbage", now: NOW }).source).toBe("today");
+  it("has no precedence: whichever writer supplied lastSave is the whole answer", () => {
+    // The Stage 0 resolver ranked cloud above local. The two regression tests
+    // for that break live in cloud/documentSession.test.ts, which drives the
+    // real sequence of writers; here, only that source is reported as given.
+    expect(resolveTitleBlockDate({ lastSave: { savedAt: SAVED_2025, source: "local-file" }, now: NOW }).source).toBe("local-file");
+    expect(resolveTitleBlockDate({ lastSave: { savedAt: SAVED_2025, source: "cloud-version" }, now: NOW }).source).toBe("cloud-version");
   });
 });
 
@@ -131,7 +136,7 @@ describe.each(TIME_ZONES)("in %s", (zone, expectedOffsetMinutes) => {
   });
 
   it('shows a hand-written "2025-03-14" as Mar 14, 2025', () => {
-    const resolved = resolveTitleBlockDate({ localFile: { savedAt: "2025-03-14" }, now: NOW });
+    const resolved = resolveTitleBlockDate({ lastSave: { source: "local-file", savedAt: "2025-03-14" }, now: NOW });
     expect(resolved.source).toBe("local-file");
     expect([resolved.date?.getFullYear(), resolved.date?.getMonth(), resolved.date?.getDate()]).toEqual([2025, 2, 14]);
     expect(titleBlockDateLabel(resolved)).toBe(formatTitleBlockDate(new Date(2025, 2, 14, 12)));
@@ -145,6 +150,6 @@ describe.each(TIME_ZONES)("in %s", (zone, expectedOffsetMinutes) => {
   });
 
   it.each([["2025"], ["0"]])('treats the formerly misread "%s" as Date not recorded', (savedAt) => {
-    expect(titleBlockDateLabel(resolveTitleBlockDate({ localFile: { savedAt }, now: NOW }))).toBe("Date not recorded");
+    expect(titleBlockDateLabel(resolveTitleBlockDate({ lastSave: { source: "local-file", savedAt }, now: NOW }))).toBe("Date not recorded");
   });
 });

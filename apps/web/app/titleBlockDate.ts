@@ -3,45 +3,61 @@
  * SAVED, never the date it happened to be printed (Tommy, 2026-09-06 — spec
  * "Backend, Accounts & Project Sharing" > Project name / site / date).
  *
- * Resolution order:
+ * LAST SAVE WINS (Stage 2B, spec "The cloud row of the date table"). Stage 0
+ * ranked a cloud date above a local one, which broke as soon as one session
+ * touched both: open a cloud version, then Load a 2025 file, and the sheet
+ * dated the 2025 design with the cloud save time. There is now ONE value,
+ * `titleBlockSave`, and exactly four writers overwrite it:
  *
- *   1. Cloud version opened  -> `project_versions.created_at`  (Stage 2 — nothing
- *                                passes this yet; the slot exists so Stage 2
- *                                only has to supply the value, not re-plumb)
- *   2. Local file loaded     -> that file's `ProjectFile.savedAt` (every guest;
- *                                also the file just written by Save Project).
- *                                If the file has no USABLE savedAt, the sheet
- *                                says "Date not recorded" (Tommy, 2026-09-13)
- *                                — it does NOT fall back to today, because a
- *                                today's date on a design of unknown age looks
- *                                authoritative and is exactly the defect this
- *                                replaces.
- *   3. Never saved or loaded -> today
+ *   Load Project (local file)       -> that file's `ProjectFile.savedAt`
+ *   Save Project (local download)   -> the `savedAt` just written into the file
+ *   Open from cloud                 -> that version's `created_at` column
+ *   Save to cloud / Save as new     -> the new version's `created_at` AS
+ *                                      RETURNED BY THE DATABASE, never the
+ *                                      browser clock
  *
- * Every file this app itself writes carries a full ISO `savedAt` in UTC, so
- * "Date not recorded" only ever appears for files the app did not produce
- * (hand-edited, damaged, or from some other tool).
+ * A failed or refused action writes nothing. Whichever writer ran last has
+ * already overwritten the value, so there is nothing to rank here.
+ *
+ * `null` means never saved or loaded this session: the sheet shows today.
+ * A PRESENT value whose `savedAt` is missing or unusable prints "Date not
+ * recorded" (Tommy, 2026-09-13) — it never collapses to today, because
+ * today's date on a design of unknown age looks authoritative and is exactly
+ * the defect this replaces.
+ *
+ * Every file this app itself writes carries a full ISO `savedAt` in UTC, and
+ * PostgREST sends `created_at` as e.g. `2026-09-14T13:05:41.611591+00:00`
+ * (confirmed against PostgreSQL 17.4 in UTC), so "Date not recorded" only
+ * appears for values the app did not produce.
  */
 
-export type TitleBlockDateSource = "cloud-version" | "local-file" | "local-file-unrecorded" | "today";
+export type TitleBlockSaveSource = "local-file" | "cloud-version";
 
-/** Exact title-block text for a loaded file with no usable save date. */
+/** The last action that saved or replaced the design. */
+export interface TitleBlockSave {
+  savedAt: string | undefined;
+  source: TitleBlockSaveSource;
+}
+
+export type TitleBlockDateSource =
+  | "cloud-version"
+  | "local-file"
+  | "local-file-unrecorded"
+  | "cloud-version-unrecorded"
+  | "today";
+
+/** Exact title-block text for a save with no usable date. */
 export const DATE_NOT_RECORDED_LABEL = "Date not recorded";
 
 export interface TitleBlockDateInputs {
-  /** Stage 2: the opened cloud version's `created_at`. It goes through the
-   * same strict parse below, so Stage 2 must confirm the value arrives as a
-   * full ISO date-time with a zone (PostgREST's `+00:00` form qualifies). */
-  cloudVersionCreatedAt?: string;
-  /** The local file most recently loaded or saved this session; undefined if
-   * none. Its own `savedAt` may be missing or unusable. */
-  localFile?: { savedAt: string | undefined };
+  /** The single `titleBlockSave` value; null if nothing was saved or loaded. */
+  lastSave: TitleBlockSave | null;
   now: Date;
 }
 
 export type ResolvedTitleBlockDate =
   | { source: "cloud-version" | "local-file" | "today"; date: Date }
-  | { source: "local-file-unrecorded"; date: undefined };
+  | { source: "local-file-unrecorded" | "cloud-version-unrecorded"; date: undefined };
 
 /*
  * Strict timestamp rule — only two shapes are usable, everything else is
@@ -104,14 +120,15 @@ export function parseSaveTimestamp(value: unknown): Date | undefined {
   return undefined;
 }
 
-export function resolveTitleBlockDate({ cloudVersionCreatedAt, localFile, now }: TitleBlockDateInputs): ResolvedTitleBlockDate {
-  const cloud = parseSaveTimestamp(cloudVersionCreatedAt);
-  if (cloud) return { source: "cloud-version", date: cloud };
-  if (localFile) {
-    const saved = parseSaveTimestamp(localFile.savedAt);
-    return saved ? { source: "local-file", date: saved } : { source: "local-file-unrecorded", date: undefined };
-  }
-  return { source: "today", date: now };
+export function resolveTitleBlockDate({ lastSave, now }: TitleBlockDateInputs): ResolvedTitleBlockDate {
+  if (!lastSave) return { source: "today", date: now };
+  const saved = parseSaveTimestamp(lastSave.savedAt);
+  if (saved) return { source: lastSave.source, date: saved };
+  // A present value with an unusable savedAt NEVER collapses to today.
+  return {
+    source: lastSave.source === "cloud-version" ? "cloud-version-unrecorded" : "local-file-unrecorded",
+    date: undefined,
+  };
 }
 
 /** The title block's existing display format (unchanged by this fix). */

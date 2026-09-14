@@ -57,6 +57,9 @@ export interface SignInResult {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/** Dispatched on `window` when the person signs out through the app. */
+export const SIGNED_OUT_EVENT = "bi:signed-out";
+
 async function postJson(url: string, body?: unknown): Promise<unknown> {
   const response = await fetch(url, {
     method: "POST",
@@ -126,6 +129,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await postJson("/api/auth/sign-out");
+    // An EXPLICIT sign-out. Distinct from a guest reading of /api/session,
+    // which a network blip or an expired token can also produce: the editor
+    // detaches its cloud project on this event, not on that reading.
+    window.dispatchEvent(new CustomEvent(SIGNED_OUT_EVENT));
     generation.current += 1;
     setSession({ ...GUEST_SESSION, backendConfigured: session.backendConfigured });
   }, [session.backendConfigured]);

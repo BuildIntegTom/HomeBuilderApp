@@ -1,0 +1,34 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+// Relative, not "@/…": vitest has no "@" alias, and cloudRouteSession.test.ts
+// imports this file.
+import { HttpError, errorResponse, requireSession, type ServerSession } from "../auth/serverSession";
+import { ProjectRouteError } from "./projectRouteLogic";
+
+/**
+ * The first line of every /api/projects route, following Stage 1's pattern:
+ * `requireSession()`, then the session's own JWT-bound client, so the RLS
+ * policies in 0006 are the access control. There is no admin client anywhere
+ * on this path.
+ *
+ * The two-factor refusal here is a MESSAGE, not the gate: 0006 puts 0004's
+ * restrictive aal policy on both tables, so a password-only session on an
+ * enrolled account already reads nothing and writes nothing. Saying so
+ * beats an empty folder that looks like data loss.
+ */
+export async function requireCloudSession(): Promise<ServerSession & { supabase: SupabaseClient }> {
+  const session = await requireSession();
+  if (!session.supabase) throw new HttpError(401, "Not signed in");
+  if (session.snapshot.mfaPending) {
+    throw new HttpError(401, "Enter your two-factor code (Account ▾) before using cloud projects");
+  }
+  return session as ServerSession & { supabase: SupabaseClient };
+}
+
+export function cloudErrorResponse(error: unknown): Response {
+  if (error instanceof ProjectRouteError) {
+    return Response.json({ error: error.message }, { status: error.status });
+  }
+  return errorResponse(error);
+}
+
+export const NO_STORE = { "cache-control": "no-store, max-age=0" } as const;
