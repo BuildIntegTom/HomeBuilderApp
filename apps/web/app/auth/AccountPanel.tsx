@@ -38,7 +38,15 @@ export default function AccountPanel() {
   const [newCompanyAdminEmail, setNewCompanyAdminEmail] = useState("");
   const [founded, setFounded] = useState<{ name: string; url: string } | null>(null);
 
-  const isAdminHere = session.actingAsLevel === "admin";
+  // A platform admin administers the people of whichever company they are acting
+  // as: the memberships and invites policies are `is_company_admin(company_id)
+  // or is_platform_admin()`, and the routes defer to them. Gating on
+  // actingAsLevel alone hid the people list and invite form from a platform
+  // admin at any company where they hold no admin membership — so a company
+  // with no admin yet (Rare Forms, 2026-09-14) could not be given its first
+  // member from the app.
+  const isAdminHere =
+    session.actingAsLevel === "admin" || (Boolean(user?.isPlatformAdmin) && Boolean(session.actingAsCompanyId));
   const companyId = session.actingAsCompanyId;
   // Decision 27: creating a company is open to company admins at any member
   // company. Level is per-membership, so this asks "an admin anywhere", not
