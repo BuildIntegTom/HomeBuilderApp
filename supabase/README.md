@@ -668,6 +668,17 @@ real. The migrations glob picks up 0007 too, so Stage 1's suite is checked with
 
 ## Stage 2 verification status
 
+**Applied to the live project 2026-09-14.** Tommy ran pre-flight (a)–(d)
+(`true,true` / `null,null,0` / 4 companies, 1 profile, 1 membership,
+0 invites / `true`), then `0006` ("Success. No rows returned."), then
+post-flight (A)–(F), every result matching the expected output above: 9
+policies, 7 triggers, 5 functions, Stage 1 counts unchanged, 0 projects and 0
+versions, (F) `t` on all four tables. Then `0007` ("Success"), and (G) showed
+all four Stage 1 tables `t t t t f f f`. **Still not verified on live: any
+actual save.** That arrives with 2B, and is tested as an ordinary member.
+
+Local verification, before the paste:
+
 Run on PostgreSQL 17.4 from a fresh data directory, in this order: shim,
 0001–0007, `stage1_rls.test.sql` (still passes, with 0006 and 0007 applied),
 `stage2_rls.test.sql`, and the concurrency script — all pass. Every rule is
