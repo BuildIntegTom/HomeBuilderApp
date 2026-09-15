@@ -437,6 +437,10 @@ A project already serializes to exactly one versioned document (`PROJECT_FILE_VE
 
 > **The switcher selects among entitlements you already hold; it never creates one.** A person with no path to the Seed Collaborative has no toggle to flip and cannot reach the browse set by any client-side means. **The server verifies the acting-as company against the user's own memberships and entitlements on every request** and re-derives permissions from the verified `(user, acting-as company)` pair. A client-supplied "I am acting as X" is an input to be checked, never a fact to be trusted.
 
+**Session memberships are filtered to the signed-in user (fixed 2026-09-14).** `memberships_select` also shows a company admin their company's rows and a platform admin every row, so `loadSession` (`serverSession.ts`) reads `.eq('user_id', <auth user>)` rather than trusting RLS to return only "mine". Before the fix, entitlements were built from other people's rows: a company admin saw their company once per member, and the first row picked supplied `level` and `is_default`. Found from Tommy's "Building Integrity appears twice", reproduced on local PostgreSQL 17.4. If a company is ever listed more than once, every entry is labelled by source and level ("(company admin)", "(member)", "(platform admin)").
+- **Reviewed consequence while live (Stage 1 → 2026-09-14): no security impact.** Ordinary members were never affected (RLS returns them only their own rows). For company and platform admins the effects were duplicate or mislabelled switcher entries, a possibly wrong default company at sign-in, and a company admin possibly shown as "member" (people list / backup entry hidden — a lockout, never a false "admin"). **One app-side rule was bypassable, by platform admins only:** if any Seed Collaborative membership row existed, a platform admin acting as Seed got a membership entitlement instead of consortium, which offered Save-as-new and a Seed folder listing that Open Item 2 defers to Stage 3. `projects_insert` permits platform admins there anyway, so nothing exceeded database permissions. Nothing sent to the browser beyond company id, name, level and default flag.
+- **Can wait:** make `computeEntitlements` itself skip already-listed companies (defence in depth against a future unfiltered read), and replace the source-regex test pinning the filter with a behavioural one.
+
 ### The two failure modes this control has to avoid
 
 Worth naming because they pull in opposite directions and one control now has to serve both:
@@ -924,15 +928,17 @@ In both cases the sheet shows a confident, wrong date, which is exactly the defe
 - **Paging.**
   - Order: projects by id, then versions by number. `after` is `<project id>:<version number>` of the last version received, validated as a uuid and an integer. Every filter is `.eq()` or `.gt()`; nothing from the request is spliced into an `or=` string.
   - Size: a page holds at most 50 versions (25 by default) and at most 4,000,000 bytes of JSON, and always at least one version.
-  - Reads: version metadata by named columns; documents one version at a time, so a page stops before the version that would take it over the budget.
+  - Reads: version metadata by named columns; documents in parallel batches of 5, each its own `.eq()` read. A page walks each batch in version order and stops before the first version over the budget; the cursor is the last version included, so a page may read up to one batch of documents it leaves out. *(Polish 2026-09-14; was one document at a time.)*
   - A single version over 4,400,000 bytes is sent without its document and marked `too-large`. 0006's 4 MB ceiling should make that unreachable.
   - The first page also returns the project count, the server time (the manifest's `exportedAt`) and the exporting account.
 - **Saves during a backup.** A save on a project the backup has not finished is included. One on a project it has already passed is not ("as of when that project was read"). Nor is a project created mid-backup whose id sorts before the cursor.
 - **Zip: `fflate` 0.8.3, pinned exactly in `apps/web/package.json`.** It was already installed through `@types/three`, so the lock file gains one line. The browser compresses each file as it arrives and holds only the compressed chunks. The file is made only after the whole backup has succeeded.
+  - *(Polish 2026-09-14.)* `backupZip` (and fflate) is loaded with a dynamic `import()` when a backup starts, not with the page. If it can't load, the backup fails with "the zip writer couldn't be loaded (are you offline?)" and saves no file. A separate fflate copy remains in the initial bundle through the 3D libraries; that is not backup code.
 - **Files.** `projects/<folder>/<name-slug>--<project-id>/v0007--2026-09-13T1402Z.json`, each `JSON.stringify(document, null, 2)`, the same call Save Project makes.
   - Key order is jsonb's rather than the original file's; `parseProjectFile` does not depend on it.
   - Slugs are lower-case ASCII: accents are folded, anything else becomes a hyphen, the length is at most 60 characters, and an empty slug is "untitled". So a path has no Windows-forbidden character, trailing dot or space, or bare device name.
   - The project id keeps same-named projects apart. A duplicate path would get "-2" rather than overwrite a file.
+  - *(Polish 2026-09-14.)* The company slug in the zip's own file name is at most 30 characters, so a Windows **Extract All** path stays under 260 (worst case 236 from `C:\Users\Tommy\Downloads\`).
   - A project renamed or moved during the backup keeps the directory it had when the backup reached it.
 - **Manifest keys are camelCase**, like `ProjectFile`'s:
   - Top level: `format`, `formatVersion`, `company`, `exportedAt`, `exportedBy` (id, email, name), `appProjectFileVersion`, `projectCount`, `versionCount`, `outsideFileFormatWindowCount` and `notes`.
@@ -942,8 +948,9 @@ In both cases the sheet shows a confident, wrong date, which is exactly the defe
   - A page is retried twice on a network error or a 5xx, and not at all on a refusal.
   - The backup stops, with a message naming the cause and "No file was saved; try again.", if a page still fails, if a version arrives marked `too-large` or `missing`, or if a project's version numbers are not 1 to head without gaps.
   - So the manifest carries no error list: a zip that exists is complete.
-- **Progress and cancel.** The panel shows "Downloaded 37 versions from 3 of 12 projects (2.1 MB)…" and a **Cancel backup** button. The runner lives in `AccountControl`, so closing the Account note does not stop it. Switching company does, and says so.
+- **Progress and cancel.** The panel shows "Downloaded 37 versions from 3 of 12 projects (2.1 MB)…" and a **Cancel backup** button. The runner lives in `AccountControl`, so closing the Account note does not stop it. Switching company does, and says so. *(Polish 2026-09-14.)* A Cancel at any point, including after the last page has arrived, ends as "Backup cancelled. No file was saved." with no download.
 - **A version file loaded with Load Project dates its title block from its own `savedAt`, not from `createdAt`.** `savedAt` is the saving browser's clock, and a rename copies the previous version's. The manifest's notes say so. The files are left untouched, as the plan requires.
+- **Flags check (polish, 2026-09-14): clean.** New administrative numbers only: document batch size 5, company slug cap 30.
 
 #### UI — the Project ▾ menu, and nothing new on the bar
 
