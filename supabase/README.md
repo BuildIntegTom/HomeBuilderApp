@@ -882,6 +882,8 @@ select (select count(*) from public.companies)        as companies,
        (select count(*) from public.project_versions) as project_versions;
 ```
 
+**Don't save or share anything in the app from here until post-flight (G) is done**, or the counts won't match.
+
 **(d)** The database owner can read the MFA factor table (the new tables get the
 same two-factor policy). Expect `true`.
 

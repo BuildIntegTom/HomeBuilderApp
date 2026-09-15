@@ -599,7 +599,7 @@ Rows are permission states (never viewer roles). **"Own" = a project owned by an
 | **Company admin, acting as own company** | yes | yes | yes | yes | yes | **no** | — | — | yes | own company | yes (27) | own projects | no | **own company only (29)** |
 | **Acting as the Seed Collaborative** (any member of a member company) | yes | yes | yes, read-only | **yes** | **only with a grant** | **yes** | **no** | **no** | no | no | no | no | no | no |
 | **A Seed Collaborative member, acting as Seed** | yes | yes | yes | yes | yes | **yes** | **no** (other companies') | **no** (other companies') | yes | per their level | per their level | own projects | no | per their level |
-| **Invited collaborator** (cross-cutting, per project) | yes | yes | — | — | **yes, that project** | — | **yes, that project** | **yes, that project** | no | no | no | no | no | that project counts as own (29) |
+| **Invited collaborator** (cross-cutting, per project) | yes | yes | — | — | **yes, that project** | — | **yes, that project** | **yes, that project** | **yes, that project** (Stage 3 answer 11: refiles it in the owner's folders) | no | no | **yes, that project** (Stage 3 answer 10: shares onward) | no | a company grant: in that company's backup (29); a personal grant: in no company's backup (Stage 3 Open Item 2) |
 | **Platform admin** | yes | yes | all | yes | yes | yes | yes | yes | yes | yes | yes | yes | **yes** | everything |
 
 Readings that must survive implementation:
@@ -608,7 +608,7 @@ Readings that must survive implementation:
 - **The two Seed rows are different and both are real.** Someone from Building Integrity acting as Seed gets Seed's tree read-only plus create rights. Someone whose *own* company is the Seed Collaborative gets their own company's tree, with costs, plus browsing. **Do not collapse them** — the difference is ownership, and it falls out of the ownership rule rather than needing a special case.
 - **"Create yes, edit only with a grant" is the one asymmetric cell**, and it is deliberate (18): creating in the consortium's tree is free, editing someone's existing work is not. **It depends on the creator keeping a grant on what they created** — confirmed by Tommy 2026-09-14 (Stage 3 plan, answer 1) — otherwise this row means you cannot edit your own new project after saving it once.
 - **An invited collaborator's access is scoped to the one project**, not to the inviting company, and it is the mechanism behind the "only with a grant" cell.
-- **⚠ Conflict flagged 2026-09-14, not yet resolved in this table:** the "Invited collaborator" row says **Move between folders: no** and **Grant collaborators: no**. Tommy's Stage 3 answers 11 and 10 say a collaborator can move folders and can share onward. The cells are left as they are until he confirms. See "Stage 3 plan — Collaboration", Open Item 6.
+- **Resolved 2026-09-14 (Stage 3 Open Item 6, default accepted by Tommy):** the "Invited collaborator" row says **yes, that project** for Move between folders (answer 11) and Grant collaborators (answer 10), and its Backup cell follows Open Item 2. The answers won because they are newer and were chosen explicitly over the alternatives.
 - **The switcher does appear in this table now, and that is the correction.** An earlier draft said consulting the switcher in a permission check was always a bug. Under the merged model the acting-as company is a legitimate input. The surviving rule: **the switcher selects among entitlements you hold and never creates one**, and the acting-as claim is verified server-side on every request.
 
 ### Build order
@@ -1395,7 +1395,7 @@ Provenance: Tommy was interviewed on 2026-09-14, and his fifteen answers are bel
 - **`list_shared_projects(p_acting_as uuid)`** returns one row per project: project id, name, folder, head number, head version id, head author name, `updated_at`, owner company id and name (through the helper), and how the project reached you (`person` / `company` / `creator`, plus the granter's name snapshot).
   - It **never selects `document`.**
   - **The grant filter is written into the function, not left to RLS.** It includes rows where `grantee_user_id = auth.uid()`, or where `grantee_company_id = p_acting_as` and `is_member_of(p_acting_as)`.
-  - It **excludes projects owned by `p_acting_as`**, which are already in the folder tabs.
+  - It **excludes projects owned by `p_acting_as` when the caller is a member of it (or a platform admin)**, because the folder tabs already list those. Acting as Seed through the consortium, a project you created in Seed's tree stays in this tab.
   - *Why explicit:* `collaborators_select` also shows owner members every grant on their projects. An unfiltered read would list another person's grants as "shared with us", which is the same class of bug as the 2026-09-14 session-membership fix.
 - **`pending_share_notices()`** returns grants that reach you and are newer than your `seen_through`.
   - Only `kind = 'shared'`, and not the grants you made yourself.
@@ -1428,7 +1428,7 @@ Provenance: Tommy was interviewed on 2026-09-14, and his fifteen answers are bel
   - **Visibility.** The access list shows every grant and who made it.
   - **Removal.** Any owner member can remove any grant (13).
   - **Honest limit, same as 23:** removing a grant stops future reads. It does not recall a file already downloaded, or a copy already saved as someone else's project.
-- **When a grant is removed, the grants that person made stay.** Grants are independent rows. The access list then shows "shared by Frank (no longer has access)" beside them. ⚠ Open Item 1.
+- **When a grant is removed, the grants that person made stay.** Grants are independent rows. The access list shows "shared by Frank" beside them, and makes no claim about whether Frank still has access: an ordinary member cannot see that through RLS, and no helper is added for it. ⚠ Open Item 1.
 - **A possible mitigation is recorded, not built:** a per-project "only Building Integrity can share this" switch. ⚠ Open Item 7. The default is no limit, as Tommy chose.
 
 #### Who sees what — the Shared tab and acting-as
@@ -1471,7 +1471,7 @@ Provenance: Tommy was interviewed on 2026-09-14, and his fifteen answers are bel
   - "**Frank** (person) — shared by Bob · Sep 14, 2026"
   - "**Rare Forms** (company: every current and future member) — shared by Bob · Sep 14"
   - "**Dave** — created this project"
-  - "… — shared by Frank (no longer has access)"
+  - "… — shared by Frank"
 - **Remove** appears only where the database would allow it: when you are an owner member or a platform admin, or when the row's `granted_by` is you. **The database is the gate, and the button is the courtesy.** A refused delete (zero rows) says "You can remove only the shares you made. Nothing was changed."
 - **The share form** offers **Person** (email) or **Company** (picker from `shareable_companies`).
   - It always shows: "They get full edit access, costs included, and can share it onward."
@@ -1487,6 +1487,7 @@ Provenance: Tommy was interviewed on 2026-09-14, and his fifteen answers are bel
   - A company grant names the company: "…shared *Smith House* with Rare Forms."
 - **When it clears:** **Got it**, which calls `dismiss_share_notices()`. The server time is stored, so a second computer is cleared too. Opening the tab does not clear it.
 - **Not notified:** creator grants, grants you made, and company grants made before you joined that company.
+- **Known race, accepted (3A review):** a grant's time is its sharing transaction's start. If the recipient presses **Got it** while that share is still committing, that one notice is never shown. The project still appears in Shared with us, which is the durable signal.
 
 #### Company backup (29) — granted projects join
 
@@ -1631,7 +1632,7 @@ Steps marked "as M / as R / as R2 / as N" must not be done as T.
 5. **As R, not T:** share the same project with N. **As N, not T:** it is in Shared with us. The access list reads "N — shared by R".
 6. **As R, not T:** the access list shows **Remove** only on N's row. Open `/api/projects/<id>/access` in the address bar and copy the `id` of R's own grant (the one M made). In the console, run `fetch('/api/projects/<id>/access/<that id>', { method: 'DELETE' }).then(r => r.status)`. It prints **404**, and the list is unchanged.
 7. **As M, not T:** share a second project with the **company** Rare Forms. **As R and as R2:** both see it. **As T:** remove R2's Rare Forms membership. **As R2:** it is gone after a reload. **As T:** re-invite R2 to Rare Forms. **As R2:** accept the invite and see the project again, with nobody re-sharing it.
-8. **As M, not T:** remove R's grant on the first project. **As R:** it leaves Shared with us, and Save to cloud in an editor that still has it open is refused with **Download project file**. **As N:** it is still shared (Open Item 1's default), and M's list reads "N — shared by R (no longer has access)". **As M:** remove N.
+8. **As M, not T:** remove R's grant on the first project. **As R:** it leaves Shared with us, and Save to cloud in an editor that still has it open is refused with **Download project file**. **As N:** it is still shared (Open Item 1's default), and M's list reads "N — shared by R". **As M:** remove N.
 9. **As R, not T, while holding a grant:** there is no delete control, and the owner line has no Remove. The company picker does not offer Building Integrity.
 10. **As R, not T:** paste the version URL of a **different** Building Integrity project that was never shared. It returns 404 with no document.
 11. **(3C) As M:** share a project with R. **As R:** reload, and the notice names M and the project. Press **Got it** and reload: it is gone. Sign in as R in a second browser: it is gone there too.
@@ -1717,7 +1718,7 @@ Steps marked "as M / as R / as R2 / as N" must not be done as T.
 
 **Answered by Tommy 2026-09-14: all eight defaults accepted.** Asked directly: item 1 ("Offer to remove them too", pre-ticked), item 2 ("The owner's backup only"), item 5 ("Yes, a one-line warning"); items 3, 4, 6, 7 and 8 accepted together as written. Each item below is now a decision; the ⚠ marks stay only so the reasoning is findable.
 
-1. **⚠ When a grant is removed, do the grants that person made go with it?** Example: Bob shares with Frank, Frank shares with Nick, and Bob removes Frank. **Default: Nick keeps access.** The list marks "shared by Frank (no longer has access)", and the Remove dialog offers "Also remove the 1 share Frank made", **pre-ticked**. The alternative, cascading automatically, is stricter but silently removes people the remover never saw.
+1. **⚠ When a grant is removed, do the grants that person made go with it?** Example: Bob shares with Frank, Frank shares with Nick, and Bob removes Frank. **Default: Nick keeps access.** The list keeps "shared by Frank" on those rows. Removing **a personal grant** offers "Also remove the 1 share Frank made", **pre-ticked**. Removing **a company grant** offers nothing further, because `granted_by` records a person, not the company they acted through. The alternative, cascading automatically, is stricter but silently removes people the remover never saw.
 2. **⚠ Personal grants, including creator grants, and backups.** A share with Frank personally is in no company's backup. **Default: excluded.** The person can still download each version, and a company backup stays a company's. The consequence: a Building Integrity designer's Seed-tree project is in Seed's backup, not Building Integrity's.
 3. **Who sees the access list?** **Default: everyone who can open the project.** Rare Forms can therefore see that New Frameworks also has it. The alternative, owner members only, hides from collaborators the grants they could remove.
 4. **Which companies appear in the share picker?** **Default: consortium member companies (`is_seed_member`) only.** A non-member company ("neither sees nor is seen") is reachable by sharing with a person's email. No non-member company exists today.
@@ -1736,7 +1737,7 @@ Steps marked "as M / as R / as R2 / as N" must not be done as T.
    - The one money-shaped field, `priceModifier`, moves only inside whole documents, to people who hold an explicit grant (24). No redaction is claimed that does not exist.
    - **No new number at all**, administrative or otherwise. Backup page sizes and name limits are Stage 2's, unchanged.
    - The plan leans on the convention's own principle:
-     - "shared by Frank (no longer has access)" rather than a vanished attribution;
+     - "shared by Frank" kept on the rows he made, rather than a vanished attribution;
      - `no-account` rather than a silent no-op;
      - names snapshotted and labelled "as shared" rather than a blank.
    - *(3A, re-run against its diff, 2026-09-14: clean.)* Only `supabase/` files changed. No building value, `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is touched, `data.ts` is untouched, and nothing reaches the Review Log. The only numbers in 0008 are SQLSTATEs, migration numbers and decision references. The fixture documents carry the app's existing default `priceModifier`, as Stage 2's did.

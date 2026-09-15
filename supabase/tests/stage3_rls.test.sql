@@ -780,6 +780,38 @@ begin
     'the notice names the project, its owner, the sharer, "you", and the time');
 end $$;
 
+-- A company admin reads every membership row of their company
+-- (memberships_select). The join-date rule must still be about YOUR row, or an
+-- admin who joined after a company grant is told of it on the strength of a
+-- colleague who was already there. henry is made a Rare Forms admin for this
+-- block only.
+reset role;
+select set_config('request.jwt.claims', '', true);
+set local app.operator = 'on';
+update public.memberships set level = 'admin'
+ where user_id = pg_temp.u('henry') and company_id = pg_temp.co('RF');
+set local app.operator = '';
+set local role authenticated;
+
+select pg_temp.act_as('henry');
+do $$ begin
+  perform pg_temp.assert(public.is_company_admin(pg_temp.co('RF'))
+    and exists (select 1 from public.memberships m
+                 where m.company_id = pg_temp.co('RF') and m.user_id <> pg_temp.u('henry')
+                   and m.created_at < (select c.created_at from public.collaborators c where c.id = pg_temp.get('g_rf'))),
+    'premise: henry, now a Rare Forms admin, reads the membership of a colleague who joined before P2 was shared with Rare Forms');
+  perform pg_temp.assert(pg_temp.same_set(pg_temp.pending(), array[pg_temp.get('g_henry')]),
+    'NOTICES FOLLOW YOUR OWN MEMBERSHIP: henry, a Rare Forms admin who joined after P2 was shared with it, is still notified only of his own P1 grant, not of the Rare Forms grant his colleagues were there for');
+end $$;
+
+reset role;
+select set_config('request.jwt.claims', '', true);
+set local app.operator = 'on';
+update public.memberships set level = 'member'
+ where user_id = pg_temp.u('henry') and company_id = pg_temp.co('RF');
+set local app.operator = '';
+set local role authenticated;
+
 select pg_temp.act_as('frank');
 do $$ begin
   perform pg_temp.assert(pg_temp.same_set(pg_temp.pending(), array[pg_temp.get('g_frank'), pg_temp.get('g_rf')]),
@@ -1086,6 +1118,19 @@ begin
   delete from public.collaborators where id = pg_temp.get('g_dave_by_frank');
   get diagnostics n = row_count;
   perform pg_temp.assert(n = 0, 'and, having lost access, cannot remove even a grant he made');
+
+  -- The delete above names a column, so collaborators_select (can_read_project)
+  -- already hides the row from it. A delete that names no column is checked by
+  -- collaborators_delete alone, so this is what proves the policy's own
+  -- can_read_project on the sharer's branch. Undone in case it ever deletes.
+  begin
+    delete from public.collaborators;
+    get diagnostics n = row_count;
+    perform pg_temp.assert(n = 0,
+      'A SHARER WHO LOST ACCESS REMOVES NOTHING: frank''s unfiltered delete, which only collaborators_delete checks, affects 0 rows (got ' || n || ')');
+    raise exception 'undo' using errcode = 'ZZ001';  -- NOT P0001: that is what pg_temp.assert raises
+  exception when sqlstate 'ZZ001' then null;
+  end;
 end $$;
 
 select pg_temp.act_as('carol');
