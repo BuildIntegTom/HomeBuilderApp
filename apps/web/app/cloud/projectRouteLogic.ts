@@ -405,6 +405,24 @@ export async function moveProject(db: SupabaseClient, projectIdParam: string, bo
   return { projectId, folder };
 }
 
+/**
+ * The owning company's name, for display. Stage 3B: through
+ * `project_owner_company_name` (0008), NOT a `companies` read — companies_select
+ * hides the owner's row from a collaborator from another company, so a plain
+ * read showed them a blank owner. The helper returns the name only when the
+ * caller can read the project. Enrichment: a failure is an empty name, which
+ * the UI shows as a visible gap, and the project read above has already
+ * decided access.
+ */
+async function ownerCompanyName(db: SupabaseClient, projectId: string): Promise<string> {
+  try {
+    const { data, error } = await db.rpc("project_owner_company_name", { p_project: projectId });
+    return !error && typeof data === "string" ? data : "";
+  } catch {
+    return "";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/projects/[id]/versions — Stage 2C, Version history
 // ---------------------------------------------------------------------------
@@ -466,7 +484,7 @@ export async function listVersions(db: SupabaseClient, projectIdParam: string): 
     }
   }
 
-  const { data: company } = await db.from("companies").select("name").eq("id", p.company_id).maybeSingle();
+  const companyName = await ownerCompanyName(db, projectId);
 
   const numberById = new Map(records.map((r) => [r.id, r.version_number]));
   const versions: CloudVersionRow[] = records.map((r) => ({
@@ -488,7 +506,7 @@ export async function listVersions(db: SupabaseClient, projectIdParam: string): 
   return {
     projectId: p.id,
     companyId: p.company_id,
-    companyName: (company as { name: string } | null)?.name ?? "",
+    companyName,
     projectName: p.name,
     folder: p.folder,
     headVersionNumber,
@@ -574,12 +592,12 @@ export async function getVersion(db: SupabaseClient, projectIdParam: string, ver
   if (!project) throw new ProjectRouteError(404, VERSION_NOT_FOUND_MESSAGE);
   const p = project as { id: string; company_id: string; name: string; folder: CloudFolder; head_version_number: number };
 
-  const { data: company } = await db.from("companies").select("name").eq("id", p.company_id).maybeSingle();
+  const companyName = await ownerCompanyName(db, projectId);
 
   return {
     projectId: p.id,
     companyId: p.company_id,
-    companyName: (company as { name: string } | null)?.name ?? "",
+    companyName,
     folder: p.folder,
     projectName: p.name,
     headVersionNumber: p.head_version_number,

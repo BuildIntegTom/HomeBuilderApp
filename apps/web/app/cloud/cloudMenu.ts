@@ -6,7 +6,9 @@ import {
   consortiumLaterStageMessage,
   displayProjectName,
   type CloudContext,
+  type SharedReach,
 } from "./cloudTypes";
+import { ownerNameOrGap, reachSummary } from "./sharingDisplay";
 
 /**
  * What the Project ▾ menu's cloud group shows (spec, "UI — the Project ▾ menu,
@@ -40,6 +42,8 @@ export type CloudMenu =
       openFromCloud: boolean;
       /** Stage 2C: only while a cloud project is open. */
       versionHistory: boolean;
+      /** Stage 3B: the open project's access list and share form. */
+      sharing: boolean;
     };
 
 export const SIGN_IN_PROMPT = "Sign in to save projects to the cloud";
@@ -59,6 +63,7 @@ export function buildCloudMenu(input: CloudMenuInput): CloudMenu {
       saveAsNew: false,
       openFromCloud: false,
       versionHistory: false,
+      sharing: false,
     };
   }
 
@@ -78,10 +83,15 @@ export function buildCloudMenu(input: CloudMenuInput): CloudMenu {
     // acting as. With nothing open, it is the create dialog.
     saveToCloud: input.cloudProjectOpen || canCreate,
     saveAsNew: canCreate,
-    openFromCloud: actingAs !== null,
+    // Stage 3B: offered to every signed-in account, including one with no
+    // membership, which can still hold a personal grant. Its note then shows
+    // only the Shared with us tab.
+    openFromCloud: true,
     // Governed by the open project, like Save to cloud, not by the switcher.
     // If access to it was lost, the history's own 404 says so.
     versionHistory: input.cloudProjectOpen,
+    // Stage 3B, the same rule: the access list's own 404 says if access went.
+    sharing: input.cloudProjectOpen,
   };
 }
 
@@ -89,18 +99,27 @@ export function buildCloudMenu(input: CloudMenuInput): CloudMenu {
  * The Project ▾ status line, shown only while a cloud project is open:
  * "Smith House · v7 · Building Integrity › Current Projects", plus the
  * acting-as mismatch line when the switcher points somewhere else.
+ *
+ * Stage 3B: `reach` is how a shared project reached you (from the Shared tab),
+ * so the second line reads "Owned by Building Integrity · shared with you by
+ * Bob. You're acting as Rare Forms; saves still go to this project." Empty when
+ * unknown (opened from a folder tab), which keeps 2B's wording.
  */
 export function cloudStatusLines(
   cloudContext: CloudContext | null,
   editorProjectName: string,
   actingAs: { companyId: string; companyName: string } | null,
+  reach: readonly SharedReach[] = [],
 ): string[] {
   if (!cloudContext) return [];
-  const lines = [
-    `${displayProjectName(editorProjectName)} · v${cloudContext.baseVersionNumber} · ${cloudContext.companyName} › ${FOLDER_LABEL[cloudContext.folder]}`,
-  ];
+  const owner = ownerNameOrGap(cloudContext.companyName);
+  const lines = [`${displayProjectName(editorProjectName)} · v${cloudContext.baseVersionNumber} · ${owner} › ${FOLDER_LABEL[cloudContext.folder]}`];
+  const how = reachSummary(reach);
+  const ownedBy = how ? `Owned by ${owner} · ${how}.` : `Owned by ${owner}.`;
   if (actingAs && actingAs.companyId !== cloudContext.companyId) {
-    lines.push(`Owned by ${cloudContext.companyName}. You're acting as ${actingAs.companyName}; saves still go to this project.`);
+    lines.push(`${ownedBy} You're acting as ${actingAs.companyName}; saves still go to this project.`);
+  } else if (!actingAs && how) {
+    lines.push(ownedBy);
   }
   return lines;
 }

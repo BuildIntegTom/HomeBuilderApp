@@ -22,11 +22,16 @@ import {
   type CloudVersionResponse,
   type CreateProjectResponse,
   type ListProjectsResponse,
+  type ListSharedProjectsResponse,
   type ListVersionsResponse,
   type MoveProjectResponse,
   type RenameProjectResponse,
   type SaveVersionResponse,
+  type SharedProjectRow,
 } from "./cloudTypes";
+import { cloudFetch } from "./cloudFetch";
+import { SHARED_TAB_LABEL, copyOwnedByLine, refileHeading, sharedEmptyLines, sharedRowDetail } from "./sharingDisplay";
+import { useProjectAccess } from "./useProjectAccess";
 import { divergenceNotice, movedOnSaveNotice, replacedWhileSavingNotice, staleOpenNotice } from "./divergenceNotice";
 import {
   answerIsCurrent,
@@ -81,6 +86,11 @@ export interface CloudMenuModel {
   onOpenFromCloud: () => void;
   /** Stage 2C: the open project's Version history. */
   onVersionHistory: () => void;
+  /** Stage 3B: the open project's access list and share form. */
+  onSharing: () => void;
+  /** Stage 3B: Move to… on the status line, into the OWNER's folders. Null
+   * with no cloud project open. */
+  refile: { heading: string; folder: CloudFolder; busy: boolean; onMove: (folder: CloudFolder) => void } | null;
   onSignIn: () => void;
 }
 
@@ -104,32 +114,8 @@ export interface UseCloudProjectsOptions {
   downloadProjectFile: () => void;
 }
 
-type FetchResult<T> = { ok: true; data: T } | { ok: false; status: number; message: string };
-
-async function cloudFetch<T>(url: string, init?: RequestInit): Promise<FetchResult<T>> {
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      cache: "no-store",
-      ...init,
-      headers: { "content-type": "application/json" },
-    });
-  } catch {
-    return { ok: false, status: 0, message: "Couldn't reach the server. Nothing was saved or changed." };
-  }
-  const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
-  if (!response.ok) {
-    const message =
-      payload && typeof payload.error === "string"
-        ? payload.error
-        : response.status === 413
-          ? // A platform body-limit refusal arrives before our route and is not JSON.
-            DOCUMENT_TOO_LARGE_MESSAGE
-          : `The server refused that (${response.status}). Nothing was saved or changed.`;
-    return { ok: false, status: response.status, message };
-  }
-  return { ok: true, data: payload as T };
-}
+/** Open from cloud's tabs: the three folders, and Stage 3B's Shared with us. */
+type OpenTab = CloudFolder | "shared";
 
 /** "2:14 pm", from a created_at the strict parser accepts. */
 export function formatSaveTime(createdAt: string): string {
@@ -197,10 +183,18 @@ export function useCloudProjects({
   const [dialogLabel, setDialogLabel] = useState("");
   const [dialogError, setDialogError] = useState<{ message: string; offerDownload: boolean } | null>(null);
 
-  const [tab, setTab] = useState<CloudFolder>("current");
+  const [tab, setTab] = useState<OpenTab>("current");
   const [list, setList] = useState<ListProjectsResponse | null>(null);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  // Stage 3B: the Shared with us tab. Kept after the tab is left, so the
+  // status line can still say how an opened shared project reached you.
+  const [sharedList, setSharedList] = useState<ListSharedProjectsResponse | null>(null);
+  const [sharedLoading, setSharedLoading] = useState(false);
+  const [sharedError, setSharedError] = useState<string | null>(null);
+  /** Bumped to reload whichever tab is showing (after a move, rename, share or removal). */
+  const [listNonce, setListNonce] = useState(0);
+  const reloadTab = useCallback(() => setListNonce((n) => n + 1), []);
   const [openProblem, setOpenProblem] = useState<OpenProblem | null>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
 
@@ -246,9 +240,17 @@ export function useCloudProjects({
   const userId = snapshot?.user?.id ?? null;
   const lastKnownUserId = useRef<string | null>(null);
 
+  // Stage 3B: the access list note. A share or removal reloads the tab.
+  const refreshSession = useCallback(() => void auth?.refresh(), [auth]);
+  const access = useProjectAccess({ onAuthProblem: refreshSession, onChanged: reloadTab });
+  const resetAccess = access.reset;
+
   const detachForAccountChange = useCallback(() => {
     dispatch({ type: "account-changed" });
     setList(null);
+    setSharedList(null);
+    setSharedError(null);
+    resetAccess();
     setOpenProblem(null);
     setDialogError(null);
     // A history read by the old account is not left on screen for the new
@@ -260,7 +262,7 @@ export function useCloudProjects({
     setHistoryLoading(false);
     setHistoryProblem(null);
     setRenaming(null);
-  }, [dispatch]);
+  }, [dispatch, resetAccess]);
 
   useEffect(() => {
     const next = trackSignedInAccount(lastKnownUserId.current, userId);
@@ -451,13 +453,29 @@ export function useCloudProjects({
     setList(result.data);
   }, []);
 
+  const loadShared = useCallback(async () => {
+    setSharedLoading(true);
+    setSharedError(null);
+    const result = await cloudFetch<ListSharedProjectsResponse>("/api/projects/shared");
+    setSharedLoading(false);
+    if (!result.ok) {
+      setSharedList(null);
+      setSharedError(result.message);
+      return;
+    }
+    setSharedList(result.data);
+  }, []);
+
   // Reloads when the note opens, the tab changes, or the acting-as company
   // changes (the tree follows the switcher; an open project does not).
+  // Stage 3B: an account with no company has only the Shared tab.
   const actingAsCompanyId = snapshot?.actingAsCompanyId ?? null;
+  const shownTab: OpenTab = actingAs ? tab : "shared";
   useEffect(() => {
     if (openNote !== "open" || !userId || mfaPending) return;
-    void loadList(tab);
-  }, [openNote, tab, actingAsCompanyId, userId, mfaPending, loadList]);
+    if (shownTab === "shared") void loadShared();
+    else void loadList(shownTab);
+  }, [openNote, shownTab, actingAsCompanyId, userId, mfaPending, loadList, loadShared, listNonce]);
 
   const openFromCloud = () => {
     setOpenProblem(null);
@@ -554,6 +572,9 @@ export function useCloudProjects({
     const opened = await openVersion(row.id, row.headVersionId, "latest", setOpenProblem);
     setRowBusy(null);
     if (opened) closeNote("open");
+    // A share removed while this list was open: the 404 is shown, and the
+    // list is re-read so the row goes.
+    else if (shownTab === "shared") reloadTab();
   };
 
   const openHistoryRow = async (row: HistoryRowModel) => {
@@ -628,7 +649,7 @@ export function useCloudProjects({
     dispatch(action);
     if (outcome === "base-moved" || outcome === "base-stays") setEditorProjectName(result.data.name);
     setRenaming(null);
-    void loadList(tab);
+    reloadTab();
     refreshHistoryIfShowing(row.id);
     showNotice({
       tone: "info",
@@ -659,7 +680,32 @@ export function useCloudProjects({
       if (result.status === 401 || result.status === 403) void auth?.refresh();
       setOpenProblem({ message: result.message });
     } else dispatch({ type: "cloud-moved", projectId: row.id, folder: result.data.folder });
-    void loadList(tab);
+    reloadTab();
+  };
+
+  /** Stage 3B: Move to… on the status line, for the project open here. */
+  const moveOpenProject = async (folder: CloudFolder) => {
+    const ctx = readDocumentSession().cloudContext;
+    if (!ctx || rowBusy !== null) return;
+    setRowBusy(ctx.projectId);
+    const result = await cloudFetch<MoveProjectResponse>(`/api/projects/${encodeURIComponent(ctx.projectId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ folder }),
+    });
+    setRowBusy(null);
+    if (!result.ok) {
+      if (result.status === 401 || result.status === 403) void auth?.refresh();
+      showNotice({ tone: "error", title: "Not moved", lines: [result.message], offerDownload: false });
+      return;
+    }
+    dispatch({ type: "cloud-moved", projectId: ctx.projectId, folder: result.data.folder });
+    showNotice({
+      tone: "info",
+      title: "Moved",
+      lines: [`Refiled in ${ctx.companyName} › ${FOLDER_LABEL[result.data.folder]}. Nothing was saved; this is filing only.`],
+      offerDownload: false,
+    });
+    reloadTab();
   };
 
   // --- Model for the Project ▾ menu --------------------------------------
@@ -673,8 +719,11 @@ export function useCloudProjects({
     cloudProjectOpen: cloudContext !== null,
   });
 
+  // How the open project reached you, when the Shared tab listed it.
+  const openReach = cloudContext ? (sharedList?.projects.find((p) => p.id === cloudContext.projectId)?.reachedVia ?? []) : [];
+
   const menuModel: CloudMenuModel = {
-    statusLines: cloudStatusLines(cloudContext, editorProjectName, actingAs),
+    statusLines: cloudStatusLines(cloudContext, editorProjectName, actingAs, openReach),
     menu,
     busy,
     onSaveToCloud: () => void saveToOpenProject(),
@@ -684,6 +733,18 @@ export function useCloudProjects({
       const ctx = readDocumentSession().cloudContext;
       if (ctx) showHistory(ctx.projectId, editorProjectName);
     },
+    onSharing: () => {
+      const ctx = readDocumentSession().cloudContext;
+      if (ctx) access.openAccess(ctx.projectId, editorProjectName);
+    },
+    refile: cloudContext
+      ? {
+          heading: refileHeading(cloudContext.companyName),
+          folder: cloudContext.folder,
+          busy: rowBusy !== null,
+          onMove: (folder) => void moveOpenProject(folder),
+        }
+      : null,
     onSignIn: () => window.dispatchEvent(new CustomEvent(OPEN_ACCOUNT_CONTROL_EVENT)),
   };
 
@@ -702,6 +763,129 @@ export function useCloudProjects({
   const shownHistory = history && historyTarget && history.projectId === historyTarget.projectId ? history : null;
   const historyRows = shownHistory ? buildHistoryRows(shownHistory, cloudContext, PROJECT_FILE_VERSION) : [];
   const historyName = shownHistory ? shownHistory.projectName : (historyTarget?.projectName ?? "");
+
+  /**
+   * One Open from cloud row. A folder row (2B/2C) and a Shared row (3B) differ
+   * only in the owner line and the Move to… picker: a Shared row's folders are
+   * the OWNER's, and the picker says so. Every row gets Access… (3B).
+   */
+  const renderRow = (row: CloudProjectRow | SharedProjectRow, shared: SharedProjectRow | null) => {
+    const isOpenHere = cloudContext?.projectId === row.id;
+    const renamingThis = renaming?.projectId === row.id ? renaming : null;
+    const name = displayProjectName(row.name);
+    return (
+      <li key={row.id} className={isOpenHere ? styles.rowOpen : styles.row} data-project-id={row.id}>
+        <span className={styles.rowTitle}>
+          {name}
+          {isOpenHere ? " (open in this editor)" : ""}
+        </span>
+        <span className={styles.rowMeta}>
+          v{row.headVersionNumber} · {row.headAuthorName ?? "author not recorded"} · {relativeSaveTime(row.updatedAt, now)}
+        </span>
+        {shared && (
+          <span className={styles.rowMeta} data-shared-detail="">
+            {sharedRowDetail(shared)}
+          </span>
+        )}
+        <span className={styles.rowActions}>
+          <button type="button" className={styles.button} disabled={rowBusy !== null} onClick={() => void openRow(row)}>
+            {rowBusy === row.id ? "Working…" : "Open"}
+          </button>
+          <button
+            type="button"
+            className={styles.button}
+            title="Every saved version of this project: who saved it and when. Any of them can be opened."
+            onClick={() => showHistory(row.id, row.name)}
+          >
+            Versions
+          </button>
+          {shared ? (
+            <select
+              className={styles.inlineSelect}
+              aria-label={`Move ${name}: ${refileHeading(shared.ownerCompanyName)}`}
+              value=""
+              disabled={rowBusy !== null}
+              onChange={(e) => {
+                if (e.target.value) void moveRow(row, e.target.value as CloudFolder);
+              }}
+            >
+              <option value="">Move to…</option>
+              <optgroup label={refileHeading(shared.ownerCompanyName)}>
+                {CLOUD_FOLDERS.map((f) => (
+                  <option key={f} value={f} disabled={f === row.folder}>
+                    {FOLDER_LABEL[f]}
+                    {f === row.folder ? " (here now)" : ""}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          ) : (
+            <select
+              className={styles.inlineSelect}
+              aria-label={`Move ${name} to another folder`}
+              value=""
+              disabled={rowBusy !== null}
+              onChange={(e) => {
+                if (e.target.value) void moveRow(row, e.target.value as CloudFolder);
+              }}
+            >
+              <option value="">Move to…</option>
+              {CLOUD_FOLDERS.filter((f) => f !== row.folder).map((f) => (
+                <option key={f} value={f}>
+                  {FOLDER_LABEL[f]}
+                </option>
+              ))}
+            </select>
+          )}
+          {!renamingThis && (
+            <button
+              type="button"
+              className={styles.button}
+              title="Rename this project. Adds a version marked Renamed; earlier versions keep their old name."
+              disabled={rowBusy !== null || busy}
+              onClick={() => startRename(row)}
+            >
+              Rename
+            </button>
+          )}
+          <button
+            type="button"
+            className={styles.button}
+            title="Who has access to this project, and share it with a person or a company"
+            onClick={() => access.openAccess(row.id, row.name)}
+          >
+            Access…
+          </button>
+        </span>
+        {renamingThis && (
+          <form
+            className={styles.renameForm}
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submitRename(row);
+            }}
+          >
+            <input
+              className={styles.input}
+              type="text"
+              aria-label={`New name for ${name}`}
+              maxLength={PROJECT_NAME_MAX_CHARS}
+              value={renamingThis.draft}
+              autoFocus
+              onChange={(e) => setRenaming({ ...renamingThis, draft: e.target.value, error: null })}
+            />
+            <button type="submit" className={styles.primary} disabled={rowBusy !== null || busy}>
+              {rowBusy === row.id ? "Renaming…" : "Save name"}
+            </button>
+            <button type="button" className={styles.button} disabled={rowBusy === row.id} onClick={() => setRenaming(null)}>
+              Cancel
+            </button>
+          </form>
+        )}
+        {renamingThis?.error && <p className={styles.error}>{renamingThis.error}</p>}
+      </li>
+    );
+  };
 
   const notes = (
     <>
@@ -734,6 +918,12 @@ export function useCloudProjects({
                 The company is the one you are acting as. Name: <strong>{displayProjectName(editorProjectName)}</strong>, from
                 the project name field.
               </p>
+              {/* Stage 3B: from another company's (shared) project, this is a copy. */}
+              {cloudContext && cloudContext.companyId !== actingAs.companyId && (
+                <p className={styles.muted} data-copy-note="">
+                  {copyOwnedByLine(actingAs.companyName, cloudContext.companyName)}
+                </p>
+              )}
               <label className={styles.field}>
                 Note (optional)
                 <input
@@ -773,25 +963,30 @@ export function useCloudProjects({
         <div className={styles.stack}>
           {!signedIn ? (
             <p className={styles.message}>Sign in to open projects from the cloud.</p>
-          ) : !actingAs ? (
-            <p className={styles.message}>{NO_COMPANY_MESSAGE}</p>
-          ) : actingAs.source === "consortium" ? (
-            // Said in words; no empty tree dressed up as a real one.
-            <p className={styles.message}>{consortiumLaterStageMessage(actingAs.companyName)}</p>
           ) : (
             <>
               <div className={styles.tabs} role="group" aria-label="Folder">
-                {CLOUD_FOLDERS.map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    className={tab === f ? styles.tabActive : styles.tab}
-                    aria-pressed={tab === f}
-                    onClick={() => setTab(f)}
-                  >
-                    {FOLDER_LABEL[f]}
-                  </button>
-                ))}
+                {/* No company: only Shared with us (a personal grant needs none). */}
+                {actingAs &&
+                  CLOUD_FOLDERS.map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      className={shownTab === f ? styles.tabActive : styles.tab}
+                      aria-pressed={shownTab === f}
+                      onClick={() => setTab(f)}
+                    >
+                      {FOLDER_LABEL[f]}
+                    </button>
+                  ))}
+                <button
+                  type="button"
+                  className={shownTab === "shared" ? styles.tabActive : styles.tab}
+                  aria-pressed={shownTab === "shared"}
+                  onClick={() => setTab("shared")}
+                >
+                  {SHARED_TAB_LABEL}
+                </button>
               </div>
               {openProblem && (
                 <div className={styles.stack}>
@@ -809,102 +1004,36 @@ export function useCloudProjects({
                   )}
                 </div>
               )}
-              {listLoading && !list ? (
+              {shownTab === "shared" ? (
+                // Stage 3B. No folders of its own: every row prints the owner's.
+                sharedLoading && !sharedList ? (
+                  <p className={styles.muted}>Loading…</p>
+                ) : sharedError ? (
+                  <p className={styles.error}>{sharedError}</p>
+                ) : sharedList && sharedList.projects.length === 0 ? (
+                  <div className={styles.stack} data-shared-empty="">
+                    {sharedEmptyLines(snapshot?.entitlements.length ?? 0).map((line) => (
+                      <p key={line} className={styles.muted}>
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <ul className={styles.rows} data-shared-list="">
+                    {(sharedList?.projects ?? []).map((row) => renderRow(row, row))}
+                  </ul>
+                )
+              ) : actingAs && actingAs.source === "consortium" ? (
+                // Said in words; no empty tree dressed up as a real one.
+                <p className={styles.message}>{consortiumLaterStageMessage(actingAs.companyName)}</p>
+              ) : listLoading && !list ? (
                 <p className={styles.muted}>Loading…</p>
               ) : listError ? (
                 <p className={styles.error}>{listError}</p>
               ) : list && list.projects.length === 0 ? (
-                <p className={styles.muted}>No projects in {FOLDER_LABEL[tab]} yet.</p>
+                <p className={styles.muted}>No projects in {FOLDER_LABEL[shownTab]} yet.</p>
               ) : (
-                <ul className={styles.rows}>
-                  {(list?.projects ?? []).map((row) => {
-                    const isOpenHere = cloudContext?.projectId === row.id;
-                    const renamingThis = renaming?.projectId === row.id ? renaming : null;
-                    return (
-                      <li key={row.id} className={isOpenHere ? styles.rowOpen : styles.row} data-project-id={row.id}>
-                        <span className={styles.rowTitle}>
-                          {displayProjectName(row.name)}
-                          {isOpenHere ? " (open in this editor)" : ""}
-                        </span>
-                        <span className={styles.rowMeta}>
-                          v{row.headVersionNumber} · {row.headAuthorName ?? "author not recorded"} ·{" "}
-                          {relativeSaveTime(row.updatedAt, now)}
-                        </span>
-                        <span className={styles.rowActions}>
-                          <button
-                            type="button"
-                            className={styles.button}
-                            disabled={rowBusy !== null}
-                            onClick={() => void openRow(row)}
-                          >
-                            {rowBusy === row.id ? "Working…" : "Open"}
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.button}
-                            title="Every saved version of this project: who saved it and when. Any of them can be opened."
-                            onClick={() => showHistory(row.id, row.name)}
-                          >
-                            Versions
-                          </button>
-                          <select
-                            className={styles.inlineSelect}
-                            aria-label={`Move ${displayProjectName(row.name)} to another folder`}
-                            value=""
-                            disabled={rowBusy !== null}
-                            onChange={(e) => {
-                              if (e.target.value) void moveRow(row, e.target.value as CloudFolder);
-                            }}
-                          >
-                            <option value="">Move to…</option>
-                            {CLOUD_FOLDERS.filter((f) => f !== row.folder).map((f) => (
-                              <option key={f} value={f}>
-                                {FOLDER_LABEL[f]}
-                              </option>
-                            ))}
-                          </select>
-                          {!renamingThis && (
-                            <button
-                              type="button"
-                              className={styles.button}
-                              title="Rename this project. Adds a version marked Renamed; earlier versions keep their old name."
-                              disabled={rowBusy !== null || busy}
-                              onClick={() => startRename(row)}
-                            >
-                              Rename
-                            </button>
-                          )}
-                        </span>
-                        {renamingThis && (
-                          <form
-                            className={styles.renameForm}
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              void submitRename(row);
-                            }}
-                          >
-                            <input
-                              className={styles.input}
-                              type="text"
-                              aria-label={`New name for ${displayProjectName(row.name)}`}
-                              maxLength={PROJECT_NAME_MAX_CHARS}
-                              value={renamingThis.draft}
-                              autoFocus
-                              onChange={(e) => setRenaming({ ...renamingThis, draft: e.target.value, error: null })}
-                            />
-                            <button type="submit" className={styles.primary} disabled={rowBusy !== null || busy}>
-                              {rowBusy === row.id ? "Renaming…" : "Save name"}
-                            </button>
-                            <button type="button" className={styles.button} disabled={rowBusy === row.id} onClick={() => setRenaming(null)}>
-                              Cancel
-                            </button>
-                          </form>
-                        )}
-                        {renamingThis?.error && <p className={styles.error}>{renamingThis.error}</p>}
-                      </li>
-                    );
-                  })}
-                </ul>
+                <ul className={styles.rows}>{(list?.projects ?? []).map((row) => renderRow(row, null))}</ul>
               )}
               <p className={styles.muted}>Opening replaces the design on screen with the project&apos;s latest version.</p>
             </>
@@ -1041,6 +1170,9 @@ export function useCloudProjects({
           </div>
         </div>
       </StickyNote>
+
+      {/* Stage 3B. Last, so it lands on top of the row or menu it was opened from. */}
+      {access.note}
     </>
   );
 

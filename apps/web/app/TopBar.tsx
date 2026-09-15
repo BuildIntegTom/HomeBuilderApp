@@ -8,6 +8,7 @@ import AccountControl from "./auth/AccountControl";
 import { EDITOR_TAB_LABEL, editorTabsInScope, type EditorTab } from "./editorTabs";
 import { clampMenuLeft, roleControlLabel, roleOptions, settingsMenuHasAdminGroup } from "./topBarMenus";
 import type { CloudMenuModel } from "./cloud/useCloudProjects";
+import { CLOUD_FOLDERS, FOLDER_LABEL, isCloudFolder } from "./cloud/cloudTypes";
 import styles from "./TopBar.module.css";
 
 export interface TopBarProps {
@@ -240,6 +241,31 @@ export default function TopBar({
                 {line}
               </p>
             ))}
+            {/* Stage 3B: Move to… on the status line. The folders are the
+                OWNER's, and the picker says so (spec, "Folder moves by a
+                collaborator"). Inside this note, not on the bar. */}
+            {cloud.refile && (
+              <select
+                className={styles.cloudRefile}
+                aria-label={cloud.refile.heading}
+                value=""
+                disabled={cloud.refile.busy}
+                onChange={(e) => {
+                  const folder = e.target.value;
+                  if (cloud.refile && isCloudFolder(folder)) cloud.refile.onMove(folder);
+                }}
+              >
+                <option value="">Move to…</option>
+                <optgroup label={cloud.refile.heading}>
+                  {CLOUD_FOLDERS.map((f) => (
+                    <option key={f} value={f} disabled={f === cloud.refile?.folder}>
+                      {FOLDER_LABEL[f]}
+                      {f === cloud.refile?.folder ? " (here now)" : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+            )}
           </div>
         )}
         {cloud && cloud.menu.kind !== "absent" && <h3 className={styles.menuSectionTitle}>This computer</h3>}
@@ -288,7 +314,7 @@ export default function TopBar({
           <div className={styles.menuSection} role="group" aria-label={cloud.menu.heading}>
             <h3 className={styles.menuSectionTitle}>{cloud.menu.heading}</h3>
             {cloud.menu.message && <p className={styles.dropdownNote}>{cloud.menu.message}</p>}
-            {(cloud.menu.saveToCloud || cloud.menu.saveAsNew || cloud.menu.openFromCloud || cloud.menu.versionHistory) && (
+            {(cloud.menu.saveToCloud || cloud.menu.saveAsNew || cloud.menu.openFromCloud || cloud.menu.versionHistory || cloud.menu.sharing) && (
               <div className={styles.menuList}>
                 {cloud.menu.saveToCloud && (
                   <button
@@ -347,6 +373,20 @@ export default function TopBar({
                     }}
                   >
                     Version history
+                  </button>
+                )}
+                {/* Stage 3B. Inside this note, not on the bar. */}
+                {cloud.menu.sharing && (
+                  <button
+                    type="button"
+                    title="Who has access to the cloud project that is open, and share it with a person or a company"
+                    className={styles.menuItem}
+                    onClick={() => {
+                      closeMenu();
+                      cloud.onSharing();
+                    }}
+                  >
+                    Sharing…
                   </button>
                 )}
               </div>

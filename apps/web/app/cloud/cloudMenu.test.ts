@@ -37,15 +37,16 @@ describe("buildCloudMenu", () => {
     expect(SIGN_IN_PROMPT).toBe("Sign in to save projects to the cloud");
   });
 
-  it("signed in with NO company: no cloud save, and says why in plain words", () => {
+  it("signed in with NO company: no cloud save, says why, and (3B) still offers Open from cloud for personal shares", () => {
     expect(buildCloudMenu({ ...base, actingAs: null })).toEqual({
       kind: "signed-in",
       heading: "Cloud",
       message: NO_COMPANY_MESSAGE,
       saveToCloud: false,
       saveAsNew: false,
-      openFromCloud: false,
+      openFromCloud: true,
       versionHistory: false,
+      sharing: false,
     });
     expect(NO_COMPANY_MESSAGE).toMatch(/aren't a member of any company/);
     expect(NO_COMPANY_MESSAGE).toMatch(/Save Project still downloads/);
@@ -65,7 +66,15 @@ describe("buildCloudMenu", () => {
       saveAsNew: true,
       openFromCloud: true,
       versionHistory: false,
+      sharing: false,
     });
+  });
+
+  it("3B: Sharing… is offered only while a cloud project is open, whatever the switcher says, and never with two-factor pending", () => {
+    expect(buildCloudMenu({ ...base, cloudProjectOpen: true })).toMatchObject({ sharing: true });
+    expect(buildCloudMenu({ ...base, actingAs: RF_PLATFORM, cloudProjectOpen: true })).toMatchObject({ sharing: true });
+    expect(buildCloudMenu({ ...base, actingAs: null, cloudProjectOpen: true })).toMatchObject({ sharing: true });
+    expect(buildCloudMenu({ ...base, mfaPending: true, cloudProjectOpen: true })).toMatchObject({ sharing: false, openFromCloud: false });
   });
 
   it("2C: Version history is offered only while a cloud project is open, whatever the switcher says", () => {
@@ -125,6 +134,27 @@ describe("cloudStatusLines", () => {
       "Smith House · v7 · Building Integrity › Current Projects",
       "Owned by Building Integrity. You're acting as Rare Forms; saves still go to this project.",
     ]);
+  });
+
+  const byBob = [{ via: "person" as const, granteeName: "Rory", grantedByName: "Bob", createdAt: "2026-09-14T13:00:00+00:00" }];
+
+  it("3B: a shared project says how it reached you, and that saves still go to it", () => {
+    expect(cloudStatusLines(ctx, "Smith House", { companyId: "rf", companyName: "Rare Forms" }, byBob)).toEqual([
+      "Smith House · v7 · Building Integrity › Current Projects",
+      "Owned by Building Integrity · shared with you by Bob. You're acting as Rare Forms; saves still go to this project.",
+    ]);
+  });
+
+  it("3B: an account with no membership still sees who owns it and how it reached them", () => {
+    expect(cloudStatusLines(ctx, "Smith House", null, byBob)).toEqual([
+      "Smith House · v7 · Building Integrity › Current Projects",
+      "Owned by Building Integrity · shared with you by Bob.",
+    ]);
+    expect(cloudStatusLines(ctx, "Smith House", null)).toHaveLength(1);
+  });
+
+  it("3B: a blank owner name (the pre-3B collaborator bug) is a visible gap, not 'v7 ·  › Current Projects'", () => {
+    expect(cloudStatusLines({ ...ctx, companyName: "" }, "Smith House", BI)[0]).toBe("Smith House · v7 · (owner name not available) › Current Projects");
   });
 });
 

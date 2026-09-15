@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // imports this file.
 import { HttpError, errorResponse, requireSession, type ServerSession } from "../auth/serverSession";
 import { ProjectRouteError } from "./projectRouteLogic";
+import type { SharingViewer } from "./sharingRouteLogic";
 
 /**
  * The first line of every /api/projects route, following Stage 1's pattern:
@@ -22,6 +23,21 @@ export async function requireCloudSession(): Promise<ServerSession & { supabase:
     throw new HttpError(401, "Enter your two-factor code (Account ▾) before using cloud projects");
   }
   return session as ServerSession & { supabase: SupabaseClient };
+}
+
+/**
+ * Stage 3B: who is asking, for the access list's Remove buttons. Everything
+ * here comes from loadSession's verified reading (memberships re-read on every
+ * request), never from the request. It only decides which buttons to show;
+ * collaborators_delete decides what is removed.
+ */
+export function sharingViewerOf(session: ServerSession): SharingViewer {
+  return {
+    userId: session.snapshot.user?.id ?? "",
+    isPlatformAdmin: Boolean(session.snapshot.user?.isPlatformAdmin),
+    entitlements: session.entitlements,
+    actingAs: session.actingAs,
+  };
 }
 
 export function cloudErrorResponse(error: unknown): Response {

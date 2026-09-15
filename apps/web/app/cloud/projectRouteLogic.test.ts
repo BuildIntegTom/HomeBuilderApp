@@ -482,7 +482,8 @@ describe("getVersion — GET /api/projects/[id]/versions/[versionId]", () => {
         return { data: { id: V3, project_id: P1, version_number: 3, created_at: CREATED_AT, schema_version: 24, author_name: "Virgil", document: DOC } };
       }
       if (call.name === "projects") return { data: { id: P1, company_id: BI_ID, name: "Smith House", folder: "past", head_version_number: 5 } };
-      return { data: { name: "Building Integrity" } };
+      if (call.name === "project_owner_company_name") return { data: "Building Integrity" };
+      return {};
     });
     await expect(getVersion(db, P1, V3)).resolves.toEqual({
       projectId: P1,
@@ -528,7 +529,7 @@ describe("listVersions — GET /api/projects/[id]/versions", () => {
   const standard = (over: { names?: Reply; versions?: Reply; project?: Reply } = {}) =>
     fakeDb((call) => {
       if (call.name === "projects") return over.project ?? { data: PROJECT };
-      if (call.name === "companies") return { data: { name: "Building Integrity" } };
+      if (call.name === "project_owner_company_name") return { data: "Building Integrity" };
       if (call.name === "project_versions" && isRenameNames(call)) return over.names ?? { data: [{ id: V3, project_name: "Smith Residence" }] };
       if (call.name === "project_versions") return over.versions ?? { data: ROWS };
       return {};
@@ -651,6 +652,39 @@ describe("renameProject — POST /api/projects/[id]/rename", () => {
   });
 });
 
+describe("the owner's name for a collaborator (Stage 3B)", () => {
+  // Reproduces what live code did: a Rare Forms collaborator reads the project
+  // and its versions through the grant, but companies_select hides Building
+  // Integrity's row, so a `companies` read comes back empty.
+  const asCollaborator = (ownerName: Reply = { data: "Building Integrity" }) =>
+    fakeDb((call) => {
+      if (call.name === "project_versions" && call.terminal === "maybeSingle") {
+        return { data: { id: V3, project_id: P1, version_number: 3, created_at: CREATED_AT, schema_version: 24, author_name: "Rory Rare", document: DOC } };
+      }
+      if (call.name === "project_versions") return { data: [] };
+      if (call.name === "projects") return { data: { id: P1, company_id: BI_ID, name: "Smith House", folder: "proposals", head_version_number: 3 } };
+      if (call.name === "companies") return { data: null };
+      if (call.name === "project_owner_company_name") return ownerName;
+      return {};
+    });
+
+  it("getVersion and listVersions take it from project_owner_company_name, and never read companies", async () => {
+    for (const run of [(db: SupabaseClient) => getVersion(db, P1, V3), (db: SupabaseClient) => listVersions(db, P1)]) {
+      const { db, calls } = asCollaborator();
+      await expect(run(db)).resolves.toMatchObject({ companyId: BI_ID, companyName: "Building Integrity" });
+      expect(calls.find((c) => c.name === "project_owner_company_name")).toMatchObject({ kind: "rpc", args: { p_project: P1 } });
+      expect(calls.some((c) => c.name === "companies")).toBe(false);
+    }
+  });
+
+  it("a null or failing helper is an empty name, never a refused read (the project read already decided access)", async () => {
+    for (const reply of [{ data: null }, { error: { code: "XX000", message: "boom" } }]) {
+      await expect(getVersion(asCollaborator(reply).db, P1, V3)).resolves.toMatchObject({ companyName: "" });
+      await expect(listVersions(asCollaborator(reply).db, P1)).resolves.toMatchObject({ companyName: "" });
+    }
+  });
+});
+
 describe("mapProjectDbError — 2C operations", () => {
   it("history and rename give 404 for 42501, 22P02 and PGRST116, with their own messages", () => {
     for (const code of ["42501", "22P02", "PGRST116"]) {
@@ -678,14 +712,17 @@ describe("the project routes", () => {
       return statSync(path).isDirectory() ? files(path) : [path];
     });
 
-  it("exist for 2B and 2C (version list, rename), and not for 2D's backup", () => {
+  it("exist for 2B, 2C (version list, rename) and 3B (shared list, access list), and not for 2D's backup", () => {
     const routes = files(apiDir).map((p) => p.slice(apiDir.length).replace(/\\/g, "/"));
     expect(routes.sort()).toEqual([
+      "/[id]/access/[grantId]/route.ts",
+      "/[id]/access/route.ts",
       "/[id]/rename/route.ts",
       "/[id]/route.ts",
       "/[id]/versions/[versionId]/route.ts",
       "/[id]/versions/route.ts",
       "/route.ts",
+      "/shared/route.ts",
     ]);
     const versions = readFileSync(join(apiDir, "[id]", "versions", "route.ts"), "utf8");
     expect(versions).toMatch(/export async function GET/);
@@ -695,8 +732,18 @@ describe("the project routes", () => {
     expect(rename).not.toMatch(/export async function (GET|PATCH|DELETE)/);
   });
 
-  it("have no DELETE anywhere (decision 13)", () => {
-    for (const path of files(apiDir)) expect(readFileSync(path, "utf8"), path).not.toMatch(/export async function DELETE/);
+  it("can delete no project or version (decision 13): the one DELETE (3B) removes a grant, through removeGrant only", () => {
+    for (const path of files(apiDir)) {
+      const source = readFileSync(path, "utf8");
+      const isGrantRoute = path.replace(/\\/g, "/").endsWith("/[id]/access/[grantId]/route.ts");
+      if (isGrantRoute) {
+        expect(source).toMatch(/export async function DELETE/);
+        expect(source).toMatch(/removeGrant\(/);
+        expect(source).not.toMatch(/from\("projects"\)|from\("project_versions"\)/);
+      } else {
+        expect(source, path).not.toMatch(/export async function DELETE/);
+      }
+    }
   });
 
   it("never import the admin (service-role) client", () => {

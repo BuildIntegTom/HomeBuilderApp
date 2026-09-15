@@ -269,6 +269,105 @@ export interface BackupPageResponse {
   done: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Stage 3B: sharing, the access list and the "Shared with us" tab.
+// Spec: "Stage 3 plan — Collaboration" → "Who sees what", "The owner's access
+// list, and sharing UI", Routes.
+// ---------------------------------------------------------------------------
+
+/** How a grant reaches you: to you personally, to the company you act as, or
+ * the creator grant (answer 1). */
+export type ReachedVia = "person" | "company" | "creator";
+
+/** One entry of `list_shared_projects.reached_via`. Names are snapshots taken
+ * when the grant was made ("as shared"). */
+export interface SharedReach {
+  via: ReachedVia;
+  granteeName: string;
+  /** Null only for a creator grant. */
+  grantedByName: string | null;
+  createdAt: string;
+}
+
+/** One row of the Shared tab. Metadata only: the route never selects `document`. */
+export interface SharedProjectRow extends CloudProjectRow {
+  ownerCompanyId: string;
+  /** Through `project_owner_company_name`; empty only if it could not be read. */
+  ownerCompanyName: string;
+  /** Oldest first. One project reached two ways is ONE row with two entries. */
+  reachedVia: SharedReach[];
+}
+
+export interface ListSharedProjectsResponse {
+  /** The verified acting-as company the list was filtered by, or null (no membership). */
+  actingAs: { id: string; name: string } | null;
+  projects: SharedProjectRow[];
+}
+
+export type GrantKind = "shared" | "creator";
+
+/** One row of a project's access list, as the route shapes it. No user ids
+ * are sent: removal rights are decided server-side (and again by RLS). */
+export interface AccessGrantRow {
+  grantId: string;
+  kind: GrantKind;
+  granteeKind: "person" | "company";
+  /** The person's or company's name when the grant was made. */
+  granteeName: string;
+  /** True when the grantee company is The Seed Collaborative (own members only). */
+  granteeIsConsortium: boolean;
+  grantedByName: string | null;
+  /** The signed-in person made this grant. */
+  grantedByYou: boolean;
+  /** This grant is to the signed-in person. */
+  isYou: boolean;
+  createdAt: string;
+  /** Whether the database would let the signed-in person remove it (the
+   * button is the courtesy; RLS is the gate). */
+  canRemove: boolean;
+  /** For a personal grant: the ids of the grants THAT person made on this
+   * project (the Remove offer, Open Item 1). Empty for company and creator grants. */
+  sharesMadeByGrantee: string[];
+}
+
+export interface ProjectAccessResponse {
+  projectId: string;
+  projectName: string;
+  owner: { id: string; name: string };
+  /** The signed-in person is a member of the owner company (or a platform admin). */
+  viewerIsOwnerSide: boolean;
+  grants: AccessGrantRow[];
+}
+
+export type PersonShareStatus = "shared" | "already-shared" | "no-account" | "self" | "already-member";
+export type CompanyShareStatus = "shared" | "already-shared" | "owner-company" | "not-shareable";
+
+export interface ShareResponse {
+  kind: "person" | "company";
+  status: PersonShareStatus | CompanyShareStatus;
+  grantId: string | null;
+  /** The answer in words, ready to show. */
+  message: string;
+}
+
+export interface RemoveGrantResponse {
+  removedGrantId: string;
+  /** Of the "shares they made" the remover chose to remove too. */
+  alsoRemoved: number;
+  /** Chosen, but already gone or not removable by you. */
+  alsoNotRemoved: number;
+}
+
+export interface ShareableCompany {
+  id: string;
+  name: string;
+  isConsortium: boolean;
+}
+
+export interface ShareableCompaniesResponse {
+  companies: ShareableCompany[];
+}
+
 export function actingAsChangedMessage(companyName: string): string {
   return `You're now acting as ${companyName} (changed in another tab). Nothing was saved.`;
 }

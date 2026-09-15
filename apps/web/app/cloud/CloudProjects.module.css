@@ -211,3 +211,16 @@
 .renameForm .input {
   flex: 1 1 160px;
 }
+
+/* Stage 3B: the access list's "Also remove the shares they made" offer. */
+.checkRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--bi-on-surface-variant);
+}
+
+.checkRow input {
+  margin-top: 2px;
+}
