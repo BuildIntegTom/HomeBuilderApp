@@ -46,6 +46,13 @@ export const BACKUP_PAGE_BYTE_BUDGET = 4_000_000;
  * than that, so this is a guard that should never fire.
  */
 export const BACKUP_SINGLE_VERSION_HARD_LIMIT = 4_400_000;
+/**
+ * Documents are read this many at a time, in parallel, rather than one after
+ * another (up to ~53 sequential reads a page before). A page may fetch up to
+ * one batch of documents it then leaves out (when the budget is crossed at
+ * the first version of a batch); they are simply read again for the next page.
+ */
+export const BACKUP_DOCUMENT_BATCH_SIZE = 5;
 
 export const BACKUP_COMPANY_NOT_FOUND_MESSAGE = "That company doesn't exist, or you can't back it up.";
 export const BACKUP_CURSOR_MESSAGE = "That backup page request isn't valid. No file was saved; start the backup again.";
@@ -214,46 +221,58 @@ export async function readBackupPage(
     if (metaError) fail(metaError);
     const metas = (metaRows ?? []) as VersionMetaRecord[];
 
-    for (const meta of metas) {
-      // One document per read, so a page can stop the moment the next one
-      // would push it over the byte budget, having fetched at most one extra.
-      const { data: docRow, error: docError } = await db
-        .from("project_versions")
-        .select("document")
-        .eq("project_id", project.id)
-        .eq("id", meta.id)
-        .maybeSingle();
-      if (docError) fail(docError);
+    for (let start = 0; start < metas.length && !pageFull; start += BACKUP_DOCUMENT_BATCH_SIZE) {
+      const batch = metas.slice(start, start + BACKUP_DOCUMENT_BATCH_SIZE);
+      // One read per document (`.eq()` on the project and the version id), a
+      // small batch of them in parallel. The budget check below still walks
+      // the batch in version order, so a page stops before the first version
+      // that would take it over, and the cursor is the last one included.
+      const docRows = await Promise.all(
+        batch.map(async (meta) => {
+          const { data, error } = await db
+            .from("project_versions")
+            .select("document")
+            .eq("project_id", project!.id)
+            .eq("id", meta.id)
+            .maybeSingle();
+          if (error) fail(error);
+          return data as { document: unknown } | null;
+        }),
+      );
 
-      const entry: BackupVersionEntry = {
-        projectId: project.id,
-        projectName: project.name,
-        folder: project.folder,
-        projectHeadVersionNumber: project.head_version_number,
-        versionId: meta.id,
-        versionNumber: meta.version_number,
-        parentVersionId: meta.parent_version_id,
-        kind: meta.kind,
-        label: meta.label,
-        authorName: meta.author_name,
-        createdAt: meta.created_at,
-        schemaVersion: meta.schema_version,
-        document: docRow ? (docRow as { document: unknown }).document : null,
-        omitted: docRow ? null : "missing",
-      };
-      let size = jsonByteLength(entry);
-      if (size > BACKUP_SINGLE_VERSION_HARD_LIMIT) {
-        entry.document = null;
-        entry.omitted = "too-large";
-        size = jsonByteLength(entry);
+      for (let i = 0; i < batch.length; i++) {
+        const meta = batch[i];
+        const docRow = docRows[i];
+        const entry: BackupVersionEntry = {
+          projectId: project.id,
+          projectName: project.name,
+          folder: project.folder,
+          projectHeadVersionNumber: project.head_version_number,
+          versionId: meta.id,
+          versionNumber: meta.version_number,
+          parentVersionId: meta.parent_version_id,
+          kind: meta.kind,
+          label: meta.label,
+          authorName: meta.author_name,
+          createdAt: meta.created_at,
+          schemaVersion: meta.schema_version,
+          document: docRow ? docRow.document : null,
+          omitted: docRow ? null : "missing",
+        };
+        let size = jsonByteLength(entry);
+        if (size > BACKUP_SINGLE_VERSION_HARD_LIMIT) {
+          entry.document = null;
+          entry.omitted = "too-large";
+          size = jsonByteLength(entry);
+        }
+        // The first version always goes, so a page always advances.
+        if (versions.length > 0 && bytes + size + 1 > BACKUP_PAGE_BYTE_BUDGET) {
+          pageFull = true;
+          break;
+        }
+        versions.push(entry);
+        bytes += size + 1;
       }
-      // The first version always goes, so a page always advances.
-      if (versions.length > 0 && bytes + size + 1 > BACKUP_PAGE_BYTE_BUDGET) {
-        pageFull = true;
-        break;
-      }
-      versions.push(entry);
-      bytes += size + 1;
     }
     if (pageFull) break;
 

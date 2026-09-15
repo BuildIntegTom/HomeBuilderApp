@@ -29,6 +29,15 @@ export const BACKUP_MANIFEST_FORMAT_VERSION = 1;
 
 /** Administrative, not building values. */
 export const BACKUP_SLUG_MAX_CHARS = 60;
+/**
+ * The company slug in the zip's file name is shorter than a project slug:
+ * Windows' "Extract All" makes a folder named after the zip, so the company
+ * slug is repeated in front of every extracted path. Worst case with 30:
+ * "C:\Users\Tommy\Downloads\" (25) + "company-backup--<30>--2026-09-13T1402Z" (64)
+ * + "\" + "projects\proposals\<60>--<36-char id>\v0007--2026-09-13T1402Z.json"
+ * (146) = 236 characters, under the 260 MAX_PATH. With 60 it was 266.
+ */
+export const BACKUP_COMPANY_SLUG_MAX_CHARS = 30;
 const PAGE_RETRIES = 2;
 const RETRY_DELAY_MS = 1500;
 
@@ -44,14 +53,14 @@ const RETRY_DELAY_MS = 1500;
  * device name on its own. Lower case, because Windows paths are
  * case-insensitive: "Smith" and "smith" must not be two different folders.
  */
-export function backupNameSlug(name: string | null | undefined): string {
+export function backupNameSlug(name: string | null | undefined, maxChars: number = BACKUP_SLUG_MAX_CHARS): string {
   const slug = (name ?? "")
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, BACKUP_SLUG_MAX_CHARS)
+    .slice(0, maxChars)
     .replace(/-+$/g, "");
   return slug || "untitled";
 }
@@ -82,7 +91,7 @@ export function backupVersionFileName(versionNumber: number, createdAt: string):
 }
 
 export function backupZipFileName(companyName: string, exportedAt: string): string {
-  return `company-backup--${backupNameSlug(companyName)}--${backupTimestamp(exportedAt) ?? "time-not-recorded"}.zip`;
+  return `company-backup--${backupNameSlug(companyName, BACKUP_COMPANY_SLUG_MAX_CHARS)}--${backupTimestamp(exportedAt) ?? "time-not-recorded"}.zip`;
 }
 
 const WINDOWS_FORBIDDEN = /[<>:"\\|?*\u0000-\u001f]/;

@@ -92,7 +92,14 @@ export const loadSession = cache(async (): Promise<ServerSession> => {
       .select("display_name, is_platform_admin, email")
       .eq("id", authUser.id)
       .maybeSingle(),
-    supabase.from("memberships").select("company_id, level, is_default"),
+    // Filtered to THIS user, not left to RLS. memberships_select (0002) also
+    // lets a company admin read every membership of their company and a
+    // platform admin read every membership anywhere, so an unfiltered read
+    // handed those people other members' rows as if they were their own: the
+    // same company listed once per member in the switcher, with someone else's
+    // level and default flag. Found 2026-09-14 from Tommy's "Building Integrity
+    // appears twice"; reproduced on local PostgreSQL 17.4.
+    supabase.from("memberships").select("company_id, level, is_default").eq("user_id", authUser.id),
     supabase.from("companies").select("id, name, is_seed_member, is_consortium"),
     supabase.auth.mfa.listFactors(),
     supabase.auth.mfa.getAuthenticatorAssuranceLevel(),

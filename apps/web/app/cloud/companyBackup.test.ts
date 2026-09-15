@@ -6,6 +6,7 @@ import { createZipCollector, type BackupFileSink } from "./backupZip";
 import type { BackupPageResponse, BackupVersionEntry } from "./cloudTypes";
 import {
   BACKUP_CANCELLED_MESSAGE,
+  BACKUP_COMPANY_SLUG_MAX_CHARS,
   backupNameSlug,
   backupProjectDirectory,
   backupVersionFileName,
@@ -137,6 +138,27 @@ describe("file names are safe on Windows", () => {
     expect(backupVersionFileName(12345, "2026-09-13T14:02:05Z")).toBe("v12345--2026-09-13T1402Z.json");
     expect(backupVersionFileName(3, "not a time")).toBe("v0003--time-not-recorded.json");
     expect(backupZipFileName("Building Integrity", "2026-09-14T12:00:00.000Z")).toBe("company-backup--building-integrity--2026-09-14T1200Z.zip");
+  });
+
+  it("caps the company slug in the zip name at 30 characters, so extracted paths stay under Windows' 260", () => {
+    const longCompany = "The Very Long Company Name Of Straw Bale Builders Incorporated Northwest";
+    const name = backupZipFileName(longCompany, "2026-09-14T12:00:00.000Z");
+    expect(name).toBe("company-backup--the-very-long-company-name-of--2026-09-14T1200Z.zip");
+    const companySlug = name.slice("company-backup--".length, -"--2026-09-14T1200Z.zip".length);
+    expect(companySlug.length).toBeLessThanOrEqual(BACKUP_COMPANY_SLUG_MAX_CHARS);
+    expect(companySlug).not.toMatch(/-$/);
+    // Project slugs keep their 60.
+    expect(backupNameSlug(longCompany)).toHaveLength(60);
+
+    // Worst case, as Windows "Extract All" lays it out: a folder named after
+    // the zip (with a full 30-character company slug), then the longest
+    // project path this backup can write.
+    const fullName = backupZipFileName("Building Integrity Straw Panels Northwest Cooperative", "2026-09-14T12:00:00.000Z");
+    expect(fullName).toBe("company-backup--building-integrity-straw-panel--2026-09-14T1200Z.zip");
+    const project = backupProjectDirectory("proposals", "P".repeat(500), "9320be5d-515c-4b62-bbfd-19a419a0729e");
+    const extracted = `C:\\Users\\Tommy\\Downloads\\${fullName.replace(/\.zip$/, "")}\\${project.replace(/\//g, "\\")}\\${backupVersionFileName(1234, "2026-09-13T14:02:00Z")}`;
+    expect(extracted.length).toBe(236);
+    expect(extracted.length).toBeLessThan(260);
   });
 
   it("every generated path passes the Windows check, however hostile the name", () => {

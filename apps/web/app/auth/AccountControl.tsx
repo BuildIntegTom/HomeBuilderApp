@@ -6,6 +6,7 @@ import { clampMenuLeft } from "../topBarMenus";
 import { useCompanyBackup } from "../cloud/useCompanyBackup";
 import AccountPanel from "./AccountPanel";
 import SignInForm from "./SignInForm";
+import { switcherLabels } from "./switcherLabels";
 import { useOptionalAuth } from "./AuthProvider";
 import styles from "./AccountControl.module.css";
 
@@ -94,17 +95,13 @@ export default function AccountControl() {
     });
   };
 
+  // One label per entry; a company listed more than once has every entry tagged
+  // (switcherLabels.ts). Options are selected by company id, so such entries
+  // would all act the same: the title shows the first one's label.
+  const labels = switcherLabels(entitlements);
   const label = (companyId: string) => {
-    const entitlement = entitlements.find((e) => e.companyId === companyId);
-    if (!entitlement) return companyId;
-    // Said plainly rather than implied by styling: acting as the consortium
-    // without being a member of it is a different thing from acting as your own
-    // company, and from Stage 4 it is what shows you other companies' work.
-    return entitlement.source === "consortium"
-      ? `${entitlement.companyName} (consortium)`
-      : entitlement.source === "platform-admin"
-        ? `${entitlement.companyName} (platform admin)`
-        : entitlement.companyName;
+    const index = entitlements.findIndex((e) => e.companyId === companyId);
+    return index === -1 ? companyId : labels[index];
   };
 
   return (
@@ -140,9 +137,9 @@ export default function AccountControl() {
               }
             }}
           >
-            {entitlements.map((entitlement) => (
-              <option key={entitlement.companyId} value={entitlement.companyId}>
-                {label(entitlement.companyId)}
+            {entitlements.map((entitlement, index) => (
+              <option key={`${entitlement.companyId}:${entitlement.source}:${index}`} value={entitlement.companyId}>
+                {labels[index]}
               </option>
             ))}
           </select>

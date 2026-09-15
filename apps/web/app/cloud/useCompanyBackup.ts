@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PROJECT_FILE_VERSION } from "../projectFile";
-import { createZipCollector } from "./backupZip";
 import type { BackupPageResponse } from "./cloudTypes";
-import { collectCompanyBackup, type BackupPageResult, type BackupProgress } from "./companyBackup";
+import type { BackupPageResult, BackupProgress } from "./companyBackup";
+import { runCompanyBackup } from "./companyBackupRun";
 
 /**
  * Stage 2D: runs a company backup and downloads the zip.
@@ -15,6 +15,10 @@ import { collectCompanyBackup, type BackupPageResult, type BackupProgress } from
  *
  * Switching the acting-as company while a backup runs stops it: the pages are
  * that company's, and the route would refuse the next one with a 409 anyway.
+ *
+ * The zip writer (backupZip, and fflate with it) is NOT imported here: it is
+ * loaded by `import()` when a backup starts (companyBackupRun.ts), because this
+ * hook sits in the page's initial bundle through AccountControl -> TopBar.
  */
 
 export type CompanyBackupState =
@@ -67,47 +71,28 @@ export function useCompanyBackup(actingAsCompanyId: string | null): CompanyBacku
     controllerRef.current = controller;
     runningCompanyRef.current = companyId;
     setState({ status: "running", companyId, companyName, progress: null });
-    const zip = createZipCollector();
 
     void (async () => {
       try {
-        const outcome = await collectCompanyBackup({
+        const outcome = await runCompanyBackup({
           companyId,
           appProjectFileVersion: PROJECT_FILE_VERSION,
           fetchPage: (after, signal) => fetchBackupPage(companyId, after, signal),
-          sink: zip,
           signal: controller.signal,
+          loadZip: () => import("./backupZip"),
+          download: downloadBlob,
           onProgress: (progress) => {
             if (!controller.signal.aborted) setState({ status: "running", companyId, companyName, progress });
           },
         });
-        if (!outcome.ok) {
+        if (outcome.status === "cancelled") {
           // A cancel caused by switching company has already set its own message.
-          if (controller.signal.aborted && outcome.reason === "cancelled") {
-            setState((was) => (was.status === "running" ? { status: "cancelled", companyId, message: outcome.message } : was));
-          } else {
-            setState({ status: outcome.reason, companyId, message: outcome.message });
-          }
-          return;
+          setState((was) => (was.status === "running" ? { status: "cancelled", companyId, message: outcome.message } : was));
+        } else if (outcome.status === "failed") {
+          setState({ status: "failed", companyId, message: outcome.message });
+        } else {
+          setState({ ...outcome, companyId });
         }
-        const chunks = zip.finish();
-        const blob = new Blob(chunks as BlobPart[], { type: "application/zip" });
-        downloadBlob(outcome.fileName, blob);
-        setState({
-          status: "done",
-          companyId,
-          fileName: outcome.fileName,
-          versionCount: outcome.manifest.versionCount,
-          projectCount: outcome.manifest.projectCount,
-          outsideWindowCount: outcome.manifest.outsideFileFormatWindowCount,
-          zipBytes: blob.size,
-        });
-      } catch (error) {
-        setState({
-          status: "failed",
-          companyId,
-          message: `The backup stopped: ${error instanceof Error ? error.message : "something went wrong"}. No file was saved; try again.`,
-        });
       } finally {
         controllerRef.current = null;
         runningCompanyRef.current = null;

@@ -7,6 +7,7 @@ import type { Entitlement } from "../auth/actingAs";
 import {
   BACKUP_COMPANY_NOT_FOUND_MESSAGE,
   BACKUP_CURSOR_MESSAGE,
+  BACKUP_DOCUMENT_BATCH_SIZE,
   BACKUP_PAGE_BYTE_BUDGET,
   BACKUP_PAGE_MAX_VERSIONS,
   checkBackupAccess,
@@ -103,8 +104,31 @@ interface FakeProject {
   versions: FakeVersion[];
 }
 
-function companyDb(projects: FakeProject[]) {
-  return fakeDb((call) => {
+function companyDb(projects: FakeProject[], options: { latency?: boolean } = {}) {
+  const stats = { docReads: 0, inFlightDocReads: 0, maxConcurrentDocReads: 0 };
+  const serve = serveCompany(projects);
+  const fake = fakeDb((call) => {
+    const isDocRead = call.name === "project_versions" && opArgs(call, "select")?.[0] === "document";
+    if (!isDocRead || !options.latency) {
+      if (isDocRead) stats.docReads++;
+      return serve(call);
+    }
+    // A document read that takes a moment, so reads issued together overlap.
+    stats.docReads++;
+    stats.inFlightDocReads++;
+    stats.maxConcurrentDocReads = Math.max(stats.maxConcurrentDocReads, stats.inFlightDocReads);
+    return new Promise<Reply>((resolve) =>
+      setTimeout(() => {
+        stats.inFlightDocReads--;
+        resolve(serve(call));
+      }, 2),
+    ) as unknown as Reply;
+  });
+  return { ...fake, stats };
+}
+
+function serveCompany(projects: FakeProject[]) {
+  return (call: Call): Reply => {
     const eq = new Map(opsNamed(call, "eq").map(([k, v]) => [k as string, v]));
     const gt = new Map(opsNamed(call, "gt").map(([k, v]) => [k as string, v]));
     const limit = (opArgs(call, "limit")?.[0] as number | undefined) ?? Infinity;
@@ -140,7 +164,7 @@ function companyDb(projects: FakeProject[]) {
         schema_version: 24,
       }));
     return { data: rows };
-  });
+  };
 }
 
 const vid = (p: string, n: number) => `${p.slice(0, 8)}-${String(n).padStart(4, "0")}-4000-8000-000000000000`;
@@ -247,7 +271,7 @@ describe("readBackupPage", () => {
     for (const call of calls.filter((c) => c.name === "projects")) expect(opsNamed(call, "eq")).toContainEqual(["company_id", BI_ID]);
   });
 
-  it("reads version metadata by named columns (never `document`), and documents one version at a time", async () => {
+  it("reads version metadata by named columns (never `document`), and each document by its own .eq() read", async () => {
     const { db, calls } = companyDb([project(PA, "Smith House", 3)]);
     await readBackupPage(db, caller(BI_ADMIN), BI_ID, {});
     const versionCalls = calls.filter((c) => c.name === "project_versions");
@@ -257,6 +281,16 @@ describe("readBackupPage", () => {
     const docCalls = versionCalls.filter((c) => opArgs(c, "select")?.[0] === "document");
     expect(docCalls).toHaveLength(3);
     for (const c of docCalls) expect(opsNamed(c, "eq").map(([k]) => k).sort()).toEqual(["id", "project_id"]);
+    // Only .eq/.gt/.order/.limit/.select/maybeSingle: no in(), or(), or filter strings.
+    for (const c of calls) for (const [op] of c.ops) expect(["select", "eq", "gt", "order", "limit"]).toContain(op);
+  });
+
+  it("reads documents in parallel batches of BACKUP_DOCUMENT_BATCH_SIZE, not one after another", async () => {
+    const { db, stats } = companyDb([project(PA, "Smith House", 12)], { latency: true });
+    const page = await readBackupPage(db, caller(BI_ADMIN), BI_ID, {});
+    expect(page.versions.map((v) => v.versionNumber)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+    expect(stats.maxConcurrentDocReads).toBe(BACKUP_DOCUMENT_BATCH_SIZE);
+    expect(stats.docReads).toBe(12);
   });
 
   it("pages across projects in id order, then version order, and every page's cursor picks up exactly where it left off", async () => {
@@ -324,6 +358,60 @@ describe("readBackupPage", () => {
       const second = await readBackupPage(db, caller(BI_ADMIN), BI_ID, { after: first.nextAfter });
       expect(second.versions.map((v) => v.versionNumber)).toEqual([3, 4]);
       expect(second.done).toBe(true);
+    });
+
+    /** Every page from the first, checking each one's bytes and document reads. */
+    async function walkPages(projects: FakeProject[]) {
+      const { db, stats } = companyDb(projects);
+      const pages: { numbers: number[]; nextAfter: string | null; docReads: number; versionBytes: number; pageBytes: number }[] = [];
+      let after: string | null = null;
+      for (let guard = 0; guard < 50; guard++) {
+        const readsBefore = stats.docReads;
+        const page = await readBackupPage(db, caller(BI_ADMIN), BI_ID, { after, limit: "50" });
+        pages.push({
+          numbers: page.versions.map((v) => v.versionNumber),
+          nextAfter: page.nextAfter,
+          docReads: stats.docReads - readsBefore,
+          versionBytes: page.versions.reduce((sum, v) => sum + jsonByteLength(v) + 1, 0),
+          pageBytes: jsonByteLength(page),
+        });
+        if (page.done) break;
+        after = page.nextAfter;
+      }
+      return pages;
+    }
+
+    it("a batch that straddles the budget: the page stops at the first version over it, mid-batch, and the next page resumes exactly there", async () => {
+      // ~600 KB each: six fit under 4,000,000, the seventh does not. With
+      // batches of 5, versions 6-10 are one batch, so the cut falls inside it.
+      expect(BACKUP_DOCUMENT_BATCH_SIZE).toBe(5);
+      const pages = await walkPages([project(PA, "Big", 14, big(600_000))]);
+      expect(pages.map((p) => p.numbers)).toEqual([[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 11, 12], [13, 14]]);
+      expect(pages[0].nextAfter).toBe(`${PA}:6`);
+      expect(pages[1].nextAfter).toBe(`${PA}:12`);
+      for (const p of pages) {
+        expect(p.versionBytes).toBeLessThanOrEqual(BACKUP_PAGE_BYTE_BUDGET);
+        expect(p.pageBytes).toBeLessThan(BACKUP_PAGE_BYTE_BUDGET + 1024);
+        // Reads at most one batch's worth of documents it leaves out.
+        expect(p.docReads).toBeLessThanOrEqual(p.numbers.length + BACKUP_DOCUMENT_BATCH_SIZE);
+      }
+      expect(pages[0].docReads).toBe(10); // batches 1-5 and 6-10; 7-10 left for page two
+      // No skips, no duplicates.
+      expect(pages.flatMap((p) => p.numbers)).toEqual(Array.from({ length: 14 }, (_, i) => i + 1));
+    });
+
+    it("a budget crossed exactly at the first version of a batch, and across a project boundary", async () => {
+      // ~790 KB each: five fit, the sixth (the first of the second batch) does not.
+      const pages = await walkPages([project(PA, "First", 7, big(790_000)), project(PB, "Second", 4, big(790_000))]);
+      const seen = pages.flatMap((p, i) => p.numbers.map((n) => `${i}:${n}`));
+      expect(pages.map((p) => p.numbers)).toEqual([[1, 2, 3, 4, 5], [6, 7, 1, 2, 3], [4]]);
+      expect(pages[0].nextAfter).toBe(`${PA}:5`);
+      expect(pages[1].nextAfter).toBe(`${PB}:3`);
+      expect(seen).toHaveLength(11);
+      for (const p of pages) {
+        expect(p.versionBytes).toBeLessThanOrEqual(BACKUP_PAGE_BYTE_BUDGET);
+        expect(p.docReads).toBeLessThanOrEqual(p.numbers.length + BACKUP_DOCUMENT_BATCH_SIZE);
+      }
     });
 
     it("a single version near the 4 MB ceiling still goes, alone, in a page under 4.5 MB", async () => {
