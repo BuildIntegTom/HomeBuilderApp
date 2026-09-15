@@ -264,9 +264,27 @@ do $$ begin
   perform pg_temp.assert(
     pg_temp.sqlstate_of($q$ select public.create_project('22222222-0000-0000-0000-000000000001', 'current', pg_temp.doc('X'), null) $q$) = '42501',
     'bob (ordinary BI member) cannot create a project in Rare Forms');
-  perform pg_temp.assert(
-    pg_temp.sqlstate_of($q$ select public.create_project('44444444-0000-0000-0000-000000000001', 'current', pg_temp.doc('X'), null) $q$) = '42501',
-    'bob cannot create in the Seed Collaborative through the consortium entitlement (Stage 3)');
+  -- CHANGED ON PURPOSE IN STAGE 3 (spec, "Stage 3 plan", 3A; Stage 2 Open
+  -- Item 2 answered by Tommy 2026-09-14). This was "bob cannot create in the
+  -- Seed Collaborative". Since 0008, bob — seed-entitled through Building
+  -- Integrity — CAN, and receives a creator grant on that one project. Undone
+  -- inside its own subtransaction so the grant does not change what bob reads
+  -- in the margin assertion below.
+  begin
+    perform pg_temp.assert(
+      pg_temp.sqlstate_of($q$ select public.create_project('44444444-0000-0000-0000-000000000001', 'current', pg_temp.doc('Seed Tree House'), null) $q$) is null,
+      'bob CAN create in the Seed Collaborative through the consortium entitlement (Stage 3, answer 1)');
+    perform pg_temp.assert(
+      (select count(*) from public.collaborators c
+         join public.projects p on p.id = c.project_id
+        where p.company_id = '44444444-0000-0000-0000-000000000001'
+          and c.kind = 'creator'
+          and c.grantee_user_id = 'bbbbbbbb-0000-0000-0000-000000000001'
+          and c.granted_by is null) = 1,
+      'and receives a creator grant on it');
+    raise exception 'undo' using errcode = 'ZZ001';  -- NOT P0001: that is what pg_temp.assert raises, and catching it would swallow a failed assertion
+  exception when sqlstate 'ZZ001' then null;
+  end;
   perform pg_temp.assert(
     pg_temp.sqlstate_of($q$ insert into public.projects (company_id, created_by) values ('22222222-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001') $q$) = '42501',
     'nor by a direct insert');
