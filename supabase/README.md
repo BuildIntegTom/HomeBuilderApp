@@ -822,12 +822,12 @@ they pick up grants through the two helpers.
   3A as-built note.
 - **One project reached two ways is one row**, with `reached_via` listing each
   way (`person`, `company`, `creator`, with the granter's name).
-- **"Shared by Frank (no longer has access)" cannot be computed by an ordinary
-  member through RLS.** The access list can find the shares a person made
-  (`granted_by` = that person's `grantee_user_id`), which is the Remove dialog's
-  "also remove the N shares Frank made". Whether Frank *still* has access
-  another way (a company grant, a membership) is not visible to another
-  company's member. Raised with the spec rather than invented here.
+- **The access list says "shared by Frank", and nothing about whether Frank
+  still has access.** An ordinary member cannot see that through RLS (it depends
+  on memberships another company's member cannot read), and no helper is added
+  for it. The access list can find the shares a person made (`granted_by` = that
+  person's `grantee_user_id`), which is the Remove dialog's "also remove the N
+  shares Frank made", offered for a personal grant only.
 - **A notice can be missed in one narrow race.** A grant's time is its sharing
   transaction's start. If the recipient presses Got it while that share is
   committing, the notice for it is not shown. The project still appears in the
