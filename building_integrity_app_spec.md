@@ -1263,7 +1263,7 @@ Anything that behaves differently for M or R than for T is worth stopping on, ev
      - Cost fields such as `priceModifier` travel inside the company's own documents, unchanged, exactly as a version download already carries them. The backup covers only projects the company owns.
      - A failed page, a version that could not be included, and a gap in version numbers each stop the backup with a message. None produces a zip that looks complete: a visible failure, never a silent substitute.
 
-### Stage 3 plan — Collaboration (2026-09-14) — PLANNED, NOT BUILT
+### Stage 3 plan — Collaboration (2026-09-14) — APPROVED BY TOMMY 2026-09-14 (all Open Item defaults accepted), NOT BUILT
 
 Provenance: Tommy was interviewed on 2026-09-14, and his fifteen answers are below. He will review this plan and decide its Open Items before any code is written. The plan builds on what is live, which was read directly rather than assumed: `supabase/migrations/0001`–`0007`, `supabase/README.md`, `apps/web/app/api/projects/**`, `apps/web/app/cloud/**` and `apps/web/app/auth/{actingAs,serverSession}.ts`.
 
@@ -1695,6 +1695,8 @@ Steps marked "as M / as R / as R2 / as N" must not be done as T.
 - Transferring ownership between companies.
 
 #### Open Items — Stage 3 (Tommy's decisions; each has a recommended default)
+
+**Answered by Tommy 2026-09-14: all eight defaults accepted.** Asked directly: item 1 ("Offer to remove them too", pre-ticked), item 2 ("The owner's backup only"), item 5 ("Yes, a one-line warning"); items 3, 4, 6, 7 and 8 accepted together as written. Each item below is now a decision; the ⚠ marks stay only so the reasoning is findable.
 
 1. **⚠ When a grant is removed, do the grants that person made go with it?** Example: Bob shares with Frank, Frank shares with Nick, and Bob removes Frank. **Default: Nick keeps access.** The list marks "shared by Frank (no longer has access)", and the Remove dialog offers "Also remove the 1 share Frank made", **pre-ticked**. The alternative, cascading automatically, is stricter but silently removes people the remover never saw.
 2. **⚠ Personal grants, including creator grants, and backups.** A share with Frank personally is in no company's backup. **Default: excluded.** The person can still download each version, and a company backup stays a company's. The consequence: a Building Integrity designer's Seed-tree project is in Seed's backup, not Building Integrity's.
