@@ -427,7 +427,8 @@ A project already serializes to exactly one versioned document (`PROJECT_FILE_VE
 - **Membership in any member company entitles you to act as the Seed Collaborative.** Being at Building Integrity is what puts the toggle in front of you. You do not need a separate Seed membership row.
 - **Acting as Seed, you may create new projects in Seed's folders freely.** This is the "design a house for the Seed Collaborative folder" case in Tommy's own words.
 - **Editing an *existing* Seed project requires an invitation on that project**, exactly like every other cross-company case (24-26). Deliberately consistent with the rest of the model rather than a special case for the consortium.
-  - **⚠ Inference, flagged as such and needing Tommy's yes: the creator of a Seed-tree project must keep access to it.** Taken literally, "create freely" plus "editing an existing Seed project needs an invitation" means you lose your own work the instant you save it, which cannot be what he means. **The coherent reading: creating a project in another company's tree grants the creator a standing collaborator grant on that project.** Ownership still lands with the Seed Collaborative (`projects.company_id`), so it is Seed's project in Seed's tree — the creator simply holds a grant on it, using machinery that already exists for 24-26. Confirm before building; do not silently pick the other reading.
+  - **ANSWERED by Tommy 2026-09-14: yes — creating a project in another company's tree gives the creator a standing collaborator grant; ownership stays with that tree's company.** See "Stage 3 plan — Collaboration", answer 1, and its creator-grant trigger. The original inference is kept below for the record.
+  - **~~⚠ Inference, flagged as such and needing Tommy's yes~~: the creator of a Seed-tree project must keep access to it.** Taken literally, "create freely" plus "editing an existing Seed project needs an invitation" means you lose your own work the instant you save it, which cannot be what he means. **The coherent reading: creating a project in another company's tree grants the creator a standing collaborator grant on that project.** Ownership still lands with the Seed Collaborative (`projects.company_id`), so it is Seed's project in Seed's tree — the creator simply holds a grant on it, using machinery that already exists for 24-26. Confirm before building; do not silently pick the other reading.
 - **The switcher is visible at all times, not buried in a menu.** The failure mode it exists to prevent is saving a project into the wrong company's folder tree, which is silent, plausible, and only noticed later by someone else. It belongs in the top bar next to the sign-in state, showing the acting-as company by name at all times — not only while being changed. **This matters more now than it did as a plain switcher**, because the control also changes whether you are looking at one company or at all of them.
   - **Stage 1 shipped this control but the top bar broke the guarantee, 2026-09-13.** The bar is one `nowrap` row needing 1407px with the account control last in it, so in Tommy's own 710px viewport it sat 677px off-screen — present in the DOM, unreachable in practice. **"Visible at all times" is a layout requirement, not just a component requirement**, and it is now the reason the top bar is being restructured rather than restyled. See "Top Bar & App Chrome — the Stitch reorganisation."
 - **What "acting as" governs:** which company a **new project is created under** (the one that actually loses work if it is wrong); which **folder tree** is shown; whether the **shared read layer** is visible at all; which company's **admin powers** apply, if you are an admin of one company and a plain member of another; which company a **backup** covers (29).
@@ -605,8 +606,9 @@ Readings that must survive implementation:
 
 - **Browsing is a row of this table now, not a mode layered over one.** "Acting as the Seed Collaborative" is where consortium read lives; there is no separate browse permission to grant.
 - **The two Seed rows are different and both are real.** Someone from Building Integrity acting as Seed gets Seed's tree read-only plus create rights. Someone whose *own* company is the Seed Collaborative gets their own company's tree, with costs, plus browsing. **Do not collapse them** — the difference is ownership, and it falls out of the ownership rule rather than needing a special case.
-- **"Create yes, edit only with a grant" is the one asymmetric cell**, and it is deliberate (18): creating in the consortium's tree is free, editing someone's existing work is not. **It depends on the flagged inference above** that a creator keeps a grant on what they created — otherwise this row means you cannot edit your own new project after saving it once.
+- **"Create yes, edit only with a grant" is the one asymmetric cell**, and it is deliberate (18): creating in the consortium's tree is free, editing someone's existing work is not. **It depends on the creator keeping a grant on what they created** — confirmed by Tommy 2026-09-14 (Stage 3 plan, answer 1) — otherwise this row means you cannot edit your own new project after saving it once.
 - **An invited collaborator's access is scoped to the one project**, not to the inviting company, and it is the mechanism behind the "only with a grant" cell.
+- **⚠ Conflict flagged 2026-09-14, not yet resolved in this table:** the "Invited collaborator" row says **Move between folders: no** and **Grant collaborators: no**. Tommy's Stage 3 answers 11 and 10 say a collaborator can move folders and can share onward. The cells are left as they are until he confirms. See "Stage 3 plan — Collaboration", Open Item 6.
 - **The switcher does appear in this table now, and that is the correction.** An earlier draft said consulting the switcher in a permission check was always a bug. Under the merged model the acting-as company is a legitimate input. The surviving rule: **the switcher selects among entitlements you hold and never creates one**, and the acting-as claim is verified server-side on every request.
 
 ### Build order
@@ -618,7 +620,7 @@ Tommy has seen and agreed this. **Each stage is usable alone**, which is the poi
 0. **Title-block save date (no backend required).** The local-file and never-saved rows of the date table above: read `ProjectFile.savedAt`, stop calling `new Date()` at render. **Numbered zero because it needs nothing from any other stage and fixes the defect for every user the app currently has.** The cloud row follows in Stage 2. **Shipped 2026-09-13** (`titleBlockDate.ts`). Its fixed cloud-then-local precedence is replaced by the last-save-wins rule in Stage 2B (see the Stage 2 plan).
 1. **Accounts and companies.** Sign in/out, invites, memberships, default company, company admin, **and the always-visible acting-as switcher including the Seed toggle**. The app gains a real identity and nothing else changes. *(Usable alone: nothing to save yet, but the top-bar sign-in Tommy described exists and works.)*
 2. **Cloud projects and versions.** The three folders, save-as-new-version, the version list, open-from-cloud, the divergence notice (11), and the cloud row of the date table. Local save/load untouched alongside it. *(This is the stage that delivers Tommy's actual sentence — "reachable to another Member on any computer where they can log in.")* **Planned 2026-09-13. 2A BUILT and applied to live 2026-09-14; 2B BUILT, DEPLOYED and hand-tested live 2026-09-14 (as an ordinary member M and a Rare Forms member R: save and open across windows, company isolation, the divergence notice, the two-tab refusal); 2C BUILT, DEPLOYED and hand-tested live 2026-09-14 (steps 8a–8e matched; 8f had no out-of-window version to test, 8g skipped as already covered by the 2B cross-company check); 2D BUILT, DEPLOYED and hand-tested live 2026-09-14 (a Building Integrity backup extracted in Explorer and a file from it reopened with Load Project; the ordinary Building Integrity member and the Rare Forms member see no backup section). **Stage 2 is complete.** See "Stage 2 plan — Cloud projects and versions" below, sub-stages 2A–2D, and its Open Items.**
-3. **Collaboration.** `collaborators`, invitations, requests, shared access to one project (24-26). Supersedes the older "in-app inbox" line in the Handoff section above — this *is* the handoff mechanism. **It is also what makes the "edit an existing Seed project" case work**, so it is a prerequisite for Stage 4 being coherent rather than an independent feature.
+3. **Collaboration.** `collaborators`, invitations, shared access to one project (24-26). **Planned 2026-09-14 from Tommy's interview; not built.** See "Stage 3 plan — Collaboration", sub-stages 3A–3E, and its Open Items. **Access requests (26's other direction, `collab_requests`) moved to Stage 4** by Tommy's answer 6. Supersedes the older "in-app inbox" line in the Handoff section above — this *is* the handoff mechanism. **It is also what makes the "edit an existing Seed project" case work**, so it is a prerequisite for Stage 4 being coherent rather than an independent feature.
 4. **Consortium browsing.** Acting as the Seed Collaborative, the cross-company read layer, the cost redactor, the export restrictions (19-23). **The redactor is the highest-risk single piece of the whole design** and deliberately does not ship before there is anything to browse.
 5. **Platform admin.** Cross-company visibility, permanent delete, full backup, and the case-by-case departing-company judgement (28).
 
@@ -764,6 +766,7 @@ RLS is enabled on both, not FORCE (same reasoning as 0002). **Both get 0004's re
 **Stage 2's policies give no read of any kind on a project owned by a company you are not a member of.** Platform admins are the exception, and that is already accepted and recorded under "Platform admins".
 - There is no browse set, no redacted view and no metadata-only listing.
 - **Because the cost redactor does not exist yet, this is what keeps every `priceModifier` inside its own company.** It is asserted directly in the RLS test.
+- *(Stage 3, planned 2026-09-14: the one deliberate opening is an explicit `collaborators` grant. See "Stage 3 plan — Across companies".)*
 
 **A constraint for Stage 4, recorded now so the easy path is not taken:** browsing must **not** be added by widening `project_versions_select`. RLS decides whether a row is served, not what the document inside contains (decision 30's caveat). A widened policy would hand browsers the raw document, margin included, straight from PostgREST using the publishable key that ships in the bundle. Cross-company documents must arrive only through the redactor's path.
 
@@ -1206,7 +1209,7 @@ Anything that behaves differently for M or R than for T is worth stopping on, ev
 #### Not in scope for Stage 2
 
 - Collaborators, grants and requests (Stage 3).
-- Creating in Seed's tree through the consortium entitlement (Stage 3, pending the creator-grant inference).
+- Creating in Seed's tree through the consortium entitlement (Stage 3; the inference was confirmed 2026-09-14, see the Stage 3 plan, 3D).
 - Browsing and the redactor (Stage 4).
 - Permanent-delete UI, single-version delete, and platform backup (Stage 5).
 - An unsaved-changes warning before opening over current work (Load Project has none today either).
@@ -1224,7 +1227,7 @@ Anything that behaves differently for M or R than for T is worth stopping on, ev
 **Answered by Tommy 2026-09-13: all seven defaults accepted as written** — *"Your recommendations for all these things are great, let's roll with them."* Each item below is now a decision, not an open question; the ⚠ marks are kept only so the reasoning stays findable. The 4 MB ceiling (5) remains a picked number that Tommy accepted, not a measured one.
 
 1. **⚠ Old cloud versions become unopenable after two file-format bumps.** Default: show them honestly ("saved by an older app version") with a raw-file download, and do not widen `parseProjectFile`'s one-back window now. The alternative, keeping every migration forever, is a real cost on every future schema change.
-2. **⚠ Creating a project while acting as the Seed Collaborative without being a Seed member waits for Stage 3.** Without the `collaborators` table, the creator could not reopen their own project after saving it once. Default: defer, and answer the creator-grant inference (under "The company switcher") when Stage 3 is planned.
+2. **⚠ Creating a project while acting as the Seed Collaborative without being a Seed member waits for Stage 3.** Without the `collaborators` table, the creator could not reopen their own project after saving it once. Default: defer, and answer the creator-grant inference (under "The company switcher") when Stage 3 is planned. **Answered by Tommy 2026-09-14 (Stage 3 answer 1): the creator gets a grant.** Built in Stage 3's sub-stage 3D; see "Stage 3 plan — Collaboration".
 3. **⚠ Renaming from the tree adds a version marked "Renamed".** Default: yes. A rename that only touches the listing is undone by the next save, because the listing takes its name from the document.
 4. **Backup format.** Default: the zip described under "Company backup". Accepting it closes the standing backup-format item, and confirms that admin-only backup is a convenience gate rather than a security one.
 5. **⚠ Document size ceiling: 4 MB, picked, not decided.** Default: 4 MB, just under Vercel's request limit. Recorded here rather than wrapped in a `CatalogValue`, for the same reason as `INVITE_EXPIRY_DAYS`.
@@ -1233,7 +1236,7 @@ Anything that behaves differently for M or R than for T is worth stopping on, ev
 
 **Added in the 2A review (2026-09-13), after Tommy's acceptance above:**
 
-8. **Account deletion leaves dangling uuids — approved by Tommy 2026-09-14:** *"yes, keep saved work separate from accounts."* `author_id` and `created_by` have no foreign key, so deleting an auth user leaves them pointing at no one. Attribution survives through the `author_name` snapshot, and nothing grants access through either column. Rejected: `on delete restrict`, which makes anyone who ever saved undeletable; a trigger exception on versions, which breaks "never updated". **Stage 3 must know:** if the creator-grant inference (Open Item 2) ever grants access by `created_by`, that column is a plain uuid that may name a deleted account. Revisit if a later stage joins versions to live accounts (such as a Stage 5 audit view); that join must tolerate missing users.
+8. **Account deletion leaves dangling uuids — approved by Tommy 2026-09-14:** *"yes, keep saved work separate from accounts."* `author_id` and `created_by` have no foreign key, so deleting an auth user leaves them pointing at no one. Attribution survives through the `author_name` snapshot, and nothing grants access through either column. Rejected: `on delete restrict`, which makes anyone who ever saved undeletable; a trigger exception on versions, which breaks "never updated". **Stage 3 must know:** if the creator-grant inference (Open Item 2) ever grants access by `created_by`, that column is a plain uuid that may name a deleted account. *(Addressed in the Stage 3 plan: the creator grant is written from `auth.uid()` into a column with a foreign key, and nothing keys on `created_by`.)* Revisit if a later stage joins versions to live accounts (such as a Stage 5 audit view); that join must tolerate missing users.
 9. **Stage 1, found in passing: a person who founded a company cannot be deleted.** `companies.created_by` is an FK with `on delete set null`, and Stage 1's guard refuses changing a company's creator, so the delete aborts (`42501: a company's creator cannot be changed`). Not caused by Stage 2. Default: leave it until someone actually needs deleting, and fix it the same way as 8 (drop the FK) if so. Recorded in `supabase/README.md`.
 
 #### Flags check: clean, confirmed against the code rather than assumed
@@ -1259,6 +1262,462 @@ Anything that behaves differently for M or R than for T is worth stopping on, ev
        - two retries.
      - Cost fields such as `priceModifier` travel inside the company's own documents, unchanged, exactly as a version download already carries them. The backup covers only projects the company owns.
      - A failed page, a version that could not be included, and a gap in version numbers each stop the backup with a message. None produces a zip that looks complete: a visible failure, never a silent substitute.
+
+### Stage 3 plan — Collaboration (2026-09-14) — PLANNED, NOT BUILT
+
+Provenance: Tommy was interviewed on 2026-09-14, and his fifteen answers are below. He will review this plan and decide its Open Items before any code is written. The plan builds on what is live, which was read directly rather than assumed: `supabase/migrations/0001`–`0007`, `supabase/README.md`, `apps/web/app/api/projects/**`, `apps/web/app/cloud/**` and `apps/web/app/auth/{actingAs,serverSession}.ts`.
+
+**Nothing decided above is reopened.** Where an answer collides with an earlier line of this log or with the live schema, it is marked ⚠ and listed in this plan's Open Items.
+
+#### Tommy's answers, 2026-09-14 — decisions, not suggestions
+
+1. **Creator keeps access.** Creating a project in another company's tree (for example, acting as The Seed Collaborative) gives the creator a standing collaborator grant. Ownership stays with that tree's company. *This confirms the inference under "The company switcher" and unblocks Stage 2 Open Item 2.*
+2. **A grant goes to a person or to a whole company.**
+3. **Any member of the owner company can share** a project outside the company. *Chosen over admin-only.*
+4. **There is one access level: full edit, costs included** (24). There is no view-only tier.
+5. **Shared-in projects appear in a "Shared with us" tab** in Open from cloud, beside Current / Past / Proposals, and each names the owner company. The recipient's own folders stay theirs.
+6. **Access requests (the other direction of 26) are deferred to Stage 4**, alongside browsing. Stage 3 builds sharing only.
+7. **Notification is an in-app notice at sign-in**, plus the project appearing in the Shared tab. There is no email service, and none is to be added.
+8. **Removal** is refined by 13.
+9. **A company-wide grant covers current and future members.** Whoever is a member at the time of each request has access; people who leave lose it.
+10. **Collaborators CAN share onward.** *Chosen over owner-only.* See "Re-sharing".
+11. **Collaborators can rename AND move folders.** *Chosen over rename-only.* See "Folder moves by a collaborator".
+12. **Sharing is only with existing accounts and companies.** A new person is first invited to a company the normal way.
+13. **Revocation:** any member of the owner company can remove any grant. A collaborator can remove only the grants they made themselves.
+14. **Owner safety:** a collaborator can never remove the owner company's access or delete the project. Only a platform admin permanently deletes (13).
+15. **The people/activity page and the "make admin" button are a short follow-up right after Stage 3**, not part of it. See "Open Items — Backend, Accounts & Project Sharing"; this plan does not specify them.
+
+#### What changes, in one paragraph
+
+- **A grant is a row in `collaborators`.** Holding one makes `can_read_project` and `can_write_project` true, which Stage 2 defined separately so that this stage could extend both.
+- **The owner company's access is not a row.** It is `projects.company_id`, and no grant operation can touch it. That is what makes answer 14 structural rather than a rule someone has to remember.
+- **Every write of a grant goes through a database function**, and **removal is an RLS policy**. The UI shows or hides buttons; the database decides.
+
+#### Schema — migration `0008_stage3_collaboration.sql`
+
+**Safe on the live database, by construction:**
+- One `begin; … commit;`, re-runnable, in the same style as 0006: `create table if not exists`, `create or replace function`, and `drop … if exists` before each trigger and policy.
+- **No Stage 1 object is altered.**
+- **Exactly six Stage 2 objects are replaced, each because it has to be:**
+  - the functions `can_read_project`, `can_write_project` and `create_project`;
+  - the policies `projects_select`, `projects_insert` and `projects_update`.
+  - The reason for each is given below. Nothing else from 0006 changes: no table, no trigger, no other policy, and no row.
+- Tommy pastes it after 0007, exactly as before.
+
+**`collaborators`:** one grant on one project.
+
+| Column | Type / constraint | Why |
+|---|---|---|
+| `id` | uuid pk | |
+| `project_id` | uuid not null, FK `projects(id)` **on delete cascade** | Reachable only through a platform admin deleting the whole project. |
+| `grantee_user_id` | uuid null, FK `auth.users(id)` **on delete cascade** | A grant to a person (2). **Deleting the account deletes the grant.** This is a DELETE, which nothing refuses, so the 2A problem (an FK action becoming a refused UPDATE) cannot arise. |
+| `grantee_company_id` | uuid null, FK `companies(id)` on delete cascade | A grant to a company (2). |
+| **exactly one grantee** | `check (num_nonnulls(grantee_user_id, grantee_company_id) = 1)` | Enforced by the table, not by the function that writes it. |
+| `kind` | text not null, check in (`shared`, `creator`) | `creator` is answer 1's grant. |
+| `granted_by` | uuid, **no foreign key**; `check ((kind = 'creator') = (granted_by is null))` | Who shared it. Authorship-like, so it is decided the same way as 2A (Open Item 8): **no FK, and a snapshotted name.** An FK with `on delete set null` would make deleting a sharer's account rewrite the record of who granted whom, and 13 keys removal rights off this column. A dangling uuid grants nothing, because nobody holds a deleted account's `auth.uid()`. A creator grant has no granter. |
+| `granted_by_name` | text null | Snapshot, using `prepare_project_version`'s rule (display name, then email). **Required for the access list across companies:** `user_profiles_select` hides a sharer from another company. Null only for `creator`. |
+| `grantee_name` | text not null | Snapshot of the person's name, or of the company's name, when the grant was made. It is labelled "as shared" in the UI. **Why a snapshot:** neither `user_profiles_select` nor `companies_select` shows another company's person or company. |
+| `created_at` | timestamptz not null default `now()`, forced by the writing function | Drives the notice (7) and the list order. |
+
+- **Indexes:**
+  - `unique (project_id, grantee_user_id) where grantee_user_id is not null`
+  - `unique (project_id, grantee_company_id) where grantee_company_id is not null`
+  - `(grantee_user_id)` and `(grantee_company_id)` (the Shared tab and the notice)
+  - `(granted_by)`
+- **Grants are immutable.** There is no update grant and no update policy. Changing a grant means removing it and sharing again.
+- **Privileges:** `authenticated` gets **`select` and `delete` only**, with no `insert` and no `update`. Every grant is written by the functions below. `anon` and `service_role` get nothing, as in 0006.
+- RLS is enabled, not FORCE. The table carries 0004's restrictive `meets_required_aal()` policy.
+
+**`share_notice_state`:** one row per person, holding the in-app notice's high-water mark (7).
+
+| Column | Type | Why |
+|---|---|---|
+| `user_id` | uuid pk, FK `auth.users(id)` on delete cascade | |
+| `seen_through` | timestamptz not null | A grant created after this time is "new" to this person. Set only by `dismiss_share_notices()`, to the server's `now()`. |
+
+- **Why not a seen flag on the grant:** a company grant reaches many people, and one flag cannot record that some of them have seen it.
+- Privileges: `select` to `authenticated`, and nothing else. A `select` policy shows `user_id = auth.uid()` only, plus the aal policy.
+
+**Helpers**, all `SECURITY DEFINER`, `stable`, `set search_path = public`, with execute revoked from `public`/`anon` and granted to `authenticated` (0002's grant loop):
+
+- **`holds_project_grant(p_project uuid)`:** does a `collaborators` row exist on that project with `grantee_user_id = auth.uid()`, **or** with `grantee_company_id` set **and `is_member_of(grantee_company_id)`**?
+  - **That membership test is answer 9, evaluated on every request and never copied.** A person who joins Rare Forms tomorrow has access on their first request, and a person who leaves has none on their next. No per-member rows are ever written.
+  - **It is `is_member_of`, never `can_act_as` or `is_seed_entitled`.** A grant to the company *The Seed Collaborative* therefore reaches **Seed's own membership rows only, not the whole co-operative.** Otherwise one share would become Stage 4 browsing, costs included. The test asserts this, and one mutation checks it.
+- **`can_read_project` / `can_write_project`** (replaced): Stage 2's body `or holds_project_grant(p_project)`. **They are still identical (4)** and still defined separately. The comment gains: *"Stage 4 adds browsing to NEITHER."*
+- **`project_owner_company_id(p_project uuid)`:** the owning company, read past RLS, so that the `collaborators` policies can ask "is the caller a member of the owner?"
+- **`project_owner_company_name(p_project uuid)`:** returns the name **only if `can_read_project(p_project)`**, and null otherwise. **This is needed because live code would show a blank owner:** `listVersions` and `getVersion` read `companies.name` through RLS, and `companies_select` hides the owner from a collaborator from another company.
+
+**Policies** — the Stage 2 ones that change, and the new ones:
+
+| Policy | Stage 3 expression | Why it must change |
+|---|---|---|
+| `projects_select` (replaced) | `is_member_of(company_id) or is_platform_admin() or holds_project_grant(id)` | **Stage 2's policy calls `is_member_of` directly, not `can_read_project`.** Changing only the helpers would show a collaborator the versions of a project they could not list. |
+| `projects_update` (replaced) | the same expression, for both using and check | Answer 11 (moves). Also required for renames: `rename_project` runs `select … for update`, and **PostgreSQL applies the UPDATE policy to `FOR UPDATE`**, so a collaborator's rename would otherwise fail as "not found". `guard_project_columns` still narrows the update to `folder`, and it still refuses a change of `company_id` from anyone below a privileged caller. |
+| `projects_insert` (replaced) | Stage 2's check, with `(is_member_of(company_id) or is_platform_admin() or (company_id = consortium_company_id() and is_seed_entitled()))` in place of the member test | Answer 1 plus 18: create freely in Seed's tree. **This widens nothing else:** no other company can be named. |
+| `projects_delete` | unchanged: platform admin | 14. |
+| `project_versions_*` | unchanged, and already expressed through `can_read_project` / `can_write_project` | They pick up grants through the helpers. |
+| `collaborators_select` (new) | `can_read_project(project_id)` | Everyone who can open the project sees its whole access list, including who granted whom (10). ⚠ Open Item 3. |
+| `collaborators_delete` (new) | `is_member_of(project_owner_company_id(project_id)) or is_platform_admin() or (granted_by = auth.uid() and can_read_project(project_id))` | Answer 13, **in the database.** A collaborator deleting someone else's grant affects zero rows. |
+| `collaborators_require_aal`, `share_notice_state_require_aal` (new) | restrictive, `meets_required_aal()` | As on every other table. |
+| `share_notice_state_select` (new) | `user_id = auth.uid()` | |
+
+**Answer 14 holds structurally.** The owner company's access is `projects.company_id`: there is no row a collaborator could delete, and the share functions refuse a grant to the owner company. The project itself can be deleted only under `projects_delete`, by a platform admin.
+
+**Functions that write** (`SECURITY DEFINER`). Each checks its own precondition, as `redeem_invite` does. **Each also calls `meets_required_aal()` itself and raises 42501 if it is false.** This adds them to 0004's written list of definer functions that bypass the restrictive policies, and that list must be updated in the migration comment rather than left to be rediscovered.
+
+- **`share_project_with_person(p_project uuid, p_email text)` → `(status text, grant_id uuid)`.**
+  - It refuses with one uniform 42501, *"project not found, or you cannot share it"*, unless `can_write_project(p_project)`. That covers answers 3 and 10: owner members, grantees (including members of a grantee company) and platform admins.
+  - It looks up `lower(btrim(email))` in `auth.users`, which is why this function has to be definer.
+  - **The status says what happened. Each case is not an exception:**
+    - `shared`
+    - `already-shared`: a grant to that person already exists. It is left untouched, and the original `granted_by` stands.
+    - `no-account` (12): ⚠ Open Item 8.
+    - `self`
+    - `already-member`: the person is a member of the owner company, and a personal grant would keep them in after they leave, which would undermine decision 6.
+  - It stamps `granted_by = auth.uid()`, both name snapshots and `created_at = now()`.
+- **`share_project_with_company(p_project uuid, p_company uuid)` → `(status, grant_id)`.**
+  - It uses the same access check as sharing with a person.
+  - Statuses are `shared`, `already-shared`, `owner-company` (refused: answer 14, and a pointless grant), and `not-shareable` (a company outside `shareable_companies()`, reported with the same wording as a company that does not exist).
+- **`shareable_companies()` → `(id, name)`.**
+  - It feeds the company picker, and it is definer because `companies_select` shows only your own companies.
+  - Default: companies with `is_seed_member = true`. ⚠ Open Item 4.
+  - It returns names only, never flags or theme.
+- **`dismiss_share_notices()`** upserts `(auth.uid(), now())` into `share_notice_state`.
+- **The creator grant is a trigger, not a change to `create_project`.**
+  - `grant_creator_access()` runs `AFTER INSERT` on `projects`, as definer. It inserts `(project_id = new.id, grantee_user_id = auth.uid(), kind = 'creator')` **when `auth.uid()` is not null and not `is_member_of(new.company_id)` and not `is_platform_admin()`.**
+  - **It uses `auth.uid()`, never `new.created_by`.** That answers Stage 2 Open Item 8's warning: no access is ever keyed to the FK-less `created_by`. The grantee column has an FK, so the grant cannot outlive the account.
+  - **A member creating in their own company gets no grant**, deliberately. Otherwise the grant would survive them leaving, against decision 6.
+  - **A platform admin gets no grant either.** They already have access, and a grant would outlast losing the flag.
+  - A trigger rather than an RPC change means every path that creates a project, including a direct PostgREST insert, writes the grant.
+
+**Functions that read** (`SECURITY INVOKER`: RLS applies; they exist for one round trip, not for privilege):
+
+- **`list_shared_projects(p_acting_as uuid)`** returns one row per project: project id, name, folder, head number, head version id, head author name, `updated_at`, owner company id and name (through the helper), and how the project reached you (`person` / `company` / `creator`, plus the granter's name snapshot).
+  - It **never selects `document`.**
+  - **The grant filter is written into the function, not left to RLS.** It includes rows where `grantee_user_id = auth.uid()`, or where `grantee_company_id = p_acting_as` and `is_member_of(p_acting_as)`.
+  - It **excludes projects owned by `p_acting_as`**, which are already in the folder tabs.
+  - *Why explicit:* `collaborators_select` also shows owner members every grant on their projects. An unfiltered read would list another person's grants as "shared with us", which is the same class of bug as the 2026-09-14 session-membership fix.
+- **`pending_share_notices()`** returns grants that reach you and are newer than your `seen_through`.
+  - Only `kind = 'shared'`, and not the grants you made yourself.
+  - For a company grant, only grants created after **your own `memberships.created_at` at that company**. Someone who joins next year is not told about every old share as news.
+  - Each row carries the project name, owner company name, the granter's name snapshot, "you" or the company name, and the time.
+
+**`create_project` (replaced, same signature): why it must change.**
+- **The trap.** It does `insert into projects … returning id into v_project_id`. `RETURNING` applies `projects_select` to the new row. For a consortium creator, the only true branch is `holds_project_grant(id)`, whose grant is written by an AFTER trigger in that same command. That is the invisible-to-its-own-command trap 0005 documents, so the create would fail with "new row violates row-level security policy".
+- **The fix.** Set `v_project_id := gen_random_uuid()`, and insert it **without `RETURNING`**, which applies only the insert policy. The following version insert is a later statement, so it sees both the project row and the grant.
+- **The comment in 0006 claiming the trap cannot bite is corrected here, not left standing.**
+- **Assert both paths in the test:** a consortium create succeeds, and the single-statement CTE still fails closed.
+
+#### Across companies — the one opening, and still nothing else
+
+- **After Stage 3, a project owned by a company you are not a member of is readable only through a `collaborators` row that reaches you.** There is still no browse set, no redacted view and no metadata-only listing.
+- **A collaborator sees costs** (24): the grant is the deliberate handoff that 21's redaction does not apply to.
+- **The cost redactor still does not exist**, and nothing here needs it. RLS serves the whole document only to someone who holds a grant.
+- **Stage 4's constraint is unchanged:** browsing must never be added through `can_read_project`, `holds_project_grant` or any `project_versions` policy.
+- **The Seed-tree create is checked against this rule.** Acting as Seed through the consortium entitlement, you may create; the trigger then grants you that one project.
+  - You still see **zero** other Seed projects, including those made by colleagues of your own company, unless one is shared with you.
+  - **Consortium browsing is still Stage 4.** The folder tabs, acting as Seed through the consortium, keep saying so.
+- **⚠ The honest consequence:** a document you create in Seed's tree carries **your** `priceModifier`, and Seed is now its owner. **Seed's own members see it, costs included**, by the ownership rule (20's sub-note). The database is behaving correctly; the person creating it might not expect this. ⚠ Open Item 5.
+
+#### Re-sharing and propagation (10) — the exposure, stated plainly
+
+- **There is no depth limit.** Anyone with access can share onward, to any existing account or to any company in the picker.
+- **A company grant multiplies this.** Sharing with Rare Forms lets **every current and future member of Rare Forms** share onward, and their grantees can share onward again.
+- **A design can therefore travel beyond the owner's direct control.** It does so with costs included (24), and with full export (a collaborator may Download project file or Save as new cloud project into their own company).
+- **What the owner keeps:**
+  - **Visibility.** The access list shows every grant and who made it.
+  - **Removal.** Any owner member can remove any grant (13).
+  - **Honest limit, same as 23:** removing a grant stops future reads. It does not recall a file already downloaded, or a copy already saved as someone else's project.
+- **When a grant is removed, the grants that person made stay.** Grants are independent rows. The access list then shows "shared by Frank (no longer has access)" beside them. ⚠ Open Item 1.
+- **A possible mitigation is recorded, not built:** a per-project "only Building Integrity can share this" switch. ⚠ Open Item 7. The default is no limit, as Tommy chose.
+
+#### Who sees what — the Shared tab and acting-as
+
+- **"Shared with us" is a fourth tab** in Open from cloud. It lists:
+  - projects **shared with you personally**, under any acting-as company, because a personal grant belongs to a person;
+  - plus projects **shared with the company you are acting as**, because a company grant belongs to that company;
+  - **minus** projects the acting-as company owns.
+- **A company grant to one of your *other* companies is not listed while you act as a different one.** This is consistent with the folder tabs.
+  - **Access is unaffected:** RLS still lets you save to it, and a project already open keeps saving (Stage 2's rule, below).
+  - The empty state says so: "Projects shared with your other companies appear when you act as them."
+- **Acting as Seed through the consortium:** the tab shows your personal grants, including creator grants. The three folder tabs keep the Stage 4 message.
+- **A signed-in account with no membership** (such as `tommy.fieser@gmail.com` today) can hold a personal grant. For it, Project ▾ shows **Open from cloud**, with only the Shared tab.
+- **Each row reads:** "*Smith House* · v7 · Frank · 2 hours ago — **Owned by Building Integrity › Proposals** · shared with you by Bob". A company grant reads "shared with Rare Forms by Bob", and a creator grant reads "you created it".
+- **Actions:** **Open**, **Versions**, **Move to…** and **Rename** (all 11), plus **Access…**.
+
+#### Folder moves by a collaborator (11)
+
+- **The folder is the owner company's filing (12)**, and a collaborator's move refiles the project **in the owner's tree**.
+- **How the collaborator sees it:** the Shared tab has no folders of its own, so every row prints the owner's folder: "Owned by Building Integrity › Proposals". The Project ▾ status line prints it too.
+- **How they change it:** **Move to…** on the Shared row, or on the status line. The picker is titled **"Refile in Building Integrity's folders"** and lists Current / Past / Proposals, so that nobody thinks they are filing into their own company.
+- **Route:** Stage 2's `PATCH /api/projects/[id]` is unchanged. The database allows the move through the replaced `projects_update`, and zero rows still means 404.
+- **Rename:** Stage 2's route and `rename_project` are unchanged. They work through the replaced `projects_select` / `projects_update`.
+
+#### Saving as a collaborator — which company's context applies
+
+- **None. The project's grants govern it, as Stage 2 already decided.** `POST /api/projects/[id]/versions` has no acting-as check, and it stays that way.
+- **The 2B 409 is create-only** (`checkCreateTarget`), so it cannot block a collaborator's save. Hand-test step 3 proves this live.
+- **The author is `auth.uid()`, and the name is snapshotted** exactly as for a member. The divergence notice and version history already print `author_name` without a profile join, so **a Rare Forms author reads correctly in Building Integrity's history**, and still does after they lose access or leave (6).
+- **The status line** adds how you reached the project: "Owned by Building Integrity · shared with you by Bob. You're acting as Rare Forms; saves still go to this project."
+- **Save as new cloud project from a shared project** creates a copy in the acting-as company, with no lineage (Stage 2's rule). **It carries the owner's price modifier into your company.** 24 permits this (full export), and the dialog says "a copy, owned by Rare Forms; Building Integrity's project is unchanged".
+- **When a grant is removed mid-session**, the save returns 403 with Stage 2's **Download project file** offer. Nothing new is needed.
+- **`getVersion` / `listVersions` take the owner's name from `project_owner_company_name`**, not from a `companies` read, or a collaborator sees a blank owner.
+
+#### The owner's access list, and sharing UI
+
+- **Reached by** **Access…** on any tree row (all four tabs), and by Project ▾ → **Sharing…** while a cloud project is open. It is a `StickyNote`. **Nothing is added to the top bar** (Stage 2 Open Item 6).
+- **First line, fixed, with no control:** "**Building Integrity** owns this project. Every Building Integrity member has access, and only a platform admin can delete it."
+- **Then one row per grant, oldest first:**
+  - "**Frank** (person) — shared by Bob · Sep 14, 2026"
+  - "**Rare Forms** (company: every current and future member) — shared by Bob · Sep 14"
+  - "**Dave** — created this project"
+  - "… — shared by Frank (no longer has access)"
+- **Remove** appears only where the database would allow it: when you are an owner member or a platform admin, or when the row's `granted_by` is you. **The database is the gate, and the button is the courtesy.** A refused delete (zero rows) says "You can remove only the shares you made. Nothing was changed."
+- **The share form** offers **Person** (email) or **Company** (picker from `shareable_companies`).
+  - It always shows: "They get full edit access, costs included, and can share it onward."
+  - For a company it adds: "…every current and future member of Rare Forms."
+  - **A grant to The Seed Collaborative** reads: "The Seed Collaborative's own members, not the whole co-operative" (see `holds_project_grant`).
+  - Status messages: `no-account` → "No account uses that email. Invite them to a company first; nothing was shared." `already-member` → "They're a Building Integrity member and already have access."
+
+#### The in-app notice (7)
+
+- **What is stored:** only `share_notice_state.seen_through`. What counts as new is computed by `pending_share_notices()`.
+- **When it shows:** whenever the app loads for a signed-in person with pending notices, not only at the moment of signing in. It is a non-modal note:
+  > **Shared with you:** Bob (Building Integrity) shared *Smith House* with you · Sep 14. **[Open Shared with us]** **[Got it]**
+  - A company grant names the company: "…shared *Smith House* with Rare Forms."
+- **When it clears:** **Got it**, which calls `dismiss_share_notices()`. The server time is stored, so a second computer is cleared too. Opening the tab does not clear it.
+- **Not notified:** creator grants, grants you made, and company grants made before you joined that company.
+
+#### Company backup (29) — granted projects join
+
+- **A company backup now contains every version of:**
+  - projects the company **owns**, as today;
+  - projects **shared with that company** (`grantee_company_id` = that company).
+- **Personal grants are in no company's backup.** A personal grant belongs to a person, not a company. That person can already download each version by hand. ⚠ Open Item 2, which also covers creator grants: a Building Integrity designer's Seed-tree project is in **Seed's** backup (owned), not in Building Integrity's.
+- **Route:** the cursor gains a phase, `after=owned:<project>:<n>` or `after=granted:<project>:<n>`. A cursor with no phase is read as `owned`, so a backup already in progress survives a deploy.
+  - The granted phase reads project ids from `collaborators` **filtered by `.eq('grantee_company_id', companyId)`**, then pages exactly as the owned phase does.
+  - **The filter is load-bearing for platform admins.** RLS shows them every grant, so without it one company's backup would carry another company's shares.
+  - **A project both owned and shared with its owner cannot exist:** it is refused as `owner-company`.
+- **Manifest:** `formatVersion` 2. Each granted version carries `ownership: "granted"` and `ownerCompany: { id, name }`, and the top level gains `grantedProjectCount`.
+  - Files go under `shared/<owner-slug>/<name-slug>--<project-id>/…`, so an owner's folder names never mix with the backing-up company's.
+- **A grant removed after a backup was taken:** the zip keeps the files. **A backup cannot be recalled**, which is the same honest limit as a downloaded file (23). The manifest's notes say so in one line.
+- **A grant removed during a backup:** a page that can no longer read the project skips it, and the next project continues, as the owned phase already does for a deleted project. The completeness check applies only to projects that were read.
+
+#### Routes
+
+Stage 2's conventions apply unchanged: `requireCloudSession`, the JWT-bound client, `.eq()`/`.in()` only with database-returned or validated values, **no admin client**, and uuids checked before any query.
+
+| Route | Does |
+|---|---|
+| `GET /api/projects/shared` | `list_shared_projects(<verified acting-as id or null>)`. No `document`. |
+| `GET /api/projects/[id]/access` | The owner line (company name through the helper) and the grant rows (named columns). Unreadable and nonexistent are the same 404. |
+| `POST /api/projects/[id]/access` | `{ kind: "person", email }` or `{ kind: "company", companyId }` → the matching RPC. `shared` is 201, and each other status is 200 with its message. 42501 is 404. |
+| `DELETE /api/projects/[id]/access/[grantId]` | Deletes through RLS. **Zero rows is 404**, "You can remove only the shares you made, or this share is already gone. Nothing was changed." |
+| `GET /api/companies/shareable` | `shareable_companies()`. |
+| `GET /api/share-notices` · `POST /api/share-notices/dismiss` | The notice. |
+| `POST /api/projects` (changed) | `checkCreateTarget` **admits `source === "consortium"`** (3D). The 409 on a mismatch is unchanged. |
+| `GET /api/companies/[id]/backup` (changed) | The granted phase (3E). |
+| `GET /api/projects/[id]/versions` and `…/versions/[versionId]` (changed) | The owner's name comes from `project_owner_company_name`. |
+
+#### Staging — five sub-stages, each shippable
+
+- **3A — Schema, RLS and tests. No app change.**
+  - Contents: `0008`, `supabase/tests/stage3_rls.test.sql`, README (a Stage 3 section, pre-flight and post-flight, "run 0008 after 0007"), and **one deliberate edit to `stage2_rls.test.sql`**. Its assertion 3, "bob cannot create in the Seed Collaborative", becomes "bob **can**, and receives a creator grant". That is Stage 2 Open Item 2 being answered, not a regression.
+  - Safe ahead of the app: no grant can exist until someone calls a share RPC. The live app's create route still refuses a consortium create.
+  - Ships when all three SQL suites and the concurrency script pass locally, the mutation checks fail as expected, and Tommy has pasted 0008 and matched the post-flight results.
+- **3B — Share, the access list, the Shared tab, and working as a collaborator.** The routes above except the notice and backup; the owner-name fix; Move to… and Rename on Shared rows; the status line. *Usable alone: this is the handoff.* Hand-test steps 1–10.
+- **3C — The in-app notice.** Hand-test step 11.
+- **3D — Creating in Seed's tree.** `checkCreateTarget` admits the consortium source; the save dialog names Seed and carries the Open Item 5 line; the Open note's create action appears acting as Seed. Hand-test steps 12–14.
+- **3E — Granted projects in the company backup.** Hand-test steps 15–16.
+
+#### Tests — `supabase/tests/stage3_rls.test.sql` (local or staging only, never the live project)
+
+- **Harness:** Stage 2's harness, unchanged. Run `local_shim.sql`, then 0001–0008, then `stage1_rls.test.sql`, `stage2_rls.test.sql` (with its one edited assertion) and the concurrency script, then this file.
+- **Guards:** the same refuse-to-run guard, extended to any `collaborators` row.
+- **Fixtures:** Stage 2's people, plus:
+  - **fiona**, a second ordinary member of Rare Forms;
+  - **nick**, an ordinary member of a new company, New Frameworks (`is_seed_member` true);
+  - **henry**, an account with no membership, who joins Rare Forms partway through.
+- **Every assertion runs as an ordinary member**, without the operator opt-in, unless it is about the platform admin.
+
+1. **Personal grant.** bob shares BI project P1 with frank → `shared`.
+   - frank reads P1 and its versions, saves (the author is frank and the name is snapshotted), renames it, and moves its folder.
+   - frank changing `company_id` or `created_by` raises 42501. frank deleting P1 affects 0 rows.
+   - fiona (frank's colleague) reads 0.
+2. **Nothing else crosses: the margin assertion, again.** frank sees exactly P1's versions among BI documents carrying `priceModifier`, and 0 rows of BI's other projects, even when naming their ids.
+3. **Company grant, current and future (9).** bob shares P2 with Rare Forms.
+   - frank and fiona read it; gwen reads it.
+   - henry reads 0, is given a Rare Forms membership, and then reads it **with no new grant row**.
+   - fiona's membership is removed, and she reads 0.
+4. **A Seed company grant is not a consortium grant.** bob shares P3 with The Seed Collaborative. dave (a Seed member) reads it. **frank, who is seed-entitled but not a Seed member, reads 0.**
+5. **Onward sharing (10).** frank shares P1 with nick: `granted_by` is frank and `granted_by_name` is set, and nick reads it. nick, now a grantee, shares P1 with carol, and carol reads it.
+6. **Revocation (13), in the database.**
+   - frank deleting bob's grant to frank, or bob's grant to Rare Forms, affects 0 rows.
+   - frank deleting his own grant to nick affects 1 row.
+   - alice (BI admin) and bob (BI member) can each delete any grant.
+   - After bob deletes frank's grant, carol **still** reads P1 (encoding Open Item 1's default), and frank reads 0.
+7. **Owner safety (14).**
+   - Sharing with Building Integrity returns `owner-company`, and no row is written.
+   - Sharing with erin (a BI member) returns `already-member`.
+   - Sharing with yourself returns `self`.
+   - Sharing the same person twice returns `already-shared`, with `granted_by` unchanged.
+   - Sharing with an unknown email returns `no-account`, and the lookup is case-insensitive.
+   - A direct `insert` or `update` on `collaborators` raises 42501 for everyone below operator.
+8. **No access, no sharing.** frank, holding no grant on P4, calling either share RPC gets 42501. carol, whose company is not a member, gets the same on a project she cannot see.
+9. **The creator grant (1).**
+   - frank (seed-entitled) calls `create_project` into Seed: it succeeds, a `creator` row names frank, and frank saves again.
+   - bob (seed-entitled) reads 0 of it. dave (a Seed member) reads it, costs included.
+   - carol calling `create_project` into Seed gets 42501. frank creating in Rare Forms, dave in Seed, and pat anywhere each write **no** grant.
+   - A direct `projects` insert by frank into Seed also writes the grant.
+   - The single-statement CTE create still fails closed.
+10. **Deleting accounts.**
+    - Deleting nick's account (no operator opt-in) removes nick's grant.
+    - Deleting frank's account leaves the grant frank made to someone else untouched, with its `granted_by_name` intact.
+11. **Two-factor.** frank, with a verified factor at aal1, reads 0 shared projects and 0 grants, and each share RPC and `dismiss_share_notices` raise. At aal2 all of them work again.
+12. **The Shared list and notices filter explicitly.**
+    - bob (an owner member, who sees every grant on P1) gets **0** rows from `list_shared_projects(BI)`.
+    - frank gets P1 under `list_shared_projects(Rare Forms)` and under `(Seed)`. He gets P2 only under `(Rare Forms)`.
+    - `pending_share_notices()` for henry excludes P2, which was granted before he joined. After `dismiss_share_notices()` it returns 0 for that person, and `seen_through` equals the server's `now()`.
+13. **Privileges.** `anon` holds nothing on either new table. `authenticated` holds no insert, update or truncate on `collaborators`. `anon` cannot execute any new function.
+
+**Mutation checks**, each of which must fail the suite:
+- `holds_project_grant` uses `can_act_as` instead of `is_member_of`: fails on assertion 4.
+- The `granted_by = auth.uid()` branch of `collaborators_delete` is replaced with `can_read_project`: fails on 6.
+- The creator trigger is dropped: fails on 9.
+- The `owner-company` refusal is removed: fails on 7.
+- The aal check is removed from `share_project_with_person`: fails on 11.
+- `list_shared_projects` drops its grantee filter: fails on 12.
+- `projects_select` is left at its Stage 2 form: fails on 1.
+
+#### Pre-flight and post-flight for live — read-only, one query per paste
+
+The coder copies these into the README with the exact expected output.
+
+- **Pre-flight (a):** 0006 and 0007 are applied. Expect `true`.
+  - `select to_regprocedure('public.create_project(uuid,text,jsonb,text)') is not null;`
+- **(b):** 0008 is not yet applied. Expect `null | null`.
+  - `select to_regclass('public.collaborators'), to_regclass('public.share_notice_state');`
+- **(c):** write down four numbers.
+  - `select (select count(*) from public.companies), (select count(*) from public.memberships), (select count(*) from public.projects), (select count(*) from public.project_versions);`
+- **(d):** expect `true`.
+  - `select has_table_privilege('postgres', 'auth.mfa_factors', 'select');`
+- **Post-flight (A):** both new tables exist, with RLS on.
+- **(B):** privileges. `collaborators` is select `t`, delete `t`, insert `f`, update `f`, truncate `f`. `share_notice_state` is select only. `anon` and `service_role` are `f` on everything.
+- **(C):** policies on the two new tables, five rows, with the two `_require_aal` rows RESTRICTIVE. `projects` still has five policies with Stage 2's names.
+- **(D):** the new trigger `projects_grant_creator` exists, and all 7 Stage 2 triggers are still present.
+- **(E):** functions, with a definer flag for each and `anon_can_call` `f` on all of them.
+  - `holds_project_grant`, `project_owner_company_id`, `project_owner_company_name`, `share_project_with_person`, `share_project_with_company`, `shareable_companies`, `dismiss_share_notices`, `grant_creator_access`, `can_read_project` and `can_write_project` are `t`.
+  - `create_project`, `list_shared_projects` and `pending_share_notices` are `f`.
+- **(F):** the helpers were really replaced. Expect `t | t`.
+  - `select bool_or(proname = 'can_read_project' and prosrc like '%holds_project_grant%'), bool_or(proname = 'can_write_project' and prosrc like '%holds_project_grant%') from pg_proc where pronamespace = 'public'::regnamespace;`
+- **(G):** the four numbers from (c) are unchanged, and `select count(*) from public.collaborators;` returns 0.
+
+#### Hand-test checklist — the live app
+
+**Accounts:**
+- **T** — Tommy, the platform admin.
+- **M** — the ordinary Building Integrity member.
+- **R** — the ordinary Rare Forms member.
+- **R2** — a **second ordinary Rare Forms member**, invited by T to another address he controls, as R was.
+- **N** — an **ordinary New Frameworks member**, invited the same way. **Not Ace**, who is a platform admin.
+
+Steps marked "as M / as R / as R2 / as N" must not be done as T.
+
+0. **After pasting 0008 (3A):** pre-flight (a)–(d) before, and post-flight (A)–(G) after.
+1. **(3B) As M, not T:** on a Building Integrity project, open Project ▾ → **Sharing…** and share it with R's email. The list shows "R — shared by M". **As R, not T:** open **Shared with us**, which lists it as "Owned by Building Integrity › Current Projects · shared with you by M". Open it. The Project Summary price matches what M sees. **As R2, not T:** the tab does not list it.
+2. **As R, not T:** Save to cloud. **As M:** Version history shows R's name on the new version.
+3. **As R, not T:** switch to The Seed Collaborative **without closing the project**, then Save to cloud. It saves; there is no "changed in another tab" refusal.
+4. **As R, not T:** on the Shared row, choose **Move to…**. The picker says "Refile in Building Integrity's folders". Pick Proposals. **As M:** it is in Building Integrity's Proposals. **As R:** Rename it, and M sees the new name.
+5. **As R, not T:** share the same project with N. **As N, not T:** it is in Shared with us. The access list reads "N — shared by R".
+6. **As R, not T:** the access list shows **Remove** only on N's row. Open `/api/projects/<id>/access` in the address bar and copy the `id` of R's own grant (the one M made). In the console, run `fetch('/api/projects/<id>/access/<that id>', { method: 'DELETE' }).then(r => r.status)`. It prints **404**, and the list is unchanged.
+7. **As M, not T:** share a second project with the **company** Rare Forms. **As R and as R2:** both see it. **As T:** remove R2's Rare Forms membership. **As R2:** it is gone after a reload. **As T:** re-invite R2 to Rare Forms. **As R2:** accept the invite and see the project again, with nobody re-sharing it.
+8. **As M, not T:** remove R's grant on the first project. **As R:** it leaves Shared with us, and Save to cloud in an editor that still has it open is refused with **Download project file**. **As N:** it is still shared (Open Item 1's default), and M's list reads "N — shared by R (no longer has access)". **As M:** remove N.
+9. **As R, not T, while holding a grant:** there is no delete control, and the owner line has no Remove. The company picker does not offer Building Integrity.
+10. **As R, not T:** paste the version URL of a **different** Building Integrity project that was never shared. It returns 404 with no document.
+11. **(3C) As M:** share a project with R. **As R:** reload, and the notice names M and the project. Press **Got it** and reload: it is gone. Sign in as R in a second browser: it is gone there too.
+12. **(3D) As M, not T:** switch to The Seed Collaborative and choose Save as new cloud project. The dialog says "New project in The Seed Collaborative › Current Projects" and shows the price line. Save it. Shared with us lists it as "you created it". Switch back to Building Integrity: it is still listed, and it opens and saves.
+13. **As R, not T, acting as Seed:** Shared with us does not list M's Seed project, and its version URL returns 404. The folder tabs still say Seed's folders come later.
+14. **As T:** open M's Seed project's access list: "M — created this project". Remove it. **As M:** it is gone, and a save is refused. **As T:** share it with M again. **As M:** it is back.
+15. **(3E) As T, acting as Rare Forms:** download the company backup. The manifest has `"ownership": "granted"` entries naming Building Integrity for step 7's company share, with files under `shared/`. One of them opens with Load Project. **No entry** is present for a project shared only with R personally (Open Item 2's default).
+16. **As T, acting as Building Integrity:** the backup lists step 7's project once, as `owned`.
+
+#### Coder handoff — to-do, one block per sub-stage
+
+- **3A.**
+  - Scope: `0008` and its RLS test, exactly as specified.
+  - Files:
+    - `supabase/migrations/0008_stage3_collaboration.sql`
+    - `supabase/tests/stage3_rls.test.sql`
+    - `supabase/tests/stage2_rls.test.sql` (assertion 3 only)
+    - `supabase/README.md` (Stage 3 section, pre- and post-flight; delete the "collaborators are not here" line; add the new definer functions to 0004's bypass list)
+  - Acceptance:
+    - All suites pass locally, and every listed mutation fails them.
+    - One transaction, re-runnable; a copy broken before `commit;` leaves nothing behind.
+    - No Stage 1 object is touched. Only the six named Stage 2 objects change.
+  - Edge cases: `create_project` through the consortium without `RETURNING`; FK cascade on grantee deletion under RLS; `for update` in `rename_project` for a grantee.
+  - Not in scope: app code; `collab_requests`.
+- **3B.**
+  - Scope: sharing, the access list, the Shared tab, and collaborator open/save/move/rename.
+  - Files:
+    - `api/projects/shared`, `api/projects/[id]/access/**` and `api/companies/shareable` routes
+    - `cloud/projectRouteLogic.ts` (owner name through the helper)
+    - `cloud/useCloudProjects.tsx` (fourth tab, Access…, refile picker wording)
+    - `cloud/cloudMenu.ts` and the status line
+    - `cloud/cloudTypes.ts`
+  - Acceptance: hand-test steps 1–10 **as M, R, R2 and N**. No route imports the admin client. The Shared list never selects `document`.
+  - Edge cases: a no-membership account with a personal grant; a grant removed while the Shared tab is open; a project shared both personally and to your company (listed once, with both reasons).
+  - Not in scope: the notice, Seed create, backup.
+- **3C.**
+  - Scope: the notice. Files: the share-notices routes and a notice component beside the account control.
+  - Acceptance: step 11.
+  - Edge case: a company grant made before you joined is not notified.
+- **3D.**
+  - Scope: consortium create. Files: `checkCreateTarget`, the save dialog and the Open note's consortium branch.
+  - Acceptance: steps 12–14. The folder tabs acting as Seed through the consortium are unchanged.
+- **3E.**
+  - Scope: granted projects in the company backup. Files: `cloud/backupRouteLogic.ts` (phased cursor), `cloud/companyBackup.ts` (manifest v2, `shared/` paths) and their tests.
+  - Acceptance: steps 15–16. A phase-less cursor still works.
+  - Edge case: a grant removed mid-backup.
+  - Not in scope: personal grants in any backup (pending Open Item 2).
+
+**The coder re-runs the 6-point flags check against each diff.**
+
+#### Not in scope for Stage 3
+
+- **Access requests (`collab_requests`)**, which move to Stage 4 (answer 6).
+- Browsing, the redactor and export restrictions (Stage 4).
+- The people/activity page and promote-to-admin (answer 15). They follow Stage 3 directly; see the Backend Open Items.
+- Email or any other notification channel (7).
+- Sharing with an address that has no account (12).
+- A view-only tier (4).
+- Leaving a share yourself, as a recipient. Only owner members and the person who shared can remove a grant (13). A recipient who wants out asks either of them.
+- Showing each version author's company in version history. `author_name` alone is recorded, as in Stage 2.
+- Transferring ownership between companies.
+
+#### Open Items — Stage 3 (Tommy's decisions; each has a recommended default)
+
+1. **⚠ When a grant is removed, do the grants that person made go with it?** Example: Bob shares with Frank, Frank shares with Nick, and Bob removes Frank. **Default: Nick keeps access.** The list marks "shared by Frank (no longer has access)", and the Remove dialog offers "Also remove the 1 share Frank made", **pre-ticked**. The alternative, cascading automatically, is stricter but silently removes people the remover never saw.
+2. **⚠ Personal grants, including creator grants, and backups.** A share with Frank personally is in no company's backup. **Default: excluded.** The person can still download each version, and a company backup stays a company's. The consequence: a Building Integrity designer's Seed-tree project is in Seed's backup, not Building Integrity's.
+3. **Who sees the access list?** **Default: everyone who can open the project.** Rare Forms can therefore see that New Frameworks also has it. The alternative, owner members only, hides from collaborators the grants they could remove.
+4. **Which companies appear in the share picker?** **Default: consortium member companies (`is_seed_member`) only.** A non-member company ("neither sees nor is seen") is reachable by sharing with a person's email. No non-member company exists today.
+5. **⚠ Creating in Seed's tree hands your price modifier to Seed's members.** **Default: one line in the create dialog**: "Owned by The Seed Collaborative: its members will see this design's costs." No redaction, since it is Seed's project by decision.
+6. **⚠ Conflict with the permission matrix.** The "Invited collaborator" row says **Move between folders: no** and **Grant collaborators: no**. Answers 11 and 10 say yes. **Default: the answers win**, because they are newer and were explicitly chosen over the alternatives. The matrix row is corrected when this plan is approved, and it was not edited silently.
+7. **Re-sharing has no limit.** **Default: none, as chosen.** Recorded mitigation, not built: a per-project "only the owner company can share this" switch. **Revisit trigger:** the first time an owner finds a grant on their list they did not expect.
+8. **Sharing by email reveals whether an address has an account**, to anyone who can share a project. **Default: say so plainly** ("No account uses that email"). Answer 12 needs the sharer to know this, and membership is already the trust boundary (15).
+
+#### Flags check: clean, confirmed against the plan rather than assumed
+
+1–4. **Clean.** No real-world building number is introduced: no fastener spacing, load, density, dimension or cost figure. No `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is in scope, and `data.ts` is not touched.
+
+5. **Clean.** Nothing new reaches the Review Log.
+
+6. **Clean.**
+   - The one money-shaped field, `priceModifier`, moves only inside whole documents, to people who hold an explicit grant (24). No redaction is claimed that does not exist.
+   - **No new number at all**, administrative or otherwise. Backup page sizes and name limits are Stage 2's, unchanged.
+   - The plan leans on the convention's own principle:
+     - "shared by Frank (no longer has access)" rather than a vanished attribution;
+     - `no-account` rather than a silent no-op;
+     - names snapshotted and labelled "as shared" rather than a blank.
 
 ---
 
@@ -1522,7 +1981,7 @@ Tommy: *"i want to have 3 platform admins that can reach all companies - me from
 
 - **FLAGGED FOR LATER (Tommy, 2026-09-14) — promote a member to company admin, and a people/activity page. Not specced; do not build until Tommy picks it up.** Found in the 2D review: the database already allows promotion (`memberships_update`, and 0001's `guard_membership_self_update` lets a company admin change a level) but the app has no control for it, so README Stage 1 step 7 ("promote them") cannot be done from the UI. Tommy's direction, recorded verbatim so it is not re-derived: *"any admin of a company or the platform admins can upgrade a member to admin. perhaps admins of companies have a section under the accounts that shows them latest actions each member of their company has taken, their email, how many edits theyve made total, and how long theyve been a member for. each account also can see these stats on their account page, but the admin has a drop down menu with everyone of their companies (if company admin) or an entire list of everyone if viewing as the seed collaborative (or platform admin)."*
   - **Things a spec pass must settle before any code:** "latest actions" needs a definition — Stage 2 records saves and renames (`project_versions`, with author and time) but there is no general activity log, so anything beyond saves/renames is new schema. "Edits" presumably means versions authored. "How long a member" needs `memberships.created_at` (check it exists). **Acting as the Seed Collaborative showing "everyone" is a cross-company people view**, which touches the consortium read layer (Stage 4) and the `user_profiles_select` rule that only shows profiles to people who share a company — that is a real permission decision, not a UI detail. **Caution already on record:** a platform admin can change levels only where the guard allows; re-check 0001 before promising platform-admin promotion everywhere.
-  - Rides naturally with Stage 3 (people and grants) or Stage 5 (platform admin tools); Tommy to place it.
+  - **Placed by Tommy 2026-09-14 (Stage 3 answer 15): a short follow-up directly after Stage 3**, not part of it. It still needs its own spec pass.
 
 - **⚠ How long is an invite good for? Picked, not decided — needs Tommy.** Decision 3 makes the app invite-only and the build talks throughout about a "valid, unexpired invite token", but no window is named anywhere in this log. Stage 1 shipped with `INVITE_EXPIRY_DAYS = 14` in `apps/web/app/auth/inviteToken.ts` — long enough that someone gets round to it, short enough that a forwarded email is not still live a year later. **That is a guess wearing a constant's clothes**, and it is recorded here because a code comment is not where this project keeps unresolved decisions. Changing it is one edit; the invites already in flight keep the expiry they were minted with.
   - **Deliberately NOT wrapped in a `CatalogValue`.** The `status` / review-log convention exists for real-world building numbers, and it works because the Items for Engineer/Contractor Review list is short and every line on it is something a human reviewer needs to check. An administrative timeout on that list would dilute exactly the thing the convention protects. Flagged here instead — same honesty, right audience.
@@ -1566,7 +2025,7 @@ It also means the colour never encodes *whose work you are looking at*, so nothi
 - **⚠ Backup format and manifest — the one open decision.** Decision 29 says "a complete backup for a USB stick" and nothing about shape. A zip of one JSON per version plus a manifest is the obvious answer and needs about ten seconds of Tommy's confirmation, mostly so the manifest carries what he would actually want to find on that stick a year later (company, project, folder, version, author, date). Blocks nothing until Stage 2. **2026-09-13: the Stage 2 plan proposes a concrete default** (a zip built in the browser, one untouched `ProjectFile` per version, and a `manifest.json` with those fields plus schema version, parent version and a checksum). See "Stage 2 plan — Company backup" and its Open Item 4. It still needs Tommy's yes before this item closes.
 
 **Needs Tommy's yes, but is an inference rather than a question he was asked.**
-- **⚠ Does the creator of a Seed-tree project keep access to it?** "Create freely, but editing an existing Seed project needs an invitation" taken literally means you lose your own work the moment you save it. **The coherent reading — creating in another company's tree grants the creator a standing collaborator grant on that project — is written into the spec above and flagged there as an inference.** Confirm before Stage 3/4; the alternative reading is not plausible but should be ruled out by him rather than by us.
+- ~~**⚠ Does the creator of a Seed-tree project keep access to it?**~~ **Answered by Tommy 2026-09-14: yes** (Stage 3 plan, answer 1). Original text kept for the record: "Create freely, but editing an existing Seed project needs an invitation" taken literally means you lose your own work the moment you save it. **The coherent reading — creating in another company's tree grants the creator a standing collaborator grant on that project — is written into the spec above and flagged there as an inference.** Confirm before Stage 3/4; the alternative reading is not plausible but should be ruled out by him rather than by us.
 
 **Answered by Tommy 2026-09-06 — folded in, kept for the record.**
 - ~~**Does consortium browsing include the Proposals folder?**~~ **Answered twice, and the second answer reversed the first.** Initially: Proposals private to the owning company. **Final: no privacy — *"lets keep proposals simple then, no permission boundary."*** All three folders are browsable and `projects.folder` is purely organisational. **The exposure this accepts is recorded on decision 12** — a live bid and who it is for is visible to every member company — and he was shown that consequence and chose simplicity. Recorded as a deliberate rejection, not an oversight.
