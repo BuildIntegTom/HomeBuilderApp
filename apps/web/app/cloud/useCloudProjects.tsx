@@ -17,6 +17,7 @@ import {
   consortiumLaterStageMessage,
   displayProjectName,
   isCertainlyTooLargeForCloud,
+  seedTreeCostWarning,
   type CloudFolder,
   type CloudProjectRow,
   type CloudVersionResponse,
@@ -774,7 +775,8 @@ export function useCloudProjects({
     onToggleFullscreen: () => setFullscreen((was) => (was === id ? null : id)),
   });
 
-  const canCreateHere = actingAs !== null && actingAs.source !== "consortium";
+  // Stage 3D: a consortium entitlement creates in the consortium's own tree.
+  const canCreateHere = actingAs !== null;
   const now = new Date();
   const shownHistory = history && historyTarget && history.projectId === historyTarget.projectId ? history : null;
   const historyRows = shownHistory ? buildHistoryRows(shownHistory, cloudContext, PROJECT_FILE_VERSION) : [];
@@ -911,8 +913,6 @@ export function useCloudProjects({
             <p className={styles.message}>Sign in to save projects to the cloud.</p>
           ) : !actingAs ? (
             <p className={styles.message}>{NO_COMPANY_MESSAGE}</p>
-          ) : !canCreateHere ? (
-            <p className={styles.message}>{consortiumLaterStageMessage(actingAs.companyName)}</p>
           ) : (
             <>
               <p className={styles.lead}>
@@ -930,6 +930,14 @@ export function useCloudProjects({
                   ))}
                 </select>
               </p>
+              {/* Stage 3D / Open Item 5: ONE line, only in the consortium's
+                  tree. Creating there hands your price modifier to its members,
+                  and nothing redacts it. */}
+              {actingAs.source === "consortium" && (
+                <p className={styles.muted} data-seed-cost-warning="">
+                  {seedTreeCostWarning(actingAs.companyName)}
+                </p>
+              )}
               <p className={styles.muted}>
                 The company is the one you are acting as. Name: <strong>{displayProjectName(editorProjectName)}</strong>, from
                 the project name field.

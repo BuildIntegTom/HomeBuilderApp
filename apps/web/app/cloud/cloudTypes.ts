@@ -217,8 +217,27 @@ export const DOCUMENT_TOO_LARGE_MESSAGE =
 export const NO_COMPANY_MESSAGE =
   "You're signed in, but you aren't a member of any company yet, so there's no company to save a cloud project into. Ask a company admin for an invite. Save Project still downloads the file to this computer.";
 
+/**
+ * Acting as the consortium company, the three folder tabs list nothing until
+ * browsing arrives in Stage 4.
+ *
+ * Stage 3D removed the second half of this sentence — "and you can't create a
+ * project in it yet" — because creating in the consortium's tree is now allowed
+ * (answer 1). Listing it is NOT: only explicitly granted projects are visible,
+ * which is exactly what keeps the Shared tab and the folder tabs different.
+ */
 export function consortiumLaterStageMessage(companyName: string): string {
-  return `You're acting as ${companyName} through the consortium. Its folders open in a later stage, so there's nothing to list here and you can't create a project in it yet.`;
+  return `You're acting as ${companyName} through the consortium. Its folders open in a later stage, so there's nothing to list here.`;
+}
+
+/**
+ * Stage 3 Open Item 5, Tommy's accepted default: ONE line in the create dialog.
+ * A project created in the consortium's tree is owned by it and carries your own
+ * `priceModifier`, so its members open it costs included (the ownership rule).
+ * The line says so rather than implying a redaction, because none exists.
+ */
+export function seedTreeCostWarning(companyName: string): string {
+  return `Owned by ${companyName}: its members will see this design's costs.`;
 }
 
 // ---------------------------------------------------------------------------

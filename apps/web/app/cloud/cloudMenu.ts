@@ -68,10 +68,11 @@ export function buildCloudMenu(input: CloudMenuInput): CloudMenu {
   }
 
   const { actingAs } = input;
-  // Creating follows the verified acting-as company, and only from a
-  // membership or platform admin: the consortium route waits for Stage 3
-  // (Open Item 2).
-  const canCreate = actingAs !== null && actingAs.source !== "consortium";
+  // Creating follows the verified acting-as company. Stage 3D: a consortium
+  // entitlement creates too, in the consortium company's own tree, where the
+  // creator keeps a standing grant (answer 1, Stage 2 Open Item 2). LISTING
+  // that tree is still Stage 4, which is what `message` below still says.
+  const canCreate = actingAs !== null;
   const message = actingAs === null ? NO_COMPANY_MESSAGE : actingAs.source === "consortium" ? consortiumLaterStageMessage(actingAs.companyName) : null;
 
   return {

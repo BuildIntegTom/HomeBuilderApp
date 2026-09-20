@@ -5,7 +5,6 @@ import {
   NAME_LENGTH_MESSAGE,
   NO_COMPANY_MESSAGE,
   actingAsChangedMessage,
-  consortiumLaterStageMessage,
   isCloudFolder,
   type CloudFolder,
   type CloudProjectRow,
@@ -101,17 +100,26 @@ export type CreateTargetCheck =
  * (the cookie is per browser, not per tab), and the answer is a visible 409
  * rather than a save into a folder the person never saw.
  *
- * Mismatch is checked before the consortium refusal on purpose: someone who
- * switched to Seed in another tab should be told THAT, which is the thing they
- * can act on.
+ * Mismatch is checked first on purpose: someone who switched to Seed in another
+ * tab should be told THAT, which is the thing they can act on.
+ *
+ * STAGE 3D: a `consortium` entitlement is no longer refused (answer 1). This
+ * opens ONE company and no other, structurally rather than by a name check:
+ * `computeEntitlements` builds the `consortium` source only for the single
+ * company flagged `isConsortium`, and the entitlement itself came from
+ * `loadSession`, which re-verifies it against real rows on every request. Every
+ * other wrong-company create is still refused — by the 409 above when the cookie
+ * moved under the dialog, and by the database otherwise.
+ *
+ * THE DATABASE REMAINS THE GATE, not this function: `projects_insert` (0008)
+ * admits `company_id = consortium_company_id() and is_seed_entitled()`, so an
+ * account that is not seed-entitled is refused there and comes back as 42501 →
+ * "You can't create a project in that company. Nothing was saved."
  */
 export function checkCreateTarget(actingAs: Entitlement | null, expectedCompanyId: string): CreateTargetCheck {
   if (!actingAs) return { ok: false, status: 403, message: NO_COMPANY_MESSAGE };
   if (actingAs.companyId !== expectedCompanyId) {
     return { ok: false, status: 409, message: actingAsChangedMessage(actingAs.companyName) };
-  }
-  if (actingAs.source === "consortium") {
-    return { ok: false, status: 403, message: `${consortiumLaterStageMessage(actingAs.companyName)} Nothing was saved.` };
   }
   return { ok: true, companyId: actingAs.companyId, companyName: actingAs.companyName };
 }

@@ -62,6 +62,12 @@ describe("the Shared tab — labels", () => {
     );
   });
 
+  it("3D: a project you created in Seed's tree is listed as 'you created it', owned by Seed", () => {
+    expect(sharedRowDetail({ ownerCompanyName: "The Seed Collaborative", folder: "current", reachedVia: [creator("Mia")] })).toBe(
+      "Owned by The Seed Collaborative › Current Projects · you created it",
+    );
+  });
+
   it("shows a blank owner as a visible gap, never an empty 'Owned by  ›'", () => {
     expect(ownerFilingText("", "past")).toBe("Owned by (owner name not available) › Past Projects");
   });

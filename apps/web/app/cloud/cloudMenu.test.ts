@@ -90,14 +90,17 @@ describe("buildCloudMenu", () => {
     expect(buildCloudMenu({ ...base, actingAs: RF_PLATFORM })).toMatchObject({ saveAsNew: true, heading: "Cloud · Rare Forms" });
   });
 
-  it("acting as Seed through the consortium: no create, an explanation, and Open still explains in its note", () => {
+  it("3D: acting as Seed through the consortium can now create, while its folders still say Stage 4", () => {
     const menu = buildCloudMenu({ ...base, actingAs: SEED_CONSORTIUM });
-    expect(menu).toMatchObject({ saveToCloud: false, saveAsNew: false, openFromCloud: true });
-    expect(menu.kind === "signed-in" && menu.message).toMatch(/later stage/);
+    expect(menu).toMatchObject({ saveToCloud: true, saveAsNew: true, openFromCloud: true, heading: "Cloud · The Seed Collaborative" });
+    // The message is now about LISTING only: creating is no longer refused,
+    // and the folder tabs are deliberately unchanged (browsing is Stage 4).
+    expect(menu.kind === "signed-in" && menu.message).toMatch(/folders open in a later stage/);
+    expect(menu.kind === "signed-in" && menu.message).not.toMatch(/can't create/);
   });
 
   it("acting as Seed with a Building Integrity project open still saves into that project", () => {
-    expect(buildCloudMenu({ ...base, actingAs: SEED_CONSORTIUM, cloudProjectOpen: true })).toMatchObject({ saveToCloud: true, saveAsNew: false });
+    expect(buildCloudMenu({ ...base, actingAs: SEED_CONSORTIUM, cloudProjectOpen: true })).toMatchObject({ saveToCloud: true, saveAsNew: true });
   });
 
   it("two-factor pending offers nothing and says to enter the code", () => {

@@ -132,12 +132,34 @@ describe("checkCreateTarget — the acting-as check", () => {
     });
   });
 
-  it("reports the tab switch before the consortium refusal", () => {
-    expect(checkCreateTarget(SEED, BI_ID)).toMatchObject({ status: 409, message: expect.stringContaining("The Seed Collaborative (changed in another tab)") });
+  it("3D: the two-tab 409 still fires for the consortium entitlement, word for word", () => {
+    expect(checkCreateTarget(SEED, BI_ID)).toEqual({
+      ok: false,
+      status: 409,
+      message: "You're now acting as The Seed Collaborative (changed in another tab). Nothing was saved.",
+    });
   });
 
-  it("refuses a consortium entitlement with 403 even when it matches", () => {
-    expect(checkCreateTarget(SEED, SEED_ID)).toMatchObject({ ok: false, status: 403, message: expect.stringMatching(/later stage.*Nothing was saved/) });
+  it("3D: allows the consortium entitlement when it matches, into the consortium's own tree", () => {
+    expect(checkCreateTarget(SEED, SEED_ID)).toEqual({ ok: true, companyId: SEED_ID, companyName: "The Seed Collaborative" });
+  });
+
+  it("3D opened ONE company: every other wrong-company create is still refused", () => {
+    // The company the client names never decides anything; the verified
+    // entitlement does. A consortium entitlement names only the consortium
+    // company (computeEntitlements), so there is no other company it reaches.
+    const wrong = [
+      [BI, RF_ID],
+      [BI, SEED_ID],
+      [RF_ADMIN, BI_ID],
+      [RF_ADMIN, SEED_ID],
+      [SEED, BI_ID],
+      [SEED, RF_ID],
+    ] as const;
+    for (const [actingAs, named] of wrong) {
+      expect(checkCreateTarget(actingAs, named)).toMatchObject({ ok: false, status: 409 });
+    }
+    expect(checkCreateTarget(null, SEED_ID)).toMatchObject({ ok: false, status: 403, message: NO_COMPANY_MESSAGE });
   });
 
   it("allows membership and platform-admin entitlements, using the verified company", () => {
@@ -331,11 +353,27 @@ describe("createProject — POST /api/projects", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("403s for a consortium entitlement and for no company, without saving", async () => {
+  it("403s for no company, without saving", async () => {
     const { db, calls } = ok();
-    expect((await rejection(createProject(db, SEED, { expectedCompanyId: SEED_ID, document: DOC }))).status).toBe(403);
     expect((await rejection(createProject(db, null, { expectedCompanyId: BI_ID, document: DOC }))).message).toBe(NO_COMPANY_MESSAGE);
     expect(calls).toHaveLength(0);
+  });
+
+  it("3D: creates in the consortium's tree, and the answer names Seed as the owner", async () => {
+    const { db, calls } = ok();
+    const result = await createProject(db, SEED, { expectedCompanyId: SEED_ID, document: DOC });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ kind: "rpc", name: "create_project", terminal: "single", args: { p_company_id: SEED_ID } });
+    // Ownership stays with Seed (answer 1). The creator's grant is the
+    // database trigger's job, so nothing here writes or claims one.
+    expect(result).toMatchObject({ companyId: SEED_ID, companyName: "The Seed Collaborative", folder: "current" });
+  });
+
+  it("3D: the database staying the gate — a refused consortium create is the create 403, not a save or list message", async () => {
+    const { db } = fakeDb(() => ({ error: { code: "42501", message: "new row violates row-level security policy" } }));
+    const error = await rejection(createProject(db, SEED, { expectedCompanyId: SEED_ID, document: DOC }));
+    expect(error.status).toBe(403);
+    expect(error.message).toBe("You can't create a project in that company. Nothing was saved.");
   });
 
   it("400s on a missing expectedCompanyId, a bad folder or a bad document, without saving", async () => {
