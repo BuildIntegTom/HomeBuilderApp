@@ -549,9 +549,22 @@ describe("the 3B routes", () => {
     expect(logic).not.toMatch(/^import .*createSupabaseAdminClient/m);
   });
 
-  it("add nothing for the notice (3C) or the backup (3E)", () => {
-    expect(files(api).some((p) => /share-notices/.test(p))).toBe(false);
+  it("add nothing for the backup (3E)", () => {
+    // 3C's routes now exist (see shareNoticeLogic.test.ts). What this still
+    // guards is that they are a SEPARATE module: nothing in 3B's logic calls
+    // the notice RPCs, so the notice cannot quietly become part of sharing.
     const logic = readFileSync(join(here, "sharingRouteLogic.ts"), "utf8");
     expect(logic).not.toMatch(/pending_share_notices|dismiss_share_notices/);
+  });
+
+  it("keep 3C's notice routes to their own two files, each on the session client", () => {
+    const noticeRoutes = files(api).filter((p) => /share-notices/.test(p));
+    expect(noticeRoutes).toHaveLength(2);
+    for (const path of noticeRoutes) {
+      const source = readFileSync(path, "utf8");
+      expect(source, path).toMatch(/requireCloudSession\(\)/);
+      expect(source, path).toMatch(/cloudErrorResponse\(error\)/);
+      expect(source, path).not.toMatch(/createSupabaseAdminClient|SUPABASE_SECRET_KEY|service_role/);
+    }
   });
 });

@@ -32,6 +32,7 @@ import {
 import { cloudFetch } from "./cloudFetch";
 import { SHARED_TAB_LABEL, copyOwnedByLine, refileHeading, sharedEmptyLines, sharedRowDetail } from "./sharingDisplay";
 import { useProjectAccess } from "./useProjectAccess";
+import { useShareNotice } from "./useShareNotice";
 import { divergenceNotice, movedOnSaveNotice, replacedWhileSavingNotice, staleOpenNotice } from "./divergenceNotice";
 import {
   answerIsCurrent,
@@ -244,6 +245,21 @@ export function useCloudProjects({
   const refreshSession = useCallback(() => void auth?.refresh(), [auth]);
   const access = useProjectAccess({ onAuthProblem: refreshSession, onChanged: reloadTab });
   const resetAccess = access.reset;
+
+  // Stage 3C: the "shared with you" notice. It lives here rather than beside
+  // the account control (the handoff's suggestion) because both of its actions
+  // already do: Open from cloud's Shared tab is this hook's own state, and the
+  // session, cloudFetch and the 401/403 refresh are all in hand. Nothing is
+  // added to the top bar either way.
+  const openSharedTab = useCallback(() => {
+    setTab("shared");
+    setOpenNote("open");
+  }, []);
+  const shareNotice = useShareNotice({
+    audience: { userId, mfaPending },
+    onOpenSharedTab: openSharedTab,
+    onAuthProblem: refreshSession,
+  });
 
   const detachForAccountChange = useCallback(() => {
     dispatch({ type: "account-changed" });
@@ -1173,6 +1189,11 @@ export function useCloudProjects({
 
       {/* Stage 3B. Last, so it lands on top of the row or menu it was opened from. */}
       {access.note}
+
+      {/* Stage 3C. The notice arrives on its own at sign-in or page load, so it
+          is rendered last of all: nothing it could cover is open yet, and if
+          the tree is opened from it, the tree lands on top. */}
+      {shareNotice.note}
     </>
   );
 

@@ -371,3 +371,52 @@ export interface ShareableCompaniesResponse {
 export function actingAsChangedMessage(companyName: string): string {
   return `You're now acting as ${companyName} (changed in another tab). Nothing was saved.`;
 }
+
+// ---------------------------------------------------------------------------
+// Stage 3C: the in-app "shared with you" notice (answer 7).
+// Spec: "Stage 3 plan — Collaboration" → "The in-app notice (7)".
+// ---------------------------------------------------------------------------
+
+/**
+ * One pending notice: one `shared` grant that reaches you and is newer than
+ * your own `share_notice_state.seen_through`. Column for column
+ * `pending_share_notices()` (0008), whose result type was read off local
+ * PostgreSQL 17.4 rather than assumed:
+ *
+ *   TABLE(grant_id uuid, project_id uuid, project_name text,
+ *         owner_company_name text, granted_by_name text, grantee_kind text,
+ *         grantee_name text, created_at timestamptz)
+ *
+ * What is NOT here is the point of it: no user ids, and no `document`. The
+ * function already excludes creator grants, grants you made yourself, and
+ * company grants made before you joined that company.
+ */
+export interface ShareNoticeRow {
+  grantId: string;
+  projectId: string;
+  projectName: string;
+  /** Through `project_owner_company_name`; empty only if it could not be read. */
+  ownerCompanyName: string;
+  /**
+   * Who shared it, as snapshotted when the grant was made. The table's check
+   * constraint makes this non-null for every `shared` grant, so a null here
+   * would mean a row that should not exist — shown as a visible gap, never a
+   * substituted name.
+   */
+  grantedByName: string | null;
+  /** Whether the grant is to you personally or to a company you belong to. */
+  granteeKind: "person" | "company";
+  /** Your name, or the company's, as shared. */
+  granteeName: string;
+  createdAt: string;
+}
+
+export interface PendingShareNoticesResponse {
+  notices: ShareNoticeRow[];
+}
+
+/** `dismiss_share_notices()` returns void; the route answers with this so the
+ * browser can tell a real success from an empty body. */
+export interface DismissShareNoticesResponse {
+  dismissed: true;
+}
