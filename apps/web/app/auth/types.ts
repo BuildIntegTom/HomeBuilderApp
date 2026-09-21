@@ -61,12 +61,38 @@ export const GUEST_SESSION: SessionSnapshot = {
   actingAsRejectedCompanyId: null,
 };
 
+/**
+ * One thing a member did: a save or a rename. That is the whole of what the app
+ * records, and therefore the whole of what the People section shows (spec,
+ * "People & activity page", Open Item 1 — answered yes by Tommy 2026-09-20).
+ *
+ * `authorName` is the snapshot taken at save time, never a profile looked up by
+ * author id: a leaver's profile stops being visible to their former colleagues
+ * the moment their membership is revoked.
+ */
+export interface MemberActionSummary {
+  versionId: string;
+  kind: "save" | "rename";
+  projectName: string;
+  versionNumber: number;
+  createdAt: string;
+  authorName: string;
+}
+
 export interface CompanyMemberSummary {
   membershipId: string;
   userId: string;
   email: string;
   displayName: string;
   level: MembershipLevel;
+  /** `memberships.created_at`: this MEMBERSHIP's start, not the account's. */
+  memberSince: string | null;
+  /** Versions authored IN THIS COMPANY'S PROJECTS. Never a cross-company total. */
+  versionCount: number;
+  /** False when the count is a floor rather than a total (the scan was capped). */
+  versionCountExact: boolean;
+  /** Newest first, capped. */
+  recentActions: MemberActionSummary[];
 }
 
 export interface CompanyInviteSummary {

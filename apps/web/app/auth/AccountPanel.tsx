@@ -4,6 +4,21 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import CompanyBackupSection from "../cloud/CompanyBackupSection";
 import type { CompanyBackupController } from "../cloud/useCompanyBackup";
 import { useAuth } from "./AuthProvider";
+import {
+  ACTION_KIND_NOTE,
+  MEMBER_SINCE_NOTE,
+  PROMOTE_GRANTS,
+  actionLine,
+  actionsToggleLabel,
+  adminCountOf,
+  canRemoveMember,
+  isAdminHereFor,
+  levelControl,
+  levelErrorMessage,
+  memberSinceLabel,
+  scopeNote,
+  versionCountLabel,
+} from "./peopleActivity";
 import type { CompanyInviteSummary, CompanyMemberSummary } from "./types";
 import styles from "./AccountControl.module.css";
 
@@ -33,6 +48,10 @@ export default function AccountPanel({ backup }: { backup: CompanyBackupControll
   const [code, setCode] = useState("");
   const [members, setMembers] = useState<CompanyMemberSummary[] | null>(null);
   const [invites, setInvites] = useState<CompanyInviteSummary[] | null>(null);
+  // Which row is mid-confirmation for Make admin, and which row has its action
+  // list open. Membership ids, or null.
+  const [confirmPromote, setConfirmPromote] = useState<string | null>(null);
+  const [openActions, setOpenActions] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteLevel, setInviteLevel] = useState<"member" | "admin">("member");
   const [freshInviteUrl, setFreshInviteUrl] = useState<string | null>(null);
@@ -55,8 +74,11 @@ export default function AccountPanel({ backup }: { backup: CompanyBackupControll
   // admin at any company where they hold no admin membership — so a company
   // with no admin yet (Rare Forms, 2026-09-14) could not be given its first
   // member from the app.
-  const isAdminHere =
-    session.actingAsLevel === "admin" || (Boolean(user?.isPlatformAdmin) && Boolean(session.actingAsCompanyId));
+  const isAdminHere = isAdminHereFor({
+    actingAsLevel: session.actingAsLevel,
+    actingAsCompanyId: session.actingAsCompanyId,
+    isPlatformAdmin: Boolean(user?.isPlatformAdmin),
+  });
   const companyId = session.actingAsCompanyId;
   // Decision 27: creating a company is open to company admins at any member
   // company. Level is per-membership, so this asks "an admin anywhere", not
@@ -66,18 +88,24 @@ export default function AccountPanel({ backup }: { backup: CompanyBackupControll
     (entitlement) => entitlement.source === "membership" && entitlement.level === "admin",
   );
 
+  // EVERYONE with a company loads the people list, admin or not: the policies
+  // hand an ordinary member exactly one row — their own — which is what "each
+  // account can see these stats on their account page" needs, with no second
+  // component and no second route. Invites stay behind the admin gate because
+  // that route is an admin's; asking for them as a member would only produce a
+  // refusal to display.
   const loadCompany = useCallback(async () => {
-    if (!companyId || !isAdminHere) {
+    if (!companyId) {
       setMembers(null);
       setInvites(null);
       return;
     }
     const [membersResponse, invitesResponse] = await Promise.all([
       fetch(`/api/companies/${companyId}/members`, { cache: "no-store" }),
-      fetch(`/api/companies/${companyId}/invites`, { cache: "no-store" }),
+      isAdminHere ? fetch(`/api/companies/${companyId}/invites`, { cache: "no-store" }) : Promise.resolve(null),
     ]);
-    if (membersResponse.ok) setMembers((await membersResponse.json()).members);
-    if (invitesResponse.ok) setInvites((await invitesResponse.json()).invites);
+    setMembers(membersResponse.ok ? (await membersResponse.json()).members : null);
+    setInvites(invitesResponse?.ok ? (await invitesResponse.json()).invites : null);
   }, [companyId, isAdminHere]);
 
   useEffect(() => {
@@ -167,6 +195,34 @@ export default function AccountPanel({ backup }: { backup: CompanyBackupControll
     }
   };
 
+  /**
+   * Make admin / Remove admin. One call to the route that already accepted it:
+   * `PATCH /api/memberships/[id]` with `{ level }`. No new route, no new policy
+   * — the database has permitted this since Stage 1 and the app simply had no
+   * button (README Stage 1 step 7, undoable from the UI until now).
+   *
+   * Every refusal here is the database's: `guard_membership_self_update` for
+   * someone who is not a company admin, `guard_last_company_admin` for the
+   * demotion that would leave a company with nobody to administer it. They are
+   * shown in words rather than swallowed.
+   */
+  const changeLevel = async (membershipId: string, level: "member" | "admin") => {
+    setConfirmPromote(null);
+    try {
+      await call(`/api/memberships/${membershipId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ level }),
+      });
+      await loadCompany();
+      // Your own level may have just changed, and it decides what the rest of
+      // this panel offers.
+      await refresh();
+    } catch (err) {
+      setError(levelErrorMessage(err instanceof Error ? err.message : null));
+    }
+  };
+
   const saveName = async (event: FormEvent) => {
     event.preventDefault();
     try {
@@ -194,6 +250,12 @@ export default function AccountPanel({ backup }: { backup: CompanyBackupControll
       setError(err instanceof Error ? err.message : "Couldn't withdraw that invite");
     }
   };
+
+  // Derived from the list as loaded, which is what the buttons have to agree
+  // with: an ordinary member's list is their own row alone, and they get no
+  // buttons at all.
+  const memberList = members ?? [];
+  const adminCount = adminCountOf(memberList);
 
   return (
     <div className={styles.form}>
@@ -271,33 +333,128 @@ export default function AccountPanel({ backup }: { backup: CompanyBackupControll
         </>
       )}
 
-      {isAdminHere && companyId && (
+      {/* People & activity (spec, 2026-09-20). Gated on having a list rather
+          than on being an admin: a plain member's list is one row — their own —
+          and that is their account page. Acting as a company you hold no
+          membership at (the consortium) returns nothing, so nothing renders. */}
+      {companyId && memberList.length > 0 && (
         <>
           <p className={styles.sectionTitle}>{session.actingAsCompanyName} — people</p>
           <ul className={styles.list}>
-            {(members ?? []).map((member) => (
-              <li key={member.membershipId} className={styles.row}>
-                <span className={styles.rowMain}>
-                  <span>{member.displayName || member.email}</span>
-                  <span className={styles.rowSub}>
-                    {member.email} · {member.level}
+            {memberList.map((member) => {
+              const control = levelControl(member, { isAdminHere, adminCount });
+              const actionsOpen = openActions === member.membershipId;
+              return (
+                <li key={member.membershipId} className={styles.row}>
+                  <span className={styles.rowMain}>
+                    <span>{member.displayName || member.email}</span>
+                    <span className={styles.rowSub}>
+                      {member.email} · {member.level}
+                    </span>
+                    <span className={styles.rowSub}>{memberSinceLabel(member.memberSince)}</span>
+                    <span className={styles.rowSub}>
+                      {versionCountLabel(
+                        member.versionCount,
+                        member.versionCountExact,
+                        session.actingAsCompanyName,
+                      )}
+                    </span>
+                    {member.recentActions.length > 0 ? (
+                      <button
+                        className={styles.linkButton}
+                        type="button"
+                        aria-expanded={actionsOpen}
+                        onClick={() => setOpenActions(actionsOpen ? null : member.membershipId)}
+                      >
+                        {actionsToggleLabel(member.recentActions.length)}
+                      </button>
+                    ) : (
+                      <span className={styles.rowSub}>{actionsToggleLabel(0)}</span>
+                    )}
+                    {actionsOpen && (
+                      <ul className={styles.list}>
+                        {member.recentActions.map((action) => (
+                          <li key={action.versionId} className={styles.rowSub}>
+                            {actionLine(action, member.displayName)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {control.kind === "demote" && control.refusal && (
+                      <span className={styles.rowSub}>{control.refusal}</span>
+                    )}
+                    {control.kind === "promote" && confirmPromote === member.membershipId && (
+                      <span className={styles.rowSub}>{PROMOTE_GRANTS}</span>
+                    )}
                   </span>
-                </span>
-                <button
-                  className={styles.linkButton}
-                  type="button"
-                  onClick={() => void removeMember(member.membershipId)}
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
+                  <span className={styles.rowMain}>
+                    {control.kind === "promote" &&
+                      (confirmPromote === member.membershipId ? (
+                        <>
+                          <button
+                            className={styles.linkButton}
+                            type="button"
+                            onClick={() => void changeLevel(member.membershipId, "admin")}
+                          >
+                            Yes, make admin
+                          </button>
+                          <button
+                            className={styles.linkButton}
+                            type="button"
+                            onClick={() => setConfirmPromote(null)}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          className={styles.linkButton}
+                          type="button"
+                          onClick={() => {
+                            setError(null);
+                            setConfirmPromote(member.membershipId);
+                          }}
+                        >
+                          {control.label}
+                        </button>
+                      ))}
+                    {control.kind === "demote" && (
+                      <button
+                        className={styles.linkButton}
+                        type="button"
+                        onClick={() => void changeLevel(member.membershipId, "member")}
+                      >
+                        {control.label}
+                      </button>
+                    )}
+                    {canRemoveMember({ isAdminHere }) && (
+                      <button
+                        className={styles.linkButton}
+                        type="button"
+                        onClick={() => void removeMember(member.membershipId)}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
-          <p className={styles.notice}>
-            Removing someone revokes their access from their next request onward. Their name stays on
-            anything they saved — attribution is history, not access.
-          </p>
+          <p className={styles.notice}>{scopeNote(session.actingAsCompanyName ?? "")}</p>
+          <p className={styles.notice}>{MEMBER_SINCE_NOTE}</p>
+          <p className={styles.notice}>{ACTION_KIND_NOTE}</p>
+          {isAdminHere && (
+            <p className={styles.notice}>
+              Removing someone revokes their access from their next request onward. Their name stays
+              on anything they saved — attribution is history, not access.
+            </p>
+          )}
+        </>
+      )}
 
+      {isAdminHere && companyId && (
+        <>
           <p className={styles.sectionTitle}>Invite someone</p>
           <form className={styles.form} onSubmit={sendInvite}>
             <label className={styles.field}>
