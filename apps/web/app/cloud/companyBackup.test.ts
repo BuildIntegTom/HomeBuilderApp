@@ -9,12 +9,14 @@ import {
   BACKUP_COMPANY_SLUG_MAX_CHARS,
   backupNameSlug,
   backupProjectDirectory,
+  backupSharedProjectDirectory,
   backupVersionFileName,
   backupZipFileName,
   claimUniquePath,
   collectCompanyBackup,
   findMissingVersions,
   isWindowsSafePath,
+  pageProjectCount,
   type BackupManifest,
   type BackupPageResult,
 } from "./companyBackup";
@@ -208,8 +210,11 @@ describe("findMissingVersions", () => {
 // ---------------------------------------------------------------------------
 
 const BI = { id: "11111111-0000-0000-0000-000000000001", name: "Building Integrity" };
+/** The company that OWNS a granted project: not the one taking the backup. */
+const OWNER = { id: "22222222-0000-0000-0000-000000000001", name: "Rare Forms" };
 const P1 = "9320be5d-515c-4b62-bbfd-19a419a0729e";
 const P2 = "5a0f3a8e-6c1d-4b8e-9f2a-0c7d1e2b3a4f";
+const P3 = "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f";
 
 function entry(projectId: string, projectName: string, n: number, head: number, extra: Partial<BackupVersionEntry> = {}): BackupVersionEntry {
   return {
@@ -227,8 +232,22 @@ function entry(projectId: string, projectName: string, n: number, head: number, 
     schemaVersion: PROJECT_FILE_VERSION,
     document: storedDocument({ projectName: projectName }),
     omitted: null,
+    ownership: "owned",
+    ownerCompany: null,
     ...extra,
   };
+}
+
+/** The same version, reached by a company grant from another company (3E). */
+function grantedEntry(
+  projectId: string,
+  projectName: string,
+  n: number,
+  head: number,
+  owner: { id: string; name: string } = OWNER,
+  extra: Partial<BackupVersionEntry> = {},
+): BackupVersionEntry {
+  return entry(projectId, projectName, n, head, { ownership: "granted", ownerCompany: owner, ...extra });
 }
 
 function page(versions: BackupVersionEntry[], extra: Partial<BackupPageResponse> = {}): BackupPageResponse {
@@ -237,6 +256,7 @@ function page(versions: BackupVersionEntry[], extra: Partial<BackupPageResponse>
     exportedBy: { id: "u1", email: "alice@bi.test", displayName: "Alice" },
     serverTime: "2026-09-14T12:00:00.000Z",
     projectCount: null,
+    grantedProjectCount: null,
     versions,
     nextAfter: null,
     done: true,
@@ -290,7 +310,7 @@ describe("collectCompanyBackup", () => {
     expect(progress).toEqual([2, 3]);
     expect(m).toMatchObject({
       format: "building-integrity-company-backup",
-      formatVersion: 1,
+      formatVersion: 2,
       company: BI,
       exportedAt: "2026-09-14T12:00:00.000Z",
       exportedBy: { id: "u1", email: "alice@bi.test", name: "Alice" },
@@ -456,6 +476,142 @@ describe("collectCompanyBackup", () => {
       });
       expect(outcome).toMatchObject({ ok: false, reason: "cancelled" });
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stage 3E: projects another company shared with this one
+// ---------------------------------------------------------------------------
+
+describe("granted projects in a company backup (3E)", () => {
+  const run = (pages: BackupPageResult[]) => {
+    const { fetchPage } = servePages(pages);
+    const { sink, files } = recordingSink();
+    const progress: { versions: number; projectCount: number | null }[] = [];
+    return collectCompanyBackup({
+      companyId: BI.id,
+      appProjectFileVersion: PROJECT_FILE_VERSION,
+      fetchPage,
+      sink,
+      signal: new AbortController().signal,
+      sleep: noSleep,
+      onProgress: (p) => progress.push({ versions: p.versions, projectCount: p.projectCount }),
+    }).then((outcome) => ({ outcome, files, progress }));
+  };
+
+  it("files a granted project under shared/<owner>/, marks it granted and names the owner; owned entries are untouched", async () => {
+    const { outcome, files } = await run([
+      {
+        ok: true,
+        data: page([entry(P1, "Ours", 1, 1), grantedEntry(P2, "Theirs", 1, 1)], { projectCount: 1, grantedProjectCount: 1 }),
+      },
+    ]);
+    if (!outcome.ok) throw new Error(outcome.message);
+    const m = outcome.manifest;
+    expect(m.formatVersion).toBe(2);
+
+    const [owned, granted] = m.versions;
+    expect(owned.path).toBe(`projects/current/ours--${P1}`.concat("/v0001--2026-09-11T1402Z.json"));
+    expect(owned.ownership).toBe("owned");
+    // An owned entry is byte for byte 2D's: no ownerCompany key at all.
+    expect("ownerCompany" in owned).toBe(false);
+
+    expect(granted.ownership).toBe("granted");
+    expect(granted.ownerCompany).toEqual(OWNER);
+    expect(granted.path).toBe(`shared/rare-forms/theirs--${P2}/v0001--2026-09-11T1402Z.json`);
+    expect(granted.path.startsWith("shared/")).toBe(true);
+    // The owner's FOLDER never becomes a directory of this company's backup.
+    expect(granted.path).not.toMatch(/^projects\//);
+
+    // Counts, and a correct SHA-256 for the shared file as well as the owned one.
+    expect(m.projectCount).toBe(2);
+    expect(m.grantedProjectCount).toBe(1);
+    expect(m.versionCount).toBe(2);
+    for (const v of m.versions) {
+      expect(isWindowsSafePath(v.path)).toBe(true);
+      expect(createHash("sha256").update(files.get(v.path)!).digest("hex")).toBe(v.sha256);
+    }
+  });
+
+  it("two owners' projects of the same name stay apart, and one owner's projects share one directory", async () => {
+    const other = { id: "33333333-0000-0000-0000-000000000001", name: "New Frameworks" };
+    const { outcome } = await run([
+      {
+        ok: true,
+        data: page(
+          [grantedEntry(P2, "Barn", 1, 1), grantedEntry(P3, "Barn", 1, 1, other), grantedEntry(P2, "Barn", 2, 2)],
+          { projectCount: 0, grantedProjectCount: 2 },
+        ),
+      },
+    ]);
+    if (!outcome.ok) throw new Error(outcome.message);
+    const paths = outcome.manifest.versions.map((v) => v.path);
+    expect(paths[0]).toBe(`shared/rare-forms/barn--${P2}/v0001--2026-09-11T1402Z.json`);
+    expect(paths[1]).toBe(`shared/new-frameworks/barn--${P3}/v0001--2026-09-11T1402Z.json`);
+    expect(paths[2]).toBe(`shared/rare-forms/barn--${P2}/v0002--2026-09-12T1402Z.json`);
+    expect(new Set(paths).size).toBe(3);
+    expect(outcome.manifest.grantedProjectCount).toBe(2);
+    expect(outcome.manifest.projectCount).toBe(2);
+  });
+
+  it("an owner whose name could not be read back is a visible gap, not a substituted name", async () => {
+    const { outcome } = await run([
+      { ok: true, data: page([grantedEntry(P2, "Barn", 1, 1, { id: OWNER.id, name: "" })], { projectCount: 0, grantedProjectCount: 1 }) },
+    ]);
+    if (!outcome.ok) throw new Error(outcome.message);
+    const [v] = outcome.manifest.versions;
+    // The id still identifies the owner, and the project id is in the path.
+    expect(v.ownerCompany).toEqual({ id: OWNER.id, name: "" });
+    expect(v.path).toBe(`shared/untitled/barn--${P2}/v0001--2026-09-11T1402Z.json`);
+  });
+
+  it("the completeness check covers granted projects too: a missing version saves no file", async () => {
+    const { outcome, files } = await run([
+      { ok: true, data: page([grantedEntry(P2, "Barn", 1, 3), grantedEntry(P2, "Barn", 3, 3)], { projectCount: 0, grantedProjectCount: 1 }) },
+    ]);
+    expect(outcome).toMatchObject({ ok: false, reason: "failed", message: expect.stringContaining("Barn is missing version 2.") });
+    expect(files.has("manifest.json")).toBe(false);
+  });
+
+  it("the progress line counts owned and granted projects together", async () => {
+    const { progress } = await run([
+      { ok: true, data: page([entry(P1, "Ours", 1, 1), grantedEntry(P2, "Theirs", 1, 1)], { projectCount: 4, grantedProjectCount: 3 }) },
+    ]);
+    expect(progress.at(-1)).toEqual({ versions: 2, projectCount: 7 });
+    // A page that knows neither total keeps 2D's "no total known" branch.
+    expect(pageProjectCount(page([], { projectCount: null, grantedProjectCount: null }))).toBeNull();
+    expect(pageProjectCount(page([], { projectCount: 2, grantedProjectCount: null }))).toBe(2);
+  });
+
+  it("the manifest's notes say what is in a backup, what is not, and that a backup cannot be recalled", async () => {
+    const { outcome } = await run([{ ok: true, data: page([], { projectCount: 0, grantedProjectCount: 0 }) }]);
+    if (!outcome.ok) throw new Error(outcome.message);
+    const notes = outcome.manifest.notes.join(" ");
+    expect(notes).toMatch(/shared with this company/);
+    expect(notes).toMatch(/shared with one person, rather than with this company, is not here/);
+    expect(notes).toMatch(/cannot be recalled/);
+    // The 2D note that said shared projects were excluded is gone.
+    expect(notes).not.toMatch(/not included in this stage/);
+  });
+
+  it("a shared path stays inside Windows' 260 characters, which is why the owner slug is capped at 30", () => {
+    // Any owner name is capped…
+    expect(
+      backupSharedProjectDirectory("The Very Long Company Name Of Straw Bale Builders Incorporated Northwest", "x", "id").split("/")[1].length,
+    ).toBeLessThanOrEqual(BACKUP_COMPANY_SLUG_MAX_CHARS);
+
+    // …and this is the WORST case: a name that fills all 30 characters with no
+    // trailing hyphen to trim, the longest project name, and a full uuid.
+    const worstOwner = "Building Integrity Straw Panels Northwest Cooperative";
+    const directory = backupSharedProjectDirectory(worstOwner, "P".repeat(500), "9320be5d-515c-4b62-bbfd-19a419a0729e");
+    const ownerSlug = directory.split("/")[1];
+    expect(ownerSlug).toHaveLength(BACKUP_COMPANY_SLUG_MAX_CHARS);
+
+    const zipName = backupZipFileName(worstOwner, "2026-09-14T12:00:00.000Z");
+    const extracted = `C:\\Users\\Tommy\\Downloads\\${zipName.replace(/\.zip$/, "")}\\${directory.replace(/\//g, "\\")}\\${backupVersionFileName(1234, "2026-09-13T14:02:00Z")}`;
+    expect(extracted.length).toBe(255);
+    expect(extracted.length).toBeLessThan(260);
+    expect(isWindowsSafePath(`${directory}/${backupVersionFileName(1, "2026-09-13T14:02:00Z")}`)).toBe(true);
   });
 });
 

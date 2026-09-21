@@ -3,7 +3,7 @@ import { parseSaveTimestamp } from "../titleBlockDate";
 import {
   FOLDER_LABEL,
   NO_COMPANY_MESSAGE,
-  consortiumLaterStageMessage,
+  consortiumMenuMessage,
   displayProjectName,
   type CloudContext,
   type SharedReach,
@@ -72,8 +72,13 @@ export function buildCloudMenu(input: CloudMenuInput): CloudMenu {
   // entitlement creates too, in the consortium company's own tree, where the
   // creator keeps a standing grant (answer 1, Stage 2 Open Item 2). LISTING
   // that tree is still Stage 4, which is what `message` below still says.
+  //
+  // It says it in the MENU's own words (`consortiumMenuMessage`), not the
+  // folder tabs': this line sits directly above Open from cloud…, and since 3D
+  // that note does have something to list — anything shared with you, and
+  // anything you created in the consortium's tree, in Shared with us.
   const canCreate = actingAs !== null;
-  const message = actingAs === null ? NO_COMPANY_MESSAGE : actingAs.source === "consortium" ? consortiumLaterStageMessage(actingAs.companyName) : null;
+  const message = actingAs === null ? NO_COMPANY_MESSAGE : actingAs.source === "consortium" ? consortiumMenuMessage(actingAs.companyName) : null;
 
   return {
     kind: "signed-in",

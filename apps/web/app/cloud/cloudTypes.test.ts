@@ -4,6 +4,7 @@ import {
   FOLDER_LABEL,
   actingAsChangedMessage,
   consortiumLaterStageMessage,
+  consortiumMenuMessage,
   displayProjectName,
   isCertainlyTooLargeForCloud,
   isCloudFolder,
@@ -57,6 +58,19 @@ describe("the consortium's own tree (3D)", () => {
     expect(consortiumLaterStageMessage("The Seed Collaborative")).toBe(
       "You're acting as The Seed Collaborative through the consortium. Its folders open in a later stage, so there's nothing to list here.",
     );
+  });
+
+  it("3E: the MENU's version of the same situation does not claim there is nothing to list", () => {
+    const menu = consortiumMenuMessage("The Seed Collaborative");
+    expect(menu).toBe(
+      "You're acting as The Seed Collaborative through the consortium. Its own folders open in a later stage; projects shared with you, and ones you create here, are in Shared with us.",
+    );
+    // The line sits directly above "Open from cloud…", which since 3D does have
+    // something to list: a project you created in Seed's tree is in Shared with us.
+    expect(menu).not.toMatch(/nothing to list/);
+    expect(menu).toMatch(/Shared with us/);
+    // The FOLDER TAB wording is deliberately untouched (hand-test step 13 reads it).
+    expect(consortiumLaterStageMessage("The Seed Collaborative")).toMatch(/nothing to list here/);
   });
 
   it("carries Open Item 5's warning as ONE line, naming the owner and the costs", () => {

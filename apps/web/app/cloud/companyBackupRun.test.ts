@@ -18,6 +18,7 @@ const lastPage = (): BackupPageResult => ({
     exportedBy: { id: "u1", email: "alice@bi.test", displayName: "Alice" },
     serverTime: "2026-09-14T12:00:00.000Z",
     projectCount: 0,
+    grantedProjectCount: 0,
     versions: [],
     nextAfter: null,
     done: true,

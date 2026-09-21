@@ -8,7 +8,7 @@ import {
   relativeSaveTime,
   type CloudMenuInput,
 } from "./cloudMenu";
-import { NO_COMPANY_MESSAGE, type CloudContext } from "./cloudTypes";
+import { NO_COMPANY_MESSAGE, consortiumLaterStageMessage, consortiumMenuMessage, type CloudContext } from "./cloudTypes";
 
 const BI = { companyId: "bi", companyName: "Building Integrity", source: "membership" as const };
 const SEED_CONSORTIUM = { companyId: "seed", companyName: "The Seed Collaborative", source: "consortium" as const };
@@ -97,6 +97,14 @@ describe("buildCloudMenu", () => {
     // and the folder tabs are deliberately unchanged (browsing is Stage 4).
     expect(menu.kind === "signed-in" && menu.message).toMatch(/folders open in a later stage/);
     expect(menu.kind === "signed-in" && menu.message).not.toMatch(/can't create/);
+  });
+
+  it("3E: the menu line does not say 'nothing to list here' above Open from cloud…, which lists Shared with us", () => {
+    const menu = buildCloudMenu({ ...base, actingAs: SEED_CONSORTIUM });
+    expect(menu).toMatchObject({ openFromCloud: true, message: consortiumMenuMessage("The Seed Collaborative") });
+    expect(menu.kind === "signed-in" && menu.message).not.toMatch(/nothing to list/);
+    // Still the folder tabs' own sentence in the tree; only the menu changed.
+    expect(consortiumMenuMessage("X")).not.toBe(consortiumLaterStageMessage("X"));
   });
 
   it("acting as Seed with a Building Integrity project open still saves into that project", () => {

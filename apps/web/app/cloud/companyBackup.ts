@@ -1,6 +1,6 @@
 import { parseSaveTimestamp } from "../titleBlockDate";
 import type { BackupFileSink } from "./backupZip";
-import type { BackupPageResponse, BackupVersionEntry, CloudVersionKind } from "./cloudTypes";
+import type { BackupOwnership, BackupPageResponse, BackupVersionEntry, CloudVersionKind } from "./cloudTypes";
 import { classifyCloudSchemaVersion, type CloudSchemaOutcome } from "./schemaOutcome";
 
 /**
@@ -11,6 +11,13 @@ import { classifyCloudSchemaVersion, type CloudSchemaOutcome } from "./schemaOut
  * Layout:
  *   manifest.json
  *   projects/<folder>/<project-name-slug>--<project-id>/v0007--2026-09-13T1402Z.json
+ *   shared/<owner-company-slug>/<project-name-slug>--<project-id>/v0007--….json
+ *
+ * Stage 3E adds the second line: a project ANOTHER COMPANY shared with this one
+ * (a company grant). It is kept out of `projects/` on purpose, so an owner's
+ * folder names never mix with the backing-up company's own filing, and it is
+ * marked `ownership: "granted"` in the manifest with the owning company named.
+ * A project shared with ONE PERSON is in no company's backup (Open Item 2).
  *
  * Each version file is the stored `ProjectFile` untouched, written as 2-space
  * JSON exactly as Save Project writes a file, so plain Load Project opens any
@@ -25,7 +32,8 @@ import { classifyCloudSchemaVersion, type CloudSchemaOutcome } from "./schemaOut
  */
 
 export const BACKUP_MANIFEST_FORMAT = "building-integrity-company-backup";
-export const BACKUP_MANIFEST_FORMAT_VERSION = 1;
+/** 2 since Stage 3E: granted projects, `shared/` paths, `grantedProjectCount`. */
+export const BACKUP_MANIFEST_FORMAT_VERSION = 2;
 
 /** Administrative, not building values. */
 export const BACKUP_SLUG_MAX_CHARS = 60;
@@ -84,6 +92,28 @@ export function backupProjectDirectory(folder: string, projectName: string, proj
   return `projects/${backupNameSlug(folder)}/${backupNameSlug(projectName)}--${backupNameSlug(projectId)}`;
 }
 
+/**
+ * Stage 3E: a project another company shared with this one. The owner's name
+ * replaces the folder segment, because the folder is the OWNER's filing and
+ * putting it under `projects/proposals/` would read as this company's.
+ *
+ * THE OWNER SLUG IS CAPPED AT THE COMPANY LENGTH (30), NOT THE NAME LENGTH
+ * (60), for the same MAX_PATH reason the zip's own name is. Worst case, as
+ * Windows "Extract All" lays it out:
+ *   "C:\Users\Tommy\Downloads\" (25) + "company-backup--<30>--2026-09-13T1402Z"
+ *   (64) + "\" + "shared\" (7) + "<30>" + "\" + "<60>--<36-char id>" (98) + "\"
+ *   + "v0007--2026-09-13T1402Z.json" (28) = 255, under the 260 MAX_PATH.
+ * With 60 it would be 285, i.e. over.
+ *
+ * An owner name that could not be read back slugs to "untitled", exactly as an
+ * unnamed project does: the project id in the next segment still identifies it,
+ * and the manifest carries the empty name rather than a substituted one.
+ */
+export function backupSharedProjectDirectory(ownerCompanyName: string, projectName: string, projectId: string): string {
+  const owner = backupNameSlug(ownerCompanyName, BACKUP_COMPANY_SLUG_MAX_CHARS);
+  return `shared/${owner}/${backupNameSlug(projectName)}--${backupNameSlug(projectId)}`;
+}
+
 /** "v0007--2026-09-13T1402Z.json". Numbers keep sorting past 9999 by growing. */
 export function backupVersionFileName(versionNumber: number, createdAt: string): string {
   const n = `v${String(Math.max(0, Math.trunc(versionNumber))).padStart(4, "0")}`;
@@ -134,8 +164,17 @@ export interface BackupManifestVersion {
   /** The project's name when the backup read it (the tree's name, not necessarily this version's). */
   projectName: string;
   folder: string;
-  /** Stage 3 adds "granted" without a format change. */
-  ownership: "owned";
+  /**
+   * `owned`: `projects.company_id` is the backing-up company (2D's only case).
+   * `granted`: another company owns it and shared it with this one (3E).
+   */
+  ownership: BackupOwnership;
+  /**
+   * The owning company, on GRANTED entries only — the key is absent on an owned
+   * entry, which is byte for byte what 2D wrote. `name` is empty, never
+   * substituted, when the owner's name could not be read back.
+   */
+  ownerCompany?: { id: string; name: string };
   versionNumber: number;
   kind: CloudVersionKind;
   label: string | null;
@@ -159,7 +198,11 @@ export interface BackupManifest {
   exportedAt: string;
   exportedBy: { id: string; email: string; name: string };
   appProjectFileVersion: number;
+  /** Every project in this backup: owned and granted together. */
   projectCount: number;
+  /** Stage 3E: how many of `projectCount` reached this company through a
+   * company grant rather than ownership. */
+  grantedProjectCount: number;
   versionCount: number;
   /** Versions this app's Load Project can't open (older or newer file format), still included. */
   outsideFileFormatWindowCount: number;
@@ -168,7 +211,9 @@ export interface BackupManifest {
 }
 
 export const BACKUP_MANIFEST_NOTES = [
-  "Every version of every project this company owns. Projects shared with the company by another company are not included in this stage.",
+  "Every version of every project this company owns, plus every version of every project another company has shared with this company. Shared ones are marked ownership: \"granted\", name the company that owns them, and their files are under shared/ rather than projects/.",
+  "A project shared with one person, rather than with this company, is not here: that share belongs to the person, not to the company, and they can still download each version themselves.",
+  "Removing a share later does not reach a backup already taken. A zip cannot be recalled, any more than a project file someone has already downloaded can.",
   "Each file under projects/ is the project document exactly as it is stored in the cloud, written as 2-space JSON the way Save Project writes a file. Load Project opens any file whose opensWithLoadProject is true.",
   "Files whose opensWithLoadProject is false were saved by an older (or newer) version of the app than this backup's appProjectFileVersion allows. They are included untouched so nothing is lost.",
   "createdAt is the cloud's record of when a version was saved. The savedAt inside a file is the saving browser's clock (and a rename copies the previous version's), so a loaded file's title block may show a different date.",
@@ -251,6 +296,16 @@ export interface CollectBackupOptions {
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/**
+ * The progress line's "… of 12 projects": owned and granted together, from the
+ * first page (later pages send null for both). Null only when the first page
+ * gave neither, which keeps 2D's "no total known" branch working.
+ */
+export function pageProjectCount(page: BackupPageResponse): number | null {
+  if (page.projectCount === null && page.grantedProjectCount === null) return null;
+  return (page.projectCount ?? 0) + (page.grantedProjectCount ?? 0);
+}
+
 function omissionMessage(entry: BackupVersionEntry): string {
   const name = entry.projectName || "(untitled)";
   return entry.omitted === "too-large"
@@ -275,6 +330,8 @@ export async function collectCompanyBackup(options: CollectBackupOptions): Promi
   const usedPaths = new Set<string>(["manifest.json"]);
   const directories = new Map<string, string>();
   const runs = new Map<string, ProjectRun>();
+  /** Project ids that reached this company through a company grant (3E). */
+  const grantedProjects = new Set<string>();
   let bytes = 0;
 
   for (;;) {
@@ -305,9 +362,15 @@ export async function collectCompanyBackup(options: CollectBackupOptions): Promi
       if (entry.omitted || entry.document === null || entry.document === undefined) {
         return failed(versions.length, omissionMessage(entry));
       }
+      const granted = entry.ownership === "granted";
+      if (granted) grantedProjects.add(entry.projectId);
       let directory = directories.get(entry.projectId);
       if (!directory) {
-        directory = backupProjectDirectory(entry.folder, entry.projectName, entry.projectId);
+        // A granted project is filed under its OWNER, not under this company's
+        // folders: the folder is the owner's filing (decision 12).
+        directory = granted
+          ? backupSharedProjectDirectory(entry.ownerCompany?.name ?? "", entry.projectName, entry.projectId)
+          : backupProjectDirectory(entry.folder, entry.projectName, entry.projectId);
         directories.set(entry.projectId, directory);
       }
       const path = claimUniquePath(`${directory}/${backupVersionFileName(entry.versionNumber, entry.createdAt)}`, usedPaths);
@@ -326,7 +389,10 @@ export async function collectCompanyBackup(options: CollectBackupOptions): Promi
         projectId: entry.projectId,
         projectName: runs.get(entry.projectId)!.projectName,
         folder: entry.folder,
-        ownership: "owned",
+        ownership: entry.ownership as BackupOwnership,
+        // Named only where it means something: an owned entry has no
+        // `ownerCompany` key at all, exactly as 2D wrote it.
+        ...(granted && entry.ownerCompany ? { ownerCompany: { id: entry.ownerCompany.id, name: entry.ownerCompany.name } } : {}),
         versionNumber: entry.versionNumber,
         kind: entry.kind,
         label: entry.label,
@@ -339,7 +405,7 @@ export async function collectCompanyBackup(options: CollectBackupOptions): Promi
       });
     }
 
-    onProgress?.({ versions: versions.length, projectsSeen: runs.size, projectCount: first.projectCount, bytes });
+    onProgress?.({ versions: versions.length, projectsSeen: runs.size, projectCount: pageProjectCount(first), bytes });
 
     if (page.done) break;
     if (!page.nextAfter || page.nextAfter === after) {
@@ -359,6 +425,7 @@ export async function collectCompanyBackup(options: CollectBackupOptions): Promi
     exportedBy: { id: first.exportedBy.id, email: first.exportedBy.email, name: first.exportedBy.displayName },
     appProjectFileVersion,
     projectCount: runs.size,
+    grantedProjectCount: grantedProjects.size,
     versionCount: versions.length,
     outsideFileFormatWindowCount: versions.filter((v) => !v.opensWithLoadProject).length,
     notes: BACKUP_MANIFEST_NOTES,

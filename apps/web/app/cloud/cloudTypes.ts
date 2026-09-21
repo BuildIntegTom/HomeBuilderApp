@@ -231,6 +231,21 @@ export function consortiumLaterStageMessage(companyName: string): string {
 }
 
 /**
+ * The SAME situation said differently in the Project ▾ menu, which is printed
+ * directly above "Open from cloud…".
+ *
+ * The folder-tab sentence above ends "there's nothing to list here", which is
+ * true of the three folder tabs and false of the note as a whole: since 3D, a
+ * project you created in the consortium's tree is listed in Shared with us, and
+ * so is anything shared with you. Saying "nothing to list" immediately above the
+ * item that opens that list would be a plain untruth, so the menu gets its own
+ * words. The folder tabs keep theirs (hand-test step 13 reads them).
+ */
+export function consortiumMenuMessage(companyName: string): string {
+  return `You're acting as ${companyName} through the consortium. Its own folders open in a later stage; projects shared with you, and ones you create here, are in Shared with us.`;
+}
+
+/**
  * Stage 3 Open Item 5, Tommy's accepted default: ONE line in the create dialog.
  * A project created in the consortium's tree is owned by it and carries your own
  * `priceModifier`, so its members open it costs included (the ownership rule).
@@ -253,7 +268,18 @@ export function seedTreeCostWarning(companyName: string): string {
  */
 export type BackupOmission = "too-large" | "missing";
 
-/** One version of one project the company owns, with its stored document. */
+/**
+ * Stage 3E: how the backing-up company reaches this project.
+ * - `owned`: `projects.company_id` is that company (Stage 2D's only case).
+ * - `granted`: a `collaborators` row grants the project TO THAT COMPANY.
+ *
+ * A PERSONAL grant is neither, and is in no company's backup (Open Item 2): it
+ * belongs to a person, not to a company.
+ */
+export type BackupOwnership = "owned" | "granted";
+
+/** One version of one project the company owns OR holds a company grant on,
+ * with its stored document. */
 export interface BackupVersionEntry {
   projectId: string;
   /** The project's name as it was when this page read the project row. */
@@ -272,6 +298,15 @@ export interface BackupVersionEntry {
   /** The stored `ProjectFile`, untouched. Null only when `omitted` says why. */
   document: unknown;
   omitted: BackupOmission | null;
+  /** Stage 3E. `owned` entries are exactly what 2D sent. */
+  ownership: BackupOwnership;
+  /**
+   * Who owns a `granted` project — another company, named through
+   * `project_owner_company_name` because `companies_select` hides that row from
+   * a collaborator. Null for an owned project (the backing-up company owns it).
+   * The name is empty, never substituted, if the helper could not read it.
+   */
+  ownerCompany: { id: string; name: string } | null;
 }
 
 export interface BackupPageResponse {
@@ -281,7 +316,14 @@ export interface BackupPageResponse {
   serverTime: string;
   /** How many projects the company owns: on the first page only, otherwise null. */
   projectCount: number | null;
-  /** Ordered by project id, then version number. */
+  /**
+   * Stage 3E: how many projects are granted to the company (one `collaborators`
+   * row per project per company), on the first page only, otherwise null.
+   * Counted from the grant rows, so it is an upper bound in the two cases the
+   * walk skips: a grant removed mid-backup, and a project the company also owns.
+   */
+  grantedProjectCount: number | null;
+  /** Ordered by phase (owned, then granted), then project id, then version number. */
   versions: BackupVersionEntry[];
   /** Pass back as `after` for the next page. Null when `done`. */
   nextAfter: string | null;

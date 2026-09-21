@@ -31,9 +31,10 @@ export default function CompanyBackupSection({
     <div className={styles.form} data-company-backup>
       <p className={styles.sectionTitle}>{companyName} — backup</p>
       <p className={styles.notice}>
-        Every version of every project {companyName} owns, as one .zip: a manifest.json plus one
-        project file per version, which Load Project opens. It is built in this browser, so keep
-        this tab open until it finishes. Closing this panel does not stop it.
+        Every version of every project {companyName} owns, and of every project another company has
+        shared with {companyName}, as one .zip: a manifest.json plus one project file per version,
+        which Load Project opens. Shared ones are under shared/ in the zip. It is built in this
+        browser, so keep this tab open until it finishes. Closing this panel does not stop it.
       </p>
 
       {running ? (
