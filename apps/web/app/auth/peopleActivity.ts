@@ -235,12 +235,26 @@ export function canRemoveMember(context: { isAdminHere: boolean }): boolean {
 /**
  * A database refusal, in the words the page shows. The guards raise real
  * messages; these are the two a person can actually provoke from this page.
+ *
+ * Anything else gets one generic sentence, never the raw text: the rest of
+ * this codebase refuses to surface database messages (see the 2B/2C route
+ * error mapping), and passing one through here was the one exception —
+ * found in the People page review, e.g. "a membership cannot be moved to
+ * another company" reaching the screen verbatim.
  */
+export const LEVEL_CHANGE_FAILED = "Couldn’t change that level — reload the page and try again.";
+
+/**
+ * Shown when the level change itself succeeded but reloading the list after
+ * it did not (a network blip). It must not say the change failed: it didn't.
+ */
+export const LEVEL_CHANGED_RELOAD_FAILED = "Level changed. Reload the page to see the updated list.";
+
 export function levelErrorMessage(message: string | null | undefined): string {
   const text = (message ?? "").toLowerCase();
   if (text.includes("at least one admin")) return LAST_ADMIN_REFUSAL;
   if (text.includes("only a company admin")) return NOT_ADMIN_REFUSAL;
-  return message && message.trim().length > 0 ? message : "Couldn’t change that level";
+  return LEVEL_CHANGE_FAILED;
 }
 
 // ---------------------------------------------------------------------------

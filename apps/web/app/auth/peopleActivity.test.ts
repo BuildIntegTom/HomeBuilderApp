@@ -19,6 +19,8 @@ import {
   canRemoveMember,
   isAdminHereFor,
   levelControl,
+  LEVEL_CHANGE_FAILED,
+  LEVEL_CHANGED_RELOAD_FAILED,
   levelErrorMessage,
   memberSinceLabel,
   scopeNote,
@@ -267,9 +269,31 @@ describe("levelErrorMessage", () => {
     expect(levelErrorMessage("only a company admin can change a membership's level")).toBe(NOT_ADMIN_REFUSAL);
   });
 
-  it("passes anything else through rather than inventing a reason", () => {
-    expect(levelErrorMessage("You can't change that membership")).toBe("You can't change that membership");
-    expect(levelErrorMessage(null)).toBe("Couldn’t change that level");
+  it("never shows raw database text for any other refusal", () => {
+    // The reviewer's concrete case: a guard message that is not one of the two mapped ones.
+    const raw = "a membership cannot be moved to another company";
+    expect(levelErrorMessage(raw)).toBe(LEVEL_CHANGE_FAILED);
+    expect(levelErrorMessage(raw)).not.toContain("membership cannot be moved");
+    expect(levelErrorMessage("You can't change that membership")).toBe(LEVEL_CHANGE_FAILED);
+    expect(levelErrorMessage("Failed to fetch")).toBe(LEVEL_CHANGE_FAILED);
+  });
+
+  it("falls back to the same sentence when there is no message at all", () => {
+    expect(levelErrorMessage(null)).toBe(LEVEL_CHANGE_FAILED);
+    expect(levelErrorMessage(undefined)).toBe(LEVEL_CHANGE_FAILED);
+    expect(levelErrorMessage("   ")).toBe(LEVEL_CHANGE_FAILED);
+  });
+
+  it("never tells someone a change failed when only the reload after it did", () => {
+    // AccountPanel.changeLevel shows this one only after the PATCH succeeded.
+    expect(LEVEL_CHANGED_RELOAD_FAILED).not.toBe(LEVEL_CHANGE_FAILED);
+    expect(LEVEL_CHANGED_RELOAD_FAILED.toLowerCase()).not.toContain("couldn");
+    expect(LEVEL_CHANGED_RELOAD_FAILED.toLowerCase()).toContain("changed");
+  });
+
+  it("still maps the two known guards, whatever the case", () => {
+    expect(levelErrorMessage("A COMPANY MUST KEEP AT LEAST ONE ADMIN")).toBe(LAST_ADMIN_REFUSAL);
+    expect(levelErrorMessage("Only A Company Admin can change a membership's level")).toBe(NOT_ADMIN_REFUSAL);
   });
 });
 

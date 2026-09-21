@@ -13,6 +13,7 @@ import {
   adminCountOf,
   canRemoveMember,
   isAdminHereFor,
+  LEVEL_CHANGED_RELOAD_FAILED,
   levelControl,
   levelErrorMessage,
   memberSinceLabel,
@@ -208,18 +209,28 @@ export default function AccountPanel({ backup }: { backup: CompanyBackupControll
    */
   const changeLevel = async (membershipId: string, level: "member" | "admin") => {
     setConfirmPromote(null);
+    // call() clears the error; clear any earlier notice too, so an old one
+    // ("Level changed…", "Two-factor is on…") can't linger beside this result.
+    setNotice(null);
     try {
       await call(`/api/memberships/${membershipId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ level }),
       });
+    } catch (err) {
+      setError(levelErrorMessage(err instanceof Error ? err.message : null));
+      return;
+    }
+    // The change has landed. Anything that fails from here on is only the
+    // reload, so it must not claim the change failed (found in review).
+    try {
       await loadCompany();
       // Your own level may have just changed, and it decides what the rest of
       // this panel offers.
       await refresh();
-    } catch (err) {
-      setError(levelErrorMessage(err instanceof Error ? err.message : null));
+    } catch {
+      setNotice(LEVEL_CHANGED_RELOAD_FAILED);
     }
   };
 
