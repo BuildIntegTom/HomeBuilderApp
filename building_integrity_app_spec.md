@@ -621,7 +621,7 @@ Tommy has seen and agreed this. **Each stage is usable alone**, which is the poi
 1. **Accounts and companies.** Sign in/out, invites, memberships, default company, company admin, **and the always-visible acting-as switcher including the Seed toggle**. The app gains a real identity and nothing else changes. *(Usable alone: nothing to save yet, but the top-bar sign-in Tommy described exists and works.)*
 2. **Cloud projects and versions.** The three folders, save-as-new-version, the version list, open-from-cloud, the divergence notice (11), and the cloud row of the date table. Local save/load untouched alongside it. *(This is the stage that delivers Tommy's actual sentence — "reachable to another Member on any computer where they can log in.")* **Planned 2026-09-13. 2A BUILT and applied to live 2026-09-14; 2B BUILT, DEPLOYED and hand-tested live 2026-09-14 (as an ordinary member M and a Rare Forms member R: save and open across windows, company isolation, the divergence notice, the two-tab refusal); 2C BUILT, DEPLOYED and hand-tested live 2026-09-14 (steps 8a–8e matched; 8f had no out-of-window version to test, 8g skipped as already covered by the 2B cross-company check); 2D BUILT, DEPLOYED and hand-tested live 2026-09-14 (a Building Integrity backup extracted in Explorer and a file from it reopened with Load Project; the ordinary Building Integrity member and the Rare Forms member see no backup section). **Stage 2 is complete.** See "Stage 2 plan — Cloud projects and versions" below, sub-stages 2A–2D, and its Open Items.**
 3. **Collaboration.** `collaborators`, invitations, shared access to one project (24-26). **Planned 2026-09-14 from Tommy's interview. 3A BUILT and reviewed (ship), migration 0008 merged; APPLIED TO LIVE 2026-09-15 (pre-flight 4 companies / 3 memberships / 3 projects / 12 versions; every post-flight check matched; counts unchanged, 0 grants; an ordinary member saved and loaded a cloud project afterwards). 3B BUILT, DEPLOYED and hand-tested live 2026-09-15 (steps 1–10 all matched, run as M, R, R2, N and T in separate browsers). 3C BUILT, reviewed (ship) and DEPLOYED 2026-09-20; **its hand test (step 11) is deferred to the next testing batch** at Tommy's request — he was away from his desktop and chose to push and move on. 3D BUILT, reviewed (ship) and DEPLOYED 2026-09-20 (this closes Stage 2 Open Item 2); **its hand test (steps 12–14) joins the same deferred batch**. 3E BUILT, reviewed (ship) and DEPLOYED 2026-09-20; **its hand test (steps 15–16) joins the same deferred batch. STAGE 3 IS COMPLETE** — every sub-stage is live, with the batch of steps 11–16 outstanding. See "Stage 3 plan — Collaboration", sub-stages 3A–3E, and its Open Items. **Access requests (26's other direction, `collab_requests`) moved to Stage 4** by Tommy's answer 6. Supersedes the older "in-app inbox" line in the Handoff section above — this *is* the handoff mechanism. **It is also what makes the "edit an existing Seed project" case work**, so it is a prerequisite for Stage 4 being coherent rather than an independent feature.
-4. **Consortium browsing.** Acting as the Seed Collaborative, the cross-company read layer, the cost redactor, the export restrictions (19-23). **The redactor is the highest-risk single piece of the whole design** and deliberately does not ship before there is anything to browse.
+4. **Consortium browsing.** Acting as the Seed Collaborative, the cross-company read layer, the cost redactor, the export restrictions (19-23). **The redactor is the highest-risk single piece of the whole design** and deliberately does not ship before there is anything to browse. **Planned 2026-09-20; NOTHING BUILT.** Access requests (`collab_requests`) arrive here by Stage 3's answer 6. See "Stage 4 plan — Consortium browsing", sub-stages 4A–4C, its Tests and hand-test steps 17–25, and its **Open Items, which Tommy decides before any code is written**. Two sequencing facts live there and are repeated because they bite: Stage 3's hand-test steps 11–16 are still outstanding and **must run before 4B**, which replaces a string step 13 reads word for word; and the export restrictions ship **with** browsing in 4B, never after it.
 5. **Platform admin.** Cross-company visibility, permanent delete, full backup, and the case-by-case departing-company judgement (28).
 
 Backups (29) ride with the stage that makes them meaningful: company backup with stage 2, platform backup with stage 5.
@@ -1860,6 +1860,406 @@ Steps marked "as M / as R / as R2 / as N" must not be done as T.
    - *(3D, re-run against its diff, 2026-09-20: clean.)* Only `apps/web/app/cloud/**` and this spec changed. No building value, `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is touched; `data.ts`, `packages/**`, `TopBar.tsx` and the Review Log are untouched, and no route file changed. **No new number of any kind:** the only numerals in the diff are the HTTP statuses `checkCreateTarget` already used (403, 409). **The one money-shaped thing this stage touches is said out loud rather than hidden:** a design created in Seed's tree carries the creator's own `priceModifier` into a project Seed owns, so the dialog's single new line tells the person that Seed's members will see its costs. It claims no redaction, because none exists. The convention's principle is kept in the other direction too — the consortium folder message **lost** the half that had stopped being true ("and you can't create a project in it yet") instead of being left to assert something the code no longer does.
    - *(3E, re-run against its diff, 2026-09-20: clean.)* Only `apps/web/app/cloud/**` and this spec changed. No building value, `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is touched; `data.ts`, `packages/**`, `TopBar.tsx` and the Review Log are untouched, and no route or SQL file changed. **No new number of any kind:** `BACKUP_MANIFEST_FORMAT_VERSION` moves 1 → 2, and the `shared/` owner slug **reuses** the existing 30-character company cap rather than inventing a second limit — the 260-character arithmetic that forced it is written out in the code and pinned by a test. No cost field moves anywhere new: a granted project's document was already served in full to the grantee company by RLS (24), and the backup adds no field to it. The convention's principle is kept in three places — an owner company whose name cannot be read is an **empty name and an "untitled" folder**, never a substituted company; the manifest says plainly that a personal share is **not** in a company backup rather than leaving its absence to be discovered; and it says that **a backup already taken cannot be recalled**, which is the honest limit rather than an implied guarantee.
 
+### Stage 4 plan — Consortium browsing (2026-09-20) — APPROVED BY TOMMY 2026-09-20 (all seven Open Items answered), NOT BUILT
+
+Provenance: Tommy asked to start Stage 4 on 2026-09-20, immediately after 3E went live. **He reviews this plan and decides its Open Items before any code is written**, exactly as for Stages 2 and 3. The plan was written against what is actually live, read directly rather than assumed: `supabase/migrations/0001`–`0008`, `supabase/README.md`, `apps/web/app/api/**`, `apps/web/app/cloud/**`, `apps/web/app/auth/{actingAs,serverSession}.ts`, and `apps/web/app/projectFile.ts` at **`PROJECT_FILE_VERSION = 24`**.
+
+**Nothing decided above is reopened.** Four places where a decision collides with the live code are marked ⚠ and listed in this plan's Open Items; none is settled quietly.
+
+**Sequencing warning, concrete and dated.** Stage 3's hand-test steps **11–16 are still outstanding** (3C, 3D and 3E were deployed without them at Tommy's choice). Step 13 reads `consortiumLaterStageMessage` word for word, and 4B replaces that string because it finally stops being true. **Run the Stage 3 batch before 4B ships, or step 13 must be rewritten first.** The Stage 4 steps below are numbered from 17 so the whole batch can be driven in one sitting.
+
+#### Why this stage is the risky one, in one paragraph
+
+Decision 22 says there is **no server-side calculation engine**: the document reaches the browser and the client computes everything. Decision 21 says a browsing company must **never** see another company's price modifier. Decision 23 admits export blocking is **friction, not access control**. So the only thing standing between a browsing company and another company's margin is that **the field is removed from the document before it is sent** — and that has to happen somewhere a browser cannot go around. That is this stage's whole job, and everything else here is arrangements around it.
+
+#### What is money, named against the real shape
+
+Verified against `apps/web/app/projectFile.ts` (v24), not guessed:
+
+| Field | In the document? | What it feeds | Stage 4 |
+|---|---|---|---|
+| **`state.priceModifier`** | **Yes** — `ProjectState.priceModifier`, and it is in `REQUIRED_STATE_KEYS` | `effectivePriceModifier` (`page.tsx:4882`) → the `price` memo (`page.tsx:4884`) → the **Price** row and the **Markup** input on Project Summary (`page.tsx:7503-7531`) | **REDACTED. It is the whole list.** |
+| `state.zipCode` | Yes | seismic zone, shipping distance, the sheet's site label | **Not redacted.** It is a design input, and decision 12 already accepted that a browsing company sees which client and place a project is for. |
+| `state.role` | Yes | which disclaimer prints | **Not redacted, and already ignored on a cloud open** (Roles, 9). The viewer's own toggle wins. |
+| `shippingRatePerMile`, the four `plaster*Price*`, `steelMeshPricePerSqFt`, `plasterLaborRatePerHour` | **No** — `useState` only (`page.tsx:550, 562-567, 577, 578`) | the Shipping and Plaster Master cards | **Not redaction targets today, because they are not in the document.** ⚠ See Open Item 6: what a browser is shown on those cards is *their own* defaults. **The day these are added to `ProjectState` they become redaction targets**, and the classification check below is what forces that. |
+| The catalog list rates (`priceRates.*`, `packages/panel-catalog/src/data.ts:788`) | No — they are in the app's own code | every price | **Not hidden, and cannot be** (21's own note). A browser can compute an unmodified price. That is the app's arithmetic, not the other company's margin. |
+
+**So the redaction list, for schema version 24, is exactly one path: `state.priceModifier`.** Recorded as a fact with its verification, not as an assumption.
+
+#### ⚠ The collision with the live parser, and what it forces
+
+**`priceModifier` is in `REQUIRED_STATE_KEYS` (`projectFile.ts:344`).** `parseProjectFile` returns `{ ok: false, error: 'That file is missing the "priceModifier" field.' }` when a required key is absent. So **a document with the field simply removed does not open** — every browsed project would fail with a message that reads like a corrupt file. Decision 21 is still right and is not reopened; it needs one more piece than it names:
+
+- **The redacted document carries an explicit top-level marker**, a sibling of `schemaVersion` / `savedAt` / `state`:
+  `"redaction": { "schemaVersion": 24, "removedPaths": ["state.priceModifier"], "reason": "another company's cost information" }`.
+  A top-level key `parseProjectFile` does not read is ignored by it today, so **this needs no `PROJECT_FILE_VERSION` bump** — confirmed by reading the parser, which reads only `schemaVersion`, `state` and `savedAt`.
+- **The client gets a redacted-aware parse path** that accepts exactly the paths the marker names as missing, and returns `costsRedacted: true` alongside the state. A document missing a required key **without** a marker naming it is still refused, exactly as today.
+- **The field is removed, not nulled or zeroed.** 21's guarantee is "the field never leaves the server", and a key that is not there cannot be multiplied by anything.
+
+#### What the client does with a redacted document — a visible gap, and a loud one
+
+- **Everything that is not money still draws.** Panels, walls, the footprint, quantities, dimensions, the 3D preview, every fabrication and detail sheet, the Review Log, and printing. That is decision 20's "design yes, money no", and it is the whole point of the document reaching the browser.
+- **The Price row prints `—`**, with: "Cost is not shown for another company's project." **The Markup input is not rendered at all** while browsing.
+- **`—` whatever the viewer role.** `effectivePriceModifier` is `role === "public" ? 1 : priceModifier`, so a browsing viewer in the public role would otherwise be shown a real base price on someone else's sheet, which reads as "their price". 21 permits them to compute it themselves from published rates; the app does not present it as the owner's number.
+- **`priceModifier` is held as `NaN` while browsing, and every price display is gated on `costsRedacted`.** Deliberate: if a gate is ever missed, the screen shows `$NaN` — obviously broken, impossible to mistake for a number — instead of a confident `$48,210` built from a defaulted 1.0 or 1.3. **This is the flag convention's own rule** (a visible gap beats a plausible substitute), applied to the one field that carries another company's commercial information.
+- **No dollar figure anywhere on a browsed project may fall back to a default.** Where a card cannot honestly show a number, it shows the gap and says why.
+
+#### The redactor: where it runs, and why it cannot be gone around
+
+**It runs in the database, inside a `SECURITY DEFINER` function, and no function or policy a browser can reach ever returns an unredacted cross-company document.**
+
+The reason is written in 0006 and 0008 already and is not re-derived here: **the publishable key ships in the browser bundle**, so anything RLS will serve, PostgREST will serve directly. Redacting in a Next.js route would mean some database call somewhere returns the raw document to a signed-in browser, and that call is then reachable without the route.
+
+- **`project_versions_select`, `projects_select`, `can_read_project`, `can_write_project` and `holds_project_grant` are NOT touched.** 0006 and 0008 both say Stage 4 must not widen them; the post-flight and the test both assert they are byte-identical after 0009.
+- **`browse_version(p_project, p_version)`** is the only way a browsed document is served. It is definer, checks seed entitlement and the browse set itself, checks `meets_required_aal()` itself, and returns the document **after** removing every path for that document's `schema_version`, with the marker added.
+- **Nothing a browser can call returns the raw document.** There is no "read it raw, redact it in TypeScript" step anywhere, and no route uses the service role (the standing Stage 2/3 rule is unchanged).
+- **Stage 2's and Stage 3's document paths are not borrowed and not widened.** `GET /api/projects/[id]/versions/[versionId]` and the backup route keep serving grant-holders and members exactly as they do now, through RLS. A browser gets a 404 from them, as today — hand-test step 19 checks precisely that.
+
+**Keyed to `schema_version`, and failing closed.** `0009` creates:
+
+`browse_schema_redaction (schema_version integer primary key, redacted_paths jsonb not null, note text)`, seeded with one row: `(24, '[["state","priceModifier"]]', …)`.
+
+- **Absence of the row is the failure, not an empty list.** A future schema version with genuinely no money fields gets a row with an empty array; a schema version nobody has classified has **no row**, and `browse_version` **raises rather than serving it**. Stated explicitly because it is the rule that survives a future field: *a document whose `schemaVersion` the redactor does not know is not served cross-company at all.*
+- **An out-of-window version is therefore never served to a browser either**, and — importantly — **the browse path offers no raw download.** ⚠ Stage 2C's honest "Download this version's file" hands over the *untouched stored document*; copied onto the browse path it would be a hole straight through 21, not merely 23's friction. It is suppressed on every browse surface, and the two rules line up: an unknown format is refused, and nothing is offered in its place except the fact that it cannot be shown.
+
+#### What browsing shows
+
+- **The browse set is every project of every company with `is_seed_member = true`**, in all three folders (19, 20, 12). All four companies carry the flag today, the Seed Collaborative's own included.
+- **Open from cloud gains a fifth tab, "Browse the consortium"**, shown **only while the acting-as entitlement is the consortium one, or the acting-as company is a member company** — i.e. browsing is the acting-as state, never ambient (hand-test step 25).
+  - It lists the member companies by name (`browse_companies()`), and within one company, the three folder tabs.
+  - Each row: "*Smith House* · v7 · Frank · 2 hours ago — **Owned by Rare Forms › Proposals** · read-only, costs not shown".
+  - **Each row is marked `full` or `redacted`.** `full` means the caller can already read it (membership, a grant, or platform admin), and the row opens through the Stage 2 route with costs; `redacted` opens through `browse_version`. See Open Item 2.
+- **Acting as Seed through the consortium, Seed's own folder tabs finally show something** — through the browse path, redacted, because a consortium entitlement is not a Seed membership. `consortiumLaterStageMessage` and `consortiumMenuMessage` are replaced; both stop being true this stage.
+- **A Seed member acting as Seed** sees Seed's own tree in the folder tabs with costs (membership, through RLS) and everyone else's redacted. The two Seed rows of the permission matrix stay different, as the matrix insists.
+- **⚠ Your own company's projects are redacted while you act as Seed.** Decision 20's sub-note defines "another company" as "the company you are acting as is not the owner", so a Building Integrity member acting as Seed sees Building Integrity's own work costs-hidden. It is the decided rule and is not changed here, but it is surprising the first time; hand-test step 18 puts it in front of Tommy before it is final. See Open Item 7.
+- **Platform admins are served through the normal path, never the redactor.** RLS already gives them everything, their rows are marked `full`, and "your margin stays yours and the four platform admins'" is not quietly widened or quietly narrowed.
+- **A version list while browsing** shows number, "Saved"/"Renamed to …", author name, date and time, and the label — the same metadata Stage 2C shows, which contains no cost field. **Open** on a row goes through `browse_version`. There is **no** raw download, and **no** Move to…, Rename, Access… or Sharing… control: browsing writes nothing.
+
+#### `is_seed_member` — its real job, and the symmetric false branch
+
+The flag finally does the two things the data-model note promised:
+
+1. **It defines the browse set.** `browse_projects` filters on it, in the database.
+2. **It decides who gets the entitlement at all.** `computeEntitlements` already builds the consortium source only when one of your own companies carries the flag (`actingAs.ts`), and `is_seed_entitled()` is the database's own copy of that rule.
+
+**The false branch, asserted rather than assumed: a non-member company neither sees nor is seen.** Its members get no consortium entitlement and every browse function returns them nothing; its projects are absent from every other company's browse set. Both halves are asserted in the RLS suite, as an ordinary member of a non-member company. **There is no non-member company today, so this branch cannot be hand-tested live** — that is stated rather than papered over, and it is why the SQL assertion carries the weight.
+
+⚠ Stage 3 Open Item 4 recorded that `shareable_companies()` answers **any** signed-in account, so a non-member company's members can read the consortium's company names. Stage 4's functions must not repeat it: `browse_companies()` checks seed entitlement itself. Whether to tighten `shareable_companies()` at the same time is Open Item 5.
+
+#### Access requests — `collab_requests`, the other direction of 26
+
+Moved here by Stage 3's answer 6. **It is the one thing in this stage that writes.**
+
+- **`collab_requests`**: `id`, `project_id` (FK, cascade), `requested_by` uuid (FK `auth.users`, **cascade** — a deleted account's request goes with it), `requested_by_name` (snapshot, same rule as everywhere else), `message` text null (1–500), `status` in (`pending`, `granted`, `declined`), `created_at`, `decided_by` uuid **no FK** (authorship-like, as `granted_by` is), `decided_by_name` snapshot, `decided_at`.
+  - `unique (project_id, requested_by) where status = 'pending'` — one open request per person per project.
+  - `authenticated` gets **select only**. Every write goes through a definer function; there is no insert, update or delete grant.
+- **Who may ask:** anyone the project is **browsable** by — seed-entitled, and the project in their browse set — **and who cannot already read it**. Asking about a project outside your browse set raises the same uniform "not found, or you cannot ask about it" 42501 whether or not it exists, so requests cannot be used to probe for project ids.
+- **Who may grant:** **any member of the owner company, or a platform admin** — the same set that may share (answer 3) and remove (answer 13). Not the requester's own company, and not a collaborator.
+- **How a request becomes a grant:** `decide_collab_request(p_request, p_grant)` checks the decider, then — when granting — **writes the grant by calling `share_project_with_person` with the requester's address**. Deliberately **not** a second way to write a `collaborators` row: the grant that results is an ordinary personal grant with `granted_by` = the decider, so **everything downstream already understands it** — the Shared with us tab, the 3C notice, the access list, the cascade offer, and Open Item 2's backup exclusion. The request row is then marked `granted`.
+- **What a refusal looks like:** `status = 'declined'`, with `decided_by_name` and `decided_at`. **The requester sees it on their own request list**, and nowhere else: there is no email (7), and no new notice channel is added. Nothing is written to `collaborators`. Re-asking is allowed (a new row), because with no notification channel there is nothing to spam. See Open Items 3 and 4.
+- **Where owners see them:** pending requests appear in the project's existing **Access…** note, above the grant rows, for owner-side viewers only, each with **Grant** and **Decline**. **The database is the gate and the button is the courtesy**, as for Remove.
+
+#### Export restrictions (23) in the UI — and the wording that must go with them
+
+**While a redacted document is on screen, these controls are not rendered:**
+
+| Control | Where it lives today |
+|---|---|
+| **Save Project** (local download) | `TopBar.tsx:284` |
+| **Save to cloud**, **Save as new cloud project…** | `cloud/cloudMenu.ts` |
+| **Export as OBJ** | `Building3DView.tsx:1619` |
+| **Download OBJ** on a single panel | `StandardPanel3DView.tsx:132` |
+| **Download this version's file** | `cloud/useCloudProjects.tsx` (the out-of-window offer) — see above; on the browse path it is a hole, not a courtesy |
+| **Download project file** on a refused-save notice | `cloud/useCloudProjects.tsx` |
+
+- **Save as new cloud project is included deliberately.** 23 names the project file and the OBJ; "save a copy into my own company and carry on with it" is the exact thing 23 says view-only must not become, and it is a copy of a redacted document besides. Recorded as a reading of 23, not a new decision.
+- **`cloudContext` must be null while browsing**, and a new `browseContext` set instead, so **no save path can attach to a browsed project** even if a control were missed. Same shape as 2B's rule that Load Project clears `cloudContext`.
+- **Printing and PDF stay** (23), as does every drawing and detail sheet.
+- **The honest wording, on the browse banner:**
+  > You're viewing **Smith House**, owned by **Rare Forms**, as a member of the consortium. Costs are not shown. You can print this or save a PDF. This app doesn't hand you an editable copy — taking one another way is a breach of the terms rather than something the software prevents.
+- **The rule for every string this stage adds, stated so a coder cannot get it wrong: no wording may say or imply that the app prevents copying.** Banned phrasings include "other companies cannot take your files", "your designs are protected", "copy-protected" and "secure". **Redaction (21) is a guarantee and may be stated as one; export blocking (23) is friction and must never be.** A vitest assertion pins this against the browse strings file.
+
+#### Backups (29) — browsing-only projects stay out, and how 3E enforces it
+
+- **Nothing changes in `cloud/backupRouteLogic.ts`, and that is the enforcement.** The 3E cursor walks exactly two sources — `projects.company_id = <company>` (owned) and `collaborators.grantee_company_id = <company>` (granted) — and **Stage 4 adds no third phase.** A project reachable only through browsing matches neither `.eq()`, so no page can contain it.
+- **29's rule holds unchanged: a backup may never contain more than its owner could already export by hand.** A browsing company cannot export a browsed project at all, so it cannot appear in their zip.
+- **Asserted, not assumed**, in three places: the SQL suite (a browse-set project yields zero rows from both enumerations); a vitest assertion that the phase list is exactly `["owned", "granted"]`; and a vitest assertion that `companyBackup.ts` and `backupRouteLogic.ts` reference no browse function or `/api/browse` route. Hand-test step 24 checks it live.
+
+#### The permission matrix rows this stage fills in
+
+No row is rewritten; four cells stop being promises and become code.
+
+| Row | Cells this stage makes real |
+|---|---|
+| **Acting as the Seed Collaborative** (any member of a member company) | **Browse other member trees: yes** (the browse path) · **See their costs: no** (the redactor) · **Export their file / OBJ: no** (23's friction, honestly labelled) · **See acting-as tree: yes, read-only** — Seed's own tree, served redacted, because a consortium entitlement is not a Seed membership |
+| **A Seed Collaborative member, acting as Seed** | **Browse: yes** · **See their costs: no** (other companies') · **Export: no** (other companies'). Seed's own tree stays full, through membership. |
+| **Member / company admin, acting as own company** | **Browse other member trees: no** — unchanged, and now enforced by the browse tab being absent rather than by there being nothing to browse |
+| **Platform admin** | **Browse: yes · costs: yes** — through the normal path, never the redactor |
+| **Invited collaborator** | unchanged (24: costs included, full export) — a grant is a handoff, not browsing |
+
+#### Staging — three sub-stages, each shippable
+
+- **4A — Schema, RLS, the redactor and tests. No app change.**
+  - Contents: `supabase/migrations/0009_stage4_browsing.sql`, `supabase/tests/stage4_rls.test.sql`, README (a Stage 4 section, read-only pre-flight and post-flight, "run 0009 after 0008").
+  - **Safe ahead of the app**: no app code calls any of it, and it widens no existing policy or helper. The live app has no browse surface until 4B.
+  - Ships when the suites pass locally with every mutation check failing them, and Tommy has pasted `0009` and matched the post-flight output.
+- **4B — Browsing, the redacted read, and the export restrictions. They ship together, deliberately:** shipping the browse tab before the controls are hidden would hand out OBJs of other companies' work on day one.
+  - Contents: the browse routes, the fifth tab and company list, the redacted-aware parse path and `costsRedacted`, the gap on every price display, the banner and its wording, the replaced consortium messages, and the hidden export controls.
+  - *Usable alone: this is decision 15's sentence — "you are in the club and welcome, here is what everyone is doing."*
+  - Hand-test steps 17–21 and 24–25.
+- **4C — Access requests.** `collab_requests` end to end: Ask for access while browsing, the owner's Grant/Decline in the Access note, the requester's own list. Hand-test steps 22–23.
+
+#### Tests — `supabase/tests/stage4_rls.test.sql` (local or staging only, never the live project)
+
+Stage 3's harness unchanged: `local_shim.sql`, then 0001–0009, then the Stage 1, 2 and 3 suites (**all three must still pass**), then this file, in one transaction ending in `ROLLBACK`, with the same refuse-to-run guard extended to any `collab_requests` row. Fixtures are Stage 3's people, so the non-member company (carol) and the Seed member (dave) already exist. **Every assertion runs as an ordinary member of a real company — never only as the platform admin.**
+
+1. **The browse set.** frank (Rare Forms), acting as Seed, lists Building Integrity's, New Frameworks', Rare Forms' and Seed's projects. **He does not list carol's non-member company's**, even naming its ids.
+2. **The symmetric false branch.** carol gets **zero** companies from `browse_companies()`, zero projects from `browse_projects()`, and a 42501 from `browse_version()` on a project she named — the same error as for a project that does not exist.
+3. **THE MARGIN ASSERTION, Stage 4's version, and the one that matters most.** For a Building Integrity project with `priceModifier` in its document:
+   - `browse_version(...)` returns a document whose **`document::text` does not contain the string `priceModifier`**, for frank, for nick and for dave;
+   - the same document read through `project_versions` returns **0 rows** for each of them;
+   - the marker is present and names `state.priceModifier`;
+   - across **every** function frank can call, the count of documents he can reach that carry `priceModifier` equals the count of projects he holds a grant on or his own company owns — and no more.
+4. **Fail closed on an unknown schema version.** A version stamped `schema_version = 99`, with no `browse_schema_redaction` row, makes `browse_version` **raise**; it serves no document, redacted or otherwise. A version stamped 24 serves normally. **This is the future-schema guard and it must fail loudly, not quietly serve.**
+5. **RLS is untouched.** `projects_select`, `project_versions_select`, `can_read_project`, `can_write_project` and `holds_project_grant` all answer exactly as they did before 0009 — asserted by behaviour (frank still reads 0 rows of a BI project) **and** by a definition comparison in the post-flight.
+6. **Access requests.** frank asks on a BI project he can browse → `pending`. bob (an ordinary BI member) grants → a `collaborators` row exists with `granted_by = bob`, frank now reads the **full** document with `priceModifier` present, and the request is `granted`. A second pending request from frank is refused. frank asking about carol's project raises. carol asking about anything raises. A decline writes no grant, and the declined requester still reads 0.
+7. **Two-factor.** frank with a verified factor at aal1 gets nothing from every browse function and a raise from every request function; at aal2 they all work.
+8. **Privileges.** `anon` holds nothing on `collab_requests` or `browse_schema_redaction` and can execute no Stage 4 function. `authenticated` holds no insert, update or truncate on `collab_requests`.
+9. **Backups.** Both 3E enumerations return **0** rows for a project that is only browsable.
+
+**Mutation checks — each must fail the suite, on the assertion named:**
+
+| Mutation | Fails on |
+|---|---|
+| `browse_version` returns the raw document | 3 ("does not contain priceModifier") |
+| `browse_schema_redaction`'s paths emptied for v24 | 3 |
+| the unknown-schema refusal removed (serves it unredacted) | 4 |
+| `browse_projects` drops its `is_seed_member` filter | 1 |
+| `browse_companies` drops its seed-entitlement check | 2 |
+| `projects_select` widened to the browse set | 5 |
+| `decide_collab_request` skips the owner-member check | 6 |
+| the `meets_required_aal()` check removed from `browse_version` | 7 |
+
+**The TypeScript side — the test that fails when a future cost field is added and nobody notices.** This is decision 21's "tested against `ProjectState`'s own key list", and it has three layers, in `apps/web/app/cloud/redaction.ts` and `redaction.test.ts`:
+
+- **(a) The build fails, not just a test.** `MONEY_CLASSIFICATION: Record<keyof ProjectState, "money" | "not-money">` — a `Record` over `keyof ProjectState` is **exhaustive by type**, so adding a field to `ProjectState` without classifying it fails `tsc --noEmit`, naming the missing key. A silently unclassified new field is exactly how the first leak happens, so it is caught by the compiler.
+- **(b) The runtime keys agree with the type.** A test serializes a real project and asserts every key of `serializeProject(state).state` appears in the map, catching drift the type cannot see.
+- **(c) The migration agrees with the classification.** The test `readFileSync`s `0009_stage4_browsing.sql` (the repo already has source-reading tests — `projectRouteLogic.test.ts`, `sharingRouteLogic.test.ts`), extracts the seeded paths for `PROJECT_FILE_VERSION`, and asserts they are **exactly** the keys classified `money`. So a new money field fails (a); classifying it without seeding it fails (c); and **a future schema version with no seed row at all** is asserted to be absent, which is the state that makes the database refuse to serve it.
+- **(d) A stringified redacted document contains neither `"priceModifier"` nor the modifier's value**, asserted both in vitest (on the shape) and in SQL (on the real function output, assertion 3 above).
+- **(e) Route-level invariants**, in the established readFileSync style: no `/api/browse/**` route imports `createSupabaseAdminClient` or mentions `service_role`; no browse logic selects `document` from `project_versions` directly; and the browse strings contain none of the banned "cannot take your files" phrasings.
+
+#### Hand-test checklist — the live app
+
+**Accounts:** **T** (Tommy, platform admin), **M** (ordinary Building Integrity member), **R** and **R2** (ordinary Rare Forms members), **N** (ordinary New Frameworks member). Steps marked "as M / as R / as R2 / as N" must not be done as T — a platform admin passes every check here, including the redactor, by design. **One browser or profile per account**: incognito windows share one sign-in (found in 3B's hand test).
+
+**Steps 11–16 from Stage 3 are still outstanding and run in this same batch, before these** — step 13 reads a string 4B replaces.
+
+17. **(4B) As M, not T:** Acting as → **The Seed Collaborative (consortium)**. Project ▾ → Open from cloud… → the new **Browse the consortium** tab. It lists the four companies. Pick **Rare Forms** → **Current Projects** → a project R saved. The row reads "Owned by Rare Forms › Current Projects · read-only, costs not shown". Press **Open**. The design draws, dimensions and all. Then check, in this order:
+    - **Project Summary → Price** reads **`—`** with "Cost is not shown for another company's project.", and there is **no Markup box**. It does **not** read `$NaN`, `$0.00` or any number.
+    - **Project ▾** offers **no Save to cloud**, **no Save as new cloud project…**, and **no Save Project**.
+    - **3D Preview** has **no Export as OBJ** button; a single panel's viewer has **no Download OBJ**.
+    - The banner is there, and its last sentence says taking a copy another way is a breach of the terms — **not** that the app prevents it.
+    - **Print preview still works** and the sheets carry their title blocks.
+18. **As M, still acting as Seed:** in the browse list pick **Building Integrity** — your own company. Its rows are marked as readable in full and open **with** the price. Now open one from the browse tab anyway: **it shows `—`**. *(This is decision 20's ownership rule — "another company" means the acting-as company is not the owner. It is the decided behaviour, and Open Item 7 is your chance to say you want it differently before this is final.)*
+19. **As M, not T — the redactor line, in the console.** F12 → Console (Chrome may ask you to type `allow pasting`).
+    - `fetch('/api/browse/companies').then(r=>r.json()).then(d=>console.table(d.companies))` — four companies.
+    - Get a Rare Forms version: `fetch('/api/browse/projects?company=PASTE_RF_ID&folder=current').then(r=>r.json()).then(d=>console.table(d.projects.map(p=>({name:p.name,url:'/api/browse/projects/'+p.id+'/versions/'+p.headVersionId}))))`.
+    - `fetch('PASTE_URL').then(r=>r.json()).then(d=>console.log(JSON.stringify(d.document).includes('priceModifier'), d.document.redaction))` — it prints **`false`** and the marker.
+    - Now paste the **Stage 2** URL for the same version, `/api/projects/<id>/versions/<vid>`, into the address bar: **404, no document.** *That pair is the whole stage: the only path that serves it, serves it redacted.*
+20. **As N, not T:** acting as Seed, browse **Building Integrity** and **Rare Forms**. Both list, both open, both show `—`. **As R, not T:** the same in the other direction against Building Integrity.
+21. **An unknown or out-of-window format.** If any browsable version was saved before the app's current − 1 format, its browse row says it cannot be shown, and **offers no download of any kind**. *(Contrast with Version history on your own project, where Download this version's file stays.)* If no such version exists, note that and skip.
+22. **(4C) As M, not T:** browsing that Rare Forms project, press **Ask for access**, type a short note, send. It says the request was sent. **As R, not T:** Open from cloud… → Current Projects → **Access…** on that project. M's request is listed, with the note, above the grant rows. Press **Grant**. **As M:** reload. A **"Shared with you"** notice names R (3C's machinery, unchanged), the project is in **Shared with us**, and opening it now **shows the price** — costs included, because a grant is a handoff (24).
+23. **As N, not T:** ask for access on a different Rare Forms project. **As R:** press **Decline**. **As N:** reload — your request list reads **Declined**, Shared with us does not list it, and the project is still browsable, still `—`.
+24. **As T, acting as Rare Forms:** Account ▾ → **Download company backup…**. Open the zip: there is `projects/` (owned) and `shared/` (granted) and **nothing else**. Search the manifest for a Building Integrity project that was only ever **browsed**: **no entry, no file**. *(29: a backup never contains more than its owner could export by hand.)*
+25. **As R, not T, acting as Rare Forms** (not Seed): Open from cloud… has **no Browse the consortium tab at all**. Browsing is the acting-as state, not an ambient one.
+
+**Not testable live, and said rather than skipped:** the non-member company branch ("neither sees nor is seen"). All four companies are consortium members today, and flipping a real company's flag is a platform-admin judgement call (28), not a test fixture. It is proven in the RLS suite only.
+
+#### Coder handoff — to-do, one block per sub-stage
+
+- **4A.**
+  - **Scope:** `0009` and its RLS test, exactly as specified. No app code.
+  - **Files:** `supabase/migrations/0009_stage4_browsing.sql`, `supabase/tests/stage4_rls.test.sql`, `supabase/README.md` (a Stage 4 section, pre-flight and post-flight, "run 0009 after 0008", and the new definer functions added to 0004's bypass list).
+  - **Acceptance:** all four SQL suites and both concurrency scripts pass locally; every mutation in the table above fails the suite on its named assertion; one transaction, re-runnable, a copy broken before `commit;` leaves nothing behind; **`projects_select`, `project_versions_select`, `can_read_project`, `can_write_project` and `holds_project_grant` are byte-identical afterwards** (the per-object dump, as 3A did).
+  - **Edge cases:** a version whose `schema_version` has no redaction row; a project owned by a company that has left the consortium (the flag is a judgement call, 28 — follow the flag, whatever it says); a grantee who is also seed-entitled (they must reach the full document through the grant, not the redacted one); `decide_collab_request` calling `share_project_with_person` as definer while `auth.uid()` is the decider.
+  - **Not in scope:** any app code; widening any Stage 2 or Stage 3 object.
+- **4B.**
+  - **Scope:** browsing, the redacted read, and the export restrictions — together.
+  - **Files:** `apps/web/app/api/browse/**` (new); `cloud/browseRouteLogic.ts` and `cloud/browseDisplay.ts` (every string, as `sharingDisplay.ts` holds Stage 3's); `cloud/redaction.ts` + `redaction.test.ts` (the classification map); `app/projectFile.ts` (the redacted-aware parse path — **a new exported function beside `parseProjectFile`, not a loosening of it**); `cloud/cloudTypes.ts` (the browse shapes; `consortiumLaterStageMessage` and `consortiumMenuMessage` replaced); `cloud/cloudMenu.ts`; `cloud/useCloudProjects.tsx` (the fifth tab, replacing the consortium branch at its folder-tab render site); `page.tsx` (`costsRedacted` threaded to the Price row, the Markup input gated); `TopBar.tsx`, `Building3DView.tsx`, `StandardPanel3DView.tsx` (the export controls gated).
+  - **Acceptance:** hand-test steps 17–21 and 24–25 **as M, R and N**; every test in the TypeScript section above; no browse route imports the admin client; `tsc --noEmit` clean **including the exhaustive classification Record**.
+  - **Edge cases:** a browsed project renamed or moved by its owner while open; a browsed version whose format is out of window; a grant arriving while the browsed copy is on screen (the redacted copy stays until reopened — say so, do not silently swap it); `browseContext` and `cloudContext` never both set; the title-block date of a browsed version (it is that version's `created_at`, through the existing `cloud-version` writer).
+  - **Not in scope:** access requests (4C); any change to the backup; widening `parseProjectFile`'s version window; adding the seven plaster/shipping prices to `ProjectState`.
+- **4C.**
+  - **Scope:** `collab_requests` end to end.
+  - **Files:** the request routes, the Access note's request rows, the requester's own list, `cloud/browseDisplay.ts` for the wording.
+  - **Acceptance:** hand-test steps 22–23; a granted request produces an ordinary `collaborators` row that the Shared tab, the 3C notice and the access list all already understand, with **no new grant-writing path**.
+  - **Edge cases:** the same person asking twice; a request on a project whose grant arrives from elsewhere first; the requester's account deleted while a request is pending; a decline followed by a re-ask.
+  - **Not in scope:** email or any other notification channel (7); requests on behalf of a company (Open Item 3); a reason on a decline (Open Item 4).
+
+**The coder re-runs the 6-point flags check against each diff.**
+
+#### Not in scope for Stage 4
+
+- Platform-admin cross-company UI, permanent-delete UI, single-version delete and the platform-wide backup (Stage 5).
+- The departing-company judgement call (28) — the flag is followed, never set, by this code.
+- The people/activity page and promote-to-admin (Stage 3 answer 15) — still its own short follow-up.
+- Fixing the seven plaster/shipping prices' round-trip. **When it is fixed they become redaction targets**, and the classification `Record` is what will say so.
+- A view-only tier for grants (Stage 3 answer 4: there is one access level).
+- Any server-side rendering of drawings. 23 already records why that is the only design that would make export blocking real, and why it is not recommended.
+- Search across the browse set, and browsing history or audit.
+
+#### Open Items — Stage 4 (Tommy's decisions; each has a recommended default)
+
+**Answered by Tommy 2026-09-20.** Asked directly: **item 5 — yes, tighten `shareable_companies()` to seed-entitled callers, in 4A's migration** (he was shown that it currently answers any signed-in account and undercuts the "neither sees nor is seen" branch Stage 4 depends on); **item 3 — personal requests only, and a decline carries no reason** ("Declined" is all the requester sees). Items **1, 2, 6 and 7 accepted as written**, including that his own company's work appears redacted while he acts as Seed — he was told it is decision 20 working, and that step 18 is where to eyeball it. Each item below is now a decision.
+
+1. **⚠ How a redacted document is marked, given `priceModifier` is a required key.** **Default: remove the field, add a top-level `redaction` marker naming the removed paths, and add a redacted-aware parse path beside `parseProjectFile`** (no `PROJECT_FILE_VERSION` bump — the parser ignores unknown top-level keys). The alternative, keeping the key with `null`, avoids touching the parser but leaves a money key in the document, which is exactly what 21 says must not leave the server.
+2. **⚠ Does the browse path also serve a project you can already read in full?** **Default: yes, always redacted, with the listing marking such rows so the UI opens them through the Stage 2 route with costs.** One always-redacting function has fewer branches and so fewer holes; the cost is that a mis-clicked row can show you your own project with `—`. The alternative is a refusal branch keyed to `can_read_project`.
+3. **May a request be made on behalf of a company?** **Default: no — a request is personal, and grants a personal grant.** The owner can share with the whole company instead, which is a decision they should make deliberately.
+4. **Does a decline carry a reason?** **Default: no free-text reason; the requester sees "Declined".** A reason box invites a negotiation the app cannot host, and it would be readable by everyone who can open the project.
+5. **Tighten `shareable_companies()` to seed-entitled callers now?** (Stage 3 Open Item 4 said "revisit before onboarding a non-member company".) **Default: yes, in 0009** — Stage 4 is where the "neither sees nor is seen" branch finally means something, and leaving one function answering everyone undercuts it.
+6. **⚠ The Shipping and Plaster Master dollar figures on a browsed project are the *viewer's own* defaults**, because those seven fields still do not round-trip. **Default: one line on those cards while browsing saying so.** The real fix is putting them in `ProjectState`, which is out of scope and which makes them redaction targets.
+7. **⚠ Your own company's projects are redacted while you act as Seed** (decision 20's ownership rule). **Default: leave it exactly as decided**, and look at it once in hand-test step 18 before calling Stage 4 done.
+
+#### Flags check: clean, confirmed against the plan rather than assumed
+
+1–4. **Clean.** No real-world building number is introduced or moved: no fastener spacing, load, density, dimension or cost figure. No `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is in scope, and `data.ts` is not touched.
+
+5. **Clean.** Nothing new reaches the Review Log.
+
+6. **Clean.**
+   - **The one money-shaped field, `priceModifier`, moves in exactly one new direction: out of the document, before it is sent.** No new dollar figure is created, defaulted or displayed anywhere. The catalog list rates keep whatever status they already carry and stay visible to everyone, as 21 says they must.
+   - **No new number of any kind is a building value.** The only numerals this plan adds are a schema version in a seed row, a 500-character request-note cap and HTTP statuses — administrative, and deliberately kept off the engineer's review list for the same reason as `INVITE_EXPIRY_DAYS`.
+   - **The plan leans on the flag convention's own principle in five places**, which is the reason it is safe to build at all: `—` and a named reason instead of a defaulted price modifier; `NaN` rather than a plausible number if a display gate is ever missed; **refuse to serve** a schema version the redactor does not know, rather than serve it and hope; **no raw download** on the browse path, rather than Stage 2's honest-but-here-fatal offer; and export blocking described as friction, never as a guarantee.
+   - **Nothing pending is treated as settled.** The seven plaster/shipping prices are named as not-yet-in-the-document and as future redaction targets rather than quietly assumed safe, and the non-member-company branch is marked as proven in SQL only, because no non-member company exists to test it live.
+
+### People & activity page (2026-09-20) — APPROVED BY TOMMY 2026-09-20 (all five Open Items answered; the cross-company list deferred), NOT BUILT
+
+Provenance: Tommy's direction is recorded verbatim under "Open Items — Backend, Accounts & Project Sharing", and he placed it as **a short follow-up directly after Stage 3** (Stage 3 answer 15). Stage 3 is complete, so it is due. This plan is deliberately small, and it was written against the live schema and routes rather than from the Open Item's description.
+
+**The headline, and the reason this is short: it needs no new schema, and promotion needs no new route.** Everything Tommy described is already recorded, or is already permitted and simply has no button.
+
+#### What the live schema already answers
+
+| Tommy's words | Where it already lives | Verified |
+|---|---|---|
+| "their email" | `user_profiles.email`, already returned by `GET /api/companies/[id]/members` | `members/route.ts` |
+| "how long they've been a member for" | **`memberships.created_at` exists** | `0001:134` |
+| "how many edits they've made total" | `project_versions` rows where `author_id` is that person | `0006` |
+| "latest actions each member has taken" | `project_versions` — `author_id`, `created_at`, `kind` (`save` / `rename`), `project_id` | `0006` |
+| "upgrade a member to admin" | `memberships.level`, and **`PATCH /api/memberships/[id]` already accepts `{ level }`** | `api/memberships/[id]/route.ts:38` |
+
+**No migration. No new table. No new route for promotion.** If a later pass wants an action this list cannot answer, that is new schema and a new decision — see Open Item 1.
+
+#### "Latest actions" — the definition, and what it deliberately excludes
+
+**An action is a version this person authored: a save or a rename.** That is the whole of it, and the honest reason is that it is the whole of what the app records.
+
+- **Shown as:** "Saved *Smith House* v7 · 2 hours ago", "Renamed *Smith House* to 'Smith Residence' · yesterday" — the same words and the same `kind` caveat Version history already uses (`supabase/README.md`: `kind` is not proof of what changed, so a rename row is **labelled**, never trusted).
+- **Not recorded anywhere, and therefore not shown:** sign-ins, opening or printing a project, folder moves (Stage 2: a move "creates no version"), backups, and browsing. **Proposing a general activity log for these is explicitly not done here** — it is new schema, it is a surveillance decision as much as a technical one, and Tommy asked for a short follow-up.
+- **One cheap addition is available without schema and is left for Tommy:** shares are recorded (`collaborators.granted_by`, `granted_by_name`, `created_at`), so "Shared *Smith House* with Rare Forms" is answerable today. See Open Item 2.
+
+#### "Total edits", scoped honestly
+
+**"Edits" = versions authored.** But a count has to say *where*, because RLS decides what can be counted: `project_versions_select` is `can_read_project`, so a company admin can count a member's versions **in that company's own projects** and cannot see that member's work in another company (as a collaborator, or in the Seed tree).
+
+- **The number shown is therefore "versions saved in *this company's* projects", and it is labelled that way.** A total across every company would be wrong for everyone except a platform admin, and silently wrong — the failure this log's flag convention exists to prevent.
+- **On your own account page, the same rule**: your count is per company, for the company you are acting as.
+
+#### "How long a member" — and its one honest caveat
+
+`memberships.created_at` is **the membership's start, not the account's**. They differ, and the difference is real: Stage 3's hand-test step 7 removed and re-invited R2, so R2's Rare Forms membership now dates from that re-invite. The label says "member since 14 Sep 2026", not "joined the app", and a re-invited person's date is their **current** membership's. Stated rather than smoothed over, because it is exactly the kind of number someone would otherwise read as tenure.
+
+#### Promotion — exactly who may promote whom, read from the migrations
+
+| Caller | May change `level` on | Enforced by |
+|---|---|---|
+| **Company admin** | any membership **of a company they administer**, their own row included | `memberships_update` (0002:368) permits the row; `guard_membership_self_update` (0001:251) returns early for `is_company_admin(old.company_id)` |
+| **Platform admin** | any membership, at any company | `is_platform_admin()` in the policy, `is_privileged_caller()` in the guard |
+| **A plain member** | **nobody, including themselves** | the guard raises `42501: only a company admin can change a membership's level`. Self-update is narrowed to `is_default` alone |
+| **Anyone** | **cannot** move a membership to another company or another person | the guard's first branch, checked **before** any early return — the privilege escalation found in the Stage 1 review |
+
+- **Demotion is guarded too:** `guard_last_company_admin` raises `23514: a company must keep at least one admin`. So the last admin cannot demote themselves, and the UI must show that refusal in words rather than as a dead button.
+- **So the whole of "make admin" is a button** on the existing people list, calling the existing `PATCH /api/memberships/[id]` with `{ level: "admin" }`. **Demote to member** is the same call with `{ level: "member" }`. **No route, policy, trigger or migration changes.** This closes README Stage 1 step 7, which has never been doable from the UI.
+
+#### The cross-company view — the real decision, and the recommendation
+
+Tommy: *"an entire list of everyone if viewing as the seed collaborative (or platform admin)."*
+
+**Recommendation: build the per-company page now, and do not build the cross-company people list in this pass.** The reasons are structural, not scheduling:
+
+- **`user_profiles_select` (0002:319) shows a profile only to `id = auth.uid()`, `shares_company_with(id)`, or a platform admin.** So "everyone" for an ordinary seed-entitled person is **zero rows** through RLS. Making it work means a new `SECURITY DEFINER` function that hands another company's people's **names and email addresses** across a company line — which is a genuine permission decision, not a UI detail.
+- **It is a consortium read, so it belongs with the consortium read layer.** Stage 4 decides what acting as Seed reveals; a people list is another thing it would reveal, and decision 20 is about designs, not staff directories. **Emails in particular:** Stage 3 Open Item 8 already records that the app reveals whether an address has an account to anyone who can share a project — spreading addresses further is a step past that, not a continuation of it.
+- **Stage 3 Open Item 4's live caveat is the warning shot:** `shareable_companies()` already answers **any** signed-in account, so company *names* have leaked past the consortium boundary once without anyone deciding it. Stage 4's Open Item 5 proposes tightening exactly that. Adding a cross-company people view in the same week would widen the boundary while the other hand is narrowing it.
+- **A platform admin already has the access**, so the one part that is free is: **acting as any company, a platform admin sees that company's page** — which the existing `isAdminHere` gate already produces, because the policies treat them as an admin everywhere. That covers Tommy's "(or platform admin)" half at no cost.
+
+See Open Item 3. If Tommy wants the full cross-company list, it is a Stage 4 companion, not this pass.
+
+#### Attribution after someone leaves — the trap this page must not fall into
+
+**The page must never resolve `project_versions.author_id` to a profile row.** That is the exact defect the `author_name` snapshot was created to avoid: once a leaver's membership is revoked, `user_profiles_select` stops showing their profile to their former colleagues, so a join-on-read shows a blank author precisely when attribution matters (decision 6, and 0006's own comment).
+
+- **Any name beside an action comes from `author_name`**, as Version history already does.
+- **A leaver simply drops off the people list** — the list is built from `memberships`, and they have none. Their saved work and their name stay exactly where they are.
+- **The activity rows are counted by `author_id`** (a uuid comparison needs no profile read) and **labelled by `author_name`**. `author_id` may name a deleted account; nothing here grants access by it (Stage 2 Open Item 8).
+
+#### Routes
+
+| Route | Change |
+|---|---|
+| `GET /api/companies/[id]/members` | **Extended**: each member gains `memberSince` (`memberships.created_at`), `versionCount`, and `recentActions` (the latest few). Still RLS-decided, still no `requireEntitlement` — a plain member gets back only their own row, which is exactly what "each account can see these stats on their account page" needs. |
+| `PATCH /api/memberships/[id]` | **Unchanged.** It already takes `{ level }`. |
+| Everything else | **Unchanged.** No new route. |
+
+- Counts and recent actions are read with `.eq()`/`.in()` on ids the database just returned, never spliced into a filter string (`listProjects`' rule).
+- **`document` is never selected.** A count and a `created_at` need no document, and a project name for an action row comes from `projects.name`.
+- One round trip per member is not acceptable for a company of twenty: counts come from one grouped read over `project_versions` filtered to that company's project ids, and recent actions from one ordered read with a small cap. **Cap the action list at 5 per member** — an administrative number, not a building value.
+
+#### UI
+
+- **It extends the existing section**, `{company} — people` in `auth/AccountPanel.tsx` (the list at ~276–291, above the invite form and the 2D backup entry). **Nothing is added to the top bar** (Stage 2 Open Item 6).
+- Each row today reads `email · level` with **Remove**. It gains: **member since**, **N versions saved**, the latest actions (collapsed, expandable), and **Make admin** / **Make member**.
+- **Make admin asks for confirmation once**, naming what it grants: "An admin can invite and remove people, change levels, and download the company backup." Nothing in this app is undoable by accident.
+- **A refused demotion shows the database's own meaning in words**: "A company must keep at least one admin. Promote someone else first." (`23514` from `guard_last_company_admin`.)
+- **Your own stats, for a plain member:** the same section renders with one row — yours — and no Make admin, no Remove, no invite form. That is what RLS already returns them, so the page is the same component, not a second one.
+- **A platform admin acting as a company** sees that company's page, as they already do for the people list and the backup.
+
+#### Tests
+
+- **Unit (vitest), the established style:** the summary shape; "member since" formatting, including a date the strict parser rejects → a visible gap, never today's date; the count labelled per company; an action row for a `rename` labelled, never collapsed; **a test that no name is read from `user_profiles` for an action row** (source-level, as `sharingRouteLogic.test.ts` does).
+- **SQL:** no new migration, so no new suite. **Add three assertions to `stage1_rls.test.sql`**, where the promotion rules already live: an ordinary member changing their own `level` raises 42501; a company admin changing a member's level in their own company succeeds; the same admin changing a level at another company affects 0 rows. *(Check first whether the existing suite already covers the first of these — it carries the row-move attack and four variants — and do not duplicate it.)*
+- **Mutation check:** gating the Make admin button on `actingAsLevel` instead of the existing `isAdminHere` must fail a test — that is the exact bug the 2D review found, invisible to a platform admin.
+
+#### Hand-test checklist — short
+
+Accounts as before; **steps marked "as M / as R" must not be done as T.** These can run in the same batch as Stage 3's outstanding steps 11–16.
+
+1. **As T, acting as Building Integrity:** Account ▾ → the people section. M's row shows their email, "member since …", a version count, and the latest saves. Press **Make admin** on M and confirm.
+2. **As M, not T:** reload. The invite form and people list have appeared (M is now an admin). M's own row shows the same stats. **As M**, press **Make member** on your own row — allowed only if another admin exists; if M is the only admin, the refusal reads "A company must keep at least one admin."
+3. **As R, not T** (an ordinary Rare Forms member): Account ▾ shows **one** row — R's own — with R's stats, **no** Make admin, **no** Remove, and no invite form.
+4. **As R:** confirm R's version count covers Rare Forms' own projects and **does not** include the Building Integrity project shared with R in Stage 3 step 1, which R saved to. *(That is the per-company scoping, working.)*
+5. **As T:** revoke a test member's membership, then confirm they vanish from the people list while **their name is still on their versions** in Version history.
+
+#### Open Items — People & activity (each with a recommended default)
+
+**Answered by Tommy 2026-09-20.** Asked directly: **item 3 — the cross-company "everyone" list stays out of this pass**, revisited with Stage 4, where that boundary is being decided anyway; he was told a platform admin already reaches any company's page by acting as it, which covers half of what he originally asked for at no cost. Items **1, 2, 4 and 5 accepted as written**: "latest actions" means saves and renames only, shares are not added yet, company admins see full action rows rather than counts, and any company admin may promote with no second approval. Each item below is now a decision.
+
+1. **Is "latest actions" saves and renames only?** **Default: yes.** Anything else — sign-ins, opens, prints, folder moves — is not recorded, and recording it is new schema plus a decision about watching people, which is more than Tommy asked for.
+2. **Add shares to the action list?** **Default: no, not in this pass** — but it is available with no schema (`collaborators.granted_by` + `granted_by_name`) if he wants it, and it is the one addition that costs almost nothing.
+3. **⚠ The cross-company "everyone" list while acting as Seed.** **Default: not in this pass.** It needs a definer function to hand another company's people's names and emails across a company line, it is a consortium-read decision, and it lands in the same week Stage 4's Open Item 5 proposes *narrowing* that boundary. A platform admin already sees any company's page by acting as it, which covers half of what he asked for at no cost.
+4. **Does a company admin see another member's action rows in full, or only counts?** **Default: in full** — they can already open every version of those projects and read the author on each, so the page shows what they could already assemble by hand. (The same "convenience, not a security boundary" wording the backup carries.)
+5. **Does "make admin" need a second admin's agreement?** **Default: no.** Any company admin may promote, as Tommy said. The only refusal in the system is the last-admin guard, which protects the company rather than the person.
+
+#### Flags check: clean
+
+1–4. **Clean.** No real-world building number is introduced or moved. No `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is in scope, and `data.ts` is not touched.
+
+5. **Clean.** Nothing new reaches the Review Log.
+
+6. **Clean.**
+   - **No new number of any kind is a building value.** The only one added is administrative: 5 recent actions per member.
+   - **No cost field is involved at all.** This page reads names, dates and counts; it never reads `document`, so `priceModifier` is nowhere near it.
+   - **The convention's own principle is kept in three places:** a count is labelled with the company it covers rather than presented as a total it is not; "member since" shows a visible gap for a date the strict parser rejects, never today; and a leaver's name comes from the `author_name` snapshot rather than a profile join that would quietly go blank.
+
 ---
 
 ## Top Bar & App Chrome — the Stitch reorganisation (2026-09-13) — Stage 1 BUILT (overflow fix); Stage 2 BUILT (wordmark + nav at 1200px, name grows — see Tommy's 2026-09-13 decisions); Stage 3 BUILT (footer — role disclaimer, no policy links yet; sidebar/tray re-skin not done)
@@ -2122,7 +2522,7 @@ Tommy: *"i want to have 3 platform admins that can reach all companies - me from
 
 - **FLAGGED FOR LATER (Tommy, 2026-09-14) — promote a member to company admin, and a people/activity page. Not specced; do not build until Tommy picks it up.** Found in the 2D review: the database already allows promotion (`memberships_update`, and 0001's `guard_membership_self_update` lets a company admin change a level) but the app has no control for it, so README Stage 1 step 7 ("promote them") cannot be done from the UI. Tommy's direction, recorded verbatim so it is not re-derived: *"any admin of a company or the platform admins can upgrade a member to admin. perhaps admins of companies have a section under the accounts that shows them latest actions each member of their company has taken, their email, how many edits theyve made total, and how long theyve been a member for. each account also can see these stats on their account page, but the admin has a drop down menu with everyone of their companies (if company admin) or an entire list of everyone if viewing as the seed collaborative (or platform admin)."*
   - **Things a spec pass must settle before any code:** "latest actions" needs a definition — Stage 2 records saves and renames (`project_versions`, with author and time) but there is no general activity log, so anything beyond saves/renames is new schema. "Edits" presumably means versions authored. "How long a member" needs `memberships.created_at` (check it exists). **Acting as the Seed Collaborative showing "everyone" is a cross-company people view**, which touches the consortium read layer (Stage 4) and the `user_profiles_select` rule that only shows profiles to people who share a company — that is a real permission decision, not a UI detail. **Caution already on record:** a platform admin can change levels only where the guard allows; re-check 0001 before promising platform-admin promotion everywhere.
-  - **Placed by Tommy 2026-09-14 (Stage 3 answer 15): a short follow-up directly after Stage 3**, not part of it. It still needs its own spec pass.
+  - **Placed by Tommy 2026-09-14 (Stage 3 answer 15): a short follow-up directly after Stage 3**, not part of it. ~~It still needs its own spec pass.~~ **SPEC'D 2026-09-20 — see "People & activity page (2026-09-20) — PLANNED, NOT BUILT", after the Stage 4 plan.** The questions listed above are answered there: the page needs **no migration and no new route** (`memberships.created_at` exists, `PATCH /api/memberships/[id]` already takes `{ level }`, and saves/renames are already recorded on `project_versions`), "edits" is scoped per company because RLS scopes it, and **the cross-company "everyone" list is recommended OUT of this pass** — it needs a definer function to carry another company's people and emails across a company line, which is a consortium-read decision belonging with Stage 4. Tommy decides its five Open Items before any code.
 
 - **⚠ How long is an invite good for? Picked, not decided — needs Tommy.** Decision 3 makes the app invite-only and the build talks throughout about a "valid, unexpired invite token", but no window is named anywhere in this log. Stage 1 shipped with `INVITE_EXPIRY_DAYS = 14` in `apps/web/app/auth/inviteToken.ts` — long enough that someone gets round to it, short enough that a forwarded email is not still live a year later. **That is a guess wearing a constant's clothes**, and it is recorded here because a code comment is not where this project keeps unresolved decisions. Changing it is one edit; the invites already in flight keep the expiry they were minted with.
   - **Deliberately NOT wrapped in a `CatalogValue`.** The `status` / review-log convention exists for real-world building numbers, and it works because the Items for Engineer/Contractor Review list is short and every line on it is something a human reviewer needs to check. An administrative timeout on that list would dilute exactly the thing the convention protects. Flagged here instead — same honesty, right audience.
