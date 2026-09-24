@@ -109,6 +109,8 @@ const ent = (companyId: string, companyName: string, source: Entitlement["source
   source,
   level: source === "membership" ? "member" : null,
   isDefault: false,
+  // Stage 4B: acting as the consortium is what offers the browse tab.
+  isConsortium: source === "consortium",
 });
 
 const VIEW_M: SharingViewer = { userId: M, isPlatformAdmin: false, entitlements: [ent(BI_ID, "Building Integrity", "membership")], actingAs: ent(BI_ID, "Building Integrity", "membership") };

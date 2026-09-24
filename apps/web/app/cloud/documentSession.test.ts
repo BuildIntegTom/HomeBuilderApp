@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { formatTitleBlockDate, resolveTitleBlockDate, titleBlockDateLabel } from "../titleBlockDate";
+import type { BrowseContext } from "./cloudTypes";
 import {
   INITIAL_DOCUMENT_SESSION,
   answerIsCurrent,
+  bothContextsSet,
+  costsRedacted,
   createDocumentSessionMirror,
   documentSessionReducer,
   generationAfter,
   renameOutcome,
   trackSignedInAccount,
+  type BrowseOpenAction,
   type CloudCreateAction,
   type CloudOpenAction,
   type CloudRenameAction,
@@ -232,7 +236,7 @@ describe("late answers: an answer for a design that was replaced in flight is ig
 
 describe("documentSessionReducer", () => {
   it("starts with no cloud project and today's date", () => {
-    expect(INITIAL_DOCUMENT_SESSION).toEqual({ cloudContext: null, titleBlockSave: null, designGeneration: 0 });
+    expect(INITIAL_DOCUMENT_SESSION).toEqual({ cloudContext: null, browseContext: null, titleBlockSave: null, designGeneration: 0 });
     expect(dateOf(INITIAL_DOCUMENT_SESSION).source).toBe("today");
   });
 
@@ -406,5 +410,110 @@ describe("trackSignedInAccount — detach only on a real account change", () => 
   it("the page's first sign-in is not a change", () => {
     expect(trackSignedInAccount(null, null)).toEqual({ lastKnownUserId: null, detach: false });
     expect(trackSignedInAccount(null, "u1")).toEqual({ lastKnownUserId: "u1", detach: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stage 4B: browseContext, and the invariant that no save can attach to it
+// ---------------------------------------------------------------------------
+
+const BROWSED: BrowseContext = {
+  projectId: "rf1",
+  ownerCompanyId: "rf",
+  ownerCompanyName: "Rare Forms",
+  folder: "current",
+  versionId: "rfv4",
+  versionNumber: 4,
+  createdAt: CLOUD_V4,
+  projectName: "Smith House",
+};
+
+const browseOpen = (sentAtGeneration = 0, version: BrowseContext = BROWSED): BrowseOpenAction => ({
+  type: "browse-open",
+  sentAtGeneration,
+  version,
+});
+
+describe("browse-open (4B)", () => {
+  it("puts the browsed version on screen and writes its created_at as the title-block date", () => {
+    const state = run(browseOpen(0));
+    expect(state.browseContext).toEqual(BROWSED);
+    expect(state.titleBlockSave).toEqual({ savedAt: CLOUD_V4, source: "cloud-version" });
+    expect(costsRedacted(state)).toBe(true);
+  });
+
+  it("CLEARS cloudContext, so there is no project for a save to attach to", () => {
+    // The belt behind every hidden export control: even if Save to cloud were
+    // somehow reachable, it has nothing to save into.
+    const state = run(openV3(0), browseOpen(1));
+    expect(state.cloudContext).toBeNull();
+    expect(state.browseContext).toEqual(BROWSED);
+    expect(bothContextsSet(state)).toBe(false);
+  });
+
+  it("never leaves both contexts set, whatever order the actions arrive in", () => {
+    const sequences: DocumentSessionAction[][] = [
+      [openV3(0), browseOpen(1)],
+      [browseOpen(0), openV3(1)],
+      [browseOpen(0), createP2(1)],
+      [browseOpen(0), { type: "local-load", savedAt: OLD_FILE_2025 }],
+      [openV3(0), browseOpen(1), saveFrom(2)],
+      [browseOpen(0), { type: "cloud-moved", projectId: "rf1", folder: "past" }],
+      [browseOpen(0), { type: "account-changed" }],
+      [browseOpen(0), { type: "cloud-refused" }],
+    ];
+    for (const actions of sequences) expect(bothContextsSet(run(...actions))).toBe(false);
+  });
+
+  it("a full open of the same or another project ENDS the browse", () => {
+    const state = run(browseOpen(0), openV3(1));
+    expect(state.browseContext).toBeNull();
+    expect(state.cloudContext?.projectId).toBe("p1");
+    expect(costsRedacted(state)).toBe(false);
+  });
+
+  it("a create ends it too — the new project is the viewer's own work", () => {
+    expect(run(browseOpen(0), createP2(1)).browseContext).toBeNull();
+  });
+
+  it("Load Project ends it: your own file replaces the browsed design", () => {
+    const state = run(browseOpen(0), { type: "local-load", savedAt: OLD_FILE_2025 });
+    expect(state.browseContext).toBeNull();
+    expect(costsRedacted(state)).toBe(false);
+  });
+
+  it("a save or rename answer for a cloud project is a no-op while browsing", () => {
+    // answerIsCurrent needs a matching cloudContext, which browsing cleared.
+    const state = run(openV3(0), browseOpen(1), saveFrom(2));
+    expect(state.browseContext).toEqual(BROWSED);
+    expect(state.cloudContext).toBeNull();
+    expect(state.titleBlockSave).toEqual({ savedAt: CLOUD_V4, source: "cloud-version" });
+  });
+
+  it("SURVIVES an account change, unlike cloudContext — the design on screen has not changed", () => {
+    // Clearing it would drop the price gate while the redacted design is still
+    // drawn. cloudContext is a save target the new account may not hold;
+    // browseContext describes what is on screen.
+    const state = run(browseOpen(0), { type: "account-changed" });
+    expect(state.browseContext).toEqual(BROWSED);
+    expect(costsRedacted(state)).toBe(true);
+  });
+
+  it("bumps the generation exactly as a cloud open does, so a late answer is ignored", () => {
+    expect(generationAfter(0, browseOpen(0))).toBe(1);
+    expect(generationAfter(1, browseOpen(0))).toBe(1);
+    const late = run({ type: "local-load", savedAt: OLD_FILE_2025 }, browseOpen(0));
+    expect(late.browseContext).toBeNull();
+    expect(late.titleBlockSave).toEqual({ savedAt: OLD_FILE_2025, source: "local-file" });
+  });
+
+  it("answerIsCurrent refuses a browse answer whose design was replaced", () => {
+    expect(answerIsCurrent(INITIAL_DOCUMENT_SESSION, browseOpen(0))).toBe(true);
+    expect(answerIsCurrent(INITIAL_DOCUMENT_SESSION, browseOpen(1))).toBe(false);
+  });
+
+  it("the synchronous mirror agrees with the reducer on a browse open", () => {
+    const mirror = createDocumentSessionMirror();
+    expect(mirror.apply(browseOpen(0))).toEqual(run(browseOpen(0)));
   });
 });

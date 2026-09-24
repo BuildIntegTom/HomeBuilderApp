@@ -5,10 +5,12 @@ import {
   NO_COMPANY_MESSAGE,
   consortiumMenuMessage,
   displayProjectName,
+  type BrowseContext,
   type CloudContext,
   type SharedReach,
 } from "./cloudTypes";
 import { ownerNameOrGap, reachSummary } from "./sharingDisplay";
+import { BROWSE_EXPORT_ABSENT_NOTE, browseBannerLines } from "./browseDisplay";
 
 /**
  * What the Project ▾ menu's cloud group shows (spec, "UI — the Project ▾ menu,
@@ -27,6 +29,20 @@ export interface CloudMenuInput {
   mfaPending: boolean;
   actingAs: { companyId: string; companyName: string; source: EntitlementSource } | null;
   cloudProjectOpen: boolean;
+  /**
+   * Stage 4B: a redacted, read-only design from another member company is on
+   * screen. Every save item goes while it is — Save to cloud, Save as new cloud
+   * project…, and (in TopBar) the local Save Project. Decision 23: "save a copy
+   * into my own company and carry on with it" is the exact thing view-only must
+   * not become, and it would be a copy of a redacted document besides.
+   *
+   * THE BUTTONS ARE THE COURTESY, NOT THE GATE. `cloudContext` is null while
+   * browsing, so there is no project for a save to attach to even if one of
+   * these were missed — the same shape of belt as everywhere else in the cloud
+   * stages. And it is friction either way: the document is in the browser, so
+   * hiding these removes the easy path, not the possible one (23).
+   */
+  browsing?: boolean;
 }
 
 export type CloudMenu =
@@ -68,6 +84,7 @@ export function buildCloudMenu(input: CloudMenuInput): CloudMenu {
   }
 
   const { actingAs } = input;
+  const browsing = input.browsing === true;
   // Creating follows the verified acting-as company. Stage 3D: a consortium
   // entitlement creates too, in the consortium company's own tree, where the
   // creator keeps a standing grant (answer 1, Stage 2 Open Item 2). LISTING
@@ -77,8 +94,14 @@ export function buildCloudMenu(input: CloudMenuInput): CloudMenu {
   // folder tabs': this line sits directly above Open from cloud…, and since 3D
   // that note does have something to list — anything shared with you, and
   // anything you created in the consortium's tree, in Shared with us.
-  const canCreate = actingAs !== null;
-  const message = actingAs === null ? NO_COMPANY_MESSAGE : actingAs.source === "consortium" ? consortiumMenuMessage(actingAs.companyName) : null;
+  const canCreate = actingAs !== null && !browsing;
+  const message = browsing
+    ? BROWSE_EXPORT_ABSENT_NOTE
+    : actingAs === null
+      ? NO_COMPANY_MESSAGE
+      : actingAs.source === "consortium"
+        ? consortiumMenuMessage(actingAs.companyName)
+        : null;
 
   return {
     kind: "signed-in",
@@ -86,8 +109,11 @@ export function buildCloudMenu(input: CloudMenuInput): CloudMenu {
     message,
     // Saving into a project already open is governed by that project's
     // ownership, not by the switcher, so it stays offered whatever you are
-    // acting as. With nothing open, it is the create dialog.
-    saveToCloud: input.cloudProjectOpen || canCreate,
+    // acting as. With nothing open, it is the create dialog. Stage 4B: not
+    // while a browsed design is on screen — `cloudProjectOpen` is already false
+    // then (browsing clears `cloudContext`), and `browsing` says it in its own
+    // right so the rule does not depend on that coincidence.
+    saveToCloud: !browsing && (input.cloudProjectOpen || canCreate),
     saveAsNew: canCreate,
     // Stage 3B: offered to every signed-in account, including one with no
     // membership, which can still hold a personal grant. Its note then shows
@@ -116,7 +142,21 @@ export function cloudStatusLines(
   editorProjectName: string,
   actingAs: { companyId: string; companyName: string } | null,
   reach: readonly SharedReach[] = [],
+  /**
+   * Stage 4B: a browsed design instead. It takes over the status line entirely,
+   * because there is nothing a cloud status line could truthfully say about it
+   * — no base to save from, no folder of yours it lives in. The banner's own
+   * three sentences ARE the status, so the same words appear in both places
+   * rather than two descriptions of one state drifting apart.
+   */
+  browseContext: BrowseContext | null = null,
 ): string[] {
+  if (browseContext) {
+    return [
+      `${displayProjectName(browseContext.projectName)} · v${browseContext.versionNumber} · ${ownerNameOrGap(browseContext.ownerCompanyName)} › ${FOLDER_LABEL[browseContext.folder]}`,
+      ...browseBannerLines(browseContext.projectName, browseContext.ownerCompanyName).slice(1),
+    ];
+  }
   if (!cloudContext) return [];
   const owner = ownerNameOrGap(cloudContext.companyName);
   const lines = [`${displayProjectName(editorProjectName)} · v${cloudContext.baseVersionNumber} · ${owner} › ${FOLDER_LABEL[cloudContext.folder]}`];

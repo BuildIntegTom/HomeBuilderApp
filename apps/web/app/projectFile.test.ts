@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PROJECT_FILE_VERSION, parseProjectFile, serializeProject, type ProjectState } from "./projectFile";
+import {
+  PROJECT_FILE_VERSION,
+  REDACTED_FIELD_SURVIVED_MESSAGE,
+  REDACTED_UNMARKED_MESSAGE,
+  parseProjectFile,
+  parseRedactedProjectFile,
+  redactedUnknownPathMessage,
+  serializeProject,
+  type ProjectState,
+} from "./projectFile";
 import { resolveTitleBlockDate, titleBlockDateLabel } from "./titleBlockDate";
 
 function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
@@ -483,5 +492,174 @@ describe("parseProjectFile rejecting malformed input", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/primaryCornerIds/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stage 4B: parseRedactedProjectFile — the browse path's own parse
+// ---------------------------------------------------------------------------
+
+/**
+ * Exactly what `browse_version` sends: the stored document minus every
+ * classified money path, plus the top-level `redaction` marker. Built from a
+ * real serialized project so the two never drift, and shaped after a genuine
+ * `browse_redact` output read off local PostgreSQL 17.4 (see
+ * `cloud/redaction.test.ts` for the captured original).
+ */
+function redactedFile(overrides: Partial<ProjectState> = {}) {
+  const file = serializeProject(makeState(overrides));
+  const { priceModifier: _removed, ...state } = file.state;
+  return {
+    ...file,
+    state,
+    redaction: {
+      schemaVersion: file.schemaVersion,
+      removedPaths: ["state.priceModifier"],
+      reason: "another company's cost information",
+    },
+  };
+}
+
+describe("parseRedactedProjectFile", () => {
+  it("opens a stripped document that parseProjectFile refuses as corrupt", () => {
+    const raw = JSON.stringify(redactedFile());
+
+    // THE WHOLE REASON THIS FUNCTION EXISTS. priceModifier is in
+    // REQUIRED_STATE_KEYS, so the ordinary parser reads a redacted document as
+    // a broken file — which would be the message on EVERY browsed project.
+    const refused = parseProjectFile(raw);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toMatch(/priceModifier/);
+
+    const parsed = parseRedactedProjectFile(raw);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.costsRedacted).toBe(true);
+    expect(parsed.removedPaths).toEqual(["state.priceModifier"]);
+    expect(parsed.reason).toBe("another company's cost information");
+  });
+
+  it("holds the price modifier as NaN — never 1, never 0, never 1.3", () => {
+    const parsed = parseRedactedProjectFile(JSON.stringify(redactedFile()));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(Number.isNaN(parsed.state.priceModifier)).toBe(true);
+    // Said as its own assertion because the point is what it is NOT: a missed
+    // display gate must print $NaN, not a plausible figure.
+    expect(parsed.state.priceModifier).not.toBe(1);
+    expect(parsed.state.priceModifier).not.toBe(0);
+    expect(parsed.state.priceModifier).not.toBe(1.3);
+    // Any arithmetic on it stays NaN, so no downstream total can launder it.
+    expect(Number.isNaN(parsed.state.priceModifier * 48210)).toBe(true);
+  });
+
+  it("brings the whole design through — money no, design yes (decision 20)", () => {
+    const doc = redactedFile();
+    const parsed = parseRedactedProjectFile(JSON.stringify(doc));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.state.projectName).toBe(makeState().projectName);
+    expect(parsed.state.baseWallSlots.AB).toHaveLength(2);
+    expect(parsed.state.primaryCornerIds).toBeInstanceOf(Set);
+    expect(parsed.state.zipCode).toBe("97201");
+    // The title block's fallback: the version's own created_at is what the
+    // browse open actually writes, but savedAt must survive the parse.
+    expect(parsed.savedAt).toBe(doc.savedAt);
+  });
+
+  it("refuses a document with NO marker, rather than treating it as a full one", () => {
+    const file = serializeProject(makeState());
+    const { priceModifier: _removed, ...state } = file.state;
+    const parsed = parseRedactedProjectFile(JSON.stringify({ ...file, state }));
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toBe(REDACTED_UNMARKED_MESSAGE);
+  });
+
+  it("refuses a marker whose schemaVersion disagrees with the document's", () => {
+    const doc = redactedFile();
+    const parsed = parseRedactedProjectFile(
+      JSON.stringify({ ...doc, redaction: { ...doc.redaction, schemaVersion: PROJECT_FILE_VERSION - 1 } }),
+    );
+    expect(parsed.ok).toBe(false);
+  });
+
+  it("refuses a marker naming a path this app does not know how to open without", () => {
+    const doc = redactedFile();
+    const parsed = parseRedactedProjectFile(
+      JSON.stringify({ ...doc, redaction: { ...doc.redaction, removedPaths: ["state.zipCode"] } }),
+    );
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toBe(redactedUnknownPathMessage("state.zipCode"));
+  });
+
+  it("refuses a FORGED marker that tries to excuse a real design field", () => {
+    // The defence that matters: a marker cannot be used to open a document
+    // with a hole in the DESIGN. `standardWidthIn` is required and is not
+    // money, so naming it excuses nothing.
+    const file = serializeProject(makeState());
+    const { priceModifier: _money, standardWidthIn: _design, ...state } = file.state;
+    const parsed = parseRedactedProjectFile(
+      JSON.stringify({
+        ...file,
+        state,
+        redaction: { schemaVersion: file.schemaVersion, removedPaths: ["state.priceModifier", "state.standardWidthIn"], reason: "x" },
+      }),
+    );
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toBe(redactedUnknownPathMessage("state.standardWidthIn"));
+  });
+
+  it("refuses a document whose marker says the field went but the field is still there", () => {
+    // The server's account of what it sent is wrong. Refuse rather than show
+    // another company's markup under a banner saying costs are not shown.
+    const doc = redactedFile();
+    const parsed = parseRedactedProjectFile(JSON.stringify({ ...doc, state: { ...doc.state, priceModifier: 1.3777 } }));
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toBe(REDACTED_FIELD_SURVIVED_MESSAGE);
+  });
+
+  it("refuses a money field that survived WITHOUT being named — the other side of the same fault", () => {
+    const doc = redactedFile();
+    const parsed = parseRedactedProjectFile(
+      JSON.stringify({ ...doc, state: { ...doc.state, priceModifier: 1.3777 }, redaction: { ...doc.redaction, removedPaths: [] } }),
+    );
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toBe(REDACTED_FIELD_SURVIVED_MESSAGE);
+  });
+
+  it("still refuses everything the ordinary parser refuses: version, shape, and other missing keys", () => {
+    const doc = redactedFile();
+    expect(parseRedactedProjectFile("not json").ok).toBe(false);
+    expect(parseRedactedProjectFile(JSON.stringify({ ...doc, schemaVersion: 2, redaction: { ...doc.redaction, schemaVersion: 2 } })).ok).toBe(
+      false,
+    );
+    const { standardWidthIn: _drop, ...state } = doc.state;
+    const missing = parseRedactedProjectFile(JSON.stringify({ ...doc, state }));
+    expect(missing.ok).toBe(false);
+    if (missing.ok) return;
+    expect(missing.error).toMatch(/standardWidthIn/);
+  });
+
+  it("does not loosen parseProjectFile: an ordinary file still needs every required key", () => {
+    const file = serializeProject(makeState());
+    const { priceModifier: _drop, ...state } = file.state;
+    // Even WITH a marker attached, the ordinary parser is unchanged: it does
+    // not read the marker, so the key is still required.
+    const withMarker = { ...file, state, redaction: { schemaVersion: file.schemaVersion, removedPaths: ["state.priceModifier"], reason: "x" } };
+    const result = parseProjectFile(JSON.stringify(withMarker));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/priceModifier/);
+  });
+
+  it("no PROJECT_FILE_VERSION bump: a redacted v24 document is still v24", () => {
+    const doc = redactedFile();
+    expect(doc.schemaVersion).toBe(PROJECT_FILE_VERSION);
+    expect(parseRedactedProjectFile(JSON.stringify(doc)).ok).toBe(true);
   });
 });

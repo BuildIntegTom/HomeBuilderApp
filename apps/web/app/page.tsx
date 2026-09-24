@@ -296,6 +296,8 @@ import BuildingSummaryRender from "./BuildingSummaryRender";
 import CompassWidget from "./CompassWidget";
 import PageFeaturesButton from "./PageFeaturesButton";
 import { DocumentMetaProvider } from "./DocumentMetaContext";
+import { BrowseModeProvider } from "./BrowseModeContext";
+import { PRICE_GAP, PRICE_REDACTED_NOTE, VIEWER_OWN_DEFAULTS_NOTE } from "./cloud/browseDisplay";
 import DrawingToolPen from "./DrawingToolPen";
 import EditorToolbar from "./EditorToolbar";
 import OctagonRingPreview from "./OctagonRingPreview";
@@ -4879,7 +4881,17 @@ export default function LayoutEditor() {
 
   // The markup only applies for fabricator/admin — public viewers always
   // see the base material cost (Tommy).
-  const effectivePriceModifier = role === "public" ? 1 : priceModifier;
+  //
+  // STAGE 4B: `—` WHATEVER THE VIEWER ROLE. `role === "public" ? 1 : …` would
+  // otherwise show a browsing viewer in the public role a real base price on
+  // someone else's sheet, which reads as "their price". Decision 21 lets them
+  // compute it themselves from published rates; the app does not present it as
+  // the owner's number. So while browsing this is NaN, and it is NaN rather
+  // than 0 or 1 on purpose: every price display is gated on `costsRedacted`
+  // below, and if a gate is ever missed the screen reads `$NaN` — obviously
+  // broken — instead of a confident figure built from a defaulted markup.
+  const costsRedacted = documentSession.browseContext !== null;
+  const effectivePriceModifier = costsRedacted ? Number.NaN : role === "public" ? 1 : priceModifier;
 
   const price = useMemo(() => {
     // Height-dependent (area = width x height), so — like strawWeight/
@@ -6819,6 +6831,10 @@ export default function LayoutEditor() {
 
   return (
     <DocumentMetaProvider value={{ projectName, siteLabel: documentSiteLabel, date: documentDate }}>
+    {/* Stage 4B: wraps the whole editor, so the two OBJ buttons — on the
+        building preview and on every single-panel viewer, wherever they are
+        rendered from — go while another company's design is on screen. */}
+    <BrowseModeProvider browsing={costsRedacted}>
     <div className={styles.page} ref={pageRef}>
       <div className="print-hidden-chrome">
         <TopBar
@@ -7413,6 +7429,9 @@ export default function LayoutEditor() {
           weightNote={`Straw: ${strawWeight.weightLb.toFixed(1)} lb. Wood (${woodEligibleCount} standard/braced panels): ${(totalWoodWeightKg * KG_TO_LB).toFixed(1)} lb.`}
           price={price}
           priceNote="Priced per panel type (standard/corner/braced/opening/roof rates), see Review Log."
+          costsRedacted={costsRedacted}
+          priceRedactedGap={PRICE_GAP}
+          priceRedactedNote={PRICE_REDACTED_NOTE}
           carbonSequesteredLb={carbonRange.atStandardMoisture.carbonLb}
           carbonSequesteredKg={carbonRange.atStandardMoisture.carbonKg}
           netCO2eKg={embodiedCarbon.netCO2eKg}
@@ -7502,12 +7521,25 @@ export default function LayoutEditor() {
               <tr>
                 <td>Price</td>
                 <td>
-                  ${price.toFixed(2)}
-                  <span className={styles.note}>
-                    {" "}
-                    — priced per panel type (standard/corner/braced/opening/roof rates), see Review Log
-                  </span>
-                  {role !== "public" && (
+                  {/* Stage 4B: the gap, and why. An em dash and a named reason
+                      — never `$0.00`, never a number built from a defaulted
+                      markup. The Markup box is not rendered at all: there is
+                      nothing of the owner's for it to modify. */}
+                  {costsRedacted ? (
+                    <span data-price-redacted="">
+                      {PRICE_GAP}
+                      <span className={styles.note}> — {PRICE_REDACTED_NOTE}</span>
+                    </span>
+                  ) : (
+                    <>
+                      ${price.toFixed(2)}
+                      <span className={styles.note}>
+                        {" "}
+                        — priced per panel type (standard/corner/braced/opening/roof rates), see Review Log
+                      </span>
+                    </>
+                  )}
+                  {role !== "public" && !costsRedacted && (
                     <div>
                       <label>
                         Markup{" "}
@@ -8264,6 +8296,20 @@ export default function LayoutEditor() {
             triggerCondition="Every design with at least 1 real panel instance — how many trucks this project needs, how each truck's own panels stack, and a rough shipping-cost estimate."
             diagram={
               <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+                {/* Stage 4B, Open Item 6. The rate below is `useState` in this
+                    editor and does NOT round-trip in a project file, so what a
+                    browsing viewer sees here is their own default — not the
+                    owner's rate, and not redacted either, because there was
+                    never anything of the owner's here to redact. Said in one
+                    line rather than left to be mistaken for the owner's
+                    pricing. (The day these seven figures move into
+                    ProjectState they become redaction targets, and
+                    cloud/redaction.ts is what will force that.) */}
+                {costsRedacted && (
+                  <p className={styles.note} data-viewer-own-defaults="">
+                    {VIEWER_OWN_DEFAULTS_NOTE}
+                  </p>
+                )}
                 <div role="group" aria-label="Truck bed type" className={styles.toolbar}>
                   {truckBedTypes.value.map((t) => (
                     <button
@@ -8394,6 +8440,15 @@ export default function LayoutEditor() {
             triggerCondition="Interior finish = Clay plaster and/or exterior finish = Lime plaster (Panelizer > Wall Assembly), and/or the Bale Foundation floor's own rodent/air-sealed steel + clay bottom skin (Floor tab) — total plaster materials, purchase units, and price."
             diagram={
               <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+                {/* Stage 4B, Open Item 6 — the same line, for the same reason
+                    as the Shipping card: these four material prices, the steel
+                    mesh price and the labor rate are all `useState` here and
+                    are in no project file, so they are the viewer's own. */}
+                {costsRedacted && (
+                  <p className={styles.note} data-viewer-own-defaults="">
+                    {VIEWER_OWN_DEFAULTS_NOTE}
+                  </p>
+                )}
                 <table className={styles.results} style={{ width: "100%", marginBottom: 8 }}>
                   <tbody>
                     <tr>
@@ -8942,6 +8997,7 @@ export default function LayoutEditor() {
         <AppFooter role={role} />
       </div>
     </div>
+    </BrowseModeProvider>
     </DocumentMetaProvider>
   );
 }

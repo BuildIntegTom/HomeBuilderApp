@@ -8,9 +8,10 @@ import {
   relativeSaveTime,
   type CloudMenuInput,
 } from "./cloudMenu";
-import { NO_COMPANY_MESSAGE, consortiumLaterStageMessage, consortiumMenuMessage, type CloudContext } from "./cloudTypes";
+import { NO_COMPANY_MESSAGE, consortiumFolderTabsMessage, consortiumMenuMessage, type BrowseContext, type CloudContext } from "./cloudTypes";
+import { BROWSE_EXPORT_ABSENT_NOTE } from "./browseDisplay";
 
-const BI = { companyId: "bi", companyName: "Building Integrity", source: "membership" as const };
+const BI_MEMBER = { companyId: "bi", companyName: "Building Integrity", source: "membership" as const };
 const SEED_CONSORTIUM = { companyId: "seed", companyName: "The Seed Collaborative", source: "consortium" as const };
 const RF_PLATFORM = { companyId: "rf", companyName: "Rare Forms", source: "platform-admin" as const };
 
@@ -19,7 +20,7 @@ const base: CloudMenuInput = {
   loading: false,
   signedIn: true,
   mfaPending: false,
-  actingAs: BI,
+  actingAs: BI_MEMBER,
   cloudProjectOpen: false,
 };
 
@@ -90,21 +91,59 @@ describe("buildCloudMenu", () => {
     expect(buildCloudMenu({ ...base, actingAs: RF_PLATFORM })).toMatchObject({ saveAsNew: true, heading: "Cloud · Rare Forms" });
   });
 
-  it("3D: acting as Seed through the consortium can now create, while its folders still say Stage 4", () => {
+  it("3D: acting as Seed through the consortium can now create; 4B: its line names the browse tab, not a later stage", () => {
     const menu = buildCloudMenu({ ...base, actingAs: SEED_CONSORTIUM });
     expect(menu).toMatchObject({ saveToCloud: true, saveAsNew: true, openFromCloud: true, heading: "Cloud · The Seed Collaborative" });
-    // The message is now about LISTING only: creating is no longer refused,
-    // and the folder tabs are deliberately unchanged (browsing is Stage 4).
-    expect(menu.kind === "signed-in" && menu.message).toMatch(/folders open in a later stage/);
+    // The message is about LISTING only: creating is not refused.
     expect(menu.kind === "signed-in" && menu.message).not.toMatch(/can't create/);
+    // 4B replaced the "later stage" promise with the tab that keeps it.
+    expect(menu.kind === "signed-in" && menu.message).not.toMatch(/later stage/);
+    expect(menu.kind === "signed-in" && menu.message).toMatch(/Browse the consortium/);
   });
 
   it("3E: the menu line does not say 'nothing to list here' above Open from cloud…, which lists Shared with us", () => {
     const menu = buildCloudMenu({ ...base, actingAs: SEED_CONSORTIUM });
     expect(menu).toMatchObject({ openFromCloud: true, message: consortiumMenuMessage("The Seed Collaborative") });
     expect(menu.kind === "signed-in" && menu.message).not.toMatch(/nothing to list/);
-    // Still the folder tabs' own sentence in the tree; only the menu changed.
-    expect(consortiumMenuMessage("X")).not.toBe(consortiumLaterStageMessage("X"));
+    // The folder tabs keep their OWN sentence; the two are still different
+    // strings for the same situation, said to different audiences.
+    expect(consortiumMenuMessage("X")).not.toBe(consortiumFolderTabsMessage("X"));
+  });
+
+  // -------------------------------------------------------------------------
+  // Stage 4B: the export controls, in the menu (decision 23)
+  // -------------------------------------------------------------------------
+
+  it("4B: browsing removes BOTH cloud saves, whatever you are acting as", () => {
+    for (const actingAs of [BI_MEMBER, SEED_CONSORTIUM, RF_PLATFORM, null]) {
+      const menu = buildCloudMenu({ ...base, actingAs, browsing: true });
+      expect(menu).toMatchObject({ saveToCloud: false, saveAsNew: false });
+    }
+  });
+
+  it("4B: browsing removes Save to cloud even with a cloud project counted as open", () => {
+    // Belt: `browse-open` clears cloudContext, so this combination should not
+    // arise. The rule does not depend on that — it is stated in its own right.
+    const menu = buildCloudMenu({ ...base, actingAs: BI_MEMBER, cloudProjectOpen: true, browsing: true });
+    expect(menu).toMatchObject({ saveToCloud: false, saveAsNew: false });
+  });
+
+  it("4B: Open from cloud stays — browsing is how you leave a browsed design", () => {
+    expect(buildCloudMenu({ ...base, actingAs: BI_MEMBER, browsing: true })).toMatchObject({ openFromCloud: true });
+  });
+
+  it("4B: the browsing line says the app does not hand you a copy, never that it stops you taking one", () => {
+    const menu = buildCloudMenu({ ...base, actingAs: SEED_CONSORTIUM, browsing: true });
+    const message = menu.kind === "signed-in" ? (menu.message ?? "") : "";
+    expect(message).toBe(BROWSE_EXPORT_ABSENT_NOTE);
+    expect(message).toMatch(/Printing and Save as PDF still are/);
+    expect(message).not.toMatch(/cannot take|can't take|copy-protected|protected|secure|prevent/i);
+  });
+
+  it("4B: not browsing leaves every 3D/3E answer exactly as it was", () => {
+    for (const actingAs of [BI_MEMBER, SEED_CONSORTIUM, RF_PLATFORM, null]) {
+      expect(buildCloudMenu({ ...base, actingAs, browsing: false })).toEqual(buildCloudMenu({ ...base, actingAs }));
+    }
   });
 
   it("acting as Seed with a Building Integrity project open still saves into that project", () => {
@@ -129,15 +168,15 @@ describe("cloudStatusLines", () => {
   };
 
   it("is empty with no cloud project open", () => {
-    expect(cloudStatusLines(null, "Smith House", BI)).toEqual([]);
+    expect(cloudStatusLines(null, "Smith House", BI_MEMBER)).toEqual([]);
   });
 
   it("reads name · version · company › folder", () => {
-    expect(cloudStatusLines(ctx, "Smith House", BI)).toEqual(["Smith House · v7 · Building Integrity › Current Projects"]);
+    expect(cloudStatusLines(ctx, "Smith House", BI_MEMBER)).toEqual(["Smith House · v7 · Building Integrity › Current Projects"]);
   });
 
   it("shows an empty name as (untitled)", () => {
-    expect(cloudStatusLines({ ...ctx, folder: "proposals" }, "  ", BI)[0]).toBe("(untitled) · v7 · Building Integrity › Proposals");
+    expect(cloudStatusLines({ ...ctx, folder: "proposals" }, "  ", BI_MEMBER)[0]).toBe("(untitled) · v7 · Building Integrity › Proposals");
   });
 
   it("adds the mismatch line when acting as another company; saves still go to the project", () => {
@@ -165,7 +204,41 @@ describe("cloudStatusLines", () => {
   });
 
   it("3B: a blank owner name (the pre-3B collaborator bug) is a visible gap, not 'v7 ·  › Current Projects'", () => {
-    expect(cloudStatusLines({ ...ctx, companyName: "" }, "Smith House", BI)[0]).toBe("Smith House · v7 · (owner name not available) › Current Projects");
+    expect(cloudStatusLines({ ...ctx, companyName: "" }, "Smith House", BI_MEMBER)[0]).toBe("Smith House · v7 · (owner name not available) › Current Projects");
+  });
+
+  // -------------------------------------------------------------------------
+  // Stage 4B: a browsed design takes the status line over
+  // -------------------------------------------------------------------------
+
+  const browsed: BrowseContext = {
+    projectId: "p1",
+    ownerCompanyId: "rf",
+    ownerCompanyName: "Rare Forms",
+    folder: "current",
+    versionId: "v1",
+    versionNumber: 4,
+    createdAt: "2026-09-14T13:00:00+00:00",
+    projectName: "Smith House",
+  };
+
+  it("4B: names the owner and the version, then repeats the banner's own words", () => {
+    expect(cloudStatusLines(null, "Smith House", BI_MEMBER, [], browsed)).toEqual([
+      "Smith House · v4 · Rare Forms › Current Projects",
+      "Costs are not shown. You can print this or save a PDF.",
+      "This app doesn't hand you an editable copy — taking one another way is a breach of the terms rather than something the software prevents.",
+    ]);
+  });
+
+  it("4B: it wins over a cloud context, so no save-from line can appear beside a browsed design", () => {
+    // Belt only: `browse-open` clears cloudContext, so both are never set.
+    const lines = cloudStatusLines(ctx, "Smith House", BI_MEMBER, [], browsed);
+    expect(lines[0]).toBe("Smith House · v4 · Rare Forms › Current Projects");
+    expect(lines.join(" ")).not.toMatch(/saves still go to this project/);
+  });
+
+  it("4B: a blank owner name is still a visible gap here too", () => {
+    expect(cloudStatusLines(null, "x", null, [], { ...browsed, ownerCompanyName: "" })[0]).toMatch(/\(owner name not available\)/);
   });
 });
 

@@ -270,19 +270,27 @@ export default function TopBar({
         )}
         {cloud && cloud.menu.kind !== "absent" && <h3 className={styles.menuSectionTitle}>This computer</h3>}
         {/* Save Project and Load Project: unchanged, and never sign-in-gated
-            (decision 14). Guests stay download-only. */}
+            (decision 14). Guests stay download-only.
+
+            STAGE 4B: Save Project is NOT RENDERED while a browsed design is on
+            screen — it would hand over an editable copy of another company's
+            project as one JSON file. Load Project stays: it replaces the
+            browsed design with your own work, which is the way OUT of browsing,
+            not a way around it. */}
         <div className={styles.menuList}>
-          <button
-            type="button"
-            title="Download every input on this page as one JSON file"
-            className={styles.menuItem}
-            onClick={() => {
-              closeMenu();
-              onSaveProject();
-            }}
-          >
-            Save Project
-          </button>
+          {!cloud?.browsing && (
+            <button
+              type="button"
+              title="Download every input on this page as one JSON file"
+              className={styles.menuItem}
+              onClick={() => {
+                closeMenu();
+                onSaveProject();
+              }}
+            >
+              Save Project
+            </button>
+          )}
           <button
             type="button"
             title="Load a previously saved project JSON file"

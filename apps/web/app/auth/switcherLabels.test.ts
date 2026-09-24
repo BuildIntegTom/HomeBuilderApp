@@ -11,6 +11,8 @@ const ent = (companyId: string, companyName: string, source: Entitlement["source
   source,
   level,
   isDefault: false,
+  // Stage 4B: acting as the consortium is what offers the browse tab.
+  isConsortium: source === "consortium",
 });
 
 describe("switcherLabels", () => {

@@ -13,6 +13,18 @@ export interface ProjectSummaryPageProps {
   weightNote: string;
   price: number;
   priceNote: string;
+  /**
+   * Stage 4B: this sheet is another company's, browsed with its costs removed.
+   * PRINTING STAYS (decision 23) — every drawing and detail sheet still prints,
+   * and this one prints too — so the gap has to reach the printed page as well
+   * as the screen. `price` is NaN in that state, which is the deliberate
+   * backstop: a missed gate would print `$NaN`, not a plausible figure.
+   */
+  costsRedacted?: boolean;
+  /** The em dash and its reason, passed in so the one wording lives in
+   * `cloud/browseDisplay.ts` with the rest of the browse strings. */
+  priceRedactedGap?: string;
+  priceRedactedNote?: string;
   carbonSequesteredLb: number;
   carbonSequesteredKg: number;
   netCO2eKg: number;
@@ -99,6 +111,9 @@ export default function ProjectSummaryPage({
   weightNote,
   price,
   priceNote,
+  costsRedacted = false,
+  priceRedactedGap,
+  priceRedactedNote,
   carbonSequesteredLb,
   carbonSequesteredKg,
   netCO2eKg,
@@ -169,10 +184,10 @@ export default function ProjectSummaryPage({
           </tr>
           <tr>
             <td>Price</td>
-            <td>
-              ${price.toFixed(2)}
+            <td data-price-redacted={costsRedacted ? "" : undefined}>
+              {costsRedacted ? (priceRedactedGap ?? "—") : `$${price.toFixed(2)}`}
               <br />
-              <span className={styles.note}>{priceNote}</span>
+              <span className={styles.note}>{costsRedacted ? (priceRedactedNote ?? "") : priceNote}</span>
             </td>
           </tr>
           <tr>

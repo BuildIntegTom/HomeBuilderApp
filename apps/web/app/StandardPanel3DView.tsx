@@ -6,6 +6,7 @@ import { OrbitControls } from "@react-three/drei";
 import { buildPanelObj, memberBoxSizeIn, SKIN_THICKNESS_IN, type PanelMember } from "@building-integrity/panel-catalog";
 import { computeStandardPanelStrawVolume } from "@building-integrity/calc-engine";
 import PanelMembersGroup from "./PanelMembersGroup";
+import { useBrowsing } from "./BrowseModeContext";
 
 const CANVAS_WIDTH = 360;
 const CANVAS_HEIGHT = 420;
@@ -44,6 +45,10 @@ export interface StandardPanel3DViewProps {
  * true CSG cutout, so it visually overlaps the studs/girts/nailer at
  * their exact locations rather than wrapping around them. */
 export default function StandardPanel3DView({ members, overallDimensions, displayName = "Panel", compact = false }: StandardPanel3DViewProps) {
+  // Stage 4B: another company's design, browsed read-only. From Context, so
+  // the ~3 call sites of this component need no new prop — see
+  // BrowseModeContext.tsx.
+  const browsing = useBrowsing();
   const [showStraw, setShowStraw] = useState(false);
   const canvasWidth = compact ? CANVAS_WIDTH_COMPACT : CANVAS_WIDTH;
   const canvasHeight = compact ? CANVAS_HEIGHT_COMPACT : CANVAS_HEIGHT;
@@ -128,9 +133,14 @@ export default function StandardPanel3DView({ members, overallDimensions, displa
           <input type="checkbox" checked={showStraw} onChange={(e) => setShowStraw(e.target.checked)} />
           {compact ? "Straw" : "Show straw fill"}
         </label>
-        <button type="button" onClick={handleDownloadObj} style={{ fontSize: compact ? 9 : 12 }}>
-          {compact ? "OBJ" : "Download OBJ"}
-        </button>
+        {/* Stage 4B: no Download OBJ while a browsed design is on screen
+            (decision 23). The straw-fill toggle and the model itself stay:
+            they are the design, which browsing is for. */}
+        {!browsing && (
+          <button type="button" onClick={handleDownloadObj} style={{ fontSize: compact ? 9 : 12 }}>
+            {compact ? "OBJ" : "Download OBJ"}
+          </button>
+        )}
       </div>
       <div style={{ width: "100%", maxWidth: canvasWidth, height: canvasHeight, border: "1px solid #ccc" }}>
         <Canvas camera={{ position: cameraPosition, fov: 45, near: 0.01, far: 1000 }}>

@@ -78,6 +78,7 @@ import {
 import PanelMembersGroup from "./PanelMembersGroup";
 import { PANEL_TYPE_COLORS } from "./panelColors";
 import { computeOpeningGeometry } from "./openingGeometry";
+import { useBrowsing } from "./BrowseModeContext";
 
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 480;
@@ -848,6 +849,9 @@ export default function Building3DView({
   onSetWindowSillHeight,
   onSetWindowHeight,
 }: Building3DViewProps) {
+  // Stage 4B: another company's design is on screen, browsed read-only. Read
+  // from Context rather than taken as a prop — see BrowseModeContext.tsx.
+  const browsing = useBrowsing();
   const heightIn = wallHeightFt * IN_PER_FT;
   // Sill & Header drag tool's own selection + drag-in-progress state — a
   // pure 3D-view interaction concern (mirrors how FootprintCanvas.tsx keeps
@@ -1613,7 +1617,10 @@ export default function Building3DView({
 
   return (
     <div style={{ width: CANVAS_WIDTH }}>
-      {!captureMode && (
+      {/* Stage 4B: no Export as OBJ while a browsed design is on screen
+          (decision 23). The 3D view itself stays — browsing is "design yes,
+          money no", and the model is part of the design. */}
+      {!captureMode && !browsing && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
           <button type="button" onClick={handleDownloadObj} style={{ fontSize: 12 }}>
             Export as OBJ

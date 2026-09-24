@@ -218,32 +218,35 @@ export const NO_COMPANY_MESSAGE =
   "You're signed in, but you aren't a member of any company yet, so there's no company to save a cloud project into. Ask a company admin for an invite. Save Project still downloads the file to this computer.";
 
 /**
- * Acting as the consortium company, the three folder tabs list nothing until
- * browsing arrives in Stage 4.
+ * Acting as the consortium company, the three folder tabs still list nothing:
+ * a consortium entitlement is not a membership, so RLS gives them no row.
  *
- * Stage 3D removed the second half of this sentence — "and you can't create a
- * project in it yet" — because creating in the consortium's tree is now allowed
- * (answer 1). Listing it is NOT: only explicitly granted projects are visible,
- * which is exactly what keeps the Shared tab and the folder tabs different.
+ * STAGE 4B REPLACED THIS STRING (it was `consortiumLaterStageMessage`, and it
+ * said "Its folders open in a later stage"). That stopped being true the moment
+ * browsing shipped: the consortium's own tree is now readable — through the
+ * browse path, redacted, because a consortium entitlement is not a Seed
+ * membership. The sentence now points at the tab that does show it rather than
+ * at a stage that has arrived.
  */
-export function consortiumLaterStageMessage(companyName: string): string {
-  return `You're acting as ${companyName} through the consortium. Its folders open in a later stage, so there's nothing to list here.`;
+export function consortiumFolderTabsMessage(companyName: string): string {
+  return `You're acting as ${companyName} through the consortium, which isn't a membership in it, so these folder tabs list nothing. ${companyName}'s own projects are in ${BROWSE_TAB_NAME}, read-only and with costs not shown.`;
 }
 
 /**
  * The SAME situation said differently in the Project ▾ menu, which is printed
- * directly above "Open from cloud…".
+ * directly above "Open from cloud…" — and which, since 3D, sits above a note
+ * that genuinely does have something to list (Shared with us).
  *
- * The folder-tab sentence above ends "there's nothing to list here", which is
- * true of the three folder tabs and false of the note as a whole: since 3D, a
- * project you created in the consortium's tree is listed in Shared with us, and
- * so is anything shared with you. Saying "nothing to list" immediately above the
- * item that opens that list would be a plain untruth, so the menu gets its own
- * words. The folder tabs keep theirs (hand-test step 13 reads them).
+ * STAGE 4B REPLACED THIS STRING TOO, for the same reason: "Its own folders open
+ * in a later stage" is no longer true.
  */
 export function consortiumMenuMessage(companyName: string): string {
-  return `You're acting as ${companyName} through the consortium. Its own folders open in a later stage; projects shared with you, and ones you create here, are in Shared with us.`;
+  return `You're acting as ${companyName} through the consortium. Open from cloud… has ${BROWSE_TAB_NAME}, where every member company's work is read-only with costs not shown; projects shared with you, and ones you create here, are in Shared with us.`;
 }
+
+/** Named here (rather than imported from `browseDisplay.ts`) so `cloudTypes.ts`
+ * keeps importing nothing. `browseDisplay.test.ts` asserts the two agree. */
+const BROWSE_TAB_NAME = "Browse the consortium";
 
 /**
  * Stage 3 Open Item 5, Tommy's accepted default: ONE line in the create dialog.
@@ -480,4 +483,140 @@ export interface PendingShareNoticesResponse {
  * browser can tell a real success from an empty body. */
 export interface DismissShareNoticesResponse {
   dismissed: true;
+}
+
+// ---------------------------------------------------------------------------
+// Stage 4B: consortium browsing. Column for column the four browse functions in
+// migration 0009, whose result types were read off local PostgreSQL 17.4 rather
+// than assumed. Every one of them is SECURITY DEFINER and checks seed
+// entitlement, the browse set and `meets_required_aal()` for itself.
+// Spec: "Stage 4 plan — Consortium browsing" → "What browsing shows".
+// ---------------------------------------------------------------------------
+
+/**
+ * How a browsed row will open (`browse_projects.access`, decided in SQL by
+ * `can_read_project`, which 0009 calls and does not widen).
+ *
+ * - `full`: the caller can already read it — membership, a grant, or platform
+ *   admin — so the row opens through the Stage 2 route, WITH costs.
+ * - `redacted`: it opens through `browse_version`, which always redacts.
+ *
+ * `browse_version` ALWAYS redacts, for every caller including one who could
+ * read the project in full (Open Item 2, answered): one always-redacting
+ * function has fewer branches and so fewer holes.
+ */
+export type BrowseAccess = "full" | "redacted";
+
+export interface BrowseCompany {
+  id: string;
+  name: string;
+}
+
+export interface BrowseCompaniesResponse {
+  companies: BrowseCompany[];
+}
+
+export interface BrowseProjectRow {
+  projectId: string;
+  name: string;
+  folder: CloudFolder;
+  headVersionNumber: number;
+  /** Null only if the head version could not be read back. */
+  headVersionId: string | null;
+  /**
+   * Masked in SQL (`browse_author_name`) when the snapshot is an email address,
+   * to "a member of <company>". A REAL VALUE, not a missing one: it is shown as
+   * it came back and is never blanked or re-masked in the browser.
+   */
+  headAuthorName: string | null;
+  headSchemaVersion: number | null;
+  /**
+   * False means the database has no redaction classification for that file
+   * format, so `browse_version` will REFUSE it (SQLSTATE `0A000`) rather than
+   * serve it. The row says it cannot be shown and offers no download.
+   */
+  headRedactionKnown: boolean;
+  updatedAt: string;
+  ownerCompanyId: string;
+  ownerCompanyName: string;
+  access: BrowseAccess;
+}
+
+export interface BrowseProjectsResponse {
+  /** The company the list was narrowed to, when one was asked for. */
+  company: BrowseCompany | null;
+  /** The folder the list was narrowed to, when one was asked for. */
+  folder: CloudFolder | null;
+  projects: BrowseProjectRow[];
+}
+
+/** One row of the version list while browsing. Metadata only: `browse_versions`
+ * selects no document except `state.projectName`. */
+export interface BrowseVersionRow {
+  versionId: string;
+  versionNumber: number;
+  parentVersionId: string | null;
+  kind: CloudVersionKind;
+  /**
+   * ALWAYS null on this path, and not by accident: `browse_versions` returns
+   * `null::text` for it (narrowed 2026-09-23, after 4A's review, when a probe
+   * read back a save note saying "Quoted at 1.35 markup" to another company).
+   * The column stays in the signature; the value does not. Stage 2's and Stage
+   * 3's own paths keep labels.
+   */
+  label: null;
+  /** Masked in SQL when it was an email address — see `headAuthorName`. */
+  authorName: string | null;
+  createdAt: string;
+  schemaVersion: number;
+  redactionKnown: boolean;
+  /** The name this version was saved under, for a "Renamed to …" row. */
+  projectName: string | null;
+}
+
+export interface BrowseVersionsResponse {
+  projectId: string;
+  /** Newest first. */
+  versions: BrowseVersionRow[];
+}
+
+/**
+ * One browsed version, with its REDACTED document. The only path that serves a
+ * browsed document at all, and it always redacts. The Stage 2 version route and
+ * the backup route are never borrowed for this.
+ */
+export interface BrowseVersionResponse {
+  projectId: string;
+  folder: CloudFolder;
+  ownerCompanyId: string;
+  ownerCompanyName: string;
+  versionId: string;
+  versionNumber: number;
+  kind: CloudVersionKind;
+  /** Masked in SQL when it was an email address. */
+  authorName: string | null;
+  createdAt: string;
+  schemaVersion: number;
+  /** The stored document minus every classified money path, plus the top-level
+   * `redaction` marker naming what went. Opened by `parseRedactedProjectFile`,
+   * never by `parseProjectFile`. */
+  document: unknown;
+}
+
+/**
+ * Where a READ-ONLY browsed design on screen came from. The mirror image of
+ * `CloudContext`, and deliberately a different field on the session so that no
+ * save path can attach to a browsed project even if a control were missed:
+ * `cloudContext` is null whenever this is set, and the reducer enforces it.
+ */
+export interface BrowseContext {
+  projectId: string;
+  ownerCompanyId: string;
+  ownerCompanyName: string;
+  folder: CloudFolder;
+  versionId: string;
+  versionNumber: number;
+  createdAt: string;
+  /** The name the version was saved under, for the banner. */
+  projectName: string;
 }

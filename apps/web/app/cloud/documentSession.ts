@@ -1,5 +1,5 @@
 import type { TitleBlockSave } from "../titleBlockDate";
-import type { CloudContext, CloudFolder } from "./cloudTypes";
+import type { BrowseContext, CloudContext, CloudFolder } from "./cloudTypes";
 
 /**
  * Where the design on screen came from: the cloud project it belongs to (if
@@ -18,6 +18,8 @@ import type { CloudContext, CloudFolder } from "./cloudTypes";
  *   cloud-rename Rename from the tree  -> returned created_at, base moves,
  *                of the project open      ONLY when base was head (2C; see
  *                in this editor           renameOutcome)
+ *   browse-open  Browse the consortium -> version created_at, browseContext
+ *                                          = it, cloudContext CLEARED (4B)
  *
  * OPENING AN OLDER VERSION (2C) is an ordinary cloud-open: base becomes that
  * version, so the next Save to cloud names it as the parent and the database
@@ -47,11 +49,39 @@ import type { CloudContext, CloudFolder } from "./cloudTypes";
  */
 export interface DocumentSession {
   cloudContext: CloudContext | null;
+  /**
+   * STAGE 4B. A read-only browsed design from another member company, served
+   * redacted by `browse_version`. Set INSTEAD OF `cloudContext`, never beside
+   * it — `bothContextsSet` below asserts the invariant and the reducer keeps
+   * it — so no save path can attach to a browsed project even if an export
+   * control were missed. Same shape of rule as 2B's "Load Project clears
+   * cloudContext", and for the same reason: the failure it prevents is silent.
+   */
+  browseContext: BrowseContext | null;
   titleBlockSave: TitleBlockSave | null;
   designGeneration: number;
 }
 
-export const INITIAL_DOCUMENT_SESSION: DocumentSession = { cloudContext: null, titleBlockSave: null, designGeneration: 0 };
+export const INITIAL_DOCUMENT_SESSION: DocumentSession = {
+  cloudContext: null,
+  browseContext: null,
+  titleBlockSave: null,
+  designGeneration: 0,
+};
+
+/**
+ * True while the design on screen is another company's, served with its costs
+ * removed. The one question the editor asks: every price display is gated on
+ * it, and the export controls are gated on it.
+ */
+export function costsRedacted(state: DocumentSession): boolean {
+  return state.browseContext !== null;
+}
+
+/** The invariant, as a function so a test can state it: never both. */
+export function bothContextsSet(state: DocumentSession): boolean {
+  return state.cloudContext !== null && state.browseContext !== null;
+}
 
 interface VersionFacts {
   projectId: string;
@@ -89,6 +119,19 @@ export type CloudRenameAction = {
   result: { versionId: string; versionNumber: number; createdAt: string };
 };
 
+/**
+ * Stage 4B: a redacted document from another member company went on screen.
+ * It REPLACES the design exactly as a cloud open does — same generation guard,
+ * same date writer (the version's `created_at`, through the existing
+ * `cloud-version` source) — and it clears `cloudContext`, which is what makes
+ * every save path unreachable rather than merely unoffered.
+ */
+export type BrowseOpenAction = {
+  type: "browse-open";
+  sentAtGeneration: number;
+  version: BrowseContext;
+};
+
 export type DocumentSessionAction =
   | { type: "local-load"; savedAt: string | undefined }
   | { type: "local-save"; savedAt: string }
@@ -96,6 +139,7 @@ export type DocumentSessionAction =
   | CloudCreateAction
   | CloudSaveAction
   | CloudRenameAction
+  | BrowseOpenAction
   | { type: "cloud-moved"; projectId: string; folder: CloudFolder }
   /** A REAL account change: a different account signed in, or an explicit
    * sign-out. Not a transient signed-out reading (see trackSignedInAccount). */
@@ -113,6 +157,7 @@ export function generationAfter(generation: number, action: DocumentSessionActio
       return generation + 1;
     case "cloud-open":
     case "cloud-create":
+    case "browse-open":
       return action.sentAtGeneration === generation ? generation + 1 : generation;
     default:
       return generation;
@@ -125,7 +170,10 @@ export function generationAfter(generation: number, action: DocumentSessionActio
  * (of the synchronous mirror) before applying an opened document or wording a
  * save notice.
  */
-export function answerIsCurrent(state: DocumentSession, action: CloudOpenAction | CloudCreateAction | CloudSaveAction): boolean {
+export function answerIsCurrent(
+  state: DocumentSession,
+  action: CloudOpenAction | CloudCreateAction | CloudSaveAction | BrowseOpenAction,
+): boolean {
   if (action.sentAtGeneration !== state.designGeneration) return false;
   if (action.type !== "cloud-save") return true;
   // Same generation, but the base must still be the one the save was sent
@@ -170,6 +218,7 @@ export function documentSessionReducer(state: DocumentSession, action: DocumentS
     case "local-load":
       return {
         cloudContext: null,
+        browseContext: null,
         titleBlockSave: { savedAt: action.savedAt, source: "local-file" },
         designGeneration: generationAfter(state.designGeneration, action),
       };
@@ -193,7 +242,26 @@ export function documentSessionReducer(state: DocumentSession, action: DocumentS
           baseCreatedAt: v.createdAt,
           latestKnownVersionNumber: latestKnown,
         },
+        // A full open ends the browse: the design on screen is no longer the
+        // read-only copy, so the costs gate and the export controls come back.
+        browseContext: null,
         titleBlockSave: { savedAt: v.createdAt, source: "cloud-version" },
+        designGeneration: generationAfter(state.designGeneration, action),
+      };
+    }
+
+    case "browse-open": {
+      if (!answerIsCurrent(state, action)) return state;
+      return {
+        // Cleared, not merely unused: with no cloudContext there is no project
+        // for Save to cloud to attach to, so a missed control cannot save a
+        // browsed design into someone's tree.
+        cloudContext: null,
+        browseContext: action.version,
+        // The date is that version's created_at, through the same cloud-version
+        // writer an ordinary open uses — the title block of a browsed sheet
+        // says when the owner saved it, which is the true answer.
+        titleBlockSave: { savedAt: action.version.createdAt, source: "cloud-version" },
         designGeneration: generationAfter(state.designGeneration, action),
       };
     }
@@ -241,6 +309,14 @@ export function documentSessionReducer(state: DocumentSession, action: DocumentS
       // from that save or load (only the four writers move the date). What
       // goes is the attachment to a cloud project the new account may not be
       // able to reach, and any answer still in flight for the old account.
+      //
+      // `browseContext` DELIBERATELY STAYS, unlike `cloudContext`. The two are
+      // not the same kind of fact. `cloudContext` is a save target, and the new
+      // account may have no right to it; `browseContext` describes THE DESIGN
+      // STILL ON SCREEN — whose it is, and that its costs were removed before
+      // it was sent. That has not changed because somebody signed in. Clearing
+      // it would drop the price gate while the redacted design is still drawn,
+      // which is the one thing this stage must not do.
       return { ...state, cloudContext: null, designGeneration: generationAfter(state.designGeneration, action) };
 
     case "cloud-refused":

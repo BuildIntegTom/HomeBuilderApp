@@ -3,7 +3,7 @@ import {
   CLOUD_DOCUMENT_CEILING_BYTES,
   FOLDER_LABEL,
   actingAsChangedMessage,
-  consortiumLaterStageMessage,
+  consortiumFolderTabsMessage,
   consortiumMenuMessage,
   displayProjectName,
   isCertainlyTooLargeForCloud,
@@ -53,24 +53,39 @@ describe("actingAsChangedMessage", () => {
   });
 });
 
-describe("the consortium's own tree (3D)", () => {
-  it("the folder message is now only about listing: it no longer claims you cannot create", () => {
-    expect(consortiumLaterStageMessage("The Seed Collaborative")).toBe(
-      "You're acting as The Seed Collaborative through the consortium. Its folders open in a later stage, so there's nothing to list here.",
+describe("the consortium's own tree (3D), as 4B rewrote it", () => {
+  // BOTH of these strings changed in Stage 4B. Each used to say the
+  // consortium's folders "open in a later stage"; browsing shipped, so that
+  // stopped being true, and each now points at the tab that shows them.
+  it("4B: the folder-tab message points at the browse tab instead of at a later stage", () => {
+    const line = consortiumFolderTabsMessage("The Seed Collaborative");
+    expect(line).toBe(
+      "You're acting as The Seed Collaborative through the consortium, which isn't a membership in it, so these folder tabs list nothing. " +
+        "The Seed Collaborative's own projects are in Browse the consortium, read-only and with costs not shown.",
     );
+    expect(line).not.toMatch(/later stage/);
+    // Still honest about WHY the tabs are empty: a consortium entitlement is
+    // not a membership, so RLS gives these tabs no row.
+    expect(line).toMatch(/isn't a membership/);
   });
 
-  it("3E: the MENU's version of the same situation does not claim there is nothing to list", () => {
+  it("4B: the MENU's version of the same situation still does not claim there is nothing to list", () => {
     const menu = consortiumMenuMessage("The Seed Collaborative");
     expect(menu).toBe(
-      "You're acting as The Seed Collaborative through the consortium. Its own folders open in a later stage; projects shared with you, and ones you create here, are in Shared with us.",
+      "You're acting as The Seed Collaborative through the consortium. Open from cloud… has Browse the consortium, where every member company's " +
+        "work is read-only with costs not shown; projects shared with you, and ones you create here, are in Shared with us.",
     );
     // The line sits directly above "Open from cloud…", which since 3D does have
     // something to list: a project you created in Seed's tree is in Shared with us.
     expect(menu).not.toMatch(/nothing to list/);
+    expect(menu).not.toMatch(/later stage/);
     expect(menu).toMatch(/Shared with us/);
-    // The FOLDER TAB wording is deliberately untouched (hand-test step 13 reads it).
-    expect(consortiumLaterStageMessage("The Seed Collaborative")).toMatch(/nothing to list here/);
+  });
+
+  it("4B: neither replacement claims the app prevents copying (decision 23)", () => {
+    for (const line of [consortiumFolderTabsMessage("X"), consortiumMenuMessage("X")]) {
+      expect(line).not.toMatch(/cannot take|can't take|copy-protected|protected|secure/i);
+    }
   });
 
   it("carries Open Item 5's warning as ONE line, naming the owner and the costs", () => {

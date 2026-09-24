@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import StickyNote from "../StickyNote";
 import { OPEN_ACCOUNT_CONTROL_EVENT } from "../auth/AccountControl";
 import { SIGNED_OUT_EVENT, useOptionalAuth } from "../auth/AuthProvider";
-import { PROJECT_FILE_VERSION, parseProjectFile, type ProjectFile, type ProjectState } from "../projectFile";
+import { PROJECT_FILE_VERSION, parseProjectFile, parseRedactedProjectFile, type ProjectFile, type ProjectState } from "../projectFile";
 import { parseSaveTimestamp } from "../titleBlockDate";
 import { absoluteSaveTime, buildCloudMenu, cloudStatusLines, relativeSaveTime, type CloudMenu } from "./cloudMenu";
 import {
@@ -14,10 +14,16 @@ import {
   NAME_LENGTH_MESSAGE,
   NO_COMPANY_MESSAGE,
   PROJECT_NAME_MAX_CHARS,
-  consortiumLaterStageMessage,
+  consortiumFolderTabsMessage,
   displayProjectName,
   isCertainlyTooLargeForCloud,
   seedTreeCostWarning,
+  type BrowseCompaniesResponse,
+  type BrowseCompany,
+  type BrowseProjectRow,
+  type BrowseProjectsResponse,
+  type BrowseVersionResponse,
+  type BrowseVersionsResponse,
   type CloudFolder,
   type CloudProjectRow,
   type CloudVersionResponse,
@@ -39,6 +45,7 @@ import {
   answerIsCurrent,
   renameOutcome,
   trackSignedInAccount,
+  type BrowseOpenAction,
   type CloudCreateAction,
   type CloudOpenAction,
   type CloudRenameAction,
@@ -46,6 +53,19 @@ import {
   type DocumentSession,
   type DocumentSessionAction,
 } from "./documentSession";
+import {
+  BROWSE_CANNOT_SHOW_MESSAGE,
+  BROWSE_EXPORT_ABSENT_NOTE,
+  BROWSE_NO_COMPANIES_MESSAGE,
+  BROWSE_TAB_LABEL,
+  BROWSE_TAB_LEAD,
+  browseBannerLines,
+  browseEmptyFolderMessage,
+  browseRowDetail,
+  browseVersionListNotes,
+  buildBrowseVersionRows,
+  cannotShowFormatMessage,
+} from "./browseDisplay";
 import { classifyCloudSchemaVersion, cloudVersionFileName } from "./schemaOutcome";
 import { buildHistoryRows, historySummary, openedOlderVersionNotice, renameNotice, type HistoryRowModel } from "./versionHistory";
 import styles from "./CloudProjects.module.css";
@@ -83,6 +103,10 @@ export interface CloudMenuModel {
   statusLines: string[];
   menu: CloudMenu;
   busy: boolean;
+  /** Stage 4B: a read-only browsed design is on screen. TopBar drops the local
+   * Save Project while it is; the 3D views drop their OBJ buttons through
+   * `BrowseModeProvider` rather than through this. */
+  browsing: boolean;
   onSaveToCloud: () => void;
   onSaveAsNew: () => void;
   onOpenFromCloud: () => void;
@@ -116,8 +140,17 @@ export interface UseCloudProjectsOptions {
   downloadProjectFile: () => void;
 }
 
-/** Open from cloud's tabs: the three folders, and Stage 3B's Shared with us. */
-type OpenTab = CloudFolder | "shared";
+/**
+ * Open from cloud's tabs: the three folders, Stage 3B's Shared with us, and
+ * Stage 4B's Browse the consortium — the fifth.
+ *
+ * The fifth is offered ONLY while browsing is the acting-as state: the
+ * entitlement you are acting through is the consortium one, or the company you
+ * are acting as is itself a member company. Browsing is never ambient
+ * (hand-test step 25), so acting as your own non-consortium company the tab is
+ * not there at all.
+ */
+type OpenTab = CloudFolder | "shared" | "browse";
 
 /** "2:14 pm", from a created_at the strict parser accepts. */
 export function formatSaveTime(createdAt: string): string {
@@ -150,7 +183,7 @@ interface OpenProblem {
   raw?: { fileName: string; document: unknown };
 }
 
-type NoteId = "save" | "open" | "notice" | "history";
+type NoteId = "save" | "open" | "notice" | "history" | "browse";
 
 /** "latest" is the tree's Open (head-only, 2B); "chosen" is a specific
  * version picked in Version history (2C). Only the notice differs. */
@@ -174,7 +207,19 @@ export function useCloudProjects({
   const actingAs = actingAsEntitlement
     ? { companyId: actingAsEntitlement.companyId, companyName: actingAsEntitlement.companyName, source: actingAsEntitlement.source }
     : null;
-  const { cloudContext } = documentSession;
+  const { cloudContext, browseContext } = documentSession;
+  /**
+   * Stage 4B. Browsing is the ACTING-AS STATE, never an ambient one: the fifth
+   * tab exists only while the company you are acting as IS the Seed
+   * Collaborative — through the consortium entitlement, or through a real
+   * membership in it (a Seed member acting as Seed, the matrix's other Seed
+   * row). Acting as your own company, member company or not, the tab is not
+   * there at all; hand-test step 25 checks exactly that.
+   *
+   * It offers, it does not permit. Every browse function checks
+   * `is_seed_entitled()` itself, in the database.
+   */
+  const canBrowse = actingAsEntitlement?.isConsortium === true;
 
   const [openNote, setOpenNote] = useState<NoteId | null>(null);
   const [noticeOpen, setNoticeOpen] = useState(false);
@@ -194,6 +239,24 @@ export function useCloudProjects({
   const [sharedList, setSharedList] = useState<ListSharedProjectsResponse | null>(null);
   const [sharedLoading, setSharedLoading] = useState(false);
   const [sharedError, setSharedError] = useState<string | null>(null);
+  // Stage 4B: the Browse the consortium tab. The company list, the picked
+  // company and folder, and the rows. Kept separate from `list` so switching
+  // tabs never shows one tree's rows under the other's heading.
+  const [browseCompanies, setBrowseCompanies] = useState<BrowseCompany[] | null>(null);
+  const [browseCompanyId, setBrowseCompanyId] = useState<string | null>(null);
+  const [browseFolder, setBrowseFolder] = useState<CloudFolder>("current");
+  const [browseList, setBrowseList] = useState<BrowseProjectsResponse | null>(null);
+  const [browseLoading, setBrowseLoading] = useState(false);
+  const [browseError, setBrowseError] = useState<string | null>(null);
+  // The browse version list, in the same note Version history uses. Its own
+  // state, because a browse history is not a `ListVersionsResponse` and must
+  // never be rendered with Stage 2C's controls beside it (no Download this
+  // version's file, no Rename, no Access…): browsing writes nothing, and the
+  // raw download in particular would be a hole straight through decision 21.
+  const [browseHistory, setBrowseHistory] = useState<BrowseVersionsResponse | null>(null);
+  const [browseHistoryTarget, setBrowseHistoryTarget] = useState<BrowseProjectRow | null>(null);
+  /** The browse banner's note. Opened by every successful browse open. */
+  const [browseNoteOpen, setBrowseNoteOpen] = useState(false);
   /** Bumped to reload whichever tab is showing (after a move, rename, share or removal). */
   const [listNonce, setListNonce] = useState(0);
   const reloadTab = useCallback(() => setListNonce((n) => n + 1), []);
@@ -220,6 +283,15 @@ export function useCloudProjects({
     historyShowing.current = historyOpen && historyTarget ? historyTarget.projectId : null;
   }, [historyOpen, historyTarget]);
 
+  // The banner belongs to the browsed design, so it goes when the design does
+  // — a full open, a create, or a Load Project. It is NOT closed on an account
+  // change, because `browseContext` deliberately survives one: the redacted
+  // design is still on screen, so the statement about it is still true.
+  const browsing = documentSession.browseContext !== null;
+  useEffect(() => {
+    if (!browsing) setBrowseNoteOpen(false);
+  }, [browsing]);
+
   const showNotice = (next: Notice) => {
     setNotice(next);
     setNoticeOpen(true);
@@ -228,6 +300,7 @@ export function useCloudProjects({
   const closeNote = (id: NoteId) => {
     if (id === "notice") setNoticeOpen(false);
     else if (id === "history") setHistoryOpen(false);
+    else if (id === "browse") setBrowseNoteOpen(false);
     else setOpenNote((was) => (was === id ? null : was));
     setFullscreen((was) => (was === id ? null : was));
   };
@@ -267,6 +340,15 @@ export function useCloudProjects({
     setList(null);
     setSharedList(null);
     setSharedError(null);
+    // The consortium tree read by the old account is not left on screen for
+    // the new one, which may not be seed-entitled at all. The DESIGN on screen
+    // stays, and so does its browseContext, so the price gap stays with it.
+    setBrowseCompanies(null);
+    setBrowseCompanyId(null);
+    setBrowseList(null);
+    setBrowseError(null);
+    setBrowseHistory(null);
+    setBrowseHistoryTarget(null);
     resetAccess();
     setOpenProblem(null);
     setDialogError(null);
@@ -327,6 +409,11 @@ export function useCloudProjects({
   const showHistory = (projectId: string, projectName: string) => {
     setHistoryTarget({ projectId, projectName });
     setHistory((was) => (was && was.projectId === projectId ? was : null));
+    // The two lists share one note, so opening the Stage 2C one puts the browse
+    // one down. Otherwise a browsed list could still be rendered underneath
+    // with Stage 2C's Download and Rename beside it.
+    setBrowseHistory(null);
+    setBrowseHistoryTarget(null);
     setHistoryProblem(null);
     setHistoryOpen(true);
     void loadHistory(projectId);
@@ -483,16 +570,64 @@ export function useCloudProjects({
     setSharedList(result.data);
   }, []);
 
+  // --- Browse the consortium (4B) ----------------------------------------
+
+  const loadBrowseCompanies = useCallback(async () => {
+    setBrowseError(null);
+    const result = await cloudFetch<BrowseCompaniesResponse>("/api/browse/companies");
+    if (!result.ok) {
+      setBrowseCompanies(null);
+      setBrowseError(result.message);
+      return;
+    }
+    setBrowseCompanies(result.data.companies);
+  }, []);
+
+  const loadBrowseProjects = useCallback(async (companyId: string, folder: CloudFolder) => {
+    setBrowseLoading(true);
+    setBrowseError(null);
+    const result = await cloudFetch<BrowseProjectsResponse>(
+      `/api/browse/projects?company=${encodeURIComponent(companyId)}&folder=${encodeURIComponent(folder)}`,
+    );
+    setBrowseLoading(false);
+    if (!result.ok) {
+      setBrowseList(null);
+      setBrowseError(result.message);
+      return;
+    }
+    setBrowseList(result.data);
+  }, []);
+
   // Reloads when the note opens, the tab changes, or the acting-as company
   // changes (the tree follows the switcher; an open project does not).
   // Stage 3B: an account with no company has only the Shared tab.
+  // Stage 4B: the fifth tab falls back to Shared the moment browsing stops
+  // being the acting-as state, so switching company never leaves it selected.
   const actingAsCompanyId = snapshot?.actingAsCompanyId ?? null;
-  const shownTab: OpenTab = actingAs ? tab : "shared";
+  const shownTab: OpenTab = tab === "browse" ? (canBrowse ? "browse" : "shared") : actingAs ? tab : "shared";
   useEffect(() => {
     if (openNote !== "open" || !userId || mfaPending) return;
+    if (shownTab === "browse") {
+      void loadBrowseCompanies();
+      if (browseCompanyId) void loadBrowseProjects(browseCompanyId, browseFolder);
+      return;
+    }
     if (shownTab === "shared") void loadShared();
     else void loadList(shownTab);
-  }, [openNote, shownTab, actingAsCompanyId, userId, mfaPending, loadList, loadShared, listNonce]);
+  }, [
+    openNote,
+    shownTab,
+    actingAsCompanyId,
+    userId,
+    mfaPending,
+    loadList,
+    loadShared,
+    loadBrowseCompanies,
+    loadBrowseProjects,
+    browseCompanyId,
+    browseFolder,
+    listNonce,
+  ]);
 
   const openFromCloud = () => {
     setOpenProblem(null);
@@ -577,6 +712,164 @@ export function useCloudProjects({
       if (older) showNotice({ tone: "info", title: "Opened an older version", lines: [older], offerDownload: false, history });
     }
     return true;
+  };
+
+  /**
+   * THE BROWSE OPEN. Its own path, beside `openVersion`, and the differences
+   * are all deliberate:
+   *
+   *   * it calls `/api/browse/...`, which is `browse_version`, which ALWAYS
+   *     redacts. The Stage 2 version route is never used here, and there is no
+   *     fallback to it — not on a refusal, not on a `full` row, not ever;
+   *   * it parses with `parseRedactedProjectFile`, because `priceModifier` is a
+   *     required key and a stripped document would otherwise be rejected as
+   *     corrupt;
+   *   * it dispatches `browse-open`, which CLEARS `cloudContext`, so no save
+   *     path can attach to what it put on screen;
+   *   * it offers NO raw download when a version cannot be shown. Stage 2C's
+   *     honest "Download this version's file" hands over the untouched stored
+   *     document; copied here it would be a hole straight through decision 21.
+   */
+  const openBrowsedVersion = async (
+    row: Pick<BrowseProjectRow, "projectId" | "name" | "folder" | "ownerCompanyId" | "ownerCompanyName">,
+    versionId: string,
+    report: (problem: OpenProblem) => void,
+  ): Promise<boolean> => {
+    const sentAtGeneration = readDocumentSession().designGeneration;
+    const result = await cloudFetch<BrowseVersionResponse>(
+      `/api/browse/projects/${encodeURIComponent(row.projectId)}/versions/${encodeURIComponent(versionId)}`,
+    );
+    if (!result.ok) {
+      refuse();
+      if (result.status === 401 || result.status === 403) void auth?.refresh();
+      // 422 is the redactor's own refusal (SQLSTATE 0A000): a file format it
+      // has no classification for. It is FINAL — it is not a reason to reach
+      // for the Stage 2 route, which would serve the untouched document.
+      report({ message: result.status === 422 ? BROWSE_CANNOT_SHOW_MESSAGE : result.message });
+      return false;
+    }
+    const version = result.data;
+    // No `raw` on any of these, at any point: nothing is offered in place of a
+    // version that cannot be shown except the fact that it cannot.
+    const outcome = classifyCloudSchemaVersion(version.schemaVersion, version.versionNumber, PROJECT_FILE_VERSION);
+    if (outcome.kind !== "opens" && outcome.kind !== "opens-via-migration") {
+      refuse();
+      report({ message: cannotShowFormatMessage(version.schemaVersion) });
+      return false;
+    }
+    const parsed = parseRedactedProjectFile(JSON.stringify(version.document));
+    if (!parsed.ok) {
+      refuse();
+      report({ message: `Version ${version.versionNumber} couldn't be opened: ${parsed.error}` });
+      return false;
+    }
+    const action: BrowseOpenAction = {
+      type: "browse-open",
+      sentAtGeneration,
+      version: {
+        projectId: version.projectId,
+        ownerCompanyId: version.ownerCompanyId,
+        ownerCompanyName: version.ownerCompanyName,
+        folder: version.folder,
+        versionId: version.versionId,
+        versionNumber: version.versionNumber,
+        createdAt: version.createdAt,
+        projectName: row.name,
+      },
+    };
+    if (!answerIsCurrent(readDocumentSession(), action)) {
+      refuse();
+      report({
+        message: `${displayProjectName(row.name)} wasn't opened: the design on screen was replaced while it was loading. Open it again if you still want it.`,
+      });
+      return false;
+    }
+    // Role is ignored here too (decision 9), and the price is NaN in the state
+    // this applies: every price display is gated on `costsRedacted`, and the
+    // NaN is what a missed gate would show instead of a plausible number.
+    applyCloudState(parsed.state);
+    dispatch(action);
+    // The banner, every time: it is the first thing said about a design that
+    // is not yours, and it is said again on the Project ▾ status line for as
+    // long as the design is on screen.
+    setBrowseNoteOpen(true);
+    return true;
+  };
+
+  /**
+   * A browse row's **Open**, which is the row's ordinary action.
+   *
+   * A row the database marked `full` opens through the STAGE 2 route, WITH
+   * costs (Open Item 2, answered): the caller can already read it — membership,
+   * a grant, or platform admin — and showing them their own project's price as
+   * `—` would be a worse answer than the real one. This is which request to
+   * send, not which permission to apply: RLS decides the Stage 2 read, and
+   * `browse_version` would redact the same project either way.
+   *
+   * ⚠ THE BROWSE PATH IS STILL ALWAYS REDACTED, AND IT IS REACHABLE FROM HERE.
+   * **Versions** on the same row goes through `browse_version`, which redacts
+   * for every caller including this one — so a Building Integrity member acting
+   * as Seed who opens a Building Integrity version that way sees `—`, which is
+   * decision 20's ownership rule and Open Item 7 working, not a bug. Hand-test
+   * step 18 is where Tommy looks at that before it is final.
+   */
+  const openBrowseRow = async (row: BrowseProjectRow) => {
+    setOpenProblem(null);
+    if (!row.headVersionId) {
+      setOpenProblem({ message: "This project's latest version couldn't be read just now. Try again." });
+      return;
+    }
+    if (row.access === "redacted" && !row.headRedactionKnown) {
+      setOpenProblem({ message: cannotShowFormatMessage(row.headSchemaVersion ?? PROJECT_FILE_VERSION) });
+      return;
+    }
+    setRowBusy(row.projectId);
+    const opened =
+      row.access === "full"
+        ? await openVersion(row.projectId, row.headVersionId, "latest", setOpenProblem)
+        : await openBrowsedVersion(row, row.headVersionId, setOpenProblem);
+    setRowBusy(null);
+    if (opened) closeNote("open");
+  };
+
+  // --- The version list while browsing (4B) -------------------------------
+
+  const loadBrowseHistory = useCallback(async (projectId: string) => {
+    const request = ++historyRequest.current;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    const result = await cloudFetch<BrowseVersionsResponse>(`/api/browse/projects/${encodeURIComponent(projectId)}/versions`);
+    if (request !== historyRequest.current) return;
+    setHistoryLoading(false);
+    if (!result.ok) {
+      setBrowseHistory(null);
+      setHistoryError(result.message);
+      return;
+    }
+    setBrowseHistory(result.data);
+  }, []);
+
+  const showBrowseHistory = (row: BrowseProjectRow) => {
+    setBrowseHistoryTarget(row);
+    setHistoryTarget({ projectId: row.projectId, projectName: row.name });
+    setHistory(null);
+    setBrowseHistory((was) => (was && was.projectId === row.projectId ? was : null));
+    setHistoryProblem(null);
+    setHistoryOpen(true);
+    void loadBrowseHistory(row.projectId);
+  };
+
+  const openBrowseHistoryRow = async (versionId: string) => {
+    const target = browseHistoryTarget;
+    if (!target) return;
+    setHistoryProblem(null);
+    setHistoryBusy(versionId);
+    const opened = await openBrowsedVersion(target, versionId, setHistoryProblem);
+    setHistoryBusy(null);
+    if (opened) {
+      closeNote("history");
+      closeNote("open");
+    }
   };
 
   const openRow = async (row: CloudProjectRow) => {
@@ -734,15 +1027,20 @@ export function useCloudProjects({
     mfaPending,
     actingAs,
     cloudProjectOpen: cloudContext !== null,
+    browsing: browseContext !== null,
   });
 
   // How the open project reached you, when the Shared tab listed it.
   const openReach = cloudContext ? (sharedList?.projects.find((p) => p.id === cloudContext.projectId)?.reachedVia ?? []) : [];
 
   const menuModel: CloudMenuModel = {
-    statusLines: cloudStatusLines(cloudContext, editorProjectName, actingAs, openReach),
+    statusLines: cloudStatusLines(cloudContext, editorProjectName, actingAs, openReach, browseContext),
     menu,
     busy,
+    // Stage 4B: TopBar drops the local Save Project while this is true. The
+    // honest reading of decision 23 — the app does not hand you a copy; it
+    // does not, and this comment does not, claim to stop you taking one.
+    browsing: browseContext !== null,
     onSaveToCloud: () => void saveToOpenProject(),
     onSaveAsNew: openSaveDialog,
     onOpenFromCloud: openFromCloud,
@@ -768,7 +1066,7 @@ export function useCloudProjects({
   // --- Notes -------------------------------------------------------------
 
   const noteProps = (id: NoteId, cascadeIndex: number) => ({
-    isOpen: id === "notice" ? noticeOpen : id === "history" ? historyOpen : openNote === id,
+    isOpen: id === "notice" ? noticeOpen : id === "history" ? historyOpen : id === "browse" ? browseNoteOpen : openNote === id,
     isFullscreen: fullscreen === id,
     cascadeIndex,
     onClose: () => closeNote(id),
@@ -779,6 +1077,8 @@ export function useCloudProjects({
   const canCreateHere = actingAs !== null;
   const now = new Date();
   const shownHistory = history && historyTarget && history.projectId === historyTarget.projectId ? history : null;
+  const shownBrowseHistory =
+    browseHistory && browseHistoryTarget && browseHistory.projectId === browseHistoryTarget.projectId ? browseHistory : null;
   const historyRows = shownHistory ? buildHistoryRows(shownHistory, cloudContext, PROJECT_FILE_VERSION) : [];
   const historyName = shownHistory ? shownHistory.projectName : (historyTarget?.projectName ?? "");
 
@@ -905,6 +1205,55 @@ export function useCloudProjects({
     );
   };
 
+  /**
+   * One Browse the consortium row (4B). Deliberately short on controls: Open,
+   * Versions, and nothing else. No Move to…, no Rename, no Access… — browsing
+   * writes nothing — and NO DOWNLOAD OF ANY KIND, including for a version that
+   * cannot be shown, where Stage 2C would offer the raw file.
+   */
+  const renderBrowseRow = (row: BrowseProjectRow) => {
+    const isOpenHere = browseContext?.projectId === row.projectId || cloudContext?.projectId === row.projectId;
+    const name = displayProjectName(row.name);
+    const cannotShow = row.access === "redacted" && !row.headRedactionKnown;
+    return (
+      <li key={row.projectId} className={isOpenHere ? styles.rowOpen : styles.row} data-project-id={row.projectId}>
+        <span className={styles.rowTitle}>
+          {name}
+          {isOpenHere ? " (open in this editor)" : ""}
+        </span>
+        <span className={styles.rowMeta}>
+          v{row.headVersionNumber} · {/* Already masked in SQL when it was an email address. Shown as it
+              came back: "a member of Rare Forms" is a real value, not a blank
+              to paper over. */}
+          {row.headAuthorName ?? "author not recorded"} · {relativeSaveTime(row.updatedAt, now)}
+        </span>
+        <span className={styles.rowMeta} data-browse-detail="">
+          {browseRowDetail(row)}
+        </span>
+        {cannotShow && (
+          <p className={styles.rowLabel} data-browse-cannot-show="">
+            {cannotShowFormatMessage(row.headSchemaVersion ?? PROJECT_FILE_VERSION)}
+          </p>
+        )}
+        <span className={styles.rowActions}>
+          {!cannotShow && (
+            <button type="button" className={styles.button} disabled={rowBusy !== null} onClick={() => void openBrowseRow(row)}>
+              {rowBusy === row.projectId ? "Working…" : "Open"}
+            </button>
+          )}
+          <button
+            type="button"
+            className={styles.button}
+            title="Every saved version of this project: who saved it and when. They open read-only, with costs removed."
+            onClick={() => showBrowseHistory(row)}
+          >
+            Versions
+          </button>
+        </span>
+      </li>
+    );
+  };
+
   const notes = (
     <>
       <StickyNote id="cloud-save-note" label="Save to cloud" {...noteProps("save", 0)}>
@@ -1011,6 +1360,20 @@ export function useCloudProjects({
                 >
                   {SHARED_TAB_LABEL}
                 </button>
+                {/* Stage 4B, the fifth tab. Present only while the company you
+                    are acting as IS the consortium: browsing is the acting-as
+                    state, never an ambient one (hand-test step 25). */}
+                {canBrowse && (
+                  <button
+                    type="button"
+                    className={shownTab === "browse" ? styles.tabActive : styles.tab}
+                    aria-pressed={shownTab === "browse"}
+                    data-browse-tab=""
+                    onClick={() => setTab("browse")}
+                  >
+                    {BROWSE_TAB_LABEL}
+                  </button>
+                )}
               </div>
               {openProblem && (
                 <div className={styles.stack}>
@@ -1028,7 +1391,77 @@ export function useCloudProjects({
                   )}
                 </div>
               )}
-              {shownTab === "shared" ? (
+              {shownTab === "browse" ? (
+                // Stage 4B. Every member company, then that company's three
+                // folders. No Move to…, no Rename, no Access…: browsing writes
+                // nothing, and none of those would be the browser's to press.
+                <div className={styles.stack} data-browse-panel="">
+                  <p className={styles.muted}>{BROWSE_TAB_LEAD}</p>
+                  {browseError && <p className={styles.error}>{browseError}</p>}
+                  {browseCompanies === null ? (
+                    <p className={styles.muted}>Loading…</p>
+                  ) : browseCompanies.length === 0 ? (
+                    <p className={styles.muted}>{BROWSE_NO_COMPANIES_MESSAGE}</p>
+                  ) : (
+                    <>
+                      <div className={styles.tabs} role="group" aria-label="Member company">
+                        {browseCompanies.map((company) => (
+                          <button
+                            key={company.id}
+                            type="button"
+                            className={browseCompanyId === company.id ? styles.tabActive : styles.tab}
+                            aria-pressed={browseCompanyId === company.id}
+                            data-browse-company={company.id}
+                            onClick={() => {
+                              setBrowseCompanyId(company.id);
+                              setBrowseList(null);
+                              setOpenProblem(null);
+                            }}
+                          >
+                            {company.name}
+                          </button>
+                        ))}
+                      </div>
+                      {browseCompanyId === null ? (
+                        <p className={styles.muted}>Pick a company to see its three folders.</p>
+                      ) : (
+                        <>
+                          <div className={styles.tabs} role="group" aria-label="Folder">
+                            {CLOUD_FOLDERS.map((f) => (
+                              <button
+                                key={f}
+                                type="button"
+                                className={browseFolder === f ? styles.tabActive : styles.tab}
+                                aria-pressed={browseFolder === f}
+                                onClick={() => {
+                                  setBrowseFolder(f);
+                                  setOpenProblem(null);
+                                }}
+                              >
+                                {FOLDER_LABEL[f]}
+                              </button>
+                            ))}
+                          </div>
+                          {browseLoading && !browseList ? (
+                            <p className={styles.muted}>Loading…</p>
+                          ) : browseList && browseList.projects.length === 0 ? (
+                            <p className={styles.muted}>
+                              {browseEmptyFolderMessage(
+                                browseCompanies.find((c) => c.id === browseCompanyId)?.name ?? "That company",
+                                browseFolder,
+                              )}
+                            </p>
+                          ) : (
+                            <ul className={styles.rows} data-browse-list="">
+                              {(browseList?.projects ?? []).map(renderBrowseRow)}
+                            </ul>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              ) : shownTab === "shared" ? (
                 // Stage 3B. No folders of its own: every row prints the owner's.
                 sharedLoading && !sharedList ? (
                   <p className={styles.muted}>Loading…</p>
@@ -1048,8 +1481,10 @@ export function useCloudProjects({
                   </ul>
                 )
               ) : actingAs && actingAs.source === "consortium" ? (
-                // Said in words; no empty tree dressed up as a real one.
-                <p className={styles.message}>{consortiumLaterStageMessage(actingAs.companyName)}</p>
+                // Said in words; no empty tree dressed up as a real one. Stage
+                // 4B replaced this sentence: its own tree IS readable now, on
+                // the browse tab, so it points there instead of at a stage.
+                <p className={styles.message}>{consortiumFolderTabsMessage(actingAs.companyName)}</p>
               ) : listLoading && !list ? (
                 <p className={styles.muted}>Loading…</p>
               ) : listError ? (
@@ -1123,10 +1558,60 @@ export function useCloudProjects({
               )}
             </div>
           )}
-          {historyLoading && !shownHistory ? (
+          {historyLoading && !shownBrowseHistory && !shownHistory ? (
             <p className={styles.muted}>Loading…</p>
           ) : historyError ? (
             <p className={styles.error}>{historyError}</p>
+          ) : shownBrowseHistory ? (
+            // Stage 4B. THE ALWAYS-REDACTING PATH: every row here opens through
+            // `browse_version`, including a project this account could read in
+            // full — which is decision 20's ownership rule (Open Item 7) and is
+            // what hand-test step 18 looks at. No save notes (they are not
+            // served at all on this path), no Download of any kind, no Rename,
+            // no Access….
+            <>
+              {/* The second line appears only on a `full` row, where the two
+                  doors really do answer differently. `browseHistoryTarget` is
+                  the row itself, already in hand from `showBrowseHistory`, so
+                  its `access` needs no extra request. */}
+              {browseVersionListNotes(browseHistoryTarget?.access ?? "redacted").map((line) => (
+                <p key={line} className={styles.muted} data-browse-history-note="">
+                  {line}
+                </p>
+              ))}
+              <ul className={styles.rows} data-browse-history="">
+                {buildBrowseVersionRows(shownBrowseHistory.versions, PROJECT_FILE_VERSION).map((row) => (
+                  <li key={row.versionId} className={styles.row} data-version-number={row.versionNumber}>
+                    <span className={styles.rowTitle}>
+                      v{row.versionNumber} · {row.title}
+                    </span>
+                    <span className={styles.rowMeta}>
+                      {row.authorName} · {absoluteSaveTime(row.createdAt)}
+                    </span>
+                    {row.cannotShowReason && (
+                      <p className={styles.rowLabel} data-browse-cannot-show="">
+                        {row.cannotShowReason}
+                      </p>
+                    )}
+                    <span className={styles.rowActions}>
+                      {row.canOpen && (
+                        <button
+                          type="button"
+                          className={styles.button}
+                          disabled={historyBusy !== null}
+                          onClick={() => void openBrowseHistoryRow(row.versionId)}
+                        >
+                          {historyBusy === row.versionId ? "Working…" : "Open"}
+                        </button>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className={styles.muted}>
+                Opening replaces the design on screen with that version, read-only and with costs removed.
+              </p>
+            </>
           ) : shownHistory ? (
             <>
               <p className={styles.muted}>{historySummary(shownHistory)}</p>
@@ -1183,7 +1668,12 @@ export function useCloudProjects({
                 type="button"
                 className={styles.button}
                 disabled={historyLoading}
-                onClick={() => void loadHistory(historyTarget.projectId)}
+                onClick={() =>
+                  // A browsed list refreshes through the BROWSE route. Sending
+                  // the Stage 2 one here would 404 for a browser — and would be
+                  // the wrong request to send even if it did not.
+                  void (browseHistoryTarget ? loadBrowseHistory(browseHistoryTarget.projectId) : loadHistory(historyTarget.projectId))
+                }
               >
                 {historyLoading ? "Loading…" : "Refresh"}
               </button>
@@ -1202,6 +1692,39 @@ export function useCloudProjects({
           is rendered last of all: nothing it could cover is open yet, and if
           the tree is opened from it, the tree lands on top. */}
       {shareNotice.note}
+
+      {/* Stage 4B. THE BROWSE BANNER.
+          Placement, decided against the layout rather than guessed: NOTHING
+          new goes on the top bar, and there is no flow position under it to
+          put a strip in — the bar is `position: fixed` and `.main` is a fixed
+          layer pinned below it, so an inline strip lands UNDER the bar (seen,
+          on the first build, in a headless screenshot at 1200). It is a note
+          instead, which is this app's own idiom for exactly this and which
+          fits every width by construction.
+          It is not the only place the wording lives: the SAME three sentences
+          are on the Project ▾ status line for as long as the browsed design is
+          on screen, so dismissing the note does not dismiss the statement. */}
+      <StickyNote
+        id="cloud-browse-note"
+        label={browseContext ? `Viewing ${displayProjectName(browseContext.projectName)}` : "Viewing another company's project"}
+        {...noteProps("browse", 1)}
+      >
+        {browseContext && (
+          <div className={styles.stack} data-browse-banner="">
+            {browseBannerLines(browseContext.projectName, browseContext.ownerCompanyName).map((line, i) => (
+              <p key={i} className={i === 0 ? styles.lead : styles.message}>
+                {line}
+              </p>
+            ))}
+            <p className={styles.muted}>{BROWSE_EXPORT_ABSENT_NOTE}</p>
+            <div className={styles.actions}>
+              <button type="button" className={styles.button} onClick={() => closeNote("browse")}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+      </StickyNote>
     </>
   );
 

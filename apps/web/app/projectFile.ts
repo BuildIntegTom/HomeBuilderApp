@@ -36,6 +36,10 @@ import type {
 import type { ViewerRole } from "./viewerRole";
 import type { MidWallBeam } from "./midWallBeam";
 import type { WallReviewNote } from "./wallReviewNotes";
+// Stage 4B, for `parseRedactedProjectFile` only. `redaction.ts` imports
+// `ProjectState` back from here with `import type`, which is erased, so this is
+// not a runtime cycle.
+import { MONEY_STATE_KEYS, isRedactablePath, readRedactionMarker } from "./cloud/redaction";
 
 /**
  * Save/Load a project file — Tommy: "a saveable file that the user or
@@ -517,8 +521,19 @@ export type ParseProjectFileResult = { ok: true; state: ProjectState; savedAt: s
  * own exports (wrong version, missing top-level fields) — a system
  * boundary (arbitrary user-uploaded file), not full deep schema
  * validation of every nested footprint/slot shape.
+ *
+ * NOTHING IS EXCUSED HERE. A file missing a required key is refused, exactly as
+ * it always was; the one caller that may excuse a key is
+ * `parseRedactedProjectFile` below, and it excuses only the paths a redaction
+ * marker names AND the money classification recognises.
  */
 export function parseProjectFile(raw: string): ParseProjectFileResult {
+  return parseDocument(raw, NOTHING_EXCUSED);
+}
+
+const NOTHING_EXCUSED: ReadonlySet<string> = new Set();
+
+function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): ParseProjectFileResult {
   let json: unknown;
   try {
     json = JSON.parse(raw);
@@ -550,6 +565,7 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
   // repairStateToEighths), not the schema — so one shared list covers both,
   // unlike v18->v19/v19->v20 which each added/renamed a top-level key.
   for (const key of REQUIRED_STATE_KEYS) {
+    if (excusedStateKeys.has(key)) continue;
     if (!(key in state)) return { ok: false, error: `That file is missing the "${key}" field.` };
   }
   if (!Array.isArray(state.primaryCornerIds)) {
@@ -631,6 +647,105 @@ export function parseProjectFile(raw: string): ParseProjectFileResult {
       ),
       checkedInteriorIds: new Set(state.checkedInteriorIds as string[]),
       checkedExteriorIds: new Set(state.checkedExteriorIds as string[]),
+      // LAST, so it wins over every spread and default above: an excused key is
+      // held as NaN, never as a substituted number. Empty unless the caller is
+      // `parseRedactedProjectFile`. See `blankedExcusedKeys` for why NaN.
+      ...blankedExcusedKeys(excusedStateKeys),
     }),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Stage 4B: the redacted-aware parse path, BESIDE parseProjectFile
+// ---------------------------------------------------------------------------
+
+/**
+ * `priceModifier` is in `REQUIRED_STATE_KEYS`, so a document the database's
+ * redactor has stripped would otherwise be refused by `parseProjectFile` with
+ * "That file is missing the priceModifier field" — a message that reads like a
+ * corrupt file, on every browsed project (spec, "The collision with the live
+ * parser"). This is the separate path that opens one, and it is deliberately a
+ * NEW function rather than a loosening of the old one: nothing that opens a
+ * local file or a Stage 2 cloud version can reach the excusing branch.
+ *
+ * NaN, not 1.0 and not 0. Decision 21's field never leaves the server, so there
+ * is no true value to show; the flag convention's own rule (a visible gap beats
+ * a plausible substitute) says the substitute must be obviously broken. Every
+ * price display is gated on `costsRedacted`, and if a gate is ever missed the
+ * screen reads `$NaN` — impossible to mistake for the owner's number — instead
+ * of a confident figure built from a defaulted markup.
+ */
+function blankedExcusedKeys(excusedStateKeys: ReadonlySet<string>): Record<string, number> {
+  const blanked: Record<string, number> = {};
+  for (const key of excusedStateKeys) blanked[key] = Number.NaN;
+  return blanked;
+}
+
+export type ParseRedactedProjectFileResult =
+  | { ok: true; state: ProjectState; savedAt: string | undefined; costsRedacted: true; removedPaths: string[]; reason: string }
+  | { ok: false; error: string };
+
+export const REDACTED_UNMARKED_MESSAGE =
+  "That version didn't arrive marked as another company's, so it wasn't opened. Nothing is on screen from it; try again, and tell Tommy if it keeps happening.";
+
+export function redactedUnknownPathMessage(path: string): string {
+  return `That version says "${path}" was removed, which this app doesn't know how to open without. It wasn't opened.`;
+}
+
+export const REDACTED_FIELD_SURVIVED_MESSAGE =
+  "That version still carried a field it said had been removed, so it wasn't opened.";
+
+/**
+ * Parse a document served by `browse_version`: the stored document minus every
+ * classified money path, plus the top-level `redaction` marker naming what went.
+ *
+ * FAIL-CLOSED AT EVERY STEP, because this is the one parse that is allowed to
+ * accept a document with a required key missing:
+ *
+ *   * NO MARKER, no excusing. A browsed document always carries one, so a
+ *     document without one is a fault — refused, not opened as an ordinary
+ *     full document, and not retried through `parseProjectFile`.
+ *   * The marker's `schemaVersion` must match the document's own.
+ *   * Every removed path must be one the money classification recognises
+ *     (`state.priceModifier` today). A marker claiming `state.zipCode` went is
+ *     refused rather than opened with a hole in the design.
+ *   * A path the marker says was removed must genuinely be ABSENT. If the field
+ *     is still there, the server's own account of what it sent is wrong, and
+ *     this refuses instead of quietly showing another company's markup.
+ *
+ * It never removes anything itself: redaction happens in the database, and this
+ * only reads what the database did.
+ */
+export function parseRedactedProjectFile(raw: string): ParseRedactedProjectFileResult {
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return { ok: false, error: "That version isn't valid JSON." };
+  }
+  const marker = readRedactionMarker(json);
+  if (!marker) return { ok: false, error: REDACTED_UNMARKED_MESSAGE };
+
+  const file = json as Record<string, unknown>;
+  if (file.schemaVersion !== marker.schemaVersion) {
+    return { ok: false, error: REDACTED_UNMARKED_MESSAGE };
+  }
+  const state = (typeof file.state === "object" && file.state !== null ? file.state : {}) as Record<string, unknown>;
+
+  const excused = new Set<string>();
+  for (const path of marker.removedPaths) {
+    if (!isRedactablePath(path)) return { ok: false, error: redactedUnknownPathMessage(path) };
+    const key = path.slice("state.".length);
+    if (key in state) return { ok: false, error: REDACTED_FIELD_SURVIVED_MESSAGE };
+    excused.add(key);
+  }
+  // A money key the marker did NOT name, still sitting in the document, is the
+  // same fault from the other side: the redactor should never serve one.
+  for (const key of MONEY_STATE_KEYS) {
+    if (key in state) return { ok: false, error: REDACTED_FIELD_SURVIVED_MESSAGE };
+  }
+
+  const parsed = parseDocument(raw, excused);
+  if (!parsed.ok) return parsed;
+  return { ok: true, state: parsed.state, savedAt: parsed.savedAt, costsRedacted: true, removedPaths: [...marker.removedPaths], reason: marker.reason };
 }

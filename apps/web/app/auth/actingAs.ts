@@ -53,6 +53,23 @@ export interface Entitlement {
   level: MembershipLevel | null;
   /** True for the one company `memberships.is_default` points at. */
   isDefault: boolean;
+  /**
+   * STAGE 4B. This company IS the consortium — `companies.is_consortium`,
+   * carried through so the browser can tell "I am acting as The Seed
+   * Collaborative" from "I am acting as my own company".
+   *
+   * It cannot be derived from `source`: a real MEMBER of the Seed Collaborative
+   * (dave, in the test fixtures) acts as it through `membership`, and
+   * `computeEntitlements` deliberately does not add a second `consortium` entry
+   * for a company already held. Without this field that person is
+   * indistinguishable from someone acting as an ordinary company, and the
+   * permission matrix's two Seed rows would collapse into one.
+   *
+   * It grants nothing. Browsing is gated in the database, five times over
+   * (`is_seed_entitled()` in each browse function); this only decides whether
+   * the tab is offered.
+   */
+  isConsortium: boolean;
 }
 
 export interface EntitlementInput {
@@ -90,6 +107,7 @@ export function computeEntitlements({
       source: "membership",
       level: membership.level,
       isDefault: membership.isDefault,
+      isConsortium: company.isConsortium,
     });
     seen.add(company.id);
   }
@@ -108,6 +126,7 @@ export function computeEntitlements({
       source: "consortium",
       level: null,
       isDefault: false,
+      isConsortium: true,
     });
     seen.add(consortium.id);
   }
@@ -121,6 +140,7 @@ export function computeEntitlements({
         source: "platform-admin",
         level: null,
         isDefault: false,
+        isConsortium: company.isConsortium,
       });
       seen.add(company.id);
     }

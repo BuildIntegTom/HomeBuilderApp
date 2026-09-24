@@ -88,9 +88,30 @@ const V2 = "157620e3-1239-431a-8542-0bde2e90ad3b";
 const V3 = "240320ca-651c-4f2e-bf95-f97346d0fd51";
 const V4 = "0a95472c-79f6-42e4-b059-e907aa1549c1";
 
-const BI: Entitlement = { companyId: BI_ID, companyName: "Building Integrity", source: "membership", level: "member", isDefault: true };
-const RF_ADMIN: Entitlement = { companyId: RF_ID, companyName: "Rare Forms", source: "platform-admin", level: null, isDefault: false };
-const SEED: Entitlement = { companyId: SEED_ID, companyName: "The Seed Collaborative", source: "consortium", level: null, isDefault: false };
+const BI: Entitlement = {
+  companyId: BI_ID,
+  companyName: "Building Integrity",
+  source: "membership",
+  level: "member",
+  isDefault: true,
+  isConsortium: false,
+};
+const RF_ADMIN: Entitlement = {
+  companyId: RF_ID,
+  companyName: "Rare Forms",
+  source: "platform-admin",
+  level: null,
+  isDefault: false,
+  isConsortium: false,
+};
+const SEED: Entitlement = {
+  companyId: SEED_ID,
+  companyName: "The Seed Collaborative",
+  source: "consortium",
+  level: null,
+  isDefault: false,
+  isConsortium: true,
+};
 
 const DOC = { schemaVersion: 24, savedAt: "2026-09-14T13:00:00.000Z", state: { projectName: "Smith House" } };
 const CREATED_AT = "2026-09-14T13:05:41.611591+00:00";
