@@ -1,4 +1,4 @@
-# Supabase — Stage 1 (accounts and companies), Stage 2 (cloud projects and versions) and Stage 3 (collaboration)
+# Supabase — Stage 1 (accounts and companies), Stage 2 (cloud projects and versions), Stage 3 (collaboration) and Stage 4 (consortium browsing)
 
 Everything in this folder is SQL. The app's access rules live here, not in the
 route handlers: Supabase was chosen (spec decision 30) *because* the permission
@@ -17,15 +17,15 @@ than re-derived in every route that touches a project.
 | `migrations/0006_stage2_projects_and_versions.sql` | Stage 2: `projects`, `project_versions`, their triggers, helpers, RPCs and policies. |
 | `migrations/0007_stage1_revoke_truncate.sql` | Stage 1 follow-up: TRUNCATE, REFERENCES and TRIGGER taken back from `authenticated`. |
 | `migrations/0008_stage3_collaboration.sql` | Stage 3: `collaborators`, `share_notice_state`, the share functions, the creator-grant trigger, and the six Stage 2 objects that had to change. |
+| `migrations/0009_stage4_browsing.sql` | Stage 4: the cost redactor (`browse_schema_redaction`, `browse_redact`), the browse functions, `collab_requests` and its two functions, and `shareable_companies` tightened. |
 | `seed.sql` | The four real companies. |
 | `tests/stage1_rls.test.sql` | The Stage 1 verification script. |
 | `tests/stage2_rls.test.sql` | The Stage 2 verification script. Local or staging only. |
 | `tests/stage2_concurrency.test.sh` | Two connections saving the same project at once. Local throwaway database only. |
 | `tests/stage3_rls.test.sql` | The Stage 3 verification script. Local or staging only. |
 | `tests/stage3_concurrency.test.sh` | Two connections sharing the same project with the same grantee at once. Local throwaway database only. |
+| `tests/stage4_rls.test.sql` | The Stage 4 verification script, the redactor above all. Local or staging only. |
 | `tests/local_shim.sql` | Local-only stand-in for Supabase's `auth` schema and default privileges. Never run on the project. |
-
-`collab_requests` (access requests) is **not** here. Tommy moved it to Stage 4.
 
 ## Running it, first time
 
@@ -1159,3 +1159,537 @@ and row set in `public` and `auth`:
 - A second run leaves the dump identical.
 - Pre-flight (a)–(d) and post-flight (A)–(G) returned exactly what the steps
   above say.
+
+# Stage 4 — consortium browsing
+
+Spec: `building_integrity_app_spec.md`, "Stage 4 plan — Consortium browsing"
+(approved 2026-09-20, all seven Open Items answered). This is sub-stage **4A:
+schema, the redactor, RLS and tests only.** No app code calls any of it yet, so
+it is safe to apply ahead of the app: the live app has no browse surface until
+4B, and no request can exist until someone calls `request_project_access`.
+
+**The redactor is the highest-risk single piece of the whole design.** It lives
+in the database, inside `SECURITY DEFINER` functions, because the publishable
+key ships in the browser: anything the database will serve, PostgREST will
+serve directly, so a route cannot be the boundary.
+
+## What 0009 creates
+
+- **`browse_schema_redaction`** — which paths in a document are money, **per
+  schema version**. One row today: `24 → [["state","priceModifier"]]`, verified
+  against `ProjectState` in `apps/web/app/projectFile.ts`. **No client role holds
+  any privilege on it**; only a migration writes it.
+- **`browse_redact(document, schema_version)`** — the redactor. Internal: **no
+  client role can call it.** It removes every classified path (removed, not
+  nulled or zeroed) and adds a top-level marker:
+  `"redaction": {"schemaVersion": 24, "removedPaths": ["state.priceModifier"], "reason": "another company's cost information"}`.
+  It **refuses** (SQLSTATE `0A000`) rather than serve when:
+  - the format has **no row** — the future-schema guard: an unclassified
+    format is not served cross-company at all;
+  - the document's own `schemaVersion` disagrees with the recorded one;
+  - a classified path survives removal;
+  - **a key named `priceModifier` survives anywhere in the document** — a belt
+    that does not depend on the classification being right.
+  A stored document that carries its own `redaction` key cannot shape the
+  marker: the server's marker overwrites it.
+- **`browse_author_name(name, company_name)`** — the author-name mask.
+  Internal: **no client role can call it**, and it is not `SECURITY DEFINER`
+  because it reads nothing. A name snapshot that **looks like an email
+  address** (no whitespace, exactly one `@`) becomes **"a member of
+  *&lt;company&gt;*"**; a real display name is returned unchanged. See "Two
+  things the browse path withholds" below.
+- **The browse functions** (definer; each checks two-factor, seed entitlement
+  and the browse set itself):
+  - `browse_companies()` → the member companies (`is_seed_member`), id and name.
+  - `browse_projects(company, folder)` → the browse set, either argument
+    optional. Each row carries the head version, its format, whether that
+    format can be shown, the owner's name, and **`access`**: `full` if you can
+    already read the project (membership, a grant, or platform admin), else
+    `redacted`. **Never selects the document.**
+  - `browse_versions(project)` → the Stage 2C version-list metadata, plus
+    `redaction_known` and the name each version was saved under — **with the
+    save label always `null` and an email-shaped author name masked** (below).
+  - **`browse_version(project, version)` → the only way a browsed document is
+    served. Always redacted, for everyone** — including someone who could read
+    it in full (Open Item 2) and a platform admin.
+- **`collab_requests`** — access requests (the other direction of 26).
+  Personal only (Open Item 3). A decline carries **no reason** (Open Item 4).
+  One pending request per person per project. `authenticated` gets **select
+  only**; the requester sees their own, owner members and platform admins see
+  those on the owner's projects. Deleting the requester's account deletes
+  their requests; `decided_by` has no foreign key.
+  - `request_project_access(project, note)` → `requested`, `already-pending`
+    or `already-has-access`. Outside your browse set — or not existing — is
+    one uniform 42501.
+  - `decide_collab_request(request, grant)` → only an owner member or a platform
+    admin. **Granting calls `share_project_with_person`** with the requester's
+    address, so the result is an ordinary personal grant with
+    `granted_by` = the decider; the status is that function's own (`shared`,
+    `already-shared`, `already-member`, `self`). Declining writes no grant
+    (`declined`). A decided request answers `already-granted` /
+    `already-declined`.
+
+## Two things the browse path withholds besides the money field
+
+Narrowed **2026-09-23**, on Tommy's decisions, after 4A's review. **Neither is
+a redactor bug** — 4A passed review and the redactor held against every crafted
+attempt. These are two places where *ordinary metadata* crossed a company line.
+**Both are browse-path only.** The owning company and invited collaborators are
+unaffected: Stage 2's and Stage 3's own paths are not touched by this file.
+
+| What | Where | Why |
+|---|---|---|
+| **The save label is never served.** `browse_versions` and `browse_version` return `null` for `label`. | Both functions; `browse_version` does not even read the column out of the row. | A version label is free text, and free text is where people write prices. The review's probe read back a note saying **"Quoted at 1.35 markup"** to another company's member while the structured `priceModifier` beside it was correctly stripped. Stripping the field and shipping the same number in words is not a guarantee. |
+| **An email-shaped author name is masked**, to "a member of *&lt;company&gt;*" (Tommy's wording, 2026-09-24 — it reads properly for a company whose name begins with "The"). | `browse_projects`, `browse_versions` and `browse_version`, through `browse_author_name`. | `author_name` is a snapshot that falls back to the account's **email** when nobody set a display name. Stage 3 accepted that reaching an invited collaborator; it must not reach every member company. Real display names pass through untouched. |
+
+**The column stays in both signatures** — 4B's shape does not change, and a
+browsed version list simply has a blank note. **It is done in SQL, not in a
+route**, for the redactor's own reason: PostgREST serves these functions
+directly, so a TypeScript layer could be gone around.
+
+The suite asserts the pair that makes this precise: **the same person, on the
+same project, reads the label through his grant and gets `null` through the
+browse path.** It is the path that drops it, not the person.
+
+## The one Stage 3 object it replaces — and the five it does not touch
+
+| Object | Change |
+|---|---|
+| `shareable_companies()` | Open Item 5, answered: it now answers **seed-entitled callers and platform admins** only; anyone else gets no rows. It used to answer any signed-in account, so a non-member company's members could read the consortium's company names. Same signature and privileges. |
+
+**`can_read_project`, `can_write_project`, `holds_project_grant`,
+`projects_select` and `project_versions_select` are not touched.** 0006 and 0008
+both warned Stage 4 not to widen them, and they are exactly as 0008 left them:
+the raw document of a project is still served only to its owner company's
+members, its grant holders and platform admins. Post-flight (F) proves it on
+live, and the local schema-dump diff shows `shareable_companies` is the only
+pre-existing object whose definition changed. No Stage 1 or Stage 2 object is
+touched.
+
+## Things the app stages (4B, 4C) must know
+
+- **The marker itself contains the text `priceModifier`** (in `removedPaths`).
+  A check that a redacted document "does not contain `priceModifier`" must look
+  at **keys**, or at the document **without its `redaction` marker** — not at
+  the whole document as text. Hand-test step 19's console line needs to be
+  written that way (the spec's 4A as-built note has the wording).
+- **A refusal to serve is `0A000`**, distinct from "not found" (`42501`). The
+  version list already says which versions will be refused
+  (`redaction_known = false`, and `head_redaction_known` on a browse row), so
+  the UI can show "cannot be shown" without asking — and offer **no download of
+  any kind**.
+- **Format 23 is not classified**, so a format-23 version is refused on the
+  browse path even though the app itself still opens format 23. Pre-flight (d)
+  shows whether live has any. Classifying 23 is a one-row migration, after
+  checking v23's `ProjectState` in git history.
+- **Platform admins are seed-entitled here** (the permission matrix's "Browse:
+  yes"). Every row they list is `full`, and the app opens those through the
+  Stage 2 route; `browse_version` still redacts for them.
+- **A folder name other than `current` / `past` / `proposals` raises `22023`.**
+
+## The definer functions that bypass the two-factor policies
+
+0004's list, brought up to date again. Every one added in 0009 calls
+`meets_required_aal()` itself:
+
+| Migration | Function | Covered by |
+|---|---|---|
+| 0003 | `redeem_invite` | the invite it redeems (see 0004) |
+| 0005 | `create_company_with_first_admin` | the route's `requireSatisfiedAal()` only |
+| 0008 | `share_project_with_person`, `share_project_with_company` | checks `meets_required_aal()` itself |
+| 0008, replaced in 0009 | `dismiss_share_notices`, `shareable_companies` | checks `meets_required_aal()` itself |
+| 0008 | `project_owner_company_id`, `project_owner_company_name` | return null unless `meets_required_aal()` |
+| 0008 | `grant_creator_access` (trigger) | runs only inside a `projects` insert that already passed `projects_require_aal` |
+| 0009 | `browse_companies`, `browse_projects`, `browse_versions` | return no rows unless `meets_required_aal()` |
+| 0009 | `browse_version` | raises 42501 unless `meets_required_aal()` |
+| 0009 | `request_project_access`, `decide_collab_request` | raise 42501 unless `meets_required_aal()` |
+| 0009 | `browse_redact` | no client role can call it; only `browse_version` does |
+| 0009 | `browse_author_name` | **not** `SECURITY DEFINER` and reads nothing, so it bypasses nothing; no client role can call it either |
+
+## Applying it — the exact steps
+
+Everything below is **read-only except Step 2.** Run each block **on its own**:
+the SQL editor shows only the last result of a paste.
+
+### Step 1 — pre-flight (read-only)
+
+**(a)** 0008 is applied. Expect one row: `has_0008 true`.
+
+```sql
+select to_regclass('public.collaborators') is not null as has_0008;
+```
+
+**(b)** 0009 is not applied yet. Expect one row: `browse_schema_redaction NULL | collab_requests NULL`.
+(If you see the table names, 0009 has already run. Running it again is
+harmless, but you do not need to.)
+
+```sql
+select to_regclass('public.browse_schema_redaction') as browse_schema_redaction,
+       to_regclass('public.collab_requests') as collab_requests;
+```
+
+**(c)** Write these five numbers down.
+
+```sql
+select (select count(*) from public.companies)        as companies,
+       (select count(*) from public.memberships)      as memberships,
+       (select count(*) from public.projects)         as projects,
+       (select count(*) from public.project_versions) as project_versions,
+       (select count(*) from public.collaborators)    as collaborators;
+```
+
+**Don't save, share or delete anything in the app from here until post-flight (H) is done**, or the counts won't match.
+
+**(d)** Which file formats your saved versions are in. Write the rows down. Every
+version **not** in format 24 will be refused on the browse path once 4B ships —
+that is the fail-closed rule working, not a reason to stop. Expect probably a
+single row, `24 | <your project_versions count>`.
+
+```sql
+select schema_version, count(*) as versions
+  from public.project_versions
+ group by schema_version
+ order by schema_version;
+```
+
+**(e)** The five objects Stage 4 must not touch are exactly as 0008 left them.
+Expect exactly 5 rows, **all `t`**:
+
+```
+can_read_project        | t
+can_write_project       | t
+holds_project_grant     | t
+project_versions_select | t
+projects_select         | t
+```
+
+```sql
+select f.object_name,
+       md5(regexp_replace(pg_get_functiondef(f.oid), '\s+', ' ', 'g')) = f.expected as unchanged
+  from (values ('can_read_project',    'public.can_read_project(uuid)'::regprocedure,    'adcfa86d68b1e72174858f175a30b77a'),
+               ('can_write_project',   'public.can_write_project(uuid)'::regprocedure,   '6f35afeba487daf355c5c0ac18b76ae4'),
+               ('holds_project_grant', 'public.holds_project_grant(uuid)'::regprocedure, '4132d034bdd5aed44cc6ff773dfd8644')) as f(object_name, oid, expected)
+union all
+select p.policyname,
+       md5(p.cmd || '|' || p.permissive || '|' || array_to_string(p.roles, ',') || '|'
+           || replace(coalesce(p.qual, ''), 'public.', '') || '|'
+           || replace(coalesce(p.with_check, ''), 'public.', ''))
+         = case p.policyname when 'projects_select' then '35871592d8c9ffd6909ad624b169f41e'
+                             else '55bc5ffbbf1e9e0c9554d7f30b7f5193' end
+  from pg_policies p
+ where p.schemaname = 'public'
+   and (p.tablename, p.policyname) in (('projects', 'projects_select'), ('project_versions', 'project_versions_select'))
+ order by 1;
+```
+
+The fingerprint ignores spacing and line endings, so it gives the same answer
+whether the migrations were pasted or run from files (checked both ways). **If
+any row is `f` before you have run 0009, stop and send me the output:** live
+differs from the repository, and post-flight (F) could not prove anything.
+
+**(f)** The database owner can read the MFA factor table (every new function
+checks the two-factor level). Expect `true`.
+
+```sql
+select has_table_privilege('postgres', 'auth.mfa_factors', 'select');
+```
+
+Stop if (a), (e) or (f) is not all `true`.
+
+### Step 2 — run `0009` after `0008`
+
+Open `migrations/0009_stage4_browsing.sql`, paste the **whole file** into the
+SQL editor, and run it. It begins with `begin;` and ends with `commit;`. Expect
+"Success. No rows returned." If it reports an error, nothing was applied: copy
+the error and stop.
+
+**The editor will probably stop and ask you to confirm** — a warning about
+potentially destructive operations. That is expected: the file contains
+`drop policy if exists` and `revoke`, which is what makes it safe to run twice.
+The two `drop policy` lines are on the new `collab_requests` table and are
+immediately followed by their replacements. No table, column or row is dropped.
+Confirm and run.
+
+### Step 3 — post-flight (read-only). What you should see.
+
+**(A)** Both new tables exist with row level security on. Expect 2 rows:
+
+```
+browse_schema_redaction | t
+collab_requests         | t
+```
+
+```sql
+select c.relname as table_name, c.relrowsecurity as rls_on
+  from pg_class c
+ where c.relnamespace = 'public'::regnamespace
+   and c.relname in ('browse_schema_redaction', 'collab_requests')
+ order by c.relname;
+```
+
+**(B)** Privileges. Expect exactly these 2 rows (columns: anon_has_any,
+service_role_has_any, auth_select, auth_insert, auth_update, auth_delete,
+auth_truncate):
+
+```
+browse_schema_redaction | f | f | f | f | f | f | f
+collab_requests         | f | f | t | f | f | f | f
+```
+
+```sql
+select t.table_name,
+       has_table_privilege('anon', 'public.' || t.table_name, 'select,insert,update,delete,truncate,references,trigger') as anon_has_any,
+       has_table_privilege('service_role', 'public.' || t.table_name, 'select,insert,update,delete,truncate,references,trigger') as service_role_has_any,
+       has_table_privilege('authenticated', 'public.' || t.table_name, 'select')   as auth_select,
+       has_table_privilege('authenticated', 'public.' || t.table_name, 'insert')   as auth_insert,
+       has_table_privilege('authenticated', 'public.' || t.table_name, 'update')   as auth_update,
+       has_table_privilege('authenticated', 'public.' || t.table_name, 'delete')   as auth_delete,
+       has_table_privilege('authenticated', 'public.' || t.table_name, 'truncate') as auth_truncate
+  from (values ('browse_schema_redaction'), ('collab_requests')) as t(table_name)
+ order by t.table_name;
+```
+
+**(C)** Policies on the new tables. Expect exactly 2 rows (the classification
+table has none, on purpose — no client role may read it at all):
+
+```
+collab_requests | collab_requests_require_aal | RESTRICTIVE | ALL
+collab_requests | collab_requests_select      | PERMISSIVE  | SELECT
+```
+
+```sql
+select tablename, policyname, permissive, cmd
+  from pg_policies
+ where schemaname = 'public' and tablename in ('browse_schema_redaction', 'collab_requests')
+ order by tablename, policyname;
+```
+
+**(D)** Functions. Expect exactly 9 rows (function_name, security_definer,
+anon_can_call, auth_can_call). `anon_can_call` is `f` on every row. **The two
+internal ones are the two `authenticated` cannot call**: `browse_redact`, the
+redactor, and `browse_author_name`, the author-name mask — which is also the
+only row with `security_definer` `f`, because it reads nothing:
+
+```
+browse_author_name     | f | f | f
+browse_companies       | t | f | t
+browse_projects        | t | f | t
+browse_redact          | t | f | f
+browse_version         | t | f | t
+browse_versions        | t | f | t
+decide_collab_request  | t | f | t
+request_project_access | t | f | t
+shareable_companies    | t | f | t
+```
+
+```sql
+select p.proname as function_name,
+       p.prosecdef as security_definer,
+       has_function_privilege('anon', p.oid, 'execute') as anon_can_call,
+       has_function_privilege('authenticated', p.oid, 'execute') as auth_can_call
+  from pg_proc p
+ where p.pronamespace = 'public'::regnamespace
+   and p.proname in ('browse_redact', 'browse_author_name', 'browse_companies', 'browse_projects', 'browse_versions',
+                     'browse_version', 'request_project_access', 'decide_collab_request', 'shareable_companies')
+ order by p.proname;
+```
+
+**(E)** The classification. Expect exactly 1 row:
+
+```
+24 | [["state", "priceModifier"]]
+```
+
+```sql
+select schema_version, redacted_paths from public.browse_schema_redaction order by schema_version;
+```
+
+**(F)** **The five objects Stage 4 must not touch are still unchanged.** Run
+pre-flight (e) again, exactly as it is. Expect the same 5 rows, **all `t`**.
+
+**(G)** `shareable_companies` really was tightened. Expect one row: `t`.
+
+```sql
+select prosrc like '%is_seed_entitled%' as shareable_companies_tightened
+  from pg_proc
+ where oid = 'public.shareable_companies()'::regprocedure;
+```
+
+**(H)** Nothing else changed. Expect companies, memberships, projects,
+project_versions and collaborators to **equal** the five numbers from
+pre-flight (c), and `collab_requests 0`.
+
+```sql
+select (select count(*) from public.companies)        as companies,
+       (select count(*) from public.memberships)      as memberships,
+       (select count(*) from public.projects)         as projects,
+       (select count(*) from public.project_versions) as project_versions,
+       (select count(*) from public.collaborators)    as collaborators,
+       (select count(*) from public.collab_requests)  as collab_requests;
+```
+
+**(I)** The redactor, run on your real saved documents (read-only: it computes
+the redacted copy and discards it). Expect one row:
+`format_24_versions` = the format-24 count from pre-flight (d),
+`still_carrying_price 0`, and `marked` = the same number as
+`format_24_versions`.
+
+```sql
+select count(*) as format_24_versions,
+       count(*) filter (where jsonb_path_exists(public.browse_redact(v.document, v.schema_version), 'lax $.**.priceModifier')) as still_carrying_price,
+       count(*) filter (where public.browse_redact(v.document, v.schema_version) -> 'redaction' -> 'removedPaths' = '["state.priceModifier"]') as marked
+  from public.project_versions v
+ where v.schema_version = 24;
+```
+
+If (I) reports an error instead of a row — "a cost field survived redaction" —
+one of your saved documents carries a `priceModifier` key somewhere other than
+`state.priceModifier`. That document would be refused on the browse path, not
+leaked; send me the error.
+
+**(J)** What the two narrowings will withhold, on your real data (read-only).
+**There is no right answer here** — whatever the numbers are, they are what a
+browsing company stops seeing once 4B ships. Write them down. A non-zero
+`save_notes_withheld` is the point of the narrowing, not a problem, and
+`author_names_masked` counts version rows saved by people who never set a
+display name.
+
+```sql
+select count(*) filter (where v.label is not null) as save_notes_withheld,
+       count(*) filter (where public.browse_author_name(v.author_name, c.name) <> v.author_name) as author_names_masked,
+       count(distinct v.author_name) filter (where public.browse_author_name(v.author_name, c.name) <> v.author_name) as people_affected
+  from public.project_versions v
+  join public.projects p on p.id = v.project_id
+  join public.companies c on c.id = p.company_id;
+```
+
+If `people_affected` is more than zero, those people can make the mask moot by
+setting a display name in the app — the mask only replaces an address.
+
+Do **not** run anything in `tests/` against this project.
+
+## Verifying locally
+
+Against a throwaway local PostgreSQL (17.4 was used), never the project:
+
+```sh
+createdb stage4_local
+psql -d stage4_local -v ON_ERROR_STOP=1 -f supabase/tests/local_shim.sql
+for f in supabase/migrations/000*.sql; do psql -d stage4_local -v ON_ERROR_STOP=1 -f "$f"; done
+psql -d stage4_local -v ON_ERROR_STOP=1 -f supabase/tests/stage1_rls.test.sql   # must still pass
+psql -d stage4_local -v ON_ERROR_STOP=1 -f supabase/tests/stage2_rls.test.sql   # must still pass
+PGDATABASE=stage4_local bash supabase/tests/stage2_concurrency.test.sh          # must still pass
+psql -d stage4_local -v ON_ERROR_STOP=1 -f supabase/tests/stage3_rls.test.sql   # must still pass
+PGDATABASE=stage4_local bash supabase/tests/stage3_concurrency.test.sh          # must still pass
+psql -d stage4_local -v ON_ERROR_STOP=1 -f supabase/tests/stage4_rls.test.sql
+```
+
+Each prints `… ALL ASSERTIONS PASSED` or stops at the first `FAIL:`. No earlier
+suite needed any change for 0009.
+
+## Stage 4 verification status
+
+**Not applied to the live project.** Only Tommy's post-flight results will
+confirm the hosted result.
+
+Local verification, before the paste — PostgreSQL 17.4 from a fresh data
+directory, in this order: shim, 0001–0009, `stage1_rls.test.sql`,
+`stage2_rls.test.sql`, `stage2_concurrency.test.sh`, `stage3_rls.test.sql`,
+`stage3_concurrency.test.sh`, `stage4_rls.test.sql` — all pass. The same run on
+LF-only copies of every file (the shape of a paste) also passes.
+
+`stage4_rls.test.sql` runs as ordinary members of five companies — Building
+Integrity (bob; alice and erin, its admins), Rare Forms (frank, fiona), New
+Frameworks (nick), a non-consortium company (carol) and The Seed Collaborative
+(dave) — plus henry, who has no membership. Only the platform-admin assertions
+run as pat. **dave and fiona deliberately have no display name**, so their
+snapshots are their email addresses and the mask has something real to hide;
+dave's project is what the masking assertions read. **"Array House"** is a
+ninth project whose document carries a `priceModifier` nested inside arrays,
+several levels down: `browse_version` must refuse it outright. No assertion is inside a handler that could swallow it: undo blocks
+catch only `ZZ001`, and the one wrapper around `browse_version` catches only
+`0A000` and `42501` and returns null, which every caller asserts on.
+
+Each of these 42 mutations, applied to a fresh database, makes the suite fail
+**on the named assertion** shown (section numbers are the plan's). The first
+eight are the plan's own list; 39–42 cover the two narrowings and the array
+belt case added on 2026-09-23.
+
+| # | Mutation | Fails on |
+|---|---|---|
+| 1 | `browse_version` returns the raw document | 3: "MARGIN: browse_version serves the document only through browse_redact" |
+| 2 | `browse_schema_redaction`'s paths emptied for 24 | 3: "MARGIN: browse_version serves frank P1's head, redacted" (the belt refuses it) |
+| 3 | the unknown-schema refusal removed (serves it raw) | 4: "FAIL CLOSED: pf_v99 has no redaction row, so browse_version raises and serves nothing (got a document)" |
+| 4 | `browse_projects` drops its `is_seed_member` filter | 1: "BROWSE SET: frank lists … and not Nonmember Co's" |
+| 5 | `browse_companies` drops its seed-entitlement check | 2: "NON-MEMBER: carol gets zero companies from browse_companies()" |
+| 6 | `projects_select` widened to the browse set | 5: "RLS IS UNTOUCHED: projects_select is byte-identical to 0008's" |
+| 7 | `decide_collab_request` skips the owner-member check | 6: "DECIDE: frank declining his own request raises 42501" |
+| 8 | `meets_required_aal()` removed from `browse_version` | 7: "TWO-FACTOR: browse_version raises at aal1 and serves nothing" |
+| 9 | the redactor function dropped | 3: "MARGIN: the redactor, browse_redact, exists" |
+| 10 | the redactor returns its input untouched (call site intact) | 3: "MARGIN: the document served to frank has no key named priceModifier, at any depth" |
+| 11 | an unknown format served with an empty path list | 4: "FAIL CLOSED: pf_v99_nomoney has no redaction row … (got a document)" |
+| 12 | the `priceModifier` belt removed | 3: "MARGIN, EVERY PATH: the documents frank reaches that carry priceModifier are exactly his own company's and his grants' — and no more" (since 2026-09-23 the array-nested fixture leaks through the headline count first; it used to fail on 4's "BELT: a priceModifier key anywhere …", which it still would) |
+| 13 | belt removed **and** paths emptied — a cost field left in | 3: "MARGIN: the document served to frank has no key named priceModifier, at any depth" |
+| 14 | a stored document's own `redaction` key wins over the server's | 3: "FORGED MARKER: …" |
+| 15 | `can_read_project` widened | 5: "RLS IS UNTOUCHED: can_read_project is byte-identical to 0008's" |
+| 16 | `can_write_project` widened | 5: "… can_write_project …" |
+| 17 | `holds_project_grant` widened (`can_act_as`) | 5: "… holds_project_grant …" |
+| 18 | `project_versions_select` widened | 5: "… project_versions_select …" |
+| 19 | `shareable_companies` left at its Stage 3 form | 2: "SHAREABLE COMPANIES TIGHTENED: carol, not seed-entitled, gets no company names" |
+| 20 | `request_project_access` ignores the browse set | 6: "REQUEST: asking about carol's project raises the same error as asking about one that does not exist" |
+| 21 | `request_project_access` ignores existing access | 6: "REQUEST: asking about his own company's project is already-has-access" |
+| 22 | requests visible to anyone who can read the project | 6: "VISIBILITY: nick, a collaborator on P1, does not see its requests" |
+| 23 | requests hidden from the requester | 6: "REQUEST: pending, … and he can read his own request" |
+| 24 | RLS disabled on `collab_requests` | 6: "carol sees no requests" |
+| 25 | insert/update/delete on `collab_requests` granted | 6: "REQUEST: a direct insert into collab_requests raises 42501" |
+| 26 | a decline writes a grant | 6: "DECLINE: no grant is written" |
+| 27 | a grant does not record the decision | 6: "GRANT: the request is marked granted, by bob" |
+| 28 | more than one pending request allowed | 6: "REQUEST: a second pending request from frank is refused …" |
+| 29 | `browse_redact` callable by `authenticated` | 3: "EVERY FUNCTION FRANK CAN CALL is classified …" |
+| 30 | a new definer function returning documents | 3: "EVERY FUNCTION FRANK CAN CALL is classified …" |
+| 31 | `browse_schema_redaction` readable by `authenticated` | 8: "PRIVILEGES: authenticated must hold no select on browse_schema_redaction" |
+| 32 | `browse_versions` drops its `is_seed_member` filter | 1: "BROWSE SET: naming carol's project's id lists none of its versions" |
+| 33 | `browse_version` drops its `is_seed_member` filter | 1: "BROWSE SET: naming carol's project's version serves nothing (42501)" |
+| 34 | `access` always `redacted` | 1: "ACCESS MARK: his own company's project is marked full" |
+| 35 | aal check removed from `request_project_access` | 7: "TWO-FACTOR: request_project_access raises at aal1" |
+| 36 | aal check removed from `browse_projects` | 7: "TWO-FACTOR: and no projects" |
+| 37 | aal check removed from `decide_collab_request` | 7: "TWO-FACTOR: nor decline at aal1" (a grant is still stopped by `share_project_with_person`'s own check; a decline is not) |
+| 38 | two-factor policy dropped from `collab_requests` | 7: "TWO-FACTOR: and he reads none of his own requests" |
+
+| 39 | `browse_versions` returns the stored label | 1: "NO LABELS WHILE BROWSING: browse_versions returns a null label for every version" |
+| 40 | `browse_version` returns the stored label | 3: "NO LABELS WHILE BROWSING: browse_version's label is null, though the stored one reads \"second save\"" |
+| 41 | the author-name mask removed from all three functions | 1: "NAMES MASKED: browse_projects gives the owner company instead of the address" |
+| 42 | the belt walks objects but **not arrays** (a hand-rolled recursive walk) | 3: "MARGIN, EVERY PATH: the documents frank reaches that carry priceModifier are exactly his own company's and his grants' — and no more" |
+
+Also: `requested_by` without `on delete cascade` fails "deleting fiona's account
+… SUCCEEDS (got 23503)", and a foreign key on `decided_by` fails "deleting bob's
+account SUCCEEDS (got 23514)".
+
+**One mutation deliberately does NOT fail the suite, measured rather than
+assumed.** Changing the belt's JSON path from `lax $.**.priceModifier` to
+`strict $.**.priceModifier` leaves every assertion passing — and should, because
+on PostgreSQL 17.4 the two are **equivalent for this pattern**: `$.**` descends
+into arrays in both modes. That was checked across eleven document shapes
+(plain, inside an array, arrays of arrays, deep mixed, top-level, value-is-an-
+array, value-is-null, beside scalars, empty array, absent, and a key-shaped
+string inside an array) with identical results and no error in either mode. It
+is recorded so that a later reader does not mistake it for a gap and "fix" it.
+What the array cases **do** catch is a belt that cannot see inside arrays at
+all — mutation 42.
+
+Also checked against a database shaped like live (seed, a platform admin, an
+ordinary member at two companies, a member at a third, an invite, saved and
+renamed projects, a grant, notice state), comparing a one-line-per-object dump
+of every function (with privileges), policy, trigger, relation, index,
+constraint, column, default privilege and row set in `public` and `auth`:
+
+- A copy broken just before `commit;` leaves the dump identical.
+- The real run changes **exactly** `shareable_companies`. Every other object
+  and every row is byte-identical, and every added object is Stage 4's.
+- A second run leaves the dump identical.
+- Afterwards the ordinary member still saves and loads, the other company's
+  member reads 0 raw rows of it, and no request exists.
+- Pre-flight (a)–(f) and post-flight (A)–(J) returned exactly what the steps
+  above say. **(D) is 9 rows since 2026-09-23** — `browse_author_name` joined
+  it — and **(J) is new**: it counts what the two narrowings withhold on real
+  data, and has no fixed expected value.
