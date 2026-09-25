@@ -2425,6 +2425,426 @@ Accounts as before, **one browser or profile per account** — a step marked "as
 
 ---
 
+## Project Smearforn — drawing a real job (2026-09-24) — PLANNED, NOT BUILT
+
+The first time this app has been asked to reproduce an **engineered job** rather than a demo. Tommy's hard goal: **create his current project in the app by Monday evening, 2026-09-28.** This is editor work only — no backend, no schema beyond one project-file version bump, nothing in `supabase/`.
+
+**Build order confirmed by Tommy, 2026-09-24: 4C → Smearforn → Stage 5.** His words: *"I like 4c then Smearforn then admin tooling."*
+
+### Provenance
+
+Tommy supplied two PDFs from the live job — **ROGERS-SEHORN ADU, job 26024, Columbia MO**, marked NOT FOR CONSTRUCTION — at `C:\Users\Tommy\.claude\uploads\1ed28836-38c7-4ff8-85f8-37ffe3336029\` (`12e19972-2026-09-15_Engineering_Sheets.pdf`, `3ac6daf8-09-16-26_CUT_LIST.pdf`). Facts below were extracted with `pdftotext -layout` and **re-read and verified** against both PDFs. (A byte scan of a PDF returns glyph noise — a trap already recorded in the 4B as-built note. Don't.)
+
+He later uploaded a third source: **shop drawings drawn by Cameron on his team**, in SketchUp with open-cut extensions. Those drive the separate shop-drawing workstream below, not the editor stages.
+
+### The evidence, and what it demands of the editor
+
+- **60 panels**, labelled by wall: **N1–N5, E1–E12, S1–S12, W1–W12.** The app's own instance names are `${direction}-${n}` (`panelInstances.ts:282`) — `E-4`, not `E4`. Same scheme, different punctuation.
+- **Sub-panel suffixes**: `E4A/E4B/E4C`, `S3A/S3B/S3C`, `W4A`. These are Tommy's "triple panel headers" — **now settled, see "The triple header" below.**
+- **Irregular widths**: 43", 41½", 37½", 35", 31½", 30", 29½", 28½", 25½", 24", plus plan dimensions like 5'-1¾" and 3'-2½". Every one is a whole eighth, so the 1/8in grid holds with room to spare, and **every one is ≥24"**.
+- **14" is the panel DEPTH, not a width** — the job uses the 14" option from `looseDensePackThicknessOptionsIn` ([14, 15.5, 15.75]) throughout. **An earlier draft of this section read it as a 14" panel width and built an Open Item on top of that; corrected here rather than quietly edited**, because the mistake had already propagated into the Stage 1 rule and the flags check. The 21" figure that sat beside it in the same draft is gone for the same reason: **on re-reading, no panel width in this job is under 24".** The lesson is the boring one — a bare number off a cut list has a unit and an axis, and both have to be read before it means anything.
+- **"SAFETY GAP"** appears repeatedly. The app has Safety/Gap panels, but it *places* them by rule (gap end, second-to-last); it has no way to put one where a drawing puts one.
+- One wall is annotated **"FRAMED WALL OF GARAGE - FOR REFERENCE"** — which, per Tommy's answer below, the app does **not** need to draw.
+
+**The ADU is this plan's acceptance test.** Every sub-stage below closes with what of the 60-panel schedule it reaches.
+
+### The minimum panel width — SETTLED 2026-09-24, and it uncovers a pre-existing defect
+
+Tommy, unhedged: *"I can't make any panels that are left to right elevation view shorter than 2'. This project is a 14" thick panel."*
+
+That is **24 inches, measured left-to-right in elevation**, and it is a **manufacturing** limit — a statement about what his shop can physically build, not a design preference. The same sentence confirms the depth/width distinction a second time.
+
+#### How to record it — and specifically what NOT to overwrite
+
+**`panelWidthInRange.minIn` stays at 15.75.** Its note — "300-400mm on the mfr spec sheet, translated 1:1" — is **true, sourced and about a different thing**. The manufacturer's floor and Building Integrity's working minimum are two separate facts, and the honest model keeps both. Overwriting the mfr number with Tommy's would destroy a traceable source to record an unrelated one, which is the exact failure the `status`/`note` convention exists to prevent.
+
+**Add a new value beside it**, in `packages/panel-catalog/src/data.ts`:
+
+- **`status: "confirmed"`.** Tommy is Building Integrity, and this is a first-hand statement about his own shop's capability. It meets the convention's definition ("traceable to Building Integrity") on the nose.
+- **⚠ The one thing that would make it `pending`:** if anyone finds themselves *interpreting* rather than recording. He gave a number, a unit and an axis. Nothing is being inferred. **If the coder has to reason about what he meant, that is the signal to downgrade it** — flags-check point 2 exists for precisely that moment.
+- **The note quotes him verbatim**, including "left to right elevation view", because the axis is the part that was misread once already in this very section.
+- **Name it for what it is** — the narrowest panel the shop can build, e.g. `fabricationMinPanelWidthIn`. **Do not name it anything that reads as a twin of `panelWidthInRange.minIn`**; two similarly-named minimums one line apart is how the wrong one gets used.
+
+#### What the app does between 15¾" and 24"
+
+- **Typed entry: refuse.** Not a warning. A user cannot ask for a panel the shop cannot build, and the whole point of a manufacturing limit is that it is not negotiable at the keyboard. The field keeps focus, states the limit, and does not commit — the same shape as the existing "no room left" refusal.
+- **`PANEL_DRAG_FLOOR_IN` is this number, not a coincidence.** Settled. The drag floor **becomes a consumer of the new catalog value** and the local `24` is deleted. `PANEL_DRAG_SNAP_TOLERANCE_IN = 2` stays exactly where it is — the ±2" snap window and the role-handoff are genuine ergonomics and are unaffected. One number, one definition, two consumers.
+- **⚠ Existing saved projects open regardless. Limits are enforced at the point of EDIT, never at LOAD.** A stored design containing a narrower panel opens, draws, prices and prints exactly as before; the narrow panel is reported in the Review Log. **A file must never become unopenable because a limit tightened** — the same principle `parseProjectFile` already applies to a damaged timestamp ("still a loadable design, so it must not be rejected") and that the v23→v24 pass applied by repairing rather than re-tiling.
+
+#### ⚠ The defect this uncovers: the tiler already emits panels it cannot build
+
+**This is the finding, and it is pre-existing — Smearforn did not cause it and must not quietly fix it.**
+
+`computePlainSizing` (`tiling.ts:190-195`) splits a leftover across two panels: `distributeEighths(standardEighths + remainderEighths, 2)`. With the 40" standard width, each half lands between **20" and 40"** — so **a wall whose leftover is small routinely produces two ~20" panels**, under Tommy's stated 24" floor. The `rawStandardCount === 0` branch (`tiling.ts:183-189`) can emit a single panel of any width down to nearly zero, `buildEvenMiddle` divides short walls into equal pieces with only a `Math.max(1, …)` floor, and `resolveCorners` clamps a corner panel to the wall's own length. **None of these knows about a minimum.**
+
+So the app can currently hand a shop a cut list containing a panel that shop cannot make. That is worse than a UI inconsistency and it has been true the whole time.
+
+**Recommended handling, and the reasoning for not just fixing it:**
+
+- **Surface it now: a Review Log entry for every panel below the minimum, however it got there** — typed, dragged, or generated. Cheap, honest, and it makes an invisible defect visible on the one document an engineer actually reads.
+- **Do NOT change the split rule during Smearforn.** Changing how `computePlainSizing` distributes a leftover changes panel counts and widths on **every wall of every existing project**, which is a blast radius Smearforn has no business taking on in a deadline week. It also needs a real decision from Tommy about what the tiler should do instead — absorb the leftover into one wider panel? widen the safety gap? refuse the wall length? — and each of those is a different building.
+- **It goes in Open Items as its own question**, not folded in here.
+
+**Nothing in the ADU trips any of this.** Every width in the job is ≥24", so for Monday this change removes a warning that would never have fired and adds a refusal nobody will hit. It matters for the next job, not this one.
+
+#### Two neighbours worth a glance while in `data.ts`
+
+- **`sillMinWidthIn = 23.625`** (23⅝", "600mm on the mfr spec sheet") is **⅜" under the new 24" floor.** Either a sill is exempt from the 2' rule — plausible, it is a different member — or one of the two numbers wants revisiting. **Do not silently round it to 24.** Open Items.
+- **`columnMinWidthIn = 16.75`** is also below 24", but harmless: a column's real built width is 25.5", so the floor is already satisfied with room. Noted so nobody "fixes" it.
+- **The Safety/Gap panel (0.75") is not a panel for this purpose** — it is a plywood spacer board, with "no studs, plates, or girts at all" per `buildSafetyGapMembers`. It must be exempt explicitly, or the Review Log fills with false positives on every wall over 12ft.
+
+---
+
+### The architectural question: what is a hand edit, and what survives?
+
+Today a wall is panelized automatically from its length and settings. Tommy is asking for hand edits that **survive**: *"Ideally there would be fairly isolated movements with these tools rather than repanelizing the wall and reverting it back to something else."*
+
+**First, a plain restatement of what he is actually asking for, because it changes the design.** Every one of these operations will still re-run the tiler for that one wall — that is how corner ownership, the gap-panel rule, the safety-panel threshold and the sum invariant stay true. What must stop is **losing work**. The goal is not "don't re-panelize"; it is "re-panelizing is lossless." Anything else forks the tiling pipeline.
+
+#### The decision: an override layer per slot, and it mostly already exists
+
+**Verified in the code, not proposed from scratch.** `PanelSlot.lockedWidthIn` (`packages/geometry/src/types.ts:117`) is already exactly this: a per-slot fixed-width reservation set by the panel-boundary drag (`page.tsx:2077` `handleDragResizePanels`), re-applied after every retile by `reconcileBracedPlacement` (`bracedPlacement.ts:420-427`), repaired onto the grid at load by `repairWallToEighths` (`eighths.ts:236-245`), and already serialized and already classified in `cloud/redaction.ts`. The same file already carries the same "absent = automatic, present = the user decided" convention on `heightIn`, `sillHeightIn`, `bracedPattern`, `zones`, and `secondaryType`.
+
+**So: an override layer, not a switch to a manual list.** Rejected explicitly:
+
+- **"Once touched, the wall becomes a hand-authored panel array."** It would have to re-implement corner ownership, the merged-corner rule, gap placement, the safety-panel threshold, opening anchors, zone reconciliation and the sum invariant for the manual path — i.e. a second copy of the tiler that drifts from the first. Everything in this app that preserves user intent across a retile does it by **anchor + reconcile**, never by freezing.
+- **A separate `overrides` object beside the slots.** A second place for a width to live, which then has to be kept in sync with the slot it describes. `lockedWidthIn` is already on the slot.
+
+#### The one genuinely new mechanism: pinned slots are anchors
+
+The override layer covers *widths*. It does **not** cover *count* — and inserting a panel changes the count, which today is a pure function of `budget ÷ standardWidthIn` (`computePlainSizing`, `tiling.ts:150-205`). A retile re-derives the run and `reconcileBracedPlacement` maps old markers onto new positions by ordinal; an extra hand-inserted panel has no new position to land on and is dropped. **That is the silent revert Tommy is naming.**
+
+The fix is already in the building, one concept over. `retileWithOpenings` (`tiling.ts:501`) treats each opening as a **fixed-width reservation at an anchored ordinal**: it subtracts the opening widths from the budget, tiles the remainder, and re-inserts the openings at `beforeStandardCount`. Everything a hand-inserted panel needs.
+
+**Decision: generalize `OpeningAnchor` to a slot anchor.** A pinned standard/braced slot becomes an anchor exactly as a window is: its width comes out of the budget, its ordinal fixes its position, and the free run tiles around it. Consequences, stated:
+
+- **The sum invariant holds by construction** — the budget arithmetic is already integer eighths (`toEighths`/`distributeEighths`), and reserving one more fixed width changes nothing about that.
+- **`reconcileBracedPlacement`'s re-force loop becomes a no-op for pinned slots** (the retile already emitted them at their pinned width, so `deltaIn ≈ 0` and `shedWidthToNearestUnlocked` never fires). **Verify that rather than delete it** — the same loop still serves the combined safety-gap+brace case in `applyBracedPlacement`, which is a different customer.
+- **`getOpeningAnchors` grows to emit pinned standard-family anchors too**, and every caller that builds anchors by hand (`handleSetWindowWidth:2353`, `handleToggleOpening`, `retilePreservingOpenings`) inherits it.
+- **One tiler invariant has to be restated.** The property test asserts *"no `standard` slot exceeds `standardWidthIn`"* (spec, "The invariant needs a test"). A hand-pinned 43in panel against a 40in standard width breaks that as written. **The rule applies to tiler-generated slots only**; a pinned slot is bounded by `panelWidthInRange` instead. The coder updates the assertion deliberately, with a comment saying why — not by loosening it until it passes.
+- **No new persisted field, and therefore no version bump, for typed widths or insert.** `lockedWidthIn` is already in the file. This is the strongest single argument for this design.
+
+#### What happens when the wall changes afterwards
+
+Four rules. A silent revert and a silent keep-that-no-longer-fits are equally bad, so neither is allowed.
+
+1. **A pin survives any change that leaves room for it.** Wall lengthens or shortens, a window is resized, a neighbouring wall's corner ownership flips — the free run absorbs it and the pins hold. This is the common case and it is already how openings behave.
+2. **The sum invariant outranks the pin.** When the pins plus the fixed slots exceed the wall, the invariant wins and the pins that do not fit are **released** — their `lockedWidthIn` is cleared, their width returns to the tiler. Never a wall whose panels do not add up.
+3. **A release is always visible.** Two surfaces: the wall carries a **"hand-edited (n)"** badge in the elevation and Panelizer while pins are live, and a release raises a non-modal notice naming the wall and the count — the same shape as the existing `windowWidthClampNotice` / `sillClampNotice` (`page.tsx:2340-2346`), which is already the house pattern for "we changed your number and here is why".
+4. **Direct wall-length edits refuse instead of releasing.** Typing a wall length (or dragging a wall) that cannot hold its own pins is clamped at the minimum that can, with the same notice — because that gesture has an obvious right answer and destroying six hand-set widths to honour a typo is not it. Indirect changes (a bump-out, a thickness change, a corner flip) have no such clean floor and take rule 2.
+
+**Changing panelization type clears pins, with a confirm.** Square Bale locks panel width to 39in; a pinned 43in panel is not a square bale panel. This is a deliberate discard, announced, not a silent survival.
+
+#### Getting back to automatic
+
+Three exits, all explicit:
+
+- **Per panel** — a reset control beside the width field in the Selected Panel note clears that slot's `lockedWidthIn`. One panel returns to the tiler; the wall re-tiles; everything else holds.
+- **Per wall** — a **"Re-panelize this wall"** button clears every pin on that wall and runs the plain tiler. Confirmed by a dialog that names the count: *"This clears 9 hand-set widths on wall E."*
+- **Per project** — unchanged. Existing full-retile paths (new footprint draw, panelization-type change) already rebuild everything and now say so.
+
+#### The 1/8in grid, and the one snap that has to come with this
+
+Typed widths go through the existing `LengthInput` (`domain="in"`), which already parses `41 1/2`, `41½`, `41-1/2` and snaps to the eighth on commit — Stage 0 of the grid work, BUILT 2026-09-06. Nothing new is needed for typing.
+
+**But the panel-boundary drag is still unsnapped.** `WallElevationDiagram.tsx:874` says so outright: *"continuous, inch-based, NOT slot-snapped"*. That is the grid work's Stage 2 (the input-snapping layer), not built. Leaving it means a drag immediately walks a hand-set width off the grid, where the load-time repair silently absorbs it — the exact quiet-correction failure the grid section exists to prevent. **Fold the panel-boundary drag's own eighth-snap into Smearforn Stage 1**, and only that one gesture; the rest of grid Stage 2 stays where it is. Snap the *boundary position* and derive both widths from it (`leftWidthIn = boundary − pairStart`, `rightWidthIn = pairEnd − boundary`), which is what the grid section already specifies so the pair total cannot drift.
+
+**One note for whoever reads `repairStateToEighths` next.** Its doc comment (`projectFile.ts:458-464`) describes a wall whose widths miss the tiling target as *"hand-edited state, a synthetic fixture, or a footprint/slots pair that drifted apart"* — written when hand-edited state was a hypothetical. It is about to be a feature. The **behaviour stays right** (pins are whole eighths and the invariant holds, so the guard never fires on a Smearforn wall), but the comment's premise is now stale and should be updated rather than left to mislead.
+
+---
+
+### Stage 0 — Defaults: floor and foundation off, and one version bump for the whole project
+
+Tommy: *"I would like the turn off the floor and foundation tools as default for now and primarily focus on panelizing wall systems. This setting should still be visible, but perhaps it's somewhere in settings."*
+
+**Mostly already built, which is why it goes first.** The Panelizer note already carries a "Scope of work" checkbox group (`page.tsx:5183-5196`) driving `enabledEditorTabs` (`page.tsx:1288`). `floorsEnabled` and `roofEnabled` **already default off**; `wallsEnabled` defaults on. All three are already persisted (`projectFile.ts:311-313`, `373-375`) and already classified in `cloud/redaction.ts:125-127`.
+
+**What is missing is Foundation**, which is pushed unconditionally (`page.tsx:1291`). So:
+
+- **New state `foundationEnabled`**, a fourth checkbox in the same group, **default `false` for new projects**.
+- **Where it lives: the Panelizer note, beside the other three.** Tommy's *"perhaps it's somewhere in settings"* is satisfied — Panelizer is reached from the top bar and is already the stated *"keyhole to getting down to what editor tools are needed for this user's project."* Splitting one decision across two menus is worse than either menu. If he'd rather it sat in ⚙, that is a move of four checkboxes, not a redesign — Open Items.
+- **⚠ Existing projects must not lose their Foundation tab.** A v24 file has no `foundationEnabled` key. The migration defaults it to **`true`**, *not* to the new-project default of `false`. This is the "data must not vanish because a default changed" requirement and it is the whole trap in this stage: getting it backwards silently hides a tab on every project ever saved.
+- **Nothing is deleted, ever.** These flags gate rendering and which Detail Guide/Shop Drawing pages are in scope. Foundation *type*, pier grid, floor system and their geometry stay in state and in the file whether the tab is shown or not. That is already true of Floors and Roof today and must stay true.
+- **⚠ Empty scope becomes reachable for the first time.** With Foundation optional, all four can be off. `editorTabsInScope([])` **returns every tab** (`editorTabs.test.ts:18`) while the snap-to-first effect sets `editorTab` to `enabledEditorTabs[0] ?? "foundation"` (`page.tsx:1300-1304`) — the dial would show everything while the state says foundation. **Refuse to uncheck the last checked branch** (disabled checkbox with a title saying why). Cheapest correct answer; the alternative is designing an empty state nobody asked for.
+
+**This stage owns the single `PROJECT_FILE_VERSION` bump for all of Smearforn: v24 → v25.** `parseProjectFile` accepts the current version and **exactly one** prior (`projectFile.ts:549-551`), so two bumps in one week would make a v24 file unreadable. Stage 3's keys are therefore added **here**, in Stage 0, with inert defaults, even though Stage 3 may ship days later or not at all. Every new key also needs its entry in the required-keys list (`projectFile.ts:~325/373`) **and** in `cloud/redaction.ts` (all of these are `"not-money"`) — a missing classification is a load-bearing omission, not a lint nit.
+
+**ADU reach after Stage 0:** none of the schedule. Less clutter while he works, and the file format settles once.
+
+---
+
+### Stage 1 — Type a panel width (the stage that must land)
+
+Tommy: *"We need a way to manipulate the widths of individual panels. Maybe when you are on the edit tool and click the numerical value of width of one panel and then click/highlight one of the edges, it opens up the number value so you can type in a new value. And/or also a tool should allow the user to click and drag a wall to shrink one and grow another."*
+
+**The second interaction already exists** — the panel-boundary drag does exactly "shrink one and grow another", conserving the pair total, with the 24in floor and the role-handoff Tommy specified (`WallElevationDiagram.tsx:874-938`). What it lacks is the eighth snap (above). **The first interaction does not exist for standard panels** — only for windows, which already have a `LengthInput` width field in the Selected Panel note (`page.tsx:7062-7074`).
+
+**So Stage 1 is: give standard/braced slots the width field windows already have.**
+
+- **Entry point.** Click a panel (existing `selectedSlot`), type into the width field in the Selected Panel note. Tommy's phrasing suggests clicking the number on the elevation itself; a click-to-edit label on the diagram is a nicer gesture and a bigger change. **Recommendation: the Selected Panel note this pass**, because it reuses a field that already parses fractions, already clamps, already shows a clamp notice, and already relocates the selection after a retile. The on-diagram editor is a Stage-1b nicety if there is time.
+- **Committing sets `widthIn` AND `lockedWidthIn` together**, exactly as the drag already does (`page.tsx:2085-2087`), then re-tiles that one wall through the anchor path.
+- **Where the width comes from.** The typed panel grows; the *free* run shrinks. Concretely: the pinned width is reserved out of the budget and the unpinned standard/braced slots re-tile into what is left, which may change their count. The wall's total length never moves.
+- **Constraints, and what happens when an edit is impossible:**
+  - **The wall's total length is fixed.** Always. It is not a thing a panel width edit may change.
+  - **Maximum: `panelWidthInRange.maxIn` = 48in** (confirmed). Above it, clamp and say so — the existing clamp-notice pattern.
+  - **Minimum: REFUSE at 24in**, the new `confirmed` Building Integrity fabrication minimum. The field keeps focus, states the limit, and does not commit. Not a warning — a panel the shop cannot build is not a thing to negotiate at the keyboard. See "The minimum panel width" above for how it is recorded and why `panelWidthInRange.minIn` is untouched.
+  - **The same constant drives the drag floor.** `PANEL_DRAG_FLOOR_IN`'s local `24` is deleted and both consumers read the catalog value. The ±2" snap tolerance and the role-handoff are unchanged ergonomics.
+  - **Auto-generated panels below the minimum are reported, not refused** — the tiler can already produce them (see the defect above) and refusing at the tiler would change every existing wall. Review Log only, this pass.
+  - **No room left.** If the free run cannot give up the width — every other slot on the wall is pinned, an opening, or a corner — **refuse the commit**, keep focus, and say how much is actually available. Never partially apply, never silently shrink a corner panel.
+- **Reset control** beside the field: clears `lockedWidthIn`, wall re-tiles, panel returns to automatic.
+
+**ADU reach after Stage 1:** every panel width in the schedule is typeable — 43", 41½", 37½", 35", 31½", 30", 29½", 28½", 25½", 24" — and **none of them trips any limit the app enforces**, so no warning fires anywhere in this job. Any wall whose panel *count* the tiler happens to produce correctly is fully reproducible. **Not** reachable: walls needing more or fewer panels than the tiler makes, the triple headers, the wall that stops short.
+
+---
+
+### Stage 2 — Insert, replace and delete a panel
+
+Tommy: *"There should be a way to add a panel, select which type of panel you want to add, and then click where to put it. This would either replace a panel or add one between."*
+
+- **Tool shape:** pick a type from the left bar, then click a panel or a boundary. Clicking a **panel** replaces it; clicking a **boundary** inserts between. Both are the anchor mechanism; neither is a new model.
+- **Replace already half-exists.** `nextPanelCycleState` (`tiling.ts:603`) cycles standard → window → door → column → big-header → 4 braced styles → standard, and `handleToggleOpening` already routes width-changing transitions through the anchor retile and non-width-changing ones through an in-place mutation. The new tool is a **direct-select version of that same cycle** — no new transitions, no new types.
+- **Placeable types: standard, braced (4 styles), window, door, column, big-header.** The click-cycle roster exactly.
+- **NOT placeable: corner and safety-gap.** Both are placed by rules that exist for reasons — corner ownership (shorter-wall-wins, reflex corners, the merged-corner case) and gap-end placement. Hand-placing one would put the user in a fight with two systems that will overwrite them. **⚠ The ADU annotates "SAFETY GAP" repeatedly, so this may be exactly what Tommy wants next** — see Open Items. The anchor mechanism would carry it; it is a scope call, not a technical one.
+- **Insert: where the width comes from.** A new panel is born pinned, at the project's standard width (or the type's own default — a Big Header is 96in by `bigHeaderDefaultWidthIn`). That width is reserved out of the budget and the free run re-tiles smaller. **If the free budget cannot cover it, refuse the insert** and say how much room there is. Never overflow the wall; never shrink a corner or an opening to make room.
+- **Delete** is the same operation inverted: the slot goes, its width returns to the free run, the wall re-tiles. Deleting an opening is already expressible (cycle it back to standard); deleting a *panel* is new and is what lets a wall's count come down to match a drawing.
+- **Neighbours:** untouched in type, style, zones and pins. Only the unpinned free run resizes. That is the whole point of the anchor design and it is the acceptance criterion.
+
+**ADU reach after Stage 2:** panel *counts* become exact, so all four wall runs can be made to match the schedule. **The triple headers are NOT reachable here** — they are a cross-column relationship, not an insert; see Stage 2b.
+
+---
+
+### The triple header — SETTLED 2026-09-24, and it is a relationship, not three adjacent panels
+
+Tommy: a triple header is **one header panel spanning two panels below it.** Verified in the cut list, and the arithmetic closes exactly:
+
+| Panel | What it is |
+|---|---|
+| **E4A** | the header — two 6'5½" headers plus a lid |
+| **E4B** | 3'5½" wide, below |
+| **E4C** | 3'0" wide, below |
+
+**3'5½" + 3'0" = 6'5½"** — the header's span is exactly the two panels beneath it. So A is not a sibling of B and C; **A sits on top of B and C.** An earlier draft of this section guessed "three adjacent Big Header slots" and would have produced a wall 6'5½" too long. Recorded because the guess was plausible and wrong, which is the dangerous combination.
+
+**What the app can and cannot express today.** A `PanelSlot` is a full-height column, and `PanelSlot.zones` splits a column *vertically* — so "a header above a panel" is already expressible **within one column**, and "a header above two columns" is not. What spans a slot *range* today is a **Mid-Wall Bond Beam**: a `MidWallBeam` carries a slot-index coverage range (the `BoxBeamCoverage` shape), and `computeWallVerticalBandsForSlot` already shortens every covered slot's panels to make room for it. That is structurally the same object as a triple header.
+
+**Recommended design — copy the coverage mechanism, change what sits in the band.** A triple header is a **wall-level record over a slot-index range**, exactly like a mid-wall beam, except the thing occupying the band is a real **Header panel instance with its own width (the span), its own weight and its own fabrication sheet** — not a beam. Marked an inference: it is read off the cut list's arithmetic and off the existing coverage machinery, not off a conversation with Tommy about how he wants it modelled. **Have him confirm before Stage 2 commits to it.**
+
+Three consequences worth stating before anyone builds it:
+
+- **It makes the A/B/C naming fall out naturally** — the spanning panel and the panels beneath it are a parent and its children, which is precisely the relationship a suffix expresses. See the nomenclature workstream: this is the same question, and Tommy has opened it.
+- **`bigHeaderWidthInRange` (48–144in) is already `pending-BI-confirmation`**, noted "Tommy's own stated range — not mfr-sourced". A 6'5½" span sits inside it. **If a later job spans past 12ft, the range does not get widened to fit a drawing.**
+- **`W4A` is an A with no B**, which under this reading means a header spanning something that was never split — or a naming artifact. Per Tommy, the ADU's letters came from splitting panels while leaving neighbours' names alone, so an orphan A is exactly the kind of debris that scheme produces. **Evidence for the nomenclature workstream, not a modelling requirement.**
+
+**The label format question is withdrawn.** Tommy: follow our existing nomenclature — and then opened nomenclature itself as a design question. `E-4` vs `E4` is now a sub-question of that workstream, not a ten-minute separator change.
+
+---
+
+### Stage 3 — Incomplete walls: a wall that simply ends
+
+Tommy: *"We need an addition tool setting or stop wall tool so that it is possible to make incomplete walls."*
+
+**Reference walls have dropped out of scope — Tommy, 2026-09-24:** *"For new construction the bare walls meet the other bare walls. This project being all new construction is just a simple end to our wall, no need to have the rest of the plan drawn."*
+
+That answers the corner/junction Open Item and deletes a whole feature at once. The ADU does **not** need the garage drawn, labelled or dimensioned; it needs the ADU's own wall to **stop**. No junction detail, no inset question, no "REFERENCE ONLY" print treatment. The earlier plan's reference wall was solving a problem the job does not have.
+
+**Recorded for later, not built:** the addition case, which is the one that *would* need a junction detail. Tommy: *"For additions, a toe up made of 2x4s and insulation is installed vertically over a vapor closed membrane."* That is a real assembly and it belongs with the Detail Guide pages (it is a close cousin of detail 4, the toe-up/foundation load path, rotated vertical). Nobody should invent it from this one sentence — see Open Items.
+
+- **Hard decision, unchanged: the footprint polygon stays CLOSED.** An open polygon would break `computeFootprintAreaSqFt`, `perimeterRing`, `pointInPolygon`, `computeRoofBearingSegments`, the floor framing and the 3D pipeline simultaneously — every one assumes a closed ring, and `cornerOwnership` walks it by `walls.find(w => w.startCorner === wall.endCorner)`. **"Incomplete" is a property of the panel run, never of the shape.** This survives Tommy's answer intact and matters more because of it: the ADU's floor and roof still extend to the line where the wall stops, so that edge must still exist geometrically even though nothing is built along it.
+- **Data (added in Stage 0's v25 bump, inert until this stage):** one record keyed by wall id — `{ startStopIn: number; endStopIn: number }`. Absent entry = fully panelized, today's behaviour, byte-identical. Stops are inches on the eighth grid, measured from each wall end. **An edge with no wall at all is just `startStopIn` covering the whole length** — no separate mode, now that the "reference" mode is gone. One concept, one field pair.
+- **Geometry:** `wallGeometryFor` subtracts the stops from `lengthIn` before tiling. The invariant becomes **`Σ slot widths + startStop + endStop === wallFabricationLengthIn`** — still exact, still integer eighths.
+- **Drawing:** the unbuilt span draws as a **dashed boundary line**, not a hatched wall — it is where the building ends, not a wall of unknown type. It carries its own dimension in plan and elevation. **In 3D, nothing is drawn there.** A ghost solid would read as a wall that exists, which is exactly backwards.
+- **Printing:** the span's dimension prints, labelled **NO PANELS**.
+- **Totals and the cut list — still the real trap.** No panels means no instances, so anything derived *from panel instances* (price, weight, carbon, BOM, cut list, shipping) is correct for free. **Anything derived from `wall.lengthFt` is not**, and will silently over-count — plaster and wall-assembly areas are the first suspects. **An explicit audit of every total that reads a wall length rather than a panel set is an acceptance criterion of this stage.**
+- **A stop that reaches a corner takes the corner panel with it** (the corner is simply not built; the neighbour is unaffected, since it already butts or owns by its own rule). Inference; stated so it is not discovered mid-build.
+- **Review Log:** one entry per wall carrying an unbuilt span. A wall that stops short is by definition an incomplete design and the engineer must see it. Mechanism: the existing `reviewLog` useMemo (`page.tsx:5023`), which already takes `{ label, status, note }` entries.
+
+**ADU reach after Stage 3:** the wall that stops where the garage begins. **The full 60-panel schedule, minus the A/B/C naming.**
+
+---
+
+### Stage 4 — Shop drawings, to match Cameron's sheets
+
+New workstream, 2026-09-24. Tommy uploaded shop drawings made by **Cameron** on his team (SketchUp, open-cut extensions) and wants the app's per-panel output to read like them:
+
+> *"bird's eye view of the interior face at and up and clockwise angle, (more) clearly denote what the length of each cut is, and somehwere on the page clearly note what overall size (length, depth, height, AND the diagonal measurement of the exterior face. And I NEED to have total weight at 7lbs/ft3 of straw plus weight of wood and fasteners on each panels' page. I also want a blank table included on the page for the shop to write in actual height, length, and width, moisture content, weight, quality check date, and initials."*
+
+**Most of this sheet already exists, which is the single most useful fact about this workstream.** `PanelFabricationPage.tsx` already renders, per unique panel: a lettered `PanelElevationDiagram`, a **Materials cut list** table (Letter / Part / Qty / Dimensions, from `computePanelCutList(members)`), an "Also used at" instance list, structural values, a **weight breakdown with a modeled total**, and one blank line — `Actual total weight: _______________`. So this is **mostly a print/sheet-content pass, not a modelling pass**, and almost none of it needs new data.
+
+Taking his list item by item, with the print-vs-3D split he asked for:
+
+1. **Weight at 7 lb/ft³ plus wood and fasteners — nearly done, and flags-clean.** `targetDensityKgM3` in `data.ts` **is already 7 lb/ft³**, noted "7 lb/ft3 (Tommy) — supersedes the earlier ~4.7 lb/ft3 literature-derived starting point", and `computePanelWeightBreakdown` already returns components plus a modeled total. **No new building value is introduced by this item at all.** The work is confirming the breakdown on the sheet names straw, wood and fasteners as three visible lines rather than one total, and that the fastener line traces to what the BOM already computes. **⚠ Fastener counts inherit `fastenerTableStatus`, which is `pending-BI-confirmation`** — a printed screw count must carry that provisionality, not appear as a fact because it is printed in a table.
+2. **Per-cut lengths "more clearly denoted" — the data exists; the question is where it is shown.** Every cut length is already in the cut list's Dimensions column. **Inference: he means on the drawing**, as dimension leaders against the lettered members, because that is what Cameron's SketchUp sheets do and it is what "denote" reads as beside "bird's eye view". Confirm before building — if he only means a clearer table column, this item is nearly free.
+3. **Overall size block: length, depth, height, and the exterior-face diagonal.** Pure geometry off dimensions the panel already has; the diagonal is `hypot` of the exterior face. **It is a squareness check** — that is why it sits beside height and width on his QC sheet — so it must be labelled as the *exterior face* diagonal and never as a generic "diagonal". No building value, nothing flagged.
+4. **The bird's-eye interior-face view — a camera preset, not a new projection.** `StandardPanel3DView` already embeds a single-panel 3D view inside a sheet (see the Jack Stud Shop Drawing). **Recommendation: a fixed camera preset on the existing renderer** — up, clockwise, interior face toward the viewer — rather than a hand-drawn axonometric, which would be a second renderer to keep in sync with the member geometry forever. **⚠ One risk to settle before committing: the 3D view is `@react-three/fiber` (WebGL), and a WebGL canvas does not reliably print** without the drawing buffer being preserved. Verify on a real print preview *first*; if it prints blank, the fallback is rendering the preset to a raster at print time, not abandoning the view. **This also finally answers the long-standing Open Item "'Typical architect angle' set for 3D renders"** — Tommy has now described the angle he wants in his own words.
+5. **The blank QC table — match his sheet, do not invent one.** The cut list PDF's **"QUALITY CONTROL PROJECT SUMMARY CHECK LIST"** already has the columns: PANEL ID, ACTUAL HEIGHT, ACTUAL WIDTH, ACTUAL DIAGONAL, MOISTURE CONTENT, SCREW COUNT, ACTUAL WEIGHT. He wants **QUALITY CHECK DATE** and **INITIALS** added. **Use his columns verbatim, in his order, plus the two new ones** — a shop that already fills in one layout should not have to learn a second.
+   - **⚠ One real difference to settle: his existing table is project-level (one row per panel); he asked for a blank table *on each panel's page*.** Recommendation: the per-panel page carries **his columns with one row per placed instance of that panel** — since a fabrication sheet already covers N identical copies ("Also used at (12)"), one row per copy is what a shop actually fills in, and PANEL ID is then pre-filled per row rather than blank. The project-level checklist stays exactly as it is. Confirm.
+   - The existing single `Actual total weight: ____` line is **superseded** by the table's ACTUAL WEIGHT column and should be removed rather than left as a second place to write the same number.
+6. **What a panel page shows when a value is not known: a visible gap.** The house convention, already settled twice in this log (`PanelStructuralStatus` carries no invented value; the logo placeholder "claims nothing"). An unknown dimension prints as a dash with a note, never a plausible substitute. A blank cell in a QC table is *correct* — it is the shop's job to fill it.
+
+**Monday relevance: almost none, and that is the honest answer.** The Monday goal is *creating* the project, not printing it. The one item that could ride along is (1), because the number already exists and the breakdown is already computed — but even that is not needed to draw a wall. **Stage 4 goes after the editor stages.**
+
+### Stage 5 — Nomenclature: options, not a default
+
+New workstream, 2026-09-24. Tommy:
+
+> *"I would like to develope and impliment the most user friendly nomenclature system. I think we have a good one. This particular project I think was named that because we broke those panels down into abc because the other ones didn't want to change - not necessarily because that's the best nomenclature to use."*
+
+**So the ADU's `E4A/E4B/E4C` is circumstantial, not exemplary.** It is what fell out of splitting panels while refusing to renumber their neighbours.
+
+**DECIDED 2026-09-24:** *"Everything downstream should get renumbered. I really like the simplicity of CARDINALDIRECTIONLETTER-NUMBER."*
+
+So: **positional, cardinal-direction letter plus number, renumbering everything downstream on every insert or delete.** Suffixes are out.
+
+**Most of this is already built.** `panelInstances.ts:280-282` emits `${compassDirection}-${n}`, counted per direction across the building, in wall order then slot order — and because it is derived fresh on every render, **it already renumbers downstream automatically.** Nothing has to be built to get the behaviour he asked for; the work is in the consequences.
+
+**One character is still ambiguous and it is free either way.** His pattern reads `CARDINALDIRECTIONLETTER-NUMBER`, which is *literally* what the app emits (`E-4`); his drawings say `E4`. The safest reading is that he is describing today's scheme approvingly, hyphen included, and that `E4` is Cameron's rendering of the same thing. **Recommended default: change nothing** — Open Items.
+
+#### The cost of always-renumber, and what the app now owes the shop
+
+**This is the option whose cost lands on the shop floor rather than in the code**, and saying so is the point of writing it down. Insert a panel at E-3 and every panel east of it shifts by one: **the E-7 on the sheet in the shop's hand is the E-8 on the sheet in the office.** Nothing in either document says which is which. Someone installs the wrong panel.
+
+**This is now a requirement, not a nicety: a printed sheet must carry its own identity.** Minimum: **project name, revision, and date issued, on every sheet**, so two sheets naming "E-7" can be told apart at a glance. The pieces exist — `SheetTitleBlock` already takes a date (`resolveTitleBlockDate`) and `sheetNumber`/`sheetCount` from `DocumentMetaContext`, and the backend already keeps `project_versions`. What is missing is the revision on the face of the sheet and a line on the panel schedule saying **names are positional and valid only for this revision.**
+
+**Worth building, not this pass: a renumbering diff.** When a project is re-printed after an insert, show what moved — *"E-7 through E-12 shifted to E-8 through E-13."* That single feature is what turns a dangerous scheme into a safe one, because it tells the shop exactly which labels to re-read. Recommended as the first follow-up after the editor stages.
+
+#### ⚠ The scheme cannot name a spanning header without a second rule
+
+**The problem, stated plainly before anyone builds Stage 2b:** a left-to-right letter-number scheme describes a **one-dimensional** run. A header spanning two panels below it is **two-dimensional** — three panels occupying two columns. There is no assignment of consecutive left-to-right numbers that keeps all three in reading order, which is exactly why the ADU reached for A/B/C in the first place. **He is moving away from the notation that solved this, so the replacement needs its own rule.**
+
+Options, with the recommendation:
+
+| | Rule | Result on the ADU's E4 span |
+|---|---|---|
+| **1 — recommended** | Number all full-height and lower panels left-to-right first; **spanning members follow, left-to-right, after the run** | the two panels become (say) E-4 and E-5; the header becomes E-13 at the end of the east run |
+| 2 | Number strictly by left edge, lower member first | header lands *between* its own two children — unreadable |
+| 3 | A second series for headers (`EH-1`) | clean, but it is two schemes, which is what he is moving away from |
+
+**Option 1's cost, stated:** a header's number no longer tells you where it sits on the wall. That is recoverable — its schedule row carries its span and its wall — and there are very few of them per building. **Tommy decides before Stage 2b starts; the coder must not pick one by default.**
+
+#### Two smaller questions the answer did not cover
+
+- **Non-cardinal walls are already handled, and the handling is lossy.** `wallCompassDirection` snaps a wall's outward normal to the **nearest of eight** (N/NE/E/SE/S/SW/W/NW), so an octagon's mitered walls already name correctly (`NE-3`) and a rectangle always lands on a cardinal. **But the snap means two differently-angled walls can both be "NE"** and share a number run while pointing different ways. The ADU is rectilinear so nothing bites today; a bay window or an angled wall would.
+- **Two walls facing the same direction share one number run today** (the counter is keyed by direction, not by wall). On an L-shaped building that is one `E-1…E-9` run split across two walls nowhere near each other — fine on a schedule sorted by direction, confusing on site. He answered the renumbering half of this question and not this half. **Recommended default: leave it shared**, which is both today's behaviour and what a shop sorting by elevation wants.
+
+**Monday relevance: none.** The app already emits the names he asked for. The print-identity requirement is the part that matters, and it belongs with Stage 4.
+
+### Staging, and an honest read on Monday
+
+Order is by **how much of the ADU each stage unblocks per hour of work**, not by elegance. The elegant model (anchors) is carried by Stage 2 because Stage 1 does not need it.
+
+| Stage | What it is | By Monday evening? |
+|---|---|---|
+| 0 | Foundation checkbox, default off; the single v24→v25 bump carrying every Smearforn key | **Yes**, comfortably — the mechanism exists |
+| 1 | Typed panel width + eighth-snap the existing drag + per-panel reset | **Yes** — and this is the one that *must* land |
+| 2 | Insert / delete / place-a-type; the anchor generalization; the spanning header | **The insert/delete half: plausible.** The **spanning header is the new risk** — it arrived with Tommy's answer, it needs its own confirmation, and it is a new cross-column concept rather than a width edit |
+| 3 | Incomplete walls — a wall that simply ends | **Better than before, and still the most likely to slip.** Reference walls dropping out removed a whole feature; what is left is the stop mechanism plus the wall-length-derived-totals audit, which is the part that tends to find two more bugs |
+| 4 | Shop drawings | **No, and it does not need to be.** The Monday goal is creating the project, not printing it |
+| 5 | Nomenclature consequences (sheet identity) | **No** — but note the scheme itself needs **no work at all**; the app already does what he asked for |
+
+**The 24in minimum is a Stage 1 rider, not a stage.** One catalog value, one refusal in the typed-width field, one deleted local constant, one Review Log entry. **It changes nothing about Monday** — every ADU width is ≥24", so the refusal never fires on this job — and it is worth doing now precisely because it is cheap while the file is open.
+
+**Two things improved since the first draft of this plan, and one got worse.** Better: reference walls are gone (Tommy's *"just a simple end to our wall"*), and the 14in panel-width scare evaporated once it turned out to be a depth. Worse: **the triple header is a real cross-column concept**, not three adjacent panels, so Stage 2 carries more than it did yesterday.
+
+**The fallback if Stage 3 slips, stated now so it isn't improvised Monday night:** draw only the ADU's panelized walls and accept that the footprint is then short on one side — which changes area, floor and roof. That is a **wrong building with a right panel schedule**, the correct trade for a Monday deadline *provided it is written on the sheet*. It must not become a silent compromise.
+
+**What Tommy will not have Monday regardless:** the shop-drawing sheet changes, any nomenclature decision, and — unless Stage 2's spanning header lands — the `E4A`-over-`E4B`/`E4C` relationship, which would then have to be approximated by two full-height panels with the header drawn as a mid-wall beam. **That approximation is a drawing, not a panel:** it would not produce E4A as a fabricated panel with its own weight and its own sheet. Worth knowing before relying on it.
+
+---
+
+### Handoff to the coder
+
+**Not in scope for any stage of this pass:** anything in `supabase/`; the backend Stage 5 work; hand-placing corner or safety-gap panels; **any change to the naming scheme itself** (`panelInstances.ts:282` already implements what Tommy decided — leave it alone); **any change to `computePlainSizing`'s split rule** to enforce the new minimum (pre-existing defect, reported not fixed — see Open Items); reference walls (dropped, see Stage 3); the addition/toe-up junction detail; the renumbering diff; the on-diagram click-to-edit width label (Stage 1b at best); the rest of the 1/8in grid's Stage 2 snapping layer beyond the single panel-boundary drag; per-wall standard widths.
+
+**Stage 0 — defaults and the version bump.**
+*Scope:* add a Foundation scope checkbox defaulting off, and land every Smearforn project-file key in one v24→v25 migration.
+*Files:* `apps/web/app/page.tsx` (~1284-1304 state and `enabledEditorTabs`, ~5183 checkbox group), `apps/web/app/projectFile.ts` (`PROJECT_FILE_VERSION`, `ProjectState`, required-keys list, migration), `apps/web/app/cloud/redaction.ts`, `apps/web/app/editorTabs.ts`.
+*Acceptance:* a new project opens with Wall only; a v24 file loads with Foundation **on**; unchecking Foundation hides the tab and changes no foundation data; re-checking restores it identically; a round-trip save/load of a v25 file is byte-stable; the last checked branch cannot be unchecked.
+*Edge cases:* v24 file with `floorsEnabled: true`; the empty-scope path; `editorTabsInScope([])`; a file saved mid-week at v24 after a partial Stage 3 lands.
+
+**Stage 1 — typed widths.**
+*Scope:* a width field for standard/braced slots that sets `widthIn` + `lockedWidthIn` and re-tiles that wall; eighth-snap the panel-boundary drag; a per-panel reset; **plus the 24in minimum rider** (new catalog value, typed-entry refusal, `PANEL_DRAG_FLOOR_IN` folded in, Review Log entry).
+*Files:* `apps/web/app/page.tsx` (Selected Panel note ~7032; a `handleSetPanelWidth` beside `handleSetWindowWidth:2335`; `reviewLog` ~5023), `apps/web/app/WallElevationDiagram.tsx` (~874-938, and the `PANEL_DRAG_FLOOR_IN` deletion at :113), `packages/panel-catalog/src/data.ts`, `packages/geometry/src/tiling.ts`, `packages/geometry/src/bracedPlacement.ts`.
+*Acceptance:* typing `41 1/2` on a standard panel yields exactly 41.5in and redisplays as `41½"`; the wall's panels still sum exactly to `wallFabricationLengthIn`; every other panel's type, braced style, zones and pins are unchanged; resizing an unrelated window later does not move the pinned width; the panel drag lands only on eighths and floors at the catalog minimum; typing 20in is refused with the limit stated; **a saved project containing a 20in panel still opens, draws and prints**, reporting that panel in the Review Log.
+*Edge cases:* a pin wider than `standardWidthIn`; a wall where every other slot is pinned or fixed (refuses); a pinned slot adjacent to the safety-gap panel, which has its own width-shedding rule; a pinned slot on a merged-corner wall; save/load round-trip preserving the pin; **the safety-gap panel's own 0.75in width must NOT trip the minimum-width Review Log entry**; a wall short enough that the tiler itself emits a sub-24in panel (logged, not blocked).
+
+**Stage 2 — insert / replace / delete.**
+*Scope:* generalize `OpeningAnchor` to cover pinned standard-family slots; a place-a-type tool.
+*Files:* `packages/geometry/src/tiling.ts` (`OpeningAnchor`, `getOpeningAnchors`, `retileWithOpenings`), `packages/geometry/src/bracedPlacement.ts` (`reconcileBracedPlacement`), `packages/geometry/src/retile.ts`, `apps/web/app/page.tsx`, `apps/web/app/WallElevationDiagram.tsx`, `packages/geometry/src/tiling.test.ts`.
+*Acceptance:* insert a panel mid-wall, then resize a window at the other end — the inserted panel is still there, still its width, still in position; the sum invariant holds through both; the tiler-generated-slots-only restatement of the max-width assertion is made deliberately and commented; `reconcileBracedPlacement`'s re-force loop is *observed* to be a no-op for pinned slots rather than assumed.
+*Edge cases:* insert with zero free budget (refuses); insert beside a corner; insert on a wall under the 12ft safety-panel threshold (no gap panel exists); delete the last unpinned panel; insert on a mitered (octagon) wall, where `markSafetyCorner` runs afterwards; a wall with a second story whose zones must survive; the panelization-type switch clearing pins.
+
+**Stage 2b — the spanning (triple) header.** *Confirm the model with Tommy before writing code.*
+*Scope:* a wall-level header record over a slot-index range, occupied by a real Header panel instance whose width is the span.
+*Files:* `packages/geometry/src/wallVerticalBands.ts`, `packages/geometry/src/types.ts`, `apps/web/app/panelInstances.ts`, `apps/web/app/WallElevationDiagram.tsx`, `apps/web/app/page.tsx`, `apps/web/app/projectFile.ts` (key added in Stage 0).
+*Acceptance:* a header spanning two 3'5½"/3'0" panels reports a span of exactly 6'5½"; the wall's slot widths still sum exactly to its fabrication length (**the header adds no width to the run** — it sits above it); the two panels below are shortened by the header's height and remain independently editable; the header is a real panel instance with its own weight and its own fabrication sheet, not a beam.
+*Edge cases:* a span whose ends do not align with slot boundaries (refuse, or snap — decide and say which); a span over a slot that already has zones from a mid-wall beam; resizing a panel under a span; deleting a panel under a span; a span crossing an opening; a span on a wall that later shortens.
+
+**Stage 3 — incomplete walls.**
+*Scope:* per-wall run-stop record; the drawing, print, totals and Review Log consequences. **No reference walls.**
+*Files:* `packages/geometry/src/retile.ts` (`wallGeometryFor`), `apps/web/app/page.tsx`, `apps/web/app/FootprintCanvas.tsx`, `apps/web/app/WallElevationDiagram.tsx`, `apps/web/app/Building3DView.tsx`, `apps/web/app/panelInstances.ts`, `apps/web/app/projectFile.ts` (keys already added in Stage 0).
+*Acceptance:* an unbuilt span produces zero panel instances, zero cut-list rows, zero price, zero weight, zero carbon; **every total derived from a wall length rather than a panel set has been audited and named in the PR**; the footprint still closes and area/floor/roof are unchanged; the elevation and printed sheet both carry the unbuilt dimension; the Review Log carries one line per affected wall; 3D draws nothing along the span.
+*Edge cases:* a stop that reaches past a corner panel; a stop longer than the wall; a wall stopped end to end; a stopped wall on a second story; a bump-out inserted on a wall that has stops; a stopped wall that is also a gable end.
+
+**Stage 4 — shop drawings.** *Verify the WebGL print path before committing to the 3D view.*
+*Scope:* per-panel sheet gains an overall-size block with the exterior-face diagonal, a three-line weight breakdown, the bird's-eye interior-face preset, clearer per-cut denotation, and Tommy's QC table.
+*Files:* `apps/web/app/PanelFabricationPage.tsx`, `apps/web/app/PanelElevationDiagram.tsx`, `apps/web/app/StandardPanel3DView.tsx`, `apps/web/app/SheetTitleBlock.module.css`, `apps/web/app/globals.css` (print rules).
+*Acceptance:* the sheet shows length, depth, height and exterior-face diagonal, labelled as the exterior face; weight shows straw (at the catalog's 7 lb/ft³), wood and fasteners as three lines plus a total; the QC table carries Tommy's seven columns in his order plus quality check date and initials; the old single `Actual total weight` line is gone; **the whole sheet prints on one page** (see the paged-media rules — an over-length sheet fragments, and a QC table is exactly the kind of content that pushes it over); an unknown value prints as a visible gap.
+*Edge cases:* a panel with no dimensional lumber (`cutList.length === 0`); a fabrication group with many instances (how many QC rows?); the WebGL canvas in print preview; metric mode (the imperial-is-authoritative note applies); a fastener count printed while `fastenerTableStatus` is pending.
+
+**Stage 5 — nomenclature.** **The scheme is decided and already implemented; what is left is its consequences.**
+*Scope:* sheet identity (project name, revision, date on every sheet) and a "names are positional, valid for this revision only" line on the panel schedule. **Not** a change to `panelInstances.ts:282` — today's `${direction}-${n}` already is the decided scheme and already renumbers downstream.
+*Files:* `apps/web/app/SheetTitleBlock.tsx`, `apps/web/app/DocumentMetaContext` consumers, `apps/web/app/PanelFabricationPage.tsx`.
+*Acceptance:* two exports of the same project taken either side of an insert are distinguishable from the printed page alone, without opening the app.
+*Not in scope:* the renumbering diff (first follow-up); the spanning-header naming rule (**blocked on Tommy — Stage 2b must not invent one**); the `E-4` vs `E4` separator.
+
+**Flags check for the minimum-width change specifically** — this is the one part of Smearforn that touches `data.ts`, so it gets its own pass rather than riding on the general one:
+1. The new value carries `status` and a `note` quoting Tommy verbatim, axis included. ✔
+2. `confirmed` is correct — first-hand, from Building Integrity, not interpreted. **If the coder finds themselves reasoning about what he meant, downgrade it.**
+3. The note traces to a real source (his own words, dated), not a restatement of the number. ✔
+4. Not a structural figure; `PanelStructuralStatus` does not apply. ✔
+5. It reaches the Review Log through the new below-minimum entry — including for panels the **tiler** generated, which is the case a human reviewer would never otherwise see. ✔
+6. `panelWidthInRange.minIn` keeps its own sourced note and status; the sill minimum's ⅜" conflict is logged as open rather than rounded away. ✔
+
+---
+
+### Flags check — run against this plan, per the 6-point check
+
+1. **Does every real-world number in the diff carry a `status` and a `note`?** **One new building number, and it is the only one in all of Smearforn:** the 24in Building Integrity fabrication minimum, added to `data.ts` as a `CatalogValue` with `status: "confirmed"` and Tommy's own words as its note. See its dedicated flags pass above. Everything else — a pinned panel width, a run stop, a header span — is a dimension of one specific design, the same class as a wall length, and correctly carries no flag. Stage 4 adds nothing: the 7 lb/ft³ straw density it needs is already there, already `confirmed`.
+2. **Anything marked `confirmed` that is actually researched?** **No — and one number is being deliberately preserved rather than overwritten.** `panelWidthInRange.minIn = 15.75` keeps its manufacturer-sourced note; Tommy's 24in is added alongside it as a separate, differently-sourced fact. **Two earlier drafts of this check were wrong about this pair and both are corrected rather than quietly deleted:** the first claimed a confirmed catalog value was contradicted by an as-built drawing (it rested on reading the ADU's 14" *depth* as a width); the second left 24in open on the strength of a "pretty sure" that Tommy has since unhedged. The number is now first-hand and definitive, and the manufacturer's number was never in conflict with it.
+3. **Do the notes trace to a real source?** One note is written — the minimum-width value's — and it quotes Tommy verbatim and dated, axis included, rather than restating the number. ✔
+4. **Structural figures using `PanelStructuralStatus` with no invented value?** None in scope. **Two adjacent risks stay live:** `bigHeaderWidthInRange` (48–144in) is `pending-BI-confirmation` as Tommy's own stated range and **does not get widened to fit a drawing**; and Stage 4 prints fastener counts that inherit `fastenerTableStatus`, also pending — **a number does not become confirmed by being printed in a table**, which is the specific way this convention gets eroded.
+5. **Does the value surface in the Review Log?** **Two new entries:** one per panel below the 24in fabrication minimum **however it got there — typed, dragged, or tiler-generated**, and one per wall carrying an unbuilt span. Both go through the existing `reviewLog` useMemo (`page.tsx:5023`). The tiler-generated case is the important one: it is a real defect that no human reviewer would otherwise see.
+6. **Where the spec marks something open, does the code treat it as provisional?** Yes: the tiler's sub-minimum panels are **reported rather than silently corrected**, because correcting them is a change to every existing wall and needs Tommy's decision; the sill minimum's ⅜" conflict is logged rather than rounded; Stage 2b does not invent a name for a spanning header while the naming rule is open; and Stage 4's QC table leaves the shop's own measurements blank rather than pre-filling them with modeled values, which is the same principle applied to paper.
+
+**The 1/8in grid itself remains a precision convention, not a building value** — pinned widths quantize exactly like everything else, and nothing here needs anyone's engineering sign-off.
+
+### Open Items — Project Smearforn
+
+**Answered 2026-09-24 — kept short, struck rather than deleted so the reasoning survives:**
+
+- ~~Build order?~~ **4C → Smearforn → Stage 5.** *"I like 4c then Smearforn then admin tooling."*
+- ~~Is a 14in panel real?~~ **It was never a width — 14in is the panel depth**, the `looseDensePackThicknessOptionsIn` option this job uses throughout. Every ADU width is ≥24in. My error, corrected in the evidence section.
+- ~~What are `E4A/E4B/E4C`?~~ **One header panel spanning two panels below it**, verified: 3'5½" + 3'0" = 6'5½". Not three adjacent panels. See "The triple header".
+- ~~Panel labels `E4` or `E-4`?~~ **Withdrawn into the nomenclature workstream** — Tommy has opened the whole scheme.
+- ~~Corner treatment at a reference wall?~~ **No such wall.** *"For new construction the bare walls meet the other bare walls... just a simple end to our wall, no need to have the rest of the plan drawn."*
+- ~~Scope checkboxes in Panelizer or ⚙?~~ **Panelizer.** Unchanged.
+- ~~Hand-placed Safety/Gap panels?~~ **Not this pass.** Unchanged; the Stage 2 anchor mechanism would carry it cheaply whenever he wants it.
+
+- ~~Is 24in Building Integrity's real minimum panel width?~~ **Yes, unhedged 2026-09-24:** *"I can't make any panels that are left to right elevation view shorter than 2'."* Recorded as a new `confirmed` catalog value; `panelWidthInRange.minIn` untouched; `PANEL_DRAG_FLOOR_IN` folded into it. See "The minimum panel width".
+- ~~Nomenclature scheme?~~ **Positional, `CARDINALDIRECTIONLETTER-NUMBER`, renumber everything downstream.** Already how the app behaves; the work is in the consequences.
+- ~~Cut-length denotation / QC rows / the addition toe-up?~~ **Accepted as recommended:** dimension leaders on the drawing, one QC row per placed copy with the ID pre-filled, and the toe-up recorded but not built.
+
+**Still open:**
+
+- **⚠ What should the tiler do when its own arithmetic produces a panel under 24in?** It does this routinely today (`computePlainSizing`'s two-way split lands between 20" and 40" at the 40" standard width), and it is a **pre-existing defect, not a Smearforn one.** **Recommended default for now: report every occurrence in the Review Log and change nothing**, because changing the split rule changes panel counts and widths on every wall of every existing project. The real fix needs his call on what the tiler should do instead — absorb the leftover into one wider panel, widen the safety gap, or refuse the wall length. Each is a different building.
+- **Does the 2' minimum apply to a sill panel?** `sillMinWidthIn` is 23.625in — **⅜" under it**, and manufacturer-sourced. Either sills are exempt or one number wants revisiting. **Recommended default: leave both, flag it, and do not round the sill up to 24 to make the conflict disappear.**
+- **⚠ How does a spanning header get a name under a pure letter-number scheme?** A one-dimensional naming rule cannot cover a two-dimensional arrangement — this is the exact problem `E4A/E4B/E4C` solved and he is moving away from it. **Recommended: number the panels left-to-right first and put spanning members after the run** (so the header is E-13 rather than E-4A). **This blocks Stage 2b** — the coder must not pick a rule by default.
+- **Confirm the spanning-header model** — a wall-level header over a slot-index range, occupied by a real Header panel instance, reusing the Mid-Wall Bond Beam's coverage mechanism. **Recommended default: yes**, but it is an inference off the cut list's arithmetic, not something Tommy has described.
+- **`E-4` or `E4`?** His stated pattern is literally today's `E-4`; his drawings say `E4`. **Recommended default: change nothing.** One character, free either way.
+- **Do two walls facing the same direction share one number run?** They do today. **Recommended default: keep it shared.** He answered the renumbering half of this question and not this half.
+
+---
+
 ## Top Bar & App Chrome — the Stitch reorganisation (2026-09-13) — Stage 1 BUILT (overflow fix); Stage 2 BUILT (wordmark + nav at 1200px, name grows — see Tommy's 2026-09-13 decisions); Stage 3 BUILT (footer — role disclaimer, no policy links yet; sidebar/tray re-skin not done)
 
 Two things arrived at the same answer: a real overflow bug that hides the sign-in control, and the Stitch mockups (`part 1 ui stitch/` and `part 2 ui stitch/`, each holding `code.html`, `screen.png` and a **byte-identical** `DESIGN.md`). **Stitch's header is not a restyle of today's bar — it is structurally smaller, and that is what fixes the bug.** Recorded as one decision so the fix is not improvised twice.
