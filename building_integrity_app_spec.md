@@ -2852,7 +2852,7 @@ Three consequences worth stating before anyone builds it:
 
 ### Stage 3 — Incomplete walls: a wall that simply ends — BUILT 2026-09-25
 
-**As built, on branch `smearforn-stage-3`, in seven commits.** No `PROJECT_FILE_VERSION` bump — Stage 0's v25 keys were already there and already classified; this pass only taught things to read them.
+**As built, on branch `smearforn-stage-3`, in twelve commits** (eight for the stage, then four for the code review's fixes, Tommy's two answers, and the browser harness). No `PROJECT_FILE_VERSION` bump — Stage 0's v25 keys were already there and already classified; this pass only taught things to read them.
 
 **The arithmetic is a pure module,** `packages/geometry/src/wallRunStop.ts` (+ its test file): `normalizeWallRunStop`, `applyWallRunStop`, `hasWallRunStop`, `builtWallLengthsIn`, `totalBuiltWallPerimeterIn`. `wallRunFor` in `retile.ts` is now the ONE place a wall's run length and per-end corner flags are derived, shared by `retile`, `retilePreservingOpenings`, `wallGeometryFor` and `panelSlotBoxes3D`. The invariant is asserted directly as integer eighths, in both the general form and the plan's own `wallFabricationLengthIn` form, plus a sweep over every whole inch of stop on a 30ft wall.
 
@@ -2862,10 +2862,31 @@ Three consequences worth stating before anyone builds it:
 
 **Two things the plan did not say, found while building it:**
 
-- **A stop at an end and a corner OWNED at that end are different facts, and the drawing needs both.** `WallGeometry` grew `ownsCorner*` beside `hasCorner*`. A stop does not change the NEIGHBOUR, so where the neighbour owns the corner its panel is still physically there and the elevation still draws its "adjacent wall" filler sliver — with the unbuilt span between that sliver and this wall's own run. Passing the tiler's `hasCorner*` to the elevation drew a phantom neighbour at a stopped end.
+- **A stop at an end and a corner OWNED at that end are different facts, and the drawing needs both.** `WallGeometry` grew `ownsCorner*` beside `hasCorner*`; passing the tiler's `hasCorner*` to the elevation drew a phantom neighbour at a stopped end. **(Superseded in part by the orphan-corner decision below — the elevation now keys off the ADJUSTED inset, not off ownership at all.)**
 - **A stop is keyed by wall id, and two operations renumber wall ids.** `insertBumpOut` and the near-zero-wall collapse behind a drag both rebuild every id. A stale key does not fail loudly — it **stops a different wall than the one the user stopped.** Both paths now remap stops through the same point-pair correlation they already use for slots. A fresh footprint draw clears them outright, as it already does openings.
 
 **A stop is measured from the wall's own TILING length**, i.e. after corner ownership has taken its inset out. On a wall that owns its corner — the common case and the ADU's — that is exactly "inches from the corner point on the plan". On a butting end the run already starts a wall-thickness in and the stop is measured from there. Written into the module's own doc comment rather than left to be discovered.
+
+#### After the code review — SHIP WITH FIXES, all applied 2026-09-25
+
+**The MUST-FIX was a stale memo, and it is worth stating plainly because it is this stage's own failure relocated one layer up.** `roofBearingRenderData` in `Building3DView` read `wallRunStopsByWallId` and did not list it as a dependency. On a single-story building the panels moved when a stop was set (`rawSlotBoxes` does list it) and **the truss plate stayed drawn at full length across the unbuilt span**; clearing a stop went stale the same way. The reviewer hand-checked every dep array in `page.tsx` and found them complete, including three justified `eslint-disable`s — so this reads as a single oversight in the one file that did not get that attention.
+
+Four smaller fixes alongside it: the multi-story roof-bearing **position** (`computeRoofBearingSegments` returns `startXIn` relative to the SLOT RUN's origin while the 3D anchor measures from the wall's true corner — "shrinks for free" was true of length and false of position; both branches are now run-relative and the stop is added once at the anchor); a **zero-length truss plate** on a fully-stopped wall, which emitted a real shop sheet for a 0in part with its own Timber HP weight line; the refusal checking **only the ground story**; and two different **clamp bases** (`applyWallRunStop` clamps against the tiling length, `builtWallLengthsIn` clamped against the raw length, so a clamped stop on a butting wall could make the tiler build nothing while plaster and membrane still counted up to ~15¾in as built — fixed rather than commented, with a test asserting the old wrong number so the regression is named).
+
+#### Tommy's two answers, 2026-09-25
+
+- **Gable + stop: CLAMP THE GABLE ROW TO THE BUILT RUN.** This was the one place the audit's "no panels means no instances" premise did not hold by itself, and the distinction is worth keeping: `computeGableTiledRow` is not a total that reads a wall length, it is a **panel generator** that reads one, and its output becomes real `"gable"` instances that are fabricated, priced, weighed, BOM'd and cut-listed. Unclamped, a stopped Gable End wall built gable panels above a span that same wall declares carries no panels — parts cut wrong, not a number read wrong. **The ridge and roof profile still span the full wall**; `resolveGableProfilePoints` and `ridgeLine` stay in the "deliberately left" column and a test reads the roofline height at the stop off the full-wall profile to prove it. A fully stopped gable end returns `[]` rather than one zero-width tile. Two things found wiring it: a clamped run can squeeze out a whole segment, and segment tiles feed BOTH the panel loop and the `naturalCounts` pass that assigns **window ordinals**, so skipping in one and not the other would silently renumber every gable window after it (one shared helper now serves both); and the structural-column block indexes `segments[0]`/`segments[1]` directly, which a clamped run can invalidate.
+- **Orphan corner: THE CORNER SIMPLY DOES NOT EXIST**, over transferring ownership. A wall butting a corner its neighbour owns was inset a wall-thickness to make room for a panel the neighbour never builds — butting into air, with a phantom filler sliver on its elevation. `cornerOwnershipWithRunStops` clears that inset so the neighbour runs out to its own true end, and the elevation keys the sliver off the **adjusted inset** (`startInsetIn`/`endInsetIn` replace the `hasCorner*` booleans, because "does not own the corner" and "the neighbour's panel is really there" have stopped being the same fact).
+
+  **This is the first thing in Stage 3 where a stop on one wall changes another wall's tiling**, so the safety argument is written into the function and asserted: only a CONVEX loser carries an inset, so reflex corners are untouched by construction (tested on a bumped-out shape with every wall stopped at both ends); the adjustment only ever makes a wall LONGER, so no wall's own "is my corner built" answer can change as a result and one pass reaches a fixed point; and a stopped wall can never take the merged-corner branch, since merging needs corners at both ends. Consequently a stop now re-tiles **every** wall through the house's own lossless `retilePreservingOpenings` path, and the refusal checks every wall on both stories.
+
+#### The browser harness — `apps/web/harness/smearforn-stage-3/`
+
+13 checks, all passing. **The trick that makes the 3D assertions exact:** the 3D view is WebGL, so a pixel diff cannot tell "the plate is stale" from "the panels moved" — but `Export as OBJ` builds its geometry from the same memos the scene renders, so intercepting that blob gives a precise textual model of the scene. The memo pin sets a stop, then forces a recompute by touching a dependency the memo DOES list; a scene that changes as a result was stale.
+
+**It found two defects in code written the same day**, both in the refusal: it compared each wall's tiled total against its *unstopped* length plus the stops, which — once the orphan-corner rule deliberately lengthened a neighbour — **refused every legitimate stop that reached a corner**, i.e. the main case the feature exists for; and it reported a downstream symptom ("the panels do not add back up") instead of saying the run was too short. Both fixed, both with a harness step pinning them.
+
+**It can fail, measured rather than assumed:** exit 0 on a clean run, exit 1 with a single expectation deliberately inverted.
 
 #### The wall-length audit — every total that reads a length rather than a panel set
 
@@ -2879,11 +2900,12 @@ Run as an acceptance criterion, against the code rather than assumed. **Four tot
 | Single-story truss-plate length (`trussPlateWallLengthTotalIn`) | wall perimeter | **FIXED** — built perimeter, and so the Timber HP volume and weight derived from it. No panels underneath means no plate on top. |
 | Truss-plate **fabrication sheet** length (`roofBearingFabricationGroups`) | `wall.lengthFt * 12` | **FIXED** — built length. This one cuts a real part, so an over-long plate is a part cut wrong, not just a total read wrong. |
 | Truss-plate span in 3D (`Building3DView`) | `wall.lengthFt` | **FIXED** — built run, with the start offset by the stop. |
-| Multi-story box-beam / truss-plate totals | `computeRoofBearingSegments(slots)` | **Correct as-is** — derived from the second story's own slots, so it shrinks for free. |
+| Multi-story box-beam / truss-plate totals | `computeRoofBearingSegments(slots)` | **Correct in LENGTH, fixed in POSITION** — slot-derived, so the length shrinks for free, but `startXIn` is relative to the slot run's origin while the 3D anchor measures from the wall's true corner. Caught by the review. |
+| **Gable End panel row** (`computeGableTiledRow`) | `wall.lengthFt * 12` | **FIXED — clamped to the built run.** Not a total at all: a panel GENERATOR reading a wall length, whose output becomes real fabricated, priced, weighed and cut-listed `"gable"` instances. The one place "no panels means no instances" did not hold by itself. Tommy's decision. |
 | Price, weight, carbon, BOM, cut list, shipping, bearing/shear estimates | `allInstances` | **Correct as-is** — no panels, no instances. This is the part the plan called free, and it is. |
 | Floor framing, joist layout, floor panel grid, membrane polygons | `computeFootprintAreaSqFt` / the closed polygon | **Deliberately left** — the floor still extends to the line where the wall stops. |
 | Foundation pier grid (`pierGrid`), bale-foundation rings (`perimeterRing`) | `wall.lengthFt` | **Deliberately left** — same reason. The foundation reaches the full wall line. |
-| Gable/roofline geometry (`resolveGableProfilePoints`, `ridgeLine`, `computeGableTiledRow`, the gable-end eligibility check) | `wall.lengthFt` | **Deliberately left** — the roof still spans the full wall. |
+| Roofline geometry (`resolveGableProfilePoints`, `ridgeLine`, the gable-end eligibility check) | `wall.lengthFt` | **Deliberately left** — the roof still spans the full wall, and the gable row's own heights are still sampled off that full-wall profile. Confirmed by Tommy alongside the gable-row clamp. |
 | Plaster floor-bottom area, mesh/plaster over the footprint | `computeFootprintAreaSqFt` | **Correct as-is** — a plan-view area, not a wall length. |
 | `wallBoxes3D` | `wall.lengthFt` | **Deliberately left** — exported but not called by the app today. Noted so it is not mistaken for a miss. |
 
@@ -2895,7 +2917,7 @@ Run as an acceptance criterion, against the code rather than assumed. **Four tot
 
 **Point 6, stated rather than buried: "a stop that reaches a corner takes the corner panel with it" is an INFERENCE**, and the plan says so. It is implemented, and it is labelled an inference in `applyWallRunStop`'s own doc comment rather than presented as a decision. If Tommy ever says a stopped wall still gets its corner panel, that is one branch in one function.
 
-**Verified:** `npx vitest run` green — **112 files, 2074 tests** (111 / 2040 before), `tsc --noEmit` clean in `apps/web`. **Not** verified in a browser: no CDP harness run this pass.
+**Verified:** `npx vitest run` green — **112 files, 2094 tests** (111 / 2040 before). `tsc --noEmit` clean in `apps/web` **and in `packages/geometry`** — the latter added after the orphan-corner pass, because `wallGeometryFor`'s signature change was silently accepted in a geometry test file that `apps/web`'s tsconfig never sees. (Two pre-existing errors in `bracedPlacement.test.ts` predate this branch and are untouched.) Lint: **94 pre-existing errors across the files touched, zero delta**, measured baseline-vs-branch by rule and message, not by total. **Browser-verified:** `apps/web/harness/smearforn-stage-3/`, 13 of 13 checks.
 
 Tommy: *"We need an addition tool setting or stop wall tool so that it is possible to make incomplete walls."*
 
