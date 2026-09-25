@@ -156,7 +156,7 @@ export interface FootprintCanvasProps {
   bracingStyle: BracingStyle;
   /** Needed to compute how many sill instances a wide window's rough
    * opening splits into (see allPanelInstances/computeSillRunWidths), so
-   * the on-canvas combined label (e.g. "N-3+4+5") matches its Shop
+   * the on-canvas combined label (e.g. "N3+4+5") matches its Shop
    * Drawing page. */
   standardWidthIn: number;
   jackStudConfig: JackStudConfig;
@@ -228,7 +228,7 @@ export default function FootprintCanvas({
   // this same panel on its Shop Drawing page. A window slot maps to 2
   // instances (header + sill, sharing one slot since they're stacked in
   // elevation, not sequential in plan) — combinedPanelLabel merges those
-  // into one label (e.g. "N-3+4") for the single rectangle drawn here.
+  // into one label (e.g. "N3+4") for the single rectangle drawn here.
   const panelNameByKey = useMemo(() => {
     const grouped = new Map<string, PanelInstance[]>();
     if (footprint) {

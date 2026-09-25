@@ -1,6 +1,6 @@
-import { buildRectangleFootprint } from "@building-integrity/geometry";
+import { buildRectangleFootprint, type CompassDirection } from "@building-integrity/geometry";
 import { describe, expect, it } from "vitest";
-import { allPanelInstances, combinedPanelLabel } from "./panelInstances";
+import { allPanelInstances, combinedPanelLabel, type PanelInstance } from "./panelInstances";
 
 describe("allPanelInstances", () => {
   // A(0,0) B(30,0) C(30,20) D(0,20) -> AB=N, BC=E, CD=S, DA=W (see wallCompassDirection).
@@ -26,12 +26,12 @@ describe("allPanelInstances", () => {
     const ab = instances.filter((i) => i.wallId === "AB");
     // corner, standard, [window -> header+sill], standard, corner
     expect(ab.map((i) => ({ name: i.name, panelType: i.panelType }))).toEqual([
-      { name: "N-1", panelType: "corner" },
-      { name: "N-2", panelType: "standard" },
-      { name: "N-3", panelType: "header" },
-      { name: "N-4", panelType: "sill" },
-      { name: "N-5", panelType: "standard" },
-      { name: "N-6", panelType: "corner" },
+      { name: "N1", panelType: "corner" },
+      { name: "N2", panelType: "standard" },
+      { name: "N3", panelType: "header" },
+      { name: "N4", panelType: "sill" },
+      { name: "N5", panelType: "standard" },
+      { name: "N6", panelType: "corner" },
     ]);
   });
 
@@ -39,10 +39,10 @@ describe("allPanelInstances", () => {
     const instances = allPanelInstances(fp, wallSlots, 40);
     const bc = instances.filter((i) => i.wallId === "BC");
     expect(bc.map((i) => ({ name: i.name, panelType: i.panelType }))).toEqual([
-      { name: "E-1", panelType: "safety-oct-corner" },
-      { name: "E-2", panelType: "braced" },
-      { name: "E-3", panelType: "header" },
-      { name: "E-4", panelType: "corner" },
+      { name: "E1", panelType: "safety-oct-corner" },
+      { name: "E2", panelType: "braced" },
+      { name: "E3", panelType: "header" },
+      { name: "E4", panelType: "corner" },
     ]);
   });
 
@@ -55,9 +55,9 @@ describe("allPanelInstances", () => {
   it("keeps numbering consistent regardless of which panel types a caller later filters to (the pre-existing Shop-Drawing-vs-canvas mismatch this replaces)", () => {
     const instances = allPanelInstances(fp, wallSlots, 40);
     const onlyStandard = instances.filter((i) => i.panelType === "standard");
-    // These must still be "N-2" and "N-5" (their true position in the AB sequence),
-    // not "N-1"/"N-2" from an independent per-type counter.
-    expect(onlyStandard.map((i) => i.name)).toEqual(["N-2", "N-5"]);
+    // These must still be "N2" and "N5" (their true position in the AB sequence),
+    // not "N1"/"N2" from an independent per-type counter.
+    expect(onlyStandard.map((i) => i.name)).toEqual(["N2", "N5"]);
   });
 
   it("splits a wide window's sill run into multiple sill instances sharing the same slotIndexInWall", () => {
@@ -101,13 +101,13 @@ describe("allPanelInstances — gableTilesByWallId", () => {
     };
     const instances = allPanelInstances(fp, wallSlots, 40, "plywood", gableTilesByWallId);
     const ab = instances.filter((i) => i.wallId === "AB");
-    // 3 real slots (N-1..N-3) then 2 gable tiles continuing the same counter.
+    // 3 real slots (N1..N3) then 2 gable tiles continuing the same counter.
     expect(ab.map((i) => ({ name: i.name, panelType: i.panelType }))).toEqual([
-      { name: "N-1", panelType: "corner" },
-      { name: "N-2", panelType: "standard" },
-      { name: "N-3", panelType: "corner" },
-      { name: "N-4", panelType: "gable" },
-      { name: "N-5", panelType: "gable" },
+      { name: "N1", panelType: "corner" },
+      { name: "N2", panelType: "standard" },
+      { name: "N3", panelType: "corner" },
+      { name: "N4", panelType: "gable" },
+      { name: "N5", panelType: "gable" },
     ]);
   });
 
@@ -434,21 +434,112 @@ describe("allPanelInstances — a braced slot split by a Mid-Wall Bond Beam degr
 });
 
 describe("combinedPanelLabel", () => {
+  /** A minimal instance carrying the two fields this function reads. */
+  const inst = (direction: CompassDirection, panelNumber: number, panelType: PanelInstance["panelType"]): PanelInstance => ({
+    name: `${direction}${panelNumber}`,
+    direction,
+    panelNumber,
+    wallId: "AB",
+    panelType,
+    widthIn: 36,
+    slotIndexInWall: 2,
+  });
+
   it("returns a single instance's own name unchanged", () => {
-    expect(combinedPanelLabel([{ name: "N-2", wallId: "AB", panelType: "standard", widthIn: 40, slotIndexInWall: 1 }])).toBe(
-      "N-2",
-    );
+    expect(combinedPanelLabel([inst("N", 2, "standard")])).toBe("N2");
   });
 
   it("combines 2 instances sharing a slot (window's header+sill) into one label", () => {
-    const instances = [
-      { name: "N-3", wallId: "AB", panelType: "header" as const, widthIn: 36, slotIndexInWall: 2 },
-      { name: "N-4", wallId: "AB", panelType: "sill" as const, widthIn: 36, slotIndexInWall: 2 },
-    ];
-    expect(combinedPanelLabel(instances)).toBe("N-3+4");
+    expect(combinedPanelLabel([inst("N", 3, "header"), inst("N", 4, "sill")])).toBe("N3+4");
+  });
+
+  it("combines 3 (a wide window's header + 2 sills) the same way", () => {
+    expect(combinedPanelLabel([inst("N", 3, "header"), inst("N", 4, "sill"), inst("N", 5, "sill")])).toBe("N3+4+5");
   });
 
   it("returns an empty string for no instances", () => {
     expect(combinedPanelLabel([])).toBe("");
+  });
+
+  // -------------------------------------------------------------------------
+  // THE REGRESSION THE HYPHEN DROP WOULD HAVE CAUSED, NAMED FOR THE EXACT
+  // STRING IT RENDERED.
+  //
+  // combinedPanelLabel used to parse the name it was handed:
+  //
+  //     const [prefix] = instances[0]!.name.split("-");
+  //     const numbers = instances.map((i) => i.name.split("-")[1]);
+  //     return `${prefix}-${numbers.join("+")}`;
+  //
+  // With "N4" instead of "N-4", split("-") returns ["N4"], so `prefix` is the
+  // WHOLE name and every entry of `numbers` is `undefined` — every window
+  // slot in the building renders `N4-undefined+undefined` on the canvas. It
+  // throws nothing, and no test that does not look at the string fails. That
+  // is the whole danger of this change, and this is the test for it.
+  //
+  // Deliberately a property over the REAL generator's output rather than one
+  // hand-built case, so it also catches any future consumer that
+  // re-introduces a parse.
+  // -------------------------------------------------------------------------
+  it("never renders the string \"undefined\" — the N4-undefined+undefined regression", () => {
+    const fp = buildRectangleFootprint(40, 20);
+    const slots = {
+      // A plain window (header + sill) and a WIDE window (header + 2 sills):
+      // multi-instance slots are the only ones that reach the combining path.
+      AB: [
+        { type: "corner" as const, widthIn: 25.5 },
+        { type: "window" as const, widthIn: 36 },
+        { type: "standard" as const, widthIn: 40 },
+        { type: "window" as const, widthIn: 90 },
+        { type: "corner" as const, widthIn: 25.5 },
+      ],
+      BC: [
+        { type: "door" as const, widthIn: 36 },
+        { type: "standard" as const, widthIn: 40 },
+      ],
+    };
+    const instances = allPanelInstances(fp, slots, 40);
+
+    // Group by the slot each instance was drawn from, exactly as the canvas
+    // renderers do (FootprintCanvas, WallElevationDiagram, Building3DView),
+    // and label every group.
+    const bySlot = new Map<string, PanelInstance[]>();
+    for (const i of instances) {
+      const key = `${i.wallId}:${i.slotIndexInWall}`;
+      bySlot.set(key, [...(bySlot.get(key) ?? []), i]);
+    }
+    const groups = [...bySlot.values()];
+    // At least one group really is multi-instance, or this test proves nothing.
+    expect(groups.some((group) => group.length > 1)).toBe(true);
+
+    for (const label of groups.map(combinedPanelLabel)) {
+      expect(label).not.toContain("undefined");
+      expect(label).not.toContain("-");
+      expect(label).toMatch(/^(NE|SE|SW|NW|N|E|S|W)\d+(\+\d+)*$/);
+    }
+  });
+
+  it("names carry no hyphen — there is no hyphen stencil in the shop", () => {
+    // Tommy, 2026-09-24: "I have spray paint stencils in the shop, and there
+    // is no huphen stencil. So let's drop the hyphen." Every panel name is
+    // spray-painted onto a real panel, so this format is downstream of a
+    // physical rack of objects in Columbia, Missouri.
+    const fp = buildRectangleFootprint(40, 20);
+    const slots = {
+      AB: [
+        { type: "corner" as const, widthIn: 25.5 },
+        { type: "standard" as const, widthIn: 40 },
+        { type: "window" as const, widthIn: 36 },
+        { type: "corner" as const, widthIn: 25.5 },
+      ],
+    };
+    const instances = allPanelInstances(fp, slots, 40);
+    expect(instances.length).toBeGreaterThan(0);
+    for (const i of instances) {
+      expect(i.name).not.toContain("-");
+      // The fields and the display string say the same thing, so nothing has
+      // to parse the string to recover either half of it.
+      expect(i.name).toBe(`${i.direction}${i.panelNumber}`);
+    }
   });
 });

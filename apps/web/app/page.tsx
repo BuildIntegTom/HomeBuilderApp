@@ -423,6 +423,32 @@ const PHASE2_ASSUMPTIONS = [
   },
 ];
 
+/**
+ * Catalog dimensions that MOVED on Building Integrity's own authority.
+ *
+ * These are not pending values — they are `confirmed`, and `toReviewLog`
+ * correctly filters `confirmed` entries out. They are here anyway, appended
+ * after that filter rather than mislabelled as pending, because a reviewer
+ * needs to be told when a sourced number was superseded. A dimension that
+ * changes because a shop said so is exactly the thing a reviewer should see,
+ * and a ⅜in move is small enough to be mistaken for a rounding if nobody
+ * says otherwise.
+ *
+ * Add to this list only when a real building value is deliberately changed;
+ * it is not a changelog for the app.
+ */
+const CATALOG_SUPERSESSIONS = [
+  {
+    label: "Sill panel minimum width moved to 24in (Building Integrity, superseding the manufacturer)",
+    status: "confirmed" as const,
+    note:
+      "sillMinWidthIn read 23.625in — the mfr spec sheet's 600mm (23.622in) at the app's nearest-1/8in convention — until 2026-09-24. " +
+      "Tommy: \"I can't make any panels that are left to right elevation view shorter than 2'\", and asked directly whether that rule also " +
+      "governs sills, he answered yes. A sill is a short Standard Panel, so it takes the same 24in shop minimum. NOT a rounding: the " +
+      "manufacturer's figure is still recorded in the catalog note it superseded, and this line is here so the change is seen rather than absorbed.",
+  },
+];
+
 type ShapeTool = "rectangle" | "octagon" | "bump-out" | "edit" | "drag-wall";
 type PanelizationType = "loose-packed-braced" | "square-bale-panels" | "timber-frame-curtain";
 
@@ -5273,7 +5299,11 @@ export default function LayoutEditor() {
       ...(foundationTypeId === "slab" ? [{ label: "Slab foundation dimensions", ...slabFoundationDimensions }] : []),
       ...PHASE2_ASSUMPTIONS,
     ]);
-    return entries.filter((e, i) => entries.findIndex((o) => o.note === e.note) === i);
+    const deduped = entries.filter((e, i) => entries.findIndex((o) => o.note === e.note) === i);
+    // Appended AFTER toReviewLog, not passed through it: these entries are
+    // `confirmed` and the filter drops confirmed values by design. See
+    // CATALOG_SUPERSESSIONS for why they surface here anyway.
+    return [...CATALOG_SUPERSESSIONS, ...deduped];
   }, [
     interior,
     exterior,
@@ -5524,13 +5554,26 @@ export default function LayoutEditor() {
         {/* Was a bare type="number" with no `step` and no parse-on-commit,
             so it happily stored an off-grid width like 40.3 — the tiler is
             safe against that now, but the stored setting still needs to be
-            on the 1/8in grid. */}
+            on the 1/8in grid.
+
+            CLAMPED to the fabrication minimum since Smearforn 1r, and the
+            title no longer advertises the manufacturer's 15¾in floor. This
+            setting is the width of EVERY plain panel on every wall: set to
+            20in it makes the whole building unbuildable, and no amount of
+            absorbing in the tiler fixes a cap set below the floor (see
+            tiling.test.ts's "ABSORB CANNOT SAVE A SUB-24in STANDARD WIDTH").
+            A clamp rather than the typed-panel field's refusal: this is a
+            project default with an obvious right answer at the boundary, and
+            LengthInput redisplays the committed value, so the clamp is
+            visible in the field the instant it happens. */}
         <LengthInput
           value={standardWidthIn}
           domain="in"
           ariaLabel="Standard width in inches"
-          title={`Possible panel width: ${formatLengthIn(panelWidthInRange.minIn, unitSystem)}-${formatLengthIn(panelWidthInRange.maxIn, unitSystem)}`}
-          onCommit={setStandardWidthIn}
+          title={`Standard panel width: ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)}-${formatLengthIn(panelWidthInRange.maxIn, unitSystem)}. The ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} floor is what Building Integrity's shop can build, not the manufacturer's ${formatLengthIn(panelWidthInRange.minIn, unitSystem)}.`}
+          onCommit={(next) =>
+            setStandardWidthIn(Math.min(Math.max(next, fabricationMinPanelWidthIn.value), panelWidthInRange.maxIn))
+          }
         />
       </label>
       <label>

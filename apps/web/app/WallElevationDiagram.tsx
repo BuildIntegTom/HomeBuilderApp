@@ -129,7 +129,7 @@ export interface WallElevationDiagramProps {
   /** This wall's own real named panel instances (page.tsx's own
    * `allInstances`/`secondStoryAllInstances`, filtered here by wallId) —
    * lets each rendered rect show the same real compass-based ID (e.g.
-   * "N-3", merged as "N-3+4+5" for a window's header+sills) Plan View and
+   * "N3", merged as "N3+4+5" for a window's header+sills) Plan View and
    * the 3D view already show for that exact slot, instead of inventing a
    * second ID scheme just for this view. */
   allInstances: PanelInstance[];

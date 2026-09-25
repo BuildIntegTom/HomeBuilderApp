@@ -40,11 +40,29 @@ export type NamedPanelType =
   | "jack-stud";
 
 export interface PanelInstance {
-  /** e.g. "N-3" — sequential per compass direction, across every wall
+  /** e.g. "N3" — sequential per compass direction, across every wall
    * facing that direction, in true along-wall order (matches how a real
    * shop drawing would number panels along a building side, including
-   * multiple wall segments on the same side from a bump-out). */
+   * multiple wall segments on the same side from a bump-out).
+   *
+   * **No hyphen, since 2026-09-24.** Tommy: *"I have spray paint stencils in
+   * the shop, and there is no huphen stencil. So let's drop the hyphen."*
+   * The name is stencilled onto a real panel in a real shop, and the shop
+   * owns no hyphen stencil — so the format is decided by which stencils are
+   * on a shelf in Columbia, Missouri, which is not something anyone would
+   * derive from first principles.
+   *
+   * **This is a DISPLAY string. Do not parse it.** `direction` and
+   * `panelNumber` below are the same information as real fields, and every
+   * consumer that needs a part of the name must read those instead. Parsing
+   * it is what broke `combinedPanelLabel` the moment the hyphen went. */
   name: string;
+  /** The compass direction this instance's name is built from — a field, so
+   * that nothing has to split `name` back apart to recover it. */
+  direction: CompassDirection;
+  /** This instance's own number within its direction's run, 1-based — the
+   * number in `name`, as a number. See `combinedPanelLabel`. */
+  panelNumber: number;
   wallId: string;
   panelType: NamedPanelType;
   widthIn: number;
@@ -278,8 +296,14 @@ export function allPanelInstances(
     midWallBandIndex?: number,
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
+    const panelNumber = counters[direction]!;
     instances.push({
-      name: `${direction}-${counters[direction]}`,
+      // NO HYPHEN — Tommy, 2026-09-24: "I have spray paint stencils in the
+      // shop, and there is no huphen stencil. So let's drop the hyphen."
+      // It also makes the app match the drawings he already issues.
+      name: `${direction}${panelNumber}`,
+      direction,
+      panelNumber,
       wallId,
       panelType,
       widthIn,
@@ -448,7 +472,7 @@ export function allPanelInstances(
     // Gable tiles aren't members of this wall's own `slots` array at all
     // (no PanelSlotType exists for them) — appended after the normal loop,
     // continuing this same wall's own direction counter so names interleave
-    // correctly (e.g. "N-8", "N-9", ...) with no collisions. `slotIndexInWall`
+    // correctly (e.g. "N8", "N9", ...) with no collisions. `slotIndexInWall`
     // is negative here — real slot indices are always >= 0, so a negative
     // one can never collide with a per-slot instance-grouping lookup keyed
     // by `${wallId}-${slotIndex}` elsewhere (e.g. Building3DView's
@@ -537,14 +561,39 @@ export function allPanelInstances(
   return instances;
 }
 
-/** Combines the instances that share a single rendered slot (a window slot
- * has 1 header + however many sills share its run) into one label for
- * that slot's single on-canvas rectangle — e.g. ["N-3", "N-4", "N-5"] ->
- * "N-3+4+5". */
+/**
+ * Combines the instances that share a single rendered slot (a window slot
+ * has 1 header + however many sills share its run) into one label for that
+ * slot's single on-canvas rectangle — e.g. `["N3", "N4", "N5"]` -> `"N3+4+5"`.
+ *
+ * **⚠ THIS FUNCTION USED TO PARSE ITS INPUT, AND THE HYPHEN DROP BROKE IT
+ * SILENTLY.** It was:
+ *
+ *     const [prefix] = instances[0]!.name.split("-");
+ *     const numbers = instances.map((inst) => inst.name.split("-")[1]);
+ *     return `${prefix}-${numbers.join("+")}`;
+ *
+ * With `"N4"`, `split("-")` returns `["N4"]`, so `prefix` became `"N4"` and
+ * every entry of `numbers` became `undefined` — rendering
+ * **`N4-undefined+undefined`** on every multi-instance slot, which is every
+ * window slot in the building. It threw nothing, and no test that did not
+ * look at the string would have failed.
+ *
+ * The fix is not a better regex: the instance now CARRIES its direction and
+ * its number as fields (see `PanelInstance`), so this no longer round-trips
+ * through its own display string. `panelInstances.test.ts` has a test named
+ * for the exact broken rendering, so the failure mode cannot come back
+ * quietly through some other parse.
+ *
+ * The combined label drops the hyphen too — `N3+4+5`. It is a screen and
+ * drawing label rather than a stencilled panel id, so the stencil constraint
+ * does not strictly bind it, but two conventions one character apart is how
+ * the wrong one gets stencilled.
+ */
 export function combinedPanelLabel(instances: PanelInstance[]): string {
   if (instances.length === 0) return "";
   if (instances.length === 1) return instances[0]!.name;
-  const [prefix] = instances[0]!.name.split("-");
-  const numbers = instances.map((inst) => inst.name.split("-")[1]);
-  return `${prefix}-${numbers.join("+")}`;
+  const prefix = instances[0]!.direction;
+  const numbers = instances.map((inst) => inst.panelNumber);
+  return `${prefix}${numbers.join("+")}`;
 }
