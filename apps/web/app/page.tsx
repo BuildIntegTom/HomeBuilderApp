@@ -4163,8 +4163,9 @@ export default function LayoutEditor() {
       );
     }, 0);
   }, [stories, thicknessIn, includeNailer, defaultBracePattern, defaultBracedMirrored]);
-  const totalWeightKg = strawWeight.weightKg + totalWoodWeightKg;
-  const totalWeightLb = totalWeightKg * KG_TO_LB;
+  // The project's own total weight is assembled further down, right after
+  // the spanning-header fabrication groups it now also has to include — see
+  // `totalWeightKg` there.
 
   const hasClayPlaster = checkedInteriorIds.has("clay-plaster");
   const hasLimePlaster = checkedExteriorIds.has("lime-plaster");
@@ -5721,14 +5722,36 @@ export default function LayoutEditor() {
             weightBreakdown: first.weightBreakdown,
             bracedPattern: bracedStyle?.pattern,
             bracedMirrored: bracedStyle?.mirrored,
-            instances: groupInstances.map((inst) => ({
-              name: inst.name,
-              isSafetyOctCorner: inst.panelType === "safety-oct-corner",
-            })),
+            instances: groupInstances.map((inst) => {
+              // Stage 2b's reciprocal cross-reference. A panel under a
+              // spanning header says so on its own sheet, because the header's
+              // name carries no direction and a shop reading this sheet cannot
+              // see that one.
+              const headerAbove = spanningHeaderCrossReference.headerAboveByPanel.get(inst.name);
+              return {
+                name: inst.name,
+                isSafetyOctCorner: inst.panelType === "safety-oct-corner",
+                ...(headerAbove ? { note: `Header above: ${headerAbove}.` } : {}),
+              };
+            }),
           };
         });
       });
-  }, [shopDrawings, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored, doorHeaderHeightIn, sillHeightIn]);
+    // `spanningHeaderCrossReference` is listed because a panel's sheet now
+    // carries the header above it — without it, adding a header would leave
+    // every panel sheet claiming there is none. The stale-memo defect Stage
+    // 3's review found was exactly this shape, one dependency short.
+  }, [
+    shopDrawings,
+    thicknessIn,
+    wallHeightFt,
+    includeNailer,
+    defaultBracePattern,
+    defaultBracedMirrored,
+    doorHeaderHeightIn,
+    sillHeightIn,
+    spanningHeaderCrossReference,
+  ]);
 
   // Real per-wall (or per-section-of-a-wall) roof-bearing (truss plate /
   // box beam) Shop Fabrication pages — same treatment gable-end panels
@@ -5919,6 +5942,83 @@ export default function LayoutEditor() {
     });
   }, [footprint, stories, midWallBeamsByStoryAndWallId, thicknessIn]);
 
+  /**
+   * Smearforn Stage 2b — a spanning header's own Shop Fabrication pages.
+   *
+   * Same "walk the real records directly, bypass allInstances" shape
+   * `midWallBondBeamFabricationGroups` above already uses, and for the same
+   * reason: a spanning header is a wall-level record, not a slot, so it has
+   * no `PanelSlot` for the instance pipeline to walk. What it IS is a real
+   * **header panel** — so its members are `buildBigHeaderMembers`, exactly
+   * the geometry the Big Header panel type already has (chords, repeating
+   * W-truss webs on both wythes, two jack studs), at its own derived span.
+   * No new member geometry is invented here.
+   *
+   * Grouped by span + height, the "exact copies together" rule every other
+   * fabricated part uses — two headers of the same size on different walls
+   * are the same part to a shop. Each instance carries its OWN location note,
+   * because the name does not: `H1` says nothing about where it goes.
+   */
+  const spanningHeaderFabricationGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      { widthIn: number; heightIn: number; instances: { name: string; note: string }[] }
+    >();
+    for (const resolved of resolvedSpanningHeaders) {
+      if (resolved.spanWidthIn <= 0) continue;
+      const key = `${resolved.spanWidthIn.toFixed(3)}-${resolved.heightIn.toFixed(3)}`;
+      const note = spanningHeaderCrossReference.locationByHeaderName.get(resolved.name) ?? "";
+      const existing = groups.get(key);
+      if (existing) existing.instances.push({ name: resolved.name, note });
+      else groups.set(key, { widthIn: resolved.spanWidthIn, heightIn: resolved.heightIn, instances: [{ name: resolved.name, note }] });
+    }
+    return [...groups.entries()].map(([groupKey, { widthIn, heightIn, instances }]) => {
+      const members = buildBigHeaderMembers(widthIn, thicknessIn, heightIn, false, jackStudConfig);
+      const woodWeightKg = computeMemberSetWoodWeight(members).weightKg;
+      const fastenerWeightKg = computeFastenerWeight(members).totalWeightLb / KG_TO_LB;
+      const weightBreakdown: PanelWeightBreakdown = {
+        // A header is a solid framed + braced assembly, not a straw-filled
+        // cavity — the same call `midWallBondBeamFabricationGroups` makes for
+        // its own Big Header kind, rather than a flat width x height x
+        // density box that would invent straw this panel does not contain.
+        strawOnlyWeightKg: 0,
+        strawOnlyWeightLb: 0,
+        components: [
+          { label: "Wood (chords + W-braces + jack studs + plywood)", weightKg: woodWeightKg, weightLb: woodWeightKg * KG_TO_LB },
+          { label: "Fasteners", weightKg: fastenerWeightKg, weightLb: fastenerWeightKg * KG_TO_LB },
+        ],
+        totalModeledWeightKg: woodWeightKg + fastenerWeightKg,
+        totalModeledWeightLb: (woodWeightKg + fastenerWeightKg) * KG_TO_LB,
+      };
+      return { uniqueKey: `spanning-header-${groupKey}`, widthIn, heightIn, members, weightBreakdown, instances };
+    });
+  }, [resolvedSpanningHeaders, spanningHeaderCrossReference, thicknessIn, jackStudConfig]);
+
+  /**
+   * Spanning headers' own wood weight, added to the project total.
+   *
+   * A spanning header is a real fabricated panel with real members, so it
+   * has to weigh something in the project's own total — a panel on a cut
+   * list weighing zero is worse than one weighing approximately. Additive:
+   * with no headers this is 0 and every existing project's total stays
+   * byte-identical.
+   *
+   * **A gap it does NOT close:** Mid-Wall Bond Beams are still absent from
+   * `totalWoodWeightKg`, which walks standard/braced SLOTS only. That is
+   * pre-existing and out of this stage's scope — said out loud so nobody
+   * reads this new line as evidence the old one is complete.
+   */
+  const spanningHeaderWoodWeightKg = useMemo(
+    () =>
+      spanningHeaderFabricationGroups.reduce(
+        (sum, group) => sum + group.instances.length * computeMemberSetWoodWeight(group.members).weightKg,
+        0,
+      ),
+    [spanningHeaderFabricationGroups],
+  );
+  const totalWeightKg = strawWeight.weightKg + totalWoodWeightKg + spanningHeaderWoodWeightKg;
+  const totalWeightLb = totalWeightKg * KG_TO_LB;
+
   // Only surface pages that actually apply to what's currently selected/
   // drawn — a foundation detail page only if one exists for this type, a
   // panel type's Shop Drawing only if the current design actually has any
@@ -5975,6 +6075,16 @@ export default function LayoutEditor() {
         pages.push({
           id: `shop-fab-${group.uniqueKey}`,
           label: `Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
+        });
+      }
+      // Spanning headers (Stage 2b), beside the other wall-level fabricated
+      // records. Counted in headers, not walls — one sheet can cover copies
+      // on several walls, which is exactly why each carries its own location
+      // line on the sheet itself.
+      for (const group of spanningHeaderFabricationGroups) {
+        pages.push({
+          id: `shop-fab-${group.uniqueKey}`,
+          label: `Panel Fabrication: Spanning Header ${group.widthIn.toFixed(1)}in (${group.instances.length})`,
         });
       }
     }
@@ -6052,6 +6162,7 @@ export default function LayoutEditor() {
     boxBeamSizeId,
     midWallBeamWallLengthTotalIn,
     midWallBondBeamFabricationGroups,
+    spanningHeaderFabricationGroups,
     shopDrawings,
     panelFabricationGroups,
     roofBearingFabricationGroups,
@@ -6341,6 +6452,21 @@ export default function LayoutEditor() {
     // every panel above uses, just with the beam's own dimensions.
     const roofBearingAreaSqFt = roofBearingFabricationGroups.reduce((sum, g) => sum + (g.lengthIn / 12) * (g.heightIn / 12), 0);
     const midWallBeamAreaSqFt = midWallBondBeamFabricationGroups.reduce((sum, g) => sum + (g.lengthIn / 12) * (g.heightIn / 12), 0);
+    // A spanning header is a real fabricated panel, so it is priced —
+    // otherwise a wall that gained one would show no change in cost at all.
+    // Its own elevation face (derived span x its own height), the same
+    // width-x-height convention every entry here uses.
+    //
+    // **Priced at the header/sill ("opening") rate, and that is an
+    // assumption**, in the same class as the existing "no distinct rate
+    // given for safety/gap panels — priced at the standard rate" note above:
+    // no rate for this panel has been given. It is a header, so the header
+    // rate is the closest existing fact rather than a new number, and no new
+    // rate is invented. Surfaced in the Review Log.
+    const spanningHeaderAreaSqFt = spanningHeaderFabricationGroups.reduce(
+      (sum, g) => sum + g.instances.length * (g.widthIn / 12) * (g.heightIn / 12),
+      0,
+    );
 
     return computePrice(
       [
@@ -6356,13 +6482,22 @@ export default function LayoutEditor() {
             cornerEdgeAreaSqFtFor("safety-oct-corner"),
         },
         { type: "braced", areaSqFt: areaSqFtFor("braced") },
-        { type: "opening", areaSqFt: areaSqFtFor("window") + areaSqFtFor("door") },
+        { type: "opening", areaSqFt: areaSqFtFor("window") + areaSqFtFor("door") + spanningHeaderAreaSqFt },
         { type: "column", areaSqFt: areaSqFtFor("column") },
         { type: "roof", areaSqFt: gableRoofAreaSqFt + roofBearingAreaSqFt + midWallBeamAreaSqFt },
       ],
       effectivePriceModifier,
     );
-  }, [stories, effectivePriceModifier, thicknessIn, gableTilesByWallId, gableEaveHeightIn, roofBearingFabricationGroups, midWallBondBeamFabricationGroups]);
+  }, [
+    stories,
+    effectivePriceModifier,
+    thicknessIn,
+    gableTilesByWallId,
+    gableEaveHeightIn,
+    roofBearingFabricationGroups,
+    midWallBondBeamFabricationGroups,
+    spanningHeaderFabricationGroups,
+  ]);
 
   const carbonRange = useMemo(
     () =>
@@ -6452,9 +6587,37 @@ export default function LayoutEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
   }, [footprint, wallRunStopsByWallId, primaryCornerIds, leastAccessibleCorner, thicknessIn, unitSystem]);
 
+  /**
+   * One Review Log entry per spanning header — Smearforn Stage 2b.
+   *
+   * Two provisional things reach a reviewer through it, and neither should
+   * be discoverable only from the drawing:
+   *
+   * - **The span range it is being measured against is not confirmed.**
+   *   `bigHeaderWidthInRange` (48-144in) is Tommy's own stated range, not
+   *   manufacturer-sourced, and the app refuses rather than widening it. A
+   *   header sitting legally inside an unconfirmed range still deserves to
+   *   be named.
+   * - **What it is priced as is an assumption.** No rate exists for this
+   *   panel, so it is priced at the header/sill rate — the closest existing
+   *   fact rather than a new number, and said out loud, the same treatment
+   *   the safety-gap panel's rate assumption already gets.
+   *
+   * The entry also carries the cross-reference in words, because a header's
+   * own name carries no direction.
+   */
+  const spanningHeaderReviewEntries = useMemo(() => {
+    return resolvedSpanningHeaders.map((resolved) => ({
+      label: `Spanning header ${resolved.name} — ${formatLengthIn(resolved.spanWidthIn, unitSystem)} span`,
+      status: "pending-BI-confirmation" as const,
+      note: `${spanningHeaderCrossReference.locationByHeaderName.get(resolved.name) ?? ""}. One header panel carried on the panels beneath it, ${formatLengthIn(resolved.heightIn, unitSystem)} tall, its width derived from those panels rather than typed. Building Integrity's stated header span range (${bigHeaderWidthInRange.minIn}in-${bigHeaderWidthInRange.maxIn}in) and header height range (${bigHeaderHeightInRange.minIn}in-${bigHeaderHeightInRange.maxIn}in) are BOTH still pending their confirmation — a span outside them is refused rather than accommodated. Priced at the header/sill rate: no rate has been given for this panel, so the nearest existing one is used rather than a new number invented.`,
+    }));
+  }, [resolvedSpanningHeaders, spanningHeaderCrossReference, unitSystem]);
+
   const reviewLog = useMemo(() => {
     const entries = toReviewLog([
       ...wallRunStopReviewEntries,
+      ...spanningHeaderReviewEntries,
       { label: "Target density", ...targetDensityKgM3 },
       { label: "Default panel thickness", ...looseDensePackDefaultThicknessIn },
       { ...interior, label: "Interior finish: " + interior.label },
@@ -6531,6 +6694,7 @@ export default function LayoutEditor() {
     subMinimumPanels,
     unitSystem,
     wallRunStopReviewEntries,
+    spanningHeaderReviewEntries,
   ]);
 
   // Site Properties dropdown content (Tommy: "middle of the left side of
@@ -10667,6 +10831,42 @@ export default function LayoutEditor() {
                     estimatedBearingMethodLabel={
                       group.panelType.id === "column" || group.panelType.id === "corner" ? "built-up plywood section" : undefined
                     }
+                    role={role}
+                  />
+                </StickyNote>
+              );
+            })}
+
+            {spanningHeaderFabricationGroups.map((group) => {
+              const noteId = `shop-fab-${group.uniqueKey}`;
+              return (
+                <StickyNote
+                  key={group.uniqueKey}
+                  id={noteId}
+                  label={`Panel Fabrication: Spanning Header ${group.widthIn.toFixed(1)}in (${group.instances.length})`}
+                  isOpen={openNoteIds.has(noteId)}
+                  isFullscreen={fullscreenNoteId === noteId}
+                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
+                  onClose={() => handleToggleNote(noteId)}
+                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
+                  onPrint={() => handlePrintNote(noteId)}
+                >
+                  <p className={`${styles.note} print-hidden-chrome`}>
+                    Fabricator/detailer document — one sheet per unique spanning header (exact copies grouped
+                    together). Its name comes from a single building-wide H series carrying no direction, so the wall
+                    and the panels it spans are stated in words below; each of those panels&apos; own sheets names
+                    this header in return.
+                  </p>
+                  <PanelFabricationPage
+                    title="Panel Fabrication — Spanning Header"
+                    panelDescription={`One header panel sitting on top of the panels it spans — flat chords with a repeating W-truss web on both wythes plus two jack studs, the same construction a Big Header uses, built to the combined width of the panels beneath it. Its width is ${formatLengthIn(group.widthIn, unitSystem)} because that is what those panels add up to; it adds nothing to the wall's own length. Building Integrity's stated span range for a header is ${bigHeaderWidthInRange.minIn}in-${bigHeaderWidthInRange.maxIn}in, still pending their confirmation.`}
+                    widthIn={group.widthIn}
+                    heightIn={group.heightIn}
+                    members={group.members}
+                    instances={group.instances}
+                    weightBreakdown={group.weightBreakdown}
+                    loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
+                    shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
                     role={role}
                   />
                 </StickyNote>
