@@ -2697,6 +2697,23 @@ Tommy: *"i want to have 3 platform admins that can reach all companies - me from
   - **Rejected: a temporary founding window** (the creator may see and invite to their new company until its first admin accepts). It worked, and it was the option this spec previously recorded as necessary. It has three things to be careful about that the definer function cannot get wrong: a first invite issued at `level = 'member'` holds the window open forever; invites minted inside a window outlive it; and nothing stops a founder addressing the first-admin invite to themselves.
   - **The cost, accepted: a mistyped first-admin address cannot be fixed by the founder.** They cannot withdraw or reissue that invite, because they do not administer that company. A platform admin does it. This is what "no standing access" actually costs, and the UI says so before the form is submitted rather than after.
 
+### Per-company logo on printed sheets — FLAGGED 2026-09-24, not built, not specced
+
+Tommy, after the 4B review surfaced it: *"There should be a admin/company settings somewhere an admin can upload a small picture of their logo and that logo will appear for their company instead of Building Integrity's logo on any printed sheets."*
+
+**What surfaced it.** `SheetTitleBlock.tsx` prints a hardcoded `Building Integrity` wordmark on every sheet, for every company — true since long before the backend existed. Browsing made it matter: a Rare Forms member can now print another company's design, and a co-op member could hand a client a sheet of *someone else's* work carrying Building Integrity's name. It is not a claim of ownership, but it reads as one.
+
+**What a spec pass must settle before any code.** Recorded now so the decisions are made deliberately rather than discovered mid-build:
+
+1. **⚠ This would be the project's first stored file.** Verified 2026-09-24: **Supabase Storage is used nowhere** — no bucket, no `storage.objects` policy, no `getPublicUrl`, in app code or in any migration. Stage 2 deliberately put documents in a `jsonb` column instead. A logo therefore means either a new surface (a bucket, its RLS, and the question of whether logo URLs are public) or a small image encoded into a column, which avoids the new surface but bloats every row that carries it and needs a hard size cap. **Neither is obviously right; do not let a coder pick by default.**
+2. **`companies.theme jsonb` already exists** (0001), nullable and unread, added precisely so per-company presentation was not precluded. A logo reference may belong there, or in its own column — decide, don't assume.
+3. **Whose logo prints on a browsed sheet?** Almost certainly the **owning** company's, since the sheet is their design — which means a logo is visible to every browsing member by construction. That is branding, not a leak, but it should be a stated decision rather than a side effect.
+4. **Who may upload one**, and the rules that follow: a company admin presumably, but platform admins act as any company (see the 2026-09-14 people-panel fix). Uploading is also a write a **non-member** company could attempt if the route is careless.
+5. **What prints when a company has no logo.** The visible-gap convention says the honest answer is the company's name in text, never a substituted logo and never Building Integrity's by default.
+6. **Image handling is its own risk**: an uploaded file is untrusted input. Size, dimensions, accepted types (SVG carries scripts — probably refuse it), and what a broken or missing image does to a printed sheet.
+
+**Nothing is blocked by leaving it.** It predates Stage 4, affects no permission boundary, and touches every sheet in the app for everyone — which is exactly why it wants its own pass rather than a corner of another stage.
+
 ### Per-company colour schemes — possible, not yet affordable
 
 Tommy (2026-09-06): each company should be able to carry its own colour scheme, the Seed Collaborative's being a light green palette. **Not built, and deliberately not built in Stage 1** — but Stage 1 must not preclude it.
