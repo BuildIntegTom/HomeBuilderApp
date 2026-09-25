@@ -29,6 +29,19 @@
  * written down so it costs nobody else one.
  *
  * Screenshots land in ./screenshots, measurements in ./evidence.json.
+ *
+ * **THIS SCRIPT ASSERTS. It did not always.** The first version ended in an
+ * unconditional `process.exit(0)` and every `record()` call merely wrote what
+ * it saw into `evidence.json`, so a refused ADU width — or
+ * `nothingBelowTheMinimum: false` — exited GREEN with the failure sitting in a
+ * file for a human to notice. A reviewer named that as the same shape as the
+ * `.value` bug: a check that cannot fail. So `record()` now takes an
+ * expectation, and the process exits non-zero if any of them is false.
+ *
+ * `record()` REFUSES to run without one. A step that genuinely only observes
+ * has to say so out loud, with a reason, via `observationOnly("why")` — which
+ * is how "this one cannot fail" stays a deliberate, reviewable decision rather
+ * than the default.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -43,10 +56,77 @@ fs.mkdirSync(SHOTS, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const evidence = { app: APP_URL, ranAt: new Date().toISOString(), steps: [] };
-const record = (name, detail) => {
-  evidence.steps.push({ name, ...detail });
-  console.log(`  ${name}: ${JSON.stringify(detail)}`);
+const failures = [];
+
+/**
+ * Marks a step as deliberately unasserted. The reason is REQUIRED and is
+ * written into evidence.json, so "this one only watches" is a decision a
+ * reviewer can read and argue with, not an omission they have to spot.
+ */
+const observationOnly = (why) => ({ observationOnly: why });
+
+/**
+ * Writes what the step saw, checks it against `expected`, and remembers the
+ * failure. Every call must pass either a predicate over the detail object or
+ * `observationOnly("reason")`; passing neither throws immediately, which is
+ * what stops a future step from quietly joining the harness without an
+ * expectation.
+ */
+const record = (name, detail, expected) => {
+  const isObservation = expected !== null && typeof expected === "object" && typeof expected.observationOnly === "string";
+  if (typeof expected !== "function" && !isObservation) {
+    throw new Error(
+      `record("${name}") was given no expectation. Pass a predicate over the detail, ` +
+        `or observationOnly("why this step cannot fail").`,
+    );
+  }
+
+  let passed = null;
+  let expectationError = null;
+  if (typeof expected === "function") {
+    try {
+      passed = expected(detail) === true;
+    } catch (err) {
+      // A predicate that throws (e.g. reading a field off a null the step did
+      // not produce) is a FAILED check, never a passed one.
+      passed = false;
+      expectationError = String(err && err.message ? err.message : err);
+    }
+    if (!passed) failures.push(name);
+  }
+
+  evidence.steps.push({
+    name,
+    ...detail,
+    ...(isObservation ? { asserted: false, observationOnly: expected.observationOnly } : { asserted: true, passed }),
+    ...(expectationError ? { expectationError } : {}),
+  });
+  const verdict = isObservation ? "observed" : passed ? "PASS" : "FAIL";
+  console.log(`  [${verdict}] ${name}: ${JSON.stringify(detail)}`);
 };
+
+/** Both halves of a number the app might render as `41½` or as `34.125`. */
+const asInches = (text) => {
+  const map = { "½": 0.5, "¼": 0.25, "¾": 0.75, "⅛": 0.125, "⅜": 0.375, "⅝": 0.625, "⅞": 0.875 };
+  const m = String(text).match(/^(-?\d+(?:\.\d+)?)\s*([½¼¾⅛⅜⅝⅞])?/);
+  return m ? Number(m[1]) + (m[2] ? map[m[2]] : 0) : NaN;
+};
+
+const FABRICATION_MIN_IN = 24; // fabricationMinPanelWidthIn, confirmed (Tommy)
+
+/**
+ * evidence.json is written on the way out WHATEVER happened, including when a
+ * step throws part-way: a run that died at step 6 is still evidence about
+ * steps 1-5, and losing it was the old script's second-worst habit.
+ */
+let evidenceWritten = false;
+const writeEvidence = () => {
+  if (evidenceWritten) return;
+  evidenceWritten = true;
+  fs.writeFileSync(path.join(HERE, "evidence.json"), JSON.stringify(evidence, null, 2));
+  console.log("\nevidence -> evidence.json");
+};
+process.on("exit", writeEvidence);
 
 // --- CDP plumbing -----------------------------------------------------------
 const ver = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`)).json();
@@ -118,7 +198,9 @@ const navTabs = await evaluate(`(() => {
   const nav = document.querySelector('nav') || document.body;
   return [...nav.querySelectorAll('button, a')].map((e) => e.textContent.trim()).filter((t) => ['Wall','Foundation','Floor','Roof'].includes(t));
 })()`);
-record("stage0-new-project-tabs", { navTabs });
+// Stage 0's whole point: Foundation, Floor and Roof are off for a new
+// project, so the nav offers exactly one branch.
+record("stage0-new-project-tabs", { navTabs }, (d) => d.navTabs.length === 1 && d.navTabs[0] === "Wall");
 await shot("00-stage0-new-project-wall-only");
 
 // Panelizer: the four scope checkboxes, Foundation among them and unchecked.
@@ -126,7 +208,7 @@ const panelizerScope = await evaluate(`(() => {
   const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim().startsWith('Project'));
   return btn ? 'project-menu-found' : 'no-project-menu';
 })()`);
-record("panelizer-probe", { panelizerScope });
+record("panelizer-probe", { panelizerScope }, (d) => d.panelizerScope === "project-menu-found");
 
 console.log("2. drawing a footprint");
 const canvasBox = await evaluate(`(() => { const c = document.querySelector('canvas'); const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
@@ -204,7 +286,14 @@ const widthField = async () =>
 
 console.log("4. selecting a standard panel by clicking its width label");
 const labels = await panelWidthLabels();
-record("panel-width-labels", { count: labels.length, first: labels.slice(0, 4).map((l) => l.label) });
+record(
+  "panel-width-labels",
+  { count: labels.length, first: labels.slice(0, 4).map((l) => l.label) },
+  // The rest of the run clicks labels 1..7, so fewer than a couple means the
+  // gesture Stage 1 added is not on the drawing and every step after this is
+  // testing nothing.
+  (d) => d.count >= 2,
+);
 let selected = null;
 for (const l of labels.slice(1, 8)) {
   await click(l.x, l.y);
@@ -213,7 +302,13 @@ for (const l of labels.slice(1, 8)) {
   if (selected) break;
 }
 if (!selected) throw new Error("no panel width field appeared — is a standard/braced panel selected?");
-record("selected-panel", { startingWidth: selected.value });
+record(
+  "selected-panel",
+  { startingWidth: selected.value },
+  // A standard panel really is selected and its width field really is showing
+  // a buildable width, so "type 20 and get refused" means something below.
+  (d) => Number.isFinite(asInches(d.startingWidth)) && asInches(d.startingWidth) >= FABRICATION_MIN_IN,
+);
 await shot("03-panel-selected");
 
 /** Types `text` into the width field and commits with Enter. */
@@ -235,7 +330,13 @@ const noteAfterTyped = await evaluate(`(() => {
   const note = [...document.querySelectorAll('p')].map((p) => p.textContent.trim()).find((t) => t.startsWith('Hand-set'));
   return note ?? null;
 })()`);
-record("typed-width", { field: afterTyped?.value, note: noteAfterTyped });
+record(
+  "typed-width",
+  { field: afterTyped?.value, note: noteAfterTyped },
+  // `41 1/2` commits as exactly 41.5 and REDISPLAYS as the fraction, and the
+  // note says the width is now hand-set (pinned, not merely drawn).
+  (d) => asInches(d.field) === 41.5 && typeof d.note === "string" && d.note.startsWith("Hand-set"),
+);
 await shot("04-typed-width-41-1-2");
 
 console.log("6. refusing below the 24in minimum");
@@ -245,13 +346,31 @@ const refusal = await evaluate(`(() => {
   const input = document.querySelector('input[aria-label="Panel width in inches"]');
   return { message: alert ? alert.textContent.trim() : null, draft: input.value, invalid: input.getAttribute('aria-invalid') === 'true' };
 })()`);
-record("refusal-below-minimum", refusal);
+record(
+  "refusal-below-minimum",
+  refusal,
+  // A REFUSAL, not a clamp: a message naming the limit, the field marked
+  // invalid, and the user's own text still in the box so it can be corrected.
+  // If `draft` ever came back "24" this would be a clamp wearing a refusal's
+  // clothes — which is the failure this assertion exists for.
+  (d) =>
+    typeof d.message === "string" &&
+    d.message.includes(String(FABRICATION_MIN_IN)) &&
+    d.invalid === true &&
+    d.draft === "20",
+);
 await shot("05-refusal-below-24in");
 
 // Escape reverts the draft, leaving the committed 41.5in untouched.
 await pressKey("Escape", "Escape", 27);
 await sleep(400);
-record("after-escape", { field: (await widthField())?.value });
+record(
+  "after-escape",
+  { field: (await widthField())?.value },
+  // Escape discards the refused draft and the previously committed 41.5in is
+  // still there — a refusal must not destroy the value it refused to replace.
+  (d) => asInches(d.field) === 41.5,
+);
 
 console.log("7. every ADU width, typed in sequence");
 const ADU_WIDTHS = ["43", "41 1/2", "37 1/2", "35", "31 1/2", "30", "29 1/2", "28 1/2", "25 1/2", "24", "48"];
@@ -263,7 +382,18 @@ for (const width of ADU_WIDTHS) {
   aduResults.push({ typed: width, committed: after?.value ?? null, refused });
   if (refused) await pressKey("Escape", "Escape", 27);
 }
-record("adu-widths", { results: aduResults, anyRefused: aduResults.some((r) => r.refused) });
+record(
+  "adu-widths",
+  { results: aduResults, anyRefused: aduResults.some((r) => r.refused) },
+  // THE ACCEPTANCE CHECK FOR THE JOB TOMMY IS ABOUT TO DRAW. Every width on
+  // the Rogers-Sehorn cut list has to be typeable: none refused, and each one
+  // committed to exactly the number that was typed. This is the check that
+  // used to sit in evidence.json for a human to read.
+  (d) =>
+    d.results.length === ADU_WIDTHS.length &&
+    d.anyRefused === false &&
+    d.results.every((r) => r.refused === false && asInches(r.committed) === asInches(r.typed.replace(" 1/2", ".5"))),
+);
 await shot("06-adu-widths-last-48");
 
 console.log("8. per-panel reset");
@@ -282,7 +412,18 @@ const afterReset = await evaluate(`(() => {
   const note = [...document.querySelectorAll('p')].map((p) => p.textContent.trim()).find((t) => t.startsWith('Automatic') || t.startsWith('Hand-set'));
   return { width: input ? input.value : null, note: note ?? null, stillHasReset: [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Reset to automatic') };
 })()`);
-record("per-panel-reset", afterReset);
+record(
+  "per-panel-reset",
+  afterReset,
+  // The pin is gone: the note says the width is automatic again, and the
+  // control that clears a pin has disappeared because there is none left.
+  // Whatever width the tiler hands back must still be buildable.
+  (d) =>
+    d.stillHasReset === false &&
+    typeof d.note === "string" &&
+    d.note.startsWith("Automatic") &&
+    asInches(d.width) >= FABRICATION_MIN_IN,
+);
 await shot("08-after-reset-automatic");
 
 console.log("9. dragging a panel boundary");
@@ -319,14 +460,22 @@ const widthsAfterFineDrag = (await panelWidthLabels()).map((l) => l.label);
 // unchanged to the inch.
 const pairBefore = widthsBeforeDrag.map(parseImperial).reduce((a, b) => a + b, 0);
 const pairAfter = widthsAfterFineDrag.map(parseImperial).reduce((a, b) => a + b, 0);
-record("drag-fine", {
-  before: widthsBeforeDrag,
-  after: widthsAfterFineDrag,
-  everyWidthIsAWholeEighth: widthsAfterFineDrag.every((w) => isWholeEighth(parseImperial(w))),
-  runTotalBefore: pairBefore,
-  runTotalAfter: pairAfter,
-  runTotalConserved: Math.abs(pairBefore - pairAfter) < 1e-9,
-});
+record(
+  "drag-fine",
+  {
+    before: widthsBeforeDrag,
+    after: widthsAfterFineDrag,
+    everyWidthIsAWholeEighth: widthsAfterFineDrag.every((w) => isWholeEighth(parseImperial(w))),
+    runTotalBefore: pairBefore,
+    runTotalAfter: pairAfter,
+    runTotalConserved: Math.abs(pairBefore - pairAfter) < 1e-9,
+    somethingActuallyMoved: widthsAfterFineDrag.join("|") !== widthsBeforeDrag.join("|"),
+  },
+  // Three things at once, and the third is the one that keeps the other two
+  // honest: a drag that did nothing at all would trivially satisfy "whole
+  // eighths" and "total conserved".
+  (d) => d.everyWidthIsAWholeEighth && d.runTotalConserved && d.somethingActuallyMoved,
+);
 
 // (b) A LONG drag past the floor: the shrinking panel stops at the catalog
 // minimum (24in) rather than going below what the shop can build.
@@ -338,15 +487,163 @@ await sleep(200);
 await mouse("mouseReleased", handle2[0] + 90.9, handle2[1]);
 await sleep(700);
 const widthsAfterFloorDrag = (await panelWidthLabels()).map((l) => l.label);
-record("drag-to-the-floor", {
-  after: widthsAfterFloorDrag,
-  hitsTheCatalogMinimum: widthsAfterFloorDrag.some((w) => parseImperial(w) === 24),
-  nothingBelowTheMinimum: widthsAfterFloorDrag.every((w) => parseImperial(w) >= 24),
-});
+record(
+  "drag-to-the-floor",
+  {
+    after: widthsAfterFloorDrag,
+    hitsTheCatalogMinimum: widthsAfterFloorDrag.some((w) => parseImperial(w) === FABRICATION_MIN_IN),
+    nothingBelowTheMinimum: widthsAfterFloorDrag.every((w) => parseImperial(w) >= FABRICATION_MIN_IN),
+  },
+  // The drag stops AT the floor rather than below it. `nothingBelowTheMinimum`
+  // returning false used to be a line in a JSON file and a green exit code.
+  (d) => d.hitsTheCatalogMinimum === true && d.nothingBelowTheMinimum === true,
+);
 await shot("10-drag-floors-at-24in");
 
-fs.writeFileSync(path.join(HERE, "evidence.json"), JSON.stringify(evidence, null, 2));
-console.log("\nevidence -> evidence.json");
+// ⚠ A FINDING, RECORDED RATHER THAN ASSERTED. The drag floors the SHRINKING
+// panel at 24in but puts no ceiling on the GROWING one, so a long drag can
+// take a panel past panelWidthInRange.maxIn (48in) — the typed field clamps
+// there, the drag does not. Pre-existing: the drag is Stage 1's, already
+// shipped, and this asymmetry is neither caused nor touched by Stage 1r.
+// Reported rather than fixed, and left unasserted deliberately so the harness
+// does not fail on a known gap somebody else has to decide about.
+record(
+  "drag-has-no-ceiling",
+  {
+    widestAfterFloorDrag: Math.max(...widthsAfterFloorDrag.map(parseImperial)),
+    catalogMaxIn: 48,
+    anythingOverTheMaximum: widthsAfterFloorDrag.some((w) => parseImperial(w) > 48),
+  },
+  observationOnly(
+    "The panel-boundary drag has a floor (24in) but no ceiling; a long drag grows its neighbour past the 48in " +
+      "catalog maximum, which the typed width field clamps. Pre-existing Stage 1 behaviour, out of Stage 1r's " +
+      "scope, reported for a decision rather than fixed here.",
+  ),
+);
+
+// --- 10. every wall, not just the one being edited --------------------------
+// THE STAGE 1r ACCEPTANCE CHECK: no wall of a real drawn footprint carries a
+// panel the shop cannot build. Before the absorb rule the tiler produced
+// sub-24in panels routinely — a 40in standard width splits a small leftover
+// into two ~20in panels — so this is the step that would have been red
+// yesterday, on walls nobody touched.
+console.log("10. walking every wall elevation");
+
+/**
+ * The viewer dial's own current stop, e.g. "Elevation: North (AB)".
+ *
+ * **Read, rather than inferred from what is on screen.** The first version of
+ * this step identified a wall by the set of width labels it could see — and
+ * `panelWidthLabels` filters to labels actually ON SCREEN, so panning between
+ * stops changed the set without changing the wall, and four views of ONE wall
+ * were counted as four walls. It reported `wallsWalked: 4` and proved nothing.
+ * Ask the dial what it is showing.
+ */
+const currentViewLabel = async () =>
+  await evaluate(`(() => {
+    const dial = document.querySelector('[role="group"][aria-label="View mode"]');
+    if (!dial) return null;
+    const label = [...dial.querySelectorAll('div')].map((d) => d.textContent.trim()).find((t) => t && t !== '▲' && t !== '▼');
+    return label ?? null;
+  })()`);
+
+/** EVERY panel width label on the elevation, on screen or not — this step
+ * only reads them, so the click-reachability filter must not apply. */
+const allElevationWidths = async () =>
+  await evaluate(`(() => {
+    const svg = document.querySelector('svg rect[style*="ew-resize"]')?.ownerSVGElement;
+    if (!svg) return [];
+    return [...svg.querySelectorAll('text')]
+      .filter((t) => (t.getAttribute('style') || '').includes('pointer'))
+      .map((t) => t.textContent.trim());
+  })()`);
+
+/**
+ * Advances the viewer dial one stop.
+ *
+ * **Dispatched on the element rather than as a mouse event at a remembered
+ * coordinate, and that is the fix for the second thing this step got wrong.**
+ * `dialDown` was measured before any Selected Panel note existed; once one is
+ * open it sits over the dial, so every synthetic click at those coordinates
+ * hit the note instead and the dial never moved. The run still looked
+ * plausible, because panning changed which labels were on screen. Step 3 above
+ * already proves the dial responds to a real mouse click; this step is about
+ * reading four walls, not about hit areas.
+ */
+const stepViewerDial = async () =>
+  await evaluate(`(() => {
+    const dial = document.querySelector('[role="group"][aria-label="View mode"]');
+    if (!dial) return false;
+    const next = [...dial.querySelectorAll('button')].find((b) => b.textContent.trim() === '▼');
+    if (!next) return false;
+    next.click();
+    return true;
+  })()`);
+
+const wallsSeen = [];
+const viewsVisited = [];
+// One full turn of the dial plus slack: the cycle is plan, one stop per wall,
+// then the three 3D stops.
+for (let i = 0; i < 16; i++) {
+  const view = await currentViewLabel();
+  viewsVisited.push(view);
+  if (typeof view === "string" && view.startsWith("Elevation:") && !wallsSeen.some((w) => w.view === view)) {
+    // The dial's label updates before the canvas has finished re-rendering,
+    // so a first read can legitimately come back empty. Retried rather than
+    // skipped: a wall silently missing from this walk is a wall this step did
+    // not actually check, which is the failure mode it exists to prevent.
+    let widths = [];
+    for (let attempt = 0; attempt < 4 && widths.length === 0; attempt++) {
+      if (attempt > 0) await sleep(500);
+      widths = (await allElevationWidths()).map(parseImperial).filter((w) => Number.isFinite(w));
+    }
+    if (widths.length > 0) wallsSeen.push({ view, widths, narrowest: Math.min(...widths) });
+  }
+  if (!(await stepViewerDial())) break;
+  await sleep(600);
+}
+await shot("11-every-wall-walked");
+record(
+  "every-wall-at-or-above-the-minimum",
+  {
+    wallsWalked: wallsSeen.length,
+    // Named, so it is checkable that these really are four different walls.
+    views: wallsSeen.map((w) => w.view),
+    // The whole turn of the dial, so a run that never moved is visible rather
+    // than inferable — which is exactly how this step was wrong the first time.
+    viewsVisited,
+    // Every wall's whole tiling, not just its narrowest panel: a summary
+    // statistic is not evidence. (These are the STANDARD/BRACED panels only —
+    // corner and safety-gap slots carry no clickable width label — so they do
+    // not add up to the wall's own length.)
+    widthsPerWall: wallsSeen.map((w) => w.widths),
+    narrowestPerWall: wallsSeen.map((w) => w.narrowest),
+    // The safety-gap board (0.75in) is a plywood spacer, not a panel, and is
+    // exempt for the same reason the Review Log exempts it. It is also not
+    // drawn with a width label, so it never reaches this list — stated rather
+    // than assumed, because an exemption nobody can see is a hole.
+    narrowestAnywhere: wallsSeen.length ? Math.min(...wallsSeen.map((w) => w.narrowest)) : null,
+    // How many elevation stops the dial actually offered. The check below
+    // compares this against how many were READ, so a wall the walk skipped
+    // fails the step instead of quietly shrinking the sample.
+    elevationStopsOffered: new Set(viewsVisited.filter((v) => typeof v === "string" && v.startsWith("Elevation:"))).size,
+  },
+  (d) =>
+    d.elevationStopsOffered >= 4 &&
+    d.wallsWalked === d.elevationStopsOffered &&
+    d.narrowestAnywhere !== null &&
+    d.narrowestAnywhere >= FABRICATION_MIN_IN,
+);
+
+// --- the verdict ------------------------------------------------------------
+writeEvidence();
+const asserted = evidence.steps.filter((s) => s.asserted).length;
+if (failures.length > 0) {
+  console.error(`\nFAILED: ${failures.length} of ${asserted} checks — ${failures.join(", ")}`);
+  console.error("See evidence.json for what each one actually saw.");
+  process.exit(1);
+}
+console.log(`\nPASSED: ${asserted} of ${asserted} checks (plus ${evidence.steps.length - asserted} observation-only step(s)).`);
 process.exit(0);
 
 // --- tiny helpers -----------------------------------------------------------

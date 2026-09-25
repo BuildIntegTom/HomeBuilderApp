@@ -23,16 +23,14 @@ import {
  * What is here is everything the compiler cannot see.
  */
 
-const migrationPath = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-  "..",
-  "..",
-  "supabase",
-  "migrations",
-  "0009_stage4_browsing.sql",
-);
+const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "supabase", "migrations");
+
+/** 0009 created `browse_schema_redaction` and seeded version 24. */
+const migrationPath = join(migrationsDir, "0009_stage4_browsing.sql");
+
+/** 0010 seeds version 25 — Smearforn Stage 0's format bump, and nothing else.
+ * Its own conventions are asserted in describe (c). */
+const v25SeedMigrationPath = join(migrationsDir, "0010_smearforn_v25_redaction_seed.sql");
 
 /**
  * A REAL redacted document, captured from `browse_redact` running on local
@@ -152,48 +150,80 @@ describe("(b) the runtime keys agree with the type", () => {
 
 describe("(c) the migration agrees with the classification", () => {
   const sql = readFileSync(migrationPath, "utf8");
+  const v25Sql = readFileSync(v25SeedMigrationPath, "utf8");
 
-  /** Every `browse_schema_redaction` seed row, as 0009 writes them:
+  /** Every `browse_schema_redaction` seed row across every migration that
+   * writes one, as they are written:
    *    (24, '[["state","priceModifier"]]'::jsonb, …) */
-  const seededRows = () => [...sql.matchAll(/\(\s*(\d+)\s*,\s*'(\[[\s\S]*?\])'::jsonb/g)];
+  const seedRowsIn = (text: string) => [...text.matchAll(/\(\s*(\d+)\s*,\s*'(\[[\s\S]*?\])'::jsonb/g)];
+  const seededRows = () => [...seedRowsIn(sql), ...seedRowsIn(v25Sql)];
 
-  /** The one format the shipped redactor knows how to strip. It is a property
-   * of the DATABASE (migration 0009's seed rows), not of the app, so it does
-   * not follow `PROJECT_FILE_VERSION` — which is exactly what the two tests
-   * below are about now that Smearforn Stage 0 has moved the app to v25. */
-  const CLASSIFIED_SCHEMA_VERSIONS = [24];
+  /** Every format the shipped redactor knows how to strip. It is a property of
+   * the DATABASE (the seed rows above), not of the app, so it does not follow
+   * `PROJECT_FILE_VERSION` — 24 stays classified forever, because saved v24
+   * documents are never migrated in place and must keep being servable. */
+  const CLASSIFIED_SCHEMA_VERSIONS = [24, 25];
 
   it("seeds exactly the money keys for every format it does classify", () => {
     const rows = seededRows();
     const seeded = new Map(rows.map((m) => [Number(m[1]), JSON.parse(m[2]) as string[][]]));
-    expect([...seeded.keys()]).toEqual(CLASSIFIED_SCHEMA_VERSIONS);
+    expect([...seeded.keys()].sort()).toEqual(CLASSIFIED_SCHEMA_VERSIONS);
     for (const version of CLASSIFIED_SCHEMA_VERSIONS) {
       const paths = (seeded.get(version) ?? []).map((p) => p.join("."));
       expect(paths.sort()).toEqual([...MONEY_DOCUMENT_PATHS].sort());
     }
   });
 
-  it("⚠ does NOT yet classify v25 — a v25 document is refused across a company line until a seed row ships", () => {
-    // **A known, deliberate gap, recorded rather than papered over.** Smearforn
-    // Stage 0 bumped PROJECT_FILE_VERSION 24 -> 25 for the Foundation scope
-    // flag, and the plan stated that stage touches nothing in `supabase/` — but
-    // the redactor classifies BY FORMAT, so a project saved at v25 has no
-    // classification and `browse_version` refuses it (fail-closed: refused, not
-    // served unredacted — see the guard test below, which still passes).
-    // Owner-side open/save/versioning is unaffected; only cross-company
-    // browsing of a v25 document is.
+  it("classifies the format the app actually writes today — v25", () => {
+    // **The gap this replaces was real and this test is its closing.**
+    // Smearforn Stage 0 bumped PROJECT_FILE_VERSION 24 -> 25 for the
+    // Foundation scope flag while stating it touched nothing in `supabase/`.
+    // But the redactor classifies BY FORMAT, so from that moment every
+    // project Tommy saved was a v25 document with no classification, and
+    // `browse_version` refused it across a company line. Fail-closed —
+    // refused, never served unredacted (the guard test below) — and
+    // owner-side open/save/versioning was unaffected throughout.
     //
-    // The fix is one seed row for 25 with the SAME single money path, in a NEW
-    // migration — deliberately not written here, because writing SQL was
-    // explicitly out of scope for this pass and the row has to be applied to
-    // the live database to mean anything. When it ships, add 25 to
-    // CLASSIFIED_SCHEMA_VERSIONS above and delete this test.
+    // Migration 0010 seeds the row. Until it is APPLIED TO THE LIVE DATABASE
+    // this test passing means only that the SQL is written, which is why the
+    // README carries paste steps and a post-flight query for it.
     const rows = seededRows();
-    expect(rows.some((m) => Number(m[1]) === PROJECT_FILE_VERSION)).toBe(false);
-    // The redactor's window is narrower than the app's parse window by design:
-    // a format it cannot classify opens for its owner and is refused across a
-    // company line (hand-test step 21).
-    expect(rows.map((m) => Number(m[1]))).toEqual(CLASSIFIED_SCHEMA_VERSIONS);
+    expect(rows.some((m) => Number(m[1]) === PROJECT_FILE_VERSION)).toBe(true);
+    expect(PROJECT_FILE_VERSION).toBe(25);
+    // v24 keeps its row. A saved version is not migrated in place, so the
+    // database holds both formats indefinitely and dropping 24 would make
+    // every already-saved document unservable.
+    expect(rows.some((m) => Number(m[1]) === 24)).toBe(true);
+  });
+
+  it("0010 is one transaction, re-runnable, and alters no existing object", () => {
+    // The four properties that make a migration safe to paste into the live
+    // SQL editor, asserted against the file rather than inherited from 0009.
+    expect(v25Sql).toMatch(/^begin;$/m);
+    expect(v25Sql.trimEnd()).toMatch(/commit;$/);
+    // Re-runnable: the one statement is an upsert.
+    expect(v25Sql).toMatch(/on conflict \(schema_version\) do update/);
+    // Alters nothing that already exists. A seed row is the whole file, so
+    // none of these verbs has any business appearing in it.
+    for (const forbidden of [
+      /\bcreate\s+(or\s+replace\s+)?(table|function|policy|index|trigger|type|view)\b/i,
+      /\bdrop\b/i,
+      /\balter\b/i,
+      /\bgrant\b/i,
+      /\brevoke\b/i,
+      /\bdelete\s+from\b/i,
+      /\btruncate\b/i,
+    ]) {
+      // Comments are stripped first: the header explains what it does NOT do,
+      // and it says so using these very words.
+      const statements = v25Sql
+        .split(/\r?\n/)
+        .filter((line) => !line.trimStart().startsWith("--"))
+        .join("\n");
+      expect(statements).not.toMatch(forbidden);
+    }
+    // Exactly one statement writes anything.
+    expect([...v25Sql.matchAll(/\binsert\s+into\b/gi)]).toHaveLength(1);
   });
 
   it("the redactor refuses an unclassified format rather than serving it (the future-schema guard)", () => {

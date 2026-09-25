@@ -18,6 +18,7 @@ than re-derived in every route that touches a project.
 | `migrations/0007_stage1_revoke_truncate.sql` | Stage 1 follow-up: TRUNCATE, REFERENCES and TRIGGER taken back from `authenticated`. |
 | `migrations/0008_stage3_collaboration.sql` | Stage 3: `collaborators`, `share_notice_state`, the share functions, the creator-grant trigger, and the six Stage 2 objects that had to change. |
 | `migrations/0009_stage4_browsing.sql` | Stage 4: the cost redactor (`browse_schema_redaction`, `browse_redact`), the browse functions, `collab_requests` and its two functions, and `shareable_companies` tightened. |
+| `migrations/0010_smearforn_v25_redaction_seed.sql` | One row: the redaction classification for **file format 25**, which Smearforn Stage 0 bumped the app to. Until it is applied, a project saved since that bump cannot be browsed across a company line. Creates nothing and alters nothing. |
 | `seed.sql` | The four real companies. |
 | `tests/stage1_rls.test.sql` | The Stage 1 verification script. |
 | `tests/stage2_rls.test.sql` | The Stage 2 verification script. Local or staging only. |
@@ -1568,6 +1569,160 @@ setting a display name in the app — the mask only replaces an address.
 
 Do **not** run anything in `tests/` against this project.
 
+## `0010` — the file-format-25 redaction row
+
+**What is broken right now, and for whom.** The redactor classifies money paths
+**by file format**. `0009` seeded exactly one format, **24**. Smearforn Stage 0
+moved the app's `PROJECT_FILE_VERSION` from 24 to **25**, so every project saved
+since then is a v25 document the redactor has no classification for — and
+`browse_version` **refuses** it.
+
+- **It fails closed.** A v25 document is refused across a company line, never
+  served unredacted. Nothing leaked.
+- **Your own projects are fine.** Open, save and version history do not go
+  through the redactor at all. Owner-side behaviour is completely unaffected.
+- **What is broken is only this:** another consortium company browsing anything
+  you have saved since the bump gets *"This version can't be shown"*.
+
+`0010` is one row. It creates nothing, drops nothing, alters nothing, and adds
+no new money path — format 25's money set is byte-identical to format 24's
+(`state.priceModifier`, and nothing else). Format 24 keeps its own row, because
+saved versions are never migrated in place and both formats will sit in the
+database indefinitely.
+
+**Run each block on its own** — the SQL editor shows only the last result of a
+paste.
+
+### Step 1 — pre-flight (read-only)
+
+**(a)** `0009` is applied. Expect one row: `has_0009 true`. If it is `false`,
+stop — run `0009` first.
+
+```sql
+select to_regclass('public.browse_schema_redaction') is not null as has_0009;
+```
+
+**(b)** Which formats are classified today. Expect exactly one row, `24`. (If
+you already see 25, `0010` has been run. Running it again is harmless.)
+
+```sql
+select schema_version, redacted_paths
+  from public.browse_schema_redaction
+ order by schema_version;
+```
+
+**(c)** Which formats your saved versions are actually in, and how many are
+currently unbrowsable. Write the rows down. Every row whose `browsable` is `f`
+is a version another company cannot open today.
+
+```sql
+select v.schema_version,
+       count(*) as versions,
+       exists (select 1 from public.browse_schema_redaction r where r.schema_version = v.schema_version) as browsable
+  from public.project_versions v
+ group by v.schema_version
+ order by v.schema_version;
+```
+
+### Step 2 — run `0010` after `0009`
+
+Open `migrations/0010_smearforn_v25_redaction_seed.sql`, paste the **whole
+file** into the SQL editor, and run it. It begins with `begin;` and ends with
+`commit;`. Expect "Success. No rows returned." If it reports an error, nothing
+was applied: copy the error and stop.
+
+Unlike `0009`, this one should **not** raise a destructive-operation warning —
+there is no `drop`, no `revoke` and no `alter` anywhere in it. If the editor
+does warn, you have the wrong file; stop and tell me.
+
+### Step 3 — post-flight (read-only). What you should see.
+
+**(A)** Both formats are now classified, with the same single money path.
+Expect exactly 2 rows:
+
+```
+24 | [["state", "priceModifier"]]
+25 | [["state", "priceModifier"]]
+```
+
+```sql
+select schema_version, redacted_paths
+  from public.browse_schema_redaction
+ order by schema_version;
+```
+
+**(B)** Nothing else exists in the table. Expect one row: `2`.
+
+```sql
+select count(*) as classified_formats from public.browse_schema_redaction;
+```
+
+**(C)** Every saved version is now browsable. Expect **no rows at all** — each
+row returned is a format still missing a classification.
+
+```sql
+select distinct v.schema_version
+  from public.project_versions v
+ where not exists (select 1 from public.browse_schema_redaction r
+                    where r.schema_version = v.schema_version);
+```
+
+**(D)** The redactor really strips the modifier out of a v25 document. This
+runs the live redactor over your own saved v25 rows, read-only, and reports
+counts; it stores nothing. Expect `leaked` to be **0**. If it errors instead of
+returning a row, one of your documents carries a `priceModifier` key somewhere
+other than `state.priceModifier` — that document is refused rather than leaked;
+send me the error.
+
+```sql
+select count(*) as v25_versions,
+       count(*) filter (where jsonb_path_exists(public.browse_redact(v.document, v.schema_version), 'lax $.**.priceModifier')) as leaked,
+       count(*) filter (where public.browse_redact(v.document, v.schema_version) -> 'redaction' -> 'removedPaths' = '["state.priceModifier"]') as marked
+  from public.project_versions v
+ where v.schema_version = 25;
+```
+
+**(E)** The five objects Stage 4 was told never to widen are still exactly as
+`0009` left them — `0010` does not go near them, and this proves it rather than
+asserting it. Expect 5 rows, **all `t`** (the same query as `0009`'s pre-flight
+(e)).
+
+```sql
+select f.object_name,
+       md5(regexp_replace(pg_get_functiondef(f.oid), '\s+', ' ', 'g')) = f.expected as unchanged
+  from (values ('can_read_project',    'public.can_read_project(uuid)'::regprocedure,    'adcfa86d68b1e72174858f175a30b77a'),
+               ('can_write_project',   'public.can_write_project(uuid)'::regprocedure,   '6f35afeba487daf355c5c0ac18b76ae4'),
+               ('holds_project_grant', 'public.holds_project_grant(uuid)'::regprocedure, '4132d034bdd5aed44cc6ff773dfd8644')) as f(object_name, oid, expected)
+union all
+select p.policyname,
+       md5(p.cmd || '|' || p.permissive || '|' || array_to_string(p.roles, ',') || '|'
+           || replace(coalesce(p.qual, ''), 'public.', '') || '|'
+           || replace(coalesce(p.with_check, ''), 'public.', ''))
+         = case p.policyname when 'projects_select' then '35871592d8c9ffd6909ad624b169f41e'
+                             else '55bc5ffbbf1e9e0c9554d7f30b7f5193' end
+  from pg_policies p
+ where p.schemaname = 'public'
+   and (p.tablename, p.policyname) in (('projects', 'projects_select'), ('project_versions', 'project_versions_select'))
+ order by 1;
+```
+
+### `0010` verification status
+
+**Not applied to the live project**, and — unlike `0009` — **not verified
+against a local PostgreSQL either.** No PostgreSQL is installed on the machine
+this was written on, and connecting to the live project to try it was never an
+option. What HAS been checked is static, by
+`apps/web/app/cloud/redaction.test.ts`: the file parses to exactly one seed row,
+for format 25, carrying exactly the paths `MONEY_DOCUMENT_PATHS` classifies as
+money; it opens with `begin;`, ends with `commit;`, and its only write is an
+`on conflict … do update` upsert; and its non-comment text contains no
+`create`, `drop`, `alter`, `grant`, `revoke`, `delete from` or `truncate`.
+
+That is a real check of what the file says. It is **not** a check that
+PostgreSQL accepts it. **Run Step 1 (b) and Step 3 (A) and read the output
+rather than assuming the row landed.** Step 3 (C) is the one that answers the
+question that actually matters: is anything you have saved still unbrowsable.
+
 ## Verifying locally
 
 Against a throwaway local PostgreSQL (17.4 was used), never the project:
@@ -1575,7 +1730,7 @@ Against a throwaway local PostgreSQL (17.4 was used), never the project:
 ```sh
 createdb stage4_local
 psql -d stage4_local -v ON_ERROR_STOP=1 -f supabase/tests/local_shim.sql
-for f in supabase/migrations/000*.sql; do psql -d stage4_local -v ON_ERROR_STOP=1 -f "$f"; done
+for f in supabase/migrations/0[01]*.sql; do psql -d stage4_local -v ON_ERROR_STOP=1 -f "$f"; done
 psql -d stage4_local -v ON_ERROR_STOP=1 -f supabase/tests/stage1_rls.test.sql   # must still pass
 psql -d stage4_local -v ON_ERROR_STOP=1 -f supabase/tests/stage2_rls.test.sql   # must still pass
 PGDATABASE=stage4_local bash supabase/tests/stage2_concurrency.test.sh          # must still pass
