@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3213/",
-  "ranAt": "2026-09-25T13:54:59.383Z",
+  "app": "http://localhost:3214/",
+  "ranAt": "2026-09-25T14:56:48.536Z",
   "steps": [
     {
       "name": "wall-as-tiled",
@@ -17,8 +17,8 @@
         40,
         40,
         40,
-        40,
-        34.125,
+        37.125,
+        37,
         34.125,
         0.75,
         40
@@ -29,7 +29,7 @@
     {
       "name": "tool-armed",
       "insertMarkers": 16,
-      "dragStripsBefore": 10,
+      "dragStripsBefore": 11,
       "dragStripsArmed": 0,
       "asserted": true,
       "passed": true
@@ -55,10 +55,15 @@
       "passed": true
     },
     {
+      "name": "delete-mode-suspends-the-drag",
+      "dragStripsWithDeleteArmed": 0,
+      "asserted": true,
+      "passed": true
+    },
+    {
       "name": "delete",
       "notice": "Deleted a panel on wall AB: 16 panels → 15, 11 still automatic.",
       "refusalsOnTheWay": [
-        "Replaced on wall AB: 16 panels → 16, 12 still automatic.",
         "Replaced on wall AB: 16 panels → 16, 12 still automatic."
       ],
       "panelsBefore": 16,
@@ -78,7 +83,7 @@
     },
     {
       "name": "refused-insert-states-the-room",
-      "refusal": "Refused: there is 48⅛\" of automatic panel width on this wall and that panel needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
+      "refusal": "Refused: there is 53⅝\" of automatic panel width on this wall and that panel needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
       "bigHeadersPlaced": 4,
       "panelsAtRefusal": 10,
       "asserted": true,

@@ -354,6 +354,15 @@ await shot("03-after-replace");
 console.log("7. deleting a panel");
 const panelsBeforeDelete = await panelWidths();
 await armTool("Delete");
+// The drag strips must stand down for DELETE too, not just for a placement
+// type: they sit on top of the panel bodies, so a click near a panel edge
+// started a resize drag instead of deleting the panel under the cursor.
+const dragStripsWithDeleteArmed = await dragStripCount();
+record(
+  "delete-mode-suspends-the-drag",
+  { dragStripsWithDeleteArmed },
+  (d) => d.dragStripsWithDeleteArmed === 0,
+);
 const bodiesForDelete = await panelBodies();
 let deleteNotice = null;
 let afterDelete = panelsBeforeDelete;
