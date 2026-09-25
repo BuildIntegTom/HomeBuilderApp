@@ -23,6 +23,39 @@ node apps/web/harness/smearforn-stage-0-1/run.mjs
 
 Overridable with `SMEARFORN_APP_URL` and `SMEARFORN_CDP_PORT`.
 
+## `SMEARFORN_CPU_THROTTLE` — how to reproduce a "flaky" step on purpose
+
+`SMEARFORN_CPU_THROTTLE=12` slows the page down by that factor (CDP's
+`Emulation.setCPUThrottlingRate`). Unset, it is a no-op.
+
+It was added because the wall-walk step failed **about one run in three on two
+reviewers' machines and zero runs in five here**, including with the whole
+vitest suite running alongside — and a timing fix you cannot demonstrate is a
+guess. With `=12` the failure became deterministic, and the first thing it
+proved was that **the retry budget was not the cause at all**: the step missed
+a wall with a 4-attempt budget and missed it identically with a 20-attempt
+one, having used exactly **1** attempt on every wall it did read.
+
+The real cause was a brittle reader. `allElevationWidths` used to locate the
+elevation via `svg rect[style*="ew-resize"]` — the panel-boundary drag strips
+— and **a drag strip only exists between two ADJACENT standard/braced slots**,
+so a wall whose middle is a single panel between two corners has none, and the
+read returned nothing however long it waited. It looked like a timing flake
+only because drawing the footprint is itself timing-sensitive: on a slow
+machine the drag lands differently, so *which* wall comes out short varies
+from run to run, and on a fast machine often none does. The reader now reads
+the width labels directly.
+
+`readAttemptsPerWall` and `readAttemptBudget` are in the evidence so the
+margin is visible rather than trusted; `SMEARFORN_WALL_READ_BUDGET` and
+`SMEARFORN_WALL_READ_PAUSE_MS` override them, which is what made the "is it
+the budget?" question answerable in one run instead of an afternoon.
+
+**Runs behind the fix:** 6 throttled runs at 12x/20x that reached the step
+(4 of 4 walls every time), plus 2 unthrottled, plus the two pre-fix runs that
+failed 3 of 4 on demand. One 20x run died in setup before step 1 — extreme
+throttling, unrelated to this step, and it did not recur in two repeats.
+
 ## It asserts. It did not always.
 
 **Read this before adding a step.** The first version of this script ended in

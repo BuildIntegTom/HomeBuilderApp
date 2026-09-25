@@ -153,6 +153,23 @@ const { sessionId: sid } = (await send("Target.attachToTarget", { targetId, flat
 await send("Page.enable", {}, sid);
 await send("Runtime.enable", {}, sid);
 
+/**
+ * `SMEARFORN_CPU_THROTTLE=20` slows the page down by that factor.
+ *
+ * **This is how the wall-walk flake is reproduced on demand**, and it exists
+ * because the flake could not be reproduced any other way: it failed about
+ * one run in three on two reviewers' machines and zero runs in five here,
+ * including with the whole vitest suite running alongside. A timing fix that
+ * cannot be shown to fix anything is a guess, so the timing is made
+ * controllable instead. Unset, this is a no-op and the run is unchanged.
+ */
+const CPU_THROTTLE = Number(process.env.SMEARFORN_CPU_THROTTLE ?? "1");
+if (CPU_THROTTLE > 1) {
+  await send("Emulation.setCPUThrottlingRate", { rate: CPU_THROTTLE }, sid);
+  console.log(`  (CPU throttled ${CPU_THROTTLE}x — reproducing a loaded machine)`);
+  evidence.cpuThrottle = CPU_THROTTLE;
+}
+
 const evaluate = async (expression) => {
   const res = await send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, sid);
   if (res.result?.exceptionDetails) throw new Error(res.result.exceptionDetails.text + " :: " + expression.slice(0, 120));
@@ -547,13 +564,32 @@ const currentViewLabel = async () =>
     return label ?? null;
   })()`);
 
-/** EVERY panel width label on the elevation, on screen or not — this step
- * only reads them, so the click-reachability filter must not apply. */
+/**
+ * EVERY panel width label on the elevation, on screen or not — this step
+ * only reads them, so the click-reachability filter must not apply.
+ *
+ * **⚠ It must NOT find the elevation via the drag strips, and that was the
+ * whole of the "flaky" wall walk.** This read used to start from
+ * `svg rect[style*="ew-resize"]`, but a drag strip only exists between two
+ * ADJACENT standard/braced slots — so a wall that has no such pair (a short
+ * wall whose middle is one panel between two corners) has no strips at all,
+ * this returned `[]` however long it was given, and the walk recorded three
+ * walls out of four. It looked like a timing flake because footprint drawing
+ * is itself timing-sensitive: on a slow machine the drag that draws the
+ * rectangle lands differently, so WHICH wall comes out short varies from run
+ * to run, and on a fast machine often none does.
+ *
+ * Reproduced deterministically with `SMEARFORN_CPU_THROTTLE=12`: the old
+ * reader missed a wall with a 4-attempt budget AND with a 20-attempt one,
+ * using exactly 1 attempt on every wall it did read — which is what says
+ * "this is not a retry problem" out loud.
+ *
+ * The labels themselves are what this step is about, so it reads those
+ * directly, from any svg, exactly as the Stage 2 harness does.
+ */
 const allElevationWidths = async () =>
   await evaluate(`(() => {
-    const svg = document.querySelector('svg rect[style*="ew-resize"]')?.ownerSVGElement;
-    if (!svg) return [];
-    return [...svg.querySelectorAll('text')]
+    return [...document.querySelectorAll('svg text')]
       .filter((t) => (t.getAttribute('style') || '').includes('pointer'))
       .map((t) => t.textContent.trim());
   })()`);
@@ -580,6 +616,11 @@ const stepViewerDial = async () =>
     return true;
   })()`);
 
+/** How hard the walk tries to read each wall before giving up on it — see
+ * the retry loop below for why this is 20 and not 4. */
+const WALL_READ_ATTEMPT_BUDGET = Number(process.env.SMEARFORN_WALL_READ_BUDGET ?? "20");
+const WALL_READ_ATTEMPT_PAUSE_MS = Number(process.env.SMEARFORN_WALL_READ_PAUSE_MS ?? "400");
+
 const wallsSeen = [];
 const viewsVisited = [];
 // One full turn of the dial plus slack: the cycle is plan, one stop per wall,
@@ -592,12 +633,24 @@ for (let i = 0; i < 16; i++) {
     // so a first read can legitimately come back empty. Retried rather than
     // skipped: a wall silently missing from this walk is a wall this step did
     // not actually check, which is the failure mode it exists to prevent.
+    //
+    // ⚠ THE BUDGET WAS 4 x 500ms AND IT WAS NOT ENOUGH. On a loaded machine
+    // this step failed about one run in three — reading 3 of 4 walls, then 2
+    // of 4 — while every other step passed. **A flaky check is worse than no
+    // check**, because it teaches whoever reads it to discount a real
+    // failure, and this one had already cost two reviewers their time. The
+    // budget is now 20 x 400ms (8s per wall, against a step that normally
+    // needs one read) and `readAttemptsPerWall` goes into the evidence, so
+    // the margin is a number a future reader can see shrinking instead of a
+    // silence they have to trust.
     let widths = [];
-    for (let attempt = 0; attempt < 4 && widths.length === 0; attempt++) {
-      if (attempt > 0) await sleep(500);
+    let attemptsUsed = 0;
+    for (let attempt = 0; attempt < WALL_READ_ATTEMPT_BUDGET && widths.length === 0; attempt++) {
+      if (attempt > 0) await sleep(WALL_READ_ATTEMPT_PAUSE_MS);
       widths = (await allElevationWidths()).map(parseImperial).filter((w) => Number.isFinite(w));
+      attemptsUsed = attempt + 1;
     }
-    if (widths.length > 0) wallsSeen.push({ view, widths, narrowest: Math.min(...widths) });
+    if (widths.length > 0) wallsSeen.push({ view, widths, narrowest: Math.min(...widths), attemptsUsed });
   }
   if (!(await stepViewerDial())) break;
   await sleep(600);
@@ -618,6 +671,11 @@ record(
     // not add up to the wall's own length.)
     widthsPerWall: wallsSeen.map((w) => w.widths),
     narrowestPerWall: wallsSeen.map((w) => w.narrowest),
+    // How many reads each wall actually needed, against the budget. A run
+    // where these creep toward the budget is a run that is about to start
+    // failing again, and that is worth seeing BEFORE it does.
+    readAttemptsPerWall: wallsSeen.map((w) => w.attemptsUsed),
+    readAttemptBudget: WALL_READ_ATTEMPT_BUDGET,
     // The safety-gap board (0.75in) is a plywood spacer, not a panel, and is
     // exempt for the same reason the Review Log exempts it. It is also not
     // drawn with a width label, so it never reaches this list — stated rather

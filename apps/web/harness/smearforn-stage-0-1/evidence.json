@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3210/",
-  "ranAt": "2026-09-25T04:54:07.198Z",
+  "app": "http://localhost:3215/",
+  "ranAt": "2026-09-25T16:19:30.230Z",
   "steps": [
     {
       "name": "stage0-new-project-tabs",
@@ -261,8 +261,8 @@
         ],
         [
           40,
-          40,
-          40,
+          37.125,
+          37,
           40
         ]
       ],
@@ -270,8 +270,15 @@
         24,
         37,
         34.125,
-        40
+        37
       ],
+      "readAttemptsPerWall": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "readAttemptBudget": 20,
       "narrowestAnywhere": 24,
       "elevationStopsOffered": 4,
       "asserted": true,
