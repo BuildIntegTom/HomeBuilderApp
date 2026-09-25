@@ -8,6 +8,7 @@ import {
   resolvePanelDelete,
   resolvePanelInsert,
   resolvePanelReplace,
+  shiftSlotCoverage,
   type FreeRunLimitsIn,
   type PanelPlacementResult,
 } from "./panelPlacement";
@@ -361,6 +362,33 @@ describe("the [24in, 48in] bound", () => {
       expect(slot.widthIn * 8).toBe(Math.round(slot.widthIn * 8));
     }
     expect(totalEighths(result.slots)).toBe(totalEighths(wall));
+  });
+});
+
+describe("shiftSlotCoverage", () => {
+  const beam = { id: "b1", startSlotIndex: 2, endSlotIndex: 5 };
+
+  it("keeps a beam over the same panels when one is inserted before it", () => {
+    expect(shiftSlotCoverage(beam, 1, 1)).toEqual({ id: "b1", startSlotIndex: 3, endSlotIndex: 6 });
+  });
+
+  it("widens it when the panel is inserted inside it", () => {
+    expect(shiftSlotCoverage(beam, 3, 1)).toEqual({ id: "b1", startSlotIndex: 2, endSlotIndex: 6 });
+  });
+
+  it("leaves it alone when the panel is inserted after it", () => {
+    expect(shiftSlotCoverage(beam, 5, 1)).toEqual(beam);
+    expect(shiftSlotCoverage(beam, 9, 1)).toEqual(beam);
+  });
+
+  it("closes up after a delete before it, and narrows after a delete inside it", () => {
+    expect(shiftSlotCoverage(beam, 0, -1)).toEqual({ id: "b1", startSlotIndex: 1, endSlotIndex: 4 });
+    expect(shiftSlotCoverage(beam, 3, -1)).toEqual({ id: "b1", startSlotIndex: 2, endSlotIndex: 4 });
+    expect(shiftSlotCoverage(beam, 6, -1)).toEqual(beam);
+  });
+
+  it("reports a range the delete emptied rather than leaving a zero-width one", () => {
+    expect(shiftSlotCoverage({ startSlotIndex: 3, endSlotIndex: 4 }, 3, -1)).toBeNull();
   });
 });
 

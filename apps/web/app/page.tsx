@@ -47,6 +47,7 @@ import {
   reconcileBracedPlacement,
   redistributeFreeRun,
   resolvePanelDelete,
+  shiftSlotCoverage,
   resolvePanelInsert,
   resolvePanelReplace,
   resolvePanelWidthEdit,
@@ -2735,7 +2736,53 @@ export default function LayoutEditor() {
    * refuses with the limit rather than a shrug. Nothing is ever partially
    * applied: a refusal writes nothing at all.
    */
-  const applyPlacementResult = (story: "ground" | "second", wallId: string, verb: string, result: PanelPlacementResult) => {
+  /**
+   * Moves this wall's slot-index records across an insert/delete so they
+   * still cover the panels they covered before — a Mid-Wall Bond Beam's own
+   * coverage on either story, and (second story only) the roofline Box
+   * Beam's. Returns how many records the edit emptied, so the notice can say
+   * so instead of a beam just disappearing.
+   *
+   * Every OTHER slot-count change in the app comes from a re-tile, where
+   * coverage is a rough position at best. An insert/delete is one named
+   * panel at one known index, so the exact answer is available and a beam
+   * silently covering different panels would be a wrong drawing.
+   */
+  const shiftSlotCoverageRecords = (story: "ground" | "second", wallId: string, at: number, delta: 1 | -1): number => {
+    let emptied = 0;
+    // Read from this render's own state and write plain values — the count
+    // has to come back to the caller for the notice, and a state updater
+    // runs too late to tell it anything.
+    const beams = midWallBeamsByStoryAndWallId[story][wallId] ?? [];
+    if (beams.length > 0) {
+      const nextBeams = beams.map((b) => shiftSlotCoverage(b, at, delta)).filter((b): b is MidWallBeam => b !== null);
+      emptied += beams.length - nextBeams.length;
+      setMidWallBeamsByStoryAndWallId((was) => ({ ...was, [story]: { ...was[story], [wallId]: nextBeams } }));
+    }
+    const coverage = story === "second" ? boxBeamCoverageByWallId[wallId] : undefined;
+    if (coverage) {
+      const nextCoverage = shiftSlotCoverage(coverage, at, delta);
+      if (nextCoverage === null) emptied += 1;
+      setBoxBeamCoverageByWallId((was) => {
+        if (nextCoverage === null) {
+          const { [wallId]: _dropped, ...rest } = was;
+          return rest;
+        }
+        return { ...was, [wallId]: nextCoverage };
+      });
+    }
+    return emptied;
+  };
+
+  const applyPlacementResult = (
+    story: "ground" | "second",
+    wallId: string,
+    verb: string,
+    result: PanelPlacementResult,
+    /** Where a slot appeared or disappeared, for the coverage records. Null
+     * for a replace, which changes no index. */
+    coverageShift: { at: number; delta: 1 | -1 } | null,
+  ) => {
     if (result.outcome === "no-change") {
       showPanelPlacementNotice(`That panel is already what the tool is set to, so nothing changed.`);
       return;
@@ -2774,6 +2821,12 @@ export default function LayoutEditor() {
     }
     setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: result.slots }));
     setSelectedSlot(result.selectedIndex === -1 ? null : { wallId, slotIndex: result.selectedIndex, story });
+    // Only shift coverage by what ACTUALLY happened to the array. An insert
+    // that had to absorb an automatic panel to pay for itself both adds and
+    // removes one, so the net index shift is zero and the records stay put.
+    const netChange = result.slotCountAfter - result.slotCountBefore;
+    const emptied =
+      coverageShift && netChange === coverageShift.delta ? shiftSlotCoverageRecords(story, wallId, coverageShift.at, coverageShift.delta) : 0;
     // An insert that had to absorb an automatic panel to pay for itself
     // leaves the wall's own panel count where it was. Said out loud rather
     // than left to be discovered by counting panels on the drawing.
@@ -2781,8 +2834,9 @@ export default function LayoutEditor() {
       result.slotCountAfter === result.slotCountBefore && verb === "Inserted"
         ? ` The automatic run gave up a panel to pay for it, so this wall still has ${result.slotCountAfter} panels — narrow a panel to make room for another.`
         : "";
+    const beamNote = emptied > 0 ? ` ${emptied} mid-wall beam${emptied === 1 ? "" : "s"} covered only that panel and ${emptied === 1 ? "was" : "were"} removed with it.` : "";
     showPanelPlacementNotice(
-      `${verb} on wall ${wallId}: ${result.slotCountBefore} panels → ${result.slotCountAfter}, ${result.freeCountAfter} still automatic.${countNote}`,
+      `${verb} on wall ${wallId}: ${result.slotCountBefore} panels → ${result.slotCountAfter}, ${result.freeCountAfter} still automatic.${countNote}${beamNote}`,
     );
   };
 
@@ -2794,6 +2848,7 @@ export default function LayoutEditor() {
       wallId,
       "Replaced",
       resolvePanelReplace(slots, slotIndex, placementPanelForReplace(panelPlacementTool), panelWidthLimitsIn),
+      null,
     );
   };
 
@@ -2805,12 +2860,16 @@ export default function LayoutEditor() {
       wallId,
       "Inserted",
       resolvePanelInsert(slots, boundaryIndex, placementPanelForInsert(panelPlacementTool), panelWidthLimitsIn),
+      { at: boundaryIndex, delta: 1 },
     );
   };
 
   const handleDeletePanel = (story: "ground" | "second", wallId: string, slotIndex: number) => {
     const slots = wallSlotsForStory(story)[wallId] ?? [];
-    applyPlacementResult(story, wallId, "Deleted a panel", resolvePanelDelete(slots, slotIndex, panelWidthLimitsIn));
+    applyPlacementResult(story, wallId, "Deleted a panel", resolvePanelDelete(slots, slotIndex, panelWidthLimitsIn), {
+      at: slotIndex,
+      delta: -1,
+    });
   };
 
   const handleSetWindowWidth = (story: "ground" | "second", wallId: string, slotIndex: number, requestedWidthIn: number) => {

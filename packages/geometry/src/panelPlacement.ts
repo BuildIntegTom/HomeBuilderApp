@@ -154,6 +154,48 @@ export type PanelPlacementResult =
   /** The click asked for exactly what is already there. */
   | { outcome: "no-change" };
 
+/** Anything that records a half-open range of slot indices on a wall — a
+ * Mid-Wall Bond Beam's own coverage and the roofline Box Beam's
+ * `BoxBeamCoverage` are both this shape. */
+export interface SlotIndexRange {
+  startSlotIndex: number;
+  endSlotIndex: number;
+}
+
+/**
+ * Moves a slot-index range across an insert or a delete so that it still
+ * covers **the same panels it covered before**.
+ *
+ * Every other slot-count change in this app comes from a re-tile, where the
+ * run is re-derived wholesale and a coverage range is a rough position at
+ * best. An insert or a delete is different: it is one named panel appearing
+ * or disappearing at one known index, so the right answer is known exactly
+ * and there is no excuse for a beam quietly sliding one panel over — a
+ * mid-wall beam covering the wrong panels is a wrong drawing, not a
+ * cosmetic drift.
+ *
+ * `at` is the index the panel appeared at (insert) or the index it occupied
+ * (delete). Returns null when a delete empties the range — the range covered
+ * only the panel that just went, so there is nothing left for it to be
+ * about; the caller says so rather than leaving a zero-width beam behind.
+ */
+export function shiftSlotCoverage<T extends SlotIndexRange>(range: T, at: number, delta: 1 | -1): T | null {
+  if (delta === 1) {
+    // Both edges are treated the same way: a panel placed exactly AT an
+    // edge lands outside the range, not inside it. `>=` on the start and
+    // `>` on the (exclusive) end is what makes those two the same rule.
+    return {
+      ...range,
+      startSlotIndex: range.startSlotIndex >= at ? range.startSlotIndex + 1 : range.startSlotIndex,
+      endSlotIndex: range.endSlotIndex > at ? range.endSlotIndex + 1 : range.endSlotIndex,
+    };
+  }
+  const startSlotIndex = range.startSlotIndex > at ? range.startSlotIndex - 1 : range.startSlotIndex;
+  const endSlotIndex = range.endSlotIndex > at ? range.endSlotIndex - 1 : range.endSlotIndex;
+  if (endSlotIndex <= startSlotIndex) return null;
+  return { ...range, startSlotIndex, endSlotIndex };
+}
+
 /** Corner types, in both their flavours — never placeable, never deletable,
  * and never a legal insert position (a corner panel stays at the wall's own
  * end). */
