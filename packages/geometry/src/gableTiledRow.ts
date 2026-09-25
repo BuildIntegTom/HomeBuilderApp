@@ -815,10 +815,11 @@ export interface GableWindowsAgainstRunStop {
    * they generate no panel and no cut-list part. **Inference**, consistent
    * with everything else in Stage 3, but never confirmed by Tommy. */
   dropped: GableWindowPlacement[];
-  /** Windows the stop CUTS THROUGH. Deliberately NOT resolved here: half a
-   * window is a fabricated part that does not exist, and silently swallowing
-   * a whole one is worse. The caller refuses the stop and names the window.
-   */
+  /** Windows the stop CUTS THROUGH — at one end, or at both when the built
+   * run is narrower than the window itself. Deliberately NOT resolved here:
+   * half a window is a fabricated part that does not exist, and silently
+   * swallowing a whole one is worse. The caller refuses the stop and names
+   * the window. */
   straddling: GableWindowPlacement[];
 }
 
@@ -868,10 +869,19 @@ export function classifyGableWindowsAgainstRunStop(
     };
     const startsInside = toEighths(w.xStartIn) >= toEighths(builtStartIn);
     const endsInside = toEighths(w.xEndIn) <= toEighths(builtEndIn);
-    if (startsInside && endsInside) result.kept.push(w);
-    else if (!startsInside && !endsInside) result.dropped.push(w); // spans the whole built run
-    else if (toEighths(w.xEndIn) <= toEighths(builtStartIn) || toEighths(w.xStartIn) >= toEighths(builtEndIn)) result.dropped.push(w);
-    else result.straddling.push(w);
+    // Order matters: "entirely outside" is tested FIRST, so that everything
+    // reaching the straddle branch below really is cut by the stop.
+    if (toEighths(w.xEndIn) <= toEighths(builtStartIn) || toEighths(w.xStartIn) >= toEighths(builtEndIn)) {
+      result.dropped.push(w); // wholly inside the unbuilt span — not built
+    } else if (startsInside && endsInside) {
+      result.kept.push(w);
+    } else {
+      // Cut at one end, or — when a window is WIDER than the whole built run
+      // — at both. An earlier version filed that both-ends case as `dropped`,
+      // so the one situation where a stop most obviously destroys a window
+      // was the one situation nothing refused. It straddles.
+      result.straddling.push(w);
+    }
   }
   return result;
 }

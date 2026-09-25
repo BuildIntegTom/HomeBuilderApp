@@ -3677,6 +3677,7 @@ export default function LayoutEditor() {
       });
     }
     return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- gableProfilePointsFor is a per-render partial application; its own inputs are listed
   }, [
     footprint,
     gableEndWallIds,
@@ -3689,6 +3690,16 @@ export default function LayoutEditor() {
     trussPlateInsetIn,
     heelHeightIn,
     roofBearingAnchorMode,
+    // ⚠ Read at line ~3650 to clamp the row to the built run. Missing, the
+    // gable row held its PREVIOUS clamp when a stop was set or cleared —
+    // and this memo feeds `allInstances`, so the output was gable panels
+    // fabricated, priced, weighed, BOM'd and cut-listed above a span the
+    // wall declares carries none. Exactly what Tommy's clamp exists to
+    // prevent, arrived at by staleness instead of by design, and visibly
+    // inconsistent with the elevation (which reads the same map through a
+    // memo that DOES depend on it).
+    gableRunStopByWallId,
+    gableStructuralPanelWallIds,
   ]);
 
   // Real span/pitch/run for the Roof tab's own truss layout editor (Tommy:
@@ -3964,7 +3975,14 @@ export default function LayoutEditor() {
     const lengths: Record<string, number> = {};
     if (!footprint) return lengths;
     for (const wall of footprint.walls) {
-      const geometry = wallGeometryFor(wall.id);
+      // `{}` explicitly, NOT the live-stops default. `unstoppedLengthIn` is
+      // derived from BASE corner ownership and so is genuinely independent
+      // of every stop in the building — which is what makes omitting
+      // `wallRunStopsByWallId` from the deps below correct rather than the
+      // fourth instance of this stage's recurring stale-memo bug. Passing
+      // `{}` makes that independence visible at the call site instead of
+      // leaving it as a fact about a default argument.
+      const geometry = wallGeometryFor(wall.id, {});
       if (geometry) lengths[wall.id] = geometry.unstoppedLengthIn;
     }
     return lengths;

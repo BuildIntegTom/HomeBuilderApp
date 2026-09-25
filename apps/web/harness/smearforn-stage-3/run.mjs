@@ -847,6 +847,101 @@ record(
     d.neighboursThatGrew.every((n) => Math.abs(n.byIn - 15.5) < 0.6),
 );
 
+console.log("14. a Gable End wall's gable panels track the built run — set AND clear");
+/**
+ * The headline of Tommy's gable decision, driven through the APP rather than
+ * through `computeGableTiledRow` directly. It was missing here, and that gap
+ * is exactly why a stale-memo defect in the wiring layer (`gableTilesByWallId`
+ * not depending on the stop map) survived a whole review: the unit tests
+ * proved the tiler clamps, and nothing proved the app ever calls it again.
+ *
+ * Clearing matters as much as setting — a stale memo fails in both
+ * directions, and only the round trip catches that.
+ */
+const gableExtent = (groups, wallId, axis) => extentAlong(groups, `gable_${wallId}_`, axis);
+let gableResult = { error: "not run" };
+{
+  await closeOpenNotes();
+  await reachView((l) => l === `Elevation: ${targetWallId}`, `Elevation: ${targetWallId}`);
+  await sleep(1200);
+  const gableToggled = await evaluate(`(() => {
+    const label = [...document.querySelectorAll('label')].find((l) => l.textContent.trim().startsWith('Add Gable End'));
+    if (!label) return null;
+    const box = label.querySelector('input[type="checkbox"]');
+    if (!box || box.disabled) return { disabled: !!(box && box.disabled) };
+    if (!box.checked) box.click();
+    return { checked: box.checked };
+  })()`);
+  await sleep(1400);
+  if (gableToggled && gableToggled.checked) {
+    const axis = targetAxis;
+    // Both the gable row AND the wall's own panel run, because the thing
+    // that actually matters is their RELATIONSHIP — see the expectation.
+    const capture = async () => {
+      const groups = parseObjGroups(await captureObj());
+      const gable = gableExtent(groups, targetWallId, axis);
+      const wall = extentAlong(groups, `${targetWallId}_`, axis);
+      return {
+        gableStartIn: gable ? Number(gable.minIn.toFixed(3)) : null,
+        gableLengthIn: gable ? Number(gable.lengthIn.toFixed(3)) : null,
+        wallStartIn: wall ? Number(wall.minIn.toFixed(3)) : null,
+      };
+    };
+    await reachView((l) => l === "3D Framed", "3D Framed");
+    await sleep(2400);
+    const unstopped = await capture();
+    await shot("11-gable-unstopped");
+
+    await reachView((l) => l === `Elevation: ${targetWallId}`, `Elevation: ${targetWallId}`);
+    await sleep(1200);
+    await commitStop("start", STOP_IN);
+    await reachView((l) => l === "3D Framed", "3D Framed");
+    await sleep(2400);
+    const stopped = await capture();
+    await shot("12-gable-stopped");
+
+    await reachView((l) => l === `Elevation: ${targetWallId}`, `Elevation: ${targetWallId}`);
+    await sleep(1200);
+    await commitStop("start", 0);
+    await reachView((l) => l === "3D Framed", "3D Framed");
+    await sleep(2400);
+    const cleared = await capture();
+    await shot("13-gable-cleared");
+
+    gableResult = { unstopped, stopped, cleared };
+  } else {
+    gableResult = { skipped: gableToggled };
+  }
+}
+record(
+  "gable-row-tracks-the-built-run-both-ways",
+  gableResult,
+  /*
+   * NOT "shrinks by the stop": the gable row is already inset from the
+   * wall's corners by the truss-plate inset, so a 60in stop that only
+   * reaches 35.5in past that inset moves it by 35.5in, and asserting 60
+   * would be asserting a misunderstanding. The real invariant is the one
+   * Tommy's clamp exists for:
+   *
+   *   1. NO GABLE PANEL BEGINS BEFORE THE WALL'S OWN PANEL RUN DOES — no
+   *      gable panel above a span the wall says carries none;
+   *   2. it moves when the stop is set and returns EXACTLY when cleared.
+   *      A stale memo fails one or both, and it fails in both directions,
+   *      which is why the round trip is here.
+   */
+  (d) =>
+    !!d.unstopped &&
+    !!d.stopped &&
+    !!d.cleared &&
+    typeof d.stopped.gableStartIn === "number" &&
+    typeof d.stopped.wallStartIn === "number" &&
+    d.stopped.gableStartIn >= d.stopped.wallStartIn - 0.01 &&
+    d.unstopped.gableStartIn >= d.unstopped.wallStartIn - 0.01 &&
+    d.stopped.gableStartIn > d.unstopped.gableStartIn + 0.01 &&
+    Math.abs(d.cleared.gableStartIn - d.unstopped.gableStartIn) < 0.01 &&
+    Math.abs(d.cleared.gableLengthIn - d.unstopped.gableLengthIn) < 0.01,
+);
+
 record(
   "no-uncaught-exceptions",
   { count: pageExceptions.length, first: pageExceptions[0] ?? null },

@@ -942,6 +942,22 @@ describe("computeGableTiledRow — a wall that stops short (Stage 3)", () => {
       expect(classify(midFirst, 240).straddling[0]!.xStartIn).toBeCloseTo(firstStart!, 6);
     });
 
+    it("a window WIDER than the whole built run straddles — it does not silently vanish", () => {
+      // The built run sits strictly inside the first window [30,60], so the
+      // stop cuts it at BOTH ends. An earlier version filed this as
+      // `dropped`, which made the one case where a stop most obviously
+      // destroys a window the one case nothing refused.
+      const both = classifyGableWindowsAgainstRunStop(240, 120, PEAK, 40, 0, false, 0, "truss-heel", WINDOWS, undefined, 36, 54);
+      expect(both.straddling.length).toBe(1);
+      expect(both.straddling[0]!.xStartIn).toBeCloseTo(30, 6);
+      expect(both.kept).toEqual([]);
+      // The OTHER window is wholly beyond the built run, so it is simply not
+      // built — dropped, not straddling. The two classifications have to
+      // stay distinguishable here or the refusal fires on the wrong window.
+      expect(both.dropped.length).toBe(1);
+      expect(both.dropped[0]!.xStartIn).toBeCloseTo(120, 6);
+    });
+
     it("a straddled window is never half-built, even if a refusal is bypassed", () => {
       const [firstStart, firstEnd] = baseline[0]!;
       const midFirst = (firstStart! + firstEnd!) / 2;

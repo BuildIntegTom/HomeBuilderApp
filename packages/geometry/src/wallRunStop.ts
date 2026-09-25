@@ -32,11 +32,24 @@ import type { Footprint, WallRunStop } from "./types";
  *
  * ### The invariant
  *
- * `Σ slot widths + startStopIn + endStopIn === (the tiling length the wall
- * would have had with no stops)` — exactly, in whole eighths. On a wall with
- * no corner inset or reflex extension that right-hand side IS
- * `wallFabricationLengthIn(wall)`, which is the form the plan states. Both
- * forms are asserted in `wallRunStop.test.ts`.
+ * `Σ slot widths === wallGeometryFor(wall, currentStops).lengthIn` — this
+ * wall's CURRENT tiling length under the CURRENT stop map, exactly, in whole
+ * eighths. It holds unconditionally.
+ *
+ * **⚠ It is NOT `Σ slot widths + startStopIn + endStopIn === the length this
+ * wall would have had with no stops`, and this comment said so until
+ * 2026-09-25.** That form assumes no wall's length depends on another wall's
+ * stop, and the orphan-corner rule (`cornerOwnershipWithRunStops`) breaks
+ * exactly that: a wall whose neighbour stops at their shared corner grows by
+ * a wall thickness, so the left side exceeds the right by that much —
+ * measured, 344.5 vs 329 on a 30x20 rectangle. The plan states the old form
+ * too; it predates the orphan rule.
+ *
+ * Writing the false form is not hypothetical: the first stop refusal
+ * followed this sentence literally and rejected every legitimate stop that
+ * reached a corner — the case the whole feature exists for — and the browser
+ * harness, not a unit test, is what caught it. `wallRunStop.test.ts` asserts
+ * the true form throughout, and says so at its own orphan block.
  *
  * ### An absent record is today's behaviour, byte-identical
  *

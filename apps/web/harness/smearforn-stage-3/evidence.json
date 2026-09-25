@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3214/",
-  "ranAt": "2026-09-25T18:16:27.666Z",
+  "app": "http://localhost:3215/",
+  "ranAt": "2026-09-25T19:11:37.580Z",
   "stopIn": 60,
   "steps": [
     {
@@ -108,8 +108,8 @@
       "name": "clearing-the-stop-restores-elevation-plan-and-3d",
       "totalEighthsCleared": 4392,
       "noPanelsLabelsCleared": 0,
-      "boundaryGreyWithStop": 1435,
-      "boundaryGreyWithoutStop": 1339,
+      "boundaryGreyWithStop": 1447,
+      "boundaryGreyWithoutStop": 1351,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
@@ -138,6 +138,26 @@
           "byIn": 15.5
         }
       ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "gable-row-tracks-the-built-run-both-ways",
+      "unstopped": {
+        "gableStartIn": 40,
+        "gableLengthIn": 500,
+        "wallStartIn": 15.5
+      },
+      "stopped": {
+        "gableStartIn": 75.5,
+        "gableLengthIn": 464.5,
+        "wallStartIn": 75.5
+      },
+      "cleared": {
+        "gableStartIn": 40,
+        "gableLengthIn": 500,
+        "wallStartIn": 15.5
+      },
       "asserted": true,
       "passed": true
     },
