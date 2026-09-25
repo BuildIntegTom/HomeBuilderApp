@@ -2548,7 +2548,7 @@ Accounts as before, **one browser or profile per account** — a step marked "as
 
 ---
 
-## Project Smearforn — drawing a real job (2026-09-24) — STAGES 0, 1 AND 1r BUILT (1r on 2026-09-25); Stages 2, 2b, 3, 4, 5 still planned
+## Project Smearforn — drawing a real job (2026-09-24) — STAGES 0, 1, 1r AND 3 BUILT (1r and 3 on 2026-09-25); Stages 2, 2b, 4, 5 still planned
 
 The first time this app has been asked to reproduce an **engineered job** rather than a demo. Tommy's hard goal: **create his current project in the app by Monday evening, 2026-09-28.** This is editor work only — no backend, no schema beyond one project-file version bump, nothing in `supabase/`.
 
@@ -2850,7 +2850,52 @@ Three consequences worth stating before anyone builds it:
 
 ---
 
-### Stage 3 — Incomplete walls: a wall that simply ends
+### Stage 3 — Incomplete walls: a wall that simply ends — BUILT 2026-09-25
+
+**As built, on branch `smearforn-stage-3`, in seven commits.** No `PROJECT_FILE_VERSION` bump — Stage 0's v25 keys were already there and already classified; this pass only taught things to read them.
+
+**The arithmetic is a pure module,** `packages/geometry/src/wallRunStop.ts` (+ its test file): `normalizeWallRunStop`, `applyWallRunStop`, `hasWallRunStop`, `builtWallLengthsIn`, `totalBuiltWallPerimeterIn`. `wallRunFor` in `retile.ts` is now the ONE place a wall's run length and per-end corner flags are derived, shared by `retile`, `retilePreservingOpenings`, `wallGeometryFor` and `panelSlotBoxes3D`. The invariant is asserted directly as integer eighths, in both the general form and the plan's own `wallFabricationLengthIn` form, plus a sweep over every whole inch of stop on a 30ft wall.
+
+**The trap the plan names, and where it actually was.** Panel-instance-derived totals are correct for free, as predicted. The wall-length-derived ones were not — see the audit table below. The one the plan did not predict is in 3D: `panelSlotBoxes3D` carries a defensive rescale (`lengthIn / totalWidthIn`) that exists to absorb float slop, and a stopped wall's slots deliberately sum to less than the wall. Left alone it reads that shortfall as slop and **stretches every panel on the wall to fill the unbuilt span** — drawing a solid wall exactly where the plan says to draw nothing. Pinned with a test.
+
+**The too-short remaining run: REFUSED, at the point of edit.** Zero is legal (build it all) and a stop covering the whole wall is legal (an edge with no wall of ours on it — the plan's one-concept model). The band in between is refused. Rather than re-deriving what "legal" means, the refusal **tiles the candidate run for real** and asks the same `findSubMinimumPanelWidths` the Review Log uses whether the result holds a panel the shop cannot build, plus a sum check so an edit is refused whole rather than partly applied. **A stored file is never checked this way** — limits are enforced at EDIT, never at LOAD.
+
+**Two things the plan did not say, found while building it:**
+
+- **A stop at an end and a corner OWNED at that end are different facts, and the drawing needs both.** `WallGeometry` grew `ownsCorner*` beside `hasCorner*`. A stop does not change the NEIGHBOUR, so where the neighbour owns the corner its panel is still physically there and the elevation still draws its "adjacent wall" filler sliver — with the unbuilt span between that sliver and this wall's own run. Passing the tiler's `hasCorner*` to the elevation drew a phantom neighbour at a stopped end.
+- **A stop is keyed by wall id, and two operations renumber wall ids.** `insertBumpOut` and the near-zero-wall collapse behind a drag both rebuild every id. A stale key does not fail loudly — it **stops a different wall than the one the user stopped.** Both paths now remap stops through the same point-pair correlation they already use for slots. A fresh footprint draw clears them outright, as it already does openings.
+
+**A stop is measured from the wall's own TILING length**, i.e. after corner ownership has taken its inset out. On a wall that owns its corner — the common case and the ADU's — that is exactly "inches from the corner point on the plan". On a butting end the run already starts a wall-thickness in and the stop is measured from there. Written into the module's own doc comment rather than left to be discovered.
+
+#### The wall-length audit — every total that reads a length rather than a panel set
+
+Run as an acceptance criterion, against the code rather than assumed. **Four totals over-counted and are fixed; a fifth was found on a second pass.**
+
+| Total | Reads | Verdict |
+|---|---|---|
+| Plaster gross wall area (`plasterGrossWallAreaSqFt`) | wall perimeter x wall height | **FIXED** — built perimeter. Was over-counting by the unbuilt span x height, per story, on both faces. |
+| Intello membrane wall runs (`intelloWallRuns`) | per-wall `lengthFt` | **FIXED** — per-wall built length; a zero-length run drops out. Affected roll count AND seam tape, which is counted per run. |
+| Roof-bearing plywood caps (`plywoodAreaSqFt`) | wall perimeter x thickness | **FIXED** — built perimeter. The panel-member half of that tally comes from instances and was already right. |
+| Single-story truss-plate length (`trussPlateWallLengthTotalIn`) | wall perimeter | **FIXED** — built perimeter, and so the Timber HP volume and weight derived from it. No panels underneath means no plate on top. |
+| Truss-plate **fabrication sheet** length (`roofBearingFabricationGroups`) | `wall.lengthFt * 12` | **FIXED** — built length. This one cuts a real part, so an over-long plate is a part cut wrong, not just a total read wrong. |
+| Truss-plate span in 3D (`Building3DView`) | `wall.lengthFt` | **FIXED** — built run, with the start offset by the stop. |
+| Multi-story box-beam / truss-plate totals | `computeRoofBearingSegments(slots)` | **Correct as-is** — derived from the second story's own slots, so it shrinks for free. |
+| Price, weight, carbon, BOM, cut list, shipping, bearing/shear estimates | `allInstances` | **Correct as-is** — no panels, no instances. This is the part the plan called free, and it is. |
+| Floor framing, joist layout, floor panel grid, membrane polygons | `computeFootprintAreaSqFt` / the closed polygon | **Deliberately left** — the floor still extends to the line where the wall stops. |
+| Foundation pier grid (`pierGrid`), bale-foundation rings (`perimeterRing`) | `wall.lengthFt` | **Deliberately left** — same reason. The foundation reaches the full wall line. |
+| Gable/roofline geometry (`resolveGableProfilePoints`, `ridgeLine`, `computeGableTiledRow`, the gable-end eligibility check) | `wall.lengthFt` | **Deliberately left** — the roof still spans the full wall. |
+| Plaster floor-bottom area, mesh/plaster over the footprint | `computeFootprintAreaSqFt` | **Correct as-is** — a plan-view area, not a wall length. |
+| `wallBoxes3D` | `wall.lengthFt` | **Deliberately left** — exported but not called by the app today. Noted so it is not mistaken for a miss. |
+
+`totalWallPerimeterIn` was **deleted rather than left beside** `totalBuiltWallPerimeterIn`. Every consumer it had describes the wall assembly, so two near-identical perimeter numbers one line apart would only ever be a way to pick the wrong one.
+
+#### Flags check — run against the built diff, 2026-09-25 — clean
+
+`packages/panel-catalog` is **not in the diff at all**; neither is `packages/calc-engine`, `supabase/`, or `apps/web/app/cloud/**`. No `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is created, moved or read differently. **No real-world building value is introduced.** Every numeric literal added is one of: a layout/render measurement (SVG stroke widths, dash patterns, font sizes, an 18px margin bump that applies only to a stopped wall), the 1/8in grid, the 12-inches-per-foot and 144-square-inches-per-square-foot conversions already in the file, or a test fixture. `fabricationMinPanelWidthIn` is **read** by the refusal, never redefined. The one new Review Log entry is `pending-BI-confirmation` and is a statement about a *design being incomplete*, not about a value needing sourcing — the same use the sub-minimum-panel entries already make of that status, and the only non-`confirmed` status the log has.
+
+**Point 6, stated rather than buried: "a stop that reaches a corner takes the corner panel with it" is an INFERENCE**, and the plan says so. It is implemented, and it is labelled an inference in `applyWallRunStop`'s own doc comment rather than presented as a decision. If Tommy ever says a stopped wall still gets its corner panel, that is one branch in one function.
+
+**Verified:** `npx vitest run` green — **112 files, 2074 tests** (111 / 2040 before), `tsc --noEmit` clean in `apps/web`. **Not** verified in a browser: no CDP harness run this pass.
 
 Tommy: *"We need an addition tool setting or stop wall tool so that it is possible to make incomplete walls."*
 
