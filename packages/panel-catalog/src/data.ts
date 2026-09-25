@@ -96,13 +96,16 @@ export const panelHeightInRange: CatalogRange = {
  * in the Review Log instead. A file must never become unopenable because a
  * limit tightened.
  *
- * Two neighbours, noted so nobody "fixes" them: `sillMinWidthIn` (23.625in)
- * sits 3/8in UNDER this floor and is mfr-sourced — either a sill is exempt
- * or one of the two wants revisiting, and it is an open question in the
- * spec rather than something to round away. `columnMinWidthIn` (16.75in) is
- * also below it and is harmless: a Column's real built width is 25.5in.
- * The Safety/Gap panel's 0.75in is not a panel for this purpose at all —
- * it is a plywood spacer board with no studs, plates or girts.
+ * Two neighbours, noted so nobody "fixes" them in passing: `sillMinWidthIn`
+ * (23.625in) sits 3/8in UNDER this floor and is mfr-sourced. **Tommy has
+ * since decided sills follow the same 2ft rule**, but moving that number is
+ * its own piece of work with its own Review Log entry (the plan's Stage 1r,
+ * alongside the tiler's absorb rule) and it is deliberately NOT done here —
+ * it is not something to round away as a side effect of adding this value.
+ * `columnMinWidthIn` (16.75in) is also below this floor and is harmless: a
+ * Column's real built width is 25.5in. The Safety/Gap panel's 0.75in is not
+ * a panel for this purpose at all — it is a plywood spacer board with no
+ * studs, plates or girts.
  */
 export const fabricationMinPanelWidthIn: CatalogValue<number> = {
   value: 24,
