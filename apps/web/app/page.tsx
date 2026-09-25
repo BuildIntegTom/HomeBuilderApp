@@ -35,6 +35,7 @@ import {
   editWallLength,
   footprintIsAllRightAngles,
   gapEndFor,
+  findAbsorbedCornerWalls,
   findSubMinimumPanelWidths,
   getOpeningAnchors,
   toEighths,
@@ -6072,6 +6073,24 @@ export default function LayoutEditor() {
     [baseWallSlots, secondStory],
   );
 
+  // Walls in the 51in-75in two-corner band, whose corner PAIR absorbed a
+  // middle too small to hold a legal panel (see `resolveCorners`). The wall
+  // is legal — that is the whole point of the fix — but its corner panels are
+  // off their nominal 25.5in width, and `cornerPanelWidthIn` is a confirmed
+  // catalog value describing a specific piece of construction. Tommy
+  // confirmed the corner-geometry ROUTE for this band, not the individual
+  // widths it produces, so the engineer reading the Review Log sees them.
+  const absorbedCornerWalls = useMemo(
+    () => [
+      ...findAbsorbedCornerWalls(baseWallSlots, cornerWidthInForTiling).map((w) => ({ ...w, story: "ground" as const })),
+      ...findAbsorbedCornerWalls(secondStory?.wallSlots ?? {}, cornerWidthInForTiling).map((w) => ({
+        ...w,
+        story: "second" as const,
+      })),
+    ],
+    [baseWallSlots, secondStory, cornerWidthInForTiling],
+  );
+
   /**
    * One Review Log entry per wall carrying an unbuilt span.
    *
@@ -6154,17 +6173,31 @@ export default function LayoutEditor() {
       // That last case USED to be routine (computePlainSizing's two-way split
       // landed between 20in and 40in at the 40in standard width) and is now
       // rare: Tommy's ABSORB rule landed 2026-09-24 and the tiler emits one
-      // wider panel instead of two narrow ones. What is left is the three
-      // residual paths absorb cannot reach — a two-corner wall between 51in
-      // and 75in, openings eating all but a sliver, and a clamped corner on a
-      // sub-25.5in wall — each of which has nothing to absorb into and each
-      // of which is deliberately reported rather than corrected. The first
-      // one's real fix is corner geometry, which Tommy has flagged and
-      // deferred until after admin tooling. See the spec's Open Items.
+      // wider panel instead of two narrow ones.
+      //
+      // **The 51in-75in two-corner band is no longer one of the residuals**
+      // (corner absorb, 2026-09-25 — the corner-geometry route Tommy chose).
+      // Those walls are legal now and report through
+      // `absorbedCornerWalls` below instead, which says what the corners did
+      // rather than that a panel cannot be built. What is left here is the
+      // paths absorb still cannot reach, each with nothing to absorb into and
+      // each deliberately reported rather than corrected: a wall owning ONE
+      // corner and between 25.5in and 49.5in long, openings eating all but a
+      // sliver of a long wall's middle, and a clamped corner on a sub-25.5in
+      // wall. See the spec's Open Items.
       ...subMinimumPanels.map((panel) => ({
         label: `Panel narrower than the ${fabricationMinPanelWidthIn.value}in fabrication minimum: wall ${panel.wallId}, slot ${panel.slotIndex}${panel.story === "second" ? " (second story)" : ""}`,
         status: "pending-BI-confirmation" as const,
         note: `${PANEL_TYPE_LABELS[panel.type]} panel ${formatLengthIn(panel.widthIn, unitSystem)} wide, under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum Building Integrity's shop can build (Tommy: "I can't make any panels that are left to right elevation view shorter than 2'"). It opens, draws, prices and prints as stored — nothing was rewritten — but it cannot be fabricated as drawn.`,
+      })),
+      // A wall too short for two corner panels PLUS a legal middle. The wall
+      // is buildable — this is not a defect report — but its corner panels
+      // are not the nominal ones, and that is a fabrication fact an engineer
+      // has to see before the cut list reaches the shop.
+      ...absorbedCornerWalls.map((wall) => ({
+        label: `Corner panels widened to absorb a short middle: wall ${wall.wallId}${wall.story === "second" ? " (second story)" : ""}`,
+        status: "pending-BI-confirmation" as const,
+        note: `This wall owns a corner at both ends and is too short to fit them plus a panel over the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} fabrication minimum, so its two corner panels share the whole wall: ${formatLengthIn(wall.cornerWidthsIn[0], unitSystem)} and ${formatLengthIn(wall.cornerWidthsIn[1], unitSystem)} instead of ${formatLengthIn(cornerWidthInForTiling, unitSystem)} each, absorbing ${formatLengthIn(wall.absorbedIn, unitSystem)} that could not become a panel. This is the corner-geometry rule Tommy chose for this case over refusing the wall length ("I like the corner geometry rule"); the individual widths it produces are not separately confirmed. Each panel is still one corner panel with one return face, butt joined to its partner at mid-wall.`,
       })),
       ...(foundationTypeId === "concrete-pier"
         ? [
