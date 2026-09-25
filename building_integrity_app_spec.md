@@ -850,7 +850,7 @@ The editor holds one piece of new client state, `cloudContext`. It is either `nu
 - Three fixed folders per company. **Moving** is an `update … set folder` through the route. It changes nothing about who can see the project and creates no version.
 - The route checks the affected row count, because an RLS-denied UPDATE is silent (0002's own note). Zero rows means 404.
 - **Archive, never delete:** Past Projects *is* the archive. There is no archived flag and **no delete control anywhere in the Stage 2 UI**, for anyone.
-- Permanent delete is enforced now at the database level (platform admin, whole project only). Its UI is Stage 5.
+- Permanent delete is enforced now at the database level (platform admin, whole project only). Its UI is Stage 5. **BUILT 2026-09-25** — see "Stage 5 plan — admin tooling, first slice". The claim in this line was verified against 0006 before anything was built, and it held: no migration was needed.
 
 #### Acting-as: which company a new project belongs to, and switching mid-project
 
@@ -2547,6 +2547,65 @@ Accounts as before, **one browser or profile per account** — a step marked "as
    - **The convention's own principle is kept in three places:** a count is labelled with the company it covers rather than presented as a total it is not; "member since" shows a visible gap for a date the strict parser rejects, never today; and a leaver's name comes from the `author_name` snapshot rather than a profile join that would quietly go blank.
 
 ---
+
+### Stage 5 plan — admin tooling, first slice: PERMANENT-DELETE UI (2026-09-25) — BUILT
+
+Stage 5 never had a single plan section; its constraints were scattered across the earlier stages. This is the first slice built, and it is only the first: the **platform-wide backup** and **single-version delete** are still Stage 5 and still separate.
+
+**Why now.** Tommy, before handing the app to colleagues: *"It would be nice to be able to delete some of the drafts/test projects as well."* Real work starts after October, so today's cloud data is test data — but deletion is irreversible, so it was built as if it were not.
+
+#### ⚠ NO MIGRATION. The database work was already done, and this was verified rather than assumed.
+
+0006 has enforced the whole capability since Stage 2:
+
+```sql
+create policy projects_delete on public.projects
+  for delete to authenticated
+  using (public.is_platform_admin());
+```
+
+with `project_versions_delete` the same, narrowed by `refuse_project_version_change` to `is_privileged_caller() and pg_trigger_depth() > 1` — i.e. **only as the cascade from a platform admin deleting a whole project.** A client cannot raise the trigger depth, so that narrowing is unspoofable from PostgREST. `service_role` holds nothing on either table. **There is no `0011`, and Tommy is asked to paste no SQL.**
+
+**The complete footprint of a project delete**, checked against the migrations rather than remembered: exactly three tables reference `projects`, all `on delete cascade` — `project_versions` (0006), `collaborators` (0008) and `collab_requests` (0009). `share_notice_state` is keyed by person, not project. Accounts, memberships and companies are untouched.
+
+#### What it is
+
+- **`GET /api/projects/[id]/deletion`** — what a delete would destroy, read before anything is destroyed: the current name, the owner company, the folder, the head version number, and a count for each of the three cascades. **Every count is `number | null`**; a count that could not be read prints as a visible gap, never as 0, because on this one screen a wrong 0 reads as "there is nothing of this kind to lose".
+- **`DELETE /api/projects/[id]`** — the delete, with `{ confirm }` carrying the project's name typed out.
+- **The typed confirmation is an interlock against a slip, not a permission check**, and it is checked **against the name the database holds at that moment**, not the name the clicked row remembered. That is what makes it confirm a *project* rather than a string: **a rename landing while the box is open becomes a 409 refusal naming the name it now has.** A project with no name is confirmed by typing the tree's own gap marker, `(untitled)`.
+- **Delete… appears on a folder row only, and only for a platform admin** (decision 13). Not on Shared with us, not on Browse (which carries no write control at all), not on the top bar. The database would let a platform admin delete any of those; the control is kept where the clearing-out happens.
+- **Deleting the project open in this editor detaches it and nothing else.** A new `cloud-deleted` action clears `cloudContext`; **the design on screen and its title-block date do not move**, because a delete is not one of the four date writers. `designGeneration` does not move either — the design was not replaced. *Accepted and recorded:* an `open` of that same project already in flight would still be applied and re-attach to a project that is gone; the next save then gets the ordinary lost-access refusal with Download project file.
+- **Every refusal says what was not changed.** Zero affected rows is a refusal, not a success — an RLS-denied DELETE is silent. One answer covers "no such project" and "not yours", so an id cannot be probed through deletion. No database sentence is ever forwarded.
+
+**Fail closed, twice.** The route refuses a session that does not say platform admin (`deleteViewerOf`, from `loadSession`'s own re-read of `user_profiles.is_platform_admin`), and the database refuses again. **The route check only ever refuses; it never permits.** The publishable key ships in the browser, so a check that lived only in a route would not be a check.
+
+#### Files
+
+- New: `cloud/deleteRouteLogic.ts` + test, `cloud/deleteDisplay.ts` + test (every string, as `sharingDisplay.ts` holds Stage 3's), `cloud/useProjectDelete.tsx`, `app/api/projects/[id]/deletion/route.ts`, `supabase/tests/stage5_rls.test.sql`.
+- Changed: `app/api/projects/[id]/route.ts` (the `DELETE`), `cloud/cloudRouteSession.ts` (`deleteViewerOf`), `cloud/cloudTypes.ts` (two shapes), `cloud/documentSession.ts` + test (`cloud-deleted`), `cloud/useCloudProjects.tsx` (the row control and the note), `cloud/projectRouteLogic.ts` (`ownerCompanyName` exported), `cloud/projectRouteLogic.test.ts` (its two Stage 2 route assertions widened, not removed), `supabase/README.md`.
+- **No migration. `data.ts`, the redactor, the RLS helpers and the `browse_*` functions are untouched.**
+
+#### ⚠ Verification status — read this before trusting the button
+
+`supabase/tests/stage5_rls.test.sql` **has not been run.** No PostgreSQL is installed on the machine it was written on (the same situation `0010` was written in), and the live project was never an option. It is written in the style of the four suites beside it and reviewed by reading; that is not the same as passing. The app side **is** checked, by `npx vitest run` — but none of that is the database's answer.
+
+#### Not in scope, and deliberately not built
+
+- **Single-version delete.** It would leave `head_version_number` stale and break a `parent_version_id` chain; it needs its own design. The suite pins that it still raises 42501 for a platform admin, so that "the delete UI shipped" can never quietly come to mean this too.
+- **The platform-wide backup** (Stage 5, separate).
+- **Deleting a company, a company folder, or an account.** Decision 13 and decision 28 mention company folders; nothing here touches them.
+- Any warning to collaborators that a project they could reach has gone. A delete takes their access with it and nobody is told; recorded rather than fixed.
+
+#### Flags check: clean, run against the built diff (2026-09-25)
+
+1–4. **Clean.** No real-world building number is introduced or moved: no fastener spacing, load, density, dimension or cost figure. No `CatalogValue`, `CatalogRange` or `PanelStructuralStatus` is in scope, and `data.ts` is not touched — the diff is entirely `apps/web/app/cloud`, `apps/web/app/api/projects` and `supabase/`.
+
+5. **Clean.** Nothing new reaches the Review Log.
+
+6. **Clean.**
+   - **Every number in the diff is administrative**: HTTP statuses (400/403/404/409), SQLSTATEs (42501, 22P02, 23505), migration numbers, and row counts read from the database. The `1.3777` in the SQL suite is the existing Stage 4 fixture sentinel, not a claim about anything.
+   - **Nothing pending is treated as settled.** The one thing the spec left open here — how a single-version delete should work — is left open, and a test asserts the door stays shut.
+   - **The convention's own principle is kept in three places:** a count that could not be read prints as a gap rather than a plausible 0; a project with no name is confirmed by the visible `(untitled)` marker rather than a substituted name; and a rename landing mid-confirmation produces a refusal naming the real name rather than a delete of the thing that happened to match.
 
 ## Project Smearforn — drawing a real job (2026-09-24) — STAGES 0, 1, 1r, 2 AND 3 BUILT (1r, 2 and 3 on 2026-09-25); Stages 2b, 4, 5 still planned
 
