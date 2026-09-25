@@ -236,24 +236,55 @@ const canvasBox = await evaluate(`(() => { const c = document.querySelector('can
 if (!canvasBox) throw new Error("no canvas — are you on localhost rather than 127.0.0.1?");
 const [cx, cy, cw, ch] = canvasBox;
 /**
- * `SMEARFORN_FOOTPRINT_PX=70` draws a small SQUARE footprint instead of
- * filling the canvas.
+ * `SMEARFORN_FOOTPRINT_PX=70` or `=70x400` draws a footprint of that pixel
+ * size instead of filling the canvas.
  *
- * **This is the fixture that produces a strip-less wall**, and it is in the
+ * **This is the fixture that produces a STRIP-LESS WALL**, and it is in the
  * harness rather than in a reviewer's notes because it is the only way to
- * meet the bug that took three locators down: at 70px, wall AB tiles as
- * `corner / one standard / corner`, which has no two ADJACENT standard
- * panels and therefore no drag strip at all. Unset, the run draws the same
- * canvas-filling rectangle it always did.
+ * meet the bug that took three locators down. At 70px wide, the short wall
+ * tiles as `corner / one standard / corner` — no two ADJACENT standard
+ * panels, therefore no drag strip, therefore invisible to every reader that
+ * rooted on one. Measured on this app at 70x70: wall AB reads
+ * `dragStrips: 0`, old reader **0** labels, new reader **1** (a 45in panel),
+ * while every other wall reads 2 and 2.
+ *
+ * **`70x300` is the whole-run fixture; `70` alone is a probe.** A 70x70
+ * square makes every wall about 8ft, and step 7 types the Rogers-Sehorn
+ * schedule (up to 48in) into a 55in run — it would be refused for a real
+ * reason that has nothing to do with what is being tested. At 70x300,
+ * measured on this app: **AB and CD are strip-less** (`dragStrips: 0`, old
+ * reader **0**, new reader **1**) while **BC and DA carry 5 panels and 2
+ * strips**. So the run settles on a wall it can drag, steps 4-9 have room,
+ * and step 10's walk has to read two walls that the old reader could not see
+ * at all — which is the whole fix, end to end, in one run.
+ *
+ * ⚠ The height is bounded by the CANVAS, not by the window: at 1600x1000 the
+ * canvas is 720x480 and the draw starts 80px down, so `70x400` ends exactly
+ * on its bottom edge and **no footprint is drawn at all** — the run then
+ * reports no elevations and looks like a dial failure. Keep it under ~380.
+ *
+ * ⚠ **Step 9 is expected to fail on this fixture, and that is the fixture's
+ * limit rather than a regression.** The drag moves the cursor a fixed 4.31px
+ * because at the default footprint's zoom that is "a couple of inches"; on a
+ * 16ft wall the same pixels are a fraction of an inch, the boundary snaps
+ * back to the eighth it started on, and `somethingActuallyMoved` is false.
+ * Expected result here: **steps 1-8 and 10 pass, step 9's two checks fail.**
+ * The drag is proven on the default footprint, which is what the checked-in
+ * evidence is from.
+ *
+ * Unset, the run draws the same canvas-filling rectangle it always did.
  */
-const FOOTPRINT_PX = Number(process.env.SMEARFORN_FOOTPRINT_PX ?? "0");
+const FOOTPRINT_SPEC = process.env.SMEARFORN_FOOTPRINT_PX ?? "";
+const [specW, specH] = FOOTPRINT_SPEC.split("x").map((n) => Number(n));
+const footprintW = Number.isFinite(specW) && specW > 0 ? specW : 0;
+const footprintH = Number.isFinite(specH) && specH > 0 ? specH : footprintW;
 const x0 = cx + 60;
 const y0 = cy + 80;
-const x1 = FOOTPRINT_PX > 0 ? x0 + FOOTPRINT_PX : cx + cw - 80;
-const y1 = FOOTPRINT_PX > 0 ? y0 + FOOTPRINT_PX : cy + ch - 120;
-if (FOOTPRINT_PX > 0) {
-  console.log(`  (drawing a ${FOOTPRINT_PX}x${FOOTPRINT_PX}px footprint — the strip-less-wall fixture)`);
-  evidence.footprintPx = FOOTPRINT_PX;
+const x1 = footprintW > 0 ? x0 + footprintW : cx + cw - 80;
+const y1 = footprintH > 0 ? y0 + footprintH : cy + ch - 120;
+if (footprintW > 0) {
+  console.log(`  (drawing a ${footprintW}x${footprintH}px footprint — the strip-less-wall fixture)`);
+  evidence.footprintPx = `${footprintW}x${footprintH}`;
 }
 await mouse("mousePressed", x0, y0);
 await sleep(80);

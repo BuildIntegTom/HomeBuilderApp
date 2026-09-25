@@ -53,8 +53,40 @@ the budget?" question answerable in one run instead of an afternoon.
 
 **Runs behind the fix:** 6 throttled runs at 12x/20x that reached the step
 (4 of 4 walls every time), plus 2 unthrottled, plus the two pre-fix runs that
-failed 3 of 4 on demand. One 20x run died in setup before step 1 — extreme
-throttling, unrelated to this step, and it did not recur in two repeats.
+failed 3 of 4 on demand. The 20x run that died in setup before step 1 is
+fixed too: the 9s post-navigate sleep is now scaled by the throttle, which is
+what that failure actually was.
+
+## `SMEARFORN_FOOTPRINT_PX` — the strip-less-wall fixture
+
+`SMEARFORN_FOOTPRINT_PX=70x300` draws a narrow, long footprint instead of
+filling the canvas. **This is the fixture the reader audit is proven on.**
+Measured on this app:
+
+| wall | drag strips | old reader | new reader |
+|---|---|---|---|
+| AB | **0** | **0** | **1** (a 45in panel) |
+| BC | 2 | 5 | 5 |
+| CD | **0** | **0** | **1** |
+| DA | 2 | 5 | 5 |
+
+A wall whose middle is a single standard panel between two corners has no two
+ADJACENT standard panels, so it has no drag strip — and **three** readers in
+this file used to root on one: the wall walk's, the panel-label reader that
+drives steps 4-8, and the "have we reached an elevation?" check. They masked
+each other: the readiness check never let the run settle on a strip-less
+wall, so the label reader never met one. All three are fixed together.
+
+On this fixture the run settles on BC, steps 4-8 pass there, and **step 10
+reads 4 of 4 walls including the two the old reader returned nothing for** —
+which is the whole fix in one run.
+
+⚠ Two things about it, both measured rather than assumed: the height is
+bounded by the **canvas** (720x480 at a 1600x1000 window), so `70x400` draws
+nothing at all and looks like a dial failure; and **step 9 is expected to
+fail** on this fixture, because its drag moves a fixed 4.31px that is "a
+couple of inches" only at the default footprint's zoom. Expected result:
+**steps 1-8 and 10 pass, step 9's two checks fail.**
 
 ## It asserts. It did not always.
 

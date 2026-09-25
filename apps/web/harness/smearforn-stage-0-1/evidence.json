@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3215/",
-  "ranAt": "2026-09-25T16:19:30.230Z",
+  "app": "http://localhost:3216/",
+  "ranAt": "2026-09-25T18:11:14.374Z",
   "steps": [
     {
       "name": "stage0-new-project-tabs",
@@ -241,8 +241,8 @@
         ],
         [
           40,
-          37.125,
-          37,
+          34.125,
+          34.125,
           40
         ],
         [
@@ -268,7 +268,7 @@
       ],
       "narrowestPerWall": [
         24,
-        37,
+        34.125,
         34.125,
         37
       ],
@@ -284,5 +284,6 @@
       "asserted": true,
       "passed": true
     }
-  ]
+  ],
+  "cpuThrottle": 8
 }
