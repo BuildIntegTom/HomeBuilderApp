@@ -4,7 +4,8 @@ import { reconcileBracedPlacement } from "./bracedPlacement";
 import { getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall, type OpeningAnchor } from "./tiling";
 import { wallCompassDirection } from "./wallCompassDirection";
 import { wallFabricationLengthIn } from "./eighths";
-import type { BracePattern, CornerId, Footprint, PanelSlot, Wall, WallEnd } from "./types";
+import { applyWallRunStop } from "./wallRunStop";
+import type { BracePattern, CornerId, Footprint, PanelSlot, Wall, WallEnd, WallRunStop } from "./types";
 
 /** The project's seismic-zone-driven suggestion for brand-new braced-panel
  * positions (Tommy: "softly decouple [seismic auto-population] to be an
@@ -186,6 +187,27 @@ export function cornerOwnership(
   return ownership;
 }
 
+/**
+ * The ONE place a wall's tiling length and per-end corner flags are derived
+ * from its corner ownership plus its Stage 3 run stop (if any) — shared by
+ * `retile`, `retilePreservingOpenings`, `wallGeometryFor` and
+ * `panelSlotBoxes3D` so those four can never disagree about how long a
+ * wall's run is or where it starts. `panelSlotBoxes3D` learned that lesson
+ * the expensive way once already (see its own doc comment on the
+ * "long wall's panels are spaced out" bug), and a run stop is exactly the
+ * kind of adjustment that would reproduce it: its defensive rescale would
+ * silently STRETCH every panel on a stopped wall to fill the gap.
+ *
+ * `runStop` undefined (every project ever saved) returns today's numbers
+ * unchanged.
+ */
+export function wallRunFor(wall: Wall, ownership: CornerOwnership, runStop?: WallRunStop) {
+  const { start, end } = ownership;
+  const lengthIn =
+    wallFabricationLengthIn(wall) - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+  return applyWallRunStop({ lengthIn, hasCornerStart: start.hasCorner, hasCornerEnd: end.hasCorner }, runStop);
+}
+
 /** Re-tiles every wall of a footprint from scratch — discards any existing
  * openings, since re-deriving corner ownership can change every wall's
  * available length. Used after any structural change (draw, bump-out,
@@ -202,6 +224,7 @@ export function retile(
   thicknessIn: number,
   bracedSeed: BracedSeed,
   openingSeed?: OpeningSeed,
+  runStopsByWallId?: Record<string, WallRunStop>,
 ): Record<string, PanelSlot[]> {
   const next: Record<string, PanelSlot[]> = {};
   const ownership = cornerOwnership(fp, primary, thicknessIn);
@@ -209,8 +232,10 @@ export function retile(
   const randomFn = openingSeed?.randomFn ?? Math.random;
   for (const wall of fp.walls) {
     const gapEnd = gapEndFor(fp, wall, leastAccessible);
-    const { start, end } = ownership[wall.id]!;
-    const lengthIn = wallFabricationLengthIn(wall) - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+    const run = wallRunFor(wall, ownership[wall.id]!, runStopsByWallId?.[wall.id]);
+    const { lengthIn, hasCornerStart, hasCornerEnd } = run;
+    const start = { hasCorner: hasCornerStart };
+    const end = { hasCorner: hasCornerEnd };
     // Octagon (and other mitered shapes) never borrow-and-split a standard
     // panel for the gap — Tommy: no standard-safety panels for octagons.
     const plainSlots = tileWall(lengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, start.hasCorner, end.hasCorner, !mitered)
@@ -296,14 +321,17 @@ export function retilePreservingOpenings(
   oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined>,
   bracedSeed: BracedSeed,
   openingSeed?: OpeningSeed,
+  runStopsByWallId?: Record<string, WallRunStop>,
 ): Record<string, PanelSlot[]> {
   const next: Record<string, PanelSlot[]> = {};
   const ownership = cornerOwnership(fp, primary, thicknessIn);
   const mitered = isMiteredShape(fp);
   for (const wall of fp.walls) {
     const gapEnd = gapEndFor(fp, wall, leastAccessible);
-    const { start, end } = ownership[wall.id]!;
-    const lengthIn = wallFabricationLengthIn(wall) - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+    const run = wallRunFor(wall, ownership[wall.id]!, runStopsByWallId?.[wall.id]);
+    const { lengthIn, hasCornerStart, hasCornerEnd } = run;
+    const start = { hasCorner: hasCornerStart };
+    const end = { hasCorner: hasCornerEnd };
     const oldSlots = oldSlotsByNewWallId[wall.id];
     const slots = tileOneWallPreservingOpenings(
       oldSlots,
@@ -341,29 +369,61 @@ export interface WallGeometry {
   hasCornerStart: boolean;
   hasCornerEnd: boolean;
   gapEnd: WallEnd;
+  /** The length actually tiled — already reduced by any run stop. */
   lengthIn: number;
   allowBorrow: boolean;
+  /** What this wall WOULD tile at with no stop. Equals `lengthIn` on every
+   * wall without a stop, which is every wall in every project saved before
+   * Stage 3. The sum invariant is stated against this one:
+   * `Σ slot widths + startStopIn + endStopIn === unstoppedLengthIn`. */
+  unstoppedLengthIn: number;
+  /** Inches deliberately not built at each end — 0/0 for a normal wall. */
+  startStopIn: number;
+  endStopIn: number;
+  /** The stored stops asked for more than the wall has and were reduced to
+   * fit. Surfaced in the Review Log rather than corrected silently. */
+  stopClamped: boolean;
+  /** Nothing at all is built on this wall. */
+  fullyStopped: boolean;
 }
 
 /** Everything needed to re-tile one specific wall (as opposed to `retile`,
  * which rebuilds every wall) — shared by the opening-toggle/window-resize
- * handlers, which only need to redo the one wall a user interacted with. */
+ * handlers, which only need to redo the one wall a user interacted with.
+ *
+ * `runStop` is Stage 3's "a wall that simply ends" record for THIS wall;
+ * omitted (the default, and every pre-Stage-3 project) it changes nothing at
+ * all. See `wallRunStop.ts` for what a stop is measured from. */
 export function wallGeometryFor(
   footprint: Footprint,
   wallId: string,
   primaryCornerIds: Set<string>,
   leastAccessibleCorner: CornerId,
   thicknessIn: number,
+  runStop?: WallRunStop,
 ): WallGeometry | null {
   const wall = footprint.walls.find((w) => w.id === wallId);
   if (!wall) return null;
-  const { start, end } = cornerOwnership(footprint, primaryCornerIds, thicknessIn)[wall.id]!;
+  const ownership = cornerOwnership(footprint, primaryCornerIds, thicknessIn)[wall.id]!;
   const gapEnd = gapEndFor(footprint, wall, leastAccessibleCorner);
   // `wallFabricationLengthIn`, not `lengthFt * 12`: the tiled length has to
   // be a whole number of eighths or the panels can never sum to it. Both
   // adjustments are wall thicknesses (14 / 15.5 / 15.75in), all themselves
-  // whole eighths, so the result stays on the grid.
-  const lengthIn = wallFabricationLengthIn(wall) - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+  // whole eighths, so the result stays on the grid. A run stop is on the
+  // grid too, so the shortened run still is.
+  const unstopped = wallRunFor(wall, ownership, undefined);
+  const run = wallRunFor(wall, ownership, runStop);
   const allowBorrow = !isMiteredShape(footprint);
-  return { hasCornerStart: start.hasCorner, hasCornerEnd: end.hasCorner, gapEnd, lengthIn, allowBorrow };
+  return {
+    hasCornerStart: run.hasCornerStart,
+    hasCornerEnd: run.hasCornerEnd,
+    gapEnd,
+    lengthIn: run.lengthIn,
+    allowBorrow,
+    unstoppedLengthIn: unstopped.lengthIn,
+    startStopIn: run.startStopIn,
+    endStopIn: run.endStopIn,
+    stopClamped: run.clamped,
+    fullyStopped: run.fullyStopped,
+  };
 }

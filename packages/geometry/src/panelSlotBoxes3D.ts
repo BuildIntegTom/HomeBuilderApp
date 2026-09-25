@@ -1,6 +1,5 @@
-import { cornerOwnership } from "./retile";
-import { wallFabricationLengthIn } from "./eighths";
-import type { Footprint, PanelSlot } from "./types";
+import { cornerOwnership, wallRunFor } from "./retile";
+import type { Footprint, PanelSlot, WallRunStop } from "./types";
 
 /**
  * Per-panel-slot placement for the whole-building 3D preview (Tommy: "is
@@ -50,6 +49,15 @@ export interface PanelSlotBox3D {
  * `thicknessIn`, and the defensive rescale below (meant only for tiny
  * floating-point slop) silently stretched every one of that wall's panels
  * to compensate — the reported "long wall's panels are spaced out" bug.
+ *
+ * **Stage 3's run stops go through that same shared derivation, and they
+ * HAVE to.** A stopped wall's slots deliberately sum to less than its full
+ * tiled length, so without `runStopsByWallId` the rescale above would read
+ * that shortfall as float slop and stretch every panel on the wall to fill
+ * the unbuilt span — drawing a solid wall exactly where the plan says to
+ * draw nothing. With the stops passed in, the run's length and its start
+ * point both shrink, the scale returns to 1, and the unbuilt span is simply
+ * empty in 3D. Omitted, nothing changes for any wall.
  */
 export function panelSlotBoxes3D(
   footprint: Footprint,
@@ -57,6 +65,7 @@ export function panelSlotBoxes3D(
   thicknessIn: number,
   heightFt: number,
   primaryCornerIds: Set<string>,
+  runStopsByWallId?: Record<string, WallRunStop>,
 ): PanelSlotBox3D[] {
   const thicknessFt = thicknessIn / 12;
   const ownership = cornerOwnership(footprint, primaryCornerIds, thicknessIn);
@@ -71,20 +80,23 @@ export function panelSlotBoxes3D(
     const dir = { x: dx / length, z: dz / length };
     const rotationRad = Math.atan2(dz, dx);
 
-    const { start: startOwn, end: endOwn } = ownership[wall.id]!;
-    // `wallFabricationLengthIn`, not `lengthFt * 12` — the same accessor
-    // `retile()` uses. These two have to be the SAME number: on an octagon's
-    // 45deg wall the tiled slots sum to the snapped (grid) length, so reading
-    // the unsnapped one here would leave the rescale below silently absorbing
-    // a real model-vs-render disagreement instead of only float slop.
-    const lengthIn =
-      wallFabricationLengthIn(wall) - startOwn.insetAmount - endOwn.insetAmount + startOwn.extraLengthIn + endOwn.extraLengthIn;
+    const { start: startOwn } = ownership[wall.id]!;
+    // `wallRunFor`, not a local `lengthFt * 12` — the same shared derivation
+    // `retile()` uses, snapped and already carrying any run stop. These two
+    // have to be the SAME number: on an octagon's 45deg wall the tiled slots
+    // sum to the snapped (grid) length, so reading the unsnapped one here
+    // would leave the rescale below silently absorbing a real
+    // model-vs-render disagreement instead of only float slop.
+    const { lengthIn, startStopIn } = wallRunFor(wall, ownership[wall.id]!, runStopsByWallId?.[wall.id]);
     // Inset moves the tiling start INWARD (this wall doesn't own the
     // corner there); extraLengthIn moves it OUTWARD (this wall's corner
-    // panel reaches past its raw endpoint to close a reflex gap) — same
-    // formula `retile()` uses to derive `lengthIn`, applied per axis here.
-    const wallStartX = start.x + (dir.x * (startOwn.insetAmount - startOwn.extraLengthIn)) / 12;
-    const wallStartZ = start.y + (dir.z * (startOwn.insetAmount - startOwn.extraLengthIn)) / 12;
+    // panel reaches past its raw endpoint to close a reflex gap); a start
+    // stop moves it further inward again by exactly the span that is not
+    // built — same formula `retile()` uses to derive `lengthIn`, applied per
+    // axis here.
+    const startShiftFt = (startOwn.insetAmount - startOwn.extraLengthIn + startStopIn) / 12;
+    const wallStartX = start.x + dir.x * startShiftFt;
+    const wallStartZ = start.y + dir.z * startShiftFt;
 
     const slots = wallSlots[wall.id] ?? [];
     const totalWidthIn = slots.reduce((sum, s) => sum + s.widthIn, 0);

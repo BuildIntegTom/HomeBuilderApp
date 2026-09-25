@@ -16,6 +16,7 @@ export * from "./tiling";
 export * from "./bracedPlacement";
 export * from "./panelWidthEdit";
 export * from "./retile";
+export * from "./wallRunStop";
 export * from "./pierGrid";
 export * from "./floorPanelGrid";
 export * from "./joistLayout";
