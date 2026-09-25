@@ -3038,6 +3038,12 @@ Order is by **how much of the ADU each stage unblocks per hour of work**, not by
 **Still open:**
 
 - **⚠ A wall whose middle budget lands under 24in has no legal tiling and absorb cannot reach it** — a wall owning two corners and between 51" and 75" long, e.g. a 6ft bump-out return. **Recommended default: Review Log entry, no behaviour change this pass.** The likely real fix is extending the merged-corner rule `resolveCorners` already applies to a wall too short for both corners — but that changes corner geometry, which is real construction, and is his call.
+
+**ANSWERED by Tommy 2026-09-24 — flagged and deferred until after Stage 5 (admin tooling), and the merged-corner route is the one he wants:** *"I want to prioritize good building principles here with the panelizer. I like the corner geometry rule… Let's flag this and return to it after admin tooling."* So the fence-around-the-problem option is rejected on purpose.
+
+- **He was first offered a 6' minimum bump-out and I checked the arithmetic rather than recording it.** `cornerPanelWidthIn` is **25.5"** (24" core + two ¾" plywood faces), so a wall owning two corners spends **51"** on them. The middle is `L − 51`, which is under 24" for every `L` below **75"**. **6' is 72", leaving a 21" middle — three inches inside the broken band.** The first legal two-corner wall is **75" (6'3")**, where the middle is exactly 24". Recording "6' minimum" would have produced precisely the panel his shop cannot build, under a rule bearing his name.
+- **Interim behaviour, in force until the fix lands:** a two-corner wall between 51" and 75" still yields a sub-24" middle, reported in the Review Log rather than silently shipped. Below 51" the existing merged-corner rule already handles it; 75" and above is legal.
+- **⚠ Watch on the Rogers-Sehorn ADU:** `5'-1¾"` (61¾") appears among its plan dimensions, inside the broken band. If that is a wall owning two corners rather than an overall dimension, it will flag when he draws the job. Told to him as a thing to watch for, not asserted either way.
 - **Does the shop have an `H` stencil?** The eight-prefix question is gone with the per-direction series — but the format is still downstream of a physical rack, and it now depends on exactly one new character. Worth thirty seconds of looking. No recommended default: it is a question about objects on a shelf.
 
 ---
