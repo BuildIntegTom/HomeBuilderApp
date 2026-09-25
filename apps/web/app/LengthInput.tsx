@@ -60,8 +60,25 @@ export interface LengthInputProps {
    * always inches either way. */
   domain: LengthDomain;
   /** Called only with a parsed, grid-snapped value that differs from
-   * `value`. Never called for an unparseable entry. */
+   * `value`. Never called for an unparseable entry, and never for one
+   * `validate` refuses. */
   onCommit: (next: number) => void;
+  /**
+   * A REFUSAL, not a clamp: return a message and the entry does not commit.
+   *
+   * Added for Smearforn Stage 1's 24in fabrication minimum, where the right
+   * answer is explicitly not "quietly give them 24" — a panel the shop
+   * cannot build is not a thing to negotiate at the keyboard. It reuses the
+   * unparseable-entry path exactly: the field marks itself invalid, keeps
+   * the text the user typed so it can be corrected, and says why. Pressing
+   * Enter therefore leaves the caret where it is; blurring leaves the field
+   * red and uncommitted rather than trapping the caret, which is the same
+   * deliberate choice documented above.
+   *
+   * A clamp is NOT this. A value above a ceiling still commits and the
+   * caller shows its own clamp notice — see `handleSetWindowWidth`.
+   */
+  validate?: (next: number) => string | null;
   id?: string;
   title?: string;
   style?: CSSProperties;
@@ -69,6 +86,12 @@ export interface LengthInputProps {
 }
 
 const INVALID_STYLE: CSSProperties = { outline: "2px solid #c0392b", outlineOffset: 0 };
+
+const REFUSAL_STYLE: CSSProperties = {
+  margin: "4px 0 0",
+  fontSize: 12,
+  color: "#c0392b",
+};
 
 const HINT_STYLE: CSSProperties = {
   marginLeft: 6,
@@ -81,6 +104,7 @@ export default function LengthInput({
   value,
   domain,
   onCommit,
+  validate,
   id,
   title,
   style,
@@ -92,6 +116,9 @@ export default function LengthInput({
   // stale local state.
   const [draft, setDraft] = useState<string | null>(null);
   const [invalid, setInvalid] = useState(false);
+  /** A refusal from `validate` — held separately from `invalid` so the
+   * message can say WHICH limit was hit rather than just "unrecognized". */
+  const [refusal, setRefusal] = useState<string | null>(null);
   // The hint is wired up with `aria-describedby` rather than an aria-live
   // region: it changes on every keystroke, and a live region would have a
   // screen reader read the half-resolved value out loud each time.
@@ -109,7 +136,17 @@ export default function LengthInput({
       setInvalid(true);
       return false;
     }
+    // Checked against the SNAPPED value, which is the number that would
+    // actually be stored — a limit applied to the raw text would refuse (or
+    // admit) a value the field never commits.
+    const refusedFor = validate?.(resolved.value) ?? null;
+    if (refusedFor) {
+      setInvalid(true);
+      setRefusal(refusedFor);
+      return false;
+    }
     setInvalid(false);
+    setRefusal(null);
     setDraft(null);
     if (resolved.value !== value) onCommit(resolved.value);
     return true;
@@ -130,6 +167,7 @@ export default function LengthInput({
       event.preventDefault();
       setDraft(null);
       setInvalid(false);
+      setRefusal(null);
     }
   };
 
@@ -149,6 +187,7 @@ export default function LengthInput({
         onChange={(e) => {
           setDraft(e.target.value);
           setInvalid(false);
+          setRefusal(null);
         }}
         onKeyDown={handleKeyDown}
         onBlur={handleBlur}
@@ -164,6 +203,14 @@ export default function LengthInput({
               now that it no longer holds the caret to explain itself. */}
           {entry.value === null ? " (Esc to revert)" : ""}
         </span>
+      )}
+      {refusal && (
+        // role="alert" because this one is not a live-updating hint: it
+        // appears once, on a commit that was turned down, and a screen
+        // reader user needs to hear the reason their entry did not take.
+        <p role="alert" style={REFUSAL_STYLE}>
+          {refusal} (Esc to revert)
+        </p>
       )}
     </>
   );

@@ -35,7 +35,9 @@ import {
   editWallLength,
   footprintIsAllRightAngles,
   gapEndFor,
+  findSubMinimumPanelWidths,
   getOpeningAnchors,
+  toEighths,
   insertBumpOut,
   isMiteredShape,
   isPointNearPier,
@@ -43,6 +45,7 @@ import {
   nextPanelCycleState,
   pointAlongRidgeLine,
   reconcileBracedPlacement,
+  resolvePanelWidthEdit,
   reconcilePanelSlotZones,
   retile as retilePure,
   retilePreservingOpenings as retilePreservingOpeningsPure,
@@ -196,6 +199,7 @@ import {
   looseDensePackWidthIn,
   panelHeightInRange,
   panelTypes,
+  fabricationMinPanelWidthIn,
   panelWidthInRange,
   perpendicular2x4Addition,
   pierSpacingDefaultFt,
@@ -808,6 +812,19 @@ export default function LayoutEditor() {
   // to 10 ft wide").
   const [windowWidthClampNotice, setWindowWidthClampNotice] = useState<string | null>(null);
   const windowWidthClampNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The same pattern again for a hand-set PANEL width (Smearforn Stage 1).
+  // Deliberately NOT where a refusal goes — a refusal belongs in the field
+  // itself, which keeps what was typed and does not commit. This carries the
+  // two things that are not refusals: a clamp at the catalog maximum, and
+  // the "this edit would have moved the wall's total length, so nothing was
+  // changed" guard.
+  const [panelWidthNotice, setPanelWidthNotice] = useState<string | null>(null);
+  const panelWidthNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showPanelWidthNotice = (message: string) => {
+    if (panelWidthNoticeTimerRef.current) clearTimeout(panelWidthNoticeTimerRef.current);
+    setPanelWidthNotice(message);
+    panelWidthNoticeTimerRef.current = setTimeout(() => setPanelWidthNotice(null), 6000);
+  };
   // Hard guardrail (Tommy): at most 2 Gable End walls, and once 1 is active,
   // the 2nd must be its geometric opposite (parallel, facing away) — the
   // roof-catcher beam needs exactly 2 walls forming a straight run between
@@ -2353,6 +2370,147 @@ export default function LayoutEditor() {
     if (footprint) {
       setBaseWallSlots(retile(footprint, cornerId, primaryCornerIds));
     }
+  };
+
+  // --- Smearforn Stage 1: hand-set panel widths ---------------------------
+  //
+  // Tommy: "We need a way to manipulate the widths of individual panels...
+  // click the numerical value of width of one panel... so you can type in a
+  // new value." The arithmetic (quantize, refuse below the shop minimum,
+  // clamp the maximum, refuse when the free run has no room) lives in
+  // packages/geometry's `resolvePanelWidthEdit`; what is here is the wall
+  // re-tile, the notices, and keeping the selection pointed at the same
+  // panel afterwards.
+  const panelWidthLimitsIn = { minIn: fabricationMinPanelWidthIn.value, maxIn: panelWidthInRange.maxIn };
+
+  const resolvePanelWidthEditFor = (story: "ground" | "second", wallId: string, slotIndex: number, requestedWidthIn: number) =>
+    resolvePanelWidthEdit(wallSlotsForStory(story)[wallId] ?? [], slotIndex, requestedWidthIn, panelWidthLimitsIn);
+
+  /**
+   * The width field's own refusal message, or null to let the entry commit.
+   *
+   * A REFUSAL, not a clamp: the field keeps what was typed, marks itself
+   * invalid and states the limit, and nothing is written. The 24in floor is
+   * a manufacturing limit — a panel the shop cannot build is not something
+   * to negotiate at the keyboard — and "no room left" is refused for the
+   * same reason a partial application would be wrong: the wall's total
+   * length is not a thing a panel width edit may change.
+   */
+  const panelWidthRefusalMessage = (
+    story: "ground" | "second",
+    wallId: string,
+    slotIndex: number,
+    requestedWidthIn: number,
+  ): string | null => {
+    const result = resolvePanelWidthEditFor(story, wallId, slotIndex, requestedWidthIn);
+    if (result.outcome === "refuse-below-minimum") {
+      return `Refused: Building Integrity can't fabricate a panel narrower than ${formatLengthIn(result.minIn, unitSystem)} left to right in elevation. Nothing was changed.`;
+    }
+    if (result.outcome === "refuse-no-room") {
+      return `Refused: no room on this wall. The widest this panel can be right now is ${formatLengthIn(result.maxAvailableIn, unitSystem)} — every other panel here is hand-set, an opening or a corner. Reset one of them, or change the wall's length.`;
+    }
+    if (result.outcome === "refuse-not-a-panel") {
+      return "Refused: only standard and braced panels have an adjustable width here.";
+    }
+    return null;
+  };
+
+  /**
+   * Re-tiles ONE wall around whatever pins its slots now carry, and writes
+   * the result only if the wall still adds up.
+   *
+   * Same path `handleSetWindowWidth` uses — anchors for the openings, the
+   * plain tiler for the rest, `reconcileBracedPlacement` to carry every
+   * braced style, zone and pin through — plus two guards that make a failed
+   * edit a no-op rather than a half-applied one: the re-tiled wall must sum
+   * to exactly this wall's own tiling length, and the pinned slot must have
+   * come back at exactly its pinned width. If either fails, nothing is
+   * written and the caller says so. Never partially apply.
+   */
+  const retileWallAroundPins = (
+    story: "ground" | "second",
+    wallId: string,
+    nextSlots: PanelSlot[],
+    keepOrdinal: number,
+    expectWidthIn: number | null,
+  ): { ok: true; slots: PanelSlot[]; index: number } | { ok: false } => {
+    const geometry = wallGeometryFor(wallId);
+    if (!geometry) return { ok: false };
+    const anchors = getOpeningAnchors(nextSlots).map((a) => (a.type === "column" ? { ...a, widthIn: COLUMN_TOTAL_WIDTH_IN } : a));
+    const tiled = retileWithOpenings(
+      geometry.lengthIn,
+      standardWidthIn,
+      cornerWidthInForTiling,
+      geometry.gapEnd,
+      geometry.hasCornerStart,
+      geometry.hasCornerEnd,
+      anchors,
+      geometry.allowBorrow,
+    ).slots;
+    const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(tiled, geometry.gapEnd) : tiled;
+    const finalSlots = reconcileBracedPlacement(nextSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    const sumEighths = finalSlots.reduce((sum, s) => sum + toEighths(s.widthIn), 0);
+    if (sumEighths !== toEighths(geometry.lengthIn)) return { ok: false };
+    const index = findNthStandardFamilyIndex(finalSlots, keepOrdinal);
+    if (index === -1) return { ok: false };
+    if (expectWidthIn !== null && toEighths(finalSlots[index]!.widthIn) !== toEighths(expectWidthIn)) return { ok: false };
+    return { ok: true, slots: finalSlots, index };
+  };
+
+  /** How many standard/braced slots precede this one — the ordinal the
+   * selection is restored by after a re-tile reshuffles raw indices. */
+  const standardFamilyOrdinalAt = (slots: PanelSlot[], slotIndex: number): number =>
+    slots.slice(0, slotIndex).filter((s) => s.type === "standard" || s.type === "braced").length;
+
+  const handleSetPanelWidth = (story: "ground" | "second", wallId: string, slotIndex: number, requestedWidthIn: number) => {
+    const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
+    const result = resolvePanelWidthEditFor(story, wallId, slotIndex, requestedWidthIn);
+    // Every refusal already reached the user through the field's own
+    // `validate`, which is why this commits nothing and says nothing extra.
+    if (result.outcome !== "commit") return;
+
+    // Width AND lock together, exactly as the panel-boundary drag does — the
+    // lock is what survives the next unrelated re-tile of this wall.
+    const pinned = currentSlots.map((s, i) =>
+      i === slotIndex ? { ...s, widthIn: result.widthIn, lockedWidthIn: result.widthIn } : s,
+    );
+    const ordinal = standardFamilyOrdinalAt(currentSlots, slotIndex);
+    const retiled = retileWallAroundPins(story, wallId, pinned, ordinal, result.widthIn);
+    if (!retiled.ok) {
+      showPanelWidthNotice(
+        "That width couldn't be applied without moving this wall's own total length, so nothing was changed.",
+      );
+      return;
+    }
+    if (result.clampedFromIn !== null) {
+      showPanelWidthNotice(
+        `Width clamped to ${formatLengthIn(result.widthIn, unitSystem)} — ${formatLengthIn(panelWidthInRange.maxIn, unitSystem)} is the widest panel in the catalog range.`,
+      );
+    }
+    setSelectedSlot({ wallId, slotIndex: retiled.index, story, zoneIndex: selectedSlot?.zoneIndex });
+    setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: retiled.slots }));
+  };
+
+  /** Back to automatic, one panel at a time: clears this slot's own pin and
+   * re-tiles the wall, which hands its width back to the tiler. Every other
+   * pin on the wall is untouched. */
+  const handleResetPanelWidth = (story: "ground" | "second", wallId: string, slotIndex: number) => {
+    const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
+    const slot = currentSlots[slotIndex];
+    if (!slot || slot.lockedWidthIn === undefined) return;
+    const cleared = currentSlots.map((s, i) => {
+      if (i !== slotIndex) return s;
+      const { lockedWidthIn: _released, ...rest } = s;
+      return rest;
+    });
+    const ordinal = standardFamilyOrdinalAt(currentSlots, slotIndex);
+    const retiled = retileWallAroundPins(story, wallId, cleared, ordinal, null);
+    if (!retiled.ok) {
+      showPanelWidthNotice("That panel couldn't be returned to automatic without moving the wall's total length, so nothing was changed.");
+      return;
+    }
+    setSelectedSlot({ wallId, slotIndex: retiled.index, story, zoneIndex: selectedSlot?.zoneIndex });
+    setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: retiled.slots }));
   };
 
   const handleSetWindowWidth = (story: "ground" | "second", wallId: string, slotIndex: number, requestedWidthIn: number) => {
@@ -5044,6 +5202,21 @@ export default function LayoutEditor() {
     [interior, exterior, season],
   );
 
+  // Reported, never refused, and never at load: a stored design containing a
+  // panel narrower than the shop minimum opens and prints exactly as before,
+  // and shows up here instead. Both stories, since a second-story wall is
+  // fabricated by the same shop.
+  const subMinimumPanels = useMemo(
+    () => [
+      ...findSubMinimumPanelWidths(baseWallSlots, fabricationMinPanelWidthIn.value).map((p) => ({ ...p, story: "ground" as const })),
+      ...findSubMinimumPanelWidths(secondStory?.wallSlots ?? {}, fabricationMinPanelWidthIn.value).map((p) => ({
+        ...p,
+        story: "second" as const,
+      })),
+    ],
+    [baseWallSlots, secondStory],
+  );
+
   const reviewLog = useMemo(() => {
     const entries = toReviewLog([
       { label: "Target density", ...targetDensityKgM3 },
@@ -5077,6 +5250,20 @@ export default function LayoutEditor() {
       ...(standardWidthIn !== standardPanelBomReferenceWidthIn
         ? [{ label: "Wood-weight BOM vs. selected panel width", ...bomWidthMismatchWarning }]
         : []),
+      // Every panel below Building Integrity's own fabrication minimum,
+      // however it got there — typed, dragged, or produced by the tiler's own
+      // arithmetic (which does it routinely: computePlainSizing's two-way
+      // split lands between 20in and 40in at the 40in standard width). That
+      // last case is a real, PRE-EXISTING defect and is deliberately reported
+      // rather than corrected: changing the split rule would change panel
+      // counts and widths on every wall of every existing project, and needs
+      // Tommy's own decision about what the tiler should do instead. See the
+      // spec's Open Items.
+      ...subMinimumPanels.map((panel) => ({
+        label: `Panel narrower than the ${fabricationMinPanelWidthIn.value}in fabrication minimum: wall ${panel.wallId}, slot ${panel.slotIndex}${panel.story === "second" ? " (second story)" : ""}`,
+        status: "pending-BI-confirmation" as const,
+        note: `${PANEL_TYPE_LABELS[panel.type]} panel ${formatLengthIn(panel.widthIn, unitSystem)} wide, under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum Building Integrity's shop can build (Tommy: "I can't make any panels that are left to right elevation view shorter than 2'"). It opens, draws, prices and prints as stored — nothing was rewritten — but it cannot be fabricated as drawn.`,
+      })),
       ...(foundationTypeId === "concrete-pier"
         ? [
             { label: "Concrete pier dimensions", ...concretePierDimensions },
@@ -5087,7 +5274,18 @@ export default function LayoutEditor() {
       ...PHASE2_ASSUMPTIONS,
     ]);
     return entries.filter((e, i) => entries.findIndex((o) => o.note === e.note) === i);
-  }, [interior, exterior, foundationType, foundationTypeId, standardWidthIn, allInstances, estimatedTotalBearingLb, estimatedTotalShearLb]);
+  }, [
+    interior,
+    exterior,
+    foundationType,
+    foundationTypeId,
+    standardWidthIn,
+    allInstances,
+    estimatedTotalBearingLb,
+    estimatedTotalShearLb,
+    subMinimumPanels,
+    unitSystem,
+  ]);
 
   // Site Properties dropdown content (Tommy: "middle of the left side of
   // the menu bar, i want site properties drop down box") — identical
@@ -7078,6 +7276,52 @@ export default function LayoutEditor() {
                         } satisfies Record<StudConfig, string>
                       )[squareBaleStudConfig]
                     : `2x4 Nominal (${PLATE_2X4_THICKNESS_IN}in x ${PLATE_2X4_WIDTH_IN}in actual)`;
+                  // Smearforn Stage 1: the width field standard/braced panels
+                  // never had (windows have had one all along). It edits the
+                  // SLOT's width, which every zone stacked in this column
+                  // shares, so it is offered on the slot's own type rather
+                  // than on the selected zone's.
+                  const panelWidthSection =
+                    slot.type === "standard" || slot.type === "braced" ? (
+                      <>
+                        <label style={{ display: "block", marginTop: 6 }}>
+                          Width{" "}
+                          <LengthInput
+                            id={`panel-width-${wallId}-${slotIndex}`}
+                            title={`This panel's own width, left to right in elevation — ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} to ${formatLengthIn(panelWidthInRange.maxIn, unitSystem)}. The wall's total length never moves: the panels that are still automatic re-tile into what is left.`}
+                            value={slot.widthIn}
+                            domain="in"
+                            ariaLabel="Panel width in inches"
+                            style={{ width: 64 }}
+                            validate={(next) => panelWidthRefusalMessage(story, wallId, slotIndex, next)}
+                            onCommit={(next) => handleSetPanelWidth(story, wallId, slotIndex, next)}
+                          />
+                          &quot;
+                        </label>
+                        {slot.lockedWidthIn === undefined ? (
+                          <p className={styles.note}>
+                            Automatic — this width is whatever the tiler computes for this wall. Type one to hand-set it.
+                          </p>
+                        ) : (
+                          <p className={styles.note}>
+                            Hand-set at {formatLengthIn(slot.lockedWidthIn, unitSystem)}; it survives a re-tile of this wall.{" "}
+                            <button
+                              type="button"
+                              className={styles.tool}
+                              onClick={() => handleResetPanelWidth(story, wallId, slotIndex)}
+                              title="Clear this panel's hand-set width and let the tiler size it again. Only this panel is affected."
+                            >
+                              Reset to automatic
+                            </button>
+                          </p>
+                        )}
+                        {panelWidthNotice && (
+                          <p className={styles.note} style={{ color: "#a67c00" }}>
+                            {panelWidthNotice}
+                          </p>
+                        )}
+                      </>
+                    ) : null;
                   const materialSpecsSection = BEARING_ELIGIBLE_TYPES.has(zone.type) ? (
                     <div className={elevationStyles.structuralSection}>
                       <span className={elevationStyles.sectionLabel}>Material Specs</span>
@@ -7208,6 +7452,7 @@ export default function LayoutEditor() {
                             />{" "}
                             Mirrored ({bracedStyle.pattern === "chevron" ? '">"' : '"\\"'})
                           </label>
+                          {panelWidthSection}
                           {materialSpecsSection}
                         </>
                       ) : zone.type === "big-header" ? (
@@ -7259,6 +7504,7 @@ export default function LayoutEditor() {
                             {zone.type === "column" ? " Column Panels are always fabricated at a fixed width, not adjustable here." : ""}
                             {zone.type === "standard" || zone.type === "door" ? " Click it again on the canvas to cycle its type." : ""}
                           </p>
+                          {panelWidthSection}
                           {materialSpecsSection}
                         </>
                       )}

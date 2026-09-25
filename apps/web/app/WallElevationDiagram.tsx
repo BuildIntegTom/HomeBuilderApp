@@ -8,6 +8,7 @@ import {
   computeWallVerticalBandsForSlotWithMaxHeight,
   effectiveZonesForSlot,
   isSlotBoxBeamCovered,
+  resolvePanelBoundaryDrag,
   zoneFromSlot,
   type BoxBeamCoverage,
   type GableTiledPanel,
@@ -24,6 +25,7 @@ import {
   COLUMN_TOTAL_WIDTH_IN,
   computeBoxBeamHeightDeltaIn,
   computeGableRipCallout,
+  fabricationMinPanelWidthIn,
   GABLE_PANEL_MAX_HEIGHT_IN,
   panelHeightInRange,
   sillDefaultHeightIn,
@@ -110,7 +112,13 @@ const VERTICAL_GAP_COLOR = "#f0c08a";
 // otherwise, it shrinks one panel and adds it to another, snapping to when
 // a shrinking panel becomes 2' at which point it snaps there for plus or
 // minus 2 inches and then switches spots").
-const PANEL_DRAG_FLOOR_IN = 24;
+//
+// The floor this drag stops at is NOT a local constant any more: the 2' it
+// used to hard-code is Building Integrity's real fabrication minimum, now
+// `fabricationMinPanelWidthIn` in the catalog (confirmed, Tommy, 2026-09-24),
+// and the typed-width field refuses at the same number. One definition, two
+// consumers. The ±2in snap window below stays exactly where it is — that one
+// is ergonomics, not a building value, and nothing sources it.
 const PANEL_DRAG_SNAP_TOLERANCE_IN = 2;
 const PANEL_DRAG_HANDLE_HALF_WIDTH_PX = 4;
 
@@ -871,13 +879,17 @@ export default function WallElevationDiagram({
     onChangeMidWallBeamCoverage,
   ]);
 
-  // Panel drag-resize — continuous, inch-based, NOT slot-snapped (unlike
-  // the Box Beam/Mid-Wall Bond Beam coverage drags above, which always jump
-  // to the nearest real slot boundary): this needs free positioning, not
-  // always-exact. `leftSlotIndex`/`leftSlotIndex+1` are the CURRENTLY
-  // active pair, re-derived fresh every time this effect (re-)runs — a
-  // mid-drag role handoff (see below) changes `draggingPanelBoundary`
-  // itself, which re-triggers this same effect with the new pair.
+  // Panel drag-resize — free positioning along the wall, but landing on the
+  // 1/8in grid (unlike the Box Beam/Mid-Wall Bond Beam coverage drags above,
+  // which jump to the nearest real slot boundary, and unlike this drag's own
+  // former behaviour, which was continuous and put a hand-set width straight
+  // off the grid where the load-time repair silently absorbed it — see
+  // resolvePanelBoundaryDrag). The BOUNDARY is what snaps; both widths are
+  // derived from it, so the pair's total is conserved exactly.
+  // `leftSlotIndex`/`leftSlotIndex+1` are the CURRENTLY active pair,
+  // re-derived fresh every time this effect (re-)runs — a mid-drag role
+  // handoff (see below) changes `draggingPanelBoundary` itself, which
+  // re-triggers this same effect with the new pair.
   useEffect(() => {
     if (!draggingPanelBoundary) return;
     const { story, leftSlotIndex } = draggingPanelBoundary;
@@ -889,7 +901,6 @@ export default function WallElevationDiagram({
     if (!isPanel(left) || !isPanel(right)) return;
     const pairStartIn = offsetsIn[leftSlotIndex]!;
     const pairEndIn = offsetsIn[leftSlotIndex + 2]!;
-    const combinedWidthIn = pairEndIn - pairStartIn;
     const handleMove = (e: MouseEvent) => {
       const svg = svgRef.current;
       if (!svg) return;
@@ -898,21 +909,18 @@ export default function WallElevationDiagram({
       const pxPerScreenPx = svgWidthPx / rect.width;
       const localPx = (e.clientX - rect.left) * pxPerScreenPx;
       const cursorIn = (localPx - LEFT_MARGIN_PX) / scaleX;
-      const rawBoundaryIn = Math.min(Math.max(cursorIn, pairStartIn), pairEndIn);
-      let leftWidthIn = rawBoundaryIn - pairStartIn;
-      let rightWidthIn = pairEndIn - rawBoundaryIn;
       // Floor + role handoff (Tommy: "it shrinks one panel and adds it to
       // another, snapping to when a shrinking panel becomes 2' at which
       // point it snaps there for plus or minus 2 inches and then switches
-      // spots") — within PANEL_DRAG_SNAP_TOLERANCE_IN of the floor, snap
-      // exactly to it; the other side absorbs the rest.
-      if (leftWidthIn <= PANEL_DRAG_FLOOR_IN + PANEL_DRAG_SNAP_TOLERANCE_IN) {
-        leftWidthIn = PANEL_DRAG_FLOOR_IN;
-        rightWidthIn = combinedWidthIn - PANEL_DRAG_FLOOR_IN;
-      } else if (rightWidthIn <= PANEL_DRAG_FLOOR_IN + PANEL_DRAG_SNAP_TOLERANCE_IN) {
-        rightWidthIn = PANEL_DRAG_FLOOR_IN;
-        leftWidthIn = combinedWidthIn - PANEL_DRAG_FLOOR_IN;
-      }
+      // spots") and the eighth-snap, both resolved in one pure function so
+      // they are testable without a browser.
+      const { leftWidthIn, rightWidthIn } = resolvePanelBoundaryDrag({
+        cursorIn,
+        pairStartIn,
+        pairEndIn,
+        floorIn: fabricationMinPanelWidthIn.value,
+        snapToleranceIn: PANEL_DRAG_SNAP_TOLERANCE_IN,
+      });
       onDragResizePanels(story, wall.id, leftSlotIndex, leftWidthIn, rightWidthIn);
       // "Switches spots" — once the cursor has moved past whichever side
       // just floored, the ACTIVE pair hands off to the next one out (the
