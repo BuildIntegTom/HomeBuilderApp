@@ -2548,7 +2548,7 @@ Accounts as before, **one browser or profile per account** — a step marked "as
 
 ---
 
-## Project Smearforn — drawing a real job (2026-09-24) — STAGES 0, 1 AND 1r BUILT (1r on 2026-09-25); Stages 2, 2b, 3, 4, 5 still planned
+## Project Smearforn — drawing a real job (2026-09-24) — STAGES 0, 1, 1r AND 2 BUILT (1r and 2 on 2026-09-25); Stages 2b, 3, 4, 5 still planned
 
 The first time this app has been asked to reproduce an **engineered job** rather than a demo. Tommy's hard goal: **create his current project in the app by Monday evening, 2026-09-28.** This is editor work only — no backend, no schema beyond one project-file version bump, nothing in `supabase/`.
 
@@ -2808,7 +2808,39 @@ Tommy: *"We need a way to manipulate the widths of individual panels. Maybe when
 
 ---
 
-### Stage 2 — Insert, replace and delete a panel
+### Stage 2 — Insert, replace and delete a panel — BUILT 2026-09-25
+
+**As built, on branch `smearforn-stage-2`, in five commits.**
+
+**The tool.** A "Place a panel" group in the wall-elevation left bar: the nine click-cycle stops (Standard, four braced styles, Window, Door, Column, Big Header) plus **Delete**, each a toggle. With one armed, a click on a panel's body **replaces** it (or deletes it) instead of cycling it, and every legal boundary on the row becomes a drawn, dashed, clickable **insert** target. The panel-boundary drag stands down while the tool is armed — one strip cannot mean two things — and the width label stops swallowing clicks, or the panel under it would be the one spot the tool could not reach. Corner and safety-gap refuse, in words, on both replace and delete.
+
+**The arithmetic is a pure module**, `packages/geometry/src/panelPlacement.ts` (+ its test file), the same shape Stage 1 took: `resolvePanelInsert`, `resolvePanelReplace`, `resolvePanelDelete`, `redistributeFreeRun`, `insertableBoundaryRange`, `shiftSlotCoverage`, and `PLACEABLE_PANEL_TYPES` — which a test asserts against `nextPanelCycleState`'s own reachable roster, so the two cannot drift apart. The catalog minimum/maximum are passed in, not imported, for the reason `panelWidthEdit.ts` already gives.
+
+**⚠ The plan said "both use the existing anchor mechanism", and that turned out not to be buildable as written — this is the one place the build departs from the plan, deliberately.** `retileWithOpenings` derives the free run's COUNT from the budget alone, so it answers "how many panels does this wall hold" identically every time it is asked. Re-deriving the count is exactly what an insert or a delete must not do: a wall that just gained a hand-placed panel loses it again on the way back out, and a delete of an automatic panel is a no-op because the budget did not change. So the count is carried by **the slot array itself** — already persisted, no new key, **no `PROJECT_FILE_VERSION` bump** — and only the free run's *widths* are recomputed:
+
+- Let `B` be what is left for the free run (the wall total minus every fixed width: corners, the gap, every opening, every pin) and `n` the free slots the edit left standing. The run keeps `n` when it legally can: `n' = min(max(n, ceil(B / 48in)), floor(B / 24in))`. `distributeEighths` then makes every part `floor(B/n')` or `ceil(B/n')`, so **both fabrication bounds hold for every panel rather than on average**.
+- **The count may shrink, never grow.** Growing it would answer "I want one fewer panel" by inventing one, so that case is refused and said out loud.
+- `0 < B < 24in` is **refused**, not rounded away — a sliver has no legal home and nothing to absorb into without moving a corner or an opening, which this module never does. `B === 0` exactly is fine: the free run simply ends up empty.
+
+**The rider that makes Stage 1 and Stage 2 compose, and it is not optional.** `retileWallAroundPins` now falls back to `redistributeFreeRun` when the tiler's answer has **fewer standard-family slots than the wall actually has**. Without it the first width edit after an insert silently re-tiles the hand-placed panel away — and the wall still sums to its own length while doing it, so neither of that function's existing guards notices. That is the silent revert this plan forbids, and `apps/web/app/handPlacedWallRetile.{ts,test.ts}` pins both halves of it through the real tiler. A wall that has never been hand-placed on takes the tiler path exactly as before.
+
+**A rider the plan did not mention: slot-index coverage.** A Mid-Wall Bond Beam's coverage (either story) and the roofline Box Beam's are slot-index ranges, and an insert/delete shifts every index after it. `shiftSlotCoverage` moves them so they cover the same panels; a panel placed exactly at either edge lands outside the range; a delete that empties a range removes it and **says so in the notice**. Only applied when the array's length actually moved by that delta — an insert the automatic run had to pay for by absorbing a panel is a net zero. Deliberately NOT extended to re-tiles, where the run is re-derived wholesale and coverage is a rough position at best.
+
+**What an insert on a full wall does, stated because it will look like a bug.** A wall with no slack cannot hold another panel: the automatic run gives one up to pay for the new one and the wall's panel count does not move. **The notice says so** ("The automatic run gave up a panel to pay for it, so this wall still has 15 panels — narrow a panel to make room for another"), because the alternative is Tommy counting panels on a drawing to find out. The route to a higher count is the one the plan describes: pin widths narrower than the Standard width (Stage 1) and the freed budget shows up as room.
+
+**Three known limits, none of them hidden:**
+
+- **Only the paths this stage touches preserve the count.** The click-through cycle (`handleToggleOpening`), a window/Big Header width edit and a wall-length edit still re-tile and can take a hand-inserted panel with them. The new tool covers type changes on its own, so the workflow does not require the cycle — but this is the obvious next rider, and the real fix is still the plan's own "generalize `OpeningAnchor` to a slot anchor".
+- **The free run re-tiles FLAT.** Every automatic panel ends up within an eighth of every other, which means the "one absorber next to the gap, full width everywhere else" shape of a tiler-laid wall does not survive a hand edit. Nothing moves out of [24in, 48in], and the absorber's *position* rule (never corner-adjacent) is unaffected since positions do not move.
+- **A replace that would leave an automatic panel over 48in is refused** rather than answered by splitting it into two. Replacing an 8ft Big Header with a standard panel on a wall with no free run is the case.
+
+**Verified:** `npx tsc --noEmit` clean in `apps/web`, `npx vitest run` green (113 files, 2079 tests, up from 2040), and a new in-repo browser harness — `apps/web/harness/smearforn-stage-2/` — 8 of 8 against the real app, including the wall total conserved to the eighth across insert/replace/delete, the safety-gap refusal in the words the tool prints, an 8ft Big Header refused with the real free width in the message, and no uncaught exception in the page all run. It found two real defects on the way: ten tool buttons overflowing a 240px sidebar, and a corner step clicking the leftmost panel on a wall that owns no corner.
+
+**Flags check, run against the built diff: clean.** `data.ts` is not touched and no `CatalogValue`/`CatalogRange`/`PanelStructuralStatus` is in scope — the two catalog numbers this stage depends on (`fabricationMinPanelWidthIn` 24in, `panelWidthInRange.maxIn` 48in) are read, never redefined, and the pure module takes them as parameters. The widths a placed panel is born at are all existing values with their existing statuses: the project's Standard width, `COLUMN_TOTAL_WIDTH_IN`, and `bigHeaderDefaultWidthIn`/`bigHeaderDefaultHeightIn` (still `pending-BI-confirmation`, unchanged, and the tool does not present them as anything else). No fastener spacing, load, density, dimension or cost figure moves; nothing new reaches the Review Log. Every number added by the diff is a render or layout figure (a marker colour, a 2px stroke, an 8-second notice timeout) or index arithmetic.
+
+**ADU reach after Stage 2, honestly:** panel *types* are now directly selectable anywhere on a wall, a wall's count can come **down** to match the schedule, and it can go **up** wherever the pinned widths have left slack. The triple headers are still Stage 2b.
+
+---
 
 Tommy: *"There should be a way to add a panel, select which type of panel you want to add, and then click where to put it. This would either replace a panel or add one between."*
 
@@ -3324,6 +3356,9 @@ Things that are interpreted or unresolved but aren't a single flaggable number:
 ---
 
 ## Open Items
+- **Smearforn Stage 2's count preservation reaches only the paths that stage touched.** A hand-inserted panel survives a typed width edit (`retileWallAroundPins`' fallback) but NOT the click-through type cycle, a window/Big Header width edit, or a wall-length edit — each of those still re-tiles and can take the extra panel with it, silently, because the wall still sums. **The real fix is the plan's own "generalize `OpeningAnchor` to a slot anchor"**, which makes a pinned slot a budget reservation and fixes the count everywhere at once; the fallback is the smallest thing that made the stage usable before Monday. Tommy should know that after inserting a panel, cycling a panel's type on that same wall can cost him the insert.
+- **Should the free run re-tile flat after a hand edit?** Stage 2 redistributes the unpinned run with `distributeEighths`, so every automatic panel lands within an eighth of every other. A tiler-laid wall instead has full-width panels plus one absorber next to the gap. Nothing leaves [24in, 48in] either way and the absorber's *position* rule is untouched, but the shape of a hand-edited wall now differs from a fresh one. **A question for Tommy's eye, not a defect.**
+- **Corner and safety-gap are still not hand-placeable**, per the Stage 2 plan. The ADU annotates "SAFETY GAP" repeatedly, so this is the likeliest next ask; the mechanism would carry it, and what it needs is a decision about what happens when the gap-end rule and a hand-placed gap disagree.
 - **Footer Privacy Policy and Legal Disclaimer links await Tommy's documents.** The Stage 3 footer shipped without them on purpose: those are real legal texts, not ours to draft, and a link to a placeholder page or `#` was ruled out. `AppFooter.tsx` has a commented slot at the right end of the strip. When the documents exist, add the links as a non-shrinking group there so the disclaimer text is still the only thing that truncates, and re-measure at 360px.
 - **Confirm:** is "For Baleheads Only" Building Integrity's own engineering (possibly earlier company name)?
 - Metal hanger model for the jack stud beam connection — needs sizing to actual load
