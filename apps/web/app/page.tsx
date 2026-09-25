@@ -55,6 +55,7 @@ import {
   hasWallRunStop,
   normalizeWallRunStop,
   wallRunStopTotalIn,
+  NO_WALL_RUN_STOP,
   builtWallLengthsIn,
   totalBuiltWallPerimeterIn as totalBuiltWallPerimeterInPure,
   isSlotBoxBeamCovered,
@@ -73,6 +74,7 @@ import {
   type TruckDims,
   type TrussDoublingStrategy,
   type Wall,
+  type WallEnd,
   type WallRunStop,
 } from "@building-integrity/geometry";
 import {
@@ -2425,6 +2427,126 @@ export default function LayoutEditor() {
       [wallId]: finalSlots,
     }));
   };
+
+  // --- Smearforn Stage 3: a wall that simply ends -------------------------
+  //
+  // Tommy: "We need an addition tool setting or stop wall tool so that it is
+  // possible to make incomplete walls" — and, on what that means for the
+  // ADU: "For new construction the bare walls meet the other bare walls...
+  // just a simple end to our wall, no need to have the rest of the plan
+  // drawn." So there is no reference wall, no junction detail and no
+  // FOR-REFERENCE print treatment here. There is only a length of this
+  // wall's run that is not built.
+  //
+  // The arithmetic lives in packages/geometry's `wallRunStop.ts`; what is
+  // here is the single-wall re-tile, the refusal, and keeping the stop out
+  // of the stored record entirely when it is zero (absent = today's
+  // behaviour, byte-identical, which is every project ever saved).
+
+  /** Re-tiles ONE wall of ONE story against a candidate stop, preserving
+   * that wall's openings and braced decisions exactly as every other
+   * single-wall re-tile in this component does. Returns null when the wall
+   * does not exist; returns [] for a wall that is not built at all. */
+  const retileWallForRunStop = (story: "ground" | "second", wallId: string, runStop: WallRunStop): PanelSlot[] | null => {
+    const geometry = wallGeometryFor(wallId, runStop);
+    if (!geometry) return null;
+    if (geometry.fullyStopped) return [];
+    const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
+    const slots = retileWithOpenings(
+      geometry.lengthIn,
+      standardWidthIn,
+      cornerWidthInForTiling,
+      geometry.gapEnd,
+      geometry.hasCornerStart,
+      geometry.hasCornerEnd,
+      getOpeningAnchors(currentSlots),
+      geometry.allowBorrow,
+    ).slots;
+    const marked = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
+    return reconcileBracedPlacement(currentSlots, marked, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+  };
+
+  const candidateWallRunStop = (wallId: string, end: WallEnd, nextIn: number): WallRunStop => {
+    const current = wallRunStopsByWallId[wallId] ?? NO_WALL_RUN_STOP;
+    return end === "start" ? { ...current, startStopIn: nextIn } : { ...current, endStopIn: nextIn };
+  };
+
+  /**
+   * **A REFUSAL, not a clamp** — the same shape Stage 1's sub-minimum panel
+   * width uses, and for the same reason: a run the shop cannot panelize is
+   * not a thing to negotiate at the keyboard.
+   *
+   * Two things are legal that might look like they should not be. A stop of
+   * exactly ZERO is "build the whole wall". A stop covering the WHOLE wall
+   * is "this edge has no wall of ours on it at all" — the plan's own
+   * one-concept model, not a separate mode.
+   *
+   * What is refused is the band in between: a remainder too short to tile
+   * legally. Rather than re-deriving what "legal" means (corners, the
+   * safety-gap threshold, absorb) this tiles the candidate run for real and
+   * asks `findSubMinimumPanelWidths` — the same function the Review Log
+   * uses — whether the result contains a panel the shop cannot build. A
+   * stored file is NOT checked this way: limits are enforced at the point of
+   * EDIT, never at LOAD, and a project must never become unopenable because
+   * a rule tightened.
+   */
+  const wallRunStopRefusalMessage = (wallId: string, end: WallEnd, nextIn: number): string | null => {
+    if (nextIn < 0) return "A stop is measured in from the end of the wall, so it cannot be negative.";
+    const unstopped = wallGeometryFor(wallId, NO_WALL_RUN_STOP);
+    if (!unstopped) return null;
+    const candidate = candidateWallRunStop(wallId, end, nextIn);
+    const geometry = wallGeometryFor(wallId, candidate);
+    if (!geometry) return null;
+    if (geometry.stopClamped) {
+      return `This wall's run is only ${formatLengthIn(unstopped.lengthIn, unitSystem)} long; the two stops together ask for more than that.`;
+    }
+    if (geometry.fullyStopped) return null; // an edge with no wall on it at all — legal, and the point of the feature
+    const slots = retileWallForRunStop("ground", wallId, candidate) ?? [];
+    const totalIn = slots.reduce((sum, s) => sum + s.widthIn, 0);
+    if (toEighths(totalIn) + toEighths(geometry.startStopIn) + toEighths(geometry.endStopIn) !== toEighths(unstopped.lengthIn)) {
+      // The sum invariant outranks the edit. Refused whole rather than
+      // partly applied — same guard Stage 1's width edit carries.
+      return "That stop does not leave a run whose panels add back up to this wall. Nothing was changed.";
+    }
+    const subMinimum = findSubMinimumPanelWidths({ [wallId]: slots }, fabricationMinPanelWidthIn.value);
+    if (subMinimum.length > 0) {
+      return `That leaves a ${formatLengthIn(geometry.lengthIn, unitSystem)} run, which cannot be panelized without a panel under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum the shop can build. Stop less of the wall, or stop all ${formatFeetInches(unstopped.lengthIn / 12)} of it.`;
+    }
+    return null;
+  };
+
+  const applyWallRunStopChange = (wallId: string, candidate: WallRunStop) => {
+    if (!footprint) return;
+    const unstopped = wallGeometryFor(wallId, NO_WALL_RUN_STOP);
+    if (!unstopped) return;
+    const normalized = normalizeWallRunStop(candidate, unstopped.lengthIn);
+    const next: WallRunStop = { startStopIn: normalized.startStopIn, endStopIn: normalized.endStopIn };
+    // A zero stop is REMOVED from the record rather than stored as {0, 0}:
+    // "absent entry = fully panelized, byte-identical" is a property of the
+    // saved file, not only of the reader.
+    const nextStops: Record<string, WallRunStop> = { ...wallRunStopsByWallId };
+    if (hasWallRunStop(next)) nextStops[wallId] = next;
+    else delete nextStops[wallId];
+    setWallRunStopsByWallId(nextStops);
+    const groundSlots = retileWallForRunStop("ground", wallId, next);
+    if (groundSlots) setWallSlotsForStory("ground", (prev) => ({ ...prev, [wallId]: groundSlots }));
+    if (stories.length > 1) {
+      const secondSlots = retileWallForRunStop("second", wallId, next);
+      if (secondSlots) setWallSlotsForStory("second", (prev) => ({ ...prev, [wallId]: secondSlots }));
+    }
+    // The selection almost certainly points at a slot index that no longer
+    // means what it did — same reset `handleToggleOpening` does.
+    setSelectedSlot(null);
+  };
+
+  const handleSetWallRunStop = (wallId: string, end: WallEnd, nextIn: number) =>
+    applyWallRunStopChange(wallId, candidateWallRunStop(wallId, end, nextIn));
+
+  /** Both ends at once. Deliberately one call rather than two `handleSet`
+   * calls in a row — React state is not readable back in the same tick, so
+   * the second would rebuild its candidate from the pre-clear record and
+   * put the first stop straight back. */
+  const handleClearWallRunStop = (wallId: string) => applyWallRunStopChange(wallId, NO_WALL_RUN_STOP);
 
   const handleSetLeastAccessibleCorner = (cornerId: CornerId) => {
     setLeastAccessibleCorner(cornerId);
@@ -6310,6 +6432,63 @@ export default function LayoutEditor() {
         >
           {stories.length > 1 ? "Remove Layer" : "Add Layer"}
         </button>
+      </div>
+      {/* Stage 3 — stop this wall short. Two fields, one per end, in the
+          same note every other wall-level decision already lives in. Not a
+          checkbox and not a mode: a stop is a LENGTH, and zero is the
+          normal state, so the field's own value says everything there is to
+          say about whether the wall is complete. */}
+      <div className={elevationStyles.beamSection}>
+        <span className={elevationStyles.sectionLabel}>Stop Wall — Wall {elevationWall.id}</span>
+        <p className={elevationStyles.helpText}>
+          How much of this wall is deliberately NOT built (Tommy: &ldquo;a stop wall tool so that it is possible to make
+          incomplete walls&rdquo;). The building&apos;s shape does not change — the floor, foundation and roof still reach
+          the full wall line, and the span draws as a dashed boundary with its own <strong>NO PANELS</strong> dimension.
+          A stop that reaches a corner takes that corner panel with it.
+        </p>
+        <label style={{ display: "block", marginTop: 6 }}>
+          Unbuilt at the start end{" "}
+          <LengthInput
+            id={`wall-run-stop-start-${elevationWall.id}`}
+            title="Inches in from this wall's start corner that carry no panels. 0 builds the whole end."
+            value={wallRunStopsByWallId[elevationWall.id]?.startStopIn ?? 0}
+            domain="in"
+            ariaLabel="Unbuilt span at the wall's start end, in inches"
+            style={{ width: 72 }}
+            validate={(next) => wallRunStopRefusalMessage(elevationWall.id, "start", next)}
+            onCommit={(next) => handleSetWallRunStop(elevationWall.id, "start", next)}
+          />
+        </label>
+        <label style={{ display: "block", marginTop: 6 }}>
+          Unbuilt at the far end{" "}
+          <LengthInput
+            id={`wall-run-stop-end-${elevationWall.id}`}
+            title="Inches in from this wall's far corner that carry no panels. 0 builds the whole end."
+            value={wallRunStopsByWallId[elevationWall.id]?.endStopIn ?? 0}
+            domain="in"
+            ariaLabel="Unbuilt span at the wall's far end, in inches"
+            style={{ width: 72 }}
+            validate={(next) => wallRunStopRefusalMessage(elevationWall.id, "end", next)}
+            onCommit={(next) => handleSetWallRunStop(elevationWall.id, "end", next)}
+          />
+        </label>
+        {hasWallRunStop(wallRunStopsByWallId[elevationWall.id]) && (
+          <p className={elevationStyles.helpText}>
+            {formatLengthIn(wallRunStopTotalIn(wallRunStopsByWallId[elevationWall.id]), unitSystem)} of this{" "}
+            {formatFeetInches(elevationWall.lengthFt)} wall carries no panels
+            {wallGeometryFor(elevationWall.id)?.fullyStopped
+              ? " — this edge has no wall of ours on it at all."
+              : `; the remaining ${formatLengthIn(wallGeometryFor(elevationWall.id)?.lengthIn ?? 0, unitSystem)} is panelized normally.`}{" "}
+            This wall is listed in the Review Log as an incomplete design.{" "}
+            <button
+              type="button"
+              className={elevationStyles.actionButton}
+              onClick={() => handleClearWallRunStop(elevationWall.id)}
+            >
+              Build the whole wall
+            </button>
+          </p>
+        )}
       </div>
       {renderMidWallBeamSection(elevationWall.id, "ground", midWallBeamsByStoryAndWallId.ground[elevationWall.id] ?? [], wallHeightFt * 12)}
       {stories.length > 1 &&
