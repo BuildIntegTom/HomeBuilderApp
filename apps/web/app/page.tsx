@@ -68,6 +68,7 @@ import {
   defaultSpanningHeaderBottomHeightIn,
   resolveSpanningHeaderPlacement,
   spanningHeaderCoveredSlotCount,
+  spanningHeaderSpanWidthIn,
   type SpanningHeaderPlacementResult,
   type MidWallBeamGeometry,
   type BoxBeamCoverage,
@@ -2935,6 +2936,33 @@ export default function LayoutEditor() {
         const subMinimum = findSubMinimumPanelWidths({ [wall.id]: slots }, fabricationMinPanelWidthIn.value);
         if (subMinimum.length > 0) {
           return `That leaves a ${formatLengthIn(wallGeometry.lengthIn, unitSystem)} run${onWall}${storyLabel}, which cannot be panelized without a panel under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum the shop can build. Stop less of the wall, or stop all ${formatFeetInches(basisIn / 12)} of it.`;
+        }
+        // ⚠ Stage 2b x Stage 3. A stop RE-TILES the wall wholesale — the run
+        // is re-derived, not shifted — so a spanning header's slot range
+        // would come out pointing at different panels, or at panels of
+        // different widths. Its own fabricated width IS the sum of the
+        // panels it spans, so that is a header silently re-cut: a real part,
+        // already on a shop sheet, changing length because a different wall
+        // got shorter. Refused by name, which is the same answer Stage 3
+        // already gives a gable window a stop would cut in half.
+        //
+        // Note this fires for a NEIGHBOUR's headers too: since the
+        // orphan-corner rule, stopping one wall lengthens whichever wall was
+        // butting into the corner it removes, and that wall re-tiles as well.
+        const wallHeaders = spanningHeadersByStoryAndWallId[story][wall.id] ?? [];
+        if (wallHeaders.length > 0) {
+          const currentSlots = (stories.find((s) => s.id === story)?.wallSlots ?? {})[wall.id] ?? [];
+          const disturbed = wallHeaders.filter(
+            (header) =>
+              spanningHeaderCoveredSlotCount(slots, header) !== spanningHeaderCoveredSlotCount(currentSlots, header) ||
+              toEighths(spanningHeaderSpanWidthIn(slots, header)) !== toEighths(spanningHeaderSpanWidthIn(currentSlots, header)),
+          );
+          if (disturbed.length > 0) {
+            const names = resolvedSpanningHeaders
+              .filter((r) => r.story === story && r.wallId === wall.id && disturbed.some((h) => h.id === r.header.id))
+              .map((r) => r.name);
+            return spanningHeaderRunStopRefusal(names);
+          }
         }
       }
     }
@@ -7174,6 +7202,135 @@ export default function LayoutEditor() {
     </div>
   );
 
+  /**
+   * Smearforn Stage 2b — the spanning ("triple") header controls.
+   *
+   * Deliberately typed numbers rather than drag handles: a header's span is
+   * a set of WHOLE panels (slot indices, so its ends always land on a panel
+   * edge by construction), and its width is derived from those panels rather
+   * than positioned freely. The span shown here is the number that reaches a
+   * cut list, so it is read out rather than entered.
+   *
+   * Every control routes through the validating handlers — a refusal writes
+   * nothing and says why, with the number in it.
+   */
+  const renderSpanningHeaderSection = (wallId: string, story: "ground" | "second", headers: SpanningHeader[]) => {
+    const slots = (story === "ground" ? overlayWallSlots : (secondStory?.wallSlots ?? {}))[wallId] ?? [];
+    // The default new header sits on the selected panel and its right-hand
+    // neighbour — the two-panel case the ADU's own E4A is — or on the first
+    // two panels of the wall when nothing is selected.
+    const anchorIndex =
+      selectedSlot && selectedSlot.wallId === wallId && selectedSlot.story === story ? selectedSlot.slotIndex : 0;
+    const defaultStart = Math.max(0, Math.min(anchorIndex, Math.max(0, slots.length - 2)));
+    return (
+      <div className={elevationStyles.beamSection}>
+        <div className={elevationStyles.sectionHeader}>
+          <span className={elevationStyles.sectionLabel}>
+            Spanning Headers ({story === "ground" ? "ground" : "2nd story"})
+          </span>
+          <div className={elevationStyles.buttonRow}>
+            <button
+              type="button"
+              className={elevationStyles.actionButton}
+              disabled={slots.length < 2}
+              onClick={() => handleAddSpanningHeader(story, wallId, defaultStart, defaultStart + 2)}
+            >
+              + Add Spanning Header
+            </button>
+          </div>
+          {story === "ground" && (
+            <p className={elevationStyles.helpText}>
+              One header panel sitting ON TOP of two or more panels — the panels beneath are shortened to make room
+              for it, and its own fabricated width is their combined width. It is named from a single building-wide
+              series (H1, H2, H3) with no direction letter, so its sheet states the wall in words and the panels it
+              spans; each of those panels&apos; sheets names the header above it.
+            </p>
+          )}
+        </div>
+        {headers.map((header) => {
+          const name = spanningHeaderNameById.get(header.id) ?? "H?";
+          const spanWidthIn = spanningHeaderSpanWidthIn(slots, header);
+          return (
+            <div key={header.id} className={elevationStyles.beamRow}>
+              <div className={elevationStyles.structuralRowHead}>
+                <strong>{name}</strong>
+                <span className={elevationStyles.structuralValue}>{formatLengthIn(spanWidthIn, unitSystem)}</span>
+              </div>
+              <label className={elevationStyles.fieldRow}>
+                Bottom at
+                <LengthInput
+                  value={header.heightIn}
+                  domain="in"
+                  ariaLabel={`Spanning header ${name} bottom height in inches`}
+                  title="Height of this header's own bottom face above this story's floor — the panels beneath are built exactly this tall"
+                  style={{ width: 60, flex: "0 0 auto" }}
+                  onCommit={(next) => handleChangeSpanningHeaderBottomHeight(story, wallId, header.id, next)}
+                />
+                in
+              </label>
+              <label className={elevationStyles.fieldRow}>
+                Header tall
+                <LengthInput
+                  value={resolveSpanningHeaderHeightIn(header)}
+                  domain="in"
+                  ariaLabel={`Spanning header ${name} height in inches`}
+                  title={`This header's own assembly height. Building Integrity's stated range is ${bigHeaderHeightInRange.minIn}in-${bigHeaderHeightInRange.maxIn}in, which is still pending their confirmation.`}
+                  style={{ width: 60, flex: "0 0 auto" }}
+                  onCommit={(next) => handleChangeSpanningHeaderHeight(story, wallId, header.id, next)}
+                />
+                in
+              </label>
+              <div className={elevationStyles.beamRowFooter}>
+                <label className={elevationStyles.fieldRow}>
+                  Spans panels
+                  <input
+                    type="number"
+                    aria-label={`Spanning header ${name} first panel`}
+                    value={header.startSlotIndex}
+                    min={0}
+                    max={Math.max(0, slots.length - 2)}
+                    style={{ width: 50 }}
+                    onChange={(e) =>
+                      handleChangeSpanningHeaderCoverage(story, wallId, header.id, {
+                        startSlotIndex: Number(e.target.value),
+                        endSlotIndex: header.endSlotIndex,
+                      })
+                    }
+                  />
+                  to
+                  <input
+                    type="number"
+                    aria-label={`Spanning header ${name} last panel, exclusive`}
+                    value={header.endSlotIndex}
+                    min={2}
+                    max={slots.length}
+                    style={{ width: 50 }}
+                    onChange={(e) =>
+                      handleChangeSpanningHeaderCoverage(story, wallId, header.id, {
+                        startSlotIndex: header.startSlotIndex,
+                        endSlotIndex: Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <button
+                  type="button"
+                  className={elevationStyles.actionButton}
+                  onClick={() => handleRemoveSpanningHeader(story, wallId, header.id)}
+                >
+                  Remove
+                </button>
+              </div>
+              <p className={elevationStyles.helpText}>
+                {spanningHeaderCrossReference.locationByHeaderName.get(name) ?? ""}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const elevationControls = elevationWall ? (
     <div className={elevationStyles.panel}>
       <div className={elevationStyles.headerRow}>
@@ -7377,6 +7534,9 @@ export default function LayoutEditor() {
           midWallBeamsByStoryAndWallId.second[elevationWall.id] ?? [],
           (secondStory?.wallHeightFt ?? wallHeightFt) * 12,
         )}
+      {renderSpanningHeaderSection(elevationWall.id, "ground", spanningHeadersByStoryAndWallId.ground[elevationWall.id] ?? [])}
+      {stories.length > 1 &&
+        renderSpanningHeaderSection(elevationWall.id, "second", spanningHeadersByStoryAndWallId.second[elevationWall.id] ?? [])}
       {/* Smearforn Stage 2 (Tommy: "select which type of panel you want to
           add, and then click where to put it. This would either replace a
           panel or add one between"). Corner and Safety Gap are deliberately
@@ -8944,6 +9104,9 @@ export default function LayoutEditor() {
                   boxBeamSizeId={boxBeamSizeId}
                   midWallBeams={midWallBeamsByStoryAndWallId.ground[elevationWall.id] ?? []}
                   secondStoryMidWallBeams={midWallBeamsByStoryAndWallId.second[elevationWall.id] ?? []}
+                  spanningHeaders={spanningHeadersByStoryAndWallId.ground[elevationWall.id] ?? []}
+                  secondStorySpanningHeaders={spanningHeadersByStoryAndWallId.second[elevationWall.id] ?? []}
+                  spanningHeaderNameById={spanningHeaderNameById}
                   onChangeMidWallBeamHeight={(story, beamId, heightIn) =>
                     handleChangeMidWallBeamHeight(story, elevationWall.id, beamId, heightIn)
                   }
