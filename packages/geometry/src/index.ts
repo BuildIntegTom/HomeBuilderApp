@@ -14,6 +14,7 @@ export * from "./wallAxis";
 export * from "./gapPlacement";
 export * from "./tiling";
 export * from "./bracedPlacement";
+export * from "./panelWidthEdit";
 export * from "./retile";
 export * from "./pierGrid";
 export * from "./floorPanelGrid";

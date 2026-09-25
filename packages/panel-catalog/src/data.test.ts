@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   bigHeaderBeamWidthInRange,
   columnMinWidthIn,
+  fabricationMinPanelWidthIn,
   cornerPanelWidthIn,
   panelHeightInRange,
   panelThicknessInRange,
@@ -59,6 +60,37 @@ describe("panel size-limit ranges", () => {
     expect(sillMinWidthIn).toBeCloseTo(23.625, 3);
   });
 
+  it("fabricationMinPanelWidthIn is Tommy's 24in shop minimum, recorded beside the mfr floor rather than over it", () => {
+    expect(fabricationMinPanelWidthIn.value).toBe(24);
+    expect(fabricationMinPanelWidthIn.status).toBe("confirmed");
+    // The note has to carry the AXIS, which is the part that was misread
+    // once, and it has to be his words rather than a restatement of 24.
+    expect(fabricationMinPanelWidthIn.note).toContain("left to right elevation view");
+    expect(fabricationMinPanelWidthIn.note).toContain("2026-09-24");
+  });
+
+  it("leaves panelWidthInRange.minIn alone — two differently-sourced facts, both kept", () => {
+    // The manufacturer's 400mm floor and Building Integrity's working
+    // minimum are separate facts. If this ever reads 24, a sourced number
+    // has been overwritten to record an unrelated one.
+    expect(panelWidthInRange.minIn).toBeCloseTo(15.75, 3);
+    expect(panelWidthInRange.note).toContain("Mfr spec sheet");
+    expect(fabricationMinPanelWidthIn.value).toBeGreaterThan(panelWidthInRange.minIn);
+    expect(fabricationMinPanelWidthIn.value).toBeLessThan(panelWidthInRange.maxIn);
+  });
+
+  it("every ADU panel width is at or above the fabrication minimum — none of them trips it", () => {
+    // Rogers-Sehorn ADU (job 26024), the acceptance test for Smearforn: the
+    // real widths off the cut list. The 24in limit must not fire anywhere on
+    // this job, and every width must be a whole eighth so it is typeable.
+    const aduWidthsIn = [43, 41.5, 37.5, 35, 31.5, 30, 29.5, 28.5, 25.5, 24, 48];
+    for (const widthIn of aduWidthsIn) {
+      expect(widthIn).toBeGreaterThanOrEqual(fabricationMinPanelWidthIn.value);
+      expect(widthIn).toBeLessThanOrEqual(panelWidthInRange.maxIn);
+      expect(Math.abs(widthIn * 8 - Math.round(widthIn * 8))).toBeLessThan(1e-9);
+    }
+  });
+
   it("every range has a real, non-inverted min/max", () => {
     for (const range of [panelThicknessInRange, panelWidthInRange, panelHeightInRange, bigHeaderBeamWidthInRange, sillHeaderHeightInRange]) {
       expect(range.minIn).toBeLessThan(range.maxIn);
@@ -93,6 +125,7 @@ describe("catalog dimensions sit on the 1/8in grid", () => {
     ["sillDefaultHeightIn", sillDefaultHeightIn.value],
     ["sillMinWidthIn", sillMinWidthIn],
     ["columnMinWidthIn", columnMinWidthIn],
+    ["fabricationMinPanelWidthIn", fabricationMinPanelWidthIn.value],
     ["looseDensePackDefaultThicknessIn", looseDensePackDefaultThicknessIn.value],
     ["panelWidthInRange.minIn", panelWidthInRange.minIn],
     ["panelWidthInRange.maxIn", panelWidthInRange.maxIn],

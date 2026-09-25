@@ -77,6 +77,39 @@ export const panelHeightInRange: CatalogRange = {
   note: "Mfr spec sheet gives 400-3000mm (15¾\"-118⅛\") for Standard/Braced/Column/Inclined panel height (i.e. wall height). Tommy raised the max to 144in (12ft) so the app's existing 120in/10ft wall-height default stays valid — the mfr's own 118.125in max is not enforced here.",
 };
 
+/**
+ * The narrowest panel Building Integrity's own shop can physically build,
+ * measured **left to right in elevation view** — a width, not a thickness
+ * and not a height. A manufacturing limit, not a design preference.
+ *
+ * **This is NOT a twin of `panelWidthInRange.minIn` above, and must not be
+ * read as one.** That range's 15.75in floor is the manufacturer's spec
+ * sheet translated 1:1 — a true, sourced fact about a different thing.
+ * Both are kept: overwriting the mfr's number with this one would destroy a
+ * traceable source to record an unrelated one. The names are deliberately
+ * unalike so the wrong minimum cannot be reached for by accident.
+ *
+ * **Enforced at the point of EDIT, never at LOAD.** Typed entry refuses
+ * below it (`resolvePanelWidthEdit` in packages/geometry) and the panel-
+ * boundary drag floors at it; a stored design containing a narrower panel
+ * still opens, draws, prices and prints exactly as before, and is reported
+ * in the Review Log instead. A file must never become unopenable because a
+ * limit tightened.
+ *
+ * Two neighbours, noted so nobody "fixes" them: `sillMinWidthIn` (23.625in)
+ * sits 3/8in UNDER this floor and is mfr-sourced — either a sill is exempt
+ * or one of the two wants revisiting, and it is an open question in the
+ * spec rather than something to round away. `columnMinWidthIn` (16.75in) is
+ * also below it and is harmless: a Column's real built width is 25.5in.
+ * The Safety/Gap panel's 0.75in is not a panel for this purpose at all —
+ * it is a plywood spacer board with no studs, plates or girts.
+ */
+export const fabricationMinPanelWidthIn: CatalogValue<number> = {
+  value: 24,
+  status: "confirmed",
+  note: "Tommy, 2026-09-24, unhedged: \"I can't make any panels that are left to right elevation view shorter than 2'. This project is a 14\" thick panel.\" First-hand statement of what Building Integrity's own shop can fabricate, with his own axis (left to right, elevation view) kept because that axis has been misread once already. Nothing here is inferred: he gave a number, a unit and an axis.",
+};
+
 export const columnMinWidthIn = 16.75;
 // 424mm on the mfr spec sheet (16.7in, rounds to 16¾\" at nearest 1/8in) —
 // already satisfied today: Column's real built width (COLUMN_TOTAL_WIDTH_IN,
