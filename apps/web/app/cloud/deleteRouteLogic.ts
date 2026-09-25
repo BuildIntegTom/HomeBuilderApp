@@ -236,6 +236,15 @@ export async function deleteProject(
   // whether the version cascade is allowed to follow. An RLS-denied DELETE is
   // silent, so the affected rows are the answer — zero means refused, whatever
   // the reason, and the project is still there.
+  //
+  // ⚠ THAT RULE DEPENDS ON SELECT BEING AT LEAST AS WIDE AS DELETE, because the
+  // `.select("id")` returning clause is itself RLS-filtered. Today
+  // `projects_select` (0006) includes `is_platform_admin()`, so anyone who can
+  // delete can also see the row come back, and zero rows really does mean
+  // nothing went. If a future migration ever narrowed SELECT below DELETE, this
+  // line would report "nothing was deleted" AFTER REALLY DELETING — the single
+  // failure mode this whole design exists to prevent. Do not narrow
+  // `projects_select` without revisiting this.
   const { data, error } = await db.from("projects").delete().eq("id", projectIdParam).select("id");
   if (error) fail(error, "delete");
   if (!data || data.length === 0) throw new ProjectRouteError(404, DELETE_REFUSED_MESSAGE);

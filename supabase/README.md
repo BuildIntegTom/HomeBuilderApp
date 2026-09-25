@@ -1917,11 +1917,40 @@ psql -d stage5_local -v ON_ERROR_STOP=1 -f supabase/tests/stage2_rls.test.sql   
 PGDATABASE=stage5_local bash supabase/tests/stage2_concurrency.test.sh          # must still pass
 psql -d stage5_local -v ON_ERROR_STOP=1 -f supabase/tests/stage3_rls.test.sql   # must still pass
 PGDATABASE=stage5_local bash supabase/tests/stage3_concurrency.test.sh          # must still pass
-psql -d stage5_local -v ON_ERROR_STOP=1 -f supabase/tests/stage4_rls.test.sql   # must still pass
 psql -d stage5_local -v ON_ERROR_STOP=1 -f supabase/tests/stage5_rls.test.sql
 ```
 
 Each prints `… ALL ASSERTIONS PASSED` or stops at the first `FAIL:`.
+
+**`stage4_rls.test.sql` is deliberately NOT in that list, and the reason is a
+real pre-existing conflict rather than an omission.** It cannot pass on a
+database that has had `0010` applied, and the loop above applies `0010`.
+Measured both directions on a throwaway PostgreSQL 17.4 cluster, 2026-09-25:
+
+| migrations applied | `stage4_rls.test.sql` |
+|---|---|
+| `0001`–`0009` | `ALL ASSERTIONS PASSED` |
+| `0001`–`0010` | `FAIL: FAIL CLOSED: pf_v25 has no redaction row, so browse_version raises and serves nothing (got a document)` (line 850) |
+
+`0010` seeds the file-format-25 redaction row; that Stage 4 assertion requires
+it to be **absent**, because it is the assertion proving an unclassified format
+fails closed. Both files predate Stage 5 and neither is changed by it, so this
+is **not a Stage 5 regression** — but the sequence above is where an operator
+would meet it, which is why it is stated here instead of being silently
+skipped. To run the Stage 4 suite, use a database built from `0001`–`0009`
+only:
+
+```sh
+createdb stage4_recheck
+psql -d stage4_recheck -v ON_ERROR_STOP=1 -f supabase/tests/local_shim.sql
+for f in supabase/migrations/000*.sql; do psql -d stage4_recheck -v ON_ERROR_STOP=1 -f "$f"; done
+psql -d stage4_recheck -v ON_ERROR_STOP=1 -f supabase/tests/stage4_rls.test.sql
+```
+
+The real fix is for that assertion to seed and use a format number no
+migration classifies, so it stops depending on `0010` not existing. Left
+undone deliberately: it changes a Stage 4 test on a Stage 5 branch, and it
+wants its own review.
 
 `stage5_rls.test.sql` drives the delete as **seven callers who may not** — an
 ordinary member of the owner company, that company's admin, a member of

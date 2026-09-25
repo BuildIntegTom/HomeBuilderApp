@@ -826,6 +826,15 @@ describe("the project routes", () => {
         expect(source, path).not.toMatch(/export async function DELETE/);
       }
       // No route deletes a version, whatever else it does.
+      //
+      // ⚠ THIS IS A LINT, NOT THE GUARANTEE. It is a text match, so it would
+      // miss a client held in a variable, or more than 80 characters of
+      // chaining. The real guarantee is in the database:
+      // `refuse_project_version_change` (0006) raises 42501 on a direct
+      // single-version delete even for a platform admin, which
+      // `supabase/tests/stage5_rls.test.sql` asserts — and which was verified
+      // empirically on 2026-09-25 by dropping that trigger and watching the
+      // suite fail. Do not read a green run here as proof the door is shut.
       expect(source, path).not.toMatch(/from\("project_versions"\)[\s\S]{0,80}\.delete\(/);
     }
     expect(seen.sort()).toEqual(["grant", "project"]);
