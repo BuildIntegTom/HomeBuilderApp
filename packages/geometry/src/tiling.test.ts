@@ -911,6 +911,45 @@ describe("the absorb rule: no tiler-generated panel the shop cannot build", () =
     expect(slots[0]!.widthIn).toBeLessThan(TILER_MIN_PANEL_WIDTH_IN);
   });
 
+  it("tiles a whole ADU-like footprint with nothing under the minimum, on every wall", () => {
+    // The acceptance criterion, as a deterministic test rather than only as a
+    // browser run: draw a rectangular building and tile all four of its walls
+    // the way the app does — corner ownership alternating, so two opposite
+    // walls own both their corners and the other two own none.
+    //
+    // Swept over a range of plausible ADU sizes rather than one, at every
+    // whole foot, because the point is that Tommy can draw ANY building on
+    // Monday and not meet a panel his shop cannot make. The 5'-1¾" band that
+    // absorb genuinely cannot reach (residual 1) is far below this range — a
+    // habitable room's wall is not 61¾in long — which is why deferring that
+    // fix does not block the job.
+    const violations: string[] = [];
+    for (let widthFt = 16; widthFt <= 44; widthFt++) {
+      for (let depthFt = 16; depthFt <= 44; depthFt++) {
+        for (const standardWidthIn of ABSORB_STANDARD_WIDTHS_IN) {
+          const walls: [number, boolean, boolean][] = [
+            [widthFt * 12, true, true],
+            [depthFt * 12, false, false],
+            [widthFt * 12, true, true],
+            [depthFt * 12, false, false],
+          ];
+          for (const [lengthIn, hasStart, hasEnd] of walls) {
+            for (const gapEnd of GAP_ENDS) {
+              const { slots } = tileWall(lengthIn, standardWidthIn, CORNER_WIDTH_IN, gapEnd, hasStart, hasEnd);
+              collectFabricationViolations(
+                slots,
+                lengthIn,
+                `ADU ${widthFt}x${depthFt}ft, wall ${lengthIn}in, standard ${standardWidthIn}in, gap ${gapEnd}`,
+                violations,
+              );
+            }
+          }
+        }
+      }
+    }
+    expect(violations.slice(0, 10)).toEqual([]);
+  });
+
   it("absorbs on a short wall too — buildEvenMiddle drops a panel rather than halving under the floor", () => {
     // The no-safety-gap path (walls at or under 12ft). A 40⅛in budget at the
     // 40in standard used to give two ~20in panels: ceil(40.125 / 40) is 2.

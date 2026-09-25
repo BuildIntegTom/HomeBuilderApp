@@ -5277,14 +5277,19 @@ export default function LayoutEditor() {
         ? [{ label: "Wood-weight BOM vs. selected panel width", ...bomWidthMismatchWarning }]
         : []),
       // Every panel below Building Integrity's own fabrication minimum,
-      // however it got there — typed, dragged, or produced by the tiler's own
-      // arithmetic (which does it routinely: computePlainSizing's two-way
-      // split lands between 20in and 40in at the 40in standard width). That
-      // last case is a real, PRE-EXISTING defect and is deliberately reported
-      // rather than corrected: changing the split rule would change panel
-      // counts and widths on every wall of every existing project, and needs
-      // Tommy's own decision about what the tiler should do instead. See the
-      // spec's Open Items.
+      // however it got there — typed, dragged, stored in an older file, or
+      // produced by the tiler's own arithmetic.
+      //
+      // That last case USED to be routine (computePlainSizing's two-way split
+      // landed between 20in and 40in at the 40in standard width) and is now
+      // rare: Tommy's ABSORB rule landed 2026-09-24 and the tiler emits one
+      // wider panel instead of two narrow ones. What is left is the three
+      // residual paths absorb cannot reach — a two-corner wall between 51in
+      // and 75in, openings eating all but a sliver, and a clamped corner on a
+      // sub-25.5in wall — each of which has nothing to absorb into and each
+      // of which is deliberately reported rather than corrected. The first
+      // one's real fix is corner geometry, which Tommy has flagged and
+      // deferred until after admin tooling. See the spec's Open Items.
       ...subMinimumPanels.map((panel) => ({
         label: `Panel narrower than the ${fabricationMinPanelWidthIn.value}in fabrication minimum: wall ${panel.wallId}, slot ${panel.slotIndex}${panel.story === "second" ? " (second story)" : ""}`,
         status: "pending-BI-confirmation" as const,

@@ -216,14 +216,28 @@ export interface SubMinimumPanel {
  * Every panel narrower than the shop can build, however it got there —
  * typed, dragged, or produced by the tiler's own arithmetic.
  *
- * **The tiler-generated case is the important one and it is pre-existing.**
- * `computePlainSizing` splits a leftover across two panels, which at the
- * 40in standard width lands each of them anywhere from 20in up; short walls
- * and clamped corners can go lower still. Nothing here changes that
- * behaviour — changing the split rule would change panel counts and widths
- * on every wall of every existing project, and needs a real decision about
- * what the tiler should do instead. Reporting it makes an invisible defect
- * visible on the one document an engineer actually reads.
+ * **The tiler-generated case was the important one, and the tiler has since
+ * been fixed.** This used to read: `computePlainSizing` splits a leftover
+ * across two panels, which at the 40in standard width lands each of them
+ * anywhere from 20in up. That was true until 2026-09-24, when Tommy's ABSORB
+ * rule landed (see `tiling.ts`) and the tiler stopped producing sub-minimum
+ * panels on its own. Three residual paths remain, each with nothing to absorb
+ * into and each deliberately unfixed: a two-corner wall between 51in and 75in
+ * (deferred to corner geometry, Tommy's call), openings eating all but a
+ * sliver, and a corner clamped onto a sub-25.5in wall. **So this function's
+ * job has narrowed rather than gone away** — it now reports those three, plus
+ * anything a stored file arrives carrying.
+ *
+ * **What it still does NOT see: sills.** A sill is derived per opening by
+ * `computeSillRunWidths`, not stored as a slot, so a narrow sill never
+ * reaches this walk. `sillMinWidthIn` moved to 24in on 2026-09-24 and nothing
+ * enforces or reports it. Stated rather than quietly left, because a
+ * confirmed limit with no consumer looks from the outside exactly like one
+ * that is being honoured.
+ *
+ * **A stored design is still never rewritten.** Nothing here runs at load;
+ * reporting makes an invisible defect visible on the one document an engineer
+ * actually reads, and that is the whole of its effect.
  *
  * **The Safety/Gap panel is exempt, explicitly.** Its 0.75in board is a
  * plywood spacer with no studs, plates or girts at all — not a panel for
