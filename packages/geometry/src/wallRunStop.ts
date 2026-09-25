@@ -170,11 +170,23 @@ export function applyWallRunStop(base: WallRunBase, stop: WallRunStop | undefine
  * over-counts silently — a plaster area, a membrane roll count, a plywood
  * cap, a truss-plate run for a wall that was never built. Those read this.
  *
- * **Measured off `lengthFt * 12`, deliberately not off the tiling length.**
- * Corner insets and reflex extensions are ownership bookkeeping that nets
- * out around a closed ring; the existing perimeter totals are exactly the
- * raw sum, so subtracting only the stops leaves an unstopped project
- * byte-identical to today.
+ * **The LENGTH is measured off `lengthFt * 12`, deliberately not off the
+ * tiling length.** Corner insets and reflex extensions are ownership
+ * bookkeeping that nets out around a closed ring; the existing perimeter
+ * totals are exactly the raw sum, so subtracting only the stops leaves an
+ * unstopped project byte-identical to today.
+ *
+ * **But the CLAMP BASE must be the tiling length, and that is a different
+ * number.** `applyWallRunStop` clamps a stop against the run the tiler
+ * actually builds, which on a wall that butts a longer neighbour is up to
+ * one wall-thickness shorter than the raw length. Clamping here against the
+ * raw length instead let the two disagree: a stored stop landing between
+ * those two values made the tiler build NOTHING while this function still
+ * reported up to ~15¾in as built — so plaster and membrane counted a sliver
+ * on a wall with no panels on it. Pass `tilingLengthInByWallId` (from
+ * `wallGeometryFor(...).unstoppedLengthIn`) and the two agree exactly. Omit
+ * it and the raw length is used, which is correct whenever the stops fit —
+ * i.e. always, except through a clamp.
  *
  * **What must NOT read this: the floor, the foundation and the roof.** They
  * still extend to the line where the wall stops. That is the entire reason
@@ -183,11 +195,19 @@ export function applyWallRunStop(base: WallRunBase, stop: WallRunStop | undefine
 export function builtWallLengthsIn(
   footprint: Footprint,
   runStopsByWallId?: Record<string, WallRunStop>,
+  tilingLengthInByWallId?: Record<string, number>,
 ): Record<string, number> {
   const built: Record<string, number> = {};
   for (const wall of footprint.walls) {
     const fullIn = wall.lengthFt * 12;
-    const { startStopIn, endStopIn } = normalizeWallRunStop(runStopsByWallId?.[wall.id], fullIn);
+    const clampBaseIn = tilingLengthInByWallId?.[wall.id] ?? fullIn;
+    const { startStopIn, endStopIn } = normalizeWallRunStop(runStopsByWallId?.[wall.id], clampBaseIn);
+    // A wall the tiler builds nothing on contributes nothing, even though
+    // its raw length exceeds its tiling length by the butt-joint inset.
+    if (toEighths(clampBaseIn) - toEighths(startStopIn) - toEighths(endStopIn) <= 0) {
+      built[wall.id] = 0;
+      continue;
+    }
     built[wall.id] = Math.max(0, fullIn - startStopIn - endStopIn);
   }
   return built;
@@ -199,7 +219,11 @@ export function builtWallLengthsIn(
 export function totalBuiltWallPerimeterIn(
   footprint: Footprint | null | undefined,
   runStopsByWallId?: Record<string, WallRunStop>,
+  tilingLengthInByWallId?: Record<string, number>,
 ): number {
   if (!footprint) return 0;
-  return Object.values(builtWallLengthsIn(footprint, runStopsByWallId)).reduce((sum, lengthIn) => sum + lengthIn, 0);
+  return Object.values(builtWallLengthsIn(footprint, runStopsByWallId, tilingLengthInByWallId)).reduce(
+    (sum, lengthIn) => sum + lengthIn,
+    0,
+  );
 }

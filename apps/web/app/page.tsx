@@ -2500,16 +2500,24 @@ export default function LayoutEditor() {
       return `This wall's run is only ${formatLengthIn(unstopped.lengthIn, unitSystem)} long; the two stops together ask for more than that.`;
     }
     if (geometry.fullyStopped) return null; // an edge with no wall on it at all — legal, and the point of the feature
-    const slots = retileWallForRunStop("ground", wallId, candidate) ?? [];
-    const totalIn = slots.reduce((sum, s) => sum + s.widthIn, 0);
-    if (toEighths(totalIn) + toEighths(geometry.startStopIn) + toEighths(geometry.endStopIn) !== toEighths(unstopped.lengthIn)) {
-      // The sum invariant outranks the edit. Refused whole rather than
-      // partly applied — same guard Stage 1's width edit carries.
-      return "That stop does not leave a run whose panels add back up to this wall. Nothing was changed.";
-    }
-    const subMinimum = findSubMinimumPanelWidths({ [wallId]: slots }, fabricationMinPanelWidthIn.value);
-    if (subMinimum.length > 0) {
-      return `That leaves a ${formatLengthIn(geometry.lengthIn, unitSystem)} run, which cannot be panelized without a panel under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum the shop can build. Stop less of the wall, or stop all ${formatFeetInches(unstopped.lengthIn / 12)} of it.`;
+    // BOTH stories, not just the ground one. `applyWallRunStopChange`
+    // re-tiles both, and a second story whose openings differ can tile the
+    // same candidate run into a sub-minimum panel the ground story does
+    // not — which would then be committed without ever being refused.
+    const storiesToCheck: ("ground" | "second")[] = stories.length > 1 ? ["ground", "second"] : ["ground"];
+    for (const story of storiesToCheck) {
+      const slots = retileWallForRunStop(story, wallId, candidate) ?? [];
+      const totalIn = slots.reduce((sum, s) => sum + s.widthIn, 0);
+      const storyLabel = story === "second" ? " on the second story" : "";
+      if (toEighths(totalIn) + toEighths(geometry.startStopIn) + toEighths(geometry.endStopIn) !== toEighths(unstopped.lengthIn)) {
+        // The sum invariant outranks the edit. Refused whole rather than
+        // partly applied — same guard Stage 1's width edit carries.
+        return `That stop does not leave a run${storyLabel} whose panels add back up to this wall. Nothing was changed.`;
+      }
+      const subMinimum = findSubMinimumPanelWidths({ [wallId]: slots }, fabricationMinPanelWidthIn.value);
+      if (subMinimum.length > 0) {
+        return `That leaves a ${formatLengthIn(geometry.lengthIn, unitSystem)} run${storyLabel}, which cannot be panelized without a panel under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum the shop can build. Stop less of the wall, or stop all ${formatFeetInches(unstopped.lengthIn / 12)} of it.`;
+      }
     }
     return null;
   };
@@ -3814,13 +3822,27 @@ export default function LayoutEditor() {
    * so two near-identical perimeter numbers one line apart would only ever
    * be a way to pick the wrong one.
    */
+  /** Each wall's UNSTOPPED tiling length — the same base `applyWallRunStop`
+   * clamps a stop against. Fed to `builtWallLengthsIn` so a clamped stop
+   * cannot make the tiler build nothing while the totals still count the
+   * butt-joint inset as built wall. */
+  const wallTilingLengthInByWallId = useMemo(() => {
+    const lengths: Record<string, number> = {};
+    if (!footprint) return lengths;
+    for (const wall of footprint.walls) {
+      const geometry = wallGeometryFor(wall.id);
+      if (geometry) lengths[wall.id] = geometry.unstoppedLengthIn;
+    }
+    return lengths;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
+  }, [footprint, thicknessIn, primaryCornerIds, leastAccessibleCorner]);
   const builtWallLengthInByWallId = useMemo(
-    () => (footprint ? builtWallLengthsIn(footprint, wallRunStopsByWallId) : {}),
-    [footprint, wallRunStopsByWallId],
+    () => (footprint ? builtWallLengthsIn(footprint, wallRunStopsByWallId, wallTilingLengthInByWallId) : {}),
+    [footprint, wallRunStopsByWallId, wallTilingLengthInByWallId],
   );
   const totalBuiltWallPerimeterIn = useMemo(
-    () => totalBuiltWallPerimeterInPure(footprint, wallRunStopsByWallId),
-    [footprint, wallRunStopsByWallId],
+    () => totalBuiltWallPerimeterInPure(footprint, wallRunStopsByWallId, wallTilingLengthInByWallId),
+    [footprint, wallRunStopsByWallId, wallTilingLengthInByWallId],
   );
   // Box beam is now a per-wall (or per-section-of-a-wall) choice (Tommy:
   // "options for being a ring all the way around or just one section of
@@ -4876,10 +4898,19 @@ export default function LayoutEditor() {
       // an over-long plate here is a part cut wrong, not just a total.
       // (The multi-story branch reads the second story's own slots and so
       // already shrinks for free.)
+      const builtLengthIn = builtWallLengthInByWallId[wall.id] ?? wall.lengthFt * 12;
       const segments =
         stories.length > 1
           ? computeRoofBearingSegments(slots, boxBeamCoverageByWallId[wall.id])
-          : [{ kind: "truss-plate" as const, startXIn: 0, lengthIn: builtWallLengthInByWallId[wall.id] ?? wall.lengthFt * 12 }];
+          : // A wall built to zero emits NO plate. Without this guard it
+            // produced a `truss-plate-0.000` fabrication group — a real shop
+            // sheet for a 0in part, complete with a Timber HP volume and
+            // weight line. `intelloWallRuns` already filters its zero-length
+            // runs out for the same reason; so does
+            // `computeRoofBearingSegments`, which returns [] on an empty run.
+            builtLengthIn > 0
+            ? [{ kind: "truss-plate" as const, startXIn: 0, lengthIn: builtLengthIn }]
+            : [];
       for (const seg of segments) {
         const key = `${seg.kind}-${seg.lengthIn.toFixed(3)}`;
         const existing = groups.get(key);

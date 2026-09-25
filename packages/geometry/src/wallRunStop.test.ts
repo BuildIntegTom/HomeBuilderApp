@@ -254,6 +254,43 @@ describe("builtWallLengthsIn / totalBuiltWallPerimeterIn", () => {
     expect(grossBuiltSqFt).toBeCloseTo(grossRawSqFt - 90, 9);
   });
 
+  /**
+   * Review SHOULD-FIX 6. `applyWallRunStop` clamps against the wall's TILING
+   * length; this used to clamp against the raw length. On a wall that butts
+   * a longer neighbour those differ by the inset, and a stored stop landing
+   * between them made the tiler build nothing while the totals still counted
+   * up to one wall-thickness as built — plaster and membrane on a wall with
+   * no panels.
+   */
+  it("agrees with the tiler when a clamped stop wipes out a butting wall's whole run", () => {
+    // AB is the 30ft wall of a 30x20 rectangle: it LOSES both corners, so
+    // its tiling length is 360 - 2 x 15.5 = 329in against a raw 360in.
+    const thicknessIn = 15.5;
+    const tilingLengthIn = 360 - 2 * thicknessIn;
+    const tilingLengths = { AB: tilingLengthIn };
+    // A stop of 340in: past the 329in tiling length, short of the 360in raw
+    // length. The tiler builds nothing.
+    const stops = { AB: { startStopIn: 340, endStopIn: 0 } };
+    const run = applyWallRunStop(
+      { lengthIn: tilingLengthIn, hasCornerStart: false, hasCornerEnd: false },
+      stops.AB,
+    );
+    expect(run.fullyStopped).toBe(true);
+
+    expect(builtWallLengthsIn(fp, stops, tilingLengths)["AB"]).toBe(0);
+    // Without the tiling base it reported 360 - 340 = 20in of built wall on
+    // a wall carrying no panels at all.
+    expect(builtWallLengthsIn(fp, stops)["AB"]).toBe(20);
+  });
+
+  it("the tiling base changes nothing when the stops actually fit", () => {
+    const tilingLengths = { AB: 360 - 2 * 15.5, BC: 240, CD: 360 - 2 * 15.5, DA: 240 };
+    const stops = { AB: { startStopIn: 60, endStopIn: 0 } };
+    expect(builtWallLengthsIn(fp, stops, tilingLengths)).toEqual(builtWallLengthsIn(fp, stops));
+    // ...and with no stops at all it is still exactly the raw perimeter.
+    expect(totalBuiltWallPerimeterIn(fp, {}, tilingLengths)).toBeCloseTo(rawPerimeterIn, 9);
+  });
+
   it("no footprint is zero, not a crash", () => {
     expect(totalBuiltWallPerimeterIn(null)).toBe(0);
     expect(totalBuiltWallPerimeterIn(undefined, { AB: { startStopIn: 10, endStopIn: 0 } })).toBe(0);

@@ -1212,19 +1212,29 @@ export default function Building3DView({
       const axis = wallAxis(footprint, wall);
       const slots = secondStory?.wallSlots[wall.id] ?? [];
       // A roof-bearing plate sits on TOP of this wall's panels, so where
-      // there are no panels there is no plate — the single-story span is
-      // the BUILT run, not the raw wall (Stage 3). The multi-story branch
-      // reads the second story's own slots, so it already shrinks for free.
+      // there are no panels there is no plate — the span is the BUILT run,
+      // not the raw wall (Stage 3).
+      //
+      // **`startXIn` is RUN-relative in both branches, and the stop is
+      // added once at the anchor below.** `computeRoofBearingSegments`
+      // measures from the slot run's own origin, not from the wall's true
+      // corner, so the multi-story branch shrinks for free in LENGTH but
+      // not in POSITION: with a start stop the run begins further along the
+      // wall and the beam would be drawn that far back, overlapping the
+      // unbuilt span and falling short at the far end. Making the
+      // single-story branch run-relative too keeps the two symmetric, so
+      // the shift can be applied in exactly one place instead of being
+      // baked into one branch and missing from the other.
       const runStop = normalizeWallRunStop(wallRunStopsByWallId?.[wall.id], wall.lengthFt * IN_PER_FT);
+      const builtLengthIn = Math.max(0, wall.lengthFt * IN_PER_FT - runStop.startStopIn - runStop.endStopIn);
       const segments = secondStory
         ? computeRoofBearingSegments(slots, boxBeamCoverageByWallId[wall.id])
-        : [
-            {
-              kind: "truss-plate" as const,
-              startXIn: runStop.startStopIn,
-              lengthIn: Math.max(0, wall.lengthFt * IN_PER_FT - runStop.startStopIn - runStop.endStopIn),
-            },
-          ];
+        : // A wall built to zero gets NO plate at all, not a zero-length
+          // one — `computeRoofBearingSegments` already returns [] for an
+          // empty run, and this branch has to agree with it.
+          builtLengthIn > 0
+          ? [{ kind: "truss-plate" as const, startXIn: 0, lengthIn: builtLengthIn }]
+          : [];
       segments.forEach((seg, segmentIndex) => {
         const hasBoxBeam = seg.kind === "box-beam";
         const members = hasBoxBeam
@@ -1237,7 +1247,14 @@ export default function Building3DView({
         // roofBaseHeightIn (the shared roofline), same as a Truss Plate
         // segment.
         const anchorYIn = hasBoxBeam ? roofBaseHeightIn - computeBoxBeamHeightDeltaIn(boxBeamSizeId) : roofBaseHeightIn;
-        const offsetFt = seg.startXIn / IN_PER_FT;
+        // Run-relative segment position + where the run itself starts. Only
+        // the run STOP is added here: a wall that butts a longer neighbour
+        // has its slots start `thicknessIn` in as well, and this anchor has
+        // always ignored that. That is a PRE-EXISTING offset on butting
+        // walls, unrelated to Stage 3 and deliberately not changed here —
+        // fixing it would move the roof-bearing render on every existing
+        // two-story project. Noted rather than silently left.
+        const offsetFt = (seg.startXIn + runStop.startStopIn) / IN_PER_FT;
         result.push({
           wallId: wall.id,
           segmentIndex,
@@ -1263,6 +1280,12 @@ export default function Building3DView({
     trussPlateInsetIn,
     sharedRoofBearingHeightIn,
     roofBaseHeightIn,
+    // Read at the top of this memo (Stage 3). Missing, a single-story
+    // building kept drawing its truss plate at FULL length across an
+    // unbuilt span until something unrelated invalidated the memo — the
+    // exact failure this stage exists to prevent, relocated one layer up.
+    // `rawSlotBoxes` lists it, so the panels moved and the plate did not.
+    wallRunStopsByWallId,
   ]);
 
   // Bale Foundation's own rim rings + field stacks (Tommy: "the default
