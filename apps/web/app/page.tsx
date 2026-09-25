@@ -6612,11 +6612,27 @@ export default function LayoutEditor() {
    * own name carries no direction.
    */
   const spanningHeaderReviewEntries = useMemo(() => {
-    return resolvedSpanningHeaders.map((resolved) => ({
-      label: `Spanning header ${resolved.name} — ${formatLengthIn(resolved.spanWidthIn, unitSystem)} span`,
-      status: "pending-BI-confirmation" as const,
-      note: `${spanningHeaderCrossReference.locationByHeaderName.get(resolved.name) ?? ""}. One header panel carried on the panels beneath it, ${formatLengthIn(resolved.heightIn, unitSystem)} tall, its width derived from those panels rather than typed. Building Integrity's stated header span range (${bigHeaderWidthInRange.minIn}in-${bigHeaderWidthInRange.maxIn}in) and header height range (${bigHeaderHeightInRange.minIn}in-${bigHeaderHeightInRange.maxIn}in) are BOTH still pending their confirmation — a span outside them is refused rather than accommodated. Priced at the header/sill rate: no rate has been given for this panel, so the nearest existing one is used rather than a new number invented.`,
-    }));
+    return resolvedSpanningHeaders.map((resolved) => {
+      // ⚠ A header standing on fewer than two panels means the wall changed
+      // under it through a path that RE-TILES rather than shifts (a wall
+      // length edit, a panelization switch — see `shiftSlotCoverage`'s own
+      // doc comment on why re-tiles are deliberately not shifted). The
+      // insert/delete path removes such a header outright and says so; these
+      // other paths cannot, so the reviewer is told instead of a sheet being
+      // printed for a part nobody chose.
+      const stranded = resolved.coveredSlotIndices.length < 2;
+      return {
+        label: stranded
+          ? `Spanning header ${resolved.name} — no longer sits on two panels`
+          : `Spanning header ${resolved.name} — ${formatLengthIn(resolved.spanWidthIn, unitSystem)} span`,
+        status: "pending-BI-confirmation" as const,
+        note: `${spanningHeaderCrossReference.locationByHeaderName.get(resolved.name) ?? ""}. One header panel carried on the panels beneath it, ${formatLengthIn(resolved.heightIn, unitSystem)} tall, its width derived from those panels rather than typed. Building Integrity's stated header span range (${bigHeaderWidthInRange.minIn}in-${bigHeaderWidthInRange.maxIn}in) and header height range (${bigHeaderHeightInRange.minIn}in-${bigHeaderHeightInRange.maxIn}in) are BOTH still pending their confirmation — a span outside them is refused rather than accommodated. Priced at the header/sill rate: no rate has been given for this panel, so the nearest existing one is used rather than a new number invented.${
+          stranded
+            ? ` **This header now covers ${resolved.coveredSlotIndices.length} panel(s).** Its wall was re-tiled by an edit that re-derives the whole run, so its range no longer describes a real pair of panels — re-place or remove it before this sheet is issued.`
+            : ""
+        }`,
+      };
+    });
   }, [resolvedSpanningHeaders, spanningHeaderCrossReference, unitSystem]);
 
   const reviewLog = useMemo(() => {

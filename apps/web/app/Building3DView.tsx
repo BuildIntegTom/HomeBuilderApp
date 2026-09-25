@@ -1513,15 +1513,31 @@ export default function Building3DView({
           const lengthIn = Math.max(0, endXIn - startXIn);
           if (lengthIn <= 0) continue;
           const assemblyHeightIn = resolveSpanningHeaderHeightIn(header);
-          const offsetFt = startXIn / IN_PER_FT;
+          // ⚠ Anchored on the FIRST PANEL IT SPANS, not on `wallAxis` plus a
+          // slot offset — and the difference is real, not tidiness. A slot
+          // offset is measured from the panel RUN's origin, while
+          // `axis.startXFt` is the wall's true corner, and on a wall that
+          // butts a longer neighbour the run starts a wall-thickness in.
+          // The browser harness measured the gap: **15.5in of drift**, a
+          // header floating off the panels it is carried by.
+          //
+          // The beam loop just below has the same shape and the same drift.
+          // It is PRE-EXISTING and deliberately left alone here: fixing it
+          // would move the rendered beam on every existing project, which is
+          // the same call Stage 3 made about the roof-bearing anchor. Noted
+          // rather than quietly matched — see the report.
+          const anchorBox = (story === "ground" ? rawSlotBoxes : secondStorySlotBoxes).find(
+            (b) => b.wallId === wall.id && b.slotIndex === header.startSlotIndex,
+          );
+          if (!anchorBox) continue;
           result.push({
             wallId: wall.id,
             story,
             beamId: `spanningheader_${spanningHeaderNameById.get(header.id) ?? header.id}`,
-            anchorX: axis.startXFt + axis.dirX * offsetFt,
-            anchorZ: axis.startZFt + axis.dirZ * offsetFt,
+            anchorX: anchorBox.anchorX,
+            anchorZ: anchorBox.anchorZ,
             anchorYIn: baseYIn + header.heightIn,
-            rotationRad: axis.rotationRad,
+            rotationRad: anchorBox.rotationRad,
             members: buildBigHeaderMembers(lengthIn, thicknessIn, assemblyHeightIn, false, jackStudConfig),
             widthFt: lengthIn / IN_PER_FT,
             heightFt: assemblyHeightIn / IN_PER_FT,
@@ -1570,6 +1586,8 @@ export default function Building3DView({
     spanningHeadersByWallId,
     secondStorySpanningHeadersByWallId,
     spanningHeaderNameById,
+    rawSlotBoxes,
+    secondStorySlotBoxes,
     thicknessIn,
     heightIn,
     jackStudConfig,
@@ -1596,11 +1614,26 @@ export default function Building3DView({
               undefined,
               undefined,
               heightIn,
-              Object.fromEntries(Object.entries(midWallBeamsByWallId).map(([id, beams]) => [id, midWallBeamsToGeometry(beams)])),
+              // Beams AND spanning headers. ⚠ This matters even though a
+              // header alone leaves a covered slot with one band: a slot
+              // carrying BOTH a beam and a header splits into two, and a
+              // naming pass that saw only the beams would count a different
+              // number of instances than page.tsx does — i.e. the 3D labels
+              // and the panel schedule would disagree about which panel is
+              // N7.
+              Object.fromEntries(
+                [...new Set([...Object.keys(midWallBeamsByWallId), ...Object.keys(spanningHeadersByWallId)])].map((id) => [
+                  id,
+                  wallBandGeometry(
+                    midWallBeamsToGeometry(midWallBeamsByWallId[id] ?? []),
+                    spanningHeadersToGeometry(spanningHeadersByWallId[id] ?? []),
+                  ),
+                ]),
+              ),
             )
           : [],
       ),
-    [footprint, wallSlots, standardWidthIn, jackStudConfig, heightIn, midWallBeamsByWallId],
+    [footprint, wallSlots, standardWidthIn, jackStudConfig, heightIn, midWallBeamsByWallId, spanningHeadersByWallId],
   );
   const secondStoryInstancesBySlot = useMemo(
     () =>
@@ -1614,13 +1647,22 @@ export default function Building3DView({
               undefined,
               undefined,
               secondStory.wallHeightFt * IN_PER_FT,
+              // Same joined list as the ground floor above, same reason.
               Object.fromEntries(
-                Object.entries(secondStoryMidWallBeamsByWallId).map(([id, beams]) => [id, midWallBeamsToGeometry(beams)]),
+                [...new Set([...Object.keys(secondStoryMidWallBeamsByWallId), ...Object.keys(secondStorySpanningHeadersByWallId)])].map(
+                  (id) => [
+                    id,
+                    wallBandGeometry(
+                      midWallBeamsToGeometry(secondStoryMidWallBeamsByWallId[id] ?? []),
+                      spanningHeadersToGeometry(secondStorySpanningHeadersByWallId[id] ?? []),
+                    ),
+                  ],
+                ),
               ),
             )
           : [],
       ),
-    [footprint, secondStory, standardWidthIn, jackStudConfig, secondStoryMidWallBeamsByWallId],
+    [footprint, secondStory, standardWidthIn, jackStudConfig, secondStoryMidWallBeamsByWallId, secondStorySpanningHeadersByWallId],
   );
 
   const wrapSkins = useMemo(
@@ -1668,7 +1710,11 @@ export default function Building3DView({
       ),
       ...midWallBeamRenderData.map(
         ({ wallId, story, beamId, anchorX, anchorZ, anchorYIn, rotationRad, members }): WorldPlacedPanel => ({
-          label: `midwallbeam_${story}_${wallId}_${beamId}`,
+          // A spanning header's own id already carries its `spanningheader_`
+          // kind and its H name (see midWallBeamRenderData), so it labels
+          // itself rather than being filed under `midwallbeam_` — an export
+          // should name a header the way its own sheet does.
+          label: beamId.startsWith("spanningheader_") ? `${beamId}_${story}_${wallId}` : `midwallbeam_${story}_${wallId}_${beamId}`,
           worldXIn: anchorX * IN_PER_FT,
           worldZIn: anchorZ * IN_PER_FT,
           worldYIn: anchorYIn,
