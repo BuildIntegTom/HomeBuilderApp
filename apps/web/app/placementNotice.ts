@@ -48,6 +48,11 @@ export type FormatLengthIn = (valueIn: number) => string;
 export interface EmptiedCoverage {
   midWallBeams: number;
   boxBeam: boolean;
+  /** Spanning headers (Stage 2b) the edit left standing on fewer than two
+   * panels. A header's own fabricated width IS the panels it spans, so one
+   * that has lost them is not a header any more — it is removed, and saying
+   * so is the difference between a removal and a disappearance. */
+  spanningHeaders: number;
 }
 
 /** Exactly the commit fields these sentences read. Narrower than the whole
@@ -138,6 +143,9 @@ export function placementCommitNotice(op: PlacementOp, wallId: string, facts: Pl
       ? ` ${emptied.midWallBeams} Mid-Wall Bond Beam${emptied.midWallBeams === 1 ? "" : "s"} covered only panels this edit removed, so ${emptied.midWallBeams === 1 ? "it was" : "they were"} removed too.`
       : "",
     emptied.boxBeam ? " The roofline Box Beam covered only panels this edit removed, so it was removed too." : "",
+    emptied.spanningHeaders > 0
+      ? ` ${emptied.spanningHeaders} spanning header${emptied.spanningHeaders === 1 ? "" : "s"} ${emptied.spanningHeaders === 1 ? "was" : "were"} left standing on fewer than two panels, so ${emptied.spanningHeaders === 1 ? "it was" : "they were"} removed too — a header's own width is the panels it spans.`
+      : "",
   ].join("");
   return `${PLACEMENT_VERBS[op]} on wall ${wallId}: ${facts.slotCountBefore} panels → ${facts.slotCountAfter}, ${facts.freeCountAfter} still automatic.${countNote}${beamNote}`;
 }

@@ -65,6 +65,11 @@ import {
   totalBuiltWallPerimeterIn as totalBuiltWallPerimeterInPure,
   isSlotBoxBeamCovered,
   zoneFromSlot,
+  defaultSpanningHeaderBottomHeightIn,
+  resolveSpanningHeaderPlacement,
+  spanningHeaderCoveredSlotCount,
+  type SpanningHeaderPlacementResult,
+  type MidWallBeamGeometry,
   type BoxBeamCoverage,
   type CornerId,
   type Footprint,
@@ -294,6 +299,17 @@ import {
   type MidWallBeam,
   type MidWallBeamKind,
 } from "./midWallBeam";
+import {
+  resolveSpanningHeaderHeightIn,
+  resolveSpanningHeaders,
+  spannedPanelNames,
+  spanningHeaderSheetLocation,
+  spanningHeadersToGeometry,
+  SPANNING_HEADER_LIMITS_IN,
+  wallBandGeometry,
+  type SpanningHeader,
+} from "./spanningHeader";
+import { spanningHeaderCommitNotice, spanningHeaderRefusalNotice, spanningHeaderRunStopRefusal } from "./spanningHeaderNotice";
 import type { WallReviewNote } from "./wallReviewNotes";
 import PierFoundationDiagram from "./PierFoundationDiagram";
 import PlasterCoatEditor from "./PlasterCoatEditor";
@@ -1222,6 +1238,16 @@ export default function LayoutEditor() {
   const [midWallBeamsByStoryAndWallId, setMidWallBeamsByStoryAndWallId] = useState<
     Record<"ground" | "second", Record<string, MidWallBeam[]>>
   >({ ground: {}, second: {} });
+  // Smearforn Stage 2b's spanning ("triple") headers — one header panel over
+  // a slot-index RANGE, per wall, per story. Structurally the same record a
+  // Mid-Wall Bond Beam carries, which is the model Tommy confirmed
+  // 2026-09-24 ("Yes, that's what it is"): E4A spans E4B (3'5½") + E4C (3'0")
+  // = 6'5½", so A sits ON TOP of B and C rather than beside them. The span
+  // adds no width to the wall's own run — it is derived from the panels
+  // underneath.
+  const [spanningHeadersByStoryAndWallId, setSpanningHeadersByStoryAndWallId] = useState<
+    Record<"ground" | "second", Record<string, SpanningHeader[]>>
+  >({ ground: {}, second: {} });
   // Smearforn Stage 3's per-wall unbuilt spans — the key lands now (Stage 0
   // owns the single v24->v25 bump for the whole project), and NOTHING reads
   // it yet: it round-trips through save/load so the file format settles once
@@ -1238,10 +1264,26 @@ export default function LayoutEditor() {
   // handler that also writes midWallBeamsByStoryAndWallId, mirroring
   // reconcileBracedPlacement's own "old vs. new, both in this handler's own
   // closure" precedent.
-  const reconcileWallZonesForBeamChange = (story: "ground" | "second", wallId: string, oldBeams: MidWallBeam[], newBeams: MidWallBeam[]) => {
+  /** This wall's FULL band-producing geometry for a given beam list — the
+   * beams joined with whatever spanning headers the wall currently carries.
+   * Every band computation must see both (see `wallBandGeometry`), and a
+   * reconcile that saw only the beams would recompute zones against a wall
+   * that does not exist. */
+  const bandGeometryWithHeaders = (story: "ground" | "second", wallId: string, beams: MidWallBeam[]): MidWallBeamGeometry[] =>
+    wallBandGeometry(midWallBeamsToGeometry(beams), spanningHeadersToGeometry(spanningHeadersByStoryAndWallId[story][wallId] ?? []));
+
+  const reconcileWallZonesForBandChange = (
+    story: "ground" | "second",
+    wallId: string,
+    /** The FULL band-producing geometry either side of the change — beams
+     * AND spanning headers (Stage 2b), because both split a column and a
+     * reconcile that saw only half of them would compare band counts against
+     * a wall that does not exist. Built by the caller through
+     * `wallBandGeometry`, the one place those two lists are joined. */
+    oldGeom: MidWallBeamGeometry[],
+    newGeom: MidWallBeamGeometry[],
+  ) => {
     const storyHeightIn = (story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt)) * 12;
-    const oldGeom = midWallBeamsToGeometry(oldBeams);
-    const newGeom = midWallBeamsToGeometry(newBeams);
     setWallSlotsForStory(story, (prev) => {
       const slots = prev[wallId];
       if (!slots) return prev;
@@ -1275,7 +1317,12 @@ export default function LayoutEditor() {
       ...was,
       [story]: { ...was[story], [wallId]: newBeams },
     }));
-    reconcileWallZonesForBeamChange(story, wallId, oldBeams, newBeams);
+    reconcileWallZonesForBandChange(
+      story,
+      wallId,
+      bandGeometryWithHeaders(story, wallId, oldBeams),
+      bandGeometryWithHeaders(story, wallId, newBeams),
+    );
   };
   const handleRemoveMidWallBeam = (story: "ground" | "second", wallId: string, beamId: string) => {
     const oldBeams = midWallBeamsByStoryAndWallId[story][wallId] ?? [];
@@ -1284,7 +1331,12 @@ export default function LayoutEditor() {
       ...was,
       [story]: { ...was[story], [wallId]: newBeams },
     }));
-    reconcileWallZonesForBeamChange(story, wallId, oldBeams, newBeams);
+    reconcileWallZonesForBandChange(
+      story,
+      wallId,
+      bandGeometryWithHeaders(story, wallId, oldBeams),
+      bandGeometryWithHeaders(story, wallId, newBeams),
+    );
   };
   const updateMidWallBeam = (story: "ground" | "second", wallId: string, beamId: string, patch: Partial<MidWallBeam>) => {
     const oldBeams = midWallBeamsByStoryAndWallId[story][wallId] ?? [];
@@ -1293,7 +1345,12 @@ export default function LayoutEditor() {
       ...was,
       [story]: { ...was[story], [wallId]: newBeams },
     }));
-    reconcileWallZonesForBeamChange(story, wallId, oldBeams, newBeams);
+    reconcileWallZonesForBandChange(
+      story,
+      wallId,
+      bandGeometryWithHeaders(story, wallId, oldBeams),
+      bandGeometryWithHeaders(story, wallId, newBeams),
+    );
   };
   const handleChangeMidWallBeamHeight = (story: "ground" | "second", wallId: string, beamId: string, heightIn: number) =>
     updateMidWallBeam(story, wallId, beamId, { heightIn });
@@ -1303,6 +1360,150 @@ export default function LayoutEditor() {
     updateMidWallBeam(story, wallId, beamId, { bigHeaderBeamHeightIn });
   const handleChangeMidWallBeamCoverage = (story: "ground" | "second", wallId: string, beamId: string, coverage: BoxBeamCoverage) =>
     updateMidWallBeam(story, wallId, beamId, coverage);
+
+  // ---------------------------------------------------------------------
+  // Smearforn Stage 2b — spanning ("triple") headers.
+  //
+  // Every mutation below goes through the SAME two steps: validate with
+  // `resolveSpanningHeaderPlacement` (which owns every refusal, in
+  // packages/geometry, with no user-facing copy in it), then — only on
+  // "ok" — write the record AND reconcile the wall's zones, because adding
+  // or moving a header changes how many bands the covered columns split
+  // into. A refusal writes nothing at all, the same all-or-nothing rule the
+  // placement tool and the run-stop edit already follow.
+  // ---------------------------------------------------------------------
+  const spanningHeadersFor = (story: "ground" | "second", wallId: string): SpanningHeader[] =>
+    spanningHeadersByStoryAndWallId[story][wallId] ?? [];
+  const storyHeightInFor = (story: "ground" | "second") =>
+    (story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt)) * 12;
+  const slotsForStoryWall = (story: "ground" | "second", wallId: string): PanelSlot[] =>
+    (story === "ground" ? overlayWallSlots : (secondStory?.wallSlots ?? {}))[wallId] ?? [];
+
+  /** Writes a validated header list for one wall and reconciles that wall's
+   * zones across the band change. `oldHeaders`/`newHeaders` are this wall's
+   * own lists either side of the specific mutation, the same "old vs. new,
+   * both in this handler's own closure" shape `reconcileBracedPlacement` and
+   * the beam handlers already use. */
+  const commitSpanningHeaders = (
+    story: "ground" | "second",
+    wallId: string,
+    oldHeaders: SpanningHeader[],
+    newHeaders: SpanningHeader[],
+  ) => {
+    const beamGeom = midWallBeamsToGeometry(midWallBeamsByStoryAndWallId[story][wallId] ?? []);
+    setSpanningHeadersByStoryAndWallId((was) => ({ ...was, [story]: { ...was[story], [wallId]: newHeaders } }));
+    reconcileWallZonesForBandChange(
+      story,
+      wallId,
+      wallBandGeometry(beamGeom, spanningHeadersToGeometry(oldHeaders)),
+      wallBandGeometry(beamGeom, spanningHeadersToGeometry(newHeaders)),
+    );
+  };
+
+  /** Validate a candidate header against this wall as it is right now —
+   * every OTHER header on the wall counts as existing coverage, so a header
+   * being moved never collides with itself. */
+  const checkSpanningHeader = (
+    story: "ground" | "second",
+    wallId: string,
+    candidate: SpanningHeader,
+    others: SpanningHeader[],
+  ): SpanningHeaderPlacementResult =>
+    resolveSpanningHeaderPlacement(
+      slotsForStoryWall(story, wallId),
+      { startSlotIndex: candidate.startSlotIndex, endSlotIndex: candidate.endSlotIndex },
+      others.map((h) => ({ startSlotIndex: h.startSlotIndex, endSlotIndex: h.endSlotIndex })),
+      SPANNING_HEADER_LIMITS_IN,
+      {
+        heightIn: candidate.heightIn,
+        assemblyHeightIn: resolveSpanningHeaderHeightIn(candidate),
+        storyHeightIn: storyHeightInFor(story),
+      },
+    );
+
+  /** One validated mutation: build the candidate, check it, and either
+   * commit or say — with the real number in it — why not. */
+  const applySpanningHeaderChange = (
+    story: "ground" | "second",
+    wallId: string,
+    headerId: string | null,
+    candidate: SpanningHeader,
+  ) => {
+    const current = spanningHeadersFor(story, wallId);
+    const others = current.filter((h) => h.id !== headerId);
+    const result = checkSpanningHeader(story, wallId, candidate, others);
+    if (result.outcome !== "ok") {
+      showPanelPlacementNotice(spanningHeaderRefusalNotice(result, formatPlacementLength));
+      return;
+    }
+    const next = headerId === null ? [...current, candidate] : current.map((h) => (h.id === headerId ? candidate : h));
+    commitSpanningHeaders(story, wallId, current, next);
+    return result;
+  };
+
+  /** Adds a header over a run of panels. Born hard against the top of the
+   * story (`defaultSpanningHeaderBottomHeightIn`) at the catalog's own
+   * default header height — which is `pending-BI-confirmation` and is
+   * presented as nothing more than a starting point. */
+  const handleAddSpanningHeader = (story: "ground" | "second", wallId: string, startSlotIndex: number, endSlotIndex: number) => {
+    const assemblyHeightIn = bigHeaderDefaultHeightIn.value;
+    const candidate: SpanningHeader = {
+      id: crypto.randomUUID(),
+      heightIn: defaultSpanningHeaderBottomHeightIn(storyHeightInFor(story), assemblyHeightIn),
+      headerHeightIn: assemblyHeightIn,
+      startSlotIndex,
+      endSlotIndex,
+    };
+    const result = applySpanningHeaderChange(story, wallId, null, candidate);
+    if (!result) return;
+    // The commit notice names the header by the number it will have once
+    // this render settles — computed from the SAME global walk every other
+    // consumer uses, with the new header included, so the sentence and the
+    // drawing cannot disagree.
+    const nextHeadersByWall = {
+      ...spanningHeadersByStoryAndWallId,
+      [story]: {
+        ...spanningHeadersByStoryAndWallId[story],
+        [wallId]: [...spanningHeadersFor(story, wallId), candidate],
+      },
+    };
+    const resolved = resolveSpanningHeaders(footprint, stories, nextHeadersByWall).find((r) => r.header.id === candidate.id);
+    if (!resolved) return;
+    showPanelPlacementNotice(
+      spanningHeaderCommitNotice({
+        name: resolved.name,
+        location: spanningHeaderSheetLocation(resolved, spannedPanelNames(resolved, panelInstanceNameForStory(resolved.story))),
+        spanWidthIn: resolved.spanWidthIn,
+        formatLength: formatPlacementLength,
+      }),
+    );
+  };
+
+  const handleRemoveSpanningHeader = (story: "ground" | "second", wallId: string, headerId: string) => {
+    const current = spanningHeadersFor(story, wallId);
+    commitSpanningHeaders(
+      story,
+      wallId,
+      current,
+      current.filter((h) => h.id !== headerId),
+    );
+  };
+
+  const updateSpanningHeader = (story: "ground" | "second", wallId: string, headerId: string, patch: Partial<SpanningHeader>) => {
+    const target = spanningHeadersFor(story, wallId).find((h) => h.id === headerId);
+    if (!target) return;
+    applySpanningHeaderChange(story, wallId, headerId, { ...target, ...patch });
+  };
+  const handleChangeSpanningHeaderBottomHeight = (story: "ground" | "second", wallId: string, headerId: string, heightIn: number) =>
+    updateSpanningHeader(story, wallId, headerId, { heightIn });
+  const handleChangeSpanningHeaderHeight = (story: "ground" | "second", wallId: string, headerId: string, headerHeightIn: number) =>
+    updateSpanningHeader(story, wallId, headerId, { headerHeightIn });
+  const handleChangeSpanningHeaderCoverage = (
+    story: "ground" | "second",
+    wallId: string,
+    headerId: string,
+    coverage: { startSlotIndex: number; endSlotIndex: number },
+  ) => updateSpanningHeader(story, wallId, headerId, coverage);
   // Ground floor's own beams, pre-resolved to geometry (sizeId ->
   // real assemblyHeightIn) — fed straight into allPanelInstances, which
   // computes each affected slot's own bands itself now (Stage 2).
@@ -1323,6 +1524,42 @@ export default function LayoutEditor() {
       ),
     [midWallBeamsByStoryAndWallId.second],
   );
+  // Stage 2b: what every band computation actually has to see — a story's
+  // beams JOINED with its spanning headers, since both split a column into
+  // stacked bands. The beam-only memos above stay, because "the beams" is
+  // still a real question elsewhere (their own fabrication pages, their own
+  // covered-length total); these are the lists that feed allPanelInstances,
+  // the elevation and the 3D view.
+  const groundBandGeometryByWallId = useMemo(() => {
+    const wallIds = new Set([
+      ...Object.keys(midWallBeamGeometryByWallId),
+      ...Object.keys(spanningHeadersByStoryAndWallId.ground),
+    ]);
+    return Object.fromEntries(
+      [...wallIds].map((wallId) => [
+        wallId,
+        wallBandGeometry(
+          midWallBeamGeometryByWallId[wallId] ?? [],
+          spanningHeadersToGeometry(spanningHeadersByStoryAndWallId.ground[wallId] ?? []),
+        ),
+      ]),
+    );
+  }, [midWallBeamGeometryByWallId, spanningHeadersByStoryAndWallId.ground]);
+  const secondStoryBandGeometryByWallId = useMemo(() => {
+    const wallIds = new Set([
+      ...Object.keys(secondStoryMidWallBeamGeometryByWallId),
+      ...Object.keys(spanningHeadersByStoryAndWallId.second),
+    ]);
+    return Object.fromEntries(
+      [...wallIds].map((wallId) => [
+        wallId,
+        wallBandGeometry(
+          secondStoryMidWallBeamGeometryByWallId[wallId] ?? [],
+          spanningHeadersToGeometry(spanningHeadersByStoryAndWallId.second[wallId] ?? []),
+        ),
+      ]),
+    );
+  }, [secondStoryMidWallBeamGeometryByWallId, spanningHeadersByStoryAndWallId.second]);
   // midWallBeamWallLengthTotalIn lives further down, right after `stories`
   // is declared — it needs to read `stories` inside a useMemo callback
   // that runs synchronously during THIS render, unlike the deferred
@@ -1611,6 +1848,7 @@ export default function LayoutEditor() {
       boxBeamCoverageByWallId,
       boxBeamSizeId,
       midWallBeamsByStoryAndWallId,
+      spanningHeadersByStoryAndWallId,
       roofCatcherBeamOffsetIn,
       roofCatcherBeamShape,
       octagonRingDiameterFt,
@@ -1726,6 +1964,9 @@ export default function LayoutEditor() {
     setBoxBeamCoverageByWallId(s.boxBeamCoverageByWallId);
     setBoxBeamSizeId(s.boxBeamSizeId);
     setMidWallBeamsByStoryAndWallId(s.midWallBeamsByStoryAndWallId);
+    // Stage 2b's optional key — a file saved before spanning headers existed
+    // simply has none, which is today's behaviour exactly.
+    setSpanningHeadersByStoryAndWallId(s.spanningHeadersByStoryAndWallId ?? { ground: {}, second: {} });
     setRoofCatcherBeamOffsetIn(s.roofCatcherBeamOffsetIn);
     setRoofCatcherBeamShape(s.roofCatcherBeamShape);
     setOctagonRingDiameterFt(s.octagonRingDiameterFt);
@@ -3052,10 +3293,11 @@ export default function LayoutEditor() {
     /** Counted SEPARATELY, because they are different components with
      * different names and a notice that calls the roofline Box Beam a
      * "mid-wall beam" is simply wrong about what it just removed. */
-  ): { midWallBeams: number; boxBeam: boolean } => {
-    if (moves.length === 0) return { midWallBeams: 0, boxBeam: false };
+  ): { midWallBeams: number; boxBeam: boolean; spanningHeaders: number } => {
+    if (moves.length === 0) return { midWallBeams: 0, boxBeam: false, spanningHeaders: 0 };
     let emptied = 0;
     let boxBeamEmptied = false;
+    let spanningHeadersEmptied = 0;
     const applyAll = <T extends { startSlotIndex: number; endSlotIndex: number }>(range: T): T | null =>
       moves.reduce<T | null>((acc, move) => (acc === null ? null : shiftSlotCoverage(acc, move.at, move.delta)), range);
     // Read from this render's own state and write plain values — the count
@@ -3079,7 +3321,23 @@ export default function LayoutEditor() {
         return { ...was, [wallId]: nextCoverage };
       });
     }
-    return { midWallBeams: emptied, boxBeam: boxBeamEmptied };
+    // Stage 2b rides the SAME machinery, deliberately — a spanning header's
+    // coverage is the same half-open slot range, and writing a second copy
+    // of this walk is how the two would drift. A header left covering fewer
+    // than two panels has stopped being a spanning header at all (its own
+    // arithmetic would re-cut it to a width nobody chose), so it goes, and
+    // the notice says so.
+    const headers = spanningHeadersByStoryAndWallId[story][wallId] ?? [];
+    if (headers.length > 0) {
+      const nextHeaders = headers
+        .map(applyAll)
+        .filter((h): h is SpanningHeader => h !== null && h.endSlotIndex - h.startSlotIndex >= 2);
+      spanningHeadersEmptied = headers.length - nextHeaders.length;
+      if (spanningHeadersEmptied > 0 || nextHeaders.some((h, i) => h !== headers[i])) {
+        setSpanningHeadersByStoryAndWallId((was) => ({ ...was, [story]: { ...was[story], [wallId]: nextHeaders } }));
+      }
+    }
+    return { midWallBeams: emptied, boxBeam: boxBeamEmptied, spanningHeaders: spanningHeadersEmptied };
   };
 
   /** Every notice sentence this tool prints is composed in
@@ -4168,7 +4426,10 @@ export default function LayoutEditor() {
             gableTilesByWallId,
             undefined,
             wallHeightFt * 12,
-            midWallBeamGeometryByWallId,
+            // Beams AND spanning headers — a header shortens the panels
+            // beneath it here exactly as it does in the elevation and the
+            // 3D view, because all three read the same joined list.
+            groundBandGeometryByWallId,
             maxPanelHeightIn,
             gableEaveHeightIn,
           )
@@ -4180,7 +4441,7 @@ export default function LayoutEditor() {
       jackStudConfig,
       gableTilesByWallId,
       wallHeightFt,
-      midWallBeamGeometryByWallId,
+      groundBandGeometryByWallId,
       maxPanelHeightIn,
       gableEaveHeightIn,
     ],
@@ -4202,10 +4463,60 @@ export default function LayoutEditor() {
             undefined,
             undefined,
             secondStory.wallHeightFt * 12,
-            secondStoryMidWallBeamGeometryByWallId,
+            secondStoryBandGeometryByWallId,
           )
         : [],
-    [footprint, secondStory, standardWidthIn, jackStudConfig, secondStoryMidWallBeamGeometryByWallId],
+    [footprint, secondStory, standardWidthIn, jackStudConfig, secondStoryBandGeometryByWallId],
+  );
+
+  /** A panel's own name at a given wall+slot, per story — the lookup both
+   * halves of the spanning-header cross-reference go through. A slot can
+   * carry several instances (a window's header and its sills); the FIRST is
+   * the one the canvas labels that column with, so it is the one a header's
+   * sheet names. */
+  const panelInstanceNameForStory =
+    (story: "ground" | "second") =>
+    (wallId: string, slotIndex: number): string | undefined =>
+      (story === "ground" ? allInstances : secondStoryAllInstances).find(
+        (inst) => inst.wallId === wallId && inst.slotIndexInWall === slotIndex,
+      )?.name;
+
+  /** Every spanning header in the building, named `H1`, `H2`, ... from the
+   * single global series. One walk, shared by the elevation labels, the
+   * fabrication sheets, the Review Log, the price and the 3D view, so no two
+   * of them can disagree about which header is which. */
+  const resolvedSpanningHeaders = useMemo(
+    () => resolveSpanningHeaders(footprint, stories, spanningHeadersByStoryAndWallId),
+    [footprint, stories, spanningHeadersByStoryAndWallId],
+  );
+
+  /** The cross-reference the direction-free name makes mandatory, both ways:
+   * `H1 -> "East wall — spans E4, E5"` and `E4 -> "H1"`. A shop reading one
+   * sheet cannot see the other, which is exactly the situation the naming
+   * decision creates. */
+  const spanningHeaderCrossReference = useMemo(() => {
+    const locationByHeaderName = new Map<string, string>();
+    const spannedNamesByHeaderName = new Map<string, string[]>();
+    const headerAboveByPanel = new Map<string, string>();
+    for (const resolved of resolvedSpanningHeaders) {
+      const nameFor = panelInstanceNameForStory(resolved.story);
+      const names = spannedPanelNames(resolved, nameFor);
+      locationByHeaderName.set(resolved.name, spanningHeaderSheetLocation(resolved, names));
+      spannedNamesByHeaderName.set(resolved.name, names);
+      for (const panelName of names) headerAboveByPanel.set(panelName, resolved.name);
+    }
+    return { locationByHeaderName, spannedNamesByHeaderName, headerAboveByPanel };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- panelInstanceNameForStory is a
+    // plain closure over exactly these two instance lists, re-created every
+    // render; listing it would defeat the memo while changing nothing.
+  }, [resolvedSpanningHeaders, allInstances, secondStoryAllInstances]);
+
+  /** Header names by wall+story, for the elevation to label its own band
+   * with. Keyed by the header's own id, so nothing has to re-derive the
+   * numbering (or, worse, parse `H1`). */
+  const spanningHeaderNameById = useMemo(
+    () => new Map(resolvedSpanningHeaders.map((r) => [r.header.id, r.name])),
+    [resolvedSpanningHeaders],
   );
 
   // Door Rough Opening height (Tommy: "RO height for doors is almost

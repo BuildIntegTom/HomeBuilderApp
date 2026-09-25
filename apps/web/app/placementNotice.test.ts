@@ -12,7 +12,7 @@ import {
 /** Deliberately not the app's formatter: these tests are about which clauses
  * appear, not about how an inch reads. */
 const fmt = (valueIn: number) => `${valueIn}in`;
-const NO_COVERAGE: EmptiedCoverage = { midWallBeams: 0, boxBeam: false };
+const NO_COVERAGE: EmptiedCoverage = { midWallBeams: 0, boxBeam: false, spanningHeaders: 0 };
 const facts = (over: Partial<PlacementCommitFacts> = {}): PlacementCommitFacts => ({
   slotCountBefore: 15,
   slotCountAfter: 16,
@@ -112,15 +112,24 @@ describe("the insert-only 'gave up N panels' note", () => {
 
 describe("the emptied-coverage note", () => {
   it("names the component, and does not blame the panel the user clicked", () => {
-    const notice = placementCommitNotice("delete", "AB", facts(), { midWallBeams: 2, boxBeam: true });
+    const notice = placementCommitNotice("delete", "AB", facts(), { midWallBeams: 2, boxBeam: true, spanningHeaders: 0 });
     expect(notice).toContain("2 Mid-Wall Bond Beams covered only panels this edit removed, so they were removed too.");
     expect(notice).toContain("The roofline Box Beam covered only panels this edit removed, so it was removed too.");
     expect(notice).not.toContain("that panel");
   });
 
   it("agrees in number for a single beam", () => {
-    expect(placementCommitNotice("delete", "AB", facts(), { midWallBeams: 1, boxBeam: false })).toContain(
+    expect(placementCommitNotice("delete", "AB", facts(), { midWallBeams: 1, boxBeam: false, spanningHeaders: 0 })).toContain(
       "1 Mid-Wall Bond Beam covered only panels this edit removed, so it was removed too.",
+    );
+  });
+
+  it("says when a spanning header was left standing on fewer than two panels (Stage 2b)", () => {
+    const notice = placementCommitNotice("delete", "AB", facts(), { midWallBeams: 0, boxBeam: false, spanningHeaders: 1 });
+    expect(notice).toContain("1 spanning header was left standing on fewer than two panels, so it was removed too");
+    expect(notice).toContain("a header's own width is the panels it spans");
+    expect(placementCommitNotice("delete", "AB", facts(), { midWallBeams: 0, boxBeam: false, spanningHeaders: 2 })).toContain(
+      "2 spanning headers were left standing on fewer than two panels, so they were removed too",
     );
   });
 });

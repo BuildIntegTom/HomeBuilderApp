@@ -101,6 +101,10 @@ export const MONEY_CLASSIFICATION = {
   boxBeamCoverageByWallId: "not-money",
   boxBeamSizeId: "not-money",
   midWallBeamsByStoryAndWallId: "not-money",
+  // Smearforn Stage 2b. Slot indices, a height and an id — geometry, no
+  // price anywhere in it, exactly like the Mid-Wall Bond Beam record above
+  // that it mirrors.
+  spanningHeadersByStoryAndWallId: "not-money",
   roofCatcherBeamOffsetIn: "not-money",
   roofCatcherBeamShape: "not-money",
   octagonRingDiameterFt: "not-money",
