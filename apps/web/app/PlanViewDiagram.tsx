@@ -25,6 +25,12 @@ export interface PlanViewDiagramProps {
   allInstances: PanelInstance[];
   primaryCornerIds: Set<CornerId>;
   leastAccessibleCorner: CornerId;
+  /** Stage 3 — for each wall, the along-wall spans (inches from that wall's
+   * own start corner) that are deliberately NOT built. Drawn here as a
+   * **dashed boundary line, not a hatched wall**: it is where the building
+   * ends, not a wall of unknown type. Carries its own dimension, labelled
+   * NO PANELS. Absent/empty = unchanged. */
+  wallUnbuiltSpansIn?: Record<string, { fromIn: number; toIn: number }[]>;
 }
 
 /**
@@ -51,6 +57,7 @@ export default function PlanViewDiagram({
   allInstances,
   primaryCornerIds,
   leastAccessibleCorner,
+  wallUnbuiltSpansIn,
 }: PlanViewDiagramProps) {
   const wallThicknessPx = (thicknessIn / 12) * SCALE_PX_PER_FT;
 
@@ -136,6 +143,69 @@ export default function PlanViewDiagram({
           );
         }),
       )}
+
+      {/* Stage 3 — the spans of each wall that are deliberately NOT built.
+          A DASHED BOUNDARY LINE, never a hatched wall: this is where the
+          building ends, not a wall whose type is still to be decided, and
+          the two must not look alike on a sheet a shop reads. The dimension
+          prints with it, labelled NO PANELS. The footprint outline itself is
+          untouched — the polygon stays closed, and the floor, foundation and
+          roof all still reach this line. */}
+      {footprint.walls.flatMap((wall) => {
+        const spans = wallUnbuiltSpansIn?.[wall.id] ?? [];
+        if (spans.length === 0) return [];
+        const start = footprint.corners.find((c) => c.id === wall.startCorner)!.point;
+        const end = footprint.corners.find((c) => c.id === wall.endCorner)!.point;
+        const startPx = { x: start.x * SCALE_PX_PER_FT + offsetPx.x, y: start.y * SCALE_PX_PER_FT + offsetPx.y };
+        const endPx = { x: end.x * SCALE_PX_PER_FT + offsetPx.x, y: end.y * SCALE_PX_PER_FT + offsetPx.y };
+        const lengthPx = Math.hypot(endPx.x - startPx.x, endPx.y - startPx.y) || 1;
+        const dir = { x: (endPx.x - startPx.x) / lengthPx, y: (endPx.y - startPx.y) / lengthPx };
+        const pointAt = (alongIn: number) => ({
+          x: startPx.x + (dir.x * alongIn * SCALE_PX_PER_FT) / 12,
+          y: startPx.y + (dir.y * alongIn * SCALE_PX_PER_FT) / 12,
+        });
+        // Offset the label off the wall line so it never sits on top of a
+        // neighbouring panel's own name.
+        const normal = { x: -dir.y, y: dir.x };
+        return spans.map((span, i) => {
+          const a = pointAt(span.fromIn);
+          const b = pointAt(span.toIn);
+          const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          return (
+            <g key={`unbuilt-${wall.id}-${i}`}>
+              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#8a8a8a" strokeWidth={2} strokeDasharray="8 5" />
+              {/* Tick at each end of the span, so the dimension is readable
+                  as a dimension rather than as a wall that faded out. */}
+              <line
+                x1={a.x - normal.x * 5}
+                y1={a.y - normal.y * 5}
+                x2={a.x + normal.x * 5}
+                y2={a.y + normal.y * 5}
+                stroke="#8a8a8a"
+                strokeWidth={1}
+              />
+              <line
+                x1={b.x - normal.x * 5}
+                y1={b.y - normal.y * 5}
+                x2={b.x + normal.x * 5}
+                y2={b.y + normal.y * 5}
+                stroke="#8a8a8a"
+                strokeWidth={1}
+              />
+              <text
+                x={mid.x - normal.x * 12}
+                y={mid.y - normal.y * 12 + 3}
+                fontSize={9}
+                fontWeight={600}
+                textAnchor="middle"
+                fill="#6a6a6a"
+              >
+                NO PANELS: {formatFeetInches((span.toIn - span.fromIn) / 12)}
+              </text>
+            </g>
+          );
+        });
+      })}
 
       {isRightAngled &&
         footprint.corners

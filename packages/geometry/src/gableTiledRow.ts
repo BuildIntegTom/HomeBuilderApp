@@ -434,6 +434,67 @@ function tileRunWithWindows(
 }
 
 /**
+ * A gable window's REAL position along the wall, in inches from the wall's
+ * own start corner — derived from the unclamped row, so it does not depend
+ * on where the panel run happens to stop.
+ */
+export interface GableWindowPlacement {
+  xStartIn: number;
+  xEndIn: number;
+  heightIn?: number;
+  sillHeightIn?: number;
+}
+
+/**
+ * Places windows at their TRUE x positions and tiles the gaps between them.
+ *
+ * **Tommy, 2026-09-25: a gable window stays put on the building.** Stopping
+ * the near end of a wall must not move a window at the far end — a window is
+ * dimensioned from the building, not from wherever the panel run begins.
+ *
+ * The ordinal path (`tileRunWithWindows`) cannot express that: its
+ * `beforeTileCount` is positional in the run, and a start clamp removes
+ * leading tiles, so every window slides by the clamp. Measured before this
+ * existed: clamping a 240in wall's start to 60in moved two windows from
+ * x=[60,150] to x=[120,210], carrying the second one across the peak.
+ *
+ * So the clamped path places by POSITION instead. The unclamped path is
+ * untouched and still goes through `tileRunWithWindows`, which is why every
+ * existing project tiles byte-identically.
+ */
+function tileRunWithPositionedWindows(
+  startIn: number,
+  endIn: number,
+  anchors: RoofAnchor[],
+  targetPanelWidthIn: number,
+  gapEnd: "start" | "end",
+  includeSafetyGap: boolean,
+  windows: GableWindowPlacement[],
+): GableTiledPanel[] {
+  const plainTile = (a: number, b: number) =>
+    includeSafetyGap ? tileRun(a, b, anchors, targetPanelWidthIn, gapEnd) : tileEvenly(a, b, anchors, targetPanelWidthIn);
+  const inRange = windows
+    .filter((w) => toEighths(w.xStartIn) >= toEighths(startIn) && toEighths(w.xEndIn) <= toEighths(endIn))
+    .sort((a, b) => a.xStartIn - b.xStartIn);
+  if (inRange.length === 0) return plainTile(startIn, endIn);
+
+  const out: GableTiledPanel[] = [];
+  let cursorIn = startIn;
+  for (const w of inRange) {
+    if (toEighths(w.xStartIn) > toEighths(cursorIn)) out.push(...plainTile(cursorIn, w.xStartIn));
+    out.push({
+      ...panel(w.xStartIn, w.xEndIn, anchors),
+      isWindow: true,
+      ...(w.heightIn !== undefined && { windowHeightIn: w.heightIn }),
+      ...(w.sillHeightIn !== undefined && { windowSillHeightIn: w.sillHeightIn }),
+    });
+    cursorIn = w.xEndIn;
+  }
+  if (toEighths(endIn) > toEighths(cursorIn)) out.push(...plainTile(cursorIn, endIn));
+  return out;
+}
+
+/**
  * Tiles a wall's width into evenly-sized panels reading their heights off a
  * gable roofline defined by 0-2 real profile points (Tommy: a "peaked"
  * profile has 1 point — the ridge; a "flat-topped" profile has 2
@@ -546,6 +607,27 @@ export function computeGableTiledRow(
   anchorMode: RoofBearingAnchorMode = "truss-heel",
   windowReservations: GableWindowReservation[] = [],
   columnReservationWidthIn?: number,
+  /**
+   * Smearforn Stage 3 — the span of this wall that is actually BUILT, in
+   * inches from the wall's own start corner. Defaults to the whole wall,
+   * which is every project without a run stop.
+   *
+   * **This is a panel GENERATOR, which is why it has to know.** Everything
+   * else the Stage 3 audit touched was a total that read a wall length; this
+   * reads a wall length and emits real `"gable"` panel instances that flow
+   * through the same pipeline as every other type. Left unclamped, a stopped
+   * Gable End wall fabricates, prices, weighs, BOMs and cut-lists gable
+   * panels sitting above a span that same wall declares carries no panels —
+   * real parts cut wrong, not a number read wrong. Tommy's decision: clamp
+   * the row to the built run.
+   *
+   * **The ROOFLINE is deliberately not clamped.** `points`/`anchors` are
+   * still resolved across the full `wallWidthIn`, so the ridge, the profile
+   * and every sampled roofline height are unchanged — the roof still spans
+   * the wall it always did. Only the tiles stop.
+   */
+  builtStartIn = 0,
+  builtEndIn = wallWidthIn,
 ): GableTiledPanel[] {
   const { anchors, leftSnapped, rightSnapped } = resolveAnchors(wallWidthIn, eaveHeightIn, points, targetPanelWidthIn, heelHeightIn, anchorMode, insetIn);
 
@@ -557,8 +639,48 @@ export function computeGableTiledRow(
   // the roofline spans corner-to-corner as a shed, neither corner gets an
   // inset, even if the other point is still a genuine (non-snapped) shoulder.
   const effectiveInsetIn = leftSnapped || rightSnapped ? 0 : insetIn;
-  const usableStartIn = effectiveInsetIn;
-  const usableEndIn = wallWidthIn - effectiveInsetIn;
+  // The truss-plate inset and the run stop both pull the usable run in; the
+  // TIGHTER of the two wins at each end. A stop is measured from the wall's
+  // own corner, same origin the inset uses, so they compose by max/min with
+  // no extra bookkeeping.
+  const usableStartIn = Math.max(effectiveInsetIn, builtStartIn);
+  const usableEndIn = Math.min(wallWidthIn - effectiveInsetIn, builtEndIn);
+  // A fully stopped gable wall builds NOTHING up there — not one zero-width
+  // tile, which would still be a real priced and fabricated panel instance.
+  // Same guard the roof-bearing plate carries for the same reason.
+  if (usableEndIn - usableStartIn <= 0) return [];
+
+  // Is the row actually clamped by a run stop (as opposed to only by the
+  // truss-plate inset, which has always been there)?
+  const isClamped = toEighths(builtStartIn) > 0 || toEighths(builtEndIn) < toEighths(wallWidthIn);
+  // **Windows stay put on the building** (Tommy, 2026-09-25). Their true
+  // positions come from the UNCLAMPED row — one recursion, guarded by
+  // `isClamped` so it cannot repeat — and the clamped row then places the
+  // survivors at exactly those x values. See
+  // `tileRunWithPositionedWindows` for why the ordinal path cannot do this.
+  const positionedWindows: GableWindowPlacement[] =
+    isClamped && windowReservations.length > 0
+      ? computeGableTiledRow(
+          wallWidthIn,
+          eaveHeightIn,
+          points,
+          targetPanelWidthIn,
+          insetIn,
+          includeSafetyGap,
+          heelHeightIn,
+          anchorMode,
+          windowReservations,
+          columnReservationWidthIn,
+        )
+          .filter((p) => p.isWindow)
+          .map((p) => ({ xStartIn: p.xStartIn, xEndIn: p.xEndIn, heightIn: p.windowHeightIn, sillHeightIn: p.windowSillHeightIn }))
+          // Entirely inside the built run survives; entirely outside is
+          // simply not built (inference — see the as-built note); one the
+          // stop CUTS THROUGH is dropped here defensively and refused at the
+          // point of edit, because half a window is a fabricated part that
+          // does not exist.
+          .filter((w) => toEighths(w.xStartIn) >= toEighths(usableStartIn) && toEighths(w.xEndIn) <= toEighths(usableEndIn))
+      : [];
 
   // Segment boundaries are snapped to the 1/8in grid HERE rather than
   // inside the tilers, so that consecutive segments provably share an
@@ -577,7 +699,28 @@ export function computeGableTiledRow(
     });
   }
 
+  // A segment can be squeezed out entirely once a run stop clamps the
+  // usable run past one of the anchors. Tiles are taken through this helper
+  // everywhere — including the `naturalCounts` pass, whose per-segment
+  // counts set the window ordinals, so skipping a segment in one place and
+  // not the other would silently renumber every window after it.
+  const tilesForSegment = (seg: { segStartIn: number; segEndIn: number; gapEnd: "start" | "end" }): GableTiledPanel[] => {
+    if (seg.segEndIn - seg.segStartIn <= 0) return [];
+    return includeSafetyGap
+      ? tileRun(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd)
+      : tileEvenly(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn);
+  };
+
   let columnTile: GableTiledPanel | null = null;
+  // `anchors.length === 3` already guarantees two segments — `segments` is
+  // built with exactly `anchors.length - 1` entries and clamping collapses a
+  // segment to zero width rather than removing it, so indexing [0] and [1]
+  // below is safe. (An earlier version of this line also tested
+  // `segments.length >= 2` and claimed a clamp could drop one; that was
+  // false, and a guard asserting a false fact about the code is worse than
+  // no guard.) What actually protects the column against a clamp is the
+  // bounds test below, which drops it cleanly — `columnTile` stays null and
+  // nothing downstream is keyed to it.
   if (columnReservationWidthIn !== undefined && anchors.length === 3) {
     const peakAnchor = anchors[1]!;
     // Centered to within one eighth rather than exactly: the column's own
@@ -603,27 +746,40 @@ export function computeGableTiledRow(
     }
   }
 
-  if (windowReservations.length === 0) {
+  if (isClamped && windowReservations.length > 0) {
+    // Positional placement — the windows are already where they belong.
     const panels: GableTiledPanel[] = [];
     for (let segIdx = 0; segIdx < segments.length; segIdx++) {
       const seg = segments[segIdx]!;
-      panels.push(
-        ...(includeSafetyGap
-          ? tileRun(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd)
-          : tileEvenly(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn)),
-      );
+      if (seg.segEndIn - seg.segStartIn > 0) {
+        panels.push(
+          ...tileRunWithPositionedWindows(
+            seg.segStartIn,
+            seg.segEndIn,
+            anchors,
+            targetPanelWidthIn,
+            seg.gapEnd,
+            includeSafetyGap,
+            positionedWindows,
+          ),
+        );
+      }
       if (segIdx === 0 && columnTile) panels.push(columnTile);
     }
     return panels;
   }
 
-  const naturalCounts = segments.map(
-    (seg) =>
-      (includeSafetyGap
-        ? tileRun(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd)
-        : tileEvenly(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn)
-      ).filter((p) => !p.isSafetyGap).length,
-  );
+  if (windowReservations.length === 0) {
+    const panels: GableTiledPanel[] = [];
+    for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+      const seg = segments[segIdx]!;
+      panels.push(...tilesForSegment(seg));
+      if (segIdx === 0 && columnTile) panels.push(columnTile);
+    }
+    return panels;
+  }
+
+  const naturalCounts = segments.map((seg) => tilesForSegment(seg).filter((p) => !p.isSafetyGap).length);
   const segmentWindows: { ordinal: number; widthIn: number; heightIn?: number; sillHeightIn?: number }[][] = segments.map(() => []);
   let globalBase = 0;
   for (let segIdx = 0; segIdx < segments.length; segIdx++) {
@@ -644,8 +800,88 @@ export function computeGableTiledRow(
   const panels: GableTiledPanel[] = [];
   for (let segIdx = 0; segIdx < segments.length; segIdx++) {
     const seg = segments[segIdx]!;
-    panels.push(...tileRunWithWindows(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd, includeSafetyGap, segmentWindows[segIdx]!));
+    if (seg.segEndIn - seg.segStartIn > 0) {
+      panels.push(...tileRunWithWindows(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd, includeSafetyGap, segmentWindows[segIdx]!));
+    }
     if (segIdx === 0 && columnTile) panels.push(columnTile);
   }
   return panels;
+}
+
+export interface GableWindowsAgainstRunStop {
+  /** Windows the stop leaves fully built — the normal case. */
+  kept: GableWindowPlacement[];
+  /** Windows entirely inside the unbuilt span. They are simply NOT BUILT, so
+   * they generate no panel and no cut-list part. **Inference**, consistent
+   * with everything else in Stage 3, but never confirmed by Tommy. */
+  dropped: GableWindowPlacement[];
+  /** Windows the stop CUTS THROUGH — at one end, or at both when the built
+   * run is narrower than the window itself. Deliberately NOT resolved here:
+   * half a window is a fabricated part that does not exist, and silently
+   * swallowing a whole one is worse. The caller refuses the stop and names
+   * the window. */
+  straddling: GableWindowPlacement[];
+}
+
+/**
+ * How a candidate run stop would treat this wall's gable windows, without
+ * tiling anything the caller has to interpret.
+ *
+ * Exists so the stop REFUSAL can name a window the stop would cut through,
+ * rather than the tiler quietly producing a half window. The positions come
+ * from the unclamped row, so they are the windows' real positions on the
+ * building — the same basis `computeGableTiledRow` places them against.
+ */
+export function classifyGableWindowsAgainstRunStop(
+  wallWidthIn: number,
+  eaveHeightIn: number,
+  points: RoofProfilePoint[],
+  targetPanelWidthIn: number,
+  insetIn: number,
+  includeSafetyGap: boolean,
+  heelHeightIn: number,
+  anchorMode: RoofBearingAnchorMode,
+  windowReservations: GableWindowReservation[],
+  columnReservationWidthIn: number | undefined,
+  builtStartIn: number,
+  builtEndIn: number,
+): GableWindowsAgainstRunStop {
+  const result: GableWindowsAgainstRunStop = { kept: [], dropped: [], straddling: [] };
+  if (windowReservations.length === 0) return result;
+  const full = computeGableTiledRow(
+    wallWidthIn,
+    eaveHeightIn,
+    points,
+    targetPanelWidthIn,
+    insetIn,
+    includeSafetyGap,
+    heelHeightIn,
+    anchorMode,
+    windowReservations,
+    columnReservationWidthIn,
+  ).filter((p) => p.isWindow);
+  for (const p of full) {
+    const w: GableWindowPlacement = {
+      xStartIn: p.xStartIn,
+      xEndIn: p.xEndIn,
+      heightIn: p.windowHeightIn,
+      sillHeightIn: p.windowSillHeightIn,
+    };
+    const startsInside = toEighths(w.xStartIn) >= toEighths(builtStartIn);
+    const endsInside = toEighths(w.xEndIn) <= toEighths(builtEndIn);
+    // Order matters: "entirely outside" is tested FIRST, so that everything
+    // reaching the straddle branch below really is cut by the stop.
+    if (toEighths(w.xEndIn) <= toEighths(builtStartIn) || toEighths(w.xStartIn) >= toEighths(builtEndIn)) {
+      result.dropped.push(w); // wholly inside the unbuilt span — not built
+    } else if (startsInside && endsInside) {
+      result.kept.push(w);
+    } else {
+      // Cut at one end, or — when a window is WIDER than the whole built run
+      // — at both. An earlier version filed that both-ends case as `dropped`,
+      // so the one situation where a stop most obviously destroys a window
+      // was the one situation nothing refused. It straddles.
+      result.straddling.push(w);
+    }
+  }
+  return result;
 }

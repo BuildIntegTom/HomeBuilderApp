@@ -13,6 +13,8 @@ export interface PlanViewPageProps {
   allInstances: PanelInstance[];
   primaryCornerIds: Set<CornerId>;
   leastAccessibleCorner: CornerId;
+  /** Stage 3 — see PlanViewDiagram's own prop doc. */
+  wallUnbuiltSpansIn?: Record<string, { fromIn: number; toIn: number }[]>;
   role: ViewerRole;
 }
 
@@ -32,6 +34,7 @@ export default function PlanViewPage({
   allInstances,
   primaryCornerIds,
   leastAccessibleCorner,
+  wallUnbuiltSpansIn,
   role,
 }: PlanViewPageProps) {
   return (
@@ -49,6 +52,7 @@ export default function PlanViewPage({
         allInstances={allInstances}
         primaryCornerIds={primaryCornerIds}
         leastAccessibleCorner={leastAccessibleCorner}
+        wallUnbuiltSpansIn={wallUnbuiltSpansIn}
       />
     </SheetTitleBlock>
   );

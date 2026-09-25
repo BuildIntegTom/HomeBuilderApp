@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { computeGableTiledRow, GABLE_SAFETY_GAP_WIDTH_IN, GABLE_SHED_SNAP_THRESHOLD_IN, type RoofProfilePoint } from "./gableTiledRow";
+import {
+  classifyGableWindowsAgainstRunStop,
+  computeGableTiledRow,
+  GABLE_SAFETY_GAP_WIDTH_IN,
+  GABLE_SHED_SNAP_THRESHOLD_IN,
+  type GableWindowReservation,
+  type RoofProfilePoint,
+} from "./gableTiledRow";
 
 // Most tests below pass `includeSafetyGap: false` to isolate the pure
 // roofline-profile/tiling math from Part B's separate gap-absorption
@@ -750,5 +757,224 @@ describe("computeGableTiledRow on the 1/8in grid", () => {
       }
     }
     expect(violations.slice(0, 10)).toEqual([]);
+  });
+});
+
+/**
+ * Smearforn Stage 3 — the gable row is clamped to the wall's BUILT run.
+ *
+ * This is the one place the Stage 3 audit's "no panels means no instances"
+ * premise did not hold on its own: the row is not a total that reads a wall
+ * length, it is a panel GENERATOR that reads one, and its output becomes
+ * real `"gable"` panel instances that are fabricated, priced, weighed,
+ * BOM'd and cut-listed. Unclamped, a stopped Gable End wall built gable
+ * panels above a span that same wall declares carries no panels.
+ *
+ * Tommy's decision: clamp the row. **The ridge and roof profile still span
+ * the full wall** — only the panel generator stops.
+ */
+describe("computeGableTiledRow — a wall that stops short (Stage 3)", () => {
+  const PEAK: RoofProfilePoint[] = [{ xIn: 120, heightIn: 192 }];
+  const full = () => computeGableTiledRow(240, 120, PEAK, 40, 0, false);
+
+  it("defaults to the whole wall — an unstopped wall is byte-identical", () => {
+    const explicitFullSpan = computeGableTiledRow(240, 120, PEAK, 40, 0, false, 0, "truss-heel", [], undefined, 0, 240);
+    expect(JSON.stringify(explicitFullSpan)).toBe(JSON.stringify(full()));
+  });
+
+  it("generates nothing over the unbuilt span", () => {
+    const panels = computeGableTiledRow(240, 120, PEAK, 40, 0, false, 0, "truss-heel", [], undefined, 60, 240);
+    expect(panels.length).toBeGreaterThan(0);
+    // Not one tile starts before the stop, and the row still reaches the
+    // wall's far end.
+    expect(Math.min(...panels.map((p) => p.xStartIn))).toBeCloseTo(60, 6);
+    expect(Math.max(...panels.map((p) => p.xEndIn))).toBeCloseTo(240, 6);
+  });
+
+  it("clamps at the far end too, and at both ends at once", () => {
+    const endOnly = computeGableTiledRow(240, 120, PEAK, 40, 0, false, 0, "truss-heel", [], undefined, 0, 180);
+    expect(Math.min(...endOnly.map((p) => p.xStartIn))).toBeCloseTo(0, 6);
+    expect(Math.max(...endOnly.map((p) => p.xEndIn))).toBeCloseTo(180, 6);
+
+    const both = computeGableTiledRow(240, 120, PEAK, 40, 0, false, 0, "truss-heel", [], undefined, 48, 192);
+    expect(Math.min(...both.map((p) => p.xStartIn))).toBeCloseTo(48, 6);
+    expect(Math.max(...both.map((p) => p.xEndIn))).toBeCloseTo(192, 6);
+  });
+
+  it("a FULLY stopped gable end builds nothing at all — and no zero-length debris", () => {
+    // The truss-plate guard's own rule: a zero-width tile still counts as a
+    // real priced, fabricated panel instance, so there must be none.
+    expect(computeGableTiledRow(240, 120, PEAK, 40, 0, false, 0, "truss-heel", [], undefined, 240, 240)).toEqual([]);
+    expect(computeGableTiledRow(240, 120, PEAK, 40, 0, false, 0, "truss-heel", [], undefined, 0, 0)).toEqual([]);
+    // ...including when the stops cross over each other.
+    expect(computeGableTiledRow(240, 120, PEAK, 40, 0, false, 0, "truss-heel", [], undefined, 200, 100)).toEqual([]);
+  });
+
+  it("never emits a zero- or negative-width tile at any stop on the wall", () => {
+    const bad: { stopIn: number; widthIn: number }[] = [];
+    for (let stopIn = 0; stopIn <= 240; stopIn += 6) {
+      for (const panels of [
+        computeGableTiledRow(240, 120, PEAK, 40, 0, true, 0, "truss-heel", [], undefined, stopIn, 240),
+        computeGableTiledRow(240, 120, PEAK, 40, 0, true, 0, "truss-heel", [], undefined, 0, 240 - stopIn),
+      ]) {
+        for (const p of panels) if (!(p.widthIn > 0)) bad.push({ stopIn, widthIn: p.widthIn });
+      }
+    }
+    expect(bad.slice(0, 5)).toEqual([]);
+  });
+
+  it("the tiles still tile their own run contiguously, with no gap at the stop", () => {
+    const panels = computeGableTiledRow(240, 120, PEAK, 40, 0, true, 0, "truss-heel", [], undefined, 60, 216);
+    const sorted = [...panels].sort((a, b) => a.xStartIn - b.xStartIn);
+    expect(sorted[0]!.xStartIn).toBeCloseTo(60, 6);
+    expect(sorted[sorted.length - 1]!.xEndIn).toBeCloseTo(216, 6);
+    for (let i = 1; i < sorted.length; i++) {
+      expect(sorted[i]!.xStartIn).toBeCloseTo(sorted[i - 1]!.xEndIn, 6);
+    }
+    // ...and the widths add up to the built run exactly, in whole eighths.
+    const eighths = panels.reduce((sum, p) => sum + Math.round(p.widthIn * 8), 0);
+    expect(eighths).toBe(Math.round((216 - 60) * 8));
+  });
+
+  it("the ROOFLINE is not clamped — heights still come off the full-wall profile", () => {
+    // The peak is at x=120 with the eave at 120in and the ridge at 192in.
+    // A tile at the stop must read the height the FULL profile gives at that
+    // x, not a height re-derived from a shortened wall.
+    const panels = computeGableTiledRow(240, 120, PEAK, 40, 0, false, 0, "truss-heel", [], undefined, 60, 240);
+    const atStop = panels.find((p) => Math.abs(p.xStartIn - 60) < 1e-6)!;
+    // Linear from (0,120) to (120,192): at x=60 the roofline is 156in.
+    expect(atStop.leftHeightIn).toBeCloseTo(156, 6);
+    expect(Math.max(...panels.map((p) => Math.max(p.leftHeightIn, p.rightHeightIn)))).toBeCloseTo(192, 6);
+  });
+
+  /**
+   * **Tommy, 2026-09-25: a gable window stays put on the building.**
+   * Stopping the near end of a wall must not move a window at the far end —
+   * a window is dimensioned from the building, not from wherever the panel
+   * run begins. The numbers below are the ones the reviewer measured against
+   * the OLD (ordinal) behaviour, which slid every window by the clamp.
+   */
+  describe("gable windows keep their real position under a clamp", () => {
+    const WINDOWS: GableWindowReservation[] = [
+      { beforeTileCount: 1, widthIn: 30 },
+      { beforeTileCount: 3, widthIn: 30 },
+    ];
+    const winXs = (panels: ReturnType<typeof computeGableTiledRow>) =>
+      panels.filter((p) => p.isWindow).map((p) => [p.xStartIn, p.xEndIn]);
+    const row = (builtStartIn: number, builtEndIn: number) =>
+      computeGableTiledRow(240, 120, PEAK, 40, 0, false, 0, "truss-heel", WINDOWS, undefined, builtStartIn, builtEndIn);
+
+    const baseline = winXs(row(0, 240));
+
+    it("the unclamped row is unchanged — the ordinal path still owns it", () => {
+      expect(baseline.length).toBe(2);
+      // Byte-identical to calling it with no span arguments at all.
+      expect(JSON.stringify(row(0, 240))).toBe(
+        JSON.stringify(computeGableTiledRow(240, 120, PEAK, 40, 0, false, 0, "truss-heel", WINDOWS)),
+      );
+    });
+
+    it("a START clamp does not move them — the defect the reviewer measured", () => {
+      // The windows sit at [30,60] and [120,150]. Measured before the fix,
+      // a start clamp slid BOTH of them by the clamp, carrying the second
+      // across the peak. Both of these clamps leave both windows fully
+      // inside the built run, so both must come back untouched.
+      expect(winXs(row(15, 240))).toEqual(baseline);
+      expect(winXs(row(30, 240))).toEqual(baseline);
+    });
+
+    it("the surviving window still does not move when the clamp drops the other one", () => {
+      // A 60in clamp ends exactly at the first window's far edge, so that
+      // one is not built — but the second must STILL be at [120,150] rather
+      // than sliding up to fill the space.
+      expect(winXs(row(60, 240))).toEqual([baseline[1]]);
+    });
+
+    it("an END clamp does not move them either (it never did)", () => {
+      expect(winXs(row(0, 180))).toEqual(baseline);
+    });
+
+    it("clamping from both ends still leaves them where they were", () => {
+      expect(winXs(row(24, 216))).toEqual(baseline);
+    });
+
+    it("a window entirely inside the unbuilt span is NOT BUILT", () => {
+      const firstWindowEndIn = baseline[0]![1]!;
+      const clamped = row(firstWindowEndIn, 240);
+      expect(winXs(clamped)).toEqual([baseline[1]]);
+      // ...and leaves no zero-width debris behind.
+      for (const p of clamped) expect(p.widthIn).toBeGreaterThan(0);
+    });
+
+    it("a fully stopped gable end builds no windows at all", () => {
+      expect(row(240, 240)).toEqual([]);
+    });
+
+    it("tiles still run contiguously and sum to the built span exactly", () => {
+      for (const [a, b] of [
+        [30, 240],
+        [60, 240],
+        [0, 180],
+        [24, 216],
+      ]) {
+        const panels = [...row(a!, b!)].sort((p, q) => p.xStartIn - q.xStartIn);
+        expect(panels[0]!.xStartIn).toBeCloseTo(a!, 6);
+        expect(panels[panels.length - 1]!.xEndIn).toBeCloseTo(b!, 6);
+        for (let i = 1; i < panels.length; i++) expect(panels[i]!.xStartIn).toBeCloseTo(panels[i - 1]!.xEndIn, 6);
+        const eighths = panels.reduce((sum, p) => sum + Math.round(p.widthIn * 8), 0);
+        expect(eighths).toBe(Math.round((b! - a!) * 8));
+      }
+    });
+
+    it("classifies kept / dropped / straddling for the refusal to read", () => {
+      const classify = (builtStartIn: number, builtEndIn: number) =>
+        classifyGableWindowsAgainstRunStop(240, 120, PEAK, 40, 0, false, 0, "truss-heel", WINDOWS, undefined, builtStartIn, builtEndIn);
+      expect(classify(0, 240)).toEqual({ kept: expect.any(Array), dropped: [], straddling: [] });
+      expect(classify(0, 240).kept.length).toBe(2);
+
+      const [firstStart, firstEnd] = baseline[0]!;
+      // Entirely past it -> dropped, never straddling.
+      expect(classify(firstEnd!, 240).dropped.length).toBe(1);
+      expect(classify(firstEnd!, 240).straddling).toEqual([]);
+      // Cutting through it -> straddling, which the caller refuses.
+      const midFirst = (firstStart! + firstEnd!) / 2;
+      expect(classify(midFirst, 240).straddling.length).toBe(1);
+      expect(classify(midFirst, 240).straddling[0]!.xStartIn).toBeCloseTo(firstStart!, 6);
+    });
+
+    it("a window WIDER than the whole built run straddles — it does not silently vanish", () => {
+      // The built run sits strictly inside the first window [30,60], so the
+      // stop cuts it at BOTH ends. An earlier version filed this as
+      // `dropped`, which made the one case where a stop most obviously
+      // destroys a window the one case nothing refused.
+      const both = classifyGableWindowsAgainstRunStop(240, 120, PEAK, 40, 0, false, 0, "truss-heel", WINDOWS, undefined, 36, 54);
+      expect(both.straddling.length).toBe(1);
+      expect(both.straddling[0]!.xStartIn).toBeCloseTo(30, 6);
+      expect(both.kept).toEqual([]);
+      // The OTHER window is wholly beyond the built run, so it is simply not
+      // built — dropped, not straddling. The two classifications have to
+      // stay distinguishable here or the refusal fires on the wrong window.
+      expect(both.dropped.length).toBe(1);
+      expect(both.dropped[0]!.xStartIn).toBeCloseTo(120, 6);
+    });
+
+    it("a straddled window is never half-built, even if a refusal is bypassed", () => {
+      const [firstStart, firstEnd] = baseline[0]!;
+      const midFirst = (firstStart! + firstEnd!) / 2;
+      const panels = row(midFirst, 240);
+      // The straddler is gone rather than emitted at a partial width, and
+      // every remaining tile is a real one.
+      expect(winXs(panels)).toEqual([baseline[1]]);
+      for (const p of panels) expect(p.widthIn).toBeGreaterThan(0);
+    });
+  });
+
+  it("drops the structural column when the stop takes the peak with it", () => {
+    // Column centred on the peak at x=120; a stop past it leaves no room.
+    const kept = computeGableTiledRow(240, 120, PEAK, 40, 0, true, 0, "truss-heel", [], 25.5, 0, 240);
+    expect(kept.some((p) => p.isColumn)).toBe(true);
+    const dropped = computeGableTiledRow(240, 120, PEAK, 40, 0, true, 0, "truss-heel", [], 25.5, 150, 240);
+    expect(dropped.some((p) => p.isColumn)).toBe(false);
+    for (const p of dropped) expect(p.widthIn).toBeGreaterThan(0);
   });
 });

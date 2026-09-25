@@ -1,0 +1,174 @@
+{
+  "app": "http://localhost:3215/",
+  "ranAt": "2026-09-25T19:40:07.947Z",
+  "stopIn": 60,
+  "steps": [
+    {
+      "name": "roof-in-scope",
+      "roofToggled": {
+        "checked": true
+      },
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "baseline-3d-has-panels-and-a-truss-plate",
+      "wallIds": [
+        "AB",
+        "BC",
+        "CD",
+        "DA"
+      ],
+      "targetWallId": "AB",
+      "targetAxis": 0,
+      "wallExtent": {
+        "minIn": 15.5,
+        "maxIn": 564.5,
+        "lengthIn": 549,
+        "vertices": 2120
+      },
+      "plateExtent": {
+        "minIn": 0,
+        "maxIn": 580,
+        "lengthIn": 580,
+        "vertices": 24
+      },
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "elevation-before-stop",
+      "panelCount": 15,
+      "totalEighths": 4392,
+      "stopFieldValue": "0",
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "stop-shortens-the-run-and-conserves-the-wall",
+      "panelCountBefore": 15,
+      "panelCountAfter": 14,
+      "totalEighthsBefore": 4392,
+      "totalEighthsAfter": 3912,
+      "stopEighths": 480,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "unbuilt-span-draws-as-a-dashed-NO-PANELS-boundary",
+      "noPanelsLabels": [
+        "NO PANELS",
+        "NO PANELS: 5'-0\""
+      ],
+      "dashedUnfilledRects": 2,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "drag-still-lands-and-conserves-the-run",
+      "strips": 10,
+      "totalEighthsBeforeDrag": 3912,
+      "totalEighthsAfterDrag": 3912,
+      "changed": true,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "plan-sheet-carries-a-NO-PANELS-dimension",
+      "planSheetLabels": [
+        "NO PANELS: 5'-0\""
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "3d-draws-nothing-across-the-unbuilt-span",
+      "baselineWallLengthIn": 549,
+      "stoppedWallLengthIn": 489,
+      "wallShortenedBy": 60,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "3d-truss-plate-shrinks-with-the-run",
+      "baselinePlateLengthIn": 580,
+      "stoppedPlateLengthIn": 520,
+      "plateShortenedBy": 60,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "roof-bearing-memo-was-not-stale",
+      "plateBeforeForcedRecomputeIn": 520,
+      "plateAfterForcedRecomputeIn": 520,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "clearing-the-stop-restores-elevation-plan-and-3d",
+      "totalEighthsCleared": 4392,
+      "noPanelsLabelsCleared": 0,
+      "boundaryGreyWithStop": 1409,
+      "boundaryGreyWithoutStop": 1309,
+      "plateClearedIn": 580,
+      "baselinePlateIn": 580,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "too-short-remaining-run-is-refused-and-nothing-changes",
+      "askedForIn": 539,
+      "invalid": true,
+      "message": "That leaves only 10\" of this wall built, under the 24\" minimum panel the shop can build. Stop less of the wall, or stop all 45'-9\" of it. (Esc to revert)",
+      "totalEighthsBefore": 4392,
+      "totalEighthsAfter": 4392,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "corner-reaching-stop-is-accepted-not-refused",
+      "wallId": "BC",
+      "refusalMessage": null,
+      "invalid": false,
+      "runBeforeIn": 280,
+      "runAfterIn": 250,
+      "neighboursThatGrew": [
+        {
+          "id": "AB",
+          "byIn": 15.5
+        }
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "gable-row-tracks-the-built-run-both-ways",
+      "unstopped": {
+        "gableStartIn": 40,
+        "gableLengthIn": 500,
+        "wallStartIn": 15.5
+      },
+      "stopped": {
+        "gableStartIn": 75.5,
+        "gableLengthIn": 464.5,
+        "wallStartIn": 75.5
+      },
+      "cleared": {
+        "gableStartIn": 40,
+        "gableLengthIn": 500,
+        "wallStartIn": 15.5
+      },
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "no-uncaught-exceptions",
+      "count": 0,
+      "first": null,
+      "asserted": true,
+      "passed": true
+    }
+  ],
+  "pageExceptions": [],
+  "failures": []
+}

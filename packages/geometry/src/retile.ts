@@ -4,7 +4,8 @@ import { reconcileBracedPlacement } from "./bracedPlacement";
 import { getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall, type OpeningAnchor } from "./tiling";
 import { wallCompassDirection } from "./wallCompassDirection";
 import { wallFabricationLengthIn } from "./eighths";
-import type { BracePattern, CornerId, Footprint, PanelSlot, Wall, WallEnd } from "./types";
+import { applyWallRunStop, hasWallRunStop } from "./wallRunStop";
+import type { BracePattern, CornerId, Footprint, PanelSlot, Wall, WallEnd, WallRunStop } from "./types";
 
 /** The project's seismic-zone-driven suggestion for brand-new braced-panel
  * positions (Tommy: "softly decouple [seismic auto-population] to be an
@@ -186,6 +187,114 @@ export function cornerOwnership(
   return ownership;
 }
 
+/**
+ * Corner ownership, adjusted for Stage 3 run stops.
+ *
+ * **The orphan corner — Tommy's decision, 2026-09-25: the corner simply does
+ * not exist.** When a wall stops at a corner it OWNS, its corner panel is not
+ * built. The neighbour that BUTTS against that corner was still being inset
+ * by a wall thickness to make room for it — butting into air, leaving a
+ * thickness-wide empty notch with nothing marking it, and still drawing an
+ * "adjacent wall" filler sliver for a corner panel that no longer exists.
+ * That is the same phantom Stage 3 removed on the stopped wall itself,
+ * surviving on the other side of the corner.
+ *
+ * So: **neither wall builds a corner there, and the butting neighbour runs
+ * out to its own true end** instead of insetting into nothing. Chosen over
+ * transferring ownership to the neighbour.
+ *
+ * ### Why this is safe to do in ONE pass
+ *
+ * This is the first thing in Stage 3 where a stop on one wall changes
+ * another wall's tiling, so the determinism argument matters:
+ *
+ * - **Only a CONVEX corner's loser carries an inset at all.** A reflex
+ *   loser's `insetAmount` is already 0 by construction (see
+ *   `cornerOwnership`), so reflex corners are untouched here — asserted in
+ *   the tests rather than assumed.
+ * - **The adjustment only ever makes a wall LONGER.** It can therefore never
+ *   turn a wall that was buildable into a fully-stopped one, so no wall's
+ *   own "is my corner built" answer can change as a result of another wall's
+ *   adjustment. One pass reaches a fixed point; there is no iteration and no
+ *   order dependence.
+ * - **"Is this wall's corner built at this end" is read off BASE ownership
+ *   and this wall's own stop only** — never off an already-adjusted value —
+ *   which is what keeps the above true.
+ * - **The merged-corner case cannot collide with this.** `resolveCorners`
+ *   merges only when a wall owns corners at BOTH ends, and a stop at either
+ *   end removes that end's corner, so a stopped wall never merges.
+ *
+ * An absent or all-zero stop map returns `cornerOwnership`'s own result
+ * unchanged, which is every project saved before Stage 3.
+ */
+export function cornerOwnershipWithRunStops(
+  fp: Footprint,
+  primary: Set<string>,
+  thicknessIn: number,
+  runStopsByWallId?: Record<string, WallRunStop>,
+): Record<string, CornerOwnership> {
+  const base = cornerOwnership(fp, primary, thicknessIn);
+  if (!runStopsByWallId || Object.keys(runStopsByWallId).length === 0) return base;
+
+  /** Is the corner this wall owns at `end` actually BUILT? Read off base
+   * ownership plus this wall's own stop — deliberately not off anything this
+   * function has already adjusted. */
+  const cornerIsBuilt = (wall: Wall, end: WallEnd): boolean => {
+    const own = base[wall.id]!;
+    if (!own[end].hasCorner) return false;
+    const stop = runStopsByWallId[wall.id];
+    if (!hasWallRunStop(stop)) return true;
+    const baseLengthIn =
+      wallFabricationLengthIn(wall) - own.start.insetAmount - own.end.insetAmount + own.start.extraLengthIn + own.end.extraLengthIn;
+    const run = applyWallRunStop(
+      { lengthIn: baseLengthIn, hasCornerStart: own.start.hasCorner, hasCornerEnd: own.end.hasCorner },
+      stop,
+    );
+    return end === "start" ? run.hasCornerStart : run.hasCornerEnd;
+  };
+
+  const adjusted: Record<string, CornerOwnership> = {};
+  for (const [id, own] of Object.entries(base)) {
+    adjusted[id] = { start: { ...own.start }, end: { ...own.end } };
+  }
+
+  for (const wall of fp.walls) {
+    const nextWall = fp.walls.find((w) => w.startCorner === wall.endCorner);
+    if (!nextWall) continue;
+    // `wall` owns this shared corner and is not building it -> `nextWall`
+    // stops insetting into the space that corner panel would have filled.
+    if (base[wall.id]!.end.hasCorner && !cornerIsBuilt(wall, "end")) {
+      adjusted[nextWall.id]!.start.insetAmount = 0;
+    }
+    // ...and the mirror image, when the NEXT wall is the owner.
+    if (base[nextWall.id]!.start.hasCorner && !cornerIsBuilt(nextWall, "start")) {
+      adjusted[wall.id]!.end.insetAmount = 0;
+    }
+  }
+  return adjusted;
+}
+
+/**
+ * The ONE place a wall's tiling length and per-end corner flags are derived
+ * from its corner ownership plus its Stage 3 run stop (if any) — shared by
+ * `retile`, `retilePreservingOpenings`, `wallGeometryFor` and
+ * `panelSlotBoxes3D` so those four can never disagree about how long a
+ * wall's run is or where it starts. `panelSlotBoxes3D` learned that lesson
+ * the expensive way once already (see its own doc comment on the
+ * "long wall's panels are spaced out" bug), and a run stop is exactly the
+ * kind of adjustment that would reproduce it: its defensive rescale would
+ * silently STRETCH every panel on a stopped wall to fill the gap.
+ *
+ * `runStop` undefined (every project ever saved) returns today's numbers
+ * unchanged.
+ */
+export function wallRunFor(wall: Wall, ownership: CornerOwnership, runStop?: WallRunStop) {
+  const { start, end } = ownership;
+  const lengthIn =
+    wallFabricationLengthIn(wall) - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+  return applyWallRunStop({ lengthIn, hasCornerStart: start.hasCorner, hasCornerEnd: end.hasCorner }, runStop);
+}
+
 /** Re-tiles every wall of a footprint from scratch — discards any existing
  * openings, since re-deriving corner ownership can change every wall's
  * available length. Used after any structural change (draw, bump-out,
@@ -202,15 +311,18 @@ export function retile(
   thicknessIn: number,
   bracedSeed: BracedSeed,
   openingSeed?: OpeningSeed,
+  runStopsByWallId?: Record<string, WallRunStop>,
 ): Record<string, PanelSlot[]> {
   const next: Record<string, PanelSlot[]> = {};
-  const ownership = cornerOwnership(fp, primary, thicknessIn);
+  const ownership = cornerOwnershipWithRunStops(fp, primary, thicknessIn, runStopsByWallId);
   const mitered = isMiteredShape(fp);
   const randomFn = openingSeed?.randomFn ?? Math.random;
   for (const wall of fp.walls) {
     const gapEnd = gapEndFor(fp, wall, leastAccessible);
-    const { start, end } = ownership[wall.id]!;
-    const lengthIn = wallFabricationLengthIn(wall) - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+    const run = wallRunFor(wall, ownership[wall.id]!, runStopsByWallId?.[wall.id]);
+    const { lengthIn, hasCornerStart, hasCornerEnd } = run;
+    const start = { hasCorner: hasCornerStart };
+    const end = { hasCorner: hasCornerEnd };
     // Octagon (and other mitered shapes) never borrow-and-split a standard
     // panel for the gap — Tommy: no standard-safety panels for octagons.
     const plainSlots = tileWall(lengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, start.hasCorner, end.hasCorner, !mitered)
@@ -296,14 +408,17 @@ export function retilePreservingOpenings(
   oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined>,
   bracedSeed: BracedSeed,
   openingSeed?: OpeningSeed,
+  runStopsByWallId?: Record<string, WallRunStop>,
 ): Record<string, PanelSlot[]> {
   const next: Record<string, PanelSlot[]> = {};
-  const ownership = cornerOwnership(fp, primary, thicknessIn);
+  const ownership = cornerOwnershipWithRunStops(fp, primary, thicknessIn, runStopsByWallId);
   const mitered = isMiteredShape(fp);
   for (const wall of fp.walls) {
     const gapEnd = gapEndFor(fp, wall, leastAccessible);
-    const { start, end } = ownership[wall.id]!;
-    const lengthIn = wallFabricationLengthIn(wall) - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+    const run = wallRunFor(wall, ownership[wall.id]!, runStopsByWallId?.[wall.id]);
+    const { lengthIn, hasCornerStart, hasCornerEnd } = run;
+    const start = { hasCorner: hasCornerStart };
+    const end = { hasCorner: hasCornerEnd };
     const oldSlots = oldSlotsByNewWallId[wall.id];
     const slots = tileOneWallPreservingOpenings(
       oldSlots,
@@ -338,32 +453,132 @@ export function retilePreservingOpenings(
 }
 
 export interface WallGeometry {
+  /** Does this wall BUILD a corner panel at this end — corner ownership AND
+   * no run stop there. This is what the tiler wants. */
   hasCornerStart: boolean;
   hasCornerEnd: boolean;
+  /** Does this wall OWN the corner at this end, ignoring any run stop.
+   * Distinct from `hasCorner*` and the distinction matters on screen: a
+   * stop does not change the NEIGHBOUR, so where the neighbour owns the
+   * corner its panel is still physically there and the elevation still
+   * draws the "adjacent wall" filler sliver for it — with the unbuilt span
+   * drawn between that sliver and this wall's own run. */
+  ownsCornerStart: boolean;
+  ownsCornerEnd: boolean;
+  /** How far this wall's run is inset at each end because the NEIGHBOUR's
+   * corner panel occupies it — already adjusted for the orphan-corner rule,
+   * so it is 0 when that neighbour is not building the corner after all.
+   * `> 0` is the right test for "draw the adjacent-wall filler sliver". */
+  startInsetIn: number;
+  endInsetIn: number;
+  /** Where this wall's panel run begins, in inches from the wall's own TRUE
+   * start corner: the butt-joint inset (or a negative reflex extension)
+   * plus any start stop. Every renderer that places this wall's content —
+   * the printable plan, the live canvas, the panel snap lines, the gable
+   * column alignment — measures from here. */
+  runStartOffsetIn: number;
+  /** The mirror of `runStartOffsetIn`, measured in from the wall's TRUE end
+   * corner. `wallFabricationLengthIn(wall) - runEndOffsetIn` is where the
+   * run finishes. */
+  runEndOffsetIn: number;
   gapEnd: WallEnd;
+  /** The length actually tiled — already reduced by any run stop. */
   lengthIn: number;
   allowBorrow: boolean;
+  /**
+   * What this wall would tile at with **no stop anywhere in the building** —
+   * corner ownership only, before the orphan-corner rule is applied.
+   *
+   * **⚠ The sum invariant is NOT stated against this.** It used to say
+   * `Σ slot widths + startStopIn + endStopIn === unstoppedLengthIn`, and
+   * that is measurably false on any wall whose neighbour is stopped at their
+   * shared corner: the orphan rule lets that wall grow by a wall thickness,
+   * so the left side exceeds this by exactly that much (344.5 vs 329 on a
+   * 30x20 rectangle). Following the old sentence literally is what made the
+   * first refusal reject every legitimate stop that reached a corner — the
+   * browser harness had to catch it.
+   *
+   * **The invariant that IS true, and the one to write tests against:**
+   *
+   *   `Σ slot widths === wallGeometryFor(wall, currentStops).lengthIn`
+   *
+   * i.e. against this wall's CURRENT tiling length under the CURRENT stop
+   * map. That holds unconditionally, orphan adjustment included.
+   *
+   * This field survives for the narrower job it is still right for: as the
+   * basis a stop on THIS wall is measured and clamped against, and as the
+   * "what would it have been" figure a Review Log entry quotes. See
+   * `wallRunStopBasisIn` in page.tsx, which is careful to take this with
+   * other walls' stops applied and only this wall's own removed.
+   */
+  unstoppedLengthIn: number;
+  /** Inches deliberately not built at each end — 0/0 for a normal wall. */
+  startStopIn: number;
+  endStopIn: number;
+  /** The stored stops asked for more than the wall has and were reduced to
+   * fit. Surfaced in the Review Log rather than corrected silently. */
+  stopClamped: boolean;
+  /** Nothing at all is built on this wall. */
+  fullyStopped: boolean;
 }
 
 /** Everything needed to re-tile one specific wall (as opposed to `retile`,
  * which rebuilds every wall) — shared by the opening-toggle/window-resize
- * handlers, which only need to redo the one wall a user interacted with. */
+ * handlers, which only need to redo the one wall a user interacted with.
+ *
+ * **Takes the WHOLE stop map, not just this wall's own record**, and that is
+ * load-bearing rather than convenient: since the orphan-corner rule, a stop
+ * on the NEIGHBOUR changes this wall's inset (see
+ * `cornerOwnershipWithRunStops`). Omitted — the default, and every
+ * pre-Stage-3 project — it changes nothing at all. See `wallRunStop.ts` for
+ * what a stop is measured from. */
 export function wallGeometryFor(
   footprint: Footprint,
   wallId: string,
   primaryCornerIds: Set<string>,
   leastAccessibleCorner: CornerId,
   thicknessIn: number,
+  runStopsByWallId?: Record<string, WallRunStop>,
 ): WallGeometry | null {
   const wall = footprint.walls.find((w) => w.id === wallId);
   if (!wall) return null;
-  const { start, end } = cornerOwnership(footprint, primaryCornerIds, thicknessIn)[wall.id]!;
+  const runStop = runStopsByWallId?.[wallId];
+  const ownership = cornerOwnershipWithRunStops(footprint, primaryCornerIds, thicknessIn, runStopsByWallId)[wall.id]!;
+  // The UNSTOPPED baseline has to come off unadjusted ownership, or a
+  // neighbour's stop would silently move this wall's "what it would have
+  // been" figure — which is the number the sum invariant is stated against.
+  const baseOwnership = cornerOwnership(footprint, primaryCornerIds, thicknessIn)[wall.id]!;
   const gapEnd = gapEndFor(footprint, wall, leastAccessibleCorner);
   // `wallFabricationLengthIn`, not `lengthFt * 12`: the tiled length has to
   // be a whole number of eighths or the panels can never sum to it. Both
   // adjustments are wall thicknesses (14 / 15.5 / 15.75in), all themselves
-  // whole eighths, so the result stays on the grid.
-  const lengthIn = wallFabricationLengthIn(wall) - start.insetAmount - end.insetAmount + start.extraLengthIn + end.extraLengthIn;
+  // whole eighths, so the result stays on the grid. A run stop is on the
+  // grid too, so the shortened run still is.
+  const unstopped = wallRunFor(wall, baseOwnership, undefined);
+  const run = wallRunFor(wall, ownership, runStop);
   const allowBorrow = !isMiteredShape(footprint);
-  return { hasCornerStart: start.hasCorner, hasCornerEnd: end.hasCorner, gapEnd, lengthIn, allowBorrow };
+  return {
+    hasCornerStart: run.hasCornerStart,
+    hasCornerEnd: run.hasCornerEnd,
+    ownsCornerStart: ownership.start.hasCorner,
+    ownsCornerEnd: ownership.end.hasCorner,
+    // The ADJUSTED insets. `> 0` is exactly "the neighbour's corner panel
+    // really is sitting in this end of my line", which is the only thing
+    // that should make the elevation draw an adjacent-wall filler sliver.
+    startInsetIn: ownership.start.insetAmount,
+    endInsetIn: ownership.end.insetAmount,
+    runStartOffsetIn:
+      (ownership.start.extraLengthIn > 0 ? -ownership.start.extraLengthIn : ownership.start.insetAmount) +
+      run.startStopIn,
+    runEndOffsetIn:
+      (ownership.end.extraLengthIn > 0 ? -ownership.end.extraLengthIn : ownership.end.insetAmount) + run.endStopIn,
+    gapEnd,
+    lengthIn: run.lengthIn,
+    allowBorrow,
+    unstoppedLengthIn: unstopped.lengthIn,
+    startStopIn: run.startStopIn,
+    endStopIn: run.endStopIn,
+    stopClamped: run.clamped,
+    fullyStopped: run.fullyStopped,
+  };
 }

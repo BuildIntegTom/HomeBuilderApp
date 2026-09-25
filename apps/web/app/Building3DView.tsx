@@ -13,6 +13,7 @@ import {
   computeWallVerticalBandsForSlotWithMaxHeight,
   effectiveZonesForSlot,
   isSlotBoxBeamCovered,
+  builtWallSpan,
   panelSlotBoxes3D,
   wallAxis,
   type BoxBeamCoverage,
@@ -20,6 +21,7 @@ import {
   type Footprint,
   type PanelSlot,
   type PanelSlotBox3D,
+  type WallRunStop,
 } from "@building-integrity/geometry";
 import { allPanelInstances, combinedPanelLabel, type PanelInstance } from "./panelInstances";
 import { midWallBeamsToGeometry, resolveMidWallBeamAssemblyHeightIn, type MidWallBeam } from "./midWallBeam";
@@ -601,6 +603,14 @@ interface Building3DViewProps {
   thicknessIn: number;
   includeNailer: boolean;
   primaryCornerIds: Set<string>;
+  /** Stage 3 "a wall that simply ends" — inches at each end of a wall that
+   * are deliberately NOT built. **In 3D nothing at all is drawn there**: a
+   * ghost solid would read as a wall that exists, which is exactly
+   * backwards. Absent/empty = every wall fully panelized, unchanged. */
+  wallRunStopsByWallId?: Record<string, WallRunStop>;
+  /** Each wall's UNSTOPPED tiling length — the base a stop is clamped
+   * against, so this view and page.tsx's own totals cannot disagree. */
+  wallTilingLengthInByWallId?: Record<string, number>;
   /** A second story stacked at `wallHeightFt`'s top-plate height, sharing
    * the ground floor's footprint (Tommy: "an option for adding a second
    * level of panels"). `wallSlots` here is a genuinely independent copy of
@@ -816,6 +826,8 @@ export default function Building3DView({
   thicknessIn,
   includeNailer,
   primaryCornerIds,
+  wallRunStopsByWallId,
+  wallTilingLengthInByWallId,
   secondStory,
   isSquareBalePanelization = false,
   squareBaleStudConfig = "single-2x4",
@@ -913,8 +925,11 @@ export default function Building3DView({
   }, []);
 
   const rawSlotBoxes = useMemo(
-    () => (footprint ? panelSlotBoxes3D(footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds) : []),
-    [footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds],
+    () =>
+      footprint
+        ? panelSlotBoxes3D(footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds, wallRunStopsByWallId)
+        : [],
+    [footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds, wallRunStopsByWallId],
   );
   // Built flat (nominal height for every slot) above, then split into 1-2
   // real boxes for any wall with a Mid-Wall Bond Beam — mirrors
@@ -974,7 +989,14 @@ export default function Building3DView({
   const secondStoryHeightIn = secondStory ? secondStory.wallHeightFt * IN_PER_FT : 0;
   const secondStorySlotBoxes = useMemo(() => {
     if (!footprint || !secondStory) return [];
-    const boxes = panelSlotBoxes3D(footprint, secondStory.wallSlots, thicknessIn, secondStory.wallHeightFt, primaryCornerIds);
+    const boxes = panelSlotBoxes3D(
+      footprint,
+      secondStory.wallSlots,
+      thicknessIn,
+      secondStory.wallHeightFt,
+      primaryCornerIds,
+      wallRunStopsByWallId,
+    );
     const splitBoxes = splitForMidWallBeam(boxes, secondStoryMidWallBeamsByWallId, secondStory.wallHeightFt * IN_PER_FT, maxPanelHeightIn);
     if (Object.keys(boxBeamCoverageByWallId).length === 0) return splitBoxes;
     const heightDeltaFt = computeBoxBeamHeightDeltaIn(boxBeamSizeId) / IN_PER_FT;
@@ -986,7 +1008,7 @@ export default function Building3DView({
         ? { ...box, heightFt: box.heightFt - heightDeltaFt }
         : box,
     );
-  }, [footprint, secondStory, thicknessIn, primaryCornerIds, secondStoryMidWallBeamsByWallId, boxBeamCoverageByWallId, boxBeamSizeId, maxPanelHeightIn]);
+  }, [footprint, secondStory, thicknessIn, primaryCornerIds, wallRunStopsByWallId, secondStoryMidWallBeamsByWallId, boxBeamCoverageByWallId, boxBeamSizeId, maxPanelHeightIn]);
   const secondStorySlotRenderData = useMemo(
     () =>
       secondStorySlotBoxes.map((box) => ({
@@ -1193,9 +1215,35 @@ export default function Building3DView({
     for (const wall of footprint.walls) {
       const axis = wallAxis(footprint, wall);
       const slots = secondStory?.wallSlots[wall.id] ?? [];
+      // A roof-bearing plate sits on TOP of this wall's panels, so where
+      // there are no panels there is no plate — the span is the BUILT run,
+      // not the raw wall (Stage 3).
+      //
+      // **`startXIn` is RUN-relative in both branches, and the stop is
+      // added once at the anchor below.** `computeRoofBearingSegments`
+      // measures from the slot run's own origin, not from the wall's true
+      // corner, so the multi-story branch shrinks for free in LENGTH but
+      // not in POSITION: with a start stop the run begins further along the
+      // wall and the beam would be drawn that far back, overlapping the
+      // unbuilt span and falling short at the far end. Making the
+      // single-story branch run-relative too keeps the two symmetric, so
+      // the shift can be applied in exactly one place instead of being
+      // baked into one branch and missing from the other.
+      // `builtWallSpan`, not a local clamp against the raw length: a stop is
+      // clamped against the TILING length, and clamping it here against the
+      // raw one instead left this view disagreeing with page.tsx's own
+      // fabrication groups by up to a wall thickness on a butting wall.
+      const rawLengthIn = wall.lengthFt * IN_PER_FT;
+      const runStop = builtWallSpan(rawLengthIn, wallTilingLengthInByWallId?.[wall.id] ?? rawLengthIn, wallRunStopsByWallId?.[wall.id]);
+      const builtLengthIn = runStop.builtLengthIn;
       const segments = secondStory
         ? computeRoofBearingSegments(slots, boxBeamCoverageByWallId[wall.id])
-        : [{ kind: "truss-plate" as const, startXIn: 0, lengthIn: wall.lengthFt * IN_PER_FT }];
+        : // A wall built to zero gets NO plate at all, not a zero-length
+          // one — `computeRoofBearingSegments` already returns [] for an
+          // empty run, and this branch has to agree with it.
+          builtLengthIn > 0
+          ? [{ kind: "truss-plate" as const, startXIn: 0, lengthIn: builtLengthIn }]
+          : [];
       segments.forEach((seg, segmentIndex) => {
         const hasBoxBeam = seg.kind === "box-beam";
         const members = hasBoxBeam
@@ -1208,7 +1256,22 @@ export default function Building3DView({
         // roofBaseHeightIn (the shared roofline), same as a Truss Plate
         // segment.
         const anchorYIn = hasBoxBeam ? roofBaseHeightIn - computeBoxBeamHeightDeltaIn(boxBeamSizeId) : roofBaseHeightIn;
-        const offsetFt = seg.startXIn / IN_PER_FT;
+        // Run-relative segment position + where the run itself starts. Only
+        // the run STOP is added here: a wall that butts a longer neighbour
+        // has its slots start `thicknessIn` in as well, and this anchor has
+        // always ignored that. That is a PRE-EXISTING, RENDER-ONLY offset on
+        // butting walls, unrelated to Stage 3 and deliberately not changed
+        // here — fixing it would move the roof-bearing render on every
+        // existing two-story project. Still open; noted rather than silently
+        // left.
+        //
+        // **Not to be confused with the plate's CUT LENGTH**, which is a
+        // different question with a different answer. This memo's `widthFt`
+        // comes from `seg.lengthIn` and never reaches a fabrication sheet;
+        // the sheet is cut by `roofBearingFabricationGroups`, and Tommy
+        // settled on 2026-09-25 that it correctly spans the full wall line
+        // because top plates LAP AT THE CORNERS. The two got conflated once.
+        const offsetFt = (seg.startXIn + runStop.startStopIn) / IN_PER_FT;
         result.push({
           wallId: wall.id,
           segmentIndex,
@@ -1234,6 +1297,13 @@ export default function Building3DView({
     trussPlateInsetIn,
     sharedRoofBearingHeightIn,
     roofBaseHeightIn,
+    // Read at the top of this memo (Stage 3). Missing, a single-story
+    // building kept drawing its truss plate at FULL length across an
+    // unbuilt span until something unrelated invalidated the memo — the
+    // exact failure this stage exists to prevent, relocated one layer up.
+    // `rawSlotBoxes` lists it, so the panels moved and the plate did not.
+    wallRunStopsByWallId,
+    wallTilingLengthInByWallId,
   ]);
 
   // Bale Foundation's own rim rings + field stacks (Tommy: "the default

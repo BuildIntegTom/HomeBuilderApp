@@ -93,4 +93,64 @@ describe("panelSlotBoxes3D", () => {
     const boxes = panelSlotBoxes3D(fp, {}, THICKNESS_IN, 10, allPrimary(fp));
     expect(boxes).toHaveLength(0);
   });
+
+  /**
+   * Stage 3's 3D trap, tested directly. The defensive rescale in this
+   * function exists to absorb float slop; a stopped wall's slots
+   * deliberately sum to LESS than its full tiled length, and without the
+   * stops passed in that shortfall is read as slop and every panel on the
+   * wall is stretched to fill it — drawing a solid wall exactly where the
+   * plan says to draw nothing.
+   */
+  describe("run stops — draw nothing on the unbuilt span", () => {
+    // BC is the 20ft wall of a 30x20 rectangle: it WINS both its corners, so
+    // its tiling length is its raw length and the arithmetic below is clean.
+    const fp = buildRectangleFootprint(30, 20);
+    const fullLengthIn = 20 * 12;
+
+    it("shifts the run's start and keeps every panel at its own width", () => {
+      const stopIn = 60;
+      const slots: PanelSlot[] = [
+        { type: "standard", widthIn: 90 },
+        { type: "standard", widthIn: 90 },
+      ];
+      expect(slots.reduce((s, x) => s + x.widthIn, 0)).toBe(fullLengthIn - stopIn);
+      const boxes = panelSlotBoxes3D(fp, { BC: slots }, THICKNESS_IN, 10, allPrimary(fp), {
+        BC: { startStopIn: stopIn, endStopIn: 0 },
+      }).filter((b) => b.wallId === "BC");
+      // NOT stretched: 90in stays 7.5ft. Without the stops these would each
+      // come back 120in wide.
+      expect(boxes.map((b) => b.widthFt)).toEqual([7.5, 7.5]);
+      // BC runs B(30,0) -> C(30,20), i.e. along +Z, so the stop moves the
+      // first box 5ft down the wall.
+      expect(boxes[0]!.anchorZ).toBeCloseTo(stopIn / 12, 6);
+    });
+
+    it("draws nothing at all for a fully stopped wall", () => {
+      const boxes = panelSlotBoxes3D(fp, { BC: [] }, THICKNESS_IN, 10, allPrimary(fp), {
+        BC: { startStopIn: fullLengthIn, endStopIn: 0 },
+      });
+      expect(boxes.filter((b) => b.wallId === "BC")).toHaveLength(0);
+      // ...and every other wall is untouched.
+      expect(boxes.filter((b) => b.wallId !== "BC")).toHaveLength(0); // no slots supplied for them either
+    });
+
+    it("an absent or empty stop map is byte-identical to today", () => {
+      const slots: PanelSlot[] = [
+        { type: "standard", widthIn: 120 },
+        { type: "standard", widthIn: 120 },
+      ];
+      const withNothing = panelSlotBoxes3D(fp, { BC: slots }, THICKNESS_IN, 10, allPrimary(fp));
+      expect(JSON.stringify(panelSlotBoxes3D(fp, { BC: slots }, THICKNESS_IN, 10, allPrimary(fp), {}))).toBe(
+        JSON.stringify(withNothing),
+      );
+      expect(
+        JSON.stringify(
+          panelSlotBoxes3D(fp, { BC: slots }, THICKNESS_IN, 10, allPrimary(fp), {
+            BC: { startStopIn: 0, endStopIn: 0 },
+          }),
+        ),
+      ).toBe(JSON.stringify(withNothing));
+    });
+  });
 });

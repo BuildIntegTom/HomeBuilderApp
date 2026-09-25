@@ -14,6 +14,7 @@ import {
   computeFieldFramingLayout,
   computeFloorPanelGrid,
   computeFootprintAreaSqFt,
+  classifyGableWindowsAgainstRunStop,
   computeGableTiledRow,
   computeInsetPerimeterRing,
   computeJoistLayout,
@@ -30,7 +31,6 @@ import {
   computeWallVerticalBandsForSlotWithMaxHeight,
   effectiveZonesForSlot,
   partitionLongHeaders,
-  cornerOwnership as cornerOwnershipPure,
   dragWallBounded,
   editWallLength,
   footprintIsAllRightAngles,
@@ -58,6 +58,11 @@ import {
   retileWithOpenings,
   wallCompassDirection,
   wallGeometryFor as wallGeometryForPure,
+  hasWallRunStop,
+  normalizeWallRunStop,
+  NO_WALL_RUN_STOP,
+  builtWallLengthsIn,
+  totalBuiltWallPerimeterIn as totalBuiltWallPerimeterInPure,
   isSlotBoxBeamCovered,
   zoneFromSlot,
   type BoxBeamCoverage,
@@ -77,6 +82,7 @@ import {
   type TruckDims,
   type TrussDoublingStrategy,
   type Wall,
+  type WallEnd,
   type WallRunStop,
 } from "@building-integrity/geometry";
 import {
@@ -1061,13 +1067,14 @@ export default function LayoutEditor() {
     // columnReservationWidthIn). Measured from the wall's own TRUE
     // starting corner (x=0, computeGableTiledRow's own origin) — this
     // story's own slots only start there when this wall owns its start
-    // corner; otherwise they start `thicknessIn` in (the neighbor's own
-    // corner panel fills that initial sliver instead — see
+    // corner and nothing is stopped off it; otherwise they start
+    // `runStartOffsetIn` in (the neighbor's own corner panel fills that
+    // initial sliver, and/or a Stage 3 run stop withholds more of it — see
     // WallElevationDiagram's own startOffsetIn, which this mirrors).
     const wallLengthIn = wall.lengthFt * 12;
     const { resolvedPointXsIn } = resolveGableProfilePoints(roofProfilePointHeightsFt, gableProfilePositionsInByWallId[wallId] ?? [], wallLengthIn);
     const peakXIn = resolvedPointXsIn[0] ?? wallLengthIn / 2;
-    const startOffsetIn = geometry.hasCornerStart ? 0 : thicknessIn;
+    const startOffsetIn = geometry.runStartOffsetIn;
     const existingAnchors = getOpeningAnchors(currentSlots);
     const candidateOrdinals: number[] = [];
     for (let ordinal = 1; ordinal < standardFamilyIndices.length - 1; ordinal++) candidateOrdinals.push(ordinal);
@@ -2111,20 +2118,44 @@ export default function LayoutEditor() {
   // packages/geometry/src/retile.ts for the full rationale, including the
   // reflex-corner gap fix that was originally verified by direct pixel
   // measurement). They take this component's panel parameters as explicit
-  // arguments rather than closing over them, so these 3 names are
+  // arguments rather than closing over them, so these names are
   // intentionally shadowed for the rest of this component with thin
   // partial applications supplying `thicknessIn`/`standardWidthIn`/
   // `cornerPanelWidthIn`/`bracedSeed` — every call site below already
   // expects the closure-capturing signature these provide.
-  const cornerOwnership = (fp: Footprint, primary: Set<string>) => cornerOwnershipPure(fp, primary, thicknessIn);
+  //
+  // (A `cornerOwnership` wrapper used to sit here too. Its last caller was
+  // `wallRenderOffsetIn`, which now reads `runStartOffsetIn` off
+  // `wallGeometryFor` so that the inset, the reflex extension and the Stage 3
+  // stop are folded in one place. Removed rather than left unused.)
   // `{}` (default randomFn = Math.random) — Tommy's own confirmed soft
   // default: every freshly-tiled wall gets 1 default window, plus 1
   // default door on an East/South/West-facing wall. See retile.ts's own
   // `seedDefaultOpenings` doc comment for why this only ever affects a
   // wall with no prior slots to preserve.
   const openingSeed: OpeningSeed = {};
-  const retile = (fp: Footprint, leastAccessible: CornerId, primary: Set<string>): Record<string, PanelSlot[]> =>
-    retilePure(fp, leastAccessible, primary, standardWidthIn, cornerWidthInForTiling, thicknessIn, bracedSeed, openingSeed);
+  // Stage 3's run stops ride along on all three wrappers, defaulting to the
+  // live `wallRunStopsByWallId`. The explicit override exists because React
+  // state is not readable back in the same tick: the handful of paths that
+  // rebuild or renumber wall ids have to hand the NEXT stop map to the
+  // retile they run in that same handler, not the stale one in the closure.
+  const retile = (
+    fp: Footprint,
+    leastAccessible: CornerId,
+    primary: Set<string>,
+    runStops: Record<string, WallRunStop> = wallRunStopsByWallId,
+  ): Record<string, PanelSlot[]> =>
+    retilePure(
+      fp,
+      leastAccessible,
+      primary,
+      standardWidthIn,
+      cornerWidthInForTiling,
+      thicknessIn,
+      bracedSeed,
+      openingSeed,
+      runStops,
+    );
   // Same as `retile` above, but preserves each wall's existing openings —
   // see retile.ts's own doc comment. `oldSlotsByNewWallId` resolves the
   // old-to-new wall correlation; for an id-stable operation (dragWall,
@@ -2134,6 +2165,7 @@ export default function LayoutEditor() {
     leastAccessible: CornerId,
     primary: Set<string>,
     oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined>,
+    runStops: Record<string, WallRunStop> = wallRunStopsByWallId,
   ): Record<string, PanelSlot[]> =>
     retilePreservingOpeningsPure(
       fp,
@@ -2145,9 +2177,17 @@ export default function LayoutEditor() {
       oldSlotsByNewWallId,
       bracedSeed,
       openingSeed,
+      runStops,
     );
-  const wallGeometryFor = (wallId: string) =>
-    footprint ? wallGeometryForPure(footprint, wallId, primaryCornerIds, leastAccessibleCorner, thicknessIn) : null;
+  /** `runStops` is the WHOLE map, not one wall's record: since the
+   * orphan-corner rule a stop on the neighbour changes this wall's own inset
+   * (see `cornerOwnershipWithRunStops`). Callers exploring a CANDIDATE stop
+   * pass a copy of the map with that one wall replaced, so the candidate is
+   * evaluated with its cross-wall effects included. */
+  const wallGeometryFor = (wallId: string, runStops: Record<string, WallRunStop> = wallRunStopsByWallId) =>
+    footprint
+      ? wallGeometryForPure(footprint, wallId, primaryCornerIds, leastAccessibleCorner, thicknessIn, runStops)
+      : null;
 
   const handleDraw = (widthFt: number, depthFt: number, origin: { x: number; y: number }) => {
     const fp =
@@ -2164,7 +2204,12 @@ export default function LayoutEditor() {
     setPrimaryCornerIds(nextPrimary);
     setOffsetPx(origin);
     setLeastAccessibleCorner(nextLeastAccessible);
-    setBaseWallSlots(retile(fp, nextLeastAccessible, nextPrimary));
+    // A brand-new footprint's walls have no relationship to the old ones —
+    // a run stop is a statement about a specific wall of a specific
+    // building, so it goes with the building, exactly as this path already
+    // discards openings and braced-panel decisions via `retile`.
+    setWallRunStopsByWallId({});
+    setBaseWallSlots(retile(fp, nextLeastAccessible, nextPrimary, {}));
     setShapeTool("edit");
     // A brand-new footprint has no meaningful relationship to whatever
     // second-story data existed for the old one (see the `secondStory`
@@ -2494,6 +2539,208 @@ export default function LayoutEditor() {
       [wallId]: finalSlots,
     }));
   };
+
+  // --- Smearforn Stage 3: a wall that simply ends -------------------------
+  //
+  // Tommy: "We need an addition tool setting or stop wall tool so that it is
+  // possible to make incomplete walls" — and, on what that means for the
+  // ADU: "For new construction the bare walls meet the other bare walls...
+  // just a simple end to our wall, no need to have the rest of the plan
+  // drawn." So there is no reference wall, no junction detail and no
+  // FOR-REFERENCE print treatment here. There is only a length of this
+  // wall's run that is not built.
+  //
+  // The arithmetic lives in packages/geometry's `wallRunStop.ts`; what is
+  // here is the re-tile, the refusal, and keeping the stop out of the stored
+  // record entirely when it is zero (absent = today's behaviour,
+  // byte-identical, which is every project ever saved).
+  //
+  // **⚠ A stop re-tiles EVERY wall, not just its own, and that is new in
+  // this stage.** Since Tommy's orphan-corner decision, a wall that stops at
+  // a corner it owns takes that corner with it, and the neighbour which was
+  // butting against it stops insetting into air and runs out to its own true
+  // end. So a stop on one wall genuinely changes another wall's tiling. A
+  // whole-footprint `retilePreservingOpenings` is the honest way to express
+  // that: it is the house's own lossless-retile path (openings preserved by
+  // anchor, braced decisions and hand-set widths preserved by
+  // `reconcileBracedPlacement`), and hand-picking "just the neighbours"
+  // would be a second, subtly different copy of `cornerOwnership`'s
+  // adjacency rules.
+
+  /** The whole footprint re-tiled against a candidate stop map, per story. */
+  const retileAllForRunStops = (story: "ground" | "second", runStops: Record<string, WallRunStop>) => {
+    if (!footprint) return null;
+    return retilePreservingOpenings(footprint, leastAccessibleCorner, primaryCornerIds, wallSlotsForStory(story), runStops);
+  };
+
+  /** The stop map as it would be with one end of one wall changed. Returned
+   * as a MAP rather than a single record because every consumer now needs
+   * the cross-wall view. */
+  const candidateWallRunStops = (wallId: string, end: WallEnd, nextIn: number): Record<string, WallRunStop> => {
+    const current = wallRunStopsByWallId[wallId] ?? NO_WALL_RUN_STOP;
+    const next = end === "start" ? { ...current, startStopIn: nextIn } : { ...current, endStopIn: nextIn };
+    return { ...wallRunStopsByWallId, [wallId]: next };
+  };
+
+  /**
+   * **A REFUSAL, not a clamp** — the same shape Stage 1's sub-minimum panel
+   * width uses, and for the same reason: a run the shop cannot panelize is
+   * not a thing to negotiate at the keyboard.
+   *
+   * Two things are legal that might look like they should not be. A stop of
+   * exactly ZERO is "build the whole wall". A stop covering the WHOLE wall
+   * is "this edge has no wall of ours on it at all" — the plan's own
+   * one-concept model, not a separate mode.
+   *
+   * What is refused is the band in between: a remainder too short to tile
+   * legally. Rather than re-deriving what "legal" means (corners, the
+   * safety-gap threshold, absorb) this tiles the candidate run for real and
+   * asks `findSubMinimumPanelWidths` — the same function the Review Log
+   * uses — whether the result contains a panel the shop cannot build. A
+   * stored file is NOT checked this way: limits are enforced at the point of
+   * EDIT, never at LOAD, and a project must never become unopenable because
+   * a rule tightened.
+   */
+  /**
+   * **The one length a stop on this wall is measured and clamped against:**
+   * this wall's tiling length with every OTHER wall's stops applied but none
+   * of its own.
+   *
+   * It has to be exactly this, and getting it wrong was a real defect. The
+   * refusal used to validate against the orphan-ADJUSTED length while the
+   * commit normalized against the UNADJUSTED one. Since the orphan rule only
+   * ever lengthens, those diverge by exactly one wall thickness on any wall
+   * whose neighbour is stopped at their shared corner — and at precisely the
+   * adjusted length, a stop the refusal accepted as "build nothing" was
+   * stored short, leaving a 15½in braced panel (below the confirmed 24in
+   * fabrication minimum) on a wall the app had just said carries no panels.
+   *
+   * Removing only this wall's own stop is safe and not circular: the orphan
+   * rule lets a wall's stop change its NEIGHBOUR's inset, never its own, so
+   * this wall's inset does not depend on this wall's stop.
+   */
+  const wallRunStopBasisIn = (wallId: string, stops: Record<string, WallRunStop>): number | null => {
+    const withoutOwnStop = { ...stops };
+    delete withoutOwnStop[wallId];
+    return wallGeometryFor(wallId, withoutOwnStop)?.lengthIn ?? null;
+  };
+
+  const wallRunStopRefusalMessage = (wallId: string, end: WallEnd, nextIn: number): string | null => {
+    if (nextIn < 0) return "A stop is measured in from the end of the wall, so it cannot be negative.";
+    const candidateStops = candidateWallRunStops(wallId, end, nextIn);
+    // The SAME basis `applyWallRunStopChange` normalizes against — see
+    // `wallRunStopBasisIn`. Every user-facing length below quotes it, so the
+    // app's own advice ("stop all of it") lands outside the refused band
+    // rather than back inside it.
+    const basisIn = wallRunStopBasisIn(wallId, candidateStops);
+    if (basisIn === null) return null;
+    const geometry = wallGeometryFor(wallId, candidateStops);
+    if (!geometry) return null;
+    if (geometry.stopClamped) {
+      return `This wall's run is only ${formatLengthIn(basisIn, unitSystem)} long; the two stops together ask for more than that.`;
+    }
+    // The band the whole refusal exists for, checked directly rather than
+    // inferred from whatever the tiler happens to emit: build nothing, or
+    // leave a run the shop can actually panelize. Stated up front so the
+    // message says what is wrong instead of reporting a downstream symptom
+    // (with openings anchored on a 10in run, the sum-invariant backstop
+    // below fires first and says something far less useful).
+    if (
+      !geometry.fullyStopped &&
+      toEighths(geometry.lengthIn) > 0 &&
+      toEighths(geometry.lengthIn) < toEighths(fabricationMinPanelWidthIn.value)
+    ) {
+      return `That leaves only ${formatLengthIn(geometry.lengthIn, unitSystem)} of this wall built, under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum panel the shop can build. Stop less of the wall, or stop all ${formatFeetInches(basisIn / 12)} of it.`;
+    }
+    // A stop that lands INSIDE a gable window is refused by name. Tommy's
+    // rule is that a gable window stays put on the building, so a stop
+    // either leaves one fully built or does not build it at all; cutting one
+    // in half would fabricate a part that does not exist.
+    const cutWindows = gableWindowsCutByStop(
+      wallId,
+      geometry.startStopIn > 0 ? geometry.runStartOffsetIn : 0,
+      geometry.endStopIn > 0 ? (footprint?.walls.find((w) => w.id === wallId)?.lengthFt ?? 0) * 12 - geometry.runEndOffsetIn : Infinity,
+    );
+    if (cutWindows.length > 0) {
+      const w = cutWindows[0]!;
+      return `That stop cuts through a gable window (it runs from ${formatLengthIn(w.xStartIn, unitSystem)} to ${formatLengthIn(w.xEndIn, unitSystem)} along this wall). Stop clear of it on either side — a gable window is either built or not built, never half built.`;
+    }
+    // BOTH stories, not just the ground one (the commit re-tiles both, and a
+    // second story whose openings differ can tile the same run into a
+    // sub-minimum panel the ground story does not), and EVERY wall, not just
+    // this one — since the orphan-corner rule, this stop lengthens whichever
+    // neighbour was butting into the corner it removes.
+    const storiesToCheck: ("ground" | "second")[] = stories.length > 1 ? ["ground", "second"] : ["ground"];
+    for (const story of storiesToCheck) {
+      const retiled = retileAllForRunStops(story, candidateStops);
+      if (!retiled) continue;
+      const storyLabel = story === "second" ? " on the second story" : "";
+      for (const wall of footprint?.walls ?? []) {
+        const wallGeometry = wallGeometryFor(wall.id, candidateStops);
+        if (!wallGeometry) continue;
+        const slots = retiled[wall.id] ?? [];
+        const totalIn = slots.reduce((sum, s) => sum + s.widthIn, 0);
+        const onWall = wall.id === wallId ? "" : ` on wall ${wall.id}`;
+        // Against this wall's OWN tiled length under the candidate, not
+        // against its unstopped length plus the stops. Those two differ by a
+        // wall thickness on any neighbour the orphan-corner rule just made
+        // longer — so the older form refused every legitimate stop that
+        // reached a corner, which is the main case this feature exists for.
+        if (toEighths(totalIn) !== toEighths(wallGeometry.lengthIn)) {
+          // The sum invariant outranks the edit. Refused whole rather than
+          // partly applied — same guard Stage 1's width edit carries.
+          return `That stop does not leave a run${onWall}${storyLabel} whose panels add back up to that wall. Nothing was changed.`;
+        }
+        const subMinimum = findSubMinimumPanelWidths({ [wall.id]: slots }, fabricationMinPanelWidthIn.value);
+        if (subMinimum.length > 0) {
+          return `That leaves a ${formatLengthIn(wallGeometry.lengthIn, unitSystem)} run${onWall}${storyLabel}, which cannot be panelized without a panel under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum the shop can build. Stop less of the wall, or stop all ${formatFeetInches(basisIn / 12)} of it.`;
+        }
+      }
+    }
+    return null;
+  };
+
+  const applyWallRunStopChange = (wallId: string, candidate: WallRunStop) => {
+    if (!footprint) return;
+    // The SAME basis the refusal validated against. Using the unadjusted
+    // length here while the refusal used the adjusted one is what let an
+    // accepted "build nothing" be stored a wall-thickness short.
+    const basisIn = wallRunStopBasisIn(wallId, { ...wallRunStopsByWallId, [wallId]: candidate });
+    if (basisIn === null) return;
+    const normalized = normalizeWallRunStop(candidate, basisIn);
+    const next: WallRunStop = { startStopIn: normalized.startStopIn, endStopIn: normalized.endStopIn };
+    // A zero stop is REMOVED from the record rather than stored as {0, 0}:
+    // "absent entry = fully panelized, byte-identical" is a property of the
+    // saved file, not only of the reader.
+    const nextStops: Record<string, WallRunStop> = { ...wallRunStopsByWallId };
+    if (hasWallRunStop(next)) nextStops[wallId] = next;
+    else delete nextStops[wallId];
+    setWallRunStopsByWallId(nextStops);
+    // Every wall, both stories — see the orphan-corner note above.
+    const groundSlots = retileAllForRunStops("ground", nextStops);
+    if (groundSlots) setBaseWallSlots(groundSlots);
+    if (stories.length > 1) {
+      const secondSlots = retileAllForRunStops("second", nextStops);
+      if (secondSlots) setWallSlotsForStory("second", () => secondSlots);
+    }
+    // The selection almost certainly points at a slot index that no longer
+    // means what it did — same reset `handleToggleOpening` does.
+    setSelectedSlot(null);
+  };
+
+  const handleSetWallRunStop = (wallId: string, end: WallEnd, nextIn: number) => {
+    const current = wallRunStopsByWallId[wallId] ?? NO_WALL_RUN_STOP;
+    applyWallRunStopChange(
+      wallId,
+      end === "start" ? { ...current, startStopIn: nextIn } : { ...current, endStopIn: nextIn },
+    );
+  };
+
+  /** Both ends at once. Deliberately one call rather than two `handleSet`
+   * calls in a row — React state is not readable back in the same tick, so
+   * the second would rebuild its candidate from the pre-clear record and
+   * put the first stop straight back. */
+  const handleClearWallRunStop = (wallId: string) => applyWallRunStopChange(wallId, NO_WALL_RUN_STOP);
 
   const handleSetLeastAccessibleCorner = (cornerId: CornerId) => {
     setLeastAccessibleCorner(cornerId);
@@ -3282,18 +3529,27 @@ export default function LayoutEditor() {
     }
     const newCornersById = new Map(fp.corners.map((c) => [c.id, c.point]));
     const oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined> = {};
+    const nextRunStops: Record<string, WallRunStop> = {};
     for (const w of fp.walls) {
       const start = newCornersById.get(w.startCorner)!;
       const end = newCornersById.get(w.endCorner)!;
       const oldWallId = oldWallIdByPointPair.get(`${pointKey(start)}|${pointKey(end)}`);
       if (oldWallId) oldSlotsByNewWallId[w.id] = baseWallSlots[oldWallId];
+      // A run stop is keyed by wall id, so it has to ride the SAME
+      // point-pair correlation the slots do — left un-remapped it would
+      // silently stop a different wall than the one the user stopped.
+      // Deliberately nothing is carried onto the bumped-out wall itself
+      // (excluded from the map above), for the same reason its openings
+      // aren't: its old run no longer exists as a run.
+      if (oldWallId && wallRunStopsByWallId[oldWallId]) nextRunStops[w.id] = wallRunStopsByWallId[oldWallId]!;
     }
 
     setFootprint(fp);
     setIsBumpedOut(true);
     setPrimaryCornerIds(nextPrimary);
     setLeastAccessibleCorner(nextLeastAccessible);
-    setBaseWallSlots(retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId));
+    setWallRunStopsByWallId(nextRunStops);
+    setBaseWallSlots(retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops));
     setShapeTool("edit");
     // Only the bump-out's own new jog wall(s) (no old counterpart at all)
     // can be freshly seeded here — every OTHER wall keeps its real,
@@ -3346,12 +3602,19 @@ export default function LayoutEditor() {
         }
         const newCornersById = new Map(fp.corners.map((c) => [c.id, c.point]));
         const oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined> = {};
+        const nextRunStops: Record<string, WallRunStop> = {};
         for (const w of fp.walls) {
           const start = newCornersById.get(w.startCorner)!;
           const end = newCornersById.get(w.endCorner)!;
           const draggedWallId = draggedWallIdByPointPair.get(`${pointKey(start)}|${pointKey(end)}`);
           if (draggedWallId) oldSlotsByNewWallId[w.id] = baseWallSlots[draggedWallId];
+          // Same reason as the bump-out path: a collapse renumbers ids, and
+          // a run stop keyed by a stale id stops the wrong wall.
+          if (draggedWallId && wallRunStopsByWallId[draggedWallId]) {
+            nextRunStops[w.id] = wallRunStopsByWallId[draggedWallId]!;
+          }
         }
+        setWallRunStopsByWallId(nextRunStops);
 
         // leastAccessibleCorner is a site-wide marker corner id — if the
         // collapse renumbered ids, the old value may no longer point at any
@@ -3367,7 +3630,9 @@ export default function LayoutEditor() {
           : ([...nextPrimary][0] ?? fp.corners[0]!.id);
         setLeastAccessibleCorner(nextLeastAccessible);
 
-        setBaseWallSlots(retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId));
+        setBaseWallSlots(
+          retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops),
+        );
       }
       return;
     }
@@ -3406,14 +3671,67 @@ export default function LayoutEditor() {
   // instead, with no separate offset needed.
   const wallRenderOffsetIn = useMemo(() => {
     if (!footprint) return {};
-    const ownership = cornerOwnership(footprint, primaryCornerIds);
     const offsets: Record<string, number> = {};
     for (const wall of footprint.walls) {
-      const { start } = ownership[wall.id]!;
-      offsets[wall.id] = start.extraLengthIn > 0 ? -start.extraLengthIn : start.insetAmount;
+      // `runStartOffsetIn` folds the butt-joint inset, the reflex extension
+      // and (Stage 3) any start stop into one number. Every plan-view
+      // consumer — the printable PlanViewDiagram, the live FootprintCanvas
+      // and the panel snap lines — reads this one map, so they cannot
+      // disagree about where a wall's content starts.
+      offsets[wall.id] = wallGeometryFor(wall.id)?.runStartOffsetIn ?? 0;
     }
     return offsets;
-  }, [footprint, thicknessIn, primaryCornerIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
+  }, [footprint, thicknessIn, primaryCornerIds, leastAccessibleCorner, wallRunStopsByWallId]);
+
+  /**
+   * Stage 3 — where each wall's unbuilt span(s) actually sit, as inches
+   * along that wall from its own TRUE start corner. Derived once here (the
+   * only place that has both corner ownership and the stops) and handed to
+   * every plan-view renderer, so the printable sheet and the live canvas
+   * cannot draw the boundary in two different places.
+   *
+   * Note the span starts where this wall's run WOULD have started, not at
+   * the corner point: where the neighbour owns the corner, its panel really
+   * is in that first wall-thickness of this wall's line, and a dashed
+   * "nothing here" line drawn across it would be a lie.
+   */
+  const wallRunSpanData = useMemo(() => {
+    const unbuilt: Record<string, { fromIn: number; toIn: number }[]> = {};
+    /** The complement: where this wall's run actually STARTS and ENDS, in
+     * the same corner-origin coordinates. The gable row reads this — it is a
+     * panel generator, not a total, so it has to stop where the wall does. */
+    const built: Record<string, { builtStartIn: number; builtEndIn: number }> = {};
+    if (!footprint) return { unbuilt, built };
+    for (const wall of footprint.walls) {
+      const geometry = wallGeometryFor(wall.id);
+      if (!geometry || (geometry.startStopIn <= 0 && geometry.endStopIn <= 0)) continue;
+      const wallLengthIn = wall.lengthFt * 12;
+      const forWall: { fromIn: number; toIn: number }[] = [];
+      if (geometry.startStopIn > 0) {
+        forWall.push({ fromIn: geometry.runStartOffsetIn - geometry.startStopIn, toIn: geometry.runStartOffsetIn });
+      }
+      if (geometry.endStopIn > 0) {
+        forWall.push({
+          fromIn: wallLengthIn - geometry.runEndOffsetIn,
+          toIn: wallLengthIn - geometry.runEndOffsetIn + geometry.endStopIn,
+        });
+      }
+      unbuilt[wall.id] = forWall;
+      // Measured to where the PANELS actually start, not to the bare stop:
+      // on a wall that butts a neighbour the run already begins a
+      // wall-thickness in, and clamping the gable to the bare stop would
+      // leave a gable panel hanging over that much unbuilt wall.
+      built[wall.id] = {
+        builtStartIn: geometry.startStopIn > 0 ? geometry.runStartOffsetIn : 0,
+        builtEndIn: geometry.endStopIn > 0 ? wallLengthIn - geometry.runEndOffsetIn : wallLengthIn,
+      };
+    }
+    return { unbuilt, built };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
+  }, [footprint, thicknessIn, primaryCornerIds, leastAccessibleCorner, wallRunStopsByWallId]);
+  const wallUnbuiltSpansIn = wallRunSpanData.unbuilt;
+  const gableRunStopByWallId = wallRunSpanData.built;
 
   // Under "loose-packed-braced" (today's default system), braced-panel
   // placement is now real stored state directly in `baseWallSlots` (Tommy:
@@ -3614,6 +3932,51 @@ export default function LayoutEditor() {
   // full-ridge-height preview) — same computeGableTiledRow call shape
   // WallElevationDiagram.tsx already uses for its own SVG, so the two stay
   // consistent. Feeds allInstances below.
+  /** This wall's roof-profile anchor points, in `computeGableTiledRow`'s own
+   * absolute coordinate space. Extracted so the gable row and the run-stop
+   * refusal below cannot build them differently. */
+  const gableProfilePointsFor = (wall: Wall): RoofProfilePoint[] => {
+    const wallLengthIn = wall.lengthFt * 12;
+    const storedPositions = gableProfilePositionsInByWallId[wall.id] ?? [];
+    return roofProfilePointHeightsFt.map((heightFt, i) => {
+      const defaultXIn = roofProfilePointHeightsFt.length === 1 ? wallLengthIn / 2 : ((i + 1) * wallLengthIn) / 3;
+      const storedXIn = storedPositions[i];
+      return {
+        xIn: storedXIn ?? defaultXIn,
+        heightIn: gableEaveHeightIn + heightFt * 12,
+        isExplicitPosition: storedXIn != null,
+      };
+    });
+  };
+
+  /**
+   * Gable windows a candidate stop would CUT THROUGH on this wall.
+   *
+   * Tommy's rule is that a gable window stays put on the building, so a stop
+   * either leaves a window fully built or does not build it at all. The one
+   * case neither of those covers is a stop landing inside a window, and that
+   * is refused rather than resolved: half a window is a fabricated part that
+   * does not exist, and silently swallowing a whole one is worse.
+   */
+  const gableWindowsCutByStop = (wallId: string, builtStartIn: number, builtEndIn: number) => {
+    const wall = footprint?.walls.find((w) => w.id === wallId);
+    if (!wall || !gableEndWallIds.has(wallId)) return [];
+    return classifyGableWindowsAgainstRunStop(
+      wall.lengthFt * 12,
+      gableEaveHeightIn,
+      gableProfilePointsFor(wall),
+      standardWidthIn,
+      trussPlateInsetIn,
+      true,
+      heelHeightIn,
+      roofBearingAnchorMode,
+      gableWindowAnchorsByWallId[wallId] ?? [],
+      gableStructuralPanelWallIds.has(wallId) ? COLUMN_TOTAL_WIDTH_IN : undefined,
+      builtStartIn,
+      builtEndIn,
+    ).straddling;
+  };
+
   const gableTilesByWallId = useMemo(() => {
     if (!footprint) return {};
     const result: Record<
@@ -3634,25 +3997,14 @@ export default function LayoutEditor() {
     for (const wall of footprint.walls) {
       if (!gableEndWallIds.has(wall.id)) continue;
       const wallLengthIn = wall.lengthFt * 12;
-      const storedPositions = gableProfilePositionsInByWallId[wall.id] ?? [];
-      const points: RoofProfilePoint[] = roofProfilePointHeightsFt.map((heightFt, i) => {
-        // Default position: the single midpoint for a peaked (1-point)
-        // profile, or a symmetric flat run spanning the middle third for a
-        // flat-top (2-point) profile — same "auto-centered, never snaps"
-        // convention the old single-peak default already had.
-        const defaultXIn = roofProfilePointHeightsFt.length === 1 ? wallLengthIn / 2 : ((i + 1) * wallLengthIn) / 3;
-        const storedXIn = storedPositions[i];
-        return {
-          xIn: storedXIn ?? defaultXIn,
-          // heightFt is a RISE above the eave, not an absolute height (see
-          // roofProfilePointHeightsFt's own doc comment) — computeGableTiledRow
-          // still expects an absolute anchor in the same coordinate space
-          // as gableEaveHeightIn, so convert here at the call site rather
-          // than changing that function's own (still-absolute) contract.
-          heightIn: gableEaveHeightIn + heightFt * 12,
-          isExplicitPosition: storedXIn != null,
-        };
-      });
+      // Default position: the single midpoint for a peaked (1-point) profile,
+      // or a symmetric flat run spanning the middle third for a flat-top
+      // (2-point) profile — same "auto-centered, never snaps" convention the
+      // old single-peak default already had. `heightFt` is a RISE above the
+      // eave, not an absolute height (see roofProfilePointHeightsFt's own doc
+      // comment); `gableProfilePointsFor` converts it, so that
+      // `computeGableTiledRow`'s still-absolute contract is unchanged.
+      const points: RoofProfilePoint[] = gableProfilePointsFor(wall);
       const tiles = computeGableTiledRow(
         wallLengthIn,
         gableEaveHeightIn,
@@ -3664,6 +4016,11 @@ export default function LayoutEditor() {
         roofBearingAnchorMode,
         gableWindowAnchorsByWallId[wall.id] ?? [],
         gableStructuralPanelWallIds.has(wall.id) ? COLUMN_TOTAL_WIDTH_IN : undefined,
+        // Stage 3: gable panels are generated only above the part of this
+        // wall that is actually built. The ridge and roof profile still span
+        // the full wall — only the panel row clamps. Tommy's decision.
+        gableRunStopByWallId[wall.id]?.builtStartIn ?? 0,
+        gableRunStopByWallId[wall.id]?.builtEndIn ?? wallLengthIn,
       );
       // The real high edge is capped to maxGablePanelHeightIn's own
       // fabrication ceiling (Tommy: "gable panels...can be up to 8' tall")
@@ -3692,6 +4049,7 @@ export default function LayoutEditor() {
       });
     }
     return result;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- gableProfilePointsFor is a per-render partial application; its own inputs are listed
   }, [
     footprint,
     gableEndWallIds,
@@ -3704,6 +4062,16 @@ export default function LayoutEditor() {
     trussPlateInsetIn,
     heelHeightIn,
     roofBearingAnchorMode,
+    // ⚠ Read at line ~3650 to clamp the row to the built run. Missing, the
+    // gable row held its PREVIOUS clamp when a stop was set or cleared —
+    // and this memo feeds `allInstances`, so the output was gable panels
+    // fabricated, priced, weighed, BOM'd and cut-listed above a span the
+    // wall declares carries none. Exactly what Tommy's clamp exists to
+    // prevent, arrived at by staleness instead of by design, and visibly
+    // inconsistent with the elevation (which reads the same map through a
+    // memo that DOES depend on it).
+    gableRunStopByWallId,
+    gableStructuralPanelWallIds,
   ]);
 
   // Real span/pitch/run for the Roof tab's own truss layout editor (Tommy:
@@ -3940,12 +4308,65 @@ export default function LayoutEditor() {
   // bearing) — Tommy: whichever the building is, it needs one of these on
   // top of the wall panels. 3D preview uses a small illustrative length
   // (10ft); the insulation quantity below uses the footprint's actual
-  // total wall perimeter, so it's a real whole-building material total,
+  // BUILT wall perimeter, so it's a real whole-building material total,
   // not just an illustrative snippet.
   const ASSEMBLY_PREVIEW_LENGTH_IN = 120;
-  const totalWallPerimeterIn = useMemo(
-    () => (footprint ? footprint.walls.reduce((sum, w) => sum + w.lengthFt * 12, 0) : 0),
-    [footprint],
+  /**
+   * **Stage 3's acceptance criterion, and the trap it names.** No panels
+   * means no panel instances, so everything derived FROM instances — price,
+   * weight, carbon, BOM, cut list, shipping — is already right on a wall
+   * that stops short. Everything derived from `wall.lengthFt` is not, and
+   * over-counts SILENTLY: a plausible plaster total for a wall that was
+   * never built.
+   *
+   * So: one derivation of how much of each wall is actually BUILT, and
+   * every per-wall-length total that describes the WALL ASSEMBLY reads it.
+   * Measured off `lengthFt * 12` rather than off the tiling length on
+   * purpose — corner insets are ownership bookkeeping that nets out around
+   * a closed ring, and today's perimeter total is exactly the raw sum, so
+   * subtracting only the stops keeps an unstopped project byte-identical.
+   *
+   * **What deliberately does NOT read this:** the floor, the foundation and
+   * the roof. They still extend to the line where the wall stops — that is
+   * the whole reason the footprint polygon stays closed. Those three read
+   * the footprint polygon (`computeFootprintAreaSqFt`, `perimeterRing`,
+   * `pierGrid`, `computeRoofBearingSegments`, the gable/ridge geometry),
+   * never a wall's panel run, and they were each checked rather than
+   * assumed — see the Stage 3 as-built audit.
+   *
+   * There is deliberately no second "raw perimeter" total left in this
+   * component. Every consumer the old one had describes the wall assembly,
+   * so two near-identical perimeter numbers one line apart would only ever
+   * be a way to pick the wrong one.
+   */
+  /** Each wall's UNSTOPPED tiling length — the same base `applyWallRunStop`
+   * clamps a stop against. Fed to `builtWallLengthsIn` so a clamped stop
+   * cannot make the tiler build nothing while the totals still count the
+   * butt-joint inset as built wall. */
+  const wallTilingLengthInByWallId = useMemo(() => {
+    const lengths: Record<string, number> = {};
+    if (!footprint) return lengths;
+    for (const wall of footprint.walls) {
+      // `{}` explicitly, NOT the live-stops default. `unstoppedLengthIn` is
+      // derived from BASE corner ownership and so is genuinely independent
+      // of every stop in the building — which is what makes omitting
+      // `wallRunStopsByWallId` from the deps below correct rather than the
+      // fourth instance of this stage's recurring stale-memo bug. Passing
+      // `{}` makes that independence visible at the call site instead of
+      // leaving it as a fact about a default argument.
+      const geometry = wallGeometryFor(wall.id, {});
+      if (geometry) lengths[wall.id] = geometry.unstoppedLengthIn;
+    }
+    return lengths;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
+  }, [footprint, thicknessIn, primaryCornerIds, leastAccessibleCorner]);
+  const builtWallLengthInByWallId = useMemo(
+    () => (footprint ? builtWallLengthsIn(footprint, wallRunStopsByWallId, wallTilingLengthInByWallId) : {}),
+    [footprint, wallRunStopsByWallId, wallTilingLengthInByWallId],
+  );
+  const totalBuiltWallPerimeterIn = useMemo(
+    () => totalBuiltWallPerimeterInPure(footprint, wallRunStopsByWallId, wallTilingLengthInByWallId),
+    [footprint, wallRunStopsByWallId, wallTilingLengthInByWallId],
   );
   // Box beam is now a per-wall (or per-section-of-a-wall) choice (Tommy:
   // "options for being a ring all the way around or just one section of
@@ -3968,7 +4389,11 @@ export default function LayoutEditor() {
   }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId]);
   const trussPlateWallLengthTotalIn = useMemo(() => {
     if (!footprint) return 0;
-    if (stories.length <= 1) return totalWallPerimeterIn;
+    // A truss plate bears on TOP of this wall's panels — where no panels are
+    // built there is no plate, so the single-story total is the BUILT
+    // perimeter. (The multi-story branch below sums real per-wall segments
+    // off the second story's own slots, so it already shrinks for free.)
+    if (stories.length <= 1) return totalBuiltWallPerimeterIn;
     let totalIn = 0;
     for (const wall of footprint.walls) {
       const slots = secondStory?.wallSlots[wall.id] ?? [];
@@ -3977,7 +4402,7 @@ export default function LayoutEditor() {
       }
     }
     return totalIn;
-  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, totalWallPerimeterIn]);
+  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, totalBuiltWallPerimeterIn]);
   const trussPlatePreviewMembers = useMemo(
     () => buildTrussPlateMembers(ASSEMBLY_PREVIEW_LENGTH_IN, thicknessIn, trussPlateInsetIn),
     [thicknessIn, trussPlateInsetIn],
@@ -4105,12 +4530,15 @@ export default function LayoutEditor() {
     let threeQuarterSqFt = computePlywoodAreaSqFt(allRealMembers, 0.75);
     const halfSqFt = computePlywoodAreaSqFt(allRealMembers, 0.5);
     // Roof-bearing assembly's own plywood cap(s) — box beam has both a top
-    // and bottom cap, truss plate just one — over the real wall perimeter.
+    // and bottom cap, truss plate just one — over the real BUILT wall
+    // perimeter. The panel-member half of this tally already comes from
+    // `allRealMembers` (i.e. from panel instances), so it is correct for
+    // free; only this wall-length-derived half needed the stops.
     threeQuarterSqFt += stories.length > 1
-      ? (2 * totalWallPerimeterIn * thicknessIn) / 144
-      : (totalWallPerimeterIn * thicknessIn) / 144;
+      ? (2 * totalBuiltWallPerimeterIn * thicknessIn) / 144
+      : (totalBuiltWallPerimeterIn * thicknessIn) / 144;
     return { threeQuarterSqFt, halfSqFt };
-  }, [allRealMembers, stories, totalWallPerimeterIn, thicknessIn]);
+  }, [allRealMembers, stories, totalBuiltWallPerimeterIn, thicknessIn]);
 
   const plywoodThreeQuarterSheetCount = Math.ceil(plywoodAreaSqFt.threeQuarterSqFt / PLYWOOD_SHEET_AREA_SQFT);
   const plywoodHalfSheetCount = Math.ceil(plywoodAreaSqFt.halfSqFt / PLYWOOD_SHEET_AREA_SQFT);
@@ -4301,8 +4729,8 @@ export default function LayoutEditor() {
   // Plaster Master (Tommy: "total materials and total price for plaster
   // options... link whether this turns on or off to the exterior or
   // interior finish options") — net plastered area auto-derives from the
-  // drawn footprint (wall perimeter x wall height, doubled if Second Story
-  // is on, since it mirrors story 1's own footprint) minus each window/
+  // drawn footprint (BUILT wall perimeter x wall height, doubled if Second
+  // Story is on, since it mirrors story 1's own footprint) minus each window/
   // door's own clear Rough Opening area (you don't plaster over the
   // opening itself). Same area/RO-count applies to both faces of the same
   // wall, so it's computed once and shared by whichever side(s) are active.
@@ -4314,7 +4742,14 @@ export default function LayoutEditor() {
       return sum + (roWidthIn * roHeightIn) / 144;
     }, 0);
   const plasterFloorCount = stories.length;
-  const plasterGrossWallAreaSqFt = stories.reduce((sum, s) => sum + (totalWallPerimeterIn / 12) * s.wallHeightFt, 0);
+  // BUILT perimeter, not raw: you do not plaster a wall that was never
+  // built. This is the first total the plan names as a suspect and it was
+  // over-counting by the full unbuilt span times the wall height on every
+  // story.
+  const plasterGrossWallAreaSqFt = stories.reduce(
+    (sum, s) => sum + (totalBuiltWallPerimeterIn / 12) * s.wallHeightFt,
+    0,
+  );
   const plasterNetAreaSqFt = Math.max(0, plasterGrossWallAreaSqFt - plasterOpeningsAreaSqFtPerFloor * plasterFloorCount);
   const plasterRoughOpeningCount = allInstances.filter((inst) => inst.panelType === "header").length * plasterFloorCount;
 
@@ -4332,8 +4767,17 @@ export default function LayoutEditor() {
 
   const intelloWallRuns = useMemo(() => {
     if (!footprint) return [];
-    return stories.flatMap((story) => footprint.walls.map((w) => ({ lengthFt: w.lengthFt, heightFt: story.wallHeightFt })));
-  }, [footprint, stories]);
+    // Per-wall BUILT length, not raw — an unbuilt span gets no air-tightness
+    // membrane, and `computeMembraneCoverage` also counts vertical strips
+    // per run, so a raw length inflates the seam tape figure too. A wall
+    // built to zero drops out of the run list entirely rather than
+    // contributing a zero-length strip.
+    return stories.flatMap((story) =>
+      footprint.walls
+        .map((w) => ({ lengthFt: (builtWallLengthInByWallId[w.id] ?? w.lengthFt * 12) / 12, heightFt: story.wallHeightFt }))
+        .filter((run) => run.lengthFt > 0),
+    );
+  }, [footprint, stories, builtWallLengthInByWallId]);
   // Flat plan-view placeholder — see computeFootprintAreaSqFt's own doc
   // comment on why real sloped roof area isn't computable yet.
   const intelloRoofAreaSqFt = useMemo(() => (footprint ? computeFootprintAreaSqFt(footprint) : 0), [footprint]);
@@ -4972,10 +5416,25 @@ export default function LayoutEditor() {
     for (const wall of footprint.walls) {
       const direction = wallCompassDirection(wall, footprint);
       const slots = stories.length > 1 ? (secondStory?.wallSlots[wall.id] ?? []) : [];
+      // The single-story plate spans this wall's BUILT run, not its raw
+      // length — a plate bears on top of panels, and a stopped wall has
+      // none there to bear on. This one drives a real FABRICATION sheet, so
+      // an over-long plate here is a part cut wrong, not just a total.
+      // (The multi-story branch reads the second story's own slots and so
+      // already shrinks for free.)
+      const builtLengthIn = builtWallLengthInByWallId[wall.id] ?? wall.lengthFt * 12;
       const segments =
         stories.length > 1
           ? computeRoofBearingSegments(slots, boxBeamCoverageByWallId[wall.id])
-          : [{ kind: "truss-plate" as const, startXIn: 0, lengthIn: wall.lengthFt * 12 }];
+          : // A wall built to zero emits NO plate. Without this guard it
+            // produced a `truss-plate-0.000` fabrication group — a real shop
+            // sheet for a 0in part, complete with a Timber HP volume and
+            // weight line. `intelloWallRuns` already filters its zero-length
+            // runs out for the same reason; so does
+            // `computeRoofBearingSegments`, which returns [] on an empty run.
+            builtLengthIn > 0
+            ? [{ kind: "truss-plate" as const, startXIn: 0, lengthIn: builtLengthIn }]
+            : [];
       for (const seg of segments) {
         const key = `${seg.kind}-${seg.lengthIn.toFixed(3)}`;
         const existing = groups.get(key);
@@ -5026,7 +5485,7 @@ export default function LayoutEditor() {
         instances: walls.map((w) => ({ name: `Wall ${w.id} (${w.direction})` })),
       };
     });
-  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, boxBeamSizeId, thicknessIn, trussPlateInsetIn]);
+  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, boxBeamSizeId, thicknessIn, trussPlateInsetIn, builtWallLengthInByWallId]);
 
   // Mid-Wall Bond Beam's own Shop Fabrication pages — same "walk
   // walls/stories directly, bypass allInstances" shape as
@@ -5613,8 +6072,50 @@ export default function LayoutEditor() {
     [baseWallSlots, secondStory],
   );
 
+  /**
+   * One Review Log entry per wall carrying an unbuilt span.
+   *
+   * **A wall that stops short is by definition an incomplete design**, and
+   * the engineer reading the Review Log is exactly the person who must not
+   * find that out from the drawing alone. `pending-BI-confirmation` is the
+   * only non-confirmed status the log has, and it is the honest one here:
+   * the entry is not claiming a value needs sourcing, it is claiming this
+   * design is not finished — the same way the sub-minimum-panel entries
+   * above use it for a condition rather than for a number.
+   *
+   * A stop that had to be CLAMPED (stored inches that no longer fit the
+   * wall, most likely because the wall was shortened afterwards) says so in
+   * its own sentence rather than being quietly absorbed.
+   */
+  const wallRunStopReviewEntries = useMemo(() => {
+    if (!footprint) return [];
+    const entries: { label: string; status: "pending-BI-confirmation"; note: string }[] = [];
+    for (const wall of footprint.walls) {
+      if (!hasWallRunStop(wallRunStopsByWallId[wall.id])) continue;
+      const geometry = wallGeometryFor(wall.id);
+      if (!geometry) continue;
+      const direction = wallCompassDirection(wall, footprint);
+      const spans: string[] = [];
+      if (geometry.startStopIn > 0) spans.push(`${formatLengthIn(geometry.startStopIn, unitSystem)} at the start end`);
+      if (geometry.endStopIn > 0) spans.push(`${formatLengthIn(geometry.endStopIn, unitSystem)} at the far end`);
+      const totalIn = geometry.startStopIn + geometry.endStopIn;
+      entries.push({
+        label: geometry.fullyStopped
+          ? `Wall ${direction} is not built at all (${wall.id})`
+          : `Wall ${direction} stops short — ${formatLengthIn(totalIn, unitSystem)} unbuilt (${wall.id})`,
+        status: "pending-BI-confirmation" as const,
+        note: geometry.fullyStopped
+          ? `The whole ${formatFeetInches(wall.lengthFt)} of this edge carries no panels — it is an edge of the building with no wall of ours on it. The footprint polygon still closes through it, so the floor, foundation and roof all still reach this line; only the panel run is absent. Nothing is drawn here in 3D, and no panel, price, weight or cut-list line comes from it.${geometry.stopClamped ? " The stored stop was longer than the wall and was reduced to fit — check it against the drawing." : ""}`
+          : `${spans.join(" and ")} of this ${formatFeetInches(wall.lengthFt)} wall is deliberately not panelized${geometry.hasCornerStart && geometry.hasCornerEnd ? "" : ", and the corner panel at a stopped end is not built either"}. The remaining ${formatLengthIn(geometry.lengthIn, unitSystem)} is panelized normally. The footprint stays closed, so floor, foundation and roof still reach the full wall line — this is an incomplete PANEL RUN, not an incomplete shape, and it needs a reviewer's eye for that reason.${geometry.stopClamped ? " The stored stop no longer fits this wall and was reduced to fit — check it against the drawing." : ""}`,
+      });
+    }
+    return entries;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
+  }, [footprint, wallRunStopsByWallId, primaryCornerIds, leastAccessibleCorner, thicknessIn, unitSystem]);
+
   const reviewLog = useMemo(() => {
     const entries = toReviewLog([
+      ...wallRunStopReviewEntries,
       { label: "Target density", ...targetDensityKgM3 },
       { label: "Default panel thickness", ...looseDensePackDefaultThicknessIn },
       { ...interior, label: "Interior finish: " + interior.label },
@@ -5690,6 +6191,7 @@ export default function LayoutEditor() {
     estimatedTotalShearLb,
     subMinimumPanels,
     unitSystem,
+    wallRunStopReviewEntries,
   ]);
 
   // Site Properties dropdown content (Tommy: "middle of the left side of
@@ -6490,6 +6992,71 @@ export default function LayoutEditor() {
         >
           {stories.length > 1 ? "Remove Layer" : "Add Layer"}
         </button>
+      </div>
+      {/* Stage 3 — stop this wall short. Two fields, one per end, in the
+          same note every other wall-level decision already lives in. Not a
+          checkbox and not a mode: a stop is a LENGTH, and zero is the
+          normal state, so the field's own value says everything there is to
+          say about whether the wall is complete. */}
+      <div className={elevationStyles.beamSection}>
+        <span className={elevationStyles.sectionLabel}>Stop Wall — Wall {elevationWall.id}</span>
+        <p className={elevationStyles.helpText}>
+          How much of this wall is deliberately NOT built (Tommy: &ldquo;a stop wall tool so that it is possible to make
+          incomplete walls&rdquo;). The building&apos;s shape does not change — the floor, foundation and roof still reach
+          the full wall line, and the span draws as a dashed boundary with its own <strong>NO PANELS</strong> dimension.
+          A stop that reaches a corner takes that corner panel with it.
+        </p>
+        <label style={{ display: "block", marginTop: 6 }}>
+          Unbuilt at the start end{" "}
+          <LengthInput
+            id={`wall-run-stop-start-${elevationWall.id}`}
+            title="Inches in from this wall's start corner that carry no panels. 0 builds the whole end."
+            // The value actually IN EFFECT (grid-snapped, and clamped if the
+            // wall has since been shortened under it), never the raw stored
+            // number — showing one number while using another is the exact
+            // failure `LengthInput` exists to remove.
+            value={wallGeometryFor(elevationWall.id)?.startStopIn ?? 0}
+            domain="in"
+            ariaLabel="Unbuilt span at the wall's start end, in inches"
+            style={{ width: 72 }}
+            validate={(next) => wallRunStopRefusalMessage(elevationWall.id, "start", next)}
+            onCommit={(next) => handleSetWallRunStop(elevationWall.id, "start", next)}
+          />
+        </label>
+        <label style={{ display: "block", marginTop: 6 }}>
+          Unbuilt at the far end{" "}
+          <LengthInput
+            id={`wall-run-stop-end-${elevationWall.id}`}
+            title="Inches in from this wall's far corner that carry no panels. 0 builds the whole end."
+            value={wallGeometryFor(elevationWall.id)?.endStopIn ?? 0}
+            domain="in"
+            ariaLabel="Unbuilt span at the wall's far end, in inches"
+            style={{ width: 72 }}
+            validate={(next) => wallRunStopRefusalMessage(elevationWall.id, "end", next)}
+            onCommit={(next) => handleSetWallRunStop(elevationWall.id, "end", next)}
+          />
+        </label>
+        {hasWallRunStop(wallRunStopsByWallId[elevationWall.id]) && (
+          <p className={elevationStyles.helpText}>
+            {formatLengthIn(
+              (wallGeometryFor(elevationWall.id)?.startStopIn ?? 0) + (wallGeometryFor(elevationWall.id)?.endStopIn ?? 0),
+              unitSystem,
+            )}{" "}
+            of this{" "}
+            {formatFeetInches(elevationWall.lengthFt)} wall carries no panels
+            {wallGeometryFor(elevationWall.id)?.fullyStopped
+              ? " — this edge has no wall of ours on it at all."
+              : `; the remaining ${formatLengthIn(wallGeometryFor(elevationWall.id)?.lengthIn ?? 0, unitSystem)} is panelized normally.`}{" "}
+            This wall is listed in the Review Log as an incomplete design.{" "}
+            <button
+              type="button"
+              className={elevationStyles.actionButton}
+              onClick={() => handleClearWallRunStop(elevationWall.id)}
+            >
+              Build the whole wall
+            </button>
+          </p>
+        )}
       </div>
       {renderMidWallBeamSection(elevationWall.id, "ground", midWallBeamsByStoryAndWallId.ground[elevationWall.id] ?? [], wallHeightFt * 12)}
       {stories.length > 1 &&
@@ -8012,8 +8579,18 @@ export default function LayoutEditor() {
                   wallHeightFt={wallHeightFt}
                   allInstances={allInstances}
                   secondStoryAllInstances={secondStoryAllInstances}
-                  hasCornerStart={wallGeometryFor(elevationWall.id)?.hasCornerStart ?? true}
-                  hasCornerEnd={wallGeometryFor(elevationWall.id)?.hasCornerEnd ?? true}
+                  // The ADJUSTED insets, deliberately not raw ownership: where
+                  // the neighbour owns this corner AND is building it, its
+                  // panel really is in this end of the line and the "adjacent
+                  // wall" filler sliver belongs on the drawing. Where the
+                  // neighbour stops short, the corner does not exist, this wall
+                  // runs out to its own true end, and nothing is drawn there.
+                  startInsetIn={wallGeometryFor(elevationWall.id)?.startInsetIn ?? 0}
+                  endInsetIn={wallGeometryFor(elevationWall.id)?.endInsetIn ?? 0}
+                  startStopIn={wallGeometryFor(elevationWall.id)?.startStopIn ?? 0}
+                  endStopIn={wallGeometryFor(elevationWall.id)?.endStopIn ?? 0}
+                  gableBuiltStartIn={gableRunStopByWallId[elevationWall.id]?.builtStartIn}
+                  gableBuiltEndIn={gableRunStopByWallId[elevationWall.id]?.builtEndIn}
                   secondStorySlots={secondStory?.wallSlots[elevationWall.id]}
                   secondStoryWallHeightFt={secondStory?.wallHeightFt}
                   onToggleOpening={handleToggleOpening}
@@ -8075,6 +8652,7 @@ export default function LayoutEditor() {
                   offsetPx={offsetPx}
                   wallSlots={effectiveViewedStoryId === "ground" ? overlayWallSlots : (secondStory?.wallSlots ?? {})}
                   wallStartOffsetIn={wallRenderOffsetIn}
+                  wallUnbuiltSpansIn={wallUnbuiltSpansIn}
                   wallThicknessIn={thicknessIn}
                   wallHeightFt={effectiveViewedStoryId === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt)}
                   includeNailer={includeNailer}
@@ -8110,6 +8688,8 @@ export default function LayoutEditor() {
                   thicknessIn={thicknessIn}
                   includeNailer={includeNailer}
                   primaryCornerIds={primaryCornerIds}
+                  wallRunStopsByWallId={wallRunStopsByWallId}
+                  wallTilingLengthInByWallId={wallTilingLengthInByWallId}
                   secondStory={stories[1] ?? null}
                   isSquareBalePanelization={panelizationType === "square-bale-panels"}
                   squareBaleStudConfig={squareBaleStudConfig}
@@ -8190,6 +8770,8 @@ export default function LayoutEditor() {
               thicknessIn={thicknessIn}
               includeNailer={includeNailer}
               primaryCornerIds={primaryCornerIds}
+              wallRunStopsByWallId={wallRunStopsByWallId}
+              wallTilingLengthInByWallId={wallTilingLengthInByWallId}
               secondStory={stories[1] ?? null}
               isSquareBalePanelization={panelizationType === "square-bale-panels"}
               squareBaleStudConfig={squareBaleStudConfig}
@@ -9011,6 +9593,7 @@ export default function LayoutEditor() {
               allInstances={allInstances}
               primaryCornerIds={primaryCornerIds}
               leastAccessibleCorner={leastAccessibleCorner}
+              wallUnbuiltSpansIn={wallUnbuiltSpansIn}
               role={role}
             />
           </StickyNote>
@@ -9069,7 +9652,7 @@ export default function LayoutEditor() {
             }
             fastenerSchedule={[]}
             notes={[
-              "3/4in plywood: every Standard/Braced/Sill panel's 2 skins, every Column/Corner panel's 2 side plies, every Safety/Gap panel's single sheet (see the Safety/Gap redesign note on its own Shop Drawing page), every Door/Window Header's top+bottom plate caps, plus the roof-bearing assembly's own plywood cap(s) — a box beam's top+bottom caps if Second Story is enabled, a truss plate's single cap otherwise — across the drawn footprint's real total wall perimeter, not an illustrative preview length.",
+              "3/4in plywood: every Standard/Braced/Sill panel's 2 skins, every Column/Corner panel's 2 side plies, every Safety/Gap panel's single sheet (see the Safety/Gap redesign note on its own Shop Drawing page), every Door/Window Header's top+bottom plate caps, plus the roof-bearing assembly's own plywood cap(s) — a box beam's top+bottom caps if Second Story is enabled, a truss plate's single cap otherwise — across the drawn footprint's real BUILT wall perimeter (a wall run stopped short of its corner carries no panels and no plate, so it is excluded), not an illustrative preview length.",
               "1/2in plywood is only the girt webs (girt bars themselves are dimensional lumber, tallied separately).",
               ...(panelizationType === "square-bale-panels"
                 ? [
@@ -9427,7 +10010,7 @@ export default function LayoutEditor() {
             fastenerSchedule={[]}
             notes={[
               "Every formula here (Cu Ft, Parts ratios, buckets/bags/cu-yd/110-gal-tub conversions, and the field/edge labor-hours split) mirrors Tommy's own \"Faster Plaster Calculator\" spreadsheet.",
-              "Net plastered area auto-derives from the drawn footprint (wall perimeter x wall height, doubled if Second Story is on) minus each window/door's own clear Rough Opening area — the spreadsheet's own workflow instead had you type in a sqft figure by hand.",
+              "Net plastered area auto-derives from the drawn footprint (BUILT wall perimeter x wall height, doubled if Second Story is on — a wall run stopped short is not plastered over the span it does not occupy) minus each window/door's own clear Rough Opening area — the spreadsheet's own workflow instead had you type in a sqft figure by hand.",
               "Base Coat mix defaults (Sand 3.5 : Clay 1 : Lime 0.25 : Chopped Straw 1) match the spreadsheet's own \"Key\" — used for both interior and exterior, since the spreadsheet only gives one Base Coat recipe (straight onto the straw either side).",
               "Finish Coat: exterior (lime-plaster) defaults to the spreadsheet's own Sand 3 : Lime 1 recipe. Interior (clay-plaster) defaults to Sand 3 : Clay 1 — this app's own adaptation (same structure, clay in place of lime), since the spreadsheet never gave a clay-finish recipe. Every ratio is editable.",
               "\"Base 2\" (a distinct second base-coat layer in the source spreadsheet) isn't modeled separately — each side's own single Base Coat here covers that side's own straight-onto-the-straw layer.",

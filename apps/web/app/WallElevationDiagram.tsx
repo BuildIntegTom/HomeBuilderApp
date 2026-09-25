@@ -145,8 +145,43 @@ export interface WallElevationDiagramProps {
    * means this wall's own slots stop `thicknessIn` short of that end's true
    * corner, and a filler sliver (the neighboring wall's own corner panel,
    * visible edge-on) is drawn in that gap instead. */
-  hasCornerStart: boolean;
-  hasCornerEnd: boolean;
+  /**
+   * How far this wall's run is inset at each end because the NEIGHBOUR's
+   * corner panel physically occupies it — 0 when this wall owns the corner
+   * itself, `thicknessIn` when it butts.
+   *
+   * **A number rather than the old `hasCornerStart`/`hasCornerEnd` booleans,
+   * and the difference is Stage 3's orphan-corner rule.** "This wall does not
+   * own the corner" and "the neighbour's corner panel is really there" used
+   * to be the same fact. They are not any more: when the neighbour stops at
+   * that corner it never builds the panel, so this wall runs out to its own
+   * true end (inset 0) and the "adjacent wall" filler sliver must NOT draw.
+   * `> 0` is exactly the right test for both. */
+  startInsetIn: number;
+  endInsetIn: number;
+  /** Stage 3 — inches at each end of this wall that are deliberately NOT
+   * built (Tommy: "a stop wall tool so that it is possible to make
+   * incomplete walls"). Drawn as a **dashed boundary line, not a hatched
+   * wall**: it is where the building ends, not a wall of unknown type. It
+   * carries its own dimension, labelled NO PANELS on a printed sheet.
+   *
+   * Independent of `hasCornerStart`/`hasCornerEnd`, which are about corner
+   * OWNERSHIP and stay true: a stop does not change the neighbour, so where
+   * the neighbour owns the corner its panel is still there and the
+   * "adjacent wall" filler sliver is still drawn — with the unbuilt span
+   * between that sliver and this wall's own run. 0/0 = unchanged. */
+  startStopIn?: number;
+  endStopIn?: number;
+  /** Stage 3 — where this wall's BUILT run starts and ends, in inches from
+   * its own true start corner, exactly as page.tsx computes it for the
+   * model. The gable row is clamped to this.
+   *
+   * Passed in rather than re-derived from `startStopIn` + the corner inset,
+   * because those two are not the same number on a reflex-corner winner
+   * (inset 0, extension > 0) and the drawing would then disagree with the
+   * model by a wall thickness. Undefined = the whole wall. */
+  gableBuiltStartIn?: number;
+  gableBuiltEndIn?: number;
   /** This wall's own second-story slots/height, if a second story exists
    * (Tommy: "each story's row for a given wall is independently clickable/
    * editable") — undefined when there's no second story, mirroring how
@@ -396,8 +431,12 @@ export default function WallElevationDiagram({
   wallHeightFt,
   allInstances,
   secondStoryAllInstances,
-  hasCornerStart,
-  hasCornerEnd,
+  startInsetIn,
+  endInsetIn,
+  startStopIn = 0,
+  gableBuiltStartIn,
+  gableBuiltEndIn,
+  endStopIn = 0,
   secondStorySlots,
   secondStoryWallHeightFt,
   onToggleOpening,
@@ -502,13 +541,19 @@ export default function WallElevationDiagram({
   );
 
   const wallWidthIn = wall.lengthFt * 12;
-  // A wall that doesn't own its own corner at an end has its real slots
-  // stop thicknessIn short of that end's true corner (see hasCornerStart/
-  // hasCornerEnd's own doc comment) — every along-wall position in this
+  // A wall whose NEIGHBOUR builds the corner at an end has its real slots
+  // stop thicknessIn short of that end's true corner (see startInsetIn/
+  // endInsetIn's own doc comment) — every along-wall position in this
   // component is anchored off these two offsets rather than assuming
   // content always starts flush at this wall's own true x=0.
-  const startOffsetIn = hasCornerStart ? 0 : thicknessIn;
-  const endOffsetIn = hasCornerEnd ? 0 : thicknessIn;
+  // Stage 3: a run stop pushes this wall's content further in by exactly
+  // the span that isn't built. Folded into these two offsets rather than
+  // handled separately, so every along-wall position in this component
+  // (panel rows, beam handles, drag hit-testing) moves together.
+  const cornerInsetStartIn = startInsetIn;
+  const cornerInsetEndIn = endInsetIn;
+  const startOffsetIn = cornerInsetStartIn + startStopIn;
+  const endOffsetIn = cornerInsetEndIn + endStopIn;
   const eaveHeightIn = wallHeightFt * 12;
   // The roofline's own base — the top of whichever story is tallest (just
   // the ground floor, or ground+second when a second story exists), PLUS
@@ -619,6 +664,14 @@ export default function WallElevationDiagram({
         roofBearingAnchorMode,
         gableWindowReservations,
         hasStructuralColumnPanel ? COLUMN_TOTAL_WIDTH_IN : undefined,
+        // Stage 3: the gable row stops where the wall does. These come in as
+        // props computed by the same `wallGeometryFor` call page.tsx feeds
+        // its own model, rather than being re-derived here from
+        // `startOffsetIn` — that local form used the corner INSET only, and
+        // on a reflex-corner winner (inset 0, extension > 0) it disagreed
+        // with the model by a full wall thickness.
+        gableBuiltStartIn ?? 0,
+        gableBuiltEndIn ?? wallWidthIn,
       )
     : [];
   const gablePanels: (GableTiledPanel & { verticalGapIn?: { leftIn: number; rightIn: number } })[] = rawGablePanels.map((p) => {
@@ -628,9 +681,13 @@ export default function WallElevationDiagram({
   const maxHeightIn = hasGableEnd ? maxProfileHeightIn : roofBaseHeightIn;
   const svgWidthPx = Math.min(CANVAS_WIDTH, LEFT_MARGIN_PX + wallWidthIn * PX_PER_IN + 24);
   const scaleX = (svgWidthPx - LEFT_MARGIN_PX - 24) / wallWidthIn;
-  const svgHeightPx = TOP_MARGIN_PX + maxHeightIn * PX_PER_IN + BOTTOM_MARGIN_PX;
+  // A stopped wall needs one more line of room under the F.F.L for the
+  // unbuilt span's own NO PANELS dimension. Conditional so that every wall
+  // without a stop keeps the exact layout it has today.
+  const bottomMarginPx = startStopIn > 0 || endStopIn > 0 ? BOTTOM_MARGIN_PX + 18 : BOTTOM_MARGIN_PX;
+  const svgHeightPx = TOP_MARGIN_PX + maxHeightIn * PX_PER_IN + bottomMarginPx;
 
-  const yPx = (heightIn: number) => svgHeightPx - BOTTOM_MARGIN_PX - heightIn * PX_PER_IN;
+  const yPx = (heightIn: number) => svgHeightPx - bottomMarginPx - heightIn * PX_PER_IN;
   const xPx = (posIn: number) => LEFT_MARGIN_PX + posIn * scaleX;
 
   useEffect(() => {
@@ -677,7 +734,7 @@ export default function WallElevationDiagram({
       if (rect.height === 0) return;
       const pxPerScreenPx = svgHeightPx / rect.height;
       const localPy = (e.clientY - rect.top) * pxPerScreenPx;
-      const rawHeightIn = (svgHeightPx - BOTTOM_MARGIN_PX - localPy) / PX_PER_IN - roofBaseHeightIn;
+      const rawHeightIn = (svgHeightPx - bottomMarginPx - localPy) / PX_PER_IN - roofBaseHeightIn;
       if (candidatesIn.length === 0) return;
       let nearestIn = candidatesIn[0]!;
       let nearestDistIn = Math.abs(nearestIn - rawHeightIn);
@@ -697,7 +754,7 @@ export default function WallElevationDiagram({
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
-  }, [isDraggingMaxHeight, rawGablePanels, roofBaseHeightIn, svgHeightPx, onChangeMaxGablePanelHeightIn]);
+  }, [isDraggingMaxHeight, rawGablePanels, roofBaseHeightIn, svgHeightPx, bottomMarginPx, onChangeMaxGablePanelHeightIn]);
 
   // Box Beam coverage handle drag — same shape as the gable-point drag
   // above, but snaps to the NEAREST real slot boundary (secondStoryOffsetsIn)
@@ -785,7 +842,7 @@ export default function WallElevationDiagram({
       if (rect.height === 0) return;
       const pxPerScreenPx = svgHeightPx / rect.height;
       const localPy = (e.clientY - rect.top) * pxPerScreenPx;
-      const absHeightIn = (svgHeightPx - BOTTOM_MARGIN_PX - localPy) / PX_PER_IN;
+      const absHeightIn = (svgHeightPx - bottomMarginPx - localPy) / PX_PER_IN;
       let heightIn = Math.min(Math.max(absHeightIn - storyFloorAbsIn, 0), storyHeightIn);
       for (let i = beam.startSlotIndex; i < beam.endSlotIndex && i < rowSlots.length; i++) {
         const slot = rowSlots[i];
@@ -820,6 +877,7 @@ export default function WallElevationDiagram({
     slots,
     secondStorySlots,
     svgHeightPx,
+    bottomMarginPx,
     eaveHeightIn,
     secondStoryHeightIn,
     onChangeMidWallBeamHeight,
@@ -848,7 +906,7 @@ export default function WallElevationDiagram({
       if (rect.height === 0) return;
       const pxPerScreenPx = svgHeightPx / rect.height;
       const localPy = (e.clientY - rect.top) * pxPerScreenPx;
-      const absTopIn = (svgHeightPx - BOTTOM_MARGIN_PX - localPy) / PX_PER_IN;
+      const absTopIn = (svgHeightPx - bottomMarginPx - localPy) / PX_PER_IN;
       const rawTopIn = Math.min(Math.max(absTopIn - storyFloorAbsIn, beam.heightIn + BIG_HEADER_BEAM_MIN_HEIGHT_IN), storyHeightIn);
       const topIn = storyHeightIn - rawTopIn <= MID_WALL_BEAM_ROOFLINE_SNAP_THRESHOLD_IN ? storyHeightIn : rawTopIn;
       onChangeMidWallBeamBigHeaderHeightIn(story, beamId, topIn - beam.heightIn);
@@ -860,7 +918,7 @@ export default function WallElevationDiagram({
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
-  }, [midWallBeamDrag, midWallBeams, secondStoryMidWallBeams, svgHeightPx, eaveHeightIn, secondStoryHeightIn, onChangeMidWallBeamBigHeaderHeightIn]);
+  }, [midWallBeamDrag, midWallBeams, secondStoryMidWallBeams, svgHeightPx, bottomMarginPx, eaveHeightIn, secondStoryHeightIn, onChangeMidWallBeamBigHeaderHeightIn]);
 
   // Mid-Wall Bond Beam horizontal coverage drag — same shape as the Box
   // Beam coverage-handle drag above, snapping to the nearest real slot
@@ -1314,9 +1372,11 @@ export default function WallElevationDiagram({
     return elements;
   };
 
-  // At an end this wall doesn't own its own corner, the wall physically
-  // butts against the shorter neighboring wall's own corner panel instead
-  // (see hasCornerStart/hasCornerEnd's own doc comment) — that panel's
+  // At an end where the neighbouring wall builds the corner, this wall
+  // physically butts against that corner panel (see startInsetIn/endInsetIn's
+  // own doc comment, and note it is the INSET that decides this, not mere
+  // ownership — a neighbour that stops short never builds the panel, and
+  // then there is nothing here to draw) — that panel's
   // narrow return face (thicknessIn deep) is what's actually visible here,
   // not a gap. Drawn as a static reference sliver, not a real slot on this
   // wall: no click handler, and not split into this wall's own mid-wall-
@@ -1352,8 +1412,66 @@ export default function WallElevationDiagram({
     );
     return (
       <>
-        {!hasCornerStart && sliver(0, `${story}-adjacent-start`)}
-        {!hasCornerEnd && sliver(wallWidthIn - thicknessIn, `${story}-adjacent-end`)}
+        {startInsetIn > 0 && sliver(0, `${story}-adjacent-start`)}
+        {endInsetIn > 0 && sliver(wallWidthIn - endInsetIn, `${story}-adjacent-end`)}
+      </>
+    );
+  };
+
+  /**
+   * Stage 3 — the span of this wall that is deliberately NOT built.
+   *
+   * **A dashed boundary outline, never a hatched wall.** This is where the
+   * building ends, not a wall of unknown type, and the two must not look
+   * alike: an unfilled dashed rectangle reads as "nothing here, and that is
+   * on purpose", where any fill or hatch would read as a panel whose type
+   * is still to be decided. The label is NO PANELS, which is also exactly
+   * what prints.
+   *
+   * One outline per stopped end, spanning the full built height of the wall
+   * (both stories when there are two — the stop record is per WALL, not per
+   * story), plus its own dimension below the F.F.L line so it sits beside
+   * the Overall Width callout rather than fighting the panel row for space.
+   */
+  const renderUnbuiltSpans = () => {
+    if (startStopIn <= 0 && endStopIn <= 0) return null;
+    const topIn = eaveHeightIn + secondStoryHeightIn;
+    const spans: { key: string; fromIn: number; toIn: number }[] = [];
+    if (startStopIn > 0) spans.push({ key: "start", fromIn: cornerInsetStartIn, toIn: cornerInsetStartIn + startStopIn });
+    if (endStopIn > 0) {
+      spans.push({ key: "end", fromIn: wallWidthIn - cornerInsetEndIn - endStopIn, toIn: wallWidthIn - cornerInsetEndIn });
+    }
+    return (
+      <>
+        {spans.map(({ key, fromIn, toIn }) => {
+          const widthPx = Math.max(0, (toIn - fromIn) * scaleX);
+          const midIn = (fromIn + toIn) / 2;
+          const dimY = yPx(0) + 18;
+          return (
+            <g key={`unbuilt-${key}`}>
+              <rect
+                x={xPx(fromIn)}
+                y={yPx(topIn)}
+                width={widthPx}
+                height={topIn * PX_PER_IN}
+                fill="none"
+                stroke="#8a8a8a"
+                strokeWidth={1.25}
+                strokeDasharray="7 5"
+              />
+              <text x={xPx(midIn)} y={yPx(topIn / 2)} fontSize={9} fontWeight={600} textAnchor="middle" fill="#6a6a6a">
+                NO PANELS
+              </text>
+              {/* Its own dimension, in the band under the F.F.L line. */}
+              <line x1={xPx(fromIn)} y1={dimY} x2={xPx(toIn)} y2={dimY} stroke="#8a8a8a" strokeWidth={1} />
+              <line x1={xPx(fromIn)} y1={dimY - 4} x2={xPx(fromIn)} y2={dimY + 4} stroke="#8a8a8a" strokeWidth={1} />
+              <line x1={xPx(toIn)} y1={dimY - 4} x2={xPx(toIn)} y2={dimY + 4} stroke="#8a8a8a" strokeWidth={1} />
+              <text x={xPx(midIn)} y={dimY + 14} fontSize={9} fontWeight={600} textAnchor="middle" fill="#6a6a6a">
+                NO PANELS: {formatFeetInches((toIn - fromIn) / 12)}
+              </text>
+            </g>
+          );
+        })}
       </>
     );
   };
@@ -1460,6 +1578,7 @@ export default function WallElevationDiagram({
         </text>
         {renderRow(slots, groundBandsAndZones, 0, "ground", eaveHeightIn)}
         {renderAdjacentWallFiller(0, eaveHeightIn, "ground")}
+        {renderUnbuiltSpans()}
 
         {/* Mid-Wall Bond Beams (ground floor) — one filled rect per beam
             at its own real position/coverage/thickness, each with its own
