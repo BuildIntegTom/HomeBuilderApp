@@ -52,6 +52,9 @@ import {
   retileWithOpenings,
   wallCompassDirection,
   wallGeometryFor as wallGeometryForPure,
+  hasWallRunStop,
+  normalizeWallRunStop,
+  wallRunStopTotalIn,
   isSlotBoxBeamCovered,
   zoneFromSlot,
   type BoxBeamCoverage,
@@ -2019,8 +2022,28 @@ export default function LayoutEditor() {
   // `seedDefaultOpenings` doc comment for why this only ever affects a
   // wall with no prior slots to preserve.
   const openingSeed: OpeningSeed = {};
-  const retile = (fp: Footprint, leastAccessible: CornerId, primary: Set<string>): Record<string, PanelSlot[]> =>
-    retilePure(fp, leastAccessible, primary, standardWidthIn, cornerWidthInForTiling, thicknessIn, bracedSeed, openingSeed);
+  // Stage 3's run stops ride along on all three wrappers, defaulting to the
+  // live `wallRunStopsByWallId`. The explicit override exists because React
+  // state is not readable back in the same tick: the handful of paths that
+  // rebuild or renumber wall ids have to hand the NEXT stop map to the
+  // retile they run in that same handler, not the stale one in the closure.
+  const retile = (
+    fp: Footprint,
+    leastAccessible: CornerId,
+    primary: Set<string>,
+    runStops: Record<string, WallRunStop> = wallRunStopsByWallId,
+  ): Record<string, PanelSlot[]> =>
+    retilePure(
+      fp,
+      leastAccessible,
+      primary,
+      standardWidthIn,
+      cornerWidthInForTiling,
+      thicknessIn,
+      bracedSeed,
+      openingSeed,
+      runStops,
+    );
   // Same as `retile` above, but preserves each wall's existing openings —
   // see retile.ts's own doc comment. `oldSlotsByNewWallId` resolves the
   // old-to-new wall correlation; for an id-stable operation (dragWall,
@@ -2030,6 +2053,7 @@ export default function LayoutEditor() {
     leastAccessible: CornerId,
     primary: Set<string>,
     oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined>,
+    runStops: Record<string, WallRunStop> = wallRunStopsByWallId,
   ): Record<string, PanelSlot[]> =>
     retilePreservingOpeningsPure(
       fp,
@@ -2041,9 +2065,12 @@ export default function LayoutEditor() {
       oldSlotsByNewWallId,
       bracedSeed,
       openingSeed,
+      runStops,
     );
-  const wallGeometryFor = (wallId: string) =>
-    footprint ? wallGeometryForPure(footprint, wallId, primaryCornerIds, leastAccessibleCorner, thicknessIn) : null;
+  const wallGeometryFor = (wallId: string, runStop: WallRunStop | undefined = wallRunStopsByWallId[wallId]) =>
+    footprint
+      ? wallGeometryForPure(footprint, wallId, primaryCornerIds, leastAccessibleCorner, thicknessIn, runStop)
+      : null;
 
   const handleDraw = (widthFt: number, depthFt: number, origin: { x: number; y: number }) => {
     const fp =
@@ -2060,7 +2087,12 @@ export default function LayoutEditor() {
     setPrimaryCornerIds(nextPrimary);
     setOffsetPx(origin);
     setLeastAccessibleCorner(nextLeastAccessible);
-    setBaseWallSlots(retile(fp, nextLeastAccessible, nextPrimary));
+    // A brand-new footprint's walls have no relationship to the old ones —
+    // a run stop is a statement about a specific wall of a specific
+    // building, so it goes with the building, exactly as this path already
+    // discards openings and braced-panel decisions via `retile`.
+    setWallRunStopsByWallId({});
+    setBaseWallSlots(retile(fp, nextLeastAccessible, nextPrimary, {}));
     setShapeTool("edit");
     // A brand-new footprint has no meaningful relationship to whatever
     // second-story data existed for the old one (see the `secondStory`
@@ -2912,18 +2944,27 @@ export default function LayoutEditor() {
     }
     const newCornersById = new Map(fp.corners.map((c) => [c.id, c.point]));
     const oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined> = {};
+    const nextRunStops: Record<string, WallRunStop> = {};
     for (const w of fp.walls) {
       const start = newCornersById.get(w.startCorner)!;
       const end = newCornersById.get(w.endCorner)!;
       const oldWallId = oldWallIdByPointPair.get(`${pointKey(start)}|${pointKey(end)}`);
       if (oldWallId) oldSlotsByNewWallId[w.id] = baseWallSlots[oldWallId];
+      // A run stop is keyed by wall id, so it has to ride the SAME
+      // point-pair correlation the slots do — left un-remapped it would
+      // silently stop a different wall than the one the user stopped.
+      // Deliberately nothing is carried onto the bumped-out wall itself
+      // (excluded from the map above), for the same reason its openings
+      // aren't: its old run no longer exists as a run.
+      if (oldWallId && wallRunStopsByWallId[oldWallId]) nextRunStops[w.id] = wallRunStopsByWallId[oldWallId]!;
     }
 
     setFootprint(fp);
     setIsBumpedOut(true);
     setPrimaryCornerIds(nextPrimary);
     setLeastAccessibleCorner(nextLeastAccessible);
-    setBaseWallSlots(retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId));
+    setWallRunStopsByWallId(nextRunStops);
+    setBaseWallSlots(retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops));
     setShapeTool("edit");
     // Only the bump-out's own new jog wall(s) (no old counterpart at all)
     // can be freshly seeded here — every OTHER wall keeps its real,
@@ -2976,12 +3017,19 @@ export default function LayoutEditor() {
         }
         const newCornersById = new Map(fp.corners.map((c) => [c.id, c.point]));
         const oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined> = {};
+        const nextRunStops: Record<string, WallRunStop> = {};
         for (const w of fp.walls) {
           const start = newCornersById.get(w.startCorner)!;
           const end = newCornersById.get(w.endCorner)!;
           const draggedWallId = draggedWallIdByPointPair.get(`${pointKey(start)}|${pointKey(end)}`);
           if (draggedWallId) oldSlotsByNewWallId[w.id] = baseWallSlots[draggedWallId];
+          // Same reason as the bump-out path: a collapse renumbers ids, and
+          // a run stop keyed by a stale id stops the wrong wall.
+          if (draggedWallId && wallRunStopsByWallId[draggedWallId]) {
+            nextRunStops[w.id] = wallRunStopsByWallId[draggedWallId]!;
+          }
         }
+        setWallRunStopsByWallId(nextRunStops);
 
         // leastAccessibleCorner is a site-wide marker corner id — if the
         // collapse renumbered ids, the old value may no longer point at any
@@ -2997,7 +3045,9 @@ export default function LayoutEditor() {
           : ([...nextPrimary][0] ?? fp.corners[0]!.id);
         setLeastAccessibleCorner(nextLeastAccessible);
 
-        setBaseWallSlots(retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId));
+        setBaseWallSlots(
+          retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops),
+        );
       }
       return;
     }
@@ -3040,10 +3090,16 @@ export default function LayoutEditor() {
     const offsets: Record<string, number> = {};
     for (const wall of footprint.walls) {
       const { start } = ownership[wall.id]!;
-      offsets[wall.id] = start.extraLengthIn > 0 ? -start.extraLengthIn : start.insetAmount;
+      const base = start.extraLengthIn > 0 ? -start.extraLengthIn : start.insetAmount;
+      // A start-end run stop moves this wall's content further in by exactly
+      // the span that isn't built (Stage 3). Every plan-view consumer —
+      // the printable PlanViewDiagram, the live FootprintCanvas, and the
+      // panel snap lines — reads this one map, so they cannot disagree.
+      offsets[wall.id] = base + (wallGeometryFor(wall.id)?.startStopIn ?? 0);
     }
     return offsets;
-  }, [footprint, thicknessIn, primaryCornerIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
+  }, [footprint, thicknessIn, primaryCornerIds, leastAccessibleCorner, wallRunStopsByWallId]);
 
   // Under "loose-packed-braced" (today's default system), braced-panel
   // placement is now real stored state directly in `baseWallSlots` (Tommy:
@@ -7672,6 +7728,7 @@ export default function LayoutEditor() {
                   thicknessIn={thicknessIn}
                   includeNailer={includeNailer}
                   primaryCornerIds={primaryCornerIds}
+                  wallRunStopsByWallId={wallRunStopsByWallId}
                   secondStory={stories[1] ?? null}
                   isSquareBalePanelization={panelizationType === "square-bale-panels"}
                   squareBaleStudConfig={squareBaleStudConfig}
@@ -7752,6 +7809,7 @@ export default function LayoutEditor() {
               thicknessIn={thicknessIn}
               includeNailer={includeNailer}
               primaryCornerIds={primaryCornerIds}
+              wallRunStopsByWallId={wallRunStopsByWallId}
               secondStory={stories[1] ?? null}
               isSquareBalePanelization={panelizationType === "square-bale-panels"}
               squareBaleStudConfig={squareBaleStudConfig}

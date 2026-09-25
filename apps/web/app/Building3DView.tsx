@@ -13,6 +13,7 @@ import {
   computeWallVerticalBandsForSlotWithMaxHeight,
   effectiveZonesForSlot,
   isSlotBoxBeamCovered,
+  normalizeWallRunStop,
   panelSlotBoxes3D,
   wallAxis,
   type BoxBeamCoverage,
@@ -20,6 +21,7 @@ import {
   type Footprint,
   type PanelSlot,
   type PanelSlotBox3D,
+  type WallRunStop,
 } from "@building-integrity/geometry";
 import { allPanelInstances, combinedPanelLabel, type PanelInstance } from "./panelInstances";
 import { midWallBeamsToGeometry, resolveMidWallBeamAssemblyHeightIn, type MidWallBeam } from "./midWallBeam";
@@ -601,6 +603,11 @@ interface Building3DViewProps {
   thicknessIn: number;
   includeNailer: boolean;
   primaryCornerIds: Set<string>;
+  /** Stage 3 "a wall that simply ends" — inches at each end of a wall that
+   * are deliberately NOT built. **In 3D nothing at all is drawn there**: a
+   * ghost solid would read as a wall that exists, which is exactly
+   * backwards. Absent/empty = every wall fully panelized, unchanged. */
+  wallRunStopsByWallId?: Record<string, WallRunStop>;
   /** A second story stacked at `wallHeightFt`'s top-plate height, sharing
    * the ground floor's footprint (Tommy: "an option for adding a second
    * level of panels"). `wallSlots` here is a genuinely independent copy of
@@ -816,6 +823,7 @@ export default function Building3DView({
   thicknessIn,
   includeNailer,
   primaryCornerIds,
+  wallRunStopsByWallId,
   secondStory,
   isSquareBalePanelization = false,
   squareBaleStudConfig = "single-2x4",
@@ -913,8 +921,11 @@ export default function Building3DView({
   }, []);
 
   const rawSlotBoxes = useMemo(
-    () => (footprint ? panelSlotBoxes3D(footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds) : []),
-    [footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds],
+    () =>
+      footprint
+        ? panelSlotBoxes3D(footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds, wallRunStopsByWallId)
+        : [],
+    [footprint, wallSlots, thicknessIn, wallHeightFt, primaryCornerIds, wallRunStopsByWallId],
   );
   // Built flat (nominal height for every slot) above, then split into 1-2
   // real boxes for any wall with a Mid-Wall Bond Beam — mirrors
@@ -974,7 +985,14 @@ export default function Building3DView({
   const secondStoryHeightIn = secondStory ? secondStory.wallHeightFt * IN_PER_FT : 0;
   const secondStorySlotBoxes = useMemo(() => {
     if (!footprint || !secondStory) return [];
-    const boxes = panelSlotBoxes3D(footprint, secondStory.wallSlots, thicknessIn, secondStory.wallHeightFt, primaryCornerIds);
+    const boxes = panelSlotBoxes3D(
+      footprint,
+      secondStory.wallSlots,
+      thicknessIn,
+      secondStory.wallHeightFt,
+      primaryCornerIds,
+      wallRunStopsByWallId,
+    );
     const splitBoxes = splitForMidWallBeam(boxes, secondStoryMidWallBeamsByWallId, secondStory.wallHeightFt * IN_PER_FT, maxPanelHeightIn);
     if (Object.keys(boxBeamCoverageByWallId).length === 0) return splitBoxes;
     const heightDeltaFt = computeBoxBeamHeightDeltaIn(boxBeamSizeId) / IN_PER_FT;
@@ -986,7 +1004,7 @@ export default function Building3DView({
         ? { ...box, heightFt: box.heightFt - heightDeltaFt }
         : box,
     );
-  }, [footprint, secondStory, thicknessIn, primaryCornerIds, secondStoryMidWallBeamsByWallId, boxBeamCoverageByWallId, boxBeamSizeId, maxPanelHeightIn]);
+  }, [footprint, secondStory, thicknessIn, primaryCornerIds, wallRunStopsByWallId, secondStoryMidWallBeamsByWallId, boxBeamCoverageByWallId, boxBeamSizeId, maxPanelHeightIn]);
   const secondStorySlotRenderData = useMemo(
     () =>
       secondStorySlotBoxes.map((box) => ({
@@ -1193,9 +1211,20 @@ export default function Building3DView({
     for (const wall of footprint.walls) {
       const axis = wallAxis(footprint, wall);
       const slots = secondStory?.wallSlots[wall.id] ?? [];
+      // A roof-bearing plate sits on TOP of this wall's panels, so where
+      // there are no panels there is no plate — the single-story span is
+      // the BUILT run, not the raw wall (Stage 3). The multi-story branch
+      // reads the second story's own slots, so it already shrinks for free.
+      const runStop = normalizeWallRunStop(wallRunStopsByWallId?.[wall.id], wall.lengthFt * IN_PER_FT);
       const segments = secondStory
         ? computeRoofBearingSegments(slots, boxBeamCoverageByWallId[wall.id])
-        : [{ kind: "truss-plate" as const, startXIn: 0, lengthIn: wall.lengthFt * IN_PER_FT }];
+        : [
+            {
+              kind: "truss-plate" as const,
+              startXIn: runStop.startStopIn,
+              lengthIn: Math.max(0, wall.lengthFt * IN_PER_FT - runStop.startStopIn - runStop.endStopIn),
+            },
+          ];
       segments.forEach((seg, segmentIndex) => {
         const hasBoxBeam = seg.kind === "box-beam";
         const members = hasBoxBeam
