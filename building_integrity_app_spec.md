@@ -2548,7 +2548,7 @@ Accounts as before, **one browser or profile per account** — a step marked "as
 
 ---
 
-## Project Smearforn — drawing a real job (2026-09-24) — PLANNED, NOT BUILT
+## Project Smearforn — drawing a real job (2026-09-24) — STAGES 0 AND 1 BUILT 2026-09-24; Stages 2, 2b, 3, 4, 5 still planned
 
 The first time this app has been asked to reproduce an **engineered job** rather than a demo. Tommy's hard goal: **create his current project in the app by Monday evening, 2026-09-28.** This is editor work only — no backend, no schema beyond one project-file version bump, nothing in `supabase/`.
 
@@ -2709,7 +2709,17 @@ Typed widths go through the existing `LengthInput` (`domain="in"`), which alread
 
 ---
 
-### Stage 0 — Defaults: floor and foundation off, and one version bump for the whole project
+### Stage 0 — Defaults: floor and foundation off, and one version bump for the whole project — BUILT 2026-09-24
+
+**As built.** `foundationEnabled` is a fourth checkbox in the Panelizer scope group, default `false` for new projects; `enabledEditorTabs` no longer pushes `"foundation"` unconditionally. `PROJECT_FILE_VERSION` is 25 and a v24 file's missing key migrates to **`true`** — proved by a test that loads a v24 document carrying floors AND a real foundation and asserts every key comes back with the value it was saved with. The last checked branch refuses to be unchecked (`isLastEnabledScopeBranch` in `editorTabs.ts`, unit-tested), in the Panelizer group and in the Floor/Roof Tools panels that carry the same two checkboxes. Stage 3's `wallRunStopsByWallId` rode along, inert.
+
+Three things the plan did not say, found while building it:
+
+- **A key added in v25 cannot be in `REQUIRED_STATE_KEYS` unconditionally** — the required-key check runs against the accepted PRIOR version too, so a v24 file would be refused for "missing foundationEnabled". There is now a `KEYS_ADDED_IN_V25` list the check skips when reading v24, which is the same carve-out v18->v19 needed and is deleted in one line when v24 falls out of the window.
+- **An additive optional key does not actually need a bump in this file** (`wallReviewNotes`, `gableWindowAnchorsByWallId`, `maxPanelHeightIn` were all added without one). What makes v25 a real migration is the ASYMMETRY: off for a new project, on for an existing file. Stated because it changes the calculus for Stage 2b — see below.
+- **⚠ The bump has a backend consequence the plan said it would not have.** The database's redactor classifies money paths **by schema version** (migration `0009`'s `browse_schema_redaction` seed, v24 only), so a project saved at **v25 is refused across a company line** until a seed row for 25 ships. Fail-closed — refused, not served unredacted — and owner-side open/save/versioning is unaffected. Writing SQL was out of scope for this pass, so it is **recorded as a test that asserts the gap** (`redaction.test.ts`, "does NOT yet classify v25") rather than quietly fixed. **One seed row, same single money path; it needs to reach the live database to mean anything.**
+
+**Stage 2b's key was deliberately NOT added here.** Its model (a wall-level header record over a slot-index range) is an inference the plan itself says Tommy must confirm, and inventing the stored shape of an unconfirmed model is exactly the thing this log exists to prevent. Since an additive optional key needs no bump (above), Stage 2b can add its own key when its model is settled without making a v24 file unreadable.
 
 Tommy: *"I would like the turn off the floor and foundation tools as default for now and primarily focus on panelizing wall systems. This setting should still be visible, but perhaps it's somewhere in settings."*
 
@@ -2729,7 +2739,17 @@ Tommy: *"I would like the turn off the floor and foundation tools as default for
 
 ---
 
-### Stage 1 — Type a panel width (the stage that must land)
+### Stage 1 — Type a panel width (the stage that must land) — BUILT 2026-09-24
+
+**As built.** Standard/braced slots have the width field windows already had, in the Selected Panel note. A commit sets `widthIn` and `lockedWidthIn` together and re-tiles that one wall through the anchor path; a per-panel **Reset to automatic** clears the pin and hands the width back to the tiler. The panel-boundary drag snaps the BOUNDARY to the eighth and derives both widths from it, so the pair total is conserved exactly. The arithmetic is a pure module, `packages/geometry/src/panelWidthEdit.ts` (+ its test file): `resolvePanelWidthEdit`, `resolvePanelBoundaryDrag`, `findSubMinimumPanelWidths`.
+
+The 24in rider, exactly as specified: `fabricationMinPanelWidthIn` is a new `confirmed` `CatalogValue` in `data.ts` quoting Tommy verbatim with his axis; `panelWidthInRange.minIn` still reads 15.75 with its manufacturer note, and a test asserts it ("if this ever reads 24, a sourced number has been overwritten"); `PANEL_DRAG_FLOOR_IN`'s local `24` is deleted and both consumers read the catalog; `PANEL_DRAG_SNAP_TOLERANCE_IN = 2` is untouched. Typed entry **refuses** below the minimum (the field keeps focus and the text, states the limit, commits nothing) via a new `validate` prop on `LengthInput` — a refusal, deliberately not a clamp, sitting beside the existing clamp path rather than replacing it. **No other number in `data.ts` moved.**
+
+**⚠ The plan was wrong about the entry point, and Stage 1 could not work without a fix.** It says "click a panel (existing `selectedSlot`), type into the width field." But clicking a panel's body runs the type cycle, and from a **standard** panel the first stop is a window; `handleToggleOpening` selects openings and braced panels and explicitly selects **nothing** when a slot lands back on "standard". So a standard panel could never BE the selected panel — the new field would have been unreachable for exactly the panels this stage is for. **Fix, kept as small as it could be: clicking a panel's width LABEL on the elevation selects it, without cycling anything.** That is the first half of what Tommy actually described ("click the numerical value of width of one panel and then... it opens up the number value so you can type in a new value"); the editing still happens in the note, so this is not the click-to-EDIT label the plan pushed to Stage 1b. A hand-set label draws bold, so a pin is visible on the drawing.
+
+Two smaller notes: an edit that would move the wall's own total length is **refused whole** (guarded by a sum check after the re-tile) rather than partly applied; and the Review Log now carries one entry per panel below the minimum, however it got there, with the safety-gap board and the openings exempt for the reasons the plan gives.
+
+**Evidence beyond the unit tests:** `apps/web/harness/smearforn-stage-0-1/` — a CDP harness IN THE REPO, with screenshots and an `evidence.json`. It shows a new project offering the Wall tab only, `41 1/2` committing as `41½`, `20` refused with the limit stated and the draft kept, per-panel reset returning a panel to 40in, a fractional-pixel drag committing 44½"/35½" with the run total conserved, a drag past the floor stopping at 24in — and **all eleven Rogers-Sehorn ADU widths typed in sequence with none refused.**
 
 Tommy: *"We need a way to manipulate the widths of individual panels. Maybe when you are on the edit tool and click the numerical value of width of one panel and then click/highlight one of the edges, it opens up the number value so you can type in a new value. And/or also a tool should allow the user to click and drag a wall to shrink one and grow another."*
 
@@ -2997,6 +3017,15 @@ Order is by **how much of the ADU each stage unblocks per hour of work**, not by
 4. Not structural figures; `PanelStructuralStatus` does not apply. ✔
 5. **Both reach the Review Log.** The minimum through the below-minimum entry — including for panels the **tiler** generated, the case a reviewer would never otherwise see — and the sill because a dimension moving because a shop said so is exactly what a reviewer should be told.
 6. **`panelWidthInRange.minIn` keeps its own sourced note and status**, unmodified. The one genuinely new risk is the absorb policy's dependence on `maxIn == 2 × minIn`, which is **asserted in a test** rather than trusted to a comment.
+
+**Flags check RUN AGAINST THE BUILT DIFF, 2026-09-24 (Stages 0 and 1).** The whole `data.ts` diff is one added value and nothing else — `git diff` on that file shows a single insertion and zero deletions.
+
+1. **Every real-world number in the diff carries a `status` and a `note`.** Exactly one real-world number was added: `fabricationMinPanelWidthIn = 24`, `status: "confirmed"`, note quoting Tommy verbatim and dated. Everything else in the diff is a mechanism (a pin, a snap, a refusal) or a dimension of one specific design.
+2. **Nothing marked `confirmed` is actually researched.** The one `confirmed` value is first-hand from Building Integrity and nothing about it was interpreted: he gave a number, a unit and an axis, and all three are recorded as given. (The downgrade trigger the plan names — "if the coder has to reason about what he meant" — did not fire.)
+3. **The note traces to a real source.** His own words, dated 2026-09-24, axis included, rather than a restatement of "24".
+4. **No structural figure is involved.** `PanelStructuralStatus` is untouched; no load, shear or fastener value is anywhere in this diff.
+5. **It reaches the Review Log.** One entry per panel below the minimum, *however it got there* — including the ones `computePlainSizing` produces by itself, which is the case no human reviewer would otherwise see. The Safety/Gap board (0.75in) is exempt explicitly, and so are openings, whose `widthIn` is a rough opening rather than a fabricated panel width.
+6. **What the spec marks open is treated as provisional in the code.** The tiler's own sub-minimum panels are reported and NOT corrected (`computePlainSizing`'s split rule is untouched); `sillMinWidthIn` is left at 23.625in with its manufacturer note and its ⅜" conflict called out in `fabricationMinPanelWidthIn`'s own doc comment rather than rounded away; `columnMinWidthIn` is untouched; Stage 2b's unconfirmed model got no stored key. **No existing catalog number was rounded, widened or deleted to make anything fit.**
 
 ---
 
