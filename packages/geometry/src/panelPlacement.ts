@@ -133,6 +133,25 @@ export type PanelPlacementResult =
       slotCountAfter: number;
       freeCountBefore: number;
       freeCountAfter: number;
+      /**
+       * Which automatic panels the run had to give up to pay for this edit,
+       * as indices into the PRE-DROP array (i.e. the array with the
+       * insert/replace/delete applied but the widths not yet rebalanced),
+       * ascending.
+       *
+       * **Returned because a caller cannot reconstruct it**, and at least
+       * one caller has to: a wall's slot-index records (a Mid-Wall Bond
+       * Beam's coverage, the roofline Box Beam's) have to move by every
+       * index change, not just the one the user asked for. An insert that
+       * absorbs two automatic panels moves the array by -1 overall, and a
+       * caller looking only at the net would leave those records pointing
+       * at different panels — a wrong drawing.
+       */
+      droppedIndices: number[];
+      /** The types of the dropped panels, index-matched to
+       * `droppedIndices` — so a notice can say that what the run gave up
+       * was a braced panel rather than just "a panel". */
+      droppedTypes: PanelSlotType[];
     }
   | { outcome: "refuse-not-placeable"; reason: PlacementRefusalReason }
   /** The automatic (unpinned) panels on this wall cannot cover the new
@@ -407,6 +426,8 @@ export function redistributeFreeRun(
       slotCountAfter: after.length,
       freeCountBefore,
       freeCountAfter: count,
+      droppedIndices: [],
+      droppedTypes: [],
     };
   }
 
@@ -425,6 +446,7 @@ export function redistributeFreeRun(
     slots.push({ ...slot, widthIn: fromEighths(widthsEighths[widthCursor++]!) });
   });
 
+  const droppedIndices = [...dropped].sort((a, b) => a - b);
   return {
     outcome: "commit",
     slots,
@@ -433,6 +455,8 @@ export function redistributeFreeRun(
     slotCountAfter: slots.length,
     freeCountBefore,
     freeCountAfter: count,
+    droppedIndices,
+    droppedTypes: droppedIndices.map((i) => after[i]!.type),
   };
 }
 
@@ -551,6 +575,8 @@ export function resolvePanelReplace(
       slotCountAfter: nextSlots.length,
       freeCountBefore: slots.filter(isFreeSlot).length,
       freeCountAfter: nextSlots.filter(isFreeSlot).length,
+      droppedIndices: [],
+      droppedTypes: [],
     };
   }
 

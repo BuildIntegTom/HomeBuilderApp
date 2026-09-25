@@ -18,7 +18,10 @@
  *
  * HOW TO RUN (from the repo root):
  *   1. `npm run dev --workspace=apps/web -- -p 3213`
- *   2. `chrome --headless=new --remote-debugging-port=9447 --user-data-dir=<temp> about:blank`
+ *   2. `chrome --headless=new --remote-debugging-port=9447 --user-data-dir=<temp> --window-size=1600,1000 about:blank`
+ *      (**the window size is not optional** — see the README: a small
+ *      headless window pushes the elevation off screen and every step here
+ *      filters to what is on screen, so the run dies for no real reason)
  *   3. `node apps/web/harness/smearforn-stage-2/run.mjs`
  *
  * **Use `localhost`, not `127.0.0.1`** — see the Stage 0/1 harness's own note

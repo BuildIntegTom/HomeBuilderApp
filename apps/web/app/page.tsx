@@ -2595,22 +2595,32 @@ export default function LayoutEditor() {
     // the wall still adding up, so neither guard below would notice. That is
     // exactly the silent revert the Smearforn plan forbids.
     //
-    // So: when the tiler's answer has fewer standard-family slots than the
-    // wall actually has, the edit is applied by `redistributeFreeRun`
-    // instead — the same count-preserving mechanism insert/replace/delete
-    // use — and the tiler's answer is discarded. A wall that has never been
-    // hand-placed on takes the tiler path, exactly as it did before Stage 2.
+    // So: when the tiler's answer disagrees with the wall about how many
+    // standard-family slots it has — in EITHER direction, see
+    // `tilerWouldChangeThePanelCount` — the edit is applied by
+    // `redistributeFreeRun` instead, the same count-preserving mechanism
+    // insert/replace/delete use, and the tiler's answer is discarded. A wall
+    // that has never been hand-placed on gives the same count both ways and
+    // takes the tiler path, exactly as it did before Stage 2.
+    const totalIs = (slots: PanelSlot[]) => slots.reduce((sum, s) => sum + toEighths(s.widthIn), 0);
     if (tilerWouldChangeThePanelCount(nextSlots, finalSlots)) {
       const fallback = redistributeFreeRun(beforeSlots, nextSlots, editIndex, panelWidthLimitsIn, { rebalance });
       if (fallback.outcome !== "commit") return { ok: false };
+      // The SAME wall-length guard the tiler path below gets. The fallback
+      // conserves `beforeSlots`' own total, which is the wall's length only
+      // as long as the wall it was read from was itself in order — this is
+      // what makes the doc comment's promise ("the re-tiled wall must sum to
+      // exactly this wall's own tiling length") true of both paths rather
+      // than one. It stops being theoretical the moment Stage 3 lands, which
+      // changes what a wall's tiling length IS.
+      if (totalIs(fallback.slots) !== toEighths(geometry.lengthIn)) return { ok: false };
       const fallbackIndex = findNthStandardFamilyIndex(fallback.slots, keepOrdinal);
       if (fallbackIndex === -1) return { ok: false };
       if (expectWidthIn !== null && toEighths(fallback.slots[fallbackIndex]!.widthIn) !== toEighths(expectWidthIn)) return { ok: false };
       return { ok: true, slots: fallback.slots, index: fallbackIndex };
     }
 
-    const sumEighths = finalSlots.reduce((sum, s) => sum + toEighths(s.widthIn), 0);
-    if (sumEighths !== toEighths(geometry.lengthIn)) return { ok: false };
+    if (totalIs(finalSlots) !== toEighths(geometry.lengthIn)) return { ok: false };
     const index = findNthStandardFamilyIndex(finalSlots, keepOrdinal);
     if (index === -1) return { ok: false };
     if (expectWidthIn !== null && toEighths(finalSlots[index]!.widthIn) !== toEighths(expectWidthIn)) return { ok: false };
@@ -2747,21 +2757,33 @@ export default function LayoutEditor() {
    * coverage is a rough position at best. An insert/delete is one named
    * panel at one known index, so the exact answer is available and a beam
    * silently covering different panels would be a wrong drawing.
+   *
+   * **`moves` is EVERY index change the edit made, in order, not the net
+   * one.** An insert whose width the automatic run could only pay for by
+   * giving up a panel is two moves — a +1 at the insertion point and a -1
+   * where the absorbed panel was — and they do not cancel unless both sit
+   * on the same side of the covered range. Netting them was this function's
+   * first version and it left records pointing at the wrong panels, or past
+   * the end of the array entirely, on exactly the case the tool's own
+   * notice already calls out.
    */
-  const shiftSlotCoverageRecords = (story: "ground" | "second", wallId: string, at: number, delta: 1 | -1): number => {
+  const shiftSlotCoverageRecords = (story: "ground" | "second", wallId: string, moves: { at: number; delta: 1 | -1 }[]): number => {
+    if (moves.length === 0) return 0;
     let emptied = 0;
+    const applyAll = <T extends { startSlotIndex: number; endSlotIndex: number }>(range: T): T | null =>
+      moves.reduce<T | null>((acc, move) => (acc === null ? null : shiftSlotCoverage(acc, move.at, move.delta)), range);
     // Read from this render's own state and write plain values — the count
     // has to come back to the caller for the notice, and a state updater
     // runs too late to tell it anything.
     const beams = midWallBeamsByStoryAndWallId[story][wallId] ?? [];
     if (beams.length > 0) {
-      const nextBeams = beams.map((b) => shiftSlotCoverage(b, at, delta)).filter((b): b is MidWallBeam => b !== null);
+      const nextBeams = beams.map(applyAll).filter((b): b is MidWallBeam => b !== null);
       emptied += beams.length - nextBeams.length;
       setMidWallBeamsByStoryAndWallId((was) => ({ ...was, [story]: { ...was[story], [wallId]: nextBeams } }));
     }
     const coverage = story === "second" ? boxBeamCoverageByWallId[wallId] : undefined;
     if (coverage) {
-      const nextCoverage = shiftSlotCoverage(coverage, at, delta);
+      const nextCoverage = applyAll(coverage);
       if (nextCoverage === null) emptied += 1;
       setBoxBeamCoverageByWallId((was) => {
         if (nextCoverage === null) {
@@ -2779,8 +2801,10 @@ export default function LayoutEditor() {
     wallId: string,
     verb: string,
     result: PanelPlacementResult,
-    /** Where a slot appeared or disappeared, for the coverage records. Null
-     * for a replace, which changes no index. */
+    /** The index change the USER asked for — an insert's boundary (+1) or a
+     * delete's slot (-1). Null for a replace, which asks for none. Any
+     * FURTHER moves the free run had to make to pay for it come off the
+     * result's own `droppedIndices`; see the move list below. */
     coverageShift: { at: number; delta: 1 | -1 } | null,
   ) => {
     if (result.outcome === "no-change") {
@@ -2821,18 +2845,27 @@ export default function LayoutEditor() {
     }
     setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: result.slots }));
     setSelectedSlot(result.selectedIndex === -1 ? null : { wallId, slotIndex: result.selectedIndex, story });
-    // Only shift coverage by what ACTUALLY happened to the array. An insert
-    // that had to absorb an automatic panel to pay for itself both adds and
-    // removes one, so the net index shift is zero and the records stay put.
-    const netChange = result.slotCountAfter - result.slotCountBefore;
-    const emptied =
-      coverageShift && netChange === coverageShift.delta ? shiftSlotCoverageRecords(story, wallId, coverageShift.at, coverageShift.delta) : 0;
-    // An insert that had to absorb an automatic panel to pay for itself
-    // leaves the wall's own panel count where it was. Said out loud rather
-    // than left to be discovered by counting panels on the drawing.
+    // EVERY index change this edit made, in the order it made them: the one
+    // the user asked for (an insert/delete — a replace asks for none), then
+    // each automatic panel the run had to give up to pay for it, highest
+    // index first so the earlier ones stay valid as they are applied.
+    // `droppedIndices` are in the array AFTER the user's own change, which
+    // is exactly the coordinate space the first move lands in.
+    const moves: { at: number; delta: 1 | -1 }[] = [
+      ...(coverageShift ? [coverageShift] : []),
+      ...[...result.droppedIndices].sort((a, b) => b - a).map((at) => ({ at, delta: -1 as const })),
+    ];
+    const emptied = shiftSlotCoverageRecords(story, wallId, moves);
+    // An insert that had to absorb automatic panels to pay for itself leaves
+    // the wall's own panel count where it was, or even lower. Said out loud
+    // — with WHAT it gave up, since an automatic panel can still be a braced
+    // one whose style the run just took with it — rather than left to be
+    // discovered by counting panels on the drawing.
+    const gaveUp = result.droppedTypes.length;
+    const bracedGaveUp = result.droppedTypes.filter((t) => t === "braced").length;
     const countNote =
-      result.slotCountAfter === result.slotCountBefore && verb === "Inserted"
-        ? ` The automatic run gave up a panel to pay for it, so this wall still has ${result.slotCountAfter} panels — narrow a panel to make room for another.`
+      gaveUp > 0 && verb === "Inserted"
+        ? ` The automatic run gave up ${gaveUp} panel${gaveUp === 1 ? "" : "s"}${bracedGaveUp > 0 ? ` (${bracedGaveUp} of them braced)` : ""} to pay for it, so this wall now has ${result.slotCountAfter} panels — narrow a panel to make room for another.`
         : "";
     const beamNote = emptied > 0 ? ` ${emptied} mid-wall beam${emptied === 1 ? "" : "s"} covered only that panel and ${emptied === 1 ? "was" : "were"} removed with it.` : "";
     showPanelPlacementNotice(

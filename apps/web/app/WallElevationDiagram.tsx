@@ -1272,32 +1272,44 @@ export default function WallElevationDiagram({
           </g>,
         );
       }
-      // The drag strips are deliberately NOT drawn while the tool is armed:
-      // one strip cannot be both "drag this boundary" and "insert here".
-      return elements;
     }
 
     // Panel drag-resize hit-zones — see the comment above.
+    //
+    // **Drawn only while NO tool is armed**, not just while the place tool
+    // is: with Delete armed these strips are still on top of the panel
+    // bodies, so a click near a panel edge started a resize drag instead of
+    // deleting the panel under the cursor. One strip cannot be both "drag
+    // this boundary" and "place/delete here", and the spec says the drag
+    // stands down for as long as the tool is armed — which includes Delete.
+    //
+    // Guarded rather than returned early on purpose: an early return here
+    // would silently skip anything a later pass appends to this function
+    // (Stage 3's unbuilt-span line is going to sit below), and a row element
+    // that vanishes only when a tool happens to be armed is the worst kind
+    // of bug to find.
     const isDraggablePanel = (s: PanelSlot) => s.type === "standard" || s.type === "braced";
-    for (let i = 0; i < rects.length - 1; i++) {
-      const leftRect = rects[i]!;
-      const rightRect = rects[i + 1]!;
-      if (!isDraggablePanel(leftRect.slot) || !isDraggablePanel(rightRect.slot)) continue;
-      elements.push(
-        <rect
-          key={`drag-${story}-${i}`}
-          x={xPx(leftRect.x1) - PANEL_DRAG_HANDLE_HALF_WIDTH_PX}
-          y={yPx(rowFloorHeightIn + rowMaxHeightIn)}
-          width={PANEL_DRAG_HANDLE_HALF_WIDTH_PX * 2}
-          height={rowMaxHeightIn * PX_PER_IN}
-          fill="transparent"
-          style={{ cursor: "ew-resize", pointerEvents: "all" }}
-          onMouseDown={(e) => {
-            e.stopPropagation();
-            setDraggingPanelBoundary({ story, leftSlotIndex: i });
-          }}
-        />,
-      );
+    if (panelToolMode === null) {
+      for (let i = 0; i < rects.length - 1; i++) {
+        const leftRect = rects[i]!;
+        const rightRect = rects[i + 1]!;
+        if (!isDraggablePanel(leftRect.slot) || !isDraggablePanel(rightRect.slot)) continue;
+        elements.push(
+          <rect
+            key={`drag-${story}-${i}`}
+            x={xPx(leftRect.x1) - PANEL_DRAG_HANDLE_HALF_WIDTH_PX}
+            y={yPx(rowFloorHeightIn + rowMaxHeightIn)}
+            width={PANEL_DRAG_HANDLE_HALF_WIDTH_PX * 2}
+            height={rowMaxHeightIn * PX_PER_IN}
+            fill="transparent"
+            style={{ cursor: "ew-resize", pointerEvents: "all" }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              setDraggingPanelBoundary({ story, leftSlotIndex: i });
+            }}
+          />,
+        );
+      }
     }
     return elements;
   };

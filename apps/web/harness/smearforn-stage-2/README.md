@@ -12,9 +12,15 @@ Three things, from the repo root:
 
 ```
 npm run dev --workspace=apps/web -- -p 3213
-chrome --headless=new --remote-debugging-port=9447 --user-data-dir=<a temp dir> about:blank
+chrome --headless=new --remote-debugging-port=9447 --user-data-dir=<a temp dir> --window-size=1600,1000 about:blank
 node apps/web/harness/smearforn-stage-2/run.mjs
 ```
+
+**`--window-size=1600,1000` is not optional.** Headless Chrome's default
+window is small enough that the sidebar pushes the elevation off screen, and
+every step here filters its click targets to what is actually on screen — so
+the run dies at "could not reach a wall elevation" with nothing wrong at all.
+Two review runs were lost to its absence.
 
 Override with `SMEARFORN_APP_URL` / `SMEARFORN_CDP_PORT`.
 

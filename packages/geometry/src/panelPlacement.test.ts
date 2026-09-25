@@ -419,6 +419,62 @@ describe("shiftSlotCoverage", () => {
   it("reports a range the delete emptied rather than leaving a zero-width one", () => {
     expect(shiftSlotCoverage({ startSlotIndex: 3, endSlotIndex: 4 }, 3, -1)).toBeNull();
   });
+
+  it("composes every move an absorbing insert makes — netting them is wrong", () => {
+    // 4 automatic panels holding 120in; a 96in Big Header leaves 24in, which
+    // is ONE buildable panel, so the run gives up three. The array goes 6
+    // slots -> 4, and the caller has to apply a +1 at the insertion point
+    // and a -1 per dropped panel: netting them to -2 (or, worse, skipping
+    // the shift because the net is not +1) leaves a beam over panels it
+    // never covered, or past the end of the array.
+    const wall = [corner(), std(30), std(30), std(30), std(30), corner()];
+    const result = commit(resolvePanelInsert(wall, 2, { type: "big-header", widthIn: 96 }, LIMITS));
+    expect(result.slotCountBefore).toBe(6);
+    expect(result.slotCountAfter).toBe(4);
+    expect(result.droppedIndices.length).toBe(3);
+    expect(result.droppedTypes).toEqual(["standard", "standard", "standard"]);
+    expect(totalEighths(result.slots)).toBe(totalEighths(wall));
+
+    // Apply the user's move, then each drop, highest index first.
+    const moves: { at: number; delta: 1 | -1 }[] = [
+      { at: 2, delta: 1 },
+      ...[...result.droppedIndices].sort((a, b) => b - a).map((at) => ({ at, delta: -1 as const })),
+    ];
+    const compose = (range: { startSlotIndex: number; endSlotIndex: number }) =>
+      moves.reduce<{ startSlotIndex: number; endSlotIndex: number } | null>(
+        (acc, m) => (acc === null ? null : shiftSlotCoverage(acc, m.at, m.delta)),
+        range,
+      );
+
+    // A beam over the last two automatic panels (slots 3 and 4). One of them
+    // survives the absorb, so the range follows it to where it actually
+    // ended up — index 2 of a four-slot wall, which is a real panel.
+    const twoPanels = compose({ startSlotIndex: 3, endSlotIndex: 5 });
+    expect(twoPanels).toEqual({ startSlotIndex: 2, endSlotIndex: 3 });
+    expect(twoPanels!.endSlotIndex).toBeLessThanOrEqual(result.slots.length);
+
+    // A beam over ONLY a panel the run gave up has nothing left to be about,
+    // and says so rather than floating over whatever is now at that index.
+    expect(compose({ startSlotIndex: 3, endSlotIndex: 4 })).toBeNull();
+  });
+
+  it("keeps a coverage range over the panels that survive an absorbing insert", () => {
+    const wall = [corner(), std(30), std(30), std(30), std(30), corner()];
+    const result = commit(resolvePanelInsert(wall, 4, { type: "standard", widthIn: 48 }, LIMITS));
+    expect(result.droppedIndices.length).toBeGreaterThan(0);
+    const moves: { at: number; delta: 1 | -1 }[] = [
+      { at: 4, delta: 1 },
+      ...[...result.droppedIndices].sort((a, b) => b - a).map((at) => ({ at, delta: -1 as const })),
+    ];
+    // A beam over slot 1 only — well left of everything that moved.
+    const moved = moves.reduce<{ startSlotIndex: number; endSlotIndex: number } | null>(
+      (acc, m) => (acc === null ? null : shiftSlotCoverage(acc, m.at, m.delta)),
+      { startSlotIndex: 1, endSlotIndex: 2 },
+    );
+    expect(moved).toEqual({ startSlotIndex: 1, endSlotIndex: 2 });
+    // And it still names a real panel in the committed array.
+    expect(moved!.endSlotIndex).toBeLessThanOrEqual(result.slots.length);
+  });
 });
 
 describe("redistributeFreeRun", () => {
