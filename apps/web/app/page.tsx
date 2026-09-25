@@ -329,6 +329,7 @@ import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import WallElevationDiagram from "./WallElevationDiagram";
 import styles from "./page.module.css";
 import elevationStyles from "./ElevationControls.module.css";
+import { tilerWouldDropPanels } from "./handPlacedWallRetile";
 
 const FootprintCanvas = dynamic(() => import("./FootprintCanvas"), { ssr: false });
 const Building3DView = dynamic(() => import("./Building3DView"), { ssr: false });
@@ -883,6 +884,13 @@ export default function LayoutEditor() {
   // avoids it silently staying "on" against a different wall's own diagram.
   useEffect(() => {
     setAdjustingGableMaxHeight(false);
+  }, [elevationViewWallId]);
+  // Same reason the max-height drag mode resets: an armed placement tool
+  // carries no meaning across a wall switch, and leaving it on would make
+  // the first click on the NEXT wall replace a panel the user was only
+  // looking at.
+  useEffect(() => {
+    setPanelPlacementTool(null);
   }, [elevationViewWallId]);
   // Which panel a click in Edit mode most recently landed on (2D or 3D —
   // both route through handleToggleOpening below) — drives the "Selected
@@ -2546,8 +2554,6 @@ export default function LayoutEditor() {
    * come back at exactly its pinned width. If either fails, nothing is
    * written and the caller says so. Never partially apply.
    */
-  const standardFamilyCount = (slots: PanelSlot[]) => slots.filter((s) => s.type === "standard" || s.type === "braced").length;
-
   const retileWallAroundPins = (
     story: "ground" | "second",
     wallId: string,
@@ -2593,7 +2599,7 @@ export default function LayoutEditor() {
     // instead — the same count-preserving mechanism insert/replace/delete
     // use — and the tiler's answer is discarded. A wall that has never been
     // hand-placed on takes the tiler path, exactly as it did before Stage 2.
-    if (standardFamilyCount(finalSlots) < standardFamilyCount(nextSlots)) {
+    if (tilerWouldDropPanels(nextSlots, finalSlots)) {
       const fallback = redistributeFreeRun(beforeSlots, nextSlots, editIndex, panelWidthLimitsIn, { rebalance });
       if (fallback.outcome !== "commit") return { ok: false };
       const fallbackIndex = findNthStandardFamilyIndex(fallback.slots, keepOrdinal);
