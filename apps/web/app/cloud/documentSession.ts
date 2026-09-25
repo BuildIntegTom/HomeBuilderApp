@@ -141,6 +141,8 @@ export type DocumentSessionAction =
   | CloudRenameAction
   | BrowseOpenAction
   | { type: "cloud-moved"; projectId: string; folder: CloudFolder }
+  /** Stage 5: that project was permanently deleted. Not a save, not a load. */
+  | { type: "cloud-deleted"; projectId: string }
   /** A REAL account change: a different account signed in, or an explicit
    * sign-out. Not a transient signed-out reading (see trackSignedInAccount). */
   | { type: "account-changed" }
@@ -303,6 +305,28 @@ export function documentSessionReducer(state: DocumentSession, action: DocumentS
       // Filing, not saving: the date does not move.
       if (!state.cloudContext || state.cloudContext.projectId !== action.projectId) return state;
       return { ...state, cloudContext: { ...state.cloudContext, folder: action.folder } };
+
+    case "cloud-deleted":
+      // Stage 5. The project this editor was attached to no longer exists, so
+      // the attachment goes — the same detach-without-replacing that an
+      // account change does, and for the same reason: there is nowhere to save
+      // to any more.
+      //
+      // THE DESIGN ON SCREEN IS NOT TOUCHED, and neither is its title-block
+      // date. A delete is not one of the four date writers: the drawing still
+      // came from whatever save or load put it there, and saying otherwise
+      // would print a confident wrong date on the sheet.
+      //
+      // `designGeneration` DOES NOT MOVE either, because the design was not
+      // replaced. The consequence, accepted and recorded: an `open` of this
+      // same project already in flight would still be applied and would
+      // re-attach to a project that is gone. The next save then gets a clean
+      // refusal with Download project file, which is the same place any other
+      // lost-access save lands. A generation bump would void that answer by
+      // claiming the design had been replaced, which is false and is read by
+      // every other cloud path.
+      if (!state.cloudContext || state.cloudContext.projectId !== action.projectId) return state;
+      return { ...state, cloudContext: null };
 
     case "account-changed":
       // The design on screen is not replaced, so its date stays: it still came

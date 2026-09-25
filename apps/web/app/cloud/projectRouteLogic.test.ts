@@ -771,12 +771,13 @@ describe("the project routes", () => {
       return statSync(path).isDirectory() ? files(path) : [path];
     });
 
-  it("exist for 2B, 2C (version list, rename), 3B (shared list, access list) and 4C (asking for access), and not for 2D's backup", () => {
+  it("exist for 2B, 2C (version list, rename), 3B (shared list, access list), 4C (asking for access) and Stage 5 (the delete preview), and not for 2D's backup", () => {
     const routes = files(apiDir).map((p) => p.slice(apiDir.length).replace(/\\/g, "/"));
     expect(routes.sort()).toEqual([
       "/[id]/access-requests/route.ts",
       "/[id]/access/[grantId]/route.ts",
       "/[id]/access/route.ts",
+      "/[id]/deletion/route.ts",
       "/[id]/rename/route.ts",
       "/[id]/route.ts",
       "/[id]/versions/[versionId]/route.ts",
@@ -784,6 +785,11 @@ describe("the project routes", () => {
       "/route.ts",
       "/shared/route.ts",
     ]);
+    // Stage 5's preview READS. It is a GET and nothing else, so the note that
+    // describes a delete can never be the thing that performs one.
+    const deletion = readFileSync(join(apiDir, "[id]", "deletion", "route.ts"), "utf8");
+    expect(deletion).toMatch(/export async function GET/);
+    expect(deletion).not.toMatch(/export async function (POST|PUT|PATCH|DELETE)/);
     const versions = readFileSync(join(apiDir, "[id]", "versions", "route.ts"), "utf8");
     expect(versions).toMatch(/export async function GET/);
     expect(versions).toMatch(/export async function POST/);
@@ -792,18 +798,40 @@ describe("the project routes", () => {
     expect(rename).not.toMatch(/export async function (GET|PATCH|DELETE)/);
   });
 
-  it("can delete no project or version (decision 13): the one DELETE (3B) removes a grant, through removeGrant only", () => {
+  /**
+   * There are exactly TWO DELETEs under /api/projects, and each is a different
+   * thing. 3B's removes one grant. Stage 5's removes one WHOLE PROJECT, and
+   * lets the database cascade to its versions — it must never reach
+   * `project_versions` itself, because a single-version delete would leave
+   * `head_version_number` stale and break a `parent_version_id` chain. The
+   * spec says that operation needs its own design and this is not it.
+   */
+  it("delete a grant (3B) and a whole project (Stage 5) — and nothing anywhere deletes a version", () => {
+    const seen: string[] = [];
     for (const path of files(apiDir)) {
       const source = readFileSync(path, "utf8");
-      const isGrantRoute = path.replace(/\\/g, "/").endsWith("/[id]/access/[grantId]/route.ts");
+      const route = path.replace(/\\/g, "/");
+      const isGrantRoute = route.endsWith("/[id]/access/[grantId]/route.ts");
+      const isProjectRoute = route.endsWith("/api/projects/[id]/route.ts");
       if (isGrantRoute) {
         expect(source).toMatch(/export async function DELETE/);
         expect(source).toMatch(/removeGrant\(/);
         expect(source).not.toMatch(/from\("projects"\)|from\("project_versions"\)/);
+        seen.push("grant");
+      } else if (isProjectRoute) {
+        expect(source).toMatch(/export async function DELETE/);
+        expect(source).toMatch(/deleteProject\(/);
+        seen.push("project");
       } else {
         expect(source, path).not.toMatch(/export async function DELETE/);
       }
+      // No route deletes a version, whatever else it does.
+      expect(source, path).not.toMatch(/from\("project_versions"\)[\s\S]{0,80}\.delete\(/);
     }
+    expect(seen.sort()).toEqual(["grant", "project"]);
+    // And neither does the logic behind the project delete.
+    const deleteLogic = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "deleteRouteLogic.ts"), "utf8");
+    expect(deleteLogic).not.toMatch(/from\("project_versions"\)[\s\S]{0,80}\.delete\(/);
   });
 
   it("never import the admin (service-role) client", () => {

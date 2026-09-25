@@ -42,6 +42,8 @@ import {
 import { cloudFetch } from "./cloudFetch";
 import { SHARED_TAB_LABEL, copyOwnedByLine, refileHeading, sharedEmptyLines, sharedRowDetail } from "./sharingDisplay";
 import { useProjectAccess } from "./useProjectAccess";
+import { useProjectDelete } from "./useProjectDelete";
+import { DELETE_BUTTON_LABEL } from "./deleteDisplay";
 import { useShareNotice } from "./useShareNotice";
 import { divergenceNotice, movedOnSaveNotice, replacedWhileSavingNotice, staleOpenNotice } from "./divergenceNotice";
 import {
@@ -353,6 +355,33 @@ export function useCloudProjects({
   const access = useProjectAccess({ onAuthProblem: refreshSession, onChanged: reloadTab });
   const resetAccess = access.reset;
 
+  /**
+   * Stage 5: the permanent-delete note (decision 13 — only a platform admin
+   * deletes anything permanently). `isPlatformAdmin` decides only whether the
+   * CONTROL is offered; `projects_delete` in the database decides whether a
+   * delete happens, and the route refuses a non-admin session before it asks.
+   */
+  const isPlatformAdmin = Boolean(snapshot?.user?.isPlatformAdmin);
+  const projectDelete = useProjectDelete({
+    onAuthProblem: refreshSession,
+    onDeleted: useCallback(
+      (projectId: string) => {
+        // The attachment goes if it was this editor's project; the design and
+        // its date do not move (see documentSession's `cloud-deleted`).
+        dispatch({ type: "cloud-deleted", projectId });
+        reloadTab();
+      },
+      [dispatch, reloadTab],
+    ),
+    // Read from the synchronous mirror at the moment the answer lands, not
+    // from rendered state, which lags a dispatch by up to a frame.
+    isOpenHere: useCallback(
+      (projectId: string) => readDocumentSession().cloudContext?.projectId === projectId,
+      [readDocumentSession],
+    ),
+  });
+  const resetProjectDelete = projectDelete.reset;
+
   // Stage 3C: the "shared with you" notice. It lives here rather than beside
   // the account control (the handoff's suggestion) because both of its actions
   // already do: Open from cloud's Shared tab is this hook's own state, and the
@@ -390,6 +419,9 @@ export function useCloudProjects({
     setAskOutcome(null);
     setAskOpen(false);
     resetAccess();
+    // Stage 5: a half-typed confirmation belongs to the account that opened
+    // it. A new account does not inherit a primed delete.
+    resetProjectDelete();
     setOpenProblem(null);
     setDialogError(null);
     // A history read by the old account is not left on screen for the new
@@ -401,7 +433,7 @@ export function useCloudProjects({
     setHistoryLoading(false);
     setHistoryProblem(null);
     setRenaming(null);
-  }, [dispatch, resetAccess]);
+  }, [dispatch, resetAccess, resetProjectDelete]);
 
   useEffect(() => {
     const next = trackSignedInAccount(lastKnownUserId.current, userId);
@@ -1292,6 +1324,23 @@ export function useCloudProjects({
           >
             Access…
           </button>
+          {/* Stage 5. Offered ONLY to a platform admin (decision 13), and only
+              on a folder row — a project this company owns and files. A Shared
+              with us row is somebody else's project reached through a grant,
+              and Browse rows carry no write control at all. The database would
+              allow a platform admin to delete any of them; the control is kept
+              where the clearing-out actually happens. */}
+          {isPlatformAdmin && !shared && (
+            <button
+              type="button"
+              className={styles.button}
+              title="Permanently delete this project and every version of it. This cannot be undone."
+              disabled={rowBusy !== null || busy}
+              onClick={() => projectDelete.openDelete(row.id, row.name)}
+            >
+              {DELETE_BUTTON_LABEL}
+            </button>
+          )}
         </span>
         {renamingThis && (
           <form
@@ -1864,6 +1913,10 @@ export function useCloudProjects({
 
       {/* Stage 3B. Last, so it lands on top of the row or menu it was opened from. */}
       {access.note}
+
+      {/* Stage 5. After the access note, so a delete opened from a row lands
+          on top of anything else that row can open. */}
+      {projectDelete.note}
 
       {/* Stage 3C. The notice arrives on its own at sign-in or page load, so it
           is rendered last of all: nothing it could cover is open yet, and if
