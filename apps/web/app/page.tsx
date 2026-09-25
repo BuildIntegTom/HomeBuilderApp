@@ -2784,7 +2784,7 @@ export default function LayoutEditor() {
     coverageShift: { at: number; delta: 1 | -1 } | null,
   ) => {
     if (result.outcome === "no-change") {
-      showPanelPlacementNotice(`That panel is already what the tool is set to, so nothing changed.`);
+      showPanelPlacementNotice("That panel is already what the tool is set to, so nothing changed.");
       return;
     }
     if (result.outcome === "refuse-not-placeable") {
