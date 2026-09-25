@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { computeSillRunWidths, getOpeningAnchors, markSafetyCorner, nextPanelCycleState, retileWithOpenings, tileWall } from "./tiling";
+import {
+  computeSillRunWidths,
+  getOpeningAnchors,
+  markSafetyCorner,
+  nextPanelCycleState,
+  retileWithOpenings,
+  tileWall,
+  TILER_MAX_PANEL_WIDTH_IN,
+  TILER_MIN_PANEL_WIDTH_IN,
+} from "./tiling";
 import type { OpeningAnchor } from "./tiling";
 import type { PanelSlot, WallEnd } from "./types";
 
@@ -463,9 +472,30 @@ function collectGridViolations(
     if (slot.widthIn < 0) {
       violations.push(`${label}: ${slot.type} width ${slot.widthIn} is negative`);
     }
-    // 4. the pre-existing "never hand the shop an oversized panel" rule
+    // 4. the "never hand the shop an oversized panel" rule — RESTATED for
+    //    the absorb rule (2026-09-24), deliberately and not by loosening it
+    //    until it passed.
+    //
+    //    It used to read "no standard slot exceeds standardWidthIn", full
+    //    stop. Absorb makes that false on purpose: where a two-way split
+    //    would put a part under the shop's 24in floor, the tiler emits ONE
+    //    wider panel instead, and that panel is wider than the nominal
+    //    standard width. An unbuildable panel is worse than an oversized
+    //    one, so the floor outranks the cap.
+    //
+    //    What survives — and it is the part that actually protects a cut
+    //    list — is the CEILING. An oversized standard slot is legal only as
+    //    an absorbed leftover, and every absorbed leftover is STRICTLY under
+    //    2 x the floor, which is exactly the catalog's 48in ceiling. Both
+    //    absorb paths give that bound: computePlainSizing's branch runs only
+    //    when `S + r < 2F`, and buildEvenMiddle's reduced count n =
+    //    floor(b / F) leaves a widest part under `F + F/n <= 2F`.
     if (slot.type === "standard" && slot.widthIn > standardWidthIn + 1e-9) {
-      violations.push(`${label}: standard slot ${slot.widthIn} exceeds standardWidthIn ${standardWidthIn}`);
+      if (slot.widthIn >= TILER_MAX_PANEL_WIDTH_IN - 1e-9) {
+        violations.push(
+          `${label}: standard slot ${slot.widthIn} exceeds standardWidthIn ${standardWidthIn} AND reaches the ${TILER_MAX_PANEL_WIDTH_IN}in ceiling — absorb cannot produce this`,
+        );
+      }
     }
     sumEighths += Math.round(slot.widthIn * 8);
   }
@@ -559,18 +589,56 @@ describe("the 1/8in grid invariant", () => {
     expect(violations.slice(0, 10)).toEqual([]);
   });
 
-  it("splits the 47.125in leftover budget as 23.625 + 23.5, not 23.5625 twice", () => {
-    // The named regression. A 178.875in wall with two corners leaves a middle
-    // of 127.875in; minus the 0.75in gap that is 127.125in, which is 3 whole
-    // 40in standards plus a 7.125in remainder — so the panel next to the gap
-    // splits a budget of 40 + 7.125 = 47.125in (377 eighths, an ODD number of
-    // eighths). The old even halving put both halves on a sixteenth.
+  it("splits an ODD-eighth leftover budget onto whole eighths, not onto a sixteenth", () => {
+    // The named regression, re-aimed. It used to use a 178.875in wall, whose
+    // 47.125in leftover budget ABSORBS as of 2026-09-24 (see the test below)
+    // and so no longer reaches the split branch at all. The behaviour it
+    // guards — an odd number of eighths splits 193/192, never 192.5 twice —
+    // is unchanged, it just needs a leftover at or over 48in to reach.
+    //
+    // A 179.875in wall with two corners leaves a 128.875in middle; minus the
+    // 0.75in gap that is 128.125in, i.e. 3 whole 40in standards plus an
+    // 8.125in remainder. The panel next to the gap splits 40 + 8.125 =
+    // 48.125in — 385 eighths, an ODD count — into 24.125 + 24.
+    const { slots } = tileWall(179.875, 40, CORNER_WIDTH_IN, "end");
+    const widths = slots.map((s) => s.widthIn);
+    expect(widths).toContain(24.125);
+    expect(widths).toContain(24);
+    expect(widths).not.toContain(24.0625);
+    expect(slots.reduce((sum, s) => sum + Math.round(s.widthIn * 8), 0)).toBe(Math.round(179.875 * 8));
+  });
+
+  it("ABSORBS the 47.125in leftover into one panel instead of splitting it into two 23½in ones", () => {
+    // The same 178.875in wall the split regression used to use, and the
+    // headline case for the absorb rule. The leftover budget is 47.125in;
+    // halving it gives 23.625 + 23.5, and BOTH are under the 24in minimum
+    // Building Integrity's shop can build. Before 2026-09-24 the tiler
+    // emitted them anyway — a cut list with two panels nobody can make.
     const { slots } = tileWall(178.875, 40, CORNER_WIDTH_IN, "end");
     const widths = slots.map((s) => s.widthIn);
-    expect(widths).toContain(23.625);
-    expect(widths).toContain(23.5);
-    expect(widths).not.toContain(23.5625);
+    expect(widths).toContain(47.125);
+    expect(widths).not.toContain(23.625);
+    expect(widths).not.toContain(23.5);
+    // One panel fewer on the run, and the wall's own total is untouched.
+    expect(slots.filter((s) => s.type === "standard")).toHaveLength(3);
     expect(slots.reduce((sum, s) => sum + Math.round(s.widthIn * 8), 0)).toBe(Math.round(178.875 * 8));
+  });
+
+  it("gives the tie at exactly 48in to the SPLIT, not to the absorb", () => {
+    // Both branches are legal at this single point — one 48in panel, or two
+    // 24in ones — and the choice is arbitrary but FIXED. Split wins: it
+    // preserves the behaviour that was there before absorb and keeps panels
+    // nearer the nominal width. Asserted because "arbitrary" is exactly the
+    // kind of decision that gets silently flipped.
+    //
+    // A 179.75in wall with two corners: middle 128.75, minus the gap 128,
+    // i.e. 3 x 40 plus an 8in remainder, so the leftover is exactly 48in.
+    const { slots } = tileWall(179.75, 40, CORNER_WIDTH_IN, "end");
+    const widths = slots.map((s) => s.widthIn);
+    expect(widths).not.toContain(48);
+    expect(widths.filter((w) => w === 24)).toHaveLength(2);
+    expect(slots.filter((s) => s.type === "standard")).toHaveLength(4);
+    expect(slots.reduce((sum, s) => sum + Math.round(s.widthIn * 8), 0)).toBe(Math.round(179.75 * 8));
   });
 
   it("snaps an off-grid standardWidthIn instead of passing it through to full-width panels", () => {
@@ -588,12 +656,42 @@ describe("the 1/8in grid invariant", () => {
   });
 
   it("floors an off-grid standard width rather than rounding it up past its own cap", () => {
-    // standardWidthIn is a cap, so 16.7 becomes 16.625, never 16.75. Rounding
+    // standardWidthIn is a cap, so 40.3 becomes 40.25, never 40.375. Rounding
     // a cap upward would hand the shop a panel wider than the cap asked for.
+    //
+    // This used to use 16.7 -> 16.625. It cannot any more: a standard width
+    // BELOW the 24in fabrication floor makes absorb fire on every run (every
+    // leftover is under 48in), so no full-width 16.625in panel survives to
+    // be measured. 40.3 exercises the same floor-not-round rule at a width
+    // the shop can actually build — and the Panelizer's Standard width field
+    // is now clamped to >= 24in, so 16.7 is no longer reachable from the UI
+    // either.
+    const { slots } = tileWall(400, 40.3, CORNER_WIDTH_IN, "end");
+    const standards = slots.filter((s) => s.type === "standard").map((s) => s.widthIn);
+    expect(standards).toContain(40.25);
+    expect(standards).not.toContain(40.375);
+  });
+
+  it("⚠ ABSORB CANNOT SAVE A SUB-24in STANDARD WIDTH, and this is why the Panelizer field is clamped", () => {
+    // The limit of the rule, stated rather than left to be discovered.
+    // Absorb only ever resolves the LEFTOVER. If `standardWidthIn` is itself
+    // under the fabrication floor, every full-width panel on the run is
+    // unbuildable and there is nothing absorb can do about it — a 16.625in
+    // standard width produces a wall of 16.625in panels.
+    //
+    // That is the whole reason the Panelizer's Standard width field is now
+    // clamped to [24, 48]: no amount of absorbing fixes a cap set below the
+    // floor. tileWall is a library function and does not clamp its own
+    // argument, so this documents what it does with one.
     const { slots } = tileWall(400, 16.7, CORNER_WIDTH_IN, "end");
     const standards = slots.filter((s) => s.type === "standard").map((s) => s.widthIn);
-    expect(Math.max(...standards)).toBeLessThanOrEqual(16.7);
     expect(standards).toContain(16.625);
+    expect(Math.min(...standards)).toBeLessThan(TILER_MIN_PANEL_WIDTH_IN);
+    // What absorb DOES still guarantee, even here: the leftover became one
+    // panel rather than two narrower ones, and nothing breached the ceiling
+    // or the sum.
+    expect(Math.max(...standards)).toBeLessThan(TILER_MAX_PANEL_WIDTH_IN);
+    expect(slots.reduce((sum, s) => sum + Math.round(s.widthIn * 8), 0)).toBe(Math.round(400 * 8));
   });
 
   it("clamps the safety-gap slot to a budget too small to hold it, rather than overrunning the wall", () => {
@@ -640,6 +738,185 @@ describe("the 1/8in grid invariant", () => {
       }
     }
     expect(violations.slice(0, 10)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE ABSORB RULE — the gate for Smearforn Stage 1r.
+//
+// Tommy, 2026-09-24: "I can't make any panels that are left to right elevation
+// view shorter than 2'." The tiler used to break that routinely — its two-way
+// split of a leftover lands between 20in and 40in at the 40in standard width —
+// so the app could hand a shop a cut list containing a panel that shop cannot
+// make. Absorb is his chosen answer: one wider panel instead of two narrow
+// ones, chosen over reporting it, over widening the safety gap, and over
+// refusing the wall length.
+//
+// Because he rejected refusing the wall length, there is NO fallback here.
+// Every wall length has to come out legal on its own, which is why this is a
+// sweep and not a handful of cases. The standard widths are the four the plan
+// names, i.e. the ones reachable now that the Panelizer's Standard width field
+// is clamped to [24, 48].
+// ---------------------------------------------------------------------------
+describe("the absorb rule: no tiler-generated panel the shop cannot build", () => {
+  /** The four reachable standard widths: the fabrication floor, Square Bale's
+   * fixed 39in, the 40in default, and the catalog ceiling. */
+  const ABSORB_STANDARD_WIDTHS_IN = [24, 39, 40, 48];
+
+  /**
+   * Pushes a description of every panel outside [24in, 48in], plus the sum
+   * check, which has to survive absorb untouched — the whole point of moving
+   * width between panels rather than inventing it.
+   *
+   * The safety-gap board is exempt BY TYPE and deliberately: it is a 0.75in
+   * plywood spacer with no studs, plates or girts (`buildSafetyGapMembers`),
+   * not a panel for this purpose. Opening slots are exempt too — a window's
+   * `widthIn` is a rough opening, not a fabricated panel width.
+   */
+  function collectFabricationViolations(
+    slots: PanelSlot[],
+    wallLengthIn: number,
+    label: string,
+    violations: string[],
+  ): void {
+    let sumEighths = 0;
+    for (const slot of slots) {
+      const isFabricatedPanel = slot.type === "standard" || slot.type === "braced" || slot.type === "corner";
+      if (isFabricatedPanel && slot.widthIn < TILER_MIN_PANEL_WIDTH_IN - 1e-9) {
+        violations.push(`${label}: ${slot.type} slot ${slot.widthIn} is under the ${TILER_MIN_PANEL_WIDTH_IN}in fabrication minimum`);
+      }
+      if (isFabricatedPanel && slot.widthIn > TILER_MAX_PANEL_WIDTH_IN + 1e-9) {
+        violations.push(`${label}: ${slot.type} slot ${slot.widthIn} is over the ${TILER_MAX_PANEL_WIDTH_IN}in ceiling`);
+      }
+      sumEighths += Math.round(slot.widthIn * 8);
+    }
+    // Conserved EXACTLY, as integers. Absorb moves width between panels; it
+    // must never create or destroy any.
+    if (sumEighths !== Math.round(wallLengthIn * 8)) {
+      violations.push(`${label}: slots sum to ${sumEighths} eighths, wall is ${Math.round(wallLengthIn * 8)} eighths`);
+    }
+  }
+
+  it("holds for tileWall across every eighth from 96in to 720in, all widths/gap ends/corner combos", () => {
+    const violations: string[] = [];
+    for (let eighths = 96 * 8; eighths <= 720 * 8; eighths++) {
+      const wallLengthIn = eighths / 8;
+      for (const standardWidthIn of ABSORB_STANDARD_WIDTHS_IN) {
+        for (const gapEnd of GAP_ENDS) {
+          for (const [hasCornerStart, hasCornerEnd] of CORNER_COMBOS) {
+            const { slots } = tileWall(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, gapEnd, hasCornerStart, hasCornerEnd);
+            collectFabricationViolations(
+              slots,
+              wallLengthIn,
+              `tileWall(${wallLengthIn}, ${standardWidthIn}, ${gapEnd}, ${hasCornerStart}/${hasCornerEnd})`,
+              violations,
+            );
+          }
+        }
+      }
+    }
+    expect(violations.slice(0, 10)).toEqual([]);
+  });
+
+  it("holds for retileWithOpenings too — an opening changes the budget, not the rule", () => {
+    const violations: string[] = [];
+    const OPENING_WIDTH_IN = 36;
+    for (let eighths = 96 * 8; eighths <= 720 * 8; eighths++) {
+      const wallLengthIn = eighths / 8;
+      for (const standardWidthIn of ABSORB_STANDARD_WIDTHS_IN) {
+        for (const [hasCornerStart, hasCornerEnd] of CORNER_COMBOS) {
+          const fixedEndsIn = (hasCornerStart ? CORNER_WIDTH_IN : 0) + (hasCornerEnd ? CORNER_WIDTH_IN : 0);
+          for (let openingCount = 1; openingCount <= 3; openingCount++) {
+            // Same over-reservation skip the grid sweep uses: a wall that
+            // genuinely cannot hold its openings is not a tiling case.
+            if (wallLengthIn - fixedEndsIn - openingCount * OPENING_WIDTH_IN < standardWidthIn + 0.75) continue;
+            const openings: OpeningAnchor[] = Array.from({ length: openingCount }, (_, i) => ({
+              beforeStandardCount: i,
+              type: "window" as const,
+              widthIn: OPENING_WIDTH_IN,
+            }));
+            const { slots } = retileWithOpenings(
+              wallLengthIn,
+              standardWidthIn,
+              CORNER_WIDTH_IN,
+              "end",
+              hasCornerStart,
+              hasCornerEnd,
+              openings,
+            );
+            collectFabricationViolations(
+              slots,
+              wallLengthIn,
+              `retileWithOpenings(${wallLengthIn}, ${standardWidthIn}, ${openingCount} openings, ${hasCornerStart}/${hasCornerEnd})`,
+              violations,
+            );
+          }
+        }
+      }
+    }
+    expect(violations.slice(0, 10)).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // The three residual cases absorb does NOT reach. Each has nothing to
+  // absorb into, each is Review-Log-only by decision, and each is asserted
+  // here so that "deliberately not fixed" stays distinguishable from
+  // "accidentally still broken".
+  // -------------------------------------------------------------------------
+  it("residual 1: a two-corner wall between 51in and 75in still yields a sub-minimum middle", () => {
+    // 51in of corners on a 61.75in wall (the ADU's own 5'-1¾" plan dimension,
+    // which is why this band is worth watching) leaves a 10.75in middle.
+    // floor(10.75 / 24) is 0, so no legal panel count exists at all.
+    //
+    // The real fix extends resolveCorners' merged-corner rule to "too short
+    // for both corners PLUS a legal middle" — corner geometry, i.e. real
+    // construction. Tommy flagged it and deferred it until after admin
+    // tooling: "I want to prioritize good building principles here with the
+    // panelizer. I like the corner geometry rule… Let's flag this and return
+    // to it after admin tooling." NOT attempted here on purpose.
+    const { slots } = tileWall(61.75, 40, CORNER_WIDTH_IN, "end", true, true);
+    const middle = slots.filter((s) => s.type === "standard");
+    expect(middle).toHaveLength(1);
+    expect(middle[0]!.widthIn).toBeCloseTo(10.75, 6);
+    expect(middle[0]!.widthIn).toBeLessThan(TILER_MIN_PANEL_WIDTH_IN);
+    // The sum invariant still holds — a broken wall, not a broken total.
+    expect(slots.reduce((sum, s) => sum + Math.round(s.widthIn * 8), 0)).toBe(Math.round(61.75 * 8));
+    // And the first legal two-corner wall is 75in, where the middle is
+    // exactly 24in. 6ft (72in) leaves 21in and is INSIDE the broken band —
+    // recording "6ft minimum" would have produced the very panel his shop
+    // cannot build.
+    const legal = tileWall(75, 40, CORNER_WIDTH_IN, "end", true, true).slots.filter((s) => s.type === "standard");
+    expect(legal[0]!.widthIn).toBe(24);
+  });
+
+  it("residual 2: rawStandardCount === 0 — openings eating all but a sliver", () => {
+    // A 148.5in window on a 200in wall leaves half an inch of plain budget.
+    // Its neighbours are an opening and a corner; there is no standard panel
+    // to absorb into, so the gap clamps and nothing else can be done.
+    const { slots } = retileWithOpenings(200, 40, CORNER_WIDTH_IN, "end", true, true, [
+      { beforeStandardCount: 0, type: "window", widthIn: 148.5 },
+    ]);
+    expect(slots.map((s) => s.type)).toEqual(["corner", "window", "safety-gap", "corner"]);
+    expect(slots.reduce((sum, s) => sum + Math.round(s.widthIn * 8), 0)).toBe(Math.round(200 * 8));
+  });
+
+  it("residual 3: a single corner clamped onto a sub-25½in wall", () => {
+    // A degenerate wall. The corner clamps to the wall's own length rather
+    // than protruding, and the result is under the fabrication minimum with
+    // nothing else on the wall to take width from.
+    const { slots } = tileWall(20, 40, CORNER_WIDTH_IN, "end", true, false);
+    expect(slots).toHaveLength(1);
+    expect(slots[0]!.type).toBe("corner");
+    expect(slots[0]!.widthIn).toBe(20);
+    expect(slots[0]!.widthIn).toBeLessThan(TILER_MIN_PANEL_WIDTH_IN);
+  });
+
+  it("absorbs on a short wall too — buildEvenMiddle drops a panel rather than halving under the floor", () => {
+    // The no-safety-gap path (walls at or under 12ft). A 40⅛in budget at the
+    // 40in standard used to give two ~20in panels: ceil(40.125 / 40) is 2.
+    // It now gives one 40⅛in panel, because floor(40.125 / 24) is 1.
+    const { slots } = tileWall(40.125, 40, CORNER_WIDTH_IN, "end", false, false);
+    expect(slots.map((s) => [s.type, s.widthIn])).toEqual([["standard", 40.125]]);
   });
 });
 

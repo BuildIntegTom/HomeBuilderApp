@@ -556,3 +556,97 @@ describe("setWindowWidth", () => {
     expect(result[0]!.widthIn).toBe(48);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ABSORB MEETS THE CORNER-BRACE COMBINE — the one interaction Smearforn's plan
+// said to TEST rather than assume.
+//
+// The tiler's absorb rule (see tiling.ts) guarantees every tiler-generated
+// panel lands in [24in, 48in]. `applyBracedPlacement` runs AFTERWARDS, and its
+// corner-brace-combining rule fixes a safety-gap slot to
+// `standardWidthIn + 0.75in`, shedding the difference onto the nearest
+// standard panel. That shed is the one place a legal tiling can be made
+// illegal after the fact.
+//
+// MEASURED, NOT ASSUMED. Sweeping every eighth from 96in to 400in across
+// standard widths {24, 39, 40, 48}, three corner combinations and 0-2
+// openings, then running applyBracedPlacement over each result:
+//
+//   * before absorb: 32,266 cases produced a panel outside [24in, 48in];
+//   * after absorb:   3,279 — and that is EXACTLY the number of cases in
+//     which the combine fires (3,279 either side of the change).
+//
+// So every remaining violation is the combine, the combine behaves
+// identically before and after, and absorb removes nine tenths of the cases
+// without creating any. The combine's own defect is NOT fixed here: it is
+// braced placement rather than the tiler, it predates this work, and it is
+// outside Stage 1r's scope. It reaches a human through the Review Log's
+// below-minimum entry, which fires however a narrow panel got there.
+// ---------------------------------------------------------------------------
+describe("the corner-brace combine vs. the tiler's fabrication bounds", () => {
+  const CORNER_WIDTH_IN = 25.5;
+  const MIN_IN = 24;
+  const MAX_IN = 48;
+
+  it("keeps every panel inside [24in, 48in] on every wall where the combine does NOT fire", () => {
+    const violations: string[] = [];
+    for (let eighths = 96 * 8; eighths <= 400 * 8; eighths++) {
+      const wallLengthIn = eighths / 8;
+      for (const standardWidthIn of [24, 39, 40, 48]) {
+        for (const [hasStart, hasEnd] of [
+          [true, true],
+          [true, false],
+          [false, false],
+        ] as [boolean, boolean][]) {
+          const { slots } = tileWall(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, "end", hasStart, hasEnd);
+          const braced = applyBracedPlacement(slots, 300, standardWidthIn, "x", false);
+          // The combine is identifiable after the fact: it is the only thing
+          // that gives a safety-gap slot a secondary type.
+          if (braced.some((s) => s.type === "safety-gap" && s.secondaryType === "braced")) continue;
+          for (const slot of braced) {
+            if (slot.type !== "standard" && slot.type !== "braced" && slot.type !== "corner") continue;
+            if (slot.widthIn < MIN_IN - 1e-9 || slot.widthIn > MAX_IN + 1e-9) {
+              violations.push(`${wallLengthIn}/${standardWidthIn}/${hasStart}${hasEnd}: ${slot.type} ${slot.widthIn}`);
+            }
+          }
+          const sumEighths = braced.reduce((a, s) => a + Math.round(s.widthIn * 8), 0);
+          if (sumEighths !== eighths) {
+            violations.push(`${wallLengthIn}/${standardWidthIn}/${hasStart}${hasEnd}: sums to ${sumEighths}, wall is ${eighths}`);
+          }
+        }
+      }
+    }
+    expect(violations.slice(0, 10)).toEqual([]);
+  });
+
+  it("⚠ PRE-EXISTING, NOT CAUSED BY ABSORB: the combine can still shed a panel away to nothing", () => {
+    // A 145in wall, two corners, a 48in standard. The middle holds one
+    // standard plus a 45¼in remainder, and 93¼in is over the 48in tie point,
+    // so it SPLITS into two 46⅝in panels with no separate corner-touching
+    // panel. The corner walk therefore reaches the safety gap first and
+    // combines with it — then wants to shed a full 48in onto a 46⅝in
+    // neighbour, which clamps at zero and leaves the wall longer than it is.
+    //
+    // This is exactly the tradeoff `shedWidthToNearestStandard` already
+    // documents ("the wall's total length will be off by deltaIn... not
+    // silently hidden"), it is reached through the SPLIT branch, and it is
+    // byte-identical before and after the absorb rule. Asserted so a later
+    // reader can tell "deliberately not fixed here" from "broken by 1r".
+    const { slots } = tileWall(145, 48, CORNER_WIDTH_IN, "end", true, true);
+    // The tiler's own output is legal on both bounds and sums exactly.
+    for (const slot of slots) {
+      if (slot.type !== "standard") continue;
+      expect(slot.widthIn).toBeGreaterThanOrEqual(MIN_IN);
+      expect(slot.widthIn).toBeLessThanOrEqual(MAX_IN);
+    }
+    expect(slots.reduce((a, s) => a + Math.round(s.widthIn * 8), 0)).toBe(Math.round(145 * 8));
+
+    const braced = applyBracedPlacement(slots, 300, 48, "x", false);
+    const combined = braced.find((s) => s.type === "safety-gap" && s.secondaryType === "braced");
+    expect(combined).toBeDefined();
+    expect(combined!.widthIn).toBe(48 + SAFETY_PLYWOOD_BUFFER_IN);
+    // …and here is the damage the combine does, stated rather than hidden.
+    expect(braced.some((s) => s.type === "standard" && s.widthIn === 0)).toBe(true);
+    expect(braced.reduce((a, s) => a + Math.round(s.widthIn * 8), 0)).not.toBe(Math.round(145 * 8));
+  });
+});

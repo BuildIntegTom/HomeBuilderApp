@@ -15,6 +15,32 @@ export interface TileWallResult {
 // depend on packages/panel-catalog.
 const SAFETY_GAP_WIDTH_IN = 0.75;
 
+/**
+ * The narrowest panel Building Integrity's shop can build, left to right in
+ * elevation — the floor the ABSORB rule below is written against.
+ *
+ * Must match panel-catalog's `fabricationMinPanelWidthIn` (24in, confirmed,
+ * Tommy 2026-09-24). Duplicated here rather than imported for exactly the
+ * reason `SAFETY_GAP_WIDTH_IN` above is: packages/geometry deliberately has
+ * no dependency on packages/panel-catalog. The duplication is not left to a
+ * comment — `apps/web/app/tilerFabricationLimits.test.ts` is the one place
+ * that imports both packages, and it asserts these two pairs agree.
+ */
+export const TILER_MIN_PANEL_WIDTH_IN = 24;
+
+/**
+ * The widest panel the catalog allows. Must match `panelWidthInRange.maxIn`
+ * (48in, confirmed), same duplication note as above.
+ *
+ * **These two numbers are coupled, and the coupling is load-bearing.** The
+ * absorb rule is total — i.e. every wall length has a legal tiling and none
+ * is ever refused — ONLY because this ceiling is exactly twice that floor.
+ * See `computePlainSizing`. `data.test.ts` asserts `maxIn >= 2 x minIn`
+ * directly so a future change to either number fails loudly rather than
+ * quietly producing a wall that cannot be built.
+ */
+export const TILER_MAX_PANEL_WIDTH_IN = 48;
+
 // Tommy: a safety/gap panel is only needed on walls longer than 12ft — a
 // shorter run doesn't accumulate enough dimensional tolerance to matter.
 const SAFETY_PANEL_MIN_WALL_LENGTH_IN = 144;
@@ -28,9 +54,31 @@ const SAFETY_PANEL_MIN_WALL_LENGTH_IN = 144;
  * `widthEachIn` past `standardWidthIn` (e.g. a 50in budget at a 40in
  * standard rounds to 1 panel, not 2); ceiling guarantees an extra panel
  * gets added instead of ever exceeding the standard width.
+ *
+ * **ABSORB (2026-09-24) — the ceiling is no longer the only constraint.**
+ * `Math.ceil` alone routinely produced panels the shop cannot build: a 40⅛in
+ * budget at a 40in standard gives 2 panels of ~20in each. The count is now
+ * also floored so that no part lands under `TILER_MIN_PANEL_WIDTH_IN`, which
+ * is one panel FEWER and one panel WIDER — Tommy's choice over reporting it,
+ * over widening the safety gap, and over refusing the wall length.
+ *
+ * `distributeEighths` makes the smallest part exactly `floor(b / n)` eighths,
+ * so "every part clears the floor" is precisely `n <= floor(b / F)`. Dropping
+ * to that count cannot breach the 48in ceiling either: at `n` the budget is
+ * under `(n + 1) x F`, so the widest part is under `F + F/n <= 2F = 48in`.
+ *
+ * `Math.max(1, …)` is untouched, and it is the one residual: a budget under
+ * 24in has nothing to absorb INTO, so it still yields a single sub-minimum
+ * panel. That is deliberate and it is reported in the Review Log rather than
+ * corrected here — the real fix is corner geometry (see the merged-corner
+ * route in `resolveCorners`), which is Tommy's call and deferred.
  */
 function buildEvenMiddle(budgetLengthIn: number, standardWidthIn: number): PanelSlot[] {
-  const count = Math.max(1, Math.ceil(budgetLengthIn / standardWidthIn));
+  // The standard width is a CAP, so this is the most panels the run may have.
+  const cappedCount = Math.ceil(budgetLengthIn / standardWidthIn);
+  // …and this is the most it may have without any of them being unbuildable.
+  const buildableCount = Math.floor(toEighths(budgetLengthIn) / toEighths(TILER_MIN_PANEL_WIDTH_IN));
+  const count = Math.max(1, Math.min(cappedCount, buildableCount));
   // "Evenly" now means "as evenly as the 1/8in grid allows": siblings can
   // differ by one eighth so that every width IS a whole eighth and the run
   // still sums to the budget exactly (see `distributeEighths`). Zero-eighth
@@ -95,9 +143,11 @@ function gridStandardWidthIn(standardWidthIn: number): number {
 interface PlainSizing {
   standardCount: number;
   gapWidthIn: number;
-  /** 1 entry for the "nothing to split" cases (an exact fit, or fewer than
-   * 1 full standard panel — see the doc comment below); 2 entries, each
-   * always under `standardWidthIn`, when there's a remainder to absorb. */
+  /** 2 entries, each at most `standardWidthIn`, when a remainder is SPLIT.
+   * 1 entry in all three of the other cases: an exact fit, fewer than 1 full
+   * standard panel, or a remainder that was ABSORBED — and only in that last
+   * case is the single entry WIDER than `standardWidthIn` (still strictly
+   * under 48in; see the doc comment below). */
   resizedWidthsIn: number[];
 }
 
@@ -127,6 +177,60 @@ interface PlainSizing {
  * wide unrendered gap around the real board; see `SAFETY_GAP_WIDTH_IN`'s
  * comment.)
  *
+ * ### The leftover: SPLIT or ABSORB — decided 2026-09-24
+ *
+ * The paragraph above describes the rule as it stood until 2026-09-24, and
+ * it was only half right. Splitting `standardWidthIn + remainderIn` two ways
+ * does keep both parts under the standard width — but it says nothing about
+ * a FLOOR, and at the 40in standard each half lands between 20in and 40in.
+ * So the tiler routinely emitted panels under Building Integrity's own 24in
+ * fabrication minimum: a cut list containing a panel the shop cannot make.
+ *
+ * **Tommy's decision: ABSORB.** Where the two-way split would put either
+ * part under the floor, do not split — emit a SINGLE panel of
+ * `standardWidthIn + remainderIn` instead. The run loses one panel and keeps
+ * its exact total. Chosen over reporting it and changing nothing, over
+ * widening the safety gap, and over refusing the wall length.
+ *
+ * **Why absorbing can never breach the 48in ceiling — and why that is a
+ * coincidence of two numbers rather than a property of this algorithm.**
+ * Writing `S` for the standard width, `r` for the remainder, `F` for the
+ * 24in floor and `C` for the 48in ceiling:
+ *
+ *   - the SPLIT is legal iff its smaller part clears the floor:
+ *     `floor((S + r) / 2) >= F`  ⟺  `S + r >= 2F = 48in`
+ *   - the ABSORB is legal iff the single panel clears the ceiling:
+ *     `S + r <= C = 48in`
+ *
+ * The two conditions are exactly complementary: every value of `S + r`
+ * satisfies at least one, they overlap only at `S + r = 48in` precisely, and
+ * therefore **every wall has a legal tiling**. At the 40in default, absorb
+ * fires only when `r < 8in`, and the absorbed panel is `40in + r < 48in`;
+ * when `r >= 8in` the split already clears 24in and nothing changes.
+ *
+ * **⚠ THE MARGIN IS ZERO. The policy is total only because `C` is exactly
+ * `2F`.** Raise the floor to 25in, or lower the ceiling to 46in, and a band
+ * of `S + r` becomes untileable with no legal answer at all — and the
+ * failure is silent, because it produces a plausible-looking cut list rather
+ * than an error. Tommy explicitly rejected "refuse the wall length", so
+ * there is no fallback refusal to hide behind; that is survivable ONLY
+ * because of the arithmetic above. `data.test.ts` asserts
+ * `panelWidthInRange.maxIn >= 2 x fabricationMinPanelWidthIn` directly for
+ * exactly this reason. Any future change to either number must re-check it.
+ *
+ * **Three residual cases absorb does not reach**, each with nothing to
+ * absorb into, all Review-Log-only by decision:
+ *   1. a middle budget under 24in with nothing else on the run — a wall
+ *      owning two corners and between 51in and 75in long. `floor(b / 24)`
+ *      is 0, so no legal panel count exists. The real fix extends
+ *      `resolveCorners`' merged-corner rule, which is corner geometry and
+ *      therefore real construction — deferred by Tommy until after admin
+ *      tooling, deliberately not attempted here.
+ *   2. `rawStandardCount === 0` — openings eating all but a sliver of a long
+ *      wall's middle. The sliver's neighbours are openings and corners.
+ *   3. `resolveCorners` clamping a single corner onto a wall shorter than
+ *      25.5in. A degenerate wall.
+ *
  * **The split is uneven by one eighth when the budget is an odd number of
  * eighths, and that is the whole point of the 1/8in grid.** The old
  * `(standardWidthIn + remainderIn) / 2` landed on a SIXTEENTH whenever
@@ -155,6 +259,8 @@ function computePlainSizing(
   // integer identity rather than a float hope.
   const budgetEighths = Math.max(0, toEighths(budgetLengthIn));
   const standardEighths = Math.max(1, toEighths(standardWidthIn));
+  // The shop's own floor, in eighths — see the absorb branch below.
+  const minEighths = toEighths(TILER_MIN_PANEL_WIDTH_IN);
   // The gap is always exactly SAFETY_GAP_WIDTH_IN — except on a budget too
   // small to hold even that, where it clamps to whatever there is. That
   // case is only reachable through `retileWithOpenings` (openings eating
@@ -188,11 +294,33 @@ function computePlainSizing(
     standardCount = availableEighths > 0 ? 1 : 0;
     resizedEighths = [availableEighths];
   } else if (remainderEighths > 0) {
-    // remainderEighths < standardEighths by construction, so each half is
-    // at most standardEighths — the "never hand the shop an oversized
-    // panel" rule survives the switch to an uneven split.
-    resizedEighths = distributeEighths(standardEighths + remainderEighths, 2);
-    standardCount += 1; // the split adds one extra panel to the run
+    // ABSORB OR SPLIT — see the doc comment's "the leftover" section.
+    const leftoverEighths = standardEighths + remainderEighths;
+    if (leftoverEighths >= 2 * minEighths) {
+      // SPLIT. Legal precisely here: `distributeEighths(x, 2)` makes the
+      // smaller part `floor(x / 2)`, which clears the floor exactly when
+      // `x >= 2F`. remainderEighths < standardEighths by construction, so
+      // each half is at most standardEighths — the "never hand the shop an
+      // oversized panel" rule survives the switch to an uneven split.
+      //
+      // ⚠ THE TIE AT EXACTLY 2F (48in) GOES TO THE SPLIT, and `>=` is where
+      // that is decided. Both branches are legal at that single point (one
+      // 48in panel, or two 24in ones); splitting preserves today's behaviour
+      // there and keeps panels nearer the nominal width. Arbitrary but
+      // FIXED, the same discipline as `distributeEighths`' absorber rule.
+      resizedEighths = distributeEighths(leftoverEighths, 2);
+      standardCount += 1; // the split adds one extra panel to the run
+    } else {
+      // ABSORB: one wider panel instead of two narrow ones. The run loses a
+      // panel and keeps its exact total — `standardCount` stays at
+      // `rawStandardCount`, and the panel that would have been full width
+      // simply grows by the remainder.
+      //
+      // It cannot breach the ceiling: this branch runs only when
+      // `leftoverEighths < 2F`, and 2F IS the ceiling (48in = 2 x 24in). So
+      // the absorbed panel is strictly under 48in, always.
+      resizedEighths = [leftoverEighths];
+    }
   } else {
     resizedEighths = [standardEighths]; // exact fit — nothing to split
   }
