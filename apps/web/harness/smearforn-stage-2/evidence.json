@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3214/",
-  "ranAt": "2026-09-25T14:56:48.536Z",
+  "app": "http://localhost:3215/",
+  "ranAt": "2026-09-25T16:25:50.412Z",
   "steps": [
     {
       "name": "wall-as-tiled",
@@ -83,7 +83,7 @@
     },
     {
       "name": "refused-insert-states-the-room",
-      "refusal": "Refused: there is 53⅝\" of automatic panel width on this wall and that panel needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
+      "refusal": "Refused: there is 53⅝\" of automatic panel width on this wall and that needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
       "bigHeadersPlaced": 4,
       "panelsAtRefusal": 10,
       "asserted": true,
