@@ -62,7 +62,7 @@ checks. The baseline step now asserts it found walls at all.
 | 10 | **The memo pin.** Forcing the roof-bearing memo to recompute (Roof off, Roof on) must not change the scene. If it does, the scene was stale — the exact defect the Stage 3 review caught. |
 | 11 | Clearing the stop restores the elevation total, the plan, and the plate |
 | 12 | A stop leaving a run under the 24in fabrication minimum is **refused**, and the wall is untouched |
-| 13 | A stop that **reaches a corner the wall owns** is **accepted** — the orphan-corner case |
+| 13 | A stop that **reaches a corner the wall owns** is **accepted**, and a neighbour really does grow by a wall thickness — the orphan corner, end to end. The neighbour is measured off the 3D scene, because the elevation only shows one wall. |
 | — | No uncaught exception anywhere in the run |
 
 ## Two real defects this found that unit tests had not
