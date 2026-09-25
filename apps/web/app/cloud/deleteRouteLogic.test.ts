@@ -16,6 +16,7 @@ import {
   mapDeleteDbError,
   previewProjectDelete,
   readConfirmation,
+  readDeleteBody,
   requireAdmin,
   type DeleteViewer,
 } from "./deleteRouteLogic";
@@ -253,6 +254,24 @@ describe("confirmationMatches", () => {
       expect(confirmationMatches(value, "Smith Residence")).toBe(false);
     }
     expect(confirmationMatches("   ", "Smith Residence")).toBe(false);
+  });
+});
+
+describe("readDeleteBody — the body is not optional here", () => {
+  it("reads a confirmation out of a real body", () => {
+    expect(readDeleteBody('{"confirm":"Smith Residence"}')).toEqual({ confirm: "Smith Residence" });
+  });
+
+  /**
+   * A bodyless or malformed DELETE is the shape of something trying to skip
+   * the interlock. It gets the same answer as an empty box — which says
+   * nothing was deleted — not a generic JSON complaint that does not.
+   */
+  it("turns no body, rubbish, a bare string and an array into no confirmation at all", () => {
+    for (const text of ["", "   ", "not json", '"Smith Residence"', "[1,2]", "null", "7"]) {
+      expect(readDeleteBody(text)).toEqual({});
+      expect(() => readConfirmation(readDeleteBody(text))).toThrow(DELETE_CONFIRM_REQUIRED_MESSAGE);
+    }
   });
 });
 

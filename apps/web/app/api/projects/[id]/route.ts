@@ -1,6 +1,6 @@
 import { readJsonBody } from "@/app/auth/serverSession";
 import { NO_STORE, cloudErrorResponse, deleteViewerOf, requireCloudSession } from "@/app/cloud/cloudRouteSession";
-import { deleteProject } from "@/app/cloud/deleteRouteLogic";
+import { deleteProject, readDeleteBody } from "@/app/cloud/deleteRouteLogic";
 import { moveProject } from "@/app/cloud/projectRouteLogic";
 
 /**
@@ -44,7 +44,10 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
   try {
     const { id } = await context.params;
     const session = await requireCloudSession();
-    const body = await readJsonBody(request);
+    // Not readJsonBody: a bodyless or malformed DELETE must read as "you did
+    // not confirm", which says nothing was deleted, rather than as a generic
+    // JSON complaint that does not.
+    const body = readDeleteBody(await request.text());
     const result = await deleteProject(session.supabase, deleteViewerOf(session), id, body);
     return Response.json(result, { headers: NO_STORE });
   } catch (error) {

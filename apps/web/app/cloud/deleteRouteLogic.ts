@@ -186,6 +186,24 @@ export function confirmationMatches(typed: unknown, projectName: string): boolea
   return wanted.length > 0 && normalize(typed) === wanted;
 }
 
+/**
+ * The DELETE's body, which is NOT optional — unlike the grant-removal route's.
+ * A request that arrives with no body at all, or with rubbish in it, is the
+ * exact shape of something trying to skip the interlock, and it gets the same
+ * answer as an empty box: say what to type, and say nothing was deleted.
+ */
+export function readDeleteBody(text: string): Body {
+  if (text.trim().length === 0) return {};
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return {};
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Body;
+}
+
 export function readConfirmation(body: Body): string {
   const value = body.confirm;
   if (typeof value !== "string" || value.trim().length === 0) {

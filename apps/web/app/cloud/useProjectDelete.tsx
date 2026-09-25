@@ -153,10 +153,6 @@ export function useProjectDelete({ onAuthProblem, onDeleted, isOpenHere }: UsePr
     onDeleted(shown.projectId);
   };
 
-  const heading = shown
-    ? deleteHeading(shown.projectName, shown.ownerCompanyName)
-    : deleteHeading(target?.projectName ?? "", "");
-
   const note = (
     <StickyNote
       id="cloud-delete-note"
@@ -175,7 +171,7 @@ export function useProjectDelete({ onAuthProblem, onDeleted, isOpenHere }: UsePr
         ) : shown ? (
           <>
             <p className={styles.lead} data-delete-heading="">
-              <strong>{heading}</strong>
+              <strong>{deleteHeading(shown.projectName, shown.ownerCompanyName)}</strong>
             </p>
             {!done && (
               <>
