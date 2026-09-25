@@ -55,6 +55,8 @@ import {
   hasWallRunStop,
   normalizeWallRunStop,
   wallRunStopTotalIn,
+  builtWallLengthsIn,
+  totalBuiltWallPerimeterIn as totalBuiltWallPerimeterInPure,
   isSlotBoxBeamCovered,
   zoneFromSlot,
   type BoxBeamCoverage,
@@ -3626,12 +3628,44 @@ export default function LayoutEditor() {
   // bearing) — Tommy: whichever the building is, it needs one of these on
   // top of the wall panels. 3D preview uses a small illustrative length
   // (10ft); the insulation quantity below uses the footprint's actual
-  // total wall perimeter, so it's a real whole-building material total,
+  // BUILT wall perimeter, so it's a real whole-building material total,
   // not just an illustrative snippet.
   const ASSEMBLY_PREVIEW_LENGTH_IN = 120;
-  const totalWallPerimeterIn = useMemo(
-    () => (footprint ? footprint.walls.reduce((sum, w) => sum + w.lengthFt * 12, 0) : 0),
-    [footprint],
+  /**
+   * **Stage 3's acceptance criterion, and the trap it names.** No panels
+   * means no panel instances, so everything derived FROM instances — price,
+   * weight, carbon, BOM, cut list, shipping — is already right on a wall
+   * that stops short. Everything derived from `wall.lengthFt` is not, and
+   * over-counts SILENTLY: a plausible plaster total for a wall that was
+   * never built.
+   *
+   * So: one derivation of how much of each wall is actually BUILT, and
+   * every per-wall-length total that describes the WALL ASSEMBLY reads it.
+   * Measured off `lengthFt * 12` rather than off the tiling length on
+   * purpose — corner insets are ownership bookkeeping that nets out around
+   * a closed ring, and today's perimeter total is exactly the raw sum, so
+   * subtracting only the stops keeps an unstopped project byte-identical.
+   *
+   * **What deliberately does NOT read this:** the floor, the foundation and
+   * the roof. They still extend to the line where the wall stops — that is
+   * the whole reason the footprint polygon stays closed. Those three read
+   * the footprint polygon (`computeFootprintAreaSqFt`, `perimeterRing`,
+   * `pierGrid`, `computeRoofBearingSegments`, the gable/ridge geometry),
+   * never a wall's panel run, and they were each checked rather than
+   * assumed — see the Stage 3 as-built audit.
+   *
+   * There is deliberately no second "raw perimeter" total left in this
+   * component. Every consumer the old one had describes the wall assembly,
+   * so two near-identical perimeter numbers one line apart would only ever
+   * be a way to pick the wrong one.
+   */
+  const builtWallLengthInByWallId = useMemo(
+    () => (footprint ? builtWallLengthsIn(footprint, wallRunStopsByWallId) : {}),
+    [footprint, wallRunStopsByWallId],
+  );
+  const totalBuiltWallPerimeterIn = useMemo(
+    () => totalBuiltWallPerimeterInPure(footprint, wallRunStopsByWallId),
+    [footprint, wallRunStopsByWallId],
   );
   // Box beam is now a per-wall (or per-section-of-a-wall) choice (Tommy:
   // "options for being a ring all the way around or just one section of
@@ -3654,7 +3688,11 @@ export default function LayoutEditor() {
   }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId]);
   const trussPlateWallLengthTotalIn = useMemo(() => {
     if (!footprint) return 0;
-    if (stories.length <= 1) return totalWallPerimeterIn;
+    // A truss plate bears on TOP of this wall's panels — where no panels are
+    // built there is no plate, so the single-story total is the BUILT
+    // perimeter. (The multi-story branch below sums real per-wall segments
+    // off the second story's own slots, so it already shrinks for free.)
+    if (stories.length <= 1) return totalBuiltWallPerimeterIn;
     let totalIn = 0;
     for (const wall of footprint.walls) {
       const slots = secondStory?.wallSlots[wall.id] ?? [];
@@ -3663,7 +3701,7 @@ export default function LayoutEditor() {
       }
     }
     return totalIn;
-  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, totalWallPerimeterIn]);
+  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, totalBuiltWallPerimeterIn]);
   const trussPlatePreviewMembers = useMemo(
     () => buildTrussPlateMembers(ASSEMBLY_PREVIEW_LENGTH_IN, thicknessIn, trussPlateInsetIn),
     [thicknessIn, trussPlateInsetIn],
@@ -3791,12 +3829,15 @@ export default function LayoutEditor() {
     let threeQuarterSqFt = computePlywoodAreaSqFt(allRealMembers, 0.75);
     const halfSqFt = computePlywoodAreaSqFt(allRealMembers, 0.5);
     // Roof-bearing assembly's own plywood cap(s) — box beam has both a top
-    // and bottom cap, truss plate just one — over the real wall perimeter.
+    // and bottom cap, truss plate just one — over the real BUILT wall
+    // perimeter. The panel-member half of this tally already comes from
+    // `allRealMembers` (i.e. from panel instances), so it is correct for
+    // free; only this wall-length-derived half needed the stops.
     threeQuarterSqFt += stories.length > 1
-      ? (2 * totalWallPerimeterIn * thicknessIn) / 144
-      : (totalWallPerimeterIn * thicknessIn) / 144;
+      ? (2 * totalBuiltWallPerimeterIn * thicknessIn) / 144
+      : (totalBuiltWallPerimeterIn * thicknessIn) / 144;
     return { threeQuarterSqFt, halfSqFt };
-  }, [allRealMembers, stories, totalWallPerimeterIn, thicknessIn]);
+  }, [allRealMembers, stories, totalBuiltWallPerimeterIn, thicknessIn]);
 
   const plywoodThreeQuarterSheetCount = Math.ceil(plywoodAreaSqFt.threeQuarterSqFt / PLYWOOD_SHEET_AREA_SQFT);
   const plywoodHalfSheetCount = Math.ceil(plywoodAreaSqFt.halfSqFt / PLYWOOD_SHEET_AREA_SQFT);
@@ -3987,8 +4028,8 @@ export default function LayoutEditor() {
   // Plaster Master (Tommy: "total materials and total price for plaster
   // options... link whether this turns on or off to the exterior or
   // interior finish options") — net plastered area auto-derives from the
-  // drawn footprint (wall perimeter x wall height, doubled if Second Story
-  // is on, since it mirrors story 1's own footprint) minus each window/
+  // drawn footprint (BUILT wall perimeter x wall height, doubled if Second
+  // Story is on, since it mirrors story 1's own footprint) minus each window/
   // door's own clear Rough Opening area (you don't plaster over the
   // opening itself). Same area/RO-count applies to both faces of the same
   // wall, so it's computed once and shared by whichever side(s) are active.
@@ -4000,7 +4041,14 @@ export default function LayoutEditor() {
       return sum + (roWidthIn * roHeightIn) / 144;
     }, 0);
   const plasterFloorCount = stories.length;
-  const plasterGrossWallAreaSqFt = stories.reduce((sum, s) => sum + (totalWallPerimeterIn / 12) * s.wallHeightFt, 0);
+  // BUILT perimeter, not raw: you do not plaster a wall that was never
+  // built. This is the first total the plan names as a suspect and it was
+  // over-counting by the full unbuilt span times the wall height on every
+  // story.
+  const plasterGrossWallAreaSqFt = stories.reduce(
+    (sum, s) => sum + (totalBuiltWallPerimeterIn / 12) * s.wallHeightFt,
+    0,
+  );
   const plasterNetAreaSqFt = Math.max(0, plasterGrossWallAreaSqFt - plasterOpeningsAreaSqFtPerFloor * plasterFloorCount);
   const plasterRoughOpeningCount = allInstances.filter((inst) => inst.panelType === "header").length * plasterFloorCount;
 
@@ -4018,8 +4066,17 @@ export default function LayoutEditor() {
 
   const intelloWallRuns = useMemo(() => {
     if (!footprint) return [];
-    return stories.flatMap((story) => footprint.walls.map((w) => ({ lengthFt: w.lengthFt, heightFt: story.wallHeightFt })));
-  }, [footprint, stories]);
+    // Per-wall BUILT length, not raw — an unbuilt span gets no air-tightness
+    // membrane, and `computeMembraneCoverage` also counts vertical strips
+    // per run, so a raw length inflates the seam tape figure too. A wall
+    // built to zero drops out of the run list entirely rather than
+    // contributing a zero-length strip.
+    return stories.flatMap((story) =>
+      footprint.walls
+        .map((w) => ({ lengthFt: (builtWallLengthInByWallId[w.id] ?? w.lengthFt * 12) / 12, heightFt: story.wallHeightFt }))
+        .filter((run) => run.lengthFt > 0),
+    );
+  }, [footprint, stories, builtWallLengthInByWallId]);
   // Flat plan-view placeholder — see computeFootprintAreaSqFt's own doc
   // comment on why real sloped roof area isn't computable yet.
   const intelloRoofAreaSqFt = useMemo(() => (footprint ? computeFootprintAreaSqFt(footprint) : 0), [footprint]);
@@ -8689,7 +8746,7 @@ export default function LayoutEditor() {
             }
             fastenerSchedule={[]}
             notes={[
-              "3/4in plywood: every Standard/Braced/Sill panel's 2 skins, every Column/Corner panel's 2 side plies, every Safety/Gap panel's single sheet (see the Safety/Gap redesign note on its own Shop Drawing page), every Door/Window Header's top+bottom plate caps, plus the roof-bearing assembly's own plywood cap(s) — a box beam's top+bottom caps if Second Story is enabled, a truss plate's single cap otherwise — across the drawn footprint's real total wall perimeter, not an illustrative preview length.",
+              "3/4in plywood: every Standard/Braced/Sill panel's 2 skins, every Column/Corner panel's 2 side plies, every Safety/Gap panel's single sheet (see the Safety/Gap redesign note on its own Shop Drawing page), every Door/Window Header's top+bottom plate caps, plus the roof-bearing assembly's own plywood cap(s) — a box beam's top+bottom caps if Second Story is enabled, a truss plate's single cap otherwise — across the drawn footprint's real BUILT wall perimeter (a wall run stopped short of its corner carries no panels and no plate, so it is excluded), not an illustrative preview length.",
               "1/2in plywood is only the girt webs (girt bars themselves are dimensional lumber, tallied separately).",
               ...(panelizationType === "square-bale-panels"
                 ? [
@@ -9047,7 +9104,7 @@ export default function LayoutEditor() {
             fastenerSchedule={[]}
             notes={[
               "Every formula here (Cu Ft, Parts ratios, buckets/bags/cu-yd/110-gal-tub conversions, and the field/edge labor-hours split) mirrors Tommy's own \"Faster Plaster Calculator\" spreadsheet.",
-              "Net plastered area auto-derives from the drawn footprint (wall perimeter x wall height, doubled if Second Story is on) minus each window/door's own clear Rough Opening area — the spreadsheet's own workflow instead had you type in a sqft figure by hand.",
+              "Net plastered area auto-derives from the drawn footprint (BUILT wall perimeter x wall height, doubled if Second Story is on — a wall run stopped short is not plastered over the span it does not occupy) minus each window/door's own clear Rough Opening area — the spreadsheet's own workflow instead had you type in a sqft figure by hand.",
               "Base Coat mix defaults (Sand 3.5 : Clay 1 : Lime 0.25 : Chopped Straw 1) match the spreadsheet's own \"Key\" — used for both interior and exterior, since the spreadsheet only gives one Base Coat recipe (straight onto the straw either side).",
               "Finish Coat: exterior (lime-plaster) defaults to the spreadsheet's own Sand 3 : Lime 1 recipe. Interior (clay-plaster) defaults to Sand 3 : Clay 1 — this app's own adaptation (same structure, clay in place of lime), since the spreadsheet never gave a clay-finish recipe. Every ratio is editable.",
               "\"Base 2\" (a distinct second base-coat layer in the source spreadsheet) isn't modeled separately — each side's own single Base Coat here covers that side's own straight-onto-the-straw layer.",

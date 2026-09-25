@@ -1,5 +1,5 @@
 import { fromEighths, toEighths } from "./eighths";
-import type { WallRunStop } from "./types";
+import type { Footprint, WallRunStop } from "./types";
 
 /**
  * Project Smearforn Stage 3 — "incomplete walls: a wall that simply ends"
@@ -156,4 +156,50 @@ export function applyWallRunStop(base: WallRunBase, stop: WallRunStop | undefine
     clamped,
     fullyStopped,
   };
+}
+
+/**
+ * How many inches of each wall are actually BUILT — its raw length less its
+ * run stops. **This is the fix for Stage 3's named trap**, and the reason it
+ * is a function in this package rather than three inline reductions in
+ * `page.tsx` is that it needed a test.
+ *
+ * No panels means no panel instances, so every total derived FROM instances
+ * (price, weight, carbon, BOM, cut list, shipping) is already correct on a
+ * stopped wall. Every total derived from `wall.lengthFt` is not, and it
+ * over-counts silently — a plaster area, a membrane roll count, a plywood
+ * cap, a truss-plate run for a wall that was never built. Those read this.
+ *
+ * **Measured off `lengthFt * 12`, deliberately not off the tiling length.**
+ * Corner insets and reflex extensions are ownership bookkeeping that nets
+ * out around a closed ring; the existing perimeter totals are exactly the
+ * raw sum, so subtracting only the stops leaves an unstopped project
+ * byte-identical to today.
+ *
+ * **What must NOT read this: the floor, the foundation and the roof.** They
+ * still extend to the line where the wall stops. That is the entire reason
+ * the footprint polygon stays closed.
+ */
+export function builtWallLengthsIn(
+  footprint: Footprint,
+  runStopsByWallId?: Record<string, WallRunStop>,
+): Record<string, number> {
+  const built: Record<string, number> = {};
+  for (const wall of footprint.walls) {
+    const fullIn = wall.lengthFt * 12;
+    const { startStopIn, endStopIn } = normalizeWallRunStop(runStopsByWallId?.[wall.id], fullIn);
+    built[wall.id] = Math.max(0, fullIn - startStopIn - endStopIn);
+  }
+  return built;
+}
+
+/** The building's BUILT wall perimeter in inches — see `builtWallLengthsIn`.
+ * With no stops this is exactly `sum(wall.lengthFt * 12)`, i.e. the number
+ * every wall-assembly total used before Stage 3. */
+export function totalBuiltWallPerimeterIn(
+  footprint: Footprint | null | undefined,
+  runStopsByWallId?: Record<string, WallRunStop>,
+): number {
+  if (!footprint) return 0;
+  return Object.values(builtWallLengthsIn(footprint, runStopsByWallId)).reduce((sum, lengthIn) => sum + lengthIn, 0);
 }

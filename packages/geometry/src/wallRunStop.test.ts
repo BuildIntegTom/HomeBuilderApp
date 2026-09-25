@@ -7,8 +7,10 @@ import { toEighths, wallFabricationLengthIn } from "./eighths";
 import {
   NO_WALL_RUN_STOP,
   applyWallRunStop,
+  builtWallLengthsIn,
   hasWallRunStop,
   normalizeWallRunStop,
+  totalBuiltWallPerimeterIn,
   wallRunStopTotalIn,
 } from "./wallRunStop";
 import type { Footprint, PanelSlot, WallRunStop } from "./types";
@@ -201,6 +203,60 @@ describe("the sum invariant survives a run stop", () => {
     expect(toEighths(sumWidths(slots)) + toEighths(stop.startStopIn) + toEighths(stop.endStopIn)).toBe(
       toEighths(wallFabricationLengthIn(wall)),
     );
+  });
+});
+
+/**
+ * The acceptance criterion of Stage 3: a total that reads a WALL LENGTH
+ * rather than a panel set must not over-count when the wall stops short.
+ * These cover the arithmetic every fixed consumer in `page.tsx` now reads —
+ * plaster gross area, the Intello membrane runs, the roof-bearing plywood
+ * caps and the single-story truss-plate length.
+ */
+describe("builtWallLengthsIn / totalBuiltWallPerimeterIn", () => {
+  const fp = buildRectangleFootprint(30, 20);
+  const rawPerimeterIn = fp.walls.reduce((sum, w) => sum + w.lengthFt * 12, 0);
+
+  it("is exactly today's raw perimeter when nothing is stopped", () => {
+    expect(totalBuiltWallPerimeterIn(fp)).toBeCloseTo(rawPerimeterIn, 9);
+    expect(totalBuiltWallPerimeterIn(fp, {})).toBeCloseTo(rawPerimeterIn, 9);
+    expect(totalBuiltWallPerimeterIn(fp, { AB: NO_WALL_RUN_STOP })).toBeCloseTo(rawPerimeterIn, 9);
+    expect(builtWallLengthsIn(fp)).toEqual({ AB: 360, BC: 240, CD: 360, DA: 240 });
+  });
+
+  it("drops exactly the unbuilt span, and only from the stopped wall", () => {
+    const built = builtWallLengthsIn(fp, { AB: { startStopIn: 96, endStopIn: 12 } });
+    expect(built["AB"]).toBe(360 - 108);
+    expect(built["BC"]).toBe(240);
+    expect(totalBuiltWallPerimeterIn(fp, { AB: { startStopIn: 96, endStopIn: 12 } })).toBeCloseTo(
+      rawPerimeterIn - 108,
+      9,
+    );
+  });
+
+  it("a wall with no panels at all contributes nothing — never a negative", () => {
+    const built = builtWallLengthsIn(fp, { BC: { startStopIn: 9999, endStopIn: 0 } });
+    expect(built["BC"]).toBe(0);
+    expect(totalBuiltWallPerimeterIn(fp, { BC: { startStopIn: 9999, endStopIn: 0 } })).toBeCloseTo(
+      rawPerimeterIn - 240,
+      9,
+    );
+  });
+
+  it("this is what stops plaster and membrane totals over-counting — worked in real units", () => {
+    // 9ft walls, one story. A 10ft unbuilt span on the north wall.
+    const wallHeightFt = 9;
+    const stops = { AB: { startStopIn: 120, endStopIn: 0 } };
+    const grossBuiltSqFt = (totalBuiltWallPerimeterIn(fp, stops) / 12) * wallHeightFt;
+    const grossRawSqFt = (rawPerimeterIn / 12) * wallHeightFt;
+    expect(grossRawSqFt - grossBuiltSqFt).toBeCloseTo(10 * wallHeightFt, 9);
+    // 90 sqft of plaster, both faces, that nobody is ever going to apply.
+    expect(grossBuiltSqFt).toBeCloseTo(grossRawSqFt - 90, 9);
+  });
+
+  it("no footprint is zero, not a crash", () => {
+    expect(totalBuiltWallPerimeterIn(null)).toBe(0);
+    expect(totalBuiltWallPerimeterIn(undefined, { AB: { startStopIn: 10, endStopIn: 0 } })).toBe(0);
   });
 });
 
