@@ -1966,8 +1966,13 @@ export default function LayoutEditor() {
     setBoxBeamSizeId(s.boxBeamSizeId);
     setMidWallBeamsByStoryAndWallId(s.midWallBeamsByStoryAndWallId);
     // Stage 2b's optional key — a file saved before spanning headers existed
-    // simply has none, which is today's behaviour exactly.
-    setSpanningHeadersByStoryAndWallId(s.spanningHeadersByStoryAndWallId ?? { ground: {}, second: {} });
+    // simply has none, which is today's behaviour exactly. Normalized here
+    // (rather than in the parser, which must return what the file actually
+    // says) so state always has both halves.
+    setSpanningHeadersByStoryAndWallId({
+      ground: s.spanningHeadersByStoryAndWallId?.ground ?? {},
+      second: s.spanningHeadersByStoryAndWallId?.second ?? {},
+    });
     setRoofCatcherBeamOffsetIn(s.roofCatcherBeamOffsetIn);
     setRoofCatcherBeamShape(s.roofCatcherBeamShape);
     setOctagonRingDiameterFt(s.octagonRingDiameterFt);
@@ -9358,6 +9363,9 @@ export default function LayoutEditor() {
                   boxBeamSizeId={boxBeamSizeId}
                   midWallBeamsByWallId={midWallBeamsByStoryAndWallId.ground}
                   secondStoryMidWallBeamsByWallId={midWallBeamsByStoryAndWallId.second}
+                  spanningHeadersByWallId={spanningHeadersByStoryAndWallId.ground}
+                  secondStorySpanningHeadersByWallId={spanningHeadersByStoryAndWallId.second}
+                  spanningHeaderNameById={spanningHeaderNameById}
                 />
               ))}
             {editorTab === "foundation" && foundationType.usesPierGrid && (
@@ -9424,6 +9432,9 @@ export default function LayoutEditor() {
               boxBeamSizeId={boxBeamSizeId}
               midWallBeamsByWallId={midWallBeamsByStoryAndWallId.ground}
               secondStoryMidWallBeamsByWallId={midWallBeamsByStoryAndWallId.second}
+              spanningHeadersByWallId={spanningHeadersByStoryAndWallId.ground}
+              secondStorySpanningHeadersByWallId={spanningHeadersByStoryAndWallId.second}
+              spanningHeaderNameById={spanningHeaderNameById}
               onCapture={handleCaptureRenderImage}
             />
           )}

@@ -25,6 +25,7 @@ import {
 } from "@building-integrity/geometry";
 import { allPanelInstances, combinedPanelLabel, type PanelInstance } from "./panelInstances";
 import { midWallBeamsToGeometry, resolveMidWallBeamAssemblyHeightIn, type MidWallBeam } from "./midWallBeam";
+import { resolveSpanningHeaderHeightIn, spanningHeadersToGeometry, wallBandGeometry, type SpanningHeader } from "./spanningHeader";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
 import PanelLabel from "./PanelLabel";
@@ -97,6 +98,11 @@ const EMPTY_GABLE_TILES_BY_WALL_ID: Record<string, { widthIn: number; xStartIn: 
   {};
 const EMPTY_BOX_BEAM_COVERAGE_BY_WALL_ID: Record<string, BoxBeamCoverage> = {};
 const EMPTY_MID_WALL_BEAMS_BY_WALL_ID: Record<string, MidWallBeam[]> = {};
+// Stable empty defaults, same reason the beam one above exists: a fresh
+// object literal in a default parameter is a new identity every render and
+// would defeat every memo that lists it.
+const EMPTY_SPANNING_HEADERS_BY_WALL_ID: Record<string, SpanningHeader[]> = {};
+const EMPTY_SPANNING_HEADER_NAMES: Map<string, string> = new Map();
 // Standard click-vs-drag screen-space threshold (px) before the Orbit
 // tool's click-and-swipe re-centering commits — a plain click stays a
 // true no-op below this.
@@ -308,9 +314,20 @@ function splitForMidWallBeam(
   beamsByWallId: Record<string, MidWallBeam[]>,
   storyHeightIn: number,
   maxPanelHeightIn: number,
+  /** Smearforn Stage 2b. A spanning header splits a column exactly as a beam
+   * does, so it belongs in the SAME band computation — otherwise 3D would
+   * draw a full-height panel through a header the elevation and the named
+   * instance list have both already made room for. */
+  headersByWallId: Record<string, SpanningHeader[]> = {},
 ): SplitPanelSlotBox3D[] {
   const result: SplitPanelSlotBox3D[] = [];
-  const geomByWallId = new Map(Object.entries(beamsByWallId).map(([wallId, beams]) => [wallId, midWallBeamsToGeometry(beams)]));
+  const wallIds = new Set([...Object.keys(beamsByWallId), ...Object.keys(headersByWallId)]);
+  const geomByWallId = new Map(
+    [...wallIds].map((wallId) => [
+      wallId,
+      wallBandGeometry(midWallBeamsToGeometry(beamsByWallId[wallId] ?? []), spanningHeadersToGeometry(headersByWallId[wallId] ?? [])),
+    ]),
+  );
   for (const box of boxes) {
     const geom = geomByWallId.get(box.wallId) ?? [];
     const bands = computeWallVerticalBandsForSlotWithMaxHeight(box.slotIndex, storyHeightIn, geom, maxPanelHeightIn, panelHeightInRange.minIn);
@@ -715,6 +732,21 @@ interface Building3DViewProps {
   midWallBeamsByWallId?: Record<string, MidWallBeam[]>;
   /** Same as `midWallBeamsByWallId`, for the second story. */
   secondStoryMidWallBeamsByWallId?: Record<string, MidWallBeam[]>;
+  /** Smearforn Stage 2b's spanning ("triple") headers, ground floor
+   * (page.tsx's own `spanningHeadersByStoryAndWallId.ground`). Fed into the
+   * SAME per-slot band computation the beams go through, so the panels
+   * beneath a header are built shorter here exactly as they are in the
+   * elevation, and the header itself is drawn as real member geometry.
+   * A wall with no entry renders exactly as before this feature existed. */
+  spanningHeadersByWallId?: Record<string, SpanningHeader[]>;
+  /** Same, second story. */
+  secondStorySpanningHeadersByWallId?: Record<string, SpanningHeader[]>;
+  /** Each header's own building-wide name (`H1`), by header id — used for
+   * the OBJ export's group label, so an exported scene names a header the
+   * same way the sheet does. Resolved once in page.tsx; never re-derived
+   * here, since two independent numberings of one series is how a drawing
+   * and a sheet come to disagree. */
+  spanningHeaderNameById?: Map<string, string>;
   /** Renders a static, non-interactive SE bird's-eye frame instead of the
    * normal orbit-able preview — used to capture a PNG for the Project
    * Summary page's static rendering (Tommy: "a static 3d rendering image
@@ -849,6 +881,9 @@ export default function Building3DView({
   boxBeamSizeId = BOX_BEAM_SIZE_DEFAULT,
   midWallBeamsByWallId = EMPTY_MID_WALL_BEAMS_BY_WALL_ID,
   secondStoryMidWallBeamsByWallId = EMPTY_MID_WALL_BEAMS_BY_WALL_ID,
+  spanningHeadersByWallId = EMPTY_SPANNING_HEADERS_BY_WALL_ID,
+  secondStorySpanningHeadersByWallId = EMPTY_SPANNING_HEADERS_BY_WALL_ID,
+  spanningHeaderNameById = EMPTY_SPANNING_HEADER_NAMES,
   captureMode = false,
   onCapture,
   compassRef,
@@ -938,8 +973,8 @@ export default function Building3DView({
   // splitting it into two (a beam-covered slot now needs its own Y offset
   // too, not just its own height).
   const slotBoxes = useMemo(
-    () => splitForMidWallBeam(rawSlotBoxes, midWallBeamsByWallId, heightIn, maxPanelHeightIn),
-    [rawSlotBoxes, midWallBeamsByWallId, heightIn, maxPanelHeightIn],
+    () => splitForMidWallBeam(rawSlotBoxes, midWallBeamsByWallId, heightIn, maxPanelHeightIn, spanningHeadersByWallId),
+    [rawSlotBoxes, midWallBeamsByWallId, heightIn, maxPanelHeightIn, spanningHeadersByWallId],
   );
 
   const slotRenderData = useMemo(
@@ -997,7 +1032,13 @@ export default function Building3DView({
       primaryCornerIds,
       wallRunStopsByWallId,
     );
-    const splitBoxes = splitForMidWallBeam(boxes, secondStoryMidWallBeamsByWallId, secondStory.wallHeightFt * IN_PER_FT, maxPanelHeightIn);
+    const splitBoxes = splitForMidWallBeam(
+      boxes,
+      secondStoryMidWallBeamsByWallId,
+      secondStory.wallHeightFt * IN_PER_FT,
+      maxPanelHeightIn,
+      secondStorySpanningHeadersByWallId,
+    );
     if (Object.keys(boxBeamCoverageByWallId).length === 0) return splitBoxes;
     const heightDeltaFt = computeBoxBeamHeightDeltaIn(boxBeamSizeId) / IN_PER_FT;
     // Roofline Box Beam always shortens from the very top of the row — only
@@ -1008,7 +1049,18 @@ export default function Building3DView({
         ? { ...box, heightFt: box.heightFt - heightDeltaFt }
         : box,
     );
-  }, [footprint, secondStory, thicknessIn, primaryCornerIds, wallRunStopsByWallId, secondStoryMidWallBeamsByWallId, boxBeamCoverageByWallId, boxBeamSizeId, maxPanelHeightIn]);
+  }, [
+    footprint,
+    secondStory,
+    thicknessIn,
+    primaryCornerIds,
+    wallRunStopsByWallId,
+    secondStoryMidWallBeamsByWallId,
+    secondStorySpanningHeadersByWallId,
+    boxBeamCoverageByWallId,
+    boxBeamSizeId,
+    maxPanelHeightIn,
+  ]);
   const secondStorySlotRenderData = useMemo(
     () =>
       secondStorySlotBoxes.map((box) => ({
@@ -1430,18 +1482,53 @@ export default function Building3DView({
       story: "ground" | "second";
       wallSlots: Record<string, PanelSlot[]>;
       beams: Record<string, MidWallBeam[]>;
+      headers: Record<string, SpanningHeader[]>;
       baseYIn: number;
-    }[] = [{ story: "ground", wallSlots, beams: midWallBeamsByWallId, baseYIn: 0 }];
+    }[] = [{ story: "ground", wallSlots, beams: midWallBeamsByWallId, headers: spanningHeadersByWallId, baseYIn: 0 }];
     if (secondStory) {
-      storiesData.push({ story: "second", wallSlots: secondStory.wallSlots, beams: secondStoryMidWallBeamsByWallId, baseYIn: heightIn });
+      storiesData.push({
+        story: "second",
+        wallSlots: secondStory.wallSlots,
+        beams: secondStoryMidWallBeamsByWallId,
+        headers: secondStorySpanningHeadersByWallId,
+        baseYIn: heightIn,
+      });
     }
-    for (const { story, wallSlots: storyWallSlots, beams, baseYIn } of storiesData) {
+    for (const { story, wallSlots: storyWallSlots, beams, headers, baseYIn } of storiesData) {
       for (const wall of footprint.walls) {
         const wallBeams = beams[wall.id];
-        if (!wallBeams || wallBeams.length === 0) continue;
+        const wallHeaders = headers[wall.id] ?? [];
+        if ((!wallBeams || wallBeams.length === 0) && wallHeaders.length === 0) continue;
         const axis = wallAxis(footprint, wall);
         const slots = storyWallSlots[wall.id] ?? [];
         const offsetsIn = slots.reduce<number[]>((acc, s) => [...acc, acc[acc.length - 1]! + s.widthIn], [0]);
+        // Stage 2b: a spanning header draws as the real header panel it is
+        // (buildBigHeaderMembers at its own derived span), in the space the
+        // band split above already left for it. Placed by the same wallAxis
+        // + slot-offset math the beams use one loop down — nothing about
+        // where a thing sits on a wall is re-derived for it.
+        for (const header of wallHeaders) {
+          const startXIn = offsetsIn[header.startSlotIndex] ?? 0;
+          const endXIn = offsetsIn[header.endSlotIndex] ?? 0;
+          const lengthIn = Math.max(0, endXIn - startXIn);
+          if (lengthIn <= 0) continue;
+          const assemblyHeightIn = resolveSpanningHeaderHeightIn(header);
+          const offsetFt = startXIn / IN_PER_FT;
+          result.push({
+            wallId: wall.id,
+            story,
+            beamId: `spanningheader_${spanningHeaderNameById.get(header.id) ?? header.id}`,
+            anchorX: axis.startXFt + axis.dirX * offsetFt,
+            anchorZ: axis.startZFt + axis.dirZ * offsetFt,
+            anchorYIn: baseYIn + header.heightIn,
+            rotationRad: axis.rotationRad,
+            members: buildBigHeaderMembers(lengthIn, thicknessIn, assemblyHeightIn, false, jackStudConfig),
+            widthFt: lengthIn / IN_PER_FT,
+            heightFt: assemblyHeightIn / IN_PER_FT,
+            depthFt: thicknessIn / IN_PER_FT,
+          });
+        }
+        if (!wallBeams || wallBeams.length === 0) continue;
         for (const beam of wallBeams) {
           const startXIn = offsetsIn[beam.startSlotIndex] ?? 0;
           const endXIn = offsetsIn[beam.endSlotIndex] ?? 0;
@@ -1470,7 +1557,23 @@ export default function Building3DView({
       }
     }
     return result;
-  }, [footprint, wallSlots, secondStory, midWallBeamsByWallId, secondStoryMidWallBeamsByWallId, thicknessIn, heightIn]);
+    // ⚠ Every input this memo READS is listed, including the three Stage 2b
+    // ones. The stale-memo defect Stage 3's review found was exactly this
+    // array one entry short: the truss plate stayed drawn at full length
+    // across an unbuilt span because the memo did not list the stop map.
+  }, [
+    footprint,
+    wallSlots,
+    secondStory,
+    midWallBeamsByWallId,
+    secondStoryMidWallBeamsByWallId,
+    spanningHeadersByWallId,
+    secondStorySpanningHeadersByWallId,
+    spanningHeaderNameById,
+    thicknessIn,
+    heightIn,
+    jackStudConfig,
+  ]);
 
   // Panel-name labels (Tommy: "the specific panel label (N1 for example)
   // to appear on... the simplified box 3d views") — a pure re-derivation of

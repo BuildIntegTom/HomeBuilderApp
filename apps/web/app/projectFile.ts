@@ -699,14 +699,26 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
       // Stage 2b's key. Absent — every file saved before this feature, at
       // v25 or at v24 — means no spanning headers, which is byte-identical
       // to today's behaviour, so this is an additive optional key and NOT a
-      // version bump. Both halves of the record are defaulted, so a file
-      // carrying only `ground` cannot produce an undefined `second`.
-      spanningHeadersByStoryAndWallId: (() => {
-        const stored = state.spanningHeadersByStoryAndWallId as
-          | Partial<Record<"ground" | "second", Record<string, SpanningHeader[]>>>
-          | undefined;
-        return { ground: stored?.ground ?? {}, second: stored?.second ?? {} };
-      })(),
+      // version bump.
+      //
+      // **Absent stays ABSENT**, rather than being defaulted to an empty
+      // record here: a load of a file without the key must produce the state
+      // that file describes, or a round trip stops being an identity (a test
+      // says exactly that). Where it IS present, both halves are normalized,
+      // so a file carrying only `ground` can never hand a consumer an
+      // undefined `second`.
+      ...(state.spanningHeadersByStoryAndWallId
+        ? {
+            spanningHeadersByStoryAndWallId: {
+              ground:
+                (state.spanningHeadersByStoryAndWallId as Partial<Record<"ground" | "second", Record<string, SpanningHeader[]>>>).ground ??
+                {},
+              second:
+                (state.spanningHeadersByStoryAndWallId as Partial<Record<"ground" | "second", Record<string, SpanningHeader[]>>>).second ??
+                {},
+            },
+          }
+        : {}),
       // Both accepted versions (v23 and v24) already carry each beam's own
       // `kind` — v23->v24 changes no beam field at all — so there is no
       // per-version branch here any more. remapLegacyBigHeaderBeamKind still
