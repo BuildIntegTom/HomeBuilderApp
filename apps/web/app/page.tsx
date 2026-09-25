@@ -54,7 +54,6 @@ import {
   wallGeometryFor as wallGeometryForPure,
   hasWallRunStop,
   normalizeWallRunStop,
-  wallRunStopTotalIn,
   NO_WALL_RUN_STOP,
   builtWallLengthsIn,
   totalBuiltWallPerimeterIn as totalBuiltWallPerimeterInPure,
@@ -4871,10 +4870,16 @@ export default function LayoutEditor() {
     for (const wall of footprint.walls) {
       const direction = wallCompassDirection(wall, footprint);
       const slots = stories.length > 1 ? (secondStory?.wallSlots[wall.id] ?? []) : [];
+      // The single-story plate spans this wall's BUILT run, not its raw
+      // length — a plate bears on top of panels, and a stopped wall has
+      // none there to bear on. This one drives a real FABRICATION sheet, so
+      // an over-long plate here is a part cut wrong, not just a total.
+      // (The multi-story branch reads the second story's own slots and so
+      // already shrinks for free.)
       const segments =
         stories.length > 1
           ? computeRoofBearingSegments(slots, boxBeamCoverageByWallId[wall.id])
-          : [{ kind: "truss-plate" as const, startXIn: 0, lengthIn: wall.lengthFt * 12 }];
+          : [{ kind: "truss-plate" as const, startXIn: 0, lengthIn: builtWallLengthInByWallId[wall.id] ?? wall.lengthFt * 12 }];
       for (const seg of segments) {
         const key = `${seg.kind}-${seg.lengthIn.toFixed(3)}`;
         const existing = groups.get(key);
@@ -4925,7 +4930,7 @@ export default function LayoutEditor() {
         instances: walls.map((w) => ({ name: `Wall ${w.id} (${w.direction})` })),
       };
     });
-  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, boxBeamSizeId, thicknessIn, trussPlateInsetIn]);
+  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, boxBeamSizeId, thicknessIn, trussPlateInsetIn, builtWallLengthInByWallId]);
 
   // Mid-Wall Bond Beam's own Shop Fabrication pages — same "walk
   // walls/stories directly, bypass allInstances" shape as
@@ -6451,7 +6456,11 @@ export default function LayoutEditor() {
           <LengthInput
             id={`wall-run-stop-start-${elevationWall.id}`}
             title="Inches in from this wall's start corner that carry no panels. 0 builds the whole end."
-            value={wallRunStopsByWallId[elevationWall.id]?.startStopIn ?? 0}
+            // The value actually IN EFFECT (grid-snapped, and clamped if the
+            // wall has since been shortened under it), never the raw stored
+            // number — showing one number while using another is the exact
+            // failure `LengthInput` exists to remove.
+            value={wallGeometryFor(elevationWall.id)?.startStopIn ?? 0}
             domain="in"
             ariaLabel="Unbuilt span at the wall's start end, in inches"
             style={{ width: 72 }}
@@ -6464,7 +6473,7 @@ export default function LayoutEditor() {
           <LengthInput
             id={`wall-run-stop-end-${elevationWall.id}`}
             title="Inches in from this wall's far corner that carry no panels. 0 builds the whole end."
-            value={wallRunStopsByWallId[elevationWall.id]?.endStopIn ?? 0}
+            value={wallGeometryFor(elevationWall.id)?.endStopIn ?? 0}
             domain="in"
             ariaLabel="Unbuilt span at the wall's far end, in inches"
             style={{ width: 72 }}
@@ -6474,7 +6483,11 @@ export default function LayoutEditor() {
         </label>
         {hasWallRunStop(wallRunStopsByWallId[elevationWall.id]) && (
           <p className={elevationStyles.helpText}>
-            {formatLengthIn(wallRunStopTotalIn(wallRunStopsByWallId[elevationWall.id]), unitSystem)} of this{" "}
+            {formatLengthIn(
+              (wallGeometryFor(elevationWall.id)?.startStopIn ?? 0) + (wallGeometryFor(elevationWall.id)?.endStopIn ?? 0),
+              unitSystem,
+            )}{" "}
+            of this{" "}
             {formatFeetInches(elevationWall.lengthFt)} wall carries no panels
             {wallGeometryFor(elevationWall.id)?.fullyStopped
               ? " — this edge has no wall of ours on it at all."
