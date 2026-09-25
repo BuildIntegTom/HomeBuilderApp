@@ -6,6 +6,7 @@ import { cloudFetch } from "./cloudFetch";
 import {
   displayProjectName,
   type AccessGrantRow,
+  type DecideAccessRequestResponse,
   type ProjectAccessResponse,
   type RemoveGrantResponse,
   type ShareResponse,
@@ -22,6 +23,14 @@ import {
   removedMessage,
   showRemove,
 } from "./sharingDisplay";
+import {
+  DECLINE_REQUEST_LABEL,
+  GRANT_REQUEST_LABEL,
+  PENDING_REQUESTS_HEADING,
+  PENDING_REQUESTS_NOTE,
+  pendingRequestNoteLine,
+  pendingRequestRowTitle,
+} from "./browseDisplay";
 import styles from "./CloudProjects.module.css";
 
 /**
@@ -29,9 +38,17 @@ import styles from "./CloudProjects.module.css";
  * Reached by Access… on any Open from cloud row (all four tabs) and by
  * Project ▾ → Sharing… while a cloud project is open. Nothing on the top bar.
  *
+ * STAGE 4C adds the pending access requests, ABOVE the grant rows and only for
+ * an owner-side viewer, each with Grant and Decline. Granting writes an
+ * ORDINARY STAGE 3 GRANT — `decide_collab_request` calls
+ * `share_project_with_person` inside the database — so the grant then appears
+ * in the very list below, removable like any other. There is no parallel
+ * mechanism here and no second grant-writing path.
+ *
  * It holds no permissions. Remove is shown where the route says the database
  * would allow it; the database (collaborators_delete) decides, and a refusal
- * is shown in the route's words. Every share answer — `no-account`,
+ * is shown in the route's words. Grant and Decline are the same arrangement:
+ * the button is the courtesy, `decide_collab_request` is the gate. Every share answer — `no-account`,
  * `already-member` and the rest — is the route's message, shown as-is.
  */
 
@@ -64,6 +81,8 @@ export function useProjectAccess({ onAuthProblem, onChanged }: UseProjectAccessO
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [confirming, setConfirming] = useState<{ grantId: string; alsoRemove: boolean } | null>(null);
+  /** Stage 4C: the request whose Grant or Decline is in flight. */
+  const [deciding, setDeciding] = useState<string | null>(null);
 
   /** Counts access-list requests: an older answer (another project, or before
    * an account change) is never shown. */
@@ -104,6 +123,7 @@ export function useProjectAccess({ onAuthProblem, onChanged }: UseProjectAccessO
     setAccess((was) => (was && was.projectId === projectId ? was : null));
     setOutcome(null);
     setConfirming(null);
+    setDeciding(null);
     setEmail("");
     setCompanyId("");
     setIsOpen(true);
@@ -121,6 +141,7 @@ export function useProjectAccess({ onAuthProblem, onChanged }: UseProjectAccessO
     setCompanies(null);
     setOutcome(null);
     setConfirming(null);
+    setDeciding(null);
   }, []);
 
   const share = async () => {
@@ -168,6 +189,38 @@ export function useProjectAccess({ onAuthProblem, onChanged }: UseProjectAccessO
     void load(target.projectId);
   };
 
+  /**
+   * Stage 4C. Grant or decline one request.
+   *
+   * Every answer is the route's own message, shown as-is — including
+   * `already-granted` and `already-declined`, which mean somebody else at this
+   * company decided it while the note was open. The access list is re-read
+   * either way, so a grant appears in the rows below as the ordinary share it
+   * is, and a decided request leaves the list above.
+   */
+  const decide = async (requestId: string, grant: boolean) => {
+    if (!target || busy) return;
+    setBusy(true);
+    setOutcome(null);
+    setDeciding(requestId);
+    const result = await cloudFetch<DecideAccessRequestResponse>(`/api/access-requests/${encodeURIComponent(requestId)}`, {
+      method: "POST",
+      body: JSON.stringify({ grant }),
+    });
+    setBusy(false);
+    setDeciding(null);
+    if (!result.ok) {
+      if (result.status === 401 || result.status === 403) onAuthProblem();
+      setOutcome({ tone: "error", text: result.message });
+    } else {
+      setOutcome({ tone: "info", text: result.data.message });
+      // A grant is a share: the tabs and notices that show sharing should
+      // reload, exactly as they do after the share box is used.
+      if (result.data.granted) onChanged(target.projectId);
+    }
+    void load(target.projectId);
+  };
+
   const shown = access && target && access.projectId === target.projectId ? access : null;
   const ownerName = shown?.owner.name ?? "";
   const pickable = (companies ?? []).filter((c) => !shown || c.id !== shown.owner.id);
@@ -197,6 +250,51 @@ export function useProjectAccess({ onAuthProblem, onChanged }: UseProjectAccessO
             <p className={styles.message} data-access-owner="">
               {ownerAccessLine(ownerName)}
             </p>
+            {/* Stage 4C. Pending requests, ABOVE the grant rows, and only ever
+                populated for an owner-side viewer — the route serves an empty
+                list to anybody else. `decide_collab_request` checks the decider
+                again for itself, in the database. */}
+            {/* `?? []` is not belt-and-braces: during a rolling deploy this
+                note can be rendered against an OLDER route's answer, which has
+                no `requests` field at all, and a missing access list is a worse
+                failure than a missing request row. */}
+            {(shown.requests ?? []).length > 0 && (
+              <div className={styles.stack} data-access-requests="">
+                <p className={styles.lead}>
+                  <strong>{PENDING_REQUESTS_HEADING}</strong>
+                </p>
+                <ul className={styles.rows}>
+                  {(shown.requests ?? []).map((row) => {
+                    const note = pendingRequestNoteLine(row.message);
+                    return (
+                      <li key={row.requestId} className={styles.row} data-request-id={row.requestId}>
+                        <span className={styles.rowTitle}>{pendingRequestRowTitle(row.requestedByName)}</span>
+                        {note && <p className={styles.rowLabel}>{note}</p>}
+                        <span className={styles.rowActions}>
+                          <button
+                            type="button"
+                            className={styles.primary}
+                            disabled={busy}
+                            onClick={() => void decide(row.requestId, true)}
+                          >
+                            {deciding === row.requestId ? "Working…" : GRANT_REQUEST_LABEL}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.button}
+                            disabled={busy}
+                            onClick={() => void decide(row.requestId, false)}
+                          >
+                            {deciding === row.requestId ? "Working…" : DECLINE_REQUEST_LABEL}
+                          </button>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className={styles.muted}>{PENDING_REQUESTS_NOTE}</p>
+              </div>
+            )}
             {shown.grants.length === 0 ? (
               <p className={styles.muted}>Nobody outside {ownerName || "the owner company"} has been given access.</p>
             ) : (

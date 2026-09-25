@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Entitlement } from "../auth/actingAs";
+import { listPendingRequests } from "./accessRequestRouteLogic";
 import {
   isCloudFolder,
   type AccessGrantRow,
@@ -257,7 +258,23 @@ export async function getProjectAccess(db: SupabaseClient, viewer: SharingViewer
     sharesMadeByGrantee: r.grantee_user_id ? records.filter((o) => o.granted_by === r.grantee_user_id).map((o) => o.id) : [],
   }));
 
-  return { projectId: p.id, projectName: p.name, owner: { id: p.company_id, name: ownerName }, viewerIsOwnerSide: ownerSide, grants };
+  // Stage 4C. Pending access requests, ABOVE the grant rows and OWNER-SIDE
+  // ONLY. Deliberately part of this response rather than a parallel surface:
+  // "where owners see them" is the project's existing Access… note, and a
+  // granted request becomes an ordinary grant in the very list below it.
+  // `collab_requests_select` is the gate underneath; not asking at all when
+  // the viewer is not owner-side keeps a collaborator's read from even
+  // touching the table.
+  const requests = ownerSide ? await listPendingRequests(db, projectId) : [];
+
+  return {
+    projectId: p.id,
+    projectName: p.name,
+    owner: { id: p.company_id, name: ownerName },
+    viewerIsOwnerSide: ownerSide,
+    grants,
+    requests,
+  };
 }
 
 // ---------------------------------------------------------------------------

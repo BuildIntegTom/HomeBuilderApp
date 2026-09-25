@@ -220,6 +220,9 @@ describe("cloudStatusLines", () => {
     versionNumber: 4,
     createdAt: "2026-09-14T13:00:00+00:00",
     projectName: "Smith House",
+    // 4C: how the ROW opens, carried for the banner's Ask gate. What is on
+    // screen is redacted either way, so the status line does not read it.
+    access: "redacted",
   };
 
   it("4B: names the owner and the version, then repeats the banner's own words", () => {

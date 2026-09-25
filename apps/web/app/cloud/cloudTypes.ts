@@ -401,6 +401,13 @@ export interface ProjectAccessResponse {
   /** The signed-in person is a member of the owner company (or a platform admin). */
   viewerIsOwnerSide: boolean;
   grants: AccessGrantRow[];
+  /**
+   * Stage 4C: pending access requests on this project, oldest first, ABOVE the
+   * grant rows. Always empty unless `viewerIsOwnerSide` — the database is the
+   * gate (only an owner member or a platform admin may decide) and this list is
+   * the courtesy, exactly as Remove is.
+   */
+  requests: PendingAccessRequestRow[];
 }
 
 export type PersonShareStatus = "shared" | "already-shared" | "no-account" | "self" | "already-member";
@@ -619,4 +626,122 @@ export interface BrowseContext {
   createdAt: string;
   /** The name the version was saved under, for the banner. */
   projectName: string;
+  /**
+   * Stage 4C: the browse row's own `access`, carried so the banner can gate
+   * Ask for access exactly as the row does.
+   *
+   * ⚠ IT IS NOT ALWAYS `redacted`. A `full` row reaches this state through
+   * **Versions** — `browse_version` always redacts, for every caller, which is
+   * the whole reason `BROWSE_VERSION_LIST_FULL_ACCESS_NOTE` exists — so a
+   * browsed design on screen may well be one its viewer can open in full
+   * through the Stage 2 door. It says how the ROW opens, never what this
+   * document is: what is on screen here is redacted either way.
+   */
+  access: BrowseAccess;
+}
+
+// ---------------------------------------------------------------------------
+// Stage 4C: access requests — `collab_requests`, `request_project_access` and
+// `decide_collab_request` in migration 0009, column for column and status for
+// status. Spec: "Stage 4 plan — Consortium browsing" → "Access requests".
+//
+// ⚠ `decided_by` HAS NO FIELD HERE, AND THAT IS THE POINT. The requester can
+// read their own request row through `collab_requests_select`, `decided_by`
+// included, and it is harmless in the database where a uuid identifies nobody.
+// Forwarding it would hand a browser an `auth.users` id for a person at
+// another company, which nothing else in this app does. The shapes below carry
+// `status`, `decidedAt` and `decidedByName` and stop there ("Two narrowings",
+// item 4, and the 4C handoff).
+// ---------------------------------------------------------------------------
+
+/** `collab_requests.status`, and its check constraint. */
+export type AccessRequestStatus = "pending" | "granted" | "declined";
+
+/**
+ * `request_project_access`'s own answers. Statuses, not errors (Stage 3's
+ * convention): a second pending request answers `already-pending` and WRITES
+ * NOTHING, and asking about something you can already read answers
+ * `already-has-access`. Anything outside your browse set raises 42501 instead,
+ * the same as a project that does not exist.
+ */
+export const ASK_STATUSES = ["requested", "already-pending", "already-has-access"] as const;
+export type AskStatus = (typeof ASK_STATUSES)[number];
+
+/**
+ * `decide_collab_request`'s answers. The first four are
+ * `share_project_with_person`'s own statuses, forwarded unchanged — a granted
+ * request becomes AN ORDINARY STAGE 3 GRANT, written by that function and by
+ * no other path — and in all four the request is closed as `granted`.
+ */
+export const DECIDE_STATUSES = [
+  "shared",
+  "already-shared",
+  "already-member",
+  "self",
+  "declined",
+  "already-granted",
+  "already-declined",
+] as const;
+export type DecideStatus = (typeof DECIDE_STATUSES)[number];
+
+/** Which decide statuses mean the requester can now read the project. */
+export const GRANTING_DECIDE_STATUSES: readonly DecideStatus[] = ["shared", "already-shared", "already-member", "self"];
+
+export interface AskForAccessResponse {
+  status: AskStatus;
+  /** The pending request's id — the caller's own row. Null for
+   * `already-has-access`, where nothing was written and nothing exists. */
+  requestId: string | null;
+  /** The answer in words, ready to show. */
+  message: string;
+}
+
+export interface DecideAccessRequestResponse {
+  status: DecideStatus;
+  /** True when the requester can now read the project — the four granting
+   * statuses. False for a decline and for a request already decided. */
+  granted: boolean;
+  message: string;
+}
+
+/**
+ * One PENDING request, as the owner company's members see it in the existing
+ * Access… note. Served only to an owner-side viewer, and only for requests
+ * still waiting: a decided request is the requester's business, not a standing
+ * entry on somebody else's project.
+ *
+ * No `requestedBy` user id, no `decided_by`: a name snapshot and a note.
+ */
+export interface PendingAccessRequestRow {
+  requestId: string;
+  /** The snapshot taken when the request was written, by
+   * `prepare_project_version`'s rule (display name, then email). */
+  requestedByName: string;
+  message: string | null;
+  createdAt: string;
+}
+
+/**
+ * One of YOUR OWN requests, in Your access requests.
+ *
+ * `projectName` and `ownerCompanyName` are resolved against `browse_projects()`
+ * and nothing else, so this list can never name a project the browse tab would
+ * not. Both are null for a project that has left your browse set.
+ */
+export interface MyAccessRequestRow {
+  requestId: string;
+  projectId: string;
+  projectName: string | null;
+  ownerCompanyName: string | null;
+  /** The note you sent, shown back to you. */
+  message: string | null;
+  status: AccessRequestStatus;
+  createdAt: string;
+  decidedAt: string | null;
+  /** A name snapshot of whoever decided. ⚠ NEVER `decided_by`, the raw uuid. */
+  decidedByName: string | null;
+}
+
+export interface MyAccessRequestsResponse {
+  requests: MyAccessRequestRow[];
 }

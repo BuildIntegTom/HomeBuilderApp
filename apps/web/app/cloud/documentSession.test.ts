@@ -426,7 +426,15 @@ const BROWSED: BrowseContext = {
   versionNumber: 4,
   createdAt: CLOUD_V4,
   projectName: "Smith House",
+  access: "redacted",
 };
+
+/**
+ * 4C: a `full` row reaches `browseContext` too, through Versions —
+ * `browse_version` always redacts, for every caller. The reducer must treat it
+ * exactly like any other browsed design: no save may attach to it either.
+ */
+const BROWSED_FULL: BrowseContext = { ...BROWSED, projectId: "bi1", ownerCompanyId: "bi", ownerCompanyName: "Building Integrity", access: "full" };
 
 const browseOpen = (sentAtGeneration = 0, version: BrowseContext = BROWSED): BrowseOpenAction => ({
   type: "browse-open",
@@ -440,6 +448,25 @@ describe("browse-open (4B)", () => {
     expect(state.browseContext).toEqual(BROWSED);
     expect(state.titleBlockSave).toEqual({ savedAt: CLOUD_V4, source: "cloud-version" });
     expect(costsRedacted(state)).toBe(true);
+  });
+
+  /**
+   * 4C, and it is the shape of a real bug the review caught: **Versions** is
+   * on every browse row with no `access` gate, so a `full` row — a project the
+   * caller can open in full through the Stage 2 door — reaches `browse-open`
+   * and sets `browseContext`. `BROWSE_VERSION_LIST_FULL_ACCESS_NOTE` exists
+   * precisely because that path is real. Nothing about the redaction changes;
+   * what changes is that the banner must not offer to ask for a project its
+   * viewer can already open.
+   */
+  it("4C: a FULL row reaches browseContext through Versions, and is redacted there like any other", () => {
+    const state = run(browseOpen(0, BROWSED_FULL));
+    expect(state.browseContext).toEqual(BROWSED_FULL);
+    expect(state.browseContext?.access).toBe("full");
+    // The document on screen is redacted whatever the row says.
+    expect(costsRedacted(state)).toBe(true);
+    expect(state.cloudContext).toBeNull();
+    expect(bothContextsSet(state)).toBe(false);
   });
 
   it("CLEARS cloudContext, so there is no project for a save to attach to", () => {

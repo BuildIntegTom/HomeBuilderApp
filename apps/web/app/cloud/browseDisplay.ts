@@ -1,9 +1,21 @@
-import { FOLDER_LABEL, displayProjectName, type BrowseAccess, type BrowseProjectRow, type BrowseVersionRow, type CloudFolder } from "./cloudTypes";
+import {
+  FOLDER_LABEL,
+  displayProjectName,
+  type AccessRequestStatus,
+  type AskStatus,
+  type BrowseAccess,
+  type BrowseProjectRow,
+  type BrowseVersionRow,
+  type CloudFolder,
+  type DecideStatus,
+} from "./cloudTypes";
 import { classifyCloudSchemaVersion } from "./schemaOutcome";
 
 /**
  * Stage 4B's words: the Browse the consortium tab, the browse banner, the price
- * gap, the version list, and the refusals. Pure, so every string is testable
+ * gap, the version list, and the refusals — and Stage 4C's, at the end of the
+ * file: asking for access, the requester's own list, and the owner's Grant and
+ * Decline. Pure, so every string is testable
  * without a browser, and imported by the routes too, so the server's messages
  * and the UI's wording cannot drift apart — the same arrangement
  * `sharingDisplay.ts` has for Stage 3.
@@ -216,4 +228,183 @@ export function buildBrowseVersionRows(versions: readonly BrowseVersionRow[], cu
       cannotShowReason,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Stage 4C: access requests (`collab_requests`) — the one thing in Stage 4
+// that writes. Its words live HERE rather than in `sharingDisplay.ts` because
+// the handoff puts them here, and because this file's banned-phrasing test
+// scans every string literal in it: a request is the other end of browsing,
+// and it must not promise anything browsing does not.
+//
+// A GRANTED REQUEST IS AN ORDINARY STAGE 3 GRANT. `decide_collab_request`
+// writes it by calling `share_project_with_person`, so the Shared with us tab,
+// the 3C notice and the access list already understand it. Nothing here builds
+// a parallel mechanism, and no wording implies one.
+// ---------------------------------------------------------------------------
+
+/** The database's own cap (`collab_requests_message_length`, 1–500). */
+export const REQUEST_NOTE_MAX_CHARS = 500;
+
+export const ASK_FOR_ACCESS_LABEL = "Ask for access";
+
+export function askForAccessLead(projectName: string, ownerCompanyName: string): string {
+  const owner = ownerCompanyName.trim().length > 0 ? ownerCompanyName : "the owner company";
+  return `Ask ${owner} to share ${displayProjectName(projectName)} with you. A member of theirs decides.`;
+}
+
+/**
+ * What a request is and is not, said before it is sent. THREE FACTS, each of
+ * which someone would otherwise have to guess at:
+ *   * it is personal (Open Item 3, answered): it asks for you, not for your
+ *     company, and what comes back is a personal grant;
+ *   * a grant is a handoff (decision 24), so the project then opens with its
+ *     costs, exactly as any other shared project does;
+ *   * there is no email (Stage 3 answer 7) — the answer appears in this app or
+ *     nowhere.
+ */
+export const ASK_FOR_ACCESS_EXPLAINER =
+  "This asks for you personally, not for your company. If it's granted, the project appears in Shared with us and opens with its costs, like any other project shared with you. There's no email: the answer shows up in Your access requests.";
+
+export const ASK_NOTE_FIELD_LABEL = "A short note (optional)";
+
+export function askNoteTooLongMessage(used: number): string {
+  return `A note can be at most ${REQUEST_NOTE_MAX_CHARS} characters; that one is ${used}. Nothing was sent.`;
+}
+
+/**
+ * The same refusal WITHOUT a length, for the database's own 22023. The route
+ * checks the cap before sending, so this is the belt behind that: reaching it
+ * means the length is not known here, and stating one would be inventing a
+ * number. A gap rather than a plausible substitute, which is the flag
+ * convention's own rule applied to a count.
+ */
+export const ASK_NOTE_TOO_LONG_MESSAGE = `A note can be at most ${REQUEST_NOTE_MAX_CHARS} characters. Nothing was sent.`;
+
+export function askNoteCharactersLeft(used: number): string {
+  return `${Math.max(0, REQUEST_NOTE_MAX_CHARS - used)} characters left`;
+}
+
+/**
+ * The answers to asking. Every one is a STATUS, not an error — Stage 3's
+ * convention, kept (4A as built, item 5). Deliberately NAME-FREE: the route
+ * answers with these, and it has no business reading a project's name back out
+ * of the database to decorate a status whose subject the caller already knows.
+ */
+export const ASK_STATUS_MESSAGE: Record<AskStatus, string> = {
+  requested: "Your request was sent. You'll see the answer in Your access requests — there's no email.",
+  // Stage 3's convention: a second pending request writes nothing at all and
+  // says so, rather than quietly making a duplicate row.
+  "already-pending":
+    "You've already asked for access to this project, and that request is still waiting for an answer. Nothing was sent again.",
+  "already-has-access": "You can already open this project, so nothing was sent.",
+};
+
+/** 42501 on the ask path: one uniform answer for "no such project", "not in
+ * your browse set" and "not entitled", so asking cannot probe for project ids. */
+export const ASK_REFUSED_MESSAGE = "That project doesn't exist, or you can't ask about it. Nothing was sent.";
+
+export const ASK_UNATTRIBUTABLE_MESSAGE =
+  "That request couldn't be recorded because your account has no name or email. Nothing was sent.";
+
+// --- The requester's own list ----------------------------------------------
+
+export const MY_REQUESTS_HEADING = "Your access requests";
+
+export const MY_REQUESTS_EMPTY_MESSAGE = "You haven't asked anyone for access to a project.";
+
+/**
+ * A project this account asked about but can no longer browse — its owner left
+ * the consortium, or this account's own entitlement changed. THE NAME IS NOT
+ * SERVED IN THAT CASE: the requester's list is resolved against
+ * `browse_projects()` and nothing else, so it can never show more than the
+ * browse tab would.
+ */
+export const REQUEST_PROJECT_UNKNOWN_NAME = "a project you can no longer browse";
+
+/**
+ * "Declined" is all a decline says. Open Item 4, answered: no free-text reason,
+ * because a reason invites a negotiation the app cannot host. Who and when are
+ * shown; why is not, and there is nothing recorded to show.
+ */
+export function myRequestStatusLine(row: { status: AccessRequestStatus; decidedByName: string | null }): string {
+  if (row.status === "pending") return "Waiting for an answer.";
+  const who = row.decidedByName !== null && row.decidedByName.trim().length > 0 ? row.decidedByName : null;
+  if (row.status === "granted") {
+    return who
+      ? `Granted by ${who}. It's in Shared with us now, and it opens with its costs.`
+      : "Granted. It's in Shared with us now, and it opens with its costs.";
+  }
+  return who ? `Declined by ${who}. No reason is recorded.` : "Declined. No reason is recorded.";
+}
+
+export const MY_REQUESTS_REFUSED_MESSAGE = "Couldn't list your access requests just now. Reload the page and try again.";
+
+// --- The owner's side, in the existing Access… note -------------------------
+
+/** The heading above the grant rows, owner-side only. */
+export const PENDING_REQUESTS_HEADING = "Asked for access";
+
+export const PENDING_REQUESTS_NOTE =
+  "Granting shares this project with that person, exactly as the box below would. You can remove it afterwards like any other share.";
+
+export function pendingRequestRowTitle(requestedByName: string): string {
+  const who = requestedByName.trim().length > 0 ? requestedByName : "someone whose name couldn't be read";
+  return `${who} asked for access`;
+}
+
+export function pendingRequestNoteLine(message: string | null): string | null {
+  if (message === null || message.trim().length === 0) return null;
+  return `Note: ${message}`;
+}
+
+export const GRANT_REQUEST_LABEL = "Grant";
+export const DECLINE_REQUEST_LABEL = "Decline";
+
+/**
+ * The answers to deciding. `shared`, `already-shared`, `already-member` and
+ * `self` are all `share_project_with_person`'s own statuses, forwarded: in
+ * every one of them the requester can now read the project, so the request is
+ * closed as granted (4A as built, item 5).
+ */
+export const DECIDE_STATUS_MESSAGE: Record<DecideStatus, string> = {
+  shared: "Granted. It's an ordinary share now — it's in the list below, and you can remove it like any other.",
+  "already-shared": "They already had access from another share, so nothing new was written. The request is closed.",
+  "already-member": "They've since joined this project's owner company, so they can already open it. The request is closed.",
+  // `self` is 0008's `v_grantee = auth.uid()`: the person who asked IS the
+  // caller. Not `already-member`'s situation, which is about somebody else.
+  self: "You're the person who asked — you've since joined this project's owner company, so you can already open it. The request is closed.",
+  declined: "Declined. They'll see that it was declined, with no reason attached. Nothing was shared.",
+  "already-granted": "That request had already been granted. Nothing was changed.",
+  "already-declined": "That request had already been declined. Nothing was changed.",
+};
+
+/** 42501 on the decide path: not a member of the owner company, not a platform
+ * admin, or no such request — one answer for all three. */
+export const DECIDE_REFUSED_MESSAGE = "That request doesn't exist, or you can't decide it. Nothing was changed.";
+
+export const DECIDE_GRANT_REQUIRED_MESSAGE = "Say whether to grant or decline. Nothing was changed.";
+
+export const DECIDE_UNATTRIBUTABLE_MESSAGE =
+  "That decision couldn't be recorded because an account has no name or email. Nothing was changed.";
+
+/**
+ * What a browse row says about a request this account has already made on it,
+ * and whether Ask for access is offered again.
+ *
+ * Re-asking after a DECISION is allowed and writes a new row (0009's partial
+ * unique index covers pending rows only): with no notification channel there is
+ * nothing to spam. Re-asking while one is still PENDING is not offered, because
+ * the database would answer `already-pending` and write nothing.
+ */
+export function browseRowRequestState(
+  requests: readonly { projectId: string; status: AccessRequestStatus }[] | null,
+  projectId: string,
+): { line: string | null; canAsk: boolean } {
+  if (requests === null) return { line: null, canAsk: true };
+  const mine = requests.filter((r) => r.projectId === projectId);
+  if (mine.some((r) => r.status === "pending")) return { line: "You've asked for access — waiting for an answer.", canAsk: false };
+  if (mine.some((r) => r.status === "granted")) return { line: "Access was granted; it's in Shared with us.", canAsk: true };
+  if (mine.length > 0) return { line: "Your earlier request was declined. You can ask again.", canAsk: true };
+  return { line: null, canAsk: true };
 }

@@ -4,15 +4,29 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PROJECT_FILE_VERSION } from "../projectFile";
 import {
+  ASK_FOR_ACCESS_EXPLAINER,
+  ASK_FOR_ACCESS_LABEL,
+  ASK_NOTE_FIELD_LABEL,
+  ASK_REFUSED_MESSAGE,
+  ASK_STATUS_MESSAGE,
   BROWSE_CANNOT_SHOW_MESSAGE,
   BROWSE_EXPORT_ABSENT_NOTE,
   BROWSE_TAB_LABEL,
   BROWSE_TAB_LEAD,
+  DECIDE_STATUS_MESSAGE,
+  MY_REQUESTS_EMPTY_MESSAGE,
+  MY_REQUESTS_HEADING,
+  PENDING_REQUESTS_HEADING,
+  PENDING_REQUESTS_NOTE,
+  REQUEST_NOTE_MAX_CHARS,
   BROWSE_VERSION_LIST_FULL_ACCESS_NOTE,
   BROWSE_VERSION_LIST_NOTE,
   PRICE_GAP,
   PRICE_REDACTED_NOTE,
   VIEWER_OWN_DEFAULTS_NOTE,
+  askForAccessLead,
+  askNoteCharactersLeft,
+  askNoteTooLongMessage,
   browseAccessBadge,
   browseBannerLines,
   browseEmptyFolderMessage,
@@ -21,6 +35,8 @@ import {
   browseVersionListNotes,
   buildBrowseVersionRows,
   cannotShowFormatMessage,
+  pendingRequestNoteLine,
+  pendingRequestRowTitle,
 } from "./browseDisplay";
 import { consortiumFolderTabsMessage, consortiumMenuMessage, type BrowseVersionRow } from "./cloudTypes";
 
@@ -138,6 +154,21 @@ describe("no string in this file claims the app prevents copying", () => {
     browseRowDetail({ ownerCompanyName: "Rare Forms", folder: "current", access: "full" }),
     browseEmptyFolderMessage("Rare Forms", "current"),
     cannotShowFormatMessage(23),
+    // Stage 4C's own strings. A request is the other end of browsing, and it
+    // must not promise anything browsing does not.
+    ASK_FOR_ACCESS_LABEL,
+    ASK_FOR_ACCESS_EXPLAINER,
+    ASK_NOTE_FIELD_LABEL,
+    ASK_REFUSED_MESSAGE,
+    MY_REQUESTS_HEADING,
+    MY_REQUESTS_EMPTY_MESSAGE,
+    PENDING_REQUESTS_HEADING,
+    PENDING_REQUESTS_NOTE,
+    ...Object.values(ASK_STATUS_MESSAGE),
+    ...Object.values(DECIDE_STATUS_MESSAGE),
+    askForAccessLead("Smith House", "Rare Forms"),
+    askNoteTooLongMessage(501),
+    pendingRequestRowTitle("Mo"),
   ];
 
   it.each(banned.map((pattern) => [String(pattern)] as const))("no exported string matches %s", (pattern) => {
@@ -299,5 +330,115 @@ describe("buildBrowseVersionRows", () => {
     expect(rows[0].canOpen).toBe(false);
     expect(rows[0].cannotShowReason).toBe(cannotShowFormatMessage(23));
     expect(rows[0]).not.toHaveProperty("offerDownload");
+  });
+});
+
+/**
+ * Stage 4C's words. The rules they are held to are Tommy's own decisions and
+ * the plan's, not taste:
+ *   * a request is PERSONAL (Open Item 3) and the wording says so;
+ *   * a DECLINE CARRIES NO REASON (Open Item 4) — the requester sees
+ *     "Declined", and there is no reason recorded to show;
+ *   * a second pending request writes NOTHING (Stage 3's convention), and the
+ *     answer says that rather than implying a duplicate was made;
+ *   * a granted request becomes an ORDINARY STAGE 3 GRANT, so the wording
+ *     points at Shared with us rather than at a new place.
+ */
+describe("asking for access (4C)", () => {
+  it("says a request is personal, not on behalf of the company", () => {
+    expect(ASK_FOR_ACCESS_EXPLAINER).toMatch(/for you personally, not for your company/);
+  });
+
+  it("says a grant is a handoff: the project then opens with its costs", () => {
+    expect(ASK_FOR_ACCESS_EXPLAINER).toMatch(/Shared with us/);
+    expect(ASK_FOR_ACCESS_EXPLAINER).toMatch(/opens with its costs/);
+  });
+
+  it("says there is no email, because there is none (Stage 3 answer 7)", () => {
+    expect(ASK_FOR_ACCESS_EXPLAINER).toMatch(/There's no email/);
+    expect(ASK_STATUS_MESSAGE.requested).toMatch(/there's no email/i);
+  });
+
+  it("names the owner company in the lead, and a gap when it has no name", () => {
+    expect(askForAccessLead("Smith House", "Rare Forms")).toBe("Ask Rare Forms to share Smith House with you. A member of theirs decides.");
+    expect(askForAccessLead("Smith House", "  ")).toMatch(/Ask the owner company/);
+  });
+
+  it("a second pending request says nothing was sent again, rather than implying a duplicate", () => {
+    expect(ASK_STATUS_MESSAGE["already-pending"]).toMatch(/still waiting for an answer/);
+    expect(ASK_STATUS_MESSAGE["already-pending"]).toMatch(/Nothing was sent again/);
+  });
+
+  it("asking about something you can already read says nothing was sent", () => {
+    expect(ASK_STATUS_MESSAGE["already-has-access"]).toMatch(/nothing was sent/);
+  });
+
+  it("the note cap is the database's own 500, and the refusal names both numbers", () => {
+    expect(REQUEST_NOTE_MAX_CHARS).toBe(500);
+    expect(askNoteTooLongMessage(501)).toBe("A note can be at most 500 characters; that one is 501. Nothing was sent.");
+    expect(askNoteCharactersLeft(0)).toBe("500 characters left");
+    expect(askNoteCharactersLeft(500)).toBe("0 characters left");
+    // Never a negative count: over the cap it reads 0 and the refusal says the rest.
+    expect(askNoteCharactersLeft(700)).toBe("0 characters left");
+  });
+
+  it("the refusal is one answer for not-found and not-yours, and says nothing was sent", () => {
+    expect(ASK_REFUSED_MESSAGE).toMatch(/doesn't exist, or you can't ask about it/);
+    expect(ASK_REFUSED_MESSAGE).toMatch(/Nothing was sent/);
+  });
+});
+
+describe("deciding, and what the requester is told (4C)", () => {
+  it("a decline says nothing was shared, and carries no reason", () => {
+    expect(DECIDE_STATUS_MESSAGE.declined).toMatch(/no reason attached/);
+    expect(DECIDE_STATUS_MESSAGE.declined).toMatch(/Nothing was shared/);
+  });
+
+  it("a grant is described as the ordinary share it is, removable like any other", () => {
+    expect(DECIDE_STATUS_MESSAGE.shared).toMatch(/ordinary share/);
+    expect(DECIDE_STATUS_MESSAGE.shared).toMatch(/remove it like any other/);
+  });
+
+  /**
+   * `self` and `already-member` are different events and must not read alike.
+   * 0008 returns `self` when `v_grantee = auth.uid()` — the person who asked
+   * IS the decider — and `already-member` when somebody else has joined the
+   * owner company. The first build described the second on both.
+   */
+  it("`self` says the DECIDER is the person who asked; `already-member` says somebody else is", () => {
+    expect(DECIDE_STATUS_MESSAGE.self).toMatch(/^You're the person who asked/);
+    expect(DECIDE_STATUS_MESSAGE.self).not.toMatch(/\bthey\b/i);
+    expect(DECIDE_STATUS_MESSAGE["already-member"]).toMatch(/^They've since joined/);
+    expect(DECIDE_STATUS_MESSAGE["already-member"]).not.toMatch(/you're the person who asked/i);
+    // Both still close the request, because in both the requester can read it.
+    for (const s of ["self", "already-member"] as const) expect(DECIDE_STATUS_MESSAGE[s]).toMatch(/The request is closed\./);
+  });
+
+  it("every decide status has words of its own — none falls back to another's", () => {
+    const messages = Object.values(DECIDE_STATUS_MESSAGE);
+    expect(new Set(messages).size).toBe(messages.length);
+    for (const m of messages) expect(m.length).toBeGreaterThan(0);
+  });
+
+  it("the owner's heading and note sit above the grant rows and explain what Grant does", () => {
+    expect(PENDING_REQUESTS_HEADING).toBe("Asked for access");
+    expect(PENDING_REQUESTS_NOTE).toMatch(/shares this project with that person/);
+    expect(PENDING_REQUESTS_NOTE).toMatch(/remove it afterwards/);
+  });
+
+  it("a request row names who asked, and shows a gap rather than an empty space", () => {
+    expect(pendingRequestRowTitle("Mo Fieser")).toBe("Mo Fieser asked for access");
+    expect(pendingRequestRowTitle("   ")).toMatch(/someone whose name couldn't be read/);
+  });
+
+  it("an empty note is no note at all, not an empty 'Note:' line", () => {
+    expect(pendingRequestNoteLine(null)).toBeNull();
+    expect(pendingRequestNoteLine("   ")).toBeNull();
+    expect(pendingRequestNoteLine("We'd like to reuse the truss layout")).toBe("Note: We'd like to reuse the truss layout");
+  });
+
+  it("the requester's list is headed plainly and says so when it is empty", () => {
+    expect(MY_REQUESTS_HEADING).toBe("Your access requests");
+    expect(MY_REQUESTS_EMPTY_MESSAGE).toMatch(/haven't asked/);
   });
 });

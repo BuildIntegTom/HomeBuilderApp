@@ -18,6 +18,7 @@ import {
   displayProjectName,
   isCertainlyTooLargeForCloud,
   seedTreeCostWarning,
+  type AskForAccessResponse,
   type BrowseCompaniesResponse,
   type BrowseCompany,
   type BrowseProjectRow,
@@ -32,6 +33,8 @@ import {
   type ListSharedProjectsResponse,
   type ListVersionsResponse,
   type MoveProjectResponse,
+  type MyAccessRequestRow,
+  type MyAccessRequestsResponse,
   type RenameProjectResponse,
   type SaveVersionResponse,
   type SharedProjectRow,
@@ -54,17 +57,29 @@ import {
   type DocumentSessionAction,
 } from "./documentSession";
 import {
+  ASK_FOR_ACCESS_EXPLAINER,
+  ASK_FOR_ACCESS_LABEL,
+  ASK_NOTE_FIELD_LABEL,
   BROWSE_CANNOT_SHOW_MESSAGE,
   BROWSE_EXPORT_ABSENT_NOTE,
   BROWSE_NO_COMPANIES_MESSAGE,
   BROWSE_TAB_LABEL,
   BROWSE_TAB_LEAD,
+  MY_REQUESTS_EMPTY_MESSAGE,
+  MY_REQUESTS_HEADING,
+  REQUEST_NOTE_MAX_CHARS,
+  REQUEST_PROJECT_UNKNOWN_NAME,
+  askForAccessLead,
+  askNoteCharactersLeft,
+  askNoteTooLongMessage,
   browseBannerLines,
   browseEmptyFolderMessage,
   browseRowDetail,
+  browseRowRequestState,
   browseVersionListNotes,
   buildBrowseVersionRows,
   cannotShowFormatMessage,
+  myRequestStatusLine,
 } from "./browseDisplay";
 import { classifyCloudSchemaVersion, cloudVersionFileName } from "./schemaOutcome";
 import { buildHistoryRows, historySummary, openedOlderVersionNotice, renameNotice, type HistoryRowModel } from "./versionHistory";
@@ -183,7 +198,7 @@ interface OpenProblem {
   raw?: { fileName: string; document: unknown };
 }
 
-type NoteId = "save" | "open" | "notice" | "history" | "browse";
+type NoteId = "save" | "open" | "notice" | "history" | "browse" | "ask";
 
 /** "latest" is the tree's Open (head-only, 2B); "chosen" is a specific
  * version picked in Version history (2C). Only the notice differs. */
@@ -257,6 +272,23 @@ export function useCloudProjects({
   const [browseHistoryTarget, setBrowseHistoryTarget] = useState<BrowseProjectRow | null>(null);
   /** The browse banner's note. Opened by every successful browse open. */
   const [browseNoteOpen, setBrowseNoteOpen] = useState(false);
+  // Stage 4C: access requests, the requester's half. `myRequests` is THIS
+  // account's own requests and nothing else (the route filters on the verified
+  // session id, because `collab_requests_select` would also hand an owner
+  // member every request on their own projects). It decides what a browse row
+  // says about a project already asked about, and it is the list hand-test
+  // step 23 reads "Declined" from.
+  const [myRequests, setMyRequests] = useState<MyAccessRequestRow[] | null>(null);
+  const [myRequestsError, setMyRequestsError] = useState<string | null>(null);
+  /** The project the Ask for access note is about, and the note it will send. */
+  const [askTarget, setAskTarget] = useState<{ projectId: string; projectName: string; ownerCompanyName: string } | null>(null);
+  const [askNote, setAskNote] = useState("");
+  /** Its own flag, not the single `openNote` slot: asking is reached FROM the
+   * tree and FROM the banner, and closing the tree underneath it would be a
+   * surprise in both directions. */
+  const [askOpen, setAskOpen] = useState(false);
+  const [askBusy, setAskBusy] = useState(false);
+  const [askOutcome, setAskOutcome] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   /** Bumped to reload whichever tab is showing (after a move, rename, share or removal). */
   const [listNonce, setListNonce] = useState(0);
   const reloadTab = useCallback(() => setListNonce((n) => n + 1), []);
@@ -301,6 +333,7 @@ export function useCloudProjects({
     if (id === "notice") setNoticeOpen(false);
     else if (id === "history") setHistoryOpen(false);
     else if (id === "browse") setBrowseNoteOpen(false);
+    else if (id === "ask") setAskOpen(false);
     else setOpenNote((was) => (was === id ? null : was));
     setFullscreen((was) => (was === id ? null : was));
   };
@@ -349,6 +382,13 @@ export function useCloudProjects({
     setBrowseError(null);
     setBrowseHistory(null);
     setBrowseHistoryTarget(null);
+    // Stage 4C: one account's requests are not another's. Cleared with the
+    // rest of the consortium state, and for the same reason.
+    setMyRequests(null);
+    setMyRequestsError(null);
+    setAskTarget(null);
+    setAskOutcome(null);
+    setAskOpen(false);
     resetAccess();
     setOpenProblem(null);
     setDialogError(null);
@@ -598,6 +638,66 @@ export function useCloudProjects({
     setBrowseList(result.data);
   }, []);
 
+  // --- Access requests, the requester's half (4C) -------------------------
+
+  /**
+   * THIS ACCOUNT'S OWN requests: pending, granted and declined. There is no
+   * email and no notice channel (Stage 3 answer 7, unchanged by this stage), so
+   * this list is where an answer appears — which is why it is loaded with the
+   * browse tab rather than only when something is asked.
+   *
+   * ⚠ It carries no `decided_by`. The route does not serve one, and there is no
+   * field on `MyAccessRequestRow` to put one in.
+   */
+  const loadMyRequests = useCallback(async () => {
+    setMyRequestsError(null);
+    const result = await cloudFetch<MyAccessRequestsResponse>("/api/access-requests");
+    if (!result.ok) {
+      setMyRequests(null);
+      setMyRequestsError(result.message);
+      return;
+    }
+    setMyRequests(result.data.requests);
+  }, []);
+
+  const openAskNote = (row: { projectId: string; name: string; ownerCompanyName: string }) => {
+    setAskTarget({ projectId: row.projectId, projectName: row.name, ownerCompanyName: row.ownerCompanyName });
+    setAskNote("");
+    setAskOutcome(null);
+    setAskOpen(true);
+  };
+
+  /**
+   * Send the request. Every answer is a STATUS shown in the route's own words,
+   * including `already-pending` — which wrote nothing — and
+   * `already-has-access`. The list is re-read afterwards whatever came back, so
+   * the row's own line agrees with what the database actually holds.
+   */
+  const askForAccess = async () => {
+    const target = askTarget;
+    if (!target || askBusy) return;
+    const note = askNote.trim();
+    if (note.length > REQUEST_NOTE_MAX_CHARS) {
+      setAskOutcome({ tone: "error", text: askNoteTooLongMessage(note.length) });
+      return;
+    }
+    setAskBusy(true);
+    setAskOutcome(null);
+    const result = await cloudFetch<AskForAccessResponse>(`/api/projects/${encodeURIComponent(target.projectId)}/access-requests`, {
+      method: "POST",
+      body: JSON.stringify({ message: note.length > 0 ? note : null }),
+    });
+    setAskBusy(false);
+    if (!result.ok) {
+      if (result.status === 401 || result.status === 403) void auth?.refresh();
+      setAskOutcome({ tone: "error", text: result.message });
+      return;
+    }
+    setAskOutcome({ tone: "info", text: result.data.message });
+    if (result.data.status === "requested") setAskNote("");
+    void loadMyRequests();
+  };
+
   // Reloads when the note opens, the tab changes, or the acting-as company
   // changes (the tree follows the switcher; an open project does not).
   // Stage 3B: an account with no company has only the Shared tab.
@@ -609,6 +709,9 @@ export function useCloudProjects({
     if (openNote !== "open" || !userId || mfaPending) return;
     if (shownTab === "browse") {
       void loadBrowseCompanies();
+      // Stage 4C: with no email and no notice channel, an answer to a request
+      // appears here or nowhere — so the list is read every time the tab is.
+      void loadMyRequests();
       if (browseCompanyId) void loadBrowseProjects(browseCompanyId, browseFolder);
       return;
     }
@@ -624,6 +727,7 @@ export function useCloudProjects({
     loadShared,
     loadBrowseCompanies,
     loadBrowseProjects,
+    loadMyRequests,
     browseCompanyId,
     browseFolder,
     listNonce,
@@ -731,7 +835,7 @@ export function useCloudProjects({
    *     document; copied here it would be a hole straight through decision 21.
    */
   const openBrowsedVersion = async (
-    row: Pick<BrowseProjectRow, "projectId" | "name" | "folder" | "ownerCompanyId" | "ownerCompanyName">,
+    row: Pick<BrowseProjectRow, "projectId" | "name" | "folder" | "ownerCompanyId" | "ownerCompanyName" | "access">,
     versionId: string,
     report: (problem: OpenProblem) => void,
   ): Promise<boolean> => {
@@ -775,6 +879,11 @@ export function useCloudProjects({
         versionNumber: version.versionNumber,
         createdAt: version.createdAt,
         projectName: row.name,
+        // Stage 4C. The ROW's access, not this document's: what `browse_version`
+        // served is redacted whatever this says. It is carried so the banner
+        // can gate Ask for access exactly as the row's own button does — and a
+        // `full` row DOES arrive here, through Versions.
+        access: row.access,
       },
     };
     if (!answerIsCurrent(readDocumentSession(), action)) {
@@ -1066,7 +1175,16 @@ export function useCloudProjects({
   // --- Notes -------------------------------------------------------------
 
   const noteProps = (id: NoteId, cascadeIndex: number) => ({
-    isOpen: id === "notice" ? noticeOpen : id === "history" ? historyOpen : id === "browse" ? browseNoteOpen : openNote === id,
+    isOpen:
+      id === "notice"
+        ? noticeOpen
+        : id === "history"
+          ? historyOpen
+          : id === "browse"
+            ? browseNoteOpen
+            : id === "ask"
+              ? askOpen
+              : openNote === id,
     isFullscreen: fullscreen === id,
     cascadeIndex,
     onClose: () => closeNote(id),
@@ -1215,6 +1333,12 @@ export function useCloudProjects({
     const isOpenHere = browseContext?.projectId === row.projectId || cloudContext?.projectId === row.projectId;
     const name = displayProjectName(row.name);
     const cannotShow = row.access === "redacted" && !row.headRedactionKnown;
+    // Stage 4C. Ask for access is offered only on a `redacted` row: on a `full`
+    // row the caller can already read the project, and the database would
+    // answer `already-has-access` and write nothing. A row already asked about
+    // says so instead of offering to ask again.
+    const request = browseRowRequestState(myRequests, row.projectId);
+    const canAsk = row.access === "redacted" && request.canAsk;
     return (
       <li key={row.projectId} className={isOpenHere ? styles.rowOpen : styles.row} data-project-id={row.projectId}>
         <span className={styles.rowTitle}>
@@ -1235,6 +1359,11 @@ export function useCloudProjects({
             {cannotShowFormatMessage(row.headSchemaVersion ?? PROJECT_FILE_VERSION)}
           </p>
         )}
+        {request.line && (
+          <p className={styles.rowLabel} data-browse-request-state="">
+            {request.line}
+          </p>
+        )}
         <span className={styles.rowActions}>
           {!cannotShow && (
             <button type="button" className={styles.button} disabled={rowBusy !== null} onClick={() => void openBrowseRow(row)}>
@@ -1249,6 +1378,13 @@ export function useCloudProjects({
           >
             Versions
           </button>
+          {/* Stage 4C: the only writing control anywhere on a browse row, and
+              it writes a REQUEST, not a change to the project. */}
+          {canAsk && (
+            <button type="button" className={styles.button} data-ask-for-access="" onClick={() => openAskNote(row)}>
+              {ASK_FOR_ACCESS_LABEL}
+            </button>
+          )}
         </span>
       </li>
     );
@@ -1398,6 +1534,47 @@ export function useCloudProjects({
                 <div className={styles.stack} data-browse-panel="">
                   <p className={styles.muted}>{BROWSE_TAB_LEAD}</p>
                   {browseError && <p className={styles.error}>{browseError}</p>}
+                  {/* Stage 4C. THE REQUESTER'S OWN VIEW — pending, granted and
+                      declined. It lives here because there is no email and no
+                      notice channel (Stage 3 answer 7, which this stage does
+                      not change): an answer appears here or nowhere. Nothing
+                      new goes on the top bar for it.
+                      A granted row says where the project now is: Shared with
+                      us, through the ordinary Stage 3 machinery. */}
+                  <details className={styles.stack} data-my-requests="">
+                    <summary className={styles.rowTitle}>
+                      {MY_REQUESTS_HEADING}
+                      {myRequests && myRequests.length > 0 ? ` (${myRequests.length})` : ""}
+                    </summary>
+                    {myRequestsError ? (
+                      <p className={styles.error}>{myRequestsError}</p>
+                    ) : myRequests === null ? (
+                      <p className={styles.muted}>Loading…</p>
+                    ) : myRequests.length === 0 ? (
+                      <p className={styles.muted}>{MY_REQUESTS_EMPTY_MESSAGE}</p>
+                    ) : (
+                      <ul className={styles.rows}>
+                        {myRequests.map((row) => (
+                          <li key={row.requestId} className={styles.row} data-my-request={row.status}>
+                            <span className={styles.rowTitle}>
+                              {/* A project that has left this account's browse
+                                  set has NO NAME here: the list is resolved
+                                  against browse_projects() and nothing else. */}
+                              {row.projectName === null ? REQUEST_PROJECT_UNKNOWN_NAME : displayProjectName(row.projectName)}
+                            </span>
+                            <span className={styles.rowMeta}>
+                              {row.ownerCompanyName ? `Owned by ${row.ownerCompanyName} · ` : ""}
+                              asked {relativeSaveTime(row.createdAt, now)}
+                            </span>
+                            <span className={styles.rowMeta} data-my-request-status="">
+                              {myRequestStatusLine(row)}
+                            </span>
+                            {row.message && <p className={styles.rowLabel}>Your note: {row.message}</p>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </details>
                   {browseCompanies === null ? (
                     <p className={styles.muted}>Loading…</p>
                   ) : browseCompanies.length === 0 ? (
@@ -1717,12 +1894,96 @@ export function useCloudProjects({
               </p>
             ))}
             <p className={styles.muted}>{BROWSE_EXPORT_ABSENT_NOTE}</p>
+            {/* Stage 4C: the second place to ask. Gated on the browsed row's
+                own access, exactly as the row's button is: a `full` row reaches
+                this state through Versions (see
+                BROWSE_VERSION_LIST_FULL_ACCESS_NOTE), and offering to ask for a
+                project you can already open would be an invitation the database
+                answers with "you can already open this project". */}
+            {browseContext.access === "redacted" && browseRowRequestState(myRequests, browseContext.projectId).line && (
+              <p className={styles.muted} data-browse-request-state="">
+                {browseRowRequestState(myRequests, browseContext.projectId).line}
+              </p>
+            )}
             <div className={styles.actions}>
+              {browseContext.access === "redacted" && browseRowRequestState(myRequests, browseContext.projectId).canAsk && (
+                <button
+                  type="button"
+                  className={styles.button}
+                  data-ask-for-access=""
+                  onClick={() =>
+                    openAskNote({
+                      projectId: browseContext.projectId,
+                      name: browseContext.projectName,
+                      ownerCompanyName: browseContext.ownerCompanyName,
+                    })
+                  }
+                >
+                  {ASK_FOR_ACCESS_LABEL}
+                </button>
+              )}
               <button type="button" className={styles.button} onClick={() => closeNote("browse")}>
                 Dismiss
               </button>
             </div>
           </div>
+        )}
+      </StickyNote>
+
+      {/* Stage 4C. ASK FOR ACCESS — reached from a browse row and from the
+          banner over a browsed design, and rendered last so it lands on top of
+          whichever opened it. Nothing new goes on the top bar for it.
+          It writes a REQUEST and nothing else. What comes back, if the owner
+          company grants it, is an ordinary Stage 3 personal grant written by
+          `share_project_with_person` inside `decide_collab_request` — so it
+          arrives in Shared with us, with the 3C notice, exactly as any other
+          share does. There is no parallel mechanism here.
+          Cascade 0, like the tree and Version history: cascade 1 already
+          overhangs a 360px screen by 2px, and this note is reached from a row
+          on that screen. DOM order is what puts it on top. */}
+      <StickyNote
+        id="cloud-ask-note"
+        label={askTarget ? `${ASK_FOR_ACCESS_LABEL} · ${displayProjectName(askTarget.projectName)}` : ASK_FOR_ACCESS_LABEL}
+        {...noteProps("ask", 0)}
+      >
+        {askTarget && (
+          <form
+            className={styles.stack}
+            data-ask-form=""
+            onSubmit={(e) => {
+              e.preventDefault();
+              void askForAccess();
+            }}
+          >
+            <p className={styles.lead}>{askForAccessLead(askTarget.projectName, askTarget.ownerCompanyName)}</p>
+            <p className={styles.muted}>{ASK_FOR_ACCESS_EXPLAINER}</p>
+            <label className={styles.field}>
+              {ASK_NOTE_FIELD_LABEL}
+              <input
+                className={styles.input}
+                type="text"
+                // The database's own cap (collab_requests_message_length,
+                // 1–500). The field stops at it, the route checks it again,
+                // and 0009 is what actually holds.
+                maxLength={REQUEST_NOTE_MAX_CHARS}
+                value={askNote}
+                onChange={(e) => setAskNote(e.target.value)}
+              />
+            </label>
+            <p className={styles.muted}>{askNoteCharactersLeft(askNote.trim().length)}</p>
+            {askNote.trim().length > REQUEST_NOTE_MAX_CHARS && (
+              <p className={styles.error}>{askNoteTooLongMessage(askNote.trim().length)}</p>
+            )}
+            {askOutcome && <p className={askOutcome.tone === "error" ? styles.error : styles.message}>{askOutcome.text}</p>}
+            <div className={styles.actions}>
+              <button type="submit" className={styles.primary} disabled={askBusy}>
+                {askBusy ? "Sending…" : "Send request"}
+              </button>
+              <button type="button" className={styles.button} onClick={() => closeNote("ask")}>
+                Close
+              </button>
+            </div>
+          </form>
         )}
       </StickyNote>
     </>

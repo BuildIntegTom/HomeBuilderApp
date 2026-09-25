@@ -771,9 +771,10 @@ describe("the project routes", () => {
       return statSync(path).isDirectory() ? files(path) : [path];
     });
 
-  it("exist for 2B, 2C (version list, rename) and 3B (shared list, access list), and not for 2D's backup", () => {
+  it("exist for 2B, 2C (version list, rename), 3B (shared list, access list) and 4C (asking for access), and not for 2D's backup", () => {
     const routes = files(apiDir).map((p) => p.slice(apiDir.length).replace(/\\/g, "/"));
     expect(routes.sort()).toEqual([
+      "/[id]/access-requests/route.ts",
       "/[id]/access/[grantId]/route.ts",
       "/[id]/access/route.ts",
       "/[id]/rename/route.ts",
