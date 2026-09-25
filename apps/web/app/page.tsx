@@ -2658,14 +2658,22 @@ export default function LayoutEditor() {
       // down). "That couldn't be applied" leaves somebody guessing at
       // numbers on a wall that has an exact answer, which is precisely what
       // the Stage 1 minimum refusal exists not to do.
+      //
+      // ⚠ Only when the refusal is ABOUT width feasibility. The other way
+      // this can fail — the wall-length or ordinal guard — is refusing for a
+      // reason that has nothing to do with which widths fit, and quoting a
+      // feasible width there would be a number attached to a refusal it does
+      // not describe.
+      if (!retiled.refusal) {
+        showPanelWidthNotice("That width couldn't be applied without moving this wall's own total length, so nothing was changed.");
+        return;
+      }
       const narrowestIn = narrowestAcceptablePinWidthIn(currentSlots, slotIndex, panelWidthLimitsIn);
       const alsoTakes =
         narrowestIn === null
           ? " No width between the shop's minimum and maximum fits this wall as it stands — reset a panel to automatic, or change the wall's length, first."
           : ` The narrowest hand-set width this wall will take right now is ${formatLengthIn(narrowestIn, unitSystem)}.`;
-      showPanelWidthNotice(
-        `${retiled.refusal ? placementRefusalMessage(retiled.refusal) : "That width couldn't be applied without moving this wall's own total length, so nothing was changed."}${alsoTakes}`,
-      );
+      showPanelWidthNotice(`${placementRefusalMessage(retiled.refusal)}${alsoTakes}`);
       return;
     }
     if (result.clampedFromIn !== null) {
@@ -2849,7 +2857,11 @@ export default function LayoutEditor() {
       case "refuse-width-out-of-range":
         return `Refused: a ${formatLengthIn(result.widthIn, unitSystem)} panel is outside what the shop builds (${formatLengthIn(result.minIn, unitSystem)} to ${formatLengthIn(result.maxIn, unitSystem)}). Nothing was changed.`;
       case "refuse-no-room":
-        return `Refused: there is ${formatLengthIn(result.freeBudgetIn, unitSystem)} of automatic panel width on this wall and that needs ${formatLengthIn(result.requestedIn, unitSystem)} of it — with whatever is left over still at least ${formatLengthIn(result.minIn, unitSystem)}. A corner or an opening is never shrunk to make room. Nothing was changed.`;
+        // "this change", not "that panel": the same sentence serves the
+        // placement tool AND the width edit, where there is no new panel to
+        // point at. A pronoun with no antecedent is what the first shared
+        // version left behind.
+        return `Refused: there is ${formatLengthIn(result.freeBudgetIn, unitSystem)} of automatic panel width on this wall and this change needs ${formatLengthIn(result.requestedIn, unitSystem)} of it — with whatever is left over still at least ${formatLengthIn(result.minIn, unitSystem)}. A corner or an opening is never shrunk to make room. Nothing was changed.`;
       case "refuse-no-free-run":
         return `Refused: every other panel on this wall is hand-set, an opening or a corner, so there is nothing automatic to give that ${formatLengthIn(result.freedWidthIn, unitSystem)} back to. Reset a panel to automatic first. Nothing was changed.`;
       case "refuse-would-exceed-maximum":
@@ -2871,9 +2883,16 @@ export default function LayoutEditor() {
     coverageShift: { at: number; delta: 1 | -1 } | null,
   ) => {
     if (result.outcome !== "commit") {
-      showPanelPlacementNotice(
-        placementRefusalMessage(result) ?? "That couldn't be applied, so nothing was changed.",
-      );
+      // The shared sentence deliberately does NOT say "this wall has no way
+      // to hold fewer panels" — on a replace or an insert that is simply
+      // untrue. On a DELETE it is exactly what happened, and only this
+      // caller knows which operation was asked for, so the accurate half of
+      // the old wording is restored here rather than in the shared text.
+      const whyItCannotShrink =
+        result.outcome === "refuse-would-exceed-maximum" && verb.startsWith("Deleted")
+          ? " This wall has no way to hold fewer panels."
+          : "";
+      showPanelPlacementNotice(`${placementRefusalMessage(result) ?? "That couldn't be applied, so nothing was changed."}${whyItCannotShrink}`);
       return;
     }
     setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: result.slots }));

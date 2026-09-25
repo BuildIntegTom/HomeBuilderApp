@@ -208,7 +208,11 @@ const pressKey = async (key, code, windowsVirtualKeyCode) => {
 // --- the run ----------------------------------------------------------------
 console.log("1. loading the app");
 await send("Page.navigate", { url: APP_URL }, sid);
-await sleep(9000);
+// Scaled by the throttle: a fixed 9s is plenty unthrottled and nowhere near
+// enough at 12x, where the app had not finished its first render before step
+// 1 read the nav and the run died before recording anything at all. That
+// looked like "12x is simply too slow to test at"; it was this one sleep.
+await sleep(9000 * Math.max(1, Math.round(CPU_THROTTLE / 2)));
 
 // Stage 0: a brand-new project has Foundation OFF, so the nav offers Wall only.
 const navTabs = await evaluate(`(() => {
@@ -231,10 +235,26 @@ console.log("2. drawing a footprint");
 const canvasBox = await evaluate(`(() => { const c = document.querySelector('canvas'); const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
 if (!canvasBox) throw new Error("no canvas — are you on localhost rather than 127.0.0.1?");
 const [cx, cy, cw, ch] = canvasBox;
+/**
+ * `SMEARFORN_FOOTPRINT_PX=70` draws a small SQUARE footprint instead of
+ * filling the canvas.
+ *
+ * **This is the fixture that produces a strip-less wall**, and it is in the
+ * harness rather than in a reviewer's notes because it is the only way to
+ * meet the bug that took three locators down: at 70px, wall AB tiles as
+ * `corner / one standard / corner`, which has no two ADJACENT standard
+ * panels and therefore no drag strip at all. Unset, the run draws the same
+ * canvas-filling rectangle it always did.
+ */
+const FOOTPRINT_PX = Number(process.env.SMEARFORN_FOOTPRINT_PX ?? "0");
 const x0 = cx + 60;
 const y0 = cy + 80;
-const x1 = cx + cw - 80;
-const y1 = cy + ch - 120;
+const x1 = FOOTPRINT_PX > 0 ? x0 + FOOTPRINT_PX : cx + cw - 80;
+const y1 = FOOTPRINT_PX > 0 ? y0 + FOOTPRINT_PX : cy + ch - 120;
+if (FOOTPRINT_PX > 0) {
+  console.log(`  (drawing a ${FOOTPRINT_PX}x${FOOTPRINT_PX}px footprint — the strip-less-wall fixture)`);
+  evidence.footprintPx = FOOTPRINT_PX;
+}
 await mouse("mousePressed", x0, y0);
 await sleep(80);
 await mouse("mouseMoved", (x0 + x1) / 2, (y0 + y1) / 2);
