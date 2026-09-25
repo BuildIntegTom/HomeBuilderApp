@@ -128,9 +128,19 @@ export interface StoppedWallRun extends WallRunBase {
  *    is simply not built. Inference, flagged as one: the plan states it and
  *    marks it an inference, and it is the only reading that makes physical
  *    sense — a corner panel wraps a corner, and a run that stops short of
- *    the corner has no corner to wrap. The NEIGHBOUR is untouched: it
- *    already either owns that corner by its own rule or butts against it,
- *    and `cornerOwnership` is not consulted differently because of a stop.
+ *    the corner has no corner to wrap.
+ *
+ * **What this function does NOT do, and where the rest of the rule lives.**
+ * It is per-wall, so it cannot see the neighbour. An earlier version of this
+ * comment claimed the neighbour was untouched because it "already either
+ * owns that corner by its own rule or butts against it" — and that was wrong
+ * for the butting case. A wall butting a corner its neighbour owns is inset
+ * by a wall thickness to make room for that corner panel; if the neighbour
+ * stops and never builds it, the butting wall was left insetting into air.
+ * **Tommy's decision, 2026-09-25: the corner simply does not exist, and the
+ * butting wall runs out to its own true end.** That adjustment is
+ * necessarily cross-wall and lives in `cornerOwnershipWithRunStops`
+ * (`retile.ts`), which is what feeds this function its `base`.
  *
  * A fully-stopped wall loses BOTH corners even though only one end may carry
  * a stop — otherwise `resolveCorners` would clamp the surviving corner to

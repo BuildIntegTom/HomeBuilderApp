@@ -1,4 +1,4 @@
-import { cornerOwnership, wallRunFor } from "./retile";
+import { cornerOwnershipWithRunStops, wallRunFor } from "./retile";
 import type { Footprint, PanelSlot, WallRunStop } from "./types";
 
 /**
@@ -68,7 +68,7 @@ export function panelSlotBoxes3D(
   runStopsByWallId?: Record<string, WallRunStop>,
 ): PanelSlotBox3D[] {
   const thicknessFt = thicknessIn / 12;
-  const ownership = cornerOwnership(footprint, primaryCornerIds, thicknessIn);
+  const ownership = cornerOwnershipWithRunStops(footprint, primaryCornerIds, thicknessIn, runStopsByWallId);
 
   const result: PanelSlotBox3D[] = [];
   for (const wall of footprint.walls) {

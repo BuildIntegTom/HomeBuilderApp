@@ -144,8 +144,20 @@ export interface WallElevationDiagramProps {
    * means this wall's own slots stop `thicknessIn` short of that end's true
    * corner, and a filler sliver (the neighboring wall's own corner panel,
    * visible edge-on) is drawn in that gap instead. */
-  hasCornerStart: boolean;
-  hasCornerEnd: boolean;
+  /**
+   * How far this wall's run is inset at each end because the NEIGHBOUR's
+   * corner panel physically occupies it — 0 when this wall owns the corner
+   * itself, `thicknessIn` when it butts.
+   *
+   * **A number rather than the old `hasCornerStart`/`hasCornerEnd` booleans,
+   * and the difference is Stage 3's orphan-corner rule.** "This wall does not
+   * own the corner" and "the neighbour's corner panel is really there" used
+   * to be the same fact. They are not any more: when the neighbour stops at
+   * that corner it never builds the panel, so this wall runs out to its own
+   * true end (inset 0) and the "adjacent wall" filler sliver must NOT draw.
+   * `> 0` is exactly the right test for both. */
+  startInsetIn: number;
+  endInsetIn: number;
   /** Stage 3 — inches at each end of this wall that are deliberately NOT
    * built (Tommy: "a stop wall tool so that it is possible to make
    * incomplete walls"). Drawn as a **dashed boundary line, not a hatched
@@ -390,8 +402,8 @@ export default function WallElevationDiagram({
   wallHeightFt,
   allInstances,
   secondStoryAllInstances,
-  hasCornerStart,
-  hasCornerEnd,
+  startInsetIn,
+  endInsetIn,
   startStopIn = 0,
   endStopIn = 0,
   secondStorySlots,
@@ -494,17 +506,17 @@ export default function WallElevationDiagram({
   );
 
   const wallWidthIn = wall.lengthFt * 12;
-  // A wall that doesn't own its own corner at an end has its real slots
-  // stop thicknessIn short of that end's true corner (see hasCornerStart/
-  // hasCornerEnd's own doc comment) — every along-wall position in this
+  // A wall whose NEIGHBOUR builds the corner at an end has its real slots
+  // stop thicknessIn short of that end's true corner (see startInsetIn/
+  // endInsetIn's own doc comment) — every along-wall position in this
   // component is anchored off these two offsets rather than assuming
   // content always starts flush at this wall's own true x=0.
   // Stage 3: a run stop pushes this wall's content further in by exactly
   // the span that isn't built. Folded into these two offsets rather than
   // handled separately, so every along-wall position in this component
   // (panel rows, beam handles, drag hit-testing) moves together.
-  const cornerInsetStartIn = hasCornerStart ? 0 : thicknessIn;
-  const cornerInsetEndIn = hasCornerEnd ? 0 : thicknessIn;
+  const cornerInsetStartIn = startInsetIn;
+  const cornerInsetEndIn = endInsetIn;
   const startOffsetIn = cornerInsetStartIn + startStopIn;
   const endOffsetIn = cornerInsetEndIn + endStopIn;
   const eaveHeightIn = wallHeightFt * 12;
@@ -1259,9 +1271,11 @@ export default function WallElevationDiagram({
     return elements;
   };
 
-  // At an end this wall doesn't own its own corner, the wall physically
-  // butts against the shorter neighboring wall's own corner panel instead
-  // (see hasCornerStart/hasCornerEnd's own doc comment) — that panel's
+  // At an end where the neighbouring wall builds the corner, this wall
+  // physically butts against that corner panel (see startInsetIn/endInsetIn's
+  // own doc comment, and note it is the INSET that decides this, not mere
+  // ownership — a neighbour that stops short never builds the panel, and
+  // then there is nothing here to draw) — that panel's
   // narrow return face (thicknessIn deep) is what's actually visible here,
   // not a gap. Drawn as a static reference sliver, not a real slot on this
   // wall: no click handler, and not split into this wall's own mid-wall-
@@ -1297,8 +1311,8 @@ export default function WallElevationDiagram({
     );
     return (
       <>
-        {!hasCornerStart && sliver(0, `${story}-adjacent-start`)}
-        {!hasCornerEnd && sliver(wallWidthIn - thicknessIn, `${story}-adjacent-end`)}
+        {startInsetIn > 0 && sliver(0, `${story}-adjacent-start`)}
+        {endInsetIn > 0 && sliver(wallWidthIn - endInsetIn, `${story}-adjacent-end`)}
       </>
     );
   };

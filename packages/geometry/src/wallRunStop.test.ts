@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildRectangleFootprint } from "./footprint";
 import { buildOctagonFootprint } from "./octagon";
-import { retile, retilePreservingOpenings, wallGeometryFor } from "./retile";
+import { insertBumpOut } from "./bumpOut";
+import { cornerOwnership, cornerOwnershipWithRunStops, retile, retilePreservingOpenings, wallGeometryFor } from "./retile";
 import { tileWall } from "./tiling";
 import { toEighths, wallFabricationLengthIn } from "./eighths";
 import {
@@ -113,7 +114,7 @@ describe("wallGeometryFor with a run stop", () => {
   it("returns exactly today's numbers when no stop is passed", () => {
     const withNothing = wallGeometryFor(fp, "AB", allPrimary(fp), "A", THICKNESS_IN);
     const withUndefined = wallGeometryFor(fp, "AB", allPrimary(fp), "A", THICKNESS_IN, undefined);
-    const withZero = wallGeometryFor(fp, "AB", allPrimary(fp), "A", THICKNESS_IN, NO_WALL_RUN_STOP);
+    const withZero = wallGeometryFor(fp, "AB", allPrimary(fp), "A", THICKNESS_IN, { AB: NO_WALL_RUN_STOP });
     expect(withUndefined).toEqual(withNothing);
     expect(withZero).toEqual(withNothing);
     expect(withNothing!.lengthIn).toBe(withNothing!.unstoppedLengthIn);
@@ -123,7 +124,7 @@ describe("wallGeometryFor with a run stop", () => {
   });
 
   it("shortens the tiled run and keeps the unstopped length for the invariant", () => {
-    const stopped = wallGeometryFor(fp, "AB", allPrimary(fp), "A", THICKNESS_IN, { startStopIn: 60, endStopIn: 0 })!;
+    const stopped = wallGeometryFor(fp, "AB", allPrimary(fp), "A", THICKNESS_IN, { AB: { startStopIn: 60, endStopIn: 0 } })!;
     const plain = wallGeometryFor(fp, "AB", allPrimary(fp), "A", THICKNESS_IN)!;
     expect(stopped.unstoppedLengthIn).toBe(plain.lengthIn);
     expect(stopped.lengthIn).toBe(plain.lengthIn - 60);
@@ -187,7 +188,7 @@ describe("the sum invariant survives a run stop", () => {
     const fp = buildRectangleFootprint(30, 20);
     const wall = fp.walls.find((w) => w.id === "BC")!;
     const stop: WallRunStop = { startStopIn: 36, endStopIn: 0 };
-    const geometry = wallGeometryFor(fp, "BC", allPrimary(fp), "A", THICKNESS_IN, stop)!;
+    const geometry = wallGeometryFor(fp, "BC", allPrimary(fp), "A", THICKNESS_IN, { BC: stop })!;
     expect(geometry.unstoppedLengthIn).toBe(wallFabricationLengthIn(wall));
     const slots = retile(
       fp,
@@ -380,7 +381,174 @@ describe("retile / retilePreservingOpenings with run stops", () => {
     );
     const wall = fp.walls.find((w) => w.id === "BC")!;
     expect(toEighths(sumWidths(next["BC"]!)) + toEighths(stop.startStopIn)).toBe(toEighths(wallFabricationLengthIn(wall)));
-    expect(JSON.stringify(next["AB"])).toBe(JSON.stringify(base["AB"]));
+    // AB is NOT untouched, and that is the orphan-corner rule working: BC
+    // owns corner B and has stopped there, so AB stops butting into a corner
+    // panel that no longer exists and runs out to its own true end. See the
+    // dedicated block below.
+    expect(toEighths(sumWidths(next["AB"]!)) - toEighths(sumWidths(base["AB"]!))).toBe(toEighths(THICKNESS_IN));
+  });
+
+  /**
+   * **The orphan corner — Tommy's decision, 2026-09-25.** When a wall stops
+   * at a corner it OWNS, that corner panel is never built, and the neighbour
+   * which was butting against it was left insetting a wall-thickness into
+   * air: an empty notch with nothing marking it, plus a phantom "adjacent
+   * wall" sliver on the elevation for a panel that does not exist. The rule
+   * is that neither wall builds a corner there and the butting neighbour
+   * runs out to its own true end.
+   *
+   * This is the FIRST thing in Stage 3 where a stop on one wall changes
+   * another wall's tiling, so the invariants get asserted on the neighbour
+   * too, not just on the stopped wall.
+   */
+  describe("the orphan corner", () => {
+    // 30x20 rectangle. At corner B (AB.end / BC.start) the SHORTER wall wins,
+    // so BC owns it and AB butts — the exact configuration the ADU hits,
+    // since stopping a short wall is what reaches a long neighbour.
+    const stopAtCornerB = { BC: { startStopIn: 36, endStopIn: 0 } };
+    const tile = (stops?: Record<string, WallRunStop>) =>
+      retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED, undefined, stops);
+
+    it("clears the butting neighbour's inset, and only at the corner that lost its panel", () => {
+      const base = cornerOwnership(fp, allPrimary(fp), THICKNESS_IN);
+      const adjusted = cornerOwnershipWithRunStops(fp, allPrimary(fp), THICKNESS_IN, stopAtCornerB);
+      expect(base["AB"]!.end.insetAmount).toBe(THICKNESS_IN);
+      expect(adjusted["AB"]!.end.insetAmount).toBe(0);
+      // AB's OTHER end is at corner A, which DA owns and is still building.
+      expect(adjusted["AB"]!.start.insetAmount).toBe(base["AB"]!.start.insetAmount);
+      // Nobody gains a corner they did not own.
+      for (const id of ["AB", "BC", "CD", "DA"]) {
+        expect(adjusted[id]!.start.hasCorner).toBe(base[id]!.start.hasCorner);
+        expect(adjusted[id]!.end.hasCorner).toBe(base[id]!.end.hasCorner);
+      }
+    });
+
+    it("is the identity with no stops — every project saved before Stage 3", () => {
+      const base = cornerOwnership(fp, allPrimary(fp), THICKNESS_IN);
+      expect(cornerOwnershipWithRunStops(fp, allPrimary(fp), THICKNESS_IN)).toEqual(base);
+      expect(cornerOwnershipWithRunStops(fp, allPrimary(fp), THICKNESS_IN, {})).toEqual(base);
+      expect(cornerOwnershipWithRunStops(fp, allPrimary(fp), THICKNESS_IN, { AB: NO_WALL_RUN_STOP })).toEqual(base);
+    });
+
+    it("the neighbour grows by exactly one wall thickness, on the eighth", () => {
+      const before = tile();
+      const after = tile(stopAtCornerB);
+      expect(toEighths(sumWidths(after["AB"]!)) - toEighths(sumWidths(before["AB"]!))).toBe(toEighths(THICKNESS_IN));
+      // The far side of the building is genuinely untouched.
+      expect(JSON.stringify(after["CD"])).toBe(JSON.stringify(before["CD"]));
+    });
+
+    it("the neighbour's own sum invariant still closes exactly", () => {
+      const after = tile(stopAtCornerB);
+      const ab = fp.walls.find((w) => w.id === "AB")!;
+      const geometry = wallGeometryFor(fp, "AB", allPrimary(fp), "A", THICKNESS_IN, stopAtCornerB)!;
+      expect(toEighths(sumWidths(after["AB"]!))).toBe(toEighths(geometry.lengthIn));
+      // AB has no stop of its own, so its whole run is built; its length is
+      // its fabrication length less only the ONE inset it still has.
+      expect(toEighths(geometry.lengthIn)).toBe(toEighths(wallFabricationLengthIn(ab) - THICKNESS_IN));
+      for (const slot of after["AB"]!) expect(Number.isInteger(toEighths(slot.widthIn))).toBe(true);
+    });
+
+    it("a FULLY stopped wall orphans BOTH of the corners it owned", () => {
+      const adjusted = cornerOwnershipWithRunStops(fp, allPrimary(fp), THICKNESS_IN, {
+        BC: { startStopIn: 20 * 12, endStopIn: 0 },
+      });
+      // BC owns corners B and C; AB butts at B and CD butts at C.
+      expect(adjusted["AB"]!.end.insetAmount).toBe(0);
+      expect(adjusted["CD"]!.start.insetAmount).toBe(0);
+    });
+
+    it("a stop at an end the wall does NOT own leaves the neighbour alone", () => {
+      // AB does not own corner A (DA does), so stopping AB's start orphans
+      // nothing — DA keeps building its corner and AB keeps its inset.
+      const base = cornerOwnership(fp, allPrimary(fp), THICKNESS_IN);
+      const adjusted = cornerOwnershipWithRunStops(fp, allPrimary(fp), THICKNESS_IN, {
+        AB: { startStopIn: 60, endStopIn: 0 },
+      });
+      expect(adjusted).toEqual(base);
+    });
+
+    it("REFLEX corners are untouched — their loser never had an inset to clear", () => {
+      const rect = buildRectangleFootprint(30, 20);
+      const { footprint: bumped, primaryCornerIds } = insertBumpOut(rect, "AB", 10, 15, 5, allPrimary(rect));
+      const reflexBase = cornerOwnership(bumped, primaryCornerIds, THICKNESS_IN);
+      // Stop every wall on the bumped shape at both ends, which is the most
+      // aggressive thing this rule can be asked to do.
+      const everythingStopped: Record<string, WallRunStop> = {};
+      for (const w of bumped.walls) everythingStopped[w.id] = { startStopIn: 12, endStopIn: 12 };
+      const adjusted = cornerOwnershipWithRunStops(bumped, primaryCornerIds, THICKNESS_IN, everythingStopped);
+      for (const w of bumped.walls) {
+        // Reflex ends are exactly the ones carrying an extension; their
+        // partner's inset was already 0 and must stay 0, and no extension
+        // may be invented or destroyed.
+        expect(adjusted[w.id]!.start.extraLengthIn).toBe(reflexBase[w.id]!.start.extraLengthIn);
+        expect(adjusted[w.id]!.end.extraLengthIn).toBe(reflexBase[w.id]!.end.extraLengthIn);
+        // An inset may only ever be cleared, never created or enlarged.
+        expect(adjusted[w.id]!.start.insetAmount).toBeLessThanOrEqual(reflexBase[w.id]!.start.insetAmount);
+        expect(adjusted[w.id]!.end.insetAmount).toBeLessThanOrEqual(reflexBase[w.id]!.end.insetAmount);
+      }
+    });
+
+    it("a bumped-out shape still closes its sum invariant on every wall, with stops everywhere", () => {
+      const rect = buildRectangleFootprint(30, 20);
+      const { footprint: bumped, primaryCornerIds } = insertBumpOut(rect, "AB", 10, 15, 5, allPrimary(rect));
+      const stops: Record<string, WallRunStop> = {};
+      for (const w of bumped.walls) stops[w.id] = { startStopIn: 6, endStopIn: 6 };
+      const tiled = retile(
+        bumped,
+        [...primaryCornerIds][0] ?? bumped.corners[0]!.id,
+        primaryCornerIds,
+        STANDARD_WIDTH_IN,
+        CORNER_PANEL_WIDTH_IN,
+        THICKNESS_IN,
+        BRACED_SEED,
+        undefined,
+        stops,
+      );
+      for (const w of bumped.walls) {
+        const geometry = wallGeometryFor(bumped, w.id, primaryCornerIds, [...primaryCornerIds][0] ?? bumped.corners[0]!.id, THICKNESS_IN, stops)!;
+        expect(toEighths(sumWidths(tiled[w.id]!))).toBe(toEighths(geometry.lengthIn));
+        for (const slot of tiled[w.id]!) expect(Number.isInteger(toEighths(slot.widthIn))).toBe(true);
+      }
+    });
+
+    it("the MERGED-corner case cannot collide with this — a stopped wall never merges", () => {
+      // Tested at `tileWall` rather than through a footprint on purpose:
+      // `buildRectangleFootprint` clamps every side to a minimum of 8ft, so a
+      // rectangle can never be short enough for two 25.5in corners to
+      // overlap. The merged case is only reachable from a bump-out's own
+      // short remainder segment — or, as here, from the function that
+      // actually decides it.
+      const MERGE_LENGTH_IN = 48; // < 2 x 25.5in, so both corners cannot fit
+      const unstopped = tileWall(MERGE_LENGTH_IN, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, "end", true, true).slots;
+      expect(unstopped).toHaveLength(1);
+      expect(unstopped[0]!.type).toBe("corner");
+      expect(unstopped[0]!.widthIn).toBe(MERGE_LENGTH_IN);
+
+      // `resolveCorners` merges only when a wall owns corners at BOTH ends,
+      // and a stop at either end removes that end's corner — so the merge
+      // branch is unreachable on a stopped wall, and nothing has to be done
+      // about it beyond proving that.
+      const run = applyWallRunStop(
+        { lengthIn: MERGE_LENGTH_IN, hasCornerStart: true, hasCornerEnd: true },
+        { startStopIn: 12, endStopIn: 0 },
+      );
+      expect(run.hasCornerStart).toBe(false);
+      expect(run.hasCornerEnd).toBe(true);
+      const stopped = tileWall(run.lengthIn, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, "end", run.hasCornerStart, run.hasCornerEnd)
+        .slots;
+      expect(stopped.some((s) => s.widthIn === MERGE_LENGTH_IN)).toBe(false);
+      expect(toEighths(sumWidths(stopped)) + toEighths(run.startStopIn)).toBe(toEighths(MERGE_LENGTH_IN));
+      for (const slot of stopped) expect(Number.isInteger(toEighths(slot.widthIn))).toBe(true);
+    });
+
+    it("is deterministic — repeated evaluation reaches the same fixed point", () => {
+      const once = cornerOwnershipWithRunStops(fp, allPrimary(fp), THICKNESS_IN, stopAtCornerB);
+      for (let i = 0; i < 5; i++) {
+        expect(cornerOwnershipWithRunStops(fp, allPrimary(fp), THICKNESS_IN, stopAtCornerB)).toEqual(once);
+      }
+      expect(JSON.stringify(tile(stopAtCornerB))).toBe(JSON.stringify(tile(stopAtCornerB)));
+    });
   });
 
   it("works on a mitered (octagon) shape too", () => {

@@ -2071,9 +2071,14 @@ export default function LayoutEditor() {
       openingSeed,
       runStops,
     );
-  const wallGeometryFor = (wallId: string, runStop: WallRunStop | undefined = wallRunStopsByWallId[wallId]) =>
+  /** `runStops` is the WHOLE map, not one wall's record: since the
+   * orphan-corner rule a stop on the neighbour changes this wall's own inset
+   * (see `cornerOwnershipWithRunStops`). Callers exploring a CANDIDATE stop
+   * pass a copy of the map with that one wall replaced, so the candidate is
+   * evaluated with its cross-wall effects included. */
+  const wallGeometryFor = (wallId: string, runStops: Record<string, WallRunStop> = wallRunStopsByWallId) =>
     footprint
-      ? wallGeometryForPure(footprint, wallId, primaryCornerIds, leastAccessibleCorner, thicknessIn, runStop)
+      ? wallGeometryForPure(footprint, wallId, primaryCornerIds, leastAccessibleCorner, thicknessIn, runStops)
       : null;
 
   const handleDraw = (widthFt: number, depthFt: number, origin: { x: number; y: number }) => {
@@ -2438,36 +2443,35 @@ export default function LayoutEditor() {
   // wall's run that is not built.
   //
   // The arithmetic lives in packages/geometry's `wallRunStop.ts`; what is
-  // here is the single-wall re-tile, the refusal, and keeping the stop out
-  // of the stored record entirely when it is zero (absent = today's
-  // behaviour, byte-identical, which is every project ever saved).
+  // here is the re-tile, the refusal, and keeping the stop out of the stored
+  // record entirely when it is zero (absent = today's behaviour,
+  // byte-identical, which is every project ever saved).
+  //
+  // **⚠ A stop re-tiles EVERY wall, not just its own, and that is new in
+  // this stage.** Since Tommy's orphan-corner decision, a wall that stops at
+  // a corner it owns takes that corner with it, and the neighbour which was
+  // butting against it stops insetting into air and runs out to its own true
+  // end. So a stop on one wall genuinely changes another wall's tiling. A
+  // whole-footprint `retilePreservingOpenings` is the honest way to express
+  // that: it is the house's own lossless-retile path (openings preserved by
+  // anchor, braced decisions and hand-set widths preserved by
+  // `reconcileBracedPlacement`), and hand-picking "just the neighbours"
+  // would be a second, subtly different copy of `cornerOwnership`'s
+  // adjacency rules.
 
-  /** Re-tiles ONE wall of ONE story against a candidate stop, preserving
-   * that wall's openings and braced decisions exactly as every other
-   * single-wall re-tile in this component does. Returns null when the wall
-   * does not exist; returns [] for a wall that is not built at all. */
-  const retileWallForRunStop = (story: "ground" | "second", wallId: string, runStop: WallRunStop): PanelSlot[] | null => {
-    const geometry = wallGeometryFor(wallId, runStop);
-    if (!geometry) return null;
-    if (geometry.fullyStopped) return [];
-    const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
-    const slots = retileWithOpenings(
-      geometry.lengthIn,
-      standardWidthIn,
-      cornerWidthInForTiling,
-      geometry.gapEnd,
-      geometry.hasCornerStart,
-      geometry.hasCornerEnd,
-      getOpeningAnchors(currentSlots),
-      geometry.allowBorrow,
-    ).slots;
-    const marked = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
-    return reconcileBracedPlacement(currentSlots, marked, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+  /** The whole footprint re-tiled against a candidate stop map, per story. */
+  const retileAllForRunStops = (story: "ground" | "second", runStops: Record<string, WallRunStop>) => {
+    if (!footprint) return null;
+    return retilePreservingOpenings(footprint, leastAccessibleCorner, primaryCornerIds, wallSlotsForStory(story), runStops);
   };
 
-  const candidateWallRunStop = (wallId: string, end: WallEnd, nextIn: number): WallRunStop => {
+  /** The stop map as it would be with one end of one wall changed. Returned
+   * as a MAP rather than a single record because every consumer now needs
+   * the cross-wall view. */
+  const candidateWallRunStops = (wallId: string, end: WallEnd, nextIn: number): Record<string, WallRunStop> => {
     const current = wallRunStopsByWallId[wallId] ?? NO_WALL_RUN_STOP;
-    return end === "start" ? { ...current, startStopIn: nextIn } : { ...current, endStopIn: nextIn };
+    const next = end === "start" ? { ...current, startStopIn: nextIn } : { ...current, endStopIn: nextIn };
+    return { ...wallRunStopsByWallId, [wallId]: next };
   };
 
   /**
@@ -2491,32 +2495,43 @@ export default function LayoutEditor() {
    */
   const wallRunStopRefusalMessage = (wallId: string, end: WallEnd, nextIn: number): string | null => {
     if (nextIn < 0) return "A stop is measured in from the end of the wall, so it cannot be negative.";
-    const unstopped = wallGeometryFor(wallId, NO_WALL_RUN_STOP);
+    const unstopped = wallGeometryFor(wallId, {});
     if (!unstopped) return null;
-    const candidate = candidateWallRunStop(wallId, end, nextIn);
-    const geometry = wallGeometryFor(wallId, candidate);
+    const candidateStops = candidateWallRunStops(wallId, end, nextIn);
+    const geometry = wallGeometryFor(wallId, candidateStops);
     if (!geometry) return null;
     if (geometry.stopClamped) {
       return `This wall's run is only ${formatLengthIn(unstopped.lengthIn, unitSystem)} long; the two stops together ask for more than that.`;
     }
-    if (geometry.fullyStopped) return null; // an edge with no wall on it at all — legal, and the point of the feature
-    // BOTH stories, not just the ground one. `applyWallRunStopChange`
-    // re-tiles both, and a second story whose openings differ can tile the
-    // same candidate run into a sub-minimum panel the ground story does
-    // not — which would then be committed without ever being refused.
+    // BOTH stories, not just the ground one (the commit re-tiles both, and a
+    // second story whose openings differ can tile the same run into a
+    // sub-minimum panel the ground story does not), and EVERY wall, not just
+    // this one — since the orphan-corner rule, this stop lengthens whichever
+    // neighbour was butting into the corner it removes.
     const storiesToCheck: ("ground" | "second")[] = stories.length > 1 ? ["ground", "second"] : ["ground"];
     for (const story of storiesToCheck) {
-      const slots = retileWallForRunStop(story, wallId, candidate) ?? [];
-      const totalIn = slots.reduce((sum, s) => sum + s.widthIn, 0);
+      const retiled = retileAllForRunStops(story, candidateStops);
+      if (!retiled) continue;
       const storyLabel = story === "second" ? " on the second story" : "";
-      if (toEighths(totalIn) + toEighths(geometry.startStopIn) + toEighths(geometry.endStopIn) !== toEighths(unstopped.lengthIn)) {
-        // The sum invariant outranks the edit. Refused whole rather than
-        // partly applied — same guard Stage 1's width edit carries.
-        return `That stop does not leave a run${storyLabel} whose panels add back up to this wall. Nothing was changed.`;
-      }
-      const subMinimum = findSubMinimumPanelWidths({ [wallId]: slots }, fabricationMinPanelWidthIn.value);
-      if (subMinimum.length > 0) {
-        return `That leaves a ${formatLengthIn(geometry.lengthIn, unitSystem)} run${storyLabel}, which cannot be panelized without a panel under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum the shop can build. Stop less of the wall, or stop all ${formatFeetInches(unstopped.lengthIn / 12)} of it.`;
+      for (const wall of footprint?.walls ?? []) {
+        const wallGeometry = wallGeometryFor(wall.id, candidateStops);
+        const wallUnstopped = wallGeometryFor(wall.id, {});
+        if (!wallGeometry || !wallUnstopped) continue;
+        const slots = retiled[wall.id] ?? [];
+        const totalIn = slots.reduce((sum, s) => sum + s.widthIn, 0);
+        const onWall = wall.id === wallId ? "" : ` on wall ${wall.id}`;
+        if (
+          toEighths(totalIn) + toEighths(wallGeometry.startStopIn) + toEighths(wallGeometry.endStopIn) !==
+          toEighths(wallUnstopped.lengthIn)
+        ) {
+          // The sum invariant outranks the edit. Refused whole rather than
+          // partly applied — same guard Stage 1's width edit carries.
+          return `That stop does not leave a run${onWall}${storyLabel} whose panels add back up to that wall. Nothing was changed.`;
+        }
+        const subMinimum = findSubMinimumPanelWidths({ [wall.id]: slots }, fabricationMinPanelWidthIn.value);
+        if (subMinimum.length > 0) {
+          return `That leaves a ${formatLengthIn(wallGeometry.lengthIn, unitSystem)} run${onWall}${storyLabel}, which cannot be panelized without a panel under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum the shop can build. Stop less of the wall, or stop all ${formatFeetInches(unstopped.lengthIn / 12)} of it.`;
+        }
       }
     }
     return null;
@@ -2524,7 +2539,7 @@ export default function LayoutEditor() {
 
   const applyWallRunStopChange = (wallId: string, candidate: WallRunStop) => {
     if (!footprint) return;
-    const unstopped = wallGeometryFor(wallId, NO_WALL_RUN_STOP);
+    const unstopped = wallGeometryFor(wallId, {});
     if (!unstopped) return;
     const normalized = normalizeWallRunStop(candidate, unstopped.lengthIn);
     const next: WallRunStop = { startStopIn: normalized.startStopIn, endStopIn: normalized.endStopIn };
@@ -2535,19 +2550,25 @@ export default function LayoutEditor() {
     if (hasWallRunStop(next)) nextStops[wallId] = next;
     else delete nextStops[wallId];
     setWallRunStopsByWallId(nextStops);
-    const groundSlots = retileWallForRunStop("ground", wallId, next);
-    if (groundSlots) setWallSlotsForStory("ground", (prev) => ({ ...prev, [wallId]: groundSlots }));
+    // Every wall, both stories — see the orphan-corner note above.
+    const groundSlots = retileAllForRunStops("ground", nextStops);
+    if (groundSlots) setBaseWallSlots(groundSlots);
     if (stories.length > 1) {
-      const secondSlots = retileWallForRunStop("second", wallId, next);
-      if (secondSlots) setWallSlotsForStory("second", (prev) => ({ ...prev, [wallId]: secondSlots }));
+      const secondSlots = retileAllForRunStops("second", nextStops);
+      if (secondSlots) setWallSlotsForStory("second", () => secondSlots);
     }
     // The selection almost certainly points at a slot index that no longer
     // means what it did — same reset `handleToggleOpening` does.
     setSelectedSlot(null);
   };
 
-  const handleSetWallRunStop = (wallId: string, end: WallEnd, nextIn: number) =>
-    applyWallRunStopChange(wallId, candidateWallRunStop(wallId, end, nextIn));
+  const handleSetWallRunStop = (wallId: string, end: WallEnd, nextIn: number) => {
+    const current = wallRunStopsByWallId[wallId] ?? NO_WALL_RUN_STOP;
+    applyWallRunStopChange(
+      wallId,
+      end === "start" ? { ...current, startStopIn: nextIn } : { ...current, endStopIn: nextIn },
+    );
+  };
 
   /** Both ends at once. Deliberately one call rather than two `handleSet`
    * calls in a row — React state is not readable back in the same tick, so
@@ -8013,13 +8034,14 @@ export default function LayoutEditor() {
                   wallHeightFt={wallHeightFt}
                   allInstances={allInstances}
                   secondStoryAllInstances={secondStoryAllInstances}
-                  // OWNERSHIP, deliberately not the tiler's `hasCorner*`: a run
-                  // stop does not change the neighbour, so where the neighbour
-                  // owns this corner its panel is still there and the "adjacent
-                  // wall" filler sliver still belongs on the drawing — with the
-                  // unbuilt span drawn between it and this wall's own run.
-                  hasCornerStart={wallGeometryFor(elevationWall.id)?.ownsCornerStart ?? true}
-                  hasCornerEnd={wallGeometryFor(elevationWall.id)?.ownsCornerEnd ?? true}
+                  // The ADJUSTED insets, deliberately not raw ownership: where
+                  // the neighbour owns this corner AND is building it, its
+                  // panel really is in this end of the line and the "adjacent
+                  // wall" filler sliver belongs on the drawing. Where the
+                  // neighbour stops short, the corner does not exist, this wall
+                  // runs out to its own true end, and nothing is drawn there.
+                  startInsetIn={wallGeometryFor(elevationWall.id)?.startInsetIn ?? 0}
+                  endInsetIn={wallGeometryFor(elevationWall.id)?.endInsetIn ?? 0}
                   startStopIn={wallGeometryFor(elevationWall.id)?.startStopIn ?? 0}
                   endStopIn={wallGeometryFor(elevationWall.id)?.endStopIn ?? 0}
                   secondStorySlots={secondStory?.wallSlots[elevationWall.id]}
