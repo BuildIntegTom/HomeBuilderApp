@@ -330,7 +330,7 @@ import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import WallElevationDiagram from "./WallElevationDiagram";
 import styles from "./page.module.css";
 import elevationStyles from "./ElevationControls.module.css";
-import { tilerWouldDropPanels } from "./handPlacedWallRetile";
+import { tilerWouldChangeThePanelCount } from "./handPlacedWallRetile";
 
 const FootprintCanvas = dynamic(() => import("./FootprintCanvas"), { ssr: false });
 const Building3DView = dynamic(() => import("./Building3DView"), { ssr: false });
@@ -2600,7 +2600,7 @@ export default function LayoutEditor() {
     // instead — the same count-preserving mechanism insert/replace/delete
     // use — and the tiler's answer is discarded. A wall that has never been
     // hand-placed on takes the tiler path, exactly as it did before Stage 2.
-    if (tilerWouldDropPanels(nextSlots, finalSlots)) {
+    if (tilerWouldChangeThePanelCount(nextSlots, finalSlots)) {
       const fallback = redistributeFreeRun(beforeSlots, nextSlots, editIndex, panelWidthLimitsIn, { rebalance });
       if (fallback.outcome !== "commit") return { ok: false };
       const fallbackIndex = findNthStandardFamilyIndex(fallback.slots, keepOrdinal);

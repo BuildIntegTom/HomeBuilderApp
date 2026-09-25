@@ -248,6 +248,35 @@ describe("replace", () => {
     });
   });
 
+  it("re-tiles the run when a wide opening becomes a standard panel — never commits an unbuildable one", () => {
+    // The 72in window's width goes back to the free run, which now has four
+    // slots and 192in: 48/48/48/48. It must NOT come back as a single 72in
+    // "standard" panel — over the shop's maximum, and nothing downstream
+    // reports an over-maximum panel, so it would reach a cut list.
+    const wall: PanelSlot[] = [corner(), { type: "window", widthIn: 72 }, std(40), std(40), std(40), corner()];
+    const result = commit(resolvePanelReplace(wall, 1, { type: "standard" }, LIMITS));
+    expect(result.slots[1]).toEqual({ type: "standard", widthIn: 48 });
+    expect(result.slots.map((s) => s.widthIn)).toEqual([25.5, 48, 48, 48, 48, 25.5]);
+    expect(totalEighths(result.slots)).toBe(totalEighths(wall));
+    for (const slot of result.slots) {
+      if (slot.type !== "standard" && slot.type !== "braced") continue;
+      expect(slot.widthIn).toBeLessThanOrEqual(LIMITS.maxIn);
+      expect(slot.widthIn).toBeGreaterThanOrEqual(LIMITS.minIn);
+    }
+  });
+
+  it("refuses that same replacement when no legal count exists", () => {
+    // Same window, but the only free slot would be the replacement itself:
+    // 72in cannot be one buildable panel and there is nowhere to put a
+    // second, so this is refused rather than quietly committed.
+    const wall: PanelSlot[] = [corner(), { type: "window", widthIn: 72 }, corner()];
+    expect(resolvePanelReplace(wall, 1, { type: "standard" }, LIMITS)).toEqual({
+      outcome: "refuse-would-exceed-maximum",
+      wouldBeIn: 72,
+      maxIn: 48,
+    });
+  });
+
   it("refuses a replacement the free run cannot pay for", () => {
     const wall = [corner(), std(40), std(40), corner()];
     expect(resolvePanelReplace(wall, 1, { type: "big-header", widthIn: 96 }, LIMITS)).toMatchObject({ outcome: "refuse-no-room" });

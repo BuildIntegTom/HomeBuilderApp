@@ -376,11 +376,29 @@ export function redistributeFreeRun(
   }
 
   // Nothing actually has to move: the free run already holds exactly this
-  // budget across exactly this many slots. Leave every automatic width
-  // alone rather than flattening a run that was fine — a replace that
-  // reserves the same width it inherited must not ripple across the wall.
+  // budget, across exactly this many slots, and **every one of them is
+  // already something the shop can build**. Leave the widths alone rather
+  // than flattening a run that was fine — a replace that reserves the same
+  // width it inherited must not ripple across the wall.
+  //
+  // ⚠ THAT LAST CLAUSE IS LOAD-BEARING AND WAS MISSING. Converting a FIXED
+  // slot into a FREE one at the same width makes both of the other two
+  // conditions true by construction, so the skip fired on exactly the case
+  // it must not: replacing a 72in window with a Standard panel committed a
+  // 72in "standard" — over the shop's maximum, with no refusal and no
+  // notice, contradicting both this module's own header and
+  // `resolvePanelInsert`, which refuses the same width outright. Nothing
+  // downstream would have caught it either: the Review Log reports the
+  // FLOOR only, and the app has no over-maximum reporter at all, so it
+  // would have reached a cut list. Now the run is re-tiled instead
+  // (72in over four free slots becomes 48/48/48/48), or refused above if
+  // no legal count exists.
   const currentFreeEighths = freeIndices.reduce((sum, i) => sum + toEighths(after[i]!.widthIn), 0);
-  if (!options?.rebalance && count === freeIndices.length && currentFreeEighths === budgetEighths) {
+  const everyFreeSlotIsBuildable = freeIndices.every((i) => {
+    const eighths = toEighths(after[i]!.widthIn);
+    return eighths >= minEighths && eighths <= maxEighths;
+  });
+  if (!options?.rebalance && everyFreeSlotIsBuildable && count === freeIndices.length && currentFreeEighths === budgetEighths) {
     return {
       outcome: "commit",
       slots: after.map((s) => ({ ...s })),
