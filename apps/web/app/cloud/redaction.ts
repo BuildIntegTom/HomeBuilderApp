@@ -125,6 +125,8 @@ export const MONEY_CLASSIFICATION = {
   wallsEnabled: "not-money",
   floorsEnabled: "not-money",
   roofEnabled: "not-money",
+  foundationEnabled: "not-money",
+  wallRunStopsByWallId: "not-money",
   wallReviewNotes: "not-money",
 } as const satisfies Record<keyof ProjectState, MoneyClassification>;
 

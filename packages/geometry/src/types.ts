@@ -155,3 +155,20 @@ export interface Story {
 }
 
 export type WallEnd = "start" | "end";
+
+/**
+ * How much of one wall is deliberately NOT built (Tommy: "an addition tool
+ * setting or stop wall tool so that it is possible to make incomplete
+ * walls") — inches measured in from each end of the wall, on the 1/8in
+ * grid. The footprint polygon stays closed either way: "incomplete" is a
+ * property of the panel RUN, never of the shape.
+ *
+ * **Declared in Stage 0 of Project Smearforn and read by nothing yet.** It
+ * ships with the v24->v25 file bump so the format settles once, and Stage 3
+ * is what teaches `wallGeometryFor` to subtract it. An absent record means
+ * a fully panelized wall, which is every existing project.
+ */
+export interface WallRunStop {
+  startStopIn: number;
+  endStopIn: number;
+}

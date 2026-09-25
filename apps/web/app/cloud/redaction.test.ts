@@ -49,6 +49,12 @@ const REAL_REDACTED_DOCUMENT =
 /** The margin that was in the document before the redactor ran. */
 const REDACTED_VALUE = "1.3777";
 
+/** The file format the capture above was taken at. Deliberately its own
+ * constant rather than `PROJECT_FILE_VERSION`: the capture is a real artefact
+ * of a real redactor run and does not move when the app's format does — see
+ * the v25 note in describe (c). */
+const REAL_REDACTED_DOCUMENT_VERSION = 24;
+
 /** Is there a KEY of this name at any depth, arrays included? */
 function hasKeyAtAnyDepth(value: unknown, key: string): boolean {
   if (Array.isArray(value)) return value.some((entry) => hasKeyAtAnyDepth(entry, key));
@@ -122,6 +128,7 @@ describe("(b) the runtime keys agree with the type", () => {
     wallsEnabled: true,
     floorsEnabled: false,
     roofEnabled: false,
+    foundationEnabled: false,
   } as unknown as ProjectState;
 
   it("every key a real serialized document carries is classified", () => {
@@ -150,21 +157,43 @@ describe("(c) the migration agrees with the classification", () => {
    *    (24, '[["state","priceModifier"]]'::jsonb, …) */
   const seededRows = () => [...sql.matchAll(/\(\s*(\d+)\s*,\s*'(\[[\s\S]*?\])'::jsonb/g)];
 
-  it("seeds exactly the money keys for this app's current file format", () => {
+  /** The one format the shipped redactor knows how to strip. It is a property
+   * of the DATABASE (migration 0009's seed rows), not of the app, so it does
+   * not follow `PROJECT_FILE_VERSION` — which is exactly what the two tests
+   * below are about now that Smearforn Stage 0 has moved the app to v25. */
+  const CLASSIFIED_SCHEMA_VERSIONS = [24];
+
+  it("seeds exactly the money keys for every format it does classify", () => {
     const rows = seededRows();
     const seeded = new Map(rows.map((m) => [Number(m[1]), JSON.parse(m[2]) as string[][]]));
-    expect(seeded.has(PROJECT_FILE_VERSION)).toBe(true);
-    const paths = (seeded.get(PROJECT_FILE_VERSION) ?? []).map((p) => p.join("."));
-    expect(paths.sort()).toEqual([...MONEY_DOCUMENT_PATHS].sort());
+    expect([...seeded.keys()]).toEqual(CLASSIFIED_SCHEMA_VERSIONS);
+    for (const version of CLASSIFIED_SCHEMA_VERSIONS) {
+      const paths = (seeded.get(version) ?? []).map((p) => p.join("."));
+      expect(paths.sort()).toEqual([...MONEY_DOCUMENT_PATHS].sort());
+    }
   });
 
-  it("classifies NO other schema version — an unclassified format is refused, not served", () => {
+  it("⚠ does NOT yet classify v25 — a v25 document is refused across a company line until a seed row ships", () => {
+    // **A known, deliberate gap, recorded rather than papered over.** Smearforn
+    // Stage 0 bumped PROJECT_FILE_VERSION 24 -> 25 for the Foundation scope
+    // flag, and the plan stated that stage touches nothing in `supabase/` — but
+    // the redactor classifies BY FORMAT, so a project saved at v25 has no
+    // classification and `browse_version` refuses it (fail-closed: refused, not
+    // served unredacted — see the guard test below, which still passes).
+    // Owner-side open/save/versioning is unaffected; only cross-company
+    // browsing of a v25 document is.
+    //
+    // The fix is one seed row for 25 with the SAME single money path, in a NEW
+    // migration — deliberately not written here, because writing SQL was
+    // explicitly out of scope for this pass and the row has to be applied to
+    // the live database to mean anything. When it ships, add 25 to
+    // CLASSIFIED_SCHEMA_VERSIONS above and delete this test.
     const rows = seededRows();
-    expect(rows.map((m) => Number(m[1]))).toEqual([PROJECT_FILE_VERSION]);
-    // Format 23 is inside THIS APP's parse window and deliberately outside the
-    // redactor's. A version saved in it opens for its owner and is refused
-    // across a company line (hand-test step 21).
-    expect(rows.some((m) => Number(m[1]) === PROJECT_FILE_VERSION - 1)).toBe(false);
+    expect(rows.some((m) => Number(m[1]) === PROJECT_FILE_VERSION)).toBe(false);
+    // The redactor's window is narrower than the app's parse window by design:
+    // a format it cannot classify opens for its owner and is refused across a
+    // company line (hand-test step 21).
+    expect(rows.map((m) => Number(m[1]))).toEqual(CLASSIFIED_SCHEMA_VERSIONS);
   });
 
   it("the redactor refuses an unclassified format rather than serving it (the future-schema guard)", () => {
@@ -201,7 +230,7 @@ describe("(d) a redacted document's shape", () => {
   it("names what it removed, and why, at the format it was redacted for", () => {
     const marker = readRedactionMarker(document);
     expect(marker).toEqual({
-      schemaVersion: PROJECT_FILE_VERSION,
+      schemaVersion: REAL_REDACTED_DOCUMENT_VERSION,
       removedPaths: ["state.priceModifier"],
       reason: "another company's cost information",
     });

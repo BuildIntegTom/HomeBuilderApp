@@ -7,6 +7,7 @@ import type {
   RoofBearingAnchorMode,
   Story,
   TrussDoublingStrategy,
+  WallRunStop,
 } from "@building-integrity/geometry";
 import type { Season } from "@building-integrity/calc-engine";
 import {
@@ -105,8 +106,25 @@ import { MONEY_STATE_KEYS, isRedactablePath, readRedactionMarker } from "./cloud
  * is shed round-robin over the standard/braced slots only, widest first — see
  * `repairStateToEighths`. Silent, with no Review Log entry: 1/8in is a shop
  * precision convention, not a building value, and nothing provisional moves.
+ * v24->v25 (Project Smearforn, Stage 0): Foundation becomes an optional
+ * scope-of-work branch (`foundationEnabled`), beside the Walls/Floors/Roof
+ * checkboxes that already existed (Tommy: "I would like the turn off the
+ * floor and foundation tools as default for now and primarily focus on
+ * panelizing wall systems"). **A v24 file's `foundationEnabled` migrates to
+ * `true`, NOT to the new-project default of `false`** — every project ever
+ * saved was drawn with a Foundation tab, and a default change must never
+ * take one away. That asymmetry (new project: off; existing file: on) is the
+ * whole reason this is a version bump: an additive optional key with ONE
+ * shared default needs no bump in this file at all (see `wallReviewNotes`,
+ * `gableWindowAnchorsByWallId`, `maxPanelHeightIn`, every one of them added
+ * without one). Nothing else moves: no length, no slot, no foundation type,
+ * pier grid or floor system — those stay in state and in the file whether
+ * their tab is shown or not, exactly as Floors and Roof already behaved.
+ * Stage 3's own per-wall run-stop record (`wallRunStopsByWallId`) is added
+ * here too, inert and empty, so the file format settles once this week
+ * rather than twice — see the Smearforn plan's Stage 0.
  */
-export const PROJECT_FILE_VERSION = 24;
+export const PROJECT_FILE_VERSION = 25;
 
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
@@ -311,6 +329,21 @@ export interface ProjectState {
   wallsEnabled: boolean;
   floorsEnabled: boolean;
   roofEnabled: boolean;
+  /** The fourth scope-of-work branch, added in v25 (Tommy: "I would like
+   * the turn off the floor and foundation tools as default for now"). New
+   * projects start `false`; a v24 file, which has no such key, migrates to
+   * `true` so an existing design never silently loses its Foundation tab —
+   * see PROJECT_FILE_VERSION's own v24->v25 note. Unchecking it hides the
+   * tab and its Detail Guide page; it deletes nothing (`foundationTypeId`,
+   * `pierSpacingFt` and every derived pier/foundation geometry stay put). */
+  foundationEnabled: boolean;
+  /** Stage 3's per-wall unbuilt spans (Tommy: "a stop wall tool so that it
+   * is possible to make incomplete walls") — inches from each wall end, on
+   * the 1/8in grid. **Inert as of Stage 0**: the key round-trips and is
+   * classified, and nothing reads it yet. An absent entry (and an absent
+   * record) means a fully panelized wall, which is today's behaviour and
+   * every existing file's. */
+  wallRunStopsByWallId?: Record<string, WallRunStop>;
   /** Engineer role's own per-wall attributed notes (Tommy's Engineer Lens
    * mockup: a free-text note signed "- Eng. Smith") — see
    * wallReviewNotes.ts's own doc comment on why this is a separate concept
@@ -373,7 +406,18 @@ const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
   "wallsEnabled",
   "floorsEnabled",
   "roofEnabled",
+  "foundationEnabled",
 ];
+
+/** Keys that exist in v25 and did NOT exist in v24. The required-keys check
+ * skips exactly these when reading the one accepted prior version — a v24
+ * file is not missing `foundationEnabled`, it predates it, and refusing to
+ * open it would be the "a file must never become unopenable because the
+ * format moved" failure this parser exists to avoid. The list is deliberately
+ * separate from `REQUIRED_STATE_KEYS` rather than a carve-out inside it, so
+ * that when v24 falls out of the window it is one deletion, not an edit to
+ * the required list. */
+const KEYS_ADDED_IN_V25: readonly string[] = ["foundationEnabled"];
 
 /** JSON has no Set type — `primaryCornerIds`/`gableEndWallIds`/
  * `checkedInteriorIds`/`checkedExteriorIds` round-trip as plain arrays.
@@ -559,13 +603,14 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
   }
   const state = file.state as Record<string, unknown>;
 
-  // v23 (the one prior version this file also accepts) has the exact same
-  // top-level required keys AND the exact same shape as v24 — v23->v24
-  // changes only the VALUES (every length snaps onto the 1/8in grid; see
-  // repairStateToEighths), not the schema — so one shared list covers both,
-  // unlike v18->v19/v19->v20 which each added/renamed a top-level key.
+  // v24 (the one prior version this file also accepts) carries every required
+  // key EXCEPT the ones v25 introduced — see KEYS_ADDED_IN_V25, which is what
+  // this skip reads, and PROJECT_FILE_VERSION's own v24->v25 note for what
+  // each of them defaults to. Everything else about the two shapes is
+  // identical: v24->v25 adds keys, it renames and removes nothing.
   for (const key of REQUIRED_STATE_KEYS) {
     if (excusedStateKeys.has(key)) continue;
+    if (isPriorVersion && KEYS_ADDED_IN_V25.includes(key)) continue;
     if (!(key in state)) return { ok: false, error: `That file is missing the "${key}" field.` };
   }
   if (!Array.isArray(state.primaryCornerIds)) {
@@ -625,6 +670,15 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
       // every one defaults to no notes (the pre-existing behavior every
       // such file was actually built with).
       wallReviewNotes: (state.wallReviewNotes as WallReviewNote[] | undefined) ?? [],
+      // v24->v25. A v24 file has no such key and was drawn with a Foundation
+      // tab, so it gets one: `true`, NOT the new-project default of `false`.
+      // A v25 file always carries its own value, and `false ?? true` is
+      // `false`, so a deliberately unchecked Foundation survives a round trip.
+      foundationEnabled: (state.foundationEnabled as boolean | undefined) ?? true,
+      // Stage 3's key, inert: absent (every v24 file, and every v25 file saved
+      // before Stage 3 lands) means no wall stops short, which is exactly
+      // today's behaviour.
+      wallRunStopsByWallId: (state.wallRunStopsByWallId as Record<string, WallRunStop> | undefined) ?? {},
       // Both accepted versions (v23 and v24) already carry each beam's own
       // `kind` — v23->v24 changes no beam field at all — so there is no
       // per-version branch here any more. remapLegacyBigHeaderBeamKind still

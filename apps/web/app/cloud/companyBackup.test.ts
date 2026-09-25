@@ -105,6 +105,7 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     wallsEnabled: true,
     floorsEnabled: false,
     roofEnabled: false,
+    foundationEnabled: false,
     wallReviewNotes: [],
     ...overrides,
   };

@@ -65,6 +65,7 @@ import {
   type TruckDims,
   type TrussDoublingStrategy,
   type Wall,
+  type WallRunStop,
 } from "@building-integrity/geometry";
 import {
   computeAssemblyPerm,
@@ -285,6 +286,7 @@ import {
   type PlasterSide,
 } from "./plasterTypes";
 import { parseProjectFile, serializeProject, type ProjectState } from "./projectFile";
+import { isLastEnabledScopeBranch, LAST_SCOPE_BRANCH_TITLE, type ScopeOfWork } from "./editorTabs";
 import { resolveTitleBlockDate, titleBlockDateLabel } from "./titleBlockDate";
 import { useDocumentSession } from "./cloud/useDocumentSession";
 import { useCloudProjects } from "./cloud/useCloudProjects";
@@ -1066,6 +1068,11 @@ export default function LayoutEditor() {
   const [midWallBeamsByStoryAndWallId, setMidWallBeamsByStoryAndWallId] = useState<
     Record<"ground" | "second", Record<string, MidWallBeam[]>>
   >({ ground: {}, second: {} });
+  // Smearforn Stage 3's per-wall unbuilt spans — the key lands now (Stage 0
+  // owns the single v24->v25 bump for the whole project), and NOTHING reads
+  // it yet: it round-trips through save/load so the file format settles once
+  // this week instead of twice. See WallRunStop's own doc comment.
+  const [wallRunStopsByWallId, setWallRunStopsByWallId] = useState<Record<string, WallRunStop>>({});
   // Every beam-count/height/coverage change moves this wall's own band
   // boundaries — reconciled here so each slot's own zones[] survives the
   // change instead of falling back to effectiveZonesForSlot's dumb
@@ -1284,15 +1291,24 @@ export default function LayoutEditor() {
   const [wallsEnabled, setWallsEnabled] = useState(true);
   const [floorsEnabled, setFloorsEnabled] = useState(false);
   const [roofEnabled, setRoofEnabled] = useState(false);
+  // Smearforn Stage 0 (Tommy: "I would like the turn off the floor and
+  // foundation tools as default for now and primarily focus on panelizing
+  // wall systems. This setting should still be visible") — Foundation used
+  // to be pushed unconditionally below. New projects start with Walls only;
+  // an existing saved file keeps its Foundation tab (the v24->v25 migration
+  // defaults this key to `true`, never to this new-project default).
+  const [foundationEnabled, setFoundationEnabled] = useState(false);
+
+  const scopeOfWork: ScopeOfWork = { walls: wallsEnabled, foundation: foundationEnabled, floors: floorsEnabled, roof: roofEnabled };
 
   const enabledEditorTabs = useMemo(() => {
     const tabs: EditorTab[] = [];
     if (wallsEnabled) tabs.push("wall");
-    tabs.push("foundation");
+    if (foundationEnabled) tabs.push("foundation");
     if (floorsEnabled) tabs.push("floor");
     if (roofEnabled) tabs.push("roof");
     return tabs;
-  }, [wallsEnabled, floorsEnabled, roofEnabled]);
+  }, [wallsEnabled, foundationEnabled, floorsEnabled, roofEnabled]);
 
   // If Panelizer's checkboxes rule out whichever editor tab is currently
   // active (e.g. unchecking Walls while the Wall tab is open), snap to the
@@ -1469,6 +1485,8 @@ export default function LayoutEditor() {
       wallsEnabled,
       floorsEnabled,
       roofEnabled,
+      foundationEnabled,
+      wallRunStopsByWallId,
       wallReviewNotes,
     };
     return state;
@@ -1582,6 +1600,11 @@ export default function LayoutEditor() {
     setWallsEnabled(s.wallsEnabled);
     setFloorsEnabled(s.floorsEnabled);
     setRoofEnabled(s.roofEnabled);
+    // parseProjectFile has already defaulted a v24 file's missing key to
+    // `true` — see its own v24->v25 note. The `?? true` here is the same
+    // answer for the one other caller (a state object built by hand).
+    setFoundationEnabled(s.foundationEnabled ?? true);
+    setWallRunStopsByWallId(s.wallRunStopsByWallId ?? {});
     setWallReviewNotes(s.wallReviewNotes ?? []);
   };
 
@@ -4551,7 +4574,7 @@ export default function LayoutEditor() {
   // relevant to the options currently selected").
   const relevantDetailPages = useMemo(() => {
     const pages: { id: string; label: string }[] = [];
-    if (foundationType.loadPath.length > 0) {
+    if (foundationEnabled && foundationType.loadPath.length > 0) {
       pages.push({ id: "detail-foundation", label: `Foundation: ${foundationType.label}` });
     }
     if (floorsEnabled && docFloorJoistType) {
@@ -4690,6 +4713,7 @@ export default function LayoutEditor() {
     floorsEnabled,
     roofEnabled,
     wallsEnabled,
+    foundationEnabled,
     bracingStyle,
   ]);
 
@@ -5176,24 +5200,57 @@ export default function LayoutEditor() {
     <>
       <h2>Panelizer</h2>
       <p className={styles.note}>
-        The keyhole for this project&apos;s scope of work — check off Floors/Walls/Roof to bring their editor tabs,
-        modality pickers, and Detail Guide/Shop Drawing pages into scope. Unchecking a branch hides its tab entirely
-        rather than just disabling it.
+        The keyhole for this project&apos;s scope of work — check off Floors/Walls/Roof/Foundation to bring their
+        editor tabs, modality pickers, and Detail Guide/Shop Drawing pages into scope. Unchecking a branch hides its
+        tab entirely rather than just disabling it.
       </p>
       <div role="group" aria-label="Scope of work" className={styles.toolbar}>
-        <label>
-          <input type="checkbox" checked={floorsEnabled} onChange={(e) => setFloorsEnabled(e.target.checked)} />{" "}
+        <label title={isLastEnabledScopeBranch(scopeOfWork, "floors") ? LAST_SCOPE_BRANCH_TITLE : undefined}>
+          <input
+            type="checkbox"
+            checked={floorsEnabled}
+            disabled={isLastEnabledScopeBranch(scopeOfWork, "floors")}
+            onChange={(e) => setFloorsEnabled(e.target.checked)}
+          />{" "}
           Floors
         </label>
-        <label>
-          <input type="checkbox" checked={wallsEnabled} onChange={(e) => setWallsEnabled(e.target.checked)} />{" "}
+        <label title={isLastEnabledScopeBranch(scopeOfWork, "walls") ? LAST_SCOPE_BRANCH_TITLE : undefined}>
+          <input
+            type="checkbox"
+            checked={wallsEnabled}
+            disabled={isLastEnabledScopeBranch(scopeOfWork, "walls")}
+            onChange={(e) => setWallsEnabled(e.target.checked)}
+          />{" "}
           Walls
         </label>
-        <label>
-          <input type="checkbox" checked={roofEnabled} onChange={(e) => setRoofEnabled(e.target.checked)} />{" "}
+        <label title={isLastEnabledScopeBranch(scopeOfWork, "roof") ? LAST_SCOPE_BRANCH_TITLE : undefined}>
+          <input
+            type="checkbox"
+            checked={roofEnabled}
+            disabled={isLastEnabledScopeBranch(scopeOfWork, "roof")}
+            onChange={(e) => setRoofEnabled(e.target.checked)}
+          />{" "}
           Roof
         </label>
+        {/* Smearforn Stage 0: the fourth branch, in the same group rather
+            than in the gear menu — Tommy's "perhaps it's somewhere in
+            settings" is satisfied by Panelizer, which is already the
+            keyhole for scope of work, and splitting one decision across two
+            menus is worse than either menu. */}
+        <label title={isLastEnabledScopeBranch(scopeOfWork, "foundation") ? LAST_SCOPE_BRANCH_TITLE : undefined}>
+          <input
+            type="checkbox"
+            checked={foundationEnabled}
+            disabled={isLastEnabledScopeBranch(scopeOfWork, "foundation")}
+            onChange={(e) => setFoundationEnabled(e.target.checked)}
+          />{" "}
+          Foundation
+        </label>
       </div>
+      <p className={styles.note}>
+        Unchecking a branch hides its tab and its pages; it never deletes anything — foundation type, pier grid, floor
+        system and their geometry all stay exactly as they are, and re-checking brings them back untouched.
+      </p>
 
       {floorsEnabled && (
         <div role="group" aria-label="Floor type" className={styles.toolbar}>
@@ -6477,8 +6534,13 @@ export default function LayoutEditor() {
     editorTab === "floor" ? (
       <div className={elevationStyles.panel}>
         <strong>Floor Tools</strong>
-        <label className={elevationStyles.checkboxLabel}>
-          <input type="checkbox" checked={floorsEnabled} onChange={(e) => setFloorsEnabled(e.target.checked)} />
+        <label className={elevationStyles.checkboxLabel} title={isLastEnabledScopeBranch(scopeOfWork, "floors") ? LAST_SCOPE_BRANCH_TITLE : undefined}>
+          <input
+            type="checkbox"
+            checked={floorsEnabled}
+            disabled={isLastEnabledScopeBranch(scopeOfWork, "floors")}
+            onChange={(e) => setFloorsEnabled(e.target.checked)}
+          />
           Floors
         </label>
         {foundationType.usesPierGrid ? (
@@ -6551,8 +6613,13 @@ export default function LayoutEditor() {
     editorTab === "roof" ? (
       <div className={elevationStyles.panel}>
         <strong>Roof Tools</strong>
-        <label className={elevationStyles.checkboxLabel}>
-          <input type="checkbox" checked={roofEnabled} onChange={(e) => setRoofEnabled(e.target.checked)} />
+        <label className={elevationStyles.checkboxLabel} title={isLastEnabledScopeBranch(scopeOfWork, "roof") ? LAST_SCOPE_BRANCH_TITLE : undefined}>
+          <input
+            type="checkbox"
+            checked={roofEnabled}
+            disabled={isLastEnabledScopeBranch(scopeOfWork, "roof")}
+            onChange={(e) => setRoofEnabled(e.target.checked)}
+          />
           Roof
         </label>
         <p className={styles.note}>{roofSystemTypes.find((t) => t.id === roofSystemTypeId)!.description}</p>

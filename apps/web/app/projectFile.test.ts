@@ -104,6 +104,8 @@ function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
     wallsEnabled: true,
     floorsEnabled: false,
     roofEnabled: false,
+    foundationEnabled: false,
+    wallRunStopsByWallId: {},
     wallReviewNotes: [{ id: "note-1", wallId: "AB", author: "Eng. Smith", note: "Confirm rim joist connection detailing." }],
     ...overrides,
   };
@@ -170,7 +172,7 @@ describe("serializeProject / parseProjectFile round-trip", () => {
   });
 });
 
-describe("v23 -> v24 migration (every stored length onto the 1/8in grid)", () => {
+describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
   /** A real 30x20 rectangle, so corner ownership and butt-joint insets are
    * the genuine ones rather than a degenerate 2-corner fixture's.
    *
@@ -194,12 +196,14 @@ describe("v23 -> v24 migration (every stored length onto the 1/8in grid)", () =>
     ],
   };
 
-  /** Builds a raw v23-shaped file. v23 and v24 have the identical SHAPE —
-   * v23->v24 changes only values — so a v23 file is a current serialization
-   * with the version number rolled back. */
-  function makeV23File(overrides: Partial<ProjectState> = {}) {
-    const currentState = serializeProject(makeState(overrides)).state;
-    return { schemaVersion: 23, savedAt: new Date().toISOString(), state: currentState };
+  /** Builds a raw v24-shaped file: a current serialization with the version
+   * rolled back AND v25's own keys stripped, which is exactly what a file
+   * saved before Smearforn Stage 0 looks like. (The 1/8in repair these tests
+   * exercise is unconditional — it runs on every load, v24 or v25 — so the
+   * version number here only decides which required-key set applies.) */
+  function makeV24File(overrides: Partial<ProjectState> = {}) {
+    const { foundationEnabled: _f, wallRunStopsByWallId: _s, ...v24State } = serializeProject(makeState(overrides)).state;
+    return { schemaVersion: 24, savedAt: new Date().toISOString(), state: v24State };
   }
 
   /** Wall AB of the rectangle above loses a corner at each end to its two
@@ -213,7 +217,7 @@ describe("v23 -> v24 migration (every stored length onto the 1/8in grid)", () =>
   ];
 
   function loadWithOffGridWall(extraOverrides: Partial<ProjectState> = {}) {
-    const file = makeV23File({
+    const file = makeV24File({
       footprint: rectangleFootprint,
       primaryCornerIds: new Set(["A", "B", "C", "D"]),
       leastAccessibleCorner: "A",
@@ -291,7 +295,7 @@ describe("v23 -> v24 migration (every stored length onto the 1/8in grid)", () =>
         { id: "DA", startCorner: "D", endCorner: "A", lengthFt: 20.004 },
       ],
     };
-    const result = parseProjectFile(JSON.stringify(makeV23File({ footprint: drifted, baseWallSlots: {}, stories: [] })));
+    const result = parseProjectFile(JSON.stringify(makeV24File({ footprint: drifted, baseWallSlots: {}, stories: [] })));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     for (const wall of result.state.footprint!.walls) {
@@ -335,7 +339,7 @@ describe("v23 -> v24 migration (every stored length onto the 1/8in grid)", () =>
     // via the GUARD instead, and would keep passing if the no-op path broke.
     const result = parseProjectFile(
       JSON.stringify(
-        makeV23File({
+        makeV24File({
           footprint: rectangleFootprint,
           primaryCornerIds: new Set(["A", "B", "C", "D"]),
           leastAccessibleCorner: "A",
@@ -363,23 +367,116 @@ describe("v23 -> v24 migration (every stored length onto the 1/8in grid)", () =>
     expect(result.state.stories).toEqual(state.stories);
   });
 
-  it("passes a v23 beam through untouched — v23->v24 changes no beam field", () => {
+  it("passes a v24 beam through untouched — v24->v25 changes no beam field", () => {
     const beams = {
       ground: { AB: [{ id: "beam-1", heightIn: 60, sizeId: "9x2-lvl" as const, kind: "box-beam" as const, startSlotIndex: 0, endSlotIndex: 3 }] },
       second: {},
     };
-    const result = parseProjectFile(JSON.stringify(makeV23File({ midWallBeamsByStoryAndWallId: beams })));
+    const result = parseProjectFile(JSON.stringify(makeV24File({ midWallBeamsByStoryAndWallId: beams })));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.midWallBeamsByStoryAndWallId.ground.AB).toEqual(beams.ground.AB);
   });
 
-  it("now rejects v22, which has fallen out of the one-version-back window", () => {
-    const v22File = { ...makeV23File(), schemaVersion: 22 };
-    const result = parseProjectFile(JSON.stringify(v22File));
+  it("now rejects v23, which has fallen out of the one-version-back window", () => {
+    const v23File = { ...makeV24File(), schemaVersion: 23 };
+    const result = parseProjectFile(JSON.stringify(v23File));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/version/i);
+  });
+});
+
+describe("v24 -> v25 migration (Foundation becomes an optional scope branch)", () => {
+  /** A file saved before Smearforn Stage 0: the current serialization with the
+   * version rolled back and v25's own two keys removed, which is byte-for-byte
+   * the shape a real v24 save has. */
+  function makeV24File(overrides: Partial<ProjectState> = {}) {
+    const { foundationEnabled: _f, wallRunStopsByWallId: _s, ...v24State } = serializeProject(makeState(overrides)).state;
+    return { schemaVersion: 24, savedAt: "2026-09-01T12:00:00.000Z", state: v24State };
+  }
+
+  it("opens a v24 project that has floors AND a foundation with both intact and both still enabled", () => {
+    // The whole trap in this stage: the new-project default is OFF, and
+    // applying it to an existing file would hide the Foundation tab on every
+    // project ever saved. This is the test that would fail if the migration
+    // default were copied from the useState call.
+    const v24 = makeV24File({
+      floorsEnabled: true,
+      floorSystemId: "bale-foundation",
+      perpendicular2x4Enabled: true,
+      floorBottomSkinEnabled: true,
+      baleFoundationTopDepthIn: 7.25,
+      baleFoundationBottomDepthIn: 5.5,
+      baleFoundationGapIn: 2,
+      baleFoundationFieldSpacingIn: 24,
+      foundationTypeId: "concrete-pier",
+      pierSpacingFt: 6,
+    });
+    expect("foundationEnabled" in v24.state).toBe(false);
+
+    const result = parseProjectFile(JSON.stringify(v24));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Enabled, not defaulted off.
+    expect(result.state.foundationEnabled).toBe(true);
+    expect(result.state.floorsEnabled).toBe(true);
+    // And every piece of foundation/floor DATA is exactly what was saved —
+    // a scope flag gates rendering, it never deletes.
+    expect(result.state.foundationTypeId).toBe("concrete-pier");
+    expect(result.state.pierSpacingFt).toBe(6);
+    expect(result.state.floorSystemId).toBe("bale-foundation");
+    expect(result.state.perpendicular2x4Enabled).toBe(true);
+    expect(result.state.floorBottomSkinEnabled).toBe(true);
+    expect(result.state.baleFoundationTopDepthIn).toBe(7.25);
+    expect(result.state.baleFoundationBottomDepthIn).toBe(5.5);
+    expect(result.state.baleFoundationGapIn).toBe(2);
+    expect(result.state.baleFoundationFieldSpacingIn).toBe(24);
+  });
+
+  it("drops nothing else at all: every v24 key comes back with the value it was saved with", () => {
+    const v24 = makeV24File({ floorsEnabled: true, roofEnabled: true, foundationTypeId: "slab", pierSpacingFt: 7 });
+    const result = parseProjectFile(JSON.stringify(v24));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Compared against the v24 document itself rather than against makeState,
+    // so a key silently dropped by the migration shows up here as undefined.
+    const loaded = serializeProject(result.state).state as Record<string, unknown>;
+    for (const [key, saved] of Object.entries(v24.state as Record<string, unknown>)) {
+      expect({ key, value: loaded[key] }).toEqual({ key, value: saved });
+    }
+  });
+
+  it("gives a v24 file an empty run-stop record — no wall stops short, which is what a v24 file meant", () => {
+    const result = parseProjectFile(JSON.stringify(makeV24File()));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.wallRunStopsByWallId).toEqual({});
+  });
+
+  it("keeps a v25 project's own unchecked Foundation unchecked (false, not re-defaulted to true)", () => {
+    const result = parseProjectFile(JSON.stringify(serializeProject(makeState({ foundationEnabled: false }))));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.foundationEnabled).toBe(false);
+  });
+
+  it("round-trips a Stage 3 run-stop record untouched, though nothing reads it yet", () => {
+    const stops = { AB: { startStopIn: 24, endStopIn: 0 } };
+    const result = parseProjectFile(JSON.stringify(serializeProject(makeState({ wallRunStopsByWallId: stops }))));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.wallRunStopsByWallId).toEqual(stops);
+  });
+
+  it("still refuses a CURRENT-version file that is missing foundationEnabled — the skip is for v24 only", () => {
+    const file = serializeProject(makeState());
+    const { foundationEnabled: _dropped, ...state } = file.state;
+    const result = parseProjectFile(JSON.stringify({ ...file, state }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/foundationEnabled/);
   });
 });
 
@@ -402,7 +499,7 @@ describe("savedAt -> title-block date", () => {
     expect(resolved.date?.getTime()).toBe(savedAtT.getTime());
   });
 
-  it("carries savedAt through a v23 file that goes through the v23 -> v24 repair", () => {
+  it("carries savedAt through a prior-version file that goes through the load-time repair", () => {
     const file = { ...serializeProject(makeState()), schemaVersion: PROJECT_FILE_VERSION - 1, savedAt: "2025-01-02T12:00:00.000Z" };
     const result = parseProjectFile(JSON.stringify(file));
     if (!result.ok) throw new Error(result.error);
@@ -657,7 +754,7 @@ describe("parseRedactedProjectFile", () => {
     expect(result.error).toMatch(/priceModifier/);
   });
 
-  it("no PROJECT_FILE_VERSION bump: a redacted v24 document is still v24", () => {
+  it("no PROJECT_FILE_VERSION bump of its own: a redacted document is still the current version", () => {
     const doc = redactedFile();
     expect(doc.schemaVersion).toBe(PROJECT_FILE_VERSION);
     expect(parseRedactedProjectFile(JSON.stringify(doc)).ok).toBe(true);
