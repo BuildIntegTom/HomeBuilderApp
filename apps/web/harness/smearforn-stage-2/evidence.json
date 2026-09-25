@@ -1,0 +1,96 @@
+{
+  "app": "http://localhost:3213/",
+  "ranAt": "2026-09-25T13:54:59.383Z",
+  "steps": [
+    {
+      "name": "wall-as-tiled",
+      "panelCount": 15,
+      "totalEighths": 4392,
+      "widths": [
+        40,
+        40,
+        40,
+        40,
+        40,
+        40,
+        40,
+        40,
+        40,
+        40,
+        40,
+        34.125,
+        34.125,
+        0.75,
+        40
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "tool-armed",
+      "insertMarkers": 16,
+      "dragStripsBefore": 10,
+      "dragStripsArmed": 0,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "insert",
+      "notice": "Inserted on wall AB: 15 panels → 16, 13 still automatic.",
+      "panelsBefore": 15,
+      "panelsAfter": 16,
+      "totalEighthsBefore": 4392,
+      "totalEighthsAfter": 4392,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "replace",
+      "notice": "Replaced on wall AB: 16 panels → 16, 12 still automatic.",
+      "panels": 16,
+      "panelsBefore": 16,
+      "totalEighths": 4392,
+      "totalEighthsBefore": 4392,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "delete",
+      "notice": "Deleted a panel on wall AB: 16 panels → 15, 11 still automatic.",
+      "refusalsOnTheWay": [
+        "Replaced on wall AB: 16 panels → 16, 12 still automatic.",
+        "Replaced on wall AB: 16 panels → 16, 12 still automatic."
+      ],
+      "panelsBefore": 16,
+      "panelsAfter": 15,
+      "totalEighthsBefore": 4392,
+      "totalEighthsAfter": 4392,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "rule-placed-panel-refuses",
+      "notice": "Corner and safety-gap panels are placed by rule, not by hand — the app positions them and would overwrite a hand-placed one. Nothing was changed.",
+      "panelsBefore": 15,
+      "panelsAfter": 15,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "refused-insert-states-the-room",
+      "refusal": "Refused: there is 48⅛\" of automatic panel width on this wall and that panel needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
+      "bigHeadersPlaced": 4,
+      "panelsAtRefusal": 10,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "no-uncaught-exceptions",
+      "count": 0,
+      "first": null,
+      "asserted": true,
+      "passed": true
+    }
+  ],
+  "pageExceptions": []
+}

@@ -6469,7 +6469,10 @@ export default function LayoutEditor() {
       <div className={elevationStyles.beamSection}>
         <div className={elevationStyles.sectionHeader}>
           <span className={elevationStyles.sectionLabel}>Place a panel</span>
-          <div role="group" aria-label="Panel placement tool" className={styles.toolbar}>
+          {/* Wraps: ten buttons do not fit across a 240px sidebar in one
+              row, and `.toolbar` itself is used by rows of two or three
+              elsewhere, so the wrap belongs here rather than on the class. */}
+          <div role="group" aria-label="Panel placement tool" className={styles.toolbar} style={{ flexWrap: "wrap", gap: 6 }}>
             {PANEL_PLACEMENT_TOOL_OPTIONS.map((option) => {
               const active =
                 panelPlacementTool?.mode === "place" &&
