@@ -96,13 +96,22 @@ export const panelHeightInRange: CatalogRange = {
  * in the Review Log instead. A file must never become unopenable because a
  * limit tightened.
  *
+ * **The absorb policy's totality depends on `panelWidthInRange.maxIn` being
+ * exactly twice this number, and that is a coincidence of two numbers rather
+ * than a property of any algorithm.** The tiler may either split a leftover
+ * two ways (legal only when the parts total >= 2 x this floor) or absorb it
+ * into one wider panel (legal only when the result is <= the 48in ceiling).
+ * The two conditions meet exactly at 48in, so every wall length has a legal
+ * tiling and no wall length is ever refused. Raise this to 25in, or lower
+ * `panelWidthInRange.maxIn` to 46in, and a band of wall lengths becomes
+ * genuinely untileable with no legal answer at all. `data.test.ts` asserts
+ * `maxIn >= 2 x value` directly so that coupling fails loudly.
+ *
  * Two neighbours, noted so nobody "fixes" them in passing: `sillMinWidthIn`
- * (23.625in) sits 3/8in UNDER this floor and is mfr-sourced. **Tommy has
- * since decided sills follow the same 2ft rule**, but moving that number is
- * its own piece of work with its own Review Log entry (the plan's Stage 1r,
- * alongside the tiler's absorb rule) and it is deliberately NOT done here —
- * it is not something to round away as a side effect of adding this value.
- * `columnMinWidthIn` (16.75in) is also below this floor and is harmless: a
+ * is **no longer** one of them — Tommy decided 2026-09-24 that sills follow
+ * the same 2ft rule, and it now reads 24in on Building Integrity's own
+ * authority (see its own doc comment, which keeps the manufacturer's figure).
+ * `columnMinWidthIn` (16.75in) IS below this floor and is harmless: a
  * Column's real built width is 25.5in. The Safety/Gap panel's 0.75in is not
  * a panel for this purpose at all — it is a plywood spacer board with no
  * studs, plates or girts.
@@ -162,8 +171,29 @@ export const sillHeaderHeightInRange: CatalogRange = {
   note: "424-850mm on the mfr spec sheet (16¾\"-33½\") — governs a sill panel's own height/depth (sillDefaultHeightIn's 32in default already fits) and the derived header depth (computeHeaderHeightIn) once sill height becomes independently draggable per window.",
 };
 
-export const sillMinWidthIn = 23.625;
-// 600mm on the mfr spec sheet (23.622in, rounds to 23⅝\" at nearest 1/8in).
+/**
+ * The narrowest sill panel Building Integrity's shop will build — the same
+ * 2ft rule as `fabricationMinPanelWidthIn`, because a sill IS a short
+ * Standard Panel (same construction, just a shorter height).
+ *
+ * **A Building Integrity value SUPERSEDING the manufacturer's, not a
+ * rounding.** It read 23.625in — 600mm on the mfr spec sheet — until
+ * 2026-09-24. That older figure and its provenance are kept in the note
+ * below rather than deleted, because the honest record of a number moving
+ * is "it was X from this source, it is now Y on that authority", not a
+ * silently edited constant. ⅜in is small enough that this could have been
+ * mistaken for a rounding, which is exactly why it is written down: it is a
+ * decision, and it reaches the Review Log so a reviewer sees it.
+ *
+ * **It was deliberately NOT moved when `fabricationMinPanelWidthIn` was
+ * added** (Smearforn Stage 1) — a dimension changing because a shop said so
+ * is its own change, not a side effect of recording a different value.
+ */
+export const sillMinWidthIn: CatalogValue<number> = {
+  value: 24,
+  status: "confirmed",
+  note: "Tommy, 2026-09-24: \"I can't make any panels that are left to right elevation view shorter than 2'\" — asked directly whether that rule also governs sills, he answered yes (spec, \"Project Smearforn\" Open Items and \"Three neighbours in data.ts\"). A sill is a short Standard Panel, so the shop minimum is the same 24in, measured left to right in elevation. SUPERSEDES the manufacturer's figure, which is preserved here rather than deleted: the mfr spec sheet gives 600mm (23.622in, which rounds to 23⅝\" at the app's nearest-1/8in convention), and that was this value until 2026-09-24. Building Integrity's own shop capability outranks the mfr sheet for what Building Integrity fabricates.",
+};
 
 export const doorRoughOpeningSelectedHeightIn: CatalogValue<number> = {
   value: 82.5,
