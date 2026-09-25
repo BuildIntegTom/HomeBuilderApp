@@ -2714,6 +2714,15 @@ Tommy, after the 4B review surfaced it: *"There should be a admin/company settin
 
 **Nothing is blocked by leaving it.** It predates Stage 4, affects no permission boundary, and touches every sheet in the app for everyone — which is exactly why it wants its own pass rather than a corner of another stage.
 
+**Tommy's answers, 2026-09-24 — four of the six questions above are now decided:**
+
+- **(3) The owning company's logo prints, browsing included, and he wants it that way.** *"Whoever made the design/the owner company's logo should be included. Totally okay to show other company logos with browsing - in fact that's pretty awesome."* He tied it to the point of the project: *"I like this idea of being able to browse what's out there, that highly encouraged this open source theme. The main goal with this project is to make it easy for anyone anywhere to design a prefabricated straw bale house."* So a logo is deliberately public to every co-op member, and that is a feature rather than an exposure to be minimised.
+- **(1) A bucket, not a column.** *"I want it to be encouraged to upload small images for this for each company, perhaps the bucket is the move here."* Recorded as his choice with the trade-off understood: it is the project's first stored file and brings a new surface (bucket, its RLS, and whether logo URLs are public — given his answer to (3), public is coherent).
+- **(5) A default placeholder instead of a bare gap.** *"a default picture that is a grey on transparent background lettering that says no logo."* This is a deliberate departure from the visible-gap convention, and a defensible one: the gap's purpose is to stop a fabricated value passing as real, and a picture that says "no logo" claims nothing. It also does the work he wants — it makes the empty state look unfinished, which is what encourages an upload.
+- **(6) PNG only, at most 1200×1200.** His proposal, and a good one: it refuses SVG (the format that can carry scripts) and bounds the decoded size at roughly 5.7 MB, so a decompression bomb cannot be smuggled in. **⚠ The residual risks a build must still handle, none of them reasons to change the rule:** the dimension and type check must be **server-side** (a browser-side check is a convenience a crafted upload ignores); a **byte-size cap** is needed as well as a pixel cap; the file must be served from an origin that is not the app's, with its content type set from the server's own validation and `nosniff`, so a file that is both valid PNG and valid HTML can never execute as a page; and **animated PNG is still PNG**, so decide whether a logo may animate on a printed sheet.
+
+**Still open:** (2) whether the reference lives in `companies.theme` or its own column, and (4) exactly who may upload — a company admin, and platform admins acting as a company, with the non-member case refused at the route.
+
 ### Per-company colour schemes — possible, not yet affordable
 
 Tommy (2026-09-06): each company should be able to carry its own colour scheme, the Seed Collaborative's being a light green palette. **Not built, and deliberately not built in Stage 1** — but Stage 1 must not preclude it.
