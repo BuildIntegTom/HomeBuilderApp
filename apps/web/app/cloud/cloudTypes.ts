@@ -745,3 +745,47 @@ export interface MyAccessRequestRow {
 export interface MyAccessRequestsResponse {
   requests: MyAccessRequestRow[];
 }
+
+// ---------------------------------------------------------------------------
+// Stage 5, first slice: permanent delete of a WHOLE project (decision 13).
+// ---------------------------------------------------------------------------
+
+/**
+ * What a permanent delete would destroy, read BEFORE anything is deleted.
+ *
+ * Every count is `number | null`. Null means the count could not be read, and
+ * the note says so rather than printing 0 — on the one screen in this app
+ * where a wrong 0 would read as "there is nothing of this kind here", a
+ * visible gap beats a plausible substitute (the flag convention's own rule).
+ *
+ * Exactly three tables reference `projects`, all `on delete cascade`: its
+ * versions (0006), its grants (0008) and its access requests (0009). Nothing
+ * else in the schema names a project, so those three are the whole footprint.
+ */
+export interface DeletePreviewResponse {
+  projectId: string;
+  /** The name the DATABASE holds now, not the name the clicked row remembered:
+   * a rename since the tree was listed has to be visible here. */
+  projectName: string;
+  ownerCompanyName: string;
+  folder: CloudFolder;
+  headVersionNumber: number;
+  versionCount: number | null;
+  grantCount: number | null;
+  accessRequestCount: number | null;
+  /** Exactly what has to be typed to confirm, computed by the route from the
+   * name above — so `(untitled)` is the phrase for a project with no name, and
+   * it is the same text the tree shows for it. */
+  confirmationPhrase: string;
+}
+
+/** What a permanent delete actually destroyed. The counts are the ones read
+ * just before the delete: afterwards there is nothing left to count. */
+export interface DeleteProjectResponse {
+  projectId: string;
+  projectName: string;
+  ownerCompanyName: string;
+  deletedVersions: number | null;
+  deletedGrants: number | null;
+  deletedAccessRequests: number | null;
+}

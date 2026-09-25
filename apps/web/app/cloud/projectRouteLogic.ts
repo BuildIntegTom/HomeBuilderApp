@@ -422,7 +422,7 @@ export async function moveProject(db: SupabaseClient, projectIdParam: string, bo
  * the UI shows as a visible gap, and the project read above has already
  * decided access.
  */
-async function ownerCompanyName(db: SupabaseClient, projectId: string): Promise<string> {
+export async function ownerCompanyName(db: SupabaseClient, projectId: string): Promise<string> {
   try {
     const { data, error } = await db.rpc("project_owner_company_name", { p_project: projectId });
     return !error && typeof data === "string" ? data : "";

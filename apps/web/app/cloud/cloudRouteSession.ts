@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // Relative, not "@/…": vitest has no "@" alias, and cloudRouteSession.test.ts
 // imports this file.
 import { HttpError, errorResponse, requireSession, type ServerSession } from "../auth/serverSession";
+import type { DeleteViewer } from "./deleteRouteLogic";
 import { ProjectRouteError } from "./projectRouteLogic";
 import type { SharingViewer } from "./sharingRouteLogic";
 
@@ -38,6 +39,18 @@ export function sharingViewerOf(session: ServerSession): SharingViewer {
     entitlements: session.entitlements,
     actingAs: session.actingAs,
   };
+}
+
+/**
+ * Stage 5: who is asking, for the permanent-delete routes. `isPlatformAdmin`
+ * comes from `loadSession`'s own read of `user_profiles.is_platform_admin`,
+ * re-read on every request, never from the request body or a cookie.
+ *
+ * It decides whether the route REFUSES. It never decides that a delete may go
+ * ahead: `projects_delete` (0006) does that, in the database.
+ */
+export function deleteViewerOf(session: ServerSession): DeleteViewer {
+  return { isPlatformAdmin: Boolean(session.snapshot.user?.isPlatformAdmin) };
 }
 
 export function cloudErrorResponse(error: unknown): Response {
