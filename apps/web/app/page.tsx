@@ -962,13 +962,14 @@ export default function LayoutEditor() {
     // columnReservationWidthIn). Measured from the wall's own TRUE
     // starting corner (x=0, computeGableTiledRow's own origin) — this
     // story's own slots only start there when this wall owns its start
-    // corner; otherwise they start `thicknessIn` in (the neighbor's own
-    // corner panel fills that initial sliver instead — see
+    // corner and nothing is stopped off it; otherwise they start
+    // `runStartOffsetIn` in (the neighbor's own corner panel fills that
+    // initial sliver, and/or a Stage 3 run stop withholds more of it — see
     // WallElevationDiagram's own startOffsetIn, which this mirrors).
     const wallLengthIn = wall.lengthFt * 12;
     const { resolvedPointXsIn } = resolveGableProfilePoints(roofProfilePointHeightsFt, gableProfilePositionsInByWallId[wallId] ?? [], wallLengthIn);
     const peakXIn = resolvedPointXsIn[0] ?? wallLengthIn / 2;
-    const startOffsetIn = geometry.hasCornerStart ? 0 : thicknessIn;
+    const startOffsetIn = geometry.runStartOffsetIn;
     const existingAnchors = getOpeningAnchors(currentSlots);
     const candidateOrdinals: number[] = [];
     for (let ordinal = 1; ordinal < standardFamilyIndices.length - 1; ordinal++) candidateOrdinals.push(ordinal);
@@ -3088,18 +3089,51 @@ export default function LayoutEditor() {
   // instead, with no separate offset needed.
   const wallRenderOffsetIn = useMemo(() => {
     if (!footprint) return {};
-    const ownership = cornerOwnership(footprint, primaryCornerIds);
     const offsets: Record<string, number> = {};
     for (const wall of footprint.walls) {
-      const { start } = ownership[wall.id]!;
-      const base = start.extraLengthIn > 0 ? -start.extraLengthIn : start.insetAmount;
-      // A start-end run stop moves this wall's content further in by exactly
-      // the span that isn't built (Stage 3). Every plan-view consumer —
-      // the printable PlanViewDiagram, the live FootprintCanvas, and the
-      // panel snap lines — reads this one map, so they cannot disagree.
-      offsets[wall.id] = base + (wallGeometryFor(wall.id)?.startStopIn ?? 0);
+      // `runStartOffsetIn` folds the butt-joint inset, the reflex extension
+      // and (Stage 3) any start stop into one number. Every plan-view
+      // consumer — the printable PlanViewDiagram, the live FootprintCanvas
+      // and the panel snap lines — reads this one map, so they cannot
+      // disagree about where a wall's content starts.
+      offsets[wall.id] = wallGeometryFor(wall.id)?.runStartOffsetIn ?? 0;
     }
     return offsets;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
+  }, [footprint, thicknessIn, primaryCornerIds, leastAccessibleCorner, wallRunStopsByWallId]);
+
+  /**
+   * Stage 3 — where each wall's unbuilt span(s) actually sit, as inches
+   * along that wall from its own TRUE start corner. Derived once here (the
+   * only place that has both corner ownership and the stops) and handed to
+   * every plan-view renderer, so the printable sheet and the live canvas
+   * cannot draw the boundary in two different places.
+   *
+   * Note the span starts where this wall's run WOULD have started, not at
+   * the corner point: where the neighbour owns the corner, its panel really
+   * is in that first wall-thickness of this wall's line, and a dashed
+   * "nothing here" line drawn across it would be a lie.
+   */
+  const wallUnbuiltSpansIn = useMemo(() => {
+    const spans: Record<string, { fromIn: number; toIn: number }[]> = {};
+    if (!footprint) return spans;
+    for (const wall of footprint.walls) {
+      const geometry = wallGeometryFor(wall.id);
+      if (!geometry || (geometry.startStopIn <= 0 && geometry.endStopIn <= 0)) continue;
+      const wallLengthIn = wall.lengthFt * 12;
+      const forWall: { fromIn: number; toIn: number }[] = [];
+      if (geometry.startStopIn > 0) {
+        forWall.push({ fromIn: geometry.runStartOffsetIn - geometry.startStopIn, toIn: geometry.runStartOffsetIn });
+      }
+      if (geometry.endStopIn > 0) {
+        forWall.push({
+          fromIn: wallLengthIn - geometry.runEndOffsetIn,
+          toIn: wallLengthIn - geometry.runEndOffsetIn + geometry.endStopIn,
+        });
+      }
+      spans[wall.id] = forWall;
+    }
+    return spans;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
   }, [footprint, thicknessIn, primaryCornerIds, leastAccessibleCorner, wallRunStopsByWallId]);
 
@@ -5356,8 +5390,50 @@ export default function LayoutEditor() {
     [baseWallSlots, secondStory],
   );
 
+  /**
+   * One Review Log entry per wall carrying an unbuilt span.
+   *
+   * **A wall that stops short is by definition an incomplete design**, and
+   * the engineer reading the Review Log is exactly the person who must not
+   * find that out from the drawing alone. `pending-BI-confirmation` is the
+   * only non-confirmed status the log has, and it is the honest one here:
+   * the entry is not claiming a value needs sourcing, it is claiming this
+   * design is not finished — the same way the sub-minimum-panel entries
+   * above use it for a condition rather than for a number.
+   *
+   * A stop that had to be CLAMPED (stored inches that no longer fit the
+   * wall, most likely because the wall was shortened afterwards) says so in
+   * its own sentence rather than being quietly absorbed.
+   */
+  const wallRunStopReviewEntries = useMemo(() => {
+    if (!footprint) return [];
+    const entries: { label: string; status: "pending-BI-confirmation"; note: string }[] = [];
+    for (const wall of footprint.walls) {
+      if (!hasWallRunStop(wallRunStopsByWallId[wall.id])) continue;
+      const geometry = wallGeometryFor(wall.id);
+      if (!geometry) continue;
+      const direction = wallCompassDirection(wall, footprint);
+      const spans: string[] = [];
+      if (geometry.startStopIn > 0) spans.push(`${formatLengthIn(geometry.startStopIn, unitSystem)} at the start end`);
+      if (geometry.endStopIn > 0) spans.push(`${formatLengthIn(geometry.endStopIn, unitSystem)} at the far end`);
+      const totalIn = geometry.startStopIn + geometry.endStopIn;
+      entries.push({
+        label: geometry.fullyStopped
+          ? `Wall ${direction} is not built at all (${wall.id})`
+          : `Wall ${direction} stops short — ${formatLengthIn(totalIn, unitSystem)} unbuilt (${wall.id})`,
+        status: "pending-BI-confirmation" as const,
+        note: geometry.fullyStopped
+          ? `The whole ${formatFeetInches(wall.lengthFt)} of this edge carries no panels — it is an edge of the building with no wall of ours on it. The footprint polygon still closes through it, so the floor, foundation and roof all still reach this line; only the panel run is absent. Nothing is drawn here in 3D, and no panel, price, weight or cut-list line comes from it.${geometry.stopClamped ? " The stored stop was longer than the wall and was reduced to fit — check it against the drawing." : ""}`
+          : `${spans.join(" and ")} of this ${formatFeetInches(wall.lengthFt)} wall is deliberately not panelized${geometry.hasCornerStart && geometry.hasCornerEnd ? "" : ", and the corner panel at a stopped end is not built either"}. The remaining ${formatLengthIn(geometry.lengthIn, unitSystem)} is panelized normally. The footprint stays closed, so floor, foundation and roof still reach the full wall line — this is an incomplete PANEL RUN, not an incomplete shape, and it needs a reviewer's eye for that reason.${geometry.stopClamped ? " The stored stop no longer fits this wall and was reduced to fit — check it against the drawing." : ""}`,
+      });
+    }
+    return entries;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
+  }, [footprint, wallRunStopsByWallId, primaryCornerIds, leastAccessibleCorner, thicknessIn, unitSystem]);
+
   const reviewLog = useMemo(() => {
     const entries = toReviewLog([
+      ...wallRunStopReviewEntries,
       { label: "Target density", ...targetDensityKgM3 },
       { label: "Default panel thickness", ...looseDensePackDefaultThicknessIn },
       { ...interior, label: "Interior finish: " + interior.label },
@@ -5433,6 +5509,7 @@ export default function LayoutEditor() {
     estimatedTotalShearLb,
     subMinimumPanels,
     unitSystem,
+    wallRunStopReviewEntries,
   ]);
 
   // Site Properties dropdown content (Tommy: "middle of the left side of
@@ -7694,8 +7771,15 @@ export default function LayoutEditor() {
                   wallHeightFt={wallHeightFt}
                   allInstances={allInstances}
                   secondStoryAllInstances={secondStoryAllInstances}
-                  hasCornerStart={wallGeometryFor(elevationWall.id)?.hasCornerStart ?? true}
-                  hasCornerEnd={wallGeometryFor(elevationWall.id)?.hasCornerEnd ?? true}
+                  // OWNERSHIP, deliberately not the tiler's `hasCorner*`: a run
+                  // stop does not change the neighbour, so where the neighbour
+                  // owns this corner its panel is still there and the "adjacent
+                  // wall" filler sliver still belongs on the drawing — with the
+                  // unbuilt span drawn between it and this wall's own run.
+                  hasCornerStart={wallGeometryFor(elevationWall.id)?.ownsCornerStart ?? true}
+                  hasCornerEnd={wallGeometryFor(elevationWall.id)?.ownsCornerEnd ?? true}
+                  startStopIn={wallGeometryFor(elevationWall.id)?.startStopIn ?? 0}
+                  endStopIn={wallGeometryFor(elevationWall.id)?.endStopIn ?? 0}
                   secondStorySlots={secondStory?.wallSlots[elevationWall.id]}
                   secondStoryWallHeightFt={secondStory?.wallHeightFt}
                   onToggleOpening={handleToggleOpening}
@@ -7750,6 +7834,7 @@ export default function LayoutEditor() {
                   offsetPx={offsetPx}
                   wallSlots={effectiveViewedStoryId === "ground" ? overlayWallSlots : (secondStory?.wallSlots ?? {})}
                   wallStartOffsetIn={wallRenderOffsetIn}
+                  wallUnbuiltSpansIn={wallUnbuiltSpansIn}
                   wallThicknessIn={thicknessIn}
                   wallHeightFt={effectiveViewedStoryId === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt)}
                   includeNailer={includeNailer}
@@ -8688,6 +8773,7 @@ export default function LayoutEditor() {
               allInstances={allInstances}
               primaryCornerIds={primaryCornerIds}
               leastAccessibleCorner={leastAccessibleCorner}
+              wallUnbuiltSpansIn={wallUnbuiltSpansIn}
               role={role}
             />
           </StickyNote>

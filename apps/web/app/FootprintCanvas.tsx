@@ -145,6 +145,11 @@ export interface FootprintCanvasProps {
   offsetPx: DragPoint;
   wallSlots: Record<string, PanelSlot[]>;
   wallStartOffsetIn: Record<string, number>;
+  /** Stage 3 — for each wall, the along-wall spans (inches from that wall's
+   * own start corner) that are deliberately NOT built. Drawn as a **dashed
+   * boundary line, not a hatched wall**: it is where the building ends, not
+   * a wall of unknown type. Absent/empty = every wall fully panelized. */
+  wallUnbuiltSpansIn?: Record<string, { fromIn: number; toIn: number }[]>;
   wallThicknessIn: number;
   /** Only needed for the hover tooltip's estimated bearing/shear numbers —
    * see structuralByKey below. */
@@ -193,6 +198,7 @@ export default function FootprintCanvas({
   offsetPx,
   wallSlots,
   wallStartOffsetIn,
+  wallUnbuiltSpansIn,
   wallThicknessIn,
   wallHeightFt,
   includeNailer,
@@ -1106,6 +1112,62 @@ export default function FootprintCanvas({
                   />
                 </Group>
               );
+            })}
+          {/* Stage 3 — each wall's deliberately unbuilt span(s), as a DASHED
+              BOUNDARY LINE rather than a hatched wall: this is where the
+              building ends, not a wall whose type is still to be decided.
+              The footprint outline itself is untouched, because the polygon
+              stays closed and the floor, foundation and roof all still reach
+              this line. Non-interactive — a stop is edited from the Selected
+              Wall note, not by dragging a line that means "nothing here". */}
+          {footprint &&
+            footprint.walls.flatMap((wall) => {
+              const spans = wallUnbuiltSpansIn?.[wall.id] ?? [];
+              if (spans.length === 0) return [];
+              const start = footprint.corners.find((c) => c.id === wall.startCorner)!.point;
+              const end = footprint.corners.find((c) => c.id === wall.endCorner)!.point;
+              const startPx = { x: start.x * SCALE_PX_PER_FT + offsetPx.x, y: start.y * SCALE_PX_PER_FT + offsetPx.y };
+              const endPx = { x: end.x * SCALE_PX_PER_FT + offsetPx.x, y: end.y * SCALE_PX_PER_FT + offsetPx.y };
+              const lengthPx = Math.hypot(endPx.x - startPx.x, endPx.y - startPx.y) || 1;
+              const dir = { x: (endPx.x - startPx.x) / lengthPx, y: (endPx.y - startPx.y) / lengthPx };
+              const normal = { x: -dir.y, y: dir.x };
+              const pointAt = (alongIn: number) => ({
+                x: startPx.x + (dir.x * alongIn * SCALE_PX_PER_FT) / 12,
+                y: startPx.y + (dir.y * alongIn * SCALE_PX_PER_FT) / 12,
+              });
+              return spans.map((span, i) => {
+                const a = pointAt(span.fromIn);
+                const b = pointAt(span.toIn);
+                const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+                return (
+                  <Group key={`unbuilt-${wall.id}-${i}`} listening={false}>
+                    <Line points={[a.x, a.y, b.x, b.y]} stroke="#8a8a8a" strokeWidth={2} dash={[8, 5]} listening={false} />
+                    <Line
+                      points={[a.x - normal.x * 5, a.y - normal.y * 5, a.x + normal.x * 5, a.y + normal.y * 5]}
+                      stroke="#8a8a8a"
+                      strokeWidth={1}
+                      listening={false}
+                    />
+                    <Line
+                      points={[b.x - normal.x * 5, b.y - normal.y * 5, b.x + normal.x * 5, b.y + normal.y * 5]}
+                      stroke="#8a8a8a"
+                      strokeWidth={1}
+                      listening={false}
+                    />
+                    <Text
+                      x={mid.x - normal.x * 14 - 50}
+                      y={mid.y - normal.y * 14 - 6}
+                      width={100}
+                      align="center"
+                      text={`NO PANELS: ${formatFeetInches((span.toIn - span.fromIn) / 12)}`}
+                      fontSize={10}
+                      fontStyle="bold"
+                      fill="#6a6a6a"
+                      listening={false}
+                    />
+                  </Group>
+                );
+              });
             })}
           {measureAnchor && measureEnd && (
             <>

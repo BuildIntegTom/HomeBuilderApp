@@ -366,8 +366,28 @@ export function retilePreservingOpenings(
 }
 
 export interface WallGeometry {
+  /** Does this wall BUILD a corner panel at this end — corner ownership AND
+   * no run stop there. This is what the tiler wants. */
   hasCornerStart: boolean;
   hasCornerEnd: boolean;
+  /** Does this wall OWN the corner at this end, ignoring any run stop.
+   * Distinct from `hasCorner*` and the distinction matters on screen: a
+   * stop does not change the NEIGHBOUR, so where the neighbour owns the
+   * corner its panel is still physically there and the elevation still
+   * draws the "adjacent wall" filler sliver for it — with the unbuilt span
+   * drawn between that sliver and this wall's own run. */
+  ownsCornerStart: boolean;
+  ownsCornerEnd: boolean;
+  /** Where this wall's panel run begins, in inches from the wall's own TRUE
+   * start corner: the butt-joint inset (or a negative reflex extension)
+   * plus any start stop. Every renderer that places this wall's content —
+   * the printable plan, the live canvas, the panel snap lines, the gable
+   * column alignment — measures from here. */
+  runStartOffsetIn: number;
+  /** The mirror of `runStartOffsetIn`, measured in from the wall's TRUE end
+   * corner. `wallFabricationLengthIn(wall) - runEndOffsetIn` is where the
+   * run finishes. */
+  runEndOffsetIn: number;
   gapEnd: WallEnd;
   /** The length actually tiled — already reduced by any run stop. */
   lengthIn: number;
@@ -417,6 +437,13 @@ export function wallGeometryFor(
   return {
     hasCornerStart: run.hasCornerStart,
     hasCornerEnd: run.hasCornerEnd,
+    ownsCornerStart: ownership.start.hasCorner,
+    ownsCornerEnd: ownership.end.hasCorner,
+    runStartOffsetIn:
+      (ownership.start.extraLengthIn > 0 ? -ownership.start.extraLengthIn : ownership.start.insetAmount) +
+      run.startStopIn,
+    runEndOffsetIn:
+      (ownership.end.extraLengthIn > 0 ? -ownership.end.extraLengthIn : ownership.end.insetAmount) + run.endStopIn,
     gapEnd,
     lengthIn: run.lengthIn,
     allowBorrow,
