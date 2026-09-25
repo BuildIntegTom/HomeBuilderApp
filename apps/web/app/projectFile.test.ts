@@ -10,6 +10,8 @@ import {
   type ProjectState,
 } from "./projectFile";
 import { resolveTitleBlockDate, titleBlockDateLabel } from "./titleBlockDate";
+import { findSubMinimumPanelWidths, type PanelSlot } from "@building-integrity/geometry";
+import { fabricationMinPanelWidthIn } from "@building-integrity/panel-catalog";
 
 function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
   return {
@@ -384,6 +386,59 @@ describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toMatch(/version/i);
+  });
+});
+
+describe("limits are enforced on EDIT, never on LOAD (Smearforn Stage 1)", () => {
+  /** A design stored before the 24in fabrication minimum existed: one 20in
+   * panel, which the shop cannot build and the tiler can still produce by
+   * itself (computePlainSizing's two-way split). */
+  const withNarrowPanel: PanelSlot[] = [
+    { type: "standard", widthIn: 20 },
+    { type: "standard", widthIn: 40 },
+    { type: "braced", widthIn: 40, bracedPattern: "hatch", bracedMirrored: true },
+  ];
+
+  it("opens a stored design containing a 20in panel, with every width exactly as saved", () => {
+    // The rule: a file must never become unopenable, or be quietly corrected,
+    // because a limit tightened. Nothing about this load may differ from what
+    // it did before the minimum existed.
+    const state = makeState({
+      baseWallSlots: { AB: withNarrowPanel },
+      stories: [{ id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: { AB: withNarrowPanel } }],
+    });
+    const result = parseProjectFile(JSON.stringify(serializeProject(state)));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.baseWallSlots.AB).toEqual(withNarrowPanel);
+    expect(result.state.stories[0]!.wallSlots.AB).toEqual(withNarrowPanel);
+  });
+
+  it("opens the same design out of a v24 file too, and still does not touch it", () => {
+    const { foundationEnabled: _f, wallRunStopsByWallId: _s, ...v24State } = serializeProject(
+      makeState({ baseWallSlots: { AB: withNarrowPanel } }),
+    ).state;
+    const result = parseProjectFile(JSON.stringify({ schemaVersion: 24, savedAt: "2026-09-01T12:00:00.000Z", state: v24State }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.baseWallSlots.AB).toEqual(withNarrowPanel);
+  });
+
+  it("reports that panel instead of repairing it — the Review Log's own source", () => {
+    const result = parseProjectFile(JSON.stringify(serializeProject(makeState({ baseWallSlots: { AB: withNarrowPanel } }))));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(findSubMinimumPanelWidths(result.state.baseWallSlots, fabricationMinPanelWidthIn.value)).toEqual([
+      { wallId: "AB", slotIndex: 0, type: "standard", widthIn: 20 },
+    ]);
+  });
+
+  it("keeps a hand-set width that is itself under the minimum — a pin is user work, not an error to clean up", () => {
+    const pinned: PanelSlot[] = [{ type: "standard", widthIn: 20, lockedWidthIn: 20 }, { type: "standard", widthIn: 40 }];
+    const result = parseProjectFile(JSON.stringify(serializeProject(makeState({ baseWallSlots: { AB: pinned } }))));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.baseWallSlots.AB).toEqual(pinned);
   });
 });
 
