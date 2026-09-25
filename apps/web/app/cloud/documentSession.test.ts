@@ -300,6 +300,41 @@ describe("documentSessionReducer", () => {
     expect(documentSessionReducer(opened, { type: "cloud-moved", projectId: "other", folder: "past" })).toBe(opened);
   });
 
+  /**
+   * Stage 5. Deleting the project this editor is attached to takes the
+   * ATTACHMENT, and nothing else. The drawing is still on screen, so its date
+   * is still whatever put it there: a delete is not one of the four date
+   * writers, and printing today's date on a sheet because somebody tidied up
+   * the cloud would be exactly the confident-wrong-date defect the date rule
+   * exists to prevent.
+   */
+  it("deleting the open cloud project detaches it and keeps the date", () => {
+    const opened = run(openV3());
+    const deleted = documentSessionReducer(opened, { type: "cloud-deleted", projectId: "p1" });
+    expect(deleted.cloudContext).toBeNull();
+    expect(deleted.titleBlockSave).toBe(opened.titleBlockSave);
+    expect(deleted.designGeneration).toBe(opened.designGeneration);
+  });
+
+  it("deleting ANOTHER project changes nothing at all", () => {
+    const opened = run(openV3());
+    expect(documentSessionReducer(opened, { type: "cloud-deleted", projectId: "other" })).toBe(opened);
+  });
+
+  it("deleting a project with no cloud project open changes nothing", () => {
+    expect(documentSessionReducer(INITIAL_DOCUMENT_SESSION, { type: "cloud-deleted", projectId: "p1" })).toBe(
+      INITIAL_DOCUMENT_SESSION,
+    );
+  });
+
+  /** A save still in flight for the deleted project is not applied: its base
+   * is gone with the context, so `answerIsCurrent` already says no. */
+  it("voids a save still in flight for the project just deleted", () => {
+    const opened = run(openV3(0));
+    const deleted = documentSessionReducer(opened, { type: "cloud-deleted", projectId: "p1" });
+    expect(documentSessionReducer(deleted, saveFrom(1))).toBe(deleted);
+  });
+
   it("an account change clears the cloud project, keeps the date, and voids answers still in flight", () => {
     const opened = run(openV3(0)); // generation 1
     const changed = documentSessionReducer(opened, { type: "account-changed" });
@@ -336,11 +371,13 @@ describe("generationAfter — what moves designGeneration", () => {
     expect(generationAfter(3, createP2(3))).toBe(4);
   });
 
-  it("does not bump for local-save, cloud-save, a folder move or a refusal", () => {
+  it("does not bump for local-save, cloud-save, a folder move, a delete or a refusal", () => {
     const same: DocumentSessionAction[] = [
       { type: "local-save", savedAt: NOW.toISOString() },
       saveFrom(3),
       { type: "cloud-moved", projectId: "p1", folder: "past" },
+      // Stage 5: a delete detaches, it does not replace the design.
+      { type: "cloud-deleted", projectId: "p1" },
       { type: "cloud-refused" },
     ];
     for (const action of same) expect(generationAfter(3, action)).toBe(3);
