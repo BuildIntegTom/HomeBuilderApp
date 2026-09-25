@@ -7296,7 +7296,6 @@ export default function LayoutEditor() {
                             validate={(next) => panelWidthRefusalMessage(story, wallId, slotIndex, next)}
                             onCommit={(next) => handleSetPanelWidth(story, wallId, slotIndex, next)}
                           />
-                          &quot;
                         </label>
                         {slot.lockedWidthIn === undefined ? (
                           <p className={styles.note}>
@@ -7539,6 +7538,11 @@ export default function LayoutEditor() {
                   secondStorySlots={secondStory?.wallSlots[elevationWall.id]}
                   secondStoryWallHeightFt={secondStory?.wallHeightFt}
                   onToggleOpening={handleToggleOpening}
+                  // Clicking a panel's width label selects it without cycling
+                  // its type — the only way a STANDARD panel can become the
+                  // selected panel, and therefore the only way to reach its
+                  // width field (see WallElevationDiagram's onSelectSlot).
+                  onSelectSlot={(story, wallId, slotIndex, zoneIndex) => setSelectedSlot({ wallId, slotIndex, story, zoneIndex })}
                   maxPanelHeightIn={maxPanelHeightIn}
                   hasGableEnd={gableEndWallIds.has(elevationWall.id)}
                   roofProfileType={roofProfileType}

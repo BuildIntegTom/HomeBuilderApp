@@ -166,6 +166,23 @@ export interface WallElevationDiagramProps {
    * which still shares one type across every band in Stride 1 — see
    * bandsAndZonesPerSlot's own doc comment). */
   onToggleOpening: (story: "ground" | "second", wallId: string, slotIndex: number, zoneIndex?: number) => void;
+  /**
+   * Select a slot WITHOUT cycling its type — the entry point Smearforn
+   * Stage 1's typed width needs, and the gesture Tommy described first:
+   * "click the numerical value of width of one panel... so you can type in
+   * a new value."
+   *
+   * **Why it had to exist.** Clicking a panel's BODY runs the type cycle
+   * (`onToggleOpening`), and from a standard panel the first stop on that
+   * cycle is a window — `handleToggleOpening` then selects the opening it
+   * just made, and selects nothing at all when a slot lands back on
+   * "standard". So a standard panel could never BE the selected panel, and
+   * the width field in the Selected Panel note would have been unreachable
+   * for exactly the panels this stage is about. The width LABEL is the one
+   * part of a panel with no gesture of its own, and it is the one Tommy
+   * pointed at. It selects only; the editing still happens in the note.
+   */
+  onSelectSlot: (story: "ground" | "second", wallId: string, slotIndex: number, zoneIndex?: number) => void;
   /** A wall column taller than this auto-splits into stacked, independently
    * editable zones (page.tsx's own `maxPanelHeightIn`) — only applied to a
    * slot with NO covering Mid-Wall Bond Beam, same restriction
@@ -365,6 +382,7 @@ export default function WallElevationDiagram({
   secondStorySlots,
   secondStoryWallHeightFt,
   onToggleOpening,
+  onSelectSlot,
   maxPanelHeightIn,
   hasGableEnd,
   roofProfileType,
@@ -1141,7 +1159,30 @@ export default function WallElevationDiagram({
                 stroke="#666"
                 strokeWidth={1}
               />
-              <text x={xPx((x0 + x1) / 2)} y={localYPx(rowWallHeightIn / 2)} fontSize={9} textAnchor="middle" fill="#333">
+              <text
+                x={xPx((x0 + x1) / 2)}
+                y={localYPx(rowWallHeightIn / 2)}
+                fontSize={9}
+                textAnchor="middle"
+                fill="#333"
+                // The label SELECTS this panel (the body still cycles its
+                // type) — see onSelectSlot's own doc comment. Bold means the
+                // width is hand-set, so a pin is visible on the drawing
+                // rather than only in the note.
+                onClick={
+                  zone.type === "standard" || zone.type === "braced"
+                    ? (e) => {
+                        e.stopPropagation();
+                        onSelectSlot(story, wall.id, i, zoneIndexForClick);
+                      }
+                    : undefined
+                }
+                style={
+                  zone.type === "standard" || zone.type === "braced"
+                    ? { cursor: "pointer", fontWeight: slot.lockedWidthIn === undefined ? "normal" : "bold" }
+                    : undefined
+                }
+              >
                 {slot.widthIn}&quot;
               </text>
             </g>,

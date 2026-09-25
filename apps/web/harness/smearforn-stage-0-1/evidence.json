@@ -1,0 +1,169 @@
+{
+  "app": "http://localhost:3210/",
+  "ranAt": "2026-09-25T03:43:31.348Z",
+  "steps": [
+    {
+      "name": "stage0-new-project-tabs",
+      "navTabs": [
+        "Wall"
+      ]
+    },
+    {
+      "name": "panelizer-probe",
+      "panelizerScope": "project-menu-found"
+    },
+    {
+      "name": "panel-width-labels",
+      "count": 13,
+      "first": [
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\""
+      ]
+    },
+    {
+      "name": "selected-panel",
+      "startingWidth": "40"
+    },
+    {
+      "name": "typed-width",
+      "field": "41½",
+      "note": "Hand-set at 41½\"; it survives a re-tile of this wall. Reset to automatic"
+    },
+    {
+      "name": "refusal-below-minimum",
+      "message": "Refused: Building Integrity can't fabricate a panel narrower than 24\" left to right in elevation. Nothing was changed. (Esc to revert)",
+      "draft": "20",
+      "invalid": true
+    },
+    {
+      "name": "after-escape",
+      "field": "41½"
+    },
+    {
+      "name": "adu-widths",
+      "results": [
+        {
+          "typed": "43",
+          "committed": "43",
+          "refused": false
+        },
+        {
+          "typed": "41 1/2",
+          "committed": "41½",
+          "refused": false
+        },
+        {
+          "typed": "37 1/2",
+          "committed": "37½",
+          "refused": false
+        },
+        {
+          "typed": "35",
+          "committed": "35",
+          "refused": false
+        },
+        {
+          "typed": "31 1/2",
+          "committed": "31½",
+          "refused": false
+        },
+        {
+          "typed": "30",
+          "committed": "30",
+          "refused": false
+        },
+        {
+          "typed": "29 1/2",
+          "committed": "29½",
+          "refused": false
+        },
+        {
+          "typed": "28 1/2",
+          "committed": "28½",
+          "refused": false
+        },
+        {
+          "typed": "25 1/2",
+          "committed": "25½",
+          "refused": false
+        },
+        {
+          "typed": "24",
+          "committed": "24",
+          "refused": false
+        },
+        {
+          "typed": "48",
+          "committed": "48",
+          "refused": false
+        }
+      ],
+      "anyRefused": false
+    },
+    {
+      "name": "per-panel-reset",
+      "width": "40",
+      "note": "Automatic — this width is whatever the tiler computes for this wall. Type one to hand-set it.",
+      "stillHasReset": false
+    },
+    {
+      "name": "drag-fine",
+      "before": [
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "34.125\"",
+        "34.125\"",
+        "40\""
+      ],
+      "after": [
+        "40\"",
+        "44.5\"",
+        "35.5\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "34.125\"",
+        "34.125\"",
+        "40\""
+      ],
+      "everyWidthIsAWholeEighth": true,
+      "runTotalBefore": 508.25,
+      "runTotalAfter": 508.25,
+      "runTotalConserved": true
+    },
+    {
+      "name": "drag-to-the-floor",
+      "after": [
+        "40\"",
+        "56\"",
+        "24\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "40\"",
+        "34.125\"",
+        "34.125\"",
+        "40\""
+      ],
+      "hitsTheCatalogMinimum": true,
+      "nothingBelowTheMinimum": true
+    }
+  ]
+}
