@@ -2503,6 +2503,19 @@ export default function LayoutEditor() {
     if (geometry.stopClamped) {
       return `This wall's run is only ${formatLengthIn(unstopped.lengthIn, unitSystem)} long; the two stops together ask for more than that.`;
     }
+    // The band the whole refusal exists for, checked directly rather than
+    // inferred from whatever the tiler happens to emit: build nothing, or
+    // leave a run the shop can actually panelize. Stated up front so the
+    // message says what is wrong instead of reporting a downstream symptom
+    // (with openings anchored on a 10in run, the sum-invariant backstop
+    // below fires first and says something far less useful).
+    if (
+      !geometry.fullyStopped &&
+      toEighths(geometry.lengthIn) > 0 &&
+      toEighths(geometry.lengthIn) < toEighths(fabricationMinPanelWidthIn.value)
+    ) {
+      return `That leaves only ${formatLengthIn(geometry.lengthIn, unitSystem)} of this wall built, under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum panel the shop can build. Stop less of the wall, or stop all ${formatFeetInches(unstopped.lengthIn / 12)} of it.`;
+    }
     // BOTH stories, not just the ground one (the commit re-tiles both, and a
     // second story whose openings differ can tile the same run into a
     // sub-minimum panel the ground story does not), and EVERY wall, not just
@@ -2515,15 +2528,16 @@ export default function LayoutEditor() {
       const storyLabel = story === "second" ? " on the second story" : "";
       for (const wall of footprint?.walls ?? []) {
         const wallGeometry = wallGeometryFor(wall.id, candidateStops);
-        const wallUnstopped = wallGeometryFor(wall.id, {});
-        if (!wallGeometry || !wallUnstopped) continue;
+        if (!wallGeometry) continue;
         const slots = retiled[wall.id] ?? [];
         const totalIn = slots.reduce((sum, s) => sum + s.widthIn, 0);
         const onWall = wall.id === wallId ? "" : ` on wall ${wall.id}`;
-        if (
-          toEighths(totalIn) + toEighths(wallGeometry.startStopIn) + toEighths(wallGeometry.endStopIn) !==
-          toEighths(wallUnstopped.lengthIn)
-        ) {
+        // Against this wall's OWN tiled length under the candidate, not
+        // against its unstopped length plus the stops. Those two differ by a
+        // wall thickness on any neighbour the orphan-corner rule just made
+        // longer — so the older form refused every legitimate stop that
+        // reached a corner, which is the main case this feature exists for.
+        if (toEighths(totalIn) !== toEighths(wallGeometry.lengthIn)) {
           // The sum invariant outranks the edit. Refused whole rather than
           // partly applied — same guard Stage 1's width edit carries.
           return `That stop does not leave a run${onWall}${storyLabel} whose panels add back up to that wall. Nothing was changed.`;

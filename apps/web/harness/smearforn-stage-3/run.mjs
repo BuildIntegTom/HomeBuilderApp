@@ -18,9 +18,14 @@
  * tell "the plate is stale" from "the panels moved". But `Export as OBJ`
  * builds its geometry from **the same memos the scene renders**, so
  * intercepting that blob gives a precise, textual model of what is actually
- * in the 3D scene — every member as world-space vertices, grouped by
- * `wall_*` / `roofbearing_*` labels. Every 3D claim below is measured off
- * that, not off a screenshot.
+ * in the 3D scene — every member as world-space vertices, grouped by label.
+ * Every 3D claim below is measured off that, not off a screenshot.
+ *
+ * ⚠ Ground-floor wall panels carry NO prefix in that file: their group is
+ * `${wallId}_${slotIndex}_${memberId}`, while everything else is prefixed
+ * (`story2_`, `gable_`, `roofbearing_`, `balefoundation_`). Assuming a
+ * `wall_` prefix made every 3D check here quietly match nothing on the first
+ * pass — which is why the baseline step asserts it found walls at all.
  *
  * What it drives:
  *   1. draw a footprint, turn Roof on (so a truss plate exists at all)
@@ -39,7 +44,9 @@
  *  10. clearing the stop restores the wall, the plate and the 3D scene
  *  11. a stop that leaves a run too short to tile is REFUSED, and the wall
  *      is left exactly as it was
- *  12. no uncaught exception anywhere in the run
+ *  12. a stop that REACHES a corner the wall owns is ACCEPTED (the
+ *      orphan-corner case — the neighbour stops butting into air)
+ *  13. no uncaught exception anywhere in the run
  *
  * HOW TO RUN (from the repo root):
  *   1. `npm run dev --workspace=apps/web -- -p 3214`
@@ -182,11 +189,19 @@ const click = async (x, y) => {
   await sleep(450);
 };
 
-/** Click the first visible element whose trimmed text is exactly `label`. */
+/**
+ * Click the first visible element whose trimmed text STARTS WITH `label`.
+ *
+ * Prefix, not equality, and that is not laziness: the top bar's own menu
+ * buttons append a caret glyph to their label ("Project▾"), so an
+ * exact-match helper finds nothing and the run dies three steps later
+ * somewhere unrelated. Learned the hard way on the first pass of this
+ * script.
+ */
 const clickByText = async (selector, label, what) => {
   const box = await evaluate(`(() => {
     const els = [...document.querySelectorAll(${JSON.stringify(selector)})]
-      .filter((e) => e.textContent.trim() === ${JSON.stringify(label)});
+      .filter((e) => e.textContent.trim().startsWith(${JSON.stringify(label)}));
     for (const e of els) {
       const r = e.getBoundingClientRect();
       if (r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0) {
@@ -372,49 +387,80 @@ await mouse("mouseReleased", x1, y1);
 await sleep(1600);
 
 console.log("3. turning Roof on (a truss plate only exists when roof is in scope)");
-await clickByText("button", "Panelizer", "Panelizer menu button");
-await sleep(700);
-const roofToggled = await evaluate(`(() => {
-  const group = document.querySelector('[aria-label="Scope of work"]');
-  if (!group) return null;
-  const label = [...group.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Roof');
-  if (!label) return null;
-  const box = label.querySelector('input[type="checkbox"]');
-  if (!box) return null;
-  if (!box.checked) box.click();
-  return { checked: box.checked };
-})()`);
+/** The Scope of work group lives in the Panelizer note, which lives inside
+ * the top bar's Project menu — two clicks deep, not one. */
+const openPanelizer = async () => {
+  const alreadyOpen = await evaluate(`!!document.querySelector('[aria-label="Scope of work"]')`);
+  if (alreadyOpen) return;
+  await clickByText("button", "Project", "Project menu button");
+  await sleep(600);
+  await clickByText("button", "Panelizer", "Panelizer menu item");
+  await sleep(800);
+  const ok = await evaluate(`!!document.querySelector('[aria-label="Scope of work"]')`);
+  if (!ok) throw new Error("the Panelizer note did not open (no Scope of work group)");
+};
+/** Closes whatever notes are open, so nothing covers the canvas afterwards. */
+const closeOpenNotes = async () => {
+  await evaluate(`(() => {
+    for (const b of [...document.querySelectorAll('button[title="Hide this note"]')]) b.click();
+  })()`);
+  await sleep(700);
+};
+const setRoofScope = async (on) =>
+  await evaluate(`(() => {
+    const group = document.querySelector('[aria-label="Scope of work"]');
+    if (!group) return null;
+    const label = [...group.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Roof');
+    if (!label) return null;
+    const box = label.querySelector('input[type="checkbox"]');
+    if (!box) return null;
+    if (box.checked !== ${on ? "true" : "false"}) box.click();
+    return { checked: box.checked };
+  })()`);
+
+await openPanelizer();
+const roofToggled = await setRoofScope(true);
 record(
   "roof-in-scope",
   { roofToggled },
   // Every 3D truss-plate claim below is vacuous if the roof is out of scope.
   (d) => !!d.roofToggled && d.roofToggled.checked === true,
 );
-await clickByText("button", "Panelizer", "Panelizer menu button (to close)");
-await sleep(600);
+await closeOpenNotes();
 
 console.log("4. baseline 3D scene");
 // Reach a 3D stop on the viewer dial by stepping and reading the label back.
 const dialLabel = async () => await evaluate(`(() => { const g = document.querySelector('[aria-label="View mode"]'); return g ? g.querySelector('div').textContent.trim() : null; })()`);
 const dialStep = async (glyph) => {
+  // Scrolled into view FIRST: after a panel drag the page can sit low enough
+  // that the dial is off screen, and a click at an off-screen coordinate
+  // hits nothing and fails silently — which looked exactly like "the dial
+  // has no 2D Floor Plan stop".
   const b = await evaluate(`(() => {
     const g = document.querySelector('[aria-label="View mode"]');
-    const btn = g && [...g.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(glyph)});
+    if (!g) return null;
+    g.scrollIntoView({ block: 'center' });
+    const btn = [...g.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(glyph)});
     if (!btn) return null;
     const r = btn.getBoundingClientRect();
+    if (r.width === 0 || r.top < 0 || r.left < 0) return null;
     return [r.left + r.width / 2, r.top + r.height / 2];
   })()`);
-  if (!b) throw new Error("no viewer dial");
+  if (!b) throw new Error("the viewer dial is not on screen");
   await click(b[0], b[1]);
   await sleep(900);
 };
 const reachView = async (predicate, what) => {
-  for (let i = 0; i < 12; i++) {
+  const seen = [];
+  for (let i = 0; i < 14; i++) {
     const label = await dialLabel();
+    seen.push(label);
     if (label && predicate(label)) return label;
     await dialStep("▼");
   }
-  throw new Error(`could not reach ${what} on the viewer dial`);
+  // Name what it actually walked past — a bare "could not reach X" sends the
+  // next person looking at the wrong thing.
+  throw new Error(`could not reach ${what} on the viewer dial; saw: ${JSON.stringify(seen)}`);
 };
 
 await reachView((l) => l === "3D Framed", "3D Framed");
@@ -422,12 +468,27 @@ await sleep(2500);
 const objBaseline = parseObjGroups(await captureObj());
 await shot("00-3d-baseline");
 
-// Which wall runs along which axis is a property of the drawn rectangle, so
-// pick the wall with the LONGEST extent and work on that one throughout.
-const wallIdsInObj = [...new Set([...objBaseline.keys()].filter((k) => k.startsWith("wall_")).map((k) => k.split("_")[1]))];
+/**
+ * Ground-floor wall panels carry NO prefix in the OBJ — their group name is
+ * `${wallId}_${slotIndex}_${memberId}`, while everything else is prefixed
+ * (`story2_`, `gable_`, `roofbearing_`, `balefoundation_`, `midwallbeam_`).
+ * So a wall id is the first segment of any group that is not one of those
+ * keywords. Reading this wrong the first time made every 3D check vacuous
+ * rather than failing loudly, which is why the baseline step below asserts
+ * that it found walls at all.
+ */
+const NON_WALL_PREFIXES = new Set(["story2", "gable", "roofbearing", "balefoundation", "midwallbeam", "trussplate", "boxbeam"]);
+const wallIdsInObj = [
+  ...new Set(
+    [...objBaseline.keys()]
+      .map((k) => /^([A-Za-z0-9]+)_\d+/.exec(k))
+      .filter((m) => m !== null && !NON_WALL_PREFIXES.has(m[1]))
+      .map((m) => m[1]),
+  ),
+];
 const wallAxisFor = (groups, wallId) => {
-  const ex = extentAlong(groups, `wall_${wallId}_`, 0);
-  const ez = extentAlong(groups, `wall_${wallId}_`, 2);
+  const ex = extentAlong(groups, `${wallId}_`, 0);
+  const ez = extentAlong(groups, `${wallId}_`, 2);
   if (!ex || !ez) return null;
   return ex.lengthIn >= ez.lengthIn ? 0 : 2;
 };
@@ -437,7 +498,7 @@ let baselineWallExtent = null;
 for (const id of wallIdsInObj) {
   const axis = wallAxisFor(objBaseline, id);
   if (axis === null) continue;
-  const ext = extentAlong(objBaseline, `wall_${id}_`, axis);
+  const ext = extentAlong(objBaseline, `${id}_`, axis);
   if (!baselineWallExtent || ext.lengthIn > baselineWallExtent.lengthIn) {
     baselineWallExtent = ext;
     targetWallId = id;
@@ -454,14 +515,23 @@ record(
     wallExtent: baselineWallExtent,
     plateExtent: baselinePlateExtent,
   },
-  // Both must exist, and the plate must span roughly the same run as the
-  // panels — otherwise there is nothing for the stop to shorten.
+  // Both must exist, and the plate must span the wall's RAW line — which on
+  // a wall that butts a neighbour at both ends is up to two wall-thicknesses
+  // longer than its panel run.
+  //
+  // That gap is a PRE-EXISTING offset, not a Stage 3 defect: the 3D
+  // roof-bearing anchor has always measured from the wall's true corner and
+  // ignored the butt-joint inset, and Stage 3 deliberately did not change it
+  // (fixing it would move the roof-bearing render on every existing
+  // two-story project). Asserted as a bounded discrepancy rather than
+  // waved through, so that if it ever grows, this notices.
   (d) =>
     !!d.targetWallId &&
     !!d.wallExtent &&
     !!d.plateExtent &&
     d.wallExtent.lengthIn > 100 &&
-    Math.abs(d.plateExtent.lengthIn - d.wallExtent.lengthIn) < 2,
+    d.plateExtent.lengthIn >= d.wallExtent.lengthIn - 0.5 &&
+    d.plateExtent.lengthIn - d.wallExtent.lengthIn <= 2 * 15.75 + 0.5,
 );
 
 console.log("5. opening that wall's elevation");
@@ -576,13 +646,17 @@ record(
   // — this is the thing a shop actually reads.
   (d) => Array.isArray(d.planSheetLabels) && d.planSheetLabels.some((t) => t.startsWith("NO PANELS")),
 );
+// The Plan View sheet opens as a note ON TOP of the editor, including the
+// viewer dial — leave it open and every later dial click lands on the note
+// instead, which reads as "the dial has no 3D stop".
+await closeOpenNotes();
 
 console.log("9. 3D with the stop set");
 await reachView((l) => l === "3D Framed", "3D Framed");
 await sleep(2500);
 const objStopped = parseObjGroups(await captureObj());
 await shot("06-3d-stopped");
-const wallStopped = extentAlong(objStopped, `wall_${targetWallId}_`, targetAxis);
+const wallStopped = extentAlong(objStopped, `${targetWallId}_`, targetAxis);
 const plateStopped = extentAlong(objStopped, `roofbearing_${targetWallId}_`, targetAxis);
 // Which end the stop is at depends on the wall's direction in world space,
 // so measure the SHORTENING rather than assuming a side.
@@ -615,21 +689,12 @@ console.log("10. THE MEMO PIN — forcing a recompute must not change the scene"
 // the scene above is whatever it last computed. Toggling Roof off and back on
 // touches a dependency the memo DOES list, forcing a fresh compute; a scene
 // that changes as a result was stale before.
-await clickByText("button", "Panelizer", "Panelizer menu button");
-await sleep(700);
-await evaluate(`(() => {
-  const group = document.querySelector('[aria-label="Scope of work"]');
-  const label = [...group.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Roof');
-  label.querySelector('input[type="checkbox"]').click();
-})()`);
+await openPanelizer();
+await setRoofScope(false);
 await sleep(900);
-await evaluate(`(() => {
-  const group = document.querySelector('[aria-label="Scope of work"]');
-  const label = [...group.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Roof');
-  label.querySelector('input[type="checkbox"]').click();
-})()`);
+await setRoofScope(true);
 await sleep(900);
-await clickByText("button", "Panelizer", "Panelizer menu button (to close)");
+await closeOpenNotes();
 await sleep(1500);
 const objRecomputed = parseObjGroups(await captureObj());
 const plateRecomputed = extentAlong(objRecomputed, `roofbearing_${targetWallId}_`, targetAxis);
@@ -712,6 +777,48 @@ record(
     typeof d.message === "string" &&
     /minimum|cannot be panelized/.test(d.message) &&
     d.totalEighthsAfter === d.totalEighthsBefore,
+);
+
+console.log("13. a stop that reaches a corner the wall OWNS is accepted, and the neighbour grows");
+// The ADU's own case, and the one the orphan-corner rule is for: on a
+// rectangle the SHORTER wall owns the corners, so stopping a short wall is
+// exactly what reaches a long neighbour. The neighbour must stop insetting
+// into a corner panel that is no longer built — and, just as importantly,
+// the stop must be ACCEPTED rather than refused for failing an invariant
+// stated against the neighbour's old length.
+await closeOpenNotes();
+const shortWallId = wallIdsInObj.find((id) => id !== targetWallId && id !== null) ?? null;
+let cornerStopResult = { error: "no second wall to try" };
+if (shortWallId) {
+  await reachView((l) => l === `Elevation: ${shortWallId}`, `Elevation: ${shortWallId}`);
+  await sleep(1200);
+  const shortWidths = await panelWidths();
+  const shortRunIn = sumEighths(shortWidths) / 8;
+  // Stop 30in off the start end — enough to take a corner panel with it,
+  // and far more than enough to leave a legal run behind.
+  await commitStop("start", 30);
+  const field = await stopField("start");
+  const afterWidths = await panelWidths();
+  await shot("10-corner-stop-accepted");
+  cornerStopResult = {
+    wallId: shortWallId,
+    refusalMessage: field?.message ?? null,
+    invalid: field?.invalid ?? null,
+    runBeforeIn: shortRunIn,
+    runAfterIn: sumEighths(afterWidths) / 8,
+  };
+}
+record(
+  "corner-reaching-stop-is-accepted-not-refused",
+  cornerStopResult,
+  // Accepted (no refusal, field not marked invalid) and the run really did
+  // shorten by the 30in asked for. Before the refusal was restated against
+  // each wall's OWN tiled length, this came back refused.
+  (d) =>
+    !!d.wallId &&
+    d.invalid === false &&
+    d.refusalMessage === null &&
+    Math.abs(d.runBeforeIn - d.runAfterIn - 30) < 0.001,
 );
 
 record(
