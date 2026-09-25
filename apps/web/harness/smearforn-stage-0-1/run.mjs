@@ -245,6 +245,24 @@ await mouse("mouseReleased", x1, y1);
 await sleep(1200);
 await shot("01-footprint-drawn");
 
+/**
+ * The viewer dial's own current stop, e.g. "Elevation: North (AB)".
+ *
+ * **Read, rather than inferred from what is on screen.** An early version of
+ * the wall walk identified a wall by the set of width labels it could see —
+ * and `panelWidthLabels` filters to labels actually ON SCREEN, so panning
+ * between stops changed the set without changing the wall, and four views of
+ * ONE wall were counted as four walls. It reported `wallsWalked: 4` and
+ * proved nothing. Ask the dial what it is showing.
+ */
+const currentViewLabel = async () =>
+  await evaluate(`(() => {
+    const dial = document.querySelector('[role="group"][aria-label="View mode"]');
+    if (!dial) return null;
+    const label = [...dial.querySelectorAll('div')].map((d) => d.textContent.trim()).find((t) => t && t !== '▲' && t !== '▼');
+    return label ?? null;
+  })()`);
+
 console.log("3. opening a wall elevation");
 // The viewer dial's down arrow steps: plan -> each wall's elevation -> 3D.
 const dialDown = await evaluate(`(() => {
@@ -252,13 +270,45 @@ const dialDown = await evaluate(`(() => {
   const r = b.getBoundingClientRect();
   return [r.left + r.width / 2, r.top + r.height / 2];
 })()`);
-let elevationReady = false;
-for (let i = 0; i < 6 && !elevationReady; i++) {
+
+/**
+ * Steps the dial until it reaches a wall elevation THIS RUN CAN USE, which is
+ * two separate questions that used to be one.
+ *
+ * **⚠ "Is this an elevation?" and "can I drag on this wall?" are not the same
+ * question, and conflating them is the same defect as the wall walk's.** This
+ * used to be `rect[style*="ew-resize"].length > 0` — one drag strip anywhere
+ * — which silently means "a wall with two ADJACENT standard/braced panels". A
+ * wall whose middle is a single panel between two corners has none, so it
+ * read as "not an elevation" and the walk stepped straight past it; the run
+ * then did steps 4-9 on a different wall than the one it had reached, and
+ * reported nothing about it. It is also part of what looked like a
+ * window-size problem in review ("could not reach a wall elevation").
+ *
+ * Now the dial's own label answers the first question, and the strip count
+ * answers the second **as an explicit requirement of step 9, which drags** —
+ * not as a definition of "elevation". When no wall satisfies it, the error
+ * says which half failed instead of blaming the viewport.
+ */
+let reached = null;
+for (let i = 0; i < 8 && reached === null; i++) {
   await click(dialDown[0], dialDown[1]);
   await sleep(700);
-  elevationReady = await evaluate(`document.querySelectorAll('rect[style*="ew-resize"]').length > 0`);
+  const view = await currentViewLabel();
+  if (typeof view !== "string" || !view.startsWith("Elevation:")) continue;
+  const dragStrips = await evaluate(`document.querySelectorAll('rect[style*="ew-resize"]').length`);
+  // Steps 4-8 need a panel to select; step 9 needs two adjacent ones to drag
+  // between. A wall with a strip always has both.
+  if (dragStrips > 0) reached = { view, dragStrips };
 }
-if (!elevationReady) throw new Error("could not reach a wall elevation with panel drag handles");
+if (reached === null) {
+  throw new Error(
+    "no wall elevation this run can use: the dial either never reported an 'Elevation:' stop, or every wall it " +
+      "offered has no two ADJACENT standard/braced panels for step 9's drag. Not a viewport problem — check the " +
+      "footprint the run drew.",
+  );
+}
+console.log(`  working on ${reached.view} (${reached.dragStrips} drag strips)`);
 
 // Zoom the elevation in, so the drag below has enough pixels per inch to land
 // somewhere interesting (at 100% on a 48ft wall, one pixel is about two
@@ -279,12 +329,32 @@ await shot("02-wall-elevation");
  * The label is the selection gesture (Tommy: "click the numerical value of
  * width of one panel") — clicking the panel's body runs the type cycle
  * instead, which from a standard panel produces a window.
+ *
+ * **⚠ The third locator in this file with the same root cause, fixed with
+ * the other two rather than after them.** It used to start from
+ * `svg rect[style*="ew-resize"]` — the panel-boundary drag strips — exactly
+ * as `allElevationWidths` and the elevation-readiness check did, so on a wall
+ * with no two ADJACENT standard/braced panels it returned `[]` and steps 4-8
+ * (select a panel, type a width, the refusal, the eleven ADU widths, the
+ * per-panel reset) had nothing to click.
+ *
+ * **These three masked each other, which is why they could not be fixed one
+ * at a time.** The readiness check never let the run settle on a strip-less
+ * wall, so this reader never met one; repair readiness alone and steps 4-8
+ * would have started failing on a wall the run had only just become able to
+ * reach. The general lesson is the one in Open Items: a reader keyed to an
+ * INCIDENTAL element fails on legitimate data, and it fails by returning
+ * nothing rather than by raising anything.
+ *
+ * The label is what this function is about, so it reads the labels: any
+ * `svg text` whose style carries the pointer cursor. That style is on the
+ * label itself and is NOT gated on the placement tool (only its `onClick`
+ * is — see WallElevationDiagram), so this is stable across tool state in a
+ * way the drag strips, gated since Stage 2, are not.
  */
 const panelWidthLabels = async () =>
   await evaluate(`(() => {
-    const svg = document.querySelector('svg rect[style*="ew-resize"]')?.ownerSVGElement;
-    if (!svg) return [];
-    return [...svg.querySelectorAll('text')]
+    return [...document.querySelectorAll('svg text')]
       .filter((t) => (t.getAttribute('style') || '').includes('pointer'))
       .map((t) => { const b = t.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2, label: t.textContent.trim(), bold: (t.getAttribute('style') || '').includes('bold') }; })
       // Only the ones actually on screen: a click at an off-screen
@@ -545,24 +615,6 @@ record(
 // into two ~20in panels — so this is the step that would have been red
 // yesterday, on walls nobody touched.
 console.log("10. walking every wall elevation");
-
-/**
- * The viewer dial's own current stop, e.g. "Elevation: North (AB)".
- *
- * **Read, rather than inferred from what is on screen.** The first version of
- * this step identified a wall by the set of width labels it could see — and
- * `panelWidthLabels` filters to labels actually ON SCREEN, so panning between
- * stops changed the set without changing the wall, and four views of ONE wall
- * were counted as four walls. It reported `wallsWalked: 4` and proved nothing.
- * Ask the dial what it is showing.
- */
-const currentViewLabel = async () =>
-  await evaluate(`(() => {
-    const dial = document.querySelector('[role="group"][aria-label="View mode"]');
-    if (!dial) return null;
-    const label = [...dial.querySelectorAll('div')].map((d) => d.textContent.trim()).find((t) => t && t !== '▲' && t !== '▼');
-    return label ?? null;
-  })()`);
 
 /**
  * EVERY panel width label on the elevation, on screen or not — this step
