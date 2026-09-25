@@ -1848,3 +1848,115 @@ constraint, column, default privilege and row set in `public` and `auth`:
   above say. **(D) is 9 rows since 2026-09-23** — `browse_author_name` joined
   it — and **(J) is new**: it counts what the two narrowings withhold on real
   data, and has no fixed expected value.
+
+# Stage 5 — permanent delete of a whole project
+
+## ⚠ THERE IS NO MIGRATION FOR THIS, AND NOTHING TO PASTE
+
+**Nothing in this section asks Tommy to run any SQL.** The whole capability was
+enforced by **0006**, in Stage 2, and the Stage 5 work is a UI and a route on
+top of it. There is no `0011`. If a future change to this area ever does need
+one, it gets pre-flight and post-flight steps here in the style of `0009` and
+`0010`, and it is a cost to be reported, not a detail.
+
+What 0006 already says, quoted rather than paraphrased:
+
+```sql
+create policy projects_delete on public.projects
+  for delete to authenticated
+  using (public.is_platform_admin());
+-- Decision 13: archive, never delete. Past Projects IS the archive.
+
+create policy project_versions_delete on public.project_versions
+  for delete to authenticated
+  using (public.is_platform_admin());
+-- (refuse_project_version_change admits it only as a whole-project cascade.)
+```
+
+and, in `refuse_project_version_change` (BEFORE UPDATE OR DELETE on
+`project_versions`):
+
+```sql
+  if public.is_privileged_caller() and pg_trigger_depth() > 1 then
+    return old;
+  end if;
+
+  raise exception 'a single project version cannot be deleted; only a platform admin deleting the whole project removes versions'
+    using errcode = '42501';
+```
+
+So: **a platform admin, a whole project, and the versions only as that
+project's cascade.** A client cannot raise the trigger depth, so the narrowing
+is unspoofable from PostgREST.
+
+## What a project delete actually takes with it
+
+Exactly three tables reference `projects`, all `on delete cascade`, and nothing
+else in the schema names a project:
+
+| Table | Migration | What goes |
+|---|---|---|
+| `project_versions` | 0006 | every saved version, documents included |
+| `collaborators` | 0008 | every grant on it, personal, company and creator |
+| `collab_requests` | 0009 | every access request made on it, decided or not |
+
+`share_notice_state` is keyed by person, not by project, so it is untouched.
+Accounts, memberships and companies are untouched: **deleting a project deletes
+no person.**
+
+## Verifying locally
+
+Against a throwaway local PostgreSQL (17.4 was used), never the project:
+
+```sh
+createdb stage5_local
+psql -d stage5_local -v ON_ERROR_STOP=1 -f supabase/tests/local_shim.sql
+for f in supabase/migrations/0[01]*.sql; do psql -d stage5_local -v ON_ERROR_STOP=1 -f "$f"; done
+psql -d stage5_local -v ON_ERROR_STOP=1 -f supabase/tests/stage1_rls.test.sql   # must still pass
+psql -d stage5_local -v ON_ERROR_STOP=1 -f supabase/tests/stage2_rls.test.sql   # must still pass
+PGDATABASE=stage5_local bash supabase/tests/stage2_concurrency.test.sh          # must still pass
+psql -d stage5_local -v ON_ERROR_STOP=1 -f supabase/tests/stage3_rls.test.sql   # must still pass
+PGDATABASE=stage5_local bash supabase/tests/stage3_concurrency.test.sh          # must still pass
+psql -d stage5_local -v ON_ERROR_STOP=1 -f supabase/tests/stage4_rls.test.sql   # must still pass
+psql -d stage5_local -v ON_ERROR_STOP=1 -f supabase/tests/stage5_rls.test.sql
+```
+
+Each prints `… ALL ASSERTIONS PASSED` or stops at the first `FAIL:`.
+
+`stage5_rls.test.sql` drives the delete as **seven callers who may not** — an
+ordinary member of the owner company, that company's admin, a member of
+another company **who holds two grants on the project**, a seed-entitled
+browser, the person whose access request is pending, someone with no
+membership at all, and a caller with no subject on the request — asserting for
+each that the statement affects **zero rows silently** (which is what the route
+reads as its refusal) and that **nothing actually went**, counted past RLS. It
+then deletes as the platform admin and checks all three cascades, across a
+company he is not a member of, and checks that a direct single-version delete
+still raises `42501` for him.
+
+## ⚠ Stage 5 verification status
+
+**`stage5_rls.test.sql` HAS NOT BEEN RUN.** No PostgreSQL is installed on the
+machine it was written on — the same situation `0010` was written in — and
+connecting to the live project to try it was never an option. It is written in
+the style of the four suites beside it and reviewed by reading; that is not the
+same as passing. **Run it before trusting the delete button with anything you
+would miss.**
+
+What HAS been checked is the app side, by `npx vitest run`: the route refuses a
+non-admin session, reads zero rows as a refusal rather than a success, checks
+the typed name against the database's current name, and never deletes a
+`project_versions` row. None of that is the database's answer.
+
+## Before you delete a real project
+
+- **There is no undo, no archive and no backup taken for you.** Past Projects
+  *is* the archive; **Move to… › Past Projects** keeps every version. Use the
+  company backup first if you want a copy.
+- **It is not only yours.** A delete takes every collaborator's access to that
+  project with it, and nobody is told.
+- **The counts in the confirmation are read before the delete.** If one of them
+  says the number could not be read, that is a real gap, not a zero.
+- **Single-version delete is still refused**, platform admin included. It would
+  leave `head_version_number` stale and break a `parent_version_id` chain, and
+  it needs its own design.
