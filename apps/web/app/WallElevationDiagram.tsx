@@ -617,6 +617,14 @@ export default function WallElevationDiagram({
         roofBearingAnchorMode,
         gableWindowReservations,
         hasStructuralColumnPanel ? COLUMN_TOTAL_WIDTH_IN : undefined,
+        // Stage 3: the gable row stops where the wall does. Measured to
+        // where the PANELS start, not to the bare stop — but only when
+        // there IS a stop, so an unstopped wall keeps the exact row it has
+        // today (the gable has always ignored the butt-joint inset, and
+        // this is not the change that starts respecting it). Must match
+        // page.tsx's own call or the drawing and the model disagree.
+        startStopIn > 0 ? startOffsetIn : 0,
+        endStopIn > 0 ? wallWidthIn - endOffsetIn : wallWidthIn,
       )
     : [];
   const gablePanels: (GableTiledPanel & { verticalGapIn?: { leftIn: number; rightIn: number } })[] = rawGablePanels.map((p) => {

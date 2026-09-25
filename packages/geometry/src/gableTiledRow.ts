@@ -546,6 +546,27 @@ export function computeGableTiledRow(
   anchorMode: RoofBearingAnchorMode = "truss-heel",
   windowReservations: GableWindowReservation[] = [],
   columnReservationWidthIn?: number,
+  /**
+   * Smearforn Stage 3 — the span of this wall that is actually BUILT, in
+   * inches from the wall's own start corner. Defaults to the whole wall,
+   * which is every project without a run stop.
+   *
+   * **This is a panel GENERATOR, which is why it has to know.** Everything
+   * else the Stage 3 audit touched was a total that read a wall length; this
+   * reads a wall length and emits real `"gable"` panel instances that flow
+   * through the same pipeline as every other type. Left unclamped, a stopped
+   * Gable End wall fabricates, prices, weighs, BOMs and cut-lists gable
+   * panels sitting above a span that same wall declares carries no panels —
+   * real parts cut wrong, not a number read wrong. Tommy's decision: clamp
+   * the row to the built run.
+   *
+   * **The ROOFLINE is deliberately not clamped.** `points`/`anchors` are
+   * still resolved across the full `wallWidthIn`, so the ridge, the profile
+   * and every sampled roofline height are unchanged — the roof still spans
+   * the wall it always did. Only the tiles stop.
+   */
+  builtStartIn = 0,
+  builtEndIn = wallWidthIn,
 ): GableTiledPanel[] {
   const { anchors, leftSnapped, rightSnapped } = resolveAnchors(wallWidthIn, eaveHeightIn, points, targetPanelWidthIn, heelHeightIn, anchorMode, insetIn);
 
@@ -557,8 +578,16 @@ export function computeGableTiledRow(
   // the roofline spans corner-to-corner as a shed, neither corner gets an
   // inset, even if the other point is still a genuine (non-snapped) shoulder.
   const effectiveInsetIn = leftSnapped || rightSnapped ? 0 : insetIn;
-  const usableStartIn = effectiveInsetIn;
-  const usableEndIn = wallWidthIn - effectiveInsetIn;
+  // The truss-plate inset and the run stop both pull the usable run in; the
+  // TIGHTER of the two wins at each end. A stop is measured from the wall's
+  // own corner, same origin the inset uses, so they compose by max/min with
+  // no extra bookkeeping.
+  const usableStartIn = Math.max(effectiveInsetIn, builtStartIn);
+  const usableEndIn = Math.min(wallWidthIn - effectiveInsetIn, builtEndIn);
+  // A fully stopped gable wall builds NOTHING up there — not one zero-width
+  // tile, which would still be a real priced and fabricated panel instance.
+  // Same guard the roof-bearing plate carries for the same reason.
+  if (usableEndIn - usableStartIn <= 0) return [];
 
   // Segment boundaries are snapped to the 1/8in grid HERE rather than
   // inside the tilers, so that consecutive segments provably share an
@@ -577,8 +606,24 @@ export function computeGableTiledRow(
     });
   }
 
+  // A segment can be squeezed out entirely once a run stop clamps the
+  // usable run past one of the anchors. Tiles are taken through this helper
+  // everywhere — including the `naturalCounts` pass, whose per-segment
+  // counts set the window ordinals, so skipping a segment in one place and
+  // not the other would silently renumber every window after it.
+  const tilesForSegment = (seg: { segStartIn: number; segEndIn: number; gapEnd: "start" | "end" }): GableTiledPanel[] => {
+    if (seg.segEndIn - seg.segStartIn <= 0) return [];
+    return includeSafetyGap
+      ? tileRun(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd)
+      : tileEvenly(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn);
+  };
+
   let columnTile: GableTiledPanel | null = null;
-  if (columnReservationWidthIn !== undefined && anchors.length === 3) {
+  // `segments.length >= 2` is implied by `anchors.length === 3` and is
+  // asserted anyway: the block below indexes segments[0] and segments[1]
+  // directly, and a clamped run is exactly the situation that could leave
+  // fewer of them than the anchor count suggests.
+  if (columnReservationWidthIn !== undefined && anchors.length === 3 && segments.length >= 2) {
     const peakAnchor = anchors[1]!;
     // Centered to within one eighth rather than exactly: the column's own
     // width stays exactly what was asked for, and its two edges stay on the
@@ -607,23 +652,13 @@ export function computeGableTiledRow(
     const panels: GableTiledPanel[] = [];
     for (let segIdx = 0; segIdx < segments.length; segIdx++) {
       const seg = segments[segIdx]!;
-      panels.push(
-        ...(includeSafetyGap
-          ? tileRun(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd)
-          : tileEvenly(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn)),
-      );
+      panels.push(...tilesForSegment(seg));
       if (segIdx === 0 && columnTile) panels.push(columnTile);
     }
     return panels;
   }
 
-  const naturalCounts = segments.map(
-    (seg) =>
-      (includeSafetyGap
-        ? tileRun(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd)
-        : tileEvenly(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn)
-      ).filter((p) => !p.isSafetyGap).length,
-  );
+  const naturalCounts = segments.map((seg) => tilesForSegment(seg).filter((p) => !p.isSafetyGap).length);
   const segmentWindows: { ordinal: number; widthIn: number; heightIn?: number; sillHeightIn?: number }[][] = segments.map(() => []);
   let globalBase = 0;
   for (let segIdx = 0; segIdx < segments.length; segIdx++) {
@@ -644,7 +679,9 @@ export function computeGableTiledRow(
   const panels: GableTiledPanel[] = [];
   for (let segIdx = 0; segIdx < segments.length; segIdx++) {
     const seg = segments[segIdx]!;
-    panels.push(...tileRunWithWindows(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd, includeSafetyGap, segmentWindows[segIdx]!));
+    if (seg.segEndIn - seg.segStartIn > 0) {
+      panels.push(...tileRunWithWindows(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd, includeSafetyGap, segmentWindows[segIdx]!));
+    }
     if (segIdx === 0 && columnTile) panels.push(columnTile);
   }
   return panels;

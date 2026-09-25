@@ -3243,9 +3243,13 @@ export default function LayoutEditor() {
    * is in that first wall-thickness of this wall's line, and a dashed
    * "nothing here" line drawn across it would be a lie.
    */
-  const wallUnbuiltSpansIn = useMemo(() => {
-    const spans: Record<string, { fromIn: number; toIn: number }[]> = {};
-    if (!footprint) return spans;
+  const wallRunSpanData = useMemo(() => {
+    const unbuilt: Record<string, { fromIn: number; toIn: number }[]> = {};
+    /** The complement: where this wall's run actually STARTS and ENDS, in
+     * the same corner-origin coordinates. The gable row reads this — it is a
+     * panel generator, not a total, so it has to stop where the wall does. */
+    const built: Record<string, { builtStartIn: number; builtEndIn: number }> = {};
+    if (!footprint) return { unbuilt, built };
     for (const wall of footprint.walls) {
       const geometry = wallGeometryFor(wall.id);
       if (!geometry || (geometry.startStopIn <= 0 && geometry.endStopIn <= 0)) continue;
@@ -3260,11 +3264,21 @@ export default function LayoutEditor() {
           toIn: wallLengthIn - geometry.runEndOffsetIn + geometry.endStopIn,
         });
       }
-      spans[wall.id] = forWall;
+      unbuilt[wall.id] = forWall;
+      // Measured to where the PANELS actually start, not to the bare stop:
+      // on a wall that butts a neighbour the run already begins a
+      // wall-thickness in, and clamping the gable to the bare stop would
+      // leave a gable panel hanging over that much unbuilt wall.
+      built[wall.id] = {
+        builtStartIn: geometry.startStopIn > 0 ? geometry.runStartOffsetIn : 0,
+        builtEndIn: geometry.endStopIn > 0 ? wallLengthIn - geometry.runEndOffsetIn : wallLengthIn,
+      };
     }
-    return spans;
+    return { unbuilt, built };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
   }, [footprint, thicknessIn, primaryCornerIds, leastAccessibleCorner, wallRunStopsByWallId]);
+  const wallUnbuiltSpansIn = wallRunSpanData.unbuilt;
+  const gableRunStopByWallId = wallRunSpanData.built;
 
   // Under "loose-packed-braced" (today's default system), braced-panel
   // placement is now real stored state directly in `baseWallSlots` (Tommy:
@@ -3515,6 +3529,11 @@ export default function LayoutEditor() {
         roofBearingAnchorMode,
         gableWindowAnchorsByWallId[wall.id] ?? [],
         gableStructuralPanelWallIds.has(wall.id) ? COLUMN_TOTAL_WIDTH_IN : undefined,
+        // Stage 3: gable panels are generated only above the part of this
+        // wall that is actually built. The ridge and roof profile still span
+        // the full wall — only the panel row clamps. Tommy's decision.
+        gableRunStopByWallId[wall.id]?.builtStartIn ?? 0,
+        gableRunStopByWallId[wall.id]?.builtEndIn ?? wallLengthIn,
       );
       // The real high edge is capped to maxGablePanelHeightIn's own
       // fabrication ceiling (Tommy: "gable panels...can be up to 8' tall")
