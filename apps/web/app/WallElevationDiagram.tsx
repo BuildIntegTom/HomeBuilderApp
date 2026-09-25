@@ -7,6 +7,7 @@ import {
   computeRoofBearingSegments,
   computeWallVerticalBandsForSlotWithMaxHeight,
   effectiveZonesForSlot,
+  insertableBoundaryRange,
   isSlotBoxBeamCovered,
   resolvePanelBoundaryDrag,
   zoneFromSlot,
@@ -183,6 +184,24 @@ export interface WallElevationDiagramProps {
    * pointed at. It selects only; the editing still happens in the note.
    */
   onSelectSlot: (story: "ground" | "second", wallId: string, slotIndex: number, zoneIndex?: number) => void;
+  /**
+   * Smearforn Stage 2's placement tool, armed from the left bar: "place" = a
+   * panel type is picked and a click lands it, "delete" = a click removes
+   * the panel it lands on, null = the tool is off and every click does what
+   * it has always done.
+   *
+   * While it is armed, a panel's BODY replaces rather than cycles, and the
+   * boundaries between panels become their own click targets (drawn, so the
+   * places a panel can go are visible rather than guessed at). The
+   * panel-boundary DRAG is suspended for as long as it is armed — the same
+   * strip cannot mean two things at once.
+   */
+  panelToolMode: "place" | "delete" | null;
+  /** Replace the panel at `slotIndex` with whatever the tool is set to. */
+  onReplacePanel: (story: "ground" | "second", wallId: string, slotIndex: number) => void;
+  /** Insert before `boundaryIndex` — the slot index the new panel takes. */
+  onInsertPanel: (story: "ground" | "second", wallId: string, boundaryIndex: number) => void;
+  onDeletePanel: (story: "ground" | "second", wallId: string, slotIndex: number) => void;
   /** A wall column taller than this auto-splits into stacked, independently
    * editable zones (page.tsx's own `maxPanelHeightIn`) — only applied to a
    * slot with NO covering Mid-Wall Bond Beam, same restriction
@@ -383,6 +402,10 @@ export default function WallElevationDiagram({
   secondStoryWallHeightFt,
   onToggleOpening,
   onSelectSlot,
+  panelToolMode,
+  onReplacePanel,
+  onInsertPanel,
+  onDeletePanel,
   maxPanelHeightIn,
   hasGableEnd,
   roofProfileType,
@@ -1018,6 +1041,17 @@ export default function WallElevationDiagram({
     }, []);
     const maxBandCount = Math.max(0, ...bandsAndZonesForRow.map((b) => b.bands.length));
     const elements: ReactNode[] = [];
+    // What a click on a panel's body means right now. With the placement
+    // tool armed it REPLACES (or deletes) instead of cycling — a direct
+    // select in place of the click-through wheel, which is the whole of
+    // Tommy's "select which type of panel you want to add, and then click
+    // where to put it". The tool acts on the whole slot/column: a width
+    // reservation is shared by every zone stacked in it.
+    const bodyClick = (slotIndex: number, zoneIndexForClick: number) => () => {
+      if (panelToolMode === "place") onReplacePanel(story, wall.id, slotIndex);
+      else if (panelToolMode === "delete") onDeletePanel(story, wall.id, slotIndex);
+      else onToggleOpening(story, wall.id, slotIndex, zoneIndexForClick);
+    };
     for (let bandIndex = 0; bandIndex < maxBandCount; bandIndex++) {
       for (const { slot, i, x0, x1 } of rects) {
         const entry = bandsAndZonesForRow[i];
@@ -1103,7 +1137,7 @@ export default function WallElevationDiagram({
           elements.push(
             <g
               key={`${story}-${bandIndex}-${i}`}
-              onClick={() => onToggleOpening(story, wall.id, i, zoneIndexForClick)}
+              onClick={bodyClick(i, zoneIndexForClick)}
               style={{ cursor: "pointer" }}
             >
               <rect
@@ -1147,7 +1181,7 @@ export default function WallElevationDiagram({
           elements.push(
             <g
               key={`${story}-${bandIndex}-${i}`}
-              onClick={() => onToggleOpening(story, wall.id, i, zoneIndexForClick)}
+              onClick={bodyClick(i, zoneIndexForClick)}
               style={{ cursor: "pointer" }}
             >
               <rect
@@ -1169,8 +1203,11 @@ export default function WallElevationDiagram({
                 // type) — see onSelectSlot's own doc comment. Bold means the
                 // width is hand-set, so a pin is visible on the drawing
                 // rather than only in the note.
+                // While the placement tool is armed the label has no gesture
+                // of its own — swallowing the click here would make the panel
+                // under it the one spot on the wall the tool cannot reach.
                 onClick={
-                  zone.type === "standard" || zone.type === "braced"
+                  panelToolMode === null && (zone.type === "standard" || zone.type === "braced")
                     ? (e) => {
                         e.stopPropagation();
                         onSelectSlot(story, wall.id, i, zoneIndexForClick);
@@ -1201,6 +1238,46 @@ export default function WallElevationDiagram({
     // Spans the row's own full height (every band together, not just one)
     // — a slot's widthIn is shared across all its bands.
     const rowMaxHeightIn = Math.max(0, ...bandsAndZonesForRow.flatMap((e) => e.bands.map((b) => b.topIn)));
+
+    // Smearforn Stage 2's insert targets: one per boundary a panel may go
+    // at, drawn so the legal places are visible rather than guessed at, and
+    // spanning the row's full height like the drag strips they replace.
+    // `insertableBoundaryRange` keeps them inside the corners — a corner
+    // panel stays at the end of the wall it belongs to.
+    if (panelToolMode === "place" && rects.length > 0) {
+      const { minIndex, maxIndex } = insertableBoundaryRange(rowSlots);
+      for (let b = minIndex; b <= maxIndex; b++) {
+        const xIn = b < rects.length ? rects[b]!.x0 : rects[rects.length - 1]!.x1;
+        elements.push(
+          <g key={`insert-${story}-${b}`} style={{ cursor: "copy" }} onClick={() => onInsertPanel(story, wall.id, b)}>
+            <rect
+              x={xPx(xIn) - PANEL_DRAG_HANDLE_HALF_WIDTH_PX}
+              y={yPx(rowFloorHeightIn + rowMaxHeightIn)}
+              width={PANEL_DRAG_HANDLE_HALF_WIDTH_PX * 2}
+              height={rowMaxHeightIn * PX_PER_IN}
+              fill="#4a90d9"
+              fillOpacity={0.12}
+              style={{ pointerEvents: "all" }}
+            />
+            <line
+              x1={xPx(xIn)}
+              y1={yPx(rowFloorHeightIn + rowMaxHeightIn)}
+              x2={xPx(xIn)}
+              y2={yPx(rowFloorHeightIn)}
+              stroke="#4a90d9"
+              strokeWidth={2}
+              strokeDasharray="5 3"
+              pointerEvents="none"
+            />
+          </g>,
+        );
+      }
+      // The drag strips are deliberately NOT drawn while the tool is armed:
+      // one strip cannot be both "drag this boundary" and "insert here".
+      return elements;
+    }
+
+    // Panel drag-resize hit-zones — see the comment above.
     const isDraggablePanel = (s: PanelSlot) => s.type === "standard" || s.type === "braced";
     for (let i = 0; i < rects.length - 1; i++) {
       const leftRect = rects[i]!;

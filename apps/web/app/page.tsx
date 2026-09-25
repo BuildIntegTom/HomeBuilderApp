@@ -45,6 +45,10 @@ import {
   nextPanelCycleState,
   pointAlongRidgeLine,
   reconcileBracedPlacement,
+  redistributeFreeRun,
+  resolvePanelDelete,
+  resolvePanelInsert,
+  resolvePanelReplace,
   resolvePanelWidthEdit,
   reconcilePanelSlotZones,
   retile as retilePure,
@@ -58,8 +62,11 @@ import {
   type CornerId,
   type Footprint,
   type PanelGroup,
+  type PanelPlacementResult,
   type PanelSlot,
   type PanelSlotZone,
+  type PlaceablePanelType,
+  type PlacementPanel,
   type GableWindowReservation,
   type OpeningSeed,
   type RoofBearingAnchorMode,
@@ -482,6 +489,71 @@ const SHOP_DRAWING_PANEL_TYPES: {
   { namedTypes: [], panelTypeId: "jack-stud" },
 ];
 
+/**
+ * Smearforn Stage 2's left-bar roster — the click-through cycle's own
+ * types, with a braced panel's four styles spelled out as four buttons
+ * (Tommy: "I want to be able to include each panel style for braced panels
+ * in the click-through cycle for panel type selections").
+ *
+ * **Corner and Safety Gap are not on it, on purpose.** Both are placed by
+ * rules — corner ownership and the gap-end/second-to-last-panel rule — and
+ * a hand-placed one would be overwritten by the systems that own them. The
+ * roster itself is `PLACEABLE_PANEL_TYPES` in packages/geometry, where a
+ * test asserts it against `nextPanelCycleState`'s own reachable set so the
+ * two cannot drift apart.
+ */
+const PANEL_PLACEMENT_TOOL_OPTIONS: {
+  key: string;
+  label: string;
+  title: string;
+  type: PlaceablePanelType;
+  bracedPattern?: BracePattern;
+  bracedMirrored?: boolean;
+}[] = [
+  { key: "standard", label: "Standard", title: "A plain Standard Panel, born at the project's Standard width.", type: "standard" },
+  {
+    key: "braced-chevron",
+    label: 'Braced "<"',
+    title: "A Braced Panel, chevron pattern, born at the project's Standard width.",
+    type: "braced",
+    bracedPattern: "chevron",
+    bracedMirrored: false,
+  },
+  {
+    key: "braced-chevron-mirrored",
+    label: 'Braced ">"',
+    title: "A Braced Panel, mirrored chevron.",
+    type: "braced",
+    bracedPattern: "chevron",
+    bracedMirrored: true,
+  },
+  {
+    key: "braced-hatch",
+    label: 'Braced "/"',
+    title: "A Braced Panel, hatch pattern.",
+    type: "braced",
+    bracedPattern: "hatch",
+    bracedMirrored: false,
+  },
+  {
+    key: "braced-hatch-mirrored",
+    label: 'Braced "\\"',
+    title: "A Braced Panel, mirrored hatch.",
+    type: "braced",
+    bracedPattern: "hatch",
+    bracedMirrored: true,
+  },
+  { key: "window", label: "Window", title: "A window opening, born at the project's Standard width.", type: "window" },
+  { key: "door", label: "Door", title: "A door opening, born at the project's Standard width.", type: "door" },
+  { key: "column", label: "Column", title: "A Column Panel — always fabricated at its own fixed width.", type: "column" },
+  {
+    key: "big-header",
+    label: "Big Header",
+    title: "A Big Header, born at its own catalog default width and height.",
+    type: "big-header",
+  },
+];
+
 type EditorTab = "wall" | "foundation" | "floor" | "roof";
 
 export default function LayoutEditor() {
@@ -850,6 +922,27 @@ export default function LayoutEditor() {
     if (panelWidthNoticeTimerRef.current) clearTimeout(panelWidthNoticeTimerRef.current);
     setPanelWidthNotice(message);
     panelWidthNoticeTimerRef.current = setTimeout(() => setPanelWidthNotice(null), 6000);
+  };
+  // --- Smearforn Stage 2: the panel placement tool ------------------------
+  //
+  // Tommy: "There should be a way to add a panel, select which type of panel
+  // you want to add, and then click where to put it. This would either
+  // replace a panel or add one between."
+  //
+  // Armed from the wall-elevation left bar: pick a type (or Delete), then
+  // click a panel to replace it or a boundary to insert between. Null = the
+  // tool is off and a click on a panel does what it has always done (the
+  // type cycle). Corner and safety-gap are not on the roster — see
+  // PLACEABLE_PANEL_TYPES' own doc comment.
+  const [panelPlacementTool, setPanelPlacementTool] = useState<
+    { mode: "place"; type: PlaceablePanelType; bracedPattern?: BracePattern; bracedMirrored?: boolean } | { mode: "delete" } | null
+  >(null);
+  const [panelPlacementNotice, setPanelPlacementNotice] = useState<string | null>(null);
+  const panelPlacementNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showPanelPlacementNotice = (message: string) => {
+    if (panelPlacementNoticeTimerRef.current) clearTimeout(panelPlacementNoticeTimerRef.current);
+    setPanelPlacementNotice(message);
+    panelPlacementNoticeTimerRef.current = setTimeout(() => setPanelPlacementNotice(null), 8000);
   };
   // Hard guardrail (Tommy): at most 2 Gable End walls, and once 1 is active,
   // the 2nd must be its geometric opposite (parallel, facing away) — the
@@ -2453,12 +2546,22 @@ export default function LayoutEditor() {
    * come back at exactly its pinned width. If either fails, nothing is
    * written and the caller says so. Never partially apply.
    */
+  const standardFamilyCount = (slots: PanelSlot[]) => slots.filter((s) => s.type === "standard" || s.type === "braced").length;
+
   const retileWallAroundPins = (
     story: "ground" | "second",
     wallId: string,
+    /** The wall as it stands BEFORE this edit — the array whose widths sum
+     * to the wall's own length, and the fallback path's target total. */
+    beforeSlots: PanelSlot[],
     nextSlots: PanelSlot[],
     keepOrdinal: number,
     expectWidthIn: number | null,
+    /** Index in `nextSlots` of the slot being edited, and whether the
+     * fallback should re-tile a free run that already adds up — see
+     * `redistributeFreeRun`'s `rebalance`. */
+    editIndex: number,
+    rebalance: boolean,
   ): { ok: true; slots: PanelSlot[]; index: number } | { ok: false } => {
     const geometry = wallGeometryFor(wallId);
     if (!geometry) return { ok: false };
@@ -2475,6 +2578,30 @@ export default function LayoutEditor() {
     ).slots;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(tiled, geometry.gapEnd) : tiled;
     const finalSlots = reconcileBracedPlacement(nextSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+
+    // ⚠ Smearforn Stage 2 rider, and the one case this function cannot
+    // answer with the tiler. The tiler derives the free run's COUNT from the
+    // budget alone, so it hands back the same number of panels every time it
+    // is asked — which is right for a wall the tiler laid out, and WRONG for
+    // one the user has since hand-placed a panel onto: the extra panel would
+    // be silently re-tiled away by the next width edit on that wall, with
+    // the wall still adding up, so neither guard below would notice. That is
+    // exactly the silent revert the Smearforn plan forbids.
+    //
+    // So: when the tiler's answer has fewer standard-family slots than the
+    // wall actually has, the edit is applied by `redistributeFreeRun`
+    // instead — the same count-preserving mechanism insert/replace/delete
+    // use — and the tiler's answer is discarded. A wall that has never been
+    // hand-placed on takes the tiler path, exactly as it did before Stage 2.
+    if (standardFamilyCount(finalSlots) < standardFamilyCount(nextSlots)) {
+      const fallback = redistributeFreeRun(beforeSlots, nextSlots, editIndex, panelWidthLimitsIn, { rebalance });
+      if (fallback.outcome !== "commit") return { ok: false };
+      const fallbackIndex = findNthStandardFamilyIndex(fallback.slots, keepOrdinal);
+      if (fallbackIndex === -1) return { ok: false };
+      if (expectWidthIn !== null && toEighths(fallback.slots[fallbackIndex]!.widthIn) !== toEighths(expectWidthIn)) return { ok: false };
+      return { ok: true, slots: fallback.slots, index: fallbackIndex };
+    }
+
     const sumEighths = finalSlots.reduce((sum, s) => sum + toEighths(s.widthIn), 0);
     if (sumEighths !== toEighths(geometry.lengthIn)) return { ok: false };
     const index = findNthStandardFamilyIndex(finalSlots, keepOrdinal);
@@ -2501,7 +2628,7 @@ export default function LayoutEditor() {
       i === slotIndex ? { ...s, widthIn: result.widthIn, lockedWidthIn: result.widthIn } : s,
     );
     const ordinal = standardFamilyOrdinalAt(currentSlots, slotIndex);
-    const retiled = retileWallAroundPins(story, wallId, pinned, ordinal, result.widthIn);
+    const retiled = retileWallAroundPins(story, wallId, currentSlots, pinned, ordinal, result.widthIn, slotIndex, false);
     if (!retiled.ok) {
       showPanelWidthNotice(
         "That width couldn't be applied without moving this wall's own total length, so nothing was changed.",
@@ -2530,13 +2657,154 @@ export default function LayoutEditor() {
       return rest;
     });
     const ordinal = standardFamilyOrdinalAt(currentSlots, slotIndex);
-    const retiled = retileWallAroundPins(story, wallId, cleared, ordinal, null);
+    const retiled = retileWallAroundPins(story, wallId, currentSlots, cleared, ordinal, null, slotIndex, true);
     if (!retiled.ok) {
       showPanelWidthNotice("That panel couldn't be returned to automatic without moving the wall's total length, so nothing was changed.");
       return;
     }
     setSelectedSlot({ wallId, slotIndex: retiled.index, story, zoneIndex: selectedSlot?.zoneIndex });
     setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: retiled.slots }));
+  };
+
+  // --- Smearforn Stage 2: insert, replace and delete a panel --------------
+  //
+  // The arithmetic is `packages/geometry`'s `panelPlacement` module; what is
+  // here is the tool's own widths (which are catalog values and belong on
+  // this side of the package boundary), the notices, and the selection.
+
+  /** What a freshly-placed panel of each type is born as. A Column is always
+   * its own fixed fabrication width and a Big Header its own catalog
+   * default; everything else is born at the project's Standard width, which
+   * is itself already clamped to [24in, 48in] (Smearforn 1r). */
+  const placementPanelForInsert = (tool: { type: PlaceablePanelType; bracedPattern?: BracePattern; bracedMirrored?: boolean }): PlacementPanel => {
+    switch (tool.type) {
+      case "column":
+        return { type: "column", widthIn: COLUMN_TOTAL_WIDTH_IN };
+      case "big-header":
+        return {
+          type: "big-header",
+          widthIn: bigHeaderDefaultWidthIn.value,
+          heightIn: bigHeaderDefaultHeightIn.value,
+          includeSillOnBigHeader: false,
+        };
+      case "braced":
+        return { type: "braced", widthIn: standardWidthIn, bracedPattern: tool.bracedPattern, bracedMirrored: tool.bracedMirrored };
+      default:
+        return { type: tool.type, widthIn: standardWidthIn };
+    }
+  };
+
+  /** A REPLACEMENT keeps the width already reserved at that position unless
+   * the new type has a width of its own — the same rule the click-cycle
+   * already follows (`handleToggleOpening`: Column is fixed, a Big Header
+   * gets its default because a standard panel is almost always under the
+   * 48in floor of `bigHeaderWidthInRange`). */
+  const placementPanelForReplace = (tool: {
+    type: PlaceablePanelType;
+    bracedPattern?: BracePattern;
+    bracedMirrored?: boolean;
+  }): PlacementPanel => {
+    switch (tool.type) {
+      case "column":
+        return { type: "column", widthIn: COLUMN_TOTAL_WIDTH_IN };
+      case "big-header":
+        return {
+          type: "big-header",
+          widthIn: bigHeaderDefaultWidthIn.value,
+          heightIn: bigHeaderDefaultHeightIn.value,
+          includeSillOnBigHeader: false,
+        };
+      case "braced":
+        return { type: "braced", bracedPattern: tool.bracedPattern, bracedMirrored: tool.bracedMirrored };
+      default:
+        return { type: tool.type };
+    }
+  };
+
+  /**
+   * Writes a placement result, or says why it was refused.
+   *
+   * Every refusal states a real number — how much room there actually is,
+   * what the panel would have become — for the same reason the width field
+   * refuses with the limit rather than a shrug. Nothing is ever partially
+   * applied: a refusal writes nothing at all.
+   */
+  const applyPlacementResult = (story: "ground" | "second", wallId: string, verb: string, result: PanelPlacementResult) => {
+    if (result.outcome === "no-change") {
+      showPanelPlacementNotice(`That panel is already what the tool is set to, so nothing changed.`);
+      return;
+    }
+    if (result.outcome === "refuse-not-placeable") {
+      showPanelPlacementNotice(
+        result.reason === "rule-placed-slot"
+          ? "Corner and safety-gap panels are placed by rule, not by hand — the app positions them and would overwrite a hand-placed one. Nothing was changed."
+          : "There is nowhere on this wall to put a panel there. Nothing was changed.",
+      );
+      return;
+    }
+    if (result.outcome === "refuse-width-out-of-range") {
+      showPanelPlacementNotice(
+        `Refused: a ${formatLengthIn(result.widthIn, unitSystem)} panel is outside what the shop builds (${formatLengthIn(result.minIn, unitSystem)} to ${formatLengthIn(result.maxIn, unitSystem)}). Nothing was changed.`,
+      );
+      return;
+    }
+    if (result.outcome === "refuse-no-room") {
+      showPanelPlacementNotice(
+        `Refused: there is ${formatLengthIn(result.freeBudgetIn, unitSystem)} of automatic panel width on this wall and that panel needs ${formatLengthIn(result.requestedIn, unitSystem)} of it — with whatever is left over still at least ${formatLengthIn(result.minIn, unitSystem)}. A corner or an opening is never shrunk to make room. Nothing was changed.`,
+      );
+      return;
+    }
+    if (result.outcome === "refuse-no-free-run") {
+      showPanelPlacementNotice(
+        `Refused: every other panel on this wall is hand-set, an opening or a corner, so there is nothing automatic to give that ${formatLengthIn(result.freedWidthIn, unitSystem)} back to. Reset a panel to automatic first. Nothing was changed.`,
+      );
+      return;
+    }
+    if (result.outcome === "refuse-would-exceed-maximum") {
+      showPanelPlacementNotice(
+        `Refused: that would leave an automatic panel ${formatLengthIn(result.wouldBeIn, unitSystem)} wide, over the ${formatLengthIn(result.maxIn, unitSystem)} maximum — this wall has no way to hold fewer panels. Nothing was changed.`,
+      );
+      return;
+    }
+    setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: result.slots }));
+    setSelectedSlot(result.selectedIndex === -1 ? null : { wallId, slotIndex: result.selectedIndex, story });
+    // An insert that had to absorb an automatic panel to pay for itself
+    // leaves the wall's own panel count where it was. Said out loud rather
+    // than left to be discovered by counting panels on the drawing.
+    const countNote =
+      result.slotCountAfter === result.slotCountBefore && verb === "Inserted"
+        ? ` The automatic run gave up a panel to pay for it, so this wall still has ${result.slotCountAfter} panels — narrow a panel to make room for another.`
+        : "";
+    showPanelPlacementNotice(
+      `${verb} on wall ${wallId}: ${result.slotCountBefore} panels → ${result.slotCountAfter}, ${result.freeCountAfter} still automatic.${countNote}`,
+    );
+  };
+
+  const handleReplacePanel = (story: "ground" | "second", wallId: string, slotIndex: number) => {
+    if (!panelPlacementTool || panelPlacementTool.mode !== "place") return;
+    const slots = wallSlotsForStory(story)[wallId] ?? [];
+    applyPlacementResult(
+      story,
+      wallId,
+      "Replaced",
+      resolvePanelReplace(slots, slotIndex, placementPanelForReplace(panelPlacementTool), panelWidthLimitsIn),
+    );
+  };
+
+  const handleInsertPanel = (story: "ground" | "second", wallId: string, boundaryIndex: number) => {
+    if (!panelPlacementTool || panelPlacementTool.mode !== "place") return;
+    const slots = wallSlotsForStory(story)[wallId] ?? [];
+    applyPlacementResult(
+      story,
+      wallId,
+      "Inserted",
+      resolvePanelInsert(slots, boundaryIndex, placementPanelForInsert(panelPlacementTool), panelWidthLimitsIn),
+    );
+  };
+
+  const handleDeletePanel = (story: "ground" | "second", wallId: string, slotIndex: number) => {
+    const slots = wallSlotsForStory(story)[wallId] ?? [];
+    applyPlacementResult(story, wallId, "Deleted a panel", resolvePanelDelete(slots, slotIndex, panelWidthLimitsIn));
   };
 
   const handleSetWindowWidth = (story: "ground" | "second", wallId: string, slotIndex: number, requestedWidthIn: number) => {
@@ -6129,6 +6397,64 @@ export default function LayoutEditor() {
           midWallBeamsByStoryAndWallId.second[elevationWall.id] ?? [],
           (secondStory?.wallHeightFt ?? wallHeightFt) * 12,
         )}
+      {/* Smearforn Stage 2 (Tommy: "select which type of panel you want to
+          add, and then click where to put it. This would either replace a
+          panel or add one between"). Corner and Safety Gap are deliberately
+          absent from this roster — see PLACEABLE_PANEL_TYPES. */}
+      <div className={elevationStyles.beamSection}>
+        <div className={elevationStyles.sectionHeader}>
+          <span className={elevationStyles.sectionLabel}>Place a panel</span>
+          <div role="group" aria-label="Panel placement tool" className={styles.toolbar}>
+            {PANEL_PLACEMENT_TOOL_OPTIONS.map((option) => {
+              const active =
+                panelPlacementTool?.mode === "place" &&
+                panelPlacementTool.type === option.type &&
+                panelPlacementTool.bracedPattern === option.bracedPattern &&
+                panelPlacementTool.bracedMirrored === option.bracedMirrored;
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  title={option.title}
+                  aria-pressed={active}
+                  className={active ? styles.toolActive : styles.tool}
+                  onClick={() =>
+                    setPanelPlacementTool(
+                      active
+                        ? null
+                        : {
+                            mode: "place",
+                            type: option.type,
+                            bracedPattern: option.bracedPattern,
+                            bracedMirrored: option.bracedMirrored,
+                          },
+                    )
+                  }
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              title="Click a panel to delete it. Its width goes back to the automatic panels on this wall and the run re-tiles; the wall's own length never moves."
+              aria-pressed={panelPlacementTool?.mode === "delete"}
+              className={panelPlacementTool?.mode === "delete" ? styles.toolActive : styles.tool}
+              onClick={() => setPanelPlacementTool((prev) => (prev?.mode === "delete" ? null : { mode: "delete" }))}
+            >
+              Delete
+            </button>
+          </div>
+          <p className={elevationStyles.helpText}>
+            {panelPlacementTool === null
+              ? "Pick a type, then click a panel on the drawing below to replace it, or a dashed boundary to insert between. Click the same button again to put the tool away."
+              : panelPlacementTool.mode === "delete"
+                ? "Click a panel below to delete it. Corner and safety-gap panels are placed by rule and can't be deleted."
+                : "Click a panel below to replace it, or a dashed boundary to insert between. A new panel is born hand-set at the project's Standard width (a Column and a Big Header at their own); that width comes out of the automatic panels on this wall, and if they can't cover it the insert is refused. The panel-boundary drag is off while this tool is armed."}
+          </p>
+          {panelPlacementNotice && <p className={elevationStyles.clampedText}>{panelPlacementNotice}</p>}
+        </div>
+      </div>
       <div className={elevationStyles.toggleRow}>
         <button type="button" className={elevationStyles.actionButton} onClick={() => handleAddBigHeaderPanel("ground", elevationWall.id)}>
           + Add Big Header
@@ -7591,6 +7917,13 @@ export default function LayoutEditor() {
                   // selected panel, and therefore the only way to reach its
                   // width field (see WallElevationDiagram's onSelectSlot).
                   onSelectSlot={(story, wallId, slotIndex, zoneIndex) => setSelectedSlot({ wallId, slotIndex, story, zoneIndex })}
+                  // Smearforn Stage 2 — while a type (or Delete) is picked in
+                  // the left bar, a click on a panel replaces/deletes it and
+                  // the boundaries between panels become insert targets.
+                  panelToolMode={panelPlacementTool?.mode ?? null}
+                  onReplacePanel={handleReplacePanel}
+                  onInsertPanel={handleInsertPanel}
+                  onDeletePanel={handleDeletePanel}
                   maxPanelHeightIn={maxPanelHeightIn}
                   hasGableEnd={gableEndWallIds.has(elevationWall.id)}
                   roofProfileType={roofProfileType}

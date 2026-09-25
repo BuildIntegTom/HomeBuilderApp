@@ -273,6 +273,15 @@ export function redistributeFreeRun(
   after: PanelSlot[],
   editIndex: number,
   limits: FreeRunLimitsIn,
+  options?: {
+    /** Re-tile the free run even when it already holds exactly the right
+     * budget across exactly the right number of slots. The one caller that
+     * needs it is "reset this panel to automatic": the slot that just lost
+     * its pin has to be given the run's fair share, not left sitting at the
+     * width the user had hand-set on it. Everything else wants the default,
+     * which is to leave an already-correct run alone. */
+    rebalance?: boolean;
+  },
 ): PanelPlacementResult {
   const totalEighths = sumEighths(before);
   const fixedEighths = after.reduce((sum, s) => (isFreeSlot(s) ? sum : sum + toEighths(s.widthIn)), 0);
@@ -329,7 +338,7 @@ export function redistributeFreeRun(
   // alone rather than flattening a run that was fine — a replace that
   // reserves the same width it inherited must not ripple across the wall.
   const currentFreeEighths = freeIndices.reduce((sum, i) => sum + toEighths(after[i]!.widthIn), 0);
-  if (count === freeIndices.length && currentFreeEighths === budgetEighths) {
+  if (!options?.rebalance && count === freeIndices.length && currentFreeEighths === budgetEighths) {
     return {
       outcome: "commit",
       slots: after.map((s) => ({ ...s })),
