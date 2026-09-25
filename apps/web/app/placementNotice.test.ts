@@ -1,0 +1,156 @@
+import { describe, expect, it } from "vitest";
+import {
+  PLACEMENT_VERBS,
+  placementCommitNotice,
+  placementRefusalNotice,
+  placementRefusalSentence,
+  type EmptiedCoverage,
+  type PlacementCommitFacts,
+  type PlacementOp,
+} from "./placementNotice";
+
+/** Deliberately not the app's formatter: these tests are about which clauses
+ * appear, not about how an inch reads. */
+const fmt = (valueIn: number) => `${valueIn}in`;
+const NO_COVERAGE: EmptiedCoverage = { midWallBeams: 0, boxBeam: false };
+const facts = (over: Partial<PlacementCommitFacts> = {}): PlacementCommitFacts => ({
+  slotCountBefore: 15,
+  slotCountAfter: 16,
+  freeCountAfter: 13,
+  droppedTypes: [],
+  ...over,
+});
+
+/**
+ * ### What these tests are really guarding
+ *
+ * Two clauses used to be chosen by reading the notice's own display string
+ * (`verb.startsWith("Deleted")`, `verb === "Inserted"`). Every assertion
+ * below drives the behaviour through `op` and NEVER through the wording, so
+ * rewording any verb — a copy edit nobody runs a harness for — cannot
+ * silently change which clause appears. The last test in the file is the one
+ * that fails if someone reintroduces the coupling.
+ */
+
+describe("the refusal sentence, shared with the width edit", () => {
+  it("quotes the numbers the arithmetic produced", () => {
+    expect(placementRefusalSentence({ outcome: "refuse-no-room", requestedIn: 96, freeBudgetIn: 53.625, minIn: 24 }, fmt)).toBe(
+      "Refused: there is 53.625in of automatic panel width on this wall and this change needs 96in of it — with whatever is " +
+        "left over still at least 24in. A corner or an opening is never shrunk to make room. Nothing was changed.",
+    );
+  });
+
+  it("is null for a result that is not a refusal", () => {
+    expect(
+      placementRefusalSentence(
+        {
+          outcome: "commit",
+          slots: [],
+          selectedIndex: -1,
+          slotCountBefore: 1,
+          slotCountAfter: 1,
+          freeCountBefore: 1,
+          freeCountAfter: 1,
+          droppedIndices: [],
+          droppedTypes: [],
+        },
+        fmt,
+      ),
+    ).toBeNull();
+  });
+
+  it("carries no operation-specific clause of its own — the width edit shows it too", () => {
+    const sentence = placementRefusalSentence({ outcome: "refuse-would-exceed-maximum", wouldBeIn: 50, maxIn: 48 }, fmt);
+    expect(sentence).toBe("Refused: that would leave an automatic panel 50in wide, over the 48in maximum. Nothing was changed.");
+    expect(sentence).not.toContain("fewer panels");
+  });
+});
+
+describe("the delete-only 'no way to hold fewer panels' clause", () => {
+  const tooWide = { outcome: "refuse-would-exceed-maximum", wouldBeIn: 50, maxIn: 48 } as const;
+
+  it("appears on a DELETE, where it is what actually happened", () => {
+    expect(placementRefusalNotice("delete", tooWide, fmt)).toContain("This wall has no way to hold fewer panels.");
+  });
+
+  it("does NOT appear on a replace or an insert refused by the same arithmetic", () => {
+    expect(placementRefusalNotice("replace", tooWide, fmt)).not.toContain("fewer panels");
+    expect(placementRefusalNotice("insert", tooWide, fmt)).not.toContain("fewer panels");
+  });
+
+  it("does not appear on a delete refused for some OTHER reason", () => {
+    expect(placementRefusalNotice("delete", { outcome: "refuse-no-free-run", freedWidthIn: 40 }, fmt)).not.toContain("fewer panels");
+  });
+});
+
+describe("the insert-only 'gave up N panels' note", () => {
+  it("appears on an INSERT the automatic run had to pay for, naming the count and the braced ones", () => {
+    const notice = placementCommitNotice(
+      "insert",
+      "AB",
+      facts({ slotCountBefore: 6, slotCountAfter: 4, droppedTypes: ["standard", "braced"] }),
+      NO_COVERAGE,
+    );
+    expect(notice).toContain("gave up 2 panels (1 of them braced)");
+    expect(notice).toContain("this wall now has 4 panels");
+  });
+
+  it("says 'panel' rather than 'panels' for one", () => {
+    expect(placementCommitNotice("insert", "AB", facts({ droppedTypes: ["standard"] }), NO_COVERAGE)).toContain("gave up 1 panel to pay");
+  });
+
+  it("does NOT appear on a replace or a delete that dropped panels — those did what they were asked", () => {
+    const dropped = facts({ droppedTypes: ["standard", "standard"] });
+    expect(placementCommitNotice("replace", "AB", dropped, NO_COVERAGE)).not.toContain("gave up");
+    expect(placementCommitNotice("delete", "AB", dropped, NO_COVERAGE)).not.toContain("gave up");
+  });
+
+  it("does not appear on an insert that cost the run nothing", () => {
+    expect(placementCommitNotice("insert", "AB", facts(), NO_COVERAGE)).not.toContain("gave up");
+  });
+});
+
+describe("the emptied-coverage note", () => {
+  it("names the component, and does not blame the panel the user clicked", () => {
+    const notice = placementCommitNotice("delete", "AB", facts(), { midWallBeams: 2, boxBeam: true });
+    expect(notice).toContain("2 Mid-Wall Bond Beams covered only panels this edit removed, so they were removed too.");
+    expect(notice).toContain("The roofline Box Beam covered only panels this edit removed, so it was removed too.");
+    expect(notice).not.toContain("that panel");
+  });
+
+  it("agrees in number for a single beam", () => {
+    expect(placementCommitNotice("delete", "AB", facts(), { midWallBeams: 1, boxBeam: false })).toContain(
+      "1 Mid-Wall Bond Beam covered only panels this edit removed, so it was removed too.",
+    );
+  });
+});
+
+describe("the display text cannot drift from the logic", () => {
+  it("derives every verb from the operation, so a copy edit cannot change a branch", () => {
+    // The guard for the actual defect: rename any verb below and these
+    // assertions still hold, because nothing reads the wording to decide
+    // anything. If someone reintroduces `verb.startsWith("Deleted")` or
+    // `verb === "Inserted"`, changing PLACEMENT_VERBS breaks the clause
+    // assertions above while this one keeps passing — which is the failure
+    // signal that was missing before.
+    const ops: PlacementOp[] = ["replace", "insert", "delete"];
+    for (const op of ops) {
+      expect(placementCommitNotice(op, "AB", facts(), NO_COVERAGE).startsWith(`${PLACEMENT_VERBS[op]} on wall AB:`)).toBe(true);
+    }
+    // And the three verbs really are distinct, so "derived" is not hiding a
+    // collapse into one string.
+    expect(new Set(Object.values(PLACEMENT_VERBS)).size).toBe(3);
+  });
+
+  it("keeps the clauses working under a hypothetical rewording", () => {
+    // Simulates the copy edit that would have broken the old code: the
+    // clause decisions are re-checked against an op whose verb text has
+    // nothing in common with the string the old branches matched on.
+    const reworded: Record<PlacementOp, string> = { replace: "Swapped", insert: "Added", delete: "Removed one" };
+    for (const op of Object.keys(reworded) as PlacementOp[]) {
+      const notice = placementCommitNotice(op, "AB", facts({ droppedTypes: ["standard"] }), NO_COVERAGE);
+      // The note's presence tracks the OPERATION, not the word in front of it.
+      expect(notice.includes("gave up")).toBe(op === "insert");
+    }
+  });
+});

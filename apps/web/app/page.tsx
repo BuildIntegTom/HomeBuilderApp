@@ -332,6 +332,7 @@ import WallElevationDiagram from "./WallElevationDiagram";
 import styles from "./page.module.css";
 import elevationStyles from "./ElevationControls.module.css";
 import { tilerWouldChangeThePanelCount } from "./handPlacedWallRetile";
+import { placementCommitNotice, placementRefusalNotice, placementRefusalSentence, type PlacementOp } from "./placementNotice";
 
 const FootprintCanvas = dynamic(() => import("./FootprintCanvas"), { ssr: false });
 const Building3DView = dynamic(() => import("./Building3DView"), { ssr: false });
@@ -2673,7 +2674,7 @@ export default function LayoutEditor() {
         narrowestIn === null
           ? " No width between the shop's minimum and maximum fits this wall as it stands — reset a panel to automatic, or change the wall's length, first."
           : ` The narrowest hand-set width this wall will take right now is ${formatLengthIn(narrowestIn, unitSystem)}.`;
-      showPanelWidthNotice(`${placementRefusalMessage(retiled.refusal)}${alsoTakes}`);
+      showPanelWidthNotice(`${placementRefusalSentence(retiled.refusal, formatPlacementLength)}${alsoTakes}`);
       return;
     }
     if (result.clampedFromIn !== null) {
@@ -2704,7 +2705,7 @@ export default function LayoutEditor() {
       // number, say the number.
       showPanelWidthNotice(
         retiled.refusal
-          ? `${placementRefusalMessage(retiled.refusal)} This panel is still hand-set at ${formatLengthIn(slot.lockedWidthIn, unitSystem)}.`
+          ? `${placementRefusalSentence(retiled.refusal, formatPlacementLength)} This panel is still hand-set at ${formatLengthIn(slot.lockedWidthIn, unitSystem)}.`
           : "That panel couldn't be returned to automatic without moving the wall's total length, so nothing was changed.",
       );
       return;
@@ -2834,47 +2835,21 @@ export default function LayoutEditor() {
     return { midWallBeams: emptied, boxBeam: boxBeamEmptied };
   };
 
-  /**
-   * What a refused placement/width edit says, in one place.
-   *
-   * **Every branch quotes the number the arithmetic produced** — how much
-   * automatic width the wall actually holds, what the panel would have
-   * become — because a refusal that only says "no" is the failure the Stage
-   * 1 minimum refusal was written to avoid. Shared by the placement tool and
-   * by the width edit's own count-preserving path, so the two cannot drift
-   * into describing the same refusal differently.
-   *
-   * Returns null for a result that is not a refusal at all.
-   */
-  const placementRefusalMessage = (result: PanelPlacementResult): string | null => {
-    switch (result.outcome) {
-      case "no-change":
-        return "That panel is already what the tool is set to, so nothing changed.";
-      case "refuse-not-placeable":
-        return result.reason === "rule-placed-slot"
-          ? "Corner and safety-gap panels are placed by rule, not by hand — the app positions them and would overwrite a hand-placed one. Nothing was changed."
-          : "There is nowhere on this wall to put a panel there. Nothing was changed.";
-      case "refuse-width-out-of-range":
-        return `Refused: a ${formatLengthIn(result.widthIn, unitSystem)} panel is outside what the shop builds (${formatLengthIn(result.minIn, unitSystem)} to ${formatLengthIn(result.maxIn, unitSystem)}). Nothing was changed.`;
-      case "refuse-no-room":
-        // "this change", not "that panel": the same sentence serves the
-        // placement tool AND the width edit, where there is no new panel to
-        // point at. A pronoun with no antecedent is what the first shared
-        // version left behind.
-        return `Refused: there is ${formatLengthIn(result.freeBudgetIn, unitSystem)} of automatic panel width on this wall and this change needs ${formatLengthIn(result.requestedIn, unitSystem)} of it — with whatever is left over still at least ${formatLengthIn(result.minIn, unitSystem)}. A corner or an opening is never shrunk to make room. Nothing was changed.`;
-      case "refuse-no-free-run":
-        return `Refused: every other panel on this wall is hand-set, an opening or a corner, so there is nothing automatic to give that ${formatLengthIn(result.freedWidthIn, unitSystem)} back to. Reset a panel to automatic first. Nothing was changed.`;
-      case "refuse-would-exceed-maximum":
-        return `Refused: that would leave an automatic panel ${formatLengthIn(result.wouldBeIn, unitSystem)} wide, over the ${formatLengthIn(result.maxIn, unitSystem)} maximum. Nothing was changed.`;
-      default:
-        return null;
-    }
-  };
+  /** Every notice sentence this tool prints is composed in
+   * `placementNotice.ts`, where the wording is DERIVED from the operation
+   * rather than read back to decide anything — see that module's own header
+   * for the defect that shape removes. This is just the unit-system binding. */
+  const formatPlacementLength = (valueIn: number) => formatLengthIn(valueIn, unitSystem);
 
   const applyPlacementResult = (
     story: "ground" | "second",
     wallId: string,
-    verb: string,
+    /** WHICH operation was asked for. Every branch below reads this; nothing
+     * reads the notice text. The verb the user sees is derived from it by
+     * `PLACEMENT_VERBS`, so a copy edit to the wording cannot silently change
+     * which clauses appear — the trap the previous `verb: string` parameter
+     * set, and the same shape as the label-parsing bug the hyphen drop hit. */
+    op: PlacementOp,
     result: PanelPlacementResult,
     /** The index change the USER asked for — an insert's boundary (+1) or a
      * delete's slot (-1). Null for a replace, which asks for none. Any
@@ -2883,16 +2858,7 @@ export default function LayoutEditor() {
     coverageShift: { at: number; delta: 1 | -1 } | null,
   ) => {
     if (result.outcome !== "commit") {
-      // The shared sentence deliberately does NOT say "this wall has no way
-      // to hold fewer panels" — on a replace or an insert that is simply
-      // untrue. On a DELETE it is exactly what happened, and only this
-      // caller knows which operation was asked for, so the accurate half of
-      // the old wording is restored here rather than in the shared text.
-      const whyItCannotShrink =
-        result.outcome === "refuse-would-exceed-maximum" && verb.startsWith("Deleted")
-          ? " This wall has no way to hold fewer panels."
-          : "";
-      showPanelPlacementNotice(`${placementRefusalMessage(result) ?? "That couldn't be applied, so nothing was changed."}${whyItCannotShrink}`);
+      showPanelPlacementNotice(placementRefusalNotice(op, result, formatPlacementLength));
       return;
     }
     setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: result.slots }));
@@ -2908,29 +2874,7 @@ export default function LayoutEditor() {
       ...[...result.droppedIndices].sort((a, b) => b - a).map((at) => ({ at, delta: -1 as const })),
     ];
     const emptied = shiftSlotCoverageRecords(story, wallId, moves);
-    // An insert that had to absorb automatic panels to pay for itself leaves
-    // the wall's own panel count where it was, or even lower. Said out loud
-    // — with WHAT it gave up, since an automatic panel can still be a braced
-    // one whose style the run just took with it — rather than left to be
-    // discovered by counting panels on the drawing.
-    const gaveUp = result.droppedTypes.length;
-    const bracedGaveUp = result.droppedTypes.filter((t) => t === "braced").length;
-    const countNote =
-      gaveUp > 0 && verb === "Inserted"
-        ? ` The automatic run gave up ${gaveUp} panel${gaveUp === 1 ? "" : "s"}${bracedGaveUp > 0 ? ` (${bracedGaveUp} of them braced)` : ""} to pay for it, so this wall now has ${result.slotCountAfter} panels — narrow a panel to make room for another.`
-        : "";
-    // Says WHICH component, and does not claim the panel the user clicked
-    // was the one that emptied the range — a range can just as well be
-    // emptied by an automatic panel the run itself gave up.
-    const beamNote = [
-      emptied.midWallBeams > 0
-        ? ` ${emptied.midWallBeams} Mid-Wall Bond Beam${emptied.midWallBeams === 1 ? "" : "s"} covered only panels this edit removed, so ${emptied.midWallBeams === 1 ? "it was" : "they were"} removed too.`
-        : "",
-      emptied.boxBeam ? " The roofline Box Beam covered only panels this edit removed, so it was removed too." : "",
-    ].join("");
-    showPanelPlacementNotice(
-      `${verb} on wall ${wallId}: ${result.slotCountBefore} panels → ${result.slotCountAfter}, ${result.freeCountAfter} still automatic.${countNote}${beamNote}`,
-    );
+    showPanelPlacementNotice(placementCommitNotice(op, wallId, result, emptied));
   };
 
   const handleReplacePanel = (story: "ground" | "second", wallId: string, slotIndex: number) => {
@@ -2939,7 +2883,7 @@ export default function LayoutEditor() {
     applyPlacementResult(
       story,
       wallId,
-      "Replaced",
+      "replace",
       resolvePanelReplace(slots, slotIndex, placementPanelForReplace(panelPlacementTool), panelWidthLimitsIn),
       null,
     );
@@ -2951,7 +2895,7 @@ export default function LayoutEditor() {
     applyPlacementResult(
       story,
       wallId,
-      "Inserted",
+      "insert",
       resolvePanelInsert(slots, boundaryIndex, placementPanelForInsert(panelPlacementTool), panelWidthLimitsIn),
       { at: boundaryIndex, delta: 1 },
     );
@@ -2959,7 +2903,7 @@ export default function LayoutEditor() {
 
   const handleDeletePanel = (story: "ground" | "second", wallId: string, slotIndex: number) => {
     const slots = wallSlotsForStory(story)[wallId] ?? [];
-    applyPlacementResult(story, wallId, "Deleted a panel", resolvePanelDelete(slots, slotIndex, panelWidthLimitsIn), {
+    applyPlacementResult(story, wallId, "delete", resolvePanelDelete(slots, slotIndex, panelWidthLimitsIn), {
       at: slotIndex,
       delta: -1,
     });
