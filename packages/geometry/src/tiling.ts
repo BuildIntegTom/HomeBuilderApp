@@ -535,13 +535,30 @@ function resolveCorners(
       // deliberately arbitrary but FIXED lowest-index rule — nobody has
       // decided that the wider corner belongs at a particular end.
       const [startEighths = 0, endEighths = 0] = distributeEighths(shareEighths, 2);
-      return {
-        merged: null,
-        cornerStart: { type: "corner", widthIn: fromEighths(startEighths) },
-        cornerEnd: { type: "corner", widthIn: fromEighths(endEighths) },
-        fixedEndsIn: fromEighths(shareEighths),
-        dropsReservations: !keepsReservations,
-      };
+      // ⚠ ABSORB ONLY WHEN THE ABSORBED PAIR IS ITSELF LEGAL — the same
+      // legality test `computePlainSizing` applies before it absorbs, and it
+      // is here for the same reason the absorb rule's own doc comment keeps
+      // repeating: the margin is a coincidence of two catalog numbers, not a
+      // property of this algorithm. At the real `cornerPanelWidthIn` of
+      // 25.5in the pair always lands in [25.5in, 37.5in] and this never
+      // fires. It fires on a caller passing some other corner width — a
+      // 70in corner on a 150in wall would otherwise produce two 75in panels,
+      // trading an unbuildably narrow panel for an unbuildably wide one.
+      // When it fires, the wall keeps today's tiling and the Review Log
+      // reports the sub-minimum panel, which is strictly better than a
+      // silent unbuildable corner.
+      const legalPair =
+        Math.min(startEighths, endEighths) >= toEighths(TILER_MIN_PANEL_WIDTH_IN) &&
+        Math.max(startEighths, endEighths) <= toEighths(TILER_MAX_PANEL_WIDTH_IN);
+      if (legalPair) {
+        return {
+          merged: null,
+          cornerStart: { type: "corner", widthIn: fromEighths(startEighths) },
+          cornerEnd: { type: "corner", widthIn: fromEighths(endEighths) },
+          fixedEndsIn: fromEighths(shareEighths),
+          dropsReservations: !keepsReservations,
+        };
+      }
     }
   }
   const clampedCornerIn = fromEighths(Math.min(cornerEighths, wallEighths));
