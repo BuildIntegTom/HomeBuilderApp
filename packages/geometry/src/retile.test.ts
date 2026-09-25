@@ -311,3 +311,201 @@ describe("wallGeometryFor", () => {
     expect(geometry!.allowBorrow).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// CORNER ABSORB, END TO END — the 51in-75in two-corner band through the real
+// retile path rather than through `tileWall` alone.
+//
+// The band's own arithmetic is covered in tiling.test.ts. What is covered
+// here is the part `tileWall` cannot answer on its own: which walls of a real
+// footprint actually own two corners and are actually short enough to land in
+// it, and whether a Stage 3 run stop can put one there.
+// ---------------------------------------------------------------------------
+describe("corner absorb on real footprints", () => {
+  const REAL_CORNER_WIDTH_IN = 25.5; // the catalog value — NOT this file's 24in fixture
+  const FLOOR_IN = 24;
+  const CEILING_IN = 48;
+
+  /** Every fabricated panel of every wall, checked against the shop's limits
+   * and against its own wall's total. Openings and the 0.75in gap board are
+   * not fabricated panels for this purpose. */
+  function fabricationViolations(
+    fp: Footprint,
+    slotsByWall: Record<string, import("./types").PanelSlot[]>,
+    stops?: Record<string, import("./types").WallRunStop>,
+  ): string[] {
+    const out: string[] = [];
+    for (const wall of fp.walls) {
+      const slots = slotsByWall[wall.id] ?? [];
+      const geometry = wallGeometryFor(fp, wall.id, allPrimary(fp), "0", THICKNESS_IN, stops)!;
+      let sumEighths = 0;
+      for (const slot of slots) {
+        const fabricated =
+          slot.type === "standard" || slot.type === "braced" || slot.type === "corner" || slot.type === "safety-oct-corner";
+        if (fabricated && slot.widthIn < FLOOR_IN - 1e-9) {
+          out.push(`${wall.id}: ${slot.type} ${slot.widthIn}in is under the ${FLOOR_IN}in minimum`);
+        }
+        if (fabricated && slot.widthIn > CEILING_IN + 1e-9) {
+          out.push(`${wall.id}: ${slot.type} ${slot.widthIn}in is over the ${CEILING_IN}in ceiling`);
+        }
+        sumEighths += Math.round(slot.widthIn * 8);
+      }
+      if (sumEighths !== Math.round(geometry.lengthIn * 8)) {
+        out.push(`${wall.id}: slots sum to ${sumEighths} eighths, run is ${Math.round(geometry.lengthIn * 8)}`);
+      }
+    }
+    return out;
+  }
+
+  it("a small octagon — every wall in the band — now tiles legally on every wall", () => {
+    // A regular octagon's side is 0.41421x its bounding box, so EVERY wall of
+    // an octagon between 10.26ft and 15.09ft across sits in the 51in-75in
+    // band, and every wall of an octagon owns BOTH its corners because the
+    // corners are mitered. Small octagons were therefore broken outright:
+    // each of the eight walls produced a panel the shop cannot build.
+    //
+    // MIN_DIMENSION_FT is 8ft, so these sizes are all drawable today.
+    const violations: string[] = [];
+    let bandWalls = 0;
+    for (let acrossFt = 10.5; acrossFt <= 15; acrossFt += 0.5) {
+      const fp = buildOctagonFootprint(acrossFt, acrossFt);
+      const slots = retile(fp, "0", allPrimary(fp), STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+      for (const wall of fp.walls) {
+        const runIn = wallGeometryFor(fp, wall.id, allPrimary(fp), "0", THICKNESS_IN)!.lengthIn;
+        if (runIn > 51 && runIn < 75) bandWalls++;
+      }
+      violations.push(...fabricationViolations(fp, slots).map((v) => `${acrossFt}ft octagon — ${v}`));
+    }
+    // Every wall of every one of these octagons is in the band: 10 sizes x 8
+    // walls. If this number drops, the test has stopped exercising the fix.
+    expect(bandWalls).toBe(80);
+    expect(violations.slice(0, 10)).toEqual([]);
+  });
+
+  it("an octagon just above the band is untouched, so the fix is not swallowing the normal case", () => {
+    const fp = buildOctagonFootprint(20, 20);
+    const slots = retile(fp, "0", allPrimary(fp), STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    for (const wall of fp.walls) {
+      const runIn = wallGeometryFor(fp, wall.id, allPrimary(fp), "0", THICKNESS_IN)!.lengthIn;
+      expect(runIn).toBeGreaterThan(75);
+      // A real middle survives — these walls did not become corner pairs.
+      expect(slots[wall.id]!.some((s) => s.type === "standard" || s.type === "braced")).toBe(true);
+    }
+    expect(fabricationViolations(fp, slots).slice(0, 10)).toEqual([]);
+  });
+
+  it("⚠ a Stage 3 run stop CANNOT move a wall into the two-corner band — and here is why", () => {
+    // This was flagged as the interaction most likely to be missed, on the
+    // reasoning that a stop shortens a wall's run and so could drop it into
+    // the band. **It cannot, and the reason is structural rather than
+    // arithmetic** — worth asserting rather than trusting, because it is the
+    // kind of claim that quietly stops being true:
+    //
+    //   1. A wall's OWN stop takes that end's corner with it
+    //      (`applyWallRunStop`), so a stopped wall owns at most one corner
+    //      and can never be a two-corner wall at all.
+    //   2. The cross-wall orphan rule (`cornerOwnershipWithRunStops`) only
+    //      ever zeroes an `insetAmount`, and `cornerOwnership` gives an
+    //      inset of 0 to every end that OWNS its corner. So a wall owning
+    //      both corners has nothing for a neighbour's stop to change, and
+    //      the adjustment only ever makes a wall LONGER in any case.
+    //
+    // Swept over every wall of a bumped-out shape with a stop at each end of
+    // each wall, at several depths: no wall anywhere ends up with two corners
+    // and a run in the band, and nothing is ever unbuildable.
+    const base = buildRectangleFootprint(20, 16);
+    // A bump-out gives the shape both convex and REFLEX corners, so the
+    // reflex path is swept here too rather than only the convex one.
+    const { footprint: fp, primaryCornerIds: primary } = insertBumpOut(base, "AB", 6, 11, 4, allPrimary(base));
+    const violations: string[] = [];
+    let twoCornerWallsInBand = 0;
+    let twoCornerWallsChecked = 0;
+    for (const stopped of fp.walls) {
+      for (const end of ["startStopIn", "endStopIn"] as const) {
+        for (const stopIn of [6, 18, 36, 60]) {
+          const stops = { [stopped.id]: { startStopIn: 0, endStopIn: 0, [end]: stopIn } };
+          const slots = retile(
+            fp,
+            "0",
+            primary,
+            STANDARD_WIDTH_IN,
+            REAL_CORNER_WIDTH_IN,
+            THICKNESS_IN,
+            BRACED_SEED,
+            undefined,
+            stops,
+          );
+          for (const wall of fp.walls) {
+            const geometry = wallGeometryFor(fp, wall.id, primary, "0", THICKNESS_IN, stops)!;
+            const unstopped = wallGeometryFor(fp, wall.id, primary, "0", THICKNESS_IN)!;
+            if (geometry.hasCornerStart && geometry.hasCornerEnd && geometry.lengthIn > 51 && geometry.lengthIn < 75) {
+              twoCornerWallsInBand++;
+            }
+            // The structural claim itself, stated directly so this cannot
+            // pass merely because no wall of this fixture happens to be near
+            // the band: a wall that still owns BOTH corners under a stop map
+            // has exactly the run it had with no stops at all. Nothing a stop
+            // does can move such a wall by even one eighth, in or out of the
+            // band.
+            if (geometry.hasCornerStart && geometry.hasCornerEnd) {
+              twoCornerWallsChecked++;
+              if (Math.round(geometry.lengthIn * 8) !== Math.round(unstopped.lengthIn * 8)) {
+                violations.push(
+                  `stop ${stopped.id} ${end}=${stopIn}: two-corner wall ${wall.id} moved from ${unstopped.lengthIn}in to ${geometry.lengthIn}in`,
+                );
+              }
+            }
+          }
+          // The sum invariant must survive the stop regardless.
+          for (const wall of fp.walls) {
+            const sumEighths = (slots[wall.id] ?? []).reduce((s, slot) => s + Math.round(slot.widthIn * 8), 0);
+            const runEighths = Math.round(
+              wallGeometryFor(fp, wall.id, primary, "0", THICKNESS_IN, stops)!.lengthIn * 8,
+            );
+            if (sumEighths !== runEighths) {
+              violations.push(`stop ${stopped.id} ${end}=${stopIn}: ${wall.id} sums to ${sumEighths}, run is ${runEighths}`);
+            }
+          }
+        }
+      }
+    }
+    expect(twoCornerWallsInBand).toBe(0);
+    // Non-vacuous: the sweep really did look at two-corner walls under stops.
+    expect(twoCornerWallsChecked).toBeGreaterThan(50);
+    expect(violations.slice(0, 10)).toEqual([]);
+  });
+
+  it("a stopped wall lands in the ONE-corner sub-minimum zone instead, which is still unfixed", () => {
+    // The shape a stop CAN produce, recorded so it is not mistaken for
+    // something this pass fixed. A stop of 55in on a 100in run leaves 45in
+    // with a single corner: 25.5in of corner and a 19.5in standard panel,
+    // under the shop minimum. A lone corner has no partner to absorb into,
+    // and Tommy's decision was specifically about the two-corner rule.
+    //
+    // The app refuses this stop rather than shipping it — `page.tsx` runs the
+    // same `findSubMinimumPanelWidths` check over the candidate result before
+    // accepting a stop — so the user sees a message, not a bad cut list.
+    const fp = buildRectangleFootprint(20, 16);
+    const wall = fp.walls[0]!;
+    const stops = { [wall.id]: { startStopIn: 0, endStopIn: wall.lengthFt * 12 - 45 } };
+    const geometry = wallGeometryFor(fp, wall.id, allPrimary(fp), "A", THICKNESS_IN, stops)!;
+    expect(geometry.hasCornerStart && geometry.hasCornerEnd).toBe(false);
+    const slots = retile(
+      fp,
+      "A",
+      allPrimary(fp),
+      STANDARD_WIDTH_IN,
+      REAL_CORNER_WIDTH_IN,
+      THICKNESS_IN,
+      BRACED_SEED,
+      undefined,
+      stops,
+    );
+    const sub = slots[wall.id]!.filter((s) => s.type !== "safety-gap" && s.widthIn < 24);
+    expect(sub.length).toBeGreaterThan(0);
+    // ...and the total is still exact. A broken wall, not a broken total.
+    expect(slots[wall.id]!.reduce((s, slot) => s + Math.round(slot.widthIn * 8), 0)).toBe(
+      Math.round(geometry.lengthIn * 8),
+    );
+  });
+});
