@@ -519,12 +519,19 @@ record(
   // a wall that butts a neighbour at both ends is up to two wall-thicknesses
   // longer than its panel run.
   //
-  // That gap is a PRE-EXISTING offset, not a Stage 3 defect: the 3D
-  // roof-bearing anchor has always measured from the wall's true corner and
-  // ignored the butt-joint inset, and Stage 3 deliberately did not change it
-  // (fixing it would move the roof-bearing render on every existing
-  // two-story project). Asserted as a bounded discrepancy rather than
-  // waved through, so that if it ever grows, this notices.
+  // **That the plate is LONGER than the panel run is correct, and settled.**
+  // Tommy, 2026-09-25: top plates lap at the corners, so a plate that
+  // stopped where each panel run stops would leave every corner unplated.
+  // The cut length is right; this assertion exists to keep it right.
+  //
+  // Separately, and still open: the 3D roof-bearing ANCHOR has always
+  // measured from the wall's true corner and ignored the butt-joint inset,
+  // so the rendered beam can sit up to a wall thickness off its panels.
+  // That is render-only — `widthFt` comes from `seg.lengthIn` and never
+  // reaches a fabrication sheet — and Stage 3 deliberately did not change it
+  // (fixing it would move the render on every existing two-story project).
+  // Bounded here rather than waved through, so that if it ever grows, this
+  // notices.
   (d) =>
     !!d.targetWallId &&
     !!d.wallExtent &&

@@ -31,7 +31,6 @@ import {
   computeWallVerticalBandsForSlotWithMaxHeight,
   effectiveZonesForSlot,
   partitionLongHeaders,
-  cornerOwnership as cornerOwnershipPure,
   dragWallBounded,
   editWallLength,
   footprintIsAllRightAngles,
@@ -2015,12 +2014,16 @@ export default function LayoutEditor() {
   // packages/geometry/src/retile.ts for the full rationale, including the
   // reflex-corner gap fix that was originally verified by direct pixel
   // measurement). They take this component's panel parameters as explicit
-  // arguments rather than closing over them, so these 3 names are
+  // arguments rather than closing over them, so these names are
   // intentionally shadowed for the rest of this component with thin
   // partial applications supplying `thicknessIn`/`standardWidthIn`/
   // `cornerPanelWidthIn`/`bracedSeed` — every call site below already
   // expects the closure-capturing signature these provide.
-  const cornerOwnership = (fp: Footprint, primary: Set<string>) => cornerOwnershipPure(fp, primary, thicknessIn);
+  //
+  // (A `cornerOwnership` wrapper used to sit here too. Its last caller was
+  // `wallRenderOffsetIn`, which now reads `runStartOffsetIn` off
+  // `wallGeometryFor` so that the inset, the reflex extension and the Stage 3
+  // stop are folded in one place. Removed rather than left unused.)
   // `{}` (default randomFn = Math.random) — Tommy's own confirmed soft
   // default: every freshly-tiled wall gets 1 default window, plus 1
   // default door on an East/South/West-facing wall. See retile.ts's own
@@ -3624,7 +3627,6 @@ export default function LayoutEditor() {
     for (const wall of footprint.walls) {
       if (!gableEndWallIds.has(wall.id)) continue;
       const wallLengthIn = wall.lengthFt * 12;
-      const storedPositions = gableProfilePositionsInByWallId[wall.id] ?? [];
       // Default position: the single midpoint for a peaked (1-point) profile,
       // or a symmetric flat run spanning the middle third for a flat-top
       // (2-point) profile — same "auto-centered, never snaps" convention the

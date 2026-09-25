@@ -10,10 +10,13 @@
   `--max-old-space-size=4096`. Run it from `apps/web` — the flat config
   lives there, and from the repo root ESLint reports a migration error and
   writes nothing.
-- **Measure a lint DELTA, not a total.** This app carries pre-existing
-  errors (94 across the editor files as of 2026-09-25), so "eslint reported
-  errors" means nothing on its own. Compare rule+message counts against the
-  base commit.
+- **Measure a lint DELTA, not a total, and count WARNINGS too.** This app
+  carries pre-existing errors (94 across the editor files as of
+  2026-09-25), so "eslint reported errors" means nothing on its own.
+  Compare rule+message counts against the base commit — **including
+  severity-1 warnings**. A "zero delta" claim that counted only errors once
+  missed a live `react-hooks/exhaustive-deps` warning on a memo that fed the
+  cut list, which is a warning that cuts real parts wrong.
 
 # This is NOT the Next.js you know
 

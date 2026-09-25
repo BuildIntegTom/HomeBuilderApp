@@ -2892,6 +2892,24 @@ Four smaller fixes alongside it: the multi-story roof-bearing **position** (`com
 
   **This is the first thing in Stage 3 where a stop on one wall changes another wall's tiling**, so the safety argument is written into the function and asserted: only a CONVEX loser carries an inset, so reflex corners are untouched by construction (tested on a bumped-out shape with every wall stopped at both ends); the adjustment only ever makes a wall LONGER, so no wall's own "is my corner built" answer can change as a result and one pass reaches a fixed point; and a stopped wall can never take the merged-corner branch, since merging needs corners at both ends. Consequently a stop now re-tiles **every** wall through the house's own lossless `retilePreservingOpenings` path, and the refusal checks every wall on both stories.
 
+#### The truss plate LAPS THE CORNER — SETTLED by Tommy, 2026-09-25
+
+The question came out of the Stage 3 audit and is now answered, so it is recorded as a decision rather than left as inherited behaviour.
+
+**What the code does:** on a butting wall with no stop, `builtWallLengthInByWallId` is the **raw** wall length, so the fabrication sheet cuts a truss plate to the full wall line — up to two wall-thicknesses (~31in) longer than the panel run beneath it.
+
+**Tommy: that is correct, and it is standard top-plate framing — plates lap at the corners.** A plate that stopped where each panel run stops would leave every corner unplated. So the cut length stands, unchanged, and the reason is on the record instead of being a coincidence of which length the code happened to read.
+
+**⚠ Do not conflate this with the 3D roof-bearing ANCHOR offset.** They were conflated once and they are different things:
+
+| | Truss-plate cut length | 3D roof-bearing anchor |
+|---|---|---|
+| Where | `roofBearingFabricationGroups` → a real shop sheet | `roofBearingRenderData` → `widthFt` from `seg.lengthIn` |
+| Cuts a part? | **Yes** | **No** — render-only, never reaches the fabrication path |
+| Status | **Settled: laps the corner, correct as-is** | **Still open**, and only a render question |
+
+The anchor still measures from the wall's true corner and ignores the butt-joint inset, so a two-story wall's beam can sit up to a wall thickness off where its panels are. That is pre-existing, render-only, and deliberately untouched by Stage 3 — fixing it would move the roof-bearing render on every existing two-story project. The harness pins it as a **bounded** discrepancy (plate length ≥ panel run, and no more than two wall-thicknesses over) so it cannot grow unnoticed. It stays open on its own terms.
+
 #### The browser harness — `apps/web/harness/smearforn-stage-3/`
 
 14 asserted checks, all passing. **The trick that makes the 3D assertions exact:** the 3D view is WebGL, so a pixel diff cannot tell "the plate is stale" from "the panels moved" — but `Export as OBJ` builds its geometry from the same memos the scene renders, so intercepting that blob gives a precise textual model of the scene. The memo pin sets a stop, then forces a recompute by touching a dependency the memo DOES list; a scene that changes as a result was stale.
@@ -2929,7 +2947,18 @@ Run as an acceptance criterion, against the code rather than assumed. **Four tot
 
 **Point 6, stated rather than buried: "a stop that reaches a corner takes the corner panel with it" is an INFERENCE**, and the plan says so. It is implemented, and it is labelled an inference in `applyWallRunStop`'s own doc comment rather than presented as a decision. If Tommy ever says a stopped wall still gets its corner panel, that is one branch in one function.
 
-**Verified:** `npx vitest run` green — **112 files, 2104 tests** (111 / 2040 before). `tsc --noEmit` clean in `apps/web` **and in `packages/geometry`** — the latter added after the orphan-corner pass, because `wallGeometryFor`'s signature change was silently accepted in a geometry test file that `apps/web`'s tsconfig never sees. (Two pre-existing errors in `bracedPlacement.test.ts` predate this branch and are untouched.) Lint: **94 pre-existing errors across the files touched, zero delta**, measured baseline-vs-branch by rule and message, not by total. **Browser-verified:** `apps/web/harness/smearforn-stage-3/`, 14 of 14 asserted checks.
+**Verified:** `npx vitest run` green — **112 files, 2105 tests** (111 / 2040 before). `tsc --noEmit` clean in `apps/web` **and in `packages/geometry`** — the latter added after the orphan-corner pass, because `wallGeometryFor`'s signature change was silently accepted in a geometry test file that `apps/web`'s tsconfig never sees. (Two pre-existing errors in `bracedPlacement.test.ts` predate this branch and are untouched.) **Browser-verified:** `apps/web/harness/smearforn-stage-3/`, **15 of 15 asserted checks**.
+
+**Lint, and a claim that had to be corrected.** Final state vs. the base commit, by rule and message:
+
+| | errors | warnings |
+|---|---|---|
+| `page.tsx` baseline → final | 63 → 63 | 25 → **23** |
+| the six other editor files | 31 → 31 | 5 → 5 |
+
+**An earlier "zero lint delta" claim in this section was wrong**, and it was wrong in the way that matters: it counted **errors only**, while the defect it should have caught — `gableTilesByWallId` not depending on the stop map — is a *warning*. It was also unmeasurable at the time, because ESLint OOM'd at the default 2GB heap on `page.tsx`; that is fixed (`npm run lint` now runs node with `--max-old-space-size=4096`) and is what surfaced the defect.
+
+The two warnings that went away are both pre-existing missing-dependency warnings this work closed: one on `wallRenderOffsetIn` (its `cornerOwnership` wrapper is gone — `runStartOffsetIn` folds the inset, the reflex extension and the stop into one place), and **one on `gableTilesByWallId`, which was already missing `gableStructuralPanelWallIds` at the base commit** — meaning toggling the structural column did not recompute the gable row either, a latent bug of exactly the same shape, closed incidentally.
 
 Tommy: *"We need an addition tool setting or stop wall tool so that it is possible to make incomplete walls."*
 

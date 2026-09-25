@@ -1259,10 +1259,18 @@ export default function Building3DView({
         // Run-relative segment position + where the run itself starts. Only
         // the run STOP is added here: a wall that butts a longer neighbour
         // has its slots start `thicknessIn` in as well, and this anchor has
-        // always ignored that. That is a PRE-EXISTING offset on butting
-        // walls, unrelated to Stage 3 and deliberately not changed here —
-        // fixing it would move the roof-bearing render on every existing
-        // two-story project. Noted rather than silently left.
+        // always ignored that. That is a PRE-EXISTING, RENDER-ONLY offset on
+        // butting walls, unrelated to Stage 3 and deliberately not changed
+        // here — fixing it would move the roof-bearing render on every
+        // existing two-story project. Still open; noted rather than silently
+        // left.
+        //
+        // **Not to be confused with the plate's CUT LENGTH**, which is a
+        // different question with a different answer. This memo's `widthFt`
+        // comes from `seg.lengthIn` and never reaches a fabrication sheet;
+        // the sheet is cut by `roofBearingFabricationGroups`, and Tommy
+        // settled on 2026-09-25 that it correctly spans the full wall line
+        // because top plates LAP AT THE CORNERS. The two got conflated once.
         const offsetFt = (seg.startXIn + runStop.startStopIn) / IN_PER_FT;
         result.push({
           wallId: wall.id,
