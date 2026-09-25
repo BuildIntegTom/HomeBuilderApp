@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { computeGableTiledRow, GABLE_SAFETY_GAP_WIDTH_IN, GABLE_SHED_SNAP_THRESHOLD_IN, type RoofProfilePoint } from "./gableTiledRow";
+import {
+  classifyGableWindowsAgainstRunStop,
+  computeGableTiledRow,
+  GABLE_SAFETY_GAP_WIDTH_IN,
+  GABLE_SHED_SNAP_THRESHOLD_IN,
+  type GableWindowReservation,
+  type RoofProfilePoint,
+} from "./gableTiledRow";
 
 // Most tests below pass `includeSafetyGap: false` to isolate the pure
 // roofline-profile/tiling math from Part B's separate gap-absorption
@@ -838,6 +845,112 @@ describe("computeGableTiledRow — a wall that stops short (Stage 3)", () => {
     // Linear from (0,120) to (120,192): at x=60 the roofline is 156in.
     expect(atStop.leftHeightIn).toBeCloseTo(156, 6);
     expect(Math.max(...panels.map((p) => Math.max(p.leftHeightIn, p.rightHeightIn)))).toBeCloseTo(192, 6);
+  });
+
+  /**
+   * **Tommy, 2026-09-25: a gable window stays put on the building.**
+   * Stopping the near end of a wall must not move a window at the far end —
+   * a window is dimensioned from the building, not from wherever the panel
+   * run begins. The numbers below are the ones the reviewer measured against
+   * the OLD (ordinal) behaviour, which slid every window by the clamp.
+   */
+  describe("gable windows keep their real position under a clamp", () => {
+    const WINDOWS: GableWindowReservation[] = [
+      { beforeTileCount: 1, widthIn: 30 },
+      { beforeTileCount: 3, widthIn: 30 },
+    ];
+    const winXs = (panels: ReturnType<typeof computeGableTiledRow>) =>
+      panels.filter((p) => p.isWindow).map((p) => [p.xStartIn, p.xEndIn]);
+    const row = (builtStartIn: number, builtEndIn: number) =>
+      computeGableTiledRow(240, 120, PEAK, 40, 0, false, 0, "truss-heel", WINDOWS, undefined, builtStartIn, builtEndIn);
+
+    const baseline = winXs(row(0, 240));
+
+    it("the unclamped row is unchanged — the ordinal path still owns it", () => {
+      expect(baseline.length).toBe(2);
+      // Byte-identical to calling it with no span arguments at all.
+      expect(JSON.stringify(row(0, 240))).toBe(
+        JSON.stringify(computeGableTiledRow(240, 120, PEAK, 40, 0, false, 0, "truss-heel", WINDOWS)),
+      );
+    });
+
+    it("a START clamp does not move them — the defect the reviewer measured", () => {
+      // The windows sit at [30,60] and [120,150]. Measured before the fix,
+      // a start clamp slid BOTH of them by the clamp, carrying the second
+      // across the peak. Both of these clamps leave both windows fully
+      // inside the built run, so both must come back untouched.
+      expect(winXs(row(15, 240))).toEqual(baseline);
+      expect(winXs(row(30, 240))).toEqual(baseline);
+    });
+
+    it("the surviving window still does not move when the clamp drops the other one", () => {
+      // A 60in clamp ends exactly at the first window's far edge, so that
+      // one is not built — but the second must STILL be at [120,150] rather
+      // than sliding up to fill the space.
+      expect(winXs(row(60, 240))).toEqual([baseline[1]]);
+    });
+
+    it("an END clamp does not move them either (it never did)", () => {
+      expect(winXs(row(0, 180))).toEqual(baseline);
+    });
+
+    it("clamping from both ends still leaves them where they were", () => {
+      expect(winXs(row(24, 216))).toEqual(baseline);
+    });
+
+    it("a window entirely inside the unbuilt span is NOT BUILT", () => {
+      const firstWindowEndIn = baseline[0]![1]!;
+      const clamped = row(firstWindowEndIn, 240);
+      expect(winXs(clamped)).toEqual([baseline[1]]);
+      // ...and leaves no zero-width debris behind.
+      for (const p of clamped) expect(p.widthIn).toBeGreaterThan(0);
+    });
+
+    it("a fully stopped gable end builds no windows at all", () => {
+      expect(row(240, 240)).toEqual([]);
+    });
+
+    it("tiles still run contiguously and sum to the built span exactly", () => {
+      for (const [a, b] of [
+        [30, 240],
+        [60, 240],
+        [0, 180],
+        [24, 216],
+      ]) {
+        const panels = [...row(a!, b!)].sort((p, q) => p.xStartIn - q.xStartIn);
+        expect(panels[0]!.xStartIn).toBeCloseTo(a!, 6);
+        expect(panels[panels.length - 1]!.xEndIn).toBeCloseTo(b!, 6);
+        for (let i = 1; i < panels.length; i++) expect(panels[i]!.xStartIn).toBeCloseTo(panels[i - 1]!.xEndIn, 6);
+        const eighths = panels.reduce((sum, p) => sum + Math.round(p.widthIn * 8), 0);
+        expect(eighths).toBe(Math.round((b! - a!) * 8));
+      }
+    });
+
+    it("classifies kept / dropped / straddling for the refusal to read", () => {
+      const classify = (builtStartIn: number, builtEndIn: number) =>
+        classifyGableWindowsAgainstRunStop(240, 120, PEAK, 40, 0, false, 0, "truss-heel", WINDOWS, undefined, builtStartIn, builtEndIn);
+      expect(classify(0, 240)).toEqual({ kept: expect.any(Array), dropped: [], straddling: [] });
+      expect(classify(0, 240).kept.length).toBe(2);
+
+      const [firstStart, firstEnd] = baseline[0]!;
+      // Entirely past it -> dropped, never straddling.
+      expect(classify(firstEnd!, 240).dropped.length).toBe(1);
+      expect(classify(firstEnd!, 240).straddling).toEqual([]);
+      // Cutting through it -> straddling, which the caller refuses.
+      const midFirst = (firstStart! + firstEnd!) / 2;
+      expect(classify(midFirst, 240).straddling.length).toBe(1);
+      expect(classify(midFirst, 240).straddling[0]!.xStartIn).toBeCloseTo(firstStart!, 6);
+    });
+
+    it("a straddled window is never half-built, even if a refusal is bypassed", () => {
+      const [firstStart, firstEnd] = baseline[0]!;
+      const midFirst = (firstStart! + firstEnd!) / 2;
+      const panels = row(midFirst, 240);
+      // The straddler is gone rather than emitted at a partial width, and
+      // every remaining tile is a real one.
+      expect(winXs(panels)).toEqual([baseline[1]]);
+      for (const p of panels) expect(p.widthIn).toBeGreaterThan(0);
+    });
   });
 
   it("drops the structural column when the stop takes the peak with it", () => {

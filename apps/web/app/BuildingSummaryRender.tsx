@@ -16,6 +16,8 @@ export interface BuildingSummaryRenderProps {
   /** Stage 3 run stops — the summary render must show the same building the
    * live 3D preview does, unbuilt spans and all (i.e. nothing drawn there). */
   wallRunStopsByWallId?: Record<string, WallRunStop>;
+  /** See Building3DView's own prop doc. */
+  wallTilingLengthInByWallId?: Record<string, number>;
   secondStory?: { wallHeightFt: number; wallSlots: Record<string, PanelSlot[]> } | null;
   isSquareBalePanelization?: boolean;
   squareBaleStudConfig?: StudConfig;

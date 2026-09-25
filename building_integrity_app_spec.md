@@ -2854,7 +2854,13 @@ Three consequences worth stating before anyone builds it:
 
 **As built, on branch `smearforn-stage-3`, in twelve commits** (eight for the stage, then four for the code review's fixes, Tommy's two answers, and the browser harness). No `PROJECT_FILE_VERSION` bump — Stage 0's v25 keys were already there and already classified; this pass only taught things to read them.
 
-**The arithmetic is a pure module,** `packages/geometry/src/wallRunStop.ts` (+ its test file): `normalizeWallRunStop`, `applyWallRunStop`, `hasWallRunStop`, `builtWallLengthsIn`, `totalBuiltWallPerimeterIn`. `wallRunFor` in `retile.ts` is now the ONE place a wall's run length and per-end corner flags are derived, shared by `retile`, `retilePreservingOpenings`, `wallGeometryFor` and `panelSlotBoxes3D`. The invariant is asserted directly as integer eighths, in both the general form and the plan's own `wallFabricationLengthIn` form, plus a sweep over every whole inch of stop on a 30ft wall.
+**The arithmetic is a pure module,** `packages/geometry/src/wallRunStop.ts` (+ its test file): `normalizeWallRunStop`, `applyWallRunStop`, `hasWallRunStop`, `builtWallLengthsIn`, `totalBuiltWallPerimeterIn`. `wallRunFor` in `retile.ts` is now the ONE place a wall's run length and per-end corner flags are derived, shared by `retile`, `retilePreservingOpenings`, `wallGeometryFor` and `panelSlotBoxes3D`.
+
+**⚠ The invariant is NOT the form this plan states above**, and the difference cost a real defect. The plan's `Σ slot widths + startStop + endStop === wallFabricationLengthIn` holds only while no wall's length depends on another wall's stop. The **orphan-corner rule breaks exactly that**: a wall whose neighbour stops at their shared corner grows by a wall thickness, so the left side exceeds the right by that much (measured: 344.5 vs 329 on a 30×20 rectangle). **The true invariant, and the one every test here is written against:**
+
+> `Σ slot widths === wallGeometryFor(wall, currentStops).lengthIn`
+
+— this wall's current tiling length under the current stop map, unconditionally, in integer eighths. It is asserted directly, plus a sweep over every whole inch of stop on a 30ft wall. The plan's original form survives only as a special case, asserted separately on a wall that owns both its corners and has no stopped neighbour.
 
 **The trap the plan names, and where it actually was.** Panel-instance-derived totals are correct for free, as predicted. The wall-length-derived ones were not — see the audit table below. The one the plan did not predict is in 3D: `panelSlotBoxes3D` carries a defensive rescale (`lengthIn / totalWidthIn`) that exists to absorb float slop, and a stopped wall's slots deliberately sum to less than the wall. Left alone it reads that shortfall as slop and **stretches every panel on the wall to fill the unbuilt span** — drawing a solid wall exactly where the plan says to draw nothing. Pinned with a test.
 

@@ -136,13 +136,20 @@ describe("wallGeometryFor with a run stop", () => {
 /**
  * THE Stage 3 invariant, asserted directly:
  *
- *   Σ slot widths + startStopIn + endStopIn === the length the wall would
- *   have tiled at with no stop
+ *   Σ slot widths === this wall's tiling length under the current stop map
  *
- * — exactly, as integer eighths, never as a float comparison. On a wall with
- * no corner inset or reflex extension that right-hand side is literally
- * `wallFabricationLengthIn(wall)`, which is the form the plan states; both
- * forms are covered below.
+ * — exactly, as integer eighths, never as a float comparison.
+ *
+ * **⚠ Deliberately NOT the form the plan states** (`Σ + startStop + endStop
+ * === wallFabricationLengthIn`). That form holds only while no wall's length
+ * depends on another wall's stop, and the orphan-corner rule breaks exactly
+ * that: a wall whose neighbour stops at their shared corner grows by a wall
+ * thickness. Writing the old form is what made the first refusal reject
+ * every legitimate stop that reached a corner.
+ *
+ * The cases in this block have no stopped neighbour, so both forms agree and
+ * both are asserted here. The orphan block further down asserts only the
+ * true form, and says so.
  */
 describe("the sum invariant survives a run stop", () => {
   const cases: { label: string; lengthIn: number; stop: WallRunStop }[] = [
@@ -438,6 +445,11 @@ describe("retile / retilePreservingOpenings with run stops", () => {
       expect(JSON.stringify(after["CD"])).toBe(JSON.stringify(before["CD"]));
     });
 
+    // Every assertion in this block uses `sumWidths === geometry.lengthIn`
+    // rather than the plan's `sum + stops === unstoppedLengthIn`, and that is
+    // the point rather than an oversight: on an orphan-affected wall the
+    // plan's form is measurably false (344.5 vs 329 here), because the rule
+    // deliberately lengthens the neighbour.
     it("the neighbour's own sum invariant still closes exactly", () => {
       const after = tile(stopAtCornerB);
       const ab = fp.walls.find((w) => w.id === "AB")!;

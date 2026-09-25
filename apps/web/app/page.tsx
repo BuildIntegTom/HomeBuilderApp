@@ -14,6 +14,7 @@ import {
   computeFieldFramingLayout,
   computeFloorPanelGrid,
   computeFootprintAreaSqFt,
+  classifyGableWindowsAgainstRunStop,
   computeGableTiledRow,
   computeInsetPerimeterRing,
   computeJoistLayout,
@@ -2493,15 +2494,43 @@ export default function LayoutEditor() {
    * EDIT, never at LOAD, and a project must never become unopenable because
    * a rule tightened.
    */
+  /**
+   * **The one length a stop on this wall is measured and clamped against:**
+   * this wall's tiling length with every OTHER wall's stops applied but none
+   * of its own.
+   *
+   * It has to be exactly this, and getting it wrong was a real defect. The
+   * refusal used to validate against the orphan-ADJUSTED length while the
+   * commit normalized against the UNADJUSTED one. Since the orphan rule only
+   * ever lengthens, those diverge by exactly one wall thickness on any wall
+   * whose neighbour is stopped at their shared corner — and at precisely the
+   * adjusted length, a stop the refusal accepted as "build nothing" was
+   * stored short, leaving a 15½in braced panel (below the confirmed 24in
+   * fabrication minimum) on a wall the app had just said carries no panels.
+   *
+   * Removing only this wall's own stop is safe and not circular: the orphan
+   * rule lets a wall's stop change its NEIGHBOUR's inset, never its own, so
+   * this wall's inset does not depend on this wall's stop.
+   */
+  const wallRunStopBasisIn = (wallId: string, stops: Record<string, WallRunStop>): number | null => {
+    const withoutOwnStop = { ...stops };
+    delete withoutOwnStop[wallId];
+    return wallGeometryFor(wallId, withoutOwnStop)?.lengthIn ?? null;
+  };
+
   const wallRunStopRefusalMessage = (wallId: string, end: WallEnd, nextIn: number): string | null => {
     if (nextIn < 0) return "A stop is measured in from the end of the wall, so it cannot be negative.";
-    const unstopped = wallGeometryFor(wallId, {});
-    if (!unstopped) return null;
     const candidateStops = candidateWallRunStops(wallId, end, nextIn);
+    // The SAME basis `applyWallRunStopChange` normalizes against — see
+    // `wallRunStopBasisIn`. Every user-facing length below quotes it, so the
+    // app's own advice ("stop all of it") lands outside the refused band
+    // rather than back inside it.
+    const basisIn = wallRunStopBasisIn(wallId, candidateStops);
+    if (basisIn === null) return null;
     const geometry = wallGeometryFor(wallId, candidateStops);
     if (!geometry) return null;
     if (geometry.stopClamped) {
-      return `This wall's run is only ${formatLengthIn(unstopped.lengthIn, unitSystem)} long; the two stops together ask for more than that.`;
+      return `This wall's run is only ${formatLengthIn(basisIn, unitSystem)} long; the two stops together ask for more than that.`;
     }
     // The band the whole refusal exists for, checked directly rather than
     // inferred from whatever the tiler happens to emit: build nothing, or
@@ -2514,7 +2543,20 @@ export default function LayoutEditor() {
       toEighths(geometry.lengthIn) > 0 &&
       toEighths(geometry.lengthIn) < toEighths(fabricationMinPanelWidthIn.value)
     ) {
-      return `That leaves only ${formatLengthIn(geometry.lengthIn, unitSystem)} of this wall built, under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum panel the shop can build. Stop less of the wall, or stop all ${formatFeetInches(unstopped.lengthIn / 12)} of it.`;
+      return `That leaves only ${formatLengthIn(geometry.lengthIn, unitSystem)} of this wall built, under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum panel the shop can build. Stop less of the wall, or stop all ${formatFeetInches(basisIn / 12)} of it.`;
+    }
+    // A stop that lands INSIDE a gable window is refused by name. Tommy's
+    // rule is that a gable window stays put on the building, so a stop
+    // either leaves one fully built or does not build it at all; cutting one
+    // in half would fabricate a part that does not exist.
+    const cutWindows = gableWindowsCutByStop(
+      wallId,
+      geometry.startStopIn > 0 ? geometry.runStartOffsetIn : 0,
+      geometry.endStopIn > 0 ? (footprint?.walls.find((w) => w.id === wallId)?.lengthFt ?? 0) * 12 - geometry.runEndOffsetIn : Infinity,
+    );
+    if (cutWindows.length > 0) {
+      const w = cutWindows[0]!;
+      return `That stop cuts through a gable window (it runs from ${formatLengthIn(w.xStartIn, unitSystem)} to ${formatLengthIn(w.xEndIn, unitSystem)} along this wall). Stop clear of it on either side — a gable window is either built or not built, never half built.`;
     }
     // BOTH stories, not just the ground one (the commit re-tiles both, and a
     // second story whose openings differ can tile the same run into a
@@ -2544,7 +2586,7 @@ export default function LayoutEditor() {
         }
         const subMinimum = findSubMinimumPanelWidths({ [wall.id]: slots }, fabricationMinPanelWidthIn.value);
         if (subMinimum.length > 0) {
-          return `That leaves a ${formatLengthIn(wallGeometry.lengthIn, unitSystem)} run${onWall}${storyLabel}, which cannot be panelized without a panel under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum the shop can build. Stop less of the wall, or stop all ${formatFeetInches(unstopped.lengthIn / 12)} of it.`;
+          return `That leaves a ${formatLengthIn(wallGeometry.lengthIn, unitSystem)} run${onWall}${storyLabel}, which cannot be panelized without a panel under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum the shop can build. Stop less of the wall, or stop all ${formatFeetInches(basisIn / 12)} of it.`;
         }
       }
     }
@@ -2553,9 +2595,12 @@ export default function LayoutEditor() {
 
   const applyWallRunStopChange = (wallId: string, candidate: WallRunStop) => {
     if (!footprint) return;
-    const unstopped = wallGeometryFor(wallId, {});
-    if (!unstopped) return;
-    const normalized = normalizeWallRunStop(candidate, unstopped.lengthIn);
+    // The SAME basis the refusal validated against. Using the unadjusted
+    // length here while the refusal used the adjusted one is what let an
+    // accepted "build nothing" be stored a wall-thickness short.
+    const basisIn = wallRunStopBasisIn(wallId, { ...wallRunStopsByWallId, [wallId]: candidate });
+    if (basisIn === null) return;
+    const normalized = normalizeWallRunStop(candidate, basisIn);
     const next: WallRunStop = { startStopIn: normalized.startStopIn, endStopIn: normalized.endStopIn };
     // A zero stop is REMOVED from the record rather than stored as {0, 0}:
     // "absent entry = fully panelized, byte-identical" is a property of the
@@ -3514,6 +3559,51 @@ export default function LayoutEditor() {
   // full-ridge-height preview) — same computeGableTiledRow call shape
   // WallElevationDiagram.tsx already uses for its own SVG, so the two stay
   // consistent. Feeds allInstances below.
+  /** This wall's roof-profile anchor points, in `computeGableTiledRow`'s own
+   * absolute coordinate space. Extracted so the gable row and the run-stop
+   * refusal below cannot build them differently. */
+  const gableProfilePointsFor = (wall: Wall): RoofProfilePoint[] => {
+    const wallLengthIn = wall.lengthFt * 12;
+    const storedPositions = gableProfilePositionsInByWallId[wall.id] ?? [];
+    return roofProfilePointHeightsFt.map((heightFt, i) => {
+      const defaultXIn = roofProfilePointHeightsFt.length === 1 ? wallLengthIn / 2 : ((i + 1) * wallLengthIn) / 3;
+      const storedXIn = storedPositions[i];
+      return {
+        xIn: storedXIn ?? defaultXIn,
+        heightIn: gableEaveHeightIn + heightFt * 12,
+        isExplicitPosition: storedXIn != null,
+      };
+    });
+  };
+
+  /**
+   * Gable windows a candidate stop would CUT THROUGH on this wall.
+   *
+   * Tommy's rule is that a gable window stays put on the building, so a stop
+   * either leaves a window fully built or does not build it at all. The one
+   * case neither of those covers is a stop landing inside a window, and that
+   * is refused rather than resolved: half a window is a fabricated part that
+   * does not exist, and silently swallowing a whole one is worse.
+   */
+  const gableWindowsCutByStop = (wallId: string, builtStartIn: number, builtEndIn: number) => {
+    const wall = footprint?.walls.find((w) => w.id === wallId);
+    if (!wall || !gableEndWallIds.has(wallId)) return [];
+    return classifyGableWindowsAgainstRunStop(
+      wall.lengthFt * 12,
+      gableEaveHeightIn,
+      gableProfilePointsFor(wall),
+      standardWidthIn,
+      trussPlateInsetIn,
+      true,
+      heelHeightIn,
+      roofBearingAnchorMode,
+      gableWindowAnchorsByWallId[wallId] ?? [],
+      gableStructuralPanelWallIds.has(wallId) ? COLUMN_TOTAL_WIDTH_IN : undefined,
+      builtStartIn,
+      builtEndIn,
+    ).straddling;
+  };
+
   const gableTilesByWallId = useMemo(() => {
     if (!footprint) return {};
     const result: Record<
@@ -3535,24 +3625,14 @@ export default function LayoutEditor() {
       if (!gableEndWallIds.has(wall.id)) continue;
       const wallLengthIn = wall.lengthFt * 12;
       const storedPositions = gableProfilePositionsInByWallId[wall.id] ?? [];
-      const points: RoofProfilePoint[] = roofProfilePointHeightsFt.map((heightFt, i) => {
-        // Default position: the single midpoint for a peaked (1-point)
-        // profile, or a symmetric flat run spanning the middle third for a
-        // flat-top (2-point) profile — same "auto-centered, never snaps"
-        // convention the old single-peak default already had.
-        const defaultXIn = roofProfilePointHeightsFt.length === 1 ? wallLengthIn / 2 : ((i + 1) * wallLengthIn) / 3;
-        const storedXIn = storedPositions[i];
-        return {
-          xIn: storedXIn ?? defaultXIn,
-          // heightFt is a RISE above the eave, not an absolute height (see
-          // roofProfilePointHeightsFt's own doc comment) — computeGableTiledRow
-          // still expects an absolute anchor in the same coordinate space
-          // as gableEaveHeightIn, so convert here at the call site rather
-          // than changing that function's own (still-absolute) contract.
-          heightIn: gableEaveHeightIn + heightFt * 12,
-          isExplicitPosition: storedXIn != null,
-        };
-      });
+      // Default position: the single midpoint for a peaked (1-point) profile,
+      // or a symmetric flat run spanning the middle third for a flat-top
+      // (2-point) profile — same "auto-centered, never snaps" convention the
+      // old single-peak default already had. `heightFt` is a RISE above the
+      // eave, not an absolute height (see roofProfilePointHeightsFt's own doc
+      // comment); `gableProfilePointsFor` converts it, so that
+      // `computeGableTiledRow`'s still-absolute contract is unchanged.
+      const points: RoofProfilePoint[] = gableProfilePointsFor(wall);
       const tiles = computeGableTiledRow(
         wallLengthIn,
         gableEaveHeightIn,
@@ -8058,6 +8138,8 @@ export default function LayoutEditor() {
                   endInsetIn={wallGeometryFor(elevationWall.id)?.endInsetIn ?? 0}
                   startStopIn={wallGeometryFor(elevationWall.id)?.startStopIn ?? 0}
                   endStopIn={wallGeometryFor(elevationWall.id)?.endStopIn ?? 0}
+                  gableBuiltStartIn={gableRunStopByWallId[elevationWall.id]?.builtStartIn}
+                  gableBuiltEndIn={gableRunStopByWallId[elevationWall.id]?.builtEndIn}
                   secondStorySlots={secondStory?.wallSlots[elevationWall.id]}
                   secondStoryWallHeightFt={secondStory?.wallHeightFt}
                   onToggleOpening={handleToggleOpening}
@@ -8149,6 +8231,7 @@ export default function LayoutEditor() {
                   includeNailer={includeNailer}
                   primaryCornerIds={primaryCornerIds}
                   wallRunStopsByWallId={wallRunStopsByWallId}
+                  wallTilingLengthInByWallId={wallTilingLengthInByWallId}
                   secondStory={stories[1] ?? null}
                   isSquareBalePanelization={panelizationType === "square-bale-panels"}
                   squareBaleStudConfig={squareBaleStudConfig}
@@ -8230,6 +8313,7 @@ export default function LayoutEditor() {
               includeNailer={includeNailer}
               primaryCornerIds={primaryCornerIds}
               wallRunStopsByWallId={wallRunStopsByWallId}
+              wallTilingLengthInByWallId={wallTilingLengthInByWallId}
               secondStory={stories[1] ?? null}
               isSquareBalePanelization={panelizationType === "square-bale-panels"}
               squareBaleStudConfig={squareBaleStudConfig}

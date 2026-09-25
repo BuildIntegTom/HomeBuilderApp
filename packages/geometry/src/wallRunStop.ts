@@ -210,17 +210,52 @@ export function builtWallLengthsIn(
   const built: Record<string, number> = {};
   for (const wall of footprint.walls) {
     const fullIn = wall.lengthFt * 12;
-    const clampBaseIn = tilingLengthInByWallId?.[wall.id] ?? fullIn;
-    const { startStopIn, endStopIn } = normalizeWallRunStop(runStopsByWallId?.[wall.id], clampBaseIn);
-    // A wall the tiler builds nothing on contributes nothing, even though
-    // its raw length exceeds its tiling length by the butt-joint inset.
-    if (toEighths(clampBaseIn) - toEighths(startStopIn) - toEighths(endStopIn) <= 0) {
-      built[wall.id] = 0;
-      continue;
-    }
-    built[wall.id] = Math.max(0, fullIn - startStopIn - endStopIn);
+    built[wall.id] = builtWallSpan(fullIn, tilingLengthInByWallId?.[wall.id] ?? fullIn, runStopsByWallId?.[wall.id])
+      .builtLengthIn;
   }
   return built;
+}
+
+export interface BuiltWallSpan {
+  /** The stops as actually applied — grid-snapped and clamped. */
+  startStopIn: number;
+  endStopIn: number;
+  /** How much of the wall's RAW line carries panels. 0 when the tiler builds
+   * nothing at all on it. */
+  builtLengthIn: number;
+}
+
+/**
+ * **One wall's built span, and the single definition of it.**
+ *
+ * Two different lengths are in play and they must not be confused, which is
+ * why this exists rather than the same three lines in four places:
+ *
+ * - `rawLengthIn` (`lengthFt * 12`) is what the span is MEASURED along, so
+ *   that an unstopped project keeps exactly the perimeter totals it always
+ *   had (corner insets net out around a closed ring).
+ * - `tilingLengthIn` is what a stop is CLAMPED against, because that is what
+ *   `applyWallRunStop` clamps against. Clamping here against the raw length
+ *   instead let a stored stop make the tiler build nothing while this still
+ *   reported up to a wall-thickness as built.
+ *
+ * Pass `tilingLengthIn === rawLengthIn` when there is no inset to worry
+ * about; behaviour is then identical either way.
+ */
+export function builtWallSpan(
+  rawLengthIn: number,
+  tilingLengthIn: number,
+  stop: WallRunStop | undefined | null,
+): BuiltWallSpan {
+  const { startStopIn, endStopIn } = normalizeWallRunStop(stop, tilingLengthIn);
+  // A wall the tiler builds nothing on contributes nothing, even though its
+  // raw length exceeds its tiling length by the butt-joint inset.
+  const tilerBuildsNothing = toEighths(tilingLengthIn) - toEighths(startStopIn) - toEighths(endStopIn) <= 0;
+  return {
+    startStopIn,
+    endStopIn,
+    builtLengthIn: tilerBuildsNothing ? 0 : Math.max(0, rawLengthIn - startStopIn - endStopIn),
+  };
 }
 
 /** The building's BUILT wall perimeter in inches — see `builtWallLengthsIn`.

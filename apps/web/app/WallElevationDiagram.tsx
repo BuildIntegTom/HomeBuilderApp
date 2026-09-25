@@ -171,6 +171,16 @@ export interface WallElevationDiagramProps {
    * between that sliver and this wall's own run. 0/0 = unchanged. */
   startStopIn?: number;
   endStopIn?: number;
+  /** Stage 3 — where this wall's BUILT run starts and ends, in inches from
+   * its own true start corner, exactly as page.tsx computes it for the
+   * model. The gable row is clamped to this.
+   *
+   * Passed in rather than re-derived from `startStopIn` + the corner inset,
+   * because those two are not the same number on a reflex-corner winner
+   * (inset 0, extension > 0) and the drawing would then disagree with the
+   * model by a wall thickness. Undefined = the whole wall. */
+  gableBuiltStartIn?: number;
+  gableBuiltEndIn?: number;
   /** This wall's own second-story slots/height, if a second story exists
    * (Tommy: "each story's row for a given wall is independently clickable/
    * editable") — undefined when there's no second story, mirroring how
@@ -405,6 +415,8 @@ export default function WallElevationDiagram({
   startInsetIn,
   endInsetIn,
   startStopIn = 0,
+  gableBuiltStartIn,
+  gableBuiltEndIn,
   endStopIn = 0,
   secondStorySlots,
   secondStoryWallHeightFt,
@@ -629,14 +641,14 @@ export default function WallElevationDiagram({
         roofBearingAnchorMode,
         gableWindowReservations,
         hasStructuralColumnPanel ? COLUMN_TOTAL_WIDTH_IN : undefined,
-        // Stage 3: the gable row stops where the wall does. Measured to
-        // where the PANELS start, not to the bare stop — but only when
-        // there IS a stop, so an unstopped wall keeps the exact row it has
-        // today (the gable has always ignored the butt-joint inset, and
-        // this is not the change that starts respecting it). Must match
-        // page.tsx's own call or the drawing and the model disagree.
-        startStopIn > 0 ? startOffsetIn : 0,
-        endStopIn > 0 ? wallWidthIn - endOffsetIn : wallWidthIn,
+        // Stage 3: the gable row stops where the wall does. These come in as
+        // props computed by the same `wallGeometryFor` call page.tsx feeds
+        // its own model, rather than being re-derived here from
+        // `startOffsetIn` — that local form used the corner INSET only, and
+        // on a reflex-corner winner (inset 0, extension > 0) it disagreed
+        // with the model by a full wall thickness.
+        gableBuiltStartIn ?? 0,
+        gableBuiltEndIn ?? wallWidthIn,
       )
     : [];
   const gablePanels: (GableTiledPanel & { verticalGapIn?: { leftIn: number; rightIn: number } })[] = rawGablePanels.map((p) => {

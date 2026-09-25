@@ -485,10 +485,32 @@ export interface WallGeometry {
   /** The length actually tiled — already reduced by any run stop. */
   lengthIn: number;
   allowBorrow: boolean;
-  /** What this wall WOULD tile at with no stop. Equals `lengthIn` on every
-   * wall without a stop, which is every wall in every project saved before
-   * Stage 3. The sum invariant is stated against this one:
-   * `Σ slot widths + startStopIn + endStopIn === unstoppedLengthIn`. */
+  /**
+   * What this wall would tile at with **no stop anywhere in the building** —
+   * corner ownership only, before the orphan-corner rule is applied.
+   *
+   * **⚠ The sum invariant is NOT stated against this.** It used to say
+   * `Σ slot widths + startStopIn + endStopIn === unstoppedLengthIn`, and
+   * that is measurably false on any wall whose neighbour is stopped at their
+   * shared corner: the orphan rule lets that wall grow by a wall thickness,
+   * so the left side exceeds this by exactly that much (344.5 vs 329 on a
+   * 30x20 rectangle). Following the old sentence literally is what made the
+   * first refusal reject every legitimate stop that reached a corner — the
+   * browser harness had to catch it.
+   *
+   * **The invariant that IS true, and the one to write tests against:**
+   *
+   *   `Σ slot widths === wallGeometryFor(wall, currentStops).lengthIn`
+   *
+   * i.e. against this wall's CURRENT tiling length under the CURRENT stop
+   * map. That holds unconditionally, orphan adjustment included.
+   *
+   * This field survives for the narrower job it is still right for: as the
+   * basis a stop on THIS wall is measured and clamped against, and as the
+   * "what would it have been" figure a Review Log entry quotes. See
+   * `wallRunStopBasisIn` in page.tsx, which is careful to take this with
+   * other walls' stops applied and only this wall's own removed.
+   */
   unstoppedLengthIn: number;
   /** Inches deliberately not built at each end — 0/0 for a normal wall. */
   startStopIn: number;

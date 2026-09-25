@@ -790,6 +790,16 @@ await closeOpenNotes();
 const shortWallId = wallIdsInObj.find((id) => id !== targetWallId && id !== null) ?? null;
 let cornerStopResult = { error: "no second wall to try" };
 if (shortWallId) {
+  // The neighbour's growth is measured off the 3D scene, because that is
+  // the only place this harness can see a wall the elevation is not showing.
+  // Without it this step only proved the stopped wall shortened, while its
+  // own name claimed the neighbour grew.
+  await reachView((l) => l === "3D Framed", "3D Framed");
+  await sleep(2200);
+  const objBeforeCornerStop = parseObjGroups(await captureObj());
+  const extentsBefore = Object.fromEntries(
+    wallIdsInObj.map((id) => [id, extentAlong(objBeforeCornerStop, `${id}_`, wallAxisFor(objBeforeCornerStop, id) ?? 0)?.lengthIn ?? null]),
+  );
   await reachView((l) => l === `Elevation: ${shortWallId}`, `Elevation: ${shortWallId}`);
   await sleep(1200);
   const shortWidths = await panelWidths();
@@ -800,25 +810,41 @@ if (shortWallId) {
   const field = await stopField("start");
   const afterWidths = await panelWidths();
   await shot("10-corner-stop-accepted");
+  await reachView((l) => l === "3D Framed", "3D Framed");
+  await sleep(2200);
+  const objAfterCornerStop = parseObjGroups(await captureObj());
+  const grew = [];
+  for (const id of wallIdsInObj) {
+    if (id === shortWallId) continue;
+    const after = extentAlong(objAfterCornerStop, `${id}_`, wallAxisFor(objAfterCornerStop, id) ?? 0)?.lengthIn ?? null;
+    const before = extentsBefore[id];
+    if (before !== null && after !== null && after - before > 0.01) grew.push({ id, byIn: Number((after - before).toFixed(3)) });
+  }
   cornerStopResult = {
     wallId: shortWallId,
     refusalMessage: field?.message ?? null,
     invalid: field?.invalid ?? null,
     runBeforeIn: shortRunIn,
     runAfterIn: sumEighths(afterWidths) / 8,
+    neighboursThatGrew: grew,
   };
 }
 record(
   "corner-reaching-stop-is-accepted-not-refused",
   cornerStopResult,
-  // Accepted (no refusal, field not marked invalid) and the run really did
-  // shorten by the 30in asked for. Before the refusal was restated against
-  // each wall's OWN tiled length, this came back refused.
+  // Accepted (no refusal, field not marked invalid), the run really did
+  // shorten by the 30in asked for, AND at least one neighbour grew by a wall
+  // thickness — the orphan corner, end to end in the real app. Before the
+  // refusal was restated against each wall's OWN tiled length, this came
+  // back refused.
   (d) =>
     !!d.wallId &&
     d.invalid === false &&
     d.refusalMessage === null &&
-    Math.abs(d.runBeforeIn - d.runAfterIn - 30) < 0.001,
+    Math.abs(d.runBeforeIn - d.runAfterIn - 30) < 0.001 &&
+    Array.isArray(d.neighboursThatGrew) &&
+    d.neighboursThatGrew.length >= 1 &&
+    d.neighboursThatGrew.every((n) => Math.abs(n.byIn - 15.5) < 0.6),
 );
 
 record(
