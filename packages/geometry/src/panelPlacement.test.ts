@@ -3,6 +3,7 @@ import { toEighths } from "./eighths";
 import {
   PLACEABLE_PANEL_TYPES,
   insertableBoundaryRange,
+  narrowestAcceptablePinWidthIn,
   isPlaceablePanelType,
   redistributeFreeRun,
   resolvePanelDelete,
@@ -474,6 +475,39 @@ describe("shiftSlotCoverage", () => {
     expect(moved).toEqual({ startSlotIndex: 1, endSlotIndex: 2 });
     // And it still names a real panel in the committed array.
     expect(moved!.endSlotIndex).toBeLessThanOrEqual(result.slots.length);
+  });
+});
+
+describe("narrowestAcceptablePinWidthIn", () => {
+  it("names the real floor on a wall whose automatic panels are already near the ceiling", () => {
+    // The shape a wall takes after a panel is deleted from it: the run sits
+    // high, so pinning one panel NARROW pushes the rest over 48in. The
+    // refusal has to be able to say what the wall would take instead.
+    const wall = [corner(), std(47), std(47), std(47), corner()];
+    const narrowest = narrowestAcceptablePinWidthIn(wall, 1, LIMITS);
+    expect(narrowest).not.toBeNull();
+    // Everything it names really does commit…
+    const pinned = wall.map((s, i) => (i === 1 ? { ...s, widthIn: narrowest!, lockedWidthIn: narrowest! } : s));
+    expect(redistributeFreeRun(wall, pinned, 1, LIMITS).outcome).toBe("commit");
+    // …and every eighth below it really is refused.
+    for (let w = LIMITS.minIn; w < narrowest!; w += 0.125) {
+      const tooNarrow = wall.map((s, i) => (i === 1 ? { ...s, widthIn: w, lockedWidthIn: w } : s));
+      expect(redistributeFreeRun(wall, tooNarrow, 1, LIMITS).outcome).not.toBe("commit");
+    }
+  });
+
+  it("is the shop minimum on an ordinary wall with room to move", () => {
+    expect(narrowestAcceptablePinWidthIn(plainWall(), 3, LIMITS)).toBe(LIMITS.minIn);
+  });
+
+  it("returns null when no width works at all, rather than naming one that doesn't", () => {
+    // Every other panel is pinned, so the free run cannot rebalance in
+    // either direction and only a no-op would survive.
+    const wall = [corner(), pinned(40), std(40), pinned(40), corner()];
+    expect(narrowestAcceptablePinWidthIn(wall, 2, LIMITS)).toBe(40);
+    const allPinned = [corner(), pinned(40), pinned(40), pinned(40), corner()];
+    expect(narrowestAcceptablePinWidthIn(allPinned, 2, LIMITS)).toBe(40);
+    expect(narrowestAcceptablePinWidthIn(allPinned, 0, LIMITS)).toBeNull();
   });
 });
 

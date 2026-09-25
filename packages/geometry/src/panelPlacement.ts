@@ -460,6 +460,44 @@ export function redistributeFreeRun(
   };
 }
 
+/**
+ * The narrowest width this wall will actually accept as a hand-set pin on
+ * `slotIndex` right now — or null when no width in `[minIn, maxIn]` works at
+ * all.
+ *
+ * **This exists so a refusal can quote a number.** Pinning a panel NARROWER
+ * hands width back to the automatic run, and on a wall whose automatic
+ * panels already sit near the 48in ceiling that is the thing that cannot be
+ * honoured: on a 16-28ft wall with a panel deleted, the run sits at
+ * 46¾-47⅜in and the narrowest pin it will take is 44½in — which refuses
+ * every width on the Rogers-Sehorn schedule (43in and down). Telling
+ * somebody "that didn't work" while knowing exactly which numbers would is
+ * the failure the Stage 1 minimum refusal was written to avoid, and this is
+ * how the width edit avoids it too.
+ *
+ * **Measured, not modelled.** It asks `redistributeFreeRun` itself, one
+ * eighth at a time, rather than deriving a closed form — the feasible set is
+ * not guaranteed to be a single interval (the free run may drop a slot at
+ * some widths and not others), and a formula that is right today would
+ * quietly stop being right the first time that rule changes. At most 193
+ * calls to a pure integer function, on a keystroke that has already been
+ * refused.
+ *
+ * Returns the width in inches, already on the 1/8in grid. Reports only what
+ * the arithmetic says: it never suggests a width, and a null answer means
+ * exactly "there isn't one", not "try something else".
+ */
+export function narrowestAcceptablePinWidthIn(slots: PanelSlot[], slotIndex: number, limits: FreeRunLimitsIn): number | null {
+  const target = slots[slotIndex];
+  if (!target || !isStandardFamily(target)) return null;
+  for (let eighths = toEighths(limits.minIn); eighths <= toEighths(limits.maxIn); eighths++) {
+    const widthIn = fromEighths(eighths);
+    const pinned = slots.map((s, i) => (i === slotIndex ? { ...s, widthIn, lockedWidthIn: widthIn } : s));
+    if (redistributeFreeRun(slots, pinned, slotIndex, limits).outcome === "commit") return widthIn;
+  }
+  return null;
+}
+
 /** The new slot an insert/replace puts on the wall. A standard/braced panel
  * placed by hand is born PINNED (`lockedWidthIn`) — it is a width the user
  * chose, and the pin is what already survives an unrelated retile of this

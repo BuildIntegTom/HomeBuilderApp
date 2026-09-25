@@ -46,6 +46,7 @@ import {
   pointAlongRidgeLine,
   reconcileBracedPlacement,
   redistributeFreeRun,
+  narrowestAcceptablePinWidthIn,
   resolvePanelDelete,
   shiftSlotCoverage,
   resolvePanelInsert,
@@ -2569,9 +2570,9 @@ export default function LayoutEditor() {
      * `redistributeFreeRun`'s `rebalance`. */
     editIndex: number,
     rebalance: boolean,
-  ): { ok: true; slots: PanelSlot[]; index: number } | { ok: false } => {
+  ): { ok: true; slots: PanelSlot[]; index: number } | { ok: false; refusal: PanelPlacementResult | null } => {
     const geometry = wallGeometryFor(wallId);
-    if (!geometry) return { ok: false };
+    if (!geometry) return { ok: false, refusal: null };
     const anchors = getOpeningAnchors(nextSlots).map((a) => (a.type === "column" ? { ...a, widthIn: COLUMN_TOTAL_WIDTH_IN } : a));
     const tiled = retileWithOpenings(
       geometry.lengthIn,
@@ -2605,7 +2606,10 @@ export default function LayoutEditor() {
     const totalIs = (slots: PanelSlot[]) => slots.reduce((sum, s) => sum + toEighths(s.widthIn), 0);
     if (tilerWouldChangeThePanelCount(nextSlots, finalSlots)) {
       const fallback = redistributeFreeRun(beforeSlots, nextSlots, editIndex, panelWidthLimitsIn, { rebalance });
-      if (fallback.outcome !== "commit") return { ok: false };
+      // The refusal travels back with its NUMBERS in it — this is the path a
+      // width edit on a hand-edited wall actually takes, and "that didn't
+      // work" with no figure is exactly what the Stage 1 refusals do not do.
+      if (fallback.outcome !== "commit") return { ok: false, refusal: fallback };
       // The SAME wall-length guard the tiler path below gets. The fallback
       // conserves `beforeSlots`' own total, which is the wall's length only
       // as long as the wall it was read from was itself in order — this is
@@ -2613,17 +2617,17 @@ export default function LayoutEditor() {
       // exactly this wall's own tiling length") true of both paths rather
       // than one. It stops being theoretical the moment Stage 3 lands, which
       // changes what a wall's tiling length IS.
-      if (totalIs(fallback.slots) !== toEighths(geometry.lengthIn)) return { ok: false };
+      if (totalIs(fallback.slots) !== toEighths(geometry.lengthIn)) return { ok: false, refusal: null };
       const fallbackIndex = findNthStandardFamilyIndex(fallback.slots, keepOrdinal);
-      if (fallbackIndex === -1) return { ok: false };
-      if (expectWidthIn !== null && toEighths(fallback.slots[fallbackIndex]!.widthIn) !== toEighths(expectWidthIn)) return { ok: false };
+      if (fallbackIndex === -1) return { ok: false, refusal: null };
+      if (expectWidthIn !== null && toEighths(fallback.slots[fallbackIndex]!.widthIn) !== toEighths(expectWidthIn)) return { ok: false, refusal: null };
       return { ok: true, slots: fallback.slots, index: fallbackIndex };
     }
 
-    if (totalIs(finalSlots) !== toEighths(geometry.lengthIn)) return { ok: false };
+    if (totalIs(finalSlots) !== toEighths(geometry.lengthIn)) return { ok: false, refusal: null };
     const index = findNthStandardFamilyIndex(finalSlots, keepOrdinal);
-    if (index === -1) return { ok: false };
-    if (expectWidthIn !== null && toEighths(finalSlots[index]!.widthIn) !== toEighths(expectWidthIn)) return { ok: false };
+    if (index === -1) return { ok: false, refusal: null };
+    if (expectWidthIn !== null && toEighths(finalSlots[index]!.widthIn) !== toEighths(expectWidthIn)) return { ok: false, refusal: null };
     return { ok: true, slots: finalSlots, index };
   };
 
@@ -2647,8 +2651,20 @@ export default function LayoutEditor() {
     const ordinal = standardFamilyOrdinalAt(currentSlots, slotIndex);
     const retiled = retileWallAroundPins(story, wallId, currentSlots, pinned, ordinal, result.widthIn, slotIndex, false);
     if (!retiled.ok) {
+      // ⚠ QUOTE THE NUMBER. This path is not rare on a hand-edited wall:
+      // delete a panel from a 16-28ft wall and its automatic panels sit at
+      // 46¾-47⅜in, where the narrowest pin the wall will take is 44½in —
+      // which refuses every width on the Rogers-Sehorn schedule (43in and
+      // down). "That couldn't be applied" leaves somebody guessing at
+      // numbers on a wall that has an exact answer, which is precisely what
+      // the Stage 1 minimum refusal exists not to do.
+      const narrowestIn = narrowestAcceptablePinWidthIn(currentSlots, slotIndex, panelWidthLimitsIn);
+      const alsoTakes =
+        narrowestIn === null
+          ? " No width between the shop's minimum and maximum fits this wall as it stands — reset a panel to automatic, or change the wall's length, first."
+          : ` The narrowest hand-set width this wall will take right now is ${formatLengthIn(narrowestIn, unitSystem)}.`;
       showPanelWidthNotice(
-        "That width couldn't be applied without moving this wall's own total length, so nothing was changed.",
+        `${retiled.refusal ? placementRefusalMessage(retiled.refusal) : "That width couldn't be applied without moving this wall's own total length, so nothing was changed."}${alsoTakes}`,
       );
       return;
     }
@@ -2676,7 +2692,13 @@ export default function LayoutEditor() {
     const ordinal = standardFamilyOrdinalAt(currentSlots, slotIndex);
     const retiled = retileWallAroundPins(story, wallId, currentSlots, cleared, ordinal, null, slotIndex, true);
     if (!retiled.ok) {
-      showPanelWidthNotice("That panel couldn't be returned to automatic without moving the wall's total length, so nothing was changed.");
+      // Same rule as the typed width above: if the arithmetic produced a
+      // number, say the number.
+      showPanelWidthNotice(
+        retiled.refusal
+          ? `${placementRefusalMessage(retiled.refusal)} This panel is still hand-set at ${formatLengthIn(slot.lockedWidthIn, unitSystem)}.`
+          : "That panel couldn't be returned to automatic without moving the wall's total length, so nothing was changed.",
+      );
       return;
     }
     setSelectedSlot({ wallId, slotIndex: retiled.index, story, zoneIndex: selectedSlot?.zoneIndex });
@@ -2767,9 +2789,17 @@ export default function LayoutEditor() {
    * the end of the array entirely, on exactly the case the tool's own
    * notice already calls out.
    */
-  const shiftSlotCoverageRecords = (story: "ground" | "second", wallId: string, moves: { at: number; delta: 1 | -1 }[]): number => {
-    if (moves.length === 0) return 0;
+  const shiftSlotCoverageRecords = (
+    story: "ground" | "second",
+    wallId: string,
+    moves: { at: number; delta: 1 | -1 }[],
+    /** Counted SEPARATELY, because they are different components with
+     * different names and a notice that calls the roofline Box Beam a
+     * "mid-wall beam" is simply wrong about what it just removed. */
+  ): { midWallBeams: number; boxBeam: boolean } => {
+    if (moves.length === 0) return { midWallBeams: 0, boxBeam: false };
     let emptied = 0;
+    let boxBeamEmptied = false;
     const applyAll = <T extends { startSlotIndex: number; endSlotIndex: number }>(range: T): T | null =>
       moves.reduce<T | null>((acc, move) => (acc === null ? null : shiftSlotCoverage(acc, move.at, move.delta)), range);
     // Read from this render's own state and write plain values — the count
@@ -2784,7 +2814,7 @@ export default function LayoutEditor() {
     const coverage = story === "second" ? boxBeamCoverageByWallId[wallId] : undefined;
     if (coverage) {
       const nextCoverage = applyAll(coverage);
-      if (nextCoverage === null) emptied += 1;
+      if (nextCoverage === null) boxBeamEmptied = true;
       setBoxBeamCoverageByWallId((was) => {
         if (nextCoverage === null) {
           const { [wallId]: _dropped, ...rest } = was;
@@ -2793,7 +2823,40 @@ export default function LayoutEditor() {
         return { ...was, [wallId]: nextCoverage };
       });
     }
-    return emptied;
+    return { midWallBeams: emptied, boxBeam: boxBeamEmptied };
+  };
+
+  /**
+   * What a refused placement/width edit says, in one place.
+   *
+   * **Every branch quotes the number the arithmetic produced** — how much
+   * automatic width the wall actually holds, what the panel would have
+   * become — because a refusal that only says "no" is the failure the Stage
+   * 1 minimum refusal was written to avoid. Shared by the placement tool and
+   * by the width edit's own count-preserving path, so the two cannot drift
+   * into describing the same refusal differently.
+   *
+   * Returns null for a result that is not a refusal at all.
+   */
+  const placementRefusalMessage = (result: PanelPlacementResult): string | null => {
+    switch (result.outcome) {
+      case "no-change":
+        return "That panel is already what the tool is set to, so nothing changed.";
+      case "refuse-not-placeable":
+        return result.reason === "rule-placed-slot"
+          ? "Corner and safety-gap panels are placed by rule, not by hand — the app positions them and would overwrite a hand-placed one. Nothing was changed."
+          : "There is nowhere on this wall to put a panel there. Nothing was changed.";
+      case "refuse-width-out-of-range":
+        return `Refused: a ${formatLengthIn(result.widthIn, unitSystem)} panel is outside what the shop builds (${formatLengthIn(result.minIn, unitSystem)} to ${formatLengthIn(result.maxIn, unitSystem)}). Nothing was changed.`;
+      case "refuse-no-room":
+        return `Refused: there is ${formatLengthIn(result.freeBudgetIn, unitSystem)} of automatic panel width on this wall and that needs ${formatLengthIn(result.requestedIn, unitSystem)} of it — with whatever is left over still at least ${formatLengthIn(result.minIn, unitSystem)}. A corner or an opening is never shrunk to make room. Nothing was changed.`;
+      case "refuse-no-free-run":
+        return `Refused: every other panel on this wall is hand-set, an opening or a corner, so there is nothing automatic to give that ${formatLengthIn(result.freedWidthIn, unitSystem)} back to. Reset a panel to automatic first. Nothing was changed.`;
+      case "refuse-would-exceed-maximum":
+        return `Refused: that would leave an automatic panel ${formatLengthIn(result.wouldBeIn, unitSystem)} wide, over the ${formatLengthIn(result.maxIn, unitSystem)} maximum. Nothing was changed.`;
+      default:
+        return null;
+    }
   };
 
   const applyPlacementResult = (
@@ -2807,39 +2870,9 @@ export default function LayoutEditor() {
      * result's own `droppedIndices`; see the move list below. */
     coverageShift: { at: number; delta: 1 | -1 } | null,
   ) => {
-    if (result.outcome === "no-change") {
-      showPanelPlacementNotice("That panel is already what the tool is set to, so nothing changed.");
-      return;
-    }
-    if (result.outcome === "refuse-not-placeable") {
+    if (result.outcome !== "commit") {
       showPanelPlacementNotice(
-        result.reason === "rule-placed-slot"
-          ? "Corner and safety-gap panels are placed by rule, not by hand — the app positions them and would overwrite a hand-placed one. Nothing was changed."
-          : "There is nowhere on this wall to put a panel there. Nothing was changed.",
-      );
-      return;
-    }
-    if (result.outcome === "refuse-width-out-of-range") {
-      showPanelPlacementNotice(
-        `Refused: a ${formatLengthIn(result.widthIn, unitSystem)} panel is outside what the shop builds (${formatLengthIn(result.minIn, unitSystem)} to ${formatLengthIn(result.maxIn, unitSystem)}). Nothing was changed.`,
-      );
-      return;
-    }
-    if (result.outcome === "refuse-no-room") {
-      showPanelPlacementNotice(
-        `Refused: there is ${formatLengthIn(result.freeBudgetIn, unitSystem)} of automatic panel width on this wall and that panel needs ${formatLengthIn(result.requestedIn, unitSystem)} of it — with whatever is left over still at least ${formatLengthIn(result.minIn, unitSystem)}. A corner or an opening is never shrunk to make room. Nothing was changed.`,
-      );
-      return;
-    }
-    if (result.outcome === "refuse-no-free-run") {
-      showPanelPlacementNotice(
-        `Refused: every other panel on this wall is hand-set, an opening or a corner, so there is nothing automatic to give that ${formatLengthIn(result.freedWidthIn, unitSystem)} back to. Reset a panel to automatic first. Nothing was changed.`,
-      );
-      return;
-    }
-    if (result.outcome === "refuse-would-exceed-maximum") {
-      showPanelPlacementNotice(
-        `Refused: that would leave an automatic panel ${formatLengthIn(result.wouldBeIn, unitSystem)} wide, over the ${formatLengthIn(result.maxIn, unitSystem)} maximum — this wall has no way to hold fewer panels. Nothing was changed.`,
+        placementRefusalMessage(result) ?? "That couldn't be applied, so nothing was changed.",
       );
       return;
     }
@@ -2867,7 +2900,15 @@ export default function LayoutEditor() {
       gaveUp > 0 && verb === "Inserted"
         ? ` The automatic run gave up ${gaveUp} panel${gaveUp === 1 ? "" : "s"}${bracedGaveUp > 0 ? ` (${bracedGaveUp} of them braced)` : ""} to pay for it, so this wall now has ${result.slotCountAfter} panels — narrow a panel to make room for another.`
         : "";
-    const beamNote = emptied > 0 ? ` ${emptied} mid-wall beam${emptied === 1 ? "" : "s"} covered only that panel and ${emptied === 1 ? "was" : "were"} removed with it.` : "";
+    // Says WHICH component, and does not claim the panel the user clicked
+    // was the one that emptied the range — a range can just as well be
+    // emptied by an automatic panel the run itself gave up.
+    const beamNote = [
+      emptied.midWallBeams > 0
+        ? ` ${emptied.midWallBeams} Mid-Wall Bond Beam${emptied.midWallBeams === 1 ? "" : "s"} covered only panels this edit removed, so ${emptied.midWallBeams === 1 ? "it was" : "they were"} removed too.`
+        : "",
+      emptied.boxBeam ? " The roofline Box Beam covered only panels this edit removed, so it was removed too." : "",
+    ].join("");
     showPanelPlacementNotice(
       `${verb} on wall ${wallId}: ${result.slotCountBefore} panels → ${result.slotCountAfter}, ${result.freeCountAfter} still automatic.${countNote}${beamNote}`,
     );
