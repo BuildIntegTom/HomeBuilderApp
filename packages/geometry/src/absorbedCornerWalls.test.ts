@@ -9,7 +9,7 @@ describe("findAbsorbedCornerWalls", () => {
   it("reports a wall whose corner pair absorbed a sub-minimum middle", () => {
     const slots = tileWall(61.75, 40, NOMINAL_IN, "end", true, true).slots;
     expect(findAbsorbedCornerWalls({ AB: slots }, NOMINAL_IN)).toEqual([
-      { wallId: "AB", cornerWidthsIn: [30.875, 30.875], absorbedIn: 10.75 },
+      { wallId: "AB", cornerWidthsIn: [30.875, 30.875], absorbedIn: 10.75, nominalCornerWidthIn: NOMINAL_IN },
     ]);
   });
 
@@ -52,7 +52,7 @@ describe("findAbsorbedCornerWalls", () => {
       { type: "corner", widthIn: 27 },
     ];
     expect(findAbsorbedCornerWalls({ AB: slots }, NOMINAL_IN)).toEqual([
-      { wallId: "AB", cornerWidthsIn: [27, 27], absorbedIn: 3 },
+      { wallId: "AB", cornerWidthsIn: [27, 27], absorbedIn: 3, nominalCornerWidthIn: NOMINAL_IN },
     ]);
   });
 

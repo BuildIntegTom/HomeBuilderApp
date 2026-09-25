@@ -5,8 +5,14 @@ export interface AbsorbedCornerWall {
   wallId: string;
   /** The two corner panels as fabricated, widest first. */
   cornerWidthsIn: [number, number];
-  /** How much each was widened past the nominal corner width, in total. */
+  /** How much the pair was widened past two nominal corners, in total. */
   absorbedIn: number;
+  /** The nominal corner width these were measured against — carried on the
+   * record rather than left to the reader to look up, because it is not
+   * always `cornerPanelWidthIn`: Square Bale panelization tiles with its own
+   * panel width. A reporting caller can then render the whole entry from the
+   * record alone. */
+  nominalCornerWidthIn: number;
 }
 
 /**
@@ -64,6 +70,7 @@ export function findAbsorbedCornerWalls(
       wallId,
       cornerWidthsIn: widths,
       absorbedIn: widths[0] + widths[1] - 2 * nominalCornerWidthIn,
+      nominalCornerWidthIn,
     });
   }
   return found;

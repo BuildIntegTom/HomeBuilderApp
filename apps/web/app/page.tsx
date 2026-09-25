@@ -6197,7 +6197,7 @@ export default function LayoutEditor() {
       ...absorbedCornerWalls.map((wall) => ({
         label: `Corner panels widened to absorb a short middle: wall ${wall.wallId}${wall.story === "second" ? " (second story)" : ""}`,
         status: "pending-BI-confirmation" as const,
-        note: `This wall owns a corner at both ends and is too short to fit them plus a panel over the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} fabrication minimum, so its two corner panels share the whole wall: ${formatLengthIn(wall.cornerWidthsIn[0], unitSystem)} and ${formatLengthIn(wall.cornerWidthsIn[1], unitSystem)} instead of ${formatLengthIn(cornerWidthInForTiling, unitSystem)} each, absorbing ${formatLengthIn(wall.absorbedIn, unitSystem)} that could not become a panel. This is the corner-geometry rule Tommy chose for this case over refusing the wall length ("I like the corner geometry rule"); the individual widths it produces are not separately confirmed. Each panel is still one corner panel with one return face, butt joined to its partner at mid-wall.`,
+        note: `This wall owns a corner at both ends and is too short to fit them plus a panel over the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} fabrication minimum, so its two corner panels share the whole wall: ${formatLengthIn(wall.cornerWidthsIn[0], unitSystem)} and ${formatLengthIn(wall.cornerWidthsIn[1], unitSystem)} instead of ${formatLengthIn(wall.nominalCornerWidthIn, unitSystem)} each, absorbing ${formatLengthIn(wall.absorbedIn, unitSystem)} that could not become a panel. This is the corner-geometry rule Tommy chose for this case over refusing the wall length ("I like the corner geometry rule"); the individual widths it produces are not separately confirmed. Each panel is still one corner panel with one return face, butt joined to its partner at mid-wall.`,
       })),
       ...(foundationTypeId === "concrete-pier"
         ? [
@@ -6223,6 +6223,11 @@ export default function LayoutEditor() {
     estimatedTotalBearingLb,
     estimatedTotalShearLb,
     subMinimumPanels,
+    // `cornerWidthInForTiling` is deliberately NOT a dependency here: each
+    // entry carries its own `nominalCornerWidthIn`, so this memo renders the
+    // whole note from the record. Fewer deps, and the number in the note is
+    // guaranteed to be the one the wall was actually tiled against.
+    absorbedCornerWalls,
     unitSystem,
     wallRunStopReviewEntries,
   ]);
