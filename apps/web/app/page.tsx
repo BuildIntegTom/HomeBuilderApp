@@ -1468,8 +1468,23 @@ export default function LayoutEditor() {
     if (!result) return;
     // The commit notice names the header by the number it will have once
     // this render settles — computed from the SAME global walk every other
-    // consumer uses, with the new header included, so the sentence and the
-    // drawing cannot disagree.
+    // consumer uses, with the new header included, so the NAME in the
+    // sentence and the name on the drawing cannot disagree.
+    //
+    // ⚠ That guarantee covers the header's own name and stops there, stated
+    // narrowly on purpose. The PANEL names beside it come from
+    // `panelInstanceNameForStory`, i.e. this render's `allInstances`, computed
+    // before the header was committed. In the default configuration they are
+    // the same names either way: a fresh header is born flush against the top
+    // plate (`defaultSpanningHeaderBottomHeightIn`), so the column it shortens
+    // still yields ONE band and therefore one instance per slot, and panel
+    // numbering is positional. They can differ only where adding the header
+    // changes a covered column's band COUNT — `maxPanelHeightIn` below the
+    // header's own bottom face, which subdivides the band beneath it. The
+    // notice is a transient toast and every durable surface (the sheets, the
+    // cross-reference, the Review Log) recomputes from committed state, so
+    // this is left alone rather than plumbed — but it is not claimed to be
+    // impossible, because it is not.
     const nextHeadersByWall = {
       ...spanningHeadersByStoryAndWallId,
       [story]: {
@@ -3393,6 +3408,30 @@ export default function LayoutEditor() {
     // the notice says so.
     const headers = spanningHeadersByStoryAndWallId[story][wallId] ?? [];
     if (headers.length > 0) {
+      // ⚠ **Both widths are measured off the BASE slots, and that is a named
+      // choice.** Everything else in Stage 2b — the placement refusals, the
+      // Review Log flag, the fabrication sheets, the 3D anchor and the price —
+      // measures from `overlayWallSlots`. Under `square-bale-panels` or
+      // `timber-frame-curtain` those two arrays differ in both widths and
+      // COUNT, because `applyUniformPanelization` re-tiles every infill run,
+      // so this notice can print a width the shop sheet does not.
+      //
+      // It still reads the base slots, because the alternative is worse rather
+      // than better: a header's stored range is a BASE slot-index range
+      // (`resolvePanelInsert`/`resolvePanelDelete` and this shift all operate
+      // on `wallSlotsForStory`), so measuring it against a re-counted overlay
+      // array would sum whichever panels happened to land at those indices —
+      // a confident wrong number instead of a self-consistent one. Prior and
+      // next are both base arrays here, so "did the panels under this range
+      // change width" is answered correctly on its own terms.
+      //
+      // The disagreement underneath this is PRE-EXISTING and larger than the
+      // notice: the elevation renders `overlayWallSlots` while
+      // `handleInsertPanel`/`handleDeletePanel` index into `baseWallSlots`,
+      // nothing gates the placement tool on panelization type, and the
+      // Mid-Wall Bond Beam's own coverage range has had the same base-vs-
+      // overlay split since long before this stage. Fixing that is its own
+      // change with its own Review Log line; it is not smuggled in here.
       const priorSlots = wallSlotsForStory(story)[wallId] ?? [];
       const nextHeaders = headers
         .map((header) => {
@@ -6843,6 +6882,23 @@ export default function LayoutEditor() {
       ...(standardWidthIn !== standardPanelBomReferenceWidthIn
         ? [{ label: "Wood-weight BOM vs. selected panel width", ...bomWidthMismatchWarning }]
         : []),
+      // ⚠ The project wood-weight figure is wrong in two known, pre-existing
+      // ways, and until this entry existed the only place that was written
+      // down was a code comment (see `spanningHeaderWoodWeightKg`). The
+      // summary's own note reads "Wood (N standard/braced panels)", which
+      // hints at gap 1 to a careful reader and says nothing at all about gap
+      // 2. Both are DOCUMENTED rather than fixed on purpose — the fabrication
+      // sheets build at `heightOverrideIn`, the real band height, so nothing
+      // reaching a shop is wrong, and correcting the sum means running the
+      // band pipeline inside it, which changes the displayed weight of every
+      // existing project that has a beam in it. That is its own change with
+      // its own line. What is NOT acceptable is the wrong number being on
+      // screen with nothing beside it, so it is flagged here now.
+      {
+        label: "Project wood weight is approximate in two known ways",
+        status: "pending-BI-confirmation" as const,
+        note: `The wood figure in the summary walks standard/braced PANEL SLOTS, which leaves two gaps, both of them older than the spanning header. (1) **Mid-Wall Bond Beams are not counted at all** — a beam is a wall-level record with no panel slot for the walk to find, so its wood is missing from the total. (2) **Every slot is charged at the full story height**, so a panel shortened to make room for a Mid-Wall Bond Beam, a spanning header, or a max-panel-height split still contributes full-height wood — and the header's or beam's own weight is then added on top of it, so that part is counted twice. The two errors point in opposite directions and do not cancel. **Nothing that reaches the shop is affected:** every fabrication sheet builds its members at the real band height, so the cut lists, member lengths and per-panel weights are right; it is the project-level total that is approximate. Correcting it means recomputing the band heights inside that sum, which would change the displayed weight of every saved project containing a beam — its own change, not a side effect of another one.`,
+      },
       // Every panel below Building Integrity's own fabrication minimum,
       // however it got there — typed, dragged, stored in an older file, or
       // produced by the tiler's own arithmetic.
