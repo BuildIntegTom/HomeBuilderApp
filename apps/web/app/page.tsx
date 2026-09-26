@@ -4532,17 +4532,23 @@ export default function LayoutEditor() {
     const locationByHeaderName = new Map<string, string>();
     const spannedNamesByHeaderName = new Map<string, string[]>();
     const headerAboveByPanel = new Map<string, string>();
+    // The lookup is written out here rather than taken from
+    // `panelInstanceNameForStory` on purpose: that helper is re-created every
+    // render, so depending on it would defeat this memo, and silencing the
+    // dependency rule to hide that is the shape that let a stale memo ship in
+    // Stage 3. Reading the two instance lists directly means the dep array is
+    // complete and honest.
     for (const resolved of resolvedSpanningHeaders) {
-      const nameFor = panelInstanceNameForStory(resolved.story);
-      const names = spannedPanelNames(resolved, nameFor);
+      const instances = resolved.story === "ground" ? allInstances : secondStoryAllInstances;
+      const names = spannedPanelNames(
+        resolved,
+        (wallId, slotIndex) => instances.find((inst) => inst.wallId === wallId && inst.slotIndexInWall === slotIndex)?.name,
+      );
       locationByHeaderName.set(resolved.name, spanningHeaderSheetLocation(resolved, names));
       spannedNamesByHeaderName.set(resolved.name, names);
       for (const panelName of names) headerAboveByPanel.set(panelName, resolved.name);
     }
     return { locationByHeaderName, spannedNamesByHeaderName, headerAboveByPanel };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- panelInstanceNameForStory is a
-    // plain closure over exactly these two instance lists, re-created every
-    // render; listing it would defeat the memo while changing nothing.
   }, [resolvedSpanningHeaders, allInstances, secondStoryAllInstances]);
 
   /** Header names by wall+story, for the elevation to label its own band
