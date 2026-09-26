@@ -265,6 +265,11 @@ export default function FootprintCanvas({
       buildColumnPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer),
       wallHeightFt * 12,
     );
+    // The NOMINAL-width corner section on purpose — corner members are built at
+    // each slot's real width elsewhere now, but a wider section reports HIGHER
+    // bearing and that is not a number to infer. Same decision, same reasoning
+    // as `estimatedCornerBuiltUpBearingLb` in page.tsx; see the spec's Open
+    // Items.
     const cornerBearingLb = computeBuiltUpColumnBearingCapacityLb(
       buildCornerPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer),
       wallHeightFt * 12,

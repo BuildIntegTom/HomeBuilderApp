@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { findAbsorbedCornerWalls } from "./absorbedCornerWalls";
-import { tileWall } from "./tiling";
+import { retileWithOpenings, tileWall } from "./tiling";
 import type { PanelSlot } from "./types";
 
 const NOMINAL_IN = 25.5;
@@ -75,6 +75,78 @@ describe("findAbsorbedCornerWalls", () => {
       const slots = tileWall(lengthIn, 40, NOMINAL_IN, "end", true, true).slots;
       const reported = findAbsorbedCornerWalls({ AB: slots }, NOMINAL_IN).length === 1;
       expect(reported).toBe(lengthIn > 51 && lengthIn < 75);
+    }
+  });
+
+  it("reports a band wall that kept a COLUMN, which it used to miss entirely", () => {
+    // MEASURED on this branch before the fix: a 70in wall carrying a 16.75in
+    // column tiles to corner 26.625 | column 16.75 | corner 26.625 — corners
+    // widened past nominal, sum exact, and this walk reported NOTHING because
+    // `column` sat in the disqualifier list alongside standard/braced. A column
+    // is a reservation like a window or a door, not a fabricated plain panel.
+    const slots = tileWall(70, 40, NOMINAL_IN, "end", true, true).slots;
+    expect(slots.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 35],
+      ["corner", 35],
+    ]);
+    // The tiler only produces that shape with the column supplied as a
+    // reservation, which is how page.tsx tiles a wall carrying one.
+    const withColumn = retileWithOpenings(70, 40, NOMINAL_IN, "end", true, true, [
+      { beforeStandardCount: 0, type: "column", widthIn: 16.75 },
+    ]).slots;
+    expect(withColumn.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 26.625],
+      ["column", 16.75],
+      ["corner", 26.625],
+    ]);
+    expect(findAbsorbedCornerWalls({ AB: withColumn }, NOMINAL_IN)).toEqual([
+      { wallId: "AB", cornerWidthsIn: [26.625, 26.625], absorbedIn: 2.25, nominalCornerWidthIn: NOMINAL_IN },
+    ]);
+  });
+
+  it("is still silent when a fabricated plain panel sits between the corners", () => {
+    // The shape test that has to keep working: wide corners AND a standard
+    // panel is not the absorbed shape (and the tiler cannot produce it).
+    const slots: PanelSlot[] = [
+      { type: "corner", widthIn: 30 },
+      { type: "standard", widthIn: 40 },
+      { type: "corner", widthIn: 30 },
+    ];
+    expect(findAbsorbedCornerWalls({ AB: slots }, NOMINAL_IN)).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // THE 39in SQUARE BALE CORNER (2026-09-26)
+  //
+  // This file's own doc comment already named Square Bale as the reason
+  // `nominalCornerWidthIn` is carried on the record — but no test ever passed
+  // 39in, so the value the app really does tile Square Bale corners at was
+  // never exercised here. Both halves matter: the record shape works at 39in,
+  // AND the tiler must never hand it a widened bale corner to report.
+  // -------------------------------------------------------------------------
+  const BALE_IN = 39;
+
+  it("measures an absorbed pair against the 39in bale nominal, not against 25.5in", () => {
+    const slots: PanelSlot[] = [
+      { type: "corner", widthIn: 42 },
+      { type: "corner", widthIn: 42 },
+    ];
+    expect(findAbsorbedCornerWalls({ AB: slots }, BALE_IN)).toEqual([
+      { wallId: "AB", cornerWidthsIn: [42, 42], absorbedIn: 6, nominalCornerWidthIn: BALE_IN },
+    ]);
+    // Measured against the WRONG nominal the same pair reads as 33in absorbed,
+    // which is why the nominal travels on the record instead of being looked up.
+    expect(findAbsorbedCornerWalls({ AB: slots }, NOMINAL_IN)[0]!.absorbedIn).toBe(33);
+  });
+
+  it("never has anything to report under Square Bale, because bale corners do not widen", () => {
+    // `cornerMayWiden: false` — Tommy: "No — refuse instead." Swept across the
+    // whole moved 78in-102in band: no absorbed pair is ever produced, so this
+    // entry never fires and the wall is refused by name instead.
+    for (let eighths = 78 * 8; eighths <= 102 * 8; eighths++) {
+      const lengthIn = eighths / 8;
+      const slots = tileWall(lengthIn, 39, BALE_IN, "end", true, true, true, false).slots;
+      expect(findAbsorbedCornerWalls({ AB: slots }, BALE_IN)).toEqual([]);
     }
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeSillRunWidths,
+  cornerBandMiddleIn,
   getOpeningAnchors,
   markSafetyCorner,
   nextPanelCycleState,
@@ -1400,5 +1401,226 @@ describe("computeSillRunWidths on the 1/8in grid", () => {
       }
     }
     expect(violations.slice(0, 10)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SQUARE BALE REFUSES, IT DOES NOT ABSORB (2026-09-26)
+//
+// `squareBalePanel.widthIn` is a CONFIRMED 39in whole-bale unit — two 18in
+// bales plus two 1.5in studs — and the app tiles Square Bale corners at that
+// width (`cornerWidthInForTiling` in page.tsx). That moves the two-corner band
+// from 51in-75in to 78in-102in, where absorb would emit corner "panels" up to
+// 48in wide. Tommy, asked directly whether a bale corner may be widened the
+// way a plywood-faced corner panel may:
+//
+//   "No — refuse instead."
+//
+// Bales do not stretch, so widening a bale corner invents a product. The
+// geometry therefore stops absorbing (`cornerMayWiden: false`), the wall keeps
+// today's nominal corners plus a sub-minimum middle the Review Log already
+// reports, and the app refuses the panelization by name at the point of edit.
+//
+// Every "would have been" number below was MEASURED on this branch before the
+// gate went in, by sweeping every eighth from 78in to 103in at a 39in corner.
+// ---------------------------------------------------------------------------
+describe("Square Bale's 39in corner: refuse, do not absorb", () => {
+  const BALE_CORNER_IN = 39;
+  const bale = (lengthIn: number, cornerMayWiden: boolean, standardWidthIn = 39) =>
+    tileWall(lengthIn, standardWidthIn, BALE_CORNER_IN, "end", true, true, true, cornerMayWiden).slots.map((s) => [
+      s.type,
+      s.widthIn,
+    ]);
+
+  describe("cornerBandMiddleIn — the one definition of 'this wall is in the band'", () => {
+    it("names the sub-minimum middle at the 25.5in corner panel", () => {
+      expect(cornerBandMiddleIn(72, 25.5, true, true)).toBe(21);
+      expect(cornerBandMiddleIn(60, 25.5, true, true)).toBe(9);
+      // 51in: the pair fits with a zero middle. Not the band.
+      expect(cornerBandMiddleIn(51, 25.5, true, true)).toBeNull();
+      // 75in: the first legal middle (exactly the 24in floor). Not the band.
+      expect(cornerBandMiddleIn(75, 25.5, true, true)).toBeNull();
+      // Too short for the pair at all — that is the merge case, not this one.
+      expect(cornerBandMiddleIn(40, 25.5, true, true)).toBeNull();
+    });
+
+    it("moves the band to 78in-102in at the 39in bale corner", () => {
+      expect(cornerBandMiddleIn(78, BALE_CORNER_IN, true, true)).toBeNull();
+      expect(cornerBandMiddleIn(78.125, BALE_CORNER_IN, true, true)).toBe(0.125);
+      // An 8ft wall — MIN_DIMENSION_FT, the shortest side the rectangle tool
+      // will draw, i.e. entirely ordinary — is inside the moved band.
+      expect(cornerBandMiddleIn(96, BALE_CORNER_IN, true, true)).toBe(18);
+      expect(cornerBandMiddleIn(101.875, BALE_CORNER_IN, true, true)).toBe(23.875);
+      expect(cornerBandMiddleIn(102, BALE_CORNER_IN, true, true)).toBeNull();
+    });
+
+    it("is null whenever the wall does not own BOTH corners", () => {
+      expect(cornerBandMiddleIn(84, BALE_CORNER_IN, true, false)).toBeNull();
+      expect(cornerBandMiddleIn(84, BALE_CORNER_IN, false, true)).toBeNull();
+      expect(cornerBandMiddleIn(84, BALE_CORNER_IN, false, false)).toBeNull();
+    });
+  });
+
+  it("84in (7ft): absorb WOULD have invented a 42in bale corner; refusal keeps 39in", () => {
+    // Measured before the gate: [corner 42, corner 42]. A 42in "square bale
+    // panel" is not a product — it is three inches of nothing between two
+    // 18in bales.
+    expect(bale(84, true)).toEqual([
+      ["corner", 42],
+      ["corner", 42],
+    ]);
+    // With the gate: both corners stay at the confirmed 39in whole-bale width
+    // and the 6in remainder is left VISIBLE as a sub-minimum panel, which the
+    // Review Log's existing sub-minimum entry reports. A visible gap beats a
+    // substituted value.
+    expect(bale(84, false)).toEqual([
+      ["corner", 39],
+      ["standard", 6],
+      ["corner", 39],
+    ]);
+  });
+
+  it("96in (8ft, MIN_DIMENSION_FT): absorb WOULD have emitted two 48in bale corners", () => {
+    expect(bale(96, true)).toEqual([
+      ["corner", 48],
+      ["corner", 48],
+    ]);
+    expect(bale(96, false)).toEqual([
+      ["corner", 39],
+      ["standard", 18],
+      ["corner", 39],
+    ]);
+  });
+
+  it("95.875in: the widest pair absorb could emit, one eighth under the ceiling", () => {
+    expect(bale(95.875, true)).toEqual([
+      ["corner", 48],
+      ["corner", 47.875],
+    ]);
+  });
+
+  it("78in is two nominal bale corners with a zero middle, gate or no gate", () => {
+    const expected = [
+      ["corner", 39],
+      ["corner", 39],
+    ];
+    expect(bale(78, true)).toEqual(expected);
+    expect(bale(78, false)).toEqual(expected);
+  });
+
+  it("96.125in-101.875in: the legality guard ALREADY fired here, and there is still no legal tiling", () => {
+    // 47 of the band's 191 eighth-steps. The pair would exceed the confirmed
+    // 48in ceiling, so absorb never applied even before the gate — which is
+    // why "every wall length has a legal tiling" was never true for Square
+    // Bale. The gate changes nothing here; the refusal is what makes it
+    // honest rather than hidden.
+    let steps = 0;
+    for (let eighths = 96.125 * 8; eighths <= 101.875 * 8; eighths++) {
+      const lengthIn = eighths / 8;
+      steps++;
+      const withGate = bale(lengthIn, false);
+      expect(bale(lengthIn, true)).toEqual(withGate);
+      // Nominal corners, and a middle under the shop floor either way.
+      expect(withGate[0]).toEqual(["corner", BALE_CORNER_IN]);
+      expect(withGate[withGate.length - 1]).toEqual(["corner", BALE_CORNER_IN]);
+      const middle = withGate.slice(1, -1) as [string, number][];
+      expect(middle.length).toBe(1);
+      expect(middle[0]![1]).toBeLessThan(TILER_MIN_PANEL_WIDTH_IN);
+    }
+    expect(steps).toBe(47);
+  });
+
+  it("across the WHOLE moved band, the gate never emits a corner off the confirmed 39in", () => {
+    // The property that matters: no invented bale product at any wall length,
+    // on any path into the tiler — including drawing a band-length wall while
+    // Square Bale is already selected, which never touches the panelization
+    // control and so is never seen by the refusal.
+    const offNominal: string[] = [];
+    let swept = 0;
+    for (let eighths = 78 * 8; eighths <= 102 * 8; eighths++) {
+      const lengthIn = eighths / 8;
+      for (const standardWidthIn of [24, 39, 48]) {
+        const slots = tileWall(lengthIn, standardWidthIn, BALE_CORNER_IN, "end", true, true, true, false).slots;
+        swept++;
+        const sum = slots.reduce((acc, s) => acc + s.widthIn, 0);
+        expect(sum).toBe(lengthIn);
+        for (const s of slots) {
+          if ((s.type === "corner" || s.type === "safety-oct-corner") && s.widthIn !== BALE_CORNER_IN) {
+            offNominal.push(`${lengthIn}@${standardWidthIn}: ${s.widthIn}`);
+          }
+        }
+      }
+    }
+    expect(swept).toBe(579);
+    expect(offNominal).toEqual([]);
+  });
+
+  it("the gate is OFF by default, so the 25.5in corner panel still absorbs", () => {
+    // Backward compatibility of the branch's own rule: `cornerMayWiden`
+    // defaults to true, so every existing caller keeps corner absorb.
+    expect(tileWall(72, 40, CORNER_WIDTH_IN, "end", true, true).slots.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 36],
+      ["corner", 36],
+    ]);
+    expect(
+      tileWall(72, 40, CORNER_WIDTH_IN, "end", true, true, true, true).slots.map((s) => [s.type, s.widthIn]),
+    ).toEqual([
+      ["corner", 36],
+      ["corner", 36],
+    ]);
+  });
+
+  it("retileWithOpenings honours the gate too — a band wall keeps its window and its 39in corners", () => {
+    // 90in wall, 30in window: the nominal middle is 12in, so the window does
+    // not fit there and the absorb path would have dropped it AND widened the
+    // corners to 45in each. Gated, the tiling is today's: nominal corners and
+    // the window kept.
+    //
+    // ⚠ AND THAT TILING OVERRUNS ITS WALL — 39 + 30 + 39 = 108in of slots on a
+    // 90in wall. This is `main`'s own pre-existing behaviour for ANY wall whose
+    // openings exceed its middle at ANY corner width (at the 25.5in corner, a
+    // 60in wall with a 30in window sums to 81in the same way), which is the
+    // "the pre-fix slot sum was already wrong" finding the absorb work
+    // measured over 4,110 cases. Absorb hid it on band walls by dropping the
+    // opening; refusing to widen a bale corner puts it back, because the only
+    // two alternatives are inventing a 45in bale panel or deleting the user's
+    // window without saying so. Nothing reports it today — recorded in the
+    // spec's Open Items, NOT fixed here, because a sum reporter is its own
+    // piece of work and this test exists so the exposure cannot be lost.
+    const gated = retileWithOpenings(
+      90,
+      39,
+      BALE_CORNER_IN,
+      "end",
+      true,
+      true,
+      [{ beforeStandardCount: 0, type: "window", widthIn: 30 }],
+      true,
+      false,
+    ).slots;
+    expect(gated.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 39],
+      ["window", 30],
+      ["corner", 39],
+    ]);
+    expect(gated.reduce((acc, s) => acc + s.widthIn, 0)).toBe(108);
+    // Ungated, for the record: the window is dropped and the corners invent
+    // themselves a 45in width.
+    expect(
+      retileWithOpenings(
+        90,
+        39,
+        BALE_CORNER_IN,
+        "end",
+        true,
+        true,
+        [{ beforeStandardCount: 0, type: "window", widthIn: 30 }],
+        true,
+        true,
+      ).slots.map((s) => [s.type, s.widthIn]),
+    ).toEqual([
+      ["corner", 45],
+      ["corner", 45],
+    ]);
   });
 });

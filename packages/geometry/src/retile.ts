@@ -312,6 +312,10 @@ export function retile(
   bracedSeed: BracedSeed,
   openingSeed?: OpeningSeed,
   runStopsByWallId?: Record<string, WallRunStop>,
+  /** False when this panelization's corner panel cannot be fabricated off its
+   * nominal width (Square Bale's 39in whole-bale corner) — see
+   * `resolveCorners`' own doc comment in tiling.ts. */
+  cornerMayWiden = true,
 ): Record<string, PanelSlot[]> {
   const next: Record<string, PanelSlot[]> = {};
   const ownership = cornerOwnershipWithRunStops(fp, primary, thicknessIn, runStopsByWallId);
@@ -325,13 +329,30 @@ export function retile(
     const end = { hasCorner: hasCornerEnd };
     // Octagon (and other mitered shapes) never borrow-and-split a standard
     // panel for the gap — Tommy: no standard-safety panels for octagons.
-    const plainSlots = tileWall(lengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, start.hasCorner, end.hasCorner, !mitered)
-      .slots;
+    const plainSlots = tileWall(
+      lengthIn,
+      standardWidthIn,
+      cornerPanelWidthIn,
+      gapEnd,
+      start.hasCorner,
+      end.hasCorner,
+      !mitered,
+      cornerMayWiden,
+    ).slots;
     const seedAnchors = openingSeed ? seedDefaultOpenings(plainSlots, wall, fp, randomFn) : [];
     const slots =
       seedAnchors.length > 0
-        ? retileWithOpenings(lengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, start.hasCorner, end.hasCorner, seedAnchors, !mitered)
-            .slots
+        ? retileWithOpenings(
+            lengthIn,
+            standardWidthIn,
+            cornerPanelWidthIn,
+            gapEnd,
+            start.hasCorner,
+            end.hasCorner,
+            seedAnchors,
+            !mitered,
+            cornerMayWiden,
+          ).slots
         : plainSlots;
     const seeded = reconcileBracedPlacement(
       undefined,
@@ -363,14 +384,32 @@ function tileOneWallPreservingOpenings(
   wall: Wall,
   fp: Footprint,
   openingSeed?: OpeningSeed,
+  cornerMayWiden = true,
 ): PanelSlot[] {
   if (!oldSlots) {
-    const plainSlots = tileWall(wallLengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, hasCornerStart, hasCornerEnd, allowBorrow)
-      .slots;
+    const plainSlots = tileWall(
+      wallLengthIn,
+      standardWidthIn,
+      cornerPanelWidthIn,
+      gapEnd,
+      hasCornerStart,
+      hasCornerEnd,
+      allowBorrow,
+      cornerMayWiden,
+    ).slots;
     const seedAnchors = openingSeed ? seedDefaultOpenings(plainSlots, wall, fp, openingSeed.randomFn ?? Math.random) : [];
     if (seedAnchors.length === 0) return plainSlots;
-    return retileWithOpenings(wallLengthIn, standardWidthIn, cornerPanelWidthIn, gapEnd, hasCornerStart, hasCornerEnd, seedAnchors, allowBorrow)
-      .slots;
+    return retileWithOpenings(
+      wallLengthIn,
+      standardWidthIn,
+      cornerPanelWidthIn,
+      gapEnd,
+      hasCornerStart,
+      hasCornerEnd,
+      seedAnchors,
+      allowBorrow,
+      cornerMayWiden,
+    ).slots;
   }
   return retileWithOpenings(
     wallLengthIn,
@@ -381,6 +420,7 @@ function tileOneWallPreservingOpenings(
     hasCornerEnd,
     getOpeningAnchors(oldSlots),
     allowBorrow,
+    cornerMayWiden,
   ).slots;
 }
 
@@ -409,6 +449,8 @@ export function retilePreservingOpenings(
   bracedSeed: BracedSeed,
   openingSeed?: OpeningSeed,
   runStopsByWallId?: Record<string, WallRunStop>,
+  /** See `retile`'s own parameter of the same name. */
+  cornerMayWiden = true,
 ): Record<string, PanelSlot[]> {
   const next: Record<string, PanelSlot[]> = {};
   const ownership = cornerOwnershipWithRunStops(fp, primary, thicknessIn, runStopsByWallId);
@@ -432,6 +474,7 @@ export function retilePreservingOpenings(
       wall,
       fp,
       openingSeed,
+      cornerMayWiden,
     );
     // Preserves this wall's own prior braced-panel decisions (type, style,
     // mirror) by position, seeding only genuinely new standard-slot

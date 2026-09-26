@@ -61,7 +61,20 @@ export function findAbsorbedCornerWalls(
     // 51.125in wall is 25.625in + 25.5in — so requiring both to exceed
     // nominal would silently miss the first eighth of the band.
     if (corners.length !== 2) continue;
-    if (list.some((s) => s.type === "standard" || s.type === "braced" || s.type === "column")) continue;
+    // ⚠ `column` was in this list and is NOT any more (2026-09-26). It was the
+    // one reservation type treated as a disqualifier while `window`, `door` and
+    // `big-header` were correctly not — and a column is a reservation exactly
+    // like them, so the corners around it absorb exactly the same way.
+    // MEASURED: a 70in wall carrying a 16.75in column tiles to
+    // `corner 26.625 | column 16.75 | corner 26.625` — the pair widened past
+    // nominal, the sum exact, and this walk returned nothing, so that wall got
+    // ZERO Review Log entries. Latent rather than live today only because
+    // page.tsx forces every column anchor to COLUMN_TOTAL_WIDTH_IN (25.5in),
+    // which can never leave a sub-24in middle to absorb; a narrower column
+    // anchor makes it immediate. `standard`/`braced` stay: a fabricated plain
+    // panel between the corners means the tiler took the ordinary path, which
+    // is not this shape.
+    if (list.some((s) => s.type === "standard" || s.type === "braced")) continue;
     if (corners.some((s) => toEighths(s.widthIn) < nominalEighths)) continue;
     const totalEighths = corners.reduce((sum, s) => sum + toEighths(s.widthIn), 0);
     if (totalEighths <= 2 * nominalEighths) continue;
