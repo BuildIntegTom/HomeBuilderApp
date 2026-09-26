@@ -1,4 +1,5 @@
-import { cornerBandMiddleIn } from "@building-integrity/geometry";
+import { cornerBandMiddleIn, wallGeometryFor } from "@building-integrity/geometry";
+import type { CornerId, Footprint, WallRunStop } from "@building-integrity/geometry";
 import type { FormatLengthIn } from "./placementNotice";
 
 /**
@@ -35,10 +36,45 @@ import type { FormatLengthIn } from "./placementNotice";
  * It is NOT the only thing standing between the shop and an invented part, and
  * must not be mistaken for it. A user already in Square Bale who draws or
  * shortens a wall into the band never touches the panelization control, so no
- * refusal can see it; what protects that path is `cornerMayWiden: false` in
- * the geometry, which leaves the wall tiled as it was before absorb existed —
- * nominal 39in corners and a **visible** sub-minimum middle that the Review
+ * refusal can see it; what covers that path is `cornerMayWiden: false` in the
+ * geometry, which leaves a **band** wall tiled as it was before absorb existed
+ * — nominal 39in corners and a **visible** sub-minimum middle that the Review
  * Log's below-minimum entry reports. A visible gap beats a substituted value.
+ *
+ * ### ⚠ What `cornerMayWiden: false` does NOT cover — the MERGED bale corner
+ *
+ * This module used to say the geometry flag stops the geometry inventing a part
+ * on *any* other path. **That was an overstatement and is corrected here
+ * (2026-09-26).** The flag gates the **absorb** branch only. It does not gate
+ * `resolveCorners`' older **merge** branch, which fires when a wall is too
+ * short for two nominal corners at all — and that branch emits one `corner`
+ * slot of the wall's **whole length**, at any corner width, regardless of the
+ * flag. Measured on this branch: `tileWall(72, 39, 39, "end", true, true, true,
+ * false)` → a single `corner 72in`, and `tileWall(77.875, ...)` → `corner
+ * 77.875in`, **29 7/8in over the confirmed 48in `panelWidthInRange.maxIn`.**
+ *
+ * So under Square Bale **every two-corner wall shorter than 78in still gets a
+ * single merged "bale corner" as wide as the wall.** It is neither refused
+ * (`cornerBandMiddleIn` deliberately returns null for the merge case, so
+ * `findSquareBaleBandWalls` never sees it) nor reported (the app has no
+ * over-maximum panel reporter).
+ *
+ * **Reached by drawing a small octagon, measured rather than argued:** under
+ * Square Bale (39in corner, 14in thickness) every wall of every octagon from
+ * about **9.7ft to 15.7ft across** is one merged slot as wide as the wall —
+ * 9.75ft → 48 1/2in, 10ft → 49 3/4in, 12ft → 59 3/4in, 15.5ft → 77 1/8in; at
+ * 15.75ft the side reaches 78in and the walls tile normally again. (On a
+ * mitered shape the slot comes out typed `safety-oct-corner` rather than
+ * `corner`, which changes nothing about its width.) A short bump-out return
+ * does **not** reach this case: it owns a corner at one end only, so it tiles
+ * `braced 21in | corner 39in` — a sub-minimum panel the Review Log does report.
+ *
+ * This is **pre-existing on `main`** and far older than absorb: the instruction
+ * for the absorb work was that the merged corner keep behaving as it does
+ * today, so it is deliberately untouched here. Whether *"No — refuse instead"*
+ * extends to the merged bale corner is **Tommy's answer and he has been
+ * asked**; nothing here assumes it either way. Recorded in the spec under the
+ * 51in-75in band section and in `## Open Items`.
  *
  * ### The honest part of the message
  *
@@ -66,6 +102,72 @@ export interface RefusalWallFacts {
   lengthIn: number;
   hasCornerStart: boolean;
   hasCornerEnd: boolean;
+}
+
+/**
+ * The per-wall facts, read **at the thickness Square Bale is about to be
+ * applied at** — not at whatever thickness the project is on right now.
+ *
+ * ### ⚠ This is the whole reason the function exists, and getting it wrong was
+ * a live defect (fixed 2026-09-26)
+ *
+ * The refusal used to be built from page.tsx's own per-render `wallGeometryFor`,
+ * which closes over the **current** `thicknessIn` — 15.5in by default. But the
+ * Square Bale button then calls `setThicknessIn(squareBalePanel.thicknessIn)` =
+ * **14in**, and a wall's tiling run is thickness-dependent: `cornerOwnership`
+ * adds `extraLengthIn = thicknessIn` to any end that owns a **reflex** corner.
+ * So the refusal was decided against a run length the wall would not have once
+ * Square Bale was applied — validating on one basis and applying on another,
+ * the same class of defect as the validate/apply basis split that was a
+ * must-fix on Smearforn Stage 3 (see `wallRunStopBasisIn` in page.tsx, whose
+ * note says the same thing about the same mistake).
+ *
+ * **Measured, both directions.** Sweeping a 6ft bump-out's span start in 1/8in
+ * steps along the 30ft wall of a 30x20 rectangle (`insertBumpOut(buildRectangle
+ * Footprint(30, 20), "AB", s, s + 6, 5, primary)`, 1249 positions, 2498
+ * two-corner walls, of which **2306 change run length** between 15.5in and
+ * 14in):
+ *
+ * - **12 positions were FALSE REFUSALS.** At a span start of 62 5/8in, wall
+ *   `01` runs **78 1/8in at 15.5in** — in the 78in-102in bale band, middle
+ *   1/8in, refused by name — but **76 5/8in at 14in**, which is not in the band
+ *   at all. The app refused Square Bale, quoting inches the building would not
+ *   have had.
+ * - **12 positions were the mirror**, out of band at 15.5in and in band at 14in
+ *   (span start 86 1/2in: 102in vs 100 1/2in, a 22 1/2in middle). Not a
+ *   shop-safety hole — `cornerMayWiden: false` still applies and the
+ *   sub-minimum middle still reports — but the refuse posture was silently
+ *   incomplete on the one-click path.
+ *
+ * Taking the thickness as an argument is also what makes this reachable from
+ * this module's own tests instead of only from untested page.tsx glue.
+ */
+export function squareBaleRefusalWallFacts(
+  footprint: Footprint,
+  primaryCornerIds: Set<string>,
+  leastAccessibleCorner: CornerId,
+  baleThicknessIn: number,
+  runStopsByWallId: Record<string, WallRunStop>,
+): RefusalWallFacts[] {
+  const facts: RefusalWallFacts[] = [];
+  for (const wall of footprint.walls) {
+    const geometry = wallGeometryFor(
+      footprint,
+      wall.id,
+      primaryCornerIds,
+      leastAccessibleCorner,
+      baleThicknessIn,
+      runStopsByWallId,
+    );
+    if (!geometry) continue;
+    facts.push({
+      wallId: wall.id,
+      lengthIn: geometry.lengthIn,
+      hasCornerStart: geometry.hasCornerStart,
+      hasCornerEnd: geometry.hasCornerEnd,
+    });
+  }
+  return facts;
 }
 
 /**

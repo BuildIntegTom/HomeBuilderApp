@@ -340,7 +340,7 @@ import styles from "./page.module.css";
 import elevationStyles from "./ElevationControls.module.css";
 import { tilerWouldChangeThePanelCount } from "./handPlacedWallRetile";
 import { placementCommitNotice, placementRefusalNotice, placementRefusalSentence, type PlacementOp } from "./placementNotice";
-import { findSquareBaleBandWalls, squareBaleCornerRefusal, type RefusalWallFacts } from "./squareBaleCornerRefusal";
+import { findSquareBaleBandWalls, squareBaleCornerRefusal, squareBaleRefusalWallFacts } from "./squareBaleCornerRefusal";
 
 const FootprintCanvas = dynamic(() => import("./FootprintCanvas"), { ssr: false });
 const Building3DView = dynamic(() => import("./Building3DView"), { ssr: false });
@@ -2746,11 +2746,23 @@ export default function LayoutEditor() {
    * `cornerBandMiddleIn`, the tiler's own definition of the band, so the two
    * cannot drift.
    *
-   * Reads the SAME run length and corner ownership the tiler would use
-   * (`wallGeometryFor`, with the live run stops), not the drawn wall length —
-   * a bump-out return or a stopped run is exactly where a band-length wall
-   * comes from. Corner ownership and run length belong to the footprint rather
-   * than to a story, so one pass covers a two-story building.
+   * Reads the SAME run length and corner ownership the tiler would use, with
+   * the live run stops, not the drawn wall length — a bump-out return or a
+   * stopped run is exactly where a band-length wall comes from. Corner
+   * ownership and run length belong to the footprint rather than to a story, so
+   * one pass covers a two-story building.
+   *
+   * **⚠ At `squareBalePanel.thicknessIn`, NOT at the project's current
+   * thickness** — this was a live defect, fixed 2026-09-26. The local
+   * `wallGeometryFor` closes over today's `thicknessIn` (15.5in by default),
+   * but the button that runs this refusal then calls
+   * `setThicknessIn(squareBalePanel.thicknessIn)` = 14in, and a reflex corner
+   * adds `extraLengthIn = thicknessIn` to a wall's run. Validating on one basis
+   * and applying on another produced 12 measured false refusals and 12 measured
+   * misses on one bump-out sweep alone; see `squareBaleRefusalWallFacts`, which
+   * takes the thickness as an argument and carries the measurements. It is the
+   * same house convention `applyWallRunStopChange` states below — the SAME basis
+   * the refusal validated against.
    *
    * Like every other limit in this app it is enforced at the point of EDIT and
    * never at load: a project saved under Square Bale with a band wall still
@@ -2759,17 +2771,13 @@ export default function LayoutEditor() {
    */
   const squareBalePanelizationRefusal = (): string | null => {
     if (!footprint) return null;
-    const facts: RefusalWallFacts[] = [];
-    for (const wall of footprint.walls) {
-      const geometry = wallGeometryFor(wall.id);
-      if (!geometry) continue;
-      facts.push({
-        wallId: wall.id,
-        lengthIn: geometry.lengthIn,
-        hasCornerStart: geometry.hasCornerStart,
-        hasCornerEnd: geometry.hasCornerEnd,
-      });
-    }
+    const facts = squareBaleRefusalWallFacts(
+      footprint,
+      primaryCornerIds,
+      leastAccessibleCorner,
+      squareBalePanel.thicknessIn,
+      wallRunStopsByWallId,
+    );
     return squareBaleCornerRefusal(
       findSquareBaleBandWalls(facts, squareBalePanel.widthIn),
       squareBalePanel.widthIn,
