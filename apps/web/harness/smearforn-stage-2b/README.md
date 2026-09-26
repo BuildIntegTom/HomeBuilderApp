@@ -46,8 +46,9 @@ in it — drawing a footprint, measuring walls, passing its first two checks —
 before dying five steps later on a missing button, with a message that looked
 like a broken locator. There is now a named check for exactly that
 (`the-app-under-test-actually-has-stage-2b-in-it`), so a wrong server is one
-loud failure instead of a puzzle. The checked-in evidence is from port 3219
-for that reason.
+loud failure instead of a puzzle. The checked-in evidence is from **port 3231**
+for that reason — 3214, 3215 and 3219 were all occupied by other checkouts
+when the review-fix pass re-ran it on 2026-09-26.
 
 ## Knobs, and why each is a real fixture
 
