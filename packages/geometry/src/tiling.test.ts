@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeSillRunWidths,
   cornerBandMiddleIn,
+  mergedCornerWidthIn,
   getOpeningAnchors,
   markSafetyCorner,
   nextPanelCycleState,
@@ -1461,6 +1462,62 @@ describe("Square Bale's 39in corner: refuse, do not absorb", () => {
     });
   });
 
+  describe("mergedCornerWidthIn — the one definition of 'this wall merges its corners'", () => {
+    it("agrees with what resolveCorners actually emits, at both corner widths", () => {
+      // The whole point of exporting it: the app's refusal must not re-derive
+      // the comparison and drift. Asserted against the tiler's own output
+      // rather than against the formula it shares with it.
+      for (const [lengthIn, cornerIn] of [
+        [40, 25.5],
+        [47.25, 25.5],
+        [50.875, 25.5],
+        [52.25, BALE_CORNER_IN],
+        [72, BALE_CORNER_IN],
+        [77.875, BALE_CORNER_IN],
+      ] as const) {
+        const slots = tileWall(lengthIn, 40, cornerIn, "end", true, true, true, false).slots;
+        expect(slots).toEqual([{ type: "corner", widthIn: lengthIn }]);
+        expect(mergedCornerWidthIn(lengthIn, cornerIn, true, true)).toBe(lengthIn);
+      }
+    });
+
+    it("is null at and above two nominal corners — there is no merge there", () => {
+      expect(mergedCornerWidthIn(51, 25.5, true, true)).toBeNull();
+      expect(mergedCornerWidthIn(72, 25.5, true, true)).toBeNull();
+      expect(mergedCornerWidthIn(78, BALE_CORNER_IN, true, true)).toBeNull();
+      expect(mergedCornerWidthIn(96, BALE_CORNER_IN, true, true)).toBeNull();
+    });
+
+    it("is null whenever the wall does not own BOTH corners, or has no length", () => {
+      expect(mergedCornerWidthIn(60, BALE_CORNER_IN, true, false)).toBeNull();
+      expect(mergedCornerWidthIn(60, BALE_CORNER_IN, false, true)).toBeNull();
+      expect(mergedCornerWidthIn(60, BALE_CORNER_IN, false, false)).toBeNull();
+      expect(mergedCornerWidthIn(0, BALE_CORNER_IN, true, true)).toBeNull();
+    });
+
+    it("⚠ the MERGED BALE CORNER is what this exists for — 29 7/8in over the 48in ceiling at worst", () => {
+      // The widest merged bale corner possible: one eighth under two nominal
+      // bale corners. `panelWidthInRange.maxIn` is a confirmed 48in.
+      expect(mergedCornerWidthIn(77.875, BALE_CORNER_IN, true, true)).toBe(77.875);
+      expect(77.875 - 48).toBe(29.875);
+      // And it is legal-width, but still not a 39in bale unit, well below the
+      // ceiling — which is why the app refuses the whole merge branch under
+      // Square Bale rather than only the part of it that breaches 48in.
+      expect(mergedCornerWidthIn(44.75, BALE_CORNER_IN, true, true)).toBe(44.75);
+    });
+
+    it("the gate does NOT stop the merge, which is exactly the gap the app refusal closes", () => {
+      // cornerMayWiden true and false give the same merged slot. Recorded so
+      // nobody reads `cornerMayWiden: false` as covering this.
+      expect(tileWall(72, 39, BALE_CORNER_IN, "end", true, true, true, true).slots).toEqual([
+        { type: "corner", widthIn: 72 },
+      ]);
+      expect(tileWall(72, 39, BALE_CORNER_IN, "end", true, true, true, false).slots).toEqual([
+        { type: "corner", widthIn: 72 },
+      ]);
+    });
+  });
+
   it("84in (7ft): absorb WOULD have invented a 42in bale corner; refusal keeps 39in", () => {
     // Measured before the gate: [corner 42, corner 42]. A 42in "square bale
     // panel" is not a product — it is three inches of nothing between two
@@ -1570,7 +1627,7 @@ describe("Square Bale's 39in corner: refuse, do not absorb", () => {
     ]);
   });
 
-  it("retileWithOpenings honours the gate too — a band wall keeps its window and its 39in corners", () => {
+  it("retileWithOpenings honours the gate too — a band wall keeps its window and its 39in corners, AND OVERRUNS its wall (108in of slots on 90in): pre-existing, recorded not fixed", () => {
     // 90in wall, 30in window: the nominal middle is 12in, so the window does
     // not fit there and the absorb path would have dropped it AND widened the
     // corners to 45in each. Gated, the tiling is today's: nominal corners and
@@ -1585,8 +1642,22 @@ describe("Square Bale's 39in corner: refuse, do not absorb", () => {
     // opening; refusing to widen a bale corner puts it back, because the only
     // two alternatives are inventing a 45in bale panel or deleting the user's
     // window without saying so. Nothing reports it today — recorded in the
-    // spec's Open Items, NOT fixed here, because a sum reporter is its own
-    // piece of work and this test exists so the exposure cannot be lost.
+    // spec's `## Open Items` as "A wall whose SLOTS do not sum to the wall"
+    // (added there 2026-09-26; this comment used to cite an Open Items list the
+    // item was not in). NOT fixed here, because a sum reporter is its own piece
+    // of work and this test exists so the exposure cannot be lost.
+    //
+    // ⚠ HOW FAR IT REACHES, established 2026-09-26 and worth stating because it
+    // is not obvious: an overrun wall's slots ARE the panel instances, so the
+    // overrun reaches **the price, the cut list and the per-unique-panel shop
+    // sheets** — 108in of panels drawn, priced and cut for a 90in wall — while
+    // being **invisible in 3D and in the OBJ export**, because
+    // `panelSlotBoxes3D` defensively rescales every slot by
+    // `lengthIn / totalWidthIn` (0.8333 here, see its line 107). **So the render
+    // looks right while the parts are 17% wider than the wall can take**, which
+    // is the strongest argument there is for the missing slot-sum/ceiling
+    // reporter — it now has three customers (this, the merged corner over the
+    // 48in ceiling, and the boundary-drag 56in panel).
     const gated = retileWithOpenings(
       90,
       39,

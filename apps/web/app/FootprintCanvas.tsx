@@ -268,8 +268,16 @@ export default function FootprintCanvas({
     // The NOMINAL-width corner section on purpose — corner members are built at
     // each slot's real width elsewhere now, but a wider section reports HIGHER
     // bearing and that is not a number to infer. Same decision, same reasoning
-    // as `estimatedCornerBuiltUpBearingLb` in page.tsx; see the spec's Open
-    // Items.
+    // as `estimatedCornerBuiltUpBearingLb` in page.tsx; the question is in the
+    // spec's `## Open Items` as "Does a WIDER corner panel carry more axial
+    // load?" (added there 2026-09-26 — this comment used to point at an Open
+    // Items list that did not contain it).
+    //
+    // ⚠ A pre-existing divergence, recorded and NOT fixed here: this builds the
+    // PLYWOOD corner at nominal unconditionally, while page.tsx's twin reads
+    // `cornerPanelMembers3D`, which under Square Bale is the BALE corner body.
+    // So the two sites agree for Loose Packed Braced and Timber Frame Curtain
+    // and disagree under Square Bale. Not introduced by the corner work.
     const cornerBearingLb = computeBuiltUpColumnBearingCapacityLb(
       buildCornerPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer),
       wallHeightFt * 12,

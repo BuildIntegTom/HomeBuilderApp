@@ -207,7 +207,10 @@ export function buildColumnPanelMembers(depthIn: number, heightIn: number, inclu
  * members' real positions), and nobody has confirmed that a widened corner's
  * cladding braces the section the same way. Bearing is still taken from the
  * nominal 25.5in build, which is the conservative direction. Recorded in the
- * spec's Open Items rather than quietly improved.
+ * spec's `## Open Items` — *"Does a WIDER corner panel carry more axial
+ * load?"* — rather than quietly improved. (That item was added to the list
+ * 2026-09-26; this pointer previously named an Open Items list the question was
+ * not actually in.)
  */
 export function buildColumnStyleMembers(
   totalWidthIn: number,

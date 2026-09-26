@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { fabricationMinPanelWidthIn, squareBalePanel } from "@building-integrity/panel-catalog";
+import { fabricationMinPanelWidthIn, panelWidthInRange, squareBalePanel } from "@building-integrity/panel-catalog";
 import { buildRectangleFootprint, insertBumpOut } from "@building-integrity/geometry";
 import {
   findSquareBaleBandWalls,
+  findSquareBaleMergedCornerWalls,
+  findSquareBaleMergedCorners,
   squareBaleCornerRefusal,
+  squareBaleMergedCornerNote,
+  squareBaleMergedCornerRefusal,
+  squareBalePanelizationRefusalMessage,
   squareBaleRefusalWallFacts,
 } from "./squareBaleCornerRefusal";
 import type { RefusalWallFacts } from "./squareBaleCornerRefusal";
@@ -221,5 +226,220 @@ describe("squareBaleRefusalWallFacts — the thickness Square Bale is about to b
     const { footprint, primaryCornerIds, leastAccessible } = bumpOutFootprint(62.625);
     const facts = squareBaleRefusalWallFacts(footprint, primaryCornerIds, leastAccessible, BALE_THICKNESS_IN, {});
     expect(facts.map((f) => f.wallId)).toEqual(footprint.walls.map((w) => w.id));
+  });
+});
+
+/**
+ * **Case A — the MERGED bale corner.** Tommy, 2026-09-26, asked whether
+ * *"No — refuse instead"* extends from the widened bale corner to the merged
+ * one: **"Yes — refuse both cases too."**
+ */
+const MAX_IN = panelWidthInRange.maxIn;
+
+describe("findSquareBaleMergedCornerWalls", () => {
+  it("is measured against the CONFIRMED 48in ceiling, not a local copy", () => {
+    expect(MAX_IN).toBe(48);
+    expect(panelWidthInRange.status).toBe("confirmed");
+  });
+
+  it("finds every two-corner wall under 78in, and reports the whole wall as the merged width", () => {
+    expect(findSquareBaleMergedCornerWalls([wall("AB", 72)], BALE_IN)).toEqual([
+      { wallId: "AB", wallLengthIn: 72, mergedWidthIn: 72 },
+    ]);
+    // The widest a merged bale corner can be: one eighth under two nominal.
+    expect(findSquareBaleMergedCornerWalls([wall("AB", 77.875)], BALE_IN)).toEqual([
+      { wallId: "AB", wallLengthIn: 77.875, mergedWidthIn: 77.875 },
+    ]);
+  });
+
+  it("finds the LEGAL-width merged corner too, because it is still not a 39in bale unit", () => {
+    // A 9ft octagon's side. Inside the 48in ceiling, and refused all the same.
+    expect(findSquareBaleMergedCornerWalls([wall("AB", 44.75)], BALE_IN)).toEqual([
+      { wallId: "AB", wallLengthIn: 44.75, mergedWidthIn: 44.75 },
+    ]);
+  });
+
+  it("is silent at 78in and above — that is the band's territory, not the merge's", () => {
+    expect(findSquareBaleMergedCornerWalls([wall("AB", 78)], BALE_IN)).toEqual([]);
+    expect(findSquareBaleMergedCornerWalls([wall("AB", 96)], BALE_IN)).toEqual([]);
+    expect(findSquareBaleMergedCornerWalls([wall("AB", 240)], BALE_IN)).toEqual([]);
+  });
+
+  it("is silent on a wall that does not own both corners", () => {
+    expect(findSquareBaleMergedCornerWalls([wall("AB", 72, [true, false])], BALE_IN)).toEqual([]);
+    expect(findSquareBaleMergedCornerWalls([wall("AB", 72, [false, false])], BALE_IN)).toEqual([]);
+  });
+
+  it("the two detectors partition the problem — no wall is ever in both", () => {
+    for (let eighths = 8; eighths <= 8 * 120; eighths += 1) {
+      const lengthIn = eighths / 8;
+      const inBand = findSquareBaleBandWalls([wall("AB", lengthIn)], BALE_IN).length;
+      const merged = findSquareBaleMergedCornerWalls([wall("AB", lengthIn)], BALE_IN).length;
+      expect(inBand + merged).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe("squareBaleMergedCornerRefusal", () => {
+  it("returns null when nothing merges", () => {
+    expect(squareBaleMergedCornerRefusal([], BALE_IN, MAX_IN, format)).toBeNull();
+  });
+
+  it("quotes the run, the 78in the pair needs, the merged width, and what was not changed", () => {
+    const message = squareBaleMergedCornerRefusal(
+      findSquareBaleMergedCornerWalls([wall("12", 72)], BALE_IN),
+      BALE_IN,
+      MAX_IN,
+      format,
+    )!;
+    expect(message).toContain("39in");
+    expect(message).toContain("Wall 12");
+    expect(message).toContain("72in");
+    expect(message).toContain("78in");
+    expect(message).toContain("not a whole-bale unit");
+    expect(message).toContain("24in over the 48in maximum panel width");
+    expect(message).toContain("NOT changed");
+  });
+
+  it("omits the over-the-ceiling clause when the merged panel does not breach it", () => {
+    const legalWidth = squareBaleMergedCornerRefusal(
+      findSquareBaleMergedCornerWalls([wall("AB", 44.75)], BALE_IN),
+      BALE_IN,
+      MAX_IN,
+      format,
+    )!;
+    // A refusal that quotes a limit the wall does not breach is not trusted.
+    expect(legalWidth).not.toContain("maximum panel width");
+    expect(legalWidth).toContain("not a whole-bale unit");
+  });
+
+  it("counts the other affected walls — a small octagon is eight of them", () => {
+    const octagon = Array.from({ length: 8 }, (_, i) => wall(`${i}${(i + 1) % 8}`, 59.75));
+    const message = squareBaleMergedCornerRefusal(
+      findSquareBaleMergedCornerWalls(octagon, BALE_IN),
+      BALE_IN,
+      MAX_IN,
+      format,
+    )!;
+    expect(message).toContain("7 other walls on this building are the same.");
+  });
+});
+
+describe("squareBalePanelizationRefusalMessage — one entry point, both cases", () => {
+  it("is null only when the building is legal in BOTH cases", () => {
+    const legal = [wall("AB", 240), wall("BC", 192), wall("CD", 240), wall("DA", 192)];
+    expect(
+      squareBalePanelizationRefusalMessage(
+        findSquareBaleBandWalls(legal, BALE_IN),
+        findSquareBaleMergedCornerWalls(legal, BALE_IN),
+        BALE_IN,
+        MIN_IN,
+        MAX_IN,
+        format,
+      ),
+    ).toBeNull();
+  });
+
+  it("refuses a band-only building with the band sentence", () => {
+    const walls = [wall("AB", 96)];
+    const message = squareBalePanelizationRefusalMessage(
+      findSquareBaleBandWalls(walls, BALE_IN),
+      findSquareBaleMergedCornerWalls(walls, BALE_IN),
+      BALE_IN,
+      MIN_IN,
+      MAX_IN,
+      format,
+    )!;
+    expect(message).toContain("no legal Square Bale tiling");
+    expect(message).not.toContain("merged into ONE corner panel");
+  });
+
+  it("refuses a merge-only building with the merge sentence", () => {
+    const walls = [wall("AB", 72)];
+    const message = squareBalePanelizationRefusalMessage(
+      findSquareBaleBandWalls(walls, BALE_IN),
+      findSquareBaleMergedCornerWalls(walls, BALE_IN),
+      BALE_IN,
+      MIN_IN,
+      MAX_IN,
+      format,
+    )!;
+    expect(message).toContain("merged into ONE corner panel");
+    expect(message).not.toContain("no legal Square Bale tiling");
+  });
+
+  it("says BOTH when a building has one of each, merged first", () => {
+    const walls = [wall("AB", 96), wall("12", 72)];
+    const message = squareBalePanelizationRefusalMessage(
+      findSquareBaleBandWalls(walls, BALE_IN),
+      findSquareBaleMergedCornerWalls(walls, BALE_IN),
+      BALE_IN,
+      MIN_IN,
+      MAX_IN,
+      format,
+    )!;
+    expect(message).toContain("merged into ONE corner panel");
+    expect(message).toContain("no legal Square Bale tiling");
+    expect(message.indexOf("merged into ONE corner panel")).toBeLessThan(message.indexOf("no legal Square Bale tiling"));
+    // Each names its OWN wall rather than one of them winning.
+    expect(message).toContain("Wall 12");
+    expect(message).toContain("Wall AB");
+  });
+});
+
+describe("findSquareBaleMergedCorners — the Review Log walk over STORED slots", () => {
+  const corner = (widthIn: number, type: "corner" | "safety-oct-corner" = "corner") => ({ type, widthIn }) as const;
+
+  it("finds the merged shape: exactly one corner slot off the nominal bale width", () => {
+    expect(findSquareBaleMergedCorners({ AB: [corner(72)] }, BALE_IN)).toEqual([{ wallId: "AB", mergedWidthIn: 72 }]);
+    // A mitered octagon renames the type and changes nothing else.
+    expect(findSquareBaleMergedCorners({ "01": [corner(52.25, "safety-oct-corner")] }, BALE_IN)).toEqual([
+      { wallId: "01", mergedWidthIn: 52.25 },
+    ]);
+    // Under the ceiling and still reported — same reasoning as the refusal.
+    expect(findSquareBaleMergedCorners({ AB: [corner(44.75)] }, BALE_IN)).toEqual([
+      { wallId: "AB", mergedWidthIn: 44.75 },
+    ]);
+  });
+
+  it("does NOT report a single slot that is exactly a whole-bale unit — that one is buildable", () => {
+    expect(findSquareBaleMergedCorners({ AB: [corner(BALE_IN)] }, BALE_IN)).toEqual([]);
+  });
+
+  it("does NOT report an ordinary tiled wall, an opening, or an empty wall", () => {
+    expect(
+      findSquareBaleMergedCorners(
+        {
+          AB: [corner(39), { type: "standard", widthIn: 39 }, corner(39)],
+          BC: [{ type: "window", widthIn: 30 }],
+          CD: [],
+        },
+        BALE_IN,
+      ),
+    ).toEqual([]);
+  });
+
+  it("tolerates an empty map without inventing a wall", () => {
+    expect(findSquareBaleMergedCorners({}, BALE_IN)).toEqual([]);
+  });
+});
+
+describe("squareBaleMergedCornerNote", () => {
+  it("says what the part is, what it is not, and that nothing was rewritten", () => {
+    const note = squareBaleMergedCornerNote({ wallId: "01", mergedWidthIn: 52.25 }, BALE_IN, MAX_IN, format);
+    expect(note).toContain("78in");
+    expect(note).toContain("52.25in");
+    expect(note).toContain("bales do not stretch");
+    expect(note).toContain("not a part the shop can build as drawn");
+    expect(note).toContain("4.25in over the 48in maximum panel width");
+    expect(note).toContain("Nothing was rewritten");
+  });
+
+  it("invents no width and quotes no ceiling it does not breach", () => {
+    const note = squareBaleMergedCornerNote({ wallId: "AB", mergedWidthIn: 44.75 }, BALE_IN, MAX_IN, format);
+    expect(note).not.toContain("maximum panel width");
+    expect(note).toContain("44.75in");
+    // The note must never suggest a width that would fit.
+    expect(note).not.toContain("39in wide");
   });
 });

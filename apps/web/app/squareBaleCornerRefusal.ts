@@ -1,5 +1,5 @@
-import { cornerBandMiddleIn, wallGeometryFor } from "@building-integrity/geometry";
-import type { CornerId, Footprint, WallRunStop } from "@building-integrity/geometry";
+import { cornerBandMiddleIn, mergedCornerWidthIn, wallGeometryFor } from "@building-integrity/geometry";
+import type { CornerId, Footprint, PanelSlot, WallRunStop } from "@building-integrity/geometry";
 import type { FormatLengthIn } from "./placementNotice";
 
 /**
@@ -33,48 +33,58 @@ import type { FormatLengthIn } from "./placementNotice";
  * refusals: a stored design must never become unopenable because a rule
  * tightened, and a limit is enforced on the gesture that would breach it.
  *
- * It is NOT the only thing standing between the shop and an invented part, and
- * must not be mistaken for it. A user already in Square Bale who draws or
- * shortens a wall into the band never touches the panelization control, so no
- * refusal can see it; what covers that path is `cornerMayWiden: false` in the
- * geometry, which leaves a **band** wall tiled as it was before absorb existed
- * — nominal 39in corners and a **visible** sub-minimum middle that the Review
- * Log's below-minimum entry reports. A visible gap beats a substituted value.
+ * ### TWO refused cases, not one — the band AND the merged corner
  *
- * ### ⚠ What `cornerMayWiden: false` does NOT cover — the MERGED bale corner
+ * `resolveCorners` has two branches that can produce a bale corner off 39in,
+ * and **both are refused** (Tommy, 2026-09-26, asked whether *"No — refuse
+ * instead"* extends to the second: **"Yes — refuse both cases too."**):
  *
- * This module used to say the geometry flag stops the geometry inventing a part
- * on *any* other path. **That was an overstatement and is corrected here
- * (2026-09-26).** The flag gates the **absorb** branch only. It does not gate
- * `resolveCorners`' older **merge** branch, which fires when a wall is too
- * short for two nominal corners at all — and that branch emits one `corner`
- * slot of the wall's **whole length**, at any corner width, regardless of the
- * flag. Measured on this branch: `tileWall(72, 39, 39, "end", true, true, true,
- * false)` → a single `corner 72in`, and `tileWall(77.875, ...)` → `corner
- * 77.875in`, **29 7/8in over the confirmed 48in `panelWidthInRange.maxIn`.**
+ * 1. **ABSORB — the 78in-102in band.** Two nominal bale corners leave a middle
+ *    under the 24in fabrication minimum, and absorb would widen them to share
+ *    the wall. `findSquareBaleBandWalls` / `squareBaleCornerRefusal`.
+ * 2. **MERGE — any two-corner wall under 78in.** Too short for two nominal bale
+ *    corners at all, so the tiler emits **one** corner slot as wide as the whole
+ *    wall. `findSquareBaleMergedCornerWalls` / `squareBaleMergedCornerRefusal`.
+ *    Measured: `tileWall(72, 39, 39, "end", true, true, true, false)` → a single
+ *    `corner 72in`; at the widest, `corner 77 7/8in`, **29 7/8in over the
+ *    confirmed 48in `panelWidthInRange.maxIn`.** Reached by drawing a small
+ *    octagon: under Square Bale every wall of every octagon from about **9.7ft
+ *    to 15.7ft across** is one merged slot as wide as the wall (9.75ft →
+ *    48 1/2in, 10ft → 49 3/4in, 12ft → 59 3/4in, 15.5ft → 77 1/8in; at 15.75ft
+ *    the side reaches 78in and the walls tile normally again). On a mitered shape
+ *    the slot comes out typed `safety-oct-corner`, which changes nothing about
+ *    its width.
  *
- * So under Square Bale **every two-corner wall shorter than 78in still gets a
- * single merged "bale corner" as wide as the wall.** It is neither refused
- * (`cornerBandMiddleIn` deliberately returns null for the merge case, so
- * `findSquareBaleBandWalls` never sees it) nor reported (the app has no
- * over-maximum panel reporter).
+ * `squareBalePanelizationRefusalMessage` is the single entry point that covers
+ * both, so a caller cannot wire up one and miss the other — which is exactly how
+ * case 2 went unrefused until 2026-09-26.
  *
- * **Reached by drawing a small octagon, measured rather than argued:** under
- * Square Bale (39in corner, 14in thickness) every wall of every octagon from
- * about **9.7ft to 15.7ft across** is one merged slot as wide as the wall —
- * 9.75ft → 48 1/2in, 10ft → 49 3/4in, 12ft → 59 3/4in, 15.5ft → 77 1/8in; at
- * 15.75ft the side reaches 78in and the walls tile normally again. (On a
- * mitered shape the slot comes out typed `safety-oct-corner` rather than
- * `corner`, which changes nothing about its width.) A short bump-out return
- * does **not** reach this case: it owns a corner at one end only, so it tiles
- * `braced 21in | corner 39in` — a sub-minimum panel the Review Log does report.
+ * ### ⚠ EXACTLY how far this coverage reaches, and where it stops
  *
- * This is **pre-existing on `main`** and far older than absorb: the instruction
- * for the absorb work was that the merged corner keep behaving as it does
- * today, so it is deliberately untouched here. Whether *"No — refuse instead"*
- * extends to the merged bale corner is **Tommy's answer and he has been
- * asked**; nothing here assumes it either way. Recorded in the spec under the
- * 51in-75in band section and in `## Open Items`.
+ * This module used to say `cornerMayWiden: false` stops the geometry inventing a
+ * part on *any* other path. **That was an overstatement, it is why case 2 sat
+ * unnoticed, and it is corrected here.** The truthful statement of the coverage
+ * is:
+ *
+ * - **The panelization control is fully covered**, both cases, at Square Bale's
+ *   own 14in thickness (see `squareBaleRefusalWallFacts`).
+ * - **The geometry flag covers one thing only: a band wall is not silently
+ *   widened.** It does **not** gate the merge branch, and deliberately still
+ *   does not — the merge is Tommy's own rule, the absorb work was instructed to
+ *   leave it alone, and the plywood path depends on it. See `mergedCornerWidthIn`
+ *   in tiling.ts.
+ * - **⚠ A wall drawn or shortened into either case while Square Bale is ALREADY
+ *   selected is NOT refused.** That path never touches the panelization control:
+ *   `handleDraw`, the wall-length edit, the octagon resize, `insertBumpOut`,
+ *   `handleDragWall` and the notch/collapse path each write a new footprint
+ *   directly. A band wall there is **reported** (the Review Log's below-minimum
+ *   entry fires on its visible sub-minimum middle); a merged bale corner there is
+ *   **reported by `findSquareBaleMergedCorners`' own Review Log entry**, added
+ *   2026-09-26 for exactly this reason, because without it Case A would have
+ *   created a silence on the one path its refusal cannot see. **Neither is
+ *   refused, and refusing them is not built** — see the spec's Open Items for
+ *   the reason (six gesture handlers, two of them, drag and draw, with no
+ *   specified refusal posture) and for what it would take.
  *
  * ### The honest part of the message
  *
@@ -212,5 +222,217 @@ export function squareBaleCornerRefusal(
     `so two of them leave ${formatLength(first.middleIn)} in the middle, under the ${formatLength(minPanelWidthIn)} minimum panel the shop can build. ` +
     `That wall has no legal Square Bale tiling at all.${alsoClause} ` +
     `The panelization was NOT changed, and no panel, wall or thickness on the building was altered.`
+  );
+}
+
+/** A wall whose Square Bale corners would be MERGED into one slot as wide as
+ * the wall — the second of the two cases Tommy refused. */
+export interface SquareBaleMergedCornerWall {
+  wallId: string;
+  /** The wall's own tiling run length, not its drawn length. */
+  wallLengthIn: number;
+  /** The single merged corner slot the tiler emits — always the wall's whole
+   * grid-snapped run, which is the problem: it is not a whole-bale unit at any
+   * length, and above the catalog ceiling it is not even a legal panel. */
+  mergedWidthIn: number;
+}
+
+/**
+ * Every wall whose Square Bale corners would be merged into one slot.
+ *
+ * **Tommy, 2026-09-26, asked whether *"No — refuse instead"* extends from the
+ * widened bale corner to the merged one:**
+ *
+ * > **"Yes — refuse both cases too."**
+ *
+ * His reasoning is consistency: both produce a bale part that cannot be built,
+ * so both refuse rather than merely report.
+ *
+ * Uses `mergedCornerWidthIn` from the tiler rather than re-deriving
+ * `run < 2 x corner`, for the same reason `findSquareBaleBandWalls` uses
+ * `cornerBandMiddleIn`: one definition, in one place, or the refusal and the
+ * geometry drift apart.
+ *
+ * ### ⚠ Every merged bale corner is refused, not only the ones over 48in
+ *
+ * Worth stating because the alternative reading is defensible and the
+ * difference is one comparison. The case put to Tommy was *"under Square Bale
+ * any two-corner wall shorter than 78in still gets a single merged bale corner
+ * of the wall's whole length — up to 30in over the confirmed 48in ceiling"*, and
+ * he refused that case. The breach of `panelWidthInRange.maxIn` is the severity
+ * of the worst end of it, not the definition: a 44 3/4in merged bale corner (a
+ * 9ft octagon's side) is inside the 48in ceiling and **still is not a 39in
+ * whole-bale unit**, which is the thing he said cannot be built. Refusing only
+ * above 48in would let a small octagon build sixteen invented bale parts and
+ * call it legal.
+ *
+ * If he meant the narrower reading, it is a single added condition here
+ * (`mergedWidthIn > maxPanelWidthIn`) and nothing else changes.
+ */
+export function findSquareBaleMergedCornerWalls(
+  walls: RefusalWallFacts[],
+  baleCornerWidthIn: number,
+): SquareBaleMergedCornerWall[] {
+  const found: SquareBaleMergedCornerWall[] = [];
+  for (const wall of walls) {
+    const mergedWidthIn = mergedCornerWidthIn(wall.lengthIn, baleCornerWidthIn, wall.hasCornerStart, wall.hasCornerEnd);
+    if (mergedWidthIn === null) continue;
+    found.push({ wallId: wall.wallId, wallLengthIn: wall.lengthIn, mergedWidthIn });
+  }
+  return found;
+}
+
+/**
+ * The refusal sentence for the merged case, or null when no wall merges.
+ *
+ * Same voice and same shape as `squareBaleCornerRefusal`: name the first
+ * offending wall, quote its real run, count the rest, and say plainly that
+ * nothing was changed. The over-the-ceiling clause appears **only when the
+ * merged slot really does breach `maxPanelWidthIn`**, because a refusal that
+ * quotes a limit the wall does not breach is a refusal nobody trusts.
+ */
+export function squareBaleMergedCornerRefusal(
+  mergedWalls: SquareBaleMergedCornerWall[],
+  baleCornerWidthIn: number,
+  maxPanelWidthIn: number,
+  formatLength: FormatLengthIn,
+): string | null {
+  const first = mergedWalls[0];
+  if (!first) return null;
+  const others = mergedWalls.length - 1;
+  const alsoClause =
+    others > 0 ? ` ${others} other wall${others === 1 ? "" : "s"} on this building ${others === 1 ? "is" : "are"} the same.` : "";
+  const overCeilingClause =
+    first.mergedWidthIn > maxPanelWidthIn
+      ? ` That is also ${formatLength(first.mergedWidthIn - maxPanelWidthIn)} over the ${formatLength(maxPanelWidthIn)} maximum panel width.`
+      : "";
+  return (
+    `A Square Bale corner panel is a fixed ${formatLength(baleCornerWidthIn)} whole-bale unit and cannot be built any other width — ` +
+    `bales do not stretch. Wall ${first.wallId} owns a corner at both ends but its run is only ${formatLength(first.wallLengthIn)}, ` +
+    `less than the ${formatLength(2 * baleCornerWidthIn)} two bale corners need side by side, so the two would be merged into ONE corner panel ` +
+    `${formatLength(first.mergedWidthIn)} wide — the whole wall, and not a whole-bale unit.${overCeilingClause}${alsoClause} ` +
+    `The panelization was NOT changed, and no panel, wall or thickness on the building was altered.`
+  );
+}
+
+/**
+ * **The one refusal the panelization control asks for** — both of Tommy's
+ * refused cases, in one message, or null when Square Bale Panels is a legal
+ * choice for this building.
+ *
+ * The merged case is stated first when a building has both, because it is the
+ * one that reaches the shop as a single part up to nearly 30in over the catalog
+ * ceiling; the band case leaves a visible sub-minimum gap instead. Both quote
+ * their own walls, so a building with one of each says so rather than picking a
+ * winner.
+ *
+ * Exported as the single entry point so page.tsx cannot accidentally wire up one
+ * case and not the other, which is how the merged case went unrefused in the
+ * first place.
+ */
+export function squareBalePanelizationRefusalMessage(
+  bandWalls: SquareBaleBandWall[],
+  mergedWalls: SquareBaleMergedCornerWall[],
+  baleCornerWidthIn: number,
+  minPanelWidthIn: number,
+  maxPanelWidthIn: number,
+  formatLength: FormatLengthIn,
+): string | null {
+  const merged = squareBaleMergedCornerRefusal(mergedWalls, baleCornerWidthIn, maxPanelWidthIn, formatLength);
+  const band = squareBaleCornerRefusal(bandWalls, baleCornerWidthIn, minPanelWidthIn, formatLength);
+  if (merged && band) return `${merged} ${band}`;
+  return merged ?? band;
+}
+
+/** One wall of a STORED Square Bale design whose corners are already merged —
+ * the reporting counterpart of `SquareBaleMergedCornerWall`, read off the slots
+ * that exist rather than off geometry that might be recomputed. */
+export interface SquareBaleMergedCornerReport {
+  wallId: string;
+  /** The single merged slot's width, which is the whole wall. */
+  mergedWidthIn: number;
+}
+
+/**
+ * Every wall of a stored design whose Square Bale corners are ALREADY merged
+ * into one slot off the nominal bale width.
+ *
+ * ### Why a report exists as well as a refusal
+ *
+ * The refusal above covers the panelization control, and Tommy's posture
+ * throughout this app is **refuse at the point of edit, never at load**. That
+ * leaves one path: a user already in Square Bale who *draws* a small octagon or
+ * shortens a wall under 78in. Nothing on that path touches the panelization
+ * control, so no refusal sees it, and unlike the band case there was **nothing
+ * else reporting it either** — the Review Log walks for panels under the 24in
+ * minimum, and a merged bale corner is over the maximum, which this app has no
+ * reporter for at all.
+ *
+ * So refusing at the control without this walk would have made the app *quieter*
+ * about the merged bale corner than it was before, on exactly the path the
+ * refusal cannot reach — silence that reads as "legal". This is the honest
+ * interim: **refused where the user acts on the panelization, reported
+ * everywhere else.** It is not a substitute for refusing the drawing gestures;
+ * see this module's coverage note above and the spec's Open Items.
+ *
+ * ### The shape it matches, and why it cannot false-positive
+ *
+ * `resolveCorners`' merge branch returns the merged slot as the wall's *only*
+ * content (`return { slots: [corners.merged] }`), so the signature is: exactly
+ * one slot, typed `corner` or `safety-oct-corner` (a mitered shape renames it
+ * and changes nothing else).
+ *
+ * A wall exactly `baleCornerWidthIn` long is excluded, and that is not a
+ * tolerance fudge — a merged corner that happens to come out at exactly 39in
+ * **is** a whole-bale unit and is buildable, and so is the other single-slot
+ * shape of that width (a wall owning one corner with a zero middle). Nothing
+ * unbuildable is filtered out by it.
+ *
+ * Deliberately scoped to Square Bale by its caller: the plywood merged corner
+ * between 48in and 51in is a separate, separately-recorded Open Item, and
+ * starting to report it here would be an unasked behaviour change.
+ */
+export function findSquareBaleMergedCorners(
+  slotsByWallId: Record<string, PanelSlot[]>,
+  baleCornerWidthIn: number,
+): SquareBaleMergedCornerReport[] {
+  const found: SquareBaleMergedCornerReport[] = [];
+  for (const [wallId, slots] of Object.entries(slotsByWallId ?? {})) {
+    const list = slots ?? [];
+    if (list.length !== 1) continue;
+    const only = list[0]!;
+    if (only.type !== "corner" && only.type !== "safety-oct-corner") continue;
+    if (only.widthIn === baleCornerWidthIn) continue;
+    found.push({ wallId, mergedWidthIn: only.widthIn });
+  }
+  return found;
+}
+
+/**
+ * The Review Log note for one already-merged Square Bale corner.
+ *
+ * Says what the part is, what it is not, and — only when true — that it also
+ * breaches the catalog ceiling. **No width is invented and no panel is
+ * changed:** the entry describes the wall as stored. Its status is the caller's
+ * to set (`pending-BI-confirmation`, same as every other fabrication flag).
+ */
+export function squareBaleMergedCornerNote(
+  report: SquareBaleMergedCornerReport,
+  baleCornerWidthIn: number,
+  maxPanelWidthIn: number,
+  formatLength: FormatLengthIn,
+): string {
+  const overCeilingClause =
+    report.mergedWidthIn > maxPanelWidthIn
+      ? ` It is also ${formatLength(report.mergedWidthIn - maxPanelWidthIn)} over the ${formatLength(maxPanelWidthIn)} maximum panel width.`
+      : "";
+  return (
+    `This wall is shorter than the ${formatLength(2 * baleCornerWidthIn)} two ${formatLength(baleCornerWidthIn)} bale corners need side by side, ` +
+    `so its two corners are merged into ONE corner panel ${formatLength(report.mergedWidthIn)} wide — the whole wall. ` +
+    `A Square Bale corner panel is a fixed ${formatLength(baleCornerWidthIn)} whole-bale unit (two 18in bales + two 1.5in studs) and bales do not stretch, ` +
+    `so this is not a part the shop can build as drawn.${overCeilingClause} ` +
+    `Nothing was rewritten — it opens, draws, prices and prints as stored. ` +
+    `Choosing Square Bale Panels on a building like this is refused outright (Tommy: "Yes — refuse both cases too"); ` +
+    `drawing into it while Square Bale is already selected is reported here instead, which is why you are reading this.`
   );
 }

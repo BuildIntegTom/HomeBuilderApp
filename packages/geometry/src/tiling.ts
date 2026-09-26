@@ -448,6 +448,58 @@ export function cornerBandMiddleIn(
   return fromEighths(middleEighths);
 }
 
+/**
+ * The width of the single MERGED corner slot a wall gets when it owns corners
+ * at both ends but is too short to fit them side by side — or null when this
+ * wall does not take the merge branch at all.
+ *
+ * Exported for exactly the reason `cornerBandMiddleIn` above is: two places
+ * need the same definition of "this wall merges its corners", and re-deriving
+ * `wallLengthIn < 2 x cornerWidthIn` in a second place is how the app's own
+ * refusal drifts away from what the tiler does. `resolveCorners`' merge branch
+ * is the only consumer that matters on the geometry side; the app's Square Bale
+ * refusal is the other one.
+ *
+ * ### Why the app needs this at all: the MERGED BALE CORNER
+ *
+ * The merged corner is Tommy's own long-standing rule for a wall too short for
+ * two corner panels, and the slot it emits is **as wide as the wall** — which
+ * is fine for a plywood-faced corner panel up to the 48in ceiling, and is not
+ * fine at all for a Square Bale corner. `squareBalePanel.widthIn` is a
+ * CONFIRMED 39in whole-bale unit, so the merge fires on every two-corner wall
+ * under 78in and emits a "bale corner" that is not 39in wide — up to
+ * 77 7/8in, nearly 30in over `panelWidthInRange.maxIn`. Bales do not stretch,
+ * so that part cannot be built, exactly like the widened bale corner
+ * `cornerMayWiden` already refuses to produce.
+ *
+ * **`cornerMayWiden` does NOT gate this branch and deliberately still does
+ * not.** The merge predates absorb, Tommy's instruction for the absorb work was
+ * that it keep behaving as it does today, and the plywood path depends on it.
+ * The answer is a refusal in the app, at the point of edit, not a change here —
+ * see `squareBaleCornerRefusal.ts`.
+ *
+ * Returns null for a wall that does not own both corners, and for a
+ * zero-or-negative length, so a caller can treat null as "the merge branch is
+ * not what happens here".
+ */
+export function mergedCornerWidthIn(
+  wallLengthIn: number,
+  cornerWidthIn: number,
+  hasCornerStart: boolean,
+  hasCornerEnd: boolean,
+): number | null {
+  if (!hasCornerStart || !hasCornerEnd) return null;
+  const cornerEighths = Math.max(0, toEighths(cornerWidthIn));
+  const wallEighths = Math.max(0, toEighths(wallLengthIn));
+  if (wallEighths <= 0) return null;
+  // The SAME comparison `resolveCorners` makes, on the same grid-snapped
+  // length `tileWall`/`retileWithOpenings` hand it: strictly less than the two
+  // nominal corners side by side. At exactly 2 x corner the pair fits with a
+  // zero middle and there is no merge.
+  if (wallEighths >= 2 * cornerEighths) return null;
+  return fromEighths(wallEighths);
+}
+
 interface ResolvedCorners {
   /** Set only when the wall owns corners at both ends but is too short to
    * fit them without overlap — see the doc comment below. When set, this
@@ -557,10 +609,39 @@ interface ResolvedCorners {
  * corners plus a sub-minimum middle, which the Review Log's existing
  * sub-minimum-panel entry reports. **That wall has no legal tiling and the app
  * must say so** — a visible gap beats a substituted value. The refusal that
- * names it at the point of edit lives in `page.tsx`; this flag is what stops
- * the geometry inventing a part on any other path (drawing a band-length wall
- * while Square Bale is already selected reaches the tiler without touching the
- * panelization control).
+ * names it at the point of edit lives in `page.tsx`.
+ *
+ * ### ⚠ EXACTLY what `cornerMayWiden` covers, and what it does not
+ *
+ * **CORRECTED 2026-09-26.** This paragraph used to say the flag "stops the
+ * geometry inventing a part on any other path". That overstated it, and the
+ * overstatement was the reason a real hole sat unnoticed. The flag gates **the
+ * absorb branch below and nothing else.**
+ *
+ * It does **not** gate the **merge** branch above it — the older
+ * "too short for both corners at all" rule — which emits one `corner` slot of
+ * the wall's **whole length** at any corner width, flag or no flag. Measured:
+ * `tileWall(72, 39, 39, "end", true, true, true, false)` → a single
+ * `corner 72in`, and `tileWall(77.875, ...)` → `corner 77.875in`, **29 7/8in
+ * over the confirmed 48in `panelWidthInRange.maxIn`**. Under Square Bale that
+ * fires on every two-corner wall under 78in, so every wall of every octagon
+ * from about 9.7ft to 15.7ft across is one merged "bale corner" as wide as the
+ * wall.
+ *
+ * **That is deliberately still not gated here.** The merge is Tommy's own rule,
+ * the instruction for the absorb work was that it keep behaving as it does
+ * today, and the plywood path depends on it. Tommy's answer (2026-09-26, asked
+ * whether *"No — refuse instead"* extends to the merged bale corner) was
+ * **"Yes — refuse both cases too"**, and a refusal belongs in the app, not in
+ * the tiler: see `mergedCornerWidthIn` below, which the app's Square Bale
+ * refusal reads so that the two cannot drift, and `squareBaleCornerRefusal.ts`.
+ *
+ * So the honest summary of what the geometry itself guarantees under
+ * `cornerMayWiden: false` is narrow: **a band wall is not silently widened.**
+ * Everything else about Square Bale's corner legality is enforced in the app,
+ * at the point of edit, and a wall drawn or shortened into the band while
+ * Square Bale is ALREADY selected is still reported rather than refused — see
+ * `squareBaleCornerRefusal.ts` for the exact edge of that coverage.
  */
 function resolveCorners(
   wallLengthIn: number,
