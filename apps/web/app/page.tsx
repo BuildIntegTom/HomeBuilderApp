@@ -6242,8 +6242,65 @@ export default function LayoutEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
   }, [footprint, wallRunStopsByWallId, primaryCornerIds, leastAccessibleCorner, thicknessIn, unitSystem]);
 
+  /**
+   * **⚠ A building with NO braced panels at all, flagged loudly** — Tommy's
+   * decision (2026-09-26), asked what should happen: *"Flag it loudly in the
+   * Review Log."* An engineer must be told that the building has no modelled
+   * shear resistance.
+   *
+   * How an ordinary building gets here: corner absorb. A 60in wall used to tile
+   * `corner | braced 9in | corner` and now tiles `corner 30 | corner 30`, so a
+   * **12ft octagon is 16 corner slots and not one braced panel** — measured,
+   * `estimatedTotalShearLb` is 0 and the shear entry reads "~0 lb across 0
+   * braced panels", which is easy to read as a rounding artefact rather than as
+   * "nothing in this building resists racking". It matters more now than it did:
+   * Tommy is planning octagon ring buildings.
+   *
+   * **No shear figure is invented for a corner panel here.** He was offered
+   * "a corner panel should count as bracing" and did not choose it, and that
+   * option was explicitly labelled as needing a real number from him or his
+   * engineer. This entry reports the absence; it does not fill it.
+   *
+   * First in the list rather than buried among the material assumptions, and it
+   * fires only on a building that has panels at all, so an empty project does
+   * not shout.
+   */
+  const zeroBracingReviewEntries = useMemo(() => {
+    const bracedCount = allInstances.filter((i) => i.panelType === "braced").length;
+    if (allInstances.length === 0 || bracedCount > 0) return [];
+    const cornerCount = allInstances.filter((i) => i.panelType === "corner" || i.panelType === "safety-oct-corner").length;
+    // Derived, not typed: the shortest two-corner wall that can still hold a
+    // legal middle is two nominal corners plus the fabrication minimum (75in at
+    // today's catalog values). Written this way so it tracks the catalog instead
+    // of going stale in a sentence.
+    const firstLegalTwoCornerWallIn = 2 * cornerPanelWidthIn.value + fabricationMinPanelWidthIn.value;
+    // Two of the three panelization types never place a braced slot at all, so
+    // the zero is expected there rather than surprising — but it still means the
+    // app is modelling no lateral resistance, which is the part that must be
+    // said either way.
+    const panelizationClause =
+      panelizationType === "square-bale-panels"
+        ? `Square Bale Panels never places a braced slot, so this is expected for this panelization — and it still means no lateral resistance is modelled anywhere in this building. `
+        : panelizationType === "timber-frame-curtain"
+          ? `Timber Frame Curtain is carried by its actual timber frame, which this app does not model at all, so a zero here is expected — and it is not evidence that the frame is adequate. Set the curtain's panel type to Braced if the panels are meant to do this work. `
+          : `Under Loose Packed Braced this is NOT expected, and the usual cause is corner panels taking up every wall run: a wall under ${formatLengthIn(firstLegalTwoCornerWallIn, unitSystem)} owning a corner at both ends has its short middle absorbed by the pair, which removes the braced slot that middle used to be. A 12ft octagon ends up entirely corners${cornerCount > 0 ? ` — ${cornerCount} of them here` : ""}. `;
+    return [
+      {
+        label: "⚠ NO BRACED PANELS IN THIS BUILDING — no modelled shear resistance",
+        status: "pending-BI-confirmation" as const,
+        note:
+          `Not one of this building's ${allInstances.length} panels is a braced panel, so its estimated total shear capacity is 0 lb — not a small number, none. ` +
+          `The app models racking resistance only from a braced panel's own diagonal braces, and there are no braces to model. ` +
+          panelizationClause +
+          `Whether a corner panel should COUNT as bracing is an open question that needs a real number from Building Integrity or its engineer — nothing here assumes one, in either direction. ` +
+          `No panel was changed to produce this entry, and none should be changed to silence it.`,
+      },
+    ];
+  }, [allInstances, panelizationType, unitSystem]);
+
   const reviewLog = useMemo(() => {
     const entries = toReviewLog([
+      ...zeroBracingReviewEntries,
       ...wallRunStopReviewEntries,
       { label: "Target density", ...targetDensityKgM3 },
       { label: "Default panel thickness", ...looseDensePackDefaultThicknessIn },
@@ -6304,10 +6361,24 @@ export default function LayoutEditor() {
       // is buildable — this is not a defect report — but its corner panels
       // are not the nominal ones, and that is a fabrication fact an engineer
       // has to see before the cut list reaches the shop.
+      //
+      // ⚠ The final clause is about DROPPED OPENINGS, and it is not decoration.
+      // On the absorb path where the reservations no longer fit the nominal
+      // middle, every window, door and column on the wall is deleted
+      // (`dropsReservations` in `resolveCorners`) — so shortening a 90in wall
+      // carrying a 30in window into the band silently loses the window, and
+      // this entry, naming only the corner widths and the absorbed inches, was
+      // the only notice anywhere. The drop itself is right (over 4,110 measured
+      // cases the pre-absorb slot sum was already wrong on every one of them,
+      // so it is not a regression), but it must not be silent. Unconditional
+      // wording on purpose: the record describes the wall as it is NOW and
+      // cannot know what the wall used to carry, and a clause that appears only
+      // when we can prove a loss would be absent in exactly the case that
+      // matters.
       ...absorbedCornerWalls.map((wall) => ({
         label: `Corner panels widened to absorb a short middle: wall ${wall.wallId}${wall.story === "second" ? " (second story)" : ""}`,
         status: "pending-BI-confirmation" as const,
-        note: `This wall owns a corner at both ends and is too short to fit them plus a panel over the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} fabrication minimum, so its two corner panels share the whole wall: ${formatLengthIn(wall.cornerWidthsIn[0], unitSystem)} and ${formatLengthIn(wall.cornerWidthsIn[1], unitSystem)} instead of ${formatLengthIn(wall.nominalCornerWidthIn, unitSystem)} each, absorbing ${formatLengthIn(wall.absorbedIn, unitSystem)} that could not become a panel. This is the corner-geometry rule Tommy chose for this case over refusing the wall length ("I like the corner geometry rule"); the individual widths it produces are not separately confirmed. Each panel is still one corner panel with one return face, butt joined to its partner at mid-wall.`,
+        note: `This wall owns a corner at both ends and is too short to fit them plus a panel over the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} fabrication minimum, so its two corner panels share the whole wall: ${formatLengthIn(wall.cornerWidthsIn[0], unitSystem)} and ${formatLengthIn(wall.cornerWidthsIn[1], unitSystem)} instead of ${formatLengthIn(wall.nominalCornerWidthIn, unitSystem)} each, absorbing ${formatLengthIn(wall.absorbedIn, unitSystem)} that could not become a panel. This is the corner-geometry rule Tommy chose for this case over refusing the wall length ("I like the corner geometry rule"); the individual widths it produces are not separately confirmed. Each panel is still one corner panel with one return face, butt joined to its partner at mid-wall. ⚠ CHECK THIS WALL'S OPENINGS: a wall shortened into this case keeps only a window, door or column that still fits between the nominal corners — anything that no longer fit was REMOVED when the corner pair took the whole wall, and nothing else reports that.`,
       })),
       ...(foundationTypeId === "concrete-pier"
         ? [
@@ -6340,6 +6411,7 @@ export default function LayoutEditor() {
     absorbedCornerWalls,
     unitSystem,
     wallRunStopReviewEntries,
+    zeroBracingReviewEntries,
   ]);
 
   // Site Properties dropdown content (Tommy: "middle of the left side of
