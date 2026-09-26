@@ -115,19 +115,24 @@ failures:
   alone, the same call Stage 3 made about the roof-bearing anchor.)
 - **A header's own cut width changing with nothing said.** Deleting a panel to
   the LEFT of the header moved its range correctly (2..4 → 1..3, the same two
-  panels) while its fabricated width went **80" → 84¾"**, because the free
+  panels) while its fabricated width went **80" → 85¾"**, because the free
   run re-tiled flat and the panels beneath were now different widths. The app
   said only *"Deleted a panel on wall AB: 15 panels → 14, 12 still automatic."*
   A part already on a shop sheet, quietly re-cut. Fixed 2026-09-26: the commit
   notice names the header and both widths, and flags a width that has landed
   outside the range a placement would refuse. Step 8's expectation now covers
-  it. ⚠ **84¾" is the figure in the committed `evidence.json`, and it is the
-  one to trust.** Several narrative copies of this observation said 85.75in;
-  that was the same measurement on a superseded footprint whose free run tiled
-  `[…, 40, 34.125, 34.125, 0.75, 40]` where today's tiles
-  `[…, 37.125, 34.125, 37, …]`. Corrected everywhere on 2026-09-26 rather than
-  left to be rediscovered — a measured number in prose that no longer matches
-  the evidence beside it is exactly the kind of claim that gets believed.
+  it. ⚠ **THE SECOND NUMBER IS NOT REPRODUCIBLE — read it off `evidence.json`,
+  never from a narrative.** Three runs of this script on the same checkout, the
+  same window size and the same 549in wall (4392 eighths every time) produced
+  **82⅜"**, **84¾"** and **85¾"**: the footprint is drawn in PIXELS, so the
+  baseline free-run tiling lands slightly differently
+  (`[…, 40, 40, 34.125, 34.125, 0.75, 40]` one run,
+  `[…, 40, 37.125, 37, 34.125, 0.75, 40]` the next), and the redistribution
+  after the delete follows it. What the step actually asserts is the invariant
+  — the range moved by one AND, if the width moved, the notice named it — not
+  any particular pair of numbers. A round of narrative copies previously quoted
+  85.75in while the committed evidence said 84¾"; the fix is not a better
+  number, it is not quoting one from memory.
 - **A field ordering trap in this script.** Committing the far end of the
   range first turned a two-panel span into a four-panel one — 160in on a wall
   of 40in panels, over the 144in maximum — so it was refused and the move

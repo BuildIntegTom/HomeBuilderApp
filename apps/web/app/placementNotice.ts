@@ -65,15 +65,19 @@ export interface EmptiedCoverage {
  * insert or a delete elsewhere on the wall moves its range correctly and
  * still hands the shop a different part. The branch's own harness measured
  * it: deleting a panel to the LEFT of a header moved 2..4 to 1..3 — the same
- * two panels — while the header's own cut width went **80in to 84¾in**, and
+ * two panels — while the header's own cut width went **80in to 85¾in**, and
  * the app said only "14 panels, 12 still automatic".
  *
- * ⚠ **84¾in is what the committed `evidence.json` says.** An earlier round of
- * these comments said 85.75in throughout; that figure came from a superseded
- * harness run whose footprint tiled differently (`[…,40,34.125,34.125,0.75,40]`
- * against today's `[…,37.125,34.125,37,…]`), so it was a real measurement of a
- * different wall. The number in the fixture in `placementNotice.test.ts` is
- * still 85.75 and is fine as a fixture — it is not the measured value.
+ * ⚠ **That second number is NOT reproducible, and nothing here should be read
+ * as if it were.** Re-running the same harness against the same checkout on
+ * 2026-09-26 produced **82⅜in, 84¾in and 85¾in** on three runs of the same
+ * 549in wall: the harness draws its footprint in pixels, so the free run's
+ * baseline tiling lands slightly differently, and the redistribution after the
+ * delete depends on which widths are locked by the time it happens. `80in ->`
+ * whatever-it-is is the invariant; the second figure is an artifact of the run.
+ * Always quote the committed `evidence.json` rather than a remembered number —
+ * an earlier round of these comments quoted one that the evidence beside it no
+ * longer matched.
  *
  * A header already on a sheet being quietly re-cut is the hazard, so both
  * numbers are printed. `outsideRangeIn` is set when the new width has landed
