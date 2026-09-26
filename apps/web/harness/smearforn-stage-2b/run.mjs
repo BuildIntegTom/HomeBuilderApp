@@ -911,7 +911,9 @@ record(
   //
   // ⚠ And the free run re-tiles flat when a panel goes, so the header's own
   // fabricated WIDTH can change even though the right panels are still
-  // underneath — this run measured 80in -> 85.75in. That is a part already on
+  // underneath — this run measured 80in -> 84.75in (see `evidence.json`; an
+  // earlier comment said 85.75in, which was this same measurement on a
+  // superseded footprint whose free run tiled differently). That is a part already on
   // a shop sheet being re-cut, so the notice has to SAY so: if the span moved,
   // the notice must name it. (Conditional on purpose — on a wall where the
   // re-tile happens to preserve the width there is nothing to report, and

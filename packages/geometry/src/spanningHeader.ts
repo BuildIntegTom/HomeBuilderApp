@@ -231,7 +231,8 @@ export interface SpanningHeaderOpeningConflict {
  * ### Why this reports rather than refuses
  *
  * Asked whether a header may span a window or door and bear on a corner
- * panel, Tommy answered **"allow both."** So the combination is permitted,
+ * panel, Tommy answered **"allow both"** (2026-09-25, the same exchange that
+ * settled what rate this panel is priced at). So the combination is permitted,
  * and this function exists for the one part of it that is not automatically
  * fine.
  *

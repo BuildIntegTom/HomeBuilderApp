@@ -3332,7 +3332,10 @@ export default function LayoutEditor() {
    * unchanged.** A spanning header's width is DERIVED from the panels it
    * spans, so a shift that keeps it over the same two panels can still change
    * what the shop cuts — measured by this branch's own harness at 80in →
-   * 85.75in on a delete to the LEFT of a header. So `spanningHeaderWidthChanges`
+   * 84¾in on a delete to the LEFT of a header (the figure in the committed
+   * `evidence.json`; an earlier round of these comments said 85.75in, which
+   * was a real measurement on a superseded footprint that tiled differently).
+   * So `spanningHeaderWidthChanges`
    * reports every header whose fabricated width moved, with both numbers, and
    * flags one that has landed outside the span range a PLACEMENT would have
    * refused. Reported and not refused, which is this app's standing rule on a
@@ -6706,7 +6709,9 @@ export default function LayoutEditor() {
    *   from `resolved.spanWidthIn` — the CURRENT slots — so it does not care
    *   which route caused it, including routes not written yet.
    * - **An opening that no longer fits under the header.** Tommy allowed a
-   *   header to span a window or door ("allow both"), and the vertical
+   *   header to span a window or door ("allow both", 2026-09-25 — he answered
+   *   this and the pricing question in one exchange, so the two quotes in this
+   *   entry carry the same date), and the vertical
    *   refusal only checks the header against the story, so a header placed
    *   low leaves a window whose rough opening reaches the top of its own
    *   shortened panel. Reported, because he permitted the combination.
@@ -6780,7 +6785,7 @@ export default function LayoutEditor() {
             : ""
         }${
           openingConflicts.length > 0
-            ? ` **It spans an opening that no longer fits beneath it: ${openingNames}.** A header shortens the panels under it, but a window keeps the sill height it already had, so that opening now runs to the top of its own panel and its own window header collapses to nothing. Spanning an opening is allowed (Tommy: "allow both"), so this is reported rather than refused — lower the opening, or raise this header, before these sheets are issued.`
+            ? ` **It spans an opening that no longer fits beneath it: ${openingNames}.** A header shortens the panels under it, but a window keeps the sill height it already had, so that opening now runs to the top of its own panel and its own window header collapses to nothing. Spanning an opening is allowed (Tommy, 2026-09-25: "allow both" — the same exchange that settled this panel's rate), so this is reported rather than refused — lower the opening, or raise this header, before these sheets are issued.`
             : ""
         }`,
       };

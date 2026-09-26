@@ -178,8 +178,15 @@ describe("the display text cannot drift from the logic", () => {
 describe("the spanning-header RE-CUT note — a header that survived the edit as a different part", () => {
   // The defect this clause exists for, from the branch's own harness:
   // deleting a panel to the LEFT of a header moved its range 2..4 -> 1..3
-  // (the same two panels) while its cut width went 80in -> 85.75in, and the
-  // notice said only "15 panels -> 14, 12 still automatic".
+  // (the same two panels) while its cut width changed, and the notice said
+  // only "15 panels -> 14, 12 still automatic".
+  //
+  // ⚠ The 85.75in below is a FIXTURE, not the measured figure. The harness
+  // measured 80in -> 84¾in (see `evidence.json`); 85.75in was the same
+  // measurement on a superseded footprint that tiled differently. Left as-is
+  // because nothing here depends on which real wall it came from — but said
+  // out loud, because a number in a test beside a real observation reads as
+  // the observation.
   const change = (over: Partial<SpanningHeaderWidthChange> = {}): SpanningHeaderWidthChange => ({
     name: "H1",
     fromIn: 80,

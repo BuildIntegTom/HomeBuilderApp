@@ -244,6 +244,34 @@ describe("spanningHeaderSpanOutOfRange — a span that changed under the header,
     });
   });
 
+  it("catches the re-tile that makes a wall LONGER — a wall absorbing its neighbour", () => {
+    // The re-tile route this flag genuinely covers: `absorbedCornerWalls`,
+    // where a wall swallows its neighbour and re-tiles wider panels under a
+    // stored range. 3 x 40in is fine; 3 x 50in is a 150in header, past the
+    // 144in maximum a placement quotes, with nobody having touched the header.
+    const range = { startSlotIndex: 0, endSlotIndex: 3 };
+    expect(spanningHeaderSpanOutOfRange([standard(40), standard(40), standard(40)], range, LIMITS)).toBeNull();
+    expect(spanningHeaderSpanOutOfRange([standard(50), standard(50), standard(50)], range, LIMITS)).toEqual({
+      spanWidthIn: 150,
+      minIn: 48,
+      maxIn: 144,
+    });
+  });
+
+  it("CANNOT catch the 51-75in two-corner absorb — that sub-route is guarded by the stranded flag instead", () => {
+    // Written down because the spec once implied the opposite. On the
+    // 51-75in two-corner dead-band re-tile each corner panel is bounded to
+    // [25.5, 37.4375]in, so the pair's total is always inside [51, 74.875]in
+    // — inside 48-144 at both ends, so no out-of-range flag is reachable
+    // there however the wall re-tiles. A reader who trusts this flag for that
+    // route is trusting the wrong safeguard.
+    const range = { startSlotIndex: 0, endSlotIndex: 2 };
+    const CORNER_MIN_IN = 25.5;
+    const CORNER_MAX_IN = 37.4375;
+    expect(spanningHeaderSpanOutOfRange([standard(CORNER_MIN_IN), standard(CORNER_MIN_IN)], range, LIMITS)).toBeNull();
+    expect(spanningHeaderSpanOutOfRange([standard(CORNER_MAX_IN), standard(CORNER_MAX_IN)], range, LIMITS)).toBeNull();
+  });
+
   it("quotes the range's own numbers back rather than a rounded pair", () => {
     // The range is pending BI confirmation and is never widened to fit — so
     // whatever is reported has to be the catalog's own figures.
