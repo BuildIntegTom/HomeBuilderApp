@@ -68,6 +68,8 @@ import {
   defaultSpanningHeaderBottomHeightIn,
   resolveSpanningHeaderPlacement,
   spanningHeaderCoveredSlotCount,
+  spanningHeaderOpeningConflicts,
+  spanningHeaderSpanOutOfRange,
   spanningHeaderSpanWidthIn,
   type SpanningHeaderPlacementResult,
   type MidWallBeamGeometry,
@@ -278,6 +280,7 @@ import {
 } from "@building-integrity/panel-catalog";
 import { formatFeetInches } from "./canvasGeometry";
 import LengthInput from "./LengthInput";
+import SlotIndexInput from "./SlotIndexInput";
 import ConcreteBlockStemWallDiagram from "./ConcreteBlockStemWallDiagram";
 import DetailGuidePage from "./DetailGuidePage";
 import FloorAddOnLayerDiagram from "./FloorAddOnLayerDiagram";
@@ -355,7 +358,13 @@ import WallElevationDiagram from "./WallElevationDiagram";
 import styles from "./page.module.css";
 import elevationStyles from "./ElevationControls.module.css";
 import { tilerWouldChangeThePanelCount } from "./handPlacedWallRetile";
-import { placementCommitNotice, placementRefusalNotice, placementRefusalSentence, type PlacementOp } from "./placementNotice";
+import {
+  placementCommitNotice,
+  placementRefusalNotice,
+  placementRefusalSentence,
+  type PlacementOp,
+  type SpanningHeaderWidthChange,
+} from "./placementNotice";
 
 const FootprintCanvas = dynamic(() => import("./FootprintCanvas"), { ssr: false });
 const Building3DView = dynamic(() => import("./Building3DView"), { ssr: false });
@@ -3318,19 +3327,38 @@ export default function LayoutEditor() {
    * first version and it left records pointing at the wrong panels, or past
    * the end of the array entirely, on exactly the case the tool's own
    * notice already calls out.
+   *
+   * **⚠ Moving a range correctly is not the same as leaving the part
+   * unchanged.** A spanning header's width is DERIVED from the panels it
+   * spans, so a shift that keeps it over the same two panels can still change
+   * what the shop cuts — measured by this branch's own harness at 80in →
+   * 85.75in on a delete to the LEFT of a header. So `spanningHeaderWidthChanges`
+   * reports every header whose fabricated width moved, with both numbers, and
+   * flags one that has landed outside the span range a PLACEMENT would have
+   * refused. Reported and not refused, which is this app's standing rule on a
+   * re-tile path: a visible flag beats an edit the user cannot complete.
    */
   const shiftSlotCoverageRecords = (
     story: "ground" | "second",
     wallId: string,
     moves: { at: number; delta: 1 | -1 }[],
+    /** This wall's slots AFTER the edit — the only place the new derived span
+     * width can be read from, since state has not been written yet. */
+    nextSlots: PanelSlot[],
     /** Counted SEPARATELY, because they are different components with
      * different names and a notice that calls the roofline Box Beam a
      * "mid-wall beam" is simply wrong about what it just removed. */
-  ): { midWallBeams: number; boxBeam: boolean; spanningHeaders: number } => {
-    if (moves.length === 0) return { midWallBeams: 0, boxBeam: false, spanningHeaders: 0 };
+  ): {
+    midWallBeams: number;
+    boxBeam: boolean;
+    spanningHeaders: number;
+    spanningHeaderWidthChanges: SpanningHeaderWidthChange[];
+  } => {
+    if (moves.length === 0) return { midWallBeams: 0, boxBeam: false, spanningHeaders: 0, spanningHeaderWidthChanges: [] };
     let emptied = 0;
     let boxBeamEmptied = false;
     let spanningHeadersEmptied = 0;
+    const spanningHeaderWidthChanges: SpanningHeaderWidthChange[] = [];
     const applyAll = <T extends { startSlotIndex: number; endSlotIndex: number }>(range: T): T | null =>
       moves.reduce<T | null>((acc, move) => (acc === null ? null : shiftSlotCoverage(acc, move.at, move.delta)), range);
     // Read from this render's own state and write plain values — the count
@@ -3362,15 +3390,39 @@ export default function LayoutEditor() {
     // the notice says so.
     const headers = spanningHeadersByStoryAndWallId[story][wallId] ?? [];
     if (headers.length > 0) {
+      const priorSlots = wallSlotsForStory(story)[wallId] ?? [];
       const nextHeaders = headers
-        .map(applyAll)
+        .map((header) => {
+          const shifted = applyAll(header);
+          // ⚠ The re-cut check, and the reason it reads WIDTHS rather than
+          // indices: a range that moved by one over two panels of different
+          // widths is the same header on the same panels at a new cut size.
+          // `resolveSpanningHeaderPlacement` is deliberately NOT called here —
+          // it refuses, and this path cannot: the panel edit has already been
+          // decided, and unwinding it would leave the user unable to delete a
+          // panel because of a header three panels away.
+          if (shifted !== null && shifted.endSlotIndex - shifted.startSlotIndex >= 2) {
+            const fromIn = spanningHeaderSpanWidthIn(priorSlots, header);
+            const toIn = spanningHeaderSpanWidthIn(nextSlots, shifted);
+            if (toEighths(fromIn) !== toEighths(toIn)) {
+              const outside = spanningHeaderSpanOutOfRange(nextSlots, shifted, SPANNING_HEADER_LIMITS_IN);
+              spanningHeaderWidthChanges.push({
+                name: spanningHeaderNameById.get(header.id) ?? "a spanning header",
+                fromIn,
+                toIn,
+                outsideRangeIn: outside ? { minIn: outside.minIn, maxIn: outside.maxIn } : null,
+              });
+            }
+          }
+          return shifted;
+        })
         .filter((h): h is SpanningHeader => h !== null && h.endSlotIndex - h.startSlotIndex >= 2);
       spanningHeadersEmptied = headers.length - nextHeaders.length;
       if (spanningHeadersEmptied > 0 || nextHeaders.some((h, i) => h !== headers[i])) {
         setSpanningHeadersByStoryAndWallId((was) => ({ ...was, [story]: { ...was[story], [wallId]: nextHeaders } }));
       }
     }
-    return { midWallBeams: emptied, boxBeam: boxBeamEmptied, spanningHeaders: spanningHeadersEmptied };
+    return { midWallBeams: emptied, boxBeam: boxBeamEmptied, spanningHeaders: spanningHeadersEmptied, spanningHeaderWidthChanges };
   };
 
   /** Every notice sentence this tool prints is composed in
@@ -3411,8 +3463,10 @@ export default function LayoutEditor() {
       ...(coverageShift ? [coverageShift] : []),
       ...[...result.droppedIndices].sort((a, b) => b - a).map((at) => ({ at, delta: -1 as const })),
     ];
-    const emptied = shiftSlotCoverageRecords(story, wallId, moves);
-    showPanelPlacementNotice(placementCommitNotice(op, wallId, result, emptied));
+    const emptied = shiftSlotCoverageRecords(story, wallId, moves, result.slots);
+    showPanelPlacementNotice(
+      placementCommitNotice(op, wallId, result, emptied, emptied.spanningHeaderWidthChanges, formatPlacementLength),
+    );
   };
 
   const handleReplacePanel = (story: "ground" | "second", wallId: string, slotIndex: number) => {
@@ -6014,10 +6068,26 @@ export default function LayoutEditor() {
    * with no headers this is 0 and every existing project's total stays
    * byte-identical.
    *
-   * **A gap it does NOT close:** Mid-Wall Bond Beams are still absent from
-   * `totalWoodWeightKg`, which walks standard/braced SLOTS only. That is
-   * pre-existing and out of this stage's scope — said out loud so nobody
-   * reads this new line as evidence the old one is complete.
+   * **⚠ Two gaps it does NOT close, both in `totalWoodWeightKg` and both
+   * pre-existing.** Named here because this line is the one a reader will take
+   * as evidence that project wood weight is now right, and it is not:
+   *
+   * 1. **Mid-Wall Bond Beams are absent from it entirely** — it walks
+   *    standard/braced SLOTS, and a beam is a wall-level record with no slot.
+   * 2. **Every standard/braced slot is charged at FULL STORY HEIGHT**, so a
+   *    panel shortened under a header (or under a beam, or by a max-panel
+   *    height split) still contributes full-height wood, and this header's own
+   *    weight is then added on top of it. A small OVER-count in the project
+   *    total, in the opposite direction to (1).
+   *
+   * DOCUMENTED RATHER THAN FIXED, deliberately. The fabrication sheets are
+   * already right — they build members at `heightOverrideIn`, the real band
+   * height — so nothing that reaches a shop is wrong. Correcting the total
+   * means running the band pipeline inside this sum, which changes the
+   * displayed weight of every existing project that has a beam in it; that is
+   * its own change with its own Review Log line, not a side effect of adding a
+   * header. Same call this branch made about the Mid-Wall Bond Beam's 3D
+   * anchor drift.
    */
   const spanningHeaderWoodWeightKg = useMemo(
     () =>
@@ -6468,12 +6538,20 @@ export default function LayoutEditor() {
     // Its own elevation face (derived span x its own height), the same
     // width-x-height convention every entry here uses.
     //
-    // **Priced at the header/sill ("opening") rate, and that is an
-    // assumption**, in the same class as the existing "no distinct rate
-    // given for safety/gap panels — priced at the standard rate" note above:
-    // no rate for this panel has been given. It is a header, so the header
-    // rate is the closest existing fact rather than a new number, and no new
-    // rate is invented. Surfaced in the Review Log.
+    // **Priced at the header/sill ("opening") rate — TOMMY'S DECISION,
+    // 2026-09-25**, asked directly what rate a spanning header carries. It
+    // stopped being this code's assumption on that date.
+    //
+    // ⚠ What he settled is WHICH EXISTING RATE APPLIES. It does not promote
+    // any catalog value's status: the header/sill rate is exactly as
+    // confirmed (or not) as it was before, and nothing in
+    // `packages/panel-catalog` moves because of this line.
+    //
+    // ⚠ And it is deliberately NOT consistent with its nearest neighbour: the
+    // mid-wall Big Header BEAM is priced at the `roof` rate two lines down.
+    // Two spanning things, two different rates, by decision rather than by
+    // oversight — which is why the Review Log entry says so in words, since
+    // that is what reaches the engineer.
     const spanningHeaderAreaSqFt = spanningHeaderFabricationGroups.reduce(
       (sum, g) => sum + g.instances.length * (g.widthIn / 12) * (g.heightIn / 12),
       0,
@@ -6609,10 +6687,29 @@ export default function LayoutEditor() {
    *   manufacturer-sourced, and the app refuses rather than widening it. A
    *   header sitting legally inside an unconfirmed range still deserves to
    *   be named.
-   * - **What it is priced as is an assumption.** No rate exists for this
-   *   panel, so it is priced at the header/sill rate — the closest existing
-   *   fact rather than a new number, and said out loud, the same treatment
-   *   the safety-gap panel's rate assumption already gets.
+   * - **What it is priced as was Tommy's decision, not the app's guess.**
+   *   Asked directly on 2026-09-25 what rate a spanning header should carry,
+   *   he answered: the header/sill rate. What he settled is WHICH EXISTING
+   *   RATE APPLIES — it does not make that rate a confirmed number, and no
+   *   catalog status moves because of it. The entry also says out loud that
+   *   the mid-wall Big Header beam is priced at the roof rate instead, since
+   *   two spanning things now carry deliberately different rates and silence
+   *   would read as consistency.
+   *
+   * **Two conditions the refusals CANNOT catch, flagged here instead:**
+   *
+   * - **A derived span that is no longer a width the shop builds.** The width
+   *   follows the panels, so it can leave the range without anybody editing
+   *   the header: an insert/delete shift, or any path that re-tiles the wall
+   *   (a length edit, a panelization switch, a corner-band change that
+   *   replaces one middle panel with two corner panels). The flag is computed
+   *   from `resolved.spanWidthIn` — the CURRENT slots — so it does not care
+   *   which route caused it, including routes not written yet.
+   * - **An opening that no longer fits under the header.** Tommy allowed a
+   *   header to span a window or door ("allow both"), and the vertical
+   *   refusal only checks the header against the story, so a header placed
+   *   low leaves a window whose rough opening reaches the top of its own
+   *   shortened panel. Reported, because he permitted the combination.
    *
    * The entry also carries the cross-reference in words, because a header's
    * own name carries no direction.
@@ -6627,19 +6724,55 @@ export default function LayoutEditor() {
       // other paths cannot, so the reviewer is told instead of a sheet being
       // printed for a part nobody chose.
       const stranded = resolved.coveredSlotIndices.length < 2;
+      const slots = (resolved.story === "ground" ? overlayWallSlots : (secondStory?.wallSlots ?? {}))[resolved.wallId] ?? [];
+      // Measured off the CURRENT slots and the stored range, never off the
+      // edit — which is what makes one flag cover the shift path, every
+      // re-tile path, and a file written under different limits.
+      const outOfRange = stranded ? null : spanningHeaderSpanOutOfRange(slots, resolved.header, SPANNING_HEADER_LIMITS_IN);
+      const openingConflicts = spanningHeaderOpeningConflicts(slots, resolved.header, resolved.header.heightIn, {
+        windowSillHeightIn: sillDefaultHeightIn.value,
+        windowHeightIn: standardWindowHeightDefaultIn.value,
+        doorRoughOpeningHeightIn,
+      });
+      const openingNames = openingConflicts
+        .map((conflict) => {
+          const instances = resolved.story === "ground" ? allInstances : secondStoryAllInstances;
+          const name = instances.find((inst) => inst.wallId === resolved.wallId && inst.slotIndexInWall === conflict.slotIndex)?.name;
+          return `${name ?? `the panel at position ${conflict.slotIndex + 1}`} (its ${conflict.openingType} reaches ${formatLengthIn(conflict.openingTopIn, unitSystem)} in a ${formatLengthIn(conflict.bandHeightIn, unitSystem)} panel)`;
+        })
+        .join(", ");
       return {
         label: stranded
           ? `Spanning header ${resolved.name} — no longer sits on two panels`
-          : `Spanning header ${resolved.name} — ${formatLengthIn(resolved.spanWidthIn, unitSystem)} span`,
+          : outOfRange
+            ? `Spanning header ${resolved.name} — ${formatLengthIn(resolved.spanWidthIn, unitSystem)} span, outside the buildable range`
+            : `Spanning header ${resolved.name} — ${formatLengthIn(resolved.spanWidthIn, unitSystem)} span`,
         status: "pending-BI-confirmation" as const,
-        note: `${spanningHeaderCrossReference.locationByHeaderName.get(resolved.name) ?? ""}. One header panel carried on the panels beneath it, ${formatLengthIn(resolved.heightIn, unitSystem)} tall, its width derived from those panels rather than typed. Building Integrity's stated header span range (${bigHeaderWidthInRange.minIn}in-${bigHeaderWidthInRange.maxIn}in) and header height range (${bigHeaderHeightInRange.minIn}in-${bigHeaderHeightInRange.maxIn}in) are BOTH still pending their confirmation — a span outside them is refused rather than accommodated. Priced at the header/sill rate: no rate has been given for this panel, so the nearest existing one is used rather than a new number invented.${
+        note: `${spanningHeaderCrossReference.locationByHeaderName.get(resolved.name) ?? ""}. One header panel carried on the panels beneath it, ${formatLengthIn(resolved.heightIn, unitSystem)} tall, its width derived from those panels rather than typed. Building Integrity's stated header span range (${bigHeaderWidthInRange.minIn}in-${bigHeaderWidthInRange.maxIn}in) and header height range (${bigHeaderHeightInRange.minIn}in-${bigHeaderHeightInRange.maxIn}in) are BOTH still pending their confirmation — a span outside them is refused at PLACEMENT, and one that drifts outside them afterwards (the panels beneath it changed) is flagged here rather than accommodated. Priced at the header/sill rate — Tommy's decision, 2026-09-25, when asked what rate this panel carries. That settles which existing rate applies, not that the rate itself is confirmed. ⚠ Note the deliberate disagreement: a spanning header is priced as an opening, while the mid-wall Big Header BEAM is priced at the roof rate. Two spanning things, two different rates, on purpose.${
           stranded
             ? ` **This header now covers ${resolved.coveredSlotIndices.length} panel(s).** Its wall was re-tiled by an edit that re-derives the whole run, so its range no longer describes a real pair of panels — re-place or remove it before this sheet is issued.`
+            : ""
+        }${
+          outOfRange
+            ? ` **Its span is now ${formatLengthIn(outOfRange.spanWidthIn, unitSystem)}, outside the ${bigHeaderWidthInRange.minIn}in-${bigHeaderWidthInRange.maxIn}in the app will place a header at.** The panels beneath it changed after it was placed — a shift, or a re-tile that re-derived the run — so this width was never accepted by the placement check that quotes that range. The range is NOT widened to fit it: re-place or remove this header before its sheet is issued.`
+            : ""
+        }${
+          openingConflicts.length > 0
+            ? ` **It spans an opening that no longer fits beneath it: ${openingNames}.** A header shortens the panels under it, but a window keeps the sill height it already had, so that opening now runs to the top of its own panel and its own window header collapses to nothing. Spanning an opening is allowed (Tommy: "allow both"), so this is reported rather than refused — lower the opening, or raise this header, before these sheets are issued.`
             : ""
         }`,
       };
     });
-  }, [resolvedSpanningHeaders, spanningHeaderCrossReference, unitSystem]);
+  }, [
+    resolvedSpanningHeaders,
+    spanningHeaderCrossReference,
+    overlayWallSlots,
+    secondStory,
+    allInstances,
+    secondStoryAllInstances,
+    doorRoughOpeningHeightIn,
+    unitSystem,
+  ]);
 
   const reviewLog = useMemo(() => {
     const entries = toReviewLog([
@@ -7472,34 +7605,36 @@ export default function LayoutEditor() {
                 in
               </label>
               <div className={elevationStyles.beamRowFooter}>
+                {/* Committed on blur/Enter, not per keystroke — see
+                    SlotIndexInput. As raw number inputs these committed every
+                    intermediate state: clearing a field sent `Number("") === 0`
+                    and moved the header to the first panel on the wall (a legal
+                    index, so nothing refused it), and re-aiming a range could
+                    dead-end on an inverted or over-long intermediate. */}
                 <label className={elevationStyles.fieldRow}>
                   Spans panels
-                  <input
-                    type="number"
-                    aria-label={`Spanning header ${name} first panel`}
+                  <SlotIndexInput
                     value={header.startSlotIndex}
-                    min={0}
-                    max={Math.max(0, slots.length - 2)}
+                    ariaLabel={`Spanning header ${name} first panel`}
+                    title="The first panel this header sits on, counting from 0 at the start of the wall. Committed when you leave the field or press Enter."
                     style={{ width: 50 }}
-                    onChange={(e) =>
+                    onCommit={(next) =>
                       handleChangeSpanningHeaderCoverage(story, wallId, header.id, {
-                        startSlotIndex: Number(e.target.value),
+                        startSlotIndex: next,
                         endSlotIndex: header.endSlotIndex,
                       })
                     }
                   />
                   to
-                  <input
-                    type="number"
-                    aria-label={`Spanning header ${name} last panel, exclusive`}
+                  <SlotIndexInput
                     value={header.endSlotIndex}
-                    min={2}
-                    max={slots.length}
+                    ariaLabel={`Spanning header ${name} last panel, exclusive`}
+                    title="One PAST the last panel this header sits on — 1 to 3 means it sits on panels 1 and 2. Committed when you leave the field or press Enter."
                     style={{ width: 50 }}
-                    onChange={(e) =>
+                    onCommit={(next) =>
                       handleChangeSpanningHeaderCoverage(story, wallId, header.id, {
                         startSlotIndex: header.startSlotIndex,
-                        endSlotIndex: Number(e.target.value),
+                        endSlotIndex: next,
                       })
                     }
                   />

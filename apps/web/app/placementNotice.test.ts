@@ -7,6 +7,7 @@ import {
   type EmptiedCoverage,
   type PlacementCommitFacts,
   type PlacementOp,
+  type SpanningHeaderWidthChange,
 } from "./placementNotice";
 
 /** Deliberately not the app's formatter: these tests are about which clauses
@@ -20,6 +21,16 @@ const facts = (over: Partial<PlacementCommitFacts> = {}): PlacementCommitFacts =
   droppedTypes: [],
   ...over,
 });
+/** The real function, with the two arguments every clause-selection test
+ * below is indifferent to bound once — the width-change list (empty unless a
+ * test is about it) and the length formatter. */
+const commitNotice = (
+  op: PlacementOp,
+  wallId: string,
+  commitFacts: PlacementCommitFacts,
+  emptied: EmptiedCoverage,
+  widthChanges: SpanningHeaderWidthChange[] = [],
+) => placementCommitNotice(op, wallId, commitFacts, emptied, widthChanges, fmt);
 
 /**
  * ### What these tests are really guarding
@@ -85,7 +96,7 @@ describe("the delete-only 'no way to hold fewer panels' clause", () => {
 
 describe("the insert-only 'gave up N panels' note", () => {
   it("appears on an INSERT the automatic run had to pay for, naming the count and the braced ones", () => {
-    const notice = placementCommitNotice(
+    const notice = commitNotice(
       "insert",
       "AB",
       facts({ slotCountBefore: 6, slotCountAfter: 4, droppedTypes: ["standard", "braced"] }),
@@ -96,39 +107,39 @@ describe("the insert-only 'gave up N panels' note", () => {
   });
 
   it("says 'panel' rather than 'panels' for one", () => {
-    expect(placementCommitNotice("insert", "AB", facts({ droppedTypes: ["standard"] }), NO_COVERAGE)).toContain("gave up 1 panel to pay");
+    expect(commitNotice("insert", "AB", facts({ droppedTypes: ["standard"] }), NO_COVERAGE)).toContain("gave up 1 panel to pay");
   });
 
   it("does NOT appear on a replace or a delete that dropped panels — those did what they were asked", () => {
     const dropped = facts({ droppedTypes: ["standard", "standard"] });
-    expect(placementCommitNotice("replace", "AB", dropped, NO_COVERAGE)).not.toContain("gave up");
-    expect(placementCommitNotice("delete", "AB", dropped, NO_COVERAGE)).not.toContain("gave up");
+    expect(commitNotice("replace", "AB", dropped, NO_COVERAGE)).not.toContain("gave up");
+    expect(commitNotice("delete", "AB", dropped, NO_COVERAGE)).not.toContain("gave up");
   });
 
   it("does not appear on an insert that cost the run nothing", () => {
-    expect(placementCommitNotice("insert", "AB", facts(), NO_COVERAGE)).not.toContain("gave up");
+    expect(commitNotice("insert", "AB", facts(), NO_COVERAGE)).not.toContain("gave up");
   });
 });
 
 describe("the emptied-coverage note", () => {
   it("names the component, and does not blame the panel the user clicked", () => {
-    const notice = placementCommitNotice("delete", "AB", facts(), { midWallBeams: 2, boxBeam: true, spanningHeaders: 0 });
+    const notice = commitNotice("delete", "AB", facts(), { midWallBeams: 2, boxBeam: true, spanningHeaders: 0 });
     expect(notice).toContain("2 Mid-Wall Bond Beams covered only panels this edit removed, so they were removed too.");
     expect(notice).toContain("The roofline Box Beam covered only panels this edit removed, so it was removed too.");
     expect(notice).not.toContain("that panel");
   });
 
   it("agrees in number for a single beam", () => {
-    expect(placementCommitNotice("delete", "AB", facts(), { midWallBeams: 1, boxBeam: false, spanningHeaders: 0 })).toContain(
+    expect(commitNotice("delete", "AB", facts(), { midWallBeams: 1, boxBeam: false, spanningHeaders: 0 })).toContain(
       "1 Mid-Wall Bond Beam covered only panels this edit removed, so it was removed too.",
     );
   });
 
   it("says when a spanning header was left standing on fewer than two panels (Stage 2b)", () => {
-    const notice = placementCommitNotice("delete", "AB", facts(), { midWallBeams: 0, boxBeam: false, spanningHeaders: 1 });
+    const notice = commitNotice("delete", "AB", facts(), { midWallBeams: 0, boxBeam: false, spanningHeaders: 1 });
     expect(notice).toContain("1 spanning header was left standing on fewer than two panels, so it was removed too");
     expect(notice).toContain("a header's own width is the panels it spans");
-    expect(placementCommitNotice("delete", "AB", facts(), { midWallBeams: 0, boxBeam: false, spanningHeaders: 2 })).toContain(
+    expect(commitNotice("delete", "AB", facts(), { midWallBeams: 0, boxBeam: false, spanningHeaders: 2 })).toContain(
       "2 spanning headers were left standing on fewer than two panels, so they were removed too",
     );
   });
@@ -144,7 +155,7 @@ describe("the display text cannot drift from the logic", () => {
     // signal that was missing before.
     const ops: PlacementOp[] = ["replace", "insert", "delete"];
     for (const op of ops) {
-      expect(placementCommitNotice(op, "AB", facts(), NO_COVERAGE).startsWith(`${PLACEMENT_VERBS[op]} on wall AB:`)).toBe(true);
+      expect(commitNotice(op, "AB", facts(), NO_COVERAGE).startsWith(`${PLACEMENT_VERBS[op]} on wall AB:`)).toBe(true);
     }
     // And the three verbs really are distinct, so "derived" is not hiding a
     // collapse into one string.
@@ -157,9 +168,61 @@ describe("the display text cannot drift from the logic", () => {
     // nothing in common with the string the old branches matched on.
     const reworded: Record<PlacementOp, string> = { replace: "Swapped", insert: "Added", delete: "Removed one" };
     for (const op of Object.keys(reworded) as PlacementOp[]) {
-      const notice = placementCommitNotice(op, "AB", facts({ droppedTypes: ["standard"] }), NO_COVERAGE);
+      const notice = commitNotice(op, "AB", facts({ droppedTypes: ["standard"] }), NO_COVERAGE);
       // The note's presence tracks the OPERATION, not the word in front of it.
       expect(notice.includes("gave up")).toBe(op === "insert");
+    }
+  });
+});
+
+describe("the spanning-header RE-CUT note — a header that survived the edit as a different part", () => {
+  // The defect this clause exists for, from the branch's own harness:
+  // deleting a panel to the LEFT of a header moved its range 2..4 -> 1..3
+  // (the same two panels) while its cut width went 80in -> 85.75in, and the
+  // notice said only "15 panels -> 14, 12 still automatic".
+  const change = (over: Partial<SpanningHeaderWidthChange> = {}): SpanningHeaderWidthChange => ({
+    name: "H1",
+    fromIn: 80,
+    toIn: 85.75,
+    outsideRangeIn: null,
+    ...over,
+  });
+
+  it("names the header and prints BOTH widths, because the old one is what is on the sheet", () => {
+    const notice = commitNotice("delete", "AB", facts(), NO_COVERAGE, [change()]);
+    expect(notice).toContain("Spanning header H1 still spans its panels");
+    expect(notice).toContain("cut 85.75in instead of 80in");
+  });
+
+  it("says nothing at all when no header's width moved", () => {
+    expect(commitNotice("delete", "AB", facts(), NO_COVERAGE)).not.toContain("still spans its panels");
+  });
+
+  it("flags a width the shift pushed outside the range a PLACEMENT would have refused, and names it as unconfirmed", () => {
+    const notice = commitNotice("delete", "AB", facts(), NO_COVERAGE, [
+      change({ toIn: 152, outsideRangeIn: { minIn: 48, maxIn: 144 } }),
+    ]);
+    expect(notice).toContain("OUTSIDE the 48in-144in span a header can be placed at");
+    expect(notice).toContain("Building Integrity has not confirmed yet");
+    expect(notice).toContain("Re-place or remove H1.");
+  });
+
+  it("does not claim a range problem when the new width is still inside the range", () => {
+    expect(commitNotice("delete", "AB", facts(), NO_COVERAGE, [change()])).not.toContain("OUTSIDE");
+  });
+
+  it("speaks per header rather than as a count, so a shop knows WHICH part to re-cut", () => {
+    const notice = commitNotice("delete", "AB", facts(), NO_COVERAGE, [change(), change({ name: "H4", fromIn: 60, toIn: 48 })]);
+    expect(notice).toContain("Spanning header H1");
+    expect(notice).toContain("Spanning header H4");
+    expect(notice).toContain("cut 48in instead of 60in");
+  });
+
+  it("is chosen by the width change, never by which operation was asked for", () => {
+    // The re-cut can arrive from any of them, so no op is special here — the
+    // same shape the verb-parsing defect taught this module.
+    for (const op of ["replace", "insert", "delete"] as PlacementOp[]) {
+      expect(commitNotice(op, "AB", facts(), NO_COVERAGE, [change()])).toContain("cut 85.75in instead of 80in");
     }
   });
 });

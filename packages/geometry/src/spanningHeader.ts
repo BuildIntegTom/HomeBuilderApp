@@ -157,6 +157,126 @@ export function slotRangesOverlap(a: SlotIndexRange, b: SlotIndexRange): boolean
 }
 
 /**
+ * Whether a span that ALREADY EXISTS is still a width the shop builds.
+ *
+ * ### Why this is separate from `resolveSpanningHeaderPlacement`
+ *
+ * That function answers "may this be placed", at the point of edit, and
+ * refuses. This one answers "is what is stored still buildable", at any time,
+ * and only reports — because by the time it can say no, the record is already
+ * there and refusing it would mean either deleting a part off a shop sheet or
+ * refusing to open a file.
+ *
+ * **It is needed because a header's width is DERIVED, and three separate paths
+ * change the panels under it without asking anybody:**
+ *
+ * - the insert/delete shift (`shiftSlotCoverageRecords`), which moves a range
+ *   but never re-checks the span it now measures;
+ * - any path that RE-TILES a wall — a wall-length edit, a panelization
+ *   switch, a corner-band change that turns one middle panel into two corner
+ *   panels — which leaves the stored range pointing at a different set of
+ *   panels entirely;
+ * - a file written by a version whose limits differed.
+ *
+ * Because the answer is computed from the CURRENT slots and the stored range,
+ * and not from whatever edit caused the change, it covers all three without
+ * knowing about any of them. That is the whole design requirement: a route
+ * nobody has written yet still gets flagged.
+ *
+ * `minIn`/`maxIn` are `bigHeaderWidthInRange`, **pending BI confirmation** —
+ * a span outside it is REPORTED, never accommodated by widening the range and
+ * never silently corrected.
+ */
+export function spanningHeaderSpanOutOfRange(
+  slots: PanelSlot[],
+  range: SlotIndexRange,
+  limits: Pick<SpanningHeaderLimitsIn, "minSpanIn" | "maxSpanIn">,
+): { spanWidthIn: number; minIn: number; maxIn: number } | null {
+  const spanWidthIn = spanningHeaderSpanWidthIn(slots, range);
+  const spanEighths = toEighths(spanWidthIn);
+  if (spanEighths >= toEighths(limits.minSpanIn) && spanEighths <= toEighths(limits.maxSpanIn)) return null;
+  return { spanWidthIn, minIn: limits.minSpanIn, maxIn: limits.maxSpanIn };
+}
+
+/** One covered panel whose own opening no longer fits underneath the header.
+ * `openingTopIn` and `bandHeightIn` are both measured from this story's own
+ * floor, so the two are directly comparable. */
+export interface SpanningHeaderOpeningConflict {
+  slotIndex: number;
+  /** Which kind of opening it is — the discriminant, so no caller has to read
+   * a sentence back to find out. */
+  openingType: "window" | "door";
+  /** Top of that opening's rough opening above the floor. */
+  openingTopIn: number;
+  /** The height the panel beneath the header is actually built to — the
+   * header's own bottom face. */
+  bandHeightIn: number;
+}
+
+/**
+ * Covered panels whose own rough opening does not fit in the band the header
+ * leaves beneath it.
+ *
+ * ### Why this reports rather than refuses
+ *
+ * Asked whether a header may span a window or door and bear on a corner
+ * panel, Tommy answered **"allow both."** So the combination is permitted,
+ * and this function exists for the one part of it that is not automatically
+ * fine.
+ *
+ * A header shortens every panel beneath it to `bandHeightIn` (that is
+ * `computeWallVerticalBandsForSlot`'s job and it is unchanged). The window in
+ * such a panel keeps the sill height and rough-opening height it already had,
+ * which are measured from the FLOOR and know nothing about the header. Put
+ * the header low enough and the opening's top reaches — or passes — the top
+ * of the panel it is now in: the window's own header collapses to zero
+ * height, an opening filling its whole panel. Nothing crashes
+ * (`computeHeaderHeightIn` clamps at 0), and nothing says anything, which is
+ * the actual defect.
+ *
+ * **The vertical refusal cannot catch this**: it checks the header's top
+ * against the story and its own assembly height against
+ * `bigHeaderHeightInRange`, both of which are about the header. And the sill
+ * clamp cannot either — it clamps against the WALL's height, not against a
+ * band a header may later put beneath it.
+ *
+ * Only `zones[0]`-level fields are read, i.e. this slot's own top-level
+ * type/sill/height, which the zone machinery keeps mirrored onto the
+ * BOTTOM-most zone — and the bottom-most zone is exactly the one a header
+ * shortens from above. Openings' own default heights are passed in, since
+ * they are catalog values and this package does not read the catalog.
+ */
+export function spanningHeaderOpeningConflicts(
+  slots: PanelSlot[],
+  range: SlotIndexRange,
+  bandHeightIn: number,
+  defaultsIn: {
+    /** `sillDefaultHeightIn` — a window slot with no sill of its own. */
+    windowSillHeightIn: number;
+    /** `standardWindowHeightDefaultIn` — a window slot with no RO height of its own. */
+    windowHeightIn: number;
+    /** `computeDoorRoughOpeningHeightIn(...)` — a door's RO is never per-slot. */
+    doorRoughOpeningHeightIn: number;
+  },
+): SpanningHeaderOpeningConflict[] {
+  const start = Math.max(0, Math.min(range.startSlotIndex, slots.length));
+  const end = Math.max(start, Math.min(range.endSlotIndex, slots.length));
+  const conflicts: SpanningHeaderOpeningConflict[] = [];
+  for (let i = start; i < end; i++) {
+    const slot = slots[i]!;
+    const openingType = slot.type === "window" ? "window" : slot.type === "door" ? "door" : null;
+    if (openingType === null) continue;
+    const openingTopIn =
+      openingType === "door"
+        ? defaultsIn.doorRoughOpeningHeightIn
+        : (slot.sillHeightIn ?? defaultsIn.windowSillHeightIn) + (slot.heightIn ?? defaultsIn.windowHeightIn);
+    if (toEighths(openingTopIn) <= toEighths(bandHeightIn)) continue;
+    conflicts.push({ slotIndex: i, openingType, openingTopIn, bandHeightIn });
+  }
+  return conflicts;
+}
+
+/**
  * Whether this wall will take a spanning header over this range, and — when
  * it will — what the header's own fabricated width is.
  *

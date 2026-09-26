@@ -59,8 +59,14 @@
  *
  * HOW TO RUN (from the repo root):
  *   1. `npm run dev --workspace=apps/web -- -p 3215`
- *   2. `chrome --headless=new --remote-debugging-port=9449 --user-data-dir=<temp> about:blank`
+ *   2. `chrome --headless=new --remote-debugging-port=9449
+ *      --window-size=1578,902 --user-data-dir=<temp> about:blank`
  *   3. `node apps/web/harness/smearforn-stage-2b/run.mjs`
+ *
+ * **`--window-size=1578,902` is required, not cosmetic** — it is the size of
+ * the checked-in screenshots, and at the default headless window the viewer
+ * dial never reaches "3D Framed": the run then dies looking like a broken
+ * locator. Same reason the Stage 0/1 harness carries its own size note.
  *
  * **Use `localhost`, not `127.0.0.1`** — see the Stage 0/1 harness's note:
  * the dynamic-import chunks never arrive over 127.0.0.1 and the canvas
@@ -75,8 +81,12 @@
  *     panels is where the 48in-144in span limits actually bite.
  *
  * `record()` REFUSES to run without an expectation, and the process exits
- * non-zero if any of them is false. There is no unconditional
- * `process.exit(0)` in this file.
+ * non-zero if any of them is false. A clean run exits 0 from the LAST TWO
+ * LINES of this file, and they have to be there: the CDP WebSocket keeps the
+ * event loop alive, so a passing run without them printed its tally and then
+ * hung until the browser was killed, which made its only reachable exit code
+ * non-zero. The `process.exit(0)` is reached only after the failure branch
+ * above it has been tested.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -297,7 +307,17 @@ const spanningHeaderRows = async () =>
     return [...byName.values()];
   })()`);
 
-/** Sets one of a header's slot-range fields the way a user does. */
+/**
+ * Sets one of a header's slot-range fields the way a user does.
+ *
+ * **Typed, then Enter** — the same gesture `commitStop` below uses on the
+ * wall-run-stop field, and for the same reason: these fields now commit on
+ * blur/Enter rather than per keystroke (`SlotIndexInput`), because committing
+ * per keystroke meant clearing the field sent `Number("") === 0` and quietly
+ * moved the header to slot 0. A harness that only dispatched `input` would
+ * type into the draft and never commit it, so this is deliberately the full
+ * gesture and not an `input` shortcut.
+ */
 const setHeaderSlot = async (name, which, value) => {
   await evaluate(`(() => {
     const label = ${JSON.stringify(`Spanning header ${name} `)} + ${JSON.stringify(which)};
@@ -305,10 +325,11 @@ const setHeaderSlot = async (name, which, value) => {
       .find((x) => (x.getAttribute('aria-label') || '').startsWith(label));
     if (!el) throw new Error('no such spanning header field: ' + label);
     el.scrollIntoView({ block: 'center' });
+    el.focus();
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
     setter.call(el, ${JSON.stringify(String(value))});
     el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   })()`);
   await sleep(900);
 };
@@ -517,11 +538,34 @@ const extentAlong = (groups, prefix, axis) => {
 // --- the run ----------------------------------------------------------------
 console.log("1. loading the app");
 await send("Page.navigate", { url: APP_URL }, sid);
-await sleep(12000);
+/**
+ * POLLED, not a fixed sleep. A cold `next dev` compiles this route on the
+ * first request and can take well past any figure worth hard-coding — the
+ * fixed 12s this used to wait meant a cold server failed at step 2 with
+ * *"no canvas — are you on localhost rather than 127.0.0.1?"*, which names
+ * the wrong cause entirely and sent a reader off checking the host.
+ */
+const waitForCanvas = async (timeoutMs) => {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const box = await evaluate(
+      `(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return r.width > 0 ? [r.left, r.top, r.width, r.height] : null; })()`,
+    );
+    if (box) return box;
+    if (Date.now() > deadline) return null;
+    await sleep(1000);
+  }
+};
 
 console.log("2. drawing a footprint");
-const canvasBox = await evaluate(`(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
-if (!canvasBox) throw new Error("no canvas — are you on localhost rather than 127.0.0.1?");
+const canvasBox = await waitForCanvas(120000);
+if (!canvasBox) {
+  throw new Error(
+    "no canvas after 120s. Either the dev server is still compiling this route (watch its own log), or the page never " +
+      "hydrated — and if the URL is 127.0.0.1 rather than localhost, the dynamic-import chunks never arrive and the " +
+      "canvas silently never appears.",
+  );
+}
 const [cx, cy, cw, ch] = canvasBox;
 const FOOTPRINT_SPEC = process.env.SMEARFORN_FOOTPRINT_PX ?? "";
 const [specW, specH] = FOOTPRINT_SPEC.split("x").map((n) => Number(n));
@@ -863,14 +907,22 @@ record(
   },
   // The header's range must move by one so it still covers the SAME panels
   // — that is `shiftSlotCoverage`, the machinery Stage 2 already wrote and
-  // this stage reuses rather than copying. The free run re-tiles flat when a
-  // panel goes, so the span may change width; what must not change is WHICH
-  // panels are underneath, which is the index move asserted here.
+  // this stage reuses rather than copying.
+  //
+  // ⚠ And the free run re-tiles flat when a panel goes, so the header's own
+  // fabricated WIDTH can change even though the right panels are still
+  // underneath — this run measured 80in -> 85.75in. That is a part already on
+  // a shop sheet being re-cut, so the notice has to SAY so: if the span moved,
+  // the notice must name it. (Conditional on purpose — on a wall where the
+  // re-tile happens to preserve the width there is nothing to report, and
+  // demanding the clause anyway would be asserting an accident of the
+  // fixture.)
   (d) =>
     typeof d.deleteNotice === "string" &&
     d.deleteNotice.startsWith("Deleted") &&
     d.startAfter === d.startBefore - 1 &&
-    d.endAfter === d.endBefore - 1,
+    d.endAfter === d.endBefore - 1 &&
+    (d.spanAfterIn === d.spanBeforeIn || /still spans its panels, but those panels are now a different width/.test(d.deleteNotice)),
 );
 
 console.log("9. a wall-run stop under the header is refused by name");
@@ -1060,3 +1112,11 @@ if (failures.length > 0) {
   console.error(`FAILURES: ${failures.join(", ")}`);
   process.exit(1);
 }
+// ⚠ A CLEAN RUN HAS TO EXIT DELIBERATELY. The open CDP WebSocket keeps the
+// event loop alive forever, so without these two lines a passing run printed
+// "14 of 14" and then sat there until the browser was killed — at which point
+// it exited 1. So the only exit code a passing run could actually reach was
+// non-zero, and the earlier claim that "the shell swallowed the code on the
+// clean runs" was wrong about its own script.
+ws.close();
+process.exit(0);

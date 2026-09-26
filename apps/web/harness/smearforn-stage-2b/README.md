@@ -16,11 +16,24 @@ From the repo root, in three terminals:
 
 ```
 npm run dev --workspace=apps/web -- -p 3215
-chrome --headless=new --remote-debugging-port=9449 --user-data-dir=<temp> about:blank
+chrome --headless=new --remote-debugging-port=9449 --window-size=1578,902 --user-data-dir=<temp> about:blank
 node apps/web/harness/smearforn-stage-2b/run.mjs
 ```
 
 Override with `SMEARFORN_APP_URL` / `SMEARFORN_CDP_PORT`.
+
+⚠ **`--window-size=1578,902` is part of the recipe, not decoration.** That is
+the size of the checked-in screenshots, and it is the size the assertions were
+measured at. At the default headless window the viewer dial never reaches
+**3D Framed** — the run then dies several steps later on a locator that looks
+broken, with nothing pointing at the window. The Stage 0/1 README carries its
+own window-size note for exactly this reason.
+
+The app is waited for by **polling for the canvas** (up to 120s), not by a
+fixed sleep. The fixed 12s this used to wait was shorter than a cold
+`next dev` compile of this route, so a cold server failed at step 2 with *"no
+canvas — are you on localhost rather than 127.0.0.1?"* — a message naming the
+wrong cause, which is worse than a timeout.
 
 **Use `localhost`, not `127.0.0.1`** — over `127.0.0.1` the dynamic-import
 chunks never arrive and the canvas silently never appears. Same note every
@@ -55,12 +68,16 @@ for that reason.
   throw mid-run is itself recorded as a failure rather than exiting quietly.
 - **Measured, 2026-09-25:** exit **`1`** with `SMEARFORN_SELF_TEST_INVERT=1`,
   which inverts the cross-reference expectation only — the run reported `13 of
-  14` and `FAILURES: both-halves-of-the-cross-reference-are-on-paper`. A clean
-  run reports **14 of 14 with zero failures** and therefore reaches no
-  non-zero exit path at all (there are exactly three: the failure branch and
-  the two process handlers). Stated that way rather than as "exit 0 measured",
-  because the shells used here swallowed the code on the clean runs and a
-  claim should not be stronger than what was actually observed.
+  14` and `FAILURES: both-halves-of-the-cross-reference-are-on-paper`.
+- ⚠ **A clean run used to have no way to exit 0, and the reason first written
+  here was wrong.** This file previously said the shell had swallowed the code
+  on the clean runs. It had not: the script never closed its CDP WebSocket and
+  never called `process.exit(0)`, so the open socket held the event loop open —
+  a passing run printed `14 of 14` and then sat there until the browser was
+  killed, at which point it exited **1**. The only exit code a passing run
+  could reach was non-zero. Fixed at the foot of `run.mjs` (`ws.close()` then
+  `process.exit(0)`), after the failure branch, and **measured, 2026-09-26: a
+  clean run exits 0.**
 
 ## How the 3D assertions can be exact
 
@@ -95,6 +112,15 @@ failures:
   it inherits the corner inset and the run stops for free. (The Mid-Wall Bond
   Beam loop next door has the same drift; that is pre-existing and left
   alone, the same call Stage 3 made about the roof-bearing anchor.)
+- **A header's own cut width changing with nothing said.** Deleting a panel to
+  the LEFT of the header moved its range correctly (2..4 → 1..3, the same two
+  panels) while its fabricated width went **80in → 85.75in**, because the free
+  run re-tiled flat and the panels beneath were now different widths. The app
+  said only *"Deleted a panel on wall AB: 15 panels → 14, 12 still automatic."*
+  A part already on a shop sheet, quietly re-cut. Fixed 2026-09-26: the commit
+  notice names the header and both widths, and flags a width that has landed
+  outside the range a placement would refuse. Step 8's expectation now covers
+  it.
 - **A field ordering trap in this script.** Committing the far end of the
   range first turned a two-panel span into a four-panel one — 160in on a wall
   of 40in panels, over the 144in maximum — so it was refused and the move
@@ -117,7 +143,7 @@ failures:
 | 6 | A header on a **different wall** is `H2`: one building-wide series, not a per-wall counter |
 | 7 | A one-panel span is refused, in words, and changes nothing |
 | 7 | A span past 12ft is refused with the number quoted and the range named as unconfirmed — **not** widened to fit the drawing |
-| 8 | Deleting a panel to the left moves the header's range so it still covers the same panels (Stage 2's `shiftSlotCoverage`) |
+| 8 | Deleting a panel to the left moves the header's range so it still covers the same panels (Stage 2's `shiftSlotCoverage`) — **and if that re-tile changed the header's own cut width, the notice says so, with both numbers** |
 | 9 | A wall-run stop that would re-cut the header is refused **by name** (Stage 3) |
 | 10 | 3D: the header exists as real geometry, spanning the same run as the panels beneath, aligned to within an eighth |
 | 10 | Those panels stop exactly at the header's bottom face while their uncovered neighbour does not |

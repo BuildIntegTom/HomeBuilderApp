@@ -5,6 +5,8 @@ import {
   resolveSpanningHeaderPlacement,
   slotRangesOverlap,
   spanningHeaderCoveredSlotCount,
+  spanningHeaderOpeningConflicts,
+  spanningHeaderSpanOutOfRange,
   spanningHeaderSpanWidthIn,
   type SpanningHeaderGeometry,
   type SpanningHeaderLimitsIn,
@@ -191,6 +193,108 @@ describe("a spanning header reuses the Mid-Wall Bond Beam band machinery unchang
     expect(bands).toEqual([
       { bandIndex: 0, bottomIn: 0, topIn: 48 },
       { bandIndex: 1, bottomIn: 58.5, topIn: 96 },
+    ]);
+  });
+});
+
+describe("spanningHeaderSpanOutOfRange — a span that changed under the header, not at the point of edit", () => {
+  // The hazard: the width is DERIVED, so the panels can change without the
+  // header being touched. Every one of these cases is a stored record that was
+  // legal when it was committed.
+  it("says nothing while the stored range still measures a buildable span", () => {
+    const slots = [standard(25.5), standard(ADU_E4B_IN), standard(ADU_E4C_IN), standard(30)];
+    expect(spanningHeaderSpanOutOfRange(slots, { startSlotIndex: 1, endSlotIndex: 3 }, LIMITS)).toBeNull();
+  });
+
+  it("reports a span that a panel DELETE to the left grew past the 144in maximum", () => {
+    // Exactly the harness's own finding, pushed further: the shift moves the
+    // range correctly and the width moves with it. 48+48+48 = 144 is legal;
+    // one wider panel under the same two-index range is not.
+    const slots = [standard(48), standard(72), standard(80), standard(48)];
+    expect(spanningHeaderSpanOutOfRange(slots, { startSlotIndex: 1, endSlotIndex: 3 }, LIMITS)).toEqual({
+      spanWidthIn: 152,
+      minIn: 48,
+      maxIn: 144,
+    });
+  });
+
+  it("reports a span that fell UNDER the 48in minimum, which is the re-tile case", () => {
+    // A corner-band re-tile can replace one wide middle panel with two narrow
+    // corner panels, leaving the same two-index range measuring much less.
+    const slots = [standard(25.5), standard(12), standard(12), standard(25.5)];
+    expect(spanningHeaderSpanOutOfRange(slots, { startSlotIndex: 1, endSlotIndex: 3 }, LIMITS)).toEqual({
+      spanWidthIn: 24,
+      minIn: 48,
+      maxIn: 144,
+    });
+  });
+
+  it("is computed from the CURRENT slots, so it does not care which edit caused the change", () => {
+    // The design requirement, asserted: the same stored range flags or does
+    // not flag purely on what is under it now. A re-tile route nobody has
+    // written yet is covered by construction.
+    const range = { startSlotIndex: 0, endSlotIndex: 2 };
+    expect(spanningHeaderSpanOutOfRange([standard(40), standard(40)], range, LIMITS)).toBeNull();
+    expect(spanningHeaderSpanOutOfRange([standard(40), standard(4)], range, LIMITS)).toEqual({
+      spanWidthIn: 44,
+      minIn: 48,
+      maxIn: 144,
+    });
+  });
+
+  it("quotes the range's own numbers back rather than a rounded pair", () => {
+    // The range is pending BI confirmation and is never widened to fit — so
+    // whatever is reported has to be the catalog's own figures.
+    const reported = spanningHeaderSpanOutOfRange([standard(10), standard(10)], { startSlotIndex: 0, endSlotIndex: 2 }, LIMITS);
+    expect(reported?.minIn).toBe(LIMITS.minSpanIn);
+    expect(reported?.maxIn).toBe(LIMITS.maxSpanIn);
+  });
+});
+
+describe("spanningHeaderOpeningConflicts — Tommy allowed spanning an opening, so this reports the one bad corner of it", () => {
+  const OPENING_DEFAULTS = { windowSillHeightIn: 36, windowHeightIn: 48, doorRoughOpeningHeightIn: 82 };
+  const window = (widthIn: number, extra: Partial<PanelSlot> = {}): PanelSlot => ({ type: "window", widthIn, ...extra });
+
+  it("says nothing when the band beneath the header still clears the window", () => {
+    const slots = [standard(25.5), window(41.5), standard(36), standard(30)];
+    // Sill 36 + RO 48 = 84 < the 96in band a 24in header leaves in a 120in story.
+    expect(spanningHeaderOpeningConflicts(slots, { startSlotIndex: 1, endSlotIndex: 3 }, 96, OPENING_DEFAULTS)).toEqual([]);
+  });
+
+  it("reports a window whose rough opening now reaches past the header's own bottom face", () => {
+    const slots = [standard(25.5), window(41.5), standard(36)];
+    // A header bottom at 72in leaves a 72in panel under a window topping out
+    // at 84in: the window's own header collapses to nothing.
+    expect(spanningHeaderOpeningConflicts(slots, { startSlotIndex: 1, endSlotIndex: 3 }, 72, OPENING_DEFAULTS)).toEqual([
+      { slotIndex: 1, openingType: "window", openingTopIn: 84, bandHeightIn: 72 },
+    ]);
+  });
+
+  it("reads each window's OWN sill and RO height, not just the project defaults", () => {
+    const slots = [window(41.5, { sillHeightIn: 12, heightIn: 24 }), window(41.5, { sillHeightIn: 60, heightIn: 48 })];
+    const conflicts = spanningHeaderOpeningConflicts(slots, { startSlotIndex: 0, endSlotIndex: 2 }, 96, OPENING_DEFAULTS);
+    expect(conflicts).toEqual([{ slotIndex: 1, openingType: "window", openingTopIn: 108, bandHeightIn: 96 }]);
+  });
+
+  it("catches a door too — a door's RO starts at the floor and is tall", () => {
+    const slots = [standard(25.5), { type: "door" as const, widthIn: 40 }, standard(36)];
+    expect(spanningHeaderOpeningConflicts(slots, { startSlotIndex: 1, endSlotIndex: 3 }, 78, OPENING_DEFAULTS)).toEqual([
+      { slotIndex: 1, openingType: "door", openingTopIn: 82, bandHeightIn: 78 },
+    ]);
+  });
+
+  it("treats an opening ending exactly at the header's bottom face as fitting", () => {
+    // Zero clearance is a real detail the shop can build; a NEGATIVE one is
+    // the thing being reported. The boundary is compared in eighths.
+    const slots = [window(41.5, { sillHeightIn: 36, heightIn: 48 }), standard(36)];
+    expect(spanningHeaderOpeningConflicts(slots, { startSlotIndex: 0, endSlotIndex: 2 }, 84, OPENING_DEFAULTS)).toEqual([]);
+    expect(spanningHeaderOpeningConflicts(slots, { startSlotIndex: 0, endSlotIndex: 2 }, 83.875, OPENING_DEFAULTS)).toHaveLength(1);
+  });
+
+  it("ignores slots outside the span, and slots that are not openings at all", () => {
+    const slots = [window(41.5), standard(36), window(41.5)];
+    expect(spanningHeaderOpeningConflicts(slots, { startSlotIndex: 1, endSlotIndex: 3 }, 12, OPENING_DEFAULTS)).toEqual([
+      { slotIndex: 2, openingType: "window", openingTopIn: 84, bandHeightIn: 12 },
     ]);
   });
 });

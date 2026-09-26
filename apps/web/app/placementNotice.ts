@@ -55,6 +55,35 @@ export interface EmptiedCoverage {
   spanningHeaders: number;
 }
 
+/**
+ * A spanning header whose own FABRICATED WIDTH changed because the panels
+ * under it changed — not a removal, a re-cut.
+ *
+ * ### Why this is said out loud rather than counted
+ *
+ * A spanning header's width is derived from the panels it spans, so an
+ * insert or a delete elsewhere on the wall moves its range correctly and
+ * still hands the shop a different part. The branch's own harness measured
+ * it: deleting a panel to the LEFT of a header moved 2..4 to 1..3 — the same
+ * two panels — while the header's own cut width went **80in to 85.75in**, and
+ * the app said only "14 panels, 12 still automatic".
+ *
+ * A header already on a sheet being quietly re-cut is the hazard, so both
+ * numbers are printed. `outsideRangeIn` is set when the new width has landed
+ * outside the span range the app REFUSES at placement — the same range,
+ * `bigHeaderWidthInRange`, still pending BI confirmation and never widened:
+ * a shift is not allowed to smuggle in a span a placement could not have
+ * made.
+ */
+export interface SpanningHeaderWidthChange {
+  /** `H1`. Composed elsewhere from a real number; never parsed here. */
+  name: string;
+  fromIn: number;
+  toIn: number;
+  /** The range the new width is outside of, or null when it is still inside. */
+  outsideRangeIn: { minIn: number; maxIn: number } | null;
+}
+
 /** Exactly the commit fields these sentences read. Narrower than the whole
  * result on purpose: it keeps the module's inputs obvious and its tests
  * free of fixture-building. */
@@ -130,8 +159,19 @@ export function placementRefusalNotice(op: PlacementOp, result: PanelPlacementRe
  * - **Coverage ranges the edit emptied**, named by component, and not
  *   claiming the panel the user clicked was the one that emptied them — a
  *   range can just as well be emptied by an automatic panel the run dropped.
+ * - **Spanning headers this edit RE-CUT** (`widthChanges`) — see
+ *   `SpanningHeaderWidthChange`. A header that survives the edit intact can
+ *   still come out a different part, and that is the one outcome here that
+ *   reaches a saw.
  */
-export function placementCommitNotice(op: PlacementOp, wallId: string, facts: PlacementCommitFacts, emptied: EmptiedCoverage): string {
+export function placementCommitNotice(
+  op: PlacementOp,
+  wallId: string,
+  facts: PlacementCommitFacts,
+  emptied: EmptiedCoverage,
+  widthChanges: SpanningHeaderWidthChange[],
+  formatLength: FormatLengthIn,
+): string {
   const gaveUp = facts.droppedTypes.length;
   const bracedGaveUp = facts.droppedTypes.filter((t) => t === "braced").length;
   const countNote =
@@ -147,5 +187,18 @@ export function placementCommitNotice(op: PlacementOp, wallId: string, facts: Pl
       ? ` ${emptied.spanningHeaders} spanning header${emptied.spanningHeaders === 1 ? "" : "s"} ${emptied.spanningHeaders === 1 ? "was" : "were"} left standing on fewer than two panels, so ${emptied.spanningHeaders === 1 ? "it was" : "they were"} removed too — a header's own width is the panels it spans.`
       : "",
   ].join("");
-  return `${PLACEMENT_VERBS[op]} on wall ${wallId}: ${facts.slotCountBefore} panels → ${facts.slotCountAfter}, ${facts.freeCountAfter} still automatic.${countNote}${beamNote}`;
+  // One clause per re-cut header, with BOTH widths in it. Plural-agnostic
+  // wording per header rather than a count, because "2 headers changed width"
+  // does not tell a shop which part to re-cut.
+  const widthNote = widthChanges
+    .map(
+      (change) =>
+        ` Spanning header ${change.name} still spans its panels, but those panels are now a different width: it is cut ${formatLength(change.toIn)} instead of ${formatLength(change.fromIn)}.${
+          change.outsideRangeIn
+            ? ` That is OUTSIDE the ${formatLength(change.outsideRangeIn.minIn)}-${formatLength(change.outsideRangeIn.maxIn)} span a header can be placed at — a range Building Integrity has not confirmed yet, so it is reported rather than widened. Re-place or remove ${change.name}.`
+            : ""
+        }`,
+    )
+    .join("");
+  return `${PLACEMENT_VERBS[op]} on wall ${wallId}: ${facts.slotCountBefore} panels → ${facts.slotCountAfter}, ${facts.freeCountAfter} still automatic.${countNote}${beamNote}${widthNote}`;
 }

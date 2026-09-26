@@ -1022,16 +1022,33 @@ export default function Building3DView({
   // `heightFt` overridden in a light post-process pass — height is fully
   // independent of a box's X/Z position/width, so this is safe.
   const secondStoryHeightIn = secondStory ? secondStory.wallHeightFt * IN_PER_FT : 0;
+  /**
+   * The second story's boxes BEFORE any band splitting — one box per slot,
+   * exactly what `rawSlotBoxes` is for the ground floor.
+   *
+   * Split out because anything that needs a slot's X/Z ANCHOR has to look it
+   * up here and not in the split list: a band split can leave a slot with a
+   * box of a different height, several boxes, or — when a beam consumes the
+   * slot's whole height — no box at all, and a `.find` by slot index then
+   * misses and the thing being anchored is silently not drawn.
+   */
+  const rawSecondStorySlotBoxes = useMemo(
+    () =>
+      footprint && secondStory
+        ? panelSlotBoxes3D(
+            footprint,
+            secondStory.wallSlots,
+            thicknessIn,
+            secondStory.wallHeightFt,
+            primaryCornerIds,
+            wallRunStopsByWallId,
+          )
+        : [],
+    [footprint, secondStory, thicknessIn, primaryCornerIds, wallRunStopsByWallId],
+  );
   const secondStorySlotBoxes = useMemo(() => {
     if (!footprint || !secondStory) return [];
-    const boxes = panelSlotBoxes3D(
-      footprint,
-      secondStory.wallSlots,
-      thicknessIn,
-      secondStory.wallHeightFt,
-      primaryCornerIds,
-      wallRunStopsByWallId,
-    );
+    const boxes = rawSecondStorySlotBoxes;
     const splitBoxes = splitForMidWallBeam(
       boxes,
       secondStoryMidWallBeamsByWallId,
@@ -1052,9 +1069,7 @@ export default function Building3DView({
   }, [
     footprint,
     secondStory,
-    thicknessIn,
-    primaryCornerIds,
-    wallRunStopsByWallId,
+    rawSecondStorySlotBoxes,
     secondStoryMidWallBeamsByWallId,
     secondStorySpanningHeadersByWallId,
     boxBeamCoverageByWallId,
@@ -1468,6 +1483,10 @@ export default function Building3DView({
     const result: {
       wallId: string;
       story: "ground" | "second";
+      /** Which of the two things sharing this list a record is. Carried as a
+       * real field so no consumer has to read `beamId`'s prefix back to find
+       * out — see the spanning-header branch below. */
+      kind: "mid-wall-beam" | "spanning-header";
       beamId: string;
       anchorX: number;
       anchorZ: number;
@@ -1526,13 +1545,27 @@ export default function Building3DView({
           // would move the rendered beam on every existing project, which is
           // the same call Stage 3 made about the roof-bearing anchor. Noted
           // rather than quietly matched — see the report.
-          const anchorBox = (story === "ground" ? rawSlotBoxes : secondStorySlotBoxes).find(
+          //
+          // ⚠ Both stories look the anchor up in their own RAW (pre-split)
+          // box list. Reading the second story's already-split list (the
+          // asymmetry this line used to carry) is harmless right up until a
+          // beam consumes a slot's whole height — then that slot has no box
+          // in the split list, this `.find` misses, and the header is simply
+          // not drawn, with nothing said.
+          const anchorBox = (story === "ground" ? rawSlotBoxes : rawSecondStorySlotBoxes).find(
             (b) => b.wallId === wall.id && b.slotIndex === header.startSlotIndex,
           );
           if (!anchorBox) continue;
           result.push({
             wallId: wall.id,
             story,
+            // The real discriminant. Everything downstream (the OBJ label,
+            // above all) branches on THIS and never on the shape of `beamId` —
+            // a string prefix is the shape that cost this repo the hyphen
+            // parse in `combinedPanelLabel` and the verb parse in
+            // `applyPlacementResult`, and a feature whose own doc comments
+            // cite both should not add a third.
+            kind: "spanning-header",
             beamId: `spanningheader_${spanningHeaderNameById.get(header.id) ?? header.id}`,
             anchorX: anchorBox.anchorX,
             anchorZ: anchorBox.anchorZ,
@@ -1559,6 +1592,7 @@ export default function Building3DView({
           result.push({
             wallId: wall.id,
             story,
+            kind: "mid-wall-beam",
             beamId: beam.id,
             anchorX: axis.startXFt + axis.dirX * offsetFt,
             anchorZ: axis.startZFt + axis.dirZ * offsetFt,
@@ -1709,12 +1743,16 @@ export default function Building3DView({
         }),
       ),
       ...midWallBeamRenderData.map(
-        ({ wallId, story, beamId, anchorX, anchorZ, anchorYIn, rotationRad, members }): WorldPlacedPanel => ({
-          // A spanning header's own id already carries its `spanningheader_`
-          // kind and its H name (see midWallBeamRenderData), so it labels
-          // itself rather than being filed under `midwallbeam_` — an export
-          // should name a header the way its own sheet does.
-          label: beamId.startsWith("spanningheader_") ? `${beamId}_${story}_${wallId}` : `midwallbeam_${story}_${wallId}_${beamId}`,
+        ({ wallId, story, kind, beamId, anchorX, anchorZ, anchorYIn, rotationRad, members }): WorldPlacedPanel => ({
+          // A spanning header labels itself rather than being filed under
+          // `midwallbeam_` — an export should name a header the way its own
+          // sheet does. Chosen by the record's own `kind`, NEVER by
+          // `beamId.startsWith("spanningheader_")`: an id is a display/export
+          // string, and logic that reads one back is the shape that cost this
+          // repo `combinedPanelLabel`'s hyphen parse and the placement
+          // notice's verb parse. (The id still carries the prefix, because the
+          // OBJ group names the harness reads are built from it.)
+          label: kind === "spanning-header" ? `${beamId}_${story}_${wallId}` : `midwallbeam_${story}_${wallId}_${beamId}`,
           worldXIn: anchorX * IN_PER_FT,
           worldZIn: anchorZ * IN_PER_FT,
           worldYIn: anchorYIn,
