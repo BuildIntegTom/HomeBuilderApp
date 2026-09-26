@@ -2943,7 +2943,7 @@ Three consequences worth stating before anyone builds it:
 - **The harness README now carries the window size** (`--window-size=1578,902`, the size of the checked-in screenshots). At a default headless window the viewer dial never reaches "3D Framed" and the run dies looking like a broken locator — the Stage 0/1 README already carries its own size note for the same reason.
 - **Step 1 polls for the canvas instead of sleeping 12s.** A cold `next dev` compile outlasted the sleep and the run then failed with *"no canvas — are you on localhost rather than 127.0.0.1?"*, naming the wrong cause entirely.
 - **The OBJ export branches on a real `kind` field**, not on `beamId.startsWith("spanningheader_")`. A string prefix of a synthetic id was the one place this stage kept a discriminant in a string — inside a feature whose own doc comments cite both the `combinedPanelLabel` hyphen parse and the placement notice's verb parse.
-- **The 3D header anchor reads the RAW box list for BOTH stories.** It read `rawSlotBoxes` for the ground floor but the already-split `secondStorySlotBoxes` for the second; harmless until a beam consumes a slot's whole height, at which point no box exists for that slot, the `.find` misses and the header is **silently not drawn**.
+- **The 3D header anchor reads the RAW box list for BOTH stories.** It read `rawSlotBoxes` for the ground floor but the already-split `secondStorySlotBoxes` for the second; harmless until a beam consumes a slot's whole height, at which point no box exists for that slot, the `.find` misses and the header is **silently not drawn**. ⚠ **And this fix immediately produced its own defect, caught by the lint delta:** moving the lookup to a new memo left `midWallBeamRenderData`'s dependency array watching the OLD list — a memo that reads one value and watches another, i.e. the second story's headers drawn at stale anchors. It surfaced as a single `react-hooks/exhaustive-deps` **WARNING**, which is the entire reason this app's notes insist a lint delta counts warnings and not just errors. Fixed, and the array now names the list it reads.
 
 #### The browser harness — `apps/web/harness/smearforn-stage-2b/`
 
@@ -2968,6 +2968,19 @@ Three consequences worth stating before anyone builds it:
 **The +10 errors on `page.tsx`, named rather than totalled:** +9 are `react-hooks/preserve-manual-memoization` *"Compilation Skipped: existing memoization could not be preserved"* — one per memo/callback this stage adds, the same class as the 43 already there — and +1 is `react-hooks/refs`, the same class as the one instance already in the file (a commit handler referenced from render that transitively touches a notice timer ref). No new rule is tripped that the file was not already tripping.
 
 **Warnings went DOWN by one, and no new warning was added.** The three `'exterior' logical expression` warnings are the same three with shifted line numbers. The one that disappeared is real: `'buildBigHeaderMembers' is defined but never used` — a pre-existing dead import that this stage now actually uses. **Two warnings this stage DID introduce were found by this measurement and fixed rather than shipped:** a `useMemo` genuinely missing a dependency, and the `eslint-disable` written to hide it, which ESLint reported as an *unused directive* because it sat before a comment line rather than the dependency array. The fix was not to move the comment — the memo now reads its real inputs directly, since silencing that rule to hide a per-render closure is the shape that let a stale memo ship in Stage 3.
+
+**The review-fix pass's own delta, measured the same way on 2026-09-26** — against `0d4f332`, and the base run is provably the base code: ESLint's JSON carries the source it linted, and those bytes are identical to the base commit's, so the two runs are comparable rather than merely adjacent in time.
+
+| | errors | warnings |
+|---|---|---|
+| `page.tsx` 0d4f332 → review fixes | 74 → **77** | 23 → **23** |
+| `Building3DView.tsx` | 2 → 2 | 0 → 0 |
+| `WallElevationDiagram.tsx`, `placementNotice.ts`, `spanningHeader.ts`, `spanningHeaderNotice.ts`, `LengthInput.tsx` | unchanged | unchanged |
+| the two new modules (`SlotIndexInput.tsx`, `slotIndexEntry.ts`) | 0 | 0 |
+
+**The +3 on `page.tsx` are all `react-hooks/preserve-manual-memoization`** (52 → 55), the same class as the 52 already there and the same class as the 9 the stage itself added. **No new rule is tripped and no warning is added.** ⚠ **One warning WAS added during the pass and is what caught a real defect** — `react-hooks/exhaustive-deps` on `Building3DView.tsx`, from the header-anchor fix leaving a memo watching the list it no longer read. It is fixed, not silenced, and that file is back to 2 → 2 / 0 → 0. It is the plainest available argument for counting warnings: as an error count, this pass was clean while a stale memo sat in it.
+
+**`npx vitest run` after the pass: 119 files, 2235 tests, green** (118 / 2214 at `0d4f332`; one new test file, +21 tests). `tsc --noEmit` clean in `apps/web`, and in `packages/geometry` except the same two pre-existing `bracedPlacement.test.ts` errors.
 
 #### Flags check — run against the built diff, 2026-09-25 — clean, with one assumption declared
 

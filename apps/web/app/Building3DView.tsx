@@ -1621,7 +1621,14 @@ export default function Building3DView({
     secondStorySpanningHeadersByWallId,
     spanningHeaderNameById,
     rawSlotBoxes,
-    secondStorySlotBoxes,
+    // ⚠ `rawSecondStorySlotBoxes`, not `secondStorySlotBoxes` — this memo's
+    // anchor lookup moved to the raw list and this array has to move with it.
+    // Listing the old one would have been a memo that reads one value and
+    // watches another: the second story's headers would have stayed drawn at
+    // stale anchors, which is precisely the stale-memo defect the comment
+    // above describes. Caught by the `exhaustive-deps` WARNING, which is why
+    // this app's notes insist a lint delta counts warnings.
+    rawSecondStorySlotBoxes,
     thicknessIn,
     heightIn,
     jackStudConfig,
