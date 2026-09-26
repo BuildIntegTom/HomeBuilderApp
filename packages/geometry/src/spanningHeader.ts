@@ -1,6 +1,8 @@
 import { fromEighths, toEighths } from "./eighths";
 import type { SlotIndexRange } from "./panelPlacement";
+import { effectiveZonesForSlot } from "./panelSlotZones";
 import type { PanelSlot } from "./types";
+import { computeWallVerticalBandsForSlotWithMaxHeight, type MidWallBeamGeometry } from "./wallVerticalBands";
 
 /**
  * Project Smearforn Stage 2b — the spanning ("triple") header.
@@ -198,18 +200,27 @@ export function spanningHeaderSpanOutOfRange(
   return { spanWidthIn, minIn: limits.minSpanIn, maxIn: limits.maxSpanIn };
 }
 
-/** One covered panel whose own opening no longer fits underneath the header.
- * `openingTopIn` and `bandHeightIn` are both measured from this story's own
- * floor, so the two are directly comparable. */
+/** One covered panel whose own opening no longer fits in the band it sits in.
+ * `openingTopIn` and `bandHeightIn` are both measured from that BAND's own
+ * bottom, not from the story floor, so the two are directly comparable — and
+ * that is also the frame the renderers use (`WallElevationDiagram` passes
+ * `band.topIn - band.bottomIn` as the row's wall height and the zone's own
+ * sill height into `computeOpeningGeometry`, and `membersForPanelTypeId`
+ * builds the window header at `computeHeaderHeightIn(heightOverrideIn, sill +
+ * RO)`). For a column with one band the two frames coincide, because band 0
+ * always starts at 0. */
 export interface SpanningHeaderOpeningConflict {
   slotIndex: number;
+  /** Which of this column's stacked bands the opening is in, bottom-most = 0
+   * — the same index `PanelInstance.midWallBandIndex` carries, so a caller can
+   * name the right one of several stacked panels rather than the lowest. */
+  zoneIndex: number;
   /** Which kind of opening it is — the discriminant, so no caller has to read
    * a sentence back to find out. */
   openingType: "window" | "door";
-  /** Top of that opening's rough opening above the floor. */
+  /** Top of that opening's rough opening above its own band's bottom. */
   openingTopIn: number;
-  /** The height the panel beneath the header is actually built to — the
-   * header's own bottom face. */
+  /** The height the panel in that band is actually built to. */
   bandHeightIn: number;
 }
 
@@ -224,13 +235,13 @@ export interface SpanningHeaderOpeningConflict {
  * and this function exists for the one part of it that is not automatically
  * fine.
  *
- * A header shortens every panel beneath it to `bandHeightIn` (that is
- * `computeWallVerticalBandsForSlot`'s job and it is unchanged). The window in
- * such a panel keeps the sill height and rough-opening height it already had,
- * which are measured from the FLOOR and know nothing about the header. Put
- * the header low enough and the opening's top reaches — or passes — the top
- * of the panel it is now in: the window's own header collapses to zero
- * height, an opening filling its whole panel. Nothing crashes
+ * A header shortens the panel beneath it to the height of that panel's own
+ * band (that is `computeWallVerticalBandsForSlot`'s job and it is unchanged).
+ * The window in such a panel keeps the sill height and rough-opening height it
+ * already had, which are measured from the panel's own bottom and know nothing
+ * about the header. Put the header low enough and the opening's top reaches —
+ * or passes — the top of the panel it is now in: the window's own header
+ * collapses to zero height, an opening filling its whole panel. Nothing crashes
  * (`computeHeaderHeightIn` clamps at 0), and nothing says anything, which is
  * the actual defect.
  *
@@ -240,16 +251,55 @@ export interface SpanningHeaderOpeningConflict {
  * clamp cannot either — it clamps against the WALL's height, not against a
  * band a header may later put beneath it.
  *
- * Only `zones[0]`-level fields are read, i.e. this slot's own top-level
- * type/sill/height, which the zone machinery keeps mirrored onto the
- * BOTTOM-most zone — and the bottom-most zone is exactly the one a header
- * shortens from above. Openings' own default heights are passed in, since
- * they are catalog values and this package does not read the catalog.
+ * ### Why it walks EVERY zone, and why reading only `zones[0]` was wrong
+ *
+ * The first version of this check read the slot's own top-level
+ * `type`/`sillHeightIn`/`heightIn`, which `applyZonesToSlot` keeps mirrored
+ * onto `zones[0]`, the BOTTOM-most zone — and justified that by claiming the
+ * bottom-most zone is the one a header shortens from above. **That claim is
+ * false for any column a Mid-Wall Bond Beam has already split.**
+ * `wallBandGeometry` hands the beams and the headers to
+ * `computeWallVerticalBandsForSlot(WithMaxHeight)` as ONE list and the bands
+ * come out bottom-up, so a beam at 48in under a header whose bottom face is at
+ * 96in produces `[0-48]` and `[48-96]`: the band the header caps is the UPPER
+ * one, `zones[1]`, and a window in it was invisible here. The same is true
+ * without any beam at all once `maxPanelHeightIn` is below the header's own
+ * bottom face, which subdivides the band beneath it.
+ *
+ * So the band list is computed per covered slot from the SAME pipeline every
+ * renderer uses (this file does not take a band list from the caller, so it
+ * cannot be handed one that disagrees with the elevation), each band is paired
+ * with its own zone through `effectiveZonesForSlot` exactly as
+ * `allPanelInstances` does, and each opening is compared against ITS OWN
+ * band's height. A slot whose entire height a beam consumes has no bands, no
+ * panels and therefore no conflicts.
+ *
+ * The comparison is band-LOCAL on both sides: a zone's sill and RO height are
+ * measured from that band's own bottom (that is how `WallElevationDiagram` and
+ * `membersForPanelTypeId` both read them), so what an opening has to fit
+ * inside is `band.topIn - band.bottomIn`. For an unsplit column the two frames
+ * are identical, since band 0 always starts at 0.
+ *
+ * Openings' own default heights are passed in, since they are catalog values
+ * and this package does not read the catalog.
  */
 export function spanningHeaderOpeningConflicts(
   slots: PanelSlot[],
   range: SlotIndexRange,
-  bandHeightIn: number,
+  /** Everything needed to reproduce this wall's own band split, so the check
+   * sees the same stacked panels the elevation and the cut list do. */
+  bandInputs: {
+    storyHeightIn: number;
+    /** This wall's FULL band-producing geometry — every Mid-Wall Bond Beam AND
+     * every spanning header on it, including the one being checked, joined by
+     * `wallBandGeometry`. Passing only the beams would leave the header's own
+     * band uncapped and the check would find nothing. */
+    bandGeometry: MidWallBeamGeometry[];
+    /** The project's `maxPanelHeightIn` and `panelHeightInRange.minIn`, the
+     * same two the instance pipeline passes. */
+    maxPanelHeightIn: number;
+    minRemainderHeightIn: number;
+  },
   defaultsIn: {
     /** `sillDefaultHeightIn` — a window slot with no sill of its own. */
     windowSillHeightIn: number;
@@ -264,14 +314,27 @@ export function spanningHeaderOpeningConflicts(
   const conflicts: SpanningHeaderOpeningConflict[] = [];
   for (let i = start; i < end; i++) {
     const slot = slots[i]!;
-    const openingType = slot.type === "window" ? "window" : slot.type === "door" ? "door" : null;
-    if (openingType === null) continue;
-    const openingTopIn =
-      openingType === "door"
-        ? defaultsIn.doorRoughOpeningHeightIn
-        : (slot.sillHeightIn ?? defaultsIn.windowSillHeightIn) + (slot.heightIn ?? defaultsIn.windowHeightIn);
-    if (toEighths(openingTopIn) <= toEighths(bandHeightIn)) continue;
-    conflicts.push({ slotIndex: i, openingType, openingTopIn, bandHeightIn });
+    const bands = computeWallVerticalBandsForSlotWithMaxHeight(
+      i,
+      bandInputs.storyHeightIn,
+      bandInputs.bandGeometry,
+      bandInputs.maxPanelHeightIn,
+      bandInputs.minRemainderHeightIn,
+    );
+    const zones = effectiveZonesForSlot(slot, bands.length);
+    for (const [zoneIndex, band] of bands.entries()) {
+      const zone = zones[zoneIndex];
+      if (!zone) continue;
+      const openingType = zone.type === "window" ? "window" : zone.type === "door" ? "door" : null;
+      if (openingType === null) continue;
+      const bandHeightIn = band.topIn - band.bottomIn;
+      const openingTopIn =
+        openingType === "door"
+          ? defaultsIn.doorRoughOpeningHeightIn
+          : (zone.sillHeightIn ?? defaultsIn.windowSillHeightIn) + (zone.heightIn ?? defaultsIn.windowHeightIn);
+      if (toEighths(openingTopIn) <= toEighths(bandHeightIn)) continue;
+      conflicts.push({ slotIndex: i, zoneIndex, openingType, openingTopIn, bandHeightIn });
+    }
   }
   return conflicts;
 }

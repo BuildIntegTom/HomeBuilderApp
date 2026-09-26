@@ -6729,15 +6729,37 @@ export default function LayoutEditor() {
       // edit — which is what makes one flag cover the shift path, every
       // re-tile path, and a file written under different limits.
       const outOfRange = stranded ? null : spanningHeaderSpanOutOfRange(slots, resolved.header, SPANNING_HEADER_LIMITS_IN);
-      const openingConflicts = spanningHeaderOpeningConflicts(slots, resolved.header, resolved.header.heightIn, {
-        windowSillHeightIn: sillDefaultHeightIn.value,
-        windowHeightIn: standardWindowHeightDefaultIn.value,
-        doorRoughOpeningHeightIn,
-      });
+      // The FULL band-producing geometry of this wall — beams joined with
+      // every header on it, this one included — so the check sees the same
+      // stacked panels the elevation and the cut list do. A header does not
+      // necessarily cap the BOTTOM band of a column: a beam (or
+      // maxPanelHeightIn) may have split it already, and the band the header
+      // shortens is then an upper one. Reading only the slot's top-level
+      // fields missed exactly that case.
+      const openingConflicts = spanningHeaderOpeningConflicts(
+        slots,
+        resolved.header,
+        {
+          storyHeightIn: (resolved.story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt)) * 12,
+          bandGeometry: (resolved.story === "ground" ? groundBandGeometryByWallId : secondStoryBandGeometryByWallId)[resolved.wallId] ?? [],
+          maxPanelHeightIn,
+          minRemainderHeightIn: panelHeightInRange.minIn,
+        },
+        {
+          windowSillHeightIn: sillDefaultHeightIn.value,
+          windowHeightIn: standardWindowHeightDefaultIn.value,
+          doorRoughOpeningHeightIn,
+        },
+      );
       const openingNames = openingConflicts
         .map((conflict) => {
           const instances = resolved.story === "ground" ? allInstances : secondStoryAllInstances;
-          const name = instances.find((inst) => inst.wallId === resolved.wallId && inst.slotIndexInWall === conflict.slotIndex)?.name;
+          const inSlot = instances.filter((inst) => inst.wallId === resolved.wallId && inst.slotIndexInWall === conflict.slotIndex);
+          // A split column has several stacked instances at the same slot
+          // index; `midWallBandIndex` is the same bottom-up index the conflict
+          // carries, so the named panel is the one that actually has the
+          // problem rather than whichever of the stack came first.
+          const name = (inSlot.find((inst) => inst.midWallBandIndex === conflict.zoneIndex) ?? inSlot[0])?.name;
           return `${name ?? `the panel at position ${conflict.slotIndex + 1}`} (its ${conflict.openingType} reaches ${formatLengthIn(conflict.openingTopIn, unitSystem)} in a ${formatLengthIn(conflict.bandHeightIn, unitSystem)} panel)`;
         })
         .join(", ");
@@ -6772,6 +6794,13 @@ export default function LayoutEditor() {
     secondStoryAllInstances,
     doorRoughOpeningHeightIn,
     unitSystem,
+    // The opening-clearance check reproduces this wall's real band split, so
+    // it reads the band geometry, the story height and the max-panel-height
+    // rule — all four named here rather than closed over silently.
+    groundBandGeometryByWallId,
+    secondStoryBandGeometryByWallId,
+    wallHeightFt,
+    maxPanelHeightIn,
   ]);
 
   const reviewLog = useMemo(() => {
