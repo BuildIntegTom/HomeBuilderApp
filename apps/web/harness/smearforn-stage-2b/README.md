@@ -53,9 +53,14 @@ for that reason.
   not a check.
 - The process exits **non-zero** if any expectation is false; an uncaught
   throw mid-run is itself recorded as a failure rather than exiting quietly.
-- **Measured both ways, 2026-09-25:** exit `0` on a clean run (14 of 14), and
-  exit `1` with `SMEARFORN_SELF_TEST_INVERT=1`, which inverts the
-  cross-reference expectation only.
+- **Measured, 2026-09-25:** exit **`1`** with `SMEARFORN_SELF_TEST_INVERT=1`,
+  which inverts the cross-reference expectation only — the run reported `13 of
+  14` and `FAILURES: both-halves-of-the-cross-reference-are-on-paper`. A clean
+  run reports **14 of 14 with zero failures** and therefore reaches no
+  non-zero exit path at all (there are exactly three: the failure branch and
+  the two process handlers). Stated that way rather than as "exit 0 measured",
+  because the shells used here swallowed the code on the clean runs and a
+  claim should not be stronger than what was actually observed.
 
 ## How the 3D assertions can be exact
 
