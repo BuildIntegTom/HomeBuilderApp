@@ -912,8 +912,8 @@ record(
   // ⚠ And the free run re-tiles flat when a panel goes, so the header's own
   // fabricated WIDTH can change even though the right panels are still
   // underneath — the committed run measured 80in -> 85.75in. ⚠ That second
-  // number is NOT reproducible: three runs of this script on the same checkout
-  // and the same 549in wall gave 82.375in, 84.75in and 85.75in, because the
+  // number is NOT reproducible: four runs of this script on the same checkout
+  // and the same 549in wall gave 82.375in, 84.75in, 85.75in and 84.75in, because the
   // footprint is drawn in PIXELS so the baseline tiling lands differently and
   // the post-delete redistribution follows it. Read it off `evidence.json`,
   // never from memory. That is a part already on

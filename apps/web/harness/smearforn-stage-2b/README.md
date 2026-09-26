@@ -122,9 +122,9 @@ failures:
   notice names the header and both widths, and flags a width that has landed
   outside the range a placement would refuse. Step 8's expectation now covers
   it. ⚠ **THE SECOND NUMBER IS NOT REPRODUCIBLE — read it off `evidence.json`,
-  never from a narrative.** Three runs of this script on the same checkout, the
+  never from a narrative.** Four clean runs of this script on the same checkout, the
   same window size and the same 549in wall (4392 eighths every time) produced
-  **82⅜"**, **84¾"** and **85¾"**: the footprint is drawn in PIXELS, so the
+  three different answers — **82⅜"**, **84¾"**, **85¾"**, then **84¾"** again: the footprint is drawn in PIXELS, so the
   baseline free-run tiling lands slightly differently
   (`[…, 40, 40, 34.125, 34.125, 0.75, 40]` one run,
   `[…, 40, 37.125, 37, 34.125, 0.75, 40]` the next), and the redistribution

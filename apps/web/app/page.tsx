@@ -3349,7 +3349,7 @@ export default function LayoutEditor() {
    * what the shop cuts — measured by this branch's own harness at 80in →
    * 85¾in on a delete to the LEFT of a header. ⚠ The second number is an
    * artifact of the run, not a constant: the same script on the same checkout
-   * produced 82⅜in, 84¾in and 85¾in on the same 549in wall (see
+   * produced 82⅜in, 84¾in, 85¾in and 84¾in again on the same 549in wall (see
    * `placementNotice.ts`). So `spanningHeaderWidthChanges`
    * reports every header whose fabricated width moved, with both numbers, and
    * flags one that has landed outside the span range a PLACEMENT would have

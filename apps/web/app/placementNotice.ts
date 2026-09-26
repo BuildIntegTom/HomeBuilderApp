@@ -70,7 +70,7 @@ export interface EmptiedCoverage {
  *
  * ⚠ **That second number is NOT reproducible, and nothing here should be read
  * as if it were.** Re-running the same harness against the same checkout on
- * 2026-09-26 produced **82⅜in, 84¾in and 85¾in** on three runs of the same
+ * 2026-09-26 produced **82⅜in, 84¾in, 85¾in and 84¾in again** on four runs of the same
  * 549in wall: the harness draws its footprint in pixels, so the free run's
  * baseline tiling lands slightly differently, and the redistribution after the
  * delete depends on which widths are locked by the time it happens. `80in ->`

@@ -183,8 +183,8 @@ describe("the spanning-header RE-CUT note — a header that survived the edit as
   //
   // ⚠ The 85.75in below is a FIXTURE. It happens to match the committed
   // `evidence.json` again, but the harness's own figure is not reproducible —
-  // three runs on the same checkout and the same 549in wall gave 82.375in,
-  // 84.75in and 85.75in. Nothing here depends on which real wall it came from;
+  // four runs on the same checkout and the same 549in wall gave 82.375in,
+  // 84.75in, 85.75in and 84.75in again. Nothing here depends on which real wall it came from;
   // said out loud because a number in a test beside a real observation reads as
   // the observation.
   const change = (over: Partial<SpanningHeaderWidthChange> = {}): SpanningHeaderWidthChange => ({
