@@ -260,16 +260,19 @@ describe("spanningHeaderSpanOutOfRange — a span that changed under the header,
 
   it("CANNOT catch the 51-75in two-corner absorb — that sub-route is guarded by the stranded flag instead", () => {
     // Written down because the spec once implied the opposite. On the
-    // 51-75in two-corner dead-band re-tile each corner panel is bounded to
-    // [25.5, 37.4375]in, so the pair's total is always inside [51, 74.875]in
-    // — inside 48-144 at both ends, so no out-of-range flag is reachable
-    // there however the wall re-tiles. A reader who trusts this flag for that
-    // route is trusting the wrong safeguard.
+    // 51-75in two-corner dead-band re-tile the wall's whole length goes to its
+    // two corner panels, so their TOTAL is bounded by the band itself: at least
+    // 2 x 25.5in = 51in, and at most one eighth under 75in = 74.875in. Both
+    // ends are inside 48-144, so no out-of-range flag is reachable there
+    // however the wall re-tiles. A reader who trusts this flag for that route
+    // is trusting the wrong safeguard.
+    //
+    // Asserted on the TOTAL rather than on a per-corner figure on purpose:
+    // splitting 74.875 evenly gives 37.4375in, which is a SIXTEENTH and not a
+    // width this app's geometry can hold — every width here is a whole eighth.
     const range = { startSlotIndex: 0, endSlotIndex: 2 };
-    const CORNER_MIN_IN = 25.5;
-    const CORNER_MAX_IN = 37.4375;
-    expect(spanningHeaderSpanOutOfRange([standard(CORNER_MIN_IN), standard(CORNER_MIN_IN)], range, LIMITS)).toBeNull();
-    expect(spanningHeaderSpanOutOfRange([standard(CORNER_MAX_IN), standard(CORNER_MAX_IN)], range, LIMITS)).toBeNull();
+    expect(spanningHeaderSpanOutOfRange([standard(25.5), standard(25.5)], range, LIMITS)).toBeNull(); // 51in, the narrow end
+    expect(spanningHeaderSpanOutOfRange([standard(37.5), standard(37.375)], range, LIMITS)).toBeNull(); // 74.875in, the wide end
   });
 
   it("quotes the range's own numbers back rather than a rounded pair", () => {
