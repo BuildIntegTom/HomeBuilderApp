@@ -1969,13 +1969,21 @@ still raises `42501` for him.
 PostgreSQL **17.4** cluster built from `local_shim.sql` + `0001`–`0010`, never
 the live project.
 
-**This supersedes the "has not been run" note this section carried.** That note
-was accurate when the delete slice shipped: no PostgreSQL was installed on the
-machine it was written on, so the suite had only ever been read. It was run as a
-side effect of standing PostgreSQL up for the second slice's own suite below,
-and it is recorded here because "written in the style of the suites beside it"
-and "passes" are different claims and the first one was the honest one at the
-time.
+**This supersedes the "has not been run" note this section carried — but the
+history matters and two intermediate reports got it wrong.** The suite was
+verified **before it merged**, not first verified here. The delete slice's
+review stood PostgreSQL up itself, got `ALL ASSERTIONS PASSED`, and then
+**mutation-tested it four ways** — including one mutation
+(`is_platform_admin()` → `select auth.uid() is not null`) chosen specifically to
+slip past the definition guards and reach the behavioural seven-callers
+assertions, which caught it. The run recorded above is a **regression re-run**
+alongside the second slice's own suite, on the same `0001`–`0010` cluster.
+
+The original ⚠ note was the honest claim **at the time it was written**: the
+builder had no PostgreSQL and said so rather than implying the suite passed.
+That is why it is superseded rather than deleted — "written in the style of the
+suites beside it" and "passes" are different claims, and naming which one you
+have is the point.
 
 The app side is checked separately, by `npx vitest run`: the route refuses a
 non-admin session, reads zero rows as a refusal rather than a success, checks
