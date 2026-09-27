@@ -232,9 +232,20 @@ function membersForSlot(
       // system already reserves for it under this panelization type (see
       // cornerWidthInForTiling in page.tsx) — the plain fixed-25.5in
       // Column/Corner unit only applies to every other panelization type.
+      //
+      // ⚠ `slot.widthIn`, not the nominal 25.5in. A corner slot is NOT a fixed
+      // unit: merge and clamp size it down, and corner absorb widens a pair to
+      // share a wall in the 51in-75in band (so a 72in wall is two 36in corner
+      // panels, and every octagon 10.5ft-15ft across is built of them). With
+      // the nominal hard-coded here, such a wall rendered 25.5in of framing in
+      // a 36in box — visibly short by up to 21in in Framed 3D and in the OBJ
+      // export, since `toWorldPlacedPanel` places these members as-is and
+      // performs no width fit. Square Bale's corner stays fixed: its 39in
+      // whole-bale body genuinely cannot be built another width, which is why
+      // the tiler never widens it (see `cornerMayWidenForTiling`).
       return isSquareBalePanelization
         ? buildSquareBaleCornerPanelMembers(thicknessIn, heightIn, includeNailer, nailerOffsetIn)
-        : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer);
+        : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer, slot.widthIn);
     case "safety-gap":
       return buildSafetyGapMembers(thicknessIn, heightIn);
     case "window":

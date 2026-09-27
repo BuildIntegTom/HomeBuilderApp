@@ -105,8 +105,8 @@ export function computeColumnBlockingRowCount(studSpanIn: number): number {
  * exactly on the studs' own inner faces ("same distance between the studs
  * horizontally") — flagged here so an independent future change to either
  * constant doesn't silently break that framing unnoticed. */
-function buildColumnBlocking(depthIn: number, studSpanIn: number): PanelMember[] {
-  const lengthIn = COLUMN_CORE_WIDTH_IN - 2 * PLATE_END_CLEARANCE_IN;
+function buildColumnBlocking(depthIn: number, studSpanIn: number, coreWidthIn: number = COLUMN_CORE_WIDTH_IN): PanelMember[] {
+  const lengthIn = coreWidthIn - 2 * PLATE_END_CLEARANCE_IN;
   const rowCount = computeColumnBlockingRowCount(studSpanIn);
   const members: PanelMember[] = [];
   for (let row = 1; row <= rowCount; row++) {
@@ -136,7 +136,11 @@ function buildColumnBlocking(depthIn: number, studSpanIn: number): PanelMember[]
 /** 3/4in plywood faces on both tall/long sides, full height x panel
  * thickness — the "safety buffer"-style side cladding that makes the core
  * 25.5in wide overall. */
-function buildColumnSidePly(depthIn: number, heightIn: number): PanelMember[] {
+function buildColumnSidePly(
+  depthIn: number,
+  heightIn: number,
+  coreWidthIn: number = COLUMN_CORE_WIDTH_IN,
+): PanelMember[] {
   return (["left", "right"] as const).map((side) => ({
     memberId: `side_ply_${side}`,
     material: "plywood",
@@ -146,7 +150,7 @@ function buildColumnSidePly(depthIn: number, heightIn: number): PanelMember[] {
     actualDimsIn: { thicknessIn: COLUMN_SIDE_PLY_THICKNESS_IN, widthIn: depthIn, lengthIn: heightIn },
     orientation: "vertical",
     position: {
-      xIn: side === "left" ? 0 : COLUMN_CORE_WIDTH_IN + COLUMN_SIDE_PLY_THICKNESS_IN,
+      xIn: side === "left" ? 0 : coreWidthIn + COLUMN_SIDE_PLY_THICKNESS_IN,
       yIn: 0,
       zIn: 0,
       rotationDeg: 0,
@@ -166,19 +170,74 @@ function buildColumnSidePly(depthIn: number, heightIn: number): PanelMember[] {
  * user-selected `standardWidthIn` — a Column Panel is always this size.
  */
 export function buildColumnPanelMembers(depthIn: number, heightIn: number, includeNailer: boolean): PanelMember[] {
+  return buildColumnStyleMembers(COLUMN_TOTAL_WIDTH_IN, depthIn, heightIn, includeNailer);
+}
+
+/**
+ * The same construction at a GIVEN overall width — the Corner Panel's builder
+ * (see `buildCornerPanelMembers`), and the only reason this is separate from
+ * `buildColumnPanelMembers`.
+ *
+ * **Why a corner panel needs it and a column panel does not.** A Column Panel
+ * is always `COLUMN_TOTAL_WIDTH_IN`; nothing in the app ever asks for another
+ * one. A **corner** slot is not fixed at all: the tiler clamps it down on a
+ * wall too short for it, merges two of them into one, and — since corner
+ * absorb — widens a pair to share a wall in the 51in-75in band. So a corner
+ * slot's real width runs the whole `panelWidthInRange`, and Tommy confirmed
+ * (2026-09-25) that the part can be built that way: *"Yes — any width in the
+ * 24-48in band."*
+ *
+ * **The defect this fixes, which was live before it.** `buildCornerPanelMembers`
+ * was `buildColumnPanelMembers` re-exported, so a 36in corner slot was framed
+ * with 25.5in of members — **10.5in short in Framed 3D, in the OBJ export, and
+ * on the per-unique-panel shop fabrication page, which described a 25.5in panel
+ * for a 36in part.** A shop sheet describing the wrong width is a part cut
+ * wrong.
+ *
+ * Nothing about the construction is invented here: every member that scales
+ * with width already took a width argument (`buildSkins`/`buildPlates`/
+ * `buildCornerStuds`/`buildGirtRows` — a Standard Panel has used them at any
+ * width from 15.75in to 48in since it existed), the blocking length tracks the
+ * plate runners exactly as Tommy specified, and the two 3/4in side plywood
+ * faces stay 3/4in. The core is simply `totalWidthIn` less those two faces.
+ *
+ * ⚠ **Structural estimates deliberately do NOT use this.** A wider section
+ * reports a HIGHER built-up bearing capacity (see
+ * `computeBuiltUpColumnBearingCapacityLb`, which derives I and r from these
+ * members' real positions), and nobody has confirmed that a widened corner's
+ * cladding braces the section the same way. Bearing is still taken from the
+ * nominal 25.5in build, which is the conservative direction. Recorded in the
+ * spec's `## Open Items` — *"Does a WIDER corner panel carry more axial
+ * load?"* — rather than quietly improved. (That item was added to the list
+ * 2026-09-26; this pointer previously named an Open Items list the question was
+ * not actually in.)
+ */
+export function buildColumnStyleMembers(
+  totalWidthIn: number,
+  depthIn: number,
+  heightIn: number,
+  includeNailer: boolean,
+): PanelMember[] {
   const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
+  const coreWidthIn = totalWidthIn - 2 * COLUMN_SIDE_PLY_THICKNESS_IN;
+  // A width at or under the two side faces leaves no core to build. Defensive
+  // only — no caller can produce it today (the narrowest corner slot the tiler
+  // emits is a clamped corner on a wall the run-stop refusal already rejects
+  // below 24in) — and it returns the faces that DO fit rather than lumber of
+  // negative length, which would reach the cut list as a real part.
+  if (coreWidthIn <= 0) return buildColumnSidePly(depthIn, heightIn, Math.max(0, coreWidthIn));
   const core: PanelMember[] = [
-    ...buildSkins(COLUMN_CORE_WIDTH_IN, depthIn, heightIn),
-    ...buildPlates(COLUMN_CORE_WIDTH_IN, depthIn, heightIn),
-    ...buildCornerStuds(COLUMN_CORE_WIDTH_IN, depthIn, heightIn),
-    ...buildGirtRows(COLUMN_GIRT_ROW_COUNT, COLUMN_CORE_WIDTH_IN, depthIn, studSpanIn),
+    ...buildSkins(coreWidthIn, depthIn, heightIn),
+    ...buildPlates(coreWidthIn, depthIn, heightIn),
+    ...buildCornerStuds(coreWidthIn, depthIn, heightIn),
+    ...buildGirtRows(COLUMN_GIRT_ROW_COUNT, coreWidthIn, depthIn, studSpanIn),
   ];
-  if (includeNailer) core.push(buildNailer(COLUMN_CORE_WIDTH_IN, heightIn));
+  if (includeNailer) core.push(buildNailer(coreWidthIn, heightIn));
 
   return [
     ...shiftMembersX(core, COLUMN_SIDE_PLY_THICKNESS_IN),
-    ...shiftMembersX(buildColumnBlocking(depthIn, studSpanIn), COLUMN_SIDE_PLY_THICKNESS_IN),
-    ...buildColumnSidePly(depthIn, heightIn),
+    ...shiftMembersX(buildColumnBlocking(depthIn, studSpanIn, coreWidthIn), COLUMN_SIDE_PLY_THICKNESS_IN),
+    ...buildColumnSidePly(depthIn, heightIn, coreWidthIn),
   ];
 }
 

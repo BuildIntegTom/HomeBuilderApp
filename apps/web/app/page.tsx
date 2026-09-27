@@ -35,6 +35,7 @@ import {
   editWallLength,
   footprintIsAllRightAngles,
   gapEndFor,
+  findAbsorbedCornerWalls,
   findSubMinimumPanelWidths,
   getOpeningAnchors,
   toEighths,
@@ -365,6 +366,14 @@ import {
   type PlacementOp,
   type SpanningHeaderWidthChange,
 } from "./placementNotice";
+import {
+  findSquareBaleBandWalls,
+  findSquareBaleMergedCornerWalls,
+  findSquareBaleMergedCorners,
+  squareBaleMergedCornerNote,
+  squareBalePanelizationRefusalMessage,
+  squareBaleRefusalWallFacts,
+} from "./squareBaleCornerRefusal";
 
 const FootprintCanvas = dynamic(() => import("./FootprintCanvas"), { ssr: false });
 const Building3DView = dynamic(() => import("./Building3DView"), { ssr: false });
@@ -1119,6 +1128,7 @@ export default function LayoutEditor() {
         geometry.hasCornerEnd,
         anchors,
         geometry.allowBorrow,
+        cornerMayWidenForTiling,
       ).slots;
       let cursorIn = startOffsetIn;
       let distanceIn = Infinity;
@@ -1752,6 +1762,13 @@ export default function LayoutEditor() {
   const [timberFrameCurtainPanelType, setTimberFrameCurtainPanelType] = useState<"standard" | "braced">("standard");
   const [timberFrameCurtainWidthIn, setTimberFrameCurtainWidthIn] = useState(36);
   const isSquareBalePanelization = panelizationType === "square-bale-panels";
+  /** The panelization control's own refusal text (Square Bale's fixed 39in
+   * corner — see `squareBaleCornerRefusal.ts`). Its own state rather than
+   * `panelWidthNotice`, which only renders inside the Selected Panel note and
+   * would be invisible to someone standing at the panelization buttons. Stays
+   * up until the next panelization click rather than timing out: it is a
+   * refusal to read, not a confirmation to glance at. */
+  const [panelizationNotice, setPanelizationNotice] = useState<string | null>(null);
   // Tommy: "loose packed braced and square bale panels are two very
   // different panelization rules and 3d models... corners should also be
   // 39in panels for square bale panels" — the tiling's corner-slot width
@@ -1760,6 +1777,32 @@ export default function LayoutEditor() {
   // still deciding how that style should behave) — it keeps the plain
   // 25.5in Column/Corner unit for now.
   const cornerWidthInForTiling = isSquareBalePanelization ? squareBalePanel.widthIn : cornerPanelWidthIn.value;
+  /**
+   * May the tiler WIDEN a corner panel past `cornerWidthInForTiling` to absorb
+   * a middle too small to build (the corner-absorb rule — see `resolveCorners`
+   * in packages/geometry's tiling.ts)?
+   *
+   * Yes for the plain corner panel: Tommy, asked directly whether one can be
+   * built off its nominal 25.5in, since its construction is a 24in core plus
+   * two 3/4in plywood faces — *"Yes — any width in the 24-48in band."*
+   *
+   * **No for Square Bale Panels.** That corner is a `squareBalePanel.widthIn`
+   * whole-bale unit — a CONFIRMED 39in, two 18in bales plus two 1.5in studs —
+   * and absorb at 39in moves the band to 78in-102in, where an ordinary 8ft wall
+   * (`MIN_DIMENSION_FT`, the shortest side the rectangle tool will draw) would
+   * emit two 48in "corner panels". Tommy, asked directly: **"No — refuse
+   * instead."** Bales do not stretch, so widening a bale corner invents a
+   * product that does not exist.
+   *
+   * With this false, a band wall tiles the way it did before absorb existed —
+   * nominal corners plus a visible sub-minimum middle, which the Review Log's
+   * existing below-minimum entry reports — and
+   * `squareBalePanelizationRefusal` refuses the panelization by name at the
+   * point of edit. The flag is what keeps the geometry honest on the paths the
+   * refusal cannot see (drawing a band-length wall while Square Bale is
+   * already selected never touches the panelization control).
+   */
+  const cornerMayWidenForTiling = !isSquareBalePanelization;
 
   const loadInputRef = useRef<HTMLInputElement>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -2426,6 +2469,7 @@ export default function LayoutEditor() {
       bracedSeed,
       openingSeed,
       runStops,
+      cornerMayWidenForTiling,
     );
   // Same as `retile` above, but preserves each wall's existing openings —
   // see retile.ts's own doc comment. `oldSlotsByNewWallId` resolves the
@@ -2449,6 +2493,7 @@ export default function LayoutEditor() {
       bracedSeed,
       openingSeed,
       runStops,
+      cornerMayWidenForTiling,
     );
   /** `runStops` is the WHOLE map, not one wall's record: since the
    * orphan-corner rule a stop on the neighbour changes this wall's own inset
@@ -2768,6 +2813,7 @@ export default function LayoutEditor() {
       geometry.hasCornerEnd,
       anchors,
       geometry.allowBorrow,
+      cornerMayWidenForTiling,
     ).slots;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
     // Preserves every OTHER braced panel already decided on this wall
@@ -2998,6 +3044,76 @@ export default function LayoutEditor() {
     return null;
   };
 
+  /**
+   * **Square Bale Panels is REFUSED for a building whose corners it cannot
+   * build** — both cases, not one:
+   *
+   * 1. a wall in the moved **78in-102in band**, where absorb would widen the
+   *    bale corners (Tommy: *"No — refuse instead."*), and
+   * 2. a two-corner wall **under 78in whose one merged slot is over the confirmed
+   *    48in `panelWidthInRange.maxIn`** (Tommy, asked whether the same answer
+   *    extends to the merged corner: *"Yes — refuse both cases too."*, then asked
+   *    directly how wide to draw that net and told the broad reading was the
+   *    technically safer one: **"only refuse over 48 inches."**).
+   *
+   * **A merged bale corner at or under 48in is therefore PERMITTED — and still
+   * REPORTED**, by `squareBaleMergedCornerReviewEntries` below, which is
+   * deliberately not narrowed to match this refusal. That is what makes the
+   * permitted case announced rather than silent.
+   *
+   * See `squareBaleCornerRefusal.ts` for the whole rationale and for the measured
+   * exposure the narrowing opens (octagons from 8ft to about 9.64ft across). The
+   * arithmetic for both is the tiler's own — `cornerBandMiddleIn` and
+   * `mergedCornerWidthIn` — so the refusal and the geometry cannot drift.
+   *
+   * Reads the SAME run length and corner ownership the tiler would use, with
+   * the live run stops, not the drawn wall length — a bump-out return or a
+   * stopped run is exactly where a band-length wall comes from. Corner
+   * ownership and run length belong to the footprint rather than to a story, so
+   * one pass covers a two-story building.
+   *
+   * **⚠ At `squareBalePanel.thicknessIn`, NOT at the project's current
+   * thickness** — this was a live defect, fixed 2026-09-26. The local
+   * `wallGeometryFor` closes over today's `thicknessIn` (15.5in by default),
+   * but the button that runs this refusal then calls
+   * `setThicknessIn(squareBalePanel.thicknessIn)` = 14in, and a reflex corner
+   * adds `extraLengthIn = thicknessIn` to a wall's run. Validating on one basis
+   * and applying on another produced 12 measured false refusals and 12 measured
+   * misses on one bump-out sweep alone; see `squareBaleRefusalWallFacts`, which
+   * takes the thickness as an argument and carries the measurements. It is the
+   * same house convention `applyWallRunStopChange` states below — the SAME basis
+   * the refusal validated against.
+   *
+   * Like every other limit in this app it is enforced at the point of EDIT and
+   * never at load: a project saved under Square Bale with a band wall still
+   * opens, shows its panels, and reports the sub-minimum panel in the Review
+   * Log — and one with a merged bale corner opens and reports
+   * `squareBaleMergedCornerReviewEntries` below. Returns null when the choice is
+   * legal.
+   */
+  const squareBalePanelizationRefusal = (): string | null => {
+    if (!footprint) return null;
+    const facts = squareBaleRefusalWallFacts(
+      footprint,
+      primaryCornerIds,
+      leastAccessibleCorner,
+      squareBalePanel.thicknessIn,
+      wallRunStopsByWallId,
+    );
+    return squareBalePanelizationRefusalMessage(
+      findSquareBaleBandWalls(facts, squareBalePanel.widthIn),
+      // The ceiling is an ARGUMENT to the detector, not just to the message:
+      // Tommy narrowed this refusal to merged corners over 48in only, so the
+      // limit decides which walls are found at all. See
+      // `findSquareBaleMergedCornerWalls`.
+      findSquareBaleMergedCornerWalls(facts, squareBalePanel.widthIn, panelWidthInRange.maxIn),
+      squareBalePanel.widthIn,
+      fabricationMinPanelWidthIn.value,
+      panelWidthInRange.maxIn,
+      (valueIn) => formatLengthIn(valueIn, unitSystem),
+    );
+  };
+
   const applyWallRunStopChange = (wallId: string, candidate: WallRunStop) => {
     if (!footprint) return;
     // The SAME basis the refusal validated against. Using the unadjusted
@@ -3129,6 +3245,7 @@ export default function LayoutEditor() {
       geometry.hasCornerEnd,
       anchors,
       geometry.allowBorrow,
+      cornerMayWidenForTiling,
     ).slots;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(tiled, geometry.gapEnd) : tiled;
     const finalSlots = reconcileBracedPlacement(nextSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
@@ -3576,6 +3693,7 @@ export default function LayoutEditor() {
       geometry.hasCornerEnd,
       anchors,
       geometry.allowBorrow,
+      cornerMayWidenForTiling,
     ).slots;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
     // Preserves every braced panel already decided on this wall — a window
@@ -3661,6 +3779,7 @@ export default function LayoutEditor() {
       geometry.hasCornerEnd,
       anchors,
       geometry.allowBorrow,
+      cornerMayWidenForTiling,
     ).slots;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
     const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
@@ -3733,6 +3852,7 @@ export default function LayoutEditor() {
       geometry.hasCornerEnd,
       anchors,
       geometry.allowBorrow,
+      cornerMayWidenForTiling,
     ).slots;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
     const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
@@ -4901,7 +5021,14 @@ export default function LayoutEditor() {
             : inst.panelType === "column"
               ? columnPanelMembers
               : inst.panelType === "corner" || inst.panelType === "safety-oct-corner"
-                ? cornerPanelMembers3D
+                ? // This instance's real width, like every other type here: the
+                  // plywood-area and board-feet tallies below are material
+                  // quantities, and a 36in corner panel from the 51in-75in band
+                  // really does use more of both than a 25.5in one. Square
+                  // Bale's corner is a fixed 39in unit and keeps its own build.
+                  isSquareBalePanelization
+                  ? cornerPanelMembers3D
+                  : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer, inst.widthIn)
                 : inst.panelType === "safety-gap"
                   ? safetyGapMembers3D
                   : inst.panelType === "sill"
@@ -5344,7 +5471,21 @@ export default function LayoutEditor() {
         : panelTypeId === "column"
           ? columnPanelMembers
           : panelTypeId === "corner"
-            ? cornerPanelMembers3D
+            ? // ⚠ Built at this instance's REAL width (and real height), not at
+              // the memoized nominal 25.5in panel. This is what the
+              // per-unique-panel Shop Fabrication page draws and describes, and
+              // those pages are already GROUPED by `inst.widthIn` — so before
+              // this, a 36in corner panel from the 51in-75in band (or from any
+              // octagon 10.5ft-15ft across) got its own page that then
+              // described a 25.5in part. A shop sheet describing the wrong
+              // width is a part cut wrong. It also feeds wood/fastener weight,
+              // which should follow the real part, as pricing already does.
+              //
+              // Square Bale's corner keeps the fixed 39in whole-bale body: that
+              // one really is a single unit, and the tiler never widens it.
+              isSquareBalePanelization
+              ? cornerPanelMembers3D
+              : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer, widthIn)
             : panelTypeId === "gable"
               ? isSafetyGapOverride
                 ? buildSafetyGapMembers(thicknessIn, Math.max(gableLeftLocalIn, gableRightLocalIn))
@@ -5670,6 +5811,25 @@ export default function LayoutEditor() {
     () => computeBuiltUpColumnBearingCapacityLb(columnPanelMembers, wallHeightFt * 12),
     [columnPanelMembers, wallHeightFt],
   );
+  // ⚠ DELIBERATELY the NOMINAL-width corner panel, even though corner members
+  // are now built at each slot's real width everywhere else (2026-09-26). This
+  // capacity is derived from the members' real positions, so a widened corner
+  // reports MORE bearing — the two side plywood faces sit further apart, which
+  // raises I and r. Nobody has confirmed that a widened corner's cladding
+  // braces the built-up section the same way, and a structural figure is not
+  // somewhere to find out by inference: the nominal section is the conservative
+  // answer. Recorded in the spec's `## Open Items` — "Does a WIDER corner panel
+  // carry more axial load?" — as Tommy's/his engineer's call. (It was cited as
+  // "the spec's Open Items" while sitting only in a narrative section and in
+  // neither Open Items list; the item was added 2026-09-26 rather than the
+  // pointer softened.)
+  //
+  // ⚠ A pre-existing divergence, recorded here and NOT fixed: this site reads
+  // `cornerPanelMembers3D`, which under Square Bale is the BALE corner body,
+  // while `structuralByKey` in FootprintCanvas.tsx always builds the plywood
+  // corner at nominal. So "bearing is consistent at both sites" holds for Loose
+  // Packed Braced and Timber Frame Curtain and NOT for Square Bale. Not
+  // introduced by the corner work; see the same note in FootprintCanvas.tsx.
   const estimatedCornerBuiltUpBearingLb = useMemo(
     () => computeBuiltUpColumnBearingCapacityLb(cornerPanelMembers3D, wallHeightFt * 12),
     [cornerPanelMembers3D, wallHeightFt],
@@ -6677,6 +6837,78 @@ export default function LayoutEditor() {
     [baseWallSlots, secondStory],
   );
 
+  // Walls in the 51in-75in two-corner band, whose corner PAIR absorbed a
+  // middle too small to hold a legal panel (see `resolveCorners`). The wall
+  // is legal — that is the whole point of the fix — but its corner panels are
+  // off their nominal 25.5in width, and `cornerPanelWidthIn` is a confirmed
+  // catalog value describing a specific piece of construction. Tommy
+  // confirmed the corner-geometry ROUTE for this band, not the individual
+  // widths it produces, so the engineer reading the Review Log sees them.
+  const absorbedCornerWalls = useMemo(
+    () => [
+      ...findAbsorbedCornerWalls(baseWallSlots, cornerWidthInForTiling).map((w) => ({ ...w, story: "ground" as const })),
+      ...findAbsorbedCornerWalls(secondStory?.wallSlots ?? {}, cornerWidthInForTiling).map((w) => ({
+        ...w,
+        story: "second" as const,
+      })),
+    ],
+    [baseWallSlots, secondStory, cornerWidthInForTiling],
+  );
+
+  /**
+   * **⚠ One entry per Square Bale wall whose ONLY panel is a corner slot off the
+   * confirmed 39in bale width** — the part Tommy said cannot be built. Usually
+   * that is a two-corner wall whose corners the tiler merged; a wall owning ONE
+   * corner, shorter than a single bale corner, produces the same single-slot
+   * shape by clamping, and this walk cannot tell the two apart. See
+   * `findSquareBaleMergedCorners`, whose note is worded for both.
+   *
+   * **Why this exists alongside the refusal, and not instead of it.** The
+   * panelization control refuses the band, and refuses a merged corner **over
+   * 48in** (*"Yes — refuse both cases too."*, narrowed by Tommy to *"only refuse
+   * over 48 inches."*). But this app refuses at the point of EDIT and never at
+   * load, and one path never touches that control: someone already in Square
+   * Bale who *draws* a small octagon, or shortens a wall under 78in. The band
+   * case at least leaves a visible sub-minimum middle that
+   * `findSubMinimumPanelWidths` reports; a merged corner is over the maximum,
+   * and **this app has no over-maximum panel reporter at all**, so that path was
+   * completely silent. Adding the refusal without this walk would have made the
+   * app quieter than before on exactly the path the refusal cannot see.
+   *
+   * **⚠ This walk is NOT narrowed to 48in the way the refusal is**, and that is
+   * deliberate: a merged bale corner inside the ceiling is still not a whole-bale
+   * unit, so the narrowing makes it *permitted and reported* rather than
+   * permitted. Narrowing this too would turn his decision about refusing into a
+   * decision about telling anyone, which he was not asked.
+   *
+   * Gated on Square Bale. The plywood merged corner is its own open question —
+   * see the spec's `## Open Items`, **"The PLYWOOD merged corner between 48in and
+   * 51in is over the 48in ceiling and nothing reports it"** — and starting to
+   * report it here would be a behaviour change nobody asked for.
+   *
+   * Reads `cornerWidthInForTiling` — the width the stored slots were actually
+   * tiled at — rather than `squareBalePanel.widthIn` directly, so it describes
+   * what is on screen rather than what a fresh retile would produce.
+   */
+  const squareBaleMergedCornerReviewEntries = useMemo(() => {
+    if (!isSquareBalePanelization) return [];
+    const format = (valueIn: number) => formatLengthIn(valueIn, unitSystem);
+    return [
+      ...findSquareBaleMergedCorners(baseWallSlots, cornerWidthInForTiling).map((w) => ({ report: w, story: "ground" as const })),
+      ...findSquareBaleMergedCorners(secondStory?.wallSlots ?? {}, cornerWidthInForTiling).map((w) => ({
+        report: w,
+        story: "second" as const,
+      })),
+    ].map(({ report, story }) => ({
+      // "one corner panel", not "one MERGED corner": the clamped one-corner wall
+      // reaches this same shape without anything being merged. The label must be
+      // true of both shapes for the same reason the note is.
+      label: `⚠ Square Bale corner panel the shop cannot build: wall ${report.wallId}${story === "second" ? " (second story)" : ""} — the whole wall is one corner panel ${format(report.mergedWidthIn)} wide`,
+      status: "pending-BI-confirmation" as const,
+      note: squareBaleMergedCornerNote(report, cornerWidthInForTiling, panelWidthInRange.maxIn, format),
+    }));
+  }, [isSquareBalePanelization, baseWallSlots, secondStory, cornerWidthInForTiling, unitSystem]);
+
   /**
    * One Review Log entry per wall carrying an unbuilt span.
    *
@@ -6847,8 +7079,93 @@ export default function LayoutEditor() {
     maxPanelHeightIn,
   ]);
 
+  /**
+   * **⚠ A building with NO braced panels at all, flagged loudly** — Tommy's
+   * decision (2026-09-26), asked what should happen: *"Flag it loudly in the
+   * Review Log."* An engineer must be told that the building has no modelled
+   * shear resistance.
+   *
+   * How an ordinary building gets here: corner absorb. A 60in wall used to tile
+   * `corner | braced 9in | corner` and now tiles `corner 30 | corner 30`, so a
+   * **12ft octagon is 16 corner slots and not one braced panel** — measured,
+   * `estimatedTotalShearLb` is 0 and the shear entry reads "~0 lb across 0
+   * braced panels", which is easy to read as a rounding artefact rather than as
+   * "nothing in this building resists racking". It matters more now than it did:
+   * Tommy is planning octagon ring buildings.
+   *
+   * **No shear figure is invented for a corner panel here.** He was offered
+   * "a corner panel should count as bracing" and did not choose it, and that
+   * option was explicitly labelled as needing a real number from him or his
+   * engineer. This entry reports the absence; it does not fill it.
+   *
+   * First in the list rather than buried among the material assumptions, and it
+   * fires only on a building that has panels at all, so an empty project does
+   * not shout.
+   */
+  const zeroBracingReviewEntries = useMemo(() => {
+    // ⚠ `panelType === "braced"` ONLY, and a COMBINED safety-gap+brace slot
+    // (`secondaryType === "braced"`, which bracedPlacement.ts itself calls "a
+    // real brace, not just a safety panel") is therefore not counted here.
+    // Deliberate, and the reason is not "it is consistent with the line below" —
+    // it is that `PanelInstance` does not carry `secondaryType` at all
+    // (panelInstances.ts pushes `zone.type`, so a combined slot arrives as a
+    // plain "safety-gap" with no bracedPattern either). So
+    // `summarizeBearingAndShear` already gives a combined slot ZERO shear, and
+    // `estimatedTotalShearLb` really is 0 for a building whose only braces are
+    // combined ones. This entry is then a TRUE statement about what the app
+    // models, not a false alarm — the model is what is wrong, not the count.
+    //
+    // ⚠ Counting `secondaryType` here without fixing the model would be worse:
+    // the entry would go quiet while the displayed shear stayed 0 lb. Fixing it
+    // properly means carrying the flag onto the instance and RAISING a displayed
+    // structural total, which is not something to do by inference — it is in the
+    // spec's `## Open Items` as **"Does a COMBINED safety-gap+brace slot count as
+    // bracing, and should `PanelInstance` carry `secondaryType`?"**, Tommy's/his
+    // engineer's call. (Added there 2026-09-27: this comment previously cited
+    // `## Open Items` for an item that was in neither Open Items list, only in
+    // the band narrative — the same defect class the pass before it was sent to
+    // fix. Fixed by adding the item and naming it, not by softening the pointer.)
+    // `FootprintCanvas`'s per-panel tooltip does count `secondaryType`, so the
+    // two genuinely disagree today; that divergence is recorded there too.
+    const bracedCount = allInstances.filter((i) => i.panelType === "braced").length;
+    if (allInstances.length === 0 || bracedCount > 0) return [];
+    const cornerCount = allInstances.filter((i) => i.panelType === "corner" || i.panelType === "safety-oct-corner").length;
+    // Derived, not typed: the shortest two-corner wall that can still hold a
+    // legal middle is two nominal corners plus the fabrication minimum (75in at
+    // today's catalog values). Written this way so it tracks the catalog instead
+    // of going stale in a sentence.
+    const firstLegalTwoCornerWallIn = 2 * cornerPanelWidthIn.value + fabricationMinPanelWidthIn.value;
+    // Two of the three panelization types never place a braced slot at all, so
+    // the zero is expected there rather than surprising — but it still means the
+    // app is modelling no lateral resistance, which is the part that must be
+    // said either way.
+    const panelizationClause =
+      panelizationType === "square-bale-panels"
+        ? `Square Bale Panels never places a braced slot, so this is expected for this panelization — and it still means no lateral resistance is modelled anywhere in this building. `
+        : panelizationType === "timber-frame-curtain"
+          ? `Timber Frame Curtain is carried by its actual timber frame, which this app does not model at all, so a zero here is expected — and it is not evidence that the frame is adequate. Set the curtain's panel type to Braced if the panels are meant to do this work. `
+          : `Under Loose Packed Braced this is NOT expected, and the usual cause is corner panels taking up every wall run: a wall under ${formatLengthIn(firstLegalTwoCornerWallIn, unitSystem)} owning a corner at both ends has its short middle absorbed by the pair, which removes the braced slot that middle used to be. A 12ft octagon ends up entirely corners${cornerCount > 0 ? ` — ${cornerCount} of them here` : ""}. `;
+    return [
+      {
+        label: "⚠ NO BRACED PANELS IN THIS BUILDING — no modelled shear resistance",
+        status: "pending-BI-confirmation" as const,
+        note:
+          `Not one of this building's ${allInstances.length} panels is a braced panel, so its estimated total shear capacity is 0 lb — not a small number, none. ` +
+          `The app models racking resistance only from a braced panel's own diagonal braces, and there are no braces to model. ` +
+          panelizationClause +
+          `Whether a corner panel should COUNT as bracing is an open question that needs a real number from Building Integrity or its engineer — nothing here assumes one, in either direction. ` +
+          `No panel was changed to produce this entry, and none should be changed to silence it.`,
+      },
+    ];
+  }, [allInstances, panelizationType, unitSystem]);
+
   const reviewLog = useMemo(() => {
     const entries = toReviewLog([
+      ...zeroBracingReviewEntries,
+      // Second, right behind zero bracing: an unbuildable part outranks every
+      // material assumption below it, and unlike the band case nothing else in
+      // the log would say a word about it.
+      ...squareBaleMergedCornerReviewEntries,
       ...wallRunStopReviewEntries,
       ...spanningHeaderReviewEntries,
       { label: "Target density", ...targetDensityKgM3 },
@@ -6906,17 +7223,45 @@ export default function LayoutEditor() {
       // That last case USED to be routine (computePlainSizing's two-way split
       // landed between 20in and 40in at the 40in standard width) and is now
       // rare: Tommy's ABSORB rule landed 2026-09-24 and the tiler emits one
-      // wider panel instead of two narrow ones. What is left is the three
-      // residual paths absorb cannot reach — a two-corner wall between 51in
-      // and 75in, openings eating all but a sliver, and a clamped corner on a
-      // sub-25.5in wall — each of which has nothing to absorb into and each
-      // of which is deliberately reported rather than corrected. The first
-      // one's real fix is corner geometry, which Tommy has flagged and
-      // deferred until after admin tooling. See the spec's Open Items.
+      // wider panel instead of two narrow ones.
+      //
+      // **The 51in-75in two-corner band is no longer one of the residuals**
+      // (corner absorb, 2026-09-25 — the corner-geometry route Tommy chose).
+      // Those walls are legal now and report through
+      // `absorbedCornerWalls` below instead, which says what the corners did
+      // rather than that a panel cannot be built. What is left here is the
+      // paths absorb still cannot reach, each with nothing to absorb into and
+      // each deliberately reported rather than corrected: a wall owning ONE
+      // corner and between 25.5in and 49.5in long, openings eating all but a
+      // sliver of a long wall's middle, and a clamped corner on a sub-25.5in
+      // wall. See the spec's Open Items.
       ...subMinimumPanels.map((panel) => ({
         label: `Panel narrower than the ${fabricationMinPanelWidthIn.value}in fabrication minimum: wall ${panel.wallId}, slot ${panel.slotIndex}${panel.story === "second" ? " (second story)" : ""}`,
         status: "pending-BI-confirmation" as const,
         note: `${PANEL_TYPE_LABELS[panel.type]} panel ${formatLengthIn(panel.widthIn, unitSystem)} wide, under the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} minimum Building Integrity's shop can build (Tommy: "I can't make any panels that are left to right elevation view shorter than 2'"). It opens, draws, prices and prints as stored — nothing was rewritten — but it cannot be fabricated as drawn.`,
+      })),
+      // A wall too short for two corner panels PLUS a legal middle. The wall
+      // is buildable — this is not a defect report — but its corner panels
+      // are not the nominal ones, and that is a fabrication fact an engineer
+      // has to see before the cut list reaches the shop.
+      //
+      // ⚠ The final clause is about DROPPED OPENINGS, and it is not decoration.
+      // On the absorb path where the reservations no longer fit the nominal
+      // middle, every window, door and column on the wall is deleted
+      // (`dropsReservations` in `resolveCorners`) — so shortening a 90in wall
+      // carrying a 30in window into the band silently loses the window, and
+      // this entry, naming only the corner widths and the absorbed inches, was
+      // the only notice anywhere. The drop itself is right (over 4,110 measured
+      // cases the pre-absorb slot sum was already wrong on every one of them,
+      // so it is not a regression), but it must not be silent. Unconditional
+      // wording on purpose: the record describes the wall as it is NOW and
+      // cannot know what the wall used to carry, and a clause that appears only
+      // when we can prove a loss would be absent in exactly the case that
+      // matters.
+      ...absorbedCornerWalls.map((wall) => ({
+        label: `Corner panels widened to absorb a short middle: wall ${wall.wallId}${wall.story === "second" ? " (second story)" : ""}`,
+        status: "pending-BI-confirmation" as const,
+        note: `This wall owns a corner at both ends and is too short to fit them plus a panel over the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} fabrication minimum, so its two corner panels share the whole wall: ${formatLengthIn(wall.cornerWidthsIn[0], unitSystem)} and ${formatLengthIn(wall.cornerWidthsIn[1], unitSystem)} instead of ${formatLengthIn(wall.nominalCornerWidthIn, unitSystem)} each, absorbing ${formatLengthIn(wall.absorbedIn, unitSystem)} that could not become a panel. This is the corner-geometry rule Tommy chose for this case over refusing the wall length ("I like the corner geometry rule"); the individual widths it produces are not separately confirmed. Each panel is still one corner panel with one return face, butt joined to its partner at mid-wall. ⚠ CHECK THIS WALL'S OPENINGS: a wall shortened into this case keeps only a window, door or column that still fits between the nominal corners — anything that no longer fit was REMOVED when the corner pair took the whole wall, and nothing else reports that.`,
       })),
       ...(foundationTypeId === "concrete-pier"
         ? [
@@ -6942,9 +7287,16 @@ export default function LayoutEditor() {
     estimatedTotalBearingLb,
     estimatedTotalShearLb,
     subMinimumPanels,
+    // `cornerWidthInForTiling` is deliberately NOT a dependency here: each
+    // entry carries its own `nominalCornerWidthIn`, so this memo renders the
+    // whole note from the record. Fewer deps, and the number in the note is
+    // guaranteed to be the one the wall was actually tiled against.
+    absorbedCornerWalls,
     unitSystem,
     wallRunStopReviewEntries,
     spanningHeaderReviewEntries,
+    zeroBracingReviewEntries,
+    squareBaleMergedCornerReviewEntries,
   ]);
 
   // Site Properties dropdown content (Tommy: "middle of the left side of
@@ -7306,7 +7658,10 @@ export default function LayoutEditor() {
           type="button"
           aria-pressed={panelizationType === "loose-packed-braced"}
           className={panelizationType === "loose-packed-braced" ? styles.toolActive : styles.tool}
-          onClick={() => setPanelizationType("loose-packed-braced")}
+          onClick={() => {
+            setPanelizationNotice(null);
+            setPanelizationType("loose-packed-braced");
+          }}
         >
           Loose Packed Braced
         </button>
@@ -7316,6 +7671,15 @@ export default function LayoutEditor() {
           className={panelizationType === "square-bale-panels" ? styles.toolActive : styles.tool}
           title={`Locks Thickness to ${squareBalePanel.thicknessIn}in — a whole-bale unit's width/thickness are physically fixed, not adjustable.`}
           onClick={() => {
+            // ⚠ REFUSED, not clamped and not absorbed, when a wall on this
+            // building has no legal Square Bale tiling — Tommy: "No — refuse
+            // instead." Nothing is changed, including the thickness below.
+            const refusal = squareBalePanelizationRefusal();
+            if (refusal) {
+              setPanelizationNotice(refusal);
+              return;
+            }
+            setPanelizationNotice(null);
             setPanelizationType("square-bale-panels");
             // Square bale panels are a fixed real-world bale size (Tommy: "always
             // 14in") — not an independently adjustable wall thickness like every
@@ -7329,11 +7693,19 @@ export default function LayoutEditor() {
           type="button"
           aria-pressed={panelizationType === "timber-frame-curtain"}
           className={panelizationType === "timber-frame-curtain" ? styles.toolActive : styles.tool}
-          onClick={() => setPanelizationType("timber-frame-curtain")}
+          onClick={() => {
+            setPanelizationNotice(null);
+            setPanelizationType("timber-frame-curtain");
+          }}
         >
           Timber Frame Curtain
         </button>
       </div>
+      {panelizationNotice && (
+        <p className={styles.note} style={{ color: "#a67c00" }} role="alert">
+          {panelizationNotice}
+        </p>
+      )}
       <div role="group" aria-label="Default bracing style" className={styles.toolbar}>
         <button
           type="button"

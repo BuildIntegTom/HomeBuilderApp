@@ -265,6 +265,19 @@ export default function FootprintCanvas({
       buildColumnPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer),
       wallHeightFt * 12,
     );
+    // The NOMINAL-width corner section on purpose — corner members are built at
+    // each slot's real width elsewhere now, but a wider section reports HIGHER
+    // bearing and that is not a number to infer. Same decision, same reasoning
+    // as `estimatedCornerBuiltUpBearingLb` in page.tsx; the question is in the
+    // spec's `## Open Items` as "Does a WIDER corner panel carry more axial
+    // load?" (added there 2026-09-26 — this comment used to point at an Open
+    // Items list that did not contain it).
+    //
+    // ⚠ A pre-existing divergence, recorded and NOT fixed here: this builds the
+    // PLYWOOD corner at nominal unconditionally, while page.tsx's twin reads
+    // `cornerPanelMembers3D`, which under Square Bale is the BALE corner body.
+    // So the two sites agree for Loose Packed Braced and Timber Frame Curtain
+    // and disagree under Square Bale. Not introduced by the corner work.
     const cornerBearingLb = computeBuiltUpColumnBearingCapacityLb(
       buildCornerPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer),
       wallHeightFt * 12,
@@ -272,6 +285,17 @@ export default function FootprintCanvas({
     for (const wall of footprint.walls) {
       const slots = wallSlots[wall.id] ?? [];
       slots.forEach((slot, slotIndex) => {
+        // ⚠ THIS site counts a COMBINED safety-gap+brace slot as braced;
+        // page.tsx's zero-bracing Review Log entry counts `panelType === "braced"`
+        // only, because `PanelInstance` does not carry `secondaryType` at all and
+        // `summarizeBearingAndShear` therefore gives a combined slot zero shear.
+        // So the per-panel tooltip and the building's shear total genuinely
+        // disagree today. Recorded here as well as there, because page.tsx claims
+        // the divergence is noted at both sites and until 2026-09-27 it was not.
+        // The spec's `## Open Items` carries it as "Does a COMBINED
+        // safety-gap+brace slot count as bracing, and should `PanelInstance` carry
+        // `secondaryType`?" — not fixed either way here, since the honest fix
+        // RAISES a displayed structural total.
         const isBraced = slot.type === "braced" || slot.secondaryType === "braced";
         const shearLb = isBraced
           ? (() => {

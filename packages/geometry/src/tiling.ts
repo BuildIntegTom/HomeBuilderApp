@@ -33,8 +33,18 @@ export const TILER_MIN_PANEL_WIDTH_IN = 24;
  * (48in, confirmed), same duplication note as above.
  *
  * **These two numbers are coupled, and the coupling is load-bearing.** The
- * absorb rule is total — i.e. every wall length has a legal tiling and none
- * is ever refused — ONLY because this ceiling is exactly twice that floor.
+ * absorb rule reaches every plain-middle length — i.e. no wall is refused for
+ * the width of its STANDARD panels — ONLY because this ceiling is exactly
+ * twice that floor.
+ *
+ * ⚠ **"Every wall length has a legal tiling" is NOT true in general, and this
+ * comment used to say it was.** It holds for the plain middle at any standard
+ * width, and for the two-corner band at the 25.5in corner. It does not hold
+ * when the corner panel may not widen: at the confirmed 39in Square Bale
+ * corner, walls from 96.125in to 101.875in have no legal tiling at any
+ * standard width (measured — see `resolveCorners`' `cornerMayWiden`), and the
+ * app refuses that panelization for such a wall rather than hiding it.
+ *
  * See `computePlainSizing`. `data.test.ts` asserts `maxIn >= 2 x minIn`
  * directly so a future change to either number fails loudly rather than
  * quietly producing a wall that cannot be built.
@@ -67,11 +77,17 @@ const SAFETY_PANEL_MIN_WALL_LENGTH_IN = 144;
  * to that count cannot breach the 48in ceiling either: at `n` the budget is
  * under `(n + 1) x F`, so the widest part is under `F + F/n <= 2F = 48in`.
  *
- * `Math.max(1, …)` is untouched, and it is the one residual: a budget under
- * 24in has nothing to absorb INTO, so it still yields a single sub-minimum
- * panel. That is deliberate and it is reported in the Review Log rather than
- * corrected here — the real fix is corner geometry (see the merged-corner
- * route in `resolveCorners`), which is Tommy's call and deferred.
+ * `Math.max(1, …)` is untouched: a budget under 24in has nothing to absorb
+ * INTO, so reaching this function with one still yields a single sub-minimum
+ * panel, reported in the Review Log rather than corrected here.
+ *
+ * **What no longer reaches it (2026-09-25):** a wall owning corners at BOTH
+ * ends can no longer hand this function a sub-24in budget at all — the
+ * corner pair absorbs it first, which is the corner-geometry fix Tommy chose
+ * for the 51in-75in band. See `resolveCorners`. Still reachable, and still
+ * deliberately unfixed: a wall owning ONE corner and between 25.5in and
+ * 49.5in long (nothing to pair the single corner with), and openings eating
+ * all but a sliver of a long wall's middle.
  */
 function buildEvenMiddle(budgetLengthIn: number, standardWidthIn: number): PanelSlot[] {
   // The standard width is a CAP, so this is the most panels the run may have.
@@ -218,14 +234,16 @@ interface PlainSizing {
  * `panelWidthInRange.maxIn >= 2 x fabricationMinPanelWidthIn` directly for
  * exactly this reason. Any future change to either number must re-check it.
  *
- * **Three residual cases absorb does not reach**, each with nothing to
+ * **The residual cases absorb does not reach**, each with nothing to
  * absorb into, all Review-Log-only by decision:
- *   1. a middle budget under 24in with nothing else on the run — a wall
- *      owning two corners and between 51in and 75in long. `floor(b / 24)`
- *      is 0, so no legal panel count exists. The real fix extends
- *      `resolveCorners`' merged-corner rule, which is corner geometry and
- *      therefore real construction — deferred by Tommy until after admin
- *      tooling, deliberately not attempted here.
+ *   1. ~~a middle budget under 24in on a wall owning two corners and between
+ *      51in and 75in long~~ — **FIXED 2026-09-25 by corner absorb**, the
+ *      corner-geometry route Tommy chose. The corner pair absorbs that
+ *      middle before this function ever sees it; see `resolveCorners`. The
+ *      ONE-corner version of the same shape (a wall owning a single corner
+ *      and between 25.5in and 49.5in long) is NOT fixed — a lone corner has
+ *      no partner to share the wall with, and inventing a rule for it was
+ *      not asked for. It is reported, not corrected.
  *   2. `rawStandardCount === 0` — openings eating all but a sliver of a long
  *      wall's middle. The sliver's neighbours are openings and corners.
  *   3. `resolveCorners` clamping a single corner onto a wall shorter than
@@ -401,6 +419,87 @@ function buildMiddle(
   return buildPlainMiddle(sizing, widthIn, gapEnd);
 }
 
+/**
+ * The sub-minimum middle a wall owning BOTH corners is left with at a given
+ * nominal corner width, or null when the wall is not in that band at all.
+ *
+ * Exported because two places need the SAME definition of "this wall is in
+ * the corner band": `resolveCorners`, which absorbs it (see below), and the
+ * app's Square Bale refusal, which must name the band to the user in real
+ * inches rather than re-deriving the arithmetic in a second place and
+ * drifting from it.
+ *
+ * Null (not in the band) covers all three of: a wall that does not own both
+ * corners, a wall whose middle is exactly 0 or negative (the nominal pair
+ * fits with nothing left over, or does not fit at all — the merge case), and
+ * a wall whose middle is already a legal panel.
+ */
+export function cornerBandMiddleIn(
+  wallLengthIn: number,
+  cornerWidthIn: number,
+  hasCornerStart: boolean,
+  hasCornerEnd: boolean,
+): number | null {
+  if (!hasCornerStart || !hasCornerEnd) return null;
+  const cornerEighths = Math.max(0, toEighths(cornerWidthIn));
+  const wallEighths = Math.max(0, toEighths(wallLengthIn));
+  const middleEighths = wallEighths - 2 * cornerEighths;
+  if (middleEighths <= 0 || middleEighths >= toEighths(TILER_MIN_PANEL_WIDTH_IN)) return null;
+  return fromEighths(middleEighths);
+}
+
+/**
+ * The width of the single MERGED corner slot a wall gets when it owns corners
+ * at both ends but is too short to fit them side by side — or null when this
+ * wall does not take the merge branch at all.
+ *
+ * Exported for exactly the reason `cornerBandMiddleIn` above is: two places
+ * need the same definition of "this wall merges its corners", and re-deriving
+ * `wallLengthIn < 2 x cornerWidthIn` in a second place is how the app's own
+ * refusal drifts away from what the tiler does. `resolveCorners`' merge branch
+ * is the only consumer that matters on the geometry side; the app's Square Bale
+ * refusal is the other one.
+ *
+ * ### Why the app needs this at all: the MERGED BALE CORNER
+ *
+ * The merged corner is Tommy's own long-standing rule for a wall too short for
+ * two corner panels, and the slot it emits is **as wide as the wall** — which
+ * is fine for a plywood-faced corner panel up to the 48in ceiling, and is not
+ * fine at all for a Square Bale corner. `squareBalePanel.widthIn` is a
+ * CONFIRMED 39in whole-bale unit, so the merge fires on every two-corner wall
+ * under 78in and emits a "bale corner" that is not 39in wide — up to
+ * 77 7/8in, nearly 30in over `panelWidthInRange.maxIn`. Bales do not stretch,
+ * so that part cannot be built, exactly like the widened bale corner
+ * `cornerMayWiden` already refuses to produce.
+ *
+ * **`cornerMayWiden` does NOT gate this branch and deliberately still does
+ * not.** The merge predates absorb, Tommy's instruction for the absorb work was
+ * that it keep behaving as it does today, and the plywood path depends on it.
+ * The answer is a refusal in the app, at the point of edit, not a change here —
+ * see `squareBaleCornerRefusal.ts`.
+ *
+ * Returns null for a wall that does not own both corners, and for a
+ * zero-or-negative length, so a caller can treat null as "the merge branch is
+ * not what happens here".
+ */
+export function mergedCornerWidthIn(
+  wallLengthIn: number,
+  cornerWidthIn: number,
+  hasCornerStart: boolean,
+  hasCornerEnd: boolean,
+): number | null {
+  if (!hasCornerStart || !hasCornerEnd) return null;
+  const cornerEighths = Math.max(0, toEighths(cornerWidthIn));
+  const wallEighths = Math.max(0, toEighths(wallLengthIn));
+  if (wallEighths <= 0) return null;
+  // The SAME comparison `resolveCorners` makes, on the same grid-snapped
+  // length `tileWall`/`retileWithOpenings` hand it: strictly less than the two
+  // nominal corners side by side. At exactly 2 x corner the pair fits with a
+  // zero middle and there is no merge.
+  if (wallEighths >= 2 * cornerEighths) return null;
+  return fromEighths(wallEighths);
+}
+
 interface ResolvedCorners {
   /** Set only when the wall owns corners at both ends but is too short to
    * fit them without overlap — see the doc comment below. When set, this
@@ -409,6 +508,12 @@ interface ResolvedCorners {
   cornerStart: PanelSlot | null;
   cornerEnd: PanelSlot | null;
   fixedEndsIn: number;
+  /** True when the corner pair ABSORBED a middle too small to hold a legal
+   * panel and there was not even room to keep the caller's reservations
+   * (openings) — they are dropped, exactly as the `merged` branch drops
+   * them. False on every other path, including the absorb path that DID
+   * keep them. */
+  dropsReservations: boolean;
 }
 
 /**
@@ -436,22 +541,184 @@ interface ResolvedCorners {
  * neighbor) has nothing to merge with — instead that single corner just
  * clamps down to the wall's own length in the rarer case where even it
  * alone doesn't fit, the one-sided version of the same overlap.
+ *
+ * ### The 51in–75in two-corner band — CORNER ABSORB (2026-09-25)
+ *
+ * Merging on "too short for both corners" left a band of wall lengths with
+ * **no legal tiling at all**, and it was live: `cornerPanelWidthIn` is
+ * 25.5in, so a wall owning two corners spends 51in on them, and the middle
+ * is `L - 51` — under the shop's 24in `fabricationMinPanelWidthIn` for every
+ * `L` below **75in**. Too long to merge, too short to hold a legal middle
+ * panel. A 6ft (72in) bump-out return sat three inches inside it; a regular
+ * octagon's side is 0.41421x its bounding box, so **every** wall of an
+ * octagon between 10.26ft and 15.09ft across landed in it.
+ *
+ * **Tommy's decision (2026-09-24) was the corner-geometry route, and he
+ * explicitly rejected refusing these wall lengths:** *"I want to prioritize
+ * good building principles here with the panelizer. I like the corner
+ * geometry rule."* So the merge condition is extended from "too short for
+ * both corners" to **"too short for both corners plus a legal middle"** —
+ * and what the corners do about it is absorb that middle, the same answer
+ * `computePlainSizing` already gives a leftover too small to stand alone:
+ * widen an existing panel rather than emit one the shop cannot build.
+ *
+ * **Why the pair absorbs it rather than one merged panel spanning the wall.**
+ * The single-panel reading of "extend the merge" would emit one corner slot
+ * up to 74.875in wide — **past `panelWidthInRange.maxIn`, a confirmed 48in
+ * catalog ceiling**, so it would trade an unbuildably narrow panel for an
+ * unbuildably wide one. Splitting the wall between the two corner panels
+ * keeps every part inside the catalog: each is `L / 2`, which over the band
+ * runs from exactly 25.5in (at L = 51in, where this branch does not even
+ * fire) up to 37.4375in (at L = 74.875in) — never below the 25.5in nominal
+ * corner and never within 10in of the ceiling. **No catalog number moved to
+ * make this fit; the geometry was chosen to fit the catalog.**
+ *
+ * Physically each panel is still one corner panel with one return face, butt
+ * joined to its partner at mid-wall — not a new product, just a corner panel
+ * off its nominal width, exactly as the merged corner has always been.
+ * ⚠ **Corner panels off nominal width are a construction detail Tommy has not
+ * signed off on case by case**, so every wall this fires on is reported in
+ * the Review Log (`findAbsorbedCornerWalls`) rather than shipped silently.
+ *
+ * `reservedIn` is the caller's opening/column reservation total (0 from
+ * `tileWall`). The corners absorb only what is left **after** it, so a wall
+ * shortened into the band keeps its window instead of losing it — but when
+ * the reservations no longer fit in the nominal middle at all, they are
+ * dropped and the pair takes the whole wall, which is what `merged` has
+ * always done and is the only answer that keeps the sum exact.
+ *
+ * ### `cornerMayWiden` — because one panelization's corner cannot stretch
+ *
+ * Absorb rests entirely on a corner panel being fabricable off its nominal
+ * width. That is true of the plain corner panel and confirmed by Tommy
+ * (2026-09-25, asked directly whether a corner panel can be built off 25.5in:
+ * *"Yes — any width in the 24-48in band"*) — it is a 24in core plus two 3/4in
+ * plywood faces, built like a Column Panel, so widening the core is the same
+ * part made longer.
+ *
+ * It is NOT true of every corner this function is called with.
+ * `squareBalePanel.widthIn` is a **confirmed 39in** whole-bale unit — two 18in
+ * bales plus two 1.5in studs — and the app tiles Square Bale corners at that
+ * width, which moves this band to **78in-102in** and would otherwise emit two
+ * 48in "corner panels" on an ordinary 8ft wall. Tommy, asked directly:
+ * **"No — refuse instead."** Bales do not stretch, so widening a bale corner
+ * invents a product that does not exist.
+ *
+ * So the caller says whether its corner product may widen. When it may not,
+ * this function does NOT absorb: the wall falls through to today's nominal
+ * corners plus a sub-minimum middle, which the Review Log's existing
+ * sub-minimum-panel entry reports. **That wall has no legal tiling and the app
+ * must say so** — a visible gap beats a substituted value. The refusal that
+ * names it at the point of edit lives in `page.tsx`.
+ *
+ * ### ⚠ EXACTLY what `cornerMayWiden` covers, and what it does not
+ *
+ * **CORRECTED 2026-09-26.** This paragraph used to say the flag "stops the
+ * geometry inventing a part on any other path". That overstated it, and the
+ * overstatement was the reason a real hole sat unnoticed. The flag gates **the
+ * absorb branch below and nothing else.**
+ *
+ * It does **not** gate the **merge** branch above it — the older
+ * "too short for both corners at all" rule — which emits one `corner` slot of
+ * the wall's **whole length** at any corner width, flag or no flag. Measured:
+ * `tileWall(72, 39, 39, "end", true, true, true, false)` → a single
+ * `corner 72in`, and `tileWall(77.875, ...)` → `corner 77.875in`, **29 7/8in
+ * over the confirmed 48in `panelWidthInRange.maxIn`**. Under Square Bale that
+ * fires on every two-corner wall under 78in, so every wall of every octagon
+ * from about 9.7ft to 15.7ft across is one merged "bale corner" as wide as the
+ * wall.
+ *
+ * **That is deliberately still not gated here.** The merge is Tommy's own rule,
+ * the instruction for the absorb work was that it keep behaving as it does
+ * today, and the plywood path depends on it. Tommy's answer (2026-09-26, asked
+ * whether *"No — refuse instead"* extends to the merged bale corner) was
+ * **"Yes — refuse both cases too"**, and a refusal belongs in the app, not in
+ * the tiler: see `mergedCornerWidthIn` below, which the app's Square Bale
+ * refusal reads so that the two cannot drift, and `squareBaleCornerRefusal.ts`.
+ *
+ * So the honest summary of what the geometry itself guarantees under
+ * `cornerMayWiden: false` is narrow: **a band wall is not silently widened.**
+ * Everything else about Square Bale's corner legality is enforced in the app,
+ * at the point of edit, and a wall drawn or shortened into the band while
+ * Square Bale is ALREADY selected is still reported rather than refused — see
+ * `squareBaleCornerRefusal.ts` for the exact edge of that coverage.
  */
 function resolveCorners(
   wallLengthIn: number,
   cornerWidthIn: number,
   hasCornerStart: boolean,
   hasCornerEnd: boolean,
+  reservedIn = 0,
+  cornerMayWiden = true,
 ): ResolvedCorners {
   // cornerWidthIn is already a whole eighth in the catalog (25.5in) — this
   // only defends against a caller passing something else, and it keeps the
-  // merged/clamped branches (which derive their width from wallLengthIn)
-  // on the grid alongside everything else.
+  // merged/clamped/absorbed branches (which derive their width from
+  // wallLengthIn) on the grid alongside everything else.
   const cornerEighths = Math.max(0, toEighths(cornerWidthIn));
   const wallEighths = Math.max(0, toEighths(wallLengthIn));
   const fixedEndsIn = fromEighths((hasCornerStart ? cornerEighths : 0) + (hasCornerEnd ? cornerEighths : 0));
-  if (hasCornerStart && hasCornerEnd && wallLengthIn < fixedEndsIn) {
-    return { merged: { type: "corner", widthIn: fromEighths(wallEighths) }, cornerStart: null, cornerEnd: null, fixedEndsIn };
+  const bothCorners = hasCornerStart && hasCornerEnd;
+  if (bothCorners && wallLengthIn < fixedEndsIn) {
+    return {
+      merged: { type: "corner", widthIn: fromEighths(wallEighths) },
+      cornerStart: null,
+      cornerEnd: null,
+      fixedEndsIn,
+      dropsReservations: false,
+    };
+  }
+  if (bothCorners && cornerMayWiden) {
+    // Non-negative: the merge test above already established
+    // `wallEighths >= 2 x cornerEighths`. Same arithmetic as
+    // `cornerBandMiddleIn`, which the app's own refusal uses — kept in
+    // eighths here because everything below works in eighths.
+    const middleEighths = wallEighths - 2 * cornerEighths;
+    if (middleEighths > 0 && middleEighths < toEighths(TILER_MIN_PANEL_WIDTH_IN)) {
+      // CORNER ABSORB — see the doc comment above. A reservation total of 0
+      // (every `tileWall` call) keeps this branch, so the pair simply shares
+      // the whole wall.
+      const reservedEighths = Math.max(0, toEighths(reservedIn));
+      const keepsReservations = reservedEighths <= middleEighths;
+      const shareEighths = keepsReservations ? wallEighths - reservedEighths : wallEighths;
+      // Whichever end takes the odd eighth is `distributeEighths`' own
+      // deliberately arbitrary but FIXED lowest-index rule — nobody has
+      // decided that the wider corner belongs at a particular end.
+      const [startEighths = 0, endEighths = 0] = distributeEighths(shareEighths, 2);
+      // ⚠ ABSORB ONLY WHEN THE ABSORBED PAIR IS ITSELF LEGAL — the same
+      // legality test `computePlainSizing` applies before it absorbs, and it
+      // is here for the same reason the absorb rule's own doc comment keeps
+      // repeating: the margin is a coincidence of two catalog numbers, not a
+      // property of this algorithm. At `cornerPanelWidthIn` (25.5in) the pair
+      // always lands in [25.5in, 37.5in] and this never fires.
+      //
+      // ⚠ **CORRECTED 2026-09-26: this guard is NOT unreachable at catalog
+      // values, and the claim that it "fires only on a caller passing a
+      // non-catalog corner width" was false.** It is reachable straight from
+      // the panelization control: at the confirmed 39in `squareBalePanel`
+      // corner the pair reaches 48in at a 96in wall, so every wall from
+      // 96.125in to 101.875in — **47 of the 191 eighth-steps in that band** —
+      // lands here, measured. Those walls have NO legal tiling at all, which
+      // is why Square Bale now passes `cornerMayWiden: false` and is refused
+      // by name instead (see the doc comment above); the guard is the
+      // backstop, not the answer.
+      //
+      // When it fires, the wall keeps today's tiling and the Review Log
+      // reports the sub-minimum panel, which is strictly better than a
+      // silent unbuildable corner.
+      const legalPair =
+        Math.min(startEighths, endEighths) >= toEighths(TILER_MIN_PANEL_WIDTH_IN) &&
+        Math.max(startEighths, endEighths) <= toEighths(TILER_MAX_PANEL_WIDTH_IN);
+      if (legalPair) {
+        return {
+          merged: null,
+          cornerStart: { type: "corner", widthIn: fromEighths(startEighths) },
+          cornerEnd: { type: "corner", widthIn: fromEighths(endEighths) },
+          fixedEndsIn: fromEighths(shareEighths),
+          dropsReservations: !keepsReservations,
+        };
+      }
+    }
   }
   const clampedCornerIn = fromEighths(Math.min(cornerEighths, wallEighths));
   return {
@@ -459,6 +726,7 @@ function resolveCorners(
     cornerStart: hasCornerStart ? { type: "corner", widthIn: clampedCornerIn } : null,
     cornerEnd: hasCornerEnd ? { type: "corner", widthIn: clampedCornerIn } : null,
     fixedEndsIn,
+    dropsReservations: false,
   };
 }
 
@@ -508,7 +776,17 @@ function resolveCorners(
  *
  * If the wall owns corners at both ends but is too short to fit them
  * without overlapping, they're merged into a single corner panel spanning
- * the wall's whole length instead — see `resolveCorners`.
+ * the wall's whole length instead; and if it is too short to fit them plus a
+ * legal middle panel (the 51in-75in band), the two corner panels absorb that
+ * middle and share the wall between them — see `resolveCorners` for both,
+ * and for why the second is a PAIR rather than one wide panel.
+ *
+ * `cornerMayWiden = false` turns that second rule OFF for a caller whose
+ * corner is a fixed physical unit that cannot be fabricated off its nominal
+ * width (Square Bale Panels' 39in whole-bale corner). Such a wall then tiles
+ * as it did before absorb existed — nominal corners and a sub-minimum middle
+ * the Review Log reports — because the honest answer there is a refusal, not a
+ * widened part. See `resolveCorners`.
  *
  * **The sum invariant:** the returned slot widths are every one a whole
  * number of 1/8in and they add up EXACTLY to `roundToEighthIn(wallLengthIn)`
@@ -531,9 +809,10 @@ export function tileWall(
   hasCornerStart = true,
   hasCornerEnd = true,
   allowBorrow = true,
+  cornerMayWiden = true,
 ): TileWallResult {
   const gridLengthIn = roundToEighthIn(wallLengthIn);
-  const corners = resolveCorners(gridLengthIn, cornerWidthIn, hasCornerStart, hasCornerEnd);
+  const corners = resolveCorners(gridLengthIn, cornerWidthIn, hasCornerStart, hasCornerEnd, 0, cornerMayWiden);
   if (corners.merged) {
     return { slots: [corners.merged] };
   }
@@ -625,6 +904,13 @@ export function getOpeningAnchors(slots: PanelSlot[]): OpeningAnchor[] {
  * the wall's whole length instead (dropping any openings — there's no room
  * for them either at that point) — see `resolveCorners` in `tileWall`'s
  * doc comment.
+ *
+ * In the 51in-75in band the corner pair absorbs the sub-minimum middle
+ * instead, and here it absorbs only what is left **after** these openings:
+ * a wall shortened into the band KEEPS a window that still fits in its
+ * nominal middle, rather than losing it the way the merged branch would.
+ * Openings are dropped only when they no longer fit there at all, which is
+ * the one case where keeping them would break the sum invariant.
  */
 export function retileWithOpenings(
   wallLengthIn: number,
@@ -635,6 +921,7 @@ export function retileWithOpenings(
   hasCornerEnd: boolean,
   openings: OpeningAnchor[],
   allowBorrow = true,
+  cornerMayWiden = true,
 ): TileWallResult {
   // Same grid snap tileWall does, for the same reason — plus each
   // opening's own reserved width, so the plain budget left over for
@@ -642,14 +929,26 @@ export function retileWithOpenings(
   // 47-5/8in is already on the grid; one that isn't gets snapped here
   // rather than pushing every panel on the wall off it.
   const gridLengthIn = roundToEighthIn(wallLengthIn);
-  const corners = resolveCorners(gridLengthIn, cornerWidthIn, hasCornerStart, hasCornerEnd);
+  const openingsTotalWidthIn = openings.reduce((sum, o) => sum + roundToEighthIn(o.widthIn), 0);
+  const corners = resolveCorners(
+    gridLengthIn,
+    cornerWidthIn,
+    hasCornerStart,
+    hasCornerEnd,
+    openingsTotalWidthIn,
+    cornerMayWiden,
+  );
   if (corners.merged) {
     return { slots: [corners.merged] };
   }
 
+  // Empty ONLY on the corner-absorb path that could not keep them — see
+  // `resolveCorners`. Every other path leaves this as the caller's own list,
+  // so nothing outside the 51in-75in band sees any change at all.
+  const keptOpenings = corners.dropsReservations ? [] : openings;
+  const keptOpeningsTotalWidthIn = corners.dropsReservations ? 0 : openingsTotalWidthIn;
   const middleLengthIn = gridLengthIn - corners.fixedEndsIn;
-  const openingsTotalWidthIn = openings.reduce((sum, o) => sum + roundToEighthIn(o.widthIn), 0);
-  const plainBudgetIn = middleLengthIn - openingsTotalWidthIn;
+  const plainBudgetIn = middleLengthIn - keptOpeningsTotalWidthIn;
   const needsSafetyPanel = gridLengthIn > SAFETY_PANEL_MIN_WALL_LENGTH_IN;
   const plainMiddle = buildMiddle(Math.max(0, plainBudgetIn), standardWidthIn, gapEnd, allowBorrow, needsSafetyPanel);
 
@@ -664,7 +963,7 @@ export function retileWithOpenings(
     zones: o.zones,
     includeSillOnBigHeader: o.includeSillOnBigHeader,
   });
-  const sortedOpenings = [...openings].sort((a, b) => a.beforeStandardCount - b.beforeStandardCount);
+  const sortedOpenings = [...keptOpenings].sort((a, b) => a.beforeStandardCount - b.beforeStandardCount);
   const middle: PanelSlot[] = [];
   let standardsSeen = 0;
   let openingIdx = 0;
