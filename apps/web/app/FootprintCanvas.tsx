@@ -285,6 +285,17 @@ export default function FootprintCanvas({
     for (const wall of footprint.walls) {
       const slots = wallSlots[wall.id] ?? [];
       slots.forEach((slot, slotIndex) => {
+        // ⚠ THIS site counts a COMBINED safety-gap+brace slot as braced;
+        // page.tsx's zero-bracing Review Log entry counts `panelType === "braced"`
+        // only, because `PanelInstance` does not carry `secondaryType` at all and
+        // `summarizeBearingAndShear` therefore gives a combined slot zero shear.
+        // So the per-panel tooltip and the building's shear total genuinely
+        // disagree today. Recorded here as well as there, because page.tsx claims
+        // the divergence is noted at both sites and until 2026-09-27 it was not.
+        // The spec's `## Open Items` carries it as "Does a COMBINED
+        // safety-gap+brace slot count as bracing, and should `PanelInstance` carry
+        // `secondaryType`?" — not fixed either way here, since the honest fix
+        // RAISES a displayed structural total.
         const isBraced = slot.type === "braced" || slot.secondaryType === "braced";
         const shearLb = isBraced
           ? (() => {
