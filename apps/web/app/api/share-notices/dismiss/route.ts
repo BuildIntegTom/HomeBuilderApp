@@ -2,7 +2,9 @@ import { NO_STORE, cloudErrorResponse, requireCloudSession } from "@/app/cloud/c
 import { dismissShareNotices } from "@/app/cloud/shareNoticeLogic";
 
 /**
- * POST /api/share-notices/dismiss — "Got it" (Stage 3C, answer 7).
+ * POST /api/share-notices/dismiss — "Got it" (Stage 3C, answer 7), and since
+ * 2026-09-23 "Open Shared with us" as well. The route is unchanged by that: it
+ * takes no body, so it could never have told the two apart.
  * `dismiss_share_notices()` upserts the SERVER's `now()` into
  * `share_notice_state`, which is what clears a second computer too.
  *

@@ -18,7 +18,8 @@
  *      would read an empty list and prove nothing.
  *
  * THERE IS NO POLLING, deliberately. A share is not urgent, the notice stays up
- * until Got it, and the Shared with us tab is the durable signal either way, so
+ * until it is dismissed (either button, since 2026-09-23 — see
+ * `useShareNotice.tsx`), and the Shared with us tab is the durable signal, so
  * a timer would buy nothing and cost a request per tab per interval forever.
  * The spec's own accepted race already says the Shared tab — not this notice —
  * is what a recipient can rely on.

@@ -24,9 +24,24 @@ import styles from "./CloudProjects.module.css";
  * `pending_share_notices()`'s answer; when to ask is shareNoticeCheck.ts's;
  * this only shows the result and offers the two buttons.
  *
- * WHEN IT CLEARS: Got it, and only Got it. Opening the Shared tab does not
- * clear it (the spec is explicit), because reading a list is not the same as
- * having seen the news — and the tab is reachable without ever noticing this.
+ * WHEN IT CLEARS: EITHER BUTTON. Both "Got it" and "Open Shared with us" call
+ * `dismiss_share_notices()`.
+ *
+ * ⚠ THIS SUPERSEDES THE ORIGINAL RULE, WHICH WAS "Got it, and only Got it".
+ * TOMMY'S PREFERENCE, 2026-09-23: "Open Shared with us" should dismiss too. The
+ * original rule was a deliberate choice, not an oversight — opening is looking,
+ * not acknowledging, and a distracted click-through would lose the signal — and
+ * he was given that reasoning and still prefers both. So the reasoning is
+ * recorded rather than deleted, here and in the spec.
+ *
+ * What makes it safe to lose the signal that way: the Shared with us tab is the
+ * durable record, `SHARE_NOTICE_DURABLE_NOTE` says so on the note itself, and
+ * dismissing costs no access and no project. The one thing genuinely given up is
+ * that a person who clicks through without reading the lines will not be shown
+ * those lines again.
+ *
+ * Closing the note (the X) still does NOT dismiss — that is unchanged, and is
+ * the remaining way to keep the news for later.
  */
 
 export interface UseShareNoticeOptions {
@@ -116,8 +131,9 @@ export function useShareNotice({ audience, onOpenSharedTab, onAuthProblem }: Use
       // sees on a phone after signing in.
       cascadeIndex={0}
       onClose={() => {
-        // Closing is not dismissing: the server's seen_through is untouched,
-        // so this returns on the next sign-in or page load. Only Got it ends it.
+        // Closing is not dismissing: the server's seen_through is untouched, so
+        // this returns on the next sign-in or page load. Since 2026-09-23 both
+        // BUTTONS end it; closing is what is left for keeping the news.
         setIsOpen(false);
         setFullscreen(false);
       }}
@@ -148,8 +164,15 @@ export function useShareNotice({ audience, onOpenSharedTab, onAuthProblem }: Use
             className={styles.button}
             data-open-shared=""
             onClick={() => {
+              // THE OPEN HAPPENS FIRST, AND IS NEVER BLOCKED ON THE DISMISS.
+              // Opening the tab is what was asked for; the dismiss is a
+              // consequence of it (Tommy, 2026-09-23). So a dismiss that fails
+              // leaves the tab open, the notice showing and its error visible —
+              // exactly what a failed "Got it" does — rather than swallowing
+              // either half.
               onOpenSharedTab();
               setFullscreen(false);
+              void dismiss();
             }}
           >
             {SHARE_NOTICE_OPEN_SHARED}
