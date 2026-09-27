@@ -1963,19 +1963,24 @@ then deletes as the platform admin and checks all three cascades, across a
 company he is not a member of, and checks that a direct single-version delete
 still raises `42501` for him.
 
-## ⚠ Stage 5 verification status
+## Stage 5 verification status — `stage5_rls.test.sql` HAS NOW BEEN RUN, 2026-09-27
 
-**`stage5_rls.test.sql` HAS NOT BEEN RUN.** No PostgreSQL is installed on the
-machine it was written on — the same situation `0010` was written in — and
-connecting to the live project to try it was never an option. It is written in
-the style of the four suites beside it and reviewed by reading; that is not the
-same as passing. **Run it before trusting the delete button with anything you
-would miss.**
+**It passes.** `stage5_rls: ALL ASSERTIONS PASSED`, on a throwaway local
+PostgreSQL **17.4** cluster built from `local_shim.sql` + `0001`–`0010`, never
+the live project.
 
-What HAS been checked is the app side, by `npx vitest run`: the route refuses a
+**This supersedes the "has not been run" note this section carried.** That note
+was accurate when the delete slice shipped: no PostgreSQL was installed on the
+machine it was written on, so the suite had only ever been read. It was run as a
+side effect of standing PostgreSQL up for the second slice's own suite below,
+and it is recorded here because "written in the style of the suites beside it"
+and "passes" are different claims and the first one was the honest one at the
+time.
+
+The app side is checked separately, by `npx vitest run`: the route refuses a
 non-admin session, reads zero rows as a refusal rather than a success, checks
 the typed name against the database's current name, and never deletes a
-`project_versions` row. None of that is the database's answer.
+`project_versions` row. That is still not the database's answer — this is.
 
 ## Before you delete a real project
 
@@ -1989,3 +1994,125 @@ the typed name against the database's current name, and never deletes a
 - **Single-version delete is still refused**, platform admin included. It would
   leave `head_version_number` stale and break a `parent_version_id` chain, and
   it needs its own design.
+
+---
+
+# Stage 5, second slice — what a BACKUP reads, and why it needs no migration
+
+## ⚠ THERE IS NO MIGRATION FOR THIS EITHER, AND NOTHING TO PASTE
+
+**Nothing in this section asks Tommy to run any SQL. There is no `0011`.** This
+is the second Stage 5 slice in a row where the database work turned out to be
+already done — and, as with the first, **that is verified rather than assumed**,
+by `supabase/tests/stage5_platform_backup_rls.test.sql`.
+
+## What the suite is actually about
+
+A platform admin can already download a per-company backup for **every**
+company, and that is the shipped Stage 2D/3E feature rather than anything new:
+
+- `computeEntitlements` (`apps/web/app/auth/actingAs.ts`) pushes an entitlement
+  with `source: "platform-admin"` for **every company**, so he can act as any of
+  them;
+- `checkBackupAccess` (`apps/web/app/cloud/backupRouteLogic.ts`) admits *"a
+  company admin of the verified acting-as company, **or a platform admin acting
+  as it**"*;
+- `isAdminHereFor` (`apps/web/app/auth/peopleActivity.ts`) is the same rule, and
+  it is what renders the Download backup control in the account panel.
+
+So when he switches to a company he holds **no membership in** and presses
+Download backup, the walk runs entirely on rows served by `is_platform_admin()`
+inside a policy. `is_member_of` is false for him everywhere.
+
+**Nothing pinned that dependence before this suite.** Narrowing any one of those
+policies would not produce an error — it would produce a **shorter zip**, or a
+zip with a company named in the manifest and no files under it, and the manifest
+would agree with itself because `collectCompanyBackup` counts what it *received*
+(see the `projectCount: runs.size` defect recorded in the spec). A backup that
+quietly holds less than it says is the worst failure available here, so the
+policies are asserted **by definition as well as by behaviour**, and the
+definitions come **first** in the file so a narrowing fails by name.
+
+## The five reads, checked against the migrations rather than remembered
+
+| what a backup reads | what serves it | admits a platform admin? |
+|---|---|---|
+| every company's `id`, `name` | `companies_select` (0002) | **yes** — `or public.is_platform_admin()` |
+| every project row | `projects_select` (0006, widened by 0008) | **yes** — `is_member_of(company_id) or is_platform_admin() or holds_project_grant(id)` |
+| every version's metadata **and `document`** | `project_versions_select` (0006) → `can_read_project` | **yes** — `can_read_project` (0008) includes `is_platform_admin()` |
+| grants, for 3E's granted phase | `collaborators_select` (0008) → `can_read_project` | **yes** |
+| access requests *(in no backup; asserted because the plan cites it)* | `collab_requests_select` (0009) | **yes**, named outright |
+
+⚠ **One correction the suite makes to the plan.** The plan's section 5 quotes
+`projects_select` as `is_member_of(company_id) or is_platform_admin()`, which is
+**0006's** text. **0008 added a third clause, `holds_project_grant(id)`.** The
+platform-admin clause is unchanged, but the suite asserts all three, because a
+test that quoted the spec instead of the database would have failed for the
+wrong reason.
+
+The restrictive `*_require_aal` policies still apply on top, which is correct and
+unchanged: an **enrolled** platform admin on a password-only session reads
+nothing at all — not one company, not one document.
+
+**No policy, function, trigger or grant is changed by this slice.**
+`browse_redact`, `browse_version`, `refuse_project_version_change`,
+`can_read_project` and `can_write_project` are untouched. `service_role` gets
+nothing, and the service role key is never shared and never gets a
+`NEXT_PUBLIC_` prefix.
+
+## Verifying locally
+
+Against a throwaway local PostgreSQL (17.4 was used), **never the project**:
+
+```sh
+createdb stage5_pb_local
+psql -d stage5_pb_local -v ON_ERROR_STOP=1 -f supabase/tests/local_shim.sql
+for f in supabase/migrations/0[01]*.sql; do psql -d stage5_pb_local -v ON_ERROR_STOP=1 -f "$f"; done
+psql -d stage5_pb_local -v ON_ERROR_STOP=1 -f supabase/tests/stage1_rls.test.sql   # must still pass
+psql -d stage5_pb_local -v ON_ERROR_STOP=1 -f supabase/tests/stage2_rls.test.sql   # must still pass
+psql -d stage5_pb_local -v ON_ERROR_STOP=1 -f supabase/tests/stage3_rls.test.sql   # must still pass
+psql -d stage5_pb_local -v ON_ERROR_STOP=1 -f supabase/tests/stage5_rls.test.sql   # must still pass
+psql -d stage5_pb_local -v ON_ERROR_STOP=1 -f supabase/tests/stage5_platform_backup_rls.test.sql
+```
+
+Prints `stage5_platform_backup_rls: ALL ASSERTIONS PASSED`, or stops at the
+first `FAIL:`. **`stage4_rls.test.sql` is deliberately not in that list**, for
+the pre-existing `0010` conflict documented above: Stage 4 is verified on
+`0001`–`0009`, this suite on `0001`–`0010`.
+
+The suite carries the same refuse-to-run guard as `stage5_rls.test.sql` — it
+aborts on any database that already has memberships, projects, grants or access
+requests, because it writes and deletes rows on purpose and live has all four.
+
+## ⚠ Stage 5 second-slice verification status — RUN, AND MUTATION-TESTED
+
+**It passes, and it has been shown to be capable of failing**, which is the bar
+the delete slice's reviewer set. On PostgreSQL 17.4, `local_shim.sql` +
+`0001`–`0010`, 2026-09-27. Each mutation is a one-line change applied after
+`0010` and before the suite:
+
+| # | mutation | what fails |
+|---|---|---|
+| 1 | `alter policy projects_select on public.projects using (true)` | *"projects_select is exactly membership, platform admin or a grant"* (section 0) — and with that guard relaxed, *"bob, an ordinary Building Integrity member, reads 0 of Rare Forms' projects"* (got 1) |
+| 2 | drop `is_platform_admin()` from `companies_select` | *"companies_select still admits a platform admin"* (section 0) — and with that guard relaxed, *"pat enumerates all four companies"* (got 0 of 4) |
+| 3 | `drop policy project_versions_require_aal on public.project_versions` | *"all five `*_require_aal` policies are present and restrictive"* (section 0) — and with that guard relaxed, *"an ENROLLED platform admin on an aal1 session reads 0 documents"* (got 7 of 7) |
+| 4 | `grant select on public.project_versions to service_role` | *"service_role holds NOTHING on project_versions"* |
+
+Mutations 1–3 are caught **twice**, definitionally and behaviourally. That is
+deliberate: the definitional assertion names the cause, and the behavioural one
+proves the cause matters.
+
+## What this suite does NOT cover
+
+- **It is not a test of a platform-wide walk.** No such walk exists. Tommy
+  answered the design's Open Item 1 with *"one per company"* on 2026-09-27, so
+  the walk is the per-company one that already shipped and is already tested.
+- **It is not a test of the redactor.** `browse_redact` and `browse_version` are
+  not called, not modified and not gone around. The suite does assert that the
+  document a platform admin reads on **this** path still carries
+  `state.priceModifier` — because `parseProjectFile` refuses a document without
+  it, so a redacted backup file would not open at all. That assertion is the
+  database half of `apps/web/app/cloud/platformBackupRoundTrip.test.ts`.
+- **It is not the hosted configuration.** `local_shim.sql` reproduces the policy
+  surface, not GoTrue, not Supabase's internal roles. A green run proves the
+  policy logic.
