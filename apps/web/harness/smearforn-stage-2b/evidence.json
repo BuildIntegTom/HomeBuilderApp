@@ -1,0 +1,160 @@
+{
+  "app": "http://localhost:3241/",
+  "ranAt": "2026-09-26T17:08:45.288Z",
+  "steps": [
+    {
+      "name": "baseline-3d-found-real-walls-and-slots",
+      "wallIds": [
+        "AB",
+        "BC",
+        "CD",
+        "DA"
+      ],
+      "targetWallId": "AB",
+      "targetAxis": 0,
+      "slotCount": 15,
+      "slotWidthsIn": [
+        40,
+        40,
+        40,
+        40,
+        40,
+        40,
+        40,
+        40,
+        40,
+        40,
+        37.125,
+        37,
+        34.125,
+        0.75,
+        40
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "elevation-before-header",
+      "panelCount": 15,
+      "totalEighths": 4392,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-app-under-test-actually-has-stage-2b-in-it",
+      "addButtonPresent": true,
+      "url": "http://localhost:3241/",
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "header-spans-exactly-the-panels-beneath-it-and-adds-no-width",
+      "addNotice": "Placed H1: North wall — spans N1, N2, spanning 80\". Its name carries no direction — every header in the building is numbered in one H series, so H1 may be on one wall and H2 on another.",
+      "headerName": "H1",
+      "startSlotIndex": 2,
+      "endSlotIndex": 4,
+      "spanText": "80\"",
+      "spanIn": 80,
+      "expectedSpanIn": 80,
+      "totalEighthsBefore": 4392,
+      "totalEighthsAfter": 4392,
+      "drawnOnTheElevation": true,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-name-carries-no-direction-at-all",
+      "headerName": "H1",
+      "location": "North wall — spans N3, N4",
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "one-building-wide-H-series-across-two-walls",
+      "firstWall": "AB",
+      "secondWall": "BC",
+      "firstName": "H1",
+      "secondName": "H2",
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "a-one-panel-span-is-refused-and-changes-nothing",
+      "notice": "Refused: a spanning header has to sit on at least two panels. A header above ONE panel is already a panel of its own — set that panel's type instead. Nothing was changed.",
+      "startSlotIndex": 2,
+      "endSlotIndex": 4,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "a-span-past-12ft-is-refused-rather-than-the-range-widened",
+      "attemptedEnd": 6,
+      "attemptedSpanIn": 160,
+      "notice": "Refused: those panels span 160\", and a header is built between 48\" and 144\" — a range Building Integrity has not confirmed yet, so it is not widened to fit a drawing. Nothing was changed.",
+      "endSlotIndex": 4,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "deleting-a-panel-left-of-the-header-moves-its-range-not-its-span",
+      "deleteNotice": "Deleted a panel on wall AB: 15 panels → 14, 12 still automatic. Spanning header H1 still spans its panels, but those panels are now a different width: it is cut 85¾\" instead of 80\".",
+      "startBefore": 2,
+      "startAfter": 1,
+      "endBefore": 4,
+      "endAfter": 3,
+      "spanBeforeIn": 80,
+      "spanAfterIn": 85.75,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "a-stop-that-would-re-cut-a-header-is-refused-by-name",
+      "message": "Refused: stopping this wall there would take panels out from under spanning header H1. A header's own width is the panels it spans, so shortening the wall would silently re-cut it. Remove the header first, or stop the wall somewhere else. Nothing was changed. (Esc to revert)",
+      "value": "60",
+      "totalEighthsBefore": 4392,
+      "totalEighthsAfter": 4392,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "3d-draws-the-header-over-exactly-the-panels-it-spans",
+      "headerGroups": 18,
+      "headerExtent": {
+        "lengthIn": 85.75,
+        "vertices": 144
+      },
+      "coveredRunLengthIn": 85.75,
+      "alignmentIn": 0,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-panels-beneath-stop-where-the-header-starts",
+      "coveredSlot": 1,
+      "coveredTopFt": 96,
+      "neighbourSlot": 3,
+      "neighbourTopFt": 120,
+      "headerBottomFt": 96,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "both-halves-of-the-cross-reference-are-on-paper",
+      "headerSheetStatesItsWall": true,
+      "panelSheetNamesTheHeader": true,
+      "headerSheetSample": "Building IntegrityActing asNot signed inSign in ▼Project ▼WallRole: Fabricator ▼▲3D Framed▼⤢▲Wall▼OrbitEditSill & Header?NESWExport as OBJPanel Fabrication: Spanning Header 85.8in (1)🖶⤢×Fabricator/detailer document — one sheet per unique spanning header (exact copies grouped together). Its name comes from a single bui",
+      "panelSheetSample": "Building IntegrityActing asNot signed inSign in ▼Project ▼WallRole: Fabricator ▼▲3D Framed▼⤢▲Wall▼OrbitEditSill & Header?NESWExport as OBJPanel Fabrication: Standard 42.875in (2)🖶⤢×Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with a to-scale lettered elevation, a materials",
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "no-uncaught-exception-in-the-page",
+      "pageExceptions": 0,
+      "first": null,
+      "asserted": true,
+      "passed": true
+    }
+  ],
+  "pageExceptions": [],
+  "failures": []
+}

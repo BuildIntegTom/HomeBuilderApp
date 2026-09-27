@@ -4,6 +4,7 @@ import type { BoxBeamCoverage, Footprint, PanelSlot, WallRunStop } from "@buildi
 import type { BoxBeamSizeId, BracingStyle, JackStudConfig, StudConfig } from "@building-integrity/panel-catalog";
 import Building3DView from "./Building3DView";
 import type { MidWallBeam } from "./midWallBeam";
+import type { SpanningHeader } from "./spanningHeader";
 
 export interface BuildingSummaryRenderProps {
   footprint: Footprint | null;
@@ -42,6 +43,13 @@ export interface BuildingSummaryRenderProps {
   boxBeamSizeId?: BoxBeamSizeId;
   midWallBeamsByWallId?: Record<string, MidWallBeam[]>;
   secondStoryMidWallBeamsByWallId?: Record<string, MidWallBeam[]>;
+  /** Smearforn Stage 2b — threaded straight through to Building3DView, so
+   * the Project Summary's static render shows the same shortened panels and
+   * the same drawn headers the live view does. A summary image that
+   * disagreed with the model would be the quietest kind of wrong. */
+  spanningHeadersByWallId?: Record<string, SpanningHeader[]>;
+  secondStorySpanningHeadersByWallId?: Record<string, SpanningHeader[]>;
+  spanningHeaderNameById?: Map<string, string>;
   onCapture: (dataUrl: string) => void;
 }
 

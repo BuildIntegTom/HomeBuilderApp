@@ -48,6 +48,7 @@ import {
   resolveMidWallBeamAssemblyHeightIn,
   type MidWallBeam,
 } from "./midWallBeam";
+import { resolveSpanningHeaderHeightIn, spanningHeadersToGeometry, wallBandGeometry, type SpanningHeader } from "./spanningHeader";
 
 const CANVAS_WIDTH = 720;
 const PX_PER_IN = 1.6;
@@ -341,6 +342,19 @@ export interface WallElevationDiagramProps {
    * and own size/kind. */
   midWallBeams: MidWallBeam[];
   secondStoryMidWallBeams: MidWallBeam[];
+  /** This wall's own spanning ("triple") headers, per story — Smearforn
+   * Stage 2b. Drawn as a real header band across the panels it spans, and
+   * fed into the SAME band computation the beams go through, so the panels
+   * beneath it are shortened here exactly as they are in the named-instance
+   * list and in 3D. Empty means this row renders exactly as it did before
+   * the feature existed. */
+  spanningHeaders: SpanningHeader[];
+  secondStorySpanningHeaders: SpanningHeader[];
+  /** Each header's own building-wide name (`H1`), by header id. Resolved by
+   * page.tsx through the single global walk, and passed in rather than
+   * re-derived here — two independent numberings of one series is how the
+   * drawing and the sheet come to disagree. */
+  spanningHeaderNameById: Map<string, string>;
   onChangeMidWallBeamHeight: (story: "ground" | "second", beamId: string, heightIn: number) => void;
   /** Big-header-beam-only — this beam's own real assembly height, directly
    * user-adjustable via its own draggable top edge, unlike a box beam's
@@ -470,6 +484,9 @@ export default function WallElevationDiagram({
   boxBeamSizeId,
   midWallBeams,
   secondStoryMidWallBeams,
+  spanningHeaders,
+  secondStorySpanningHeaders,
+  spanningHeaderNameById,
   onChangeMidWallBeamHeight,
   onChangeMidWallBeamBigHeaderHeightIn,
   onChangeMidWallBeamCoverage,
@@ -610,15 +627,22 @@ export default function WallElevationDiagram({
     rowSlots: PanelSlot[],
     storyHeightIn: number,
     beams: MidWallBeam[],
+    // Stage 2b: a spanning header splits a column exactly as a beam does, so
+    // it goes into the SAME list. Passing only the beams here would draw the
+    // panels beneath a header at full height while the named-instance list
+    // and the 3D view had already shortened them.
+    headers: SpanningHeader[],
   ): { bands: WallVerticalBand[]; zones: PanelSlotZone[] }[] => {
-    const geom = beams.length > 0 ? midWallBeamsToGeometry(beams) : [];
+    const geom = wallBandGeometry(beams.length > 0 ? midWallBeamsToGeometry(beams) : [], spanningHeadersToGeometry(headers));
     return rowSlots.map((slot, i) => {
       const bands = computeWallVerticalBandsForSlotWithMaxHeight(i, storyHeightIn, geom, maxPanelHeightIn, panelHeightInRange.minIn);
       return { bands, zones: effectiveZonesForSlot(slot, bands.length) };
     });
   };
-  const groundBandsAndZones = bandsAndZonesPerSlot(slots, eaveHeightIn, midWallBeams);
-  const secondBandsAndZones = secondStorySlots ? bandsAndZonesPerSlot(secondStorySlots, secondStoryHeightIn, secondStoryMidWallBeams) : [];
+  const groundBandsAndZones = bandsAndZonesPerSlot(slots, eaveHeightIn, midWallBeams, spanningHeaders);
+  const secondBandsAndZones = secondStorySlots
+    ? bandsAndZonesPerSlot(secondStorySlots, secondStoryHeightIn, secondStoryMidWallBeams, secondStorySpanningHeaders)
+    : [];
 
   const groundInstancesBySlot = groupInstancesBySlot(allInstances);
   const secondStoryInstancesBySlot = groupInstancesBySlot(secondStoryAllInstances);
@@ -1476,6 +1500,67 @@ export default function WallElevationDiagram({
     );
   };
 
+  /**
+   * Spanning ("triple") headers — Smearforn Stage 2b.
+   *
+   * A real header panel drawn across the panels it spans, in the Big Header
+   * panel colour (it IS a header panel, not a beam), labelled with its own
+   * building-wide name. The band beneath it has already been shortened by
+   * `bandsAndZonesPerSlot`, so this draws into space the row left for it
+   * rather than over the top of a panel.
+   *
+   * `storyFloorIn` is this story's own floor in the diagram's absolute
+   * coordinates (0 for the ground row, the eave height for the second), the
+   * same convention the Mid-Wall Bond Beam blocks use.
+   */
+  const renderSpanningHeaders = (headers: SpanningHeader[], offsetsIn: number[], storyFloorIn: number, runWidthIn: number) => {
+    if (headers.length === 0) return null;
+    return (
+      <>
+        {headers.map((header) => {
+          const assemblyHeightIn = resolveSpanningHeaderHeightIn(header);
+          const startXIn = offsetsIn[header.startSlotIndex] ?? startOffsetIn;
+          const endXIn = offsetsIn[header.endSlotIndex] ?? startOffsetIn + runWidthIn;
+          const bottomIn = storyFloorIn + header.heightIn;
+          const spanIn = Math.max(0, endXIn - startXIn);
+          // Its own real name, looked up by id. Never derived here: one
+          // series, one walk, in page.tsx.
+          const name = spanningHeaderNameById.get(header.id) ?? "H?";
+          return (
+            <g key={header.id}>
+              <rect
+                x={xPx(startXIn)}
+                y={yPx(bottomIn + assemblyHeightIn)}
+                width={spanIn * scaleX}
+                height={assemblyHeightIn * PX_PER_IN}
+                fill={SLOT_COLORS["big-header"]}
+                fillOpacity={0.85}
+                stroke="#8c2f5c"
+                strokeWidth={1.25}
+              />
+              <text
+                x={xPx(startXIn + spanIn / 2)}
+                y={yPx(bottomIn + assemblyHeightIn / 2) + 3}
+                fontSize={10}
+                fontWeight={700}
+                textAnchor="middle"
+                fill="#fff"
+              >
+                {name}
+              </text>
+              {/* The span, dimensioned on the drawing — it is this header's
+                  own fabricated width, and it is derived from the panels
+                  underneath rather than typed, so it is worth showing. */}
+              <text x={xPx(startXIn + spanIn / 2)} y={yPx(bottomIn + assemblyHeightIn) - 3} fontSize={9} textAnchor="middle" fill="#8c2f5c">
+                {formatFeetInches(spanIn / 12)}
+              </text>
+            </g>
+          );
+        })}
+      </>
+    );
+  };
+
   // Same compact icon buttons FootprintCanvas's own Pan/Zoom/Reset row
   // uses, byte-identical styling/labels so the control feels like the same
   // piece of UI everywhere it appears.
@@ -1656,6 +1741,16 @@ export default function WallElevationDiagram({
           );
         })}
 
+        {/* Spanning ("triple") headers, ground floor — Smearforn Stage 2b.
+            One real header panel per record, drawn across the panels it
+            spans at its own height, labelled with its building-wide name
+            (`H1` — no direction letter, by decision). Deliberately NOT
+            drag-handled: its coverage and heights are typed in the left bar,
+            because a header's span is a set of whole panels rather than a
+            free position, and the numbers it is built from are the ones a
+            shop sheet quotes. */}
+        {renderSpanningHeaders(spanningHeaders, groundOffsetsIn, 0, groundRunWidthIn)}
+
         {/* Second-story row + its own top-plate line(s) (Tommy: "each
             story's row for a given wall is independently clickable/
             editable") — only rendered once a second story exists. One
@@ -1806,6 +1901,10 @@ export default function WallElevationDiagram({
                   </g>
                 );
               })}
+
+            {/* Spanning headers, second story — same block as the ground
+                floor's, offset by the eave height (absolute). */}
+            {renderSpanningHeaders(secondStorySpanningHeaders, secondStoryOffsetsIn, eaveHeightIn, secondStoryRunWidthIn)}
           </>
         )}
 

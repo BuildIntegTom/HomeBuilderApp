@@ -28,6 +28,7 @@ export * from "./gableTiledRow";
 export * from "./roofBearingSegments";
 export * from "./panelSlotZones";
 export * from "./wallVerticalBands";
+export * from "./spanningHeader";
 export * from "./uniformPanelization";
 export * from "./perimeterRing";
 export * from "./ridgeLine";

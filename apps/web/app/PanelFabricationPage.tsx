@@ -9,6 +9,15 @@ import styles from "./PanelFabricationPage.module.css";
 export interface PanelFabricationInstanceRef {
   name: string;
   isSafetyOctCorner?: boolean;
+  /** Where this instance goes, in words, when its own name does not say.
+   *
+   * Written for Smearforn Stage 2b's spanning headers, whose names come from
+   * a single building-wide series carrying **no direction at all** (`H1`, not
+   * `EH1`) — so `H1` alone tells a shop nothing about where the panel
+   * belongs, and the sheet has to. Carries the reciprocal on a spanned
+   * panel's own sheet too ("Header above: H1"), because a shop reading one
+   * sheet cannot see the other. */
+  note?: string;
 }
 
 export interface PanelFabricationPageProps {
@@ -105,6 +114,21 @@ export default function PanelFabricationPage({
             </span>
           ))}
         </p>
+        {/* One line per instance that carries a note — a spanning header's
+            own wall and span in words, or a spanned panel's header above it.
+            Printed, because it is the only place on a stack of one-dimensional
+            sheets where a two-dimensional relationship survives. */}
+        {instances.some((inst) => inst.note) && (
+          <ul className={styles.note}>
+            {instances
+              .filter((inst) => inst.note)
+              .map((inst) => (
+                <li key={`note-${inst.name}`}>
+                  <strong>{inst.name}</strong>: {inst.note}
+                </li>
+              ))}
+          </ul>
+        )}
       </div>
 
       <div>

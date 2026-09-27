@@ -36,6 +36,7 @@ import type {
 } from "@building-integrity/panel-catalog";
 import type { ViewerRole } from "./viewerRole";
 import type { MidWallBeam } from "./midWallBeam";
+import type { SpanningHeader } from "./spanningHeader";
 import type { WallReviewNote } from "./wallReviewNotes";
 // Stage 4B, for `parseRedactedProjectFile` only. `redaction.ts` imports
 // `ProjectState` back from here with `import type`, which is erased, so this is
@@ -249,6 +250,22 @@ export interface ProjectState {
    * which is inherently second-story-only) since a bond beam can exist on
    * either story. */
   midWallBeamsByStoryAndWallId: Record<"ground" | "second", Record<string, MidWallBeam[]>>;
+  /** Smearforn Stage 2b's spanning ("triple") headers — one header panel
+   * over a slot-index RANGE, structurally the same record a Mid-Wall Bond
+   * Beam carries (Tommy, 2026-09-24, on the model: "Yes, that's what it
+   * is"). See `SpanningHeader`.
+   *
+   * **Optional, and therefore NOT a `PROJECT_FILE_VERSION` bump.** It is an
+   * additive key with ONE shared default — absent (every file ever saved)
+   * means no spanning headers, which is byte-identical to today's behaviour
+   * — and this file's own v24->v25 note states that such a key needs no bump
+   * (`wallReviewNotes`, `gableWindowAnchorsByWallId` and `maxPanelHeightIn`
+   * were all added without one). Stage 0 deliberately did NOT pre-land this
+   * key, because inventing the stored shape of an unconfirmed model is the
+   * thing that log exists to prevent; the model is confirmed now, so the key
+   * lands with the feature. It still needs a classification in
+   * `cloud/redaction.ts`, which it has (`not-money`). */
+  spanningHeadersByStoryAndWallId?: Record<"ground" | "second", Record<string, SpanningHeader[]>>;
   roofCatcherBeamOffsetIn: number;
   roofCatcherBeamShape: RoofCatcherBeamShape;
   /** Octagon roof-catcher ring's outside diameter (ft) — only shown/used
@@ -679,6 +696,29 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
       // before Stage 3 lands) means no wall stops short, which is exactly
       // today's behaviour.
       wallRunStopsByWallId: (state.wallRunStopsByWallId as Record<string, WallRunStop> | undefined) ?? {},
+      // Stage 2b's key. Absent — every file saved before this feature, at
+      // v25 or at v24 — means no spanning headers, which is byte-identical
+      // to today's behaviour, so this is an additive optional key and NOT a
+      // version bump.
+      //
+      // **Absent stays ABSENT**, rather than being defaulted to an empty
+      // record here: a load of a file without the key must produce the state
+      // that file describes, or a round trip stops being an identity (a test
+      // says exactly that). Where it IS present, both halves are normalized,
+      // so a file carrying only `ground` can never hand a consumer an
+      // undefined `second`.
+      ...(state.spanningHeadersByStoryAndWallId
+        ? {
+            spanningHeadersByStoryAndWallId: {
+              ground:
+                (state.spanningHeadersByStoryAndWallId as Partial<Record<"ground" | "second", Record<string, SpanningHeader[]>>>).ground ??
+                {},
+              second:
+                (state.spanningHeadersByStoryAndWallId as Partial<Record<"ground" | "second", Record<string, SpanningHeader[]>>>).second ??
+                {},
+            },
+          }
+        : {}),
       // Both accepted versions (v23 and v24) already carry each beam's own
       // `kind` — v23->v24 changes no beam field at all — so there is no
       // per-version branch here any more. remapLegacyBigHeaderBeamKind still

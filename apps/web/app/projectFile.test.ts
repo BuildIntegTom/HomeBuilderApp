@@ -128,6 +128,56 @@ describe("serializeProject / parseProjectFile round-trip", () => {
     expect(result.state).toEqual(state);
   });
 
+  /**
+   * Smearforn Stage 2b's key, which is deliberately NOT a version bump.
+   *
+   * The whole argument for that rests on two properties: a file WITHOUT the
+   * key loads to a state without it (so every file ever saved round-trips
+   * byte-identically, and `PROJECT_FILE_VERSION` — and its hand-pasted
+   * Supabase redaction migration — does not have to move), and a file WITH
+   * it keeps every field of every header. Both are asserted rather than
+   * argued.
+   */
+  describe("spanningHeadersByStoryAndWallId (Stage 2b)", () => {
+    it("is absent after a round trip when the file never had it", () => {
+      const state = makeState();
+      expect(state.spanningHeadersByStoryAndWallId).toBeUndefined();
+      const result = parseProjectFile(JSON.stringify(serializeProject(state)));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect("spanningHeadersByStoryAndWallId" in result.state).toBe(false);
+      expect(result.state).toEqual(state);
+    });
+
+    it("round-trips a header's slot range and both heights exactly", () => {
+      const state = makeState({
+        spanningHeadersByStoryAndWallId: {
+          ground: { AB: [{ id: "h-1", heightIn: 96, headerHeightIn: 24, startSlotIndex: 1, endSlotIndex: 3 }] },
+          second: {},
+        },
+      });
+      const result = parseProjectFile(JSON.stringify(serializeProject(state)));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.spanningHeadersByStoryAndWallId).toEqual({
+        ground: { AB: [{ id: "h-1", heightIn: 96, headerHeightIn: 24, startSlotIndex: 1, endSlotIndex: 3 }] },
+        second: {},
+      });
+    });
+
+    it("normalizes a half-written record rather than handing a consumer an undefined story", () => {
+      const file = serializeProject(makeState());
+      const halfWritten = {
+        ...file,
+        state: { ...file.state, spanningHeadersByStoryAndWallId: { ground: { AB: [] } } },
+      };
+      const result = parseProjectFile(JSON.stringify(halfWritten));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.spanningHeadersByStoryAndWallId).toEqual({ ground: { AB: [] }, second: {} });
+    });
+  });
+
   it("round-trips a null footprint (nothing drawn yet)", () => {
     const state = makeState({ footprint: null, primaryCornerIds: new Set() });
     const result = parseProjectFile(JSON.stringify(serializeProject(state)));
