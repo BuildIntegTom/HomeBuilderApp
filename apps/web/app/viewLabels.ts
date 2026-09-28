@@ -1,3 +1,5 @@
+import type { Footprint } from "@building-integrity/geometry";
+
 import { EDITOR_TAB_LABEL, type EditorTab } from "./editorTabs";
 import type { ViewerStop } from "./ViewerDial";
 
@@ -34,6 +36,43 @@ export function viewerStopLabel(stop: ViewerStop): string {
   }
 }
 
+export interface ViewerDialLiveInput {
+  /** The active editor tab — the same `editorTab` state the nav and the tab
+   * dial render from. */
+  editorTab: EditorTab;
+  /** `page.tsx`'s one `footprint` state. Only its presence is read; no field
+   * of it is touched, so a wall-less or a many-walled footprint answers the
+   * same. */
+  footprint: Footprint | null | undefined;
+}
+
+/**
+ * Whether the view dial is actually driving the canvas — i.e. whether there
+ * is a view for anything to NAME.
+ *
+ * **One name for a condition that was written twice, in opposite polarities,
+ * ~900 lines apart:** `ViewerDial`'s own `disabled={editorTab !== "wall" || !footprint}`
+ * and the bug note's `viewerActive: editorTab === "wall" && Boolean(footprint)`.
+ * They were exact complements, and both were covered, so this is not a bug
+ * fix — it is a seam closed before **U1 needs the same answer a third and a
+ * fourth time**, once for each of the Design and View menus. The plan's own
+ * recommendation for those menus is that they *"mirror today's behaviour
+ * exactly, with the reason in their `title`"*, which is a far easier promise
+ * to keep against one named predicate than against two hand-written
+ * expressions that have to stay De Morgan duals of each other.
+ *
+ * **The polarity here is the POSITIVE one** (`live`, not `disabled`) because
+ * that is the question every reader actually asks; the dial's `disabled` prop
+ * negates it at the one site that wants the other sense.
+ *
+ * Input is a plain object rather than component props on purpose — the same
+ * reason `CurrentViewLabelInput` is one — so U1's two-menu form can call it
+ * unchanged from a different component.
+ */
+export function isViewerDialLive({ editorTab, footprint }: ViewerDialLiveInput): boolean {
+  return editorTab === "wall" && Boolean(footprint);
+}
+
 export interface CurrentViewLabelInput {
   /** The active editor tab — the same `editorTab` state the nav and the tab
    * dial render from. */
@@ -42,8 +81,9 @@ export interface CurrentViewLabelInput {
    * `currentViewerStop`). */
   viewerStop: ViewerStop;
   /**
-   * Whether the view dial is live — `editorTab === "wall" && footprint`,
-   * exactly the condition that drives `ViewerDial`'s own `disabled` prop.
+   * Whether the view dial is live. **Supply it from `isViewerDialLive` above**
+   * — that is the one definition of this condition, and it is the same one
+   * `ViewerDial`'s `disabled` prop negates.
    *
    * When it is false the dial is disabled and the stop it would report is
    * not what is on screen (the Roof tab shows roof tools, not `3D Boxes`),
@@ -63,6 +103,12 @@ export interface CurrentViewLabelInput {
  * reporter was (spec, "the page context must be honest, and it is not
  * telemetry"). **Nothing else goes in it**: no version string, no user
  * agent, no viewport figures, no project state.
+ *
+ * **For U4/U5:** §9a says this line must also name `Summary` and `Print`
+ * once those surfaces exist. When they do, **extend `CurrentViewLabelInput`**
+ * — do not add a parallel branch at the call site. The whole point of this
+ * function is that there is one place that decides what the current surface
+ * is called.
  */
 export function currentViewLabel({ editorTab, viewerStop, viewerActive }: CurrentViewLabelInput): string {
   const tab = EDITOR_TAB_LABEL[editorTab];

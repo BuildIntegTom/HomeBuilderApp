@@ -1,5 +1,7 @@
+import { buildRectangleFootprint } from "@building-integrity/geometry";
 import { describe, expect, it } from "vitest";
-import { currentViewLabel, viewerStopLabel } from "./viewLabels";
+import { EDITOR_TAB_ORDER } from "./editorTabs";
+import { currentViewLabel, isViewerDialLive, viewerStopLabel } from "./viewLabels";
 
 describe("viewerStopLabel", () => {
   it("labels the plan stop the way the dial always has", () => {
@@ -20,6 +22,50 @@ describe("viewerStopLabel", () => {
   it("labels the two other 3D stops", () => {
     expect(viewerStopLabel({ kind: "3d-framed" })).toBe("3D Framed");
     expect(viewerStopLabel({ kind: "3d-boxes" })).toBe("3D Boxes");
+  });
+});
+
+describe("isViewerDialLive", () => {
+  const footprint = buildRectangleFootprint(24, 16);
+
+  it("is live only on the Wall tab, and only once a footprint exists", () => {
+    expect(isViewerDialLive({ editorTab: "wall", footprint })).toBe(true);
+    expect(isViewerDialLive({ editorTab: "wall", footprint: null })).toBe(false);
+    expect(isViewerDialLive({ editorTab: "roof", footprint })).toBe(false);
+    expect(isViewerDialLive({ editorTab: "roof", footprint: null })).toBe(false);
+  });
+
+  it("treats an absent footprint the same however it is absent", () => {
+    expect(isViewerDialLive({ editorTab: "wall", footprint: undefined })).toBe(false);
+  });
+
+  it("agrees with BOTH expressions it replaced, across the whole tab x footprint matrix", () => {
+    // The two sites read the same condition in opposite polarities, ~900
+    // lines apart in page.tsx:
+    //
+    //   ViewerDial:          disabled={editorTab !== "wall" || !footprint}
+    //   bug note's context:  viewerActive: editorTab === "wall" && Boolean(footprint)
+    //
+    // They were exact complements when this helper replaced them. This is
+    // the assertion that says so in every case rather than by De Morgan in
+    // a comment — and it is what will catch U1's two new menus drifting
+    // away from the dial, since all four call the helper.
+    const dialDisabledBefore = (editorTab: (typeof EDITOR_TAB_ORDER)[number], fp: object | null) =>
+      editorTab !== "wall" || !fp;
+    const viewerActiveBefore = (editorTab: (typeof EDITOR_TAB_ORDER)[number], fp: object | null) =>
+      editorTab === "wall" && Boolean(fp);
+
+    for (const editorTab of EDITOR_TAB_ORDER) {
+      for (const fp of [footprint, null]) {
+        const live = isViewerDialLive({ editorTab, footprint: fp });
+        expect(live).toBe(viewerActiveBefore(editorTab, fp));
+        expect(!live).toBe(dialDisabledBefore(editorTab, fp));
+      }
+    }
+  });
+
+  it("covers all four tabs, so a fifth tab cannot slip past the matrix above", () => {
+    expect(EDITOR_TAB_ORDER).toHaveLength(4);
   });
 });
 

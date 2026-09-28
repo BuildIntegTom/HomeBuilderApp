@@ -346,7 +346,7 @@ import {
 } from "./SidebarIconCluster";
 import ReadMeContent from "./read-me/ReadMeContent";
 import ReportBugContent from "./report-bug/ReportBugContent";
-import { currentViewLabel } from "./viewLabels";
+import { currentViewLabel, isViewerDialLive } from "./viewLabels";
 import { DocumentMetaProvider } from "./DocumentMetaContext";
 import { BrowseModeProvider } from "./BrowseModeContext";
 import { PRICE_GAP, PRICE_REDACTED_NOTE, VIEWER_OWN_DEFAULTS_NOTE } from "./cloud/browseDisplay";
@@ -9461,7 +9461,11 @@ export default function LayoutEditor() {
                 stops={viewerStops}
                 value={currentViewerStop}
                 onChange={handleViewerStopChange}
-                disabled={editorTab !== "wall" || !footprint}
+                // The one definition of "is the dial live", negated here
+                // because this prop asks the opposite question. It used to
+                // be written out longhand here and, in its complement form,
+                // ~900 lines below on the bug note's context line.
+                disabled={!isViewerDialLive({ editorTab, footprint })}
               />
               <button
                 type="button"
@@ -10391,7 +10395,7 @@ export default function LayoutEditor() {
             currentViewName={currentViewLabel({
               editorTab,
               viewerStop: currentViewerStop,
-              viewerActive: editorTab === "wall" && Boolean(footprint),
+              viewerActive: isViewerDialLive({ editorTab, footprint }),
             })}
             // OPENS it; never closes it. `handleToggleNote` stays the only
             // writer, but a link that shuts the thing it points at when that
