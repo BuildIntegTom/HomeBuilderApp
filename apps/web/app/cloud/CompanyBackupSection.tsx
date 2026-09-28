@@ -1,6 +1,7 @@
 "use client";
 
 import styles from "../auth/AccountControl.module.css";
+import { BACKUP_TAB_NOTICE, showsBackupResult } from "./backupResultDisplay";
 import type { CompanyBackupController } from "./useCompanyBackup";
 
 /**
@@ -24,7 +25,10 @@ export default function CompanyBackupSection({
   companyName: string;
 }) {
   const { state } = backup;
-  const here = state.status !== "idle" && state.companyId === companyId;
+  // NOT `state.companyId === companyId`: a run the acting-as switch aborted
+  // belongs to the company that was left, so an equality gate hid the one
+  // message written for it. See `showsBackupResult`.
+  const here = showsBackupResult(state, companyId);
   const running = state.status === "running";
 
   return (
@@ -33,8 +37,7 @@ export default function CompanyBackupSection({
       <p className={styles.notice}>
         Every version of every project {companyName} owns, and of every project another company has
         shared with {companyName}, as one .zip: a manifest.json plus one project file per version,
-        which Load Project opens. Shared ones are under shared/ in the zip. It is built in this
-        browser, so keep this tab open until it finishes. Closing this panel does not stop it.
+        which Load Project opens. Shared ones are under shared/ in the zip. {BACKUP_TAB_NOTICE}
       </p>
 
       {running ? (

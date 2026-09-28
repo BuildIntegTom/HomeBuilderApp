@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PROJECT_FILE_VERSION } from "../projectFile";
+import { backupSwitchedAwayMessage } from "./backupResultDisplay";
 import type { BackupPageResponse } from "./cloudTypes";
 import type { BackupPageResult, BackupProgress } from "./companyBackup";
 import { runCompanyBackup } from "./companyBackupRun";
@@ -15,6 +16,10 @@ import { runCompanyBackup } from "./companyBackupRun";
  *
  * Switching the acting-as company while a backup runs stops it: the pages are
  * that company's, and the route would refuse the next one with a 409 anyway.
+ * That cancelled state is marked `switchedAway`, because the panel showing it is
+ * by then the NEW company's and `showsBackupResult` needs to let it through —
+ * without the mark the message was written and never rendered (Stage 2D defect,
+ * fixed 2026-09-27; see `backupResultDisplay.ts`).
  *
  * The zip writer (backupZip, and fflate with it) is NOT imported here: it is
  * loaded by `import()` when a backup starts (companyBackupRun.ts), because this
@@ -25,7 +30,14 @@ export type CompanyBackupState =
   | { status: "idle" }
   | { status: "running"; companyId: string; companyName: string; progress: BackupProgress | null }
   | { status: "done"; companyId: string; fileName: string; versionCount: number; projectCount: number; outsideWindowCount: number; zipBytes: number }
-  | { status: "failed" | "cancelled"; companyId: string; message: string };
+  | { status: "failed"; companyId: string; message: string }
+  /**
+   * `switchedAway` is true ONLY for a run the acting-as switch aborted, whose
+   * `companyId` is therefore the company that was left. It is what tells the
+   * panel to report a run that belongs to a company no longer on screen; the
+   * message names that company itself.
+   */
+  | { status: "cancelled"; companyId: string; message: string; switchedAway: boolean };
 
 export interface CompanyBackupController {
   state: CompanyBackupState;
@@ -64,12 +76,16 @@ export function useCompanyBackup(actingAsCompanyId: string | null): CompanyBacku
   const [state, setState] = useState<CompanyBackupState>({ status: "idle" });
   const controllerRef = useRef<AbortController | null>(null);
   const runningCompanyRef = useRef<string | null>(null);
+  // Kept beside the id so the abort-on-switch message can NAME the company the
+  // run was for: by the time it is read, the screen is showing another one.
+  const runningCompanyNameRef = useRef<string | null>(null);
 
   const start = useCallback((companyId: string, companyName: string) => {
     if (controllerRef.current) return;
     const controller = new AbortController();
     controllerRef.current = controller;
     runningCompanyRef.current = companyId;
+    runningCompanyNameRef.current = companyName;
     setState({ status: "running", companyId, companyName, progress: null });
 
     void (async () => {
@@ -85,17 +101,21 @@ export function useCompanyBackup(actingAsCompanyId: string | null): CompanyBacku
             if (!controller.signal.aborted) setState({ status: "running", companyId, companyName, progress });
           },
         });
-        if (outcome.status === "cancelled") {
-          // A cancel caused by switching company has already set its own message.
-          setState((was) => (was.status === "running" ? { status: "cancelled", companyId, message: outcome.message } : was));
+        if (outcome.status === "done") {
+          setState({ ...outcome, companyId });
         } else if (outcome.status === "failed") {
           setState({ status: "failed", companyId, message: outcome.message });
         } else {
-          setState({ ...outcome, companyId });
+          // A cancel caused by switching company has already set its own
+          // message, and its own `switchedAway: true` with it.
+          setState((was) =>
+            was.status === "running" ? { status: "cancelled", companyId, message: outcome.message, switchedAway: false } : was,
+          );
         }
       } finally {
         controllerRef.current = null;
         runningCompanyRef.current = null;
+        runningCompanyNameRef.current = null;
       }
     })();
   }, []);
@@ -106,11 +126,13 @@ export function useCompanyBackup(actingAsCompanyId: string | null): CompanyBacku
   useEffect(() => {
     const running = runningCompanyRef.current;
     if (running && running !== actingAsCompanyId) {
+      const runningName = runningCompanyNameRef.current;
       controllerRef.current?.abort();
       setState({
         status: "cancelled",
         companyId: running,
-        message: "Backup stopped because you switched company. No file was saved.",
+        message: backupSwitchedAwayMessage(runningName ?? "that company"),
+        switchedAway: true,
       });
     }
   }, [actingAsCompanyId]);
