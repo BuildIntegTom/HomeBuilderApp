@@ -60,6 +60,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeViewStopControl } from "../viewStopControl.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHOTS = path.join(HERE, "screenshots");
@@ -289,15 +290,29 @@ const openIcon = async (label) => {
   await sleep(500);
 };
 
-/** The view dial's own current label, read out of the dial rather than
- * inferred from the canvas (Stage 0/1's lesson: four views of one wall once
- * counted as four walls). */
-const dialLabel = async () =>
-  await evaluate(`(() => {
-    const dial = document.querySelector('[role="group"][aria-label="View mode"]');
-    if (!dial) return null;
-    return [...dial.querySelectorAll('div')].map((d) => d.textContent.trim()).find((t) => t && t !== '▲' && t !== '▼') ?? null;
-  })()`);
+/**
+ * The current view's own label, read out of the CONTROL rather than inferred
+ * from the canvas (Stage 0/1's lesson: four views of one wall once counted as
+ * four walls).
+ *
+ * ⚠ U1 (2026-09-28) made the sidebar dial the BELOW-1200px form of the view
+ * control and put Design and View menus on the top bar at 1200 and up. **This
+ * harness drives the editor at 1280 and 1400**, so from U1 onward there is no
+ * dial on screen for most of this run: the old locator returned null, which
+ * would have failed `footprint-drawn` and every context-line assertion while
+ * looking exactly like U0 having broken. It had not — the control moved,
+ * precisely as U1's plan said it would, and this file is one of the sets of
+ * locators that plan lists as in-scope for U1 rather than as a follow-up.
+ *
+ * Nothing this harness ASSERTS has changed. The shared driver next door asks
+ * the page which form is live, so each step below still checks the same thing
+ * through whichever control the width in force actually shows — including the
+ * context line's `Wall — 2D Floor Plan` / `Wall — Membranes` strings, which
+ * U1 deliberately did not rename (the `2D Floor Plan` → `Plan View` rename is
+ * an open question for Tommy, not a coder's call).
+ */
+const view = makeViewStopControl({ evaluate, sleep });
+const dialLabel = async () => await view.currentLabel();
 
 /**
  * One step down the dial, VERIFIED.
@@ -307,24 +322,18 @@ const dialLabel = async () =>
  * the dial at its top), so the dial's rect was above the sidebar's visible box
  * and every click landed on the top bar instead. The dial label never changed
  * and the run reported "Membranes unreachable" — a locator problem wearing a
- * feature problem's clothes, which is this repo's own recorded lesson. So:
- * scroll the dial into view, click, and assert the label moved.
+ * feature problem's clothes, which is this repo's own recorded lesson.
+ *
+ * Both halves of the fix now live in the shared driver — it scrolls the
+ * target into view and dispatches on the element rather than at a remembered
+ * coordinate — and the assertion that the label MOVED stays here, because it
+ * is this helper's whole reason for existing. It also now holds at 1280/1400,
+ * where U1 sheds the dial and the Design/View menus are the control.
  */
 const stepDialDown = async () => {
   const before = await dialLabel();
-  const b = await evaluate(`(() => {
-    const dial = document.querySelector('[role="group"][aria-label="View mode"]');
-    if (!dial) return null;
-    dial.scrollIntoView({ block: 'nearest' });
-    const btn = [...dial.querySelectorAll('button')].find((x) => x.textContent.trim() === '▼');
-    const r = btn.getBoundingClientRect();
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-  })()`);
-  if (!b) throw new Error("no view dial on screen");
-  await click(b.x, b.y);
-  await sleep(500);
-  const after = await dialLabel();
-  if (after === before) throw new Error(`the view dial did not move off "${before}" — the click at ${b.x},${b.y} missed`);
+  const after = await view.step();
+  if (after === before) throw new Error(`the view control did not move off "${before}" — the step missed`);
   return after;
 };
 

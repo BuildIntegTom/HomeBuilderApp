@@ -36,6 +36,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeViewStopControl } from "../viewStopControl.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHOTS = path.join(HERE, "screenshots");
@@ -260,19 +261,34 @@ await mouse("mouseReleased", x1, y1);
 await sleep(1500);
 
 console.log("3. opening a wall elevation");
-const dialDown = await evaluate(`(() => {
-  const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '▼');
-  if (!b) return null;
-  const r = b.getBoundingClientRect();
-  return [r.left + r.width / 2, r.top + r.height / 2];
-})()`);
+/**
+ * ⚠ THIS HARNESS LAUNCHES CHROME AT 1600px, WHICH IS WHY THIS CHANGED.
+ * U1 (2026-09-28) made the sidebar dial the below-1200px form of the view
+ * control and put Design and View menus on the top bar at 1200 and up. At
+ * 1600 there is no dial at all, so the old locator — "the button whose text
+ * is ▼" — would have matched nothing and `dialDown` would have been null:
+ * the run would have died on a null dereference, or worse, stepped nowhere
+ * six times and reported "could not reach a wall elevation" as if the
+ * elevation were the problem. The shared driver asks the page which form is
+ * live.
+ *
+ * The two questions are still kept apart, as the Stage 0/1 harness's note
+ * explains: the CONTROL says whether this is an elevation, and the drag-strip
+ * count says whether it is a wall THIS run can drag on.
+ */
+const view = makeViewStopControl({ evaluate, sleep });
 let elevationReady = false;
+const stopsTried = [];
 for (let i = 0; i < 6 && !elevationReady; i++) {
-  await click(dialDown[0], dialDown[1]);
+  stopsTried.push(await view.step());
   await sleep(800);
   elevationReady = (await dragStripCount()) > 0;
 }
-if (!elevationReady) throw new Error("could not reach a wall elevation");
+if (!elevationReady) {
+  throw new Error(
+    `could not reach a wall elevation with two adjacent draggable panels; the view control offered ${JSON.stringify(stopsTried)}`,
+  );
+}
 await shot("00-wall-elevation");
 
 const before = await panelWidths();

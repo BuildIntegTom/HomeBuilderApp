@@ -9432,6 +9432,18 @@ export default function LayoutEditor() {
           editorTab={editorTab}
           onEditorTabChange={setEditorTab}
           enabledTabs={enabledEditorTabs}
+          // U1's Design and View menus: the SAME three values the ViewerDial
+          // below is given, handed to the other presentation of the same
+          // control. `handleViewerStopChange` stays the only writer of
+          // viewMode / simplified3D / showWraps / elevationViewWallId — the
+          // bar calls it, it does not reach past it. `footprint` is passed
+          // rather than a ready-made "is it live" boolean so TopBar calls
+          // `isViewerDialLive` itself and cannot be handed a different answer
+          // than the dial gets.
+          viewerStops={viewerStops}
+          currentViewerStop={currentViewerStop}
+          onViewerStopChange={handleViewerStopChange}
+          footprint={footprint}
         />
       </div>
       <input
@@ -9457,16 +9469,28 @@ export default function LayoutEditor() {
                 the tab/view changed. Kept to just ViewerDial + fullscreen
                 now, so this row's height never varies. */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", width: "100%" }}>
-              <ViewerDial
-                stops={viewerStops}
-                value={currentViewerStop}
-                onChange={handleViewerStopChange}
-                // The one definition of "is the dial live", negated here
-                // because this prop asks the opposite question. It used to
-                // be written out longhand here and, in its complement form,
-                // ~900 lines below on the bug note's context line.
-                disabled={!isViewerDialLive({ editorTab, footprint })}
-              />
+              {/* U1: the dial is now the BELOW-1200px form of the top bar's
+                  Design and View menus. .viewerDialSlot is `display: contents`
+                  (so nothing about this row changes at narrow widths) and
+                  `display: none` at 1200px and up, on the same single query
+                  that shows the menus — see page.module.css, which also
+                  records why Region 1 is allowed to change height at a
+                  breakpoint and why the dial survives rather than being
+                  replaced (the scroll wheel and the rustle sound live only
+                  here). Same stops, same value, same onChange as the menus. */}
+              <div className={styles.viewerDialSlot}>
+                <ViewerDial
+                  stops={viewerStops}
+                  value={currentViewerStop}
+                  onChange={handleViewerStopChange}
+                  // The one definition of "is the dial live", negated here
+                  // because this prop asks the opposite question. It used to
+                  // be written out longhand here and, in its complement form,
+                  // ~900 lines below on the bug note's context line. TopBar
+                  // calls the same predicate for the two menus.
+                  disabled={!isViewerDialLive({ editorTab, footprint })}
+                />
+              </div>
               <button
                 type="button"
                 title={isOsFullscreen ? "Exit fullscreen" : "Enter fullscreen editor"}

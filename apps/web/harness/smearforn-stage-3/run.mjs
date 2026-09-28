@@ -65,6 +65,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeViewStopControl } from "../viewStopControl.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHOTS = path.join(HERE, "screenshots");
@@ -429,39 +430,26 @@ record(
 await closeOpenNotes();
 
 console.log("4. baseline 3D scene");
-// Reach a 3D stop on the viewer dial by stepping and reading the label back.
-const dialLabel = async () => await evaluate(`(() => { const g = document.querySelector('[aria-label="View mode"]'); return g ? g.querySelector('div').textContent.trim() : null; })()`);
-const dialStep = async (glyph) => {
-  // Scrolled into view FIRST: after a panel drag the page can sit low enough
-  // that the dial is off screen, and a click at an off-screen coordinate
-  // hits nothing and fails silently — which looked exactly like "the dial
-  // has no 2D Floor Plan stop".
-  const b = await evaluate(`(() => {
-    const g = document.querySelector('[aria-label="View mode"]');
-    if (!g) return null;
-    g.scrollIntoView({ block: 'center' });
-    const btn = [...g.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(glyph)});
-    if (!btn) return null;
-    const r = btn.getBoundingClientRect();
-    if (r.width === 0 || r.top < 0 || r.left < 0) return null;
-    return [r.left + r.width / 2, r.top + r.height / 2];
-  })()`);
-  if (!b) throw new Error("the viewer dial is not on screen");
-  await click(b[0], b[1]);
-  await sleep(900);
-};
-const reachView = async (predicate, what) => {
-  const seen = [];
-  for (let i = 0; i < 14; i++) {
-    const label = await dialLabel();
-    seen.push(label);
-    if (label && predicate(label)) return label;
-    await dialStep("▼");
-  }
-  // Name what it actually walked past — a bare "could not reach X" sends the
-  // next person looking at the wrong thing.
-  throw new Error(`could not reach ${what} on the viewer dial; saw: ${JSON.stringify(seen)}`);
-};
+/**
+ * Reach a stop by stepping and reading the label back.
+ *
+ * ⚠ U1 (2026-09-28) split this control in two: the sidebar dial below 1200px,
+ * Design and View menus on the top bar at 1200 and up. This harness does not
+ * set a viewport width, so it can run on either side of that line, and the
+ * old locator (`[aria-label="View mode"]`) would have found nothing at
+ * desktop width and thrown "the viewer dial is not on screen" — true, and
+ * completely misleading. The shared driver asks the page which form is live.
+ *
+ * Both of this step's own scars are kept, and both now live in that driver:
+ * it scrolls the target into view before clicking (after a panel drag the
+ * page can sit low enough that the control is off screen, and a click at an
+ * off-screen coordinate hits nothing and fails silently — which read exactly
+ * like "the dial has no 2D Floor Plan stop"), and it names what it actually
+ * walked past, because a bare "could not reach X" sends the next person
+ * looking at the wrong thing.
+ */
+const view = makeViewStopControl({ evaluate, sleep });
+const reachView = async (predicate, what) => await view.reach(predicate, what);
 
 await reachView((l) => l === "3D Framed", "3D Framed");
 await sleep(2500);

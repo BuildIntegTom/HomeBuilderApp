@@ -1,6 +1,7 @@
 "use client";
 
 import { useRustleSound } from "./useRustleSound";
+import { viewerStopKey } from "./viewerMenus";
 import { viewerStopLabel } from "./viewLabels";
 import styles from "./ViewerDial.module.css";
 
@@ -11,14 +12,22 @@ export type ViewerStop =
   | { kind: "3d-boxes" }
   | { kind: "3d-wraps" };
 
-function stopKey(stop: ViewerStop): string {
-  return stop.kind === "elevation" ? `elevation-${stop.wallId}` : stop.kind;
-}
+/* Neither the stop LABELS nor the stop KEYS live here any more, and for the
+   same reason in both cases: this dial is no longer the only thing that
+   presents them.
 
-/* The stop labels themselves live in viewLabels.ts — one definition, so
-   anything else that has to NAME the current view (the Report Bug note's
-   context line, for one) reads the same strings instead of re-typing them.
-   This dial is still the only thing that RENDERS them as a control. */
+   - viewLabels.ts holds the labels, so anything that has to NAME the current
+     view (the Report Bug note's context line, for one) reads the same strings.
+   - viewerMenus.ts holds `viewerStopKey` — this file's own former private
+     `stopKey` — plus the Design/View split, because U1 puts the same stops on
+     the top bar at 1200px and up while this dial stays as the below-breakpoint
+     form. Two presentations that disagreed about which stop is "current" would
+     be a quiet, maddening bug; one key function makes it impossible.
+
+   This dial is still the only thing that renders them AS A DIAL, and it is
+   still the only home of the scroll-wheel cycling and useRustleSound. Those
+   two affordances exist nowhere else, which is exactly why the dial survives
+   below the breakpoint instead of being replaced. */
 
 export interface ViewerDialProps {
   stops: ViewerStop[];
@@ -47,7 +56,7 @@ export default function ViewerDial({ stops, value, onChange, disabled }: ViewerD
   const playRustle = useRustleSound();
   const index = Math.max(
     0,
-    stops.findIndex((s) => stopKey(s) === stopKey(value)),
+    stops.findIndex((s) => viewerStopKey(s) === viewerStopKey(value)),
   );
   const step = (delta: number) => {
     if (disabled || stops.length === 0) return;

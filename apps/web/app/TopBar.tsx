@@ -7,6 +7,16 @@ import StickyNote from "./StickyNote";
 import UnitSystemSwitch from "./UnitSystemSwitch";
 import AccountControl from "./auth/AccountControl";
 import { EDITOR_TAB_LABEL, editorTabsInScope, type EditorTab } from "./editorTabs";
+import { isViewerDialLive, viewerStopLabel } from "./viewLabels";
+import {
+  VIEWER_MENU_LABEL,
+  VIEWER_MENU_ORDER,
+  viewerMenuOwner,
+  viewerStopKey,
+  viewerStopsForMenu,
+} from "./viewerMenus";
+import type { ViewerStop } from "./ViewerDial";
+import type { Footprint } from "@building-integrity/geometry";
 import { clampMenuLeft, roleControlLabel, roleOptions, settingsMenuHasAdminGroup } from "./topBarMenus";
 import type { CloudMenuModel } from "./cloud/useCloudProjects";
 import { CLOUD_FOLDERS, FOLDER_LABEL, isCloudFolder } from "./cloud/cloudTypes";
@@ -32,9 +42,30 @@ export interface TopBarProps {
   onEditorTabChange: (tab: EditorTab) => void;
   /** Panelizer's keyhole, exactly as passed to EditorTabDial. */
   enabledTabs: EditorTab[];
+  /* ---- U1: the Design and View menus ------------------------------------
+     The bar form of the sidebar's ViewerDial, at 1200px and up. Three of
+     these four props are EXACTLY the three the dial already takes, passed
+     through unchanged, which is what makes "two presentations of one thing"
+     true rather than aspirational. */
+  /** The dial's whole cycle, in Tommy's order. Split into the two menus HERE
+   * rather than by the caller, so the bar and the dial cannot be handed two
+   * different lists. */
+  viewerStops: ViewerStop[];
+  /** page.tsx's `currentViewerStop` — the single reader of the four view
+   * flags. This component never reads those flags itself. */
+  currentViewerStop: ViewerStop;
+  /** page.tsx's `handleViewerStopChange`, and the ONLY writer of them. Both
+   * menus call this one function; see the note on the menus below. */
+  onViewerStopChange: (stop: ViewerStop) => void;
+  /** Only its presence is read, and only to answer `isViewerDialLive`. Passed
+   * as the footprint rather than as a ready-made boolean so that this
+   * component calls the one named predicate itself, instead of trusting a
+   * caller to have computed the same condition — which is the seam that
+   * predicate was added to close. */
+  footprint: Footprint | null;
 }
 
-type OpenMenu = "project" | "site" | "panelizer" | "role" | "settings" | null;
+type OpenMenu = "project" | "site" | "panelizer" | "role" | "settings" | "design" | "view" | null;
 
 /** Icon-only, so the button carries a real aria-label and title. Inline SVG
  * rather than a Material Symbols webfont: no network dependency, no FOUT, no
@@ -112,7 +143,26 @@ export default function TopBar({
   editorTab,
   onEditorTabChange,
   enabledTabs,
+  viewerStops,
+  currentViewerStop,
+  onViewerStopChange,
+  footprint,
 }: TopBarProps) {
+  /**
+   * Whether the view dial is actually driving the canvas — the SAME named
+   * predicate the dial's own `disabled` prop negates and the Report Bug note's
+   * context line reads, CALLED here rather than re-typed. Its input is a plain
+   * object, not component props, precisely so that a different component can
+   * ask the same question and be guaranteed the same answer.
+   *
+   * Writing `editorTab === "wall" && Boolean(footprint)` out here instead is
+   * exactly what `isViewerDialLive` was added (2026-09-28) to prevent: that
+   * condition had already been written twice, in opposite polarities, ~900
+   * lines apart in page.tsx. The Design and View menus are its third and
+   * fourth readers, and one call answers for both.
+   */
+  const viewerDialLive = isViewerDialLive({ editorTab, footprint });
+
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [fullscreenMenu, setFullscreenMenu] = useState<OpenMenu>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -199,6 +249,79 @@ export default function TopBar({
           >
             Project{caret("project")}
           </button>
+
+          {/* U1: Design and View — the top-bar form of the sidebar's view
+              dial, at 1200px and up only.
+
+              WHY A WRAPPER THAT RENDERS NOTHING. `.viewMenus` is
+              `display: contents` when shown, so both buttons are direct flex
+              children of the left zone and shrink, gap and truncate exactly as
+              if they were written here unwrapped; and `display: none` below
+              1200px, where the dial in the sidebar is the control instead.
+              That is the SAME `min-width: 1200px` query that shows the nav and
+              hides `EditorTabDial`, flipping two things in opposite
+              directions rather than an opposed min/max pair — so there is no
+              width, fractional ones under browser zoom included, where both
+              forms show or neither does.
+
+              ⚠ AND THE DIAL IS NOT MERELY THE NARROW FALLBACK. Scroll-wheel
+              cycling and `useRustleSound()` exist only on the dial. Replacing
+              it outright at desktop width would have deleted both without a
+              word, which is exactly the kind of row a reorganisation loses
+              quietly. Keeping it below the breakpoint keeps them at Tommy's
+              own 710px viewport. Whether the wheel and the rustle should also
+              be offered at 1200px and up is his call, and is an Open Item. */}
+          <div className={styles.viewMenus}>
+            {VIEWER_MENU_ORDER.map((menu) => {
+              const isOwner = viewerMenuOwner(currentViewerStop, viewerDialLive) === menu;
+              return (
+                <button
+                  key={menu}
+                  type="button"
+                  data-bar-control={menu}
+                  data-view-menu={menu}
+                  data-view-menu-owner={isOwner ? "true" : "false"}
+                  /* Mirrors the dial's own `disabled` EXACTLY, because it is
+                     the same predicate and not a second copy of the
+                     condition — `isViewerDialLive` is read once, above, and
+                     both menus and the dial answer from it. The reason is in
+                     the title rather than left as a dead control. */
+                  disabled={!viewerDialLive}
+                  title={
+                    viewerDialLive
+                      ? menu === "design"
+                        ? "The drawing: the floor plan, and each wall's elevation"
+                        : "The 3D views: framed, boxes and membranes"
+                      : "Available on the Wall tab, once a footprint is drawn"
+                  }
+                  className={openMenu === menu ? styles.toolActive : styles.tool}
+                  aria-expanded={openMenu === menu}
+                  onClick={(e) => toggleMenu(menu, e.currentTarget)}
+                >
+                  {isOwner ? (
+                    <>
+                      {/* The two type treatments are the acting-as control's
+                          own — 11px/600/uppercase/muted, then 13px/600/
+                          on-surface — per Tommy's "(all caps dark grey) Design
+                          (First Letter Cap and Black) Plan View". The caption
+                          is the SAME string as the bare word, uppercased by
+                          CSS, so there is only ever one spelling of each. */}
+                      <span className={styles.viewMenuCaption} data-view-menu-caption="">
+                        {VIEWER_MENU_LABEL[menu]}
+                      </span>{" "}
+                      <span className={styles.viewMenuValue} data-view-menu-value="">
+                        {viewerStopLabel(currentViewerStop)}
+                      </span>
+                    </>
+                  ) : (
+                    <span data-view-menu-word="">{VIEWER_MENU_LABEL[menu]}</span>
+                  )}
+                  {caret(menu)}
+                </button>
+              );
+            })}
+          </div>
+
         </div>
 
         {/* Scope. display: none below 1200px (EditorTabDial has the job there),
@@ -434,6 +557,51 @@ export default function TopBar({
           </button>
         </div>
       </StickyNote>
+
+      {/* U1: one note per view menu. Each lists ITS OWN stops and only its
+          own, with the current one marked — which is the usable reading of
+          Tommy's "will only show the current page under it's button menu".
+          Read literally that sentence would make a menu list exactly the page
+          you are already on, leaving no way to change page; his own example
+          ("View and Summary just show view and Summary") is about the BAR
+          text, not the menu body, and that is what the LABEL+Value treatment
+          above implements.
+
+          ⚠ ONE WRITER. Both notes call `onViewerStopChange` — page.tsx's
+          `handleViewerStopChange` — with a stop out of the caller's own
+          `viewerStops`. Neither sets `viewMode`, `simplified3D`, `showWraps`
+          or `elevationViewWallId`; neither even knows those exist. Those four
+          flags encode five stops between them, and two menus each writing
+          their own subset is precisely how `showWraps` ends up true on a plan
+          view. There is no second copy of that state machine here, and the
+          sidebar's Region 3 — which keys off exactly those flags — is the
+          harness assertion that proves it. */}
+      {VIEWER_MENU_ORDER.map((menu) => (
+        <StickyNote key={menu} id={`${menu}-note`} label={VIEWER_MENU_LABEL[menu]} {...noteProps(menu)}>
+          <div className={styles.menuList} role="group" aria-label={`${VIEWER_MENU_LABEL[menu]} views`}>
+            {viewerStopsForMenu(viewerStops, menu).map((stop) => {
+              const key = viewerStopKey(stop);
+              const isCurrent = viewerDialLive && key === viewerStopKey(currentViewerStop);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  data-view-stop={key}
+                  data-view-stop-current={isCurrent ? "true" : "false"}
+                  className={isCurrent ? styles.menuItemActive : styles.menuItem}
+                  aria-pressed={isCurrent}
+                  onClick={() => {
+                    onViewerStopChange(stop);
+                    closeMenu();
+                  }}
+                >
+                  {viewerStopLabel(stop)}
+                </button>
+              );
+            })}
+          </div>
+        </StickyNote>
+      ))}
 
       <StickyNote id="site-properties-note" label="Site Properties" {...noteProps("site")}>
         {siteContent}

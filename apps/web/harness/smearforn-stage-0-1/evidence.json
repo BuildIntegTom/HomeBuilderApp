@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3217/",
-  "ranAt": "2026-09-25T18:38:02.880Z",
+  "app": "http://localhost:3218/",
+  "ranAt": "2026-09-28T10:43:06.946Z",
   "steps": [
     {
       "name": "stage0-new-project-tabs",
@@ -139,8 +139,8 @@
         "40\"",
         "40\"",
         "40\"",
-        "37.125\"",
-        "37\"",
+        "34.125\"",
+        "34.125\"",
         "40\""
       ],
       "after": [
@@ -154,13 +154,13 @@
         "40\"",
         "40\"",
         "40\"",
-        "37.125\"",
-        "37\"",
+        "34.125\"",
+        "34.125\"",
         "40\""
       ],
       "everyWidthIsAWholeEighth": true,
-      "runTotalBefore": 514.125,
-      "runTotalAfter": 514.125,
+      "runTotalBefore": 508.25,
+      "runTotalAfter": 508.25,
       "runTotalConserved": true,
       "somethingActuallyMoved": true,
       "asserted": true,
@@ -179,8 +179,8 @@
         "40\"",
         "40\"",
         "40\"",
-        "37.125\"",
-        "37\"",
+        "34.125\"",
+        "34.125\"",
         "40\""
       ],
       "hitsTheCatalogMinimum": true,
@@ -235,14 +235,14 @@
           40,
           40,
           40,
-          37.125,
-          37,
+          34.125,
+          34.125,
           40
         ],
         [
           40,
-          40,
-          40,
+          37.125,
+          37,
           40
         ],
         [
@@ -268,7 +268,7 @@
       ],
       "narrowestPerWall": [
         24,
-        40,
+        37,
         34.125,
         34.125
       ],
@@ -284,6 +284,5 @@
       "asserted": true,
       "passed": true
     }
-  ],
-  "cpuThrottle": 8
+  ]
 }

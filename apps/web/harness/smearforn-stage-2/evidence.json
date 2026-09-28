@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3217/",
-  "ranAt": "2026-09-25T18:37:03.937Z",
+  "app": "http://localhost:3218/",
+  "ranAt": "2026-09-28T10:36:29.358Z",
   "steps": [
     {
       "name": "wall-as-tiled",
@@ -64,7 +64,6 @@
       "name": "delete",
       "notice": "Deleted a panel on wall AB: 16 panels → 15, 11 still automatic.",
       "refusalsOnTheWay": [
-        "Replaced on wall AB: 16 panels → 16, 12 still automatic.",
         "Replaced on wall AB: 16 panels → 16, 12 still automatic."
       ],
       "panelsBefore": 16,

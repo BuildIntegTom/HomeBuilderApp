@@ -98,6 +98,37 @@
   display: none;
 }
 
+/* U1's Design and View menus. Hidden below 1200px, where the sidebar's
+   ViewerDial is the view control — the same arrangement, at the same width,
+   as the nav above and EditorTabDial.
+
+   `display: contents` rather than `flex` when shown: this wrapper exists only
+   to carry the media query, so it must generate no box of its own. Its two
+   buttons then sit in .zoneLeft's flex row with the same 10px gap (4px below
+   768) and the same `flex-shrink: 0` they would have if they were written
+   there directly — which matters, because .zoneLeft is the only zone allowed
+   to shrink and the acting-as company name is the only thing inside it that
+   actually does. (Same trick, same reason, as page.module.css's
+   .toolbarPortalInline and .sidebarRegion3.)
+
+   ⚠ WHAT THE MEASUREMENT SAID, because this is where someone will come
+   looking. apps/web/harness/ui-reorg-u1/evidence-projection.json, 2026-09-28:
+   with these two on the bar the row's natural content width goes from 1176.9px
+   to 1415.2px (four companies, widest role) — about 1455px of viewport. At
+   exactly 1200px it does not fit, and what gives is the acting-as company
+   name: 354.7px of chip at 1600, 133.8px at 1200. It is truncated with its
+   title intact rather than absent, which is the documented degradation, but it
+   is a real cost at the very breakpoint that was chosen in 2026-09-13 to
+   protect that name. Tommy has the numbers. Adding Summary and Print (U4, U5)
+   takes the natural width to 1577.5px / ~1618px of viewport, which fits at NO
+   width in the brief — so that stage cannot simply append two more buttons
+   here. DO NOT invent a fourth breakpoint to make it fit; the bar has 1200 and
+   768 plus a 360px floor, and a new number is Tommy's decision with the
+   measurement in hand, exactly as 1200 was. */
+.viewMenus {
+  display: none;
+}
+
 /* Presentation. Never shrinks: Role and the settings icon are never shed. */
 .zoneRight {
   display: flex;
@@ -229,6 +260,37 @@
   text-decoration: none;
 }
 
+/* The two-part label the OWNING view menu renders: "(all caps dark grey)
+   Design (First Letter Cap and Black) Plan View" in Tommy's words.
+
+   These are the acting-as control's own two type treatments, and nothing else
+   of it. AccountControl.module.css's .actingAsLabel is 11px / 600 /
+   uppercase / 0.01em / --bi-on-surface-muted, and its value is 13px / 600 /
+   --bi-on-surface. The chip and the <select> are deliberately NOT reused:
+   Design and View are buttons that open StickyNote menus, not a bordered chip
+   around a form control.
+
+   They are re-declared here rather than `composes`-ed across module
+   boundaries because composing would silently drag the value rule's
+   background, border, padding, cursor and 220px max-width along with the
+   type. The coupling is kept honest by the harness instead, which compares
+   these two against the LIVE .actingAsLabel and .actingAsSelect computed
+   styles — so if one is ever restyled and these are not, a run fails rather
+   than the two drifting apart unnoticed. */
+.viewMenuCaption {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--bi-on-surface-muted);
+  text-transform: uppercase;
+}
+
+.viewMenuValue {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bi-on-surface);
+}
+
 .menuItemLabel {
   display: block;
   font-weight: 600;
@@ -352,6 +414,18 @@
 @media (min-width: 1200px) {
   .wordmark {
     display: block;
+  }
+
+  /* U1. The SAME single condition that shows the nav and (in
+     EditorToolbar.module.css) hides EditorTabDial, now flipping a third
+     pair: these two menus appear here and page.module.css's .viewerDialSlot
+     disappears at the identical query. Written as one condition showing one
+     form and hiding the other, never an opposed max-width/min-width pair —
+     a fractional viewport width under browser zoom satisfies neither half of
+     a pair, and the control vanishes entirely. Asserted at 1199, 1199.5,
+     1200, 1200.5 and 1360.7 by the U1 harness. */
+  .viewMenus {
+    display: contents;
   }
 
   .zoneLeft {

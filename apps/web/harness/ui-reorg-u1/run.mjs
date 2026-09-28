@@ -161,6 +161,21 @@ const record = (name, detail, expected) => {
 let evidenceWritten = false;
 const writeEvidence = () => {
   if (evidenceWritten) return;
+  /**
+   * ⚠ A RUN THAT RECORDED NOTHING NEVER OVERWRITES THE LAST ONE THAT DID, and
+   * this cost a good artefact before it was added. `writeEvidence` is on
+   * `process.on("exit")` so that a crash mid-run still leaves its partial
+   * measurements behind — which is right. But the projection pass's own guard
+   * (below) throws during setup, before a single `record()`, and that exit
+   * handler dutifully wrote a two-line `evidence-projection.json` over a
+   * 5,700-line measurement that had already been committed. An empty evidence
+   * file is never worth having and is always worth less than what it replaced.
+   */
+  if (evidence.steps.length === 0) {
+    console.log("\nno steps were recorded — leaving the existing evidence file alone");
+    evidenceWritten = true;
+    return;
+  }
   evidenceWritten = true;
   evidence.pageExceptions = pageExceptions;
   evidence.failures = failures;
@@ -492,6 +507,11 @@ const TOOLKIT = String.raw`
         title: btn.getAttribute('title') || '',
         caption: btn.querySelector('[data-view-menu-caption]')?.textContent.trim() ?? null,
         value: btn.querySelector('[data-view-menu-value]')?.textContent.trim() ?? null,
+        // ⚠ The bare word gets its own span rather than being read off the
+        // button's textContent, which also carries the open/closed caret. A
+        // reader that compared textContent to "View" would fail on "View ▼"
+        // and read exactly like a rename that never happened.
+        word: btn.querySelector('[data-view-menu-word]')?.textContent.trim() ?? null,
         text: btn.textContent.replace(/\s+/g, ' ').trim(),
         w: Math.round(r.width * 10) / 10,
       };
@@ -543,7 +563,35 @@ const TOOLKIT = String.raw`
       }
     };
     walk(root, 0);
-    return { childCount: root.children.length, lines: parts.length, signature: parts.join('\n') };
+    const signature = parts.join('\n');
+    return {
+      childCount: root.children.length,
+      lines: parts.length,
+      signature,
+      /**
+       * The same signature with every run of digits replaced by '#'.
+       *
+       * ⚠ THIS EXISTS BECAUSE THE FIRST VERSION OF THE CROSS-RUN COMPARISON
+       * FAILED, AND IT WAS THE TEST THAT WAS WRONG. Region 3 on an elevation
+       * shows the wall's computed weight, and the footprint each run draws
+       * comes from a mouse drag across the canvas — so a run-to-run
+       * difference of a pixel in where that drag lands is a slightly
+       * different building, and "8,147 lb" vs "8,103 lb" is a TRUE reading of
+       * two different designs, not a leaked view flag.
+       *
+       * So the two comparisons take different things, on purpose:
+       *   - ACROSS runs (dial baseline vs menus now) compares 'shape', which
+       *     is invariant to the footprint but still catches a changed
+       *     control, a changed aria-pressed, a section appearing or
+       *     disappearing, or any word changing.
+       *   - WITHIN one run (dial at 1199 vs menus at 1200, one design)
+       *     compares the FULL 'signature', digits and all, because there the
+       *     building is identical and any difference at all is the split
+       *     having written the flags differently.
+       * Neither alone is enough; together they are.
+       */
+      shape: signature.replace(/\d+/g, '#'),
+    };
   };
 
   return true;
@@ -566,6 +614,32 @@ console.log(`U1 harness — pass "${PASS}"`);
 console.log("0. cold load at 1600px");
 await setViewport(1600, 1000);
 await load();
+
+/**
+ * ⚠ THE PROJECTION PASS IS A ONE-TIME RECORDING OF A BAR THAT NO LONGER
+ * EXISTS, and it refuses to run against the built code rather than quietly
+ * producing a worse version of its own artefact.
+ *
+ * Its whole job is to measure the pre-U1 bar with all four of Tommy's new
+ * controls forced onto the row at EVERY width. Once Design and View are real
+ * they are `display: none` below 1200px — they have shed into the sidebar
+ * dial, which is the right answer — so the projection there would skip them
+ * (they exist) and then measure a row missing two of the controls it claims
+ * to have measured. The checked-in `evidence-projection.json` and
+ * `region3-baseline.json` are from commit 6ccdfff, against the bar as it
+ * stood, and they are the only "before" this stage has.
+ */
+if (PASS === "projection") {
+  const built = await evaluate(`Boolean(document.querySelector('[data-view-menu]'))`);
+  if (built) {
+    throw new Error(
+      "the projection pass is being run against code that ALREADY HAS the Design and View menus. Its artefacts " +
+        "(evidence-projection.json, region3-baseline.json) are a recording of the bar BEFORE U1 and must not be " +
+        "regenerated here — below 1200px the menus have shed, so there is no ten-control bar at that width to " +
+        "measure. Run the built pass instead (no UI_REORG_U1_PASS), or check out the pre-U1 commit.",
+    );
+  }
+}
 
 record(
   "the-bar-is-addressable",
@@ -651,7 +725,14 @@ record(
 );
 
 console.log("3. validating the four-company simulation against a real 2026-09-13 measurement");
-await setViewport(1440, 1000);
+// ⚠ AT 1600, NOT 1440, AND THE DIFFERENCE IS THE POINT. The 270px reference
+// was measured with room to spare, so the select was at its natural width.
+// Once U1 puts Design and View on the bar, 1440px no longer has that room:
+// the same select renders 256px there because it is being squeezed — which is
+// a true reading of the new bar, and a false basis for validating a
+// simulation. Validate where nothing is fighting for the width; the squeeze
+// itself is measured by the matrix below, which is what it is for.
+await setViewport(1600, 1000);
 await installToolkit();
 const simCheck = await evaluate(
   `(() => { const r = window.__u1.simulateCompanies(${JSON.stringify(FOUR_COMPANY_LABELS)}, ${JSON.stringify(LONGEST_COMPANY_LABEL)}); const f = window.__u1.fit(); return { ...r, chipText: f.actingAsText, chipWidth: f.actingAsWidth }; })()`,
@@ -1111,24 +1192,94 @@ if (PASS === "projection") {
     }
     const got = await evaluate(`window.__u1.region3()`);
     compared.push(label);
-    if (!got || got.signature !== want.signature) {
+    // `shape`, not `signature` — see region3()'s own note. Across two runs
+    // the drawn footprint differs by a pixel, so the wall weights Region 3
+    // prints legitimately differ; everything else must not.
+    //
+    // ⚠ The baseline is NORMALISED HERE rather than re-recorded. It is a
+    // historical artefact: it is what the bar produced BEFORE Design and
+    // View existed, and re-running the projection pass against the built code
+    // could not reproduce it (below 1200px the menus have shed, so there is
+    // no ten-control bar there to measure). Normalising an old record is the
+    // comparer's job; rewriting the record to match the new code would be
+    // deleting the only "before" this test has.
+    const wantShape = want.shape ?? String(want.signature).replace(/\d+/g, "#");
+    if (!got || got.shape !== wantShape) {
       diffs.push({
         label,
         wantLines: want.lines,
         gotLines: got ? got.lines : null,
-        firstDifference: got ? firstDifferingLine(want.signature, got.signature) : "region 3 was not found at all",
+        firstDifference: got ? firstDifferingLine(wantShape, got.shape) : "region 3 was not found at all",
       });
     }
   }
   record(
     "region-3-renders-identically-for-every-stop-before-and-after-the-split",
-    { comparedStops: compared, baselineStops: Object.keys(baseline.stops), differences: diffs },
-    // THE SINGLE-WRITER TEST. Region 3 keys off elevationWall / viewMode /
-    // showWraps, so two menus each writing their own subset — the exact
-    // mistake the plan names as most likely — shows up here as a changed
-    // signature. Every baseline stop must be compared: a stop the menus
-    // cannot reach is a difference, not an excuse to skip it.
+    { comparedStops: compared, baselineStops: Object.keys(baseline.stops), differences: diffs, comparedOn: "shape (digits normalised — two runs draw two slightly different buildings)" },
+    // THE SINGLE-WRITER TEST, HALF ONE: across the change. Region 3 keys off
+    // elevationWall / viewMode / showWraps, so two menus each writing their
+    // own subset — the exact mistake the plan names as most likely — shows up
+    // here as a changed shape. Every baseline stop must be compared: a stop
+    // the menus cannot reach is a difference, not an excuse to skip it.
     (d) => d.differences.length === 0 && d.comparedStops.length === d.baselineStops.length,
+  );
+
+  /**
+   * THE SINGLE-WRITER TEST, HALF TWO: the two presentations, one design, one
+   * run — so the comparison can be exact rather than shape-only.
+   *
+   * At 1199px the sidebar dial drives the stops; at 1200px the bar menus do.
+   * Same page, same footprint, same numbers, and the ONLY difference is which
+   * control called `handleViewerStopChange`. Any difference in Region 3 at all
+   * — a digit, a pressed state, a section present in one and not the other —
+   * is the split having written the four view flags differently, which is
+   * precisely how `showWraps` would end up true on a plan view.
+   *
+   * Why both halves are needed: this one alone would pass if U1 had broken
+   * `handleViewerStopChange` ITSELF, since both presentations call it. The
+   * cross-run half above catches that; this one catches the finer drift the
+   * cross-run half has to normalise away.
+   */
+  await setViewport(1199, 1000);
+  await installToolkit();
+  const byDial = {};
+  {
+    let label = await evaluate(`window.__u1.dialLabel()`);
+    const seen = new Set();
+    while (label && !seen.has(label)) {
+      seen.add(label);
+      byDial[label] = (await evaluate(`window.__u1.region3()`)).signature;
+      await clickSelector('[role="group"][aria-label="View mode"] button[title="Next view"]', "the dial's ▼");
+      label = await evaluate(`window.__u1.dialLabel()`);
+    }
+  }
+  await setViewport(1200, 1000);
+  await installToolkit();
+  const sameRunDiffs = [];
+  const sameRunCompared = [];
+  for (const [label, want] of Object.entries(byDial)) {
+    if (!(await selectStopByMenu(label))) {
+      sameRunDiffs.push({ label, why: "not reachable from the bar menus" });
+      continue;
+    }
+    const got = (await evaluate(`window.__u1.region3()`)).signature;
+    sameRunCompared.push(label);
+    if (got !== want) sameRunDiffs.push({ label, firstDifference: firstDifferingLine(want, got) });
+  }
+  record(
+    "the-dial-and-the-menus-leave-region-3-byte-for-byte-identical-on-one-design",
+    {
+      stops: Object.keys(byDial),
+      comparedStops: sameRunCompared,
+      differences: sameRunDiffs,
+      dialAt: 1199,
+      menusAt: 1200,
+      comparedOn: "the full signature, digits included",
+    },
+    // A baseline of nothing compares equal to anything, so the stop count is
+    // asserted too: eight stops for a four-wall footprint, all of them
+    // reached through both controls.
+    (d) => d.differences.length === 0 && d.stops.length >= 6 && d.comparedStops.length === d.stops.length,
   );
 }
 
@@ -1182,22 +1333,32 @@ if (PASS === "built") {
       onPlan: { design: onPlan.menus.design, view: onPlan.menus.view },
       on3dFramed: { design: on3d.menus.design, view: on3d.menus.view },
     },
-    // Tommy's own two examples, character for character:
-    //   DESIGN Plan View · View · …      and      Design · VIEW 3D Framed · …
+    // Tommy's own two examples:
+    //   DESIGN 2D Floor Plan · View · …   and   Design · VIEW 3D Framed · …
     // The value is the dial's own label for the stop, so the two presentations
-    // cannot drift apart. ("2D Floor Plan" rather than "Plan View" because the
-    // rename is an OPEN QUESTION for Tommy and U1 does not answer it.)
+    // cannot drift apart. ("2D Floor Plan" rather than "Plan View" because
+    // that rename is an OPEN QUESTION for Tommy and U1 does not answer it.)
+    //
+    // ⚠ The caption's TEXT is "Design", not "DESIGN": the all-caps is a
+    // `text-transform`, exactly as .actingAsLabel renders "Acting as" as
+    // "ACTING AS". One string per word, uppercased by CSS, so the caption and
+    // the bare word can never come to be spelled differently. That the caps
+    // really happen is asserted next, off the computed style.
     (d) =>
       d.onPlan.design.owner === true &&
-      d.onPlan.design.caption === "DESIGN" &&
+      d.onPlan.design.caption === "Design" &&
       d.onPlan.design.value === "2D Floor Plan" &&
       d.onPlan.view.owner === false &&
-      d.onPlan.view.text === "View" &&
+      d.onPlan.view.word === "View" &&
+      d.onPlan.view.caption === null &&
+      d.onPlan.view.value === null &&
       d.on3dFramed.view.owner === true &&
-      d.on3dFramed.view.caption === "VIEW" &&
+      d.on3dFramed.view.caption === "View" &&
       d.on3dFramed.view.value === "3D Framed" &&
       d.on3dFramed.design.owner === false &&
-      d.on3dFramed.design.text === "Design",
+      d.on3dFramed.design.word === "Design" &&
+      d.on3dFramed.design.caption === null &&
+      d.on3dFramed.design.value === null,
   );
 
   const typography = await evaluate(`(() => {
@@ -1297,6 +1458,8 @@ if (PASS === "built") {
   );
 
   console.log("10. the dial-is-live predicate, mirrored by both menus");
+  const ownersOf = (m) => ["design", "view"].filter((id) => m[id]?.owner === true);
+  const beforeRoof = await evaluate(`window.__u1.viewMenus()`);
   await clickSelector('[data-bar-control="nav-roof"]', "the Roof tab");
   await sleep(600);
   const onRoof = await evaluate(`window.__u1.viewMenus()`);
@@ -1305,20 +1468,36 @@ if (PASS === "built") {
   const backOnWall = await evaluate(`window.__u1.viewMenus()`);
   record(
     "both-menus-mirror-the-dial's-own-disabled-condition",
-    { onRoof, backOnWall },
+    {
+      beforeRoof,
+      onRoof,
+      backOnWall,
+      ownersBefore: ownersOf(beforeRoof),
+      ownersOnRoof: ownersOf(onRoof),
+      ownersBack: ownersOf(backOnWall),
+    },
     // "Mirror today's behaviour exactly" — the dial is disabled off the Wall
     // tab and with no footprint, so the menus are too, with the reason in
     // their title rather than as a dead control. And neither OWNS while the
     // view is not what is on screen: naming a stop on the Roof tab would be
     // the same lie the bug note's context line refuses to tell.
+    //
+    // ⚠ The first version of this asserted that DESIGN owns on returning to
+    // the Wall tab. That was the harness being wrong, not the app: the run
+    // arrives here on 3D Framed, so VIEW rightly owns, and it still owns
+    // after the round trip. Which is a better assertion anyway — exactly one
+    // menu owns on Wall, and the SAME one after leaving and coming back, so
+    // the trip through another tab cannot quietly reset the view.
     (d) =>
       d.onRoof.design.disabled === true &&
       d.onRoof.view.disabled === true &&
-      d.onRoof.design.owner === false &&
-      d.onRoof.view.owner === false &&
+      d.ownersOnRoof.length === 0 &&
       d.onRoof.design.title.length > 0 &&
+      d.onRoof.view.title.length > 0 &&
       d.backOnWall.design.disabled === false &&
-      d.backOnWall.design.owner === true,
+      d.backOnWall.view.disabled === false &&
+      d.ownersBack.length === 1 &&
+      JSON.stringify(d.ownersBack) === JSON.stringify(d.ownersBefore),
   );
 
   console.log("11. the dial's wheel and its rustle sound survive below the breakpoint");
