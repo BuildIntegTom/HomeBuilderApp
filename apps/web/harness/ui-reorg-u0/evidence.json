@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3218/",
-  "ranAt": "2026-09-28T10:34:11.444Z",
+  "ranAt": "2026-09-28T14:59:23.644Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -339,7 +339,7 @@
       "roofChecked": "checked",
       "roofTabClicked": "clicked",
       "line": "Roof",
-      "dial": null,
+      "dial": "Membranes",
       "asserted": true,
       "passed": true
     },

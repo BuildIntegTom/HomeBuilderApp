@@ -91,6 +91,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeViewStopControl } from "../viewStopControl.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHOTS = path.join(HERE, "screenshots");
@@ -589,32 +590,31 @@ await mouse("mouseReleased", x1, y1);
 await sleep(1800);
 
 console.log("3. baseline 3D scene");
-const dialLabel = async () => await evaluate(`(() => { const g = document.querySelector('[aria-label="View mode"]'); return g ? g.querySelector('div').textContent.trim() : null; })()`);
-const dialStep = async (glyph) => {
-  const b = await evaluate(`(() => {
-    const g = document.querySelector('[aria-label="View mode"]');
-    if (!g) return null;
-    g.scrollIntoView({ block: 'center' });
-    const btn = [...g.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(glyph)});
-    if (!btn) return null;
-    const r = btn.getBoundingClientRect();
-    if (r.width === 0 || r.top < 0 || r.left < 0) return null;
-    return [r.left + r.width / 2, r.top + r.height / 2];
-  })()`);
-  if (!b) throw new Error("the viewer dial is not on screen");
-  await click(b[0], b[1]);
-  await sleep(900);
-};
-const reachView = async (predicate, what) => {
-  const seen = [];
-  for (let i = 0; i < 16; i++) {
-    const label = await dialLabel();
-    seen.push(label);
-    if (label && predicate(label)) return label;
-    await dialStep("▼");
-  }
-  throw new Error(`could not reach ${what} on the viewer dial; saw: ${JSON.stringify(seen)}`);
-};
+/**
+ * ⚠ THIS HARNESS WAS BROKEN BY U1 AND NOBODY NOTICED — fixed 2026-09-28.
+ *
+ * It used to carry its own copy of the two view-dial locators
+ * (`[aria-label="View mode"]`, and the button whose text is `▼`). U1 made the
+ * dial the below-breakpoint form and put Design/View menus on the top bar
+ * above it. This harness runs at **1578px**, which is above that boundary
+ * however it has been set — 1200px as U1 shipped, 1454px since — so the dial
+ * is `display: none` here and the private locator matched nothing.
+ *
+ * U1 fixed exactly this in "the three Smearforn locators" plus U0's. **There
+ * are four Smearforn harnesses, not three**, and this is the fourth: it was
+ * counted out, never re-run, and its checked-in `evidence.json` is dated
+ * 2026-09-26 — before U1. The failure mode was the one `viewStopControl.mjs`
+ * exists to prevent, and it is worth noting that it did NOT fail silently in
+ * the end: `dialStep` threw "the viewer dial is not on screen" rather than
+ * reporting a view it never reached. That throw is the only reason this was
+ * found at all.
+ *
+ * So it now reads the shared control like the other four, and is width-
+ * agnostic from here: the helper asks the page which form is live instead of
+ * deciding from the window size.
+ */
+const view = makeViewStopControl({ evaluate, sleep });
+const reachView = async (predicate, what) => await view.reach(predicate, what);
 const closeOpenNotes = async () => {
   await evaluate(`(() => { for (const b of [...document.querySelectorAll('button[title="Hide this note"]')]) b.click(); })()`);
   await sleep(700);
