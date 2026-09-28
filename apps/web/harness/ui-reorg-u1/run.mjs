@@ -331,6 +331,123 @@ const TOOLKIT = String.raw`
   };
 
   /**
+   * THE COMPANY NAME ITSELF — not the chip around it.
+   *
+   * ⚠ WHY THIS EXISTS, AND WHAT IT IS FIXING. Until 2026-09-28 the only
+   * reading taken of the acting-as control was the CHIP's bounding box:
+   * 'actingAsWidth', and an 'actingAsOnScreen' that asks whether that box is
+   * inside the viewport. Both are true of a chip that is 100.8px wide
+   * containing a 16.1px select showing ZERO characters of the company name —
+   * a caption reading 'ACTING AS' followed by nothing but a caret. That is
+   * the 2026-09-13 failure in its second form, and the chip's bounding box
+   * cannot see it: the box is on screen, fully, while the value it exists to
+   * carry is gone.
+   *
+   * So the name is measured on its own terms: the select's (or, signed out,
+   * the static span's) own width, and how many characters of the label
+   * actually render.
+   *
+   * HOW THE CHARACTER COUNT IS DERIVED, since a <select> will not tell you.
+   * A hidden clone of the element with 'max-width: none' gives the element's
+   * NATURAL width — the whole label, the padding, the border and the select's
+   * own dropdown arrow. Subtracting the canvas-measured width of the full
+   * label string from that clone gives this element's fixed overhead, which
+   * is calibrated per reading rather than assumed. The text room available at
+   * the element's real width is then its width minus that overhead, and the
+   * visible count is the longest prefix of the label that fits in it, less
+   * the ellipsis when one is being drawn.
+   *
+   * The clone is measured in the element's own parent so it inherits the same
+   * computed font; anything else would be measuring a different typeface and
+   * reporting it as this one.
+   *
+   * ⚠ ITS ACCURACY, CHECKED AGAINST PICTURES RATHER THAN ASSERTED. The count
+   * was validated on 2026-09-28 by constraining this very select to a series
+   * of widths at 1600px and screenshotting the chip at each:
+   *     16.0px -> renders 'ACTING AS' and nothing at all   computed 0  ✓
+   *     22.5px -> a clipped ellipsis dot, no character     computed 0  ✓
+   *     38.4px -> renders 'T…'                             computed 0  (−1)
+   *     39.1px -> renders 'T…'                             computed 0  (−1)
+   *     50.0px -> renders 'Th…'                            computed 2  ✓
+   *    270.0px -> the whole label                          computed 39 ✓
+   * So it is exact except in the last character before the name disappears,
+   * where Chrome CLIPS the ellipsis instead of reserving room for it and this
+   * model reserves the whole thing. It therefore errs by at most one
+   * character and always DOWNWARD — which is the safe direction for the
+   * assertion built on it, since a conservative count can only complain
+   * earlier, never later. Anything published from it that turns on a single
+   * character should quote the screenshot, not this number.
+   */
+  K.actingAsName = () => {
+    const chip = document.querySelector('[data-bar-control="acting-as"]');
+    if (!chip) return null;
+    // The select when signed in (real or simulated); the static span when
+    // signed out. Both are "the company name" and both can be crushed.
+    const el = chip.querySelector('select') || chip.querySelector('span:not([id])');
+    if (!el) return null;
+    const round = (n) => Math.round(n * 10) / 10;
+    const label = (el.tagName === 'SELECT'
+      ? (el.selectedOptions[0]?.textContent ?? '')
+      : (el.textContent ?? '')).replace(/\s+/g, ' ').trim();
+    const cs = getComputedStyle(el);
+
+    const canvas = (K._canvas = K._canvas || document.createElement('canvas'));
+    const ctx = canvas.getContext('2d');
+    ctx.font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+    const textPx = ctx.measureText(label).width;
+    const ellipsisPx = ctx.measureText('…').width;
+
+    // The natural width, measured rather than assumed.
+    const clone = el.cloneNode(true);
+    clone.style.maxWidth = 'none';
+    clone.style.minWidth = '0';
+    clone.style.width = 'auto';
+    clone.style.position = 'absolute';
+    clone.style.left = '-99999px';
+    clone.style.top = '0';
+    clone.style.visibility = 'hidden';
+    el.parentNode.appendChild(clone);
+    const naturalPx = clone.getBoundingClientRect().width;
+    clone.remove();
+
+    const widthPx = el.getBoundingClientRect().width;
+    // Padding + border + the select's arrow. Never negative: a font the
+    // canvas measures slightly wider than the element lays out would
+    // otherwise credit the name with room it does not have.
+    const overheadPx = Math.max(0, naturalPx - textPx);
+    const truncated = widthPx < naturalPx - 0.5;
+    let roomPx = widthPx - overheadPx;
+    if (truncated) roomPx -= ellipsisPx;
+
+    let visibleChars = 0;
+    if (roomPx > 0) {
+      for (let i = 1; i <= label.length; i += 1) {
+        if (ctx.measureText(label.slice(0, i)).width <= roomPx) visibleChars = i;
+        else break;
+      }
+    }
+    if (!truncated) visibleChars = label.length;
+
+    return {
+      element: el.tagName.toLowerCase(),
+      label,
+      labelChars: label.length,
+      widthPx: round(widthPx),
+      naturalPx: round(naturalPx),
+      textPx: round(textPx),
+      overheadPx: round(overheadPx),
+      roomForTextPx: round(Math.max(0, roomPx)),
+      truncated,
+      visibleChars,
+      visibleText: label.slice(0, visibleChars),
+      // The whole point: is ANY of the company name on screen?
+      anyNameVisible: visibleChars > 0,
+      // The cap its own stylesheet gives it at this width, for the record.
+      capPx: window.innerWidth >= 1200 ? 280 : 220,
+    };
+  };
+
+  /**
    * Does the row fit?
    *
    * ⚠ READ YOUR OWN READER. The content box is clientWidth-based, never the
@@ -366,9 +483,13 @@ const TOOLKIT = String.raw`
       rightmostControl: rightmost ? rightmost.control : null,
       rightmostRight: rightmost ? rightmost.right : null,
       anyControlOffScreen: controls.filter((c) => c.w > 0 && (c.left < -0.5 || c.right > window.innerWidth + 0.5)).map((c) => c.control),
+      // ⚠ THE CHIP'S BOUNDING BOX, AND IT IS NOT ENOUGH ON ITS OWN. This is
+      // true of a chip showing 'ACTING AS' and nothing else; see
+      // 'actingAsName' below, which is the reading that can see that.
       actingAsOnScreen: actingAs ? actingAs.left >= -0.5 && actingAs.right <= window.innerWidth + 0.5 : false,
       actingAsWidth: actingAs ? actingAs.w : null,
       actingAsText: actingAs ? actingAs.text : null,
+      actingAsName: K.actingAsName(),
       present: controls.filter((c) => c.w > 0).map((c) => c.control),
       absent: ['wordmark', 'nav-wall', 'nav-foundation', 'nav-floor', 'nav-roof']
         .filter((n) => !controls.some((c) => c.control === n && c.w > 0)),
@@ -850,6 +971,19 @@ const summarise = (fit, width) => ({
   docOverflowPx: fit.docOverflowPx,
   actingAsWidth: fit.actingAsWidth,
   actingAsOnScreen: fit.actingAsOnScreen,
+  /* ⚠ RECORDED AT EVERY CELL, not summarised away: the select's own width and
+     how much of the company name is actually legible in it. The chip's box
+     above says "on screen" for a chip whose select is 16.1px wide and shows
+     nothing, which is the reading that let U1 ship the 2026-09-13 failure in
+     its second form. Measurement rather than assertion, like the rest of this
+     file — but there IS now an assertion over it, below. */
+  nameWidthPx: fit.actingAsName ? fit.actingAsName.widthPx : null,
+  nameNaturalPx: fit.actingAsName ? fit.actingAsName.naturalPx : null,
+  nameVisibleChars: fit.actingAsName ? fit.actingAsName.visibleChars : null,
+  nameLabelChars: fit.actingAsName ? fit.actingAsName.labelChars : null,
+  nameVisibleText: fit.actingAsName ? fit.actingAsName.visibleText : null,
+  nameTruncated: fit.actingAsName ? fit.actingAsName.truncated : null,
+  anyNameVisible: fit.actingAsName ? fit.actingAsName.anyNameVisible : null,
   offScreen: fit.anyControlOffScreen,
   barHeight: fit.barHeight,
   wantedPx: Math.round((fit.controlsWidthSum + Math.max(0, fit.controlCount - 1) * (width < 768 ? 4 : 10)) * 10) / 10,
@@ -941,6 +1075,17 @@ const summaryFor = (configId) => {
       maxDocOverflowPx: Math.max(...cells.map((c) => c.docOverflowPx)),
       minActingAsWidth: Math.min(...cells.map((c) => c.actingAsWidth ?? 0)),
       actingAsAlwaysOnScreen: cells.every((c) => c.actingAsOnScreen),
+      // The name itself, which is what the chip's width above cannot report.
+      minNameWidthPx: Math.min(...cells.map((c) => c.nameWidthPx ?? 0)),
+      nameNaturalPx: cells[0].nameNaturalPx,
+      minNameVisibleChars: Math.min(...cells.map((c) => c.nameVisibleChars ?? 0)),
+      nameLabelChars: cells[0].nameLabelChars,
+      anyNameVisibleEverywhere: cells.every((c) => c.anyNameVisible === true),
+      nameWholeEverywhere: cells.every((c) => c.nameTruncated === false),
+      worstNameVisibleText: cells.reduce(
+        (a, c) => (a === null || (c.nameVisibleChars ?? 0) < a.length ? (c.nameVisibleText ?? "") : a),
+        null,
+      ),
       everOffScreen: [...new Set(cells.flatMap((c) => c.offScreen))],
       controlsPresent: cells[0].controls,
     };
@@ -957,16 +1102,32 @@ evidence.byWidth = {
  * The narrowest viewport at which a configuration really fits, bisected in a
  * real browser rather than extrapolated from the six sampled widths.
  *
- * TWO predicates, because "fits" has two honest meanings and the gap between
- * them is the whole lesson of 2026-09-13:
+ * FOUR predicates, because "fits" has several honest meanings and the gaps
+ * between them are the whole lesson of 2026-09-13 — twice over:
  *   `nothingOffScreen`   — no control has left the viewport and nothing
  *                          scrolls. The floor, and the thing U1 must keep.
- *   `companyNameIntact`  — that, AND the acting-as company is still at the
- *                          width its own stylesheet caps it to (220px below
- *                          1200, 280px at and above). "Truncated but present
- *                          beats absent" is the rule, but a company name cut
- *                          to a letter is the SHAPE of the bug, not a
- *                          graceful degradation, so it is measured separately.
+ *   `anyNameVisible`     — that, AND at least one character of the acting-as
+ *                          company really renders. ⚠ ADDED 2026-09-28: the
+ *                          floor the 2026-09-26 decision actually promises.
+ *                          `nothingOffScreen` is satisfied by a chip reading
+ *                          `ACTING AS ⌄` with the name entirely gone, which
+ *                          is what U1 shipped at 1200px.
+ *   `companyNameIntact`  — that, AND the acting-as CHIP is at least as wide
+ *                          as the cap its select's stylesheet gives it (220px
+ *                          below 1200, 280px at and above). Kept because the
+ *                          published figures are stated in its terms, but it
+ *                          reads the chip and the chip carries ~85px of
+ *                          caption and padding, so it clears while the name
+ *                          is still cut.
+ *   `companyNameWhole`   — that, AND the NAME ELEMENT itself is at its
+ *                          natural untruncated width, measured against a
+ *                          `max-width: none` clone. ⚠ ADDED 2026-09-28: this
+ *                          is the one "the name is not crushed" means, and it
+ *                          is ~114px of viewport stricter than the chip
+ *                          reading it replaces.
+ * "Truncated but present beats absent" is the rule, but a company name cut to
+ * a letter — or to nothing — is the SHAPE of the bug, not a graceful
+ * degradation, so each is measured separately.
  *
  * ⚠ BISECTED PER BREAKPOINT BAND, AND THE FIRST VERSION OF THIS WAS WRONG.
  * A plain bisect over 320..2400 assumes fit improves monotonically with
@@ -993,10 +1154,29 @@ const makeFitsAt = (spec, predicateId) => async (w) => {
   await evaluate(`window.__u1.clearProjection(); window.__u1.clearCompanies();`);
   const nothingOffScreen = fit.anyControlOffScreen.length === 0 && fit.docOverflowPx === 0 && fit.rowOverflowPx === 0;
   if (predicateId === "nothingOffScreen") return nothingOffScreen;
+  if (predicateId === "companyNameWhole") {
+    // ⚠ THE STRICT ONE, ADDED 2026-09-28, AND THE DIFFERENCE MATTERS.
+    // `companyNameIntact` below reads the CHIP against the cap declared on
+    // the SELECT — and the chip is the select PLUS its `ACTING AS` caption,
+    // its gap, its padding and its border, some 85px of furniture. A chip of
+    // 280px therefore clears that bar while the name inside it is still being
+    // cut. Measured on the U1-as-built bar: the chip reaches 280px at 1374px
+    // of viewport, but the name is not WHOLE until ~1488px. This predicate
+    // asks the name itself, by comparing the select's laid-out width with the
+    // natural width of a `max-width: none` clone of it — no threshold copied
+    // out of a stylesheet at all.
+    return nothingOffScreen && fit.actingAsName !== null && fit.actingAsName.truncated === false;
+  }
+  if (predicateId === "anyNameVisible") {
+    // The floor the 2026-09-26 decision actually promises: some of the
+    // company name, not merely a chip whose box is on screen.
+    return nothingOffScreen && fit.actingAsName !== null && fit.actingAsName.anyNameVisible === true;
+  }
   // The cap is declared on the SELECT in AccountControl.module.css; the chip
   // measured here is that select plus its caption and padding, so reaching the
   // cap is a conservative reading of "the name is not being crushed" rather
-  // than a threshold this file invented.
+  // than a threshold this file invented. ⚠ CONSERVATIVE IN THE UNSAFE
+  // DIRECTION — see `companyNameWhole` above, which is the honest reading.
   const cap = w >= 1200 ? 280 : 220;
   return nothingOffScreen && (fit.actingAsWidth ?? 0) >= cap;
 };
@@ -1018,7 +1198,7 @@ const bisectBand = async (spec, predicateId, band) => {
 const firstFits = {};
 for (const config of PASS === "projection" ? [{ id: "today", spec: [] }, ...BAR_CONFIGS] : [{ id: "today", spec: [] }]) {
   firstFits[config.id] = {};
-  for (const predicateId of ["nothingOffScreen", "companyNameIntact"]) {
+  for (const predicateId of ["nothingOffScreen", "anyNameVisible", "companyNameIntact", "companyNameWhole"]) {
     firstFits[config.id][predicateId] = {};
     for (const band of BREAKPOINT_BANDS) {
       firstFits[config.id][predicateId][band.id] = await bisectBand(config.spec, predicateId, band);
@@ -1092,11 +1272,69 @@ record(
   // may leave the viewport and the acting-as company must be on screen at
   // every width. Whether twelve fit is the observation above; whether ten do
   // is a promise this stage has to keep.
+  //
+  // ⚠ AND IT IS NOT ENOUGH BY ITSELF — see the record immediately below.
+  // Every clause here was TRUE of the bar U1 shipped on 2026-09-28, which at
+  // 1200px showed `ACTING AS ⌄` and not one character of the company name.
+  // A chip whose bounding box is inside the viewport is not the same claim as
+  // a company name a human can read, and this assertion only ever made the
+  // first one.
   (d) =>
     d.actingAsAlwaysOnScreen === true &&
     d.offScreenAnywhere.length === 0 &&
     d.docOverflowAnywhere === 0 &&
     d.rowOverflowAnywhere === 0,
+);
+
+/**
+ * ⚠ THE ASSERTION THE ONE ABOVE COULD NOT MAKE, added 2026-09-28.
+ *
+ * `nothing-U1-ships-is-ever-pushed-off-screen` asserts the chip's bounding
+ * box is inside the viewport. That was true, at every width, of a bar whose
+ * acting-as select was 16.1px wide and rendered ZERO characters of the
+ * company name — the caption promising a value that was gone. It is the
+ * assertion standing in for the 2026-09-13 headstone and it could not see the
+ * 2026-09-13 failure in its second form.
+ *
+ * The promise the 2026-09-26 decision actually makes is that the company name
+ * STAYS ON THE BAR, because a wrong-company save is silent, plausible, and
+ * noticed later by someone else. So: at every width U1 ships, with four
+ * companies and the widest role label, at least some of the name renders.
+ *
+ * Truncation is still allowed — "truncated but present, with its title" is
+ * the documented degradation. Zero characters is not truncation.
+ */
+const nameCells = worst.map((c) => ({
+  role: c.role,
+  width: c.width,
+  nameWidthPx: (c.designView ?? c.today).nameWidthPx,
+  nameVisibleChars: (c.designView ?? c.today).nameVisibleChars,
+  nameVisibleText: (c.designView ?? c.today).nameVisibleText,
+  nameTruncated: (c.designView ?? c.today).nameTruncated,
+}));
+record(
+  "some-of-the-acting-as-company-name-is-visible-at-every-width-U1-ships",
+  {
+    configuration: PASS === "projection"
+      ? "designView projected at EVERY width — the ten controls with nothing allowed to shed"
+      : "the real shipped bar at every width",
+    narrowestNamePx: Math.min(...nameCells.map((c) => c.nameWidthPx ?? 0)),
+    fewestVisibleChars: Math.min(...nameCells.map((c) => c.nameVisibleChars ?? 0)),
+    // Named out loud, because "which cell was worst" is the first question
+    // anyone reading a failure here will ask.
+    worstCells: nameCells
+      .filter((c) => (c.nameVisibleChars ?? 0) === Math.min(...nameCells.map((x) => x.nameVisibleChars ?? 0)))
+      .map((c) => `${c.role} @ ${c.width}px: ${c.nameWidthPx}px, ${c.nameVisibleChars} chars ("${c.nameVisibleText}")`),
+    everyCell: nameCells,
+  },
+  // ⚠ In the PROJECTION pass this reads the ten controls forced on at every
+  // width including 360, which is the bar nobody ships and which the
+  // projection exists to show does not work. It is expected to FAIL there and
+  // the pass is a recording, not a gate — so the assertion is only made
+  // against the built bar. Said here rather than by quietly weakening it.
+  PASS === "projection"
+    ? { observationOnly: "the projection forces ten controls on at 360px; zero visible characters there is the finding, not a regression" }
+    : (d) => d.fewestVisibleChars >= 1,
 );
 
 console.log("5. the shed order, read off the matrix");

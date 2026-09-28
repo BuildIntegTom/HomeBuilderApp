@@ -1,0 +1,5648 @@
+{
+  "app": "http://localhost:3218/",
+  "pass": "built",
+  "ranAt": "2026-09-28T14:16:32.212Z",
+  "proveFailureMode": false,
+  "steps": [
+    {
+      "name": "the-bar-is-addressable",
+      "controlCount": 9,
+      "present": [
+        "wordmark",
+        "acting-as",
+        "account",
+        "project",
+        "design",
+        "view",
+        "nav-wall",
+        "role",
+        "settings"
+      ],
+      "barHeight": 56,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "footprint-drawn",
+      "dialLabel": "2D Floor Plan",
+      "nextDisabled": false,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "all-four-scope-branches-on",
+      "scopeBefore": [
+        {
+          "text": "Floors",
+          "checked": false
+        },
+        {
+          "text": "Walls",
+          "checked": true
+        },
+        {
+          "text": "Roof",
+          "checked": false
+        },
+        {
+          "text": "Foundation",
+          "checked": false
+        }
+      ],
+      "scopeAfter": [
+        {
+          "text": "Floors",
+          "checked": true
+        },
+        {
+          "text": "Walls",
+          "checked": true
+        },
+        {
+          "text": "Roof",
+          "checked": true
+        },
+        {
+          "text": "Foundation",
+          "checked": true
+        }
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "four-company-simulation-renders-like-the-real-control",
+      "ok": true,
+      "usedClass": "AccountControl-module__ijKEya__actingAsSelect",
+      "width": 270,
+      "chipText": "Acting asBuilding IntegrityThe Seed Collaborative (platform admin)Rare Forms (consortium)Building Integrity (company admin)",
+      "chipWidth": 354.7,
+      "recordedPx": 270,
+      "deltaPx": 0,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-dial-offers-plan-every-elevation-and-the-three-3d-modes",
+      "stops": [
+        "2D Floor Plan",
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA",
+        "3D Framed",
+        "3D Boxes",
+        "Membranes"
+      ],
+      "elevationCount": 4,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "THE-MEASUREMENT-does-a-twelve-item-bar-fit",
+      "byWidth": {
+        "today": {
+          "360": {
+            "rowContentWidth": 344,
+            "maxWantedPx": 372.1,
+            "maxShortfallPx": 28.1,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 90.6,
+            "actingAsAlwaysOnScreen": true,
+            "minNameWidthPx": 78.6,
+            "nameNaturalPx": 251,
+            "minNameVisibleChars": 7,
+            "nameLabelChars": 39,
+            "anyNameVisibleEverywhere": true,
+            "nameWholeEverywhere": false,
+            "worstNameVisibleText": "The See",
+            "everOffScreen": [],
+            "controlsPresent": [
+              "acting-as",
+              "account",
+              "project",
+              "role",
+              "settings"
+            ]
+          },
+          "710": {
+            "rowContentWidth": 694,
+            "maxWantedPx": 513.5,
+            "maxShortfallPx": -180.5,
+            "fits": true,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 232,
+            "actingAsAlwaysOnScreen": true,
+            "minNameWidthPx": 220,
+            "nameNaturalPx": 251,
+            "minNameVisibleChars": 31,
+            "nameLabelChars": 39,
+            "anyNameVisibleEverywhere": true,
+            "nameWholeEverywhere": false,
+            "worstNameVisibleText": "The Seed Collaborative (platfor",
+            "everOffScreen": [],
+            "controlsPresent": [
+              "acting-as",
+              "account",
+              "project",
+              "role",
+              "settings"
+            ]
+          },
+          "768": {
+            "rowContentWidth": 728,
+            "maxWantedPx": 761,
+            "maxShortfallPx": 33,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 304.7,
+            "actingAsAlwaysOnScreen": true,
+            "minNameWidthPx": 220,
+            "nameNaturalPx": 270,
+            "minNameVisibleChars": 29,
+            "nameLabelChars": 39,
+            "anyNameVisibleEverywhere": true,
+            "nameWholeEverywhere": false,
+            "worstNameVisibleText": "The Seed Collaborative (platf",
+            "everOffScreen": [],
+            "controlsPresent": [
+              "acting-as",
+              "account",
+              "project",
+              "role",
+              "settings"
+            ]
+          },
+          "1200": {
+            "rowContentWidth": 1160,
+            "maxWantedPx": 1194.3,
+            "maxShortfallPx": 34.3,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 100.8,
+            "actingAsAlwaysOnScreen": true,
+            "minNameWidthPx": 16,
+            "nameNaturalPx": 270,
+            "minNameVisibleChars": 0,
+            "nameLabelChars": 39,
+            "anyNameVisibleEverywhere": false,
+            "nameWholeEverywhere": false,
+            "worstNameVisibleText": "",
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          },
+          "1440": {
+            "rowContentWidth": 1400,
+            "maxWantedPx": 1434.3,
+            "maxShortfallPx": 34.3,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 340.8,
+            "actingAsAlwaysOnScreen": true,
+            "minNameWidthPx": 256,
+            "nameNaturalPx": 270,
+            "minNameVisibleChars": 35,
+            "nameLabelChars": 39,
+            "anyNameVisibleEverywhere": true,
+            "nameWholeEverywhere": false,
+            "worstNameVisibleText": "The Seed Collaborative (platform ad",
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          },
+          "1600": {
+            "rowContentWidth": 1560,
+            "maxWantedPx": 1448.2,
+            "maxShortfallPx": -111.8,
+            "fits": true,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 354.7,
+            "actingAsAlwaysOnScreen": true,
+            "minNameWidthPx": 270,
+            "nameNaturalPx": 270,
+            "minNameVisibleChars": 39,
+            "nameLabelChars": 39,
+            "anyNameVisibleEverywhere": true,
+            "nameWholeEverywhere": true,
+            "worstNameVisibleText": "The Seed Collaborative (platform admin)",
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          }
+        },
+        "designView": {
+          "360": {
+            "notMeasured": "the new controls are shed at this width; see today[360]"
+          },
+          "710": {
+            "notMeasured": "the new controls are shed at this width; see today[710]"
+          },
+          "768": {
+            "notMeasured": "the new controls are shed at this width; see today[768]"
+          },
+          "1200": {
+            "rowContentWidth": 1160,
+            "maxWantedPx": 1194.3,
+            "maxShortfallPx": 34.3,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 100.8,
+            "actingAsAlwaysOnScreen": true,
+            "minNameWidthPx": 16,
+            "nameNaturalPx": 270,
+            "minNameVisibleChars": 0,
+            "nameLabelChars": 39,
+            "anyNameVisibleEverywhere": false,
+            "nameWholeEverywhere": false,
+            "worstNameVisibleText": "",
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          },
+          "1440": {
+            "rowContentWidth": 1400,
+            "maxWantedPx": 1434.3,
+            "maxShortfallPx": 34.3,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 340.8,
+            "actingAsAlwaysOnScreen": true,
+            "minNameWidthPx": 256,
+            "nameNaturalPx": 270,
+            "minNameVisibleChars": 35,
+            "nameLabelChars": 39,
+            "anyNameVisibleEverywhere": true,
+            "nameWholeEverywhere": false,
+            "worstNameVisibleText": "The Seed Collaborative (platform ad",
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          },
+          "1600": {
+            "rowContentWidth": 1560,
+            "maxWantedPx": 1448.2,
+            "maxShortfallPx": -111.8,
+            "fits": true,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 354.7,
+            "actingAsAlwaysOnScreen": true,
+            "minNameWidthPx": 270,
+            "nameNaturalPx": 270,
+            "minNameVisibleChars": 39,
+            "nameLabelChars": 39,
+            "anyNameVisibleEverywhere": true,
+            "nameWholeEverywhere": true,
+            "worstNameVisibleText": "The Seed Collaborative (platform admin)",
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          }
+        },
+        "twelve": {
+          "360": {
+            "notMeasured": "the new controls are shed at this width; see today[360]"
+          },
+          "710": {
+            "notMeasured": "the new controls are shed at this width; see today[710]"
+          },
+          "768": {
+            "notMeasured": "the new controls are shed at this width; see today[768]"
+          },
+          "1200": {
+            "rowContentWidth": 1160,
+            "maxWantedPx": 1275.8,
+            "maxShortfallPx": 115.8,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 20,
+            "actingAsAlwaysOnScreen": true,
+            "minNameWidthPx": 0,
+            "nameNaturalPx": 270,
+            "minNameVisibleChars": 0,
+            "nameLabelChars": 39,
+            "anyNameVisibleEverywhere": false,
+            "nameWholeEverywhere": false,
+            "worstNameVisibleText": "",
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "summary",
+              "print",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          },
+          "1440": {
+            "rowContentWidth": 1400,
+            "maxWantedPx": 1434.2,
+            "maxShortfallPx": 34.2,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 178.4,
+            "actingAsAlwaysOnScreen": true,
+            "minNameWidthPx": 93.7,
+            "nameNaturalPx": 270,
+            "minNameVisibleChars": 8,
+            "nameLabelChars": 39,
+            "anyNameVisibleEverywhere": true,
+            "nameWholeEverywhere": false,
+            "worstNameVisibleText": "The Seed",
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "summary",
+              "print",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          },
+          "1600": {
+            "rowContentWidth": 1560,
+            "maxWantedPx": 1594.2,
+            "maxShortfallPx": 34.2,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 338.4,
+            "actingAsAlwaysOnScreen": true,
+            "minNameWidthPx": 253.7,
+            "nameNaturalPx": 270,
+            "minNameVisibleChars": 34,
+            "nameLabelChars": 39,
+            "anyNameVisibleEverywhere": true,
+            "nameWholeEverywhere": false,
+            "worstNameVisibleText": "The Seed Collaborative (platform a",
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "summary",
+              "print",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          }
+        }
+      },
+      "naturalWidths": {
+        "today": {
+          "naturalRowContentPx": 1448.2,
+          "naturalViewportPx": 1488.2,
+          "measuredAt": "1600px, four companies, the widest role label"
+        },
+        "designView": {
+          "naturalRowContentPx": 1448.2,
+          "naturalViewportPx": 1488.2,
+          "measuredAt": "1600px, four companies, the widest role label"
+        },
+        "twelve": {
+          "naturalRowContentPx": 1594.2,
+          "naturalViewportPx": 1634.2,
+          "measuredAt": "1600px, four companies, the widest role label"
+        }
+      },
+      "firstFitsAtViewportWidth": {
+        "today": {
+          "nothingOffScreen": {
+            "below-768": 320,
+            "768-1199": 768,
+            "1200-up": 1200
+          },
+          "anyNameVisible": {
+            "below-768": 320,
+            "768-1199": 768,
+            "1200-up": 1219
+          },
+          "companyNameIntact": {
+            "below-768": 485,
+            "768-1199": 768,
+            "1200-up": 1374
+          },
+          "companyNameWhole": {
+            "below-768": "never in 320-767",
+            "768-1199": "never in 768-1199",
+            "1200-up": 1447
+          }
+        }
+      },
+      "cells": 48,
+      "designValueMeasured": "2D Floor Plan",
+      "asserted": false,
+      "observationOnly": "the width budget IS the finding; a pass/fail here would put a thumb on the scale"
+    },
+    {
+      "name": "nothing-U1-ships-is-ever-pushed-off-screen",
+      "configuration": "the real shipped bar at every width",
+      "offScreenAnywhere": [],
+      "actingAsAlwaysOnScreen": true,
+      "narrowestActingAsPx": 90.6,
+      "docOverflowAnywhere": 0,
+      "rowOverflowAnywhere": 0,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "some-of-the-acting-as-company-name-is-visible-at-every-width-U1-ships",
+      "configuration": "the real shipped bar at every width",
+      "narrowestNamePx": 16,
+      "fewestVisibleChars": 0,
+      "worstCells": [
+        "Public @ 1200px: 39.1px, 0 chars (\"\")",
+        "Fabricator @ 1200px: 16px, 0 chars (\"\")",
+        "Admin @ 1200px: 38.4px, 0 chars (\"\")",
+        "Engineer @ 1200px: 22.5px, 0 chars (\"\")"
+      ],
+      "everyCell": [
+        {
+          "role": "Public",
+          "width": 360,
+          "nameWidthPx": 99.9,
+          "nameVisibleChars": 10,
+          "nameVisibleText": "The Seed C",
+          "nameTruncated": true
+        },
+        {
+          "role": "Public",
+          "width": 710,
+          "nameWidthPx": 220,
+          "nameVisibleChars": 31,
+          "nameVisibleText": "The Seed Collaborative (platfor",
+          "nameTruncated": true
+        },
+        {
+          "role": "Public",
+          "width": 768,
+          "nameWidthPx": 220,
+          "nameVisibleChars": 29,
+          "nameVisibleText": "The Seed Collaborative (platf",
+          "nameTruncated": true
+        },
+        {
+          "role": "Public",
+          "width": 1200,
+          "nameWidthPx": 39.1,
+          "nameVisibleChars": 0,
+          "nameVisibleText": "",
+          "nameTruncated": true
+        },
+        {
+          "role": "Public",
+          "width": 1440,
+          "nameWidthPx": 270,
+          "nameVisibleChars": 39,
+          "nameVisibleText": "The Seed Collaborative (platform admin)",
+          "nameTruncated": false
+        },
+        {
+          "role": "Public",
+          "width": 1600,
+          "nameWidthPx": 270,
+          "nameVisibleChars": 39,
+          "nameVisibleText": "The Seed Collaborative (platform admin)",
+          "nameTruncated": false
+        },
+        {
+          "role": "Fabricator",
+          "width": 360,
+          "nameWidthPx": 78.6,
+          "nameVisibleChars": 7,
+          "nameVisibleText": "The See",
+          "nameTruncated": true
+        },
+        {
+          "role": "Fabricator",
+          "width": 710,
+          "nameWidthPx": 220,
+          "nameVisibleChars": 31,
+          "nameVisibleText": "The Seed Collaborative (platfor",
+          "nameTruncated": true
+        },
+        {
+          "role": "Fabricator",
+          "width": 768,
+          "nameWidthPx": 220,
+          "nameVisibleChars": 29,
+          "nameVisibleText": "The Seed Collaborative (platf",
+          "nameTruncated": true
+        },
+        {
+          "role": "Fabricator",
+          "width": 1200,
+          "nameWidthPx": 16,
+          "nameVisibleChars": 0,
+          "nameVisibleText": "",
+          "nameTruncated": true
+        },
+        {
+          "role": "Fabricator",
+          "width": 1440,
+          "nameWidthPx": 256,
+          "nameVisibleChars": 35,
+          "nameVisibleText": "The Seed Collaborative (platform ad",
+          "nameTruncated": true
+        },
+        {
+          "role": "Fabricator",
+          "width": 1600,
+          "nameWidthPx": 270,
+          "nameVisibleChars": 39,
+          "nameVisibleText": "The Seed Collaborative (platform admin)",
+          "nameTruncated": false
+        },
+        {
+          "role": "Admin",
+          "width": 360,
+          "nameWidthPx": 99.2,
+          "nameVisibleChars": 10,
+          "nameVisibleText": "The Seed C",
+          "nameTruncated": true
+        },
+        {
+          "role": "Admin",
+          "width": 710,
+          "nameWidthPx": 220,
+          "nameVisibleChars": 31,
+          "nameVisibleText": "The Seed Collaborative (platfor",
+          "nameTruncated": true
+        },
+        {
+          "role": "Admin",
+          "width": 768,
+          "nameWidthPx": 220,
+          "nameVisibleChars": 29,
+          "nameVisibleText": "The Seed Collaborative (platf",
+          "nameTruncated": true
+        },
+        {
+          "role": "Admin",
+          "width": 1200,
+          "nameWidthPx": 38.4,
+          "nameVisibleChars": 0,
+          "nameVisibleText": "",
+          "nameTruncated": true
+        },
+        {
+          "role": "Admin",
+          "width": 1440,
+          "nameWidthPx": 270,
+          "nameVisibleChars": 39,
+          "nameVisibleText": "The Seed Collaborative (platform admin)",
+          "nameTruncated": false
+        },
+        {
+          "role": "Admin",
+          "width": 1600,
+          "nameWidthPx": 270,
+          "nameVisibleChars": 39,
+          "nameVisibleText": "The Seed Collaborative (platform admin)",
+          "nameTruncated": false
+        },
+        {
+          "role": "Engineer",
+          "width": 360,
+          "nameWidthPx": 84.5,
+          "nameVisibleChars": 7,
+          "nameVisibleText": "The See",
+          "nameTruncated": true
+        },
+        {
+          "role": "Engineer",
+          "width": 710,
+          "nameWidthPx": 220,
+          "nameVisibleChars": 31,
+          "nameVisibleText": "The Seed Collaborative (platfor",
+          "nameTruncated": true
+        },
+        {
+          "role": "Engineer",
+          "width": 768,
+          "nameWidthPx": 220,
+          "nameVisibleChars": 29,
+          "nameVisibleText": "The Seed Collaborative (platf",
+          "nameTruncated": true
+        },
+        {
+          "role": "Engineer",
+          "width": 1200,
+          "nameWidthPx": 22.5,
+          "nameVisibleChars": 0,
+          "nameVisibleText": "",
+          "nameTruncated": true
+        },
+        {
+          "role": "Engineer",
+          "width": 1440,
+          "nameWidthPx": 262.5,
+          "nameVisibleChars": 35,
+          "nameVisibleText": "The Seed Collaborative (platform ad",
+          "nameTruncated": true
+        },
+        {
+          "role": "Engineer",
+          "width": 1600,
+          "nameWidthPx": 270,
+          "nameVisibleChars": 39,
+          "nameVisibleText": "The Seed Collaborative (platform admin)",
+          "nameTruncated": false
+        }
+      ],
+      "asserted": true,
+      "passed": false
+    },
+    {
+      "name": "the-existing-shed-order-is-not-disturbed",
+      "shedOrder": {
+        "wordmark": {
+          "presentAt": [
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": 1200
+        },
+        "nav-wall": {
+          "presentAt": [
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": 1200
+        },
+        "nav-foundation": {
+          "presentAt": [
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": 1200
+        },
+        "nav-floor": {
+          "presentAt": [
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": 1200
+        },
+        "nav-roof": {
+          "presentAt": [
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": 1200
+        },
+        "acting-as": {
+          "presentAt": [
+            360,
+            710,
+            768,
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": "never shed"
+        },
+        "account": {
+          "presentAt": [
+            360,
+            710,
+            768,
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": "never shed"
+        },
+        "project": {
+          "presentAt": [
+            360,
+            710,
+            768,
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": "never shed"
+        },
+        "role": {
+          "presentAt": [
+            360,
+            710,
+            768,
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": "never shed"
+        },
+        "settings": {
+          "presentAt": [
+            360,
+            710,
+            768,
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": "never shed"
+        },
+        "design": {
+          "presentAt": [
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": 1200
+        },
+        "view": {
+          "presentAt": [
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": 1200
+        },
+        "summary": {
+          "presentAt": [],
+          "shedBelow": "never present"
+        },
+        "print": {
+          "presentAt": [],
+          "shedBelow": "never present"
+        }
+      },
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "region-3-renders-identically-for-every-stop-before-and-after-the-split",
+      "comparedStops": [
+        "2D Floor Plan",
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA",
+        "3D Framed",
+        "3D Boxes",
+        "Membranes"
+      ],
+      "baselineStops": [
+        "2D Floor Plan",
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA",
+        "3D Framed",
+        "3D Boxes",
+        "Membranes"
+      ],
+      "differences": [],
+      "comparedOn": "shape (digits normalised — two runs draw two slightly different buildings)",
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-dial-and-the-menus-leave-region-3-byte-for-byte-identical-on-one-design",
+      "stops": [
+        "Membranes",
+        "2D Floor Plan",
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA",
+        "3D Framed",
+        "3D Boxes"
+      ],
+      "comparedStops": [
+        "Membranes",
+        "2D Floor Plan",
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA",
+        "3D Framed",
+        "3D Boxes"
+      ],
+      "differences": [],
+      "dialAt": 1199,
+      "menusAt": 1200,
+      "comparedOn": "the full signature, digits included",
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-owner-renders-LABEL-plus-value-and-the-other-renders-the-bare-word",
+      "onPlan": {
+        "design": {
+          "present": true,
+          "owner": true,
+          "disabled": false,
+          "title": "The drawing: the floor plan, and each wall's elevation",
+          "caption": "Design",
+          "value": "2D Floor Plan",
+          "word": null,
+          "text": "Design 2D Floor Plan ▼",
+          "w": 176.8
+        },
+        "view": {
+          "present": true,
+          "owner": false,
+          "disabled": false,
+          "title": "The 3D views: framed, boxes and membranes",
+          "caption": null,
+          "value": null,
+          "word": "View",
+          "text": "View ▼",
+          "w": 74.5
+        }
+      },
+      "on3dFramed": {
+        "design": {
+          "present": true,
+          "owner": false,
+          "disabled": false,
+          "title": "The drawing: the floor plan, and each wall's elevation",
+          "caption": null,
+          "value": null,
+          "word": "Design",
+          "text": "Design ▼",
+          "w": 87
+        },
+        "view": {
+          "present": true,
+          "owner": true,
+          "disabled": false,
+          "title": "The 3D views: framed, boxes and membranes",
+          "caption": "View",
+          "value": "3D Framed",
+          "word": null,
+          "text": "View 3D Framed ▼",
+          "w": 145.9
+        }
+      },
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-caption-and-value-use-the-acting-as-control's-own-two-type-treatments",
+      "caption": {
+        "fontSize": "11px",
+        "fontWeight": "600",
+        "textTransform": "uppercase",
+        "letterSpacing": "0.11px",
+        "color": "rgb(119, 119, 119)"
+      },
+      "actingAsLabel": {
+        "fontSize": "11px",
+        "fontWeight": "600",
+        "textTransform": "uppercase",
+        "letterSpacing": "0.11px",
+        "color": "rgb(119, 119, 119)"
+      },
+      "value": {
+        "fontSize": "13px",
+        "fontWeight": "600",
+        "textTransform": "none",
+        "letterSpacing": "normal",
+        "color": "rgb(17, 17, 17)"
+      },
+      "actingAsValue": {
+        "fontSize": "13px",
+        "fontWeight": "600",
+        "textTransform": "none",
+        "letterSpacing": "normal",
+        "color": "rgb(17, 17, 17)"
+      },
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "exactly-one-of-the-bar-menus-and-the-sidebar-dial-at-every-width",
+      "presentations": [
+        {
+          "width": 1199,
+          "dial": true,
+          "design": false,
+          "view": false,
+          "menus": false,
+          "both": false,
+          "neither": false
+        },
+        {
+          "width": 1199.5,
+          "dial": true,
+          "design": false,
+          "view": false,
+          "menus": false,
+          "both": false,
+          "neither": false
+        },
+        {
+          "width": 1200,
+          "dial": false,
+          "design": true,
+          "view": true,
+          "menus": true,
+          "both": false,
+          "neither": false
+        },
+        {
+          "width": 1200.5,
+          "dial": false,
+          "design": true,
+          "view": true,
+          "menus": true,
+          "both": false,
+          "neither": false
+        },
+        {
+          "width": 1360.7,
+          "dial": false,
+          "design": true,
+          "view": true,
+          "menus": true,
+          "both": false,
+          "neither": false
+        },
+        {
+          "width": 710,
+          "dial": true,
+          "design": false,
+          "view": false,
+          "menus": false,
+          "both": false,
+          "neither": false
+        },
+        {
+          "width": 360,
+          "dial": true,
+          "design": false,
+          "view": false,
+          "menus": false,
+          "both": false,
+          "neither": false
+        },
+        {
+          "width": 1600,
+          "dial": false,
+          "design": true,
+          "view": true,
+          "menus": true,
+          "both": false,
+          "neither": false
+        }
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-two-menus-together-offer-exactly-the-dial's-stops-in-the-dial's-order",
+      "dial": [
+        "2D Floor Plan",
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA",
+        "3D Framed",
+        "3D Boxes",
+        "Membranes"
+      ],
+      "design": [
+        "2D Floor Plan",
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA"
+      ],
+      "view": [
+        "3D Framed",
+        "3D Boxes",
+        "Membranes"
+      ],
+      "combined": [
+        "2D Floor Plan",
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA",
+        "3D Framed",
+        "3D Boxes",
+        "Membranes"
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "both-menus-mirror-the-dial's-own-disabled-condition",
+      "beforeRoof": {
+        "design": {
+          "present": true,
+          "owner": false,
+          "disabled": false,
+          "title": "The drawing: the floor plan, and each wall's elevation",
+          "caption": null,
+          "value": null,
+          "word": "Design",
+          "text": "Design ▼",
+          "w": 87
+        },
+        "view": {
+          "present": true,
+          "owner": true,
+          "disabled": false,
+          "title": "The 3D views: framed, boxes and membranes",
+          "caption": "View",
+          "value": "3D Framed",
+          "word": null,
+          "text": "View 3D Framed ▼",
+          "w": 145.9
+        }
+      },
+      "onRoof": {
+        "design": {
+          "present": true,
+          "owner": false,
+          "disabled": true,
+          "title": "Available on the Wall tab, once a footprint is drawn",
+          "caption": null,
+          "value": null,
+          "word": "Design",
+          "text": "Design ▼",
+          "w": 87
+        },
+        "view": {
+          "present": true,
+          "owner": false,
+          "disabled": true,
+          "title": "Available on the Wall tab, once a footprint is drawn",
+          "caption": null,
+          "value": null,
+          "word": "View",
+          "text": "View ▼",
+          "w": 74.5
+        }
+      },
+      "backOnWall": {
+        "design": {
+          "present": true,
+          "owner": false,
+          "disabled": false,
+          "title": "The drawing: the floor plan, and each wall's elevation",
+          "caption": null,
+          "value": null,
+          "word": "Design",
+          "text": "Design ▼",
+          "w": 87
+        },
+        "view": {
+          "present": true,
+          "owner": true,
+          "disabled": false,
+          "title": "The 3D views: framed, boxes and membranes",
+          "caption": "View",
+          "value": "3D Framed",
+          "word": null,
+          "text": "View 3D Framed ▼",
+          "w": 145.9
+        }
+      },
+      "ownersBefore": [
+        "view"
+      ],
+      "ownersOnRoof": [],
+      "ownersBack": [
+        "view"
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-dial-and-its-wheel-still-work-at-Tommy's-own-710px",
+      "beforeWheel": "3D Framed",
+      "afterWheel": "3D Boxes",
+      "wheelMovedTheDial": true,
+      "hasAudioContext": true,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "no-uncaught-exception-anywhere-in-the-run",
+      "pageExceptions": [],
+      "asserted": true,
+      "passed": true
+    }
+  ],
+  "matrix": [
+    {
+      "role": "Public",
+      "width": 360,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 303.7,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 75.6,
+        "nameNaturalPx": 75.6,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 347.7,
+        "shortfallPx": 3.7
+      }
+    },
+    {
+      "role": "Public",
+      "width": 360,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 328,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 111.9,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 99.9,
+        "nameNaturalPx": 251,
+        "nameVisibleChars": 10,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed C",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 372,
+        "shortfallPx": 28
+      }
+    },
+    {
+      "role": "Public",
+      "width": 710,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 303.7,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 75.6,
+        "nameNaturalPx": 75.6,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 347.7,
+        "shortfallPx": -346.3
+      }
+    },
+    {
+      "role": "Public",
+      "width": 710,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 448.1,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 232,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 220,
+        "nameNaturalPx": 251,
+        "nameVisibleChars": 31,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platfor",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 492.1,
+        "shortfallPx": -201.9
+      }
+    },
+    {
+      "role": "Public",
+      "width": 768,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 489.9,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 599.9,
+        "shortfallPx": -128.1
+      }
+    },
+    {
+      "role": "Public",
+      "width": 768,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 627.9,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 304.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 220,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 29,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platf",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 737.9,
+        "shortfallPx": 9.9
+      }
+    },
+    {
+      "role": "Public",
+      "width": 1200,
+      "accountState": "signed-out",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 123.9,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 39.1,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 4,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not ",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 123.9,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 39.1,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 4,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not ",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1122.7,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 0,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 13,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1252.7,
+        "shortfallPx": 92.7,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Public",
+      "width": 1200,
+      "accountState": "four-companies-simulated",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 123.9,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 39.1,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 123.9,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 39.1,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1122.7,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 0,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1252.7,
+        "shortfallPx": 92.7,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Public",
+      "width": 1440,
+      "accountState": "signed-out",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1127.1,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1237.1,
+        "shortfallPx": -162.9
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1127.1,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1237.1,
+        "shortfallPx": -162.9,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1269.4,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1399.4,
+        "shortfallPx": -0.6,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Public",
+      "width": 1440,
+      "accountState": "four-companies-simulated",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1315.1,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1425.1,
+        "shortfallPx": 25.1
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1315.1,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1425.1,
+        "shortfallPx": 25.1,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1304.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 201.5,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 116.8,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 12,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Col",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1434.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Public",
+      "width": 1600,
+      "accountState": "signed-out",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1127.1,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1237.1,
+        "shortfallPx": -322.9
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1127.1,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1237.1,
+        "shortfallPx": -322.9,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1269.4,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1399.4,
+        "shortfallPx": -160.6,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Public",
+      "width": 1600,
+      "accountState": "four-companies-simulated",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1315.1,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1425.1,
+        "shortfallPx": -134.9
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1315.1,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1425.1,
+        "shortfallPx": -134.9,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1457.4,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1587.4,
+        "shortfallPx": 27.4,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 360,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 325.1,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 75.6,
+        "nameNaturalPx": 75.6,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 369.1,
+        "shortfallPx": 25.1
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 360,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 328.1,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 90.6,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 78.6,
+        "nameNaturalPx": 251,
+        "nameVisibleChars": 7,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The See",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 372.1,
+        "shortfallPx": 28.1
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 710,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 325.1,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 75.6,
+        "nameNaturalPx": 75.6,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 369.1,
+        "shortfallPx": -324.9
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 710,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 469.5,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 232,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 220,
+        "nameNaturalPx": 251,
+        "nameVisibleChars": 31,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platfor",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 513.5,
+        "shortfallPx": -180.5
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 768,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 513,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 623,
+        "shortfallPx": -105
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 768,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 651,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 304.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 220,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 29,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platf",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 761,
+        "shortfallPx": 33
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 1200,
+      "accountState": "signed-out",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 100.8,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 16,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 13,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 100.8,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 16,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 13,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1145.8,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 0,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 13,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1275.8,
+        "shortfallPx": 115.8,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 1200,
+      "accountState": "four-companies-simulated",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 100.8,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 16,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 100.8,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 16,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1145.8,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 0,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1275.8,
+        "shortfallPx": 115.8,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 1440,
+      "accountState": "signed-out",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1150.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1260.2,
+        "shortfallPx": -139.8
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1150.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1260.2,
+        "shortfallPx": -139.8,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1292.5,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1422.5,
+        "shortfallPx": 22.5,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 1440,
+      "accountState": "four-companies-simulated",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1324.3,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 340.8,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 256,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 35,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform ad",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1434.3,
+        "shortfallPx": 34.3
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1324.3,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 340.8,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 256,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 35,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform ad",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1434.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1304.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 178.4,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 93.7,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 8,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1434.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 1600,
+      "accountState": "signed-out",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1150.2,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1260.2,
+        "shortfallPx": -299.8
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1150.2,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1260.2,
+        "shortfallPx": -299.8,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1292.5,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1422.5,
+        "shortfallPx": -137.5,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 1600,
+      "accountState": "four-companies-simulated",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1338.2,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1448.2,
+        "shortfallPx": -111.8
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1338.2,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1448.2,
+        "shortfallPx": -111.8,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1464.2,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 338.4,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 253.7,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 34,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform a",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1594.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 360,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 304.4,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 75.6,
+        "nameNaturalPx": 75.6,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 348.4,
+        "shortfallPx": 4.4
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 360,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 328,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 111.2,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 99.2,
+        "nameNaturalPx": 251,
+        "nameVisibleChars": 10,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed C",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 372,
+        "shortfallPx": 28
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 710,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 304.4,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 75.6,
+        "nameNaturalPx": 75.6,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 348.4,
+        "shortfallPx": -345.6
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 710,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 448.8,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 232,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 220,
+        "nameNaturalPx": 251,
+        "nameVisibleChars": 31,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platfor",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 492.8,
+        "shortfallPx": -201.2
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 768,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 490.6,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 600.6,
+        "shortfallPx": -127.4
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 768,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 628.6,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 304.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 220,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 29,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platf",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 738.6,
+        "shortfallPx": 10.6
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 1200,
+      "accountState": "signed-out",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.2,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 123.1,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 38.4,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 4,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not ",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.2,
+        "shortfallPx": 34.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.2,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 123.1,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 38.4,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 4,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not ",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1123.4,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 0,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 13,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1253.4,
+        "shortfallPx": 93.4,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 1200,
+      "accountState": "four-companies-simulated",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.2,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 123.1,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 38.4,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.2,
+        "shortfallPx": 34.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.2,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 123.1,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 38.4,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1123.4,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 0,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1253.4,
+        "shortfallPx": 93.4,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 1440,
+      "accountState": "signed-out",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1127.8,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1237.8,
+        "shortfallPx": -162.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1127.8,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1237.8,
+        "shortfallPx": -162.2,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1270.1,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1400.1,
+        "shortfallPx": 0.1,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 1440,
+      "accountState": "four-companies-simulated",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1315.8,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1425.8,
+        "shortfallPx": 25.8
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1315.8,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1425.8,
+        "shortfallPx": 25.8,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1304.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 200.8,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 116,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 12,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Col",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1434.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 1600,
+      "accountState": "signed-out",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1127.8,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1237.8,
+        "shortfallPx": -322.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1127.8,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1237.8,
+        "shortfallPx": -322.2,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1270.1,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1400.1,
+        "shortfallPx": -159.9,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 1600,
+      "accountState": "four-companies-simulated",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1315.8,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1425.8,
+        "shortfallPx": -134.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1315.8,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1425.8,
+        "shortfallPx": -134.2,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1458.1,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1588.1,
+        "shortfallPx": 28.1,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 360,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 319.1,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 75.6,
+        "nameNaturalPx": 75.6,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 363.1,
+        "shortfallPx": 19.1
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 360,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 328,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 96.5,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 84.5,
+        "nameNaturalPx": 251,
+        "nameVisibleChars": 7,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The See",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 372,
+        "shortfallPx": 28
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 710,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 319.1,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 75.6,
+        "nameNaturalPx": 75.6,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 363.1,
+        "shortfallPx": -330.9
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 710,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 463.5,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 232,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 220,
+        "nameNaturalPx": 251,
+        "nameVisibleChars": 31,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platfor",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 507.5,
+        "shortfallPx": -186.5
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 768,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 506.5,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 616.5,
+        "shortfallPx": -111.5
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 768,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 644.5,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 304.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 220,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 29,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platf",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 754.5,
+        "shortfallPx": 26.5
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 1200,
+      "accountState": "signed-out",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.2,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 107.2,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 22.5,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 1,
+        "nameLabelChars": 13,
+        "nameVisibleText": "N",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.2,
+        "shortfallPx": 34.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.2,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 107.2,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 22.5,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 1,
+        "nameLabelChars": 13,
+        "nameVisibleText": "N",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1139.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 0,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 13,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1269.3,
+        "shortfallPx": 109.3,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 1200,
+      "accountState": "four-companies-simulated",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.2,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 107.2,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 22.5,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.2,
+        "shortfallPx": 34.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.2,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 107.2,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 22.5,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1139.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 0,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "nameVisibleText": "",
+        "nameTruncated": true,
+        "anyNameVisible": false,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1269.3,
+        "shortfallPx": 109.3,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 1440,
+      "accountState": "signed-out",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1143.7,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1253.7,
+        "shortfallPx": -146.3
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1143.7,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1253.7,
+        "shortfallPx": -146.3,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1286,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1416,
+        "shortfallPx": 16,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 1440,
+      "accountState": "four-companies-simulated",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1324.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 347.2,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 262.5,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 35,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform ad",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1434.2,
+        "shortfallPx": 34.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1324.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 347.2,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 262.5,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 35,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform ad",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1434.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1304.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 184.9,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 100.1,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 9,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed ",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1434.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 1600,
+      "accountState": "signed-out",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1143.7,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1253.7,
+        "shortfallPx": -306.3
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1143.7,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1253.7,
+        "shortfallPx": -306.3,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1286,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 81.9,
+        "nameNaturalPx": 81.9,
+        "nameVisibleChars": 13,
+        "nameLabelChars": 13,
+        "nameVisibleText": "Not signed in",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1416,
+        "shortfallPx": -144,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 1600,
+      "accountState": "four-companies-simulated",
+      "dialPresent": false,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1331.7,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1441.7,
+        "shortfallPx": -118.3
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1331.7,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform admin)",
+        "nameTruncated": false,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1441.7,
+        "shortfallPx": -118.3,
+        "projectedHere": [],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1464.2,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 344.9,
+        "actingAsOnScreen": true,
+        "nameWidthPx": 260.1,
+        "nameNaturalPx": 270,
+        "nameVisibleChars": 35,
+        "nameLabelChars": 39,
+        "nameVisibleText": "The Seed Collaborative (platform ad",
+        "nameTruncated": true,
+        "anyNameVisible": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1594.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [
+          "summary",
+          "print"
+        ],
+        "realHere": [
+          "design",
+          "view"
+        ]
+      }
+    }
+  ],
+  "byWidth": {
+    "today": {
+      "360": {
+        "rowContentWidth": 344,
+        "maxWantedPx": 372.1,
+        "maxShortfallPx": 28.1,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 90.6,
+        "actingAsAlwaysOnScreen": true,
+        "minNameWidthPx": 78.6,
+        "nameNaturalPx": 251,
+        "minNameVisibleChars": 7,
+        "nameLabelChars": 39,
+        "anyNameVisibleEverywhere": true,
+        "nameWholeEverywhere": false,
+        "worstNameVisibleText": "The See",
+        "everOffScreen": [],
+        "controlsPresent": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ]
+      },
+      "710": {
+        "rowContentWidth": 694,
+        "maxWantedPx": 513.5,
+        "maxShortfallPx": -180.5,
+        "fits": true,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 232,
+        "actingAsAlwaysOnScreen": true,
+        "minNameWidthPx": 220,
+        "nameNaturalPx": 251,
+        "minNameVisibleChars": 31,
+        "nameLabelChars": 39,
+        "anyNameVisibleEverywhere": true,
+        "nameWholeEverywhere": false,
+        "worstNameVisibleText": "The Seed Collaborative (platfor",
+        "everOffScreen": [],
+        "controlsPresent": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ]
+      },
+      "768": {
+        "rowContentWidth": 728,
+        "maxWantedPx": 761,
+        "maxShortfallPx": 33,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 304.7,
+        "actingAsAlwaysOnScreen": true,
+        "minNameWidthPx": 220,
+        "nameNaturalPx": 270,
+        "minNameVisibleChars": 29,
+        "nameLabelChars": 39,
+        "anyNameVisibleEverywhere": true,
+        "nameWholeEverywhere": false,
+        "worstNameVisibleText": "The Seed Collaborative (platf",
+        "everOffScreen": [],
+        "controlsPresent": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ]
+      },
+      "1200": {
+        "rowContentWidth": 1160,
+        "maxWantedPx": 1194.3,
+        "maxShortfallPx": 34.3,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 100.8,
+        "actingAsAlwaysOnScreen": true,
+        "minNameWidthPx": 16,
+        "nameNaturalPx": 270,
+        "minNameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "anyNameVisibleEverywhere": false,
+        "nameWholeEverywhere": false,
+        "worstNameVisibleText": "",
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      },
+      "1440": {
+        "rowContentWidth": 1400,
+        "maxWantedPx": 1434.3,
+        "maxShortfallPx": 34.3,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 340.8,
+        "actingAsAlwaysOnScreen": true,
+        "minNameWidthPx": 256,
+        "nameNaturalPx": 270,
+        "minNameVisibleChars": 35,
+        "nameLabelChars": 39,
+        "anyNameVisibleEverywhere": true,
+        "nameWholeEverywhere": false,
+        "worstNameVisibleText": "The Seed Collaborative (platform ad",
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      },
+      "1600": {
+        "rowContentWidth": 1560,
+        "maxWantedPx": 1448.2,
+        "maxShortfallPx": -111.8,
+        "fits": true,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 354.7,
+        "actingAsAlwaysOnScreen": true,
+        "minNameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "minNameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "anyNameVisibleEverywhere": true,
+        "nameWholeEverywhere": true,
+        "worstNameVisibleText": "The Seed Collaborative (platform admin)",
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      }
+    },
+    "designView": {
+      "360": {
+        "notMeasured": "the new controls are shed at this width; see today[360]"
+      },
+      "710": {
+        "notMeasured": "the new controls are shed at this width; see today[710]"
+      },
+      "768": {
+        "notMeasured": "the new controls are shed at this width; see today[768]"
+      },
+      "1200": {
+        "rowContentWidth": 1160,
+        "maxWantedPx": 1194.3,
+        "maxShortfallPx": 34.3,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 100.8,
+        "actingAsAlwaysOnScreen": true,
+        "minNameWidthPx": 16,
+        "nameNaturalPx": 270,
+        "minNameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "anyNameVisibleEverywhere": false,
+        "nameWholeEverywhere": false,
+        "worstNameVisibleText": "",
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      },
+      "1440": {
+        "rowContentWidth": 1400,
+        "maxWantedPx": 1434.3,
+        "maxShortfallPx": 34.3,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 340.8,
+        "actingAsAlwaysOnScreen": true,
+        "minNameWidthPx": 256,
+        "nameNaturalPx": 270,
+        "minNameVisibleChars": 35,
+        "nameLabelChars": 39,
+        "anyNameVisibleEverywhere": true,
+        "nameWholeEverywhere": false,
+        "worstNameVisibleText": "The Seed Collaborative (platform ad",
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      },
+      "1600": {
+        "rowContentWidth": 1560,
+        "maxWantedPx": 1448.2,
+        "maxShortfallPx": -111.8,
+        "fits": true,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 354.7,
+        "actingAsAlwaysOnScreen": true,
+        "minNameWidthPx": 270,
+        "nameNaturalPx": 270,
+        "minNameVisibleChars": 39,
+        "nameLabelChars": 39,
+        "anyNameVisibleEverywhere": true,
+        "nameWholeEverywhere": true,
+        "worstNameVisibleText": "The Seed Collaborative (platform admin)",
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      }
+    },
+    "twelve": {
+      "360": {
+        "notMeasured": "the new controls are shed at this width; see today[360]"
+      },
+      "710": {
+        "notMeasured": "the new controls are shed at this width; see today[710]"
+      },
+      "768": {
+        "notMeasured": "the new controls are shed at this width; see today[768]"
+      },
+      "1200": {
+        "rowContentWidth": 1160,
+        "maxWantedPx": 1275.8,
+        "maxShortfallPx": 115.8,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 20,
+        "actingAsAlwaysOnScreen": true,
+        "minNameWidthPx": 0,
+        "nameNaturalPx": 270,
+        "minNameVisibleChars": 0,
+        "nameLabelChars": 39,
+        "anyNameVisibleEverywhere": false,
+        "nameWholeEverywhere": false,
+        "worstNameVisibleText": "",
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      },
+      "1440": {
+        "rowContentWidth": 1400,
+        "maxWantedPx": 1434.2,
+        "maxShortfallPx": 34.2,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 178.4,
+        "actingAsAlwaysOnScreen": true,
+        "minNameWidthPx": 93.7,
+        "nameNaturalPx": 270,
+        "minNameVisibleChars": 8,
+        "nameLabelChars": 39,
+        "anyNameVisibleEverywhere": true,
+        "nameWholeEverywhere": false,
+        "worstNameVisibleText": "The Seed",
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      },
+      "1600": {
+        "rowContentWidth": 1560,
+        "maxWantedPx": 1594.2,
+        "maxShortfallPx": 34.2,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 338.4,
+        "actingAsAlwaysOnScreen": true,
+        "minNameWidthPx": 253.7,
+        "nameNaturalPx": 270,
+        "minNameVisibleChars": 34,
+        "nameLabelChars": 39,
+        "anyNameVisibleEverywhere": true,
+        "nameWholeEverywhere": false,
+        "worstNameVisibleText": "The Seed Collaborative (platform a",
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      }
+    }
+  },
+  "firstFitsAtViewportWidth": {
+    "today": {
+      "nothingOffScreen": {
+        "below-768": 320,
+        "768-1199": 768,
+        "1200-up": 1200
+      },
+      "anyNameVisible": {
+        "below-768": 320,
+        "768-1199": 768,
+        "1200-up": 1219
+      },
+      "companyNameIntact": {
+        "below-768": 485,
+        "768-1199": 768,
+        "1200-up": 1374
+      },
+      "companyNameWhole": {
+        "below-768": "never in 320-767",
+        "768-1199": "never in 768-1199",
+        "1200-up": 1447
+      }
+    }
+  },
+  "breakpointBands": [
+    {
+      "id": "below-768",
+      "lo": 320,
+      "hi": 767,
+      "what": "no wordmark, no nav, ACTING AS caption shed"
+    },
+    {
+      "id": "768-1199",
+      "lo": 768,
+      "hi": 1199,
+      "what": "no wordmark, no nav, caption shown"
+    },
+    {
+      "id": "1200-up",
+      "lo": 1200,
+      "hi": 2400,
+      "what": "wordmark + four nav tabs"
+    }
+  ],
+  "naturalWidths": {
+    "today": {
+      "naturalRowContentPx": 1448.2,
+      "naturalViewportPx": 1488.2,
+      "measuredAt": "1600px, four companies, the widest role label"
+    },
+    "designView": {
+      "naturalRowContentPx": 1448.2,
+      "naturalViewportPx": 1488.2,
+      "measuredAt": "1600px, four companies, the widest role label"
+    },
+    "twelve": {
+      "naturalRowContentPx": 1594.2,
+      "naturalViewportPx": 1634.2,
+      "measuredAt": "1600px, four companies, the widest role label"
+    }
+  },
+  "shedOrder": {
+    "wordmark": {
+      "presentAt": [
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": 1200
+    },
+    "nav-wall": {
+      "presentAt": [
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": 1200
+    },
+    "nav-foundation": {
+      "presentAt": [
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": 1200
+    },
+    "nav-floor": {
+      "presentAt": [
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": 1200
+    },
+    "nav-roof": {
+      "presentAt": [
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": 1200
+    },
+    "acting-as": {
+      "presentAt": [
+        360,
+        710,
+        768,
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": "never shed"
+    },
+    "account": {
+      "presentAt": [
+        360,
+        710,
+        768,
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": "never shed"
+    },
+    "project": {
+      "presentAt": [
+        360,
+        710,
+        768,
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": "never shed"
+    },
+    "role": {
+      "presentAt": [
+        360,
+        710,
+        768,
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": "never shed"
+    },
+    "settings": {
+      "presentAt": [
+        360,
+        710,
+        768,
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": "never shed"
+    },
+    "design": {
+      "presentAt": [
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": 1200
+    },
+    "view": {
+      "presentAt": [
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": 1200
+    },
+    "summary": {
+      "presentAt": [],
+      "shedBelow": "never present"
+    },
+    "print": {
+      "presentAt": [],
+      "shedBelow": "never present"
+    }
+  },
+  "presentations": [
+    {
+      "width": 1199,
+      "dial": true,
+      "design": false,
+      "view": false,
+      "menus": false,
+      "both": false,
+      "neither": false
+    },
+    {
+      "width": 1199.5,
+      "dial": true,
+      "design": false,
+      "view": false,
+      "menus": false,
+      "both": false,
+      "neither": false
+    },
+    {
+      "width": 1200,
+      "dial": false,
+      "design": true,
+      "view": true,
+      "menus": true,
+      "both": false,
+      "neither": false
+    },
+    {
+      "width": 1200.5,
+      "dial": false,
+      "design": true,
+      "view": true,
+      "menus": true,
+      "both": false,
+      "neither": false
+    },
+    {
+      "width": 1360.7,
+      "dial": false,
+      "design": true,
+      "view": true,
+      "menus": true,
+      "both": false,
+      "neither": false
+    },
+    {
+      "width": 710,
+      "dial": true,
+      "design": false,
+      "view": false,
+      "menus": false,
+      "both": false,
+      "neither": false
+    },
+    {
+      "width": 360,
+      "dial": true,
+      "design": false,
+      "view": false,
+      "menus": false,
+      "both": false,
+      "neither": false
+    },
+    {
+      "width": 1600,
+      "dial": false,
+      "design": true,
+      "view": true,
+      "menus": true,
+      "both": false,
+      "neither": false
+    }
+  ],
+  "pageExceptions": [],
+  "failures": [
+    "some-of-the-acting-as-company-name-is-visible-at-every-width-U1-ships"
+  ]
+}
