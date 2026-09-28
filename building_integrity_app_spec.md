@@ -4892,7 +4892,7 @@ The engineer text truncates at 768 and below; the other three roles truncate onl
 ---
 
 
-## Top Bar & Navigation Reorganisation (2026-09-26) — **U0 BUILT 2026-09-27**, U1–U6 PLANNED
+## Top Bar & Navigation Reorganisation (2026-09-26) — **U0 BUILT 2026-09-27; U1 BUILT, IN REVIEW; THE TWELVE-ITEM SKETCH IS SUPERSEDED — see "Decisions of 2026-09-28"**
 
 Tommy, 2026-09-26:
 
@@ -5233,6 +5233,41 @@ Per the 6-point discipline. **This plan introduces zero new `CatalogValue`s and 
 6. **Is the code treating open decisions as provisional?** Yes, and two in particular: **the acting-as visibility reversal (U2) does not get built until Tommy answers**, and **the keyhole question (§13) does not get resolved by whichever branch is easier to code.** Also: `roleDisclaimers` and the Read Me liability text are **relocated, never reworded** — *"editing one is a legal change wearing a layout change's clothes."*
 
 **Not in scope, explicitly, for any stage:** anything in `supabase/`, `apps/web/app/auth/**`'s session logic or `apps/web/app/cloud/**`; `PROJECT_FILE_VERSION`; the Privacy Policy and Legal Disclaimer documents; any wording in `viewerRole.ts`; any catalog value; the canvas, the drawing semantics, the member colours, the panel colour legend or the floor opacity bands; the *contents* of any tool section in the left sidebar's Region 3; the report-bug backend; the numbered continuation sheets; and **the printing customization editor beyond U5's relocation of today's controls.**
+
+
+### ⚠ DECISIONS OF 2026-09-28 — these supersede much of the plan above, and the sketch is no longer live
+
+U1 produced the first real width measurements and Tommy changed the design in response. **Read this block before the sections above**, several of which it overtakes. Nothing here is built.
+
+**The measured budget, from the BUILT bar** (`apps/web/harness/ui-reorg-u1/evidence.json`; four companies, widest role label) — the numbers everything below rests on:
+
+| bar | row content | ≈ viewport |
+|---|---|---|
+| today, six controls | 1176.9px | ~1217px |
+| + Design + View, **labelled** | 1448.2px | ~1488px |
+| + Summary + Print, labelled — the twelve-item sketch | 1594.2px | **~1634.2px** |
+
+Thresholds on the shipped ≥1200 band: some of the company name visible **1226px**, chip at its 280px cap **1381px**, name whole **1454px**. Below 1200 the wordmark (~142px with its gap) and all four nav tabs (~264px) already shed. **At 360px the row is 344px; at Tommy's own 710px it is 694px.**
+
+**1. Rethink the bar against the measurement, not the sketch.** *"Rethink the whole bar with the real numbers."* The twelve-item bar was drawn before anything was measured and **does not fit at any width measured, 1600 included.**
+
+**2. Design and View carry NO caption and NO value — bare words.** *"Can design and view be drop down menus that don't have a: nor the description of what page they are on reading after it… That would reduce the view button to just saying view."* **This supersedes his own instruction of 2026-09-26** (*"Design, View, and Summary should look and function similar to how the Acting As button does right now… (all caps dark grey) Design (First Letter Cap and Black) Plan View"*). The value string is most of those buttons' width — the built Design button measured **176.8px** as `DESIGN 2D Floor Plan ▼` — so this is the saving the re-plan turns on. **Consequence worth keeping: the LABEL+Value treatment becomes unique to the acting-as chip**, the one control whose value must always be readable for a documented safety reason.
+
+**3. The current stop is shown by TWO levels of highlight, not by text.** *"When you open the app it'll automatically be in planview editor. This will make the design button highlighted so that the user immediately can tell that they're designing. If they click the design button, it opens a small drop-down menu that you can clearly see that Plan View is highlighted in the drop-down menu."* So: the **bar** highlights the **owning menu**; the **open menu** highlights the **current stop**. The stop is one click deep rather than lost, which answers the objection that Design owns Plan View plus one entry per wall — nine stops on an octagon — behind a single word. **Both states are real requirements and are not the same control**; "highlighted" is doing load-bearing work in two places, and the honest form of the menu-item state is `aria-current` or an accessible name, not colour alone.
+- **His premise was verified, and it holds with no work:** `page.tsx:620-621` are `useState<EditorTab>("wall")` and `useState<"plan" | "3d">("plan")`, so the app already opens on the Wall tab in plan view and Design is highlighted on launch. That sentence describes current behaviour, not a new requirement.
+
+**4. ⚠ THE `ViewerDial` IS TO BE REMOVED ENTIRELY.** *"I would like to not have the dial after these updates. All of the viewers and editors that you can reach through the dial should be accessible on the top bar after we are done."* **This is the largest change and it removes the mechanism that made narrow widths work.** Until now the bar could shed Design and View below a breakpoint *because the dial caught them*. With no dial there is nothing to catch them, so **the bar must carry every stop at 360px**, where the row is 344px and the five non-negotiables plus the acting-as chip already live. **Whether bare buttons fit there is the question that decides the shape of the whole workstream**, and it is unmeasured. If they do not, the options are an icon-only form below some width, or an honestly declared minimum usable width — the app is a desktop drawing tool and Tommy works at 710px, so a minimum width is a legitimate answer, not a failure.
+- **Also lost with the dial: scroll-wheel cycling** (U1 asserted it with a real CDP wheel at 710px). Nothing replaces it yet; say so rather than letting it vanish.
+- **Five browser harnesses drive the view through the dial** — the three Smearforn stages, `smearforn-stage-2b` and `ui-reorg-u0` — via the shared `apps/web/harness/viewStopControl.mjs` U1 introduced so they could negotiate dial-vs-menus. **All five must be converted to drive the menus.** That is real work inside the regression net protecting the panel-editor stages that shipped 2026-09-27, and it belongs in the estimate, not a footnote.
+- `isViewerDialLive`'s **name becomes wrong**, though the property it holds — one definition read by four call sites — is worth keeping under a better one. `viewerMenus.ts` and `viewLabels.ts` need re-reading against a dial-less app.
+
+**5. The wordmark is expendable.** *"I don't think it's really all that important to have Building Integrity in left side. Maybe that would save a lot of space."* Worth ~142px **but only at ≥1200px, where it currently shows** — below 1200 it already sheds, so it buys nothing at his own 710px. It would pull a labelled Design/View threshold down by roughly its own width; against bare buttons its value is unmeasured.
+
+**6. `useRustleSound()` may go with the dial.** *"The rustle sound is no big deal. I'll probably add sound effects to certain things at later dates, but not a big deal that we are moving on from that."* **Recorded as his decision so its absence is not later read as an oversight**, and so a future sound pass starts from "this was deliberately dropped" rather than "this was lost".
+
+**Still open, and not to be answered by inference:** whether bare Design and View fit at 360px and at 710px; whether Summary and Print come back into reach at any real width; `2D Floor Plan` → `Plan View`; what Design and View do on the Floor/Roof/Foundation tabs; and whether the 1454/1381/1226 threshold question survives at all in this shape.
+
+**⚠ Status: the re-plan was started and STOPPED before it reported.** These decisions are recorded; the measured consequences of decisions 2 and 4 are not. **Nothing above should be built until the 360px question is measured**, because it decides whether the bar can carry the dial's job at all.
 
 ### Open Items — Top Bar & Navigation Reorganisation
 
