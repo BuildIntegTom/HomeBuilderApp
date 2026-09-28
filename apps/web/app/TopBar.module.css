@@ -2,6 +2,18 @@
    reorganisation", Breakpoint hygiene, and Tommy's 2026-09-13 decisions). The
    bar changes at exactly these widths; do not add another:
 
+    1454px  ⚠ THE FOURTH NUMBER, ADDED 2026-09-28, AND PROVISIONAL UNTIL TOMMY
+            CONFIRMS IT. At and above (`min-width: 1454px`): U1's Design and
+            View menus show and page.module.css's .viewerDialSlot hides, so the
+            sidebar ViewerDial is the view control below it. It is NOT 1200,
+            where U1 first put them: measured there with four companies, the
+            two menus took the ENTIRE acting-as company name — a 16px select
+            rendering zero characters under a caption still reading ACTING AS.
+            1454 is the bisected width at which those two cost the name
+            nothing. The full reasoning, the measurements, and why this breaks
+            the "do not add another" rule above are on .viewMenus below; the
+            short version is that the name is what may never be crushed and the
+            newcomers are what yield.
      1200px  At and above (`min-width: 1200px`): the wordmark and the Wall/
              Foundation/Floor/Roof nav show, EditorTabDial hides
              (EditorToolbar.module.css), and the acting-as company name may grow
@@ -24,10 +36,12 @@
    bar: shedding there left the caption showing while the company name was
    already truncated between ~601 and 700px.
 
-   Shed order, narrowing: nav tabs + wordmark (below 1200) -> "ACTING AS"
-   caption (below 768). NEVER shed: the acting-as company name, Project, Role,
-   and the settings icon. When space still runs out, the company name truncates
-   with an ellipsis and a title. No help icon exists to shed.
+   Shed order, narrowing: Design + View menus (below 1454) -> nav tabs +
+   wordmark (below 1200) -> "ACTING AS" caption (below 768). NEVER shed: the
+   acting-as company name, Project, Role, and the settings icon. When space
+   still runs out, the company name truncates with an ellipsis and a title —
+   but it is never reduced to NO characters, which is what U1 did at 1200 and
+   what moving Design/View to 1454 fixes. No help icon exists to shed.
 
    Colours read from the --bi-* chrome tokens in globals.css. Every token's
    default is the exact hex this file hardcoded before. Chrome only: nothing
@@ -98,9 +112,9 @@
   display: none;
 }
 
-/* U1's Design and View menus. Hidden below 1200px, where the sidebar's
-   ViewerDial is the view control — the same arrangement, at the same width,
-   as the nav above and EditorTabDial.
+/* U1's Design and View menus. Hidden below 1454px, where the sidebar's
+   ViewerDial is the view control — the same arrangement as the nav above and
+   EditorTabDial, but NOT at the same width, and the reason is below.
 
    `display: contents` rather than `flex` when shown: this wrapper exists only
    to carry the media query, so it must generate no box of its own. Its two
@@ -111,20 +125,55 @@
    actually does. (Same trick, same reason, as page.module.css's
    .toolbarPortalInline and .sidebarRegion3.)
 
-   ⚠ WHAT THE MEASUREMENT SAID, because this is where someone will come
-   looking. apps/web/harness/ui-reorg-u1/evidence-projection.json, 2026-09-28:
-   with these two on the bar the row's natural content width goes from 1176.9px
-   to 1415.2px (four companies, widest role) — about 1455px of viewport. At
-   exactly 1200px it does not fit, and what gives is the acting-as company
-   name: 354.7px of chip at 1600, 133.8px at 1200. It is truncated with its
-   title intact rather than absent, which is the documented degradation, but it
-   is a real cost at the very breakpoint that was chosen in 2026-09-13 to
-   protect that name. Tommy has the numbers. Adding Summary and Print (U4, U5)
-   takes the natural width to 1577.5px / ~1618px of viewport, which fits at NO
-   width in the brief — so that stage cannot simply append two more buttons
-   here. DO NOT invent a fourth breakpoint to make it fit; the bar has 1200 and
-   768 plus a 360px floor, and a new number is Tommy's decision with the
-   measurement in hand, exactly as 1200 was. */
+   ⚠⚠ WHY THESE TWO HAVE THEIR OWN WIDTH, AND WHY IT IS NOT 1200.
+   Corrected and re-measured 2026-09-28 against the BUILT bar
+   (apps/web/harness/ui-reorg-u1/evidence-u1-as-built.json); the figures this
+   block carried before were the projection pass's and all understated the
+   cost.
+
+   U1 first put these two on the bar at 1200px, the same query as the nav.
+   Measured there, with four companies and the widest role label, the
+   acting-as company name was not merely truncated — it was GONE. The select
+   was 16px wide and rendered zero characters, at all four roles; the chip
+   read `ACTING AS` and a caret and nothing else. A caption promising a value
+   that is absent is not the documented "truncated but present" degradation.
+   It is the 2026-09-13 failure in its second form, at the very breakpoint
+   chosen in 2026-09-13 to prevent it, and it is worse than the `The See…`
+   that decision was made about.
+
+   So the constraint is: THE ACTING-AS COMPANY NAME IS NEVER CRUSHED, and
+   everything else gives way first. These two menus are the newcomers, so
+   these two are what yield. They appear only at the width where they cost the
+   name nothing at all.
+
+   That width is 1454px, BISECTED IN A REAL BROWSER, not chosen: it is the
+   narrowest viewport at which the name element reaches its own natural width
+   with these two present (four companies, the widest role label, all four nav
+   tabs). Measured on the built bar:
+       1200-1225px   zero characters of the name
+       1226px        the first character appears
+       1381px        the chip reaches the 280px cap its select is given
+       1454px        the name is WHOLE — this rule's width
+   Below it the sidebar ViewerDial is the view control, which is also what
+   keeps the scroll wheel and the rustle sound.
+
+   ⚠ THIS IS A FOURTH NUMBER ON THE BAR AND TOMMY HAS NOT BEEN ASKED FOR IT.
+   The log's rule is "do not invent a fourth breakpoint". This one is measured
+   rather than invented, and it was the only mechanism that met the
+   constraint — capping the menus' own value recovers ~90px of the ~288px
+   needed at 1200, and the only other places that width could come from are
+   the wordmark and the nav, which is Tommy's 2026-09-13 decision. But it is
+   still his call, exactly as 1200 was, and until he makes it this number is
+   provisional. See the spec's Open Items.
+
+   ⚠ AND WHAT IT MEANS FOR TOMMY HIMSELF: his own viewport is 710px. These two
+   menus do not exist there, and will not at 1280 or 1366 either. The sidebar
+   dial is his real view control, and that is a fact about the whole
+   reorganisation rather than a detail of this rule.
+
+   Adding Summary and Print (U4, U5) takes the bar's natural width to 1594.2px
+   of row content / 1634.2px of viewport, which fits at NO width in the brief —
+   so that stage cannot simply append two more buttons here either. */
 .viewMenus {
   display: none;
 }
@@ -416,18 +465,6 @@
     display: block;
   }
 
-  /* U1. The SAME single condition that shows the nav and (in
-     EditorToolbar.module.css) hides EditorTabDial, now flipping a third
-     pair: these two menus appear here and page.module.css's .viewerDialSlot
-     disappears at the identical query. Written as one condition showing one
-     form and hiding the other, never an opposed max-width/min-width pair —
-     a fractional viewport width under browser zoom satisfies neither half of
-     a pair, and the control vanishes entirely. Asserted at 1199, 1199.5,
-     1200, 1200.5 and 1360.7 by the U1 harness. */
-  .viewMenus {
-    display: contents;
-  }
-
   .zoneLeft {
     flex: 0 1 auto;
   }
@@ -442,5 +479,24 @@
 
   .zoneRight {
     margin-left: 0;
+  }
+}
+
+/* U1's Design and View menus, at their own measured width — the full reasoning
+   is in the block on .viewMenus above, including why this is a fourth number
+   on the bar and why it is still Tommy's to confirm.
+
+   ONE condition, flipping two things in opposite directions: these menus
+   appear here and page.module.css's .viewerDialSlot disappears at the
+   identical query. Never an opposed max-width/min-width pair — a fractional
+   viewport width under browser zoom satisfies neither half of a pair, and the
+   control vanishes entirely. The U1 harness asserts exactly one of the two
+   presentations at 1453, 1453.5, 1454, 1454.5 and 1614.7, and at 1199/1200
+   where nothing about the view control may happen any more. It finds this
+   width by bisecting the shipped CSS rather than carrying its own copy of the
+   number, so moving this rule moves the assertions with it. */
+@media (min-width: 1454px) {
+  .viewMenus {
+    display: contents;
   }
 }

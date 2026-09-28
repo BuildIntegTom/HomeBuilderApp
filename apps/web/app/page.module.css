@@ -192,15 +192,24 @@
 /* U1: the view dial's slot in sidebar Region 1.
    `display: contents` normally, so the dial stays a direct flex child of the
    Region 1 row and keeps its 8px gap next to the fullscreen button — the
-   wrapper generates no box and changes no pixel below 1200px.
+   wrapper generates no box and changes no pixel below 1454px.
 
-   At 1200px and up it is `display: none`, because the top bar's Design and
-   View menus are the view control there. That is the SAME `min-width: 1200px`
-   query that shows those menus (TopBar.module.css), shows the nav, and hides
-   EditorTabDial (EditorToolbar.module.css) — ONE condition flipping the two
-   forms in opposite directions, never an opposed min/max pair, so there is no
-   width (fractional ones under browser zoom included) where both show or
-   neither does.
+   At 1454px and up it is `display: none`, because the top bar's Design and
+   View menus are the view control there. That is the SAME `min-width: 1454px`
+   query that shows those menus (TopBar.module.css) — ONE condition flipping
+   the two forms in opposite directions, never an opposed min/max pair, so
+   there is no width (fractional ones under browser zoom included) where both
+   show or neither does.
+
+   ⚠ 1454, NOT 1200, AND CHANGED 2026-09-28. It is deliberately NOT the query
+   that shows the nav and hides EditorTabDial. U1 shipped it at 1200 and the
+   measurement there was that the two bar menus consumed the whole acting-as
+   company name: a 16px select showing zero characters, at all four roles.
+   The name is the thing that may never be crushed, so the menus wait until
+   they cost it nothing — which is 1454px, bisected. The consequence for this
+   file is the one that matters here: THE DIAL IS THE VIEW CONTROL OVER A MUCH
+   WIDER RANGE THAN BEFORE, including 1280 and 1366, and at every width Tommy
+   himself uses. The reasoning in full is on .viewMenus in TopBar.module.css.
 
    ⚠ TWO THINGS TO KNOW BEFORE CHANGING THIS.
 
@@ -218,7 +227,7 @@
   display: contents;
 }
 
-@media (min-width: 1200px) {
+@media (min-width: 1454px) {
   .viewerDialSlot {
     display: none;
   }

@@ -9469,11 +9469,16 @@ export default function LayoutEditor() {
                 the tab/view changed. Kept to just ViewerDial + fullscreen
                 now, so this row's height never varies. */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", width: "100%" }}>
-              {/* U1: the dial is now the BELOW-1200px form of the top bar's
+              {/* U1: the dial is the BELOW-1454px form of the top bar's
                   Design and View menus. .viewerDialSlot is `display: contents`
                   (so nothing about this row changes at narrow widths) and
-                  `display: none` at 1200px and up, on the same single query
-                  that shows the menus — see page.module.css, which also
+                  `display: none` at 1454px and up, on the same single query
+                  that shows the menus. ⚠ 1454 and not 1200, changed
+                  2026-09-28: at 1200 those two menus took the entire acting-as
+                  company name, so they now wait until they cost it nothing.
+                  The practical effect here is that THE DIAL IS THE VIEW
+                  CONTROL at 1280 and 1366 and at every width Tommy himself
+                  uses — see page.module.css, which also
                   records why Region 1 is allowed to change height at a
                   breakpoint and why the dial survives rather than being
                   replaced (the scroll wheel and the rustle sound live only

@@ -756,8 +756,9 @@ if (PASS === "projection") {
     throw new Error(
       "the projection pass is being run against code that ALREADY HAS the Design and View menus. Its artefacts " +
         "(evidence-projection.json, region3-baseline.json) are a recording of the bar BEFORE U1 and must not be " +
-        "regenerated here — below 1200px the menus have shed, so there is no ten-control bar at that width to " +
-        "measure. Run the built pass instead (no UI_REORG_U1_PASS), or check out the pre-U1 commit.",
+        "regenerated here — below the boundary the menus appear at (1454px since 2026-09-28, and they are shed " +
+        "at every narrower width) there is no ten-control bar to measure. Run the built pass instead " +
+        "(no UI_REORG_U1_PASS), or check out the pre-U1 commit.",
     );
   }
 }
@@ -875,6 +876,49 @@ record(
   (d) => d.ok === true && d.deltaPx !== null && Math.abs(d.deltaPx) <= 12 && d.chipText.includes("Seed"),
 );
 await evaluate(`window.__u1.clearCompanies()`);
+
+/**
+ * THE WIDTH AT WHICH DESIGN AND VIEW APPEAR — discovered, not written down.
+ *
+ * ⚠ WHY IT IS NOT A CONSTANT HERE. This file's own rule is that hashed class
+ * names are build artefacts and are found rather than transcribed. A
+ * breakpoint is the same kind of fact: if the harness carried its own copy of
+ * the number, a stylesheet edit would leave every "one presentation at every
+ * width" assertion quietly testing the wrong boundary — passing, and meaning
+ * nothing. So the boundary is bisected out of the shipped CSS by asking which
+ * control is actually on screen, and the steps that need it read the answer.
+ *
+ * In the projection pass the menus do not exist at any width, so there is no
+ * boundary to find; the value is null there and the steps that need it are
+ * already skipped.
+ */
+const findMenusBoundary = async () => {
+  const menusAt = async (w) => {
+    await setViewport(w, 900);
+    await installToolkit();
+    return await evaluate(`(() => { const m = window.__u1.viewMenus(); return Boolean(m.design && m.design.present); })()`);
+  };
+  let lo = 320;
+  let hi = 2400;
+  if (!(await menusAt(hi))) return null;
+  if (await menusAt(lo)) return lo;
+  while (hi - lo > 1) {
+    const mid = Math.round((lo + hi) / 2);
+    if (await menusAt(mid)) hi = mid;
+    else lo = mid;
+  }
+  return hi;
+};
+const MENUS_AT = PASS === "projection" ? null : await findMenusBoundary();
+evidence.viewMenusAppearAtViewportWidth = MENUS_AT;
+console.log(`   the Design/View menus appear at ${MENUS_AT}px (measured off the shipped CSS)`);
+
+/** §12's six widths, plus the two either side of the boundary the menus
+ * really flip at — because a breakpoint nothing is sampled at is a breakpoint
+ * nothing is measured at, and this one was moved precisely because the bar at
+ * it was never read. */
+const MEASURED_WIDTHS = [...new Set([...WIDTHS, ...(MENUS_AT ? [MENUS_AT - 1, MENUS_AT] : [])])].sort((a, b) => a - b);
+evidence.measuredWidths = MEASURED_WIDTHS;
 
 console.log("4. THE MATRIX — 6 widths x 2 account states x 4 roles, twelve controls");
 /** Read every stop label by walking the dial one full turn, at a width where
@@ -1006,7 +1050,7 @@ for (const role of ROLE_LABELS) {
   await setViewport(1440, 1000);
   await installToolkit();
   await setRole(role);
-  for (const width of WIDTHS) {
+  for (const width of MEASURED_WIDTHS) {
     await setViewport(width, 900);
     await installToolkit();
     for (const accountState of ["signed-out", "four-companies-simulated"]) {
@@ -1020,14 +1064,15 @@ for (const role of ROLE_LABELS) {
       // EVERY width, because "does a twelve-item bar fit" is literally a
       // question about a bar that never sheds.
       //
-      // The built pass must not do that below 1200px: there, Design and View
-      // are really in the DOM but `display: none` — they have SHED into the
-      // sidebar dial, which is what U1 ships and is the correct answer. A
-      // projection would skip them (they exist) and then measure a row
-      // missing two of the controls it claims to have measured. So below the
-      // breakpoint the built pass measures only the real bar, and `today`
-      // there IS the shipped bar.
-      const configsHere = PASS === "projection" || width >= 1200 ? BAR_CONFIGS : [];
+      // The built pass must not do that below the boundary the menus really
+      // appear at: there, Design and View are in the DOM but `display: none`
+      // — they have SHED into the sidebar dial, which is what ships and is
+      // the correct answer. A projection would skip them (they exist) and
+      // then measure a row missing two of the controls it claims to have
+      // measured. So below the breakpoint the built pass measures only the
+      // real bar, and `today` there IS the shipped bar. The boundary is
+      // `MENUS_AT`, read off the CSS rather than written down here.
+      const configsHere = PASS === "projection" || width >= MENUS_AT ? BAR_CONFIGS : [];
       for (const config of configsHere) {
         const projection = await evaluate(`window.__u1.project(${JSON.stringify(config.spec)})`);
         if (!projection.ok) throw new Error(`projecting ${config.id} at ${width}px failed: ${projection.why}`);
@@ -1057,7 +1102,7 @@ evidence.matrix = matrix;
 const worst = matrix.filter((m) => m.accountState === "four-companies-simulated");
 const summaryFor = (configId) => {
   const out = {};
-  for (const w of WIDTHS) {
+  for (const w of MEASURED_WIDTHS) {
     const cells = worst.filter((m) => m.width === w).map((m) => m[configId]).filter(Boolean);
     if (cells.length === 0) {
       // Below 1200 in the built pass there is no projection to summarise,
@@ -1137,7 +1182,22 @@ evidence.byWidth = {
  * 875px" for a bar that is crushed at 1200 — a true number that means the
  * opposite of what it looks like. Each band is monotonic on its own, so each
  * is bisected on its own and reported on its own.
+ *
+ * ⚠ AND THE SECOND VERSION WAS WRONG TOO, FOUND 2026-09-28. The bisection
+ * runs after the matrix loop, so it inherited whatever role that loop happened
+ * to leave set — the LAST of ROLE_LABELS, which is `Engineer`. Every published
+ * threshold was therefore measured at the wrong cell: the widest role label is
+ * `Fabricator` (the 2026-09-13 measurement used it for exactly that reason,
+ * and at 1200px it is the role whose select is crushed to 16px while
+ * Engineer's is 22.5px). A bar that is short by 6.5px more than the number
+ * says is a bar whose name is cut further than the record admits. The role is
+ * now set explicitly here and recorded beside the answers, rather than left to
+ * whatever ran last.
  */
+/** The widest role label, and the reason every threshold below is measured at
+ * it. `roleDisclaimers`' longest rendered option — not a guess: at 1200px with
+ * four companies it is the role that leaves the company name narrowest. */
+const WIDEST_ROLE_LABEL = "Fabricator";
 const BREAKPOINT_BANDS = [
   { id: "below-768", lo: 320, hi: 767, what: "no wordmark, no nav, ACTING AS caption shed" },
   { id: "768-1199", lo: 768, hi: 1199, what: "no wordmark, no nav, caption shown" },
@@ -1195,6 +1255,12 @@ const bisectBand = async (spec, predicateId, band) => {
   return hi;
 };
 
+// Explicitly, rather than inheriting the matrix loop's last role. Set at a
+// width where the Role note is comfortably on screen, as the matrix does.
+await setViewport(1440, 1000);
+await installToolkit();
+await setRole(WIDEST_ROLE_LABEL);
+
 const firstFits = {};
 for (const config of PASS === "projection" ? [{ id: "today", spec: [] }, ...BAR_CONFIGS] : [{ id: "today", spec: [] }]) {
   firstFits[config.id] = {};
@@ -1205,7 +1271,29 @@ for (const config of PASS === "projection" ? [{ id: "today", spec: [] }, ...BAR_
     }
   }
 }
+/* ⚠ AND PUT IT BACK. Region 3's content is ROLE-DEPENDENT — the
+   "Estimated Structural Capacity" block is one of the sections a role gates —
+   so leaving Fabricator set here made step 6's cross-run comparison fail on
+   all four elevations against a baseline recorded under the matrix loop's
+   last role. That is the comparison being handed a different page, not a
+   leaked view flag, and it is the second time this file has had a Region 3
+   test fail for a reason that was the TEST's. The bisection borrows the role
+   and returns it. */
+await setViewport(1440, 1000);
+await installToolkit();
+await setRole(ROLE_LABELS[ROLE_LABELS.length - 1]);
+
 evidence.firstFitsAtViewportWidth = firstFits;
+/* Which cell every threshold above was measured at. Recorded because the
+   first two versions of this bisection did not say, and the second was
+   silently reading the wrong role. */
+evidence.firstFitsMeasuredAt = {
+  role: WIDEST_ROLE_LABEL,
+  why: "the widest role label; at 1200px it leaves the company name narrowest of the four",
+  accountState: "four-companies-simulated",
+  companyLabel: LONGEST_COMPANY_LABEL,
+  bisectionTolerancePx: 2,
+};
 evidence.breakpointBands = BREAKPOINT_BANDS;
 
 /**
@@ -1344,10 +1432,10 @@ for (const control of ["wordmark", "nav-wall", "nav-foundation", "nav-floor", "n
   // one that ships, not the one the projection forced. In the projection pass
   // that means design/view/summary/print read as "never present", which is
   // true of the bar as it stood before U1.
-  const widthsPresent = WIDTHS.filter((w) => worst.some((c) => c.width === w && c.today.controls.includes(control)));
+  const widthsPresent = MEASURED_WIDTHS.filter((w) => worst.some((c) => c.width === w && c.today.controls.includes(control)));
   shedOrder[control] = {
     presentAt: widthsPresent,
-    shedBelow: widthsPresent.length === 0 ? "never present" : widthsPresent.length === WIDTHS.length ? "never shed" : Math.min(...widthsPresent),
+    shedBelow: widthsPresent.length === 0 ? "never present" : widthsPresent.length === MEASURED_WIDTHS.length ? "never shed" : Math.min(...widthsPresent),
   };
 }
 evidence.shedOrder = shedOrder;
@@ -1361,13 +1449,15 @@ record(
     ["acting-as", "account", "project", "role", "settings"].every((c) => d.shedOrder[c].shedBelow === "never shed") &&
     d.shedOrder["wordmark"].shedBelow === 1200 &&
     d.shedOrder["nav-wall"].shedBelow === 1200 &&
-    // And U1's own addition: Design and View shed at the SAME width the nav
-    // does, into the sidebar dial that is already there — the plan's
-    // recommendation, checked rather than assumed. Before U1 they are not on
-    // the bar at all, which is what the projection pass records.
+    // And U1's own addition. ⚠ CHANGED 2026-09-28: Design and View no longer
+    // shed at the SAME width the nav does. They shed at their own, wider
+    // boundary — the width at which they stop taking room from the acting-as
+    // company name — because at 1200px they were taking ALL of it. They are
+    // the newcomers, so they are what yields; the name is what does not.
+    // Before U1 they are not on the bar at all, which the projection records.
     (PASS === "projection"
       ? ["design", "view"].every((c) => d.shedOrder[c].shedBelow === "never present")
-      : ["design", "view"].every((c) => d.shedOrder[c].shedBelow === 1200)),
+      : ["design", "view"].every((c) => d.shedOrder[c].shedBelow === MENUS_AT)),
 );
 
 await setViewport(1600, 1000);
@@ -1418,7 +1508,10 @@ if (PASS === "projection") {
 } else {
   if (!fs.existsSync(REGION3_FILE)) throw new Error(`no ${path.basename(REGION3_FILE)} — run the projection pass first`);
   const baseline = JSON.parse(fs.readFileSync(REGION3_FILE, "utf8"));
-  await setViewport(1440, 1000);
+  // A width where the bar menus are live: the boundary itself, read off the
+  // CSS, so this cannot drift to a width where they have shed (it did, when
+  // the boundary moved off 1200 and this still said 1440).
+  await setViewport(MENUS_AT, 1000);
   await installToolkit();
   const diffs = [];
   const compared = [];
@@ -1466,7 +1559,9 @@ if (PASS === "projection") {
    * THE SINGLE-WRITER TEST, HALF TWO: the two presentations, one design, one
    * run — so the comparison can be exact rather than shape-only.
    *
-   * At 1199px the sidebar dial drives the stops; at 1200px the bar menus do.
+   * Just below the boundary the sidebar dial drives the stops; at it, the bar
+   * menus do. Both widths follow `MENUS_AT` rather than being written down,
+   * so moving the breakpoint cannot leave this comparing one control twice.
    * Same page, same footprint, same numbers, and the ONLY difference is which
    * control called `handleViewerStopChange`. Any difference in Region 3 at all
    * — a digit, a pressed state, a section present in one and not the other —
@@ -1478,7 +1573,7 @@ if (PASS === "projection") {
    * cross-run half above catches that; this one catches the finer drift the
    * cross-run half has to normalise away.
    */
-  await setViewport(1199, 1000);
+  await setViewport(MENUS_AT - 1, 1000);
   await installToolkit();
   const byDial = {};
   {
@@ -1491,7 +1586,7 @@ if (PASS === "projection") {
       label = await evaluate(`window.__u1.dialLabel()`);
     }
   }
-  await setViewport(1200, 1000);
+  await setViewport(MENUS_AT, 1000);
   await installToolkit();
   const sameRunDiffs = [];
   const sameRunCompared = [];
@@ -1510,8 +1605,8 @@ if (PASS === "projection") {
       stops: Object.keys(byDial),
       comparedStops: sameRunCompared,
       differences: sameRunDiffs,
-      dialAt: 1199,
-      menusAt: 1200,
+      dialAt: MENUS_AT - 1,
+      menusAt: MENUS_AT,
       comparedOn: "the full signature, digits included",
     },
     // A baseline of nothing compares equal to anything, so the stop count is
@@ -1558,7 +1653,7 @@ async function selectStopByMenu(label) {
 // --- the built-pass-only assertions -----------------------------------------
 if (PASS === "built") {
   console.log("7. the owner rule, read out of the DOM");
-  await setViewport(1440, 1000);
+  await setViewport(MENUS_AT, 1000);
   await installToolkit();
   await selectStopByMenu("2D Floor Plan");
   const onPlan = await evaluate(`(() => ({ menus: window.__u1.viewMenus(), controls: window.__u1.controls() }))()`);
@@ -1638,9 +1733,14 @@ if (PASS === "built") {
       d.value.color === d.actingAsValue.color,
   );
 
-  console.log("8. exactly one presentation, at 1199, 1200 and a fractional zoom width");
+  console.log(`8. exactly one presentation, around the measured ${MENUS_AT}px boundary and a fractional zoom width`);
   const presentations = [];
-  for (const w of [1199, 1199.5, 1200, 1200.5, 1360.7, 710, 360, 1600]) {
+  /* The boundary is DISCOVERED (see `MENUS_AT`), so these widths follow the
+     stylesheet instead of being a second copy of its number — which is the
+     same rule the rest of this file follows for class names. The half-pixel
+     neighbours are the ones that catch an opposed min/max pair. */
+  const around = [MENUS_AT - 1, MENUS_AT - 0.5, MENUS_AT, MENUS_AT + 0.5, MENUS_AT + 160.7];
+  for (const w of [...around, 1199, 1200, 710, 360, 1600]) {
     await setViewport(w, 900);
     await installToolkit();
     const p = await evaluate(`(() => { const m = window.__u1.viewMenus(); return { dial: window.__u1.dialPresent(), design: Boolean(m.design && m.design.present), view: Boolean(m.view && m.view.present) }; })()`);
@@ -1649,19 +1749,22 @@ if (PASS === "built") {
   evidence.presentations = presentations;
   record(
     "exactly-one-of-the-bar-menus-and-the-sidebar-dial-at-every-width",
-    { presentations },
+    { presentations, boundary: MENUS_AT },
     // The reason the rule is "one CSS condition flipping two things" and not
     // an opposed min/max pair: a fractional viewport width under browser zoom
     // satisfies neither half of a pair, and the control vanishes entirely.
-    // 1199.5 and 1200.5 and 1360.7 are here to catch exactly that.
+    // The half-pixel widths either side of the boundary are here to catch
+    // exactly that. 1199/1200 stay in the list because that is where the
+    // wordmark and the nav still flip, and nothing about the view control may
+    // happen there any more.
     (d) =>
       d.presentations.every((p) => p.both === false && p.neither === false) &&
-      d.presentations.filter((p) => p.width >= 1200).every((p) => p.menus === true && p.dial === false) &&
-      d.presentations.filter((p) => p.width < 1200).every((p) => p.dial === true && p.design === false),
+      d.presentations.filter((p) => p.width >= MENUS_AT).every((p) => p.menus === true && p.dial === false) &&
+      d.presentations.filter((p) => p.width < MENUS_AT).every((p) => p.dial === true && p.design === false),
   );
 
   console.log("9. every stop reachable both ways, in footprint order");
-  await setViewport(1440, 1000);
+  await setViewport(MENUS_AT, 1000);
   await installToolkit();
   const designStops = await (async () => {
     await clickSelector('[data-view-menu="design"]', "the Design menu");

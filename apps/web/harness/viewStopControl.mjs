@@ -7,11 +7,15 @@
  * Until U1 there was exactly one view control — `ViewerDial` in the editor
  * sidebar — and four harnesses each grew their own copy of the same two
  * locators: `[aria-label="View mode"]` for the dial, and a search for the
- * button whose text is `▼`. U1 makes the dial the **below-1200px** form and
- * puts `Design` and `View` menus on the top bar at 1200px and up. Three of
- * those harnesses run at or above that width (Stage 2 launches Chrome at
- * 1600, the U0 harness drives the editor at 1280 and 1400), so those locators
- * would have returned `null` — **and returned it silently**, which in this
+ * button whose text is `▼`. U1 makes the dial the **below-1454px** form and
+ * puts `Design` and `View` menus on the top bar at 1454px and up. (They
+ * shipped at 1200px and the breakpoint moved the same day, because at 1200 the
+ * two menus consumed the whole acting-as company name. **THIS FILE DID NOT
+ * NEED CHANGING FOR THAT MOVE** — it asks the page which form is live rather
+ * than deciding from the width, which is exactly why it exists.) Stage 2
+ * launches Chrome at 1600 and the U0 harness drives the editor at 1280 and
+ * 1400 — all now BELOW the boundary, so a width-keyed locator would have
+ * returned `null` — **and returned it silently**, which in this
  * repo's own words is how "a reader keyed to an incidental element fails on
  * legitimate data, by returning nothing rather than by raising anything".
  *
@@ -107,8 +111,8 @@ export function makeViewStopControl({ evaluate, sleep }) {
    *
    * What this trades away: an element dispatch does not prove the control is
    * hit-testable where a user would actually click. That property IS worth
-   * proving — and it is proved, with real mouse events at 1199, 1200, 1440
-   * and 710, by `ui-reorg-u1`, whose subject is this control. It is not the
+   * proving — and it is proved, with real mouse events either side of the
+   * breakpoint and at 710, by `ui-reorg-u1`, whose subject is this control. It is not the
    * job of four harnesses that merely need to get to a view.
    */
   const clickEl = async (selector) =>

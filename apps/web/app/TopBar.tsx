@@ -43,7 +43,7 @@ export interface TopBarProps {
   /** Panelizer's keyhole, exactly as passed to EditorTabDial. */
   enabledTabs: EditorTab[];
   /* ---- U1: the Design and View menus ------------------------------------
-     The bar form of the sidebar's ViewerDial, at 1200px and up. Three of
+     The bar form of the sidebar's ViewerDial, at 1454px and up. Three of
      these four props are EXACTLY the three the dial already takes, passed
      through unchanged, which is what makes "two presentations of one thing"
      true rather than aspirational. */
@@ -251,26 +251,38 @@ export default function TopBar({
           </button>
 
           {/* U1: Design and View — the top-bar form of the sidebar's view
-              dial, at 1200px and up only.
+              dial, at 1454px and up only.
 
               WHY A WRAPPER THAT RENDERS NOTHING. `.viewMenus` is
               `display: contents` when shown, so both buttons are direct flex
               children of the left zone and shrink, gap and truncate exactly as
               if they were written here unwrapped; and `display: none` below
-              1200px, where the dial in the sidebar is the control instead.
-              That is the SAME `min-width: 1200px` query that shows the nav and
-              hides `EditorTabDial`, flipping two things in opposite
-              directions rather than an opposed min/max pair — so there is no
-              width, fractional ones under browser zoom included, where both
-              forms show or neither does.
+              1454px, where the dial in the sidebar is the control instead.
+              One condition flips the two in opposite directions rather than an
+              opposed min/max pair — so there is no width, fractional ones
+              under browser zoom included, where both forms show or neither
+              does.
+
+              ⚠ 1454, NOT THE NAV'S 1200, AND THAT IS THE WHOLE POINT.
+              Changed 2026-09-28. U1 shipped these two on the nav's own 1200px
+              query; measured there with four companies, they took the ENTIRE
+              acting-as company name — a 16px select rendering zero characters
+              while the caption still read ACTING AS. A wrong-company save is
+              silent and plausible, which is why that name is the one thing on
+              this bar that may never be crushed, so these two newcomers are
+              what yield instead. 1454px is the bisected width at which they
+              cost it nothing. Full reasoning and figures: TopBar.module.css
+              on `.viewMenus`.
 
               ⚠ AND THE DIAL IS NOT MERELY THE NARROW FALLBACK. Scroll-wheel
               cycling and `useRustleSound()` exist only on the dial. Replacing
               it outright at desktop width would have deleted both without a
               word, which is exactly the kind of row a reorganisation loses
               quietly. Keeping it below the breakpoint keeps them at Tommy's
-              own 710px viewport. Whether the wheel and the rustle should also
-              be offered at 1200px and up is his call, and is an Open Item. */}
+              own 710px viewport — and, since 2026-09-28, at every width below
+              1454px, which is most of them. Whether the wheel and the rustle
+              should also be offered at 1454px and up is his call, and is an
+              Open Item. */}
           <div className={styles.viewMenus}>
             {VIEWER_MENU_ORDER.map((menu) => {
               const isOwner = viewerMenuOwner(currentViewerStop, viewerDialLive) === menu;
