@@ -10375,7 +10375,15 @@ export default function LayoutEditor() {
             appear in the tray's card list, "Choose sections" cannot offer them,
             and the PDF packet cannot pick them up. They do share the ordinary
             note machinery (open order, cascade, fullscreen, ?openNote=), which
-            is what lets Read Me's QR be blown up to scan. */}
+            is what lets Read Me's QR be blown up to scan.
+
+            ⚠ THAT ALSO MAKES THEM INVISIBLE TO ANY COUNT OVER THOSE TWO
+            COLLECTIONS, which U4 and U5 both walk and which the reachability
+            harness counts as `relevantDetailPages.length + 3`. The category
+            now has a name — `CHROME_NOTE_IDS` in `chromeNotes.ts` — so a
+            later exhaustive walk can subtract a named set instead of
+            rediscovering two orphans. Nothing reads it at runtime; the ids
+            below are still the literals they always were. */}
         <StickyNote
           id="report-bug"
           label="Report Bug / Request Feature"

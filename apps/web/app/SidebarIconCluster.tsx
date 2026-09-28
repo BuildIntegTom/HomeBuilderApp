@@ -29,7 +29,7 @@ import styles from "./SidebarIconCluster.module.css";
  * `overflow`: an icon scrolled sideways out of a 40px column is exactly the
  * silently-unreachable failure this whole reorganisation exists to avoid.
  *
- * ⚠ At 64px that column is ~115px tall and can sit below the fold, so reaching
+ * ⚠ At 64px that column is ~113px tall (4×26 + 3×3) and can sit below the fold, so reaching
  * it uses the vertical scroll that rail already needs for its own tool sections.
  * `apps/web/harness/ui-reorg-u0` measures how far below rather than leaving it
  * to be discovered.

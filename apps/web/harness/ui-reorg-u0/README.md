@@ -95,3 +95,8 @@ clipped or unreachable (`withinScrollBox` is asserted), but it is a real cost of
 the cluster at that width and it is measured here rather than left to be found.
 Making it fit without scrolling would mean widening the 64px rail or shrinking
 the icons below 26px; both are design decisions, not implementation ones.
+
+**Tommy was shown this measurement and both alternatives on 2026-09-27 and
+decided: "Leave it — scrolling is fine."** So the 30px is a settled trade, not
+an outstanding defect, and these assertions are asserting the agreed outcome.
+(The column is 4×26 + 3×3 = **113px**.)
