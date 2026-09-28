@@ -131,7 +131,13 @@ export function useCompanyBackup(actingAsCompanyId: string | null): CompanyBacku
       setState({
         status: "cancelled",
         companyId: running,
-        message: backupSwitchedAwayMessage(runningName ?? "that company"),
+        // `||`, NOT `??`. The one caller is AccountPanel, which passes
+        // `session.actingAsCompanyName ?? ""` — so the value that can actually
+        // arrive is the EMPTY STRING, which `??` sails straight past, yielding
+        // "…switched away from ." The `??` guard guarded the case that cannot
+        // happen and missed the one that can, which is the same shape of bug
+        // this whole commit exists to fix.
+        message: backupSwitchedAwayMessage(runningName || "that company"),
         switchedAway: true,
       });
     }

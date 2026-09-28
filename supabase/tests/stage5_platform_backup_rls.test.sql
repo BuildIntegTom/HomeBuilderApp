@@ -77,7 +77,27 @@
 --        -> "collab_requests_select is exactly its three clauses" must FAIL.
 --           This is the one policy here with NO behavioural backstop (the
 --           fixture inserts no requests), so the definition is all there is.
+--   6. `alter policy companies_select ... to anon, authenticated`
+--        -> "companies_select is granted to `authenticated` alone" must FAIL.
+--   7. the same on `project_versions_select`
+--        -> its own roles assertion must FAIL.
+--   8. `grant select on public.projects to anon`
+--        -> "nor on projects, so the project LIST is not readable without a
+--           session" must FAIL.
+--   9. `grant select on public.companies to anon`
+--        -> "nor on companies, so not even the list of company names a backup
+--           is chosen from" must FAIL.
+--  10. give pat a real membership AND narrow `memberships_select` so he cannot
+--      see his own row
+--        -> "pat holds NO membership anywhere, counted PAST RLS" must FAIL.
+--           Before that premise was counted past RLS it read through pat's own
+--           view — the one view a policy bug could make true BY HIDING THE ROW.
+--           A premise a bug can satisfy is not a premise; this is the mutation
+--           that proves it now cannot.
 -- Each is a one-line change applied after 0010 and before this file.
+-- 6-9 were run and each failed by name; 5's second form and all of 6-9 passed
+-- the SUBSTRING-era suite green, which is why they are listed rather than
+-- assumed. A widening is the dangerous direction and it was the unguarded one.
 
 begin;
 

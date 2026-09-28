@@ -2105,10 +2105,30 @@ the delete slice's reviewer set. On PostgreSQL 17.4, `local_shim.sql` +
 | 2 | drop `is_platform_admin()` from `companies_select` | *"companies_select still admits a platform admin"* (section 0) — and with that guard relaxed, *"pat enumerates all four companies"* (got 0 of 4) |
 | 3 | `drop policy project_versions_require_aal on public.project_versions` | *"all five `*_require_aal` policies are present and restrictive"* (section 0) — and with that guard relaxed, *"an ENROLLED platform admin on an aal1 session reads 0 documents"* (got 7 of 7) |
 | 4 | `grant select on public.project_versions to service_role` | *"service_role holds NOTHING on project_versions"* |
+| 5 | `collab_requests_select using (true)` — **or** `using (true or is_platform_admin())` | *"collab_requests_select is exactly its three clauses … and NOTHING WIDER"*. ⚠ The second form **passed the whole suite green** while this was a substring check. It is the one policy here with no behavioural backstop (the fixture inserts no requests), so the definition is all there is |
+| 6 | `alter policy companies_select … to anon, authenticated` | *"companies_select is a SELECT policy granted to `authenticated` alone"* |
+| 7 | the same on `project_versions_select` | its own roles assertion — *"which is ALSO what makes an anon grant inert"* |
+| 8 | `grant select on public.projects to anon` | *"nor on projects, so the project LIST is not readable without a session either"* |
+| 9 | `grant select on public.companies to anon` | *"nor on companies, so not even the list of company names a backup is chosen from"* |
+| 10 | give pat a real membership **and** narrow `memberships_select` so he cannot see his own row | *"premise: pat holds NO membership anywhere, counted PAST RLS"* |
 
 Mutations 1–3 are caught **twice**, definitionally and behaviourally. That is
 deliberate: the definitional assertion names the cause, and the behavioural one
 proves the cause matters.
+
+**5–9 are the direction that was unguarded, and the reason this table grew.**
+Five of those six widenings passed the substring-era suite green. A widening is
+the dangerous direction — a policy that gets *looser* is how data escapes — and
+it was the one with no assertion behind it.
+
+**10 is the subtlest of the set and worth reading twice.** Section 1's premise
+*"pat holds no membership anywhere"* was originally counted **through pat's own
+view**, which is exactly the view a policy bug could make true **by hiding the
+row**. Constructed deliberately: give him a membership, narrow
+`memberships_select` so he cannot see it, and the old suite reported
+`ALL ASSERTIONS PASSED` with its premise silently false and every conclusion
+below it unsupported. **A premise a bug can satisfy is not a premise.** It is
+now counted past RLS first and through his own view second, as two facts.
 
 ## What this suite does NOT cover
 

@@ -100,3 +100,29 @@ describe("BACKUP_TAB_NOTICE", () => {
     expect(BACKUP_TAB_NOTICE).toContain("keep this tab open until it finishes");
   });
 });
+
+describe("backupSwitchedAwayMessage's fallback", () => {
+  // The guard in useCompanyBackup used `??`, which only catches null — while
+  // the one caller (AccountPanel) passes `session.actingAsCompanyName ?? ""`,
+  // so the value that can actually arrive is the EMPTY STRING. These pin the
+  // distinction rather than the operator, so a later revert to `??` fails here
+  // instead of shipping "…switched away from ."
+  it("reads as a sentence when the name is an empty string, which is what the caller can pass", () => {
+    const name = "" || "that company";
+    expect(backupSwitchedAwayMessage(name)).toBe(
+      "Backup stopped because you switched away from that company. No file was saved.",
+    );
+  });
+
+  it("names the company when there is one", () => {
+    expect(backupSwitchedAwayMessage("Rare Forms")).toContain("switched away from Rare Forms");
+  });
+
+  it("never renders an empty name — the sentence always has a subject", () => {
+    for (const raw of ["", "   ".trim(), undefined as unknown as string, null as unknown as string]) {
+      const message = backupSwitchedAwayMessage(raw || "that company");
+      expect(message).not.toMatch(/switched away from \./);
+      expect(message).toMatch(/switched away from \S/);
+    }
+  });
+});
