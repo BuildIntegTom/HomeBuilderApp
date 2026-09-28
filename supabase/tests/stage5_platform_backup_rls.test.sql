@@ -71,6 +71,12 @@
 --           must FAIL.
 --   4. `grant select on public.project_versions to service_role`
 --        -> "service_role holds nothing on project_versions" must FAIL.
+--   5. widen `collab_requests_select` to `using (true)` — or to
+--      `using (true or is_platform_admin())`, which the substring check this
+--      assertion replaced let through
+--        -> "collab_requests_select is exactly its three clauses" must FAIL.
+--           This is the one policy here with NO behavioural backstop (the
+--           fixture inserts no requests), so the definition is all there is.
 -- Each is a one-line change applied after 0010 and before this file.
 
 begin;
@@ -230,14 +236,17 @@ declare q text; c text; r text; permissive_kind text;
 begin
   -- (i) every company's id and name: the acting-as switcher's list, and the
   --     company row the backup's own manifest and zip file name come from.
-  select regexp_replace(replace(coalesce(qual, ''), 'public.', ''), '\s+', '', 'g')
-    into q from pg_policies
+  select regexp_replace(replace(coalesce(qual, ''), 'public.', ''), '\s+', '', 'g'), cmd, array_to_string(roles, ',')
+    into q, c, r from pg_policies
    where schemaname = 'public' and tablename = 'companies' and policyname = 'companies_select';
   perform pg_temp.assert(q like '%ORis_platform_admin()%',
     'companies_select still admits a platform admin — without this he cannot even SEE the company he is backing up (got '
       || coalesce(q, '<no such policy>') || ')');
   perform pg_temp.assert(q = '(is_member_of(id)OR(is_consortiumANDis_seed_entitled())ORis_platform_admin())',
     'companies_select is exactly its three clauses, and nothing wider (got ' || coalesce(q, '<no such policy>') || ')');
+  perform pg_temp.assert(c = 'SELECT' and r = 'authenticated',
+    'companies_select is a SELECT policy granted to `authenticated` alone (got ' || coalesce(c, 'null') || ' / '
+      || coalesce(r, 'null') || ')');
 
   -- (ii) every project row of the company being backed up.
   select regexp_replace(replace(coalesce(qual, ''), 'public.', ''), '\s+', '', 'g'), cmd, array_to_string(roles, ',')
@@ -251,12 +260,15 @@ begin
       || coalesce(r, 'null') || ')');
 
   -- (iii) every version's metadata AND its `document` — the files in the zip.
-  select regexp_replace(replace(coalesce(qual, ''), 'public.', ''), '\s+', '', 'g')
-    into q from pg_policies
+  select regexp_replace(replace(coalesce(qual, ''), 'public.', ''), '\s+', '', 'g'), cmd, array_to_string(roles, ',')
+    into q, c, r from pg_policies
    where schemaname = 'public' and tablename = 'project_versions' and policyname = 'project_versions_select';
   perform pg_temp.assert(q = 'can_read_project(project_id)',
     'project_versions_select is exactly can_read_project(project_id) — the document is served through that helper and nothing else (got '
       || coalesce(q, '<no such policy>') || ')');
+  perform pg_temp.assert(c = 'SELECT' and r = 'authenticated',
+    'project_versions_select is a SELECT policy granted to `authenticated` alone — which is ALSO what makes an anon grant inert (got '
+      || coalesce(c, 'null') || ' / ' || coalesce(r, 'null') || ')');
 
   -- and the helper it delegates to. A policy that reads right is no use if the
   -- function under it stopped admitting a platform admin.
@@ -282,11 +294,25 @@ begin
   -- (v) access requests. Not in any backup, and deliberately so; asserted
   --     because `collab_requests_select` NAMES is_platform_admin() outright and
   --     the plan cites it, so a later narrowing should be visible here too.
-  select regexp_replace(replace(coalesce(qual, ''), 'public.', ''), '\s+', '', 'g')
-    into q from pg_policies
+  --
+  -- ⚠ EXACT EQUALITY, NOT A SUBSTRING, and this one needs it MOST of the five.
+  -- The fixture inserts NO `collab_requests` rows at all — the refuse-to-run
+  -- guard above aborts if any exist — so unlike the other four there is no
+  -- behavioural assertion underneath this. A substring check for
+  -- "OR is_platform_admin()" passed a policy widened to `true or
+  -- is_platform_admin()`, which is the WIDENING direction and the dangerous
+  -- one. With no row to contradict it, the definition is the only backstop
+  -- there is, so it is pinned whole.
+  select regexp_replace(replace(coalesce(qual, ''), 'public.', ''), '\s+', '', 'g'), cmd, array_to_string(roles, ',')
+    into q, c, r from pg_policies
    where schemaname = 'public' and tablename = 'collab_requests' and policyname = 'collab_requests_select';
-  perform pg_temp.assert(q like '%ORis_platform_admin()%',
-    'collab_requests_select still names is_platform_admin() outright (got ' || coalesce(q, '<no such policy>') || ')');
+  perform pg_temp.assert(
+    q = '((requested_by=auth.uid())ORis_member_of(project_owner_company_id(project_id))ORis_platform_admin())',
+    'collab_requests_select is exactly its three clauses — the requester, the owning company''s members, and a platform admin — and NOTHING WIDER (got '
+      || coalesce(q, '<no such policy>') || ')');
+  perform pg_temp.assert(c = 'SELECT' and r = 'authenticated',
+    'collab_requests_select is a SELECT policy granted to `authenticated` alone (got ' || coalesce(c, 'null') || ' / '
+      || coalesce(r, 'null') || ')');
 
   -- THE RESTRICTIVE AAL POLICIES STAY ON TOP, and that is correct rather than
   -- inconvenient: an ENROLLED platform admin on a password-only session must
@@ -334,6 +360,14 @@ begin
     'nor on projects');
   perform pg_temp.assert(not has_table_privilege('anon', 'public.project_versions', 'select'),
     'and neither can anon — the publishable key that ships in the browser is not a way in');
+  -- ⚠ ALL THREE TABLES, not just the documents. An anon grant would in practice
+  -- be inert, because every select policy above is `to authenticated` and is
+  -- asserted to be — but that mitigation is one assertion away from changing,
+  -- and pinning it for only one of the three tables was the gap here.
+  perform pg_temp.assert(not has_table_privilege('anon', 'public.projects', 'select'),
+    'nor on projects, so the project LIST is not readable without a session either');
+  perform pg_temp.assert(not has_table_privilege('anon', 'public.companies', 'select'),
+    'nor on companies, so not even the list of company names a backup is chosen from');
 end $$;
 
 -- ===========================================================================
