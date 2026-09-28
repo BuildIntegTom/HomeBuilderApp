@@ -7,10 +7,13 @@ import { useState } from "react";
  * see anything under the main editor. are there any features or text that
  * i may be missing? ... lets add a small button on the bottom left of the
  * screen inside the left bar that when clicked, it has a small pop up that
- * says features of this page." Pinned to the bottom of the editor sidebar
- * (see page.module.css's .editorSidebar — this button's own wrapper uses
- * `marginTop: auto` to push it to the bottom of that flex column) so it's
- * in the same place on every editor tab. The list itself is a short, static
+ * says features of this page." Pinned to the bottom of the editor sidebar so
+ * it's in the same place on every editor tab — the bottom-pinning
+ * (`marginTop: auto` in that flex column) now belongs to SidebarIconCluster,
+ * which this button shares a row with; this wrapper keeps only the
+ * `position: relative` its own popup is anchored to, and sizes to the button
+ * rather than to the column so the icons beside it are not pushed onto their
+ * own rows. The list itself is a short, static
  * per-tab summary — mainly pointing at controls that live outside this
  * sidebar entirely (the Foundation/Floor/Roof tabs keep almost all of their
  * real inputs in the "<Tab> Tools" section further down the page, not here)
@@ -25,7 +28,7 @@ export default function PageFeaturesButton({ features }: PageFeaturesButtonProps
   const [open, setOpen] = useState(false);
 
   return (
-    <div style={{ position: "relative", marginTop: "auto", width: "100%" }}>
+    <div style={{ position: "relative", lineHeight: 0 }}>
       <button
         type="button"
         aria-expanded={open}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import StickyNote from "./StickyNote";
 import UnitSystemSwitch from "./UnitSystemSwitch";
@@ -457,6 +458,27 @@ export default function TopBar({
 
       <StickyNote id="settings-note" label="Settings" {...noteProps("settings")}>
         <UnitSystemSwitch value={unitSystem} onChange={onUnitSystemChange} />
+        {/* U0 of the navigation reorganisation. Tommy: "move single wall run
+            into the panelizer tab (speaking of which where is it? We should
+            move the content of the panelizer into the settings in the top
+            right)" — so Settings is where it lands, out of the right-hand
+            tray's footer. Same label, same route.
+
+            ⚠ It is still a NAVIGATION, exactly as it was in the tray: the
+            sandbox is a whole separate calculation page, not a note. There is
+            no localStorage anywhere in this app, so leaving the editor with an
+            unsaved design still loses it — unchanged by this move, and the
+            reason Read Me and Report Bug became notes instead. */}
+        <div className={`${styles.menuList} ${styles.menuListAfterSection}`}>
+          <Link
+            href="/sandbox"
+            className={styles.menuItemLink}
+            title="A standalone sandbox for one wall run's panel layout and its numbers. Opens as its own page — save your design first."
+            onClick={closeMenu}
+          >
+            Single Wall Run Calculation Sandbox →
+          </Link>
+        </div>
         {settingsMenuHasAdminGroup(role) && (
           <div className={styles.menuSection}>
             <h3 className={styles.menuSectionTitle}>Admin Options</h3>

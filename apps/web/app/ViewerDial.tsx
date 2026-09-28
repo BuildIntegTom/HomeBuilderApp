@@ -1,6 +1,7 @@
 "use client";
 
 import { useRustleSound } from "./useRustleSound";
+import { viewerStopLabel } from "./viewLabels";
 import styles from "./ViewerDial.module.css";
 
 export type ViewerStop =
@@ -14,20 +15,10 @@ function stopKey(stop: ViewerStop): string {
   return stop.kind === "elevation" ? `elevation-${stop.wallId}` : stop.kind;
 }
 
-function stopLabel(stop: ViewerStop): string {
-  switch (stop.kind) {
-    case "plan":
-      return "2D Floor Plan";
-    case "elevation":
-      return `Elevation: ${stop.label}`;
-    case "3d-framed":
-      return "3D Framed";
-    case "3d-boxes":
-      return "3D Boxes";
-    case "3d-wraps":
-      return "Membranes";
-  }
-}
+/* The stop labels themselves live in viewLabels.ts — one definition, so
+   anything else that has to NAME the current view (the Report Bug note's
+   context line, for one) reads the same strings instead of re-typing them.
+   This dial is still the only thing that RENDERS them as a control. */
 
 export interface ViewerDialProps {
   stops: ViewerStop[];
@@ -80,7 +71,7 @@ export default function ViewerDial({ stops, value, onChange, disabled }: ViewerD
       <button type="button" className={styles.chevron} title="Previous view" disabled={disabled} onClick={() => step(-1)}>
         ▲
       </button>
-      <div className={styles.current}>{stops[index] ? stopLabel(stops[index]!) : "—"}</div>
+      <div className={styles.current}>{stops[index] ? viewerStopLabel(stops[index]!) : "—"}</div>
       <button type="button" className={styles.chevron} title="Next view" disabled={disabled} onClick={() => step(1)}>
         ▼
       </button>
