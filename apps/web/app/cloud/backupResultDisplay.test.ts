@@ -107,8 +107,14 @@ describe("backupSwitchedAwayMessage's fallback", () => {
   // so the value that can actually arrive is the EMPTY STRING. These pin the
   // distinction rather than the operator, so a later revert to `??` fails here
   // instead of shipping "…switched away from ."
+  // Typed as the caller's own shape rather than written as a literal: `?? ""`
+  // in AccountPanel means the value is `string`, and TS narrows a literal `""`
+  // to always-falsy and rejects the `||` as dead code. Modelling the caller is
+  // both truer and compilable.
+  const asCallerPasses = (actingAsCompanyName: string | null): string => actingAsCompanyName ?? "";
+
   it("reads as a sentence when the name is an empty string, which is what the caller can pass", () => {
-    const name = "" || "that company";
+    const name = asCallerPasses(null) || "that company";
     expect(backupSwitchedAwayMessage(name)).toBe(
       "Backup stopped because you switched away from that company. No file was saved.",
     );
@@ -119,8 +125,15 @@ describe("backupSwitchedAwayMessage's fallback", () => {
   });
 
   it("never renders an empty name — the sentence always has a subject", () => {
-    for (const raw of ["", "   ".trim(), undefined as unknown as string, null as unknown as string]) {
-      const message = backupSwitchedAwayMessage(raw || "that company");
+    // Widened to `string | null | undefined` so TS does not narrow any entry to
+    // an always-falsy literal and reject the `||` as dead code. The point is
+    // that EVERY blank shape produces a sentence with a subject.
+    const blanks: (string | null | undefined)[] = ["", " ".repeat(3), "\t", undefined, null];
+    for (const raw of blanks) {
+      // Mirrors the hook's guard exactly, including the `.trim()` — which this
+      // very loop is what forced: a bare `||` passes "   " through, because a
+      // whitespace string is truthy, and renders a subject-less sentence.
+      const message = backupSwitchedAwayMessage((raw ?? "").trim() || "that company");
       expect(message).not.toMatch(/switched away from \./);
       expect(message).toMatch(/switched away from \S/);
     }

@@ -131,13 +131,19 @@ export function useCompanyBackup(actingAsCompanyId: string | null): CompanyBacku
       setState({
         status: "cancelled",
         companyId: running,
-        // `||`, NOT `??`. The one caller is AccountPanel, which passes
+        // `.trim() ||`, NOT `??`. The one caller is AccountPanel, which passes
         // `session.actingAsCompanyName ?? ""` — so the value that can actually
         // arrive is the EMPTY STRING, which `??` sails straight past, yielding
         // "…switched away from ." The `??` guard guarded the case that cannot
         // happen and missed the one that can, which is the same shape of bug
         // this whole commit exists to fix.
-        message: backupSwitchedAwayMessage(runningName || "that company"),
+        //
+        // The `.trim()` is there because a bare `||` let a whitespace-only name
+        // through — "   " is truthy — giving a sentence with no visible subject.
+        // That was found by the test below asserting the PROPERTY ("always has a
+        // subject") rather than the operator, which is why the property is the
+        // thing worth asserting.
+        message: backupSwitchedAwayMessage((runningName ?? "").trim() || "that company"),
         switchedAway: true,
       });
     }
