@@ -215,6 +215,20 @@
   white-space: normal;
 }
 
+/* A menu item that is a real link (the Single Wall Run sandbox, U0) rather
+   than a button. Reads identically to the buttons above it; only the element
+   differs, because it navigates. */
+.menuItemLink {
+  /* BOTH are listed on purpose: `composes` is not transitive in this
+     toolchain. `composes: menuItem` alone emitted `menuItemLink menuItem` and
+     dropped `tool` — which is where the padding, the 13px type, the outline
+     and the surface colour live — so the link rendered as bare 16px text in
+     the middle of a menu of buttons. Verified in the browser, not assumed. */
+  composes: menuItem tool;
+  display: block;
+  text-decoration: none;
+}
+
 .menuItemLabel {
   display: block;
   font-weight: 600;

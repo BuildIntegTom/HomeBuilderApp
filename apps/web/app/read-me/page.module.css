@@ -16,12 +16,22 @@
   gap: 24px;
 }
 
-.main h1 {
+/* Every typography rule below is rooted on .content, not .main, so the
+   SAME markup renders identically whether it is inside this route own .main
+   or inside a sticky note in the editor (see the *Content.tsx next door).
+   .main keeps only the route page layout. */
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.content h1 {
   font-size: 28px;
   margin-bottom: 4px;
 }
 
-.main section {
+.content section {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -31,12 +41,12 @@
   background: #fff;
 }
 
-.main h2 {
+.content h2 {
   font-size: 16px;
   margin: 0;
 }
 
-.main p {
+.content p {
   margin: 0;
   line-height: 1.5;
 }

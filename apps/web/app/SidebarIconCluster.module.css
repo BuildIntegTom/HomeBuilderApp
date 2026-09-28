@@ -1,0 +1,68 @@
+/* The editor sidebar's bottom-left icon cluster — see SidebarIconCluster.tsx
+   for what it is and whose request it answers.
+
+   WHY THIS IS A CSS MODULE AND NOT INLINE STYLES, unlike the `?` button it
+   sits with: it needs a media query. `page.module.css` narrows
+   `.editorSidebar` from 240px to 64px at ≤600px, and the usable width there is
+   NOT 56px (64 minus the 4px paddings) — it is about **40px**, because the
+   rail scrolls and a classic desktop scrollbar takes ~15px of it. Measured, in
+   this app, by the ui-reorg-u0 harness: at a 400px viewport the sidebar's
+   clientWidth is 48 and its content box is 40. Two 26px icons plus a gap need
+   56. **So two-across is not available at 64px on any scrollbar, and the
+   cluster is a single column there.** That is a real constraint, not a
+   preference, and the harness asserts the outcome at 600/400/360. */
+.cluster {
+  margin-top: auto;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Matches PageFeaturesButton's `?` exactly: same 26px box, same 1px #ccc
+   outline, same navy, same open/closed background. */
+.icon {
+  width: 26px;
+  height: 26px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1px solid #ccc;
+  background: #fff;
+  color: #3a5a8a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.iconActive {
+  composes: icon;
+  background: #eef3fa;
+}
+
+/* The log is wider than tall because the word "review" on it is the whole
+   point of the icon. 42px keeps that word legible; a 26px square would not. */
+.iconWide {
+  width: 42px;
+  border-radius: 13px;
+}
+
+/* At the 64px rail only the log has to give: 26px squares already fit the
+   ~40px content box, and they stay 26px so the three new icons keep matching
+   the `?` beside them, whose size is not this stage's business. */
+@media (max-width: 600px) {
+  .cluster {
+    gap: 3px;
+  }
+
+  /* 38px, so the widest icon still fits inside the 40px the scrolling 64px
+     rail actually leaves. Anything wider sticks out of the sidebar. */
+  .iconWide {
+    width: 38px;
+    border-radius: 13px;
+  }
+}

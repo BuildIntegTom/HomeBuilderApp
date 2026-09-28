@@ -1,0 +1,399 @@
+{
+  "app": "http://localhost:3217/",
+  "ranAt": "2026-09-28T01:00:21.389Z",
+  "proveFailureMode": false,
+  "steps": [
+    {
+      "name": "cluster-is-four-named-icons",
+      "present": true,
+      "labels": [
+        "Features of this page",
+        "Review Log — Items for Engineer/Contractor Review",
+        "Report Bug / Request Feature",
+        "Read Me"
+      ],
+      "titlesMatchLabels": true,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "cluster-fits-at-240px",
+      "sidebarWidth": 240,
+      "contentWidth": 215,
+      "rows": 1,
+      "overlaps": [],
+      "outsideHorizontally": [],
+      "clusterScrollOverflowPx": 0,
+      "inLastSidebarChild": true,
+      "fullyVisibleVertically": true,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "review-icon-opens-the-review-log",
+      "presentBefore": false,
+      "presentAfter": true,
+      "label": "Review Log — Items for Engineer/Contractor Review",
+      "bodyChars": 5653,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "review-icon-closes-it-again",
+      "presentAfterSecondClick": false,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "bug-icon-opens-a-note",
+      "presentBefore": false,
+      "presentAfter": true,
+      "label": "Report Bug / Request Feature",
+      "onScreen": true,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "bug-note-carries-the-route-wording-verbatim",
+      "routeSections": 3,
+      "shortestRouteSection": 79,
+      "missingFromNote": [],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "bug-note-introduces-no-new-address",
+      "routeMailtos": [
+        "mailto:tommy@buildinteg.com"
+      ],
+      "noteMailtos": [
+        "mailto:tommy@buildinteg.com"
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "bug-note-is-context-not-telemetry",
+      "containsUserAgent": false,
+      "uaFragmentsFound": [],
+      "looksLikeVersionString": false,
+      "mentionsViewport": false,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-bug-notes-review-log-link-opens-the-same-note",
+      "found": true,
+      "afterFirstLinkClick": true,
+      "afterSecondLinkClick": true,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "context-line-before-a-footprint-names-only-the-tab",
+      "line": {
+        "attr": "Wall",
+        "text": "You opened this from: Wall"
+      },
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "read-me-icon-opens-a-note-with-the-route-wording",
+      "presentBefore": false,
+      "presentAfter": true,
+      "label": "Read Me",
+      "routeSections": 3,
+      "missingFromNote": [],
+      "liabilityVerbatim": true,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "read-me-note-qr-is-still-scannable",
+      "img": true,
+      "renderedWidth": 240,
+      "renderedHeight": 311,
+      "pdfLinks": [
+        "/venmo-qr.pdf",
+        "/venmo-qr.pdf"
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "single-wall-run-moved-into-settings",
+      "sandboxLinksBeforeOpeningSettings": 0,
+      "inSettings": 1,
+      "text": "Single Wall Run Calculation Sandbox →",
+      "documentTotal": 1,
+      "onScreen": true,
+      "style": {
+        "fontSize": "13px",
+        "borderStyle": "solid",
+        "padded": true
+      },
+      "sandboxRouteStatus": 200,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "cluster-fits-at-every-width-including-64px",
+      "perWidth": [
+        {
+          "viewport": 1600,
+          "sidebarWidth": 240,
+          "contentWidth": 215,
+          "rows": 1,
+          "distinctLefts": 4,
+          "icons": 4,
+          "overlaps": 0,
+          "outsideHorizontally": [],
+          "scrollOverflowPx": 0,
+          "fullyVisibleVertically": true,
+          "pxBelowFold": 0,
+          "withinScrollBox": true
+        },
+        {
+          "viewport": 1280,
+          "sidebarWidth": 240,
+          "contentWidth": 215,
+          "rows": 1,
+          "distinctLefts": 4,
+          "icons": 4,
+          "overlaps": 0,
+          "outsideHorizontally": [],
+          "scrollOverflowPx": 0,
+          "fullyVisibleVertically": true,
+          "pxBelowFold": 0,
+          "withinScrollBox": true
+        },
+        {
+          "viewport": 1200,
+          "sidebarWidth": 240,
+          "contentWidth": 215,
+          "rows": 1,
+          "distinctLefts": 4,
+          "icons": 4,
+          "overlaps": 0,
+          "outsideHorizontally": [],
+          "scrollOverflowPx": 0,
+          "fullyVisibleVertically": true,
+          "pxBelowFold": 0,
+          "withinScrollBox": true
+        },
+        {
+          "viewport": 710,
+          "sidebarWidth": 240,
+          "contentWidth": 215,
+          "rows": 1,
+          "distinctLefts": 4,
+          "icons": 4,
+          "overlaps": 0,
+          "outsideHorizontally": [],
+          "scrollOverflowPx": 0,
+          "fullyVisibleVertically": true,
+          "pxBelowFold": 0,
+          "withinScrollBox": true
+        },
+        {
+          "viewport": 601,
+          "sidebarWidth": 240,
+          "contentWidth": 215,
+          "rows": 1,
+          "distinctLefts": 4,
+          "icons": 4,
+          "overlaps": 0,
+          "outsideHorizontally": [],
+          "scrollOverflowPx": 0,
+          "fullyVisibleVertically": true,
+          "pxBelowFold": 0,
+          "withinScrollBox": true
+        },
+        {
+          "viewport": 600,
+          "sidebarWidth": 64,
+          "contentWidth": 40,
+          "rows": 4,
+          "distinctLefts": 1,
+          "icons": 4,
+          "overlaps": 0,
+          "outsideHorizontally": [],
+          "scrollOverflowPx": 0,
+          "fullyVisibleVertically": false,
+          "pxBelowFold": 30,
+          "withinScrollBox": true
+        },
+        {
+          "viewport": 400,
+          "sidebarWidth": 64,
+          "contentWidth": 40,
+          "rows": 4,
+          "distinctLefts": 1,
+          "icons": 4,
+          "overlaps": 0,
+          "outsideHorizontally": [],
+          "scrollOverflowPx": 0,
+          "fullyVisibleVertically": false,
+          "pxBelowFold": 30,
+          "withinScrollBox": true
+        },
+        {
+          "viewport": 360,
+          "sidebarWidth": 64,
+          "contentWidth": 40,
+          "rows": 4,
+          "distinctLefts": 1,
+          "icons": 4,
+          "overlaps": 0,
+          "outsideHorizontally": [],
+          "scrollOverflowPx": 0,
+          "fullyVisibleVertically": false,
+          "pxBelowFold": 30,
+          "withinScrollBox": true
+        }
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "cluster-reads-as-a-cluster-at-240px-and-at-64px",
+      "at240": [
+        {
+          "viewport": 1600,
+          "contentWidth": 215,
+          "rows": 1,
+          "pxBelowFold": 0
+        },
+        {
+          "viewport": 1280,
+          "contentWidth": 215,
+          "rows": 1,
+          "pxBelowFold": 0
+        },
+        {
+          "viewport": 1200,
+          "contentWidth": 215,
+          "rows": 1,
+          "pxBelowFold": 0
+        },
+        {
+          "viewport": 710,
+          "contentWidth": 215,
+          "rows": 1,
+          "pxBelowFold": 0
+        },
+        {
+          "viewport": 601,
+          "contentWidth": 215,
+          "rows": 1,
+          "pxBelowFold": 0
+        }
+      ],
+      "at64": [
+        {
+          "viewport": 600,
+          "contentWidth": 40,
+          "rows": 4,
+          "distinctLefts": 1,
+          "pxBelowFold": 30
+        },
+        {
+          "viewport": 400,
+          "contentWidth": 40,
+          "rows": 4,
+          "distinctLefts": 1,
+          "pxBelowFold": 30
+        },
+        {
+          "viewport": 360,
+          "contentWidth": 40,
+          "rows": 4,
+          "distinctLefts": 1,
+          "pxBelowFold": 30
+        }
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "footprint-drawn",
+      "dialLabel": "2D Floor Plan",
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "context-line-names-the-view-as-the-app-labels-it",
+      "plan": "Wall — 2D Floor Plan",
+      "elevationDial": "Elevation: AB",
+      "elevation": "Wall — Elevation: AB",
+      "membranesReached": "Membranes",
+      "membranes": "Wall — Membranes",
+      "lineReadsNaturally": "You opened this from: Wall — Membranes",
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "context-line-on-the-roof-tab-names-only-the-tab",
+      "roofEnabled": "project-open",
+      "roofChecked": "checked",
+      "roofTabClicked": "clicked",
+      "line": "Roof",
+      "dial": "Membranes",
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "a-panel-was-selected-to-dock-its-note",
+      "candidates": 15,
+      "selectionAttempts": 1,
+      "selected": true,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "docked-note-and-an-icon-note-coexist-without-crowding-the-cluster",
+      "dockedNotePresent": true,
+      "reviewNotePresent": true,
+      "clusterTop": 950.4,
+      "dockedNoteBottom": 942.4,
+      "overlaps": [],
+      "outsideHorizontally": [],
+      "icons": 4,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "review-log-has-a-body-whether-empty-or-full",
+      "entries": 18,
+      "bodyChars": 5666,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "openNote-deep-link-still-opens-the-review-log",
+      "present": true,
+      "label": "Review Log — Items for Engineer/Contractor Review",
+      "clicksUsed": 0,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "routes-still-exist-behind-the-notes",
+      "/read-me": 200,
+      "/report-bug": 200,
+      "/sandbox": 200,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "no-uncaught-exceptions",
+      "count": 0,
+      "first": null,
+      "asserted": true,
+      "passed": true
+    }
+  ],
+  "pageExceptions": [],
+  "failures": []
+}

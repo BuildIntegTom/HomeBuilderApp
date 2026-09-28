@@ -337,6 +337,16 @@ import PanelFabricationPage from "./PanelFabricationPage";
 import BuildingSummaryRender from "./BuildingSummaryRender";
 import CompassWidget from "./CompassWidget";
 import PageFeaturesButton from "./PageFeaturesButton";
+import {
+  BugIcon,
+  ReadMeIcon,
+  ReviewLogIcon,
+  SidebarIconButton,
+  SidebarIconCluster,
+} from "./SidebarIconCluster";
+import ReadMeContent from "./read-me/ReadMeContent";
+import ReportBugContent from "./report-bug/ReportBugContent";
+import { currentViewLabel } from "./viewLabels";
 import { DocumentMetaProvider } from "./DocumentMetaContext";
 import { BrowseModeProvider } from "./BrowseModeContext";
 import { PRICE_GAP, PRICE_REDACTED_NOTE, VIEWER_OWN_DEFAULTS_NOTE } from "./cloud/browseDisplay";
@@ -9815,7 +9825,41 @@ export default function LayoutEditor() {
                     </StickyNote>
                   );
                 })()}
-              <PageFeaturesButton features={pageFeatures[editorTab]} />
+              {/* U0 of the navigation reorganisation: the `?` gains three
+                  neighbours. The Review Log's icon is the one with real value
+                  — it is where every pending-BI-confirmation value and every
+                  sub-minimum panel width surfaces for a human reviewer, and
+                  until now the only way in was scrolling the right-hand tray.
+                  Read Me and Report Bug open as notes rather than navigating
+                  to their routes: there is no localStorage anywhere in this
+                  app, so leaving the editor loses an unsaved design, and this
+                  cluster makes those links far easier to hit than the tray
+                  footer did. The routes are untouched. */}
+              <SidebarIconCluster>
+                <PageFeaturesButton features={pageFeatures[editorTab]} />
+                <SidebarIconButton
+                  label="Review Log — Items for Engineer/Contractor Review"
+                  active={openNoteIds.has("review-log")}
+                  wide
+                  onClick={() => handleToggleNote("review-log")}
+                >
+                  <ReviewLogIcon />
+                </SidebarIconButton>
+                <SidebarIconButton
+                  label="Report Bug / Request Feature"
+                  active={openNoteIds.has("report-bug")}
+                  onClick={() => handleToggleNote("report-bug")}
+                >
+                  <BugIcon />
+                </SidebarIconButton>
+                <SidebarIconButton
+                  label="Read Me"
+                  active={openNoteIds.has("read-me")}
+                  onClick={() => handleToggleNote("read-me")}
+                >
+                  <ReadMeIcon />
+                </SidebarIconButton>
+              </SidebarIconCluster>
             </div>
           </div>
 
@@ -10314,6 +10358,60 @@ export default function LayoutEditor() {
               ))}
             </ul>
           )}
+        </StickyNote>
+
+        {/* Report Bug / Request Feature, and Read Me — the two left-bar icons
+            whose content already existed as real routes (/report-bug,
+            /read-me). Both render the routes' own components, so the wording,
+            the mailto: address, the liability statement and the Venmo QR are
+            the same ones, by reference and not by copy.
+
+            NEITHER IS IN `allNoteSections` OR `formalDocumentNoteIds` on
+            purpose: they are chrome, not sections of the document. They do not
+            appear in the tray's card list, "Choose sections" cannot offer them,
+            and the PDF packet cannot pick them up. They do share the ordinary
+            note machinery (open order, cascade, fullscreen, ?openNote=), which
+            is what lets Read Me's QR be blown up to scan. */}
+        <StickyNote
+          id="report-bug"
+          label="Report Bug / Request Feature"
+          isOpen={openNoteIds.has("report-bug")}
+          isFullscreen={fullscreenNoteId === "report-bug"}
+          cascadeIndex={noteOpenOrder.indexOf("report-bug")}
+          onClose={() => handleToggleNote("report-bug")}
+          onToggleFullscreen={() => handleToggleNoteFullscreen("report-bug")}
+        >
+          <ReportBugContent
+            variant="note"
+            // One line, naming one screen, as the app itself labels it — and
+            // nothing else. No version string, no user agent, no viewport
+            // figures, no project state, and nothing is sent anywhere: the
+            // user writes the email. A backend for this is a decided
+            // deferral, not a gap to fill here.
+            currentViewName={currentViewLabel({
+              editorTab,
+              viewerStop: currentViewerStop,
+              viewerActive: editorTab === "wall" && Boolean(footprint),
+            })}
+            // OPENS it; never closes it. `handleToggleNote` stays the only
+            // writer, but a link that shuts the thing it points at when that
+            // thing is already open is not a link.
+            onOpenReviewLog={() => {
+              if (!openNoteIds.has("review-log")) handleToggleNote("review-log");
+            }}
+          />
+        </StickyNote>
+
+        <StickyNote
+          id="read-me"
+          label="Read Me"
+          isOpen={openNoteIds.has("read-me")}
+          isFullscreen={fullscreenNoteId === "read-me"}
+          cascadeIndex={noteOpenOrder.indexOf("read-me")}
+          onClose={() => handleToggleNote("read-me")}
+          onToggleFullscreen={() => handleToggleNoteFullscreen("read-me")}
+        >
+          <ReadMeContent variant="note" />
         </StickyNote>
 
         {role === "engineer" && (
@@ -11671,8 +11769,14 @@ export default function LayoutEditor() {
           }
           footer={
             <>
-              <Link href="/sandbox">Single Wall Run Calculation Sandbox →</Link>
-              <br />
+              {/* U0: the Single Wall Run sandbox link moved OUT of here and
+                  into the Settings menu (Tommy: "move single wall run into
+                  the panelizer tab... we should move the content of the
+                  panelizer into the settings in the top right" — one
+                  destination, nothing free-floating). Read Me and Report Bug
+                  keep their tray links as well as their new left-bar icons:
+                  the tray is the safety net until it is deleted wholesale in
+                  U5, so nothing loses a door in an intermediate stage. */}
               <Link href="/read-me">Read Me →</Link>
               <br />
               <Link href="/report-bug">Report Bug / Request Feature →</Link>
