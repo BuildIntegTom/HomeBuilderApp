@@ -106,7 +106,11 @@ export default function AccountControl() {
 
   return (
     <div className={styles.group}>
-      <div className={styles.actingAs}>
+      {/* data-bar-control: the U1 width harness enumerates the bar's controls
+          and their rendered widths by these names (TopBar.tsx carries the
+          rest). The acting-as chip is the one the 2026-09-13 bug is about, so
+          it is the one every width assertion checks is still on screen. */}
+      <div className={styles.actingAs} data-bar-control="acting-as">
         <span className={styles.actingAsLabel} id="acting-as-label">
           Acting as
         </span>
@@ -150,6 +154,7 @@ export default function AccountControl() {
         ref={buttonRef}
         type="button"
         className={open ? styles.buttonActive : styles.button}
+        data-bar-control="account"
         aria-expanded={open}
         onClick={(event) => openPanel(event.currentTarget)}
       >

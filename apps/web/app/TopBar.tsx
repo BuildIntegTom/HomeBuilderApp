@@ -167,14 +167,23 @@ export default function TopBar({
   });
 
   return (
-    <div className={styles.bar}>
-      <div className={styles.row}>
-        <div className={styles.zoneLeft}>
+    /* `data-top-bar` / `data-top-bar-row` / `data-bar-control` exist for the
+       width harness (`apps/web/harness/ui-reorg-u1/`). U1's whole deliverable
+       is a MEASUREMENT of this row — which controls are on it at each width,
+       how wide each is, and what sheds first — and CSS-module class names are
+       hashed, so a harness keyed to them is keyed to a build artefact. These
+       names are stable and say what each control IS rather than where it sits.
+       Nothing renders differently because of them. */
+    <div className={styles.bar} data-top-bar="">
+      <div className={styles.row} data-top-bar-row="">
+        <div className={styles.zoneLeft} data-top-bar-zone="left">
           {/* Text, not an image: no logo asset exists (SheetTitleBlock renders a
               text wordmark too). Brand navy via --bi-primary — NOT Stitch's
               header-gold, which is a panel semantic in its own palette. Hidden
               below 1200px, where its width belongs to the company name. */}
-          <span className={styles.wordmark}>Building Integrity</span>
+          <span className={styles.wordmark} data-bar-control="wordmark">
+            Building Integrity
+          </span>
 
           {/* Returns null with no AuthProvider (tests mount the editor that
               way); it is a direct child so a null leaves no gap behind. */}
@@ -184,6 +193,7 @@ export default function TopBar({
             type="button"
             title="Save, load, site properties and panelizer — things that change the building or the file"
             className={openMenu === "project" ? styles.toolActive : styles.tool}
+            data-bar-control="project"
             aria-expanded={openMenu === "project"}
             onClick={(e) => toggleMenu("project", e.currentTarget)}
           >
@@ -193,12 +203,13 @@ export default function TopBar({
 
         {/* Scope. display: none below 1200px (EditorTabDial has the job there),
             so it is out of the accessibility tree too and never doubles up. */}
-        <nav className={styles.zoneMiddle} aria-label="Editor">
+        <nav className={styles.zoneMiddle} data-top-bar-zone="middle" aria-label="Editor">
           {editorTabsInScope(enabledTabs).map((tab) => (
             <button
               key={tab}
               type="button"
               className={tab === editorTab ? styles.navTabActive : styles.navTab}
+              data-bar-control={`nav-${tab}`}
               aria-current={tab === editorTab ? "true" : undefined}
               onClick={() => onEditorTabChange(tab)}
             >
@@ -207,11 +218,12 @@ export default function TopBar({
           ))}
         </nav>
 
-        <div className={styles.zoneRight}>
+        <div className={styles.zoneRight} data-top-bar-zone="right">
           <button
             type="button"
             title={roleDisclaimers[role].text}
             className={openMenu === "role" ? styles.toolActive : styles.tool}
+            data-bar-control="role"
             aria-expanded={openMenu === "role"}
             onClick={(e) => toggleMenu("role", e.currentTarget)}
           >
@@ -224,6 +236,7 @@ export default function TopBar({
             aria-label="Settings"
             title="Settings — units and display options"
             className={openMenu === "settings" ? styles.iconToolActive : styles.iconTool}
+            data-bar-control="settings"
             aria-expanded={openMenu === "settings"}
             onClick={(e) => toggleMenu("settings", e.currentTarget)}
           >

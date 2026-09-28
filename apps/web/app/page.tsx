@@ -9490,7 +9490,25 @@ export default function LayoutEditor() {
             <EditorToolbar editorTab={editorTab} onEditorTabChange={setEditorTab} enabledTabs={enabledEditorTabs} />
             {/* Region 3 (variable, always last): everything else — its own
                 presence/height still varies by tab/view, but nothing below
-                it depends on that anymore. */}
+                it depends on that anymore.
+
+                WHY THIS WRAPPER EXISTS, since it renders nothing: it is
+                `display: contents`, so every child below is still a direct
+                flex child of .editorSidebar and the layout is byte-for-byte
+                what it was without it (.toolbarPortalInline next door uses
+                the same trick for the same reason). What it adds is a NAME.
+                U1's acceptance is "Region 3 renders identically for every
+                stop before and after the Design/View split" — the direct
+                test that `handleViewerStopChange` stayed the only writer of
+                viewMode/simplified3D/showWraps/elevationViewWallId, because
+                Region 3's content keys off exactly those four flags. That
+                test needs to address Region 3 without addressing Regions 1,
+                2 and 4 (Region 1 legitimately differs across the change: the
+                dial is the below-breakpoint form now). Selecting it by
+                sibling position would be a locator keyed to an incidental
+                fact — the shape this repo's harnesses have already been
+                burned by — so it gets a real hook instead. */}
+            <div data-sidebar-region-3="" className={styles.sidebarRegion3}>
             {editorTab === "wall" && elevationWall && elevationControls}
             {editorTab === "wall" && !elevationWall && viewMode === "3d" && showWraps && wallAssemblyControls}
             {editorTab === "foundation" && foundationControls}
@@ -9553,6 +9571,7 @@ export default function LayoutEditor() {
                 </button>
               </div>
             )}
+            </div>
             {/* Region 4 (bottom-pinned, Tommy: "when you click on a panel
                 or other 2d or 3d element, the [popup]... appears at the
                 bottom of the left bar above the question mark") — this

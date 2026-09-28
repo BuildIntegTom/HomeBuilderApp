@@ -189,6 +189,16 @@
   display: contents;
 }
 
+/* Region 3 of the sidebar, named so it can be addressed on its own — see the
+   comment at its JSX. `display: contents` means this element generates no box
+   at all: its children stay direct flex children of .editorSidebar and keep
+   the column's `gap`, `align-items: flex-start` and every child's own width.
+   Adding it changes no pixel; removing it would also change no pixel, and
+   would cost the one non-incidental locator Region 3 has. */
+.sidebarRegion3 {
+  display: contents;
+}
+
 /* Mobile — the 240px sidebar + 170px right spacer (410px combined) already
    exceeds a phone's own viewport width before the canvas gets any space at
    all, overlapping the sticky notes/carousel docked beside it. Shrinking
