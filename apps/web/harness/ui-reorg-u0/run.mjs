@@ -491,6 +491,26 @@ record(
     d.looksLikeVersionString === false &&
     d.mentionsViewport === false,
 );
+// The Review Log link inside the bug note now opens the note the Review icon
+// opens, rather than navigating. It must OPEN it, twice in a row, and never
+// close it — a link that shuts the thing it points at is not a link.
+const reviewLogLinkOpens = await evaluate(`(() => {
+  const b = [...document.querySelectorAll('#report-bug button')].find((x) => x.textContent.includes('Review Log'));
+  if (!b) return { found: false };
+  b.click();
+  return { found: true };
+})()`);
+await sleep(600);
+const afterFirstLinkClick = (await noteState("review-log")).present;
+await evaluate(`[...document.querySelectorAll('#report-bug button')].find((x) => x.textContent.includes('Review Log')).click()`);
+await sleep(600);
+const afterSecondLinkClick = (await noteState("review-log")).present;
+record(
+  "the-bug-notes-review-log-link-opens-the-same-note",
+  { ...reviewLogLinkOpens, afterFirstLinkClick, afterSecondLinkClick },
+  (d) => d.found === true && d.afterFirstLinkClick === true && d.afterSecondLinkClick === true,
+);
+await openIcon("Review Log — Items for Engineer/Contractor Review"); // put it back
 const ctxPlanNoFootprint = await contextLine();
 record(
   "context-line-before-a-footprint-names-only-the-tab",

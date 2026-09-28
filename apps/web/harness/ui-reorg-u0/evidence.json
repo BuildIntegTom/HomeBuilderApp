@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3217/",
-  "ranAt": "2026-09-28T00:55:01.618Z",
+  "ranAt": "2026-09-28T01:00:21.389Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -78,6 +78,14 @@
       "uaFragmentsFound": [],
       "looksLikeVersionString": false,
       "mentionsViewport": false,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-bug-notes-review-log-link-opens-the-same-note",
+      "found": true,
+      "afterFirstLinkClick": true,
+      "afterSecondLinkClick": true,
       "asserted": true,
       "passed": true
     },

@@ -10393,7 +10393,12 @@ export default function LayoutEditor() {
               viewerStop: currentViewerStop,
               viewerActive: editorTab === "wall" && Boolean(footprint),
             })}
-            onOpenReviewLog={() => handleToggleNote("review-log")}
+            // OPENS it; never closes it. `handleToggleNote` stays the only
+            // writer, but a link that shuts the thing it points at when that
+            // thing is already open is not a link.
+            onOpenReviewLog={() => {
+              if (!openNoteIds.has("review-log")) handleToggleNote("review-log");
+            }}
           />
         </StickyNote>
 

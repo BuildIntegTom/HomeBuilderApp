@@ -43,6 +43,7 @@ to fail is not evidence.
 | `bug-icon-opens-a-note` | a note, not a navigation (an unsaved design survives it) |
 | `bug-note-carries-the-route-wording-verbatim` | every `<section>` of `/report-bug`, fetched from the route itself, appears in the note character for character |
 | `bug-note-introduces-no-new-address` | exactly one `mailto:` in the note, and it is the route's own |
+| `the-bug-notes-review-log-link-opens-the-same-note` | the link inside the note opens the Review Log note (twice in a row — it opens, it never toggles shut) |
 | `bug-note-is-context-not-telemetry` | no user agent, no version string, no viewport figures anywhere in it |
 | `context-line-*` (4 steps) | the context line names `Wall` before a footprint, `Wall — 2D Floor Plan`, `Wall — «the dial's own elevation label»`, `Wall — Membranes`, and on the Roof tab **only** `Roof` |
 | `read-me-icon-opens-a-note-with-the-route-wording` | the route's sections verbatim, and the liability statement asserted by its own exact words |
