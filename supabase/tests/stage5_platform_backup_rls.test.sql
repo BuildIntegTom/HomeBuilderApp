@@ -172,6 +172,16 @@ $$;
 -- caller under test can see. Every "X reads N rows" assertion below is paired
 -- with one of these, because "the caller saw 0" and "there were 0" are
 -- different facts and only the pair distinguishes them.
+--
+-- ⚠ THAT SENTENCE IS NOW LITERALLY TRUE, AND WAS NOT (fixed 2026-09-27). The
+-- suite shipped with inline pairs on bob's and dave's counts only; alice's,
+-- frank's, nick's, henry's, the no-subject caller's and section 4's rested on the
+-- one fixture-sanity block instead. Substantively the distinction held — that
+-- block asserts four companies, four projects and seven versions before any
+-- assertion runs, so no zero in this file could have been a zero fixture — but
+-- the claim was stronger than the file, and alice's zeros are the ones most
+-- worth pinning where they are read ("Admin of a company is not admin of the
+-- platform").
 create or replace function pg_temp.really_all_companies()
 returns bigint language sql security definer as $$ select count(*) from public.companies; $$;
 
@@ -186,6 +196,32 @@ $$;
 create or replace function pg_temp.really_versions(p uuid)
 returns bigint language sql security definer as $$
   select count(*) from public.project_versions where project_id = p;
+$$;
+
+-- One row, counted past RLS: for the assertions that ask about a SINGLE company
+-- or project row rather than a set, so "she cannot see it" and "it is not there"
+-- stay different facts at that granularity too.
+create or replace function pg_temp.really_company(p_company uuid)
+returns bigint language sql security definer as $$
+  select count(*) from public.companies where id = p_company;
+$$;
+
+create or replace function pg_temp.really_project(p_project uuid)
+returns bigint language sql security definer as $$
+  select count(*) from public.projects where id = p_project;
+$$;
+
+-- Section 1's premise is "pat holds NO membership anywhere", and read through
+-- his own view that is exactly the sentence RLS could have made true by hiding
+-- one. Counted past RLS it is a fact about the fixture.
+create or replace function pg_temp.really_memberships_of(p_user uuid)
+returns bigint language sql security definer as $$
+  select count(*) from public.memberships where user_id = p_user;
+$$;
+
+create or replace function pg_temp.really_grants_to(p_company uuid)
+returns bigint language sql security definer as $$
+  select count(*) from public.collaborators where grantee_company_id = p_company;
 $$;
 
 create or replace function pg_temp.really_all_versions()
@@ -481,15 +517,20 @@ set local role authenticated;
 -- ===========================================================================
 select pg_temp.act_as('pat');
 do $$ begin
+  perform pg_temp.assert(pg_temp.really_memberships_of(pg_temp.u('pat')) = 0,
+    'premise: pat holds NO membership anywhere, counted PAST RLS — every row he reads below comes through is_platform_admin(), never is_member_of (got '
+      || pg_temp.really_memberships_of(pg_temp.u('pat')) || ')');
   perform pg_temp.assert((select count(*) from public.memberships where user_id = pg_temp.u('pat')) = 0,
-    'premise: pat holds NO membership anywhere — every row he reads below comes through is_platform_admin(), never is_member_of');
+    'and he reads none of his own either, so the premise is not an artifact of what memberships_select shows him');
   perform pg_temp.assert((select count(*) from public.companies) = 4,
     'pat enumerates all four companies (got ' || (select count(*) from public.companies) || ' of '
       || pg_temp.really_all_companies() || ')');
   perform pg_temp.assert((select name from public.companies where id = pg_temp.co('RF')) = 'Rare Forms',
     'and reads Rare Forms'' NAME, which is what the zip file name and the manifest are built from');
   perform pg_temp.assert((select count(*) from public.companies where id = pg_temp.co('SEED')) = 1,
-    'including The Seed Collaborative, which owns nothing: a company with nothing must be distinguishable from a company that is missing');
+    'including The Seed Collaborative, which owns nothing: a company with nothing must be distinguishable from a company that is missing (got '
+      || (select count(*) from public.companies where id = pg_temp.co('SEED')) || ' of '
+      || pg_temp.really_company(pg_temp.co('SEED')) || ')');
 end $$;
 
 -- ===========================================================================
@@ -507,9 +548,11 @@ begin
     'pat reads Rare Forms'' one project (got ' || (select count(*) from public.projects where company_id = pg_temp.co('RF'))
       || ' of ' || pg_temp.really_projects_of(pg_temp.co('RF')) || ')');
   perform pg_temp.assert((select count(*) from public.projects where company_id = pg_temp.co('BI')) = 2,
-    'and Building Integrity''s two');
+    'and Building Integrity''s two (got ' || (select count(*) from public.projects where company_id = pg_temp.co('BI'))
+      || ' of ' || pg_temp.really_projects_of(pg_temp.co('BI')) || ')');
   perform pg_temp.assert((select count(*) from public.projects where company_id = pg_temp.co('NF')) = 1,
-    'and New Frameworks'' one');
+    'and New Frameworks'' one (got ' || (select count(*) from public.projects where company_id = pg_temp.co('NF'))
+      || ' of ' || pg_temp.really_projects_of(pg_temp.co('NF')) || ')');
   perform pg_temp.assert((select count(*) from public.projects) = 4,
     'four projects across every company, with no membership anywhere (got ' || (select count(*) from public.projects)
       || ' of ' || pg_temp.really_all_projects() || ')');
@@ -567,7 +610,9 @@ end $$;
 -- The grant rows the 3E granted phase walks, read cross-company.
 do $$ begin
   perform pg_temp.assert((select count(*) from public.collaborators where grantee_company_id = pg_temp.co('RF')) = 1,
-    'pat reads the one grant made TO Rare Forms, which is how a Rare Forms backup finds its granted project');
+    'pat reads the one grant made TO Rare Forms, which is how a Rare Forms backup finds its granted project (got '
+      || (select count(*) from public.collaborators where grantee_company_id = pg_temp.co('RF')) || ' of '
+      || pg_temp.really_grants_to(pg_temp.co('RF')) || ')');
   perform pg_temp.assert(
     (select project_id from public.collaborators where grantee_company_id = pg_temp.co('RF')) = pg_temp.get('p1'),
     'and it points at Building Integrity''s p1, a project Rare Forms does not own');
@@ -597,7 +642,9 @@ do $$ begin
     'and enumerates only his own company and the consortium, not all four (got '
       || (select count(*) from public.companies) || ' of ' || pg_temp.really_all_companies() || ')');
   perform pg_temp.assert((select count(*) from public.projects where company_id = pg_temp.co('BI')) = 2,
-    'premise: he really does read HIS OWN company''s two projects — so the refusals above are about the company line, not about him');
+    'premise: he really does read HIS OWN company''s two projects — so the refusals above are about the company line, not about him (got '
+      || (select count(*) from public.projects where company_id = pg_temp.co('BI')) || ' of '
+      || pg_temp.really_projects_of(pg_temp.co('BI')) || ')');
 end $$;
 
 -- alice: a COMPANY ADMIN of Building Integrity. `checkBackupAccess` admits a
@@ -607,11 +654,16 @@ select pg_temp.act_as('alice');
 do $$ begin
   perform pg_temp.assert((select count(*) from public.projects where company_id = pg_temp.co('RF')) = 0,
     'alice, a COMPANY ADMIN, reads 0 of Rare Forms'' projects (got '
-      || (select count(*) from public.projects where company_id = pg_temp.co('RF')) || ')');
+      || (select count(*) from public.projects where company_id = pg_temp.co('RF')) || ', and there really are '
+      || pg_temp.really_projects_of(pg_temp.co('RF')) || ')');
   perform pg_temp.assert((select count(*) from public.project_versions where project_id = pg_temp.get('rf1')) = 0,
-    'and 0 of its versions: being able to download YOUR company''s backup is not being able to download anyone else''s');
+    'and 0 of its versions: being able to download YOUR company''s backup is not being able to download anyone else''s (got '
+      || (select count(*) from public.project_versions where project_id = pg_temp.get('rf1')) || ' of '
+      || pg_temp.really_versions(pg_temp.get('rf1')) || ')');
   perform pg_temp.assert((select count(*) from public.companies where id = pg_temp.co('RF')) = 0,
-    'and cannot even see the Rare Forms company row');
+    'and cannot even see the Rare Forms company row (got '
+      || (select count(*) from public.companies where id = pg_temp.co('RF')) || ' of '
+      || pg_temp.really_company(pg_temp.co('RF')) || ')');
 end $$;
 
 -- frank: Rare Forms' own member, who ALSO holds a company grant on BI's p1.
@@ -620,17 +672,22 @@ end $$;
 select pg_temp.act_as('frank');
 do $$ begin
   perform pg_temp.assert((select count(*) from public.projects where id = pg_temp.get('p1')) = 1,
-    'frank reads BI''s p1 through his company''s grant — the granted phase of a Rare Forms backup');
+    'frank reads BI''s p1 through his company''s grant — the granted phase of a Rare Forms backup (got '
+      || (select count(*) from public.projects where id = pg_temp.get('p1')) || ' of '
+      || pg_temp.really_project(pg_temp.get('p1')) || ')');
   perform pg_temp.assert((select document -> 'state' ->> 'priceModifier' from public.project_versions
                            where id = pg_temp.get('p1_v1')) = '1.3777',
     'and its document COMPLETE, margin included: a grant is a share, and a granted project is in the zip in full');
   perform pg_temp.assert((select count(*) from public.projects where id = pg_temp.get('p2')) = 0,
     'but 0 of BI''s OTHER project, which no grant reaches (got '
-      || (select count(*) from public.projects where id = pg_temp.get('p2')) || ')');
+      || (select count(*) from public.projects where id = pg_temp.get('p2')) || ' of '
+      || pg_temp.really_project(pg_temp.get('p2')) || ')');
   perform pg_temp.assert((select count(*) from public.projects where company_id = pg_temp.co('NF')) = 0,
-    'and 0 of New Frameworks'' (got ' || (select count(*) from public.projects where company_id = pg_temp.co('NF')) || ')');
+    'and 0 of New Frameworks'' (got ' || (select count(*) from public.projects where company_id = pg_temp.co('NF'))
+      || ' of ' || pg_temp.really_projects_of(pg_temp.co('NF')) || ')');
   perform pg_temp.assert((select count(*) from public.projects) = 2,
-    'two projects in total: his own, and the one shared with his company (got ' || (select count(*) from public.projects) || ')');
+    'two projects in total: his own, and the one shared with his company (got ' || (select count(*) from public.projects)
+      || ' of ' || pg_temp.really_all_projects() || ')');
 end $$;
 
 -- dave: a Seed Collaborative member, seed-entitled, who can BROWSE Building
@@ -643,16 +700,20 @@ do $$ begin
     'dave, who can BROWSE every seed company''s tree, reads 0 raw versions and therefore 0 documents (got '
       || (select count(*) from public.project_versions) || ' of ' || pg_temp.really_all_versions() || ')');
   perform pg_temp.assert((select count(*) from public.projects) = 0,
-    'and 0 project rows: browsing goes through browse_projects, never through projects_select');
+    'and 0 project rows: browsing goes through browse_projects, never through projects_select (got '
+      || (select count(*) from public.projects) || ' of ' || pg_temp.really_all_projects() || ')');
 end $$;
 
 -- nick: New Frameworks' member. His own company only.
 select pg_temp.act_as('nick');
 do $$ begin
   perform pg_temp.assert((select count(*) from public.projects) = 1,
-    'nick reads only New Frameworks'' own project (got ' || (select count(*) from public.projects) || ')');
+    'nick reads only New Frameworks'' own project (got ' || (select count(*) from public.projects) || ' of '
+      || pg_temp.really_all_projects() || ')');
   perform pg_temp.assert((select count(*) from public.project_versions where project_id = pg_temp.get('rf1')) = 0,
-    'and 0 of Rare Forms'' versions');
+    'and 0 of Rare Forms'' versions (got '
+      || (select count(*) from public.project_versions where project_id = pg_temp.get('rf1')) || ' of '
+      || pg_temp.really_versions(pg_temp.get('rf1')) || ')');
 end $$;
 
 -- henry: signed in, no membership anywhere. The shape of an account that has
@@ -660,9 +721,13 @@ end $$;
 select pg_temp.act_as('henry');
 do $$ begin
   perform pg_temp.assert((select count(*) from public.companies) = 0,
-    'henry, with no membership at all, enumerates 0 companies (got ' || (select count(*) from public.companies) || ')');
-  perform pg_temp.assert((select count(*) from public.projects) = 0, 'and 0 projects');
-  perform pg_temp.assert((select count(*) from public.project_versions) = 0, 'and 0 versions');
+    'henry, with no membership at all, enumerates 0 companies (got ' || (select count(*) from public.companies) || ' of '
+      || pg_temp.really_all_companies() || ')');
+  perform pg_temp.assert((select count(*) from public.projects) = 0,
+    'and 0 projects (got ' || (select count(*) from public.projects) || ' of ' || pg_temp.really_all_projects() || ')');
+  perform pg_temp.assert((select count(*) from public.project_versions) = 0,
+    'and 0 versions (got ' || (select count(*) from public.project_versions) || ' of '
+      || pg_temp.really_all_versions() || ')');
 end $$;
 
 -- A caller with no subject on the request at all: an expired or broken token
@@ -672,8 +737,11 @@ do $$ begin
   perform pg_temp.assert(not public.is_platform_admin(),
     'is_platform_admin() is FALSE, not null and not an error, when there is no subject — the route''s fail-closed check has the same answer underneath it');
   perform pg_temp.assert((select count(*) from public.companies) = 0,
-    'a caller with no subject enumerates 0 companies (got ' || (select count(*) from public.companies) || ')');
-  perform pg_temp.assert((select count(*) from public.project_versions) = 0, 'and reads 0 documents');
+    'a caller with no subject enumerates 0 companies (got ' || (select count(*) from public.companies) || ' of '
+      || pg_temp.really_all_companies() || ')');
+  perform pg_temp.assert((select count(*) from public.project_versions) = 0,
+    'and reads 0 documents (got ' || (select count(*) from public.project_versions) || ' of '
+      || pg_temp.really_all_versions() || ')');
 end $$;
 
 -- ===========================================================================
@@ -701,9 +769,11 @@ do $$ begin
   perform pg_temp.assert((select count(*) from public.project_versions) = 0,
     'an ENROLLED platform admin on an aal1 session reads 0 documents (got '
       || (select count(*) from public.project_versions) || ' of ' || pg_temp.really_all_versions() || ')');
-  perform pg_temp.assert((select count(*) from public.projects) = 0, 'and 0 project rows');
+  perform pg_temp.assert((select count(*) from public.projects) = 0,
+    'and 0 project rows (got ' || (select count(*) from public.projects) || ' of ' || pg_temp.really_all_projects() || ')');
   perform pg_temp.assert((select count(*) from public.companies) = 0,
-    'and 0 companies, so the backup cannot even begin');
+    'and 0 companies, so the backup cannot even begin (got ' || (select count(*) from public.companies) || ' of '
+      || pg_temp.really_all_companies() || ')');
 end $$;
 
 select pg_temp.act_as('pat', 'aal2');
@@ -711,8 +781,10 @@ do $$ begin
   perform pg_temp.assert(public.meets_required_aal(), 'premise: aal2 meets it');
   perform pg_temp.assert((select count(*) from public.project_versions) = 7,
     'and reads all seven documents once the second factor has actually been presented (got '
-      || (select count(*) from public.project_versions) || ')');
-  perform pg_temp.assert((select count(*) from public.companies) = 4, 'and all four companies');
+      || (select count(*) from public.project_versions) || ' of ' || pg_temp.really_all_versions() || ')');
+  perform pg_temp.assert((select count(*) from public.companies) = 4,
+    'and all four companies (got ' || (select count(*) from public.companies) || ' of '
+      || pg_temp.really_all_companies() || ')');
 end $$;
 
 reset role;
