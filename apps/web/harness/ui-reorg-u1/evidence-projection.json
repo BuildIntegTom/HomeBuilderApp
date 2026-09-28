@@ -1,0 +1,5752 @@
+{
+  "app": "http://localhost:3218/",
+  "pass": "projection",
+  "ranAt": "2026-09-28T10:10:52.999Z",
+  "proveFailureMode": false,
+  "steps": [
+    {
+      "name": "the-bar-is-addressable",
+      "controlCount": 7,
+      "present": [
+        "wordmark",
+        "acting-as",
+        "account",
+        "project",
+        "nav-wall",
+        "role",
+        "settings"
+      ],
+      "barHeight": 56,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "footprint-drawn",
+      "dialLabel": "2D Floor Plan",
+      "nextDisabled": false,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "all-four-scope-branches-on",
+      "scopeBefore": [
+        {
+          "text": "Floors",
+          "checked": false
+        },
+        {
+          "text": "Walls",
+          "checked": true
+        },
+        {
+          "text": "Roof",
+          "checked": false
+        },
+        {
+          "text": "Foundation",
+          "checked": false
+        }
+      ],
+      "scopeAfter": [
+        {
+          "text": "Floors",
+          "checked": true
+        },
+        {
+          "text": "Walls",
+          "checked": true
+        },
+        {
+          "text": "Roof",
+          "checked": true
+        },
+        {
+          "text": "Foundation",
+          "checked": true
+        }
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "four-company-simulation-renders-like-the-real-control",
+      "ok": true,
+      "usedClass": "AccountControl-module__1h-VOa__actingAsSelect",
+      "width": 270,
+      "chipText": "Acting asBuilding IntegrityThe Seed Collaborative (platform admin)Rare Forms (consortium)Building Integrity (company admin)",
+      "chipWidth": 354.7,
+      "recordedPx": 270,
+      "deltaPx": 0,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-dial-offers-plan-every-elevation-and-the-three-3d-modes",
+      "stops": [
+        "2D Floor Plan",
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA",
+        "3D Framed",
+        "3D Boxes",
+        "Membranes"
+      ],
+      "elevationCount": 4,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "THE-MEASUREMENT-does-a-twelve-item-bar-fit",
+      "byWidth": {
+        "today": {
+          "360": {
+            "rowContentWidth": 344,
+            "maxWantedPx": 364.1,
+            "maxShortfallPx": 20.1,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 90.6,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "acting-as",
+              "account",
+              "project",
+              "role",
+              "settings"
+            ]
+          },
+          "710": {
+            "rowContentWidth": 694,
+            "maxWantedPx": 505.5,
+            "maxShortfallPx": -188.5,
+            "fits": true,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 232,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "acting-as",
+              "account",
+              "project",
+              "role",
+              "settings"
+            ]
+          },
+          "768": {
+            "rowContentWidth": 728,
+            "maxWantedPx": 741,
+            "maxShortfallPx": 13,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 304.7,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "acting-as",
+              "account",
+              "project",
+              "role",
+              "settings"
+            ]
+          },
+          "1200": {
+            "rowContentWidth": 1160,
+            "maxWantedPx": 1176.9,
+            "maxShortfallPx": 16.9,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 354.7,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          },
+          "1440": {
+            "rowContentWidth": 1400,
+            "maxWantedPx": 1176.9,
+            "maxShortfallPx": -223.1,
+            "fits": true,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 354.7,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          },
+          "1600": {
+            "rowContentWidth": 1560,
+            "maxWantedPx": 1176.9,
+            "maxShortfallPx": -383.1,
+            "fits": true,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 354.7,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          }
+        },
+        "designView": {
+          "360": {
+            "rowContentWidth": 344,
+            "maxWantedPx": 481.6,
+            "maxShortfallPx": 137.6,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 12,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "role",
+              "settings"
+            ]
+          },
+          "710": {
+            "rowContentWidth": 694,
+            "maxWantedPx": 701.6,
+            "maxShortfallPx": 7.6,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 232,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "role",
+              "settings"
+            ]
+          },
+          "768": {
+            "rowContentWidth": 728,
+            "maxWantedPx": 782.2,
+            "maxShortfallPx": 54.2,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 107.6,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "role",
+              "settings"
+            ]
+          },
+          "1200": {
+            "rowContentWidth": 1160,
+            "maxWantedPx": 1194.3,
+            "maxShortfallPx": 34.3,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 133.8,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          },
+          "1440": {
+            "rowContentWidth": 1400,
+            "maxWantedPx": 1415.2,
+            "maxShortfallPx": 15.2,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 354.7,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          },
+          "1600": {
+            "rowContentWidth": 1560,
+            "maxWantedPx": 1415.2,
+            "maxShortfallPx": -144.8,
+            "fits": true,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 354.7,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          }
+        },
+        "twelve": {
+          "360": {
+            "rowContentWidth": 344,
+            "maxWantedPx": 597.6,
+            "maxShortfallPx": 253.6,
+            "fits": false,
+            "maxOverflowPx": 25,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 12,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [
+              "print"
+            ],
+            "controlsPresent": [
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "summary",
+              "print",
+              "role",
+              "settings"
+            ]
+          },
+          "710": {
+            "rowContentWidth": 694,
+            "maxWantedPx": 714.1,
+            "maxShortfallPx": 20.1,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 128.5,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "summary",
+              "print",
+              "role",
+              "settings"
+            ]
+          },
+          "768": {
+            "rowContentWidth": 728,
+            "maxWantedPx": 856.9,
+            "maxShortfallPx": 128.9,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 20,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "summary",
+              "print",
+              "role",
+              "settings"
+            ]
+          },
+          "1200": {
+            "rowContentWidth": 1160,
+            "maxWantedPx": 1242.8,
+            "maxShortfallPx": 82.8,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 20,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "summary",
+              "print",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          },
+          "1440": {
+            "rowContentWidth": 1400,
+            "maxWantedPx": 1434.2,
+            "maxShortfallPx": 34.2,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 211.4,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "summary",
+              "print",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          },
+          "1600": {
+            "rowContentWidth": 1560,
+            "maxWantedPx": 1577.5,
+            "maxShortfallPx": 17.5,
+            "fits": false,
+            "maxOverflowPx": 0,
+            "maxDocOverflowPx": 0,
+            "minActingAsWidth": 354.7,
+            "actingAsAlwaysOnScreen": true,
+            "everOffScreen": [],
+            "controlsPresent": [
+              "wordmark",
+              "acting-as",
+              "account",
+              "project",
+              "design",
+              "view",
+              "summary",
+              "print",
+              "nav-wall",
+              "nav-foundation",
+              "nav-floor",
+              "nav-roof",
+              "role",
+              "settings"
+            ]
+          }
+        }
+      },
+      "naturalWidths": {
+        "today": {
+          "naturalRowContentPx": 1176.9,
+          "naturalViewportPx": 1216.9,
+          "measuredAt": "1600px, four companies, the widest role label"
+        },
+        "designView": {
+          "naturalRowContentPx": 1415.2,
+          "naturalViewportPx": 1455.2,
+          "measuredAt": "1600px, four companies, the widest role label"
+        },
+        "twelve": {
+          "naturalRowContentPx": 1577.5,
+          "naturalViewportPx": 1617.5,
+          "measuredAt": "1600px, four companies, the widest role label"
+        }
+      },
+      "firstFitsAtViewportWidth": {
+        "today": {
+          "nothingOffScreen": {
+            "below-768": 320,
+            "768-1199": 768,
+            "1200-up": 1200
+          },
+          "companyNameIntact": {
+            "below-768": 485,
+            "768-1199": 768,
+            "1200-up": 1200
+          }
+        },
+        "designView": {
+          "nothingOffScreen": {
+            "below-768": 320,
+            "768-1199": 768,
+            "1200-up": 1200
+          },
+          "companyNameIntact": {
+            "below-768": 681,
+            "768-1199": 875,
+            "1200-up": 1341
+          }
+        },
+        "twelve": {
+          "nothingOffScreen": {
+            "below-768": 385,
+            "768-1199": 768,
+            "1200-up": 1200
+          },
+          "companyNameIntact": {
+            "below-768": "never in 320-767",
+            "768-1199": 1037,
+            "1200-up": 1503
+          }
+        }
+      },
+      "cells": 48,
+      "designValueMeasured": "2D Floor Plan",
+      "asserted": false,
+      "observationOnly": "the width budget IS the finding; a pass/fail here would put a thumb on the scale"
+    },
+    {
+      "name": "nothing-U1-ships-is-ever-pushed-off-screen",
+      "configuration": "designView projected at EVERY width — the ten controls with nothing allowed to shed",
+      "offScreenAnywhere": [],
+      "actingAsAlwaysOnScreen": true,
+      "narrowestActingAsPx": 12,
+      "docOverflowAnywhere": 0,
+      "rowOverflowAnywhere": 0,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the-existing-shed-order-is-not-disturbed",
+      "shedOrder": {
+        "wordmark": {
+          "presentAt": [
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": 1200
+        },
+        "nav-wall": {
+          "presentAt": [
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": 1200
+        },
+        "nav-foundation": {
+          "presentAt": [
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": 1200
+        },
+        "nav-floor": {
+          "presentAt": [
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": 1200
+        },
+        "nav-roof": {
+          "presentAt": [
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": 1200
+        },
+        "acting-as": {
+          "presentAt": [
+            360,
+            710,
+            768,
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": "never shed"
+        },
+        "account": {
+          "presentAt": [
+            360,
+            710,
+            768,
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": "never shed"
+        },
+        "project": {
+          "presentAt": [
+            360,
+            710,
+            768,
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": "never shed"
+        },
+        "role": {
+          "presentAt": [
+            360,
+            710,
+            768,
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": "never shed"
+        },
+        "settings": {
+          "presentAt": [
+            360,
+            710,
+            768,
+            1200,
+            1440,
+            1600
+          ],
+          "shedBelow": "never shed"
+        },
+        "design": {
+          "presentAt": [],
+          "shedBelow": "never present"
+        },
+        "view": {
+          "presentAt": [],
+          "shedBelow": "never present"
+        },
+        "summary": {
+          "presentAt": [],
+          "shedBelow": "never present"
+        },
+        "print": {
+          "presentAt": [],
+          "shedBelow": "never present"
+        }
+      },
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "region-3-baseline-captured-for-every-stop",
+      "stops": [
+        "2D Floor Plan",
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA",
+        "3D Framed",
+        "3D Boxes",
+        "Membranes"
+      ],
+      "lines": {
+        "2D Floor Plan": 74,
+        "Elevation: AB": 100,
+        "Elevation: BC": 100,
+        "Elevation: CD": 100,
+        "Elevation: DA": 100,
+        "3D Framed": 4,
+        "3D Boxes": 4,
+        "Membranes": 36
+      },
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "no-uncaught-exception-anywhere-in-the-run",
+      "pageExceptions": [],
+      "asserted": true,
+      "passed": true
+    }
+  ],
+  "matrix": [
+    {
+      "role": "Public",
+      "width": 360,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 303.7,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 339.7,
+        "shortfallPx": -4.3
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 416.2,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 460.2,
+        "shortfallPx": 116.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 524.2,
+        "rowContentWidth": 344,
+        "overflowPx": 25,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [
+          "print"
+        ],
+        "barHeight": 56,
+        "wantedPx": 576.2,
+        "shortfallPx": 232.2,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Public",
+      "width": 360,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 328,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 111.9,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 364,
+        "shortfallPx": 20
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 416.2,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 460.2,
+        "shortfallPx": 116.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 524.2,
+        "rowContentWidth": 344,
+        "overflowPx": 25,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [
+          "print"
+        ],
+        "barHeight": 56,
+        "wantedPx": 576.2,
+        "shortfallPx": 232.2,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Public",
+      "width": 710,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 303.7,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 339.7,
+        "shortfallPx": -354.3
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 491.8,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 535.8,
+        "shortfallPx": -158.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 599.8,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 651.8,
+        "shortfallPx": -42.2,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Public",
+      "width": 710,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 448.1,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 232,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 484.1,
+        "shortfallPx": -209.9
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 636.2,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 232,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 680.2,
+        "shortfallPx": -13.8,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 662,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 149.8,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 714,
+        "shortfallPx": 20,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Public",
+      "width": 768,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 489.9,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 579.9,
+        "shortfallPx": -148.1
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 672.2,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 130.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 782.2,
+        "shortfallPx": 54.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 703.8,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 833.8,
+        "shortfallPx": 105.8,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Public",
+      "width": 768,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 627.9,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 304.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 717.9,
+        "shortfallPx": -10.1
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 672.2,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 130.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 782.2,
+        "shortfallPx": 54.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 703.8,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 833.8,
+        "shortfallPx": 105.8,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Public",
+      "width": 1200,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 875.8,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 965.8,
+        "shortfallPx": -194.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 156.9,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1089.7,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1219.7,
+        "shortfallPx": 59.7,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Public",
+      "width": 1200,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 1063.8,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1153.8,
+        "shortfallPx": -6.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 156.9,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1089.7,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1219.7,
+        "shortfallPx": 59.7,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Public",
+      "width": 1440,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 875.8,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 965.8,
+        "shortfallPx": -434.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1094.1,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1204.1,
+        "shortfallPx": -195.9,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1236.4,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1366.4,
+        "shortfallPx": -33.6,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Public",
+      "width": 1440,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 1063.8,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1153.8,
+        "shortfallPx": -246.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1282.1,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1392.1,
+        "shortfallPx": -7.9,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1304.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 234.5,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1434.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Public",
+      "width": 1600,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 875.8,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 965.8,
+        "shortfallPx": -594.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1094.1,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1204.1,
+        "shortfallPx": -355.9,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1236.4,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1366.4,
+        "shortfallPx": -193.6,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Public",
+      "width": 1600,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 1063.8,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1153.8,
+        "shortfallPx": -406.2
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1282.1,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1392.1,
+        "shortfallPx": -167.9,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1424.4,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1554.4,
+        "shortfallPx": -5.6,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 360,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 325.1,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 361.1,
+        "shortfallPx": 17.1
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 437.6,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 481.6,
+        "shortfallPx": 137.6,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 545.6,
+        "rowContentWidth": 344,
+        "overflowPx": 25,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [
+          "print"
+        ],
+        "barHeight": 56,
+        "wantedPx": 597.6,
+        "shortfallPx": 253.6,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 360,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 328.1,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 90.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 364.1,
+        "shortfallPx": 20.1
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 437.6,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 481.6,
+        "shortfallPx": 137.6,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 545.6,
+        "rowContentWidth": 344,
+        "overflowPx": 25,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [
+          "print"
+        ],
+        "barHeight": 56,
+        "wantedPx": 597.6,
+        "shortfallPx": 253.6,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 710,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 325.1,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 361.1,
+        "shortfallPx": -332.9
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 513.2,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 557.2,
+        "shortfallPx": -136.8,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 621.2,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 673.2,
+        "shortfallPx": -20.8,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 710,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 469.5,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 232,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 505.5,
+        "shortfallPx": -188.5
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 657.6,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 232,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 701.6,
+        "shortfallPx": 7.6,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 662.1,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 128.5,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 714.1,
+        "shortfallPx": 20.1,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 768,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 513,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 603,
+        "shortfallPx": -125
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 672.2,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 107.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 782.2,
+        "shortfallPx": 54.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 726.9,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 856.9,
+        "shortfallPx": 128.9,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 768,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 651,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 304.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 741,
+        "shortfallPx": 13
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 672.2,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 107.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 782.2,
+        "shortfallPx": 54.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 726.9,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 856.9,
+        "shortfallPx": 128.9,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 1200,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 898.9,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 988.9,
+        "shortfallPx": -171.1
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 133.8,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1112.8,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1242.8,
+        "shortfallPx": 82.8,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 1200,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 1086.9,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1176.9,
+        "shortfallPx": 16.9
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 133.8,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1112.8,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1242.8,
+        "shortfallPx": 82.8,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 1440,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 898.9,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 988.9,
+        "shortfallPx": -411.1
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1117.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1227.2,
+        "shortfallPx": -172.8,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1259.5,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1389.5,
+        "shortfallPx": -10.5,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 1440,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 1086.9,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1176.9,
+        "shortfallPx": -223.1
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1305.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1415.2,
+        "shortfallPx": 15.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1304.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 211.4,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1434.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 1600,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 898.9,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 988.9,
+        "shortfallPx": -571.1
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1117.2,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1227.2,
+        "shortfallPx": -332.8,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1259.5,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1389.5,
+        "shortfallPx": -170.5,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Fabricator",
+      "width": 1600,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 1086.9,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1176.9,
+        "shortfallPx": -383.1
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1305.2,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1415.2,
+        "shortfallPx": -144.8,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1447.5,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1577.5,
+        "shortfallPx": 17.5,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 360,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 304.4,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 340.4,
+        "shortfallPx": -3.6
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 416.9,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 460.9,
+        "shortfallPx": 116.9,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 524.9,
+        "rowContentWidth": 344,
+        "overflowPx": 25,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [
+          "print"
+        ],
+        "barHeight": 56,
+        "wantedPx": 576.9,
+        "shortfallPx": 232.9,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 360,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 328,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 111.2,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 364,
+        "shortfallPx": 20
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 416.9,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 460.9,
+        "shortfallPx": 116.9,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 524.9,
+        "rowContentWidth": 344,
+        "overflowPx": 25,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [
+          "print"
+        ],
+        "barHeight": 56,
+        "wantedPx": 576.9,
+        "shortfallPx": 232.9,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 710,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 304.4,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 340.4,
+        "shortfallPx": -353.6
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 492.5,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 536.5,
+        "shortfallPx": -157.5,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 600.5,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 652.5,
+        "shortfallPx": -41.5,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 710,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 448.8,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 232,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 484.8,
+        "shortfallPx": -209.2
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 636.9,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 232,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 680.9,
+        "shortfallPx": -13.1,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 662.1,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 149.2,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 714.1,
+        "shortfallPx": 20.1,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 768,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 490.6,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 580.6,
+        "shortfallPx": -147.4
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 672.2,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 130,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 782.2,
+        "shortfallPx": 54.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 704.5,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 834.5,
+        "shortfallPx": 106.5,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 768,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 628.6,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 304.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 718.6,
+        "shortfallPx": -9.4
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 672.2,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 130,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 782.2,
+        "shortfallPx": 54.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 704.5,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 834.5,
+        "shortfallPx": 106.5,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 1200,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 876.5,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 966.5,
+        "shortfallPx": -193.5
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 156.2,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1090.4,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1220.4,
+        "shortfallPx": 60.4,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 1200,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 1064.5,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1154.5,
+        "shortfallPx": -5.5
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 156.2,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1090.4,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1220.4,
+        "shortfallPx": 60.4,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 1440,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 876.5,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 966.5,
+        "shortfallPx": -433.5
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1094.8,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1204.8,
+        "shortfallPx": -195.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1237.1,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1367.1,
+        "shortfallPx": -32.9,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 1440,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 1064.5,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1154.5,
+        "shortfallPx": -245.5
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1282.8,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1392.8,
+        "shortfallPx": -7.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1304.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 233.8,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1434.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 1600,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 876.5,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 966.5,
+        "shortfallPx": -593.5
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1094.8,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1204.8,
+        "shortfallPx": -355.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1237.1,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1367.1,
+        "shortfallPx": -192.9,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Admin",
+      "width": 1600,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 1064.5,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1154.5,
+        "shortfallPx": -405.5
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1282.8,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1392.8,
+        "shortfallPx": -167.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1425.1,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1555.1,
+        "shortfallPx": -4.9,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 360,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 319.1,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 355.1,
+        "shortfallPx": 11.1
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 431.6,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 475.6,
+        "shortfallPx": 131.6,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 539.6,
+        "rowContentWidth": 344,
+        "overflowPx": 25,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [
+          "print"
+        ],
+        "barHeight": 56,
+        "wantedPx": 591.6,
+        "shortfallPx": 247.6,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 360,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 328,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 96.5,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 364,
+        "shortfallPx": 20
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 431.6,
+        "rowContentWidth": 344,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 475.6,
+        "shortfallPx": 131.6,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 539.6,
+        "rowContentWidth": 344,
+        "overflowPx": 25,
+        "docOverflowPx": 0,
+        "actingAsWidth": 12,
+        "actingAsOnScreen": true,
+        "offScreen": [
+          "print"
+        ],
+        "barHeight": 56,
+        "wantedPx": 591.6,
+        "shortfallPx": 247.6,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 710,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 319.1,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 355.1,
+        "shortfallPx": -338.9
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 507.2,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 551.2,
+        "shortfallPx": -142.8,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 615.2,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 87.6,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 667.2,
+        "shortfallPx": -26.8,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 710,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 463.5,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 232,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 499.5,
+        "shortfallPx": -194.5
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 651.6,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 232,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 695.6,
+        "shortfallPx": 1.6,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 662.1,
+        "rowContentWidth": 694,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 134.5,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 714.1,
+        "shortfallPx": 20.1,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 768,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 506.5,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 596.5,
+        "shortfallPx": -131.5
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 672.2,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 114.1,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 782.2,
+        "shortfallPx": 54.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 720.4,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 850.4,
+        "shortfallPx": 122.4,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 768,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 644.5,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 304.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 734.5,
+        "shortfallPx": 6.5
+      },
+      "designView": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 672.2,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 114.1,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 782.2,
+        "shortfallPx": 54.2,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 720.4,
+        "rowContentWidth": 728,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 850.4,
+        "shortfallPx": 122.4,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 1200,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 892.4,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 982.4,
+        "shortfallPx": -177.6
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 140.3,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1106.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1236.3,
+        "shortfallPx": 76.3,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 1200,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 1080.4,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1170.4,
+        "shortfallPx": 10.4
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1084.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 140.3,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1194.3,
+        "shortfallPx": 34.3,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1106.3,
+        "rowContentWidth": 1160,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 20,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1236.3,
+        "shortfallPx": 76.3,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 1440,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 892.4,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 982.4,
+        "shortfallPx": -417.6
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1110.7,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1220.7,
+        "shortfallPx": -179.3,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1253,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1383,
+        "shortfallPx": -17,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 1440,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 1080.4,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1170.4,
+        "shortfallPx": -229.6
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1298.7,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1408.7,
+        "shortfallPx": 8.7,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1304.2,
+        "rowContentWidth": 1400,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 217.9,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1434.2,
+        "shortfallPx": 34.2,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 1600,
+      "accountState": "signed-out",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 892.4,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 982.4,
+        "shortfallPx": -577.6
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1110.7,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1220.7,
+        "shortfallPx": -339.3,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1253,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 166.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1383,
+        "shortfallPx": -177,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    },
+    {
+      "role": "Engineer",
+      "width": 1600,
+      "accountState": "four-companies-simulated",
+      "dialPresent": true,
+      "today": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 10,
+        "widthSum": 1080.4,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1170.4,
+        "shortfallPx": -389.6
+      },
+      "designView": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 12,
+        "widthSum": 1298.7,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1408.7,
+        "shortfallPx": -151.3,
+        "projectedHere": [
+          "design",
+          "view"
+        ],
+        "realHere": []
+      },
+      "twelve": {
+        "controls": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ],
+        "controlCount": 14,
+        "widthSum": 1441,
+        "rowContentWidth": 1560,
+        "overflowPx": 0,
+        "docOverflowPx": 0,
+        "actingAsWidth": 354.7,
+        "actingAsOnScreen": true,
+        "offScreen": [],
+        "barHeight": 56,
+        "wantedPx": 1571,
+        "shortfallPx": 11,
+        "projectedHere": [
+          "design",
+          "view",
+          "summary",
+          "print"
+        ],
+        "realHere": []
+      }
+    }
+  ],
+  "byWidth": {
+    "today": {
+      "360": {
+        "rowContentWidth": 344,
+        "maxWantedPx": 364.1,
+        "maxShortfallPx": 20.1,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 90.6,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ]
+      },
+      "710": {
+        "rowContentWidth": 694,
+        "maxWantedPx": 505.5,
+        "maxShortfallPx": -188.5,
+        "fits": true,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 232,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ]
+      },
+      "768": {
+        "rowContentWidth": 728,
+        "maxWantedPx": 741,
+        "maxShortfallPx": 13,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 304.7,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "acting-as",
+          "account",
+          "project",
+          "role",
+          "settings"
+        ]
+      },
+      "1200": {
+        "rowContentWidth": 1160,
+        "maxWantedPx": 1176.9,
+        "maxShortfallPx": 16.9,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 354.7,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      },
+      "1440": {
+        "rowContentWidth": 1400,
+        "maxWantedPx": 1176.9,
+        "maxShortfallPx": -223.1,
+        "fits": true,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 354.7,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      },
+      "1600": {
+        "rowContentWidth": 1560,
+        "maxWantedPx": 1176.9,
+        "maxShortfallPx": -383.1,
+        "fits": true,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 354.7,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      }
+    },
+    "designView": {
+      "360": {
+        "rowContentWidth": 344,
+        "maxWantedPx": 481.6,
+        "maxShortfallPx": 137.6,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 12,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ]
+      },
+      "710": {
+        "rowContentWidth": 694,
+        "maxWantedPx": 701.6,
+        "maxShortfallPx": 7.6,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 232,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ]
+      },
+      "768": {
+        "rowContentWidth": 728,
+        "maxWantedPx": 782.2,
+        "maxShortfallPx": 54.2,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 107.6,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "role",
+          "settings"
+        ]
+      },
+      "1200": {
+        "rowContentWidth": 1160,
+        "maxWantedPx": 1194.3,
+        "maxShortfallPx": 34.3,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 133.8,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      },
+      "1440": {
+        "rowContentWidth": 1400,
+        "maxWantedPx": 1415.2,
+        "maxShortfallPx": 15.2,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 354.7,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      },
+      "1600": {
+        "rowContentWidth": 1560,
+        "maxWantedPx": 1415.2,
+        "maxShortfallPx": -144.8,
+        "fits": true,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 354.7,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      }
+    },
+    "twelve": {
+      "360": {
+        "rowContentWidth": 344,
+        "maxWantedPx": 597.6,
+        "maxShortfallPx": 253.6,
+        "fits": false,
+        "maxOverflowPx": 25,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 12,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [
+          "print"
+        ],
+        "controlsPresent": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ]
+      },
+      "710": {
+        "rowContentWidth": 694,
+        "maxWantedPx": 714.1,
+        "maxShortfallPx": 20.1,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 128.5,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ]
+      },
+      "768": {
+        "rowContentWidth": 728,
+        "maxWantedPx": 856.9,
+        "maxShortfallPx": 128.9,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 20,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "role",
+          "settings"
+        ]
+      },
+      "1200": {
+        "rowContentWidth": 1160,
+        "maxWantedPx": 1242.8,
+        "maxShortfallPx": 82.8,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 20,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      },
+      "1440": {
+        "rowContentWidth": 1400,
+        "maxWantedPx": 1434.2,
+        "maxShortfallPx": 34.2,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 211.4,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      },
+      "1600": {
+        "rowContentWidth": 1560,
+        "maxWantedPx": 1577.5,
+        "maxShortfallPx": 17.5,
+        "fits": false,
+        "maxOverflowPx": 0,
+        "maxDocOverflowPx": 0,
+        "minActingAsWidth": 354.7,
+        "actingAsAlwaysOnScreen": true,
+        "everOffScreen": [],
+        "controlsPresent": [
+          "wordmark",
+          "acting-as",
+          "account",
+          "project",
+          "design",
+          "view",
+          "summary",
+          "print",
+          "nav-wall",
+          "nav-foundation",
+          "nav-floor",
+          "nav-roof",
+          "role",
+          "settings"
+        ]
+      }
+    }
+  },
+  "firstFitsAtViewportWidth": {
+    "today": {
+      "nothingOffScreen": {
+        "below-768": 320,
+        "768-1199": 768,
+        "1200-up": 1200
+      },
+      "companyNameIntact": {
+        "below-768": 485,
+        "768-1199": 768,
+        "1200-up": 1200
+      }
+    },
+    "designView": {
+      "nothingOffScreen": {
+        "below-768": 320,
+        "768-1199": 768,
+        "1200-up": 1200
+      },
+      "companyNameIntact": {
+        "below-768": 681,
+        "768-1199": 875,
+        "1200-up": 1341
+      }
+    },
+    "twelve": {
+      "nothingOffScreen": {
+        "below-768": 385,
+        "768-1199": 768,
+        "1200-up": 1200
+      },
+      "companyNameIntact": {
+        "below-768": "never in 320-767",
+        "768-1199": 1037,
+        "1200-up": 1503
+      }
+    }
+  },
+  "breakpointBands": [
+    {
+      "id": "below-768",
+      "lo": 320,
+      "hi": 767,
+      "what": "no wordmark, no nav, ACTING AS caption shed"
+    },
+    {
+      "id": "768-1199",
+      "lo": 768,
+      "hi": 1199,
+      "what": "no wordmark, no nav, caption shown"
+    },
+    {
+      "id": "1200-up",
+      "lo": 1200,
+      "hi": 2400,
+      "what": "wordmark + four nav tabs"
+    }
+  ],
+  "naturalWidths": {
+    "today": {
+      "naturalRowContentPx": 1176.9,
+      "naturalViewportPx": 1216.9,
+      "measuredAt": "1600px, four companies, the widest role label"
+    },
+    "designView": {
+      "naturalRowContentPx": 1415.2,
+      "naturalViewportPx": 1455.2,
+      "measuredAt": "1600px, four companies, the widest role label"
+    },
+    "twelve": {
+      "naturalRowContentPx": 1577.5,
+      "naturalViewportPx": 1617.5,
+      "measuredAt": "1600px, four companies, the widest role label"
+    }
+  },
+  "shedOrder": {
+    "wordmark": {
+      "presentAt": [
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": 1200
+    },
+    "nav-wall": {
+      "presentAt": [
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": 1200
+    },
+    "nav-foundation": {
+      "presentAt": [
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": 1200
+    },
+    "nav-floor": {
+      "presentAt": [
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": 1200
+    },
+    "nav-roof": {
+      "presentAt": [
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": 1200
+    },
+    "acting-as": {
+      "presentAt": [
+        360,
+        710,
+        768,
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": "never shed"
+    },
+    "account": {
+      "presentAt": [
+        360,
+        710,
+        768,
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": "never shed"
+    },
+    "project": {
+      "presentAt": [
+        360,
+        710,
+        768,
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": "never shed"
+    },
+    "role": {
+      "presentAt": [
+        360,
+        710,
+        768,
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": "never shed"
+    },
+    "settings": {
+      "presentAt": [
+        360,
+        710,
+        768,
+        1200,
+        1440,
+        1600
+      ],
+      "shedBelow": "never shed"
+    },
+    "design": {
+      "presentAt": [],
+      "shedBelow": "never present"
+    },
+    "view": {
+      "presentAt": [],
+      "shedBelow": "never present"
+    },
+    "summary": {
+      "presentAt": [],
+      "shedBelow": "never present"
+    },
+    "print": {
+      "presentAt": [],
+      "shedBelow": "never present"
+    }
+  },
+  "pageExceptions": [],
+  "failures": []
+}
