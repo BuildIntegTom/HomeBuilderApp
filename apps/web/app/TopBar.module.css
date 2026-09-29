@@ -3,17 +3,18 @@
    DECISIONS OF 2026-09-28). The bar changes at exactly these widths; do not
    add another:
 
-     1200px  At and above (`min-width: 1200px`): the Wall/Foundation/Floor/Roof
-             nav shows, EditorTabDial hides (EditorToolbar.module.css), and the
-             acting-as company name may grow past 220px
-             (AccountControl.module.css). Written as ONE condition that shows
-             one thing and hides the other, rather than a max-width/min-width
-             pair, so there is no width — fractional ones under browser zoom
-             included — where nav and tab dial both show or neither does.
-             Why not 768, where the spec first put the nav: measured with four
-             companies, the bar at 768 had 34px spare with the name at 220px,
-             and the nav + the (now removed) wordmark needed ~380px. They would
-             have crushed the name.
+     1200px  ⚠ NOT A BREAKPOINT OF THIS FILE ANY MORE, and that is worth
+             stating rather than leaving as an absence. It used to show the
+             wordmark and the Wall/Foundation/Floor/Roof nav; both were removed
+             2026-09-28, so this stylesheet has no `min-width: 1200px` rule at
+             all. The NUMBER still matters to the bar's neighbours: at and above
+             it the acting-as company name's cap rises from 220px to 280px
+             (AccountControl.module.css) and EditorTabDial hides
+             (EditorToolbar.module.css). Both are deliberately untouched here.
+             Why the nav was never at 768, where the spec first put it:
+             measured with four companies, the bar at 768 had 34px spare with
+             the name at 220px, and the nav plus the wordmark needed ~380px.
+             They would have crushed the name.
       768px  `md`. Below it (written `max-width: 767px`) the bar sheds: tighter
              controls, carets dropped, and AccountControl drops its "ACTING AS"
              caption word (AccountControl.module.css).
@@ -35,20 +36,37 @@
    bar: shedding there left the caption showing while the company name was
    already truncated between ~601 and 700px.
 
-   Shed order, narrowing: nav tabs (below 1200) -> "ACTING AS" caption (below
-   768) -> and after that only the acting-as company NAME itself, which
-   truncates. NEVER shed: Design, View, the acting-as chip, Project, Role and
-   the settings icon. No help icon exists to shed, and there is no wordmark
-   left to shed.
+   Shed order, narrowing: "ACTING AS" caption (below 768) -> and after that
+   only the acting-as company NAME itself, which truncates. That is the WHOLE
+   order now: the wordmark and the four nav tabs used to shed below 1200 and
+   neither exists any more, so nothing on this bar disappears at a breakpoint at
+   all. NEVER shed: Design, View, the acting-as chip, Project, Role and the
+   settings icon. No help icon exists to shed either.
 
-   ⚠ WHAT THAT COSTS, SAID PLAINLY. Truncated-but-present beats absent is this
-   bar's rule, and the name is the last thing given room. But with Design and
-   View now permanent the narrow end of the range runs out of pixels, and below
-   a measured width the name renders NO characters. That is a real lapse in a
-   documented safety property, so it is measured rather than assumed, and every
-   width at which the name is fully absent is published in
-   apps/web/harness/ui-reorg-u1/README.md with the declared supported range.
-   Nothing here shrinks type to hide it.
+   ⚠ WHAT THAT COSTS, SAID PLAINLY, WITH THE MEASURED NUMBERS. Truncated-but-
+   present beats absent is this bar's rule, and the name is the last thing given
+   room. With Design and View now permanent the narrow end runs out of pixels:
+
+       >=1200px   the row wants 922.5px and has 1160+; the name is WHOLE
+                  (39 of 39 characters, four companies, widest role label)
+        710px     the row wants 588.7px and has 694; the name shows 31 of 39.
+                  This is Tommy's own viewport and it has 105px to spare
+        768px     WORSE THAN 710 and not a typo: the ACTING AS caption returns
+                  here and every control grows, so the row wants 732.2px and
+                  has 728, and the name is cut to 6 characters ("The Se")
+        425px     the narrowest width at which ANY of the name renders
+       <425px     the name renders ZERO characters. The chip, its caret and the
+                  switcher are still there and still on screen; the NAME is
+                  gone. 360px is demo-only by Tommy's own framing, and every
+                  view is still reachable there (asserted with a real mouse)
+
+   No control is ever pushed off screen and nothing scrolls horizontally at any
+   of these widths. Below 425px this bar does NOT keep the documented
+   "truncated but present" promise, which is the direct price of removing the
+   dial — with nothing to catch the view stops, Design and View cannot shed, so
+   the name is the only thing left that can give. Published in full in
+   apps/web/harness/ui-reorg-u1/README.md and put in front of Tommy rather than
+   engineered around. Nothing here shrinks type to hide it.
 
    Colours read from the --bi-* chrome tokens in globals.css. Every token's
    default is the exact hex this file hardcoded before. Chrome only: nothing

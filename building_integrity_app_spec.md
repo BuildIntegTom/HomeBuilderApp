@@ -4892,7 +4892,7 @@ The engineer text truncates at 768 and below; the other three roles truncate onl
 ---
 
 
-## Top Bar & Navigation Reorganisation (2026-09-26) — **U0 BUILT 2026-09-27**, **U1 BUILT 2026-09-28**, U2–U6 PLANNED
+## Top Bar & Navigation Reorganisation (2026-09-26) — **U0 BUILT 2026-09-27**; **U1 BUILT 2026-09-28 and then REBUILT the same day to Tommy's re-drawn design — read "U1 REBUILT as built" and treat everything about the labelled bar, the fourth breakpoint and the surviving dial as SUPERSEDED**; U2–U6 PLANNED
 
 Tommy, 2026-09-26:
 
@@ -5319,7 +5319,9 @@ Per the 6-point discipline. **This plan introduces zero new `CatalogValue`s and 
 
 *The one thing most likely to be got wrong:* **introducing a second writer of the view state.** `viewMode`, `simplified3D`, `showWraps` and `elevationViewWallId` are four flags that encode five stops, and `handleViewerStopChange` is the only function that sets them consistently. Two menus each setting their own subset is exactly how `showWraps` ends up true on a plan view. **One writer, one reader (`currentViewerStop`), two presentations** — the same discipline `editorTabs.ts` already enforces for the tabs.
 
-#### U1 as built — 2026-09-28
+#### U1 as built — 2026-09-28 — ⚠ SUPERSEDED THE SAME DAY; see "U1 REBUILT as built" below
+
+⚠ **KEPT AS THE RECORD OF A BAR THAT NO LONGER EXISTS, AND AS THE REASON THE NEXT ONE LOOKS AS IT DOES.** Everything below describes the LABELLED Design/View pair, the fourth breakpoint at 1454px, and the sidebar dial surviving as the below-breakpoint form. Tommy read these figures and replaced all three: bare words, no dial, no wordmark, no tab items. **Its measurements are still live evidence** — they are what the re-plan was argued from, and `evidence-u1-labelled-bar.json` is their recording — but nothing in this subsection describes the code as it now stands.
 
 **Shipped the scope above and nothing from U2–U6.** Files: `apps/web/app/viewerMenus.ts` + its test (the one definition of which stops go under which menu, plus `viewerStopKey`, which was `ViewerDial`'s private `stopKey`), and edits to `TopBar.tsx`/`.module.css`, `ViewerDial.tsx`, `page.tsx`/`.module.css`. Harness: `apps/web/harness/ui-reorg-u1/`, plus a new shared `apps/web/harness/viewStopControl.mjs` that the three Smearforn harnesses and U0's now read.
 
@@ -5412,6 +5414,117 @@ Per the 6-point discipline. **This plan introduces zero new `CatalogValue`s and 
 **Flags check: vacuously clean.** The diff introduces no `CatalogValue`, no real-world building number, and nothing carrying a `status` or a `note`. Every figure in it is a layout measurement (1200px, 11px, 13px, and the widths above) or a count of stops. Point 5 is untouched: nothing new reaches the Review Log and nothing leaves it. Site Properties and the Panelizer were not touched — that is U3 — so no flagged catalog value moved at all.
 
 **Still open after U1, and NOT answered here:** the `2D Floor Plan` → `Plan View` rename; whether Print shows a value on the bar when active; what Design and View should do on the Floor/Roof/Foundation tabs (U1 mirrors today's behaviour — present, disabled, reason in the `title` — which is the recommendation, not a ruling); whether the wheel and the rustle should also exist at desktop width; and, newly sharpened by the measurement, **what sheds, or what the bar's fourth number is, now that twelve are known not to fit.**
+
+#### U1 REBUILT as built — 2026-09-28 (the bare bar, and the dial is gone)
+
+**This supersedes "U1 as built" above.** Tommy read U1's numbers and re-drew the bar the same day, in the "Decisions of 2026-09-28" block and then in the interview that followed. Everything below is built, on branch `ui-u1-bare`. **Not merged and not deployed.**
+
+**What shipped:** `Design` and `View` as **bare words**; **two levels of highlight**; **`ViewerDial` deleted** (with `useRustleSound()` and the scroll wheel); the **wordmark dropped**; and the **four `Wall / Foundation / Floor / Roof` tab items folded into the Design menu** as subject groups gated by the scope of work.
+
+Files: `viewerMenus.ts` (now also the home of `ViewerStop`, the destination model and the two highlight rules) + its test; `viewLabels.ts` (`isViewerDialLive` → **`isViewStopLive`**, and `destinationLabel`) + its test; `TopBar.tsx`/`.module.css`; `page.tsx`/`.module.css`; `EditorTabDial.tsx` (one stale comment); **deleted:** `ViewerDial.tsx`, `ViewerDial.module.css`, `useRustleSound.ts`. Harnesses: `ui-reorg-u1/` rewritten, `viewStopControl.mjs` extended, and all five re-run.
+
+##### ⚠⚠ THE MEASUREMENT — the per-control widths, because the old ones were inferred
+
+`apps/web/harness/ui-reorg-u1/evidence.json` (8 widths × 2 account states × 4 roles × 4 bar configurations, plus per-band bisections). **U1's own `evidence.json` is kept as `evidence-u1-labelled-bar.json`** — it is the only recording of the labelled bar and the "before" for all of this.
+
+**Account, Projects and Settings were published as ~104px each. That figure was inference** — measured parts subtracted from a measured total — and it is what made 1280px look like it had ~17px of margin. Measured one control at a time, four companies, widest role:
+
+| control | ≥768px | <768px |
+|---|---|---|
+| acting-as chip | **354.7px** (select at its 280px cap) | 187.5 at 768 → **12.0** at 360 |
+| Account (`Sign in`) | **86.3px** | 52.7 |
+| Project | **87.0px** | 53.4 |
+| Design | **87.0px** | 53.4 |
+| View | **74.5px** | 41.8 |
+| Role | **139.0px** (`Fabricator`) | 80.0–101.4 |
+| ⚙ Settings | **34.0px** | 30.0 |
+
+Account + Projects + Settings together are **207.3px, not ~312px**.
+
+**Natural row content** (nothing squeezed, at 1600px):
+
+| bar | row content | ≈ viewport |
+|---|---|---|
+| **the shipped bar (option B)** | **922.5px** | **~962.5px** |
+| option A — the four tab items back | 1216.8px | ~1256.8px |
+| shipped + Summary + Print, bare | **1084.8px** | **~1124.8px** |
+| option A + Summary + Print | 1379.1px | ~1419.1px |
+
+- **Folding the tabs into Design saved 294.3px, measured** (the plan estimated ~264px).
+- **Summary and Print cost 162.3px** as bare buttons — so **they come back into reach**: on the shipped bar they fit from ~1125px of viewport, with the company name whole from 1200px. That is a U4/U5 input, not a licence to build them.
+- **1280px does not break.** The shipped bar has **317px to spare** there. Option A would have had 23.2px, which is why the inferred figure looked frightening.
+
+**Fit at the eight widths** (shipped bar, four companies, worst role). `chars` is how much of `The Seed Collaborative (platform admin)` (39 characters) renders:
+
+| viewport | row has | wants | chars |
+|---|---|---|---|
+| 360 | 344 | 368.7 | **0 — the name is gone** |
+| 710 | 694 | 588.7 | 31 |
+| 768 | 728 | 732.2 | 6 (`The Se`) |
+| 1200 | 1160 | 922.5 | **39 — whole** |
+| 1280 | 1240 | 922.5 | **39 — whole** |
+| 1366 | 1326 | 922.5 | **39 — whole** |
+| 1440 | 1400 | 922.5 | **39 — whole** |
+| 1600 | 1560 | 922.5 | **39 — whole** |
+
+**No control is ever pushed off screen and nothing scrolls horizontally, at any width.** When the row runs short the acting-as select is the only thing that gives, exactly as the stylesheet says it should.
+
+⚠ **768px is worse than 710px, and it is not a typo.** At 768 the `ACTING AS` caption returns and every control grows (12px → 13px type, wider padding), which costs more than the 58px of viewport gained.
+
+##### ⚠ THE DECLARED RANGE, from Tommy's landscape clarification
+
+*"If someone is using this on their phone they should be able to turn it sideways and have a longer top bar… most of the work is going to be done on a bigger screen."*
+
+- **≥1200px — everything, comfortably.** Name whole, 237px+ spare.
+- **425–1199px — the working range.** Every destination reachable, nothing off screen, the name **truncated but present** — 31 of 39 characters at **Tommy's own 710px**, with 105px of row to spare.
+- **below 425px — demo only.** Every control is still on the bar and every view is still reachable (asserted with a real mouse at 360px), but the acting-as select is crushed to 12px and renders **no characters of the company name**.
+
+##### ⚠ EVERY WIDTH AT WHICH THE COMPANY NAME IS FULLY ABSENT — and it is a safety property being spent
+
+| bar | absent below | of the sampled widths |
+|---|---|---|
+| **shipped (option B)** | **425px** | 360 |
+| option A | 695px, and again 768–1023px | 360, 768 |
+| shipped + Summary + Print | 541px, and again 768–891px | 360, 768 |
+| option A + Summary + Print | never below 768; 768–1185px | 360, 710, 768 |
+
+The acting-as company is on the bar because a wrong-company save is *silent, plausible, and noticed later by someone else*, and `AccountControl.module.css` records that the original 2026-09-13 bug was the name truncated while its caption still showed — the principle being **truncated-but-present beats absent**. **Below 425px this bar does not keep that promise.** It is the direct price of removing the dial: with nothing to catch the view stops, `Design` and `View` cannot shed, so at the narrow end the name is the only thing left that can give. **Nothing was shrunk, hidden or re-breakpointed to make this go away, and it is Tommy's to accept or reject.** Two things soften it and neither is an excuse: option B is better than option A at every width (the tabs' 294px were coming out of the name), and the name is whole from 1200px up, where he says the work happens.
+
+##### The two levels of highlight, and why they are two functions
+
+`viewerMenuOwner({ editorTab, currentStop })` — the BAR — and `isCurrentDestination(destination, { editorTab, currentStop })` — the OPEN MENU. Each has its own unit tests and its own browser acceptance criterion, and **neither is colour alone**: the bar carries `aria-pressed` plus an inset 2px underline (an underline, not weight, so ownership moving cannot reflow the row — the removed nav tabs' own recorded reason); the menu entry carries `aria-current="true"` plus heavier weight and a left edge bar. Asserted in the browser against a non-current sibling, not described in a comment.
+
+⚠ **Ownership deliberately no longer reads the footprint, and that is a correction.** Tommy: *"When you open the app it'll automatically be in planview editor. This will make the design button highlighted."* Under U1's rule ownership required a live view stop, which requires a footprint — so **on a cold load neither menu was highlighted**, on the exact screen he was describing. The harness asserts the launch state first, before it draws anything.
+
+##### One writer, with the dial gone
+
+`handleViewerStopChange` is still the only writer of `viewMode` / `simplified3D` / `showWraps` / `elevationViewWallId`; `setEditorTab` is still the only writer of `editorTab`. The merged menu calls both and writes neither. **Half of U1's proof was impossible to keep** — it compared the dial against the menus inside one run — so:
+
+- **Across the change**, unchanged and unrepeatable: `region3-baseline.json` was recorded off the **dial**, so comparing the menus against it is still a two-control comparison. It can never be re-made.
+- **Two paths, one run**, the replacement: every stop is reached directly and again after a detour through a stop of the other kind, and Region 3 must be **byte-for-byte identical** both times, digits included. The detour is what writes the flags, so this tests precisely `showWraps` left true on a plan view arrived at from 3D.
+
+##### The five harnesses
+
+All five drive the bar menus through `viewStopControl.mjs`, which gained `selectSubject()` and `subjectsOffered()` because `nav[aria-label="Editor"]` no longer exists. Results: `smearforn-stage-0-1` 12/12, `-2` all pass, **`-2b` 14/14** (the one U1 broke silently), `-3` all pass, `ui-reorg-u0` all pass, `ui-reorg-u1` every assertion passes.
+
+⚠ **U0's 64px cluster assertion was rewritten, because the measured truth IMPROVED.** It required a single flush-left stack with **30px below the fold** — the "one measured deviation at 64px" Tommy accepted on 2026-09-27. Removing the dial took ~60px out of the sidebar column, so it no longer overflows (`scrollHeight 820 === clientHeight 820`), the 15px scrollbar is gone, the content box went **40px → 55px**, the four icons sit two abreast and **nothing is below the fold**. The old numbers are quoted where they were; he has not been asked to accept anything new.
+
+⚠ **A retry budget was added to the shared `openMenu` — three clicks, reported in the error.** A first click after a cold load can land before React has attached its handlers: two U0 checks failed exactly once that way and passed on re-run, and Stage 0/1's first action is now to read this menu. The budget is bounded and named, in the same spirit as Stage 0/1's wall-read budget, because a flaky check teaches its reader to discount a real failure.
+
+##### Gates
+
+`npx vitest run` **129 files / 2490** (baseline 2470; +20 for the new menu rules). `tsc --noEmit` clean in `apps/web`; `packages/geometry` clean except the two pre-existing `bracedPlacement.test.ts` errors (602, 644). **Lint delta zero including severity-1 warnings** (119 errors / 48 warnings, unchanged).
+
+**Flags check: vacuously clean.** The diff introduces no `CatalogValue`, no real-world building number, and nothing carrying a `status` or a `note`. Every figure is a layout measurement or a count of destinations. Point 5 is untouched: nothing new reaches the Review Log and nothing leaves it. **Site Properties and the Panelizer were not touched** — that is U3 — so no flagged catalog value moved at all.
+
+##### Still open after this pass, and NOT answered here
+
+- **`2D Floor Plan` → `Plan View`.** Untouched, as instructed. `Membranes` and the internal `3d-wraps` key likewise.
+- **Whether anything replaces the dial's scroll-wheel cycling.** Nothing does today. Recorded in `viewerMenus.ts`, `TopBar.tsx` and `page.tsx` so its absence cannot later read as an oversight.
+- **`EditorTabDial`'s remaining role — reported, not decided.** It was not touched. It still renders from `editorTab` and still hides at ≥1200px (`EditorToolbar.module.css`), so **below 1200px there are now two doors to the same subjects** (it and the Design menu) and **at ≥1200px the Design menu is the only one**. That asymmetry is a consequence of this pass, not a decision taken in it.
+- **The Design menu's group order is Tommy's (`Wall, Floor, Roof, Foundation`), which is NOT `EDITOR_TAB_ORDER`'s building order** (`wall, foundation, floor, roof`). Both constants exist, each with its reason, and a test asserts they cover the same four tabs. Whether the menu should follow building order instead is his call.
+- **Two presentational judgements flagged rather than claimed as his:** a subject group is **headed only when it holds more than one destination** (so `Floor`, `Roof` and `Foundation` are single entries with no heading above them repeating the word), and the wall group's heading is **`Wall`**, the app's own single definition of that label, rather than the plural `Walls` he wrote informally.
+- **Whether Summary and Print are wanted on the bar at all** — they now fit (~1125px), which U4/U5 did not previously have grounds to assume.
 
 ---
 

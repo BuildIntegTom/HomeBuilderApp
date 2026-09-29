@@ -6,7 +6,7 @@ import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import StickyNote from "./StickyNote";
 import UnitSystemSwitch from "./UnitSystemSwitch";
 import AccountControl from "./auth/AccountControl";
-import { EDITOR_TAB_LABEL, editorTabsInScope, type EditorTab } from "./editorTabs";
+import { EDITOR_TAB_LABEL, type EditorTab } from "./editorTabs";
 import { destinationLabel, isViewStopLive, viewerStopLabel } from "./viewLabels";
 import {
   VIEWER_MENU_LABEL,
@@ -429,9 +429,11 @@ export default function TopBar({
             Wall / Foundation / Floor / Roof buttons at 1200px and up. Tommy
             merged the two axes on 2026-09-28: the subjects are now GROUPS
             INSIDE the Design menu, and "no separate Walls / Floor / Roof /
-            Foundation bar items". That frees roughly 264px, the single biggest
-            saving available on this bar, and it is why the measured figures for
-            this pass are not comparable to U1's.
+            Foundation bar items". The plan estimated that at ~264px; MEASURED
+            against the same bar with the four tab items projected back onto it,
+            it is **294.3px** — the single biggest saving available on this bar,
+            and the reason this pass's figures are not comparable to U1's.
+            (apps/web/harness/ui-reorg-u1/evidence.json, tabFoldSavingPx.)
 
             The state did not move: `editorTab` is still one `useState` in
             page.tsx with `setEditorTab` its one writer, and `EditorTabDial` in

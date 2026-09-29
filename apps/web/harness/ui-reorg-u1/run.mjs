@@ -292,6 +292,32 @@ const clickSelector = async (selector, what) => {
   await click(at.x, at.y);
 };
 
+/**
+ * Click, then check the page really did what the click was for — and try again
+ * if it did not.
+ *
+ * ⚠ WHY: the first click after a cold load can land before React has attached
+ * its handlers. The element is there, laid out and enabled, the mouse events
+ * are dispatched at its own coordinates, and nothing happens. Seen on
+ * 2026-09-28 in three harnesses on the same afternoon, always on the first
+ * interaction of a run and never on a re-run.
+ *
+ * **Three attempts, and it says how many it spent.** A silent retry loop would
+ * hide a control that genuinely stopped working, which is worse than the flake
+ * it fixes — the same reason the shared view-stop driver's `openMenu` budget is
+ * bounded and reported.
+ */
+const clickSelectorUntil = async (selector, what, readyExpression) => {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await clickSelector(selector, what);
+    await sleep(attempt === 1 ? 200 : 600);
+    if (await evaluate(readyExpression)) return attempt;
+  }
+  throw new Error(
+    `clicked ${what} three times and ${readyExpression} never became true — the control is present and clickable, so is something overlaying it, or did the page not finish hydrating?`,
+  );
+};
+
 // --- the page-side toolkit --------------------------------------------------
 //
 // Installed once per page load. Everything below that reads or manipulates the
@@ -973,8 +999,14 @@ record(
 );
 
 console.log("2. all four scope branches on — the widest bar the keyhole allows");
-await clickSelector('[data-bar-control="project"]', "the Project menu");
-await clickSelector('#project-note button[title^="Which editor tools"]', "the Panelizer item");
+evidence.coldClickAttempts = {
+  projectMenu: await clickSelectorUntil('[data-bar-control="project"]', "the Project menu", `Boolean(document.querySelector('#project-note'))`),
+  panelizerItem: await clickSelectorUntil(
+    '#project-note button[title^="Which editor tools"]',
+    "the Panelizer item",
+    `Boolean(document.querySelector('#panelizer-note'))`,
+  ),
+};
 const scopeBoxes = await evaluate(`(() => {
   const note = document.querySelector('#panelizer-note');
   if (!note) return null;
@@ -1132,7 +1164,11 @@ const allStopLabels = [
   ...designEntries.flatMap((g) => g.entries.filter((e) => e.kind === "stop").map((e) => e.label)),
   ...viewEntries.flatMap((g) => g.entries.filter((e) => e.kind === "stop").map((e) => e.label)),
 ];
-const longestStopLabel = allStopLabels.reduce((a, b) => (b.length > a.length ? b : a), allStopLabels[0]);
+/* The longest stop label, recorded rather than used: it is what a menu ENTRY
+   has to be wide enough for, and with the bar words bare it is the only place
+   that string still has to fit. A later stage adding a longer stop name can
+   compare against it. */
+evidence.longestStopLabel = allStopLabels.reduce((a, b) => (b.length > a.length ? b : a), allStopLabels[0]);
 record(
   "the-two-menus-together-reach-every-stop-and-every-subject-in-scope",
   {
