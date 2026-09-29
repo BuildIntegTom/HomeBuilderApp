@@ -4,6 +4,7 @@ import { EDITOR_TAB_ORDER, type EditorTab } from "./editorTabs";
 import { destinationLabel, viewerStopLabel } from "./viewLabels";
 import {
   DESIGN_SUBJECT_ORDER,
+  viewerMenuEmptyReason,
   VIEWER_MENU_LABEL,
   VIEWER_MENU_ORDER,
   destinationKey,
@@ -272,6 +273,17 @@ describe("viewerMenuGroups — what the merged menu offers", () => {
     expect(viewerMenuGroups("view", { stops: RECTANGLE, enabledTabs: ["floor"], footprint: FOOTPRINT })).toEqual([]);
   });
 
+  it("reads the scope through editorTabsInScope, so an empty list means what it means everywhere else", () => {
+    // The two differ in exactly one case, and it is the case this module treats
+    // as meaningful: an EMPTY enabled list. `editorTabsInScope` falls back to
+    // every tab; a raw `includes` would offer nothing and disable Design, which
+    // is the state that means "there is nowhere to go". page.tsx cannot produce
+    // an empty list (the last scope branch refuses to be unchecked), so this is
+    // a seam being kept closed rather than a bug being fixed.
+    const groups = viewerMenuGroups("design", { stops: RECTANGLE, enabledTabs: [], footprint: FOOTPRINT });
+    expect(groups.map((g) => g.subject)).toEqual([...DESIGN_SUBJECT_ORDER]);
+  });
+
   it("never leaves Design empty while any scope branch is checked", () => {
     for (const only of ALL_TABS) {
       const groups = viewerMenuGroups("design", { stops: RECTANGLE, enabledTabs: [only], footprint: FOOTPRINT });
@@ -305,6 +317,30 @@ describe("viewerMenuGroups — what the merged menu offers", () => {
     const [wall] = viewerMenuGroups("design", { stops: RECTANGLE, enabledTabs: ALL_TABS, footprint: FOOTPRINT });
     const second = wall!.destinations[1]!;
     expect(second.kind === "stop" && second.stop).toBe(RECTANGLE[1]);
+  });
+});
+
+describe("viewerMenuEmptyReason — why a disabled button is disabled", () => {
+  it("is null whenever the menu has anywhere to go", () => {
+    const input = { stops: RECTANGLE, enabledTabs: ALL_TABS, footprint: FOOTPRINT };
+    expect(viewerMenuEmptyReason("design", input)).toBeNull();
+    expect(viewerMenuEmptyReason("view", input)).toBeNull();
+  });
+
+  it("blames the missing footprint when that is what is missing", () => {
+    expect(viewerMenuEmptyReason("view", { stops: stopsFor([]), enabledTabs: ALL_TABS, footprint: null })).toBe(
+      "no-footprint",
+    );
+  });
+
+  it("blames the scope of work when the walls are unchecked, even with a footprint drawn", () => {
+    // ⚠ THE CASE THE BUTTON USED TO GET WRONG. It told anyone whose Walls
+    // branch was unchecked to "draw one on the plan first" while a footprint
+    // was already drawn — an instruction that cannot be acted on, which is
+    // worse than no reason at all.
+    expect(
+      viewerMenuEmptyReason("view", { stops: RECTANGLE, enabledTabs: ["floor"], footprint: FOOTPRINT }),
+    ).toBe("walls-out-of-scope");
   });
 });
 

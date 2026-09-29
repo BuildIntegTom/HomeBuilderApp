@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3218/",
-  "ranAt": "2026-09-29T03:18:48.154Z",
+  "ranAt": "2026-09-29T14:40:23.614Z",
   "steps": [
     {
       "name": "baseline-3d-found-real-walls-and-slots",
@@ -142,8 +142,8 @@
       "name": "both-halves-of-the-cross-reference-are-on-paper",
       "headerSheetStatesItsWall": true,
       "panelSheetNamesTheHeader": true,
-      "headerSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼Role: Fabricator ▼⤢▲Wall▼OrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Spanning Header 84.8in (1)🖶⤢×Fabricator/detailer document — one sheet per unique spanning header (exact copies grouped together). Its name comes from a single building-wide H ",
-      "panelSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼Role: Fabricator ▼⤢▲Wall▼OrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Standard 42.375in (2)🖶⤢×Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with a to-scale lettered elevation, a materials cut list, wh",
+      "headerSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼SummaryPrintRole: Fabricator ▼⤢OrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Spanning Header 84.8in (1)🖶⤢×Fabricator/detailer document — one sheet per unique spanning header (exact copies grouped together). Its name comes from a single building-w",
+      "panelSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼SummaryPrintRole: Fabricator ▼⤢OrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Standard 42.375in (2)🖶⤢×Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with a to-scale lettered elevation, a materials cut li",
       "asserted": true,
       "passed": true
     },

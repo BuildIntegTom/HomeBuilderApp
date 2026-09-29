@@ -13,6 +13,7 @@ import {
   VIEWER_MENU_ORDER,
   destinationKey,
   isCurrentDestination,
+  viewerMenuEmptyReason,
   viewerMenuGroups,
   viewerMenuOwner,
   type MenuDestination,
@@ -40,11 +41,15 @@ export interface TopBarProps {
   onLoadProjectClick: () => void;
   siteContent: ReactNode;
   panelizerContent: ReactNode;
-  /** The same `editorTab` state EditorTabDial is driven by — one source of
-   * truth, two presentations. */
+  /** `page.tsx`'s one `editorTab` state. Since the tab dial was removed
+   * (2026-09-29) the Design menu is its ONLY presentation — one source of
+   * truth, one control — and `onEditorTabChange` is still `setEditorTab`, its
+   * one writer, not a second copy of the state. */
   editorTab: EditorTab;
   onEditorTabChange: (tab: EditorTab) => void;
-  /** Panelizer's keyhole, exactly as passed to EditorTabDial. */
+  /** Panelizer's keyhole — `page.tsx`'s `enabledEditorTabs`, which is derived
+   * from the scope-of-work checkboxes. Read here, never duplicated: it decides
+   * which subject groups the Design menu offers. */
   enabledTabs: EditorTab[];
   /* ---- the Design and View menus -----------------------------------------
      THE ONLY VIEW CONTROL IN THE APP since `ViewerDial` was removed
@@ -75,6 +80,60 @@ export interface TopBarProps {
 
 type OpenMenu = "project" | "site" | "panelizer" | "role" | "settings" | "design" | "view" | null;
 
+/**
+ * The two bar words that hold a place for a page nobody has built yet.
+ *
+ * ⚠ A CONTROL THAT OPENS NOTHING IS FORBIDDEN BY THIS SECTION'S OWN RULE, and
+ * Tommy broke it here knowingly, 2026-09-29, having been told so: *"i like the
+ * add then now as disabled placeholders. that is okay for this instance because
+ * i want to get a feel for how this is going to be a user friendly
+ * experience."* Recorded as his decision so that a later reader finds an
+ * exception with a reason rather than a rule that quietly stopped applying.
+ *
+ * They are `disabled`, so the exception costs nobody a dead click, and each
+ * says in its title what is not built yet. **When U4 and U5 build the pages,
+ * these two entries are what they replace** — and `viewLabels.ts`'s
+ * `currentViewLabel` will need extending then, per its own note, so the Report
+ * Bug context line can name those surfaces too.
+ *
+ * ⚠ THE ORDER IS AN OPEN QUESTION, not a decision. Tommy's own 2026-09-26 list
+ * reads "Design, View, Print, Summary" while his example of the menus a
+ * sentence later reads "Summary Print". This uses Summary then Print, which is
+ * the order U1 measured and published; it is a label-order question for him and
+ * costs nothing either way (they measure 71.8px and 55.4px, so the pair is the
+ * same width in either order).
+ */
+/**
+ * What a disabled Design or View button says about itself.
+ *
+ * The WHICH is `viewerMenuEmptyReason`, in viewerMenus.ts, where it is derived
+ * from the same inputs that made the menu empty and is unit-tested; the WORDING
+ * is here, because it is presentation. ⚠ The reason this split exists at all:
+ * View used to tell anyone whose Walls branch was unchecked to "draw one on the
+ * plan first" even with a footprint already drawn — a disabled control giving an
+ * instruction that cannot help, which sends the user to fix something that is
+ * not broken.
+ */
+const EMPTY_MENU_REASON: Record<"no-footprint" | "walls-out-of-scope" | "nothing-in-scope", string> = {
+  "no-footprint": "The 3D views need a footprint — draw one on the plan first",
+  "walls-out-of-scope": "The 3D views are of the walls, and Walls is unchecked in the Panelizer's scope of work",
+  "nothing-in-scope": "Nothing is in the scope of work yet — check a branch in the Panelizer",
+};
+
+const BAR_PLACEHOLDERS: readonly { id: string; label: string; title: string }[] = [
+  {
+    id: "summary",
+    label: "Summary",
+    title:
+      "Not built yet — a placeholder. Summary will hold the project summary, project totals and materials totals pages that are in the right-hand tray today.",
+  },
+  {
+    id: "print",
+    label: "Print",
+    title: "Not built yet — a placeholder. Print will hold all the shop drawings.",
+  },
+];
+
 /** Icon-only, so the button carries a real aria-label and title. Inline SVG
  * rather than a Material Symbols webfont: no network dependency, no FOUT, no
  * licensing question for a one-icon need. */
@@ -94,29 +153,34 @@ function GearIcon() {
 }
 
 /**
- * Sticky top-of-screen chrome, in three zones (spec: "Top Bar & App Chrome —
- * the Stitch reorganisation").
+ * Sticky top-of-screen chrome, in TWO zones (spec: "Top Bar & App Chrome — the
+ * Stitch reorganisation", and Tommy's decisions of 2026-09-28/29).
  *
- * - LEFT, identity & document: the acting-as / sign-in control, then Project ▾
- *   (Save, Load, Site Properties, Panelizer — the things that change the
- *   building or the file), then Design ▾ and View ▾.
- *   ⚠ **NO WORDMARK.** It read `Building Integrity` at 1200px and up and was
- *   dropped on 2026-09-28 at Tommy's word — *"I don't think it's really all
- *   that important to have Building Integrity in left side"* — worth ~142px
- *   with its gap, and only at ≥1200px, because below that it already shed.
- * - MIDDLE, scope: Wall / Foundation / Floor / Roof (1200px and up). Below
- *   that, EditorTabDial in the sidebar is the tab control. Both are driven by
- *   the same state, and one CSS condition flips them, so exactly one shows.
+ * - LEFT, identity & document & where you are: the acting-as / sign-in control,
+ *   then Project ▾ (Save, Load, Site Properties, Panelizer — the things that
+ *   change the building or the file), then Design ▾ and View ▾, then the
+ *   Summary and Print placeholders.
  * - RIGHT, presentation: Role ▾ and ⚙ Settings (units and Admin Options — the
  *   things that change only how you look at it). No help icon: there is
- *   nothing for it to open yet, and the spec forbids an icon that opens nothing.
+ *   nothing for it to open yet.
  *
- * WHY THE NAV IS AT 1200 AND NOT `md`. The spec first put it at 768px.
- * Measured with four companies, the bar at 768 has 34px spare with the company
- * name at its 220px; the wordmark and nav needed ~380px more. Showing them
- * there would have crushed the acting-as company name — the one thing this bar
- * exists to keep legible. Tommy moved them to 1200 (2026-09-13). The wordmark
- * half of that query is gone; the nav's half is unchanged.
+ * ⚠ **THE MIDDLE ZONE IS GONE, AND SO IS EVERY `min-width: 1200px` RULE IN
+ * THIS COMPONENT'S STYLESHEET.** It held the Wall / Foundation / Floor / Roof
+ * nav at ≥1200px, paired with `EditorTabDial` in the sidebar below that width.
+ * On 2026-09-28 Tommy merged the two axes and the nav's four items became
+ * subject groups inside the Design menu; on 2026-09-29 he removed the tab dial
+ * too ("Remove it — Design is the only door"), so **neither half of that pair
+ * exists** and there is nothing left for a breakpoint to flip. The wordmark,
+ * which shared the same query, went with them. 1200px still matters to this
+ * bar's NEIGHBOURS — the company name's cap rises there
+ * (`AccountControl.module.css`) — and nowhere in this file.
+ *
+ * Why the nav was never put at 768px, kept because the reasoning still governs
+ * what may shed: measured with four companies, the bar at 768 has 34px spare
+ * with the company name at its 220px, and the nav plus the wordmark needed
+ * ~380px more. They would have crushed the acting-as company name — the one
+ * thing this bar exists to keep legible. Tommy moved them to 1200 (2026-09-13),
+ * and then removed both.
  *
  * WHY DESIGN AND VIEW HAVE NO BREAKPOINT AT ALL. U1 shipped them at a fourth,
  * measured width (1454px) and let the sidebar dial catch the stops below it.
@@ -181,8 +245,16 @@ export default function TopBar({
    * Writing `editorTab === "wall" && Boolean(footprint)` out here instead is
    * exactly what this predicate was added (2026-09-28) to prevent: that
    * condition had already been written twice, in opposite polarities, ~900
-   * lines apart in page.tsx. It answers four questions here — each button's
-   * `disabled`, and both levels of the highlight — from one call.
+   * lines apart in page.tsx.
+   *
+   * ⚠ WHAT IT ACTUALLY ANSWERS HERE, stated exactly, because an earlier version
+   * of this comment claimed it drove the buttons' `disabled` and both
+   * highlights and it drives neither: it decides ONLY whether the owning
+   * button's title names the current view STOP or the current SUBJECT. The
+   * `disabled` state is "this menu has no destinations"; the highlights are
+   * `viewerMenuOwner` and `isCurrentDestination`, which do not read the
+   * footprint at all — on purpose, since Design owns the plan before one is
+   * drawn.
    * (It was `isViewerDialLive`; the dial it was named after is gone, the
    * one-definition property it was created for is not.)
    */
@@ -333,9 +405,10 @@ export default function TopBar({
               oversight later: scroll-wheel cycling (nothing replaces it — an
               open question, not a settled answer) and `useRustleSound()`
               (Tommy: "The rustle sound is no big deal. I'll probably add sound
-              effects to certain things at later dates"). `EditorTabDial`, the
-              Walls/Floor/Roof/Foundation tab dial in the sidebar, is a
-              DIFFERENT control and is untouched.
+              effects to certain things at later dates"). The sidebar's
+              Wall/Foundation/Floor/Roof tab dial was a DIFFERENT control and
+              was left alone that day; Tommy removed it the next, so these two
+              words are now the only navigation in the app's chrome.
 
               ⚠ WHAT THESE MENUS CONTAIN IS THE CALLER'S BUSINESS. Nothing here
               lists a destination: `viewerMenuGroups` filters the caller's own
@@ -352,13 +425,22 @@ export default function TopBar({
                elevation and the Floor / Roof / Foundation editors, View the
                three 3D representations.
 
-               ⚠ IT IS NOT COLOUR ALONE. `aria-pressed` carries the state to a
-               screen reader — a real pressed state on a real button — and the
-               visible cue is an underline as well as colour, which is the same
-               device the nav tabs next door already use and for the same
-               recorded reason: an underline does not change the control's
-               width, so ownership moving between Design and View can never
-               reflow the bar. Weight would have. */
+               ⚠ IT IS NOT COLOUR ALONE, and the attribute is `aria-current`,
+               not `aria-pressed`. Both were tried; `aria-pressed` is wrong here
+               and the reason is worth keeping: this button ALSO carries
+               `aria-expanded`, and activating it opens a menu rather than
+               toggling anything on or off. A screen reader would announce a
+               toggle button that is "pressed" and then open a menu, which
+               describes a control this is not. `aria-current="true"` says the
+               true thing — this is the one of the set you are currently in —
+               and it is the same attribute the menu entries use one level down,
+               which is exactly the relationship being expressed.
+
+               The visible cue is an underline as well as colour, which is the
+               device the removed nav tabs used and for their recorded reason:
+               an underline does not change the control's width, so ownership
+               moving between Design and View can never reflow the bar. Weight
+               would have. */
             const isOwner = owningMenu === menu;
             return (
               <button
@@ -388,12 +470,12 @@ export default function TopBar({
                    is always checked) and View is empty until a footprint exists,
                    exactly as the old dial was disabled until then. */
                 disabled={menuGroups[menu].length === 0}
-                aria-pressed={isOwner}
+                aria-current={isOwner ? "true" : undefined}
                 title={
                   menuGroups[menu].length === 0
-                    ? menu === "view"
-                      ? "The 3D views need a footprint — draw one on the plan first"
-                      : "Nothing is in the scope of work yet — check a branch in the Panelizer"
+                    ? EMPTY_MENU_REASON[
+                        viewerMenuEmptyReason(menu, { stops: viewerStops, enabledTabs, footprint }) ?? "nothing-in-scope"
+                      ]
                     : isOwner
                       ? menu === "design"
                         ? `You are designing — ${viewStopLive ? viewerStopLabel(currentViewerStop) : EDITOR_TAB_LABEL[editorTab]}`
@@ -423,6 +505,45 @@ export default function TopBar({
               </button>
             );
           })}
+
+          {/* ⚠ SUMMARY AND PRINT — DISABLED PLACEHOLDERS, AND THAT BREAKS THIS
+              SECTION'S OWN RULE ON TOMMY'S EXPLICIT DECISION.
+
+              The Top Bar rule is that a control which opens nothing does not go
+              on the bar; it is why U1 measured Summary and Print rather than
+              building them. Told that, he chose to break it here, 2026-09-29:
+              *"i like the add then now as disabled placeholders. that is okay
+              for this instance because i want to get a feel for how this is
+              going to be a user friendly experience."* So this is a deliberate,
+              recorded exception for ONE case, not the rule quietly lapsing —
+              and the `disabled` state plus the title is what keeps it honest:
+              the control cannot be clicked into a dead end, and hovering says
+              why.
+
+              THEY ARE NOT VIEW MENUS. They carry no `data-view-menu`, take no
+              part in the owner rule, and open no note. They are two words
+              holding two places, and the pages behind them are U4 and U5.
+
+              What he says goes in them, recorded here and NOT built: Summary
+              holds "project summary, project totals, and materials totals pages
+              that we have under summary"; Print holds "all the shop drawings".
+              And, tentatively — his word is "maybe" — "maybe the print button
+              opens and closes the right bar", which is an unresolved idea
+              rather than a requirement, and one that interacts with U5, the
+              stage that deletes the right sidebar. */}
+          {BAR_PLACEHOLDERS.map((placeholder) => (
+            <button
+              key={placeholder.id}
+              type="button"
+              data-bar-control={placeholder.id}
+              data-bar-placeholder=""
+              disabled
+              title={placeholder.title}
+              className={styles.toolPlaceholder}
+            >
+              {placeholder.label}
+            </button>
+          ))}
         </div>
 
         {/* ⚠ THE FOUR SCOPE TABS USED TO BE HERE — a middle zone of
@@ -436,10 +557,13 @@ export default function TopBar({
             (apps/web/harness/ui-reorg-u1/evidence.json, tabFoldSavingPx.)
 
             The state did not move: `editorTab` is still one `useState` in
-            page.tsx with `setEditorTab` its one writer, and `EditorTabDial` in
-            the sidebar still renders from it below 1200px. What its remaining
-            role should be, now that the bar carries no tabs, is a question
-            reported back rather than answered here. */}
+            page.tsx with `setEditorTab` its one writer. `EditorTabDial` in the
+            sidebar went on 2026-09-29 — asked what should become of it now that
+            the bar carried no tabs, Tommy said "Remove it — Design is the only
+            door", against a review that recommended showing it at every width.
+            ⚠ The reason the review gave is real and is recorded at Region 2 in
+            page.tsx: with both gone, NOTHING IN THE CHROME NAMES THE CURRENT
+            SUBJECT — this button reads "Design" on all four. */}
 
         <div className={styles.zoneRight} data-top-bar-zone="right">
           <button
@@ -693,20 +817,29 @@ export default function TopBar({
           this. */}
       {VIEWER_MENU_ORDER.map((menu) => (
         <StickyNote key={menu} id={`${menu}-note`} label={VIEWER_MENU_LABEL[menu]} {...noteProps(menu)}>
-          {/* One `role="group"` per SUBJECT, each named by its heading, rather
-              than one group for the whole menu: Tommy chose grouped over flat so
-              that the headings say which subject, and a heading that is only a
-              bold line of text says that to sighted readers alone. A group with
-              an accessible name says it to everyone. Where a subject has a
-              single destination there is no heading and no nested group — see
-              `MenuGroup` for why repeating the word would not be grouping. */}
+          {/* One `role="group"` per SUBJECT, each with its own accessible name:
+              Tommy chose grouped over flat so that the headings say which
+              subject, and a heading that is only a bold line of text says that
+              to sighted readers alone. A group with an accessible name says it
+              to everyone.
+
+              ⚠ EVERY GROUP IS NAMED, INCLUDING THE SINGLE-ENTRY ONES. A
+              single-entry subject shows no visible heading — repeating "Floor"
+              directly above an entry reading "Floor" is noise, not grouping —
+              but it still gets `aria-label={EDITOR_TAB_LABEL[subject]}`. The
+              first version labelled all three of them "Design destinations",
+              which gave Floor, Roof and Foundation one shared accessible name
+              between them: to a screen reader that is one group listed three
+              times, which is worse than no grouping at all. */}
           {menuGroups[menu].map((group) => (
             <div
               key={group.subject ?? "representations"}
               className={styles.menuList}
               data-menu-group={group.subject ?? "representations"}
               role="group"
-              aria-label={group.heading ?? `${VIEWER_MENU_LABEL[menu]} destinations`}
+              aria-label={
+                group.heading ?? (group.subject ? EDITOR_TAB_LABEL[group.subject] : `${VIEWER_MENU_LABEL[menu]} destinations`)
+              }
             >
               {group.heading && (
                 <p className={styles.menuGroupHeading} data-menu-group-heading="">

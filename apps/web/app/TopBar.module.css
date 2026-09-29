@@ -47,24 +47,33 @@
    present beats absent is this bar's rule, and the name is the last thing given
    room. With Design and View now permanent the narrow end runs out of pixels:
 
-       >=1200px   the row wants 922.5px and has 1160+; the name is WHOLE
+       >=1200px   the row wants 1084.8px and has 1160+; the name is WHOLE
                   (39 of 39 characters, four companies, widest role label)
-        710px     the row wants 588.7px and has 694; the name shows 31 of 39.
-                  This is Tommy's own viewport and it has 105px to spare
-        768px     WORSE THAN 710 and not a typo: the ACTING AS caption returns
-                  here and every control grows, so the row wants 732.2px and
-                  has 728, and the name is cut to 6 characters ("The Se")
-        425px     the narrowest width at which ANY of the name renders
-       <425px     the name renders ZERO characters. The chip, its caret and the
-                  switcher are still there and still on screen; the NAME is
-                  gone. 360px is demo-only by Tommy's own framing, and every
-                  view is still reachable there (asserted with a real mouse)
+        892px     the narrowest width at and above which the name always renders
+        710px     the row wants 694.1px and has 694 — 0.1px short, and the name
+                  shows 30 of 39. This is Tommy's own viewport
+     768-891px   ⚠ THE NAME RENDERS NOTHING, and 768 is WORSE THAN 710: the
+                  ACTING AS caption returns here and every control grows, which
+                  costs more than the extra viewport brings
+        541px     the narrowest width at which any of the name renders at all
+       <541px     the name renders ZERO characters. The chip, its caret and the
+                  switcher are still there and still on screen, and the full
+                  name is still on the select's title and in its selected
+                  option — hidden, not lost. 360px is demo-only by Tommy's own
+                  framing, and every view is still reachable there (asserted
+                  with a real mouse)
+
+   ⚠ THE 768-891px BAND AND THE LOST SLACK AT 710 ARE WHAT THE Summary AND Print
+   PLACEHOLDERS COST (2026-09-29, his decision). Before them the same bar showed
+   6 characters at 768 and had 105px to spare at 710, and the name was absent
+   only below 425px. Six characters still tell four real companies apart
+   ("Buildi" / "The Se" / "Rare F" / "Buildi"); zero characters tell you
+   nothing, so this band is a real change in kind and not just in degree. It is
+   reversible by deleting two entries from BAR_PLACEHOLDERS in TopBar.tsx.
 
    No control is ever pushed off screen and nothing scrolls horizontally at any
-   of these widths. Below 425px this bar does NOT keep the documented
-   "truncated but present" promise, which is the direct price of removing the
-   dial — with nothing to catch the view stops, Design and View cannot shed, so
-   the name is the only thing left that can give. Published in full in
+   of these widths. Where the name is absent this bar does NOT keep the
+   documented "truncated but present" promise. Published in full in
    apps/web/harness/ui-reorg-u1/README.md and put in front of Tommy rather than
    engineered around. Nothing here shrinks type to hide it.
 
@@ -193,6 +202,22 @@
   border-color: var(--bi-primary);
   color: var(--bi-primary);
   box-shadow: inset 0 -2px 0 var(--bi-primary);
+}
+
+/* ⚠ A DISABLED PLACEHOLDER — Summary and Print, on Tommy's explicit decision
+   of 2026-09-29 to break this section's "no control that opens nothing" rule
+   for one case. It has to read as a real bar control (so he can judge the
+   layout, which is the whole reason he asked for it) while being visibly not
+   yet clickable, so it is .tool's metrics with a muted label and the
+   not-allowed cursor. `disabled` on the element is what actually stops the
+   click and what a screen reader announces; this is only the look.
+
+   It is deliberately NOT `opacity`, which would fade the border and the
+   surface too and make the bar look broken rather than unfinished. */
+.toolPlaceholder {
+  composes: tool;
+  color: var(--bi-on-surface-muted);
+  cursor: not-allowed;
 }
 
 .iconTool {

@@ -19,20 +19,25 @@
  * individually and its real width is published**, at every width, in every
  * role, with four companies simulated.
  *
- * ## The four bar configurations it measures
+ * ## The two bar configurations it measures
  *
- *   built       the bar as it ships: Design and View bare, no wordmark, no tab
- *               items. **Option B.**
- *   optionA     that bar PLUS the four tab items, projected — the structure
- *               Tommy did not choose. Its cost is what "folding the tabs into
- *               Design frees ~264px" actually means, measured rather than
- *               asserted.
- *   builtPlus   built PLUS `Summary` and `Print` as bare buttons. They are U4
- *               and U5 and the Top Bar rule forbids a control that opens
- *               nothing, so they are PROJECTED — but whether they will fit is
- *               a question worth answering before they are built rather than
- *               after.
- *   optionAPlus optionA plus those two, for the same reason.
+ *   built     the bar as it ships: Design and View bare, the Summary and Print
+ *             placeholders, no wordmark, no tab items, no tab dial. **Option B.**
+ *   optionA   that bar PLUS the four tab items, projected — the structure Tommy
+ *             did not choose — **shedding below 1200px exactly as the real nav
+ *             did**. Its cost is what "folding the tabs into Design frees
+ *             ~264px" actually means, measured rather than asserted.
+ *
+ * ⚠ **`Summary` and `Print` are no longer projected: they are real, disabled
+ * placeholders** on Tommy's decision of 2026-09-29, so every "built" figure
+ * includes them. The same bar before they arrived is checked in as
+ * `evidence-seven-control-bar.json`, and the difference between the two files
+ * is what they cost.
+ *
+ * ⚠ **AND OPTION A USED TO BE MEASURED UNFAIRLY.** It injected the four tab
+ * items at every width, but the real nav only ever rendered at >=1200px, so its
+ * narrow-end figures described a bar that never existed — and they flattered
+ * the decision already taken. Gated now; its true cost is wide-end only.
  *
  * ⚠ **THE PROJECTED TAB ITEMS CARRY THEIR OWN DECLARATIONS, AND THAT IS SAID
  * OUT LOUD.** Everything else projected here is built from a class read out of
@@ -157,6 +162,19 @@ const LONGEST_COMPANY_LABEL = "The Seed Collaborative (platform admin)";
  * including the select's arrow. Recorded in AccountControl.module.css. */
 const RECORDED_LONGEST_LABEL_PX = 270;
 
+/**
+ * The shipped bar's natural row content BEFORE the Summary and Print
+ * placeholders were added — seven controls, measured by this same harness at
+ * 1600px with four companies and the widest role label on 2026-09-28, and
+ * checked in as `evidence-seven-control-bar.json`.
+ *
+ * Quoted rather than recomputed, because that bar cannot be measured again
+ * without deleting two controls Tommy asked for. It is the base of the
+ * published "what Summary and Print cost" figure, and if it is ever doubted the
+ * file it came from is right there.
+ */
+const SEVEN_CONTROL_BAR_NATURAL_PX = 922.5;
+
 fs.mkdirSync(SHOTS, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -211,6 +229,25 @@ const writeEvidence = () => {
   if (evidence.steps.length === 0) {
     console.log("\nno steps were recorded — leaving the existing evidence file alone");
     evidenceWritten = true;
+    return;
+  }
+  /**
+   * ⚠ AND A PROVE-FAILURE RUN NEVER OVERWRITES A REAL ONE EITHER.
+   *
+   * The guard above only catches a run that recorded NOTHING.
+   * `UI_REORG_U1_PROVE_FAILURE=1` records everything and then appends one
+   * deliberately false check, so it wrote a deliberately-failing evidence.json
+   * over a passing one — marked `proveFailureMode: true`, which is honest but
+   * is a flag a reader has to notice, and the checked-in artefact is what
+   * people read. The run exists to prove the harness CAN fail, not to produce
+   * evidence, so it now produces none.
+   */
+  if (PROVE_FAILURE) {
+    evidenceWritten = true;
+    console.log(
+      "\nprove-failure mode: NOT writing evidence — this run exists to show the harness can fail, " +
+        "and its artefact would be a failing record of a passing bar",
+    );
     return;
   }
   evidenceWritten = true;
@@ -722,22 +759,49 @@ const TOOLKIT = String.raw`
     };
   };
 
-  /** The editor tab dial in the sidebar — NOT removed, and deliberately not
-   * touched by this pass. Recorded at every width so that what it does after
-   * the bar lost its tabs is a measured fact in the report rather than an
-   * impression. */
+  /**
+   * The editor tab dial that used to live in sidebar Region 2 — REMOVED
+   * 2026-09-29 on Tommy's decision ("Remove it — Design is the only door"), so
+   * this now checks it is gone rather than measuring it.
+   *
+   * ⚠ IT IS FOUND BY ITS OWN REAL LOCATORS, and the first version of this
+   * reader had them WRONG: it looked for '[aria-label="Editor tab"]', which the
+   * dial never had, so it reported found:false at every width while the control
+   * was alive on screen. The dial's actual markers were
+   * 'role="group" aria-label="Editor"' and a title beginning "Scroll or use the
+   * arrows to switch between Wall". Both are checked, plus the toolbar box that
+   * wrapped it — a locator that cannot see the thing it is asserting the
+   * absence of is the vacuous pass this whole file is written against.
+   */
   K.editorTabDial = () => {
-    const dial = document.querySelector('[role="group"][aria-label="Editor tab"], [aria-label="Editor tab"]');
-    const byTitle = dial ?? [...document.querySelectorAll('[title]')].find((e) => (e.getAttribute('title') || '').includes('Walls, Foundation, Floor'));
-    if (!byTitle) return { found: false, laidOut: false, label: null };
-    const r = byTitle.getBoundingClientRect();
+    const byRole = document.querySelector('[role="group"][aria-label="Editor"]');
+    const byTitle = [...document.querySelectorAll('[title]')].find((e) =>
+      (e.getAttribute('title') || '').startsWith('Scroll or use the arrows to switch between Wall'),
+    );
+    const el = byRole ?? byTitle ?? null;
     return {
-      found: true,
-      laidOut: r.width > 0 && r.height > 0,
-      label: [...byTitle.querySelectorAll('div')].map((d) => d.textContent.trim()).find((t) => t && t !== '▲' && t !== '▼') ?? null,
-      w: Math.round(r.width * 10) / 10,
+      found: Boolean(el),
+      foundByRole: Boolean(byRole),
+      foundByTitle: Boolean(byTitle),
+      laidOut: el ? el.getBoundingClientRect().width > 0 : false,
     };
   };
+
+  /** The two disabled placeholders Tommy asked for, read as they render. */
+  K.placeholders = () =>
+    [...document.querySelectorAll('[data-bar-placeholder]')].map((el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        control: el.getAttribute('data-bar-control'),
+        label: el.textContent.replace(/\s+/g, ' ').trim(),
+        disabled: el.disabled === true,
+        title: el.getAttribute('title') || '',
+        opensAMenu: el.hasAttribute('aria-expanded'),
+        isAViewMenu: el.hasAttribute('data-view-menu'),
+        w: Math.round(r.width * 10) / 10,
+        onScreen: r.left >= -0.5 && r.right <= window.innerWidth + 0.5,
+      };
+    });
 
   /** The two bar menus, when they exist: which one owns, and what each reads. */
   K.viewMenus = () => {
@@ -751,10 +815,15 @@ const TOOLKIT = String.raw`
         present: r.width > 0 && r.height > 0,
         owner: btn.getAttribute('data-view-menu-owner') === 'true',
         /* ⚠ LEVEL ONE OF THE HIGHLIGHT, READ AS AN ACCESSIBLE STATE. The owner
-           attribute above is the harness's own hook; 'aria-pressed' is what a
+           attribute above is the harness's own hook; 'aria-current' is what a
            screen reader is actually told, and the two are asserted to agree so
-           the hook cannot drift into being the only true one. */
-        pressed: btn.getAttribute('aria-pressed'),
+           the hook cannot drift into being the only true one.
+
+           It was 'aria-pressed' until 2026-09-29. The review's objection is
+           recorded in TopBar.tsx and is right: this button also carries
+           'aria-expanded' and opens a menu, so announcing it as a pressed
+           toggle describes a control this is not. */
+        current: btn.getAttribute('aria-current'),
         /* And the sighted half, which must be MORE THAN COLOUR: the inset
            underline. Recorded rather than described. */
         boxShadow: cs.boxShadow,
@@ -949,22 +1018,22 @@ record(
   await evaluate(`(() => {
     const m = window.__u1.viewMenus();
     return {
-      design: { owner: m.design.owner, pressed: m.design.pressed, disabled: m.design.disabled, word: m.design.word },
-      view: { owner: m.view.owner, pressed: m.view.pressed, disabled: m.view.disabled, word: m.view.word, title: m.view.title },
+      design: { owner: m.design.owner, current: m.design.current, disabled: m.design.disabled, word: m.design.word },
+      view: { owner: m.view.owner, current: m.view.current, disabled: m.view.disabled, word: m.view.word, title: m.view.title },
     };
   })()`),
-  // Design owns and is pressed; View is DISABLED, because a 3D view of a
+  // Design owns and is marked current; View is DISABLED, because a 3D view of a
   // building that does not exist yet is not a destination — which is exactly
   // what the removed dial did before a footprint was drawn, kept rather than
   // reinvented. And Design is never disabled, because it is now the only way
   // back from the Floor, Roof and Foundation editors.
   (d) =>
     d.design.owner === true &&
-    d.design.pressed === "true" &&
+    d.design.current === "true" &&
     d.design.disabled === false &&
     d.design.word === "Design" &&
     d.view.owner === false &&
-    d.view.pressed === "false" &&
+    d.view.current === null &&
     d.view.disabled === true &&
     d.view.title.length > 0,
 );
@@ -999,7 +1068,7 @@ record(
 );
 
 console.log("2. all four scope branches on — the widest bar the keyhole allows");
-evidence.coldClickAttempts = {
+const coldClickAttempts = {
   projectMenu: await clickSelectorUntil('[data-bar-control="project"]', "the Project menu", `Boolean(document.querySelector('#project-note'))`),
   panelizerItem: await clickSelectorUntil(
     '#project-note button[title^="Which editor tools"]',
@@ -1007,6 +1076,18 @@ evidence.coldClickAttempts = {
     `Boolean(document.querySelector('#panelizer-note'))`,
   ),
 };
+evidence.coldClickAttempts = coldClickAttempts;
+record(
+  "the-cold-click-retry-is-a-safety-net-and-not-load-bearing",
+  { coldClickAttempts, budget: 3, ceiling: 2 },
+  // ⚠ A RETRY NOBODY WATCHES BECOMES A MASK. The budget is 3, so a run in which
+  // every first click failed would still have gone green, with the evidence of
+  // it buried in a field nobody reads. Asserting a CEILING of 2 lets the net
+  // catch the known cold-load race — one retry, which this machine needs most
+  // runs — and fails the run if clicks start needing every attempt, which would
+  // be a real control problem wearing a flake's clothes.
+  (d) => Object.values(d.coldClickAttempts).every((attempts) => attempts <= d.ceiling),
+);
 const scopeBoxes = await evaluate(`(() => {
   const note = document.querySelector('#panelizer-note');
   if (!note) return null;
@@ -1088,6 +1169,7 @@ for (const w of WIDTHS) {
     return {
       removed: window.__u1.removedControls(),
       editorTabDial: window.__u1.editorTabDial(),
+      placeholders: window.__u1.placeholders(),
       design: { present: m.design.present, word: m.design.word, text: m.design.text, w: m.design.w },
       view: { present: m.view.present, word: m.view.word, text: m.view.text, w: m.view.w },
     };
@@ -1096,8 +1178,10 @@ for (const w of WIDTHS) {
 }
 evidence.removalSweep = removalSweep;
 record(
-  "the-dial-the-nav-tabs-and-the-wordmark-are-gone-at-every-width",
-  { removalSweep: removalSweep.map((r) => ({ width: r.width, ...r.removed })) },
+  "the-dial-the-nav-tabs-the-tab-dial-and-the-wordmark-are-gone-at-every-width",
+  {
+    removalSweep: removalSweep.map((r) => ({ width: r.width, ...r.removed, editorTabDial: r.editorTabDial })),
+  },
   // ⚠ A REMOVAL IS ONLY REAL IF IT HOLDS AT EVERY WIDTH. Each of these three
   // had a width-keyed life: the dial was the below-breakpoint form, the nav
   // tabs and the wordmark appeared at 1200 and up. A sweep at 1600 alone would
@@ -1114,7 +1198,13 @@ record(
         r.barTabButtons.length === 0 &&
         r.wordmark === false &&
         r.viewMenuCaptions === 0 &&
-        r.viewMenuValues === 0,
+        r.viewMenuValues === 0 &&
+        // ⚠ ADDED 2026-09-29: the Wall/Foundation/Floor/Roof tab dial, which
+        // Region 2 of the sidebar held until Tommy removed it. It was the LAST
+        // second door to a subject; with it gone the Design menu is the only
+        // way to change what you are editing, which is what he asked for and is
+        // the thing most worth a check at every width.
+        r.editorTabDial.found === false,
     ),
 );
 record(
@@ -1141,6 +1231,34 @@ record(
         c.view.word === "View" &&
         c.design.text.replace(/[▼▲]/g, "").trim() === "Design" &&
         c.view.text.replace(/[▼▲]/g, "").trim() === "View",
+    ),
+);
+
+record(
+  "Summary-and-Print-are-disabled-placeholders-at-every-width",
+  {
+    cells: removalSweep.map((r) => ({ width: r.width, placeholders: r.placeholders })),
+    widths: removalSweep.map((r) => r.width),
+  },
+  // ⚠ THIS CHECKS A DELIBERATE RULE-BREAK, so it checks the terms of it. The
+  // Top Bar rule forbids a control that opens nothing; Tommy took the exception
+  // knowingly for these two ("i like the add then now as disabled
+  // placeholders… i want to get a feel for how this is going to be a user
+  // friendly experience"). What keeps it honest is that they are really
+  // DISABLED — nobody can click into a dead end — that each says in its title
+  // what is not built, and that they take no part in the view machinery: no
+  // aria-expanded, no data-view-menu, so they cannot own, be current, or open
+  // an empty note. All four of those are asserted, at every width, because the
+  // bar carries them everywhere.
+  (d) =>
+    d.cells.every(
+      (c) =>
+        c.placeholders.length === 2 &&
+        c.placeholders.map((p) => p.control).join(",") === "summary,print" &&
+        c.placeholders.map((p) => p.label).join(",") === "Summary,Print" &&
+        c.placeholders.every(
+          (p) => p.disabled === true && p.title.length > 0 && p.opensAMenu === false && p.isAViewMenu === false && p.onScreen === true,
+        ),
     ),
 );
 
@@ -1213,16 +1331,43 @@ const TAB_SPEC = [
   { control: "nav-floor", label: "Floor", style: "navTab" },
   { control: "nav-roof", label: "Roof", style: "navTab" },
 ];
-const SUMMARY_PRINT_SPEC = [
-  { control: "summary", label: "Summary" },
-  { control: "print", label: "Print" },
-];
+/**
+ * ⚠ SUMMARY AND PRINT ARE NO LONGER PROJECTED — THEY ARE ON THE BAR.
+ *
+ * They were projected here because the Top Bar rule forbids a control that
+ * opens nothing. Tommy broke that rule for this one case on 2026-09-29 ("i like
+ * the add then now as disabled placeholders… i want to get a feel for how this
+ * is going to be a user friendly experience"), so they are real, disabled
+ * buttons and every "built" figure below INCLUDES them. The previous run — the
+ * same bar without them — is kept as `evidence-seven-control-bar.json`, and the
+ * difference between the two is what Summary and Print actually cost.
+ *
+ * ⚠ OPTION A IS GATED AT >=1200px, AND THE FIRST VERSION OF THIS WAS WRONG.
+ * It injected the four tab items at EVERY width, but the real nav tabs only
+ * ever rendered at >=1200px — below that they shed and cost the company name
+ * nothing. So the narrow-end "option A" figures described a bar that never
+ * existed, and the comparison was unfair in the direction that flattered the
+ * decision already taken. Option A now sheds exactly as the nav did, which
+ * makes its true cost a wide-end one: the company name whole from 1253px
+ * instead of 1200px. The 294.3px fold saving is unaffected — it was measured at
+ * 1600px, where the tabs really did show.
+ */
 const BAR_CONFIGS = [
-  { id: "optionA", spec: TAB_SPEC, what: "the four tab items back on the bar — the structure Tommy did not choose" },
-  { id: "builtPlus", spec: SUMMARY_PRINT_SPEC, what: "option B plus Summary and Print as bare buttons (U4/U5, projected)" },
-  { id: "optionAPlus", spec: [...TAB_SPEC, ...SUMMARY_PRINT_SPEC], what: "option A plus Summary and Print" },
+  {
+    id: "optionA",
+    spec: TAB_SPEC,
+    minWidth: 1200,
+    what: "the four tab items back on the bar, shedding below 1200px exactly as the real nav did — the structure Tommy did not choose",
+  },
 ];
-evidence.barConfigurations = [{ id: "built", spec: [], what: "the bar as it ships: bare Design and View, no wordmark, no tab items" }, ...BAR_CONFIGS];
+evidence.barConfigurations = [
+  {
+    id: "built",
+    spec: [],
+    what: "the bar as it ships: bare Design and View, the Summary and Print placeholders, no wordmark, no tab items, no tab dial",
+  },
+  ...BAR_CONFIGS,
+];
 
 const setRole = async (label) => {
   await clickSelector('[data-bar-control="role"]', "the Role control");
@@ -1301,6 +1446,13 @@ for (const role of ROLE_LABELS) {
       const cell = { role, width, accountState };
       cell.built = summarise(await evaluate(`window.__u1.fit()`), width);
       for (const config of BAR_CONFIGS) {
+        /* Below its own minWidth a configuration IS the shipped bar, because
+           what it adds really did shed there. Recorded as such rather than
+           skipped, so a reader of the table sees a number at every width. */
+        if (config.minWidth && width < config.minWidth) {
+          cell[config.id] = { ...cell.built, shedHere: config.spec.map((s) => s.control) };
+          continue;
+        }
         const projection = await evaluate(`window.__u1.project(${JSON.stringify(config.spec)})`);
         if (!projection.ok) throw new Error(`projecting ${config.id} at ${width}px failed: ${projection.why}`);
         const fit = await evaluate(`window.__u1.fit()`);
@@ -1325,7 +1477,7 @@ evidence.matrix = matrix;
 /** Four companies is the widest real case, so every summary below is taken
  * from it. The signed-out rows stay in `matrix` for comparison. */
 const worst = matrix.filter((m) => m.accountState === "four-companies-simulated");
-const CONFIG_IDS = ["built", "optionA", "builtPlus", "optionAPlus"];
+const CONFIG_IDS = ["built", "optionA"];
 const summaryFor = (configId) => {
   const out = {};
   for (const w of MEASURED_WIDTHS) {
@@ -1437,11 +1589,15 @@ const BREAKPOINT_BANDS = [
   { id: "1200-up", lo: 1200, hi: 2400, what: "company name capped at 280px; sidebar tab dial hidden" },
 ];
 
-const makeFitsAt = (spec, predicateId) => async (w) => {
+const makeFitsAt = (spec, predicateId, minWidth = 0) => async (w) => {
   await setViewport(w, 900);
   await installToolkit();
   await applyAccountState("four-companies-simulated", w);
-  if (spec.length > 0) {
+  // Same gating as the matrix: below its own minWidth the configuration sheds
+  // what it adds, so there is nothing to project and the answer is the shipped
+  // bar's. Without this the bisection answers a question about a bar nobody
+  // ever shipped or proposed.
+  if (spec.length > 0 && w >= minWidth) {
     const projection = await evaluate(`window.__u1.project(${JSON.stringify(spec)})`);
     if (!projection.ok) throw new Error(`bisect projection failed at ${w}px: ${projection.why}`);
   }
@@ -1459,8 +1615,8 @@ const makeFitsAt = (spec, predicateId) => async (w) => {
   return nothingOffScreen && (fit.actingAsWidth ?? 0) >= cap;
 };
 
-const bisectBand = async (spec, predicateId, band) => {
-  const fitsAt = makeFitsAt(spec, predicateId);
+const bisectBand = async (spec, predicateId, band, minWidth = 0) => {
+  const fitsAt = makeFitsAt(spec, predicateId, minWidth);
   if (await fitsAt(band.lo)) return band.lo;
   if (!(await fitsAt(band.hi))) return `never in ${band.lo}-${band.hi}`;
   let lo = band.lo;
@@ -1484,7 +1640,7 @@ for (const config of [{ id: "built", spec: [] }, ...BAR_CONFIGS]) {
   for (const predicateId of ["nothingOffScreen", "anyNameVisible", "companyNameIntact", "companyNameWhole"]) {
     firstFits[config.id][predicateId] = {};
     for (const band of BREAKPOINT_BANDS) {
-      firstFits[config.id][predicateId][band.id] = await bisectBand(config.spec, predicateId, band);
+      firstFits[config.id][predicateId][band.id] = await bisectBand(config.spec, predicateId, band, config.minWidth ?? 0);
     }
   }
 }
@@ -1532,10 +1688,14 @@ evidence.tabFoldSavingPx =
   natural.optionA && natural.built
     ? Math.round((natural.optionA.naturalRowContentPx - natural.built.naturalRowContentPx) * 10) / 10
     : null;
-evidence.summaryPrintCostPx =
-  natural.builtPlus && natural.built
-    ? Math.round((natural.builtPlus.naturalRowContentPx - natural.built.naturalRowContentPx) * 10) / 10
-    : null;
+/** What Summary and Print cost, now that they are real: the shipped bar minus
+ * the same bar before they were added, which is the checked-in
+ * `evidence-seven-control-bar.json` and is quoted here rather than recomputed,
+ * because that bar cannot be measured again without deleting them. */
+evidence.summaryPrintCostPx = natural.built
+  ? Math.round((natural.built.naturalRowContentPx - SEVEN_CONTROL_BAR_NATURAL_PX) * 10) / 10
+  : null;
+evidence.sevenControlBarNaturalPx = SEVEN_CONTROL_BAR_NATURAL_PX;
 
 /** ⚠ EVERY WIDTH AT WHICH THE COMPANY NAME IS FULLY ABSENT — the number Tommy
  * asked for by name, stated as a range per band and as a list of the sampled
@@ -1661,16 +1821,18 @@ evidence.highlightStates = { onPlan, on3d, onRoof };
 record(
   "LEVEL-ONE-the-bar-highlights-the-OWNING-menu-and-says-so-accessibly",
   {
-    onPlan: { design: { owner: onPlan.bar.design.owner, pressed: onPlan.bar.design.pressed, boxShadow: onPlan.bar.design.boxShadow, title: onPlan.bar.design.title }, view: { owner: onPlan.bar.view.owner, pressed: onPlan.bar.view.pressed, boxShadow: onPlan.bar.view.boxShadow } },
-    on3dFramed: { design: { owner: on3d.bar.design.owner, pressed: on3d.bar.design.pressed, boxShadow: on3d.bar.design.boxShadow }, view: { owner: on3d.bar.view.owner, pressed: on3d.bar.view.pressed, boxShadow: on3d.bar.view.boxShadow, title: on3d.bar.view.title } },
-    onRoof: { design: { owner: onRoof.bar.design.owner, pressed: onRoof.bar.design.pressed, title: onRoof.bar.design.title }, view: { owner: onRoof.bar.view.owner, pressed: onRoof.bar.view.pressed } },
+    onPlan: { design: { owner: onPlan.bar.design.owner, current: onPlan.bar.design.current, boxShadow: onPlan.bar.design.boxShadow, title: onPlan.bar.design.title }, view: { owner: onPlan.bar.view.owner, current: onPlan.bar.view.current, boxShadow: onPlan.bar.view.boxShadow } },
+    on3dFramed: { design: { owner: on3d.bar.design.owner, current: on3d.bar.design.current, boxShadow: on3d.bar.design.boxShadow }, view: { owner: on3d.bar.view.owner, current: on3d.bar.view.current, boxShadow: on3d.bar.view.boxShadow, title: on3d.bar.view.title } },
+    onRoof: { design: { owner: onRoof.bar.design.owner, current: onRoof.bar.design.current, title: onRoof.bar.design.title }, view: { owner: onRoof.bar.view.owner, current: onRoof.bar.view.current } },
     designWidths: [onPlan.bar.design.w, on3d.bar.design.w, onRoof.bar.design.w],
     viewWidths: [onPlan.bar.view.w, on3d.bar.view.w, onRoof.bar.view.w],
   },
   // ⚠ ITS OWN ACCEPTANCE CRITERION, separate from level two below, because they
   // are two different controls carrying two different facts.
-  //  - Exactly one menu is pressed in each state, and it is the one that owns.
-  //  - The state reaches a screen reader: `aria-pressed`, not colour.
+  //  - Exactly one menu is marked in each state, and it is the one that owns.
+  //  - The state reaches a screen reader: `aria-current="true"`, not colour.
+  //    (It was `aria-pressed` until 2026-09-29 — wrong for a button that opens
+  //    a menu rather than toggling; the reasoning is in TopBar.tsx.)
   //  - The sighted cue is MORE THAN COLOUR: an inset underline, which a
   //    non-owner does not have.
   //  - Design owns on the Roof editor, because editing a roof IS designing —
@@ -1680,17 +1842,17 @@ record(
   //    reflow the bar, which is why the marker is an underline and not weight.
   (d) =>
     d.onPlan.design.owner === true &&
-    d.onPlan.design.pressed === "true" &&
-    d.onPlan.view.pressed === "false" &&
+    d.onPlan.design.current === "true" &&
+    d.onPlan.view.current === null &&
     d.onPlan.design.boxShadow !== "none" &&
     d.onPlan.view.boxShadow === "none" &&
     d.on3dFramed.view.owner === true &&
-    d.on3dFramed.view.pressed === "true" &&
-    d.on3dFramed.design.pressed === "false" &&
+    d.on3dFramed.view.current === "true" &&
+    d.on3dFramed.design.current === null &&
     d.on3dFramed.view.boxShadow !== "none" &&
     d.onRoof.design.owner === true &&
-    d.onRoof.design.pressed === "true" &&
-    d.onRoof.view.pressed === "false" &&
+    d.onRoof.design.current === "true" &&
+    d.onRoof.view.current === null &&
     new Set(d.designWidths).size === 1 &&
     new Set(d.viewWidths).size === 1,
 );

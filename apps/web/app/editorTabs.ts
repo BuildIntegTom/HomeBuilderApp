@@ -1,9 +1,16 @@
 /**
- * The Wall / Foundation / Floor / Roof editor tabs, as one definition shared by
- * both controls that present them: `EditorTabDial` (below 1200px) and the top
- * bar's nav (1200px and up). Both render from `page.tsx`'s one `editorTab`
- * state; sharing the order, the labels and the keyhole filter here is what
- * stops the two presentations from ever disagreeing about which tabs exist.
+ * The Wall / Foundation / Floor / Roof editor subjects, as one definition.
+ *
+ * ⚠ **THERE IS ONLY ONE CONTROL LEFT THAT PRESENTS THEM**, as of 2026-09-29:
+ * the top bar's **Design menu**, where they are subject groups. Both of the
+ * others are gone by Tommy's own decisions — the bar's nav tabs when the two
+ * axes merged, and `EditorTabDial` the next day ("Remove it — Design is the
+ * only door"). This module is kept as the single definition anyway, and that is
+ * not sentiment: `EDITOR_TAB_LABEL` is what the Design menu's headings and its
+ * subject entries read, so the menu introduces no new word for a subject, and
+ * `editorTabsInScope` is still the one place the keyhole's "absent, not
+ * shown-and-inert" rule is applied. One definition with one reader is still
+ * worth having when a second reader is one feature away.
  */
 
 export type EditorTab = "wall" | "foundation" | "floor" | "roof";

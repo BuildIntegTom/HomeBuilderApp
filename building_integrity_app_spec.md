@@ -5415,13 +5415,15 @@ Per the 6-point discipline. **This plan introduces zero new `CatalogValue`s and 
 
 **Still open after U1, and NOT answered here:** the `2D Floor Plan` → `Plan View` rename; whether Print shows a value on the bar when active; what Design and View should do on the Floor/Roof/Foundation tabs (U1 mirrors today's behaviour — present, disabled, reason in the `title` — which is the recommendation, not a ruling); whether the wheel and the rustle should also exist at desktop width; and, newly sharpened by the measurement, **what sheds, or what the bar's fourth number is, now that twelve are known not to fit.**
 
-#### U1 REBUILT as built — 2026-09-28 (the bare bar, and the dial is gone)
+#### U1 REBUILT as built — 2026-09-28/29 (the bare bar; every dial gone)
 
-**This supersedes "U1 as built" above.** Tommy read U1's numbers and re-drew the bar the same day, in the "Decisions of 2026-09-28" block and then in the interview that followed. Everything below is built, on branch `ui-u1-bare`. **Not merged and not deployed.**
+**This supersedes "U1 as built" above.** Tommy read U1's numbers and re-drew the bar on 2026-09-28, in the "Decisions of 2026-09-28" block and then in the interview that followed; two more decisions came back with the review on **2026-09-29** and are built too (their own sub-block below). Everything here is on branch `ui-u1-bare`. **Not merged and not deployed.**
 
-**What shipped:** `Design` and `View` as **bare words**; **two levels of highlight**; **`ViewerDial` deleted** (with `useRustleSound()` and the scroll wheel); the **wordmark dropped**; and the **four `Wall / Foundation / Floor / Roof` tab items folded into the Design menu** as subject groups gated by the scope of work.
+**What shipped:** `Design` and `View` as **bare words**; **two levels of highlight**; **`ViewerDial` deleted** (with `useRustleSound()` and the scroll wheel); the **wordmark dropped**; the **four `Wall / Foundation / Floor / Roof` tab items folded into the Design menu** as subject groups gated by the scope of work; **`EditorTabDial` and its toolbar deleted** (2026-09-29); and **`Summary` and `Print` added as disabled placeholders** (2026-09-29).
 
-Files: `viewerMenus.ts` (now also the home of `ViewerStop`, the destination model and the two highlight rules) + its test; `viewLabels.ts` (`isViewerDialLive` → **`isViewStopLive`**, and `destinationLabel`) + its test; `TopBar.tsx`/`.module.css`; `page.tsx`/`.module.css`; `EditorTabDial.tsx` (one stale comment); **deleted:** `ViewerDial.tsx`, `ViewerDial.module.css`, `useRustleSound.ts`. Harnesses: `ui-reorg-u1/` rewritten, `viewStopControl.mjs` extended, and all five re-run.
+Files: `viewerMenus.ts` (now also the home of `ViewerStop`, the destination model, the two highlight rules and the empty-menu reason) + its test; `viewLabels.ts` (`isViewerDialLive` → **`isViewStopLive`**, and `destinationLabel`) + its test; `editorTabs.ts`; `TopBar.tsx`/`.module.css`; `page.tsx`/`.module.css`. **Deleted:** `ViewerDial.tsx`, `ViewerDial.module.css`, `useRustleSound.ts`, `EditorTabDial.tsx`, `EditorTabDial.module.css`, `EditorToolbar.tsx`, `EditorToolbar.module.css`. Harnesses: `ui-reorg-u1/` rewritten, `viewStopControl.mjs` extended, and all five re-run.
+
+⚠ **THE FIGURES BELOW ARE THE POST-2026-09-29 ONES.** The two placeholders are real controls and cost 162.3px, so anything quoted from the 2026-09-28 run — including this section's first published set — is superseded; that bar is kept as `evidence-seven-control-bar.json` and is quoted where the comparison is the point.
 
 ##### ⚠⚠ THE MEASUREMENT — the per-control widths, because the old ones were inferred
 
@@ -5436,6 +5438,8 @@ Files: `viewerMenus.ts` (now also the home of `ViewerStop`, the destination mode
 | Project | **87.0px** | 53.4 |
 | Design | **87.0px** | 53.4 |
 | View | **74.5px** | 41.8 |
+| Summary (placeholder) | **85.6px** | 67.3 |
+| Print (placeholder) | **56.7px** | 40.7 |
 | Role | **139.0px** (`Fabricator`) | 80.0–101.4 |
 | ⚙ Settings | **34.0px** | 30.0 |
 
@@ -5445,27 +5449,26 @@ Account + Projects + Settings together are **207.3px, not ~312px**.
 
 | bar | row content | ≈ viewport |
 |---|---|---|
-| **the shipped bar (option B)** | **922.5px** | **~962.5px** |
-| option A — the four tab items back | 1216.8px | ~1256.8px |
-| shipped + Summary + Print, bare | **1084.8px** | **~1124.8px** |
-| option A + Summary + Print | 1379.1px | ~1419.1px |
+| **the shipped bar** (with the placeholders) | **1084.8px** | **~1124.8px** |
+| the same bar before the placeholders | 922.5px | ~962.5px |
+| option A — the four tab items back, at ≥1200px | 1379.1px | ~1419.1px |
 
-- **Folding the tabs into Design saved 294.3px, measured** (the plan estimated ~264px).
-- **Summary and Print cost 162.3px** as bare buttons — so **they come back into reach**: on the shipped bar they fit from ~1125px of viewport, with the company name whole from 1200px. That is a U4/U5 input, not a licence to build them.
-- **1280px does not break.** The shipped bar has **317px to spare** there. Option A would have had 23.2px, which is why the inferred figure looked frightening.
+- **Folding the tabs into Design saved 294.3px, measured** at 1600px where the tabs really showed (the plan estimated ~264px).
+- **Summary and Print cost 162.3px**, which the projection had predicted to the decimal before they were built.
+- **1280px does not break.** The shipped bar has **155px to spare** there, and 75px at 1200px. The inferred ~104px-per-control figure was what made 1280 look marginal.
 
 **Fit at the eight widths** (shipped bar, four companies, worst role). `chars` is how much of `The Seed Collaborative (platform admin)` (39 characters) renders:
 
 | viewport | row has | wants | chars |
 |---|---|---|---|
-| 360 | 344 | 368.7 | **0 — the name is gone** |
-| 710 | 694 | 588.7 | 31 |
-| 768 | 728 | 732.2 | 6 (`The Se`) |
-| 1200 | 1160 | 922.5 | **39 — whole** |
-| 1280 | 1240 | 922.5 | **39 — whole** |
-| 1366 | 1326 | 922.5 | **39 — whole** |
-| 1440 | 1400 | 922.5 | **39 — whole** |
-| 1600 | 1560 | 922.5 | **39 — whole** |
+| 360 | 344 | 484.7 | **0 — the name is gone** |
+| 710 | 694 | 694.1 | 30 (0.1px short of fitting) |
+| 768 | 728 | 750.1 | **0 — the name is gone** |
+| 1200 | 1160 | 1084.8 | **39 — whole** |
+| 1280 | 1240 | 1084.8 | **39 — whole** |
+| 1366 | 1326 | 1084.8 | **39 — whole** |
+| 1440 | 1400 | 1084.8 | **39 — whole** |
+| 1600 | 1560 | 1084.8 | **39 — whole** |
 
 **No control is ever pushed off screen and nothing scrolls horizontally, at any width.** When the row runs short the acting-as select is the only thing that gives, exactly as the stylesheet says it should.
 
@@ -5475,20 +5478,20 @@ Account + Projects + Settings together are **207.3px, not ~312px**.
 
 *"If someone is using this on their phone they should be able to turn it sideways and have a longer top bar… most of the work is going to be done on a bigger screen."*
 
-- **≥1200px — everything, comfortably.** Name whole, 237px+ spare.
-- **425–1199px — the working range.** Every destination reachable, nothing off screen, the name **truncated but present** — 31 of 39 characters at **Tommy's own 710px**, with 105px of row to spare.
-- **below 425px — demo only.** Every control is still on the bar and every view is still reachable (asserted with a real mouse at 360px), but the acting-as select is crushed to 12px and renders **no characters of the company name**.
+- **≥1200px — everything, comfortably.** Name whole, 75px spare at 1200 and 155px at 1280.
+- **892–1199px — the working range.** Every destination reachable, nothing off screen, the name truncated but present.
+- **541–891px — working, with the name spent for part of it.** Tommy's own **710px renders 30 of 39 characters**; from **768 to 891px the name renders nothing**.
+- **below 541px — demo only.** Every control is still on the bar and every view is still reachable (asserted with a real mouse at 360px), but the acting-as select is crushed to 12px and renders **no characters of the company name**.
 
 ##### ⚠ EVERY WIDTH AT WHICH THE COMPANY NAME IS FULLY ABSENT — and it is a safety property being spent
 
-| bar | absent below | of the sampled widths |
+| bar | absent | of the sampled widths |
 |---|---|---|
-| **shipped (option B)** | **425px** | 360 |
-| option A | 695px, and again 768–1023px | 360, 768 |
-| shipped + Summary + Print | 541px, and again 768–891px | 360, 768 |
-| option A + Summary + Print | never below 768; 768–1185px | 360, 710, 768 |
+| **the shipped bar** | **below 541px, and again 768–891px** | 360, 768 |
+| the same bar before the placeholders | below 425px | 360 |
+| option A | identical below 1200px (the tabs shed there) | 360, 768 |
 
-The acting-as company is on the bar because a wrong-company save is *silent, plausible, and noticed later by someone else*, and `AccountControl.module.css` records that the original 2026-09-13 bug was the name truncated while its caption still showed — the principle being **truncated-but-present beats absent**. **Below 425px this bar does not keep that promise.** It is the direct price of removing the dial: with nothing to catch the view stops, `Design` and `View` cannot shed, so at the narrow end the name is the only thing left that can give. **Nothing was shrunk, hidden or re-breakpointed to make this go away, and it is Tommy's to accept or reject.** Two things soften it and neither is an excuse: option B is better than option A at every width (the tabs' 294px were coming out of the name), and the name is whole from 1200px up, where he says the work happens.
+The acting-as company is on the bar because a wrong-company save is *silent, plausible, and noticed later by someone else*, and `AccountControl.module.css` records that the original 2026-09-13 bug was the name truncated while its caption still showed — the principle being **truncated-but-present beats absent**. **Below 541px, and again from 768 to 891px, this bar does not keep that promise.** It is the price of removing the dial (nothing catches the view stops, so `Design` and `View` cannot shed) plus the price of the two placeholders. **Nothing was shrunk, hidden or re-breakpointed to make this go away, and it is Tommy's to accept or reject** — the placeholders' share of it is two array entries away from being undone. What genuinely softens it, and what makes 6 characters acceptable where 0 is not, is in the 2026-09-29 sub-block below: the name is **hidden, not lost** (`title` and the selected `<option>` carry it at every width), and at 6 characters the four real company labels remain distinguishable.
 
 ##### The two levels of highlight, and why they are two functions
 
@@ -5513,18 +5516,64 @@ All five drive the bar menus through `viewStopControl.mjs`, which gained `select
 
 ##### Gates
 
-`npx vitest run` **129 files / 2490** (baseline 2470; +20 for the new menu rules). `tsc --noEmit` clean in `apps/web`; `packages/geometry` clean except the two pre-existing `bracedPlacement.test.ts` errors (602, 644). **Lint delta zero including severity-1 warnings** (119 errors / 48 warnings, unchanged).
+`npx vitest run` **129 files / 2494**. Named against its base, because the base matters: the branch's fork point `07fea1e` had 129 / 2470, but **against `main`, which is what will land, it is 128 files / 2456 → 129 / 2494 — +1 file, +38 tests.** `tsc --noEmit` clean in `apps/web`; `packages/geometry` clean except the two pre-existing `bracedPlacement.test.ts` errors (602, 644). **Lint delta zero including severity-1 warnings** (119 errors / 48 warnings, unchanged) — counting warnings is what caught two unused symbols this diff introduced.
 
 **Flags check: vacuously clean.** The diff introduces no `CatalogValue`, no real-world building number, and nothing carrying a `status` or a `note`. Every figure is a layout measurement or a count of destinations. Point 5 is untouched: nothing new reaches the Review Log and nothing leaves it. **Site Properties and the Panelizer were not touched** — that is U3 — so no flagged catalog value moved at all.
+
+##### ⚠ DECISIONS OF 2026-09-29, BUILT — the tab dial goes, and two placeholders arrive
+
+Both came back with the review and both are Tommy's, taken against a stated alternative. They change the measured bar, so **every figure in the section above was re-measured after them** and is the post-decision figure.
+
+**1. `EditorTabDial` is REMOVED, with the toolbar that held it.** *"Remove it — Design is the only door."* Sidebar Region 2 is gone; `EditorToolbar` existed only to hold the dial and went with it. One control now reaches every subject at every width.
+
+⚠ **THE REVIEW RECOMMENDED THE OPPOSITE, IT WAS PUT TO HIM, AND THE REMOVAL STILL STANDS.** The objection is real and was measured live at 1400px on the Roof subject: with both the dial and the nav gone, **nothing in the chrome names the current subject** — the Design button reads `Design` on all four, its current-stop attribute is `null` off the wall subject, and the only text naming it on screen is Region 3's own `Roof Tools` heading. Offered three ways out, including keeping the dial at every width and putting the subject on the Design button, he chose **"No — removal stands, it's one click deep."**
+
+**The reasoning, which is the part a later reader needs:** it is **the same trade he already made for the view stop**, made deliberately and twice. Open Design and the current destination is highlighted, which names the subject as well as the stop; the sidebar's tools heading still says `Roof Tools` while he is working there. So this is consistent with his design rather than an oversight — and **the fact that it was re-tested against a live measurement and held** is worth writing down, because otherwise someone finds the same gap in six months and assumes nobody noticed.
+
+⚠ **And the rejected alternative is not a free improvement waiting to be "fixed" in later:** putting the subject on the Design button would spend width the bare buttons had just bought back, and would partly reintroduce the value text he removed on 2026-09-28. It is rejected on the same grounds the bare words were chosen.
+
+**2. `Summary` and `Print` are on the bar as DISABLED PLACEHOLDERS — a deliberate break of this section's own rule.** The Top Bar rule forbids a control that opens nothing; told so, he chose to break it here: *"i like the add then now as disabled placeholders. that is okay for this instance because i want to get a feel for how this is going to be a user friendly experience."* **Recorded as an explicit exception for one case**, not a rule that lapsed. They are `disabled`, each says in its title what is not built, and they take no part in the view machinery — no `aria-expanded`, no `data-view-menu`, so neither can own, be current, or open an empty note.
+
+**What he says goes in them, for the record only — NOT built:** Summary holds *"project summary, project totals, and materials totals pages that we have under summary"*; Print holds *"all the shop drawings"*. And tentatively — his word is *"maybe"* — *"maybe the print button opens and closes the right bar."* **That is an unresolved idea, not a requirement**, and it interacts with U5, which deletes the right sidebar; it needs settling before U5 rather than during it. Their ORDER is also unsettled: his 2026-09-26 list reads `Design, View, Print, Summary` and his example a sentence later reads `Summary Print`; the bar uses Summary then Print, and the pair is the same width either way (85.6px and 56.7px).
+
+##### ⚠ WHAT THE PLACEHOLDERS COST — measured, and it is the company name again
+
+They are 162.3px, which is what the projection had predicted to the decimal. At ≥1200px they cost nothing anyone can see. Below it:
+
+| viewport | before them (2026-09-28) | now |
+|---|---|---|
+| **710px** — his own | 31 of 39 characters, **105px of row to spare** | 30 characters, **0.1px short of fitting** |
+| **768–891px** | 6 characters (`The Se`) | **0 characters — the name is gone** |
+| below 541px | (absent below 425px) | absent |
+| ≥1200px | whole | whole |
+
+**Six characters and zero characters differ in kind, not degree**, and this is the argument that matters more than the count: at 6 the four real labels read `Buildi` / `The Se` / `Rare F` / `Buildi`, so **distinct companies stay distinguishable** and the only collision is between two entitlements of the *same* company — a wrong-**company** save is still detectable at a glance. At 0 nothing is. So the placeholders moved the 768–891px band across that line. **Reversible by deleting two entries from `BAR_PLACEHOLDERS`.**
+
+⚠ **THE MITIGATION THE EARLIER RECORD OMITTED, and it changes how the whole spend reads: the name is HIDDEN, NOT LOST.** At every width the select still carries `title={label(actingAsCompanyId)}` and its selected `<option>` holds the full string, so the company name survives **on hover and to assistive technology**, and switching still works because the native dropdown renders at OS size rather than at the select's width. A sighted user at 360px cannot read the company at a glance; they can still hover it, still open it, and still see which entry is ticked. Leaving that out overstated the cost.
+
+##### ⚠ THE OPTION A COMPARISON, CORRECTED — it was measured unfairly
+
+The earlier record said option B was *"better than option A at every width"*. **That was an artefact of how option A was measured**, found in review: the projection injected the four tab items at **every** width, but the real nav only ever rendered at **≥1200px**. Below that the tabs shed and cost the company name nothing, so option A's narrow-end figures — *"name absent below 695px, and again 768–1023px"* — describe **a bar that never existed**, and they flattered the decision already taken.
+
+Corrected, with the projection gated at ≥1200px exactly as the nav was: **the two are identical below 1200px**, and option A's real cost is wide-end only. It is still substantial — the company name **whole from 1416px instead of 1200px**, 2 characters at 1200px and 15 at 1280px — and **the 294.3px fold saving is unaffected**, because it was measured at 1600px where the tabs really did show.
+
+##### Housekeeping the review asked for, done
+
+- **`UI_REORG_U1_PROVE_FAILURE=1` now writes no evidence at all.** It records plenty and then fails on purpose, so it used to leave a deliberately-failing `evidence.json` over a passing one; the `proveFailureMode: true` flag was honest but the checked-in artefact is what people read.
+- **The cold-click retry has an asserted ceiling.** Budget 3, and the run FAILS if any click needs more than 2, so the net cannot quietly become load-bearing. The counts are in `coldClickAttempts`.
+- **U0's 64px assertion is pinned to the measured truth** — `contentWidth === 55`, `distinctLefts === 2`, `rows === 3`, `pxBelowFold === 0` — rather than to a bound that the old cut-off layout would also have satisfied. Re-measured after the tab dial was removed from the same column: unchanged, so the icons' layout is set by the rail's width, not by what sits above them.
+- **`region3-baseline.json`'s fate at U3 and U5 is decided now: RETIRE it, do not regenerate it.** U5 will legitimately change what Region 3 renders. That baseline is a recording of Region 3 as driven by the **view dial**, which no longer exists; regenerating it off the menus would turn a two-control comparison into a self-comparison that passes by construction while still looking like the strongest check in the file. The within-run two-path test survives any such change and is the one to keep. Written down now because nobody will decide this calmly on the day a red run blocks a merge.
+- **Test-count framing, named against its base:** `07fea1e` (this branch's fork point) had 129 files / 2470; it is now **129 / 2494**. Against **`main`**, which is what will actually land, it is **128 files / 2456 → 129 / 2494: +1 file, +38 tests.**
 
 ##### Still open after this pass, and NOT answered here
 
 - **`2D Floor Plan` → `Plan View`.** Untouched, as instructed. `Membranes` and the internal `3d-wraps` key likewise.
 - **Whether anything replaces the dial's scroll-wheel cycling.** Nothing does today. Recorded in `viewerMenus.ts`, `TopBar.tsx` and `page.tsx` so its absence cannot later read as an oversight.
-- **`EditorTabDial`'s remaining role — reported, not decided.** It was not touched. It still renders from `editorTab` and still hides at ≥1200px (`EditorToolbar.module.css`), so **below 1200px there are now two doors to the same subjects** (it and the Design menu) and **at ≥1200px the Design menu is the only one**. That asymmetry is a consequence of this pass, not a decision taken in it.
+- **✅ `EditorTabDial` — ANSWERED 2026-09-29 and BUILT: removed.** Reported as a question, put to Tommy with the review's counter-argument, and he chose removal. See the 2026-09-29 sub-block for his reasoning and for the live measurement it was re-tested against.
 - **The Design menu's group order is Tommy's (`Wall, Floor, Roof, Foundation`), which is NOT `EDITOR_TAB_ORDER`'s building order** (`wall, foundation, floor, roof`). Both constants exist, each with its reason, and a test asserts they cover the same four tabs. Whether the menu should follow building order instead is his call.
 - **Two presentational judgements flagged rather than claimed as his:** a subject group is **headed only when it holds more than one destination** (so `Floor`, `Roof` and `Foundation` are single entries with no heading above them repeating the word), and the wall group's heading is **`Wall`**, the app's own single definition of that label, rather than the plural `Walls` he wrote informally.
-- **Whether Summary and Print are wanted on the bar at all** — they now fit (~1125px), which U4/U5 did not previously have grounds to assume.
+- **✅ Whether Summary and Print are wanted on the bar — ANSWERED 2026-09-29 and BUILT as disabled placeholders**, a deliberate exception to the "no control that opens nothing" rule. What remains open about them: their ORDER, and whether *"maybe the print button opens and closes the right bar"* becomes a requirement (it interacts with U5, which deletes that sidebar).
+- **What names the current SUBJECT on screen at ≥1200px — nothing does, and Tommy has decided that is acceptable.** Recorded rather than left open, because it is the kind of gap a later reader will re-discover: see the 2026-09-29 sub-block.
 
 ---
 

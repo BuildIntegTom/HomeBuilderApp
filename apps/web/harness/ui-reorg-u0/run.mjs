@@ -704,18 +704,25 @@ record(
   // 64px rail is gone. The content box therefore went 40px -> 55px, the four
   // icons now sit two abreast, and NOTHING IS BELOW THE FOLD any more.
   //
-  // So the numbers that moved are recorded here rather than being loosened
-  // away, and the assertion now states the property that actually matters —
-  // every icon reachable without scrolling a 64px rail — instead of the
-  // particular stack shape the old overflow forced. The deviation Tommy
-  // accepted is simply no longer there; he has not been asked to accept
-  // anything new, and if he prefers the single column that is a CSS choice, not
-  // a measurement.
+  // ⚠ AND IT IS PINNED TO THE MEASURED TRUTH, NOT TO A BOUND. The first
+  // rewrite said `contentWidth <= 60 && distinctLefts <= 2 && rows <= 4`, which
+  // is satisfied by the old cut-off layout AND by several worse ones — a
+  // loosened assertion is how a regression becomes invisible, and loosening is
+  // the standing temptation whenever a measured fact moves. The layout is now
+  // 55px of content, two columns, three rows, nothing below the fold, at all
+  // three of the 64px widths, and that is what is asserted. `pxBelowFold === 0`
+  // is the clause the OLD assertion never had at all: it accepted 30px of the
+  // cluster being unreachable, which is the deviation Tommy was shown and
+  // accepted on 2026-09-27 and which no longer exists.
+  //
+  // Measured again on 2026-09-29 after `EditorTabDial` and its toolbar were
+  // removed from the same column: unchanged at 55 / 2 / 3 / 0, so the icons'
+  // layout is set by the rail's width, not by how much sits above them.
   (d) =>
     d.at240.length === 5 &&
     d.at240.every((r) => r.rows === 1 && r.pxBelowFold === 0) &&
     d.at64.length === 3 &&
-    d.at64.every((r) => r.contentWidth <= 60 && r.distinctLefts <= 2 && r.rows <= 4 && r.pxBelowFold === 0),
+    d.at64.every((r) => r.contentWidth === 55 && r.distinctLefts === 2 && r.rows === 3 && r.pxBelowFold === 0),
 );
 
 console.log("7. the context line on an elevation, on Membranes, and on the Roof subject");

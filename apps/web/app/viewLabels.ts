@@ -73,11 +73,19 @@ export interface ViewStopLiveInput {
  * existed, in opposite polarities, ~900 lines apart in `page.tsx` — the dial's
  * `disabled={editorTab !== "wall" || !footprint}` and the bug note's
  * `viewerActive: editorTab === "wall" && Boolean(footprint)`. The dial's copy
- * is gone with the dial; the readers now are the bar's `Design`/`View` buttons
- * (their `disabled`, and both levels of highlight through `viewerMenuOwner`
- * and `isCurrentViewerStop`) and the Report Bug note's context line. A name
- * that still said "dial" would have been a false description of the one thing
- * they all agree through.
+ * is gone with the dial.
+ *
+ * ⚠ **ITS READERS TODAY, NAMED ACCURATELY** — an earlier version of this note
+ * listed readers it does not have, which is worse than no note on a predicate
+ * whose whole claim is "one definition, every reader":
+ *   - the Report Bug note's context line (`currentViewLabel`'s `viewerActive`);
+ *   - `TopBar`, for the owning button's `title`, which names the current STOP
+ *     only while a stop is what is on screen and the subject otherwise.
+ * It is **not** what disables the two buttons (that is "this menu has no
+ * destinations", `viewerMenuGroups(...).length === 0`) and it is **not** read
+ * by either highlight rule: `viewerMenuOwner` and `isCurrentDestination` take
+ * `editorTab` and the current stop, deliberately, because ownership is true on
+ * a cold load before any footprint exists.
  *
  * **The polarity is the POSITIVE one** (`live`, not `disabled`) because that is
  * the question every reader actually asks; the one site that wants the other

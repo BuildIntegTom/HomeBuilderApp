@@ -1,6 +1,6 @@
 import type { Footprint } from "@building-integrity/geometry";
 
-import { EDITOR_TAB_LABEL, EDITOR_TAB_ORDER, type EditorTab } from "./editorTabs";
+import { EDITOR_TAB_LABEL, EDITOR_TAB_ORDER, editorTabsInScope, type EditorTab } from "./editorTabs";
 
 /**
  * Everywhere the two top-bar menus — `Design` and `View` — can take you, and
@@ -260,14 +260,25 @@ export interface MenuGroupsInput {
  * given.
  */
 export function viewerMenuGroups(menu: ViewerMenuId, { stops, enabledTabs, footprint }: MenuGroupsInput): MenuGroup[] {
+  /* ⚠ `editorTabsInScope`, NOT `enabledTabs.includes(...)`, and the difference
+     is not style. That helper is the one place the keyhole's rule lives, and
+     its own doc says sharing it "is what stops the two presentations from ever
+     disagreeing". Their behaviours differ in exactly one case — an EMPTY list,
+     where the helper falls back to every tab and a raw `includes` offers
+     nothing — and "the menu is empty" is the one state this whole module
+     treats as meaningful (it is what disables a button). page.tsx cannot
+     produce an empty list today, because the last checked scope branch refuses
+     to be unchecked, so this is a seam rather than a bug; using the helper is
+     what stops it re-opening. */
+  const subjectsInScope = editorTabsInScope(enabledTabs);
   if (menu === "view") {
-    if (!footprint || !enabledTabs.includes("wall")) return [];
+    if (!footprint || !subjectsInScope.includes("wall")) return [];
     const destinations = viewerStopsForMenu(stops, "view").map((stop) => ({ kind: "stop" as const, stop }));
     return destinations.length > 0 ? [{ subject: null, heading: null, destinations }] : [];
   }
   const groups: MenuGroup[] = [];
   for (const subject of DESIGN_SUBJECT_ORDER) {
-    if (!enabledTabs.includes(subject)) continue;
+    if (!subjectsInScope.includes(subject)) continue;
     const destinations: MenuDestination[] =
       subject === "wall"
         ? viewerStopsForMenu(stops, "design").map((stop) => ({ kind: "stop" as const, stop }))
@@ -348,6 +359,35 @@ export function isCurrentDestination(
 ): boolean {
   if (destination.kind === "subject") return destination.subject === editorTab;
   return editorTab === "wall" && viewerStopKey(destination.stop) === viewerStopKey(currentStop);
+}
+
+/**
+ * Why a menu is offering nothing, or `null` when it is offering something.
+ *
+ * ⚠ **THE BUTTON'S REASON HAS TO BE THE MENU'S REASON, AND IT WAS NOT.** The
+ * `View` button said "The 3D views need a footprint — draw one on the plan
+ * first" whenever it was empty, which is a lie in the reachable state where a
+ * footprint IS drawn and the Walls branch is simply unchecked in the Panelizer.
+ * A disabled control whose stated reason cannot be acted on is worse than one
+ * with no reason at all: it sends the user to the canvas to do something they
+ * have already done. So the reason is derived here, from the same inputs that
+ * decide the emptiness, rather than written out at the call site as a guess.
+ *
+ * Returns a key rather than a sentence: the wording is presentation and lives
+ * in `TopBar`, but which of the two truths applies is logic and is tested.
+ */
+export function viewerMenuEmptyReason(
+  menu: ViewerMenuId,
+  input: MenuGroupsInput,
+): "no-footprint" | "walls-out-of-scope" | "nothing-in-scope" | null {
+  if (viewerMenuGroups(menu, input).length > 0) return null;
+  if (menu === "view") {
+    if (!editorTabsInScope(input.enabledTabs).includes("wall")) return "walls-out-of-scope";
+    return "no-footprint";
+  }
+  /* Design can only be empty if no subject at all is in scope, which page.tsx
+     prevents. Named rather than left to fall through to the View wording. */
+  return "nothing-in-scope";
 }
 
 /** Every editor tab is a design subject, and the two lists are checked against

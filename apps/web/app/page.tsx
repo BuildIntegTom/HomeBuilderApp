@@ -351,7 +351,6 @@ import { DocumentMetaProvider } from "./DocumentMetaContext";
 import { BrowseModeProvider } from "./BrowseModeContext";
 import { PRICE_GAP, PRICE_REDACTED_NOTE, VIEWER_OWN_DEFAULTS_NOTE } from "./cloud/browseDisplay";
 import DrawingToolPen from "./DrawingToolPen";
-import EditorToolbar from "./EditorToolbar";
 import OctagonRingPreview from "./OctagonRingPreview";
 import RoofTrussLayoutView from "./RoofTrussLayoutView";
 import PanelLegend from "./PanelLegend";
@@ -9482,8 +9481,9 @@ export default function LayoutEditor() {
                 on his own decisions and recorded so neither reads later as an
                 oversight: SCROLL-WHEEL CYCLING (nothing replaces it; an open
                 question) and `useRustleSound()` ("The rustle sound is no big
-                deal"). `EditorTabDial`, Region 2 below, is a DIFFERENT control
-                and is untouched. What is left in this row is the fullscreen
+                deal"). The Wall/Foundation/Floor/Roof tab dial that used to sit
+                below this row went the next day on a SEPARATE decision of his —
+                see Region 2's note. What is left in this row is the fullscreen
                 toggle. */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", width: "100%" }}>
               <button
@@ -9503,10 +9503,25 @@ export default function LayoutEditor() {
                 {isOsFullscreen ? "⤡" : "⤢"}
               </button>
             </div>
-            {/* Region 2 (always second, fixed): floor/wall/roof layer tabs
-                — now guaranteed to sit right below Region 1 every time,
-                since Region 1 no longer varies in height. */}
-            <EditorToolbar editorTab={editorTab} onEditorTabChange={setEditorTab} enabledTabs={enabledEditorTabs} />
+            {/* ⚠ REGION 2 IS GONE — it held `EditorToolbar`, whose only content
+                was `EditorTabDial`, the Wall/Foundation/Floor/Roof scroll dial.
+                Removed 2026-09-29 on Tommy's decision: "Remove it — Design is
+                the only door." The subjects are groups inside the top bar's
+                Design menu now, at every width, so this was the second door to
+                the same state rather than the narrow-width form of anything.
+
+                The state did not move: `editorTab` is still one `useState` in
+                this file and `setEditorTab` is still its one writer — the
+                Design menu calls it through `onEditorTabChange`, exactly as
+                this dial did.
+
+                ⚠ WHAT THAT COSTS, because it is a real trade and he took it
+                knowingly: with Region 2 gone, nothing in the chrome NAMES the
+                current subject. The Design button reads "Design" whichever
+                subject you are on; only opening the menu shows which entry is
+                marked, and only Region 3's own headings ("Roof Tools", and so
+                on) name it on screen. That is the argument the review made for
+                keeping the dial, and it is recorded here rather than lost. */}
             {/* Region 3 (variable, always last): everything else — its own
                 presence/height still varies by tab/view, but nothing below
                 it depends on that anymore.
