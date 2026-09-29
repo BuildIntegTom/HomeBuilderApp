@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3218/",
-  "ranAt": "2026-09-29T14:33:53.183Z",
+  "app": "http://localhost:3230/",
+  "ranAt": "2026-09-29T16:53:41.700Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -335,7 +335,7 @@
     },
     {
       "name": "context-line-on-the-roof-tab-names-only-the-tab",
-      "roofEnabled": "project-open",
+      "roofEnabled": "settings-open",
       "roofChecked": "checked",
       "roofTabClicked": "clicked",
       "line": "Roof",

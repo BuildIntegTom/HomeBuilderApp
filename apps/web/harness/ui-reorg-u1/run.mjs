@@ -1067,6 +1067,29 @@ record(
   (d) => d.currentStop === "2D Floor Plan" && d.viewDisabled === false,
 );
 
+/* ⚠ U3'S REAL ACCEPTANCE CRITERION, HALF ONE — read BEFORE the checkboxes are
+   touched, and before Settings is even opened.
+
+   Moving the Panelizer into Settings is what satisfies Tommy's "all floor,
+   foundation, and roof options should be a checkbox toggle under settings",
+   and the thing that would make that move worthless is the checkboxes quietly
+   ceasing to gate anything. So the Design menu's subject groups are read here
+   against the default scope (Floors, Roof and Foundation OFF since Smearforn
+   Stage 0) and again below with all four on, and both times they are compared
+   to the CHECKBOXES THEMSELVES rather than to a hard-coded list — a gate that
+   had stopped working would otherwise look like a list that happened to
+   match. */
+const designSubjects = async () => {
+  await clickSelector('[data-view-menu="design"]', "the Design menu");
+  const entries = await evaluate(`window.__u1.openMenuEntries()`);
+  await clickSelector('[data-view-menu="design"]', "the Design menu");
+  return entries.map((g) => g.subject);
+};
+const SCOPE_LABEL_TO_SUBJECT = { Floors: "floor", Walls: "wall", Roof: "roof", Foundation: "foundation" };
+const subjectsFromBoxes = (boxes) =>
+  boxes.filter((b) => b.checked).map((b) => SCOPE_LABEL_TO_SUBJECT[b.text]);
+const designSubjectsAtDefaultScope = await designSubjects();
+
 console.log("2. all four scope branches on — the widest bar the keyhole allows");
 /* ⚠ U3 (2026-09-29): ONE CLICK, NOT TWO. The Panelizer is a section inside the
    ⚙ Settings note now — Tommy, "we should move the content of the panelizer
@@ -1138,6 +1161,35 @@ record(
   // menu would be measured two subject groups short, and option A two tabs
   // short.
   (d) => d.scopeAfter.length === 4 && d.scopeAfter.every((b) => b.checked === true),
+);
+
+/* ⚠ U3'S REAL ACCEPTANCE CRITERION, HALF TWO. The checkboxes were ticked in
+   their NEW home — inside ⚙ Settings — and the Design menu is read again. Both
+   readings are compared to the checkbox states they were taken under, so this
+   fails if the relocation left the boxes rendering but no longer wired to
+   `scopeOfWork` → `enabledEditorTabs` → the menu's subject groups. That is the
+   failure the move is most likely to cause and the one nothing else here would
+   catch: the note would still open, the boxes would still tick, and the Design
+   menu would simply stop changing. */
+const designSubjectsAtFullScope = await designSubjects();
+record(
+  "the-panelizers-scope-checkboxes-still-gate-the-design-menu-from-their-new-home-in-settings",
+  {
+    where: "the Panelizer, as a section inside #settings-note (U3)",
+    atDefaultScope: { boxes: scopeBoxes, wantSubjects: subjectsFromBoxes(scopeBoxes), designSubjects: designSubjectsAtDefaultScope },
+    atFullScope: { boxes: scopeAfter, wantSubjects: subjectsFromBoxes(scopeAfter), designSubjects: designSubjectsAtFullScope },
+  },
+  // Sets, not sequences: the menu's group ORDER is Tommy's (Wall, Floor, Roof,
+  // Foundation) and is asserted by its own unit test, not here. What is
+  // asserted here is that the set of subject groups the Design menu offers is
+  // exactly the set of scope branches checked in the Panelizer — twice, under
+  // two different scopes, so a menu that ignores the boxes cannot pass both.
+  (d) =>
+    [d.atDefaultScope, d.atFullScope].every(
+      (c) =>
+        c.designSubjects.length === c.wantSubjects.length &&
+        c.wantSubjects.every((s) => c.designSubjects.includes(s)),
+    ) && d.atDefaultScope.designSubjects.length !== d.atFullScope.designSubjects.length,
 );
 
 console.log("3. validating the four-company simulation against a real 2026-09-13 measurement");

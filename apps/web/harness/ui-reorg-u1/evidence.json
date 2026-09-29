@@ -1,7 +1,7 @@
 {
-  "app": "http://localhost:3218/",
+  "app": "http://localhost:3230/",
   "pass": "built",
-  "ranAt": "2026-09-29T14:25:38.283Z",
+  "ranAt": "2026-09-29T17:02:46.010Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -50,8 +50,7 @@
     {
       "name": "the-cold-click-retry-is-a-safety-net-and-not-load-bearing",
       "coldClickAttempts": {
-        "projectMenu": 1,
-        "panelizerItem": 1
+        "settingsMenu": 1
       },
       "budget": 3,
       "ceiling": 2,
@@ -100,9 +99,73 @@
       "passed": true
     },
     {
+      "name": "the-panelizers-scope-checkboxes-still-gate-the-design-menu-from-their-new-home-in-settings",
+      "where": "the Panelizer, as a section inside #settings-note (U3)",
+      "atDefaultScope": {
+        "boxes": [
+          {
+            "text": "Floors",
+            "checked": false
+          },
+          {
+            "text": "Walls",
+            "checked": true
+          },
+          {
+            "text": "Roof",
+            "checked": false
+          },
+          {
+            "text": "Foundation",
+            "checked": false
+          }
+        ],
+        "wantSubjects": [
+          "wall"
+        ],
+        "designSubjects": [
+          "wall"
+        ]
+      },
+      "atFullScope": {
+        "boxes": [
+          {
+            "text": "Floors",
+            "checked": true
+          },
+          {
+            "text": "Walls",
+            "checked": true
+          },
+          {
+            "text": "Roof",
+            "checked": true
+          },
+          {
+            "text": "Foundation",
+            "checked": true
+          }
+        ],
+        "wantSubjects": [
+          "floor",
+          "wall",
+          "roof",
+          "foundation"
+        ],
+        "designSubjects": [
+          "wall",
+          "floor",
+          "roof",
+          "foundation"
+        ]
+      },
+      "asserted": true,
+      "passed": true
+    },
+    {
       "name": "four-company-simulation-renders-like-the-real-control",
       "ok": true,
-      "usedClass": "AccountControl-module__b-iGea__actingAsSelect",
+      "usedClass": "AccountControl-module__5hhbVW__actingAsSelect",
       "width": 270,
       "chipText": "Acting asBuilding IntegrityThe Seed Collaborative (platform admin)Rare Forms (consortium)Building Integrity (company admin)",
       "chipWidth": 354.7,
@@ -2195,8 +2258,7 @@
     }
   ],
   "coldClickAttempts": {
-    "projectMenu": 1,
-    "panelizerItem": 1
+    "settingsMenu": 1
   },
   "removalSweep": [
     {
