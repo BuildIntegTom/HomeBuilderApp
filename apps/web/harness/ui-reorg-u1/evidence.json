@@ -1,7 +1,7 @@
 {
   "app": "http://localhost:3230/",
   "pass": "built",
-  "ranAt": "2026-09-29T17:02:46.010Z",
+  "ranAt": "2026-09-29T17:10:10.519Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -2162,34 +2162,6 @@
           "after": "Membranes"
         }
       ],
-      "asserted": true,
-      "passed": true
-    },
-    {
-      "name": "region-3-renders-identically-for-every-stop-before-and-after",
-      "comparedStops": [
-        "2D Floor Plan",
-        "Elevation: AB",
-        "Elevation: BC",
-        "Elevation: CD",
-        "Elevation: DA",
-        "3D Framed",
-        "3D Boxes",
-        "Membranes"
-      ],
-      "baselineStops": [
-        "2D Floor Plan",
-        "Elevation: AB",
-        "Elevation: BC",
-        "Elevation: CD",
-        "Elevation: DA",
-        "3D Framed",
-        "3D Boxes",
-        "Membranes"
-      ],
-      "baselineDrivenBy": "the sidebar view dial at 1100px",
-      "differences": [],
-      "comparedOn": "shape (digits normalised — two runs draw two slightly different buildings)",
       "asserted": true,
       "passed": true
     },

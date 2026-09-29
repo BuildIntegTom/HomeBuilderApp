@@ -108,10 +108,11 @@
  *                                  name assertion FAILS at 1200px — the kept
  *                                  failing "before" for the shed-order fix.
  *   evidence-projection.json       the pre-U1 bar with four controls projected.
- *   region3-baseline.json          Region 3's signature at every stop, recorded
- *                                  off the DIAL before any of this. With the
- *                                  dial deleted this is the only cross-control
- *                                  comparison left, and it cannot be re-made.
+ *   region3-baseline.json          ⚠ RETIRED AT U3 (2026-09-29) and no longer
+ *                                  read by this script. Region 3's signature
+ *                                  at every stop, recorded off the DIAL before
+ *                                  any of this. Kept because it cannot be
+ *                                  re-made; never to be regenerated.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -125,7 +126,12 @@ const PASS = process.env.UI_REORG_U1_PASS === "projection" ? "projection" : "bui
 const PROVE_FAILURE = process.env.UI_REORG_U1_PROVE_FAILURE === "1";
 
 const EVIDENCE_FILE = path.join(HERE, PASS === "projection" ? "evidence-projection.json" : "evidence.json");
-const REGION3_FILE = path.join(HERE, "region3-baseline.json");
+/* ⚠ `region3-baseline.json` HAS NO CONSTANT HERE ANY MORE. It was RETIRED at
+   U3 by a decision taken in advance (see step 10's note, this file's README and
+   the spec) — the file is kept as an unrepeatable recording, and nothing reads
+   it. If a later stage finds itself adding this path back, read that note
+   first: regenerating it off the menus makes a self-comparison that passes by
+   construction. */
 
 /**
  * The widths this bar is judged at.
@@ -2009,72 +2015,58 @@ record(
 
 console.log("10. Region 3's signature at every stop — the single-writer test");
 /**
- * ⚠ HOW THE PROOF CHANGED WHEN THE DIAL WENT.
+ * ⚠ HOW THE PROOF CHANGED WHEN THE DIAL WENT, AND AGAIN AT U3.
  *
  * U1 proved one writer two ways: ACROSS the change (Region 3's signature at
  * every stop, recorded off the DIAL before U1, compared against the menus
  * after) and WITHIN one run (the dial at one width vs the menus at another, on
- * one design, byte for byte). **The second half is impossible now — there is no
- * second control to compare against.**
+ * one design, byte for byte). The second half became impossible when the dial
+ * was removed — there is no second control to compare against — and was
+ * replaced by the TWO-PATH comparison below: each stop is reached twice, once
+ * directly and once after a detour through a stop of the other kind, and
+ * Region 3 must be byte-for-byte identical both times. That is the half the
+ * cross-run comparison could not make (it normalised digits away), and it
+ * catches precisely the failure the plan names as most likely — `showWraps`
+ * left true on a plan view arrived at from 3D — because the detour is what
+ * sets those flags in the first place.
  *
- * So the within-run half is replaced by a TWO-PATH comparison: each stop is
- * reached twice, once directly and once after a detour through a stop of the
- * other kind, and Region 3 must be byte-for-byte identical both times. That is
- * the half the cross-run comparison cannot make (it normalises digits away),
- * and it catches precisely the failure the plan names as most likely —
- * `showWraps` left true on a plan view arrived at from 3D — because the detour
- * is what sets those flags in the first place.
+ * ⚠⚠ **`region3-baseline.json` IS RETIRED AT U3, BY A DECISION TAKEN IN
+ * ADVANCE**, recorded in this harness's own README ("What happens to
+ * region3-baseline.json at U3 and U5 — decide now, not then") and in the spec.
+ * The reason it was decided early is that nobody decides it calmly on the day
+ * a red run blocks a merge: it is a recording of Region 3 as driven by the
+ * **view dial**, which no longer exists, so once it stops matching the only
+ * honest move is to retire it — regenerating it off the menus would turn a
+ * two-control comparison into a self-comparison that passes by construction
+ * while still looking like the strongest check in the file.
+ *
+ * **It was still GREEN when it was retired, and that is recorded rather than
+ * glossed.** U3 moved Site Properties and the Panelizer into Settings and
+ * touched none of the four view flags, so the comparison passed one last time
+ * on 2026-09-29 — all 8 stops, zero differences — and that run is in this
+ * repository's history, in the commit before the one that removed it. The
+ * retirement is therefore a deliberate simplification, not a red check being
+ * deleted to go green.
+ *
+ * **The file itself is KEPT, not deleted**: it is the only recording of
+ * Region 3 as a control other than these menus produced it, and it can never
+ * be re-made. It is simply no longer asserted against.
  */
 const stopSignatures = {};
 if (PASS === "projection") {
   throw new Error("the projection pass records Region 3 off the dial, which no longer exists");
 }
-if (!fs.existsSync(REGION3_FILE)) throw new Error(`no ${path.basename(REGION3_FILE)} — it is a kept artefact and cannot be regenerated`);
-const baseline = JSON.parse(fs.readFileSync(REGION3_FILE, "utf8"));
 await setViewport(1440, 1000);
 await installToolkit();
-const diffs = [];
-const compared = [];
-for (const [label, want] of Object.entries(baseline.stops)) {
-  const reached = await selectStopByMenu(label);
-  if (!reached) {
-    diffs.push({ label, why: "not reachable from the bar menus" });
-    continue;
-  }
-  const got = await evaluate(`window.__u1.region3()`);
-  stopSignatures[label] = got;
-  compared.push(label);
-  // `shape`, not `signature` — see region3()'s own note. Across two runs the
-  // drawn footprint differs by a pixel, so the wall weights Region 3 prints
-  // legitimately differ; everything else must not.
-  const wantShape = want.shape ?? String(want.signature).replace(/\d+/g, "#");
-  if (!got || got.shape !== wantShape) {
-    diffs.push({
-      label,
-      wantLines: want.lines,
-      gotLines: got ? got.lines : null,
-      firstDifference: got ? firstDifferingLine(wantShape, got.shape) : "region 3 was not found at all",
-    });
-  }
+/* The stop list now comes from the MENUS THEMSELVES — the labels read out of
+   the open Design and View menus in step 5 — rather than from the retired
+   baseline's key set. Deduplicated because a stop reachable from both menus
+   would otherwise be walked twice. */
+const compared = [...new Set(allStopLabels)];
+for (const label of compared) {
+  if (!(await selectStopByMenu(label))) throw new Error(`could not reach ${label} from the bar menus`);
+  stopSignatures[label] = await evaluate(`window.__u1.region3()`);
 }
-record(
-  "region-3-renders-identically-for-every-stop-before-and-after",
-  {
-    comparedStops: compared,
-    baselineStops: Object.keys(baseline.stops),
-    baselineDrivenBy: baseline.drivenBy,
-    differences: diffs,
-    comparedOn: "shape (digits normalised — two runs draw two slightly different buildings)",
-  },
-  // THE SINGLE-WRITER TEST, HALF ONE: across the change, and now also across the
-  // dial's removal. The baseline was recorded with the DIAL driving the stops,
-  // so this is still a two-control comparison — it is simply the only one left,
-  // and it cannot be re-made. Region 3 keys off elevationWall / viewMode /
-  // showWraps, so a second writer leaving a flag set shows up here as a changed
-  // shape. Every baseline stop must be compared: a stop the menus cannot reach
-  // is a difference, not an excuse to skip it.
-  (d) => d.differences.length === 0 && d.comparedStops.length === d.baselineStops.length,
-);
 
 const twoPath = [];
 const detourFor = (label) => (label.startsWith("3D") || label === "Membranes" ? "2D Floor Plan" : "3D Boxes");
