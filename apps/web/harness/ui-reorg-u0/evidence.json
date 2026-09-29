@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3217/",
-  "ranAt": "2026-09-28T01:00:21.389Z",
+  "app": "http://localhost:3218/",
+  "ranAt": "2026-09-29T14:33:53.183Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -213,43 +213,43 @@
         {
           "viewport": 600,
           "sidebarWidth": 64,
-          "contentWidth": 40,
-          "rows": 4,
-          "distinctLefts": 1,
+          "contentWidth": 55,
+          "rows": 3,
+          "distinctLefts": 2,
           "icons": 4,
           "overlaps": 0,
           "outsideHorizontally": [],
           "scrollOverflowPx": 0,
-          "fullyVisibleVertically": false,
-          "pxBelowFold": 30,
+          "fullyVisibleVertically": true,
+          "pxBelowFold": 0,
           "withinScrollBox": true
         },
         {
           "viewport": 400,
           "sidebarWidth": 64,
-          "contentWidth": 40,
-          "rows": 4,
-          "distinctLefts": 1,
+          "contentWidth": 55,
+          "rows": 3,
+          "distinctLefts": 2,
           "icons": 4,
           "overlaps": 0,
           "outsideHorizontally": [],
           "scrollOverflowPx": 0,
-          "fullyVisibleVertically": false,
-          "pxBelowFold": 30,
+          "fullyVisibleVertically": true,
+          "pxBelowFold": 0,
           "withinScrollBox": true
         },
         {
           "viewport": 360,
           "sidebarWidth": 64,
-          "contentWidth": 40,
-          "rows": 4,
-          "distinctLefts": 1,
+          "contentWidth": 55,
+          "rows": 3,
+          "distinctLefts": 2,
           "icons": 4,
           "overlaps": 0,
           "outsideHorizontally": [],
           "scrollOverflowPx": 0,
-          "fullyVisibleVertically": false,
-          "pxBelowFold": 30,
+          "fullyVisibleVertically": true,
+          "pxBelowFold": 0,
           "withinScrollBox": true
         }
       ],
@@ -293,24 +293,24 @@
       "at64": [
         {
           "viewport": 600,
-          "contentWidth": 40,
-          "rows": 4,
-          "distinctLefts": 1,
-          "pxBelowFold": 30
+          "contentWidth": 55,
+          "rows": 3,
+          "distinctLefts": 2,
+          "pxBelowFold": 0
         },
         {
           "viewport": 400,
-          "contentWidth": 40,
-          "rows": 4,
-          "distinctLefts": 1,
-          "pxBelowFold": 30
+          "contentWidth": 55,
+          "rows": 3,
+          "distinctLefts": 2,
+          "pxBelowFold": 0
         },
         {
           "viewport": 360,
-          "contentWidth": 40,
-          "rows": 4,
-          "distinctLefts": 1,
-          "pxBelowFold": 30
+          "contentWidth": 55,
+          "rows": 3,
+          "distinctLefts": 2,
+          "pxBelowFold": 0
         }
       ],
       "asserted": true,
@@ -318,14 +318,14 @@
     },
     {
       "name": "footprint-drawn",
-      "dialLabel": "2D Floor Plan",
+      "stopLabel": "2D Floor Plan",
       "asserted": true,
       "passed": true
     },
     {
       "name": "context-line-names-the-view-as-the-app-labels-it",
       "plan": "Wall — 2D Floor Plan",
-      "elevationDial": "Elevation: AB",
+      "elevationStop": "Elevation: AB",
       "elevation": "Wall — Elevation: AB",
       "membranesReached": "Membranes",
       "membranes": "Wall — Membranes",
@@ -339,7 +339,7 @@
       "roofChecked": "checked",
       "roofTabClicked": "clicked",
       "line": "Roof",
-      "dial": "Membranes",
+      "stopLabel": null,
       "asserted": true,
       "passed": true
     },

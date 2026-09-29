@@ -1,24 +1,26 @@
 import type { Footprint } from "@building-integrity/geometry";
 
 import { EDITOR_TAB_LABEL, type EditorTab } from "./editorTabs";
-import type { ViewerStop } from "./ViewerDial";
+import type { MenuDestination, ViewerStop } from "./viewerMenus";
 
 /**
  * The app's own name for the view you are looking at, in one place.
  *
- * `viewerStopLabel` is `ViewerDial`'s own label function, moved here so the
- * dial and anything else that needs to NAME the current view read the same
- * strings rather than re-typing them — the same one-definition-two-readers
- * rule `editorTabs.ts` already enforces for the tab labels. `ViewerDial`
- * imports it back and is still the only thing that renders the dial.
+ * `viewerStopLabel` was `ViewerDial`'s own label function, moved here so that
+ * everything which needs to NAME the current view reads the same strings
+ * rather than re-typing them — the same one-definition-two-readers rule
+ * `editorTabs.ts` already enforces for the tab labels. Its readers now are the
+ * top bar's Design and View menus and the Report Bug note's context line; the
+ * dial itself was removed on 2026-09-28 at Tommy's instruction.
  *
  * `"Membranes"` (not `"3D Wraps"`) and the internal `"3d-wraps"` stop kind
- * are both deliberate and recorded in `ViewerDial`'s doc comment: the
+ * are both deliberate and recorded on the type in `viewerMenus.ts`: the
  * user-facing word was renamed at Tommy's request, the key was not. Do not
- * "tidy" either half.
+ * "tidy" either half. `2D Floor Plan` → `Plan View` is an open question for
+ * Tommy and is deliberately NOT answered here.
  *
  * The type import is type-only and therefore erased, so this module has no
- * runtime dependency on `ViewerDial` (and no import cycle) — which is also
+ * runtime dependency on `viewerMenus` (and no import cycle) — which is also
  * what lets it be unit-tested without mounting a component.
  */
 export function viewerStopLabel(stop: ViewerStop): string {
@@ -36,7 +38,21 @@ export function viewerStopLabel(stop: ViewerStop): string {
   }
 }
 
-export interface ViewerDialLiveInput {
+/**
+ * What one entry in the Design or View menu reads.
+ *
+ * Both halves come from a single definition that already existed — the view
+ * stops from `viewerStopLabel` above, the design subjects from
+ * `EDITOR_TAB_LABEL`, which is the same string the removed nav tab showed and
+ * the tab dial still shows. **No new user-facing word is introduced by the
+ * merge**, which matters because a merged menu is exactly where a new synonym
+ * for an existing thing would slip in unnoticed.
+ */
+export function destinationLabel(destination: MenuDestination): string {
+  return destination.kind === "stop" ? viewerStopLabel(destination.stop) : EDITOR_TAB_LABEL[destination.subject];
+}
+
+export interface ViewStopLiveInput {
   /** The active editor tab — the same `editorTab` state the nav and the tab
    * dial render from. */
   editorTab: EditorTab;
@@ -47,29 +63,41 @@ export interface ViewerDialLiveInput {
 }
 
 /**
- * Whether the view dial is actually driving the canvas — i.e. whether there
- * is a view for anything to NAME.
+ * Whether a view stop is actually driving the canvas — i.e. whether there is
+ * a view for anything to NAME or to highlight.
  *
- * **One name for a condition that was written twice, in opposite polarities,
- * ~900 lines apart:** `ViewerDial`'s own `disabled={editorTab !== "wall" || !footprint}`
- * and the bug note's `viewerActive: editorTab === "wall" && Boolean(footprint)`.
- * They were exact complements, and both were covered, so this is not a bug
- * fix — it is a seam closed before **U1 needs the same answer a third and a
- * fourth time**, once for each of the Design and View menus. The plan's own
- * recommendation for those menus is that they *"mirror today's behaviour
- * exactly, with the reason in their `title`"*, which is a far easier promise
- * to keep against one named predicate than against two hand-written
- * expressions that have to stay De Morgan duals of each other.
+ * ⚠ **RENAMED FROM `isViewerDialLive` on 2026-09-28, when the dial it was
+ * named after was removed.** The property that made it worth having is
+ * unchanged and is the reason the rename was not skipped: **one definition,
+ * every reader.** The condition had been written out twice before this
+ * existed, in opposite polarities, ~900 lines apart in `page.tsx` — the dial's
+ * `disabled={editorTab !== "wall" || !footprint}` and the bug note's
+ * `viewerActive: editorTab === "wall" && Boolean(footprint)`. The dial's copy
+ * is gone with the dial.
  *
- * **The polarity here is the POSITIVE one** (`live`, not `disabled`) because
- * that is the question every reader actually asks; the dial's `disabled` prop
- * negates it at the one site that wants the other sense.
+ * ⚠ **ITS READERS TODAY, NAMED ACCURATELY** — an earlier version of this note
+ * listed readers it does not have, which is worse than no note on a predicate
+ * whose whole claim is "one definition, every reader":
+ *   - the Report Bug note's context line (`currentViewLabel`'s `viewerActive`);
+ *   - `TopBar`, for the owning button's `title`, which names the current STOP
+ *     only while a stop is what is on screen and the subject otherwise.
+ * It is **not** what disables the two buttons (that is "this menu has no
+ * destinations", `viewerMenuGroups(...).length === 0`) and it is **not** read
+ * by either highlight rule: `viewerMenuOwner` and `isCurrentDestination` take
+ * `editorTab` and the current stop, deliberately, because ownership is true on
+ * a cold load before any footprint exists.
+ *
+ * **The polarity is the POSITIVE one** (`live`, not `disabled`) because that is
+ * the question every reader actually asks; the one site that wants the other
+ * sense negates it there.
  *
  * Input is a plain object rather than component props on purpose — the same
- * reason `CurrentViewLabelInput` is one — so U1's two-menu form can call it
- * unchanged from a different component.
+ * reason `CurrentViewLabelInput` is one — so `TopBar` can call it and be
+ * guaranteed the same answer as `page.tsx`. **Keep passing `footprint`, not a
+ * ready-made boolean**: a caller handed a boolean can be handed a different
+ * answer than every other caller, which is the seam this closed.
  */
-export function isViewerDialLive({ editorTab, footprint }: ViewerDialLiveInput): boolean {
+export function isViewStopLive({ editorTab, footprint }: ViewStopLiveInput): boolean {
   return editorTab === "wall" && Boolean(footprint);
 }
 
@@ -81,22 +109,21 @@ export interface CurrentViewLabelInput {
    * `currentViewerStop`). */
   viewerStop: ViewerStop;
   /**
-   * Whether the view dial is live. **Supply it from `isViewerDialLive` above**
-   * — that is the one definition of this condition, and it is the same one
-   * `ViewerDial`'s `disabled` prop negates.
+   * Whether a view stop is live. **Supply it from `isViewStopLive` above** —
+   * that is the one definition of this condition, and it is the same one the
+   * bar's Design and View buttons are disabled by.
    *
-   * When it is false the dial is disabled and the stop it would report is
-   * not what is on screen (the Roof tab shows roof tools, not `3D Boxes`),
-   * so the view half is left off rather than stated wrongly. A bug report
-   * naming a view the reporter was not on is worse than one naming only the
-   * tab.
+   * When it is false the stop `currentViewerStop` would report is not what is
+   * on screen (the Roof tab shows roof tools, not `3D Boxes`), so the view
+   * half is left off rather than stated wrongly. A bug report naming a view
+   * the reporter was not on is worse than one naming only the tab.
    */
   viewerActive: boolean;
 }
 
 /**
  * One short line naming the current editor surface, as the app itself labels
- * it: the editor tab, and — only when the view dial is actually driving the
+ * it: the editor tab, and — only when a view stop is actually driving the
  * canvas — the view stop.
  *
  * Used by the Report Bug note so a report Tommy receives says where the

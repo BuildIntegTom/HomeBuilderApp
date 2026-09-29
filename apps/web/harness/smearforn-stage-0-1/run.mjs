@@ -46,6 +46,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeViewStopControl } from "../viewStopControl.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHOTS = path.join(HERE, "screenshots");
@@ -214,14 +215,30 @@ await send("Page.navigate", { url: APP_URL }, sid);
 // looked like "12x is simply too slow to test at"; it was this one sleep.
 await sleep(9000 * Math.max(1, Math.round(CPU_THROTTLE / 2)));
 
-// Stage 0: a brand-new project has Foundation OFF, so the nav offers Wall only.
-const navTabs = await evaluate(`(() => {
-  const nav = document.querySelector('nav') || document.body;
-  return [...nav.querySelectorAll('button, a')].map((e) => e.textContent.trim()).filter((t) => ['Wall','Foundation','Floor','Roof'].includes(t));
-})()`);
-// Stage 0's whole point: Foundation, Floor and Roof are off for a new
-// project, so the nav offers exactly one branch.
-record("stage0-new-project-tabs", { navTabs }, (d) => d.navTabs.length === 1 && d.navTabs[0] === "Wall");
+/**
+ * The view control, and — since the two axes merged — the scope control too.
+ *
+ * ⚠ IT HAS MOVED TWICE IN ONE DAY, AND THIS HARNESS NEVER KNEW THE WIDTH. U1
+ * (2026-09-28) made the sidebar dial the below-breakpoint form and put Design
+ * and View menus on the top bar above it; later the same day Tommy removed the
+ * dial outright and folded the four editor tabs into the Design menu. This
+ * harness does not set a viewport width — it takes whatever Chrome was launched
+ * with — so locators written against either control directly would have
+ * returned null SILENTLY. The shared driver next door reads what is on screen
+ * and throws with what it saw when it cannot get somewhere.
+ */
+const view = makeViewStopControl({ evaluate, sleep });
+
+/* Stage 0: a brand-new project has Floor, Roof and Foundation OFF.
+   ⚠ THIS USED TO COUNT THE BAR'S NAV TABS. They were removed on 2026-09-28
+   when Tommy merged the two axes, so the subjects are groups inside the Design
+   menu — and the old reader, which fell back to `document.body` when it found
+   no `<nav>`, would have returned an empty list and failed while looking like
+   Stage 0 having broken. It reads the merged menu now, through the shared
+   driver, which throws if that menu is empty rather than reporting a scope of
+   nothing. Same claim, same default, read where the user now reads it. */
+const scopeSubjects = await view.subjectsOffered();
+record("stage0-new-project-tabs", { scopeSubjects }, (d) => d.scopeSubjects.length === 1 && d.scopeSubjects[0] === "wall");
 await shot("00-stage0-new-project-wall-only");
 
 // Panelizer: the four scope checkboxes, Foundation among them and unchecked.
@@ -297,30 +314,20 @@ await sleep(1200);
 await shot("01-footprint-drawn");
 
 /**
- * The viewer dial's own current stop, e.g. "Elevation: North (AB)".
+ * The current stop, e.g. "Elevation: North (AB)".
  *
- * **Read, rather than inferred from what is on screen.** An early version of
- * the wall walk identified a wall by the set of width labels it could see —
- * and `panelWidthLabels` filters to labels actually ON SCREEN, so panning
- * between stops changed the set without changing the wall, and four views of
- * ONE wall were counted as four walls. It reported `wallsWalked: 4` and
- * proved nothing. Ask the dial what it is showing.
+ * **Read off the control, rather than inferred from what is on screen.** An
+ * early version of the wall walk identified a wall by the set of width labels
+ * it could see — and `panelWidthLabels` filters to labels actually ON SCREEN,
+ * so panning between stops changed the set without changing the wall, and four
+ * views of ONE wall were counted as four walls. It reported `wallsWalked: 4`
+ * and proved nothing. Ask the control what it is showing.
  */
-const currentViewLabel = async () =>
-  await evaluate(`(() => {
-    const dial = document.querySelector('[role="group"][aria-label="View mode"]');
-    if (!dial) return null;
-    const label = [...dial.querySelectorAll('div')].map((d) => d.textContent.trim()).find((t) => t && t !== '▲' && t !== '▼');
-    return label ?? null;
-  })()`);
+const currentViewLabel = async () => await view.currentLabel();
 
 console.log("3. opening a wall elevation");
-// The viewer dial's down arrow steps: plan -> each wall's elevation -> 3D.
-const dialDown = await evaluate(`(() => {
-  const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === '▼');
-  const r = b.getBoundingClientRect();
-  return [r.left + r.width / 2, r.top + r.height / 2];
-})()`);
+// The cycle is plan -> each wall's elevation -> the three 3D stops, in that
+// order, on the dial and in the Design/View menus alike.
 
 /**
  * Steps the dial until it reaches a wall elevation THIS RUN CAN USE, which is
@@ -343,14 +350,13 @@ const dialDown = await evaluate(`(() => {
  */
 let reached = null;
 for (let i = 0; i < 8 && reached === null; i++) {
-  await click(dialDown[0], dialDown[1]);
+  const stop = await view.step();
   await sleep(700);
-  const view = await currentViewLabel();
-  if (typeof view !== "string" || !view.startsWith("Elevation:")) continue;
+  if (typeof stop !== "string" || !stop.startsWith("Elevation:")) continue;
   const dragStrips = await evaluate(`document.querySelectorAll('rect[style*="ew-resize"]').length`);
   // Steps 4-8 need a panel to select; step 9 needs two adjacent ones to drag
   // between. A wall with a strip always has both.
-  if (dragStrips > 0) reached = { view, dragStrips };
+  if (dragStrips > 0) reached = { view: stop, dragStrips };
 }
 if (reached === null) {
   throw new Error(
@@ -698,26 +704,23 @@ const allElevationWidths = async () =>
   })()`);
 
 /**
- * Advances the viewer dial one stop.
+ * Advances the view control one stop.
  *
  * **Dispatched on the element rather than as a mouse event at a remembered
  * coordinate, and that is the fix for the second thing this step got wrong.**
- * `dialDown` was measured before any Selected Panel note existed; once one is
- * open it sits over the dial, so every synthetic click at those coordinates
- * hit the note instead and the dial never moved. The run still looked
- * plausible, because panning changed which labels were on screen. Step 3 above
- * already proves the dial responds to a real mouse click; this step is about
- * reading four walls, not about hit areas.
+ * The chevron's position was measured before any Selected Panel note existed;
+ * once one is open it sits over the dial, so every synthetic click at those
+ * coordinates hit the note instead and the dial never moved. The run still
+ * looked plausible, because panning changed which labels were on screen. That
+ * rule now lives in the shared driver, which dispatches on the element for
+ * exactly this reason — and it applies to the bar menus too, where an open
+ * note can sit over a menu item just as happily. This step is about reading
+ * four walls, not about hit areas.
  */
-const stepViewerDial = async () =>
-  await evaluate(`(() => {
-    const dial = document.querySelector('[role="group"][aria-label="View mode"]');
-    if (!dial) return false;
-    const next = [...dial.querySelectorAll('button')].find((b) => b.textContent.trim() === '▼');
-    if (!next) return false;
-    next.click();
-    return true;
-  })()`);
+const stepViewerDial = async () => {
+  await view.step();
+  return true;
+};
 
 /** How hard the walk tries to read each wall before giving up on it — see
  * the retry loop below for why this is 20 and not 4. */
@@ -729,9 +732,12 @@ const viewsVisited = [];
 // One full turn of the dial plus slack: the cycle is plan, one stop per wall,
 // then the three 3D stops.
 for (let i = 0; i < 16; i++) {
-  const view = await currentViewLabel();
-  viewsVisited.push(view);
-  if (typeof view === "string" && view.startsWith("Elevation:") && !wallsSeen.some((w) => w.view === view)) {
+  // Named `stop`, not `view`: `view` is now the shared view-stop driver at the
+  // top of this file, and a loop variable that shadowed it would work by luck
+  // and read as a bug forever after.
+  const stop = await currentViewLabel();
+  viewsVisited.push(stop);
+  if (typeof stop === "string" && stop.startsWith("Elevation:") && !wallsSeen.some((w) => w.view === stop)) {
     // The dial's label updates before the canvas has finished re-rendering,
     // so a first read can legitimately come back empty. Retried rather than
     // skipped: a wall silently missing from this walk is a wall this step did
@@ -753,7 +759,7 @@ for (let i = 0; i < 16; i++) {
       widths = (await allElevationWidths()).map(parseImperial).filter((w) => Number.isFinite(w));
       attemptsUsed = attempt + 1;
     }
-    if (widths.length > 0) wallsSeen.push({ view, widths, narrowest: Math.min(...widths), attemptsUsed });
+    if (widths.length > 0) wallsSeen.push({ view: stop, widths, narrowest: Math.min(...widths), attemptsUsed });
   }
   if (!(await stepViewerDial())) break;
   await sleep(600);

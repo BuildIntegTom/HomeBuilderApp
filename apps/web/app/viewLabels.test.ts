@@ -1,10 +1,10 @@
 import { buildRectangleFootprint } from "@building-integrity/geometry";
 import { describe, expect, it } from "vitest";
-import { EDITOR_TAB_ORDER } from "./editorTabs";
-import { currentViewLabel, isViewerDialLive, viewerStopLabel } from "./viewLabels";
+import { EDITOR_TAB_LABEL, EDITOR_TAB_ORDER } from "./editorTabs";
+import { currentViewLabel, destinationLabel, isViewStopLive, viewerStopLabel } from "./viewLabels";
 
 describe("viewerStopLabel", () => {
-  it("labels the plan stop the way the dial always has", () => {
+  it("labels the plan stop the way it has always been labelled", () => {
     expect(viewerStopLabel({ kind: "plan" })).toBe("2D Floor Plan");
   });
 
@@ -25,18 +25,18 @@ describe("viewerStopLabel", () => {
   });
 });
 
-describe("isViewerDialLive", () => {
+describe("isViewStopLive", () => {
   const footprint = buildRectangleFootprint(24, 16);
 
   it("is live only on the Wall tab, and only once a footprint exists", () => {
-    expect(isViewerDialLive({ editorTab: "wall", footprint })).toBe(true);
-    expect(isViewerDialLive({ editorTab: "wall", footprint: null })).toBe(false);
-    expect(isViewerDialLive({ editorTab: "roof", footprint })).toBe(false);
-    expect(isViewerDialLive({ editorTab: "roof", footprint: null })).toBe(false);
+    expect(isViewStopLive({ editorTab: "wall", footprint })).toBe(true);
+    expect(isViewStopLive({ editorTab: "wall", footprint: null })).toBe(false);
+    expect(isViewStopLive({ editorTab: "roof", footprint })).toBe(false);
+    expect(isViewStopLive({ editorTab: "roof", footprint: null })).toBe(false);
   });
 
   it("treats an absent footprint the same however it is absent", () => {
-    expect(isViewerDialLive({ editorTab: "wall", footprint: undefined })).toBe(false);
+    expect(isViewStopLive({ editorTab: "wall", footprint: undefined })).toBe(false);
   });
 
   it("agrees with BOTH expressions it replaced, across the whole tab x footprint matrix", () => {
@@ -57,7 +57,7 @@ describe("isViewerDialLive", () => {
 
     for (const editorTab of EDITOR_TAB_ORDER) {
       for (const fp of [footprint, null]) {
-        const live = isViewerDialLive({ editorTab, footprint: fp });
+        const live = isViewStopLive({ editorTab, footprint: fp });
         expect(live).toBe(viewerActiveBefore(editorTab, fp));
         expect(!live).toBe(dialDisabledBefore(editorTab, fp));
       }
@@ -70,13 +70,13 @@ describe("isViewerDialLive", () => {
 });
 
 describe("currentViewLabel", () => {
-  it("names the tab and the view while the view dial is driving the canvas", () => {
+  it("names the tab and the view while a view stop is driving the canvas", () => {
     expect(
       currentViewLabel({ editorTab: "wall", viewerStop: { kind: "plan" }, viewerActive: true }),
     ).toBe("Wall — 2D Floor Plan");
   });
 
-  it("names an elevation the way the dial does", () => {
+  it("names an elevation the way the menu does", () => {
     expect(
       currentViewLabel({
         editorTab: "wall",
@@ -92,7 +92,7 @@ describe("currentViewLabel", () => {
     ).toBe("Wall — Membranes");
   });
 
-  it("names only the tab on Roof, where the dial is disabled", () => {
+  it("names only the tab on Roof, where no view stop is on screen", () => {
     // The stop is still whatever it last was; stating it here would tell
     // Tommy the reporter was on 3D Boxes when the screen showed roof tools.
     expect(
@@ -111,5 +111,23 @@ describe("currentViewLabel", () => {
     expect(
       currentViewLabel({ editorTab: "foundation", viewerStop: { kind: "plan" }, viewerActive: false }),
     ).toBe("Foundation");
+  });
+});
+
+describe("destinationLabel", () => {
+  it("labels a view stop with the app's own name for it", () => {
+    expect(destinationLabel({ kind: "stop", stop: { kind: "plan" } })).toBe("2D Floor Plan");
+    expect(destinationLabel({ kind: "stop", stop: { kind: "3d-wraps" } })).toBe("Membranes");
+    expect(destinationLabel({ kind: "stop", stop: { kind: "elevation", wallId: "CD", label: "CD" } })).toBe(
+      "Elevation: CD",
+    );
+  });
+
+  it("labels a design subject with the editor tab's own label, introducing no new word", () => {
+    // The merge is exactly where a synonym for an existing thing would slip in
+    // unnoticed, so both halves come from a definition that already existed.
+    expect(destinationLabel({ kind: "subject", subject: "floor" })).toBe(EDITOR_TAB_LABEL.floor);
+    expect(destinationLabel({ kind: "subject", subject: "roof" })).toBe(EDITOR_TAB_LABEL.roof);
+    expect(destinationLabel({ kind: "subject", subject: "foundation" })).toBe(EDITOR_TAB_LABEL.foundation);
   });
 });

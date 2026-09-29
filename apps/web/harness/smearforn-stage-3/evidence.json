@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3215/",
-  "ranAt": "2026-09-25T19:40:07.947Z",
+  "app": "http://localhost:3218/",
+  "ranAt": "2026-09-29T14:43:21.005Z",
   "stopIn": 60,
   "steps": [
     {
@@ -108,8 +108,8 @@
       "name": "clearing-the-stop-restores-elevation-plan-and-3d",
       "totalEighthsCleared": 4392,
       "noPanelsLabelsCleared": 0,
-      "boundaryGreyWithStop": 1409,
-      "boundaryGreyWithoutStop": 1309,
+      "boundaryGreyWithStop": 1378,
+      "boundaryGreyWithoutStop": 1281,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
