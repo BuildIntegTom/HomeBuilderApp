@@ -75,8 +75,14 @@ describe("the Settings menu's sections — U3", () => {
     expect(settingsMenuSections("admin")).toContain("panelizer");
   });
 
-  it("keeps the order units → site → panelizer → sandbox → admin", () => {
-    expect(settingsMenuSections("admin")).toEqual(["units", "site", "panelizer", "sandbox", "admin"]);
+  it("puts the Panelizer FIRST — panelizer → site → units → sandbox → admin", () => {
+    // ⚠ The order is the answer to "where is it?". Landing on the units switch
+    // when you opened Settings looking for the Panelizer is the same problem
+    // one level shallower, so the Panelizer leads and Site Properties follows
+    // it. Accepted as a review finding 2026-09-29; one line to reverse.
+    expect(settingsMenuSections("admin")).toEqual(["panelizer", "site", "units", "sandbox", "admin"]);
+    expect(settingsMenuSections("admin")[0]).toBe("panelizer");
+    expect(settingsMenuSections("public")[0]).toBe("panelizer");
   });
 
   it("⚠ never role-gates Site Properties or the Panelizer — every role sees both", () => {

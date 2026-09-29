@@ -396,7 +396,8 @@ export default function TopBar({
        the panelizer tab (speaking of which where is it? We should move the
        content of the panelizer into the settings in the top right)" — so
        Settings is where it lands, out of the right-hand tray's footer. Same
-       label, same route. Since U3 the Panelizer it names is directly above it.
+       label, same route. Since U3 the Panelizer it names is in this same note,
+       at the top of it.
 
        ⚠ It is still a NAVIGATION, exactly as it was in the tray: the sandbox
        is a whole separate calculation page, not a note. There is no

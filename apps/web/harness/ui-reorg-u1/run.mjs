@@ -1694,6 +1694,100 @@ const bisectBand = async (spec, predicateId, band, minWidth = 0) => {
   return hi;
 };
 
+console.log("6b. the Settings note's sections, read out of the DOM at all four roles");
+/**
+ * ⚠ THE ROLE-GATE HOLE, CLOSED AT THE DOM — added 2026-09-29 at U3's review.
+ *
+ * U3's named failure mode is the Panelizer ending up INSIDE the role-gated
+ * Admin Options group: the app's central control would simply stop existing
+ * for a signed-out visitor, with no error anywhere and nothing red.
+ *
+ * **`topBarMenus.test.ts` does not close that hole and cannot.** Its tests
+ * exercise a pure filter over a frozen five-element array of ids and have no
+ * view of JSX nesting whatsoever. Paste `{siteContent}` into TopBar's `admin:`
+ * entry and `settingsMenuSections("public")` still returns `"site"`, every one
+ * of those tests still passes, and `public` still loses Site Properties. What
+ * actually closes it is the `Record<SettingsSectionId, ReactNode>` shape — one
+ * entry per id, rendered as siblings — together with THIS check, which reads
+ * the live DOM at every role and compares it to the contract.
+ *
+ * ⚠ The expected lists are RESTATED here rather than imported, because a
+ * `.mjs` harness cannot import a `.ts` module — and the restatement is the
+ * point. Two independent statements of one list, one of them measured out of a
+ * running browser: if `SETTINGS_SECTION_IDS` changes, this goes red and has to
+ * be changed on purpose.
+ */
+const SETTINGS_SECTIONS_BY_ROLE = {
+  Public: ["panelizer", "site", "units", "sandbox"],
+  Fabricator: ["panelizer", "site", "units", "sandbox", "admin"],
+  Admin: ["panelizer", "site", "units", "sandbox", "admin"],
+  Engineer: ["panelizer", "site", "units", "sandbox", "admin"],
+};
+await setViewport(1440, 1000);
+await installToolkit();
+const settingsSectionsByRole = [];
+for (const role of ROLE_LABELS) {
+  await setRole(role);
+  await clickSelectorUntil(
+    '[data-bar-control="settings"]',
+    "the Settings menu",
+    `Boolean(document.querySelector('#settings-note [data-settings-section]'))`,
+  );
+  const reading = await evaluate(`(() => {
+    const note = document.getElementById('settings-note');
+    const sections = [...note.querySelectorAll('[data-settings-section]')];
+    const byId = (id) => note.querySelector('[data-settings-section="' + id + '"]');
+    const panelizer = byId('panelizer');
+    const site = byId('site');
+    const admin = byId('admin');
+    return {
+      sections: sections.map((e) => e.dataset.settingsSection),
+      panelizerPresent: !!panelizer,
+      sitePresent: !!site,
+      /* The hole stated directly, in the only terms that can see it: is the
+         relocated section a DESCENDANT of the role-gated group? The id list
+         cannot answer this; the DOM can. */
+      panelizerInsideAdmin: !!(panelizer && admin && admin !== panelizer && admin.contains(panelizer)),
+      siteInsideAdmin: !!(site && admin && admin !== site && admin.contains(site)),
+      scopeGroupInsideThePanelizer: !!note.querySelector('[data-settings-section="panelizer"] [aria-label="Scope of work"]'),
+    };
+  })()`);
+  settingsSectionsByRole.push({ role, want: SETTINGS_SECTIONS_BY_ROLE[role], ...reading });
+  await clickSelector('#settings-note button[title="Hide this note"]', "the Settings note's close button");
+  await sleep(300);
+}
+await setRole(ROLE_LABELS[0]);
+await clickSelectorUntil(
+  '[data-bar-control="settings"]',
+  "the Settings menu",
+  `Boolean(document.querySelector('#settings-note [data-settings-section]'))`,
+);
+await shot("06b-settings-sections-at-public");
+await clickSelector('#settings-note button[title="Hide this note"]', "the Settings note's close button");
+await sleep(300);
+record(
+  "the-settings-notes-sections-in-the-dom-match-settingsmenusections-at-every-role",
+  { byRole: settingsSectionsByRole, roles: settingsSectionsByRole.length },
+  // ORDER is included, not just membership: Panelizer FIRST is the answer to
+  // Tommy's "where is it?", so the right sections in the wrong order is a
+  // finding rather than a detail. `admin` is the only id ever withheld and it
+  // is withheld from `Public` alone — counted both ways so a gate that stopped
+  // gating and a gate that started over-gating both fail.
+  (d) =>
+    d.roles === 4 &&
+    d.byRole.every(
+      (r) =>
+        JSON.stringify(r.sections) === JSON.stringify(r.want) &&
+        r.panelizerPresent === true &&
+        r.sitePresent === true &&
+        r.panelizerInsideAdmin === false &&
+        r.siteInsideAdmin === false &&
+        r.scopeGroupInsideThePanelizer === true,
+    ) &&
+    d.byRole.find((r) => r.role === "Public").sections.includes("admin") === false &&
+    d.byRole.filter((r) => r.sections.includes("admin")).length === 3,
+);
+
 console.log("7. the thresholds, bisected in the browser");
 await setViewport(1440, 1000);
 await installToolkit();
@@ -2062,6 +2156,15 @@ await installToolkit();
    the open Design and View menus in step 5 — rather than from the retired
    baseline's key set. Deduplicated because a stop reachable from both menus
    would otherwise be walked twice. */
+/**
+ * ⚠ THE STOP COUNT, PINNED — it is the number `region3-baseline.json` used to
+ * hold by listing its 8 keys, and after that file was retired at U3 nothing
+ * else in this harness held it. Eight is `2D Floor Plan` + four wall
+ * elevations + `3D Boxes` + `3D Framed` + `Membranes` on the rectangle step 1
+ * draws. If a stop is legitimately added or removed, this number moves WITH
+ * the change and says so; it does not get to drift on its own.
+ */
+const EXPECTED_VIEW_STOPS = 8;
 const compared = [...new Set(allStopLabels)];
 for (const label of compared) {
   if (!(await selectStopByMenu(label))) throw new Error(`could not reach ${label} from the bar menus`);
@@ -2086,7 +2189,13 @@ for (const label of compared) {
 }
 record(
   "the-same-stop-reached-two-ways-leaves-region-3-byte-for-byte-identical",
-  { twoPath, comparedOn: "the full signature, digits included", stops: twoPath.length },
+  {
+    twoPath,
+    comparedOn: "the full signature, digits included",
+    stops: twoPath.length,
+    comparedLabels: compared,
+    expectedStops: EXPECTED_VIEW_STOPS,
+  },
   // THE SINGLE-WRITER TEST, HALF TWO, REBUILT. One design, one run, one
   // control — so the comparison can be exact rather than shape-only. Every stop
   // is visited directly and again after a detour through the OTHER menu, which
@@ -2094,7 +2203,15 @@ record(
   // first place. Any difference at all — a digit, a pressed state, a section
   // present one way and not the other — is `handleViewerStopChange` not being
   // the only writer, or not being idempotent about the flags it does not own.
-  (d) => d.stops >= 6 && d.twoPath.every((t) => t.identical === true),
+  // ⚠ A HARD PIN, NOT A FLOOR — restored 2026-09-29 at U3's review. The
+  // retired `region3-baseline` step asserted exactly its 8 keys; once it went,
+  // a `>= 6` floor was the only thing left holding the count, and a run that
+  // quietly walked two stops fewer would have gone green on every other
+  // assertion in this file. THE COUNT IS PART OF THE CHECK.
+  (d) =>
+    d.stops === EXPECTED_VIEW_STOPS &&
+    d.comparedLabels.length === EXPECTED_VIEW_STOPS &&
+    d.twoPath.every((t) => t.identical === true),
 );
 
 function firstDifferingLine(a, b) {

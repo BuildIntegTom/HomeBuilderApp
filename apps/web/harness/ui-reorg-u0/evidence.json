@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3230/",
-  "ranAt": "2026-09-29T16:53:41.700Z",
+  "app": "http://localhost:3311/",
+  "ranAt": "2026-09-29T20:50:20.865Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -127,13 +127,60 @@
       "inSettings": 1,
       "text": "Single Wall Run Calculation Sandbox →",
       "documentTotal": 1,
-      "onScreen": true,
+      "sandboxRouteStatus": 200,
+      "whenSettingsOpens": {
+        "inSettings": 1,
+        "link": {
+          "top": 1837,
+          "bottom": 1869,
+          "left": 868,
+          "right": 1233,
+          "width": 365,
+          "horizontallyWithinViewport": true,
+          "verticallyWithinViewport": false,
+          "withinTheNotesVisibleRegion": false,
+          "hitTestable": false
+        },
+        "note": {
+          "scrollTop": 0,
+          "scrollHeight": 1901,
+          "clientHeight": 630,
+          "scrolls": true,
+          "visibleTop": 94,
+          "visibleBottom": 724
+        },
+        "viewportHeight": 900
+      },
+      "visibleWithoutScrolling": false,
+      "afterScrollingTheNote": {
+        "inSettings": 1,
+        "link": {
+          "top": 692,
+          "bottom": 724,
+          "left": 868,
+          "right": 1233,
+          "width": 365,
+          "horizontallyWithinViewport": true,
+          "verticallyWithinViewport": true,
+          "withinTheNotesVisibleRegion": true,
+          "hitTestable": true
+        },
+        "note": {
+          "scrollTop": 1145,
+          "scrollHeight": 1901,
+          "clientHeight": 630,
+          "scrolls": true,
+          "visibleTop": 94,
+          "visibleBottom": 724
+        },
+        "viewportHeight": 900
+      },
+      "reachableByScrollingTheNote": true,
       "style": {
         "fontSize": "13px",
         "borderStyle": "solid",
         "padded": true
       },
-      "sandboxRouteStatus": 200,
       "asserted": true,
       "passed": true
     },

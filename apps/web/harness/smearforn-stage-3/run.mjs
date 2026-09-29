@@ -414,7 +414,14 @@ console.log("3. turning Roof on (a truss plate only exists when roof is in scope
  * would catch the move having lost the checkboxes rather than relocated
  * them. */
 const openPanelizer = async () => {
-  const alreadyOpen = await evaluate(`!!document.querySelector('[aria-label="Scope of work"]')`);
+  /* ⚠ SCOPED TO `#settings-note`, exactly like the post-open check below.
+     They disagreed until U3's review (2026-09-29): the guard looked for a
+     Scope of work group ANYWHERE in the document while the check that follows
+     insists on one inside Settings. Harmless while only Settings renders it —
+     and precisely the asymmetry the scoping was added to prevent, since an
+     unscoped guard would return early on a group found somewhere else and
+     leave every assertion below reading a control this harness never opened. */
+  const alreadyOpen = await evaluate(`!!document.querySelector('#settings-note [aria-label="Scope of work"]')`);
   if (alreadyOpen) return;
   await clickSelector('[data-bar-control="settings"]', "the Settings button");
   await sleep(800);

@@ -398,6 +398,19 @@
   border-top: 1px solid var(--bi-divider);
 }
 
+/* ⚠ The ⚙ Settings note renders its sections from `settingsMenuSections`, so
+   WHICH section is first changes with that list's order — and a section's
+   divider is there to separate it from what sits above it. The first one has
+   nothing above it, so it sheds the rule rather than drawing a stray line
+   across the top of the note. Scoped to the settings sections by their own
+   data attribute; every other note's `.menuSection` is unaffected. */
+.menuSection[data-settings-section]:first-child,
+.menuListAfterSection[data-settings-section]:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
 .menuItem:disabled {
   cursor: default;
   opacity: 0.6;
