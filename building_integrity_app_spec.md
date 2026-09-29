@@ -4892,7 +4892,7 @@ The engineer text truncates at 768 and below; the other three roles truncate onl
 ---
 
 
-## Top Bar & Navigation Reorganisation (2026-09-26) — **U0 BUILT 2026-09-27; U1 BUILT 2026-09-28 and REBUILT 2026-09-28/29 to Tommy’s re-drawn design, merged to main 2026-09-29 — read “U1 REBUILT as built”. THE TWELVE-ITEM SKETCH IS SUPERSEDED (see “Decisions of 2026-09-28”), and so is everything about the labelled bar, the fourth breakpoint and the surviving dial**; U2–U6 PLANNED
+## Top Bar & Navigation Reorganisation (2026-09-26) — **U0 BUILT 2026-09-27; U1 BUILT 2026-09-28 and REBUILT 2026-09-28/29 to Tommy’s re-drawn design, merged to main 2026-09-29 — read “U1 REBUILT as built”; U3 BUILT 2026-09-29 on a branch, not merged — read “U3 as built”. THE TWELVE-ITEM SKETCH IS SUPERSEDED (see “Decisions of 2026-09-28”), and so is everything about the labelled bar, the fourth breakpoint and the surviving dial**; U2–U6 PLANNED
 
 Tommy, 2026-09-26:
 
@@ -5190,7 +5190,7 @@ His answer: **Summary and Print fill the editor, and Walls/Floor/Roof/Foundation
 | **U0** ✅ **BUILT 2026-09-27** | **The left-bar icon cluster, and Single Wall Run into Settings.** Read Me, Report Bug (as a note, with the current-view line) and the Review Log icons beside the `?`; the sandbox link moves into Settings. **The tray stays**; nothing about the top bar changes. | **Yes — and this is the recommended early slice.** | That the cluster reads as a cluster at 240px and at 64px, and it gives the **Review Log a permanent front door before anything is deleted.** **Proved, with one measured deviation at 64px — decided acceptable by Tommy 2026-09-27, see "U0 as built" below.** |
 | **U1** ✅ **BUILT 2026-09-28** | **The label pattern + the Design/View split, WITH the measurement. ⇦ THE "PROVE THE NAVIGATION MODEL WORKS" STAGE.** Two bar menus over one `handleViewerStopChange`; the LABEL+Value owner rule; the sidebar keeps `ViewerDial` below the breakpoint; **the shed order measured and published** at 360/710/768/1200/1440/1600 × four companies × four roles. No content moves; Summary and Print are not yet pages. | Yes. | **The riskiest assumption in the plan: that twelve controls can share this bar without re-creating the 2026-09-13 overflow bug.** It is tested here, cheaply, before four sections depend on it. If it is false, it is false here, and the answer is a decision for Tommy with numbers in hand — not a workaround invented mid-build. |
 | **U2** | **Account absorbs Acting As and Role.** Two labelled groups in the account note; `roleDisclaimers` verbatim; the acting-as company **still legible on the bar** per §4's resolution. | Yes. | **Blocked on Tommy's explicit sign-off** — it reverses a documented safety decision (Open Items). |
-| **U3** | **Settings absorbs Site and Panelizer.** Straight relocation of `siteContent` and `panelizerContent`; catalog values move by reference. | Yes. | Answers *"where is it?"* permanently, and puts the keyhole one level deep instead of two. |
+| **U3** ✅ **BUILT 2026-09-29 — see "U3 as built"** | **Settings absorbs Site and Panelizer.** Straight relocation of `siteContent` and `panelizerContent`; catalog values move by reference. | Yes. | Answers *"where is it?"* permanently, and puts the keyhole one level deep instead of two. **⚠ It did NOT buy bar width — neither was ever a bar control — and the measurement says so.** |
 | **U4** | **Summary as a full page.** The `editorSurface` state; the drawing **hidden, not unmounted**; the four edit tabs stay live and return you to the drawing; his six sections plus the rest per §9. | Yes. | That leaving and returning preserves pan, zoom, the selected wall and the story — the thing §13 says a naive implementation breaks silently. |
 | **U5** | **Print as a full page, and ONLY NOW is the right sidebar deleted.** Every printable, `Export PDF`, `Choose sections`, `Page size`, the per-sheet `🖶`, the card colour coding; `SectionCarousel` and `.editorRightSpacer` removed; canvas gains 170px. | Yes. | **The tray is the safety net until here.** Nothing can become unreachable in an intermediate stage, because the old door is still open in every one of them. |
 | **U6** | **The printing customization editor.** Sheet order, per-sheet options, cover sheet — **its own plan when reached**, and it wants the numbered-continuation-sheet pagination under it first. | Yes, and it must be. | Least specified part of the request; see §14. |
@@ -5672,6 +5672,67 @@ Corrected, with the projection gated at ≥1200px exactly as the nav was: **the 
 - **✅ Whether Summary and Print are wanted on the bar — ANSWERED 2026-09-29 and BUILT as disabled placeholders**, a deliberate exception to the "no control that opens nothing" rule. What remains open about them: their ORDER, and whether *"maybe the print button opens and closes the right bar"* becomes a requirement (it interacts with U5, which deletes that sidebar).
 - **What names the current SUBJECT on screen at ≥1200px — nothing does, and Tommy has decided that is acceptable.** Recorded rather than left open, because it is the kind of gap a later reader will re-discover: see the 2026-09-29 sub-block.
 
+
+#### U3 as built — 2026-09-29 (Settings absorbs Site Properties and the Panelizer)
+
+Branched from `ac55a39`, the merge of the bare bar. **Not pushed and not merged.**
+
+**What shipped:** `siteContent` and `panelizerContent` render as two sections inside the ⚙ Settings note, **moved by reference** — `page.tsx` is not in the diff at all. The `site` and `panelizer` entries left the `OpenMenu` union with the two `StickyNote`s they opened (`site-properties-note`, `panelizer-note`) and the two Project-menu items that opened them. The Settings note's sections now render from `settingsMenuSections(role)`, a tested list, rather than from JSX order.
+
+Files: `TopBar.tsx`, `topBarMenus.ts` + its test. Harnesses: `smearforn-stage-3`, `ui-reorg-u0`, `ui-reorg-u1`.
+
+##### ⚠ IT BOUGHT NO BAR WIDTH, AND THE BRIEF EXPECTED THE OPPOSITE
+
+**Site Properties and the Panelizer were never bar controls.** They were `menuItem` buttons *inside* the Project note, two clicks deep, and `data-bar-control` has only ever named `project`, `design`, `view`, `summary`, `print`, `role`, `settings` plus the acting-as chip and the account control. So U3 removes nothing from the row.
+
+**Measured rather than argued:** `ui-reorg-u1`'s `evidence.json` was re-run after the move and compared step by step against the committed pre-U3 file. **Every width figure is byte-identical** — `perControlWidths`, `byWidth`, `naturalWidths`, `breakpointBands`, `companyNameFullyAbsent`, the per-control table, the 8×2×4×4 matrix. Natural row content is still **1084.8px / ~1124.8px of viewport**. Only two fields differ and neither is a measurement: the cold-click key (one click on the gear replaces two through Project) and a hashed CSS-module class name.
+
+**So the 768–891px band still renders ZERO characters of the acting-as company name, and U3 does not help it.** The 162.3px the Summary/Print placeholders cost is still spent and is still *"reversible by deleting two entries from `BAR_PLACEHOLDERS`"*. **⚠ That remains Tommy's to accept or reject; U3 changed nothing about it in either direction.**
+
+##### THE ACCEPTANCE CRITERION — the scope checkboxes still gate the Design menu, asserted three ways
+
+Moving the Panelizer is what satisfies his *"all floor, foundation, and roof options should be a checkbox toggle under settings"*, so the thing that had to be proved is that the checkboxes still drive `scopeOfWork` → `enabledEditorTabs` → the Design menu's subject groups from their new home. **The way that fails is silent**: the note still opens, the boxes still tick, and the menu simply stops changing.
+
+- **`ui-reorg-u1`, new assertion** — the Design menu's subject groups are read **twice**, at the default scope and again with all four ticked in ⚙ Settings, and each reading is compared to **the checkbox states it was taken under** rather than to a hard-coded list. Default scope offers exactly `wall`; all four ticked offers `wall, floor, roof, foundation`. One reading alone could pass by coincidence; two cannot.
+- **`smearforn-stage-0-1`** — a brand-new project still offers exactly one subject, read out of the Design menu (`stage0-new-project-tabs`, 12/12).
+- **`ui-reorg-u0`** — Roof ticked in its new Settings home, and `selectSubject("roof")` then reaches the Roof editor from the Design menu (`roofEnabled: "settings-open"`).
+
+##### The click path changed, and three harnesses were re-pointed deliberately
+
+The Panelizer is **one click** now (the ⚙, icon-only, located by `data-bar-control="settings"`), not two through `Project ▾ → Panelizer`. `smearforn-stage-3`'s `openPanelizer`, `ui-reorg-u0`'s roof-scope fixture and `ui-reorg-u1`'s cold-click pair were all changed to match, and each still asserts the same thing it did before — the Scope of work group, looked for **inside `#settings-note`** so a run that found it somewhere else fails rather than passing quietly. The Settings note's sections carry `data-settings-section` for this.
+
+##### ⚠ `region3-baseline.json` RETIRED, and it was still green when it was retired
+
+Done here, at the stage the decision named. The comparison step is gone from `ui-reorg-u1/run.mjs`; the surviving two-path test takes its stop list from the **menus** now and still walks all 8 stops byte-for-byte. **The file is kept — it cannot be re-made — and is never to be regenerated.**
+
+**It passed one last time first.** U3 touched none of the four view flags, so all 8 stops matched with zero differences, and that run is committed one commit before the removal. Recorded because "the check was retired" and "the check was failing" are different facts and only one of them is true here.
+
+##### Gates
+
+- `npx vitest run` **129 files / 2500 tests**, from `main`'s 129 / 2494: **+0 files, +6 tests**, all in the existing `apps/web/app/topBarMenus.test.ts`. No new test file.
+- `tsc --noEmit` clean in `apps/web`; `packages/geometry` clean except the two pre-existing `bracedPlacement.test.ts` errors (602, 644).
+- **Lint delta zero, including severity-1 warnings** — 119 errors / 48 warnings, and the rule+message+file map is byte-identical to the base's. The two warnings in `harness/smearforn-stage-*/run.mjs` are a pre-existing unused `observationOnly`.
+- **All six harnesses green**: `smearforn-stage-0-1` 12/12, `-2` all pass, `-2b` 14/14, `-3` all pass, `ui-reorg-u0` all pass, `ui-reorg-u1` every assertion passes (20 steps). `UI_REORG_U1_PROVE_FAILURE=1` re-run after the assertion changes: exits 1 and writes no evidence.
+
+##### Flags check — VERIFIED clean, not assumed
+
+The brief asked for this to be checked rather than assumed, because the Panelizer is the one surface where flagged `CatalogValue`/`CatalogRange` items live. **`page.tsx` and `packages/panel-catalog` are not in the diff at all** — the only app files changed are `TopBar.tsx`, `topBarMenus.ts` and its test, and the whole diff contains exactly one numeric literal in code (`<h3>`). So:
+
+1. **Real-world numbers in the diff: none.** Every figure is a layout measurement or a count of sections.
+2. **Nothing marked `confirmed`;** nothing marked at all.
+3. Notes trace to Tommy's quoted words or to a measurement in `evidence.json`.
+4. **No `PanelStructuralStatus` touched.**
+5. **Review log untouched** — nothing new reaches it, nothing leaves it.
+6. Open decisions still treated as provisional; see what is still open below.
+
+`seismicBracedPanelSpacingFt`, `bracedWallLineSpacingFt`, `groundScrewProductsStatus`, the `foundationTypes` vapor notes, `looseDensePackThicknessOptionsIn`, `targetDensityKgM3`, `fabricationMinPanelWidthIn`, `panelWidthInRange` and the *"Default 10ft (120in) is Panel Set 1's confirmed standard panel height"* note all **moved by reference and none changed**, which is a property of the diff rather than a claim about it.
+
+##### Still open after U3, and NOT answered here
+
+- **⚠ TOMMY'S CALL, carried forward unchanged: the company name is absent below 541px and again 768–891px.** U3 was expected to buy width back and did not, so nothing about that spend has improved. The two placeholders are still two array entries from being undone.
+- **Two presentational judgements flagged rather than claimed as his.** (a) The section ORDER inside Settings is `units, site, panelizer, sandbox, admin` — units first because it is one small control, the sandbox and Admin Options last because they are a departure and a role-gated group. (b) Each moved section is headed by the `<h2>` its own content already carried (`Site Properties`, `Panelizer`), rather than being given a new `menuSectionTitle` heading to match `Admin Options` — two headings for one section would have been noise, but the Settings note now mixes `<h2>` and `<h3>` heading levels. Both are reversible and neither is his decision yet.
+- **The Settings note is now long.** It scrolls inside `StickyNote`'s `max-height: 75vh`, which is what it did as two separate notes, but the Panelizer and Site Properties together are much taller than the units switch was. Whether that wants grouping, collapsing or a wider note is a design question nobody has been asked.
+- **The ⚙ zone's meaning changed and the comment says so.** The right-hand zone was documented as *"the things that change only how you look at it"*; it now holds the seismic zone, the foundation type and the scope of work. That is what Tommy asked for, and it is recorded rather than quietly contradicted — but if the zone should be renamed or re-drawn, this is the stage that made it worth asking.
 ---
 
 **→ `## Open Items`** — add these two lines to the doc's own global Open Items list:
