@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   computeGableTiledRow,
@@ -49,12 +49,31 @@ import {
   type MidWallBeam,
 } from "./midWallBeam";
 import { resolveSpanningHeaderHeightIn, spanningHeadersToGeometry, wallBandGeometry, type SpanningHeader } from "./spanningHeader";
+import {
+  ELEVATION_LEFT_MARGIN_PX,
+  ELEVATION_PX_PER_IN,
+  elevationSvgWidthPx,
+  fitHeightScale,
+  renderedDrawingSizePx,
+  steppedViewScale,
+  wheelZoomedViewScale,
+  zoomAnchorScrollDelta,
+} from "./elevationViewport";
 
-const CANVAS_WIDTH = 720;
-const PX_PER_IN = 1.6;
+// The drawing's own internal unit and margins live in `elevationViewport.ts`
+// with the fit/zoom maths and its tests — see that file's header for why the
+// 720px `CANVAS_WIDTH` cap that used to sit here is gone and why the scale is
+// now uniform on both axes.
+//
+// ⚠ FootprintCanvas.tsx, FoundationCanvas.tsx and FloorCanvas.tsx still carry
+// their own `CANVAS_WIDTH = 720` / `CANVAS_HEIGHT = 480` and have the same
+// underlying problem. They are deliberately NOT changed here: whether all
+// four canvases move to a fitted, scrollable viewport together is Tommy's
+// decision, not a side effect of fixing the elevation.
+const PX_PER_IN = ELEVATION_PX_PER_IN;
 const TOP_MARGIN_PX = 44; // 24 base + ~20 for the "Overall Width" dimension callout
 const BOTTOM_MARGIN_PX = 36;
-const LEFT_MARGIN_PX = 48;
+const LEFT_MARGIN_PX = ELEVATION_LEFT_MARGIN_PX;
 
 const SLOT_COLORS: Record<PanelSlot["type"], string> = {
   corner: "#8a8a8a",
@@ -494,39 +513,163 @@ export default function WallElevationDiagram({
   toolbarPortalTarget,
 }: WallElevationDiagramProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
-  // Pan/zoom view (Tommy: "include the pan/zoom in/out/reset pieces found
-  // in the plan view editor in the foundation and elevation editors") — a
-  // plain CSS transform on a wrapper div around the SVG, not a viewBox
-  // change, so every EXISTING drag handler in this file keeps working with
-  // no changes: each already derives its own scale ratio fresh per event
-  // from the SVG's real (possibly CSS-scaled) rendered width vs. its fixed
-  // internal svgWidthPx (see `pxPerScreenPx` throughout), which stays
-  // correct under any zoom/pan an ancestor applies. While `isPanning` is
-  // on, a transparent overlay rect (rendered last, on top of everything)
-  // captures the drag instead of touching any of those handlers — nothing
-  // else needs to know pan mode exists at all.
+  // Pan/zoom/scroll view (Tommy: "include the pan/zoom in/out/reset pieces
+  // found in the plan view editor in the foundation and elevation editors",
+  // and 2026-09-29: "the elevation viewers appear super small and do not
+  // have zoom or scroll capabilities").
+  //
+  // **This used to be a CSS transform on a wrapper inside `overflow:
+  // hidden`.** Zooming in therefore pushed the drawing off the edge with no
+  // scrollbars to bring it back — the only recovery was switching to Pan
+  // and dragging, which is why zoom read as "no zoom". It is now a real
+  // scrollable viewport: the SVG is given a real pixel size (fit x zoom) and
+  // the container scrolls it, so ordinary horizontal scrolling reaches a
+  // long wall and the scrollbars say the content is there.
+  //
+  // Every EXISTING drag handler in this file still needs no changes, for the
+  // same reason as before AND one new one: each derives its own ratio fresh
+  // per event from the SVG's real rendered width vs. its fixed internal
+  // svgWidthPx (see `pxPerScreenPx` throughout), which is exact under any
+  // rendered size — PROVIDED the drawing is scaled uniformly. It now is (see
+  // `scaleX` below); it was not before past ~33.75ft.
+  //
+  // While `isPanning` is on, a transparent overlay rect (rendered last, on
+  // top of everything) captures the drag and moves the scroll position
+  // instead of touching any of those handlers — nothing else needs to know
+  // pan mode exists at all.
+  //
   // Own local toggle, independent of FootprintCanvas's own same-named
   // showPanelLabels state (Tommy: keep this local rather than lifting a
   // shared toggle into page.tsx) — same "Panel ID Visibility" concept, just
   // not wired together.
   const [showPanelLabels, setShowPanelLabels] = useState(true);
-  const [viewOffset, setViewOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [viewScale, setViewScale] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [panDragging, setPanDragging] = useState(false);
-  const panStartRef = useRef<{ clientX: number; clientY: number; viewOffset: { x: number; y: number } } | null>(null);
-  const zoomIn = () => setViewScale((s) => Math.min(3, s * 1.25));
-  const zoomOut = () => setViewScale((s) => Math.max(0.25, s / 1.25));
-  const resetView = () => {
-    setViewOffset({ x: 0, y: 0 });
-    setViewScale(1);
+  const panStartRef = useRef<{ clientX: number; clientY: number; scrollLeft: number; scrollTop: number } | null>(null);
+  // The scrollable viewport the drawing lives in, and its measured box. The
+  // height is what "fit height" fits to, so it has to be observed rather
+  // than assumed — the editor is fullscreen and resizes with the window.
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [viewportSizePx, setViewportSizePx] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    // ⚠ Measured on the BORDER box (offsetWidth/offsetHeight), not the
+    // content box. A content-box measurement shrinks when a scrollbar
+    // appears, which would feed back into the fit — and for a wall whose
+    // drawing is only just wider than the viewport that is a genuine
+    // oscillation (scrollbar appears -> fit shrinks -> drawing fits ->
+    // scrollbar goes -> fit grows -> ...). The border box does not move when
+    // a scrollbar appears, and ELEVATION_FIT_SLACK_PX covers the scrollbar's
+    // own thickness.
+    const measure = () => {
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      setViewportSizePx((prev) => (prev.width === w && prev.height === h ? prev : { width: w, height: h }));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  // Pointer-anchored zoom: captured before the scale changes, applied after
+  // the element has been re-measured (see the layout effect below).
+  const zoomAnchorRef = useRef<{ fracX: number; fracY: number; clientX: number; clientY: number } | null>(null);
+  const captureZoomAnchor = (clientX: number, clientY: number) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const r = svg.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    zoomAnchorRef.current = { fracX: (clientX - r.left) / r.width, fracY: (clientY - r.top) / r.height, clientX, clientY };
   };
+  const zoomAboutViewportCentre = (direction: "in" | "out") => {
+    const el = viewportRef.current;
+    if (el) {
+      const r = el.getBoundingClientRect();
+      captureZoomAnchor(r.left + r.width / 2, r.top + r.height / 2);
+    }
+    setViewScale((s) => steppedViewScale(s, direction));
+  };
+  const zoomIn = () => zoomAboutViewportCentre("in");
+  const zoomOut = () => zoomAboutViewportCentre("out");
+  const resetView = () => {
+    zoomAnchorRef.current = null;
+    setViewScale(1);
+    const el = viewportRef.current;
+    if (el) {
+      el.scrollLeft = 0;
+      el.scrollTop = 0;
+    }
+  };
+  useLayoutEffect(() => {
+    const anchor = zoomAnchorRef.current;
+    zoomAnchorRef.current = null;
+    if (!anchor) return;
+    const el = viewportRef.current;
+    const svg = svgRef.current;
+    if (!el || !svg) return;
+    const r = svg.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    const { dxPx, dyPx } = zoomAnchorScrollDelta({
+      fracX: anchor.fracX,
+      fracY: anchor.fracY,
+      clientX: anchor.clientX,
+      clientY: anchor.clientY,
+      newLeftPx: r.left,
+      newTopPx: r.top,
+      newWidthPx: r.width,
+      newHeightPx: r.height,
+    });
+    el.scrollLeft += dxPx;
+    el.scrollTop += dyPx;
+  }, [viewScale]);
+  // Wheel handling. **Ctrl/Cmd + wheel zooms; a plain wheel scrolls.**
+  // Reasoning, since this is a deliberate choice: the default view scrolls
+  // HORIZONTALLY (a wall is long and short), so the wheel's primary job here
+  // is reaching the far end of the wall — and taking plain wheel for zoom
+  // would have left the app with a zoom gesture and no scroll gesture, which
+  // is the exact complaint this change exists to fix. Ctrl/Cmd+wheel is also
+  // what the browser itself, every map and every drawing tool already use
+  // for zoom. So: plain wheel scrolls the drawing (and when the drawing
+  // fits vertically — which it does by default — a vertical wheel is
+  // redirected to horizontal, so the gesture is never dead); Shift+wheel is
+  // the browser's own horizontal scroll and is left alone.
+  //
+  // Attached natively with `{ passive: false }` rather than via React's
+  // `onWheel`: React registers wheel listeners on the root as PASSIVE, so a
+  // `preventDefault()` from an `onWheel` handler is ignored and Ctrl+wheel
+  // would zoom the whole browser page instead of the drawing.
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        captureZoomAnchor(e.clientX, e.clientY);
+        setViewScale((s) => wheelZoomedViewScale(s, e.deltaY));
+        return;
+      }
+      if (e.shiftKey || e.deltaY === 0) return; // the browser's own horizontal scroll
+      const canScrollVertically = el.scrollHeight - el.clientHeight > 1;
+      const canScrollHorizontally = el.scrollWidth - el.clientWidth > 1;
+      if (!canScrollVertically && canScrollHorizontally) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+      }
+    };
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []);
   useEffect(() => {
     if (!panDragging) return;
     const handleMove = (e: MouseEvent) => {
       const start = panStartRef.current;
-      if (!start) return;
-      setViewOffset({ x: start.viewOffset.x + (e.clientX - start.clientX), y: start.viewOffset.y + (e.clientY - start.clientY) });
+      const el = viewportRef.current;
+      if (!start || !el) return;
+      // Drag right => the drawing follows the cursor right => scroll left.
+      el.scrollLeft = start.scrollLeft - (e.clientX - start.clientX);
+      el.scrollTop = start.scrollTop - (e.clientY - start.clientY);
     };
     const handleUp = () => setPanDragging(false);
     window.addEventListener("mousemove", handleMove);
@@ -703,13 +846,31 @@ export default function WallElevationDiagram({
     return { ...p, leftHeightIn: capped.leftEdgeHeightIn, rightHeightIn: capped.rightEdgeHeightIn, verticalGapIn: capped.verticalGapIn };
   });
   const maxHeightIn = hasGableEnd ? maxProfileHeightIn : roofBaseHeightIn;
-  const svgWidthPx = Math.min(CANVAS_WIDTH, LEFT_MARGIN_PX + wallWidthIn * PX_PER_IN + 24);
-  const scaleX = (svgWidthPx - LEFT_MARGIN_PX - 24) / wallWidthIn;
+  // ⚠ ONE UNIFORM SCALE, both axes. `scaleX` used to be
+  // `(svgWidthPx - margins) / wallWidthIn` against a hard 720px cap, so past
+  // ~33.75ft it fell below the vertical PX_PER_IN and the drawing rendered
+  // panels narrow-and-tall — on a 60ft wall, horizontal at 56% of vertical.
+  // A fabrication elevation must not lie about proportion, so the cap is
+  // gone and the drawing's real size on screen comes from the fit + zoom
+  // below instead. It stays a NAMED binding rather than being replaced by
+  // PX_PER_IN at its ~40 call sites so the X axis is still visibly its own
+  // thing (and so every `useEffect` dependency list keeps working).
+  const svgWidthPx = elevationSvgWidthPx(wallWidthIn);
+  const scaleX = PX_PER_IN;
   // A stopped wall needs one more line of room under the F.F.L for the
   // unbuilt span's own NO PANELS dimension. Conditional so that every wall
   // without a stop keeps the exact layout it has today.
   const bottomMarginPx = startStopIn > 0 || endStopIn > 0 ? BOTTOM_MARGIN_PX + 18 : BOTTOM_MARGIN_PX;
   const svgHeightPx = TOP_MARGIN_PX + maxHeightIn * PX_PER_IN + bottomMarginPx;
+
+  // Tommy's chosen default view, 2026-09-29: FIT HEIGHT, SCROLL WIDTH. The
+  // wall's full height fills the available editor height (less slack) and
+  // the length scrolls when it is longer than the viewport — chosen over
+  // "fit the whole wall" and over "fixed readable scale". `viewScale` (the
+  // Zoom buttons and Ctrl+wheel) multiplies the fit, so 100% means "fits
+  // the height" and Reset returns there.
+  const fitScale = fitHeightScale(viewportSizePx.height, svgHeightPx);
+  const rendered = renderedDrawingSizePx({ svgWidthPx, svgHeightPx, fitScale, viewScale });
 
   const yPx = (heightIn: number) => svgHeightPx - bottomMarginPx - heightIn * PX_PER_IN;
   const xPx = (posIn: number) => LEFT_MARGIN_PX + posIn * scaleX;
@@ -1574,16 +1735,25 @@ export default function WallElevationDiagram({
     color: active ? "#fff" : "#333",
     cursor: "pointer",
   });
-  const viewingToolbar = (
+  // Two presentations, one state (the same discipline `viewerMenus.ts` uses
+  // for the Design/View menus): the SIDEBAR copy is exactly what shipped
+  // before and is not removed, and a DOCK copy sits over the drawing itself,
+  // following the `.compassDock` / `.legendDock` precedent, because
+  // unlabelled icons at the top of a 240px scrolling side panel are not
+  // where anyone looks for zoom. The dock copy is the labelled one.
+  // ⚠ Two visible copies of the same row is a judgement call, not Tommy's
+  // decision — if he wants only one, deleting either is a one-line change.
+  const viewingToolbar = (variant: "sidebar" | "dock") => (
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
       <button
         type="button"
-        title="Pan: drag the canvas to pan around"
+        title="Pan: drag the drawing to move around it"
         aria-pressed={isPanning}
         onClick={() => setIsPanning((p) => !p)}
         style={iconButtonStyle(isPanning)}
       >
         <PanIcon />
+        {variant === "dock" && <span style={{ fontSize: 12, marginLeft: 4 }}>Pan</span>}
       </button>
       <button type="button" title="Zoom out" onClick={zoomOut} style={iconButtonStyle(false)}>
         <ZoomOutIcon />
@@ -1594,11 +1764,11 @@ export default function WallElevationDiagram({
       </button>
       <button
         type="button"
-        title="Reset pan and zoom to the default view"
+        title="Reset the view: fit the wall's full height to the window and scroll back to its start"
         onClick={resetView}
         style={{ ...iconButtonStyle(false), fontSize: 12, padding: "6px 10px" }}
       >
-        Reset
+        {variant === "dock" ? "Fit height" : "Reset"}
       </button>
       <button
         type="button"
@@ -1620,14 +1790,72 @@ export default function WallElevationDiagram({
   );
 
   return (
-    <div>
-      {toolbarPortalTarget ? createPortal(viewingToolbar, toolbarPortalTarget) : viewingToolbar}
-      <div style={{ width: "100%", maxWidth: svgWidthPx, overflow: "hidden" }}>
-        <div style={{ transform: `translate(${viewOffset.x}px, ${viewOffset.y}px) scale(${viewScale})`, transformOrigin: "0 0" }}>
+    // Fills the editor canvas area rather than floating a small drawing in
+    // the middle of it — `.editorCanvasLayer` is `flex: 1 1 auto; height:
+    // 100%` and centres its child, so `alignSelf: stretch` is what takes the
+    // height it was already offering. `position: relative` anchors the
+    // docked toolbar below.
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        alignSelf: "stretch",
+        position: "relative",
+        display: "flex",
+        flexDirection: "column",
+        minWidth: 0,
+        minHeight: 0,
+      }}
+    >
+      {toolbarPortalTarget ? createPortal(viewingToolbar("sidebar"), toolbarPortalTarget) : viewingToolbar("sidebar")}
+      <div
+        style={{
+          position: "absolute",
+          top: 8,
+          right: 8,
+          zIndex: 45,
+          background: "rgba(255,255,255,0.92)",
+          border: "1px solid #ddd",
+          borderRadius: 8,
+          padding: "6px 8px",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.12)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-end",
+          gap: 3,
+        }}
+      >
+        {viewingToolbar("dock")}
+        {/* The wheel is the one gesture with no button, so it gets a line of
+            its own — on a SECOND line rather than beside the buttons, which
+            made the dock wide enough to cover the whole "Overall Width"
+            dimension callout it floats over. */}
+        <span style={{ fontSize: 11, color: "#666" }}>Ctrl + scroll to zoom &middot; scroll to move along the wall</span>
+      </div>
+      {/* The real scrollable viewport. `overflow: auto` plus an SVG given a
+          real pixel size is what makes a zoomed or over-long drawing
+          reachable by ordinary scrolling — the previous `overflow: hidden`
+          plus a CSS transform made zoomed-in content unreachable except by
+          Pan. `margin: auto` on the child (rather than flex centring) is the
+          form that centres a SMALL drawing without making the overflowing
+          start of a LARGE one unscrollable. */}
+      <div
+        ref={viewportRef}
+        style={{ flex: "1 1 auto", minHeight: 0, minWidth: 0, overflow: "auto", display: "flex" }}
+      >
+        <div style={{ margin: "auto", flex: "0 0 auto" }}>
           <svg
             ref={svgRef}
             viewBox={`0 0 ${svgWidthPx} ${svgHeightPx}`}
-            style={{ width: "100%", maxWidth: svgWidthPx, height: "auto", background: "#fafafa", cursor: isPanning ? "grab" : undefined }}
+            width={rendered.widthPx}
+            height={rendered.heightPx}
+            style={{
+              display: "block",
+              width: rendered.widthPx,
+              height: rendered.heightPx,
+              background: "#fafafa",
+              cursor: isPanning ? "grab" : undefined,
+            }}
             role="img"
             aria-label={`Elevation view of wall ${wall.id}`}
           >
@@ -2252,7 +2480,13 @@ export default function WallElevationDiagram({
             fill="transparent"
             style={{ cursor: "grab", pointerEvents: "all" }}
             onMouseDown={(e) => {
-              panStartRef.current = { clientX: e.clientX, clientY: e.clientY, viewOffset: { ...viewOffset } };
+              const el = viewportRef.current;
+              panStartRef.current = {
+                clientX: e.clientX,
+                clientY: e.clientY,
+                scrollLeft: el?.scrollLeft ?? 0,
+                scrollTop: el?.scrollTop ?? 0,
+              };
               setPanDragging(true);
             }}
           />
