@@ -937,6 +937,160 @@ record(
     Math.abs(d.cleared.gableLengthIn - d.unstopped.gableLengthIn) < 0.01,
 );
 
+console.log("15. openings inside the unbuilt span are DROPPED, REMEMBERED and RESTORED");
+/**
+ * **The defect Tommy reported on 2026-09-29, driven end to end.**
+ *
+ * > *"i am having trouble building the seahorn project using the stop wall
+ * > tool. whenever i stop wall over a certain amount, for one wall this
+ * > boundary was 174", it says that the panel wall doesnt add up and will not
+ * > let me edit the layout how i need to"*
+ *
+ * `retileWithOpenings` kept every opening on the wall at full width no matter
+ * how short the stop made the run, because an `OpeningAnchor` carries an
+ * ORDINAL and not a position. Once the run was narrower than
+ * `Σ openings + Σ corners` — 174in on his wall, exactly those two totals —
+ * the slots summed to more than the wall and the sum-invariant backstop
+ * refused every further stop with a message about arithmetic.
+ *
+ * His decision, given three options, was **"Drop them, and remember"**. So
+ * what this step drives is all three halves of that: the opening leaves the
+ * built run, the app SAYS it was set aside rather than deleted, and clearing
+ * the stop puts the wall back panel for panel.
+ *
+ * The sweep is the part that pins the bug itself: at no stop anywhere along
+ * the wall may the "does not add back up" sentence appear again.
+ */
+await closeOpenNotes();
+await reachView((l) => l === `Elevation: ${targetWallId}`, `Elevation: ${targetWallId}`);
+await sleep(1200);
+// Step 14 left a gable end on this wall, and a gable window has its own,
+// entirely separate refusal (a stop may not cut one in half). Turning it back
+// off keeps this step measuring the ONE thing it is about.
+await evaluate(`(() => {
+  const label = [...document.querySelectorAll('label')].find((l) => l.textContent.trim().startsWith('Add Gable End'));
+  const box = label && label.querySelector('input[type="checkbox"]');
+  if (box && !box.disabled && box.checked) box.click();
+})()`);
+await sleep(1400);
+await commitStop("start", 0);
+await commitStop("end", 0);
+
+/** How many openings the app says the unbuilt span swallowed — read off its
+ * own sentence in the Stop Wall panel, so this measures what Tommy would
+ * actually be told, not an internal. 0 when the sentence is absent. */
+const withheldOpeningCount = async () =>
+  await evaluate(`(() => {
+    const t = document.body.innerText || "";
+    const m = /([0-9]+)\\s+(?:opening|openings)\\s+in the unbuilt span/.exec(t);
+    return m ? Number(m[1]) : 0;
+  })()`);
+
+/**
+ * How many slots on this wall are OPENINGS, read off the 3D model rather than
+ * off the drawing.
+ *
+ * The elevation gives every slot a width label and no type, so a DOM count
+ * cannot tell a window from a standard panel. The OBJ can: an opening
+ * assembly contributes `header_` and `sill_` members, and its group name
+ * carries the slot index (`${wallId}_${slotIndex}_${memberId}`). Counting
+ * distinct slot indices with those members counts openings exactly — and it
+ * counts them in the SAME model the cut list, the fabrication groups and the
+ * shop drawings are built from, which is the claim "an unbuilt section of
+ * wall has no window in it" actually needs.
+ */
+const openingSlotCount = (groups, wallId) => {
+  const slots = new Set();
+  for (const name of groups.keys()) {
+    const m = new RegExp(`^${wallId}_(\\d+)_(header|sill)_`).exec(name);
+    if (m) slots.add(m[1]);
+  }
+  return slots.size;
+};
+const captureOpeningSlots = async () => {
+  await reachView((l) => l === "3D Framed", "3D Framed");
+  await sleep(2400);
+  const n = openingSlotCount(parseObjGroups(await captureObj()), targetWallId);
+  await reachView((l) => l === `Elevation: ${targetWallId}`, `Elevation: ${targetWallId}`);
+  await sleep(1200);
+  return n;
+};
+
+const memoryBaseWidths = await panelWidths();
+const memoryBaseEighths = sumEighths(memoryBaseWidths);
+const openingSlotsBefore = await captureOpeningSlots();
+await shot("14-openings-before-stop");
+// Stops are swept from the START end: the default opening seed anchors a
+// wall's window at a low ordinal, so that is the end whose span actually has
+// something in it. A sweep with nothing in the way proves nothing, which is
+// what expectation 3 below exists to catch.
+const sweep = [];
+for (const fraction of [0.15, 0.3, 0.45, 0.6, 0.75]) {
+  const stopIn = Math.round(memoryBaseEighths * fraction) / 8;
+  await commitStop("start", stopIn);
+  const field = await stopField("start");
+  const widths = await panelWidths();
+  sweep.push({
+    stopIn,
+    invalid: field?.invalid ?? null,
+    message: field?.message ?? null,
+    totalEighths: sumEighths(widths),
+    withheldOpenings: await withheldOpeningCount(),
+  });
+}
+// The deepest stop the app accepted — where the most has been set aside.
+const deepest = [...sweep].filter((s) => s.invalid === false).sort((a, b) => b.stopIn - a.stopIn)[0] ?? null;
+let openingSlotsStopped = null;
+if (deepest) {
+  await commitStop("start", deepest.stopIn);
+  openingSlotsStopped = await captureOpeningSlots();
+}
+await shot("15-openings-dropped-by-stop");
+// Back to a whole wall, and the openings must come back.
+await commitStop("start", 0);
+const restoredWidths = await panelWidths();
+const restoredWithheld = await withheldOpeningCount();
+const openingSlotsRestored = await captureOpeningSlots();
+await shot("16-openings-restored");
+record(
+  "openings-in-the-unbuilt-span-are-dropped-remembered-and-restored",
+  {
+    baseEighths: memoryBaseEighths,
+    basePanelCount: memoryBaseWidths.length,
+    openingSlotsBefore,
+    sweep,
+    deepestAcceptedStopIn: deepest?.stopIn ?? null,
+    openingSlotsStopped,
+    restoredEighths: sumEighths(restoredWidths),
+    restoredPanelCount: restoredWidths.length,
+    restoredWithheld,
+    openingSlotsRestored,
+  },
+  (d) =>
+    // 0. Not vacuous: this wall has openings on it in the first place.
+    d.openingSlotsBefore >= 1 &&
+    // 1. THE BUG. The sentence Tommy was shown never appears again, at any
+    //    stop anywhere along this wall.
+    d.sweep.every((s) => !/add back up/i.test(String(s.message ?? ""))) &&
+    // 2. Every stop the app accepted still conserves the wall exactly, in
+    //    eighths — the invariant that was breaking.
+    d.sweep
+      .filter((s) => s.invalid === false)
+      .every((s) => s.totalEighths + Math.round(s.stopIn * 8) === d.baseEighths) &&
+    // 3. An opening really did leave the BUILT MODEL — not just the drawing —
+    //    and the app said so in words rather than swallowing it silently.
+    d.deepestAcceptedStopIn !== null &&
+    d.openingSlotsStopped !== null &&
+    d.openingSlotsStopped < d.openingSlotsBefore &&
+    d.sweep.some((s) => s.invalid === false && s.withheldOpenings >= 1) &&
+    // 4. And clearing the stop gives every one of them back, with nothing
+    //    left withheld. "Remembered, not deleted", measured.
+    d.restoredWithheld === 0 &&
+    d.restoredEighths === d.baseEighths &&
+    d.restoredPanelCount === d.basePanelCount &&
+    d.openingSlotsRestored === d.openingSlotsBefore,
+);
+
 record(
   "no-uncaught-exceptions",
   { count: pageExceptions.length, first: pageExceptions[0] ?? null },

@@ -3,6 +3,7 @@ import type {
   BoxBeamCoverage,
   Footprint,
   GableWindowReservation,
+  OpeningAnchor,
   PanelSlot,
   RoofBearingAnchorMode,
   Story,
@@ -361,6 +362,32 @@ export interface ProjectState {
    * record) means a fully panelized wall, which is today's behaviour and
    * every existing file's. */
   wallRunStopsByWallId?: Record<string, WallRunStop>;
+  /** Smearforn Stage 3's run-stop opening memory (Tommy, 2026-09-29, choosing
+   * between three ways to handle an opening a stop swallows: **"Drop them,
+   * and remember"** — *"Openings in the stopped-off part are removed from the
+   * built run, but stored so they come straight back if you un-stop the wall.
+   * Physically honest — an unbuilt section has no windows — and
+   * non-destructive."*).
+   *
+   * Per story, per wall: the `OpeningAnchor`s an unbuilt span swallowed. They
+   * are not in `baseWallSlots`/`stories[].wallSlots` at all — an unbuilt
+   * section of wall has no window in it, so nothing derived from slots (cut
+   * list, fabrication groups, shop drawings, price, weight) sees them — and
+   * they are not deleted either: reducing or clearing the stop hands them
+   * back to the tiler and the wall comes back exactly as it was.
+   *
+   * **Optional, and therefore NOT a `PROJECT_FILE_VERSION` bump**, by this
+   * file's own stated rule: it is an additive optional key with ONE shared
+   * default — absent (every file ever saved) means nothing was ever withheld,
+   * which is byte-identical to today's behaviour. See the v24->v25 note above,
+   * which states the rule and names `wallReviewNotes`,
+   * `gableWindowAnchorsByWallId`, `maxPanelHeightIn` and
+   * `spanningHeadersByStoryAndWallId` as precedents. Deliberately NOT added to
+   * `REQUIRED_STATE_KEYS` for the same reason: requiring it would make every
+   * project file that predates today unopenable, and this key's absence has an
+   * unambiguous meaning. It still needs a classification in
+   * `cloud/redaction.ts`, which it has (`not-money`). */
+  unbuiltOpeningsByStoryAndWallId?: Record<"ground" | "second", Record<string, OpeningAnchor[]>>;
   /** Engineer role's own per-wall attributed notes (Tommy's Engineer Lens
    * mockup: a free-text note signed "- Eng. Smith") — see
    * wallReviewNotes.ts's own doc comment on why this is a separate concept
@@ -716,6 +743,30 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
               second:
                 (state.spanningHeadersByStoryAndWallId as Partial<Record<"ground" | "second", Record<string, SpanningHeader[]>>>).second ??
                 {},
+            },
+          }
+        : {}),
+      // Stage 3's opening memory. Absent — every file saved before today, at
+      // v25 or at v24 — means nothing was ever withheld from a run, which is
+      // byte-identical to today's behaviour, so this is an additive optional
+      // key and NOT a version bump (see its own doc comment, and the v24->v25
+      // note, which states that rule).
+      //
+      // **Absent stays ABSENT**, for the same reason
+      // `spanningHeadersByStoryAndWallId` above does: a load of a file without
+      // the key must produce the state that file describes, or a round trip
+      // stops being an identity. Where it IS present both halves are
+      // normalized, so a file carrying only `ground` can never hand a consumer
+      // an undefined `second`.
+      ...(state.unbuiltOpeningsByStoryAndWallId
+        ? {
+            unbuiltOpeningsByStoryAndWallId: {
+              ground:
+                (state.unbuiltOpeningsByStoryAndWallId as Partial<Record<"ground" | "second", Record<string, OpeningAnchor[]>>>)
+                  .ground ?? {},
+              second:
+                (state.unbuiltOpeningsByStoryAndWallId as Partial<Record<"ground" | "second", Record<string, OpeningAnchor[]>>>)
+                  .second ?? {},
             },
           }
         : {}),

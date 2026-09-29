@@ -728,11 +728,31 @@ record(
 console.log("7. the context line on an elevation, on Membranes, and on the Roof subject");
 await setViewport(1400, 1000);
 await send("Page.navigate", { url: APP_URL }, sid);
-await sleep(9000);
-const canvasBox = await evaluate(
-  `(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`,
-);
-if (!canvasBox) throw new Error("no canvas — are you on localhost rather than 127.0.0.1?");
+/**
+ * ⚠ **Waited FOR, not waited OUT.** This used to be a flat `sleep(9000)`, and
+ * on a busy machine the dev server's own compile of this reload lands a little
+ * past that — the canvas mounted at about 6s on one run and past 9s on the
+ * next three, and the harness died here with "no canvas — are you on localhost
+ * rather than 127.0.0.1?", which sends the next person to look at the URL
+ * scheme instead of at the clock. Measured 2026-09-29: three consecutive
+ * failures at 9s on the same build that passes here.
+ *
+ * Polling changes no assertion — every check below still runs against the same
+ * page — it only stops a slow reload being reported as a missing canvas. The
+ * ceiling is still a real failure if it is reached.
+ */
+const readCanvasBox = async () =>
+  await evaluate(
+    `(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`,
+  );
+let canvasBox = null;
+for (let waitedMs = 0; waitedMs < 40000 && !canvasBox; waitedMs += 1000) {
+  await sleep(1000);
+  canvasBox = await readCanvasBox();
+}
+if (!canvasBox) throw new Error("no canvas after 40s — are you on localhost rather than 127.0.0.1?");
+// The canvas element can mount a beat before the editor finishes laying out.
+await sleep(2000);
 const [cx, cy, cw, ch] = canvasBox;
 const x0 = cx + 60, y0 = cy + 80, x1 = cx + cw - 80, y1 = cy + ch - 120;
 await mouse("mousePressed", x0, y0);

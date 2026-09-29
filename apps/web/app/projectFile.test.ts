@@ -178,6 +178,69 @@ describe("serializeProject / parseProjectFile round-trip", () => {
     });
   });
 
+  /**
+   * Smearforn Stage 3's run-stop opening memory (Tommy, 2026-09-29: **"Drop
+   * them, and remember"**), which is deliberately NOT a version bump either,
+   * and for exactly the argument above: absent means nothing was ever
+   * withheld, which is what every file ever saved meant.
+   *
+   * The second test is the one that carries the promise. A remembered window
+   * is only worth remembering if every field survives the trip to disk and
+   * back — a width without its height and sill is not the window Tommy drew.
+   */
+  describe("unbuiltOpeningsByStoryAndWallId (Stage 3's opening memory)", () => {
+    it("is absent after a round trip when the file never had it", () => {
+      const state = makeState();
+      expect(state.unbuiltOpeningsByStoryAndWallId).toBeUndefined();
+      const result = parseProjectFile(JSON.stringify(serializeProject(state)));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect("unbuiltOpeningsByStoryAndWallId" in result.state).toBe(false);
+      expect(result.state).toEqual(state);
+    });
+
+    it("round-trips every field of a withheld opening, not just its width", () => {
+      const withheld = {
+        beforeStandardCount: 3,
+        type: "big-header" as const,
+        widthIn: 61.5,
+        heightIn: 60,
+        sillHeightIn: 36,
+        includeSillOnBigHeader: true,
+        zones: [{ type: "standard" as const, heightIn: 60, sillHeightIn: 36 }],
+      };
+      const state = makeState({
+        unbuiltOpeningsByStoryAndWallId: { ground: { AB: [withheld] }, second: {} },
+      });
+      const result = parseProjectFile(JSON.stringify(serializeProject(state)));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.unbuiltOpeningsByStoryAndWallId).toEqual({ ground: { AB: [withheld] }, second: {} });
+    });
+
+    it("normalizes a half-written record rather than handing a consumer an undefined story", () => {
+      const file = serializeProject(makeState());
+      const halfWritten = {
+        ...file,
+        state: { ...file.state, unbuiltOpeningsByStoryAndWallId: { ground: { AB: [] } } },
+      };
+      const result = parseProjectFile(JSON.stringify(halfWritten));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.unbuiltOpeningsByStoryAndWallId).toEqual({ ground: { AB: [] }, second: {} });
+    });
+
+    it("does not move PROJECT_FILE_VERSION — an additive optional key needs no bump", () => {
+      // Stated in projectFile.ts's own v24->v25 note and asserted here so the
+      // claim cannot drift: a file written with the new key is still a v25
+      // file, and a v25 file written without it still opens.
+      expect(PROJECT_FILE_VERSION).toBe(25);
+      const withKey = serializeProject(makeState({ unbuiltOpeningsByStoryAndWallId: { ground: {}, second: {} } }));
+      expect(withKey.schemaVersion).toBe(25);
+      expect(parseProjectFile(JSON.stringify(withKey)).ok).toBe(true);
+    });
+  });
+
   it("round-trips a null footprint (nothing drawn yet)", () => {
     const state = makeState({ footprint: null, primaryCornerIds: new Set() });
     const result = parseProjectFile(JSON.stringify(serializeProject(state)));

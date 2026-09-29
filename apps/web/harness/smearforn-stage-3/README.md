@@ -63,6 +63,7 @@ checks. The baseline step now asserts it found walls at all.
 | 11 | Clearing the stop restores the elevation total, the plan, and the plate |
 | 12 | A stop leaving a run under the 24in fabrication minimum is **refused**, and the wall is untouched |
 | 13 | A stop that **reaches a corner the wall owns** is **accepted**, and a neighbour really does grow by a wall thickness — the orphan corner, end to end. The neighbour is measured off the 3D scene, because the elevation only shows one wall. |
+| 15 | **Openings in the unbuilt span are dropped, remembered and restored** (Tommy, 2026-09-29: "Drop them, and remember"). Sweeps the stop along the wall: the "does not add back up" sentence never appears again, every accepted stop still conserves the wall to the eighth, at least one really does swallow an opening and the app says so, and clearing the stop gives the wall back panel for panel with nothing withheld. |
 | — | No uncaught exception anywhere in the run |
 
 ## Two real defects this found that unit tests had not
@@ -79,3 +80,20 @@ checks. The baseline step now asserts it found walls at all.
    (openings anchored into a budget too small for them) instead of saying
    the run was too short. The too-short band is now checked directly and up
    front.
+
+## The third defect, found in the field rather than here — 2026-09-29
+
+Tommy, building the Rogers-Sehorn ADU: *"whenever i stop wall over a certain
+amount, for one wall this boundary was 174", it says that the panel wall
+doesnt add up and will not let me edit the layout how i need to"*.
+
+The same downstream message as (2) above, but reached from a direction the
+harness was not driving: **not a run that is too short in itself, but a run
+that is too short for the openings still reserved on it.** Every opening on
+the wall was kept at full width no matter how much the stop removed, because
+an `OpeningAnchor` carries an ordinal and not a position. His 174in is that
+wall's own `Σ opening widths + Σ corner panel widths`, and below it the slots
+summed to more than the wall.
+
+Step 15 is the regression pin, and it exists because steps 6-13 could all pass
+on a wall the user could not actually stop.

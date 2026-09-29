@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3218/",
-  "ranAt": "2026-09-29T14:43:21.005Z",
+  "app": "http://localhost:3214/",
+  "ranAt": "2026-09-29T18:06:51.740Z",
   "stopIn": 60,
   "steps": [
     {
@@ -66,7 +66,7 @@
     },
     {
       "name": "drag-still-lands-and-conserves-the-run",
-      "strips": 10,
+      "strips": 9,
       "totalEighthsBeforeDrag": 3912,
       "totalEighthsAfterDrag": 3912,
       "changed": true,
@@ -108,8 +108,8 @@
       "name": "clearing-the-stop-restores-elevation-plan-and-3d",
       "totalEighthsCleared": 4392,
       "noPanelsLabelsCleared": 0,
-      "boundaryGreyWithStop": 1378,
-      "boundaryGreyWithoutStop": 1281,
+      "boundaryGreyWithStop": 1403,
+      "boundaryGreyWithoutStop": 1307,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
@@ -158,6 +158,57 @@
         "gableLengthIn": 500,
         "wallStartIn": 15.5
       },
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "openings-in-the-unbuilt-span-are-dropped-remembered-and-restored",
+      "baseEighths": 4516,
+      "basePanelCount": 15,
+      "openingSlotsBefore": 1,
+      "sweep": [
+        {
+          "stopIn": 84.625,
+          "invalid": false,
+          "message": null,
+          "totalEighths": 3839,
+          "withheldOpenings": 0
+        },
+        {
+          "stopIn": 169.375,
+          "invalid": false,
+          "message": null,
+          "totalEighths": 3161,
+          "withheldOpenings": 1
+        },
+        {
+          "stopIn": 254,
+          "invalid": false,
+          "message": null,
+          "totalEighths": 2484,
+          "withheldOpenings": 1
+        },
+        {
+          "stopIn": 338.75,
+          "invalid": true,
+          "message": "That leaves a 225¾\" run, which cannot be panelized without a panel under the 24\" minimum the shop can build. Stop less of the wall, or stop all 47'-0½\" of it. (Esc to revert)",
+          "totalEighths": 2484,
+          "withheldOpenings": 1
+        },
+        {
+          "stopIn": 423.375,
+          "invalid": false,
+          "message": null,
+          "totalEighths": 1129,
+          "withheldOpenings": 1
+        }
+      ],
+      "deepestAcceptedStopIn": 423.375,
+      "openingSlotsStopped": 0,
+      "restoredEighths": 4516,
+      "restoredPanelCount": 15,
+      "restoredWithheld": 0,
+      "openingSlotsRestored": 1,
       "asserted": true,
       "passed": true
     },
