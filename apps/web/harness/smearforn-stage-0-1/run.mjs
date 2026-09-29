@@ -215,14 +215,30 @@ await send("Page.navigate", { url: APP_URL }, sid);
 // looked like "12x is simply too slow to test at"; it was this one sleep.
 await sleep(9000 * Math.max(1, Math.round(CPU_THROTTLE / 2)));
 
-// Stage 0: a brand-new project has Foundation OFF, so the nav offers Wall only.
-const navTabs = await evaluate(`(() => {
-  const nav = document.querySelector('nav') || document.body;
-  return [...nav.querySelectorAll('button, a')].map((e) => e.textContent.trim()).filter((t) => ['Wall','Foundation','Floor','Roof'].includes(t));
-})()`);
-// Stage 0's whole point: Foundation, Floor and Roof are off for a new
-// project, so the nav offers exactly one branch.
-record("stage0-new-project-tabs", { navTabs }, (d) => d.navTabs.length === 1 && d.navTabs[0] === "Wall");
+/**
+ * The view control, and — since the two axes merged — the scope control too.
+ *
+ * ⚠ IT HAS MOVED TWICE IN ONE DAY, AND THIS HARNESS NEVER KNEW THE WIDTH. U1
+ * (2026-09-28) made the sidebar dial the below-breakpoint form and put Design
+ * and View menus on the top bar above it; later the same day Tommy removed the
+ * dial outright and folded the four editor tabs into the Design menu. This
+ * harness does not set a viewport width — it takes whatever Chrome was launched
+ * with — so locators written against either control directly would have
+ * returned null SILENTLY. The shared driver next door reads what is on screen
+ * and throws with what it saw when it cannot get somewhere.
+ */
+const view = makeViewStopControl({ evaluate, sleep });
+
+/* Stage 0: a brand-new project has Floor, Roof and Foundation OFF.
+   ⚠ THIS USED TO COUNT THE BAR'S NAV TABS. They were removed on 2026-09-28
+   when Tommy merged the two axes, so the subjects are groups inside the Design
+   menu — and the old reader, which fell back to `document.body` when it found
+   no `<nav>`, would have returned an empty list and failed while looking like
+   Stage 0 having broken. It reads the merged menu now, through the shared
+   driver, which throws if that menu is empty rather than reporting a scope of
+   nothing. Same claim, same default, read where the user now reads it. */
+const scopeSubjects = await view.subjectsOffered();
+record("stage0-new-project-tabs", { scopeSubjects }, (d) => d.scopeSubjects.length === 1 && d.scopeSubjects[0] === "wall");
 await shot("00-stage0-new-project-wall-only");
 
 // Panelizer: the four scope checkboxes, Foundation among them and unchecked.
@@ -296,19 +312,6 @@ await sleep(80);
 await mouse("mouseReleased", x1, y1);
 await sleep(1200);
 await shot("01-footprint-drawn");
-
-/**
- * The view control, whichever one is on screen.
- *
- * ⚠ U1 (2026-09-28) made the sidebar dial the BELOW-1200px form and put
- * Design and View menus on the top bar at 1200px and up. This harness does
- * not set a viewport width — it takes whatever Chrome was launched with — so
- * it can legitimately run on either side of that line, and locators written
- * against the dial alone would have returned null SILENTLY. The shared driver
- * next door asks the page which form is live and throws with what it saw when
- * it cannot get somewhere.
- */
-const view = makeViewStopControl({ evaluate, sleep });
 
 /**
  * The current stop, e.g. "Elevation: North (AB)".

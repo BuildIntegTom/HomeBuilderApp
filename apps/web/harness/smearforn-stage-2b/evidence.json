@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3218/",
-  "ranAt": "2026-09-28T15:03:39.400Z",
+  "ranAt": "2026-09-29T03:18:48.154Z",
   "steps": [
     {
       "name": "baseline-3d-found-real-walls-and-slots",
@@ -97,13 +97,13 @@
     },
     {
       "name": "deleting-a-panel-left-of-the-header-moves-its-range-not-its-span",
-      "deleteNotice": "Deleted a panel on wall AB: 15 panels → 14, 12 still automatic. Spanning header H1 still spans its panels, but those panels are now a different width: it is cut 82⅜\" instead of 80\".",
+      "deleteNotice": "Deleted a panel on wall AB: 15 panels → 14, 12 still automatic. Spanning header H1 still spans its panels, but those panels are now a different width: it is cut 84¾\" instead of 80\".",
       "startBefore": 2,
       "startAfter": 1,
       "endBefore": 4,
       "endAfter": 3,
       "spanBeforeIn": 80,
-      "spanAfterIn": 82.375,
+      "spanAfterIn": 84.75,
       "asserted": true,
       "passed": true
     },
@@ -120,10 +120,10 @@
       "name": "3d-draws-the-header-over-exactly-the-panels-it-spans",
       "headerGroups": 18,
       "headerExtent": {
-        "lengthIn": 82.375,
+        "lengthIn": 84.75,
         "vertices": 144
       },
-      "coveredRunLengthIn": 82.375,
+      "coveredRunLengthIn": 84.75,
       "alignmentIn": 0,
       "asserted": true,
       "passed": true
@@ -142,8 +142,8 @@
       "name": "both-halves-of-the-cross-reference-are-on-paper",
       "headerSheetStatesItsWall": true,
       "panelSheetNamesTheHeader": true,
-      "headerSheetSample": "Building IntegrityActing asNot signed inSign in ▼Project ▼Design ▼View 3D Framed ▼WallRole: Fabricator ▼▲3D Framed▼⤢▲Wall▼OrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Spanning Header 82.4in (1)🖶⤢×Fabricator/detailer document — one sheet per unique spanning header (exact copies grouped together). It",
-      "panelSheetSample": "Building IntegrityActing asNot signed inSign in ▼Project ▼Design ▼View 3D Framed ▼WallRole: Fabricator ▼▲3D Framed▼⤢▲Wall▼OrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Standard 42.375in (1)🖶⤢×Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with a to-scale l",
+      "headerSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼Role: Fabricator ▼⤢▲Wall▼OrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Spanning Header 84.8in (1)🖶⤢×Fabricator/detailer document — one sheet per unique spanning header (exact copies grouped together). Its name comes from a single building-wide H ",
+      "panelSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼Role: Fabricator ▼⤢▲Wall▼OrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Standard 42.375in (2)🖶⤢×Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with a to-scale lettered elevation, a materials cut list, wh",
       "asserted": true,
       "passed": true
     },

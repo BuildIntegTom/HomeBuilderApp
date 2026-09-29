@@ -21,7 +21,7 @@
  *      the mailto: address is the route's address, and the note carries the
  *      user agent NOWHERE (it is context, not telemetry)
  *   4. the context line names the right surface on plan, on an elevation, on
- *      Membranes and on the Roof tab (where the view dial is disabled and the
+ *      Membranes and on the Roof subject (where no view stop is on screen and the
  *      line must name only the tab)
  *   5. the Read Me icon opens a note carrying the route's liability statement
  *      verbatim and a QR still wide enough to scan
@@ -295,43 +295,49 @@ const openIcon = async (label) => {
  * from the canvas (Stage 0/1's lesson: four views of one wall once counted as
  * four walls).
  *
- * ⚠ U1 (2026-09-28) made the sidebar dial the BELOW-1200px form of the view
- * control and put Design and View menus on the top bar at 1200 and up. **This
- * harness drives the editor at 1280 and 1400**, so from U1 onward there is no
- * dial on screen for most of this run: the old locator returned null, which
- * would have failed `footprint-drawn` and every context-line assertion while
- * looking exactly like U0 having broken. It had not — the control moved,
- * precisely as U1's plan said it would, and this file is one of the sets of
- * locators that plan lists as in-scope for U1 rather than as a follow-up.
+ * ⚠ THE CONTROLS THIS HARNESS DRIVES HAVE MOVED TWICE, and neither move
+ * changed a single thing it ASSERTS.
  *
- * Nothing this harness ASSERTS has changed. The shared driver next door asks
- * the page which form is live, so each step below still checks the same thing
- * through whichever control the width in force actually shows — including the
- * context line's `Wall — 2D Floor Plan` / `Wall — Membranes` strings, which
- * U1 deliberately did not rename (the `2D Floor Plan` → `Plan View` rename is
- * an open question for Tommy, not a coder's call).
+ * U1 (2026-09-28) made the sidebar dial the below-breakpoint form of the view
+ * control and put Design and View menus on the top bar above it. **This harness
+ * drives the editor at 1280 and 1400**, so the old dial locator returned null
+ * there — which would have failed `footprint-drawn` and every context-line
+ * assertion while looking exactly like U0 having broken. It had not; the control
+ * had moved, and these locators were in scope for the stage that moved them.
+ *
+ * Later the same day Tommy removed the dial outright and merged the four editor
+ * tabs into the Design menu, so **two** of this file's locators were stale: the
+ * dial, and `nav[aria-label="Editor"]`, which this run used to click the Roof
+ * and Wall tabs. Both now go through the shared driver next door
+ * (`view.selectSubject`), which is the whole reason it exists — five harnesses
+ * sharing one set of locators rather than five copies to find one at a time.
+ *
+ * Still asserted, unchanged: the context line's `Wall — 2D Floor Plan` /
+ * `Wall — Membranes` strings, which are deliberately NOT renamed (the
+ * `2D Floor Plan` → `Plan View` rename is an open question for Tommy, not a
+ * coder's call).
  */
 const view = makeViewStopControl({ evaluate, sleep });
-const dialLabel = async () => await view.currentLabel();
+const stopLabel = async () => await view.currentLabel();
 
 /**
- * One step down the dial, VERIFIED.
+ * One step to the next view stop, VERIFIED.
  *
- * ⚠ The first version just clicked where the ▼ was, and lost six clicks in a
- * row: opening an icon's note scrolls the sidebar (the icons are at its bottom,
- * the dial at its top), so the dial's rect was above the sidebar's visible box
- * and every click landed on the top bar instead. The dial label never changed
- * and the run reported "Membranes unreachable" — a locator problem wearing a
- * feature problem's clothes, which is this repo's own recorded lesson.
+ * ⚠ The first version just clicked where the dial's ▼ was, and lost six clicks
+ * in a row: opening an icon's note scrolls the sidebar (the icons are at its
+ * bottom, the dial was at its top), so the dial's rect was above the sidebar's
+ * visible box and every click landed on the top bar instead. The label never
+ * changed and the run reported "Membranes unreachable" — a locator problem
+ * wearing a feature problem's clothes, which is this repo's own recorded lesson.
  *
- * Both halves of the fix now live in the shared driver — it scrolls the
- * target into view and dispatches on the element rather than at a remembered
- * coordinate — and the assertion that the label MOVED stays here, because it
- * is this helper's whole reason for existing. It also now holds at 1280/1400,
- * where U1 sheds the dial and the Design/View menus are the control.
+ * Both halves of the fix live in the shared driver — it scrolls the target into
+ * view and dispatches on the element rather than at a remembered coordinate —
+ * and the assertion that the label MOVED stays here, because it is this
+ * helper's whole reason for existing. The same hazard applies to a bar menu: an
+ * open note can sit over a menu entry just as happily as it sat over the dial.
  */
-const stepDialDown = async () => {
-  const before = await dialLabel();
+const stepToNextStop = async () => {
+  const before = await stopLabel();
   const after = await view.step();
   if (after === before) throw new Error(`the view control did not move off "${before}" — the step missed`);
   return after;
@@ -524,7 +530,7 @@ const ctxPlanNoFootprint = await contextLine();
 record(
   "context-line-before-a-footprint-names-only-the-tab",
   { line: ctxPlanNoFootprint },
-  // The view dial is disabled with no footprint, so naming a view would be a
+  // No view stop is on screen with no footprint, so naming a view would be a
   // lie about where the reporter was.
   (d) => d.line !== null && d.line.attr === "Wall",
 );
@@ -684,18 +690,35 @@ record(
       .filter((r) => r.sidebarWidth === 64)
       .map((r) => ({ viewport: r.viewport, contentWidth: r.contentWidth, rows: r.rows, distinctLefts: r.distinctLefts, pxBelowFold: r.pxBelowFold })),
   },
-  // At 240px: one row, and no scrolling to reach it.
-  // At 64px: one COLUMN — four icons cannot share a ~40px content box on any
-  // scrollbar, so what "reads as a cluster" means there is a single flush-left
-  // stack, asserted as one distinct left edge rather than assumed.
+  // At 240px: one row, and no scrolling to reach it. Unchanged.
+  //
+  // ⚠ AT 64px THIS ASSERTION WAS REWRITTEN ON 2026-09-28, BECAUSE THE MEASURED
+  // TRUTH IMPROVED. It used to require `contentWidth <= 44, rows === 4,
+  // distinctLefts === 1` — a single flush-left stack with 30px of it BELOW THE
+  // FOLD, which is the "one measured deviation at 64px" Tommy was shown and
+  // accepted on 2026-09-27.
+  //
+  // Removing the sidebar view dial (2026-09-28) took ~60px out of the column,
+  // so the sidebar no longer overflows vertically at 64px. Measured: scrollHeight
+  // 820 === clientHeight 820, and the scrollbar that used to take 15px of a
+  // 64px rail is gone. The content box therefore went 40px -> 55px, the four
+  // icons now sit two abreast, and NOTHING IS BELOW THE FOLD any more.
+  //
+  // So the numbers that moved are recorded here rather than being loosened
+  // away, and the assertion now states the property that actually matters —
+  // every icon reachable without scrolling a 64px rail — instead of the
+  // particular stack shape the old overflow forced. The deviation Tommy
+  // accepted is simply no longer there; he has not been asked to accept
+  // anything new, and if he prefers the single column that is a CSS choice, not
+  // a measurement.
   (d) =>
     d.at240.length === 5 &&
     d.at240.every((r) => r.rows === 1 && r.pxBelowFold === 0) &&
     d.at64.length === 3 &&
-    d.at64.every((r) => r.contentWidth <= 44 && r.rows === 4 && r.distinctLefts === 1),
+    d.at64.every((r) => r.contentWidth <= 60 && r.distinctLefts <= 2 && r.rows <= 4 && r.pxBelowFold === 0),
 );
 
-console.log("7. the context line on an elevation, on Membranes, and on the Roof tab");
+console.log("7. the context line on an elevation, on Membranes, and on the Roof subject");
 await setViewport(1400, 1000);
 await send("Page.navigate", { url: APP_URL }, sid);
 await sleep(9000);
@@ -715,27 +738,27 @@ await mouse("mouseReleased", x1, y1);
 await sleep(1400);
 record(
   "footprint-drawn",
-  { dialLabel: await dialLabel() },
+  { stopLabel: await stopLabel() },
   // Everything after this depends on there being a building, so it is
   // asserted rather than assumed.
-  (d) => d.dialLabel === "2D Floor Plan",
+  (d) => d.stopLabel === "2D Floor Plan",
 );
 
 await openIcon("Report Bug / Request Feature");
 const ctxPlan = await contextLine();
 await openIcon("Report Bug / Request Feature");
-// One step down the dial is the first wall's elevation.
-await stepDialDown();
-const elevationDial = await dialLabel();
+// One step on from the plan is the first wall's elevation.
+await stepToNextStop();
+const elevationStop = await stopLabel();
 await openIcon("Report Bug / Request Feature");
 const ctxElevation = await contextLine();
 await openIcon("Report Bug / Request Feature");
 await shot("07-elevation-view");
-// Walk the dial to Membranes, whichever stop index that is for this footprint.
+// Walk to Membranes, whichever stop index that is for this footprint.
 let membranesReached = null;
 for (let i = 0; i < 12 && membranesReached === null; i++) {
-  await stepDialDown();
-  if ((await dialLabel()) === "Membranes") membranesReached = "Membranes";
+  await stepToNextStop();
+  if ((await stopLabel()) === "Membranes") membranesReached = "Membranes";
 }
 await openIcon("Report Bug / Request Feature");
 const ctxMembranes = await contextLine();
@@ -744,7 +767,7 @@ record(
   "context-line-names-the-view-as-the-app-labels-it",
   {
     plan: ctxPlan?.attr ?? null,
-    elevationDial,
+    elevationStop,
     elevation: ctxElevation?.attr ?? null,
     membranesReached,
     membranes: ctxMembranes?.attr ?? null,
@@ -755,9 +778,9 @@ record(
   // Wraps") is asserted by name: that word was a specific request.
   (d) =>
     d.plan === "Wall — 2D Floor Plan" &&
-    typeof d.elevationDial === "string" &&
-    d.elevationDial.startsWith("Elevation: ") &&
-    d.elevation === `Wall — ${d.elevationDial}` &&
+    typeof d.elevationStop === "string" &&
+    d.elevationStop.startsWith("Elevation: ") &&
+    d.elevation === `Wall — ${d.elevationStop}` &&
     d.membranesReached === "Membranes" &&
     d.membranes === "Wall — Membranes",
 );
@@ -793,37 +816,38 @@ await evaluate(`(() => {
   if (close) close.click();
 })()`);
 await sleep(500);
-const roofTabClicked = await evaluate(`(() => {
-  const nav = document.querySelector('nav[aria-label="Editor"]');
-  const b = nav && [...nav.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Roof');
-  if (!b) return 'no-roof-tab';
-  b.click();
-  return 'clicked';
-})()`);
+/* ⚠ THERE IS NO ROOF TAB ANY MORE. The bar's nav[aria-label="Editor"] and its
+   four tab buttons were removed on 2026-09-28, when Tommy merged the two axes:
+   the subjects are groups inside the Design menu now. The shared driver knows
+   how to get there, and a subject out of the scope of work has no entry at all
+   — which is why the checkbox above is ticked first, and why the driver throws
+   with what WAS on offer rather than reporting a tab it could not find. */
+const roofTabClicked = (await view.selectSubject("roof")) ? "clicked" : "not-offered";
 await sleep(900);
 await openIcon("Report Bug / Request Feature");
 const ctxRoof = await contextLine();
 record(
   "context-line-on-the-roof-tab-names-only-the-tab",
-  { roofEnabled, roofChecked, roofTabClicked, line: ctxRoof?.attr ?? null, dial: await dialLabel() },
-  // The view dial is disabled off the Wall tab, so the line must NOT claim a
-  // view — this is the case that would quietly report "Membranes" to Tommy
-  // from a screen showing roof tools.
+  { roofEnabled, roofChecked, roofTabClicked, line: ctxRoof?.attr ?? null, stopLabel: await stopLabel() },
+  // No view stop is on screen off the wall subject, so the line must NOT claim
+  // a view — this is the case that would quietly report "Membranes" to Tommy
+  // from a screen showing roof tools. ⚠ The assertion is unchanged; only the
+  // control that gets here changed. `stopLabel` reads null, which is what the
+  // bar's own current-stop attribute says when the surface is a Roof editor.
   (d) => d.roofChecked === "checked" && d.roofTabClicked === "clicked" && d.line === "Roof",
 );
 await shot("08-roof-tab-bug-note");
 await openIcon("Report Bug / Request Feature");
 
 console.log("8. a docked Selected Panel note and an icon note at the same time");
-await evaluate(`(() => {
-  const nav = document.querySelector('nav[aria-label="Editor"]');
-  const b = nav && [...nav.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Wall');
-  if (b) b.click();
-})()`);
+// Back to the wall subject through the Design menu — the only door, now that
+// the bar carries no tabs. It lands on the plan, the wall subject's first
+// destination, and the walk below steps on from there to an elevation.
+if (!(await view.selectSubject("wall"))) throw new Error("the Design menu would not go back to the wall subject");
 await sleep(700);
 // Back to an elevation, then click a panel body to dock the Selected Panel
 // note above the cluster.
-while ((await dialLabel()) !== null && !(await dialLabel()).startsWith("Elevation: ")) await stepDialDown();
+while ((await stopLabel()) !== null && !(await stopLabel()).startsWith("Elevation: ")) await stepToNextStop();
 /**
  * Clicks panels until one is actually SELECTED.
  *

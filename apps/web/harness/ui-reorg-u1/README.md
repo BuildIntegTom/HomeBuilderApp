@@ -1,18 +1,32 @@
-# Browser harness — Top Bar & Navigation Reorganisation, stage U1
+# Browser harness — Top Bar & Navigation Reorganisation, U1 REBUILT
 
-Two things, in one script: it **measures whether Tommy's twelve-item top bar
-fits**, and it asserts the **Design/View split** behaves. Same plumbing and
-the same `record()` discipline as `../ui-reorg-u0` and the three
-`../smearforn-stage-*` harnesses — every step carries an expectation,
-`record()` throws without one, and the process exits non-zero if any
-expectation is false.
+Two things, in one script: it **measures the bar Tommy re-drew on 2026-09-28**,
+and it **asserts that bar behaves**. Same plumbing and the same `record()`
+discipline as `../ui-reorg-u0` and the four `../smearforn-stage-*` harnesses —
+every step carries an expectation, `record()` throws without one, and the
+process exits non-zero if any expectation is false.
 
-**The measurement is the deliverable, not a check on it.** The plan's own
-riskiest assumption was that the width budget is already spent: the bar needed
-a third breakpoint to fit six controls, Tommy's list is twelve, his everyday
-viewport is 710px, and the plan's estimate for the new group (~1550–1600px)
-was explicitly marked *unmeasured*. The answer lives in `evidence-projection.json`,
-checked in, rather than in a commit message.
+**The measurement is the deliverable, not a check on it.**
+
+## What changed on 2026-09-28, and why U1's own figures are not comparable
+
+U1 measured a bar that no longer exists. Tommy read its numbers and changed the
+design twice the same day:
+
+1. `Design` and `View` became **bare words** — no caption, no value. (The built
+   labelled `DESIGN 2D Floor Plan ▼` measured **176.8px**; bare it is **87px** at
+   ≥768px and **53.4px** below.)
+2. The **view dial was removed entirely**, so these two menus are the only way
+   to reach any view, at any width. Scroll-wheel cycling and `useRustleSound()`
+   went with it, on his word, and nothing replaces the wheel.
+3. The **wordmark was dropped** (~142px, ≥1200px only).
+4. In the interview that followed, the **four `Wall / Foundation / Floor / Roof`
+   tab items left the bar** and became subject groups inside the Design menu.
+
+So this file measures the bar that ships (**option B**) and, projected onto the
+real row, **option A** — the same bar with the four tab items back — plus
+`Summary` and `Print` on top of each, because those are U4 and U5 and whether
+they will fit is worth knowing before they are built.
 
 ## Run it
 
@@ -24,171 +38,225 @@ node apps/web/harness/ui-reorg-u1/run.mjs
 
 Override with `UI_REORG_U1_APP_URL` / `UI_REORG_U1_CDP_PORT`.
 
-**Use `localhost`, not `127.0.0.1`.** Over `127.0.0.1` the client chunks for
-the `next/dynamic` canvas never arrive and the page renders its chrome with no
-canvas at all, silently — the Stage 0/1 harness's README explains it at length.
+**Use `localhost`, not `127.0.0.1`.** Over `127.0.0.1` the client chunks for the
+`next/dynamic` canvas never arrive and the page renders its chrome with no
+canvas at all, silently.
 
 **Prove it can fail:** `UI_REORG_U1_PROVE_FAILURE=1 node apps/web/harness/ui-reorg-u1/run.mjs`
-appends one deliberately false check; the run must then exit 1. A harness
-nobody has watched fail is not evidence.
+appends one deliberately false check; the run must then exit 1. A harness nobody
+has watched fail is not evidence.
 
-## The two passes, and why one of them is not re-runnable
+## THE PER-CONTROL WIDTHS — measured one control at a time
 
-| | `UI_REORG_U1_PASS=projection` | (default) `built` |
+Four companies simulated, the widest reading across all four roles. ⚠ The
+previous record carried **~104px each for Account, Projects and Settings**,
+derived by subtracting measured parts from a measured total. That was inference
+sitting in a table of measurements, and it is what made 1280px look like it had
+~17px of margin. These are read out of the real layout.
+
+| control | ≥768px | <768px |
 |---|---|---|
-| Runs against | the bar **before** Design/View exist | the finished bar |
-| Design & View | projected: built from the bar's own real classes, inserted into the real row, measured, removed | real |
-| Summary & Print | projected | projected — they are U4 and U5, and a control that opens nothing is forbidden |
-| Writes | `evidence-projection.json`, `region3-baseline.json` | `evidence.json` |
+| acting-as chip | **354.7** (at its 280px select cap) | 187.5 at 768 → **12.0** at 360 |
+| Account (`Sign in`) | **86.3** | 52.7 |
+| Project | **87.0** | 53.4 |
+| **Design** | **87.0** | 53.4 |
+| **View** | **74.5** | 41.8 |
+| Role | **139.0** (`Fabricator`; 115.9–132.5 for the others) | 80.0–101.4 |
+| ⚙ Settings | **34.0** | 30.0 |
 
-(`evidence-u1-as-built.json` is a kept copy of a built run, not a third pass —
-see "The three evidence files" below.)
+So Account / Projects / Settings are **86.3 / 87.0 / 34.0**, not ~104 each: the
+inference was ~18px high on two of them and ~70px high on Settings, and the
+three together are **207.3px**, not ~312px.
 
-**The projection pass refuses to run against the built code, and its artefacts
-must not be regenerated.** They are a recording of a bar that no longer
-exists. Once Design and View are real they are `display: none` below the
-boundary they appear at (1200px as U1 shipped, 1454px since the shed-order
-correction) — they have *shed* into the sidebar dial, which is the right
-answer — so a
-projection there would skip them and then measure a row missing two of the
-controls it claims to have measured. The checked-in files are from commit
-`6ccdfff`, and they are the only "before" this stage has.
-
-## What the measurement said
-
-⚠ **Three figures here were the PROJECTION pass's, not the built bar's, and
-all three understated the cost in the same direction. Corrected 2026-09-28**
-from `evidence-u1-as-built.json`. Where a projection figure is still quoted it
-now says so in the same breath.
-
-Natural row-content width, four companies, the widest role label:
+**Natural row content** (nothing squeezed, measured at 1600px):
 
 | bar | row content | ≈ viewport |
 |---|---|---|
-| today, 6 controls | 1176.9px *(projection)* | ~1217px *(projection)* |
-| + Design + View (what U1 ships) | 1415.2px *(projection)* / **1448.2px as built** | ~1455 *(projection)* / **~1488px as built** |
-| + Summary + Print (Tommy's twelve) | **1594.2px as built** *(1577.5 projected)* | **~1634px as built** *(~1618 projected)* |
+| **built — option B** | **922.5px** | **~962.5px** |
+| option A (four tab items back) | 1216.8px | ~1256.8px |
+| option B + Summary + Print | 1084.8px | ~1124.8px |
+| option A + Summary + Print | 1379.1px | ~1419.1px |
 
-**Twelve fit at no width in the brief.** Forced onto the row anyway, at 360px
-`Print` is pushed off screen and the acting-as chip is crushed to 12px; at 768
-and 1200 the chip is 20px. The acting-as company keeps the width its own
-stylesheet caps it to only from **1503px** up (twelve, *projection*) and
-**1381px** up (U1's ten, **built** — 1341 was the projection figure, and it
-was also bisected at the wrong role; see below).
+**Folding the tabs into Design saved 294.3px** — measured, against the plan's
+~264px estimate. **Summary and Print cost 162.3px** as bare buttons.
 
-That is a finding, not an obstacle that was engineered around. Nothing here
-shrinks type, drops a label or adds an overflow menu to make an assertion
-pass — those are design decisions and they are Tommy's, the same way 1200px
-was in 2026-09-13.
+## Does it fit? — 360 / 710 / 768 / 1200 / 1280 / 1366 / 1440 / 1600
 
-## The shed order correction, 2026-09-28
+Option B, four companies, worst role. `chars` is how much of
+`The Seed Collaborative (platform admin)` (39 characters) really renders.
 
-U1 shipped Design and View at `min-width: 1200px`. Measured there on the built
-bar with four companies, **the acting-as company name rendered zero characters
-at all four roles** — a 16px select under a caption still reading `ACTING AS`.
-The chip's bounding box was entirely on screen the whole time, which is why
-`nothing-U1-ships-is-ever-pushed-off-screen` passed and why it was not enough.
+| viewport | row has | row wants | fits | chars of the company name |
+|---|---|---|---|---|
+| 360 | 344 | 368.7 | no (−24.7) | **0 — the name is gone** |
+| 710 | 694 | 588.7 | **yes, 105px spare** | 31 of 39 |
+| 768 | 728 | 732.2 | no (−4.2) | 6 of 39 (`The Se`) |
+| 1200 | 1160 | 922.5 | yes, 237px spare | **39 — whole** |
+| 1280 | 1240 | 922.5 | yes, 317px spare | **39 — whole** |
+| 1366 | 1326 | 922.5 | yes, 403px spare | **39 — whole** |
+| 1440 | 1400 | 922.5 | yes, 477px spare | **39 — whole** |
+| 1600 | 1560 | 922.5 | yes, 637px spare | **39 — whole** |
 
-So the name is now measured on its own terms at every cell — **the select's
-own width and its visible character count** — and there is a new assertion,
-`some-of-the-acting-as-company-name-is-visible-at-every-width-U1-ships`,
-requiring at least one character everywhere. The bisection gained
-`anyNameVisible` and `companyNameWhole` beside the chip-based
-`companyNameIntact`, whose weakness (it reads the chip, which carries ~85px of
-caption and padding) is now written down rather than assumed away.
+**No control is ever pushed off screen and nothing scrolls horizontally, at any
+of these widths** — when the row runs short the acting-as select is the only
+thing that gives, exactly as the stylesheet says it should. "Does not fit" above
+means *the row wants more than it has and the name is being cut*, not *a control
+fell off*.
 
-Thresholds, built bar, four companies, the widest role label — `Fabricator`.
-⚠ **The published thresholds used to be bisected at whatever role the matrix
-loop left set, which was `Engineer`, so every one of them was 6–7px off in the
-optimistic direction.** The role is now set explicitly, recorded in the
-evidence as `firstFitsMeasuredAt`, and handed back afterwards, because Region
-3's content is role-gated and leaving it changed broke the cross-run
-comparison.
+⚠ **768px is worse than 710px, and that is not a typo.** At 768 the `ACTING AS`
+caption comes back and every control grows (12px → 13px type, wider padding),
+which costs more than the extra 58px of viewport brings. It is the narrowest
+width at which the name is cut to single figures.
 
-| | ≥1200 band, U1 as shipped on 2026-09-28 |
-|---|---|
-| some of the name visible at all | 1226px |
-| the chip at the 280px cap its select is given | 1381px |
-| the name **whole** | **1454px** |
+### The declared supported range
 
-**Design and View now appear at `min-width: 1454px`** — the last row — with
-`.viewerDialSlot` hidden at the identical query. The name is whole at every
-width from 1200 up on the shipped bar.
+- **≥1200px — everything, comfortably.** Every control present, the company name
+  whole, 237px+ to spare. This is where the work gets done.
+- **425px–1199px — the working range.** Every destination reachable, no control
+  off screen, the company name **truncated but present** (31 of 39 characters at
+  Tommy's own 710px; 6 at its worst, around 768–823px). **Tommy's 710px works
+  with room to spare.**
+- **below 425px — demo only, and the company name is gone.** The bar still
+  carries every control and every view is still reachable (asserted with a real
+  mouse at 360px), but the acting-as select is crushed to 12px and renders **no
+  characters of the company name**. The chip, its caret and the switcher are all
+  still there and still on screen; it is the NAME that is absent.
 
-⚠ **Two things that belong in any summary of this harness.** First, 1454 is a
-**fourth breakpoint on a bar whose own log says not to add one**; it is
-measured rather than chosen, but it is Tommy's to confirm. Second, and more
-important: **Tommy's viewport is 710px, and the menus are also absent at 1280
-and 1366**, so for him and for most users the sidebar dial is the view control
-and these menus are a wide-monitor affordance.
+### ⚠ Every width at which the company name is FULLY ABSENT
 
-**The boundary is discovered, not written down.** `run.mjs` bisects the shipped
-CSS by asking which control is on screen, and every step that needs the number
-reads the answer — the "exactly one presentation" widths, the dial-vs-menus
-Region 3 comparison, the shed-order assertion, and each step that drives a
-menu. A harness carrying its own copy of a breakpoint tests the wrong boundary
-the moment the stylesheet moves, and passes while doing it.
+Bisected in the browser at the widest role label, per breakpoint band:
 
-## The three evidence files
+| bar | name absent below | of the sampled widths |
+|---|---|---|
+| **built — option B** | **425px** | 360 |
+| option A (tabs on the bar) | 695px (and again 768–1023px) | 360, 768 |
+| option B + Summary + Print | 541px (and again 768–891px) | 360, 768 |
+| option A + Summary + Print | never visible below 768; 768–1185px | 360, 710, 768 |
+
+**This is a documented safety property being spent, and it is the one number to
+put in front of Tommy.** The acting-as company is on the bar because a
+wrong-company save is *silent, plausible, and noticed later by someone else*,
+and `AccountControl.module.css` records that the original bug was the name
+truncated while its caption still showed — the principle drawn from it being
+**truncated-but-present beats absent**. Below 425px this bar does not keep that
+promise. It is the price of removing the dial: with no dial to catch the view
+stops, `Design` and `View` cannot shed, so at the narrow end the name is the
+only thing left that can give. Nothing here shrinks type or invents a breakpoint
+to hide it.
+
+Two things that soften it and neither is an excuse: **option B is far better
+than option A at every width** (the tabs' 294px were coming out of the name), and
+**the name is whole from 1200px up**, where Tommy says the work happens.
+
+## What it asserts about the bar Tommy drew
+
+- **Bare words at every width.** `Design` and `View` carry the word and the
+  caret and nothing else, and are present at 360 through 1600. With no dial,
+  a width where these are hidden is a width where the plan, every wall
+  elevation and the three 3D views cannot be reached at all.
+- **The removals are real at EVERY width** — the dial, `nav[aria-label="Editor"]`,
+  the four `nav-*` bar buttons, the wordmark, and any `LABEL`+`Value` treatment
+  on a view menu. Each of those had a width-keyed life, so a sweep at 1600 alone
+  would have called them gone while two of them were alive at 710.
+- **Level one of the highlight** — the bar marks the OWNING menu with
+  `aria-pressed` **and** an inset underline (not colour alone), Design owns the
+  Roof editor, and the two buttons' widths do not move between states, so
+  ownership changing can never reflow the row.
+- **Level two of the highlight** — the open menu marks the current entry with
+  `aria-current="true"` **and** a heavier weight and a left edge bar. Exactly one
+  entry is marked, in the owning menu only; on the Roof editor the marked entry
+  is the SUBJECT and no stop is marked at all.
+- **The cold-load state Tommy described**: with no footprint, Design is
+  highlighted and View is disabled with its reason in the title.
+- **Every destination reachable and counted** — the plan, one entry per wall, the
+  three 3D representations by name, and the three non-wall subjects, which appear
+  only because they were checked on in the Panelizer.
+- **A real mouse reaches Membranes from the bar at 360, 710 and 1280** — pressed
+  and released at the control's own coordinates, not an element dispatch.
+
+## The single-writer test, and how it survived the dial's removal
+
+`viewMode`, `simplified3D`, `showWraps` and `elevationViewWallId` are four flags
+encoding five stops, and sidebar Region 3 keys off exactly those. So Region 3
+rendering identically is the direct test that `handleViewerStopChange` stayed the
+only writer.
+
+U1 proved it two ways. **One of them is impossible now** — it compared the dial
+against the menus within a single run, and there is no second control left. So:
+
+- **Across the change** — the eight stops' Region 3 signatures, recorded off the
+  **dial** in `region3-baseline.json` before any of this, and re-derived off the
+  **menus** now. Compared on `shape`, digits normalised, because two runs draw
+  two slightly different buildings by a pixel of mouse drag. ⚠ **That baseline
+  can never be re-made**: it is the only recording of Region 3 as a control other
+  than these menus produced it.
+- **Two paths, one run** — the replacement for the lost half. Every stop is
+  reached twice: directly, and again after a detour through a stop of the other
+  kind. Region 3 must be **byte-for-byte identical** both times, digits included.
+  The detour is what writes `showWraps` / `simplified3D` / `elevationViewWallId`
+  in the first place, so this is precisely the test for `showWraps` left true on
+  a plan view arrived at from 3D — the failure the plan names as most likely.
+
+Neither is enough alone: the second would pass if `handleViewerStopChange` itself
+were broken, since every path calls it; the first catches that but has to
+normalise away the fine detail the second keeps.
+
+## Measurement discipline, kept
+
+**Four companies are SIMULATED, and every cell says so.** Signing in needs
+Supabase and nothing in this workstream may touch it, so the signed-out acting-as
+span is swapped for a real `<select>` carrying `switcherLabels`' real output for
+four real entitlements, built with the app's own hashed `.actingAsSelect` class
+read out of the live stylesheet. **It is validated before any width is judged by
+it**: the longest real label must render within 12px of the 270px a real browser
+produced for it on 2026-09-13. It measured **exactly 270px** on this run.
+
+**The company name is measured on its own terms** — the select's own width and
+its visible character count — never the chip's bounding box. U1's original
+assertion was *"nothing is pushed off screen"*, which was **true with a 16px
+select showing nothing**. The character count was validated against screenshots
+on 2026-09-28 and **errs downward by at most one character**, where Chrome clips
+the ellipsis, which is the safe direction.
+
+**Thresholds are bisected out of the shipped CSS**, never transcribed, and
+**per breakpoint band**, because fit is not monotonic in width: at 1200 the name's
+own cap rises from 220px to 280px.
+
+**⚠ The one projection not built from a live class.** The `.navTab` rule was
+deleted along with the tabs it styled, so option A's four tab items are projected
+with the declarations that rule carried, quoted from the commit that removed
+them (14px/400/20px, `padding: 0 12px`, transparent 2px top and bottom borders).
+Every other projected control is built from a class read out of the live
+stylesheet. The evidence records which controls came from deleted CSS
+(`projectedFromDeletedCss`), because a figure built on remembered CSS is weaker
+than one built on live CSS.
+
+**A run that records nothing never overwrites a run that did** — an exit handler
+once wrote a two-line evidence file over a committed 5,700-line measurement.
+
+## The evidence files
 
 | file | what it records |
 |---|---|
-| `evidence-projection.json` | the bar **before** U1, with all four new controls projected onto it. Not re-runnable; see below. |
-| `evidence-u1-as-built.json` | the **built** bar as U1 first shipped it, menus at 1200px — the run where the new name assertion **fails**, 0 characters at all four roles. The "before" for the shed-order correction. |
-| `evidence.json` | the bar as it ships now, menus at 1454px. All assertions pass. |
-
-## Two things worth knowing before trusting a number here
-
-**Four companies are SIMULATED, and every cell says so.** Signing in needs
-Supabase and nothing in this workstream may touch it, so the signed-out
-acting-as span is swapped for a real `<select>` carrying `switcherLabels`'
-real output for four real entitlements, built with the app's own hashed
-`.actingAsSelect` class read out of the live stylesheet. **It is validated
-before any width is judged by it**: the longest real label must render within
-12px of the 270px a real browser produced for it on 2026-09-13. If the class
-lookup ever fails the select renders unstyled and every "four companies"
-figure would be a measurement of nothing — so that fails here rather than
-downstream.
-
-**Fit is not monotonic in width, and the first bisection assumed it was.** At
-exactly 1200px the bar gains the wordmark and four nav tabs, ~380px arriving
-in one step, so a configuration can fit at 1199 and fail at 1200. The naive
-bisect reported "fits from 875px" for a bar that is crushed at 1200 — a true
-number meaning the opposite of what it looks like. Bisected per breakpoint
-band now (`<768`, `768–1199`, `≥1200`), each of which is monotonic on its own.
-
-## The single-writer test, in two halves
-
-`viewMode`, `simplified3D`, `showWraps` and `elevationViewWallId` are four
-flags encoding five stops, and sidebar Region 3 keys off exactly those. So
-Region 3 rendering identically is the direct test that
-`handleViewerStopChange` stayed the only writer.
-
-- **Across the change** — the eight stops' Region 3 signatures, recorded off
-  the **dial** before U1 (`region3-baseline.json`) and re-derived off the
-  **menus** after. Compared on `shape`, digits normalised, because two runs
-  draw two slightly different buildings by a pixel of mouse drag and
-  `8,147 lb` vs `8,103 lb` is a true reading of that rather than a leaked
-  flag. *The first version of this failed for exactly that reason, and the
-  test was what was wrong.*
-- **Within one run** — the dial one pixel below the boundary vs the menus at
-  it, one design, compared byte for byte including digits. Both widths follow
-  the discovered boundary, so this cannot end up comparing one control twice.
-
-Neither is enough alone: the second would pass if `handleViewerStopChange`
-itself were broken, since both presentations call it; the first catches that
-but has to normalise away the fine detail the second keeps.
+| `evidence.json` | **this bar** — bare Design/View, no dial, no wordmark, no tab items. Every assertion passes. |
+| `evidence-u1-labelled-bar.json` | ⚠ **KEPT, NOT REGENERATED.** U1's built bar: labelled Design/View at 1454px, the dial, the wordmark, the four tab items. The "before" for everything above, and the only recording of a bar that no longer exists. |
+| `evidence-u1-as-built.json` | U1's first shipped form, menus at 1200px, where the company-name assertion **fails** — the kept failing "before" for the shed-order fix. |
+| `evidence-projection.json` | the pre-U1 bar with all four of Tommy's new controls projected onto it. Not re-runnable. |
+| `region3-baseline.json` | Region 3's signature at every stop, **driven by the dial**. Cannot be re-made. |
 
 ## Locators
 
-Nothing here is keyed to an incidental element. Controls by
-`data-bar-control`, the menus by `data-view-menu` / `-owner` / `-caption` /
-`-value` / `-word`, stops by `data-view-stop`, Region 3 by
-`data-sidebar-region-3`. CSS-module class names are hashed build artefacts and
-are never written down: they are found by the **stem** the source file uses,
-preferentially by taking the hashed prefix off an element really in the DOM.
+Nothing is keyed to an incidental element. Controls by `data-bar-control`, the
+menus by `data-view-menu` / `-owner` / `-word` / `-current-stop`, entries by
+`data-view-stop` and `data-design-subject`, groups by `data-menu-group`, Region 3
+by `data-sidebar-region-3`. CSS-module class names are hashed build artefacts and
+are never written down: they are found by the **stem** the source file uses.
 
 The bare word is read from its own `data-view-menu-word` span rather than off
-`textContent`, which also carries the caret — a reader comparing `textContent`
-to `"View"` fails on `"View ▼"` and reads exactly like a rename that never
-happened.
+`textContent`, which also carries the caret — a reader comparing `textContent` to
+`"View"` fails on `"View ▼"` and reads exactly like a rename that never happened.
+
+`data-view-menu-current-stop` is a **harness-only** attribute on the owning
+button: the bar deliberately shows the current stop nowhere, so there is nothing
+visible left to read. It renders from the same `viewerStopLabel(currentViewerStop)`
+call the open menu marks with `aria-current`, and the run asserts the two agree —
+otherwise this harness would be reading a second, private truth.

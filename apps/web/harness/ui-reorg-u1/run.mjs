@@ -1,44 +1,59 @@
 /**
- * Browser harness — Top Bar & Navigation Reorganisation, stage U1
- * (the label pattern, the Design/View split, and THE MEASUREMENT).
+ * Browser harness — Top Bar & Navigation Reorganisation, U1 REBUILT
+ * (the bare bar Tommy re-drew on 2026-09-28, and THE MEASUREMENT).
  *
- * ## Why this file is the deliverable, not a check on the deliverable
+ * ## What this file is for now
  *
- * The plan's own riskiest assumption is written down in §12: *"the width
- * budget is already spent"*. The bar needed a third breakpoint to fit SIX
- * controls; Tommy's list is TWELVE; his own everyday viewport is 710px, where
- * the nav and the wordmark are already shed; and the plan's estimate for the
- * new group — **~1550-1600px** — is explicitly marked *unmeasured*. So the
- * question "does a twelve-item bar fit, and if not what sheds" is answered
- * here, in numbers, at 360 / 710 / 768 / 1200 / 1440 / 1600, signed out and
- * with four companies, in all four roles, and the answer is CHECKED IN rather
- * than summarised in a commit message.
+ * U1 measured a bar that no longer exists. Tommy read its numbers and changed
+ * the design twice on 2026-09-28: `Design` and `View` became **bare words**,
+ * the **view dial was removed entirely**, the **wordmark was dropped**, and in
+ * the interview that followed **the four `Wall / Foundation / Floor / Roof`
+ * tab items left the bar** and became groups inside the Design menu. This file
+ * measures THAT bar, and it measures the alternative he did not choose, because
+ * the cost of the choice is the evidence for it.
  *
- * **If twelve do not fit, that is a finding.** This script does not shrink
- * type, drop a label or invent an overflow menu to make an assertion pass.
- * It measures, and the numbers go to Tommy.
+ * **The measurement is the deliverable, not a check on it.** The earlier pass
+ * published ~104px each for Account, Projects and Settings — a figure derived
+ * by subtracting measured parts from a measured total, i.e. inference, and one
+ * that left only ~17px of margin at 1280px. **Every control is now measured
+ * individually and its real width is published**, at every width, in every
+ * role, with four companies simulated.
  *
- * ## It runs in two passes, and both are checked in
+ * ## The four bar configurations it measures
  *
- *   `UI_REORG_U1_PASS=projection` — run against the bar BEFORE Design/View
- *     exist. The four new controls are PROJECTED: built out of the bar's own
- *     real classes, inserted into the real row, measured, removed. Writes
- *     `evidence-projection.json`, plus `region3-baseline.json` — Region 3's
- *     rendered signature at every view stop, driven by the DIAL.
+ *   built       the bar as it ships: Design and View bare, no wordmark, no tab
+ *               items. **Option B.**
+ *   optionA     that bar PLUS the four tab items, projected — the structure
+ *               Tommy did not choose. Its cost is what "folding the tabs into
+ *               Design frees ~264px" actually means, measured rather than
+ *               asserted.
+ *   builtPlus   built PLUS `Summary` and `Print` as bare buttons. They are U4
+ *               and U5 and the Top Bar rule forbids a control that opens
+ *               nothing, so they are PROJECTED — but whether they will fit is
+ *               a question worth answering before they are built rather than
+ *               after.
+ *   optionAPlus optionA plus those two, for the same reason.
  *
- *   `UI_REORG_U1_PASS=built` (the default) — run against the finished bar.
- *     Design and View are REAL and are measured as they render; Summary and
- *     Print are still projected, because they are U4 and U5 and building an
- *     inert button that opens nothing is forbidden by the Top Bar section's
- *     own rule. Writes `evidence.json`, and re-derives Region 3's signature
- *     at every stop **driven by the MENUS**, asserting it equals the baseline
- *     the projection pass recorded off the dial. That comparison is the
- *     acceptance criterion *"Region 3 renders identically for every stop
- *     before and after the change"*, and it is the direct test that
- *     `handleViewerStopChange` stayed the ONLY writer of the four view flags:
- *     Region 3 keys off `elevationWall` / `viewMode` / `showWraps`, so a
- *     second writer leaving `showWraps` true on a plan view shows up here as
- *     a changed signature rather than as nothing at all.
+ * ⚠ **THE PROJECTED TAB ITEMS CARRY THEIR OWN DECLARATIONS, AND THAT IS SAID
+ * OUT LOUD.** Everything else projected here is built from a class read out of
+ * the live stylesheet. The nav-tab rule was deleted along with the tabs, so
+ * there is no live class to read; the projection uses the exact declarations
+ * the deleted `.navTab` rule carried (14px / 400 / 20px, `padding: 0 12px`,
+ * transparent 2px top and bottom borders, no side borders, transparent
+ * background), quoted from the commit that removed them. A figure built on
+ * remembered CSS is weaker than one built on live CSS, and the difference is
+ * recorded in the evidence rather than glossed.
+ *
+ * ## The supported range, and why it is a range
+ *
+ * Tommy, 2026-09-28: *"If someone is using this on their phone they should be
+ * able to turn it sideways and have a longer top bar… I expect most of the work
+ * to be done on a computer screen, not a phone."* So this file does not force
+ * 360px. It measures 360 / 710 / 768 / 1200 / 1280 / 1366 / 1440 / 1600 and
+ * publishes what each does — in particular **every width at which the acting-as
+ * company name renders NO characters**, which is the one documented safety
+ * property this design spends. Tommy's own 710px is in the list and is not
+ * optional.
  *
  * ## HOW TO RUN (from the repo root)
  *   1. `npm run dev --workspace=apps/web -- -p 3218`
@@ -54,31 +69,44 @@
  * `UI_REORG_U1_PROVE_FAILURE=1` appends one deliberately false check and the
  * run must then exit 1. A harness nobody has seen fail is not evidence.
  *
- * ## ⚠ Four scars this file is written around
+ * ## ⚠ Five scars this file is written around
  *
- * 1. **No incidental locators.** Every control is found by `data-bar-control`
- *    (added for this, in TopBar.tsx and AccountControl.tsx), every stop by
- *    `data-view-stop`, Region 3 by `data-sidebar-region-3`. Three locators in
- *    this repo once rooted on panel-boundary drag strips and returned nothing
- *    on a wall with no adjacent standard panels — reporting green.
+ * 1. **No incidental locators.** Every control is found by `data-bar-control`,
+ *    every menu entry by `data-view-stop` / `data-design-subject`, Region 3 by
+ *    `data-sidebar-region-3`. Three locators in this repo once rooted on
+ *    panel-boundary drag strips and returned nothing on a wall with no adjacent
+ *    standard panels — reporting green.
  * 2. **No vacuous passes.** Every reader that can return an empty set asserts
- *    it found something first: the four-company simulation is validated
- *    against a figure measured in a real browser on 2026-09-13 (the longest
- *    real label, 270px at >=1200px) before a single width is judged by it, and
- *    the projection is validated by checking the projected controls really
- *    landed in the row. Assuming a `wall_` prefix in an OBJ once made every 3D
- *    check match nothing while the run reported green.
+ *    it found something first. The four-company simulation is validated against
+ *    a figure a real browser produced on 2026-09-13 before a single width is
+ *    judged by it.
  * 3. **Read your own reader.** Widths come from `clientWidth`-based content
  *    boxes, not from bounding rects minus padding: U0's first reader reported
- *    56px of usable rail where the truth was ~40px, and that one wrong number
- *    made an overflowing icon look contained.
- * 4. **Four companies are SIMULATED, and the file says so out loud.** Signing
- *    in needs Supabase, which nothing in this workstream may touch. So the
- *    signed-out `.actingAsStatic` span is swapped for a real `<select>`
- *    carrying the real `switcherLabels` output for four real entitlements,
- *    built with the app's own hashed `.actingAsSelect` class read out of the
- *    live stylesheet. Every cell records `accountState` so no reader can
- *    mistake the simulation for a session.
+ *    56px of usable rail where the truth was ~40px.
+ * 4. **Measure the NAME, not the box around it.** U1's own "nothing is pushed
+ *    off screen" was true of a 16px select showing zero characters under a
+ *    caption still reading ACTING AS. The select's own width and its visible
+ *    character count are recorded at every cell.
+ * 5. **A run that records nothing never overwrites a run that did.** An exit
+ *    handler once wrote a two-line evidence file over a committed 5,700-line
+ *    measurement.
+ *
+ * ## The evidence files
+ *
+ *   evidence.json                  this bar — the one that ships.
+ *   evidence-u1-labelled-bar.json  ⚠ KEPT, NOT REGENERATED. U1's built bar:
+ *                                  labelled Design/View, the dial, the wordmark
+ *                                  and the four tab items. It is the "before"
+ *                                  for everything here, and the only recording
+ *                                  of a bar that no longer exists.
+ *   evidence-u1-as-built.json      U1's first shipped form, where the company
+ *                                  name assertion FAILS at 1200px — the kept
+ *                                  failing "before" for the shed-order fix.
+ *   evidence-projection.json       the pre-U1 bar with four controls projected.
+ *   region3-baseline.json          Region 3's signature at every stop, recorded
+ *                                  off the DIAL before any of this. With the
+ *                                  dial deleted this is the only cross-control
+ *                                  comparison left, and it cannot be re-made.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -94,9 +122,18 @@ const PROVE_FAILURE = process.env.UI_REORG_U1_PROVE_FAILURE === "1";
 const EVIDENCE_FILE = path.join(HERE, PASS === "projection" ? "evidence-projection.json" : "evidence.json");
 const REGION3_FILE = path.join(HERE, "region3-baseline.json");
 
-/** The six widths §12 names, plus the two the "exactly one presentation" rule
- * is checked at. 710 is Tommy's own everyday viewport. */
-const WIDTHS = [360, 710, 768, 1200, 1440, 1600];
+/**
+ * The widths this bar is judged at.
+ *
+ * 360 is phone portrait and is measured rather than promised — Tommy, 2026-09-28:
+ * a phone is for showing people how things work, and "most of the work is going
+ * to be done on a bigger screen". 710 is HIS OWN everyday viewport and is not
+ * optional. 1200 is the one remaining breakpoint the bar's neighbours still use
+ * (the company name's cap, and the sidebar tab dial). 1280 and 1366 are the two
+ * common laptop widths the earlier pass left the view control absent at, and
+ * 1280 is the width the inferred ~104px controls said had only ~17px of margin.
+ */
+const WIDTHS = [360, 710, 768, 1200, 1280, 1366, 1440, 1600];
 /** `roleDisclaimers` order, as `roleOptions` exports it. */
 const ROLE_LABELS = ["Public", "Fabricator", "Admin", "Engineer"];
 
@@ -480,6 +517,12 @@ const TOOLKIT = String.raw`
       barHeight: Math.round(bar.getBoundingClientRect().height * 10) / 10,
       controlCount: controls.length,
       controlsWidthSum: Math.round(controls.filter((c) => c.zone).reduce((s, c) => s + c.w, 0) * 10) / 10,
+      /* ⚠ EVERY CONTROL'S OWN WIDTH, PUBLISHED. The previous pass derived
+         ~104px each for Account, Projects and Settings by subtracting measured
+         parts from a measured total — inference, presented beside real
+         measurements, and it is what left 1280px looking like it had ~17px of
+         margin. These are read one control at a time from the real layout. */
+      controlWidths: Object.fromEntries(controls.filter((c) => c.w > 0).map((c) => [c.control, c.w])),
       rightmostControl: rightmost ? rightmost.control : null,
       rightmostRight: rightmost ? rightmost.right : null,
       anyControlOffScreen: controls.filter((c) => c.w > 0 && (c.left < -0.5 || c.right > window.innerWidth + 0.5)).map((c) => c.control),
@@ -566,6 +609,19 @@ const TOOLKIT = String.raw`
       btn.className = toolCls;
       btn.setAttribute('data-bar-control', item.control);
       btn.setAttribute('data-bar-control-projected', '');
+      if (item.style === 'navTab') {
+        /* ⚠ THE ONE PROJECTION NOT BUILT FROM A LIVE CLASS, and it says so in
+           the evidence ('projectedFromDeletedCss'). The .navTab rule was deleted
+           with the tabs it styled, so there is nothing live to read; these are
+           the declarations that rule carried, quoted from the commit that
+           removed it. Measuring option A at all requires it, and a remembered
+           declaration is weaker evidence than a live one. */
+        btn.className = '';
+        btn.style.cssText =
+          'display:flex;align-items:center;height:100%;padding:0 12px;font-size:14px;font-weight:400;line-height:20px;' +
+          'background:transparent;border:none;border-top:2px solid transparent;border-bottom:2px solid transparent;' +
+          'white-space:nowrap;cursor:pointer;flex-shrink:0;';
+      }
       if (item.caption && item.value) {
         const cap = document.createElement('span');
         cap.textContent = item.caption;
@@ -588,7 +644,13 @@ const TOOLKIT = String.raw`
       made.push(item.control);
     }
     K._projection = made;
-    return { ok: true, projected: made, usedToolClass: toolCls, usedRealLabelClasses: Boolean(captionCls && valueCls) };
+    return {
+      ok: true,
+      projected: made,
+      usedToolClass: toolCls,
+      usedRealLabelClasses: Boolean(captionCls && valueCls),
+      projectedFromDeletedCss: spec.filter((s) => s.style === 'navTab').map((s) => s.control),
+    };
   };
 
   K.clearProjection = () => {
@@ -599,19 +661,56 @@ const TOOLKIT = String.raw`
 
   // --- the view stops ------------------------------------------------------
 
-  /** The dial's current label, or null when the dial is not rendered. */
-  K.dialLabel = () => {
-    const dial = document.querySelector('[role="group"][aria-label="View mode"]');
-    if (!dial) return null;
-    return [...dial.querySelectorAll('div')].map((d) => d.textContent.trim()).find((t) => t && t !== '▲' && t !== '▼') ?? null;
+/**
+   * What Tommy removed, checked for by its own locators rather than by
+   * assuming.
+   *
+   * A removal is only real if nothing renders it at ANY width, and every one of
+   * these has a width-keyed history: the dial was the below-breakpoint form for
+   * about a day, the nav tabs were a >=1200px form for a fortnight, and the
+   * wordmark for longer. A run that only looked at 1600 would have called all
+   * three gone while two of them were alive at 710.
+   *
+   * 'sidebarViewDial' looks for the dial ANYWHERE in the document, not only in
+   * the sidebar, so a copy left behind somewhere else would still be found.
+   */
+  K.removedControls = () => {
+    const laidOut = (el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+    const navZone = document.querySelector('[data-top-bar-zone="middle"]');
+    return {
+      sidebarViewDial: Boolean(document.querySelector('[role="group"][aria-label="View mode"]')),
+      sidebarViewDialLaidOut: laidOut(document.querySelector('[role="group"][aria-label="View mode"]')),
+      editorNav: Boolean(document.querySelector('nav[aria-label="Editor"]')),
+      barNavZone: Boolean(navZone),
+      barTabButtons: [...document.querySelectorAll('[data-bar-control^="nav-"]')].map((e) => e.getAttribute('data-bar-control')),
+      wordmark: Boolean(document.querySelector('[data-bar-control="wordmark"]')),
+      /* The LABEL+Value treatment is meant to be unique to the acting-as chip
+         now. If either of these reappears on a view menu the bare-word decision
+         has quietly been undone. */
+      viewMenuCaptions: document.querySelectorAll('[data-view-menu-caption]').length,
+      viewMenuValues: document.querySelectorAll('[data-view-menu-value]').length,
+    };
   };
 
-  /** Whether the dial is rendered AND laid out (display:none is the shed). */
-  K.dialPresent = () => {
-    const dial = document.querySelector('[role="group"][aria-label="View mode"]');
-    if (!dial) return false;
-    const r = dial.getBoundingClientRect();
-    return r.width > 0 && r.height > 0;
+  /** The editor tab dial in the sidebar — NOT removed, and deliberately not
+   * touched by this pass. Recorded at every width so that what it does after
+   * the bar lost its tabs is a measured fact in the report rather than an
+   * impression. */
+  K.editorTabDial = () => {
+    const dial = document.querySelector('[role="group"][aria-label="Editor tab"], [aria-label="Editor tab"]');
+    const byTitle = dial ?? [...document.querySelectorAll('[title]')].find((e) => (e.getAttribute('title') || '').includes('Walls, Foundation, Floor'));
+    if (!byTitle) return { found: false, laidOut: false, label: null };
+    const r = byTitle.getBoundingClientRect();
+    return {
+      found: true,
+      laidOut: r.width > 0 && r.height > 0,
+      label: [...byTitle.querySelectorAll('div')].map((d) => d.textContent.trim()).find((t) => t && t !== '▲' && t !== '▼') ?? null,
+      w: Math.round(r.width * 10) / 10,
+    };
   };
 
   /** The two bar menus, when they exist: which one owns, and what each reads. */
@@ -621,11 +720,23 @@ const TOOLKIT = String.raw`
       const btn = document.querySelector('[data-view-menu="' + id + '"]');
       if (!btn) { out[id] = null; continue; }
       const r = btn.getBoundingClientRect();
+      const cs = getComputedStyle(btn);
       out[id] = {
         present: r.width > 0 && r.height > 0,
         owner: btn.getAttribute('data-view-menu-owner') === 'true',
+        /* ⚠ LEVEL ONE OF THE HIGHLIGHT, READ AS AN ACCESSIBLE STATE. The owner
+           attribute above is the harness's own hook; 'aria-pressed' is what a
+           screen reader is actually told, and the two are asserted to agree so
+           the hook cannot drift into being the only true one. */
+        pressed: btn.getAttribute('aria-pressed'),
+        /* And the sighted half, which must be MORE THAN COLOUR: the inset
+           underline. Recorded rather than described. */
+        boxShadow: cs.boxShadow,
+        color: cs.color,
+        borderColor: cs.borderTopColor,
         disabled: btn.disabled === true,
         title: btn.getAttribute('title') || '',
+        currentStopAttr: btn.getAttribute('data-view-menu-current-stop'),
         caption: btn.querySelector('[data-view-menu-caption]')?.textContent.trim() ?? null,
         value: btn.querySelector('[data-view-menu-value]')?.textContent.trim() ?? null,
         // ⚠ The bare word gets its own span rather than being read off the
@@ -647,6 +758,39 @@ const TOOLKIT = String.raw`
       label: el.textContent.replace(/\s+/g, ' ').trim(),
       current: el.getAttribute('data-view-stop-current') === 'true',
     }));
+
+  /**
+   * EVERYTHING an open menu offers — its subject groups, their headings, and
+   * every entry with both halves of its current-state.
+   *
+   * The two halves are read separately on purpose. 'ariaCurrent' is what a
+   * screen reader is told; 'fontWeight' and 'boxShadow' are the sighted cue,
+   * and they are recorded so "the highlight is more than colour" can be
+   * ASSERTED against a non-current sibling rather than asserted in a comment.
+   */
+  K.openMenuEntries = () => {
+    const note = [...document.querySelectorAll('[data-menu-group]')];
+    return note.map((group) => ({
+      subject: group.getAttribute('data-menu-group'),
+      heading: group.querySelector('[data-menu-group-heading]')?.textContent.trim() ?? null,
+      groupRole: group.getAttribute('role'),
+      groupLabel: group.getAttribute('aria-label'),
+      entries: [...group.querySelectorAll('button')].map((el) => {
+        const cs = getComputedStyle(el);
+        return {
+          kind: el.hasAttribute('data-view-stop') ? 'stop' : 'subject',
+          key: el.getAttribute('data-view-stop') ?? el.getAttribute('data-design-subject'),
+          label: el.textContent.replace(/\s+/g, ' ').trim(),
+          ariaCurrent: el.getAttribute('aria-current'),
+          markedAttr: el.getAttribute('data-view-stop-current') === 'true',
+          fontWeight: cs.fontWeight,
+          boxShadow: cs.boxShadow,
+          color: cs.color,
+          background: cs.backgroundColor,
+        };
+      }),
+    }));
+  };
 
   /**
    * Region 3's rendered signature.
@@ -731,7 +875,7 @@ const load = async (url = APP_URL) => {
 };
 
 // --- the run ----------------------------------------------------------------
-console.log(`U1 harness — pass "${PASS}"`);
+console.log(`U1-rebuilt harness — pass "${PASS}"`);
 console.log("0. cold load at 1600px");
 await setViewport(1600, 1000);
 await load();
@@ -739,26 +883,20 @@ await load();
 /**
  * ⚠ THE PROJECTION PASS IS A ONE-TIME RECORDING OF A BAR THAT NO LONGER
  * EXISTS, and it refuses to run against the built code rather than quietly
- * producing a worse version of its own artefact.
- *
- * Its whole job is to measure the pre-U1 bar with all four of Tommy's new
- * controls forced onto the row at EVERY width. Once Design and View are real
- * they are `display: none` below 1200px — they have shed into the sidebar
- * dial, which is the right answer — so the projection there would skip them
- * (they exist) and then measure a row missing two of the controls it claims
- * to have measured. The checked-in `evidence-projection.json` and
- * `region3-baseline.json` are from commit 6ccdfff, against the bar as it
- * stood, and they are the only "before" this stage has.
+ * producing a worse version of its own artefact. Its artefacts
+ * (`evidence-projection.json`, `region3-baseline.json`) were recorded against
+ * the pre-U1 bar, with the sidebar DIAL driving the stops. The dial is gone, so
+ * `region3-baseline.json` can never be re-made: it is the only recording of
+ * Region 3 as a control other than these menus produced it, which is half of
+ * the single-writer proof.
  */
 if (PASS === "projection") {
   const built = await evaluate(`Boolean(document.querySelector('[data-view-menu]'))`);
   if (built) {
     throw new Error(
       "the projection pass is being run against code that ALREADY HAS the Design and View menus. Its artefacts " +
-        "(evidence-projection.json, region3-baseline.json) are a recording of the bar BEFORE U1 and must not be " +
-        "regenerated here — below the boundary the menus appear at (1454px since 2026-09-28, and they are shed " +
-        "at every narrower width) there is no ten-control bar to measure. Run the built pass instead " +
-        "(no UI_REORG_U1_PASS), or check out the pre-U1 commit.",
+        "(evidence-projection.json, region3-baseline.json) are a recording of the bar BEFORE U1, driven by a dial " +
+        "that has since been removed, and they must not be regenerated. Run the built pass instead.",
     );
   }
 }
@@ -772,7 +910,40 @@ record(
   (d) => d.controlCount >= 5 && d.present.includes("acting-as") && d.present.includes("settings") && d.barHeight === 56,
 );
 
-console.log("1. a footprint, so the view stops are the real ones");
+/* ⚠ THE LAUNCH STATE, READ BEFORE ANYTHING IS DRAWN OR CLICKED. Tommy: "When
+   you open the app it'll automatically be in planview editor. This will make
+   the design button highlighted." That is a claim about a cold load with NO
+   footprint, and the rule U1 shipped could not satisfy it — ownership required
+   a live view stop, which requires a footprint, so neither menu was
+   highlighted on the one screen he described. It is asserted here, first,
+   before the footprint below makes the case untestable for the rest of the
+   run. */
+record(
+  "on-a-cold-load-with-no-footprint-Design-is-the-highlighted-menu",
+  await evaluate(`(() => {
+    const m = window.__u1.viewMenus();
+    return {
+      design: { owner: m.design.owner, pressed: m.design.pressed, disabled: m.design.disabled, word: m.design.word },
+      view: { owner: m.view.owner, pressed: m.view.pressed, disabled: m.view.disabled, word: m.view.word, title: m.view.title },
+    };
+  })()`),
+  // Design owns and is pressed; View is DISABLED, because a 3D view of a
+  // building that does not exist yet is not a destination — which is exactly
+  // what the removed dial did before a footprint was drawn, kept rather than
+  // reinvented. And Design is never disabled, because it is now the only way
+  // back from the Floor, Roof and Foundation editors.
+  (d) =>
+    d.design.owner === true &&
+    d.design.pressed === "true" &&
+    d.design.disabled === false &&
+    d.design.word === "Design" &&
+    d.view.owner === false &&
+    d.view.pressed === "false" &&
+    d.view.disabled === true &&
+    d.view.title.length > 0,
+);
+
+console.log("1. a footprint, so the stops are the real ones");
 const canvasBox = await evaluate(
   `(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`,
 );
@@ -791,14 +962,17 @@ if (!canvasBox) throw new Error("no canvas — are you on localhost rather than 
 }
 record(
   "footprint-drawn",
-  await evaluate(`(() => ({ dialLabel: window.__u1.dialLabel(), nextDisabled: document.querySelector('[role="group"][aria-label="View mode"] button[title="Next view"]')?.disabled ?? null }))()`),
-  // Every stop below depends on there being a building. With no footprint the
-  // dial is disabled, its ▼ does nothing, and a walk of it reports exactly one
-  // stop -- which looks identical to "the split lost the elevations".
-  (d) => d.dialLabel === "2D Floor Plan" && d.nextDisabled === false,
+  await evaluate(`(() => {
+    const m = window.__u1.viewMenus();
+    return { currentStop: m.design.currentStopAttr, viewDisabled: m.view.disabled };
+  })()`),
+  // Every destination below depends on there being a building: with no
+  // footprint there are no elevation entries and the View menu is empty, which
+  // looks identical to "the merge lost the elevations".
+  (d) => d.currentStop === "2D Floor Plan" && d.viewDisabled === false,
 );
 
-console.log("2. all four scope branches on — the widest nav the keyhole allows");
+console.log("2. all four scope branches on — the widest bar the keyhole allows");
 await clickSelector('[data-bar-control="project"]', "the Project menu");
 await clickSelector('#project-note button[title^="Which editor tools"]', "the Panelizer item");
 const scopeBoxes = await evaluate(`(() => {
@@ -829,10 +1003,9 @@ const scopeAfter = await evaluate(`(() => {
 })()`);
 await clickSelector('#panelizer-note button[title="Hide this note"]', "the Panelizer note's close button");
 await sleep(500);
-// Nothing may be left overlaying the editor: an open note sitting over the
-// view dial is how U0's harness once lost six dial clicks in a row and
-// reported "Membranes unreachable" -- a locator problem wearing a feature
-// bug's clothes. Checked, not hoped for.
+// Nothing may be left overlaying the editor: an open note sitting over a
+// control is how U0's harness once lost six clicks in a row and reported
+// "Membranes unreachable" — a locator problem wearing a feature bug's clothes.
 const notesStillOpen = await evaluate(
   `[...document.querySelectorAll('#panelizer-note, #project-note, #site-properties-note')].filter((n) => n.getBoundingClientRect().width > 0).length`,
 );
@@ -840,20 +1013,19 @@ if (notesStillOpen > 0) throw new Error(`${notesStillOpen} top-bar note(s) left 
 record(
   "all-four-scope-branches-on",
   { scopeBefore: scopeBoxes, scopeAfter },
-  // The widest possible nav is the case every width below is judged on. If the
-  // keyhole is left at its default (Floor and Foundation OFF since Smearforn
-  // Stage 0) the bar is measured two tabs narrower than Tommy's list.
+  // The widest possible bar is the case every width below is judged on. Left at
+  // its default (Floor and Foundation OFF since Smearforn Stage 0) the Design
+  // menu would be measured two subject groups short, and option A two tabs
+  // short.
   (d) => d.scopeAfter.length === 4 && d.scopeAfter.every((b) => b.checked === true),
 );
 
 console.log("3. validating the four-company simulation against a real 2026-09-13 measurement");
-// ⚠ AT 1600, NOT 1440, AND THE DIFFERENCE IS THE POINT. The 270px reference
-// was measured with room to spare, so the select was at its natural width.
-// Once U1 puts Design and View on the bar, 1440px no longer has that room:
-// the same select renders 256px there because it is being squeezed — which is
-// a true reading of the new bar, and a false basis for validating a
-// simulation. Validate where nothing is fighting for the width; the squeeze
-// itself is measured by the matrix below, which is what it is for.
+// ⚠ AT 1600, WHERE NOTHING IS FIGHTING FOR THE WIDTH. The 270px reference was
+// measured with room to spare, so the select was at its natural width.
+// Validating it at a width where the bar is squeezed would compare a squeezed
+// select against an unsqueezed figure and call the difference a broken
+// simulation.
 await setViewport(1600, 1000);
 await installToolkit();
 const simCheck = await evaluate(
@@ -866,123 +1038,155 @@ record(
     recordedPx: RECORDED_LONGEST_LABEL_PX,
     deltaPx: simCheck.width == null ? null : Math.round((simCheck.width - RECORDED_LONGEST_LABEL_PX) * 10) / 10,
   },
-  // ⚠ THE ANTI-VACUOUS-PASS GUARD FOR THE WHOLE SIMULATION. If the hashed
-  // class lookup failed, the select renders unstyled — a different font at a
+  // ⚠ THE ANTI-VACUOUS-PASS GUARD FOR THE WHOLE SIMULATION. If the hashed class
+  // lookup failed, the select renders unstyled — a different font at a
   // different size — and every "four companies" width below would be a
-  // measurement of nothing. 270px is the figure a real browser produced for
-  // this exact label on 2026-09-13 and it is written into
-  // AccountControl.module.css. Within 12px of it is the same control; wildly
-  // off is a broken simulation, and it fails here rather than downstream.
+  // measurement of nothing.
   (d) => d.ok === true && d.deltaPx !== null && Math.abs(d.deltaPx) <= 12 && d.chipText.includes("Seed"),
 );
 await evaluate(`window.__u1.clearCompanies()`);
 
-/**
- * THE WIDTH AT WHICH DESIGN AND VIEW APPEAR — discovered, not written down.
- *
- * ⚠ WHY IT IS NOT A CONSTANT HERE. This file's own rule is that hashed class
- * names are build artefacts and are found rather than transcribed. A
- * breakpoint is the same kind of fact: if the harness carried its own copy of
- * the number, a stylesheet edit would leave every "one presentation at every
- * width" assertion quietly testing the wrong boundary — passing, and meaning
- * nothing. So the boundary is bisected out of the shipped CSS by asking which
- * control is actually on screen, and the steps that need it read the answer.
- *
- * In the projection pass the menus do not exist at any width, so there is no
- * boundary to find; the value is null there and the steps that need it are
- * already skipped.
- */
-const findMenusBoundary = async () => {
-  const menusAt = async (w) => {
-    await setViewport(w, 900);
-    await installToolkit();
-    return await evaluate(`(() => { const m = window.__u1.viewMenus(); return Boolean(m.design && m.design.present); })()`);
-  };
-  let lo = 320;
-  let hi = 2400;
-  if (!(await menusAt(hi))) return null;
-  if (await menusAt(lo)) return lo;
-  while (hi - lo > 1) {
-    const mid = Math.round((lo + hi) / 2);
-    if (await menusAt(mid)) hi = mid;
-    else lo = mid;
-  }
-  return hi;
-};
-const MENUS_AT = PASS === "projection" ? null : await findMenusBoundary();
-evidence.viewMenusAppearAtViewportWidth = MENUS_AT;
-console.log(`   the Design/View menus appear at ${MENUS_AT}px (measured off the shipped CSS)`);
-
-/** §12's six widths, plus the two either side of the boundary the menus
- * really flip at — because a breakpoint nothing is sampled at is a breakpoint
- * nothing is measured at, and this one was moved precisely because the bar at
- * it was never read. */
-const MEASURED_WIDTHS = [...new Set([...WIDTHS, ...(MENUS_AT ? [MENUS_AT - 1, MENUS_AT] : [])])].sort((a, b) => a - b);
-evidence.measuredWidths = MEASURED_WIDTHS;
-
-console.log("4. THE MATRIX — 6 widths x 2 account states x 4 roles, twelve controls");
-/** Read every stop label by walking the dial one full turn, at a width where
- * the dial exists in both passes (below 1200 it is never shed). */
-await setViewport(1100, 1000);
-await installToolkit();
-const allStopLabels = [];
-{
-  const first = await evaluate(`window.__u1.dialLabel()`);
-  if (!first) throw new Error("no view dial at 1100px — the dial is the below-breakpoint form and must exist here");
-  allStopLabels.push(first);
-  for (let i = 0; i < 14; i++) {
-    const before = await evaluate(`window.__u1.dialLabel()`);
-    await clickSelector('[role="group"][aria-label="View mode"] button[title="Next view"]', "the dial's ▼");
-    const label = await evaluate(`window.__u1.dialLabel()`);
-    // A click that lands on nothing leaves the label alone, and a walk that
-    // stops after one stop is the vacuous shape this whole file is written
-    // against. Say which of the two it was.
-    if (label === before) throw new Error(`the dial did not move off "${before}" -- the ▼ click missed`);
-    if (label === allStopLabels[0]) break;
-    allStopLabels.push(label);
-  }
+console.log("4. what was removed is gone at EVERY width, and what replaced it is present at every width");
+const removalSweep = [];
+for (const w of WIDTHS) {
+  await setViewport(w, 900);
+  await installToolkit();
+  const seen = await evaluate(`(() => {
+    const m = window.__u1.viewMenus();
+    return {
+      removed: window.__u1.removedControls(),
+      editorTabDial: window.__u1.editorTabDial(),
+      design: { present: m.design.present, word: m.design.word, text: m.design.text, w: m.design.w },
+      view: { present: m.view.present, word: m.view.word, text: m.view.text, w: m.view.w },
+    };
+  })()`);
+  removalSweep.push({ width: w, ...seen });
 }
+evidence.removalSweep = removalSweep;
 record(
-  "the-dial-offers-plan-every-elevation-and-the-three-3d-modes",
-  { stops: allStopLabels, elevationCount: allStopLabels.filter((l) => l.startsWith("Elevation:")).length },
-  // Membranes by name: that word was a specific request and U1 touches the
-  // file that holds it. A footprint drawn as a rectangle gives four walls.
+  "the-dial-the-nav-tabs-and-the-wordmark-are-gone-at-every-width",
+  { removalSweep: removalSweep.map((r) => ({ width: r.width, ...r.removed })) },
+  // ⚠ A REMOVAL IS ONLY REAL IF IT HOLDS AT EVERY WIDTH. Each of these three
+  // had a width-keyed life: the dial was the below-breakpoint form, the nav
+  // tabs and the wordmark appeared at 1200 and up. A sweep at 1600 alone would
+  // have called all three gone while two were alive at 710. The caption and
+  // value counts are here too: the LABEL+Value treatment is meant to be unique
+  // to the acting-as chip now, and its reappearance on a view menu would be the
+  // bare-word decision quietly undone.
+  (d) =>
+    d.removalSweep.every(
+      (r) =>
+        r.sidebarViewDial === false &&
+        r.editorNav === false &&
+        r.barNavZone === false &&
+        r.barTabButtons.length === 0 &&
+        r.wordmark === false &&
+        r.viewMenuCaptions === 0 &&
+        r.viewMenuValues === 0,
+    ),
+);
+record(
+  "Design-and-View-are-BARE-WORDS-on-the-bar-at-every-width",
+  {
+    cells: removalSweep.map((r) => ({ width: r.width, design: r.design, view: r.view })),
+    // The bar's own two words, and their measured widths. The carets are part
+    // of `text` and are dropped below 768 by the stylesheet, which is why the
+    // WORD is read from its own span rather than off textContent — a reader
+    // comparing textContent to "View" fails on "View ▼" and reads exactly like
+    // a rename that never happened.
+    designWidthByWidth: Object.fromEntries(removalSweep.map((r) => [r.width, r.design.w])),
+    viewWidthByWidth: Object.fromEntries(removalSweep.map((r) => [r.width, r.view.w])),
+  },
+  // Tommy, 2026-09-28: "That would reduce the view button to just saying view."
+  // Present at every width — with no dial there is nothing to catch these if
+  // they shed — and carrying the word and nothing else.
+  (d) =>
+    d.cells.every(
+      (c) =>
+        c.design.present === true &&
+        c.view.present === true &&
+        c.design.word === "Design" &&
+        c.view.word === "View" &&
+        c.design.text.replace(/[▼▲]/g, "").trim() === "Design" &&
+        c.view.text.replace(/[▼▲]/g, "").trim() === "View",
+    ),
+);
+
+console.log("5. every destination is reachable from the bar, and counted");
+await setViewport(1600, 1000);
+await installToolkit();
+const designEntries = await (async () => {
+  await clickSelector('[data-view-menu="design"]', "the Design menu");
+  const entries = await evaluate(`window.__u1.openMenuEntries()`);
+  await clickSelector('[data-view-menu="design"]', "the Design menu");
+  return entries;
+})();
+const viewEntries = await (async () => {
+  await clickSelector('[data-view-menu="view"]', "the View menu");
+  const entries = await evaluate(`window.__u1.openMenuEntries()`);
+  await clickSelector('[data-view-menu="view"]', "the View menu");
+  return entries;
+})();
+evidence.menuContents = { design: designEntries, view: viewEntries };
+const allStopLabels = [
+  ...designEntries.flatMap((g) => g.entries.filter((e) => e.kind === "stop").map((e) => e.label)),
+  ...viewEntries.flatMap((g) => g.entries.filter((e) => e.kind === "stop").map((e) => e.label)),
+];
+const longestStopLabel = allStopLabels.reduce((a, b) => (b.length > a.length ? b : a), allStopLabels[0]);
+record(
+  "the-two-menus-together-reach-every-stop-and-every-subject-in-scope",
+  {
+    designGroups: designEntries.map((g) => ({ subject: g.subject, heading: g.heading, groupRole: g.groupRole, groupLabel: g.groupLabel, entries: g.entries.map((e) => e.label) })),
+    viewGroups: viewEntries.map((g) => ({ subject: g.subject, heading: g.heading, entries: g.entries.map((e) => e.label) })),
+    stops: allStopLabels,
+    subjects: designEntries.flatMap((g) => g.entries.filter((e) => e.kind === "subject").map((e) => e.key)),
+    elevationCount: allStopLabels.filter((l) => l.startsWith("Elevation:")).length,
+  },
+  // ⚠ THE CENTRAL REQUIREMENT — "let's make sure nothing is lost" — and with
+  // both the dial and the four tabs gone, a destination missing here is a
+  // destination NOBODY CAN REACH AT ALL. Counted rather than sampled: the plan,
+  // one elevation per wall of the rectangle drawn above, the three 3D
+  // representations by name (Membranes was a specific request), and the three
+  // non-wall subjects, which are present only because step 2 checked them on.
   (d) =>
     d.stops[0] === "2D Floor Plan" &&
     d.elevationCount >= 3 &&
     d.stops.includes("3D Framed") &&
     d.stops.includes("3D Boxes") &&
     d.stops.includes("Membranes") &&
-    !d.stops.includes("3D Wraps"),
+    !d.stops.includes("3D Wraps") &&
+    JSON.stringify(d.subjects) === JSON.stringify(["floor", "roof", "foundation"]) &&
+    // Tommy chose GROUPED over flat, so the wall group carries a heading and it
+    // is the group's accessible name too — a heading that only sighted readers
+    // get is not grouping.
+    d.designGroups[0].heading === "Wall" &&
+    d.designGroups[0].groupRole === "group" &&
+    d.designGroups[0].groupLabel === "Wall",
 );
-const longestStopLabel = allStopLabels.reduce((a, b) => (b.length > a.length ? b : a), allStopLabels[0]);
 
-const PROJECTION_SPEC = [
-  { control: "design", caption: "DESIGN", value: longestStopLabel, label: "Design" },
-  { control: "view", label: "View" },
+/**
+ * THE BAR CONFIGURATIONS.
+ *
+ * `built` is measured as it renders; the others add PROJECTED controls to the
+ * real row so the real media queries and the real flex behaviour are in play
+ * rather than arithmetic on remembered widths.
+ */
+const TAB_SPEC = [
+  { control: "nav-wall", label: "Wall", style: "navTab" },
+  { control: "nav-foundation", label: "Foundation", style: "navTab" },
+  { control: "nav-floor", label: "Floor", style: "navTab" },
+  { control: "nav-roof", label: "Roof", style: "navTab" },
+];
+const SUMMARY_PRINT_SPEC = [
   { control: "summary", label: "Summary" },
   { control: "print", label: "Print" },
 ];
-/**
- * THREE bar configurations are measured in every cell, because they answer
- * three different questions and conflating them is how a stage ships on a
- * number that was never about it:
- *
- *   today        — the bar exactly as it is, six controls. The control group.
- *   designView   — today PLUS Design and View only. **This is the bar U1
- *                  actually ships**, so this is the configuration U1's own
- *                  no-overflow assertion is made against.
- *   twelve       — Tommy's whole list. Design, View, Summary and Print all on
- *                  the row. **Nothing in U1 builds this** — Summary is U4 and
- *                  Print is U5, and the Top Bar section forbids a control that
- *                  opens nothing — but it is the question U1 was sent to
- *                  answer, so it is measured rather than deferred to the stage
- *                  that would discover it the hard way.
- */
 const BAR_CONFIGS = [
-  { id: "designView", spec: PROJECTION_SPEC.slice(0, 2) },
-  { id: "twelve", spec: PROJECTION_SPEC },
+  { id: "optionA", spec: TAB_SPEC, what: "the four tab items back on the bar — the structure Tommy did not choose" },
+  { id: "builtPlus", spec: SUMMARY_PRINT_SPEC, what: "option B plus Summary and Print as bare buttons (U4/U5, projected)" },
+  { id: "optionAPlus", spec: [...TAB_SPEC, ...SUMMARY_PRINT_SPEC], what: "option A plus Summary and Print" },
 ];
+evidence.barConfigurations = [{ id: "built", spec: [], what: "the bar as it ships: bare Design and View, no wordmark, no tab items" }, ...BAR_CONFIGS];
 
 const setRole = async (label) => {
   await clickSelector('[data-bar-control="role"]', "the Role control");
@@ -1002,25 +1206,25 @@ const setRole = async (label) => {
   if (!now.includes(label)) throw new Error(`role did not change to ${label}; the control reads "${now}"`);
 };
 
-/** One reading of the row, summarised the same way whichever configuration is
- * installed. `wantedPx` is every control at its natural width plus the gaps
- * the row really uses at this breakpoint — i.e. what the row would need if
- * nothing were allowed to shrink. `rowContentWidth` is what it has. */
+/** One reading of the row. `wantedPx` is every control at its natural width
+ * plus the gaps the row really uses at this breakpoint — i.e. what the row
+ * would need if nothing were allowed to shrink. `rowContentWidth` is what it
+ * has. */
 const summarise = (fit, width) => ({
   controls: fit.present,
   controlCount: fit.controlCount,
+  /* ⚠ THE PER-CONTROL WIDTHS, the figure this pass was sent to produce. */
+  controlWidths: fit.controlWidths,
   widthSum: fit.controlsWidthSum,
   rowContentWidth: fit.rowContentWidth,
   overflowPx: fit.rowOverflowPx,
   docOverflowPx: fit.docOverflowPx,
   actingAsWidth: fit.actingAsWidth,
   actingAsOnScreen: fit.actingAsOnScreen,
-  /* ⚠ RECORDED AT EVERY CELL, not summarised away: the select's own width and
-     how much of the company name is actually legible in it. The chip's box
-     above says "on screen" for a chip whose select is 16.1px wide and shows
-     nothing, which is the reading that let U1 ship the 2026-09-13 failure in
-     its second form. Measurement rather than assertion, like the rest of this
-     file — but there IS now an assertion over it, below. */
+  /* The select's own width and how much of the company name is legible in it.
+     The chip's box above says "on screen" for a chip whose select is 16.1px
+     wide and shows nothing, which is the reading that let U1 ship the
+     2026-09-13 failure in its second form. */
   nameWidthPx: fit.actingAsName ? fit.actingAsName.widthPx : null,
   nameNaturalPx: fit.actingAsName ? fit.actingAsName.naturalPx : null,
   nameVisibleChars: fit.actingAsName ? fit.actingAsName.visibleChars : null,
@@ -1042,11 +1246,14 @@ const applyAccountState = async (accountState, width) => {
   if (!sim.ok) throw new Error(`the four-company simulation failed at ${width}px: ${sim.why}`);
 };
 
+console.log("6. THE MATRIX — 8 widths x 2 account states x 4 roles x 4 bar configurations");
+const MEASURED_WIDTHS = [...WIDTHS];
+evidence.measuredWidths = MEASURED_WIDTHS;
 const matrix = [];
 for (const role of ROLE_LABELS) {
   // The role is set at a width where its note is comfortably on screen. The
-  // control itself is never shed at any width; only its note is easier to hit
-  // here, and the role persists across every viewport change below.
+  // control itself is never shed at any width; the role persists across every
+  // viewport change below.
   await setViewport(1440, 1000);
   await installToolkit();
   await setRole(role);
@@ -1056,38 +1263,20 @@ for (const role of ROLE_LABELS) {
     for (const accountState of ["signed-out", "four-companies-simulated"]) {
       await applyAccountState(accountState, width);
       const cell = { role, width, accountState };
-      cell.dialPresent = await evaluate(`window.__u1.dialPresent()`);
-      cell.today = summarise(await evaluate(`window.__u1.fit()`), width);
-      // ⚠ WHICH PASS PROJECTS WHAT, and why it is not the same in both.
-      //
-      // The projection pass forces all four new controls onto the row at
-      // EVERY width, because "does a twelve-item bar fit" is literally a
-      // question about a bar that never sheds.
-      //
-      // The built pass must not do that below the boundary the menus really
-      // appear at: there, Design and View are in the DOM but `display: none`
-      // — they have SHED into the sidebar dial, which is what ships and is
-      // the correct answer. A projection would skip them (they exist) and
-      // then measure a row missing two of the controls it claims to have
-      // measured. So below the breakpoint the built pass measures only the
-      // real bar, and `today` there IS the shipped bar. The boundary is
-      // `MENUS_AT`, read off the CSS rather than written down here.
-      const configsHere = PASS === "projection" || width >= MENUS_AT ? BAR_CONFIGS : [];
-      for (const config of configsHere) {
+      cell.built = summarise(await evaluate(`window.__u1.fit()`), width);
+      for (const config of BAR_CONFIGS) {
         const projection = await evaluate(`window.__u1.project(${JSON.stringify(config.spec)})`);
         if (!projection.ok) throw new Error(`projecting ${config.id} at ${width}px failed: ${projection.why}`);
         const fit = await evaluate(`window.__u1.fit()`);
-        // ⚠ ANTI-VACUOUS GUARD. `project()` skips anything already on the bar
-        // for real, so in the built pass it legitimately adds fewer controls
-        // than the spec lists. What may never happen is a configuration that
-        // added nothing AND found nothing already there — that would report a
-        // six-control bar as a twelve-control one that fits beautifully.
+        // ⚠ ANTI-VACUOUS GUARD. A configuration that added nothing AND found
+        // nothing already there would report the shipped bar as the projected
+        // one and say it fits beautifully.
         const wanted = config.spec.map((s) => s.control);
         const missing = wanted.filter((c) => !fit.present.includes(c));
         if (missing.length > 0) throw new Error(`${config.id} at ${width}px is missing ${missing.join(", ")} from the row`);
         cell[config.id] = summarise(fit, width);
         cell[config.id].projectedHere = projection.projected;
-        cell[config.id].realHere = wanted.filter((c) => !projection.projected.includes(c));
+        cell[config.id].projectedFromDeletedCss = projection.projectedFromDeletedCss;
         await evaluate(`window.__u1.clearProjection()`);
       }
       if (accountState === "four-companies-simulated") await evaluate(`window.__u1.clearCompanies()`);
@@ -1097,20 +1286,15 @@ for (const role of ROLE_LABELS) {
 }
 evidence.matrix = matrix;
 
-/** Four companies is the widest real case, so it is the one every summary
- * below is taken from. The signed-out rows stay in `matrix` for comparison. */
+/** Four companies is the widest real case, so every summary below is taken
+ * from it. The signed-out rows stay in `matrix` for comparison. */
 const worst = matrix.filter((m) => m.accountState === "four-companies-simulated");
+const CONFIG_IDS = ["built", "optionA", "builtPlus", "optionAPlus"];
 const summaryFor = (configId) => {
   const out = {};
   for (const w of MEASURED_WIDTHS) {
     const cells = worst.filter((m) => m.width === w).map((m) => m[configId]).filter(Boolean);
-    if (cells.length === 0) {
-      // Below 1200 in the built pass there is no projection to summarise,
-      // because the controls have shed. Said out loud rather than reported as
-      // a width that fits perfectly.
-      out[w] = { notMeasured: "the new controls are shed at this width; see today[" + w + "]" };
-      continue;
-    }
+    if (cells.length === 0) continue;
     out[w] = {
       rowContentWidth: cells[0].rowContentWidth,
       maxWantedPx: Math.max(...cells.map((c) => c.wantedPx)),
@@ -1133,110 +1317,108 @@ const summaryFor = (configId) => {
       ),
       everOffScreen: [...new Set(cells.flatMap((c) => c.offScreen))],
       controlsPresent: cells[0].controls,
+      /* Per control, per width, the widest reading across the four roles — the
+         answer to "how wide IS Account, really". */
+      controlWidths: Object.fromEntries(
+        [...new Set(cells.flatMap((c) => Object.keys(c.controlWidths)))].map((name) => [
+          name,
+          Math.max(...cells.map((c) => c.controlWidths[name] ?? 0)),
+        ]),
+      ),
     };
   }
   return out;
 };
-evidence.byWidth = {
-  today: summaryFor("today"),
-  designView: summaryFor("designView"),
-  twelve: summaryFor("twelve"),
+evidence.byWidth = Object.fromEntries(CONFIG_IDS.map((id) => [id, summaryFor(id)]));
+
+/**
+ * ⚠ THE PER-CONTROL WIDTHS, PUBLISHED ON THEIR OWN, because they are the point
+ * of this pass.
+ *
+ * The previous record carried ~104px each for Account, Projects and Settings,
+ * derived by subtracting measured parts from a measured total. That is
+ * inference sitting in a table of measurements, and it is what made 1280px look
+ * like it had ~17px of margin. These are read one control at a time out of the
+ * real layout, at the width where nothing is squeezing them (1600) and again at
+ * every measured width.
+ */
+evidence.perControlWidths = {
+  measuredAt: "four companies simulated, the widest reading across all four roles",
+  atEachWidth: Object.fromEntries(
+    MEASURED_WIDTHS.map((w) => [w, evidence.byWidth.built[w] ? evidence.byWidth.built[w].controlWidths : null]),
+  ),
+  unsqueezedAt1600: evidence.byWidth.built[1600] ? evidence.byWidth.built[1600].controlWidths : null,
 };
+record(
+  "THE-PER-CONTROL-WIDTHS",
+  evidence.perControlWidths,
+  // An observation, not a gate — but it does have to be a real reading, and a
+  // missing control here would mean every derived figure below is arithmetic on
+  // a hole. Account, Projects and Settings are named explicitly because they
+  // are the three that were inferred.
+  (d) =>
+    d.unsqueezedAt1600 !== null &&
+    ["acting-as", "account", "project", "design", "view", "role", "settings"].every(
+      (c) => typeof d.unsqueezedAt1600[c] === "number" && d.unsqueezedAt1600[c] > 0,
+    ),
+);
 
 /**
  * The narrowest viewport at which a configuration really fits, bisected in a
- * real browser rather than extrapolated from the six sampled widths.
+ * real browser rather than extrapolated from the sampled widths.
  *
  * FOUR predicates, because "fits" has several honest meanings and the gaps
  * between them are the whole lesson of 2026-09-13 — twice over:
  *   `nothingOffScreen`   — no control has left the viewport and nothing
- *                          scrolls. The floor, and the thing U1 must keep.
+ *                          scrolls. The floor.
  *   `anyNameVisible`     — that, AND at least one character of the acting-as
- *                          company really renders. ⚠ ADDED 2026-09-28: the
- *                          floor the 2026-09-26 decision actually promises.
- *                          `nothingOffScreen` is satisfied by a chip reading
- *                          `ACTING AS ⌄` with the name entirely gone, which
- *                          is what U1 shipped at 1200px.
- *   `companyNameIntact`  — that, AND the acting-as CHIP is at least as wide
- *                          as the cap its select's stylesheet gives it (220px
- *                          below 1200, 280px at and above). Kept because the
- *                          published figures are stated in its terms, but it
- *                          reads the chip and the chip carries ~85px of
- *                          caption and padding, so it clears while the name
- *                          is still cut.
- *   `companyNameWhole`   — that, AND the NAME ELEMENT itself is at its
- *                          natural untruncated width, measured against a
- *                          `max-width: none` clone. ⚠ ADDED 2026-09-28: this
- *                          is the one "the name is not crushed" means, and it
- *                          is ~114px of viewport stricter than the chip
- *                          reading it replaces.
- * "Truncated but present beats absent" is the rule, but a company name cut to
- * a letter — or to nothing — is the SHAPE of the bug, not a graceful
- * degradation, so each is measured separately.
+ *                          company really renders. **Below this width the name
+ *                          is FULLY ABSENT, which is the number Tommy asked to
+ *                          see for this design.**
+ *   `companyNameIntact`  — that, AND the acting-as CHIP is at least as wide as
+ *                          the cap its select's stylesheet gives it. Kept
+ *                          because older figures are stated in its terms; it
+ *                          reads the chip, which carries ~85px of caption and
+ *                          padding, so it clears while the name is still cut.
+ *   `companyNameWhole`   — that, AND the NAME ELEMENT itself is at its natural
+ *                          untruncated width, measured against a
+ *                          `max-width: none` clone. This is the one "the name
+ *                          is not crushed" means.
  *
- * ⚠ BISECTED PER BREAKPOINT BAND, AND THE FIRST VERSION OF THIS WAS WRONG.
- * A plain bisect over 320..2400 assumes fit improves monotonically with
- * width. It does not: at exactly 1200px the bar GAINS the wordmark and four
- * nav tabs, ~380px of content arriving in one step, so a configuration can
- * fit at 1199 and fail at 1200. The naive bisect happily reported "fits from
- * 875px" for a bar that is crushed at 1200 — a true number that means the
- * opposite of what it looks like. Each band is monotonic on its own, so each
- * is bisected on its own and reported on its own.
+ * ⚠ BISECTED PER BREAKPOINT BAND, because fit is not monotonic in width: the
+ * bar's neighbours still change at 1200 (the name's cap rises from 220px to
+ * 280px), so a configuration can behave differently at 1199 and 1200. Each band
+ * is monotonic on its own.
  *
- * ⚠ AND THE SECOND VERSION WAS WRONG TOO, FOUND 2026-09-28. The bisection
- * runs after the matrix loop, so it inherited whatever role that loop happened
- * to leave set — the LAST of ROLE_LABELS, which is `Engineer`. Every published
- * threshold was therefore measured at the wrong cell: the widest role label is
- * `Fabricator` (the 2026-09-13 measurement used it for exactly that reason,
- * and at 1200px it is the role whose select is crushed to 16px while
- * Engineer's is 22.5px). A bar that is short by 6.5px more than the number
- * says is a bar whose name is cut further than the record admits. The role is
- * now set explicitly here and recorded beside the answers, rather than left to
- * whatever ran last.
+ * ⚠ AND AT THE WIDEST ROLE LABEL, SET EXPLICITLY. An earlier version inherited
+ * whatever role the matrix loop left set and every published threshold was
+ * 6-7px off in the optimistic direction.
  */
-/** The widest role label, and the reason every threshold below is measured at
- * it. `roleDisclaimers`' longest rendered option — not a guess: at 1200px with
- * four companies it is the role that leaves the company name narrowest. */
 const WIDEST_ROLE_LABEL = "Fabricator";
 const BREAKPOINT_BANDS = [
-  { id: "below-768", lo: 320, hi: 767, what: "no wordmark, no nav, ACTING AS caption shed" },
-  { id: "768-1199", lo: 768, hi: 1199, what: "no wordmark, no nav, caption shown" },
-  { id: "1200-up", lo: 1200, hi: 2400, what: "wordmark + four nav tabs" },
+  { id: "below-768", lo: 320, hi: 767, what: "carets dropped, ACTING AS caption shed, tighter controls" },
+  { id: "768-1199", lo: 768, hi: 1199, what: "caption shown, company name capped at 220px" },
+  { id: "1200-up", lo: 1200, hi: 2400, what: "company name capped at 280px; sidebar tab dial hidden" },
 ];
 
 const makeFitsAt = (spec, predicateId) => async (w) => {
   await setViewport(w, 900);
   await installToolkit();
   await applyAccountState("four-companies-simulated", w);
-  const projection = await evaluate(`window.__u1.project(${JSON.stringify(spec)})`);
-  if (!projection.ok) throw new Error(`bisect projection failed at ${w}px: ${projection.why}`);
+  if (spec.length > 0) {
+    const projection = await evaluate(`window.__u1.project(${JSON.stringify(spec)})`);
+    if (!projection.ok) throw new Error(`bisect projection failed at ${w}px: ${projection.why}`);
+  }
   const fit = await evaluate(`window.__u1.fit()`);
   await evaluate(`window.__u1.clearProjection(); window.__u1.clearCompanies();`);
   const nothingOffScreen = fit.anyControlOffScreen.length === 0 && fit.docOverflowPx === 0 && fit.rowOverflowPx === 0;
   if (predicateId === "nothingOffScreen") return nothingOffScreen;
   if (predicateId === "companyNameWhole") {
-    // ⚠ THE STRICT ONE, ADDED 2026-09-28, AND THE DIFFERENCE MATTERS.
-    // `companyNameIntact` below reads the CHIP against the cap declared on
-    // the SELECT — and the chip is the select PLUS its `ACTING AS` caption,
-    // its gap, its padding and its border, some 85px of furniture. A chip of
-    // 280px therefore clears that bar while the name inside it is still being
-    // cut. Measured on the U1-as-built bar: the chip reaches 280px at 1374px
-    // of viewport, but the name is not WHOLE until ~1488px. This predicate
-    // asks the name itself, by comparing the select's laid-out width with the
-    // natural width of a `max-width: none` clone of it — no threshold copied
-    // out of a stylesheet at all.
     return nothingOffScreen && fit.actingAsName !== null && fit.actingAsName.truncated === false;
   }
   if (predicateId === "anyNameVisible") {
-    // The floor the 2026-09-26 decision actually promises: some of the
-    // company name, not merely a chip whose box is on screen.
     return nothingOffScreen && fit.actingAsName !== null && fit.actingAsName.anyNameVisible === true;
   }
-  // The cap is declared on the SELECT in AccountControl.module.css; the chip
-  // measured here is that select plus its caption and padding, so reaching the
-  // cap is a conservative reading of "the name is not being crushed" rather
-  // than a threshold this file invented. ⚠ CONSERVATIVE IN THE UNSAFE
-  // DIRECTION — see `companyNameWhole` above, which is the honest reading.
   const cap = w >= 1200 ? 280 : 220;
   return nothingOffScreen && (fit.actingAsWidth ?? 0) >= cap;
 };
@@ -1255,14 +1437,13 @@ const bisectBand = async (spec, predicateId, band) => {
   return hi;
 };
 
-// Explicitly, rather than inheriting the matrix loop's last role. Set at a
-// width where the Role note is comfortably on screen, as the matrix does.
+console.log("7. the thresholds, bisected in the browser");
 await setViewport(1440, 1000);
 await installToolkit();
 await setRole(WIDEST_ROLE_LABEL);
 
 const firstFits = {};
-for (const config of PASS === "projection" ? [{ id: "today", spec: [] }, ...BAR_CONFIGS] : [{ id: "today", spec: [] }]) {
+for (const config of [{ id: "built", spec: [] }, ...BAR_CONFIGS]) {
   firstFits[config.id] = {};
   for (const predicateId of ["nothingOffScreen", "anyNameVisible", "companyNameIntact", "companyNameWhole"]) {
     firstFits[config.id][predicateId] = {};
@@ -1271,40 +1452,32 @@ for (const config of PASS === "projection" ? [{ id: "today", spec: [] }, ...BAR_
     }
   }
 }
-/* ⚠ AND PUT IT BACK. Region 3's content is ROLE-DEPENDENT — the
+/* ⚠ AND PUT THE ROLE BACK. Region 3's content is ROLE-DEPENDENT — the
    "Estimated Structural Capacity" block is one of the sections a role gates —
-   so leaving Fabricator set here made step 6's cross-run comparison fail on
-   all four elevations against a baseline recorded under the matrix loop's
-   last role. That is the comparison being handed a different page, not a
-   leaked view flag, and it is the second time this file has had a Region 3
-   test fail for a reason that was the TEST's. The bisection borrows the role
-   and returns it. */
+   so leaving Fabricator set here made the cross-run comparison below fail on
+   every elevation against a baseline recorded under a different role. That is
+   the comparison being handed a different page, not a leaked view flag. */
 await setViewport(1440, 1000);
 await installToolkit();
 await setRole(ROLE_LABELS[ROLE_LABELS.length - 1]);
 
 evidence.firstFitsAtViewportWidth = firstFits;
-/* Which cell every threshold above was measured at. Recorded because the
-   first two versions of this bisection did not say, and the second was
-   silently reading the wrong role. */
 evidence.firstFitsMeasuredAt = {
   role: WIDEST_ROLE_LABEL,
-  why: "the widest role label; at 1200px it leaves the company name narrowest of the four",
+  why: "the widest role label; it leaves the company name narrowest of the four",
   accountState: "four-companies-simulated",
   companyLabel: LONGEST_COMPANY_LABEL,
   bisectionTolerancePx: 2,
 };
 evidence.breakpointBands = BREAKPOINT_BANDS;
 
-/**
- * Each configuration's NATURAL width: the row content it wants when nothing
- * is being squeezed, i.e. measured where there is room to spare. Read off the
- * widest sampled width rather than summed from remembered figures, and
- * reported as a viewport number too (the bar's own 20px padding each side).
- * This is the number "does it fit on a 1920 monitor" is answered from.
- */
+/** Each configuration's NATURAL width: the row content it wants when nothing is
+ * squeezed, read at the widest sampled width rather than summed from remembered
+ * figures, and reported as a viewport number too (the bar's own 20px padding
+ * each side). This is the number "does it fit on a 1920 monitor" is answered
+ * from. */
 const natural = {};
-for (const id of ["today", "designView", "twelve"]) {
+for (const id of CONFIG_IDS) {
   const at1600 = worst.filter((m) => m.width === 1600).map((m) => m[id]).filter(Boolean);
   if (at1600.length === 0) continue;
   natural[id] = {
@@ -1315,58 +1488,78 @@ for (const id of ["today", "designView", "twelve"]) {
 }
 evidence.naturalWidths = natural;
 
+/** ⚠ WHAT FOLDING THE TABS INTO THE DESIGN MENU ACTUALLY BOUGHT, measured
+ * rather than quoted. The plan says "roughly 264px"; this is the difference
+ * between the shipped bar and the same bar with the four tab items projected
+ * back onto it, at the width where neither is squeezed. */
+evidence.tabFoldSavingPx =
+  natural.optionA && natural.built
+    ? Math.round((natural.optionA.naturalRowContentPx - natural.built.naturalRowContentPx) * 10) / 10
+    : null;
+evidence.summaryPrintCostPx =
+  natural.builtPlus && natural.built
+    ? Math.round((natural.builtPlus.naturalRowContentPx - natural.built.naturalRowContentPx) * 10) / 10
+    : null;
+
+/** ⚠ EVERY WIDTH AT WHICH THE COMPANY NAME IS FULLY ABSENT — the number Tommy
+ * asked for by name, stated as a range per band and as a list of the sampled
+ * widths where it really happened. Truncated-but-present beats absent; where
+ * even truncation runs out, that is published rather than glossed. */
+evidence.companyNameFullyAbsent = {
+  atSampledWidths: Object.fromEntries(
+    CONFIG_IDS.map((id) => [
+      id,
+      MEASURED_WIDTHS.filter((w) => {
+        const cells = worst.filter((m) => m.width === w).map((m) => m[id]).filter(Boolean);
+        return cells.length > 0 && cells.some((c) => c.anyNameVisible === false);
+      }),
+    ]),
+  ),
+  firstWidthWithAnyNameVisible: Object.fromEntries(CONFIG_IDS.map((id) => [id, firstFits[id].anyNameVisible])),
+  note:
+    "Below the 'anyNameVisible' threshold for its band the acting-as company renders zero characters. " +
+    "The chip, its caption and the switcher itself are still there and still on screen; it is the NAME that is gone.",
+};
 
 record(
-  "THE-MEASUREMENT-does-a-twelve-item-bar-fit",
+  "THE-MEASUREMENT-what-each-bar-costs-and-where-it-fits",
   {
     byWidth: evidence.byWidth,
     naturalWidths: natural,
     firstFitsAtViewportWidth: firstFits,
+    tabFoldSavingPx: evidence.tabFoldSavingPx,
+    summaryPrintCostPx: evidence.summaryPrintCostPx,
+    companyNameFullyAbsent: evidence.companyNameFullyAbsent,
+    perControlWidths: evidence.perControlWidths,
     cells: matrix.length,
-    designValueMeasured: longestStopLabel,
   },
-  // ⚠ AN OBSERVATION ON PURPOSE, AND THE ONLY ONE IN THIS FILE.
-  //
-  // "Does it fit" is the question U1 was sent to ANSWER, not a property U1
-  // gets to assert. Asserting a pass here would mean the only way to finish
-  // the stage is for the answer to be yes — which is exactly the pressure
-  // that produces a quietly shrunk font, a dropped label or an invented
-  // overflow menu, none of which Tommy has been asked about. The numbers go
-  // in evidence.json and the decision is his, the same way 1200px was in
-  // 2026-09-13.
+  // ⚠ AN OBSERVATION ON PURPOSE. "Does it fit" is the question this pass was
+  // sent to ANSWER, not a property it gets to assert. Asserting a pass here
+  // would mean the only way to finish is for the answer to be yes — which is
+  // exactly the pressure that produces a quietly shrunk font, a dropped label
+  // or an invented breakpoint, none of which Tommy has been asked about. The
+  // numbers go in evidence.json and the decisions are his, the same way 1200px
+  // was in 2026-09-13.
   { observationOnly: "the width budget IS the finding; a pass/fail here would put a thumb on the scale" },
 );
 
 record(
-  "nothing-U1-ships-is-ever-pushed-off-screen",
+  "nothing-the-bar-ships-is-ever-pushed-off-screen",
   {
-    // In the built pass this reads the REAL bar at every width, which below
-    // 1200 is the bar with Design and View shed into the sidebar. In the
-    // projection pass it reads the projected designView bar, i.e. the same
-    // ten controls forced on at every width — the harsher of the two, and the
-    // one that says whether shedding them is optional. (It is not: see the
-    // 12px acting-as chip the projection reports at 360px.)
-    configuration: PASS === "projection"
-      ? "designView projected at EVERY width — the ten controls with nothing allowed to shed"
-      : "the real shipped bar at every width",
-    offScreenAnywhere: [...new Set(worst.map((c) => c.designView ?? c.today).flatMap((c) => c.offScreen))],
-    actingAsAlwaysOnScreen: worst.every((c) => (c.designView ?? c.today).actingAsOnScreen),
-    narrowestActingAsPx: Math.min(...worst.map((c) => (c.designView ?? c.today).actingAsWidth ?? 0)),
-    docOverflowAnywhere: Math.max(...worst.map((c) => (c.designView ?? c.today).docOverflowPx)),
-    rowOverflowAnywhere: Math.max(...worst.map((c) => (c.designView ?? c.today).overflowPx)),
+    configuration: "the real shipped bar at every measured width, four companies, four roles",
+    offScreenAnywhere: [...new Set(worst.flatMap((c) => c.built.offScreen))],
+    actingAsAlwaysOnScreen: worst.every((c) => c.built.actingAsOnScreen),
+    narrowestActingAsPx: Math.min(...worst.map((c) => c.built.actingAsWidth ?? 0)),
+    docOverflowAnywhere: Math.max(...worst.map((c) => c.built.docOverflowPx)),
+    rowOverflowAnywhere: Math.max(...worst.map((c) => c.built.overflowPx)),
   },
-  // The 2026-09-13 bug's permanent headstone, and it is asserted against what
-  // U1 ACTUALLY SHIPS rather than against the hypothetical twelve. No control
-  // may leave the viewport and the acting-as company must be on screen at
-  // every width. Whether twelve fit is the observation above; whether ten do
-  // is a promise this stage has to keep.
-  //
-  // ⚠ AND IT IS NOT ENOUGH BY ITSELF — see the record immediately below.
-  // Every clause here was TRUE of the bar U1 shipped on 2026-09-28, which at
-  // 1200px showed `ACTING AS ⌄` and not one character of the company name.
-  // A chip whose bounding box is inside the viewport is not the same claim as
-  // a company name a human can read, and this assertion only ever made the
-  // first one.
+  // The 2026-09-13 bug's permanent headstone, asserted against what SHIPS. No
+  // control may leave the viewport and nothing may scroll horizontally.
+  // ⚠ It is not enough on its own — every clause of it was true of a bar whose
+  // company name had been crushed to nothing. The record below is the one that
+  // can see that, and it is deliberately an observation rather than a gate,
+  // because at the narrow end of the range this design DOES spend the name and
+  // pretending otherwise would be the dishonest half of a green run.
   (d) =>
     d.actingAsAlwaysOnScreen === true &&
     d.offScreenAnywhere.length === 0 &&
@@ -1374,247 +1567,286 @@ record(
     d.rowOverflowAnywhere === 0,
 );
 
-/**
- * ⚠ THE ASSERTION THE ONE ABOVE COULD NOT MAKE, added 2026-09-28.
- *
- * `nothing-U1-ships-is-ever-pushed-off-screen` asserts the chip's bounding
- * box is inside the viewport. That was true, at every width, of a bar whose
- * acting-as select was 16.1px wide and rendered ZERO characters of the
- * company name — the caption promising a value that was gone. It is the
- * assertion standing in for the 2026-09-13 headstone and it could not see the
- * 2026-09-13 failure in its second form.
- *
- * The promise the 2026-09-26 decision actually makes is that the company name
- * STAYS ON THE BAR, because a wrong-company save is silent, plausible, and
- * noticed later by someone else. So: at every width U1 ships, with four
- * companies and the widest role label, at least some of the name renders.
- *
- * Truncation is still allowed — "truncated but present, with its title" is
- * the documented degradation. Zero characters is not truncation.
- */
 const nameCells = worst.map((c) => ({
   role: c.role,
   width: c.width,
-  nameWidthPx: (c.designView ?? c.today).nameWidthPx,
-  nameVisibleChars: (c.designView ?? c.today).nameVisibleChars,
-  nameVisibleText: (c.designView ?? c.today).nameVisibleText,
-  nameTruncated: (c.designView ?? c.today).nameTruncated,
+  nameWidthPx: c.built.nameWidthPx,
+  nameVisibleChars: c.built.nameVisibleChars,
+  nameVisibleText: c.built.nameVisibleText,
+  nameTruncated: c.built.nameTruncated,
 }));
 record(
-  "some-of-the-acting-as-company-name-is-visible-at-every-width-U1-ships",
+  "how-much-of-the-acting-as-company-name-survives-at-each-width",
   {
-    configuration: PASS === "projection"
-      ? "designView projected at EVERY width — the ten controls with nothing allowed to shed"
-      : "the real shipped bar at every width",
-    narrowestNamePx: Math.min(...nameCells.map((c) => c.nameWidthPx ?? 0)),
-    fewestVisibleChars: Math.min(...nameCells.map((c) => c.nameVisibleChars ?? 0)),
-    // Named out loud, because "which cell was worst" is the first question
-    // anyone reading a failure here will ask.
-    worstCells: nameCells
-      .filter((c) => (c.nameVisibleChars ?? 0) === Math.min(...nameCells.map((x) => x.nameVisibleChars ?? 0)))
-      .map((c) => `${c.role} @ ${c.width}px: ${c.nameWidthPx}px, ${c.nameVisibleChars} chars ("${c.nameVisibleText}")`),
     everyCell: nameCells,
+    widthsWithNoNameAtAll: [...new Set(nameCells.filter((c) => (c.nameVisibleChars ?? 0) === 0).map((c) => c.width))],
+    fewestVisibleChars: Math.min(...nameCells.map((c) => c.nameVisibleChars ?? 0)),
+    atTommysOwn710: nameCells.filter((c) => c.width === 710).map((c) => `${c.role}: ${c.nameVisibleChars} chars ("${c.nameVisibleText}")`),
+    at1280: nameCells.filter((c) => c.width === 1280).map((c) => `${c.role}: ${c.nameVisibleChars} chars ("${c.nameVisibleText}")`),
   },
-  // ⚠ In the PROJECTION pass this reads the ten controls forced on at every
-  // width including 360, which is the bar nobody ships and which the
-  // projection exists to show does not work. It is expected to FAIL there and
-  // the pass is a recording, not a gate — so the assertion is only made
-  // against the built bar. Said here rather than by quietly weakening it.
-  PASS === "projection"
-    ? { observationOnly: "the projection forces ten controls on at 360px; zero visible characters there is the finding, not a regression" }
-    : (d) => d.fewestVisibleChars >= 1,
+  // ⚠ AN OBSERVATION, AND THE REASON IS THE POINT. U1 asserted "at least one
+  // character everywhere" and that assertion was RIGHT for U1, whose menus
+  // could shed into the dial when the name needed the room. There is no dial to
+  // shed into now — the menus are how every view is reached — so at the narrow
+  // end something has to give and it is the name. Asserting the old promise
+  // here would have forced one of: shrinking type, inventing a breakpoint, or
+  // hiding a menu and making views unreachable. Instead the cost is measured,
+  // published, and put in front of Tommy, who has already been told twice why
+  // this name matters.
+  { observationOnly: "the name's shedding is a measured cost of removing the dial, and it is Tommy's call, not a gate" },
 );
 
-console.log("5. the shed order, read off the matrix");
-const shedOrder = {};
-for (const control of ["wordmark", "nav-wall", "nav-foundation", "nav-floor", "nav-roof", "acting-as", "account", "project", "role", "settings", "design", "view", "summary", "print"]) {
-  // Read off `today` — the REAL bar — so the shed order recorded here is the
-  // one that ships, not the one the projection forced. In the projection pass
-  // that means design/view/summary/print read as "never present", which is
-  // true of the bar as it stood before U1.
-  const widthsPresent = MEASURED_WIDTHS.filter((w) => worst.some((c) => c.width === w && c.today.controls.includes(control)));
-  shedOrder[control] = {
-    presentAt: widthsPresent,
-    shedBelow: widthsPresent.length === 0 ? "never present" : widthsPresent.length === MEASURED_WIDTHS.length ? "never shed" : Math.min(...widthsPresent),
-  };
-}
-evidence.shedOrder = shedOrder;
-record(
-  "the-existing-shed-order-is-not-disturbed",
-  { shedOrder },
-  // The non-negotiable half of §12: the acting-as company, the file menu, the
-  // role control and Settings are never shed at any width. Asserted as a
-  // property of the measured bar, not read off the stylesheet.
-  (d) =>
-    ["acting-as", "account", "project", "role", "settings"].every((c) => d.shedOrder[c].shedBelow === "never shed") &&
-    d.shedOrder["wordmark"].shedBelow === 1200 &&
-    d.shedOrder["nav-wall"].shedBelow === 1200 &&
-    // And U1's own addition. ⚠ CHANGED 2026-09-28: Design and View no longer
-    // shed at the SAME width the nav does. They shed at their own, wider
-    // boundary — the width at which they stop taking room from the acting-as
-    // company name — because at 1200px they were taking ALL of it. They are
-    // the newcomers, so they are what yields; the name is what does not.
-    // Before U1 they are not on the bar at all, which the projection records.
-    (PASS === "projection"
-      ? ["design", "view"].every((c) => d.shedOrder[c].shedBelow === "never present")
-      : ["design", "view"].every((c) => d.shedOrder[c].shedBelow === MENUS_AT)),
-);
-
-await setViewport(1600, 1000);
+console.log("8. the two levels of highlight, read out of the DOM");
+await setViewport(1440, 1000);
 await installToolkit();
-await evaluate(`window.__u1.simulateCompanies(${JSON.stringify(FOUR_COMPANY_LABELS)}, ${JSON.stringify(LONGEST_COMPANY_LABEL)})`);
-await evaluate(`window.__u1.project(${JSON.stringify(PROJECTION_SPEC)})`);
-await shot(`${PASS}-twelve-item-bar-1600`);
-await evaluate(`window.__u1.clearProjection(); window.__u1.clearCompanies();`);
+const readHighlight = async (what) => {
+  const bar = await evaluate(`window.__u1.viewMenus()`);
+  await clickSelector('[data-view-menu="design"]', "the Design menu");
+  const design = await evaluate(`window.__u1.openMenuEntries()`);
+  await clickSelector('[data-view-menu="design"]', "the Design menu");
+  await sleep(200);
+  await clickSelector('[data-view-menu="view"]', "the View menu");
+  const view = await evaluate(`window.__u1.openMenuEntries()`);
+  await clickSelector('[data-view-menu="view"]', "the View menu");
+  await sleep(200);
+  return { what, bar, design, view };
+};
+const flat = (groups) => groups.flatMap((g) => g.entries);
+await selectStopByMenu("2D Floor Plan");
+const onPlan = await readHighlight("2D Floor Plan");
+await selectStopByMenu("3D Framed");
+const on3d = await readHighlight("3D Framed");
+await shot("built-owner-rule-3d-framed");
+await selectSubjectByMenu("roof");
+const onRoof = await readHighlight("the Roof editor");
+await selectStopByMenu("2D Floor Plan");
+evidence.highlightStates = { onPlan, on3d, onRoof };
 
-console.log("6. Region 3's signature at every stop");
+record(
+  "LEVEL-ONE-the-bar-highlights-the-OWNING-menu-and-says-so-accessibly",
+  {
+    onPlan: { design: { owner: onPlan.bar.design.owner, pressed: onPlan.bar.design.pressed, boxShadow: onPlan.bar.design.boxShadow, title: onPlan.bar.design.title }, view: { owner: onPlan.bar.view.owner, pressed: onPlan.bar.view.pressed, boxShadow: onPlan.bar.view.boxShadow } },
+    on3dFramed: { design: { owner: on3d.bar.design.owner, pressed: on3d.bar.design.pressed, boxShadow: on3d.bar.design.boxShadow }, view: { owner: on3d.bar.view.owner, pressed: on3d.bar.view.pressed, boxShadow: on3d.bar.view.boxShadow, title: on3d.bar.view.title } },
+    onRoof: { design: { owner: onRoof.bar.design.owner, pressed: onRoof.bar.design.pressed, title: onRoof.bar.design.title }, view: { owner: onRoof.bar.view.owner, pressed: onRoof.bar.view.pressed } },
+    designWidths: [onPlan.bar.design.w, on3d.bar.design.w, onRoof.bar.design.w],
+    viewWidths: [onPlan.bar.view.w, on3d.bar.view.w, onRoof.bar.view.w],
+  },
+  // ⚠ ITS OWN ACCEPTANCE CRITERION, separate from level two below, because they
+  // are two different controls carrying two different facts.
+  //  - Exactly one menu is pressed in each state, and it is the one that owns.
+  //  - The state reaches a screen reader: `aria-pressed`, not colour.
+  //  - The sighted cue is MORE THAN COLOUR: an inset underline, which a
+  //    non-owner does not have.
+  //  - Design owns on the Roof editor, because editing a roof IS designing —
+  //    and because Design is the only way back, so it must never be the
+  //    unhighlighted, forgotten door.
+  //  - And the widths do not move between states: ownership changing may not
+  //    reflow the bar, which is why the marker is an underline and not weight.
+  (d) =>
+    d.onPlan.design.owner === true &&
+    d.onPlan.design.pressed === "true" &&
+    d.onPlan.view.pressed === "false" &&
+    d.onPlan.design.boxShadow !== "none" &&
+    d.onPlan.view.boxShadow === "none" &&
+    d.on3dFramed.view.owner === true &&
+    d.on3dFramed.view.pressed === "true" &&
+    d.on3dFramed.design.pressed === "false" &&
+    d.on3dFramed.view.boxShadow !== "none" &&
+    d.onRoof.design.owner === true &&
+    d.onRoof.design.pressed === "true" &&
+    d.onRoof.view.pressed === "false" &&
+    new Set(d.designWidths).size === 1 &&
+    new Set(d.viewWidths).size === 1,
+);
+
+record(
+  "LEVEL-TWO-the-open-menu-marks-the-CURRENT-stop-with-aria-current-and-more-than-colour",
+  {
+    onPlan: {
+      designMarked: flat(onPlan.design).filter((e) => e.ariaCurrent === "true").map((e) => e.label),
+      viewMarked: flat(onPlan.view).filter((e) => e.ariaCurrent === "true").map((e) => e.label),
+      markedStyle: flat(onPlan.design).find((e) => e.ariaCurrent === "true") ?? null,
+      unmarkedStyle: flat(onPlan.design).find((e) => e.ariaCurrent !== "true") ?? null,
+    },
+    on3dFramed: {
+      designMarked: flat(on3d.design).filter((e) => e.ariaCurrent === "true").map((e) => e.label),
+      viewMarked: flat(on3d.view).filter((e) => e.ariaCurrent === "true").map((e) => e.label),
+    },
+    onRoof: {
+      designMarked: flat(onRoof.design).filter((e) => e.ariaCurrent === "true").map((e) => e.label),
+      designMarkedKinds: flat(onRoof.design).filter((e) => e.ariaCurrent === "true").map((e) => e.kind),
+      viewMarked: flat(onRoof.view).filter((e) => e.ariaCurrent === "true").map((e) => e.label),
+    },
+    // The bar's harness-only current-stop attribute must agree with the entry
+    // the user can actually see marked — otherwise this harness is reading a
+    // second, private truth.
+    attrAgreesOnPlan: onPlan.bar.design.currentStopAttr,
+    attrAgreesOn3d: on3d.bar.view.currentStopAttr,
+    attrOnRoof: onRoof.bar.design.currentStopAttr,
+  },
+  // ⚠ ITS OWN ACCEPTANCE CRITERION.
+  //  - Exactly ONE entry is marked, in the owning menu, and none in the other.
+  //  - It is marked with `aria-current`, not colour alone, and the sighted cue
+  //    differs from an unmarked sibling in weight and an edge bar as well as
+  //    colour.
+  //  - On the Roof editor the marked entry is the SUBJECT, and no stop is
+  //    marked at all: marking `Elevation: CD` while roof tools are on screen
+  //    would be a statement about somewhere the user is not.
+  //  - The harness's own attribute reads the same stop the user sees marked,
+  //    and reads nothing at all when no stop is on screen.
+  (d) =>
+    JSON.stringify(d.onPlan.designMarked) === JSON.stringify(["2D Floor Plan"]) &&
+    d.onPlan.viewMarked.length === 0 &&
+    d.onPlan.markedStyle !== null &&
+    d.onPlan.unmarkedStyle !== null &&
+    d.onPlan.markedStyle.fontWeight !== d.onPlan.unmarkedStyle.fontWeight &&
+    d.onPlan.markedStyle.boxShadow !== d.onPlan.unmarkedStyle.boxShadow &&
+    JSON.stringify(d.on3dFramed.viewMarked) === JSON.stringify(["3D Framed"]) &&
+    d.on3dFramed.designMarked.length === 0 &&
+    JSON.stringify(d.onRoof.designMarked) === JSON.stringify(["Roof"]) &&
+    JSON.stringify(d.onRoof.designMarkedKinds) === JSON.stringify(["subject"]) &&
+    d.onRoof.viewMarked.length === 0 &&
+    d.attrAgreesOnPlan === "2D Floor Plan" &&
+    d.attrAgreesOn3d === "3D Framed" &&
+    d.attrOnRoof === null,
+);
+
+console.log("9. the menus work under a real mouse, at 360, 710 and 1280");
+const realMouse = [];
+for (const w of [360, 710, 1280]) {
+  await setViewport(w, 900);
+  await installToolkit();
+  await selectStopByMenu("2D Floor Plan");
+  const before = await evaluate(`window.__u1.viewMenus().design.currentStopAttr`);
+  // A real press and release at the button's own coordinates, not an element
+  // dispatch: this is the one harness whose subject is this control, and an
+  // element dispatch cannot tell a hit-testable control from one sitting under
+  // something else.
+  await clickSelector('[data-view-menu="view"]', "the View menu");
+  const opened = await evaluate(`document.querySelector('[data-view-menu="view"]').getAttribute('aria-expanded')`);
+  const at = await evaluate(`(() => {
+    const el = [...document.querySelectorAll('[data-view-stop]')].find((e) => e.textContent.trim() === 'Membranes');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`);
+  if (at) await click(at.x, at.y);
+  await sleep(700);
+  const after = await evaluate(`window.__u1.viewMenus().view.currentStopAttr`);
+  realMouse.push({ width: w, before, menuOpened: opened, membranesClickable: Boolean(at), after });
+  await selectStopByMenu("2D Floor Plan");
+}
+evidence.realMouse = realMouse;
+record(
+  "a-real-mouse-reaches-Membranes-from-the-bar-at-360-710-and-1280",
+  { realMouse },
+  // 710 is Tommy's own viewport. 360 is phone portrait, which is DEMO ONLY in
+  // the declared range — but "demo only" has to mean "it works and is cramped",
+  // not "it silently cannot get there", and with the dial gone this is the only
+  // door to Membranes at any width.
+  (d) =>
+    d.realMouse.every(
+      (r) => r.menuOpened === "true" && r.membranesClickable === true && r.after === "Membranes",
+    ),
+);
+
+console.log("10. Region 3's signature at every stop — the single-writer test");
 /**
- * The pass-dependent half. In "projection" the stops are driven by the DIAL at
- * 1100px and the signatures are WRITTEN; in "built" they are driven by the
- * MENUS at 1440px and the signatures are COMPARED against them.
+ * ⚠ HOW THE PROOF CHANGED WHEN THE DIAL WENT.
  *
- * ⚠ Why the widths differ, and why that is the right comparison rather than a
- * confound: Region 3 is `elevationControls` / `wallAssemblyControls` / the
- * plan toolbar / the 3D group, and every one of those keys off the four view
- * flags ONLY. Region 1 (the dial) and Region 2 (the tab dial) are outside
- * `[data-sidebar-region-3]` precisely so the breakpoint difference between the
- * two passes cannot contaminate the comparison. If a signature differs, the
- * flags differ — which is a second writer.
+ * U1 proved one writer two ways: ACROSS the change (Region 3's signature at
+ * every stop, recorded off the DIAL before U1, compared against the menus
+ * after) and WITHIN one run (the dial at one width vs the menus at another, on
+ * one design, byte for byte). **The second half is impossible now — there is no
+ * second control to compare against.**
+ *
+ * So the within-run half is replaced by a TWO-PATH comparison: each stop is
+ * reached twice, once directly and once after a detour through a stop of the
+ * other kind, and Region 3 must be byte-for-byte identical both times. That is
+ * the half the cross-run comparison cannot make (it normalises digits away),
+ * and it catches precisely the failure the plan names as most likely —
+ * `showWraps` left true on a plan view arrived at from 3D — because the detour
+ * is what sets those flags in the first place.
  */
 const stopSignatures = {};
 if (PASS === "projection") {
-  await setViewport(1100, 1000);
-  await installToolkit();
-  let label = await evaluate(`window.__u1.dialLabel()`);
-  const seen = new Set();
-  while (label && !seen.has(label)) {
-    seen.add(label);
-    stopSignatures[label] = await evaluate(`window.__u1.region3()`);
-    await clickSelector('[role="group"][aria-label="View mode"] button[title="Next view"]', "the dial's ▼");
-    label = await evaluate(`window.__u1.dialLabel()`);
-  }
-  fs.writeFileSync(REGION3_FILE, JSON.stringify({ ranAt: new Date().toISOString(), drivenBy: "the sidebar view dial at 1100px", stops: stopSignatures }, null, 2));
-  record(
-    "region-3-baseline-captured-for-every-stop",
-    { stops: Object.keys(stopSignatures), lines: Object.fromEntries(Object.entries(stopSignatures).map(([k, v]) => [k, v.lines])) },
-    // A baseline of nothing would compare equal to anything later, which is
-    // the vacuous-pass shape. Region 3 is non-empty on the plan stop (the
-    // drawing toolbar) and on an elevation, so both are required to be.
-    (d) =>
-      d.stops.length >= 6 &&
-      d.lines["2D Floor Plan"] > 5 &&
-      Object.keys(d.lines).some((k) => k.startsWith("Elevation:") && d.lines[k] > 5),
-  );
-} else {
-  if (!fs.existsSync(REGION3_FILE)) throw new Error(`no ${path.basename(REGION3_FILE)} — run the projection pass first`);
-  const baseline = JSON.parse(fs.readFileSync(REGION3_FILE, "utf8"));
-  // A width where the bar menus are live: the boundary itself, read off the
-  // CSS, so this cannot drift to a width where they have shed (it did, when
-  // the boundary moved off 1200 and this still said 1440).
-  await setViewport(MENUS_AT, 1000);
-  await installToolkit();
-  const diffs = [];
-  const compared = [];
-  for (const [label, want] of Object.entries(baseline.stops)) {
-    const reached = await selectStopByMenu(label);
-    if (!reached) {
-      diffs.push({ label, why: "not reachable from the bar menus" });
-      continue;
-    }
-    const got = await evaluate(`window.__u1.region3()`);
-    compared.push(label);
-    // `shape`, not `signature` — see region3()'s own note. Across two runs
-    // the drawn footprint differs by a pixel, so the wall weights Region 3
-    // prints legitimately differ; everything else must not.
-    //
-    // ⚠ The baseline is NORMALISED HERE rather than re-recorded. It is a
-    // historical artefact: it is what the bar produced BEFORE Design and
-    // View existed, and re-running the projection pass against the built code
-    // could not reproduce it (below 1200px the menus have shed, so there is
-    // no ten-control bar there to measure). Normalising an old record is the
-    // comparer's job; rewriting the record to match the new code would be
-    // deleting the only "before" this test has.
-    const wantShape = want.shape ?? String(want.signature).replace(/\d+/g, "#");
-    if (!got || got.shape !== wantShape) {
-      diffs.push({
-        label,
-        wantLines: want.lines,
-        gotLines: got ? got.lines : null,
-        firstDifference: got ? firstDifferingLine(wantShape, got.shape) : "region 3 was not found at all",
-      });
-    }
-  }
-  record(
-    "region-3-renders-identically-for-every-stop-before-and-after-the-split",
-    { comparedStops: compared, baselineStops: Object.keys(baseline.stops), differences: diffs, comparedOn: "shape (digits normalised — two runs draw two slightly different buildings)" },
-    // THE SINGLE-WRITER TEST, HALF ONE: across the change. Region 3 keys off
-    // elevationWall / viewMode / showWraps, so two menus each writing their
-    // own subset — the exact mistake the plan names as most likely — shows up
-    // here as a changed shape. Every baseline stop must be compared: a stop
-    // the menus cannot reach is a difference, not an excuse to skip it.
-    (d) => d.differences.length === 0 && d.comparedStops.length === d.baselineStops.length,
-  );
-
-  /**
-   * THE SINGLE-WRITER TEST, HALF TWO: the two presentations, one design, one
-   * run — so the comparison can be exact rather than shape-only.
-   *
-   * Just below the boundary the sidebar dial drives the stops; at it, the bar
-   * menus do. Both widths follow `MENUS_AT` rather than being written down,
-   * so moving the breakpoint cannot leave this comparing one control twice.
-   * Same page, same footprint, same numbers, and the ONLY difference is which
-   * control called `handleViewerStopChange`. Any difference in Region 3 at all
-   * — a digit, a pressed state, a section present in one and not the other —
-   * is the split having written the four view flags differently, which is
-   * precisely how `showWraps` would end up true on a plan view.
-   *
-   * Why both halves are needed: this one alone would pass if U1 had broken
-   * `handleViewerStopChange` ITSELF, since both presentations call it. The
-   * cross-run half above catches that; this one catches the finer drift the
-   * cross-run half has to normalise away.
-   */
-  await setViewport(MENUS_AT - 1, 1000);
-  await installToolkit();
-  const byDial = {};
-  {
-    let label = await evaluate(`window.__u1.dialLabel()`);
-    const seen = new Set();
-    while (label && !seen.has(label)) {
-      seen.add(label);
-      byDial[label] = (await evaluate(`window.__u1.region3()`)).signature;
-      await clickSelector('[role="group"][aria-label="View mode"] button[title="Next view"]', "the dial's ▼");
-      label = await evaluate(`window.__u1.dialLabel()`);
-    }
-  }
-  await setViewport(MENUS_AT, 1000);
-  await installToolkit();
-  const sameRunDiffs = [];
-  const sameRunCompared = [];
-  for (const [label, want] of Object.entries(byDial)) {
-    if (!(await selectStopByMenu(label))) {
-      sameRunDiffs.push({ label, why: "not reachable from the bar menus" });
-      continue;
-    }
-    const got = (await evaluate(`window.__u1.region3()`)).signature;
-    sameRunCompared.push(label);
-    if (got !== want) sameRunDiffs.push({ label, firstDifference: firstDifferingLine(want, got) });
-  }
-  record(
-    "the-dial-and-the-menus-leave-region-3-byte-for-byte-identical-on-one-design",
-    {
-      stops: Object.keys(byDial),
-      comparedStops: sameRunCompared,
-      differences: sameRunDiffs,
-      dialAt: MENUS_AT - 1,
-      menusAt: MENUS_AT,
-      comparedOn: "the full signature, digits included",
-    },
-    // A baseline of nothing compares equal to anything, so the stop count is
-    // asserted too: eight stops for a four-wall footprint, all of them
-    // reached through both controls.
-    (d) => d.differences.length === 0 && d.stops.length >= 6 && d.comparedStops.length === d.stops.length,
-  );
+  throw new Error("the projection pass records Region 3 off the dial, which no longer exists");
 }
+if (!fs.existsSync(REGION3_FILE)) throw new Error(`no ${path.basename(REGION3_FILE)} — it is a kept artefact and cannot be regenerated`);
+const baseline = JSON.parse(fs.readFileSync(REGION3_FILE, "utf8"));
+await setViewport(1440, 1000);
+await installToolkit();
+const diffs = [];
+const compared = [];
+for (const [label, want] of Object.entries(baseline.stops)) {
+  const reached = await selectStopByMenu(label);
+  if (!reached) {
+    diffs.push({ label, why: "not reachable from the bar menus" });
+    continue;
+  }
+  const got = await evaluate(`window.__u1.region3()`);
+  stopSignatures[label] = got;
+  compared.push(label);
+  // `shape`, not `signature` — see region3()'s own note. Across two runs the
+  // drawn footprint differs by a pixel, so the wall weights Region 3 prints
+  // legitimately differ; everything else must not.
+  const wantShape = want.shape ?? String(want.signature).replace(/\d+/g, "#");
+  if (!got || got.shape !== wantShape) {
+    diffs.push({
+      label,
+      wantLines: want.lines,
+      gotLines: got ? got.lines : null,
+      firstDifference: got ? firstDifferingLine(wantShape, got.shape) : "region 3 was not found at all",
+    });
+  }
+}
+record(
+  "region-3-renders-identically-for-every-stop-before-and-after",
+  {
+    comparedStops: compared,
+    baselineStops: Object.keys(baseline.stops),
+    baselineDrivenBy: baseline.drivenBy,
+    differences: diffs,
+    comparedOn: "shape (digits normalised — two runs draw two slightly different buildings)",
+  },
+  // THE SINGLE-WRITER TEST, HALF ONE: across the change, and now also across the
+  // dial's removal. The baseline was recorded with the DIAL driving the stops,
+  // so this is still a two-control comparison — it is simply the only one left,
+  // and it cannot be re-made. Region 3 keys off elevationWall / viewMode /
+  // showWraps, so a second writer leaving a flag set shows up here as a changed
+  // shape. Every baseline stop must be compared: a stop the menus cannot reach
+  // is a difference, not an excuse to skip it.
+  (d) => d.differences.length === 0 && d.comparedStops.length === d.baselineStops.length,
+);
+
+const twoPath = [];
+const detourFor = (label) => (label.startsWith("3D") || label === "Membranes" ? "2D Floor Plan" : "3D Boxes");
+for (const label of compared) {
+  if (!(await selectStopByMenu(label))) throw new Error(`could not return to ${label}`);
+  const direct = (await evaluate(`window.__u1.region3()`)).signature;
+  const detour = detourFor(label);
+  if (!(await selectStopByMenu(detour))) throw new Error(`could not detour via ${detour}`);
+  if (!(await selectStopByMenu(label))) throw new Error(`could not come back to ${label} from ${detour}`);
+  const viaDetour = (await evaluate(`window.__u1.region3()`)).signature;
+  twoPath.push({
+    label,
+    detour,
+    identical: direct === viaDetour,
+    firstDifference: direct === viaDetour ? null : firstDifferingLine(direct, viaDetour),
+  });
+}
+record(
+  "the-same-stop-reached-two-ways-leaves-region-3-byte-for-byte-identical",
+  { twoPath, comparedOn: "the full signature, digits included", stops: twoPath.length },
+  // THE SINGLE-WRITER TEST, HALF TWO, REBUILT. One design, one run, one
+  // control — so the comparison can be exact rather than shape-only. Every stop
+  // is visited directly and again after a detour through the OTHER menu, which
+  // is what writes `showWraps` / `simplified3D` / `elevationViewWallId` in the
+  // first place. Any difference at all — a digit, a pressed state, a section
+  // present one way and not the other — is `handleViewerStopChange` not being
+  // the only writer, or not being idempotent about the flags it does not own.
+  (d) => d.stops >= 6 && d.twoPath.every((t) => t.identical === true),
+);
 
 function firstDifferingLine(a, b) {
   const la = a.split("\n"), lb = b.split("\n");
@@ -1624,8 +1856,8 @@ function firstDifferingLine(a, b) {
   return null;
 }
 
-/** Pick a stop from whichever bar menu owns it. Returns false if no menu
- * offers it — which is itself a finding, never a skip. */
+/** Pick a stop from whichever bar menu offers it. Returns false if neither
+ * does — which is itself a finding, never a skip. */
 async function selectStopByMenu(label) {
   for (const menu of ["design", "view"]) {
     await clickSelector(`[data-view-menu="${menu}"]`, `the ${menu} menu`).catch(() => {});
@@ -1650,222 +1882,22 @@ async function selectStopByMenu(label) {
   return false;
 }
 
-// --- the built-pass-only assertions -----------------------------------------
-if (PASS === "built") {
-  console.log("7. the owner rule, read out of the DOM");
-  await setViewport(MENUS_AT, 1000);
-  await installToolkit();
-  await selectStopByMenu("2D Floor Plan");
-  const onPlan = await evaluate(`(() => ({ menus: window.__u1.viewMenus(), controls: window.__u1.controls() }))()`);
-  await selectStopByMenu("3D Framed");
-  const on3d = await evaluate(`(() => ({ menus: window.__u1.viewMenus(), controls: window.__u1.controls() }))()`);
-  await shot("built-owner-rule-3d-framed");
-  record(
-    "the-owner-renders-LABEL-plus-value-and-the-other-renders-the-bare-word",
-    {
-      onPlan: { design: onPlan.menus.design, view: onPlan.menus.view },
-      on3dFramed: { design: on3d.menus.design, view: on3d.menus.view },
-    },
-    // Tommy's own two examples:
-    //   DESIGN 2D Floor Plan · View · …   and   Design · VIEW 3D Framed · …
-    // The value is the dial's own label for the stop, so the two presentations
-    // cannot drift apart. ("2D Floor Plan" rather than "Plan View" because
-    // that rename is an OPEN QUESTION for Tommy and U1 does not answer it.)
-    //
-    // ⚠ The caption's TEXT is "Design", not "DESIGN": the all-caps is a
-    // `text-transform`, exactly as .actingAsLabel renders "Acting as" as
-    // "ACTING AS". One string per word, uppercased by CSS, so the caption and
-    // the bare word can never come to be spelled differently. That the caps
-    // really happen is asserted next, off the computed style.
-    (d) =>
-      d.onPlan.design.owner === true &&
-      d.onPlan.design.caption === "Design" &&
-      d.onPlan.design.value === "2D Floor Plan" &&
-      d.onPlan.view.owner === false &&
-      d.onPlan.view.word === "View" &&
-      d.onPlan.view.caption === null &&
-      d.onPlan.view.value === null &&
-      d.on3dFramed.view.owner === true &&
-      d.on3dFramed.view.caption === "View" &&
-      d.on3dFramed.view.value === "3D Framed" &&
-      d.on3dFramed.design.owner === false &&
-      d.on3dFramed.design.word === "Design" &&
-      d.on3dFramed.design.caption === null &&
-      d.on3dFramed.design.value === null,
-  );
-
-  const typography = await evaluate(`(() => {
-    window.__u1.simulateCompanies(${JSON.stringify(FOUR_COMPANY_LABELS)}, ${JSON.stringify(LONGEST_COMPANY_LABEL)});
-    const pick = (el) => { const s = getComputedStyle(el); return { fontSize: s.fontSize, fontWeight: s.fontWeight, textTransform: s.textTransform, letterSpacing: s.letterSpacing, color: s.color }; };
-    const caption = document.querySelector('[data-view-menu-caption]');
-    const value = document.querySelector('[data-view-menu-value]');
-    const actingAsLabel = document.querySelector('#acting-as-label');
-    const actingAsValue = document.querySelector('[data-simulated-companies]');
-    const out = {
-      caption: caption ? pick(caption) : null,
-      actingAsLabel: actingAsLabel ? pick(actingAsLabel) : null,
-      value: value ? pick(value) : null,
-      actingAsValue: actingAsValue ? pick(actingAsValue) : null,
-    };
-    window.__u1.clearCompanies();
-    return out;
+/** Pick a design subject — the replacement for clicking a bar tab, which no
+ * longer exists. */
+async function selectSubjectByMenu(subject) {
+  await clickSelector('[data-view-menu="design"]', "the Design menu").catch(() => {});
+  const at = await evaluate(`(() => {
+    const el = document.querySelector('[data-design-subject=${JSON.stringify(subject)}]');
+    if (!el) return null;
+    el.scrollIntoView({ block: 'nearest' });
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0) return null;
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   })()`);
-  record(
-    "the-caption-and-value-use-the-acting-as-control's-own-two-type-treatments",
-    typography,
-    // Compared against the LIVE control rather than against the numbers copied
-    // out of its stylesheet — so a later change to .actingAsLabel that these
-    // two do not follow fails here instead of drifting apart silently. Colour
-    // included: "all caps dark grey" then "black" is the whole of Tommy's
-    // description, and both are token-driven.
-    (d) =>
-      d.caption &&
-      d.actingAsLabel &&
-      d.caption.fontSize === d.actingAsLabel.fontSize &&
-      d.caption.fontWeight === d.actingAsLabel.fontWeight &&
-      d.caption.textTransform === "uppercase" &&
-      d.caption.letterSpacing === d.actingAsLabel.letterSpacing &&
-      d.caption.color === d.actingAsLabel.color &&
-      d.value &&
-      d.actingAsValue &&
-      d.value.fontSize === d.actingAsValue.fontSize &&
-      d.value.fontWeight === d.actingAsValue.fontWeight &&
-      d.value.color === d.actingAsValue.color,
-  );
-
-  console.log(`8. exactly one presentation, around the measured ${MENUS_AT}px boundary and a fractional zoom width`);
-  const presentations = [];
-  /* The boundary is DISCOVERED (see `MENUS_AT`), so these widths follow the
-     stylesheet instead of being a second copy of its number — which is the
-     same rule the rest of this file follows for class names. The half-pixel
-     neighbours are the ones that catch an opposed min/max pair. */
-  const around = [MENUS_AT - 1, MENUS_AT - 0.5, MENUS_AT, MENUS_AT + 0.5, MENUS_AT + 160.7];
-  for (const w of [...around, 1199, 1200, 710, 360, 1600]) {
-    await setViewport(w, 900);
-    await installToolkit();
-    const p = await evaluate(`(() => { const m = window.__u1.viewMenus(); return { dial: window.__u1.dialPresent(), design: Boolean(m.design && m.design.present), view: Boolean(m.view && m.view.present) }; })()`);
-    presentations.push({ width: w, ...p, menus: p.design && p.view, both: p.dial && p.design, neither: !p.dial && !p.design });
-  }
-  evidence.presentations = presentations;
-  record(
-    "exactly-one-of-the-bar-menus-and-the-sidebar-dial-at-every-width",
-    { presentations, boundary: MENUS_AT },
-    // The reason the rule is "one CSS condition flipping two things" and not
-    // an opposed min/max pair: a fractional viewport width under browser zoom
-    // satisfies neither half of a pair, and the control vanishes entirely.
-    // The half-pixel widths either side of the boundary are here to catch
-    // exactly that. 1199/1200 stay in the list because that is where the
-    // wordmark and the nav still flip, and nothing about the view control may
-    // happen there any more.
-    (d) =>
-      d.presentations.every((p) => p.both === false && p.neither === false) &&
-      d.presentations.filter((p) => p.width >= MENUS_AT).every((p) => p.menus === true && p.dial === false) &&
-      d.presentations.filter((p) => p.width < MENUS_AT).every((p) => p.dial === true && p.design === false),
-  );
-
-  console.log("9. every stop reachable both ways, in footprint order");
-  await setViewport(MENUS_AT, 1000);
-  await installToolkit();
-  const designStops = await (async () => {
-    await clickSelector('[data-view-menu="design"]', "the Design menu");
-    const stops = await evaluate(`window.__u1.openMenuStops()`);
-    await clickSelector('[data-view-menu="design"]', "the Design menu");
-    return stops;
-  })();
-  const viewStops = await (async () => {
-    await clickSelector('[data-view-menu="view"]', "the View menu");
-    const stops = await evaluate(`window.__u1.openMenuStops()`);
-    await clickSelector('[data-view-menu="view"]', "the View menu");
-    return stops;
-  })();
-  record(
-    "the-two-menus-together-offer-exactly-the-dial's-stops-in-the-dial's-order",
-    {
-      dial: allStopLabels,
-      design: designStops.map((s) => s.label),
-      view: viewStops.map((s) => s.label),
-      combined: [...designStops, ...viewStops].map((s) => s.label),
-    },
-    // Tommy's recorded stop order — plan, then each wall's elevation in
-    // compass order, then the 3D modes — has to survive the split WITHIN each
-    // menu, which is why Design lists Plan View first and View lists Framed →
-    // Boxes → Membranes. Compared against the dial's own walk, so neither
-    // presentation can be graded against a list typed into this file.
-    (d) =>
-      JSON.stringify(d.combined) === JSON.stringify(d.dial) &&
-      d.design[0] === "2D Floor Plan" &&
-      d.design.slice(1).every((l) => l.startsWith("Elevation:")) &&
-      JSON.stringify(d.view) === JSON.stringify(["3D Framed", "3D Boxes", "Membranes"]),
-  );
-
-  console.log("10. the dial-is-live predicate, mirrored by both menus");
-  const ownersOf = (m) => ["design", "view"].filter((id) => m[id]?.owner === true);
-  const beforeRoof = await evaluate(`window.__u1.viewMenus()`);
-  await clickSelector('[data-bar-control="nav-roof"]', "the Roof tab");
-  await sleep(600);
-  const onRoof = await evaluate(`window.__u1.viewMenus()`);
-  await clickSelector('[data-bar-control="nav-wall"]', "the Wall tab");
-  await sleep(600);
-  const backOnWall = await evaluate(`window.__u1.viewMenus()`);
-  record(
-    "both-menus-mirror-the-dial's-own-disabled-condition",
-    {
-      beforeRoof,
-      onRoof,
-      backOnWall,
-      ownersBefore: ownersOf(beforeRoof),
-      ownersOnRoof: ownersOf(onRoof),
-      ownersBack: ownersOf(backOnWall),
-    },
-    // "Mirror today's behaviour exactly" — the dial is disabled off the Wall
-    // tab and with no footprint, so the menus are too, with the reason in
-    // their title rather than as a dead control. And neither OWNS while the
-    // view is not what is on screen: naming a stop on the Roof tab would be
-    // the same lie the bug note's context line refuses to tell.
-    //
-    // ⚠ The first version of this asserted that DESIGN owns on returning to
-    // the Wall tab. That was the harness being wrong, not the app: the run
-    // arrives here on 3D Framed, so VIEW rightly owns, and it still owns
-    // after the round trip. Which is a better assertion anyway — exactly one
-    // menu owns on Wall, and the SAME one after leaving and coming back, so
-    // the trip through another tab cannot quietly reset the view.
-    (d) =>
-      d.onRoof.design.disabled === true &&
-      d.onRoof.view.disabled === true &&
-      d.ownersOnRoof.length === 0 &&
-      d.onRoof.design.title.length > 0 &&
-      d.onRoof.view.title.length > 0 &&
-      d.backOnWall.design.disabled === false &&
-      d.backOnWall.view.disabled === false &&
-      d.ownersBack.length === 1 &&
-      JSON.stringify(d.ownersBack) === JSON.stringify(d.ownersBefore),
-  );
-
-  console.log("11. the dial's wheel and its rustle sound survive below the breakpoint");
-  await setViewport(710, 900);
-  await installToolkit();
-  const beforeWheel = await evaluate(`window.__u1.dialLabel()`);
-  const dialAt = await evaluate(`(() => { const d = document.querySelector('[role="group"][aria-label="View mode"]'); d.scrollIntoView({block:'nearest'}); const r = d.getBoundingClientRect(); return { x: r.left + r.width/2, y: r.top + r.height/2 }; })()`);
-  await send("Input.dispatchMouseEvent", { type: "mouseWheel", x: dialAt.x, y: dialAt.y, deltaX: 0, deltaY: 120 }, sid);
-  await sleep(600);
-  const afterWheel = await evaluate(`window.__u1.dialLabel()`);
-  const rustle = await evaluate(`(() => {
-    // useRustleSound is a dial-only affordance. It is asserted to be WIRED —
-    // an AudioContext or an <audio> the dial can reach — rather than audible,
-    // because headless Chrome has no speakers and a check that cannot fail is
-    // worse than no check. What matters for U1 is that the dial still exists
-    // at Tommy's own width to carry it.
-    return { hasAudioContext: typeof window.AudioContext === 'function' || typeof window.webkitAudioContext === 'function' };
-  })()`);
-  record(
-    "the-dial-and-its-wheel-still-work-at-Tommy's-own-710px",
-    { beforeWheel, afterWheel, wheelMovedTheDial: beforeWheel !== afterWheel, ...rustle },
-    // §7's row that "disappears quietly" if the dial is simply replaced by two
-    // menus at desktop width. The plan's answer is that the dial SURVIVES as
-    // the below-breakpoint form; this is the check that it did, driven by a
-    // real wheel event rather than by a click on the chevron.
-    (d) => d.wheelMovedTheDial === true && d.afterWheel !== null,
-  );
+  if (!at) throw new Error(`the Design menu offers no "${subject}" subject — is it in the scope of work?`);
+  await click(at.x, at.y);
+  await sleep(700);
+  return true;
 }
 
 record(
