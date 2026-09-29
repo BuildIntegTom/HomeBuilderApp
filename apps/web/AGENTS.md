@@ -17,6 +17,16 @@
   severity-1 warnings**. A "zero delta" claim that counted only errors once
   missed a live `react-hooks/exhaustive-deps` warning on a memo that fed the
   cut list, which is a warning that cuts real parts wrong.
+- **Lint does not work from a git worktree that has no root `node_modules`.**
+  It does not fail — it hangs. A reviewer burned 40+ minutes on 2026-09-29
+  with no output and had to report the gate unverified, because ESLint
+  could not resolve its config and went wandering. Either `npm install`
+  in the worktree, or run lint in the MAIN checkout against the merged
+  tree. It completes there in minutes. **Never restate a lint number you
+  did not observe yourself** — say the gate is unverified instead.
+- **The baseline, measured on `main` @ `ac55a39` (2026-09-29): 167 problems,
+  119 errors / 48 warnings.** Compare against a fresh run of the base
+  commit rather than trusting this figure as it ages.
 
 # This is NOT the Next.js you know
 
