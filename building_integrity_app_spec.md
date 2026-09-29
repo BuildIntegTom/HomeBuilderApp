@@ -5269,6 +5269,68 @@ Thresholds on the shipped ≥1200 band: some of the company name visible **1226p
 
 **⚠ Status: the re-plan was started and STOPPED before it reported.** These decisions are recorded; the measured consequences of decisions 2 and 4 are not. **Nothing above should be built until the 360px question is measured**, because it decides whether the bar can carry the dial's job at all.
 
+
+### ⚠ INTERVIEW OF 2026-09-28 — the menu structure, the engineer lens, and a real roof-panel spec
+
+Tommy asked to interview and plan rather than keep building. These answers **supersede parts of the "Decisions of 2026-09-28" block above** where they conflict, and they open a new workstream.
+
+#### The structure: ONE merged Design menu, GROUPED BY SUBJECT
+
+**Decided.** The two axes collapse. Today the **tab** says what you are editing (Walls / Floor / Roof / Foundation) and the **view** says how you are looking at it (plan, elevation, 3D, membranes). They merge:
+
+- **Design** holds every design destination, **grouped with headings by subject** — Walls (Plan View, then each wall elevation), then Floor, Roof, Foundation.
+- **View** holds the generated representations — 3D Framed, 3D Boxes, Membranes.
+- **No separate `Walls / Floor / Roof / Foundation` bar items.** This frees roughly **264px** of bar, the single biggest saving available, and it materially changes the width budget measured at U1.
+- Grouping is what keeps a long list usable: with every scope on and an octagon drawn, Design would otherwise be a flat list of a dozen or more entries.
+
+**Why grouped rather than flat:** he chose it over a flat list explicitly. The headings do the work the removed tabs used to do — they say *which subject* — while the menu still reaches everything from one control.
+
+#### Scope gating: ALREADY BUILT, and defaulting the way he wants
+
+His request was *"all floor, foundation, and roof options should be a checkbox toggle under settings… once you check them on, you can access it through the drop down menus"*, with floor/roof/foundation **hidden by default** because *"every job will include walls while some may include roof, floor, and foundations."*
+
+**Verified in the code, 2026-09-28 — this is ~90% shipped:**
+- `page.tsx` has `roofEnabled` (**default false**), `foundationEnabled` (**default false**), `floorsEnabled` and `wallsEnabled`, collected into a `scopeOfWork` object.
+- `enabledEditorTabs` is derived from them, pushing foundation / floor / roof **only when enabled** — so unchecked scopes are already hidden from both the tab dial and the nav.
+- The **Panelizer's own "keyhole" checkboxes** already drive it. His words, in the code: *"I want this tab to be the keyhole to getting down to what editor tools are needed for this user's project."*
+- **U3 already moves the Panelizer into Settings**, which carries those checkboxes there with no extra work.
+
+**So the genuine gaps are only:** the gating must now filter the **Design menu's groups** rather than a tab list, and `EditorTabDial`'s doc comment claiming *"Foundation has no such checkbox, so it's always included by the caller"* is **stale** — Smearforn Stage 0 added `foundationEnabled`.
+
+#### The engineer lens: its own Summary section
+
+**Decided.** The engineer lens gets **a dedicated engineering section in the Summary page** — every wall section and every panel with its equations and inputs: **stud pack, header bearing capacity, and shear**, wall-by-wall or per panel. One place to review a whole building's structure, separate from the shop-floor sheets.
+
+His read on why the lenses feel clunky is worth keeping: *"i think my clunkiness feelings though are just to do with it having been visible before, which i believe were changing right now."* So the fix may be placement, not mechanism.
+
+⚠ **This section must derive from the same computation the panel sheets already use.** The structural values on a fabrication sheet and the equations in Summary showing their working cannot come from two code paths, or they will disagree and the disagreement will be invisible. `PanelStructuralStatus` and the existing `pending-BI-confirmation` statuses ride along unchanged — **an equation shown beside a provisional value does not make it confirmed.**
+
+#### Viewing-as: signed-out is public, signed-in defaults to architect, and the choice is REMEMBERED
+
+**Decided.** A not-signed-in visitor can only view as **public**. Signing in defaults to **architect**. And he chose **remember what each person last selected** over resetting each session.
+
+⚠ **"Remembered per person" has a cost he should see:** there is **no `localStorage` or `sessionStorage` anywhere in `apps/web`** (verified), and browser storage would be per-browser rather than per-person anyway. Per-person means the account record — `public.user_profiles` (`0001`), which today carries `email`, `display_name`, `is_platform_admin` and `created_at` and **has no preferences column**. So this needs **a migration and therefore a hand-paste from Tommy**, in the style of `0009`/`0010` with pre-flight and post-flight checks. Small, but it is the first migration since the platform-backup slice was found to need none. **Flagged, not assumed.**
+
+---
+
+### ⚠ NEW WORKSTREAM, FLAGGED IN HIS OWN WORDS — roof and foundation panelizers
+
+Tommy, 2026-09-28, asked what was wrong with them and answered in real detail. **This is a specification, not a bare flag** — recorded verbatim, and nothing is to be built from inference around it:
+
+> *"3d foundation, and be able to design and create and view roof panels made out of nail laminated and glued 2x4s and 5/8" osb. panels would be similar to the floor in that the first panel has a nail laminated truss bearing inside flush with the x/y coordinaes of the panel walls. 3d roof panel viewer. the editing tools are perhaps clunky. and do the panels appear in shop drawings?"*
+
+The pieces:
+1. **A 3D foundation viewer.**
+2. **Real roof panels**, designable and creatable: **nail-laminated and glued 2x4s with 5/8in OSB.**
+3. **The first roof panel carries a nail-laminated truss bearing inside, flush with the x/y coordinates of the panel walls** — explicitly *"similar to the floor"*, so the Floor tab's rim/field framing system is the precedent to read first.
+4. **A 3D roof panel viewer.**
+5. **The editing tools are "perhaps clunky"** — his hedge is preserved; it is not yet a defect report.
+
+⚠ **ANSWER TO HIS QUESTION — "do the panels appear in shop drawings?" — verified 2026-09-28: NO, and for two different reasons.** The fabrication groups that exist are `panelFabricationGroups` (wall panels), `spanningHeaderFabricationGroups`, `midWallBondBeamFabricationGroups` and `roofBearingFabricationGroups`. That last is the **roof BEARING** — the truss plate — **not roof panels**. So **roof panels do not appear because they do not exist yet**, and **foundation has no fabrication group at all**, so it produces no shop drawings of any kind. Walls, spanning headers, mid-wall bond beams and the truss plate do.
+
+⚠ **FLAGS DISCIPLINE FOR WHOEVER BUILDS THIS.** His description contains **real building values** — nail-laminated 2x4s, glue, **5/8in OSB**, and a truss bearing flush to the panel walls' x/y. When those enter `data.ts` they are **`confirmed`, with this quotation as their provenance note**, because they came from him directly — the same treatment `fabricationMinPanelWidthIn` (24in) received. **Do not invent what he did not say:** no nail schedule, no glue specification, no lamination count, no panel width or span, no bearing capacity. Every such number is `pending-BI-confirmation` or absent, and a visible gap beats a substituted value.
+
+**Sequencing:** he said *"lets flag that for soon"*. It sits after the bar work and ahead of the concentric rings, which are themselves roughly 3x all of Smearforn Stages 0-3.
 ### Open Items — Top Bar & Navigation Reorganisation
 
 - **✅ ANSWERED by Tommy 2026-09-26 — the switcher moves, the company name stays.** Asked directly, and told that the log records the opposite twice with a reason, he chose **"Switcher into Account, company name stays on the bar"**: the Account button itself reads the company being acted as, the switching controls leave the bar, and **the fact never leaves the screen**. So the standing decision is *not* reversed — it is satisfied by a different presentation, which is the outcome the recommendation below hoped for. **U2 is unblocked. Do not build the fully-hidden variant**, and if anyone proposes it later, this entry is the answer. The original analysis is kept below because the reason matters more than the ruling.
