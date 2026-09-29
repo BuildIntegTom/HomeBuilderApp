@@ -189,50 +189,6 @@
   display: contents;
 }
 
-/* U1: the view dial's slot in sidebar Region 1.
-   `display: contents` normally, so the dial stays a direct flex child of the
-   Region 1 row and keeps its 8px gap next to the fullscreen button — the
-   wrapper generates no box and changes no pixel below 1454px.
-
-   At 1454px and up it is `display: none`, because the top bar's Design and
-   View menus are the view control there. That is the SAME `min-width: 1454px`
-   query that shows those menus (TopBar.module.css) — ONE condition flipping
-   the two forms in opposite directions, never an opposed min/max pair, so
-   there is no width (fractional ones under browser zoom included) where both
-   show or neither does.
-
-   ⚠ 1454, NOT 1200, AND CHANGED 2026-09-28. It is deliberately NOT the query
-   that shows the nav and hides EditorTabDial. U1 shipped it at 1200 and the
-   measurement there was that the two bar menus consumed the whole acting-as
-   company name: a 16px select showing zero characters, at all four roles.
-   The name is the thing that may never be crushed, so the menus wait until
-   they cost it nothing — which is 1454px, bisected. The consequence for this
-   file is the one that matters here: THE DIAL IS THE VIEW CONTROL OVER A MUCH
-   WIDER RANGE THAN BEFORE, including 1280 and 1366, and at every width Tommy
-   himself uses. The reasoning in full is on .viewMenus in TopBar.module.css.
-
-   ⚠ TWO THINGS TO KNOW BEFORE CHANGING THIS.
-
-   1. Region 1's height is fixed ON PURPOSE — it was made to stop varying
-      once already, because a row that changed height every time the tab or
-      view changed shifted everything below it. Hiding the dial here changes
-      Region 1's height AT A BREAKPOINT rather than during use, which is the
-      same trade already accepted for EditorToolbar. Stated here rather than
-      left to be rediscovered.
-   2. The dial is not merely the narrow fallback. Scroll-wheel cycling and
-      useRustleSound() live ONLY on the dial, so replacing it outright at
-      desktop width would have deleted both silently. Keeping it below the
-      breakpoint keeps them at Tommy's own 710px viewport. */
-.viewerDialSlot {
-  display: contents;
-}
-
-@media (min-width: 1454px) {
-  .viewerDialSlot {
-    display: none;
-  }
-}
-
 /* Region 3 of the sidebar, named so it can be addressed on its own — see the
    comment at its JSX. `display: contents` means this element generates no box
    at all: its children stay direct flex children of .editorSidebar and keep

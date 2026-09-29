@@ -7,15 +7,19 @@ import StickyNote from "./StickyNote";
 import UnitSystemSwitch from "./UnitSystemSwitch";
 import AccountControl from "./auth/AccountControl";
 import { EDITOR_TAB_LABEL, editorTabsInScope, type EditorTab } from "./editorTabs";
-import { isViewerDialLive, viewerStopLabel } from "./viewLabels";
+import { destinationLabel, isViewStopLive, viewerStopLabel } from "./viewLabels";
 import {
   VIEWER_MENU_LABEL,
   VIEWER_MENU_ORDER,
+  destinationKey,
+  isCurrentDestination,
+  viewerMenuGroups,
   viewerMenuOwner,
-  viewerStopKey,
-  viewerStopsForMenu,
+  type MenuDestination,
+  type MenuGroup,
+  type ViewerMenuId,
+  type ViewerStop,
 } from "./viewerMenus";
-import type { ViewerStop } from "./ViewerDial";
 import type { Footprint } from "@building-integrity/geometry";
 import { clampMenuLeft, roleControlLabel, roleOptions, settingsMenuHasAdminGroup } from "./topBarMenus";
 import type { CloudMenuModel } from "./cloud/useCloudProjects";
@@ -42,14 +46,18 @@ export interface TopBarProps {
   onEditorTabChange: (tab: EditorTab) => void;
   /** Panelizer's keyhole, exactly as passed to EditorTabDial. */
   enabledTabs: EditorTab[];
-  /* ---- U1: the Design and View menus ------------------------------------
-     The bar form of the sidebar's ViewerDial, at 1454px and up. Three of
-     these four props are EXACTLY the three the dial already takes, passed
-     through unchanged, which is what makes "two presentations of one thing"
-     true rather than aspirational. */
-  /** The dial's whole cycle, in Tommy's order. Split into the two menus HERE
-   * rather than by the caller, so the bar and the dial cannot be handed two
-   * different lists. */
+  /* ---- the Design and View menus -----------------------------------------
+     THE ONLY VIEW CONTROL IN THE APP since `ViewerDial` was removed
+     (2026-09-28, Tommy: "All of the viewers and editors that you can reach
+     through the dial should be accessible on the top bar"). These are the same
+     three values the dial took, unchanged, which is why the dial could simply
+     be removed rather than rewritten. */
+  /** The whole cycle, in Tommy's order. **Supplied by the caller and merely
+   * FILTERED here** (`viewerStopsForMenu`), so what the two menus contain is
+   * the caller's business: adding the Floor / Roof / Foundation editors to
+   * them later — which Tommy raised on 2026-09-28 and which is still being
+   * settled with him — needs no change to this component. Nothing in here
+   * types out a list of stops. */
   viewerStops: ViewerStop[];
   /** page.tsx's `currentViewerStop` — the single reader of the four view
    * flags. This component never reads those flags itself. */
@@ -57,7 +65,7 @@ export interface TopBarProps {
   /** page.tsx's `handleViewerStopChange`, and the ONLY writer of them. Both
    * menus call this one function; see the note on the menus below. */
   onViewerStopChange: (stop: ViewerStop) => void;
-  /** Only its presence is read, and only to answer `isViewerDialLive`. Passed
+  /** Only its presence is read, and only to answer `isViewStopLive`. Passed
    * as the footprint rather than as a ready-made boolean so that this
    * component calls the one named predicate itself, instead of trusting a
    * caller to have computed the same condition — which is the seam that
@@ -89,9 +97,13 @@ function GearIcon() {
  * Sticky top-of-screen chrome, in three zones (spec: "Top Bar & App Chrome —
  * the Stitch reorganisation").
  *
- * - LEFT, identity & document: the wordmark (1200px and up), then the
- *   acting-as / sign-in control, then Project ▾ (Save, Load, Site Properties,
- *   Panelizer — the things that change the building or the file).
+ * - LEFT, identity & document: the acting-as / sign-in control, then Project ▾
+ *   (Save, Load, Site Properties, Panelizer — the things that change the
+ *   building or the file), then Design ▾ and View ▾.
+ *   ⚠ **NO WORDMARK.** It read `Building Integrity` at 1200px and up and was
+ *   dropped on 2026-09-28 at Tommy's word — *"I don't think it's really all
+ *   that important to have Building Integrity in left side"* — worth ~142px
+ *   with its gap, and only at ≥1200px, because below that it already shed.
  * - MIDDLE, scope: Wall / Foundation / Floor / Roof (1200px and up). Below
  *   that, EditorTabDial in the sidebar is the tab control. Both are driven by
  *   the same state, and one CSS condition flips them, so exactly one shows.
@@ -99,11 +111,20 @@ function GearIcon() {
  *   things that change only how you look at it). No help icon: there is
  *   nothing for it to open yet, and the spec forbids an icon that opens nothing.
  *
- * WHY 1200 AND NOT `md`. The spec first put the nav at 768px. Measured with
- * four companies, the bar at 768 has 34px spare with the company name at its
- * 220px; the wordmark and nav need ~380px more. Showing them there would have
- * crushed the acting-as company name — the one thing this bar exists to keep
- * legible. Tommy moved them to 1200 (2026-09-13).
+ * WHY THE NAV IS AT 1200 AND NOT `md`. The spec first put it at 768px.
+ * Measured with four companies, the bar at 768 has 34px spare with the company
+ * name at its 220px; the wordmark and nav needed ~380px more. Showing them
+ * there would have crushed the acting-as company name — the one thing this bar
+ * exists to keep legible. Tommy moved them to 1200 (2026-09-13). The wordmark
+ * half of that query is gone; the nav's half is unchanged.
+ *
+ * WHY DESIGN AND VIEW HAVE NO BREAKPOINT AT ALL. U1 shipped them at a fourth,
+ * measured width (1454px) and let the sidebar dial catch the stops below it.
+ * **With the dial removed there is nothing to catch them**: a width at which
+ * these two are hidden is a width at which the plan, every wall elevation and
+ * the three 3D views are unreachable. So they are on the bar at every width,
+ * which is what makes the honest declared range (below) a statement about the
+ * acting-as company name rather than about reachability.
  *
  * WHY THE ACCOUNT CONTROL IS ON THE LEFT. This bar used to be one nowrap row
  * needing ~1400px, scrolled with `overflow-x: auto`, with the account control
@@ -116,11 +137,13 @@ function GearIcon() {
  * lives in the identity zone, the viewer role in the presentation zone. They
  * must never read as two levels of one thing.
  *
- * WHY THERE IS NO SCROLLER. The bar fits by construction down to 360px: the
- * left zone is the only thing allowed to shrink, and inside it only the
- * acting-as company name does (ellipsis + title). If a future change breaks
- * that, it should break visibly, not slide a control silently off-screen.
- * Truncated-with-a-tooltip beats absent.
+ * WHY THERE IS NO SCROLLER. The left zone is the only thing allowed to shrink,
+ * and inside it only the acting-as company name does (ellipsis + title). If a
+ * future change breaks that, it should break visibly, not slide a control
+ * silently off-screen. Truncated-with-a-tooltip beats absent — and where even
+ * truncation runs out, the measured widths are published rather than glossed:
+ * see `apps/web/harness/ui-reorg-u1/README.md`, which records the declared
+ * supported range and every width at which the company name is fully absent.
  *
  * Every menu opens as a real `StickyNote`, as before: the old nested popovers
  * were clipped by the row's overflow (setting one axis non-`visible` forces
@@ -149,20 +172,34 @@ export default function TopBar({
   footprint,
 }: TopBarProps) {
   /**
-   * Whether the view dial is actually driving the canvas — the SAME named
-   * predicate the dial's own `disabled` prop negates and the Report Bug note's
-   * context line reads, CALLED here rather than re-typed. Its input is a plain
-   * object, not component props, precisely so that a different component can
-   * ask the same question and be guaranteed the same answer.
+   * Whether a view stop is actually driving the canvas — the SAME named
+   * predicate the Report Bug note's context line reads, CALLED here rather
+   * than re-typed. Its input is a plain object, not component props, precisely
+   * so that a different component can ask the same question and be guaranteed
+   * the same answer.
    *
    * Writing `editorTab === "wall" && Boolean(footprint)` out here instead is
-   * exactly what `isViewerDialLive` was added (2026-09-28) to prevent: that
+   * exactly what this predicate was added (2026-09-28) to prevent: that
    * condition had already been written twice, in opposite polarities, ~900
-   * lines apart in page.tsx. The Design and View menus are its third and
-   * fourth readers, and one call answers for both.
+   * lines apart in page.tsx. It answers four questions here — each button's
+   * `disabled`, and both levels of the highlight — from one call.
+   * (It was `isViewerDialLive`; the dial it was named after is gone, the
+   * one-definition property it was created for is not.)
    */
-  const viewerDialLive = isViewerDialLive({ editorTab, footprint });
-
+  const viewStopLive = isViewStopLive({ editorTab, footprint });
+  /** LEVEL ONE of the highlight, computed once for both buttons: which menu the
+   * user is working inside. Exactly one always owns — including on a cold load,
+   * before any footprint exists, which is the screen Tommy described as making
+   * "the design button highlighted". */
+  const owningMenu = viewerMenuOwner({ editorTab, currentStop: currentViewerStop });
+  /** What each menu offers, grouped by subject, out of the ONE list of stops and
+   * the ONE enabled-tabs array the caller passed. Computed here rather than in
+   * the render of each button so the bar's `disabled` state and the note's
+   * contents can never disagree about whether a menu is empty. */
+  const menuGroups: Record<ViewerMenuId, MenuGroup[]> = {
+    design: viewerMenuGroups("design", { stops: viewerStops, enabledTabs, footprint }),
+    view: viewerMenuGroups("view", { stops: viewerStops, enabledTabs, footprint }),
+  };
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [fullscreenMenu, setFullscreenMenu] = useState<OpenMenu>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -187,6 +224,25 @@ export default function TopBar({
     setOpenMenu(null);
     setFullscreenMenu(null);
   };
+  /** Selecting a destination. **Neither branch writes any state itself** — each
+   * calls the one existing writer of the state it changes: the four view flags
+   * only ever move through page.tsx's `handleViewerStopChange`, and `editorTab`
+   * only ever through its `setEditorTab`.
+   *
+   * A stop chosen from the Floor tab has to bring the wall subject with it, or
+   * the click would set a view nobody can see and look like a dead control; so
+   * the tab is set FIRST and the stop second, which is also the order that
+   * leaves `editorTab` correct if a render happens in between. */
+  const goToDestination = (destination: MenuDestination) => {
+    if (destination.kind === "subject") {
+      onEditorTabChange(destination.subject);
+    } else {
+      if (editorTab !== "wall") onEditorTabChange("wall");
+      onViewerStopChange(destination.stop);
+    }
+    closeMenu();
+  };
+
 
   // A menu opened wide and then the window narrowed must not be left anchored
   // off the right edge. Only ever moves the note left, so widening again leaves
@@ -227,13 +283,15 @@ export default function TopBar({
     <div className={styles.bar} data-top-bar="">
       <div className={styles.row} data-top-bar-row="">
         <div className={styles.zoneLeft} data-top-bar-zone="left">
-          {/* Text, not an image: no logo asset exists (SheetTitleBlock renders a
-              text wordmark too). Brand navy via --bi-primary — NOT Stitch's
-              header-gold, which is a panel semantic in its own palette. Hidden
-              below 1200px, where its width belongs to the company name. */}
-          <span className={styles.wordmark} data-bar-control="wordmark">
-            Building Integrity
-          </span>
+          {/* ⚠ THE WORDMARK USED TO BE HERE and was removed 2026-09-28 on
+              Tommy's word: "I don't think it's really all that important to
+              have Building Integrity in left side. Maybe that would save a lot
+              of space." It was a `Building Integrity` text span (no logo asset
+              exists) shown at 1200px and up only, measured at ~142px with its
+              gap. Recorded rather than silently absent, because the space it
+              freed is what the two view menus spend at ≥1200px. The app's name
+              still prints on every sheet — SheetTitleBlock renders its own
+              wordmark and is untouched. */}
 
           {/* Returns null with no AuthProvider (tests mount the editor that
               way); it is a direct child so a null leaves no gap behind. */}
@@ -250,108 +308,136 @@ export default function TopBar({
             Project{caret("project")}
           </button>
 
-          {/* U1: Design and View — the top-bar form of the sidebar's view
-              dial, at 1454px and up only.
+          {/* Design ▾ and View ▾ — THE app's view control since `ViewerDial`
+              was removed (2026-09-28).
 
-              WHY A WRAPPER THAT RENDERS NOTHING. `.viewMenus` is
-              `display: contents` when shown, so both buttons are direct flex
-              children of the left zone and shrink, gap and truncate exactly as
-              if they were written here unwrapped; and `display: none` below
-              1454px, where the dial in the sidebar is the control instead.
-              One condition flips the two in opposite directions rather than an
-              opposed min/max pair — so there is no width, fractional ones
-              under browser zoom included, where both forms show or neither
-              does.
+              ⚠ BARE WORDS, NO CAPTION AND NO VALUE, and that is Tommy's
+              decision of 2026-09-28, superseding his own of 2026-09-26: "Can
+              design and view be drop down menus that don't have a: nor the
+              description of what page they are on reading after it… That would
+              reduce the view button to just saying view." The value string was
+              most of the width — the built `DESIGN 2D Floor Plan ▼` measured
+              176.8px against ~73px bare — and that saving is what lets these
+              two live on the bar at EVERY width, which is what the dial's
+              removal requires of them.
 
-              ⚠ 1454, NOT THE NAV'S 1200, AND THAT IS THE WHOLE POINT.
-              Changed 2026-09-28. U1 shipped these two on the nav's own 1200px
-              query; measured there with four companies, they took the ENTIRE
-              acting-as company name — a 16px select rendering zero characters
-              while the caption still read ACTING AS. A wrong-company save is
-              silent and plausible, which is why that name is the one thing on
-              this bar that may never be crushed, so these two newcomers are
-              what yield instead. 1454px is the bisected width at which they
-              cost it nothing. Full reasoning and figures: TopBar.module.css
-              on `.viewMenus`.
+              ⚠ NO MEDIA QUERY, DELIBERATELY. U1 hid them below 1454px and let
+              the sidebar dial catch the stops. There is no dial now, so a
+              width at which these are hidden is a width at which the plan,
+              every wall elevation and the three 3D views cannot be reached at
+              all. They are always on the bar; the acting-as company name is
+              what gives instead, and every width at which it is fully absent
+              is published in the harness README rather than left to be found.
 
-              ⚠ AND THE DIAL IS NOT MERELY THE NARROW FALLBACK. Scroll-wheel
-              cycling and `useRustleSound()` exist only on the dial. Replacing
-              it outright at desktop width would have deleted both without a
-              word, which is exactly the kind of row a reorganisation loses
-              quietly. Keeping it below the breakpoint keeps them at Tommy's
-              own 710px viewport — and, since 2026-09-28, at every width below
-              1454px, which is most of them. Whether the wheel and the rustle
-              should also be offered at 1454px and up is his call, and is an
-              Open Item. */}
-          <div className={styles.viewMenus}>
-            {VIEWER_MENU_ORDER.map((menu) => {
-              const isOwner = viewerMenuOwner(currentViewerStop, viewerDialLive) === menu;
-              return (
-                <button
-                  key={menu}
-                  type="button"
-                  data-bar-control={menu}
-                  data-view-menu={menu}
-                  data-view-menu-owner={isOwner ? "true" : "false"}
-                  /* Mirrors the dial's own `disabled` EXACTLY, because it is
-                     the same predicate and not a second copy of the
-                     condition — `isViewerDialLive` is read once, above, and
-                     both menus and the dial answer from it. The reason is in
-                     the title rather than left as a dead control. */
-                  disabled={!viewerDialLive}
-                  title={
-                    viewerDialLive
+              ⚠ WHAT WENT WITH THE DIAL, so neither absence reads as an
+              oversight later: scroll-wheel cycling (nothing replaces it — an
+              open question, not a settled answer) and `useRustleSound()`
+              (Tommy: "The rustle sound is no big deal. I'll probably add sound
+              effects to certain things at later dates"). `EditorTabDial`, the
+              Walls/Floor/Roof/Foundation tab dial in the sidebar, is a
+              DIFFERENT control and is untouched.
+
+              ⚠ WHAT THESE MENUS CONTAIN IS THE CALLER'S BUSINESS. Nothing here
+              lists a destination: `viewerMenuGroups` filters the caller's own
+              `viewerStops` and its own `enabledTabs`. That is what let the
+              subjects Tommy merged in on 2026-09-28 — Floor, Roof, Foundation,
+              each gated by the scope checkbox it already had — arrive as a
+              grouping rule rather than as a rewrite of this component, and it
+              is what will let the roof-panel and 3D-foundation viewers arrive
+              the same way. */}
+          {VIEWER_MENU_ORDER.map((menu) => {
+            /* LEVEL ONE OF THE HIGHLIGHT — the bar. `owningMenu` is
+               `viewerMenuOwner` called once above; "Design highlighted" means
+               "you are designing", and Design owns the plan, every wall
+               elevation and the Floor / Roof / Foundation editors, View the
+               three 3D representations.
+
+               ⚠ IT IS NOT COLOUR ALONE. `aria-pressed` carries the state to a
+               screen reader — a real pressed state on a real button — and the
+               visible cue is an underline as well as colour, which is the same
+               device the nav tabs next door already use and for the same
+               recorded reason: an underline does not change the control's
+               width, so ownership moving between Design and View can never
+               reflow the bar. Weight would have. */
+            const isOwner = owningMenu === menu;
+            return (
+              <button
+                key={menu}
+                type="button"
+                data-bar-control={menu}
+                data-view-menu={menu}
+                data-view-menu-owner={isOwner ? "true" : "false"}
+                /* The current stop's NAME, for the browser harnesses only —
+                   they used to read it off the dial's face, and the bar
+                   deliberately no longer shows it anywhere. It is rendered from
+                   the same `viewerStopLabel(currentViewerStop)` the open menu
+                   marks, so the two cannot drift, and the harness asserts they
+                   agree. Nothing is displayed; it adds no width. */
+                data-view-menu-current-stop={
+                  isOwner && viewStopLive ? viewerStopLabel(currentViewerStop) : undefined
+                }
+                /* ⚠ DISABLED WHEN, AND ONLY WHEN, THE MENU HAS NOWHERE TO GO —
+                   which is read off the very groups the note below renders, so
+                   the button and its menu can never disagree. It is NOT keyed to
+                   `isViewStopLive` any more, and that is a correctness fix
+                   rather than a preference: these menus now hold the Floor, Roof
+                   and Foundation editors, so a Design button disabled off the
+                   wall subject would be a door locked from the inside — the only
+                   way back to the drawing, greyed out because you had used it.
+                   In practice Design is never empty (at least one scope branch
+                   is always checked) and View is empty until a footprint exists,
+                   exactly as the old dial was disabled until then. */
+                disabled={menuGroups[menu].length === 0}
+                aria-pressed={isOwner}
+                title={
+                  menuGroups[menu].length === 0
+                    ? menu === "view"
+                      ? "The 3D views need a footprint — draw one on the plan first"
+                      : "Nothing is in the scope of work yet — check a branch in the Panelizer"
+                    : isOwner
                       ? menu === "design"
-                        ? "The drawing: the floor plan, and each wall's elevation"
+                        ? `You are designing — ${viewStopLive ? viewerStopLabel(currentViewerStop) : EDITOR_TAB_LABEL[editorTab]}`
+                        : `You are viewing — ${viewerStopLabel(currentViewerStop)}`
+                      : menu === "design"
+                        ? "Where to design: the plan, each wall's elevation, and the floor, roof and foundation editors in scope"
                         : "The 3D views: framed, boxes and membranes"
-                      : "Available on the Wall tab, once a footprint is drawn"
-                  }
-                  className={openMenu === menu ? styles.toolActive : styles.tool}
-                  aria-expanded={openMenu === menu}
-                  onClick={(e) => toggleMenu(menu, e.currentTarget)}
-                >
-                  {isOwner ? (
-                    <>
-                      {/* The two type treatments are the acting-as control's
-                          own — 11px/600/uppercase/muted, then 13px/600/
-                          on-surface — per Tommy's "(all caps dark grey) Design
-                          (First Letter Cap and Black) Plan View". The caption
-                          is the SAME string as the bare word, uppercased by
-                          CSS, so there is only ever one spelling of each. */}
-                      <span className={styles.viewMenuCaption} data-view-menu-caption="">
-                        {VIEWER_MENU_LABEL[menu]}
-                      </span>{" "}
-                      <span className={styles.viewMenuValue} data-view-menu-value="">
-                        {viewerStopLabel(currentViewerStop)}
-                      </span>
-                    </>
-                  ) : (
-                    <span data-view-menu-word="">{VIEWER_MENU_LABEL[menu]}</span>
-                  )}
-                  {caret(menu)}
-                </button>
-              );
-            })}
-          </div>
-
+                }
+                className={
+                  isOwner
+                    ? openMenu === menu
+                      ? styles.toolOwnerActive
+                      : styles.toolOwner
+                    : openMenu === menu
+                      ? styles.toolActive
+                      : styles.tool
+                }
+                aria-expanded={openMenu === menu}
+                onClick={(e) => toggleMenu(menu, e.currentTarget)}
+              >
+                {/* The word gets its own span rather than being loose text:
+                    the button also carries the caret, so a reader comparing
+                    `textContent` to "View" would fail on "View ▼" and read
+                    exactly like a rename that never happened. */}
+                <span data-view-menu-word="">{VIEWER_MENU_LABEL[menu]}</span>
+                {caret(menu)}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Scope. display: none below 1200px (EditorTabDial has the job there),
-            so it is out of the accessibility tree too and never doubles up. */}
-        <nav className={styles.zoneMiddle} data-top-bar-zone="middle" aria-label="Editor">
-          {editorTabsInScope(enabledTabs).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              className={tab === editorTab ? styles.navTabActive : styles.navTab}
-              data-bar-control={`nav-${tab}`}
-              aria-current={tab === editorTab ? "true" : undefined}
-              onClick={() => onEditorTabChange(tab)}
-            >
-              {EDITOR_TAB_LABEL[tab]}
-            </button>
-          ))}
-        </nav>
+        {/* ⚠ THE FOUR SCOPE TABS USED TO BE HERE — a middle zone of
+            Wall / Foundation / Floor / Roof buttons at 1200px and up. Tommy
+            merged the two axes on 2026-09-28: the subjects are now GROUPS
+            INSIDE the Design menu, and "no separate Walls / Floor / Roof /
+            Foundation bar items". That frees roughly 264px, the single biggest
+            saving available on this bar, and it is why the measured figures for
+            this pass are not comparable to U1's.
+
+            The state did not move: `editorTab` is still one `useState` in
+            page.tsx with `setEditorTab` its one writer, and `EditorTabDial` in
+            the sidebar still renders from it below 1200px. What its remaining
+            role should be, now that the bar carries no tabs, is a question
+            reported back rather than answered here. */}
 
         <div className={styles.zoneRight} data-top-bar-zone="right">
           <button
@@ -570,48 +656,89 @@ export default function TopBar({
         </div>
       </StickyNote>
 
-      {/* U1: one note per view menu. Each lists ITS OWN stops and only its
-          own, with the current one marked — which is the usable reading of
-          Tommy's "will only show the current page under it's button menu".
-          Read literally that sentence would make a menu list exactly the page
-          you are already on, leaving no way to change page; his own example
-          ("View and Summary just show view and Summary") is about the BAR
-          text, not the menu body, and that is what the LABEL+Value treatment
-          above implements.
+      {/* One note per view menu. Each lists ITS OWN stops and only its own,
+          with the current one marked — which is the usable reading of Tommy's
+          "will only show the current page under it's button menu". Read
+          literally that sentence would make a menu list exactly the page you
+          are already on, leaving no way to change page.
 
-          ⚠ ONE WRITER. Both notes call `onViewerStopChange` — page.tsx's
-          `handleViewerStopChange` — with a stop out of the caller's own
-          `viewerStops`. Neither sets `viewMode`, `simplified3D`, `showWraps`
-          or `elevationViewWallId`; neither even knows those exist. Those four
-          flags encode five stops between them, and two menus each writing
-          their own subset is precisely how `showWraps` ends up true on a plan
-          view. There is no second copy of that state machine here, and the
-          sidebar's Region 3 — which keys off exactly those flags — is the
-          harness assertion that proves it. */}
+          ⚠ LEVEL TWO OF THE HIGHLIGHT, and it is the whole of how the current
+          stop is shown now that the bar words are bare. Tommy, 2026-09-28: "it
+          opens a small drop-down menu that you can clearly see that Plan View
+          is highlighted in the drop-down menu." So this marker is load-bearing
+          information, not decoration, and it is NOT colour alone:
+          `aria-current="true"` names it to a screen reader, and the visible
+          cue adds weight and a left edge bar on top of the surface colour.
+          `aria-current` rather than `aria-pressed` because these five items are
+          one single-select set — where you ARE — and not five independent
+          toggles; the bar button beside them is the toggle, and it is the one
+          that carries `aria-pressed`. Two states, two controls, two different
+          attributes, on purpose.
+
+          ⚠ ONE WRITER, AND THE MERGE DID NOT ADD A SECOND. Every stop entry in
+          either note goes through `goToDestination`, which calls
+          `onViewerStopChange` — page.tsx's `handleViewerStopChange` — with a
+          stop out of the caller's own `viewerStops`. Nothing here sets
+          `viewMode`, `simplified3D`, `showWraps` or `elevationViewWallId`;
+          nothing here knows those exist. Those four flags encode five stops
+          between them, and two menus each writing their own subset is precisely
+          how `showWraps` ends up true on a plan view. Subject entries write
+          `editorTab` and nothing else, through its own one writer
+          (`setEditorTab`, arriving as `onEditorTabChange`) — the same one the
+          sidebar's tab dial has always called. Two states, two writers, no
+          third. Sidebar Region 3 keys off exactly those four view flags, which
+          is why its rendered signature is the harness assertion that proves
+          this. */}
       {VIEWER_MENU_ORDER.map((menu) => (
         <StickyNote key={menu} id={`${menu}-note`} label={VIEWER_MENU_LABEL[menu]} {...noteProps(menu)}>
-          <div className={styles.menuList} role="group" aria-label={`${VIEWER_MENU_LABEL[menu]} views`}>
-            {viewerStopsForMenu(viewerStops, menu).map((stop) => {
-              const key = viewerStopKey(stop);
-              const isCurrent = viewerDialLive && key === viewerStopKey(currentViewerStop);
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  data-view-stop={key}
-                  data-view-stop-current={isCurrent ? "true" : "false"}
-                  className={isCurrent ? styles.menuItemActive : styles.menuItem}
-                  aria-pressed={isCurrent}
-                  onClick={() => {
-                    onViewerStopChange(stop);
-                    closeMenu();
-                  }}
-                >
-                  {viewerStopLabel(stop)}
-                </button>
-              );
-            })}
-          </div>
+          {/* One `role="group"` per SUBJECT, each named by its heading, rather
+              than one group for the whole menu: Tommy chose grouped over flat so
+              that the headings say which subject, and a heading that is only a
+              bold line of text says that to sighted readers alone. A group with
+              an accessible name says it to everyone. Where a subject has a
+              single destination there is no heading and no nested group — see
+              `MenuGroup` for why repeating the word would not be grouping. */}
+          {menuGroups[menu].map((group) => (
+            <div
+              key={group.subject ?? "representations"}
+              className={styles.menuList}
+              data-menu-group={group.subject ?? "representations"}
+              role="group"
+              aria-label={group.heading ?? `${VIEWER_MENU_LABEL[menu]} destinations`}
+            >
+              {group.heading && (
+                <p className={styles.menuGroupHeading} data-menu-group-heading="">
+                  {group.heading}
+                </p>
+              )}
+              {group.destinations.map((destination) => {
+                const key = destinationKey(destination);
+                /* LEVEL TWO OF THE HIGHLIGHT, from its one definition — called
+                   rather than re-typed, and comparing stop KEYS because
+                   `currentViewerStop` is rebuilt on every render so object
+                   identity would silently never match. */
+                const isCurrent = isCurrentDestination(destination, { editorTab, currentStop: currentViewerStop });
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    /* `data-view-stop` is kept as the name for stop entries —
+                       five harnesses locate by it — and subject entries get
+                       their own attribute rather than being folded into it, so
+                       a harness asking for a view stop can never be handed a
+                       tab. */
+                    {...(destination.kind === "stop" ? { "data-view-stop": key } : { "data-design-subject": destination.subject })}
+                    data-view-stop-current={isCurrent ? "true" : "false"}
+                    className={isCurrent ? styles.menuItemCurrent : styles.menuItem}
+                    aria-current={isCurrent ? "true" : undefined}
+                    onClick={() => goToDestination(destination)}
+                  >
+                    {destinationLabel(destination)}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </StickyNote>
       ))}
 

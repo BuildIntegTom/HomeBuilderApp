@@ -346,7 +346,7 @@ import {
 } from "./SidebarIconCluster";
 import ReadMeContent from "./read-me/ReadMeContent";
 import ReportBugContent from "./report-bug/ReportBugContent";
-import { currentViewLabel, isViewerDialLive } from "./viewLabels";
+import { currentViewLabel, isViewStopLive } from "./viewLabels";
 import { DocumentMetaProvider } from "./DocumentMetaContext";
 import { BrowseModeProvider } from "./BrowseModeContext";
 import { PRICE_GAP, PRICE_REDACTED_NOTE, VIEWER_OWN_DEFAULTS_NOTE } from "./cloud/browseDisplay";
@@ -362,7 +362,7 @@ import SlabFoundationDiagram from "./SlabFoundationDiagram";
 import StickyNote from "./StickyNote";
 import TopBar from "./TopBar";
 import AppFooter from "./AppFooter";
-import ViewerDial, { type ViewerStop } from "./ViewerDial";
+import type { ViewerStop } from "./viewerMenus";
 import WindowSizeDiagram from "./WindowSizeDiagram";
 import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import WallElevationDiagram from "./WallElevationDiagram";
@@ -2144,12 +2144,17 @@ export default function LayoutEditor() {
 
   const elevationWall = footprint && elevationViewWallId ? (footprint.walls.find((w) => w.id === elevationViewWallId) ?? null) : null;
 
-  // The view-mode dial's cycle (Tommy: "cycle the wall view options...
-  // starting at the top and going clockwise, and the wheel moves onto 3D
-  // views") — 2D Floor Plan, then one elevation stop per wall in the same
-  // order the footprint already lists them (compass order for the common
-  // rectangle/octagon cases), then the 2 existing 3D modes. See
-  // ViewerDial.tsx.
+  // Every view stop, in Tommy's order (his words, from when this was a dial:
+  // "cycle the wall view options... starting at the top and going clockwise,
+  // and the wheel moves onto 3D views") — 2D Floor Plan, then one elevation
+  // stop per wall in the same order the footprint already lists them (compass
+  // order for the common rectangle/octagon cases), then the three 3D modes.
+  //
+  // THE TOP BAR'S Design AND View MENUS ARE THE ONLY PRESENTATION OF THIS LIST
+  // (the sidebar dial was removed 2026-09-28). `viewerMenus.ts` splits it by
+  // filtering this array, so the two menus together are exactly this list — and
+  // a stop missing from here is a stop nobody can reach at all.
+  // See viewerMenus.ts.
   const viewerStops = useMemo<ViewerStop[]>(
     () => [
       { kind: "plan" },
@@ -9432,14 +9437,14 @@ export default function LayoutEditor() {
           editorTab={editorTab}
           onEditorTabChange={setEditorTab}
           enabledTabs={enabledEditorTabs}
-          // U1's Design and View menus: the SAME three values the ViewerDial
-          // below is given, handed to the other presentation of the same
-          // control. `handleViewerStopChange` stays the only writer of
+          // The Design and View menus — since 2026-09-28 the ONLY view control
+          // in the app, the sidebar dial having been removed at Tommy's
+          // instruction. `handleViewerStopChange` stays the only writer of
           // viewMode / simplified3D / showWraps / elevationViewWallId — the
           // bar calls it, it does not reach past it. `footprint` is passed
           // rather than a ready-made "is it live" boolean so TopBar calls
-          // `isViewerDialLive` itself and cannot be handed a different answer
-          // than the dial gets.
+          // `isViewStopLive` itself and cannot be handed a different answer
+          // than this file's own readers get.
           viewerStops={viewerStops}
           currentViewerStop={currentViewerStop}
           onViewerStopChange={handleViewerStopChange}
@@ -9460,42 +9465,27 @@ export default function LayoutEditor() {
         <div className={`${styles.editorSection} print-hidden-chrome`}>
           <div className={styles.editorSidebar}>
             {loadError && <p className={styles.disclaimer}>Couldn&apos;t load that file — {loadError}</p>}
-            {/* Region 1 (always first, fixed): viewer selection. Tommy:
-                "having the viewer selection on top, then the floor/wall/
-                roof layer, then all the editor relevant tools below" —
-                previously shared this row with the pan/zoom portal div
-                below, whose presence/absence (wall+plan only) changed the
-                row's own height and shifted everything below it every time
-                the tab/view changed. Kept to just ViewerDial + fullscreen
-                now, so this row's height never varies. */}
+            {/* Region 1 (always first, fixed): Tommy's "having the viewer
+                selection on top, then the floor/wall/roof layer, then all the
+                editor relevant tools below". It previously shared this row with
+                the pan/zoom portal div below, whose presence/absence (wall+plan
+                only) changed the row's own height and shifted everything below
+                it every time the tab/view changed; it has had a fixed height
+                ever since, and still does.
+
+                ⚠ THE VIEW CONTROL IS NO LONGER HERE. `ViewerDial` sat in this
+                row and was REMOVED on 2026-09-28 — Tommy: "I would like to not
+                have the dial after these updates. All of the viewers and
+                editors that you can reach through the dial should be accessible
+                on the top bar." The top bar's Design and View menus are the
+                whole of the view control now, at every width. Deleted with it,
+                on his own decisions and recorded so neither reads later as an
+                oversight: SCROLL-WHEEL CYCLING (nothing replaces it; an open
+                question) and `useRustleSound()` ("The rustle sound is no big
+                deal"). `EditorTabDial`, Region 2 below, is a DIFFERENT control
+                and is untouched. What is left in this row is the fullscreen
+                toggle. */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", width: "100%" }}>
-              {/* U1: the dial is the BELOW-1454px form of the top bar's
-                  Design and View menus. .viewerDialSlot is `display: contents`
-                  (so nothing about this row changes at narrow widths) and
-                  `display: none` at 1454px and up, on the same single query
-                  that shows the menus. ⚠ 1454 and not 1200, changed
-                  2026-09-28: at 1200 those two menus took the entire acting-as
-                  company name, so they now wait until they cost it nothing.
-                  The practical effect here is that THE DIAL IS THE VIEW
-                  CONTROL at 1280 and 1366 and at every width Tommy himself
-                  uses — see page.module.css, which also
-                  records why Region 1 is allowed to change height at a
-                  breakpoint and why the dial survives rather than being
-                  replaced (the scroll wheel and the rustle sound live only
-                  here). Same stops, same value, same onChange as the menus. */}
-              <div className={styles.viewerDialSlot}>
-                <ViewerDial
-                  stops={viewerStops}
-                  value={currentViewerStop}
-                  onChange={handleViewerStopChange}
-                  // The one definition of "is the dial live", negated here
-                  // because this prop asks the opposite question. It used to
-                  // be written out longhand here and, in its complement form,
-                  // ~900 lines below on the bug note's context line. TopBar
-                  // calls the same predicate for the two menus.
-                  disabled={!isViewerDialLive({ editorTab, footprint })}
-                />
-              </div>
               <button
                 type="button"
                 title={isOsFullscreen ? "Exit fullscreen" : "Enter fullscreen editor"}
@@ -9526,17 +9516,27 @@ export default function LayoutEditor() {
                 flex child of .editorSidebar and the layout is byte-for-byte
                 what it was without it (.toolbarPortalInline next door uses
                 the same trick for the same reason). What it adds is a NAME.
-                U1's acceptance is "Region 3 renders identically for every
-                stop before and after the Design/View split" — the direct
-                test that `handleViewerStopChange` stayed the only writer of
+                The acceptance is "Region 3 renders identically for every stop
+                before and after the change" — the direct test that
+                `handleViewerStopChange` stayed the only writer of
                 viewMode/simplified3D/showWraps/elevationViewWallId, because
-                Region 3's content keys off exactly those four flags. That
-                test needs to address Region 3 without addressing Regions 1,
-                2 and 4 (Region 1 legitimately differs across the change: the
-                dial is the below-breakpoint form now). Selecting it by
+                Region 3's content keys off exactly those four flags. That test
+                needs to address Region 3 without addressing Regions 1, 2 and 4
+                (Region 1 legitimately differs across the change: the view dial
+                used to live there and no longer exists). Selecting it by
                 sibling position would be a locator keyed to an incidental
-                fact — the shape this repo's harnesses have already been
-                burned by — so it gets a real hook instead. */}
+                fact — the shape this repo's harnesses have already been burned
+                by — so it gets a real hook instead.
+
+                ⚠ WITH THE DIAL GONE, ONE HALF OF THAT PROOF HAD TO BE
+                REPLACED. U1 compared the dial against the menus within a
+                single run, byte for byte. There is no second control to
+                compare against any more, so the harness instead (a) still
+                compares against `region3-baseline.json`, which was recorded
+                off the DIAL before any of this, and (b) reaches each stop
+                twice by different routes in one run and requires Region 3 to
+                be byte-identical both times — which is what would catch
+                `showWraps` left true on a plan view arrived at from 3D. */}
             <div data-sidebar-region-3="" className={styles.sidebarRegion3}>
             {editorTab === "wall" && elevationWall && elevationControls}
             {editorTab === "wall" && !elevationWall && viewMode === "3d" && showWraps && wallAssemblyControls}
@@ -10451,7 +10451,7 @@ export default function LayoutEditor() {
             currentViewName={currentViewLabel({
               editorTab,
               viewerStop: currentViewerStop,
-              viewerActive: isViewerDialLive({ editorTab, footprint }),
+              viewerActive: isViewStopLive({ editorTab, footprint }),
             })}
             // OPENS it; never closes it. `handleToggleNote` stays the only
             // writer, but a link that shuts the thing it points at when that

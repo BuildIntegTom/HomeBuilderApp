@@ -1,55 +1,63 @@
 /* Breakpoints for the top bar (spec: "Top Bar & App Chrome — the Stitch
-   reorganisation", Breakpoint hygiene, and Tommy's 2026-09-13 decisions). The
-   bar changes at exactly these widths; do not add another:
+   reorganisation", Breakpoint hygiene, Tommy's 2026-09-13 decisions, and his
+   DECISIONS OF 2026-09-28). The bar changes at exactly these widths; do not
+   add another:
 
-    1454px  ⚠ THE FOURTH NUMBER, ADDED 2026-09-28, AND PROVISIONAL UNTIL TOMMY
-            CONFIRMS IT. At and above (`min-width: 1454px`): U1's Design and
-            View menus show and page.module.css's .viewerDialSlot hides, so the
-            sidebar ViewerDial is the view control below it. It is NOT 1200,
-            where U1 first put them: measured there with four companies, the
-            two menus took the ENTIRE acting-as company name — a 16px select
-            rendering zero characters under a caption still reading ACTING AS.
-            1454 is the bisected width at which those two cost the name
-            nothing. The full reasoning, the measurements, and why this breaks
-            the "do not add another" rule above are on .viewMenus below; the
-            short version is that the name is what may never be crushed and the
-            newcomers are what yield.
-     1200px  At and above (`min-width: 1200px`): the wordmark and the Wall/
-             Foundation/Floor/Roof nav show, EditorTabDial hides
-             (EditorToolbar.module.css), and the acting-as company name may grow
-             past 220px (AccountControl.module.css). Below it the bar is exactly
-             Stage 1's. Written as ONE condition that shows one thing and hides
-             the other, rather than a max-width/min-width pair, so there is no
-             width — fractional ones under browser zoom included — where nav and
-             dial both show or neither does.
+     1200px  At and above (`min-width: 1200px`): the Wall/Foundation/Floor/Roof
+             nav shows, EditorTabDial hides (EditorToolbar.module.css), and the
+             acting-as company name may grow past 220px
+             (AccountControl.module.css). Written as ONE condition that shows
+             one thing and hides the other, rather than a max-width/min-width
+             pair, so there is no width — fractional ones under browser zoom
+             included — where nav and tab dial both show or neither does.
              Why not 768, where the spec first put the nav: measured with four
-             companies, the bar at 768 had 34px spare with the name at 220px, and
-             the wordmark + nav need ~380px. They would have crushed the name.
+             companies, the bar at 768 had 34px spare with the name at 220px,
+             and the nav + the (now removed) wordmark needed ~380px. They would
+             have crushed the name.
       768px  `md`. Below it (written `max-width: 767px`) the bar sheds: tighter
              controls, carets dropped, and AccountControl drops its "ACTING AS"
              caption word (AccountControl.module.css).
-   Not a breakpoint, but the floor: at 360px the bar must still fit with no
-   horizontal scroll. Nothing changes there; it is the width it is tested at.
+
+   ⚠ 1454px IS GONE, AND SO IS THE WORDMARK (both 2026-09-28). U1 added a
+   fourth number so its Design and View menus could wait until they cost the
+   company name nothing, with the sidebar dial catching the view stops below
+   it. **Tommy then removed the dial** — "All of the viewers and editors that
+   you can reach through the dial should be accessible on the top bar" — so
+   there is nothing to catch them, and a width at which they are hidden is a
+   width at which the plan, every wall elevation and the three 3D views are
+   unreachable. They are therefore on the bar at EVERY width and have no query
+   of their own, which is why this file is back to three numbers rather than
+   four. The wordmark (~142px with its gap, ≥1200px only) went at the same
+   time, on his word, and part of what it paid for is these two.
 
    600px is the app's existing narrow breakpoint (page.module.css,
    EditorTabDial.module.css, SectionCarousel.module.css). NOT used by the top
    bar: shedding there left the caption showing while the company name was
    already truncated between ~601 and 700px.
 
-   Shed order, narrowing: Design + View menus (below 1454) -> nav tabs +
-   wordmark (below 1200) -> "ACTING AS" caption (below 768). NEVER shed: the
-   acting-as company name, Project, Role, and the settings icon. When space
-   still runs out, the company name truncates with an ellipsis and a title —
-   but it is never reduced to NO characters, which is what U1 did at 1200 and
-   what moving Design/View to 1454 fixes. No help icon exists to shed.
+   Shed order, narrowing: nav tabs (below 1200) -> "ACTING AS" caption (below
+   768) -> and after that only the acting-as company NAME itself, which
+   truncates. NEVER shed: Design, View, the acting-as chip, Project, Role and
+   the settings icon. No help icon exists to shed, and there is no wordmark
+   left to shed.
+
+   ⚠ WHAT THAT COSTS, SAID PLAINLY. Truncated-but-present beats absent is this
+   bar's rule, and the name is the last thing given room. But with Design and
+   View now permanent the narrow end of the range runs out of pixels, and below
+   a measured width the name renders NO characters. That is a real lapse in a
+   documented safety property, so it is measured rather than assumed, and every
+   width at which the name is fully absent is published in
+   apps/web/harness/ui-reorg-u1/README.md with the declared supported range.
+   Nothing here shrinks type to hide it.
 
    Colours read from the --bi-* chrome tokens in globals.css. Every token's
    default is the exact hex this file hardcoded before. Chrome only: nothing
    here is a drawing semantic.
 
    Type follows the Geist roles in the Stitch DESIGN.md (the bar inherits Geist
-   from page.module.css's .page): wordmark headline-md, controls body-md,
-   nav tabs per the measured choice noted on .navTab, menu titles label-sm. */
+   from page.module.css's .page): controls body-md, menu
+   titles and group headings label-sm. No type role here was made
+   smaller for this pass. */
 
 .bar {
   position: fixed;
@@ -95,89 +103,6 @@
   flex: 1 1 auto;
   min-width: 0;
 }
-
-/* headline-md. Hidden below 1200px. */
-.wordmark {
-  display: none;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 24px;
-  color: var(--bi-primary);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-/* Scope. Hidden below 1200px, where EditorTabDial is the tab control. */
-.zoneMiddle {
-  display: none;
-}
-
-/* U1's Design and View menus. Hidden below 1454px, where the sidebar's
-   ViewerDial is the view control — the same arrangement as the nav above and
-   EditorTabDial, but NOT at the same width, and the reason is below.
-
-   `display: contents` rather than `flex` when shown: this wrapper exists only
-   to carry the media query, so it must generate no box of its own. Its two
-   buttons then sit in .zoneLeft's flex row with the same 10px gap (4px below
-   768) and the same `flex-shrink: 0` they would have if they were written
-   there directly — which matters, because .zoneLeft is the only zone allowed
-   to shrink and the acting-as company name is the only thing inside it that
-   actually does. (Same trick, same reason, as page.module.css's
-   .toolbarPortalInline and .sidebarRegion3.)
-
-   ⚠⚠ WHY THESE TWO HAVE THEIR OWN WIDTH, AND WHY IT IS NOT 1200.
-   Corrected and re-measured 2026-09-28 against the BUILT bar
-   (apps/web/harness/ui-reorg-u1/evidence-u1-as-built.json); the figures this
-   block carried before were the projection pass's and all understated the
-   cost.
-
-   U1 first put these two on the bar at 1200px, the same query as the nav.
-   Measured there, with four companies and the widest role label, the
-   acting-as company name was not merely truncated — it was GONE. The select
-   was 16px wide and rendered zero characters, at all four roles; the chip
-   read `ACTING AS` and a caret and nothing else. A caption promising a value
-   that is absent is not the documented "truncated but present" degradation.
-   It is the 2026-09-13 failure in its second form, at the very breakpoint
-   chosen in 2026-09-13 to prevent it, and it is worse than the `The See…`
-   that decision was made about.
-
-   So the constraint is: THE ACTING-AS COMPANY NAME IS NEVER CRUSHED, and
-   everything else gives way first. These two menus are the newcomers, so
-   these two are what yield. They appear only at the width where they cost the
-   name nothing at all.
-
-   That width is 1454px, BISECTED IN A REAL BROWSER, not chosen: it is the
-   narrowest viewport at which the name element reaches its own natural width
-   with these two present (four companies, the widest role label, all four nav
-   tabs). Measured on the built bar:
-       1200-1225px   zero characters of the name
-       1226px        the first character appears
-       1381px        the chip reaches the 280px cap its select is given
-       1454px        the name is WHOLE — this rule's width
-   Below it the sidebar ViewerDial is the view control, which is also what
-   keeps the scroll wheel and the rustle sound.
-
-   ⚠ THIS IS A FOURTH NUMBER ON THE BAR AND TOMMY HAS NOT BEEN ASKED FOR IT.
-   The log's rule is "do not invent a fourth breakpoint". This one is measured
-   rather than invented, and it was the only mechanism that met the
-   constraint — capping the menus' own value recovers ~90px of the ~288px
-   needed at 1200, and the only other places that width could come from are
-   the wordmark and the nav, which is Tommy's 2026-09-13 decision. But it is
-   still his call, exactly as 1200 was, and until he makes it this number is
-   provisional. See the spec's Open Items.
-
-   ⚠ AND WHAT IT MEANS FOR TOMMY HIMSELF: his own viewport is 710px. These two
-   menus do not exist there, and will not at 1280 or 1366 either. The sidebar
-   dial is his real view control, and that is a fact about the whole
-   reorganisation rather than a detail of this rule.
-
-   Adding Summary and Print (U4, U5) takes the bar's natural width to 1594.2px
-   of row content / 1634.2px of viewport, which fits at NO width in the brief —
-   so that stage cannot simply append two more buttons here either. */
-.viewMenus {
-  display: none;
-}
-
 /* Presentation. Never shrinks: Role and the settings icon are never shed. */
 .zoneRight {
   display: flex;
@@ -188,9 +113,13 @@
 }
 
 /* body-md (13px / 400 / 18px). Explicit line-height so every text control —
-   including AccountControl's own button — lands on the same outer height. */
+   including AccountControl's own button — lands on the same outer height.
+   .toolOwner / .toolOwnerActive share every metric declaration here, on
+   purpose: see the note on .toolOwner below. */
 .tool,
-.toolActive {
+.toolActive,
+.toolOwner,
+.toolOwnerActive {
   padding: 6px 14px;
   font-size: 13px;
   font-weight: 400;
@@ -208,6 +137,44 @@
   background: var(--bi-button-active-surface);
   border-color: var(--bi-button-active-outline);
   color: var(--bi-button-active-label);
+}
+
+/* ⚠ LEVEL ONE OF THE TWO-LEVEL HIGHLIGHT: the bar says which menu OWNS the
+   editor surface. Tommy, 2026-09-28: "This will make the design button
+   highlighted so that the user immediately can tell that they're designing."
+   With the bar words bare, this and the current-item marker in the open menu
+   are the only places the current stop appears at all, so both are carrying
+   real information rather than decorating.
+
+   THREE THINGS ABOUT HOW IT IS DRAWN, each for a recorded reason.
+
+   1. NOT COLOUR ALONE. The inset shadow draws a 2px underline — a shape, not a
+      hue. (The removed nav tabs used the same device, for the same reason.) The
+      accessible half is `aria-pressed` on the button, in TopBar.tsx, and that
+      is the part a screen reader gets; this rule is only the sighted half.
+   2. AN INSET SHADOW RATHER THAN A BORDER. A 2px border-bottom would be 1px
+      taller than .tool's 1px border and would move the row by a pixel whenever
+      ownership changed. box-shadow costs no layout at all.
+   3. NO FONT-WEIGHT CHANGE, AND NO PADDING CHANGE. Every metric is inherited
+      from the shared block above, so Design and View are the same width owned
+      or not, and moving ownership between them can never reflow the bar. This
+      is the removed nav tabs' own recorded choice ("marked by colour and
+      underline, not weight, so switching tabs never changes the nav's width"),
+      kept here because these two are now the bar's only control with an active
+      state. */
+.toolOwner {
+  border-color: var(--bi-primary);
+  color: var(--bi-primary);
+  box-shadow: inset 0 -2px 0 var(--bi-primary);
+}
+
+/* Owned AND its menu open. Both facts are shown at once because they are two
+   different facts: "you are designing" and "the Design menu is open". */
+.toolOwnerActive {
+  background: var(--bi-button-active-surface);
+  border-color: var(--bi-primary);
+  color: var(--bi-primary);
+  box-shadow: inset 0 -2px 0 var(--bi-primary);
 }
 
 .iconTool {
@@ -232,48 +199,20 @@
   min-height: 32px;
 }
 
-/* Stitch's header nav: full-height text tabs, the current one in brand navy
-   with a 2px underline. Buttons, not links — switching tabs is state, not
-   navigation.
-   Type role body-lg (14px / 400 / 20px), chosen by measurement at exactly
-   1200px with all four tabs, four companies and "Role: Fabricator":
-     label-sm    12px/600  nav 246px, company name 270px (full label)
-     body-lg     14px/400  nav 254px, company name 270px (full label)  <- this
-     headline-md 16px/600  nav 292px, company name 242px (suffix cut)
-   body-lg is the largest role that keeps "(platform admin)" readable at the
-   boundary. The active tab is marked by colour and underline, not weight, so
-   switching tabs never changes the nav's width. */
-.navTab,
-.navTabActive {
-  display: flex;
-  align-items: center;
-  height: 100%;
-  padding: 0 12px;
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-  color: var(--bi-on-surface-variant);
-  background: transparent;
-  border: none;
-  border-top: 2px solid transparent;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.navTab:hover {
-  background: var(--bi-surface-container);
-}
-
-.navTab:focus-visible,
-.navTabActive:focus-visible {
-  outline: 2px solid var(--bi-secondary);
-  outline-offset: -2px;
-}
-
-.navTabActive {
+/* A subject heading inside the Design menu (label-sm, like .menuSectionTitle,
+   which it deliberately matches — a heading in a note already has a look in
+   this app and this is not a new one). It exists because Tommy chose a GROUPED
+   Design menu over a flat one: with every scope on and an octagon drawn a flat
+   list is a dozen-plus entries, and the headings do the job the four removed
+   bar tabs used to do. `margin-top` only between groups, never above the
+   first. */
+.menuGroupHeading {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.01em;
   color: var(--bi-primary);
-  border-bottom-color: var(--bi-primary);
+  margin: 0;
 }
 
 /* Inside the menus' StickyNotes. */
@@ -289,10 +228,36 @@
   white-space: normal;
 }
 
+/* The Role menu's selected option, unchanged. (The VIEW menus' current stop is
+   .menuItemCurrent below — a stronger marker, because it is the only place the
+   current view is stated now that the bar words are bare.) */
 .menuItemActive {
   composes: toolActive;
   text-align: left;
   white-space: normal;
+}
+
+/* ⚠ LEVEL TWO OF THE TWO-LEVEL HIGHLIGHT: inside an open Design or View menu,
+   which stop you are actually on. Tommy, 2026-09-28: "it opens a small
+   drop-down menu that you can clearly see that Plan View is highlighted in the
+   drop-down menu."
+
+   NOT COLOUR ALONE, three ways: `aria-current="true"` in TopBar.tsx (the
+   accessible state, and the part that matters most), plus 600 weight and a 3px
+   left edge bar here. Weight and an edge bar are safe in a vertical menu in a
+   note — unlike on the bar, nothing here is width-critical, so this marker can
+   be stronger than the bar's.
+
+   `composes: toolActive` and NOT `composes: menuItemActive`: composes is not
+   transitive in this toolchain (see .menuItemLink, which paid for that lesson
+   by rendering as bare 16px text), so this lists the class whose declarations
+   it actually needs. */
+.menuItemCurrent {
+  composes: toolActive;
+  text-align: left;
+  white-space: normal;
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--bi-primary);
 }
 
 /* A menu item that is a real link (the Single Wall Run sandbox, U0) rather
@@ -309,36 +274,6 @@
   text-decoration: none;
 }
 
-/* The two-part label the OWNING view menu renders: "(all caps dark grey)
-   Design (First Letter Cap and Black) Plan View" in Tommy's words.
-
-   These are the acting-as control's own two type treatments, and nothing else
-   of it. AccountControl.module.css's .actingAsLabel is 11px / 600 /
-   uppercase / 0.01em / --bi-on-surface-muted, and its value is 13px / 600 /
-   --bi-on-surface. The chip and the <select> are deliberately NOT reused:
-   Design and View are buttons that open StickyNote menus, not a bordered chip
-   around a form control.
-
-   They are re-declared here rather than `composes`-ed across module
-   boundaries because composing would silently drag the value rule's
-   background, border, padding, cursor and 220px max-width along with the
-   type. The coupling is kept honest by the harness instead, which compares
-   these two against the LIVE .actingAsLabel and .actingAsSelect computed
-   styles — so if one is ever restyled and these are not, a run fails rather
-   than the two drifting apart unnoticed. */
-.viewMenuCaption {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--bi-on-surface-muted);
-  text-transform: uppercase;
-}
-
-.viewMenuValue {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--bi-on-surface);
-}
 
 .menuItemLabel {
   display: block;
@@ -438,8 +373,13 @@
     gap: 4px;
   }
 
+  /* All four states are listed, and that is not tidiness: Design and View
+     change class when ownership moves, so any metric one state has and another
+     does not would reflow the bar as the user changes view. */
   .row .tool,
-  .row .toolActive {
+  .row .toolActive,
+  .row .toolOwner,
+  .row .toolOwnerActive {
     padding: 6px 7px;
     font-size: 12px;
   }
@@ -455,48 +395,17 @@
   }
 }
 
-/* Wide: wordmark + nav, and the company name's room to grow. The nav never
-   shrinks and the right zone keeps its content width, so when space runs
-   short it is the left zone (and inside it, only the company name) that
-   gives — growth can never push a control off-screen. The nav's auto margins
-   centre it in whatever space is left between the two outer zones. */
-@media (min-width: 1200px) {
-  .wordmark {
-    display: block;
-  }
+/* ⚠ THE BAR'S OWN 1200px QUERY IS GONE (2026-09-28), and nothing replaced it.
+   It did three things: show the wordmark, lay out the middle nav zone, and
+   switch .zoneLeft to `flex: 0 1 auto` so the nav could be centred by auto
+   margins. The wordmark and the nav are both gone, so all three went with them.
+   The left zone now keeps `flex: 1 1 auto` at every width and .zoneRight's
+   `margin-left: auto` holds the right end, which is exactly what it did below
+   1200 before — i.e. one layout at all widths rather than two.
 
-  .zoneLeft {
-    flex: 0 1 auto;
-  }
-
-  .zoneMiddle {
-    display: flex;
-    align-items: stretch;
-    align-self: stretch;
-    flex: 0 0 auto;
-    margin: 0 auto;
-  }
-
-  .zoneRight {
-    margin-left: 0;
-  }
-}
-
-/* U1's Design and View menus, at their own measured width — the full reasoning
-   is in the block on .viewMenus above, including why this is a fourth number
-   on the bar and why it is still Tommy's to confirm.
-
-   ONE condition, flipping two things in opposite directions: these menus
-   appear here and page.module.css's .viewerDialSlot disappears at the
-   identical query. Never an opposed max-width/min-width pair — a fractional
-   viewport width under browser zoom satisfies neither half of a pair, and the
-   control vanishes entirely. The U1 harness asserts exactly one of the two
-   presentations at 1453, 1453.5, 1454, 1454.5 and 1614.7, and at 1199/1200
-   where nothing about the view control may happen any more. It finds this
-   width by bisecting the shipped CSS rather than carrying its own copy of the
-   number, so moving this rule moves the assertions with it. */
-@media (min-width: 1454px) {
-  .viewMenus {
-    display: contents;
-  }
-}
+   1200px HAS NOT STOPPED MATTERING to the app; it has stopped mattering to
+   THIS file. It still lives in AccountControl.module.css (the company name's
+   cap rises from 220px to 280px) and in EditorToolbar.module.css (the sidebar
+   tab dial hides). Both are deliberately left alone — the cap is Tommy's
+   2026-09-13 decision, and what remains of the tab dial now that the bar
+   carries no tabs is a question reported back, not one answered here. */

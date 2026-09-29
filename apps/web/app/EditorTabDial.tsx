@@ -10,11 +10,15 @@ export interface EditorTabDialProps {
   onChange: (tab: EditorTab) => void;
   /** Which tabs are currently relevant — Panelizer's own "keyhole"
    * checkboxes (Tommy: "I want this tab to be the keyhole to getting down
-   * to what editor tools are needed for this user's project") gate
-   * Wall/Floor/Roof; Foundation has no such checkbox, so it's always
-   * included by the caller. Cycling (chevrons/wheel) skips anything not in
-   * this list. Falls back to every tab if it's ever empty, so the dial never
-   * gets stuck with nothing to show. */
+   * to what editor tools are needed for this user's project") gate all four.
+   * ⚠ This used to say "Foundation has no such checkbox, so it's always
+   * included by the caller", which went stale when Smearforn Stage 0 added
+   * `foundationEnabled` (2026-09-24) and defaulted Floor and Foundation OFF;
+   * `page.tsx`'s `enabledEditorTabs` now derives from `wallsEnabled`,
+   * `foundationEnabled`, `floorsEnabled` and `roofEnabled` together. Corrected
+   * 2026-09-28. Cycling (chevrons/wheel) skips anything not in this list. Falls
+   * back to every tab if it's ever empty, so the dial never gets stuck with
+   * nothing to show. */
   enabledTabs: EditorTab[];
 }
 
