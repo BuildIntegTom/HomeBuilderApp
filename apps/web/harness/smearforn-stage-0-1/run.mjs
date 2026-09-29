@@ -367,16 +367,80 @@ if (reached === null) {
 }
 console.log(`  working on ${reached.view} (${reached.dragStrips} drag strips)`);
 
+/**
+ * How many real inches one screen pixel is worth on the elevation right now.
+ *
+ * ⚠ **THIS USED TO BE A CONSTANT IN A COMMENT, AND THAT IS WHY IT IS A
+ * FUNCTION NOW.** The drags below moved the cursor by hard-coded pixel
+ * distances (4.31px "a couple of inches", 90.9px "past the 24in floor")
+ * chosen against the drawing's size on 2026-09-24, when a wall elevation
+ * rendered a few hundred pixels wide whatever the window. On 2026-09-29 the
+ * elevation started fitting the editor's height and scrolling its length, so
+ * the same pixel distance is now worth a small fraction of the inches it
+ * used to be — a floor drag calibrated in pixels would simply stop reaching
+ * the floor, and would have failed looking like a drag bug.
+ *
+ * So the harness measures the scale instead of assuming it: the SVG's own
+ * viewBox width against its real rendered width gives internal-px per
+ * screen-px, and the elevation's internal scale is 1.6px per inch (uniform
+ * on both axes since 2026-09-29 — it is that uniformity the drag maths
+ * depends on, and step 9c is what proves it).
+ */
+const ELEVATION_PX_PER_IN = 1.6;
+const inchesPerScreenPx = async () =>
+  await evaluate(`(() => {
+    const svg = document.querySelector('svg[aria-label^="Elevation view of wall"]');
+    if (!svg) return null;
+    const r = svg.getBoundingClientRect();
+    const vbWidth = Number((svg.getAttribute('viewBox') || '').split(' ')[2]);
+    if (!(r.width > 0) || !(vbWidth > 0)) return null;
+    return (vbWidth / r.width) / ${ELEVATION_PX_PER_IN};
+  })()`);
+
+/**
+ * A view button's centre, by the START of its `title`, **re-read every time
+ * and required to be on screen**.
+ *
+ * ⚠ Three separate things this got wrong in one run, all of the same family:
+ *  - Matching the WHOLE title: Reset's title gained a description of what it
+ *    resets to, so a whole-string match went null and the click silently did
+ *    not happen.
+ *  - Caching the coordinates: the pan/zoom row's position moves down the
+ *    sidebar once a panel is selected and the Selected Panel note appears, so
+ *    coordinates captured at step 3 press empty space at step 9 — and a
+ *    press on empty space fails by doing nothing.
+ *  - Taking the first match: since 2026-09-29 these controls exist TWICE
+ *    (the sidebar copy and the copy docked over the drawing). The sidebar
+ *    copy can be scrolled out of its own scrolling panel; the docked one
+ *    cannot. So the on-screen one is preferred, and if neither is reachable
+ *    this THROWS rather than returning a coordinate that hits nothing.
+ */
+const viewButton = async (titlePrefix) => {
+  const found = await evaluate(`(() => {
+    const bs = [...document.querySelectorAll('button')].filter((x) => (x.title || '').startsWith(${JSON.stringify(titlePrefix)}));
+    if (!bs.length) return null;
+    const boxes = bs.map((b) => b.getBoundingClientRect());
+    const i = boxes.findIndex((r) => r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth);
+    if (i < 0) return { count: bs.length, onScreen: false };
+    return { count: bs.length, onScreen: true, xy: [boxes[i].left + boxes[i].width / 2, boxes[i].top + boxes[i].height / 2] };
+  })()`);
+  if (!found) throw new Error(`no button whose title starts with "${titlePrefix}"`);
+  if (!found.onScreen) throw new Error(`${found.count} button(s) titled "${titlePrefix}" but none on screen`);
+  return found.xy;
+};
+/** Click a view button, re-reading where it is at the moment of the click. */
+const clickViewButton = async (titlePrefix) => {
+  const xy = await viewButton(titlePrefix);
+  await click(xy[0], xy[1]);
+};
+
 // Zoom the elevation in, so the drag below has enough pixels per inch to land
-// somewhere interesting (at 100% on a 48ft wall, one pixel is about two
-// inches, and every drag lands inside the ±2in snap window around the floor).
-const zoomIn = await evaluate(`(() => {
-  const b = [...document.querySelectorAll('button')].find((x) => x.title === 'Zoom in');
-  if (!b) return null;
-  const r = b.getBoundingClientRect();
-  return [r.left + r.width / 2, r.top + r.height / 2];
-})()`);
-for (let i = 0; i < 3 && zoomIn; i++) await click(zoomIn[0], zoomIn[1]);
+// somewhere interesting. (Before 2026-09-29 this was load-bearing: at 100% on
+// a 48ft wall one pixel was about two inches and every drag landed inside the
+// ±2in snap window around the floor. The fitted view is already far finer than
+// that, but the zoom is kept — it exercises the zoom path, and step 9c below
+// deliberately compares a drag at this zoom against one at the fitted 100%.)
+for (let i = 0; i < 3; i++) await clickViewButton("Zoom in");
 await sleep(500);
 await shot("02-wall-elevation");
 
@@ -571,16 +635,53 @@ record(
 await shot("08-after-reset-automatic");
 
 console.log("9. dragging a panel boundary");
-/** The drag handle between the pair of panels at `index`. */
-const dragHandle = async (index) =>
+/**
+ * The drag handle between the pair of panels at `index`, counting only the
+ * handles that are actually ON SCREEN.
+ *
+ * ⚠ **The on-screen filter is new, and it is the same lesson this file
+ * already learned twice.** Since the elevation fits the editor's height and
+ * scrolls its length (2026-09-29), a long wall's drawing is wider than the
+ * window and some of its drag strips sit outside it. A mousedown at an
+ * off-screen coordinate hits nothing and the drag reports no movement — i.e.
+ * it fails by doing nothing, the exact shape of failure `panelWidthLabels`
+ * has its own filter for. Counting only reachable handles keeps "index 1"
+ * meaning "a handle this run can actually press".
+ */
+const dragHandles = async () =>
   await evaluate(`(() => {
-    const h = [...document.querySelectorAll('rect[style*="ew-resize"]')][${index}];
-    if (!h) return null;
-    const b = h.getBoundingClientRect();
-    return [b.left + b.width / 2, b.top + b.height / 2];
+    return [...document.querySelectorAll('rect[style*="ew-resize"]')]
+      .map((h, i) => { const b = h.getBoundingClientRect(); return { i, x: b.left + b.width / 2, y: b.top + b.height / 2 }; })
+      .filter((h) => h.x > 250 && h.x < window.innerWidth - 200 && h.y > 60 && h.y < window.innerHeight - 60);
+  })()`);
+/** Every strip's centre X, ON SCREEN OR NOT — for measuring where one landed. */
+const allStripXs = async () =>
+  await evaluate(`[...document.querySelectorAll('rect[style*="ew-resize"]')].map((h) => { const b = h.getBoundingClientRect(); return b.left + b.width / 2; })`);
+const dragHandle = async (index) => {
+  const h = (await dragHandles())[index];
+  return h ? [h.x, h.y] : null;
+};
+
+/**
+ * EVERY panel width label on this elevation, on screen or not.
+ *
+ * ⚠ **The conservation checks below must not use the click-reachability
+ * filter, and used to.** `panelWidthLabels` only returns labels inside the
+ * window because a click at an off-screen coordinate hits nothing — correct
+ * for choosing what to click, wrong for a sum. Once the elevation started
+ * scrolling a long wall (2026-09-29), only two of a 13-panel wall's labels
+ * were on screen, so "the run total is conserved" was summing two panels and
+ * failed the moment a drag moved width across the edge of the window. The
+ * numbers were right; the question was wrong.
+ */
+const allVisibleAndOffscreenWidths = async () =>
+  await evaluate(`(() => {
+    return [...document.querySelectorAll('svg text')]
+      .filter((t) => (t.getAttribute('style') || '').includes('pointer'))
+      .map((t) => t.textContent.trim());
   })()`);
 
-const widthsBeforeDrag = (await panelWidthLabels()).map((l) => l.label);
+const widthsBeforeDrag = await allVisibleAndOffscreenWidths();
 
 // (a) A SMALL drag, at a deliberately ugly fractional pixel offset. At this
 // zoom one pixel is a couple of inches, so the cursor lands nowhere near a
@@ -598,10 +699,10 @@ await mouse("mouseReleased", handle[0] + 4.31, handle[1]);
 await sleep(700);
 await shot("09-after-drag-snapped-to-eighths");
 
-const widthsAfterFineDrag = (await panelWidthLabels()).map((l) => l.label);
+const widthsAfterFineDrag = await allVisibleAndOffscreenWidths();
 // The run total, not just the dragged pair: a drag moves width between two
-// panels, so the sum of every visible panel on the wall must come out
-// unchanged to the inch.
+// panels, so the sum of every panel on the wall must come out unchanged to
+// the inch.
 const pairBefore = widthsBeforeDrag.map(parseImperial).reduce((a, b) => a + b, 0);
 const pairAfter = widthsAfterFineDrag.map(parseImperial).reduce((a, b) => a + b, 0);
 record(
@@ -621,16 +722,132 @@ record(
   (d) => d.everyWidthIsAWholeEighth && d.runTotalConserved && d.somethingActuallyMoved,
 );
 
+/**
+ * (a2) ⚠ **THE MULTI-ZOOM LANDING CHECK — does the boundary end up where the
+ * cursor let go of it, at more than one zoom level?**
+ *
+ * This is the check the 2026-09-29 elevation change owed. Every drag in
+ * `WallElevationDiagram` turns a cursor position into inches with its own
+ * per-event ratio, `svgWidthPx / svgRect.width` — which is exact at any
+ * rendered size ONLY while the drawing is scaled uniformly on both axes. It
+ * was not before that change (a 720px cap made the horizontal scale fall to
+ * 56% of the vertical on a 60ft wall) and it is now. `elevationViewport.ts`
+ * pins the arithmetic in unit tests; this pins the real thing in a browser,
+ * because the failure being guarded against is a drag that silently lands on
+ * the wrong panel boundary, and that is how Tommy sets his real panel widths.
+ *
+ * It is deliberately a MEASUREMENT of where the handle ended up, not an
+ * inference from the widths: a width that changed by roughly the right amount
+ * would also be produced by a scale that is wrong by a few percent.
+ */
+const boundaryLandingAtThisZoom = async (zoomLabel, travelIn) => {
+  const inPerPx = await inchesPerScreenPx();
+  const reachable = await dragHandles();
+  const h = reachable[1];
+  if (!h || !inPerPx) return { zoom: zoomLabel, reached: false };
+  // `h.i` is the strip's index in the FULL list, so the same boundary can be
+  // re-measured afterwards even if the drag pushed it off screen or changed
+  // which strips are reachable. Measuring `reachable[1]` again afterwards
+  // would silently be a different boundary.
+  const stripIndex = h.i;
+  // Move the boundary a real THREE INCHES, expressed in however many screen
+  // pixels three inches happens to be at this zoom — which is the point: the
+  // two runs of this function push the mouse different distances and must
+  // produce the same answer in inches. Three inches is clear of the ±2in
+  // floor snap (these panels are 40in nominal) and 24x the 1/8in grid, and
+  // the two calls go opposite ways so the wall ends where it started.
+  const dxPx = travelIn / inPerPx;
+  await mouse("mousePressed", h.x, h.y);
+  await sleep(80);
+  await mouse("mouseMoved", h.x + dxPx / 2, h.y);
+  await sleep(120);
+  await mouse("mouseMoved", h.x + dxPx, h.y);
+  await sleep(150);
+  await mouse("mouseReleased", h.x + dxPx, h.y);
+  await sleep(700);
+  const landedX = (await allStripXs())[stripIndex] ?? null;
+  const releasedAtX = h.x + dxPx;
+  return {
+    zoom: zoomLabel,
+    reached: true,
+    askedForIn: travelIn,
+    inchesPerScreenPx: Number(inPerPx.toFixed(5)),
+    cursorTravelPx: Number(dxPx.toFixed(2)),
+    stripIndex,
+    handleXBefore: Number(h.x.toFixed(2)),
+    cursorReleasedAtX: Number(releasedAtX.toFixed(2)),
+    handleXAfter: landedX === null ? null : Number(landedX.toFixed(2)),
+    // The two numbers the check is about: how far the boundary really moved,
+    // and how far it is from where the cursor let go. Both in INCHES, so the
+    // two zoom levels are directly comparable.
+    movedIn: landedX === null ? null : Number(((landedX - h.x) * inPerPx).toFixed(4)),
+    missIn: landedX === null ? null : Number((Math.abs(landedX - releasedAtX) * inPerPx).toFixed(4)),
+  };
+};
+
+// At the FITTED 100% first — the new default view, which nothing had ever
+// dragged on before this change.
+await clickViewButton("Reset the view");
+await sleep(500);
+const landingAtFit = await boundaryLandingAtThisZoom("fitted 100%", 3);
+await shot("09b-landing-at-fitted-100");
+
+// Then zoomed in three clicks (1.25^3 = 195%), where one screen pixel is
+// worth about half the inches it was — and back the other way, so the wall
+// ends this step exactly where it started it.
+for (let i = 0; i < 3; i++) await clickViewButton("Zoom in");
+await sleep(500);
+const landingAtZoom = await boundaryLandingAtThisZoom("zoomed 195%", -3);
+await shot("09c-landing-at-zoomed-195");
+
+record(
+  "drag-lands-where-the-cursor-let-go-at-two-zooms",
+  {
+    landings: [landingAtFit, landingAtZoom],
+    // Stated out loud, because "the same answer at two zooms" means nothing
+    // if the two zooms were the same zoom.
+    theZoomsReallyDiffered:
+      landingAtFit.reached &&
+      landingAtZoom.reached &&
+      Math.abs(landingAtFit.inchesPerScreenPx - landingAtZoom.inchesPerScreenPx) / landingAtFit.inchesPerScreenPx > 0.2,
+    toleranceIn: 0.125,
+  },
+  // Each landing within one eighth of the release point (the boundary snaps
+  // to the 1/8in grid, so a perfect drag is off by at most 1/16in), each
+  // having really moved about the six inches asked for, and the two zoom
+  // levels genuinely different.
+  (d) =>
+    d.theZoomsReallyDiffered === true &&
+    d.landings.every(
+      (l) =>
+        l.reached === true && l.missIn !== null && l.missIn <= d.toleranceIn && Math.abs(l.movedIn - l.askedForIn) <= 0.25,
+    ),
+);
+
 // (b) A LONG drag past the floor: the shrinking panel stops at the catalog
 // minimum (24in) rather than going below what the shop can build.
+//
+// ⚠ The distance is now derived from the measured scale rather than being a
+// hard-coded 90.9px — see `inchesPerScreenPx` above. 90.9px was ~41in on the
+// 2026-09-24 drawing and is a small fraction of that on the fitted one, so
+// the drag would have stopped short of the floor and failed as though the
+// floor had gone.
+// Back to the fitted 100% for it: 60 inches at the zoomed-in scale is over
+// 500 screen pixels, which would release the mouse outside the window.
+await clickViewButton("Reset the view");
+await sleep(500);
+const floorDragIn = 60;
+const inPerPxForFloorDrag = await inchesPerScreenPx();
+const floorDragPx = floorDragIn / (inPerPxForFloorDrag ?? 1);
 const handle2 = await dragHandle(1);
+if (!handle2) throw new Error("no panel drag handle on screen for the floor drag");
 await mouse("mousePressed", handle2[0], handle2[1]);
 await sleep(80);
-await mouse("mouseMoved", handle2[0] + 90.9, handle2[1]);
+await mouse("mouseMoved", handle2[0] + floorDragPx, handle2[1]);
 await sleep(200);
-await mouse("mouseReleased", handle2[0] + 90.9, handle2[1]);
+await mouse("mouseReleased", handle2[0] + floorDragPx, handle2[1]);
 await sleep(700);
-const widthsAfterFloorDrag = (await panelWidthLabels()).map((l) => l.label);
+const widthsAfterFloorDrag = await allVisibleAndOffscreenWidths();
 record(
   "drag-to-the-floor",
   {

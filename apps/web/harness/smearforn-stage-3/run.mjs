@@ -66,6 +66,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeViewStopControl } from "../viewStopControl.mjs";
+import { makeElevationZoomControl } from "../elevationZoom.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHOTS = path.join(HERE, "screenshots");
@@ -532,6 +533,24 @@ record(
 console.log("5. opening that wall's elevation");
 await reachView((l) => l === `Elevation: ${targetWallId}`, `Elevation: ${targetWallId}`);
 await sleep(1200);
+/**
+ * ⚠ THE WHOLE WALL HAS TO BE BROUGHT ON SCREEN, WHICH USED TO BE FREE.
+ * Before 2026-09-29 an elevation rendered a few hundred pixels wide whatever
+ * the window; since Tommy's fit-height / scroll-width change a long wall is
+ * wider than the window. Step 7 presses "the middle drag strip" — and the
+ * middle of a 48ft wall is off screen at the default view, so the mousedown
+ * hit nothing, nothing moved, and the step failed as though the drag had
+ * broken on a stopped wall. (The reading steps are unaffected: `panelWidths`
+ * and friends here have never filtered to the viewport.)
+ */
+const wholeWall = await makeElevationZoomControl({ evaluate, sleep, click }).fitWholeWall();
+record(
+  "whole-wall-on-screen",
+  wholeWall,
+  // Step 7 presses a strip by its screen coordinate; if the wall does not
+  // fit, the strip it picks is not one it can press.
+  (d) => d.wholeWallVisible === true,
+);
 await shot("01-elevation-before-stop");
 const widthsBefore = await panelWidths();
 const startFieldBefore = await stopField("start");

@@ -1,7 +1,14 @@
 {
-  "app": "http://localhost:3218/",
-  "ranAt": "2026-09-29T14:39:13.177Z",
+  "app": "http://localhost:3310/",
+  "ranAt": "2026-09-29T21:37:51.846Z",
   "steps": [
+    {
+      "name": "whole-wall-on-screen",
+      "clicks": 4,
+      "wholeWallVisible": true,
+      "asserted": true,
+      "passed": true
+    },
     {
       "name": "wall-as-tiled",
       "panelCount": 15,
@@ -62,10 +69,8 @@
     },
     {
       "name": "delete",
-      "notice": "Deleted a panel on wall AB: 16 panels → 15, 11 still automatic.",
-      "refusalsOnTheWay": [
-        "Replaced on wall AB: 16 panels → 16, 12 still automatic."
-      ],
+      "notice": "Deleted a panel on wall AB: 16 panels → 15, 12 still automatic.",
+      "refusalsOnTheWay": [],
       "panelsBefore": 16,
       "panelsAfter": 15,
       "totalEighthsBefore": 4392,
@@ -83,7 +88,7 @@
     },
     {
       "name": "refused-insert-states-the-room",
-      "refusal": "Refused: there is 48⅛\" of automatic panel width on this wall and this change needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
+      "refusal": "Refused: there is 84¼\" of automatic panel width on this wall and this change needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
       "bigHeadersPlaced": 4,
       "panelsAtRefusal": 10,
       "asserted": true,

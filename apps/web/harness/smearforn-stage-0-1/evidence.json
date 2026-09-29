@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3218/",
-  "ranAt": "2026-09-29T14:36:16.386Z",
+  "app": "http://localhost:3310/",
+  "ranAt": "2026-09-29T21:34:15.710Z",
   "steps": [
     {
       "name": "stage0-new-project-tabs",
@@ -18,9 +18,8 @@
     },
     {
       "name": "panel-width-labels",
-      "count": 13,
+      "count": 3,
       "first": [
-        "40\"",
         "40\"",
         "40\"",
         "40\""
@@ -139,14 +138,14 @@
         "40\"",
         "40\"",
         "40\"",
-        "34.125\"",
-        "34.125\"",
+        "37.125\"",
+        "37\"",
         "40\""
       ],
       "after": [
         "40\"",
-        "44.5\"",
-        "35.5\"",
+        "40.5\"",
+        "39.5\"",
         "40\"",
         "40\"",
         "40\"",
@@ -154,15 +153,50 @@
         "40\"",
         "40\"",
         "40\"",
-        "34.125\"",
-        "34.125\"",
+        "37.125\"",
+        "37\"",
         "40\""
       ],
       "everyWidthIsAWholeEighth": true,
-      "runTotalBefore": 508.25,
-      "runTotalAfter": 508.25,
+      "runTotalBefore": 514.125,
+      "runTotalAfter": 514.125,
       "runTotalConserved": true,
       "somethingActuallyMoved": true,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "drag-lands-where-the-cursor-let-go-at-two-zooms",
+      "landings": [
+        {
+          "zoom": "fitted 100%",
+          "reached": true,
+          "askedForIn": 3,
+          "inchesPerScreenPx": 0.24638,
+          "cursorTravelPx": 12.18,
+          "stripIndex": 1,
+          "handleXBefore": 751.41,
+          "cursorReleasedAtX": 763.59,
+          "handleXAfter": 763.08,
+          "movedIn": 2.875,
+          "missIn": 0.125
+        },
+        {
+          "zoom": "zoomed 195%",
+          "reached": true,
+          "askedForIn": -3,
+          "inchesPerScreenPx": 0.12615,
+          "cursorTravelPx": -23.78,
+          "stripIndex": 1,
+          "handleXBefore": 705.64,
+          "cursorReleasedAtX": 681.86,
+          "handleXAfter": 680.87,
+          "movedIn": -3.125,
+          "missIn": 0.125
+        }
+      ],
+      "theZoomsReallyDiffered": true,
+      "toleranceIn": 0.125,
       "asserted": true,
       "passed": true
     },
@@ -179,8 +213,8 @@
         "40\"",
         "40\"",
         "40\"",
-        "34.125\"",
-        "34.125\"",
+        "37.125\"",
+        "37\"",
         "40\""
       ],
       "hitsTheCatalogMinimum": true,
@@ -235,8 +269,8 @@
           40,
           40,
           40,
-          34.125,
-          34.125,
+          37.125,
+          37,
           40
         ],
         [

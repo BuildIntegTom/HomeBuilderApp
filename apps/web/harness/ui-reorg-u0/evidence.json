@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3218/",
-  "ranAt": "2026-09-29T14:33:53.183Z",
+  "app": "http://localhost:3310/",
+  "ranAt": "2026-09-29T22:28:11.225Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -345,7 +345,7 @@
     },
     {
       "name": "a-panel-was-selected-to-dock-its-note",
-      "candidates": 15,
+      "candidates": 4,
       "selectionAttempts": 1,
       "selected": true,
       "asserted": true,

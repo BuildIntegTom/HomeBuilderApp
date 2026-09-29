@@ -37,6 +37,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeViewStopControl } from "../viewStopControl.mjs";
+import { makeElevationZoomControl } from "../elevationZoom.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHOTS = path.join(HERE, "screenshots");
@@ -231,9 +232,19 @@ const panelBodies = async () =>
       .filter((g) => (g.getAttribute('style') || '').includes('pointer'))
       .filter((g) => [...g.querySelectorAll('text')].some((t) => /^[0-9]+(\\.[0-9]+)?"$/.test(t.textContent.trim())))
       .map((g) => {
-        const r = g.getBoundingClientRect();
+        // ⚠ The click point is the PANEL RECT's centre, not the group's box.
+        // A group's box also contains its width label, which is drawn wider
+        // than a narrow panel is — so on the 0.75" safety-gap board the
+        // group's centre sits over the NEIGHBOURING panel, and step 8's
+        // "clicking a rule-placed panel refuses" clicked an ordinary panel and
+        // deleted it instead. Invisible until the 2026-09-29 fit-height view
+        // changed the scale enough to move which side of the boundary the
+        // group's centre fell on; it was always the wrong point to click.
+        const box = g.getBoundingClientRect();
+        const rect = g.querySelector('rect');
+        const r = rect ? rect.getBoundingClientRect() : box;
         const label = [...g.querySelectorAll('text')].map((t) => t.textContent.trim()).find((t) => /^[0-9]+(\\.[0-9]+)?"$/.test(t));
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, label };
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: box.width, label };
       })
       .filter((p) => p.w > 4 && p.x > 250 && p.x < window.innerWidth - 40 && p.y > 60 && p.y < window.innerHeight - 40);
   })()`);
@@ -289,6 +300,25 @@ if (!elevationReady) {
     `could not reach a wall elevation with two adjacent draggable panels; the view control offered ${JSON.stringify(stopsTried)}`,
   );
 }
+/**
+ * ⚠ AND NOW THE WHOLE WALL HAS TO BE BROUGHT ON SCREEN, WHICH USED TO BE FREE.
+ * Before 2026-09-29 an elevation rendered a few hundred pixels wide whatever
+ * the window, so every panel was always visible; since Tommy's fit-height /
+ * scroll-width change a 48ft wall is wider than the window and `panelBodies`
+ * — which filters to the viewport, correctly, because it returns things to
+ * CLICK — would simply not find the safety-gap board in step 8. That fails by
+ * finding fewer elements rather than by raising, so the step says out loud
+ * that it needs the whole wall, and records whether it got it.
+ */
+const wholeWall = await makeElevationZoomControl({ evaluate, sleep, click }).fitWholeWall();
+record(
+  "whole-wall-on-screen",
+  wholeWall,
+  // Everything below locates panels by reading the DOM and filtering to the
+  // viewport; if the wall does not fit, those readers see a subset and the
+  // steps go quietly vacuous.
+  (d) => d.wholeWallVisible === true,
+);
 await shot("00-wall-elevation");
 
 const before = await panelWidths();
