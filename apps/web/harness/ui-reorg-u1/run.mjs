@@ -1068,12 +1068,17 @@ record(
 );
 
 console.log("2. all four scope branches on — the widest bar the keyhole allows");
+/* ⚠ U3 (2026-09-29): ONE CLICK, NOT TWO. The Panelizer is a section inside the
+   ⚙ Settings note now — Tommy, "we should move the content of the panelizer
+   into the settings in the top right" — so the old Project ▾ → Panelizer pair
+   of cold clicks is a single click on the gear, and what it waits for is the
+   Panelizer's own scope group INSIDE `#settings-note` rather than a note id
+   that no longer exists. */
 const coldClickAttempts = {
-  projectMenu: await clickSelectorUntil('[data-bar-control="project"]', "the Project menu", `Boolean(document.querySelector('#project-note'))`),
-  panelizerItem: await clickSelectorUntil(
-    '#project-note button[title^="Which editor tools"]',
-    "the Panelizer item",
-    `Boolean(document.querySelector('#panelizer-note'))`,
+  settingsMenu: await clickSelectorUntil(
+    '[data-bar-control="settings"]',
+    "the Settings menu",
+    `Boolean(document.querySelector('#settings-note [data-settings-section="panelizer"] [aria-label="Scope of work"]'))`,
   ),
 };
 evidence.coldClickAttempts = coldClickAttempts;
@@ -1089,7 +1094,7 @@ record(
   (d) => Object.values(d.coldClickAttempts).every((attempts) => attempts <= d.ceiling),
 );
 const scopeBoxes = await evaluate(`(() => {
-  const note = document.querySelector('#panelizer-note');
+  const note = document.querySelector('#settings-note [data-settings-section="panelizer"]');
   if (!note) return null;
   return [...note.querySelectorAll('label')]
     .map((l) => ({ text: l.textContent.replace(/\\s+/g,' ').trim(), checked: l.querySelector('input[type="checkbox"]')?.checked ?? null }))
@@ -1099,7 +1104,7 @@ if (!scopeBoxes || scopeBoxes.length !== 4) throw new Error(`expected 4 scope ch
 for (const box of scopeBoxes) {
   if (box.checked) continue;
   const at = await evaluate(`(() => {
-    const note = document.querySelector('#panelizer-note');
+    const note = document.querySelector('#settings-note [data-settings-section="panelizer"]');
     const label = [...note.querySelectorAll('label')].find((l) => l.textContent.replace(/\\s+/g,' ').trim() === ${JSON.stringify(box.text)});
     const input = label.querySelector('input[type="checkbox"]');
     input.scrollIntoView({ block: 'nearest' });
@@ -1109,18 +1114,20 @@ for (const box of scopeBoxes) {
   await click(at.x, at.y);
 }
 const scopeAfter = await evaluate(`(() => {
-  const note = document.querySelector('#panelizer-note');
+  const note = document.querySelector('#settings-note [data-settings-section="panelizer"]');
   return [...note.querySelectorAll('label')]
     .map((l) => ({ text: l.textContent.replace(/\\s+/g,' ').trim(), checked: l.querySelector('input[type="checkbox"]')?.checked ?? null }))
     .filter((l) => ['Floors','Walls','Roof','Foundation'].includes(l.text));
 })()`);
-await clickSelector('#panelizer-note button[title="Hide this note"]', "the Panelizer note's close button");
+await clickSelector('#settings-note button[title="Hide this note"]', "the Settings note's close button");
 await sleep(500);
 // Nothing may be left overlaying the editor: an open note sitting over a
 // control is how U0's harness once lost six clicks in a row and reported
 // "Membranes unreachable" — a locator problem wearing a feature bug's clothes.
+// ⚠ `#site-properties-note` and `#panelizer-note` are gone as of U3 — both are
+// sections of `#settings-note` now — so this list names the notes that exist.
 const notesStillOpen = await evaluate(
-  `[...document.querySelectorAll('#panelizer-note, #project-note, #site-properties-note')].filter((n) => n.getBoundingClientRect().width > 0).length`,
+  `[...document.querySelectorAll('#settings-note, #project-note')].filter((n) => n.getBoundingClientRect().width > 0).length`,
 );
 if (notesStillOpen > 0) throw new Error(`${notesStillOpen} top-bar note(s) left open over the editor`);
 record(

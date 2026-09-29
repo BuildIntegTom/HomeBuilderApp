@@ -7,6 +7,8 @@ import {
   roleControlLabel,
   roleOptions,
   settingsMenuHasAdminGroup,
+  settingsMenuSections,
+  SETTINGS_SECTION_IDS,
 } from "./topBarMenus";
 
 describe("clampMenuLeft", () => {
@@ -61,5 +63,48 @@ describe("the Settings menu", () => {
     for (const role of roleOptions.filter((r) => r !== "public")) {
       expect(settingsMenuHasAdminGroup(role)).toBe(true);
     }
+  });
+});
+
+describe("the Settings menu's sections — U3", () => {
+  it("holds Site Properties and the Panelizer, which used to be Project menu items", () => {
+    // The relocation itself, asserted rather than only rendered: Tommy, "we
+    // should move the content of the panelizer into the settings in the top
+    // right".
+    expect(settingsMenuSections("admin")).toContain("site");
+    expect(settingsMenuSections("admin")).toContain("panelizer");
+  });
+
+  it("keeps the order units → site → panelizer → sandbox → admin", () => {
+    expect(settingsMenuSections("admin")).toEqual(["units", "site", "panelizer", "sandbox", "admin"]);
+  });
+
+  it("⚠ never role-gates Site Properties or the Panelizer — every role sees both", () => {
+    // THE REGRESSION THIS FILE EXISTS FOR. Settings is also the note carrying
+    // the role-gated Admin Options group, so the one mistake this move could
+    // make invisibly is dropping either section inside that gate. The Panelizer
+    // holds the scope-of-work checkboxes that decide which editors exist at
+    // all; hiding it from a signed-out visitor would raise no error anywhere.
+    for (const role of roleOptions) {
+      expect(settingsMenuSections(role)).toContain("site");
+      expect(settingsMenuSections(role)).toContain("panelizer");
+      expect(settingsMenuSections(role)).toContain("units");
+      expect(settingsMenuSections(role)).toContain("sandbox");
+    }
+  });
+
+  it("withholds admin, and ONLY admin, from public", () => {
+    expect(settingsMenuSections("public")).toEqual(SETTINGS_SECTION_IDS.filter((id) => id !== "admin"));
+    expect(settingsMenuSections("public")).not.toContain("admin");
+  });
+
+  it("agrees with settingsMenuHasAdminGroup for every role, so the two cannot drift", () => {
+    for (const role of roleOptions) {
+      expect(settingsMenuSections(role).includes("admin")).toBe(settingsMenuHasAdminGroup(role));
+    }
+  });
+
+  it("lists every section exactly once — a duplicate would render a section twice", () => {
+    expect(new Set(SETTINGS_SECTION_IDS).size).toBe(SETTINGS_SECTION_IDS.length);
   });
 });

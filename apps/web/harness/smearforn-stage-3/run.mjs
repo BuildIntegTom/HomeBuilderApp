@@ -219,6 +219,23 @@ const clickByText = async (selector, label, what) => {
   return box;
 };
 
+/** Click by CSS selector, for the controls that carry no text — the ⚙
+ * Settings button is icon-only, so `clickByText` cannot reach it. Same real
+ * mouse, same visibility requirement. */
+const clickSelector = async (selector, what) => {
+  const box = await evaluate(`(() => {
+    const e = document.querySelector(${JSON.stringify(selector)});
+    if (!e) return null;
+    const r = e.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return null;
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  })()`);
+  if (!box) throw new Error(`no visible ${what ?? selector} (${selector})`);
+  await sleep(200);
+  await click(box.x, box.y);
+  return box;
+};
+
 // --- the wall, as the DOM shows it -----------------------------------------
 
 /** Every panel width label on the elevation, in inches, left to right. */
@@ -388,17 +405,21 @@ await mouse("mouseReleased", x1, y1);
 await sleep(1600);
 
 console.log("3. turning Roof on (a truss plate only exists when roof is in scope)");
-/** The Scope of work group lives in the Panelizer note, which lives inside
- * the top bar's Project menu — two clicks deep, not one. */
+/** The Scope of work group lives in the Panelizer, and **since U3
+ * (2026-09-29) the Panelizer is a section inside the ⚙ Settings note** — one
+ * click, not the two it used to take through Project ▾ → Panelizer. Tommy:
+ * "we should move the content of the panelizer into the settings in the top
+ * right". The gear is icon-only, so it is located by `data-bar-control`
+ * rather than by text; the assertion afterwards is unchanged, and it is what
+ * would catch the move having lost the checkboxes rather than relocated
+ * them. */
 const openPanelizer = async () => {
   const alreadyOpen = await evaluate(`!!document.querySelector('[aria-label="Scope of work"]')`);
   if (alreadyOpen) return;
-  await clickByText("button", "Project", "Project menu button");
-  await sleep(600);
-  await clickByText("button", "Panelizer", "Panelizer menu item");
+  await clickSelector('[data-bar-control="settings"]', "the Settings button");
   await sleep(800);
-  const ok = await evaluate(`!!document.querySelector('[aria-label="Scope of work"]')`);
-  if (!ok) throw new Error("the Panelizer note did not open (no Scope of work group)");
+  const ok = await evaluate(`!!document.querySelector('#settings-note [aria-label="Scope of work"]')`);
+  if (!ok) throw new Error("the Panelizer section did not open inside Settings (no Scope of work group)");
 };
 /** Closes whatever notes are open, so nothing covers the canvas afterwards. */
 const closeOpenNotes = async () => {

@@ -45,3 +45,30 @@ export function roleControlLabel(role: ViewerRole): string {
 export function settingsMenuHasAdminGroup(role: ViewerRole): boolean {
   return role !== "public";
 }
+
+/**
+ * The sections of the ⚙ Settings note, in the order they render.
+ *
+ * **U3 put `site` and `panelizer` here**, out of the Project menu, on Tommy's
+ * 2026-09-26 instruction (*"we should move the content of the panelizer into
+ * the settings in the top right"*) and his 2026-09-28 one about the scope
+ * checkboxes (*"all floor, foundation, and roof options should be a checkbox
+ * toggle under settings"*).
+ *
+ * ⚠ **WHY THIS IS A NAMED LIST AND NOT JUST JSX ORDER.** The Panelizer holds
+ * the scope-of-work checkboxes that decide which editors the Design menu
+ * offers at all, and Site Properties holds the seismic zone and the foundation
+ * type. Both were reachable to **every** role from the Project menu. Settings
+ * is also the note that carries the role-gated Admin Options group, so the one
+ * mistake this relocation could make invisibly is dropping either section
+ * inside that gate — which would hide the app's central control from a
+ * signed-out visitor with no error anywhere. `admin` is the ONLY id this
+ * function ever withholds, and its test says so.
+ */
+export const SETTINGS_SECTION_IDS = ["units", "site", "panelizer", "sandbox", "admin"] as const;
+
+export type SettingsSectionId = (typeof SETTINGS_SECTION_IDS)[number];
+
+export function settingsMenuSections(role: ViewerRole): SettingsSectionId[] {
+  return SETTINGS_SECTION_IDS.filter((id) => (id === "admin" ? settingsMenuHasAdminGroup(role) : true));
+}

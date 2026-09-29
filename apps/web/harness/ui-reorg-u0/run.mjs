@@ -796,20 +796,20 @@ record(
 // the Panelizer's own checkbox. The checkbox is a FIXTURE here, not the thing
 // under test, so it is toggled through the DOM; everything being measured is
 // clicked for real.
+// ⚠ U3 (2026-09-29) MOVED THE PANELIZER INTO ⚙ SETTINGS, so this is one click
+// where it used to be two through Project ▾ → Panelizer. The gear is icon-only
+// and is located by `data-bar-control`; the scope group is then looked for
+// INSIDE `#settings-note`, so a run that found it somewhere else would fail
+// rather than quietly pass.
 const roofEnabled = await evaluate(`(() => {
-  const openProject = [...document.querySelectorAll('button')].find((b) => b.textContent.trim().startsWith('Project'));
-  if (!openProject) return 'no-project-menu';
-  openProject.click();
-  return 'project-open';
-})()`);
-await sleep(500);
-await evaluate(`(() => {
-  const item = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Panelizer');
-  if (item) item.click();
+  const gear = document.querySelector('[data-bar-control="settings"]');
+  if (!gear) return 'no-settings-button';
+  gear.click();
+  return 'settings-open';
 })()`);
 await sleep(700);
 const roofChecked = await evaluate(`(() => {
-  const group = document.querySelector('[role="group"][aria-label="Scope of work"]');
+  const group = document.querySelector('#settings-note [role="group"][aria-label="Scope of work"]');
   if (!group) return 'no-scope-group';
   const label = [...group.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Roof');
   if (!label) return 'no-roof-label';
@@ -819,7 +819,7 @@ const roofChecked = await evaluate(`(() => {
 })()`);
 await sleep(600);
 await evaluate(`(() => {
-  const close = [...document.querySelectorAll('#panelizer-note button')].find((b) => (b.getAttribute('aria-label') || '') === 'Close' || b.textContent.trim() === '×');
+  const close = [...document.querySelectorAll('#settings-note button')].find((b) => (b.getAttribute('aria-label') || '') === 'Close' || (b.getAttribute('title') || '') === 'Hide this note' || b.textContent.trim() === '×');
   if (close) close.click();
 })()`);
 await sleep(500);
