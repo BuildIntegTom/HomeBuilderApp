@@ -6,8 +6,15 @@ import {
   reconcileBracedPlacement,
   setWindowWidth,
 } from "./bracedPlacement";
-import { getOpeningAnchors, retileWithOpenings, tileWall } from "./tiling";
-import type { PanelSlot, PanelSlotType, PanelSlotZone } from "./types";
+import {
+  getOpeningAnchors,
+  retileWithOpenings,
+  TILER_MAX_PANEL_WIDTH_IN,
+  TILER_MIN_PANEL_WIDTH_IN,
+  tileWall,
+  type OpeningAnchor,
+} from "./tiling";
+import type { BracePattern, PanelSlot, PanelSlotType, PanelSlotZone } from "./types";
 
 describe("applyBracedPlacement", () => {
   it("places exactly 1 braced panel touching each corner, then periodic braced panels every `spacing` along the plain run, stamped with the default pattern/mirror", () => {
@@ -129,7 +136,7 @@ describe("applyBracedPlacement", () => {
     ]);
   });
 
-  it("gracefully handles a wall too short for a corner brace on each side (both ends combine/brace here, since the safety-gap slot is itself brace-eligible)", () => {
+  it("gracefully handles a wall too short for a corner brace on each side (the end corner's combine is REFUSED here, because nothing on the run can pay for it)", () => {
     const slots: PanelSlot[] = [
       { type: "corner", widthIn: 24 },
       { type: "standard", widthIn: 48 },
@@ -137,12 +144,21 @@ describe("applyBracedPlacement", () => {
       { type: "corner", widthIn: 24 },
     ];
     const result = applyBracedPlacement(slots, 96, 48, "chevron", false);
-    // Start-corner walk claims the one standard slot. End-corner walk then
-    // finds the safety-gap slot itself eligible and combines it, rather
-    // than finding nothing (the old behavior, back when only "standard"
-    // slots counted).
+    // Start-corner walk claims the one standard slot. The end-corner walk
+    // then reaches the safety-gap slot, which IS brace-eligible — but
+    // widening it from 47¼in to 48¾in costs 1½in and the only panel on the
+    // run is the brace the other walk just placed, which this rule does not
+    // spend. So the combine is refused and the end corner goes unbraced.
+    //
+    // ⚠ This test used to assert that the combine happened here. It did, and
+    // it left the wall 1½in LONGER than itself, silently — this fixture is
+    // one of the cases Tommy's 2026-09-29 "perfectly tight with dimensions
+    // and wall lengths" instruction was about. A gap panel that is 47¼in
+    // wide is legacy-file shape in the first place; today's tiler always
+    // emits exactly 3/4in.
     expect(result.map((s) => s.type)).toEqual(["corner", "braced", "safety-gap", "corner"]);
-    expect(result[2]!.secondaryType).toBe("braced");
+    expect(result[2]!.secondaryType).toBeUndefined();
+    expect(result.reduce((a, s) => a + s.widthIn, 0)).toBe(slots.reduce((a, s) => a + s.widthIn, 0));
   });
 
   it("a slot that's already braced satisfies the corner requirement without the walk searching further inward for a second one", () => {
@@ -180,41 +196,70 @@ describe("applyBracedPlacement", () => {
   });
 
   describe("combining a safety-gap slot with a corner brace", () => {
-    it("fixed-widths the combined slot to standardWidthIn + the plywood buffer, shedding the difference to the nearest standard panel", () => {
+    it("fixed-widths the combined slot to standardWidthIn + the plywood buffer, swallowing the nearest standard panel to pay for it", () => {
+      // ⚠ This fixture used to carry a 60in safety-gap slot, which the
+      // combine then shrank to 40¾in, GROWING the neighbour to 59¼in — a
+      // panel 11¼in over the shop's 48in ceiling. It was rewritten on
+      // 2026-09-29 with the width the tiler actually emits (always exactly
+      // 3/4in), which is the shape the rule has to be right about.
       const slots: PanelSlot[] = [
         { type: "corner", widthIn: 24 },
-        { type: "safety-gap", widthIn: 60 }, // sits right at the corner
+        { type: "safety-gap", widthIn: SAFETY_PLYWOOD_BUFFER_IN }, // sits right at the corner
         { type: "standard", widthIn: 40 },
         { type: "standard", widthIn: 40 },
         { type: "corner", widthIn: 24 },
       ];
       const result = applyBracedPlacement(slots, 100_000, 40, "chevron", false);
       expect(result[1]).toEqual({ type: "safety-gap", secondaryType: "braced", widthIn: 40 + SAFETY_PLYWOOD_BUFFER_IN });
-      // 60 - 40.75 = 19.25 shed onto the nearest standard panel (index 2,
-      // continuing inward from the corner — the walk's own direction).
-      expect(result[2]).toEqual({ type: "standard", widthIn: 40 + 19.25 });
-      // The end-corner walk independently claims the last standard slot
-      // (index 3) for its own rule-1 brace, same as always.
-      expect(result[3]).toEqual({ type: "braced", widthIn: 40, bracedPattern: "chevron", bracedMirrored: false });
+      // The 3/4in the gap brought plus the 40in panel it swallowed (index 2,
+      // continuing inward from the corner — the walk's own direction) pay for
+      // the 40¾in slot exactly, so nothing else moves and index 2 is simply
+      // gone from the run.
+      expect(result.length).toBe(slots.length - 1);
+      // The end-corner walk independently claims the last standard slot for
+      // its own rule-1 brace, same as always.
+      expect(result[2]).toEqual({ type: "braced", widthIn: 40, bracedPattern: "chevron", bracedMirrored: false });
+      expect(result.reduce((a, s) => a + s.widthIn, 0)).toBe(slots.reduce((a, s) => a + s.widthIn, 0));
+    });
+
+    it("takes a SMALL payment out of the run's slack instead, swallowing nothing (the legacy wide-gap shape)", () => {
+      // A stored wall from before the gap became a fixed 3/4in spacer: the
+      // gap slot absorbed the run's leftover, so widening it to 40¾in costs
+      // only 1¾in. Swallowing a whole 40in panel for that would hand 38¼in
+      // back to a run that cannot take it; the 1¾in comes off the nearest
+      // panel instead and nothing is removed.
+      const slots: PanelSlot[] = [
+        { type: "corner", widthIn: 24 },
+        { type: "safety-gap", widthIn: 39 },
+        { type: "standard", widthIn: 40 },
+        { type: "standard", widthIn: 40 },
+        { type: "corner", widthIn: 24 },
+      ];
+      const result = applyBracedPlacement(slots, 100_000, 40, "chevron", false);
+      expect(result.length).toBe(slots.length);
+      expect(result[1]).toEqual({ type: "safety-gap", secondaryType: "braced", widthIn: 40.75 });
+      expect(result[2]!.widthIn).toBe(38.25);
+      expect(result.reduce((a, s) => a + s.widthIn, 0)).toBe(slots.reduce((a, s) => a + s.widthIn, 0));
     });
 
     it("combines independently at each end when both ends have a corner-touching safety-gap slot", () => {
       const slots: PanelSlot[] = [
         { type: "corner", widthIn: 24 },
-        { type: "safety-gap", widthIn: 50 },
+        { type: "safety-gap", widthIn: SAFETY_PLYWOOD_BUFFER_IN },
         { type: "standard", widthIn: 40 },
-        { type: "safety-gap", widthIn: 50 },
+        { type: "standard", widthIn: 40 },
+        { type: "safety-gap", widthIn: SAFETY_PLYWOOD_BUFFER_IN },
         { type: "corner", widthIn: 24 },
       ];
       const result = applyBracedPlacement(slots, 100_000, 40, "chevron", false);
-      expect(result[1]!.type).toBe("safety-gap");
+      // Each end's walk swallows the standard panel nearest its own gap, and
+      // neither reaches for the one the other already took.
+      expect(result.map((s) => s.type)).toEqual(["corner", "safety-gap", "safety-gap", "corner"]);
       expect(result[1]!.secondaryType).toBe("braced");
+      expect(result[2]!.secondaryType).toBe("braced");
       expect(result[1]!.widthIn).toBeCloseTo(40.75, 6);
-      expect(result[3]!.type).toBe("safety-gap");
-      expect(result[3]!.secondaryType).toBe("braced");
-      expect(result[3]!.widthIn).toBeCloseTo(40.75, 6);
-      // Both combined slots shed onto the same lone standard panel between them.
-      expect(result[2]!.widthIn).toBeCloseTo(40 + (50 - 40.75) * 2, 6);
+      expect(result[2]!.widthIn).toBeCloseTo(40.75, 6);
+      expect(result.reduce((a, s) => a + s.widthIn, 0)).toBe(slots.reduce((a, s) => a + s.widthIn, 0));
     });
 
     it("still applies periodic (rule 2) bracing on top of an existing combined corner slot, treating it as a real brace reset point", () => {
@@ -582,11 +627,48 @@ describe("setWindowWidth", () => {
 // braced placement rather than the tiler, it predates this work, and it is
 // outside Stage 1r's scope. It reaches a human through the Review Log's
 // below-minimum entry, which fires however a narrow panel got there.
+//
+// ⚠ **UPDATE, 2026-09-29 — the combine's own defect IS fixed now** (Tommy:
+// "fix the braced panel overflow too... this app needs to be perfectly tight
+// with dimensions and wall lengths"). The paragraph above is left standing
+// because its measurement is still the reason the tiler side is trusted; what
+// changed is the last four lines of it. `planCornerBraceCombine` now pays for
+// the combined slot by SWALLOWING the nearest standard panel rather than
+// shrinking it toward zero, settles the leftover against the panels past it,
+// and refuses outright when the run cannot pay legally. Re-measured on the
+// same shape of sweep — every eighth from 12in to 600in, standard widths
+// {39, 40, 48}, all four corner combinations, both gap ends and the SEVEN
+// opening sets the product sweep below actually uses, 790,440 cases:
+//
+//   * before: 39,162 walls whose slots did not sum to the tiler's own total,
+//     32,502 with a 0in panel on the cut list;
+//   * after:  0 and 0.
+//
+// ⚠ **The worst overrun is +48-5/8in, not the 7-3/8in first recorded.** 7-3/8in
+// was one wall's figure — Tommy's 240in two-window wall, the repro that named
+// the bug — and quoting it as the maximum undersells the defect by a factor of
+// six. The real worst is a 148-5/8in wall, 48in standard, start corner only,
+// gap at the start: `corner 25.5 | window 61.5 | gap+braced 48.75 |
+// window 61.5` sums to 197-1/4in. It is 48-5/8in **even among the walls the
+// tiler itself sized correctly**, so it is not an artefact of the tiler's own
+// opening overflow.
+//
+// An earlier draft of this note quoted 677,520 cases, 30,601 and 25,264: those
+// were measured before a seventh opening set was added to the sweep, and are
+// left corrected rather than reconciled, since the number that matters is the
+// one the sweep in this file actually reaches.
+//
+// The sweep that holds it there is "the product sweep" at the bottom of this
+// file. See also `retile.test.ts`, whose own stop-wall sweep used to carve
+// out an exception for this defect and no longer does.
 // ---------------------------------------------------------------------------
 describe("the corner-brace combine vs. the tiler's fabrication bounds", () => {
   const CORNER_WIDTH_IN = 25.5;
-  const MIN_IN = 24;
-  const MAX_IN = 48;
+  // Imported, never restated. The source enforces the combine's bounds through
+  // exactly these two constants, so a test that hard-coded 24/48 could keep
+  // passing while the limit it polices moved underneath it.
+  const MIN_IN = TILER_MIN_PANEL_WIDTH_IN;
+  const MAX_IN = TILER_MAX_PANEL_WIDTH_IN;
 
   it("keeps every panel inside [24in, 48in] on every wall where the combine does NOT fire", () => {
     const violations: string[] = [];
@@ -619,19 +701,17 @@ describe("the corner-brace combine vs. the tiler's fabrication bounds", () => {
     expect(violations.slice(0, 10)).toEqual([]);
   });
 
-  it("⚠ PRE-EXISTING, NOT CAUSED BY ABSORB: the combine can still shed a panel away to nothing", () => {
+  it("the 145in wall that used to shed a panel away to nothing now swallows it and balances", () => {
     // A 145in wall, two corners, a 48in standard. The middle holds one
     // standard plus a 45¼in remainder, and 93¼in is over the 48in tie point,
     // so it SPLITS into two 46⅝in panels with no separate corner-touching
     // panel. The corner walk therefore reaches the safety gap first and
-    // combines with it — then wants to shed a full 48in onto a 46⅝in
-    // neighbour, which clamps at zero and leaves the wall longer than it is.
+    // combines with it.
     //
-    // This is exactly the tradeoff `shedWidthToNearestStandard` already
-    // documents ("the wall's total length will be off by deltaIn... not
-    // silently hidden"), it is reached through the SPLIT branch, and it is
-    // byte-identical before and after the absorb rule. Asserted so a later
-    // reader can tell "deliberately not fixed here" from "broken by 1r".
+    // ⚠ This test used to assert the DAMAGE — a 0in panel on the cut list and
+    // a wall longer than itself — as a pre-existing defect deliberately left
+    // alone by the absorb work. Tommy asked for it fixed on 2026-09-29, so
+    // the same case is now asserted from the other side.
     const { slots } = tileWall(145, 48, CORNER_WIDTH_IN, "end", true, true);
     // The tiler's own output is legal on both bounds and sums exactly.
     for (const slot of slots) {
@@ -641,12 +721,480 @@ describe("the corner-brace combine vs. the tiler's fabrication bounds", () => {
     }
     expect(slots.reduce((a, s) => a + Math.round(s.widthIn * 8), 0)).toBe(Math.round(145 * 8));
 
-    const braced = applyBracedPlacement(slots, 300, 48, "x", false);
+    const braced = applyBracedPlacement(slots, 300, 48, "chevron", false);
     const combined = braced.find((s) => s.type === "safety-gap" && s.secondaryType === "braced");
     expect(combined).toBeDefined();
     expect(combined!.widthIn).toBe(48 + SAFETY_PLYWOOD_BUFFER_IN);
-    // …and here is the damage the combine does, stated rather than hidden.
-    expect(braced.some((s) => s.type === "standard" && s.widthIn === 0)).toBe(true);
-    expect(braced.reduce((a, s) => a + Math.round(s.widthIn * 8), 0)).not.toBe(Math.round(145 * 8));
+    // The panel the combine swallowed is GONE from the run, not sitting in it
+    // at 0in pretending to be a part.
+    expect(braced.some((s) => s.widthIn === 0)).toBe(false);
+    expect(braced.length).toBe(slots.length - 1);
+    // And the wall adds back up to itself, exactly, in whole eighths.
+    expect(braced.reduce((a, s) => a + Math.round(s.widthIn * 8), 0)).toBe(Math.round(145 * 8));
+    // The 3/4in the gap brought and the 46⅝in panel it swallowed pay 47⅜in of
+    // the 48¾in combined slot; the remaining 1⅜in comes off the one panel
+    // left, which stays legal at 45¼in.
+    expect(braced.map((s) => s.widthIn)).toEqual([CORNER_WIDTH_IN, 48.75, 45.25, CORNER_WIDTH_IN]);
+  });
+
+  it("balances Tommy's 240in two-window wall, which used to come out 7-3/8in over", () => {
+    // The reproduction that named this defect: two 61.5in windows on a 240in
+    // wall owning both corners put the safety gap one slot in from the
+    // corner with only a 32⅝in panel beyond it. The old combine fixed the
+    // gap at 40¾in and shed 40in onto that panel, clamped at zero — a 0in
+    // panel and a wall 7⅜in longer than itself.
+    const tiled = retileWithOpenings(240, 40, CORNER_WIDTH_IN, "end", true, true, [
+      { beforeStandardCount: 0, type: "window", widthIn: 61.5 },
+      { beforeStandardCount: 1, type: "window", widthIn: 61.5 },
+    ]).slots;
+    expect(tiled.map((s) => s.widthIn)).toEqual([25.5, 61.5, 0.75, 32.625, 61.5, 32.625, 25.5]);
+
+    const braced = applyBracedPlacement(tiled, 300, 40, "chevron", false);
+    // Swallowing the 32⅝in panel would leave 40¾ − (32⅝ + ¾) = 7⅜in to take
+    // off the only other panel, and 32⅝ − 7⅜ = 25¼in is legal — so this wall
+    // does NOT refuse. It balances.
+    expect(braced.map((s) => s.widthIn)).toEqual([25.5, 61.5, 40.75, 61.5, 25.25, 25.5]);
+    expect(braced.reduce((a, s) => a + Math.round(s.widthIn * 8), 0)).toBe(Math.round(240 * 8));
+  });
+
+  it("refuses when the leftover has nowhere legal to go, and leaves the tiler's wall untouched", () => {
+    // One standard panel on the whole run, and it is not the combined slot's
+    // width: swallowing it leaves a leftover with no second panel to settle
+    // against, so the combine does not happen at all. The safety gap stays
+    // the 3/4in spacer, the panel keeps its tiled width, and the corner's
+    // brace lands on that panel instead.
+    const tiled: PanelSlot[] = [
+      { type: "corner", widthIn: 25.5 },
+      { type: "safety-gap", widthIn: 0.75 },
+      { type: "standard", widthIn: 36.75 },
+      { type: "window", widthIn: 61.5 },
+      { type: "corner", widthIn: 25.5 },
+    ];
+    const braced = applyBracedPlacement(tiled, 300, 40, "chevron", false);
+    expect(braced.map((s) => s.widthIn)).toEqual(tiled.map((s) => s.widthIn));
+    expect(braced.some((s) => s.secondaryType === "braced")).toBe(false);
+    expect(braced[2]!.type).toBe("braced"); // the walk carried on past the gap
+  });
+
+  it("settles a shortfall across TWO panels rather than forcing it onto one", () => {
+    // 48in standard, a 24in panel next to the gap: swallowing it pays only
+    // 24¾in of the 48¾in combined slot, so 24in has to come out of the run.
+    // The first panel past it can only give 16in before it hits the 24in
+    // floor, so the remaining 8in comes off the next one.
+    const tiled: PanelSlot[] = [
+      { type: "corner", widthIn: 25.5 },
+      { type: "safety-gap", widthIn: 0.75 },
+      { type: "standard", widthIn: 24 },
+      { type: "standard", widthIn: 40 },
+      { type: "standard", widthIn: 40 },
+      { type: "corner", widthIn: 25.5 },
+    ];
+    const braced = applyBracedPlacement(tiled, 300, 48, "chevron", false);
+    expect(braced.map((s) => s.widthIn)).toEqual([25.5, 48.75, 24, 32, 25.5]);
+    expect(braced.reduce((a, s) => a + s.widthIn, 0)).toBe(tiled.reduce((a, s) => a + s.widthIn, 0));
+  });
+
+  it("gives a SURPLUS back across two panels, and stops each at the 48in ceiling", () => {
+    // The mirror case: a 48in panel next to the gap at a 40in standard pays
+    // 48¾in for a 40¾in slot, so 8in goes back INTO the run. Neither
+    // receiving panel may be pushed past 48in, so the 8in splits 4in/4in.
+    const tiled: PanelSlot[] = [
+      { type: "corner", widthIn: 25.5 },
+      { type: "safety-gap", widthIn: 0.75 },
+      { type: "standard", widthIn: 48 },
+      { type: "standard", widthIn: 44 },
+      { type: "standard", widthIn: 44 },
+      { type: "corner", widthIn: 25.5 },
+    ];
+    const braced = applyBracedPlacement(tiled, 300, 40, "chevron", false);
+    expect(braced.map((s) => s.widthIn)).toEqual([25.5, 40.75, 48, 48, 25.5]);
+    expect(braced.reduce((a, s) => a + s.widthIn, 0)).toBe(tiled.reduce((a, s) => a + s.widthIn, 0));
+  });
+
+  it("never swallows or resizes a user-dragged (locked) panel", () => {
+    // A locked width is re-forced by `reconcileBracedPlacement` right after
+    // this runs, so a combine that spent one would simply be undone and
+    // re-shed somewhere else. Here the only panel on the run is locked, so
+    // the combine refuses.
+    const tiled: PanelSlot[] = [
+      { type: "corner", widthIn: 25.5 },
+      { type: "safety-gap", widthIn: 0.75 },
+      { type: "standard", widthIn: 40, lockedWidthIn: 40 },
+      { type: "corner", widthIn: 25.5 },
+    ];
+    const braced = applyBracedPlacement(tiled, 300, 40, "chevron", false);
+    expect(braced.map((s) => s.widthIn)).toEqual(tiled.map((s) => s.widthIn));
+    expect(braced.some((s) => s.secondaryType === "braced")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE PRODUCT SWEEP — the test that should have caught the overflow.
+//
+// Tommy, 2026-09-29: "this app needs to be perfectly tight with dimensions and
+// wall lengths". The defect this sweep exists to make un-reintroducible was
+// not subtle — a 240in wall came out 247-3/8in — and it survived because every
+// test that could have caught it either checked a hand-built slot array or
+// carved out an explicit exception for this one rule. So this one checks the
+// realistic product space exhaustively, and the properties it checks are the
+// ones a cut list cannot survive being wrong about:
+//
+//   1. the slots sum to the wall's tiling length, EXACTLY, in whole eighths;
+//   2. no slot is zero-width — a 0in panel is not a part;
+//   3. the braced pass never widens or narrows the wall at all, whatever the
+//      tiler handed it (this one holds even on degenerate walls, below);
+//   4. it never puts a standard/braced panel outside the shop's
+//      [24in, 48in] bounds that the tiler had inside them.
+//
+// **The one exception, named and bounded rather than waved at:** property 1 is
+// asserted only where the TILER's own output sums to the wall. It does not on
+// a wall too short to hold its own openings — a 12in wall carrying two 61.5in
+// windows overflows by the 123in that do not fit, and that is the tiler's
+// reserved-opening arithmetic, not braced placement. `fits()` below is the
+// filter, property 3 covers those walls anyway, and the overflow is written up
+// in the handoff as pre-existing tiler behaviour rather than fixed here.
+//
+// Locked (user-dragged) widths are deliberately NOT swept: they travel a
+// different shed path (`shedWidthToNearestUnlocked`) which has a defect of its
+// own — a wall with a single standard panel loses the whole locked delta — and
+// pretending otherwise here would either fail or paper over it. Reported, not
+// fixed, and not silently covered.
+// ---------------------------------------------------------------------------
+describe("the product sweep: every wall length, every corner, every opening", () => {
+  const CORNER_WIDTH_IN = 25.5;
+  // Imported, never restated — see the same note on the describe above.
+  const MIN_IN = TILER_MIN_PANEL_WIDTH_IN;
+  const MAX_IN = TILER_MAX_PANEL_WIDTH_IN;
+  // 8ft, the high-seismic figure — exercises rule 2 too. ⚠ This one is a
+  // restated value on purpose: the real figure lives in
+  // `seismicBracedPanelSpacingFt` in the catalog and is
+  // `pending-BI-confirmation`. It is test INPUT, not a limit anything here
+  // polices, and every headline count below was re-measured at 300in and
+  // 100000in as well, so nothing in this file depends on it.
+  const SEISMIC_SPACING_IN = 96;
+
+  const win = (beforeStandardCount: number, widthIn: number): OpeningAnchor => ({ beforeStandardCount, type: "window", widthIn });
+  const OPENING_SETS: { name: string; openings: OpeningAnchor[] }[] = [
+    { name: "none", openings: [] },
+    // beforeStandardCount 0 puts the opening between the corner and the gap —
+    // the shape that makes the corner walk reach the gap first, which is the
+    // only way the combine fires on a long wall.
+    { name: "one 61.5in window against the corner", openings: [win(0, 61.5)] },
+    { name: "the two 61.5in windows from the report", openings: [win(0, 61.5), win(1, 61.5)] },
+    { name: "one 36in window mid-run", openings: [win(1, 36)] },
+    { name: "two 36in windows straddling the run", openings: [win(0, 36), win(2, 36)] },
+    // 61.5in sits inside the 51in-75in two-corner absorb band, 30in under it
+    // and 80in over it — all three corner routes get swept.
+    { name: "a 30in window against the corner", openings: [win(0, 30)] },
+    { name: "an 80in opening mid-run", openings: [win(1, 80)] },
+  ];
+  const CORNER_CONFIGS: [boolean, boolean][] = [
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ];
+
+  const eighths = (slots: PanelSlot[]) => slots.reduce((a, s) => a + Math.round(s.widthIn * 8), 0);
+  const outOfBounds = (slots: PanelSlot[]) => {
+    let n = 0;
+    for (const s of slots) {
+      if (s.type !== "standard" && s.type !== "braced") continue;
+      if (s.widthIn < MIN_IN - 1e-9 || s.widthIn > MAX_IN + 1e-9) n++;
+    }
+    return n;
+  };
+  /** All four properties in one allocation-free pass — this runs 790,440
+   * times, so it is written for the profiler rather than for elegance.
+   * Returns "" when the wall is clean. */
+  const check = (tiled: PanelSlot[], braced: PanelSlot[], wallEighths: number, assertWallSum: boolean) => {
+    let tiledEighths = 0;
+    let tiledOut = 0;
+    for (const s of tiled) {
+      tiledEighths += Math.round(s.widthIn * 8);
+      if ((s.type === "standard" || s.type === "braced") && (s.widthIn < MIN_IN - 1e-9 || s.widthIn > MAX_IN + 1e-9)) tiledOut++;
+    }
+    let bracedEighths = 0;
+    let bracedOut = 0;
+    let zeroes = 0;
+    for (const s of braced) {
+      const e = Math.round(s.widthIn * 8);
+      bracedEighths += e;
+      if (e === 0) zeroes++;
+      if ((s.type === "standard" || s.type === "braced") && (s.widthIn < MIN_IN - 1e-9 || s.widthIn > MAX_IN + 1e-9)) bracedOut++;
+    }
+    if (bracedEighths !== tiledEighths) return `braced pass moved the total, ${tiledEighths} -> ${bracedEighths} eighths`;
+    if (assertWallSum && tiledEighths !== wallEighths) return `TILER sums to ${tiledEighths}, wall is ${wallEighths} eighths`;
+    if (assertWallSum && bracedEighths !== wallEighths) return `sums to ${bracedEighths}, wall is ${wallEighths} eighths`;
+    if (zeroes > 0) return `${zeroes} slot(s) at 0in`;
+    if (bracedOut > tiledOut) return `${bracedOut} panels outside [24,48] vs the tiler's ${tiledOut}`;
+    return "";
+  };
+
+  /** Whether this wall is long enough to hold its own openings at all — see
+   * the named exception in the block comment above. */
+  const fits = (wallLengthIn: number, openings: OpeningAnchor[], hasStart: boolean, hasEnd: boolean) => {
+    const cornersIn = (hasStart ? CORNER_WIDTH_IN : 0) + (hasEnd ? CORNER_WIDTH_IN : 0);
+    const openingsIn = openings.reduce((a, o) => a + o.widthIn, 0);
+    return wallLengthIn - cornersIn - openingsIn >= MIN_IN;
+  };
+
+  it("holds all four properties at every eighth from 12in to 600in, across 3 standard widths x 4 corner configs x 2 gap ends x 7 opening sets", () => {
+    const violations: string[] = [];
+    let cases = 0;
+    let combineFired = 0;
+    let wallSumAsserted = 0;
+    for (let e = Math.round(12 * 8); e <= Math.round(600 * 8); e++) {
+      const wallLengthIn = e / 8;
+      for (const standardWidthIn of [39, 40, 48]) {
+        for (const [hasStart, hasEnd] of CORNER_CONFIGS) {
+          for (const gapEnd of ["start", "end"] as const) {
+            for (const { name, openings } of OPENING_SETS) {
+              cases++;
+              const tiled = retileWithOpenings(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, gapEnd, hasStart, hasEnd, openings).slots;
+              const braced = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+              for (const s of braced) {
+                if (s.type === "safety-gap" && s.secondaryType === "braced") { combineFired++; break; }
+              }
+              const walled = fits(wallLengthIn, openings, hasStart, hasEnd);
+              if (walled) wallSumAsserted++;
+              const failure = check(tiled, braced, e, walled);
+              if (failure) {
+                violations.push(`${wallLengthIn}in/${standardWidthIn}/${hasStart ? "S" : "-"}${hasEnd ? "E" : "-"}/${gapEnd}/${name}: ${failure}`);
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(violations.slice(0, 10)).toEqual([]);
+    // Non-vacuous on both counts: the sweep really did reach the rule under
+    // test, and it really did assert the wall sum over most of the space.
+    expect(cases).toBe(790_440);
+    expect(combineFired).toBeGreaterThan(5_000);
+    expect(wallSumAsserted).toBeGreaterThan(cases * 0.8);
+  });
+
+  // -------------------------------------------------------------------------
+  // THE COMBINE HAS TO SURVIVE THE NEXT RETILE, and for a while it did not.
+  //
+  // `retile.ts`'s preserving path re-reconciles EVERY wall, so an edit
+  // anywhere in the building runs `reconcileBracedPlacement` over every other
+  // wall against its own unchanged tiling. That has to be a no-op. It was not:
+  // a stored wall whose combine had fired is one standard-family slot SHORT
+  // (the swallowed panel), so every marker past the combined gap read one
+  // position too early, the gap-adjacent slot inherited a "braced" marker, and
+  // a braced slot is the one thing the combine cannot swallow. The combine
+  // refused on the second pass, the wall got its panel back, and the cut list
+  // started depending on edit history — the brace moving a second time with no
+  // user action at all.
+  //
+  // MEASURED before the fix: 1,949 of 1,957 combine walls changed layout under
+  // a no-op reconcile, panel count +1 on all of them. After:
+  //
+  //   * the FIRST pass is byte for byte identical across all 790,440 product
+  //     sweep cases — the fix is confined to the reconcile, which is where the
+  //     bug was;
+  //   * 0 of 790,440 walls change under a no-op reconcile, and 0 change under
+  //     a second one;
+  //   * 440 of 24,717 length-CHANGE reconciles now differ from the old
+  //     behaviour, and in every sampled one the new output is the better one:
+  //     the old marker misalignment had also been leaving the end corner with
+  //     a plain standard panel and no brace at all.
+  //
+  // Two mechanisms, both needed, both in `bracedPlacement.ts`:
+  // `combineSwallowedOrdinals` (where the hole in `oldMarkers` is) and
+  // `preservedBracedIndices` (a brace from the wall's own history may be
+  // RESIZED to settle the leftover, never swallowed).
+  // -------------------------------------------------------------------------
+  it("a combined wall reconciled against its OWN tiling at its OWN length does not move — twice over", () => {
+    for (const [name, tiled, standardWidthIn] of [
+      ["the 145in wall", tileWall(145, 48, CORNER_WIDTH_IN, "end", true, true).slots, 48],
+      [
+        "Tommy's 240in two-window wall",
+        retileWithOpenings(240, 40, CORNER_WIDTH_IN, "end", true, true, [win(0, 61.5), win(1, 61.5)]).slots,
+        40,
+      ],
+    ] as [string, PanelSlot[], number][]) {
+      const first = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+      // Non-vacuous: these are combine walls, which is the whole point.
+      expect(first.some((sl) => sl.type === "safety-gap" && sl.secondaryType === "braced"), name).toBe(true);
+      const second = reconcileBracedPlacement(first, tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+      const third = reconcileBracedPlacement(second, tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+      // The LAYOUT, not just the widths: types, secondary types and widths.
+      const layout = (slots: PanelSlot[]) => slots.map((sl) => [sl.type, sl.secondaryType ?? "-", sl.widthIn].join("/"));
+      expect(layout(second), name).toEqual(layout(first));
+      expect(layout(third), name).toEqual(layout(first));
+      // Stated separately because it is the consequence that reaches a shop:
+      // one more panel on the cut list.
+      expect(second.length, name).toBe(first.length);
+      expect(third.length, name).toBe(first.length);
+    }
+  });
+
+  it("no wall in the product space moves under a no-op reconcile, or under a second one", () => {
+    // Every inch rather than every eighth, which is what keeps this inside the
+    // suite's time budget; the every-eighth run measures 0 as well.
+    const violations: string[] = [];
+    let cases = 0;
+    let combineWalls = 0;
+    const layout = (slots: PanelSlot[]) =>
+      slots.map((sl) => [sl.type, sl.secondaryType ?? "-", sl.widthIn].join("/")).join(" | ");
+    for (let e = Math.round(12 * 8); e <= Math.round(600 * 8); e += 8) {
+      const wallLengthIn = e / 8;
+      for (const standardWidthIn of [39, 40, 48]) {
+        for (const [hasStart, hasEnd] of CORNER_CONFIGS) {
+          for (const gapEnd of ["start", "end"] as const) {
+            for (const { name, openings } of OPENING_SETS) {
+              cases++;
+              const tiled = retileWithOpenings(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, gapEnd, hasStart, hasEnd, openings).slots;
+              const first = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+              if (first.some((sl) => sl.type === "safety-gap" && sl.secondaryType === "braced")) combineWalls++;
+              const second = reconcileBracedPlacement(first, tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+              const where = [wallLengthIn + "in", standardWidthIn, (hasStart ? "S" : "-") + (hasEnd ? "E" : "-"), gapEnd, name].join("/");
+              if (layout(second) !== layout(first)) {
+                violations.push(where + ": 1st reconcile moved it; was " + layout(first) + "; now " + layout(second));
+                continue;
+              }
+              const third = reconcileBracedPlacement(second, tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+              if (layout(third) !== layout(second)) violations.push(where + ": 2nd reconcile moved it");
+              // The SAME no-op reconcile with the wall PINNED — the ordering
+              // that happens the moment a beam or a header is placed on a wall
+              // that already combined. Un-combining here would slide every
+              // stored index at or past the gap one panel EARLIER, so a pinned
+              // no-op has to be just as still as a free one.
+              const pinned = reconcileBracedPlacement(first, tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false, true);
+              if (layout(pinned) !== layout(first)) {
+                violations.push(where + ": PINNED reconcile moved it; was " + layout(first) + "; now " + layout(pinned));
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(violations.slice(0, 5)).toEqual([]);
+    // This is also what pins `combineSwallowedOrdinals`' RECONSTRUCTION of the
+    // swallowed ordinal against the real combine: a wrong hole misaligns the
+    // markers, which shows up here as a wall that moves.
+    expect(combineWalls).toBeGreaterThan(900);
+    expect(cases).toBeGreaterThan(90_000);
+  });
+
+  it("a wall whose slot indices are PINNED never has a panel swallowed out from under a stored index", () => {
+    // The Mid-Wall Bond Beam / Box Beam coverage / spanning header case. The
+    // combine would otherwise shorten the run by one, and nothing remaps those
+    // ranges — Building3DView reads `offsetsIn[header.startSlotIndex] ?? 0`,
+    // a silent fallback to zero. So it is refused on that wall, the same shape
+    // Stage 2b's own run-stop refusal takes.
+    const { slots: tiled } = tileWall(145, 48, CORNER_WIDTH_IN, "end", true, true);
+    const free = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, 48, "chevron", false);
+    expect(free.some((sl) => sl.type === "safety-gap" && sl.secondaryType === "braced")).toBe(true);
+    expect(free.length).toBe(tiled.length - 1);
+
+    const pinned = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, 48, "chevron", false, undefined, undefined, true);
+    // No combine, no swallow, every index still pointing at the panel it did.
+    expect(pinned.some((sl) => sl.type === "safety-gap" && sl.secondaryType === "braced")).toBe(false);
+    expect(pinned.length).toBe(tiled.length);
+    expect(pinned.map((sl) => sl.widthIn)).toEqual(tiled.map((sl) => sl.widthIn));
+    // And the refusal is visible rather than silent: the gap is still a 3/4in
+    // spacer and the corner's brace landed on an ordinary standard panel.
+    expect(pinned.filter((sl) => sl.type === "braced").length).toBeGreaterThan(0);
+    // Still exactly as long as itself, which the refusal path has always been.
+    expect(pinned.reduce((a, sl) => a + Math.round(sl.widthIn * 8), 0)).toBe(Math.round(145 * 8));
+    // Same through the reconcile door, which is the one the app actually uses
+    // — for a wall whose stored run was NEVER combined. Its markers say
+    // "standard" at the gap-adjacent ordinal, nothing is pre-combined, and the
+    // pin holds the run at its tiled length.
+    const neverCombined = reconcileBracedPlacement(tiled, tiled, SEISMIC_SPACING_IN, 48, "chevron", false, true);
+    expect(neverCombined.some((sl) => sl.type === "safety-gap" && sl.secondaryType === "braced")).toBe(false);
+    expect(neverCombined.length).toBe(tiled.length);
+  });
+
+  it("a PINNED wall whose combine had ALREADY fired keeps it — un-combining is the same index slide, backwards", () => {
+    // ⚠ The case an earlier version of this file asserted the WRONG way round.
+    // The ordering is the ordinary one: the combine fires on a fresh wall, the
+    // user then drops a Mid-Wall Bond Beam / Box Beam coverage / spanning
+    // header on it (which is what pins it), and the next reconcile runs. If
+    // "pinned" meant only "do not combine", that reconcile would hand the wall
+    // its swallowed panel back — and every stored index at or past the gap
+    // would point one panel EARLIER, which is precisely the
+    // `offsetsIn[header.startSlotIndex] ?? 0` silent-fallback hazard the pin
+    // exists to prevent. The pin freezes the structure in both directions.
+    const { slots: tiled } = tileWall(145, 48, CORNER_WIDTH_IN, "end", true, true);
+    const stored = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, 48, "chevron", false);
+    expect(stored.some((sl) => sl.type === "safety-gap" && sl.secondaryType === "braced")).toBe(true);
+    expect(stored.length).toBe(tiled.length - 1);
+
+    const reconciled = reconcileBracedPlacement(stored, tiled, SEISMIC_SPACING_IN, 48, "chevron", false, true);
+    // Same length, same slot types, same widths as the run the stored indices
+    // were drawn against — a fixpoint, not a re-derivation that happens to
+    // agree.
+    expect(reconciled.length).toBe(stored.length);
+    expect(reconciled.map((sl) => sl.type)).toEqual(stored.map((sl) => sl.type));
+    expect(reconciled.map((sl) => sl.secondaryType)).toEqual(stored.map((sl) => sl.secondaryType));
+    expect(reconciled.map((sl) => sl.widthIn)).toEqual(stored.map((sl) => sl.widthIn));
+    // Still exactly as long as itself.
+    expect(reconciled.reduce((a, sl) => a + Math.round(sl.widthIn * 8), 0)).toBe(Math.round(145 * 8));
+    // And a second reconcile does not move it either.
+    const again = reconcileBracedPlacement(reconciled, tiled, SEISMIC_SPACING_IN, 48, "chevron", false, true);
+    expect(again.map((sl) => sl.type)).toEqual(stored.map((sl) => sl.type));
+    expect(again.length).toBe(stored.length);
+    // The permission is NARROW: it re-combines the gap that was already
+    // combined, and does not turn the pin off. A pinned wall reconciled
+    // against a stored run with no combined gap still refuses — asserted in
+    // the test above.
+  });
+
+  it("braced pattern and mirroring move no width anywhere", () => {
+    // Cheap to state, and it is why the sweep above runs one pattern rather
+    // than four: a pattern is stamped onto a slot, never measured.
+    const violations: string[] = [];
+    for (let e = Math.round(12 * 8); e <= Math.round(600 * 8); e += 8) {
+      const wallLengthIn = e / 8;
+      for (const [hasStart, hasEnd] of CORNER_CONFIGS) {
+        for (const { openings } of OPENING_SETS) {
+          const tiled = retileWithOpenings(wallLengthIn, 40, CORNER_WIDTH_IN, "end", hasStart, hasEnd, openings).slots;
+          const a = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, 40, "chevron", false).map((s) => s.widthIn);
+          for (const [pattern, mirrored] of [["hatch", false], ["chevron", true], ["hatch", true]] as [BracePattern, boolean][]) {
+            const b = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, 40, pattern, mirrored).map((s) => s.widthIn);
+            if (a.join() !== b.join()) violations.push(`${wallLengthIn}in ${pattern}/${mirrored}: ${a.join()} vs ${b.join()}`);
+          }
+        }
+      }
+    }
+    expect(violations.slice(0, 5)).toEqual([]);
+  });
+
+  it("holds the same four properties through a RETILE that carries prior braced decisions", () => {
+    // The sweep above seeds every wall from scratch. This one goes through
+    // `reconcileBracedPlacement` with real prior state, which is the path the
+    // app takes on every wall-length edit: the combine runs against slots
+    // whose types came from the wall's own history.
+    const violations: string[] = [];
+    let cases = 0;
+    for (let e = Math.round(12 * 8); e <= Math.round(600 * 8); e += 4) {
+      const wallLengthIn = e / 8;
+      for (const standardWidthIn of [39, 40, 48]) {
+        for (const { name, openings } of OPENING_SETS) {
+          cases++;
+          // The wall as it stood at a different length, seeded from scratch…
+          const before = reconcileBracedPlacement(
+            undefined,
+            retileWithOpenings(wallLengthIn + 17.375, standardWidthIn, CORNER_WIDTH_IN, "end", true, true, openings).slots,
+            SEISMIC_SPACING_IN,
+            standardWidthIn,
+            "chevron",
+            false,
+          );
+          // …and the same wall re-tiled to this length, reconciled against it.
+          const tiled = retileWithOpenings(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, "end", true, true, openings).slots;
+          const after = reconcileBracedPlacement(before, tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+          const failure = check(tiled, after, e, fits(wallLengthIn, openings, true, true));
+          if (failure) violations.push(`${wallLengthIn}in/${standardWidthIn}/${name}: ${failure}`);
+        }
+      }
+    }
+    expect(violations.slice(0, 10)).toEqual([]);
+    expect(cases).toBeGreaterThan(20_000);
   });
 });
