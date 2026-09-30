@@ -26,11 +26,24 @@
   Compiler memoization hints and **`page.tsx` is already saturated with it**
   (61 on `ac55a39`, including 6854/6855/6872/6873 around the
   `absorbedCornerWalls` memo). It may rise **only** when copying an existing
-  flagged pattern, and only if every new error is named individually in the
-  report with the pattern it came from. Recorded 2026-09-30 when the
-  corner-brace Review Log entry copied `absorbedCornerWalls` exactly and
-  took +4 of that rule, with `exhaustive-deps` unchanged at 12. **A rise you
-  cannot attribute is a failure, not an exception.**
+  flagged pattern, **or is a new `useMemo` in a file already saturated with
+  it**, and only if every new error is named individually with what it came
+  from. **A rise you cannot attribute is a failure, not an exception.**
+
+  ⚠ **Recorded exception, 2026-09-30 — and the first version of this rule
+  was wrong.** The corner-brace Review Log entry took +4 of that rule
+  (61 → 65) with `exhaustive-deps` unchanged at 12 and no correctness rule
+  moving. I first wrote this rule as "only when copying an existing flagged
+  pattern", on a report that said 3 of the 4 were copies. The builder then
+  checked the raw ESLint JSON and corrected me: **only 2 are copies**
+  (`cornerBraceCombineRefusals` and its `secondStory` dep, mirroring
+  `absorbedCornerWalls` directly above, which carries the identical two).
+  The other two are `slotIndexPinnedWallIds`, a **brand-new** memo, and that
+  same memo appearing in the Review Log memo's dependency array. Both are
+  accepted as an explicit exception rather than reclassified as copies.
+  Note what that second one means: adding a new memo to a dep array can
+  flag *there* while its neighbours on the lines above do not — so expect
+  one new memo to cost two errors, and say so rather than rounding down.
 - **Lint does not work from a git worktree that has no root `node_modules`,
   and it fails in TWO different ways depending on how you invoke it.**
   `npm run lint --workspace=apps/web` from the worktree dies immediately
