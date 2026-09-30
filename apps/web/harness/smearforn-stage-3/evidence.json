@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3214/",
-  "ranAt": "2026-09-29T18:06:51.740Z",
+  "ranAt": "2026-09-29T23:23:32.232Z",
   "stopIn": 60,
   "steps": [
     {
@@ -108,8 +108,8 @@
       "name": "clearing-the-stop-restores-elevation-plan-and-3d",
       "totalEighthsCleared": 4392,
       "noPanelsLabelsCleared": 0,
-      "boundaryGreyWithStop": 1403,
-      "boundaryGreyWithoutStop": 1307,
+      "boundaryGreyWithStop": 1410,
+      "boundaryGreyWithoutStop": 1319,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
@@ -179,20 +179,20 @@
           "invalid": false,
           "message": null,
           "totalEighths": 3161,
-          "withheldOpenings": 1
+          "withheldOpenings": 0
         },
         {
           "stopIn": 254,
           "invalid": false,
           "message": null,
           "totalEighths": 2484,
-          "withheldOpenings": 1
+          "withheldOpenings": 0
         },
         {
           "stopIn": 338.75,
-          "invalid": true,
-          "message": "That leaves a 225¾\" run, which cannot be panelized without a panel under the 24\" minimum the shop can build. Stop less of the wall, or stop all 47'-0½\" of it. (Esc to revert)",
-          "totalEighths": 2484,
+          "invalid": false,
+          "message": null,
+          "totalEighths": 1806,
           "withheldOpenings": 1
         },
         {

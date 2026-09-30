@@ -24,13 +24,21 @@ import type { PanelSlot, WallEnd } from "./types";
  * useless message above.
  *
  * Measured, so the boundary is on the record rather than inferred: with a
- * 25.5in corner panel at both ends and two 61.5in windows,
- * `retileWithOpenings` breaks the sum at every eighth from 51in up to
- * **173.875in**, and is correct again from **174in** — which is exactly
+ * 25.5in corner panel at both ends and two 61.5in windows, the LAST eighth at
+ * which `retileWithOpenings` breaks the sum is **173.875in**, and it is
+ * correct at every eighth from **174in** upward — which is exactly
  * `2 x 61.5 + 2 x 25.5`. **Tommy's 174in is his wall's own openings-plus-
- * corners total.** Same law at other widths: three openings of
- * 47.625/41.5/37.5in with 14in corners break up to 154.5in and are correct
- * from 154.625in = 126.625 + 28.
+ * corners total.**
+ *
+ * ⚠ **The boundary is exact; "it breaks at every eighth below it" is not, and
+ * an earlier draft of this comment said so.** Counted: of the 984 eighths from
+ * 51in to 173.875in, **793 break and 191 do not** — the tiler's own
+ * merged-corner and corner-absorb branches happen to produce a summing run at
+ * some of them. What matters for this module is the boundary, which is sharp:
+ * below 174in there are runs with no legal tiling, and at or above it there
+ * are none. Same law at other widths: three openings of 47.625/41.5/37.5in
+ * with 14in corners have their last break at 154.5in and are correct from
+ * 154.625in = 126.625 + 28.
  *
  * ### Tommy's decision, 2026-09-29 — "Drop them, and remember"
  *
@@ -66,23 +74,70 @@ import type { PanelSlot, WallEnd } from "./types";
  * budget can no longer go negative. That is the sentence the whole fix
  * reduces to.
  *
- * ### The kept openings are deliberately NOT re-anchored
+ * ### The kept openings are deliberately NOT re-anchored — and why that alone
+ * was not enough
  *
- * They keep the `beforeStandardCount` they arrived with. That is what makes
- * restore EXACT rather than approximate: `mergeRunStopOpenings` puts the
- * remembered ones back beside them by plain ordinal, and the merged list is
- * byte-for-byte the list the wall had before the stop, so un-stopping
- * re-tiles to the slots it had before the stop. Re-anchoring the survivors
- * onto the shorter run would improve their placement WITHIN a stopped run by
- * a panel or two, and would break that exactness — a remembered opening and a
- * re-anchored survivor would no longer sort back into their original order.
- * Tommy's requirement is that window data never be lost by stopping a wall
- * and changing his mind; the trade goes that way.
+ * They keep the `beforeStandardCount` they arrived with, so the openings this
+ * function hands the tiler are the caller's own anchors, untouched.
+ *
+ * **The first version of this module claimed that made restore byte-exact on
+ * its own, and that claim was wrong.** It holds for this function in
+ * isolation and is false through `tileOneWallPreservingOpenings`, because a
+ * survivor's ordinal does not survive the round trip: the next re-tile reads
+ * it back with `getOpeningAnchors(oldSlots)`, and on a stopped wall
+ * `oldSlots` is the SHORTENED run. The remembered opening kept its long-run
+ * ordinal while the survivor was silently re-derived against a shorter one,
+ * so the two halves of the merged list were in different coordinate systems.
+ * When the survivor's re-derived ordinal fell BELOW the remembered one, the
+ * plain sort in `mergeRunStopOpenings` put them back in the wrong order —
+ * measured on a 47ft wall carrying a window and a door, sweeping every
+ * whole-inch start stop from 0 to 532in, **116 of those 533 stops came back
+ * with the door and the window swapped.** A door where a window was, on a
+ * shop drawing, is worse than a refusal.
+ *
+ * End stops happened to be clean (survivors keep the low ordinals and the
+ * remembered ones are higher, so the sort agreed by accident), which is why
+ * the first round of tests missed it. Tommy's 174in wall is stopped from BOTH
+ * ends and carries two openings — the exact failing shape.
+ *
+ * ### What fixes it: the memory carries the pre-stop ORDER, not just the
+ * withheld anchors
+ *
+ * `RunStopOpeningPartition.preStop` records the wall's opening sequence as it
+ * was immediately before the stop withheld anything — one entry per opening,
+ * left to right, each carrying the `beforeStandardCount` it had THEN and
+ * whether the stop withheld it. That is the only thing re-derivation destroys
+ * and the only thing stored to replace it.
+ *
+ * On the next re-tile `mergeRunStopOpenings` walks that sequence: it rebases
+ * each survivor onto the pre-stop ordinal recorded for its position and
+ * interleaves the remembered ones where they sat. Both halves are then in ONE
+ * coordinate system — the pre-stop one — so the merged list is the list the
+ * wall had before the stop, and un-stopping re-tiles to the slots it had
+ * before the stop. Successive stop changes chain correctly, because each new
+ * partition records the ordinals of the list the merge just rebased.
+ *
+ * Survivors are still not re-anchored for the BUILT run: re-anchoring them
+ * onto the shortened run would improve their placement within a stopped run
+ * by a panel or two, and it would throw away the pre-stop ordinals that make
+ * the restore exact. Tommy's requirement is that window data never be lost by
+ * stopping a wall and changing his mind; the trade goes that way.
  *
  * The visible consequence, stated rather than discovered: after a START stop,
  * surviving openings carry ordinals from the longer run, so
  * `retileWithOpenings` appends them toward the far end of the shortened run —
  * which is roughly where they are, since the start is what was removed.
+ *
+ * ### The one case restore is ordered-but-not-exact
+ *
+ * If openings are INSERTED or DELETED on the wall while it is stopped, the
+ * survivor count no longer matches `preStop`'s kept count and there is no
+ * one-for-one correspondence to rebase through. Restore then falls back to
+ * splicing each remembered opening back at the position it held relative to
+ * the survivors and clamping the merged ordinals monotonically, which
+ * guarantees the ORDER — no opening ever changes places with another — but
+ * not the exact panel it lands beside. Nothing is lost either way; that is
+ * the promise, and it is the one it keeps in every case.
  */
 
 const isOpeningSlot = (slot: PanelSlot): boolean =>
@@ -113,14 +168,71 @@ export interface RunStopOpeningPartitionInput {
   openings: OpeningAnchor[];
 }
 
+/** One opening in the wall's sequence as it stood immediately BEFORE the stop
+ * withheld anything. See the module doc comment: this is the pre-stop
+ * coordinate system, and storing it is what stops a re-derived survivor
+ * ordinal from sorting past a remembered one. */
+export interface PreStopOpeningPosition {
+  /** The `beforeStandardCount` this opening had before the stop. */
+  beforeStandardCount: number;
+  /** True if an unbuilt span swallowed it. Withheld entries correspond, in
+   * order, to `RunStopOpeningMemory.unbuilt`; the rest correspond, in order,
+   * to the survivors `getOpeningAnchors` reads back off the stopped wall. */
+  withheld: boolean;
+}
+
+/**
+ * What a stopped wall hands forward so a later un-stop can put it back: the
+ * anchors an unbuilt span swallowed, AND the order they sat in.
+ *
+ * **Both halves are load-bearing.** Storing only `unbuilt` is what the first
+ * version of this change did, and it is what let a start stop swap a window
+ * and a door — see the module doc comment.
+ */
+export interface RunStopOpeningMemory {
+  /** Inside an unbuilt span: not built, not deleted. Handed back through
+   * `remembered` on every later re-tile, so reducing or clearing the stop
+   * restores them. Left-to-right order, aligned with `preStop`'s withheld
+   * entries. Each carries its PRE-STOP `beforeStandardCount`. */
+  readonly unbuilt: readonly OpeningAnchor[];
+  /** The whole pre-stop sequence, left to right — survivors and withheld
+   * alike. Empty when nothing was withheld. */
+  readonly preStop: readonly PreStopOpeningPosition[];
+}
+
 export interface RunStopOpeningPartition {
   /** Built on the shortened run, in the caller's own order, anchors
    * untouched. */
   kept: OpeningAnchor[];
-  /** Inside an unbuilt span: not built, not deleted. Stored by the caller and
-   * handed back through `openings` on every later re-tile, so reducing or
-   * clearing the stop restores them. */
-  unbuilt: OpeningAnchor[];
+  /** Everything a later restore needs — see `RunStopOpeningMemory`. */
+  memory: RunStopOpeningMemory;
+}
+
+/**
+ * The memory of a wall that withheld nothing, which is every wall of every
+ * unstopped project.
+ *
+ * **Shared and frozen on purpose.** Shared, because an unstopped project must
+ * not allocate a fresh object per wall per re-tile; frozen, because a shared
+ * value that anything could push into would be a cross-wall leak of exactly
+ * the data this module exists to keep straight.
+ */
+export const EMPTY_RUN_STOP_OPENING_MEMORY: RunStopOpeningMemory = Object.freeze({
+  unbuilt: Object.freeze([]),
+  preStop: Object.freeze([]),
+});
+
+/** Every opening on the wall withheld — a fully-stopped run, or one the
+ * tiler's own merged-corner/absorb branch could not keep reservations on. The
+ * ordinals recorded are the ones the openings arrived with, which is the
+ * pre-stop coordinate system by induction: the list came out of
+ * `mergeRunStopOpenings`, which had already rebased it. */
+function withholdEverything(openings: OpeningAnchor[]): RunStopOpeningMemory {
+  const sorted = [...openings].sort((a, b) => a.beforeStandardCount - b.beforeStandardCount);
+  return {
+    unbuilt: sorted,
+    preStop: sorted.map((o) => ({ beforeStandardCount: o.beforeStandardCount, withheld: true })),
+  };
 }
 
 /**
@@ -137,11 +249,11 @@ export function partitionOpeningsByRunStop(input: RunStopOpeningPartitionInput):
   const startEighths = Math.max(0, toEighths(input.startStopIn));
   const endEighths = Math.max(0, toEighths(input.endStopIn));
   if (openings.length === 0 || (startEighths === 0 && endEighths === 0)) {
-    return { kept: openings, unbuilt: [] };
+    return { kept: openings, memory: EMPTY_RUN_STOP_OPENING_MEMORY };
   }
   // Nothing at all is built on this wall, so nothing on it is built — every
   // opening is withheld, including any the caller had already withheld.
-  if (toEighths(input.builtLengthIn) <= 0) return { kept: [], unbuilt: [...openings] };
+  if (toEighths(input.builtLengthIn) <= 0) return { kept: [], memory: withholdEverything(openings) };
 
   const basisSlots = retileWithOpenings(
     input.basisLengthIn,
@@ -165,12 +277,24 @@ export function partitionOpeningsByRunStop(input: RunStopOpeningPartitionInput):
     if (isOpeningSlot(slot)) spans.push({ startEighths: cursor, endEighths: cursor + widthEighths });
     cursor += widthEighths;
   }
-  // The basis tiling itself dropped reservations (the merged corner, or the
+  // The BASIS tiling itself dropped reservations (the merged corner, or the
   // corner-absorb band that could not keep them — see `resolveCorners`). That
   // is a pre-existing rule of the tiler and NOT something this stop did, so
-  // there are no positions to read and nothing new is withheld: today's
-  // behaviour, unchanged.
-  if (spans.length !== sorted.length) return { kept: openings, unbuilt: [] };
+  // there are no positions to read and nothing can be withheld by position.
+  //
+  // ⚠ **This bail-out is not harmless, and an earlier draft of this comment
+  // calling it "today's behaviour, unchanged" was true only of an UNSTOPPED
+  // wall.** On a stopped one it hands the shortened run every opening at full
+  // width, which is exactly the over-length condition this module exists to
+  // prevent; the sum-invariant backstop in page.tsx would then refuse with the
+  // same useless message Tommy reported. It is accepted because every
+  // reachable instance is latent: the basis run is this wall with its own
+  // stops REMOVED, so it is the longest this wall is ever tiled at, and the
+  // branches that drop reservations there need either a run under 51in or
+  // corner 39 with `cornerMayWiden`, which the app does not currently produce.
+  // **If a caller ever makes those reachable, this has to withhold rather than
+  // pass through.**
+  if (spans.length !== sorted.length) return { kept: openings, memory: EMPTY_RUN_STOP_OPENING_MEMORY };
 
   const windowStartEighths = startEighths;
   const windowEndEighths = Math.max(startEighths, toEighths(input.basisLengthIn) - endEighths);
@@ -203,40 +327,102 @@ export function partitionOpeningsByRunStop(input: RunStopOpeningPartitionInput):
       input.cornerMayWiden,
     ).slots;
     if (builtSlots.filter(isOpeningSlot).length !== keptSorted.length) {
-      return { kept: [], unbuilt: [...openings] };
+      return { kept: [], memory: withholdEverything(openings) };
     }
   }
 
-  // Both lists in the CALLER's original order, not the sorted one — an anchor
-  // list round-trips through here untouched when nothing is withheld.
+  // Nothing was withheld after all — every opening lies inside the built
+  // window, so there is no memory and the anchor list round-trips untouched.
+  if (unbuiltSet.size === 0) return { kept: openings, memory: EMPTY_RUN_STOP_OPENING_MEMORY };
+
+  // `kept` in the CALLER's original order; the memory in LEFT-TO-RIGHT order,
+  // read off `sorted`, because that is the order restore walks it in and the
+  // order `getOpeningAnchors` will hand the survivors back in.
   return {
     kept: openings.filter((o) => !unbuiltSet.has(o)),
-    unbuilt: openings.filter((o) => unbuiltSet.has(o)),
+    memory: {
+      unbuilt: sorted.filter((o) => unbuiltSet.has(o)),
+      preStop: sorted.map((o) => ({ beforeStandardCount: o.beforeStandardCount, withheld: unbuiltSet.has(o) })),
+    },
   };
 }
 
 /**
  * The full opening set a stopped wall is MEANT to have: what it currently
- * builds, plus whatever a stop withheld earlier.
+ * builds, plus whatever a stop withheld earlier — **in the order the wall had
+ * them before the stop.**
  *
- * Ordinals are never rewritten on either side (see the module doc comment),
- * so a plain stable sort puts a remembered opening back exactly where it was
- * relative to its neighbours — which is what makes un-stopping restore the
- * wall's previous slots rather than an approximation of them.
+ * `current` is what `getOpeningAnchors` just read back off the stopped wall,
+ * so it is in left-to-right order and carries the CURRENT payload of every
+ * survivor (a width edited while the wall was stopped is honoured), but its
+ * ordinals were re-derived against the SHORTENED run and are therefore in a
+ * different coordinate system from the remembered ones. Reconciling those two
+ * coordinate systems is this function's whole job; before it did, a start
+ * stop could restore a window and a door in each other's places. See the
+ * module doc comment for the measurement.
  *
- * Remembered entries are listed FIRST before sorting, so that where two
- * openings share an ordinal (they were adjacent, with no standard panel
- * between them) the remembered one lands on the left. Arbitrary but FIXED,
- * the same discipline `distributeEighths`' absorber rule uses — nobody has
- * decided which of two adjacent openings is "first", and a stable rule beats
- * a plausible one.
+ * The exact path: survivor *i* is rebased onto `memory.preStop`'s *i*-th kept
+ * ordinal and the remembered ones are interleaved where they sat. The merged
+ * list is then the pre-stop list, ordinal for ordinal.
+ *
+ * The fallback path, taken only when openings were inserted or deleted on the
+ * wall while it was stopped so the counts no longer correspond: splice each
+ * remembered opening back at the position it held among the survivors and
+ * clamp the ordinals monotonically. Order is still exact — no two openings can
+ * trade places — but placement is approximate, which it has to be once the
+ * list itself changed underneath the memory.
  */
 export function mergeRunStopOpenings(
   current: OpeningAnchor[],
-  remembered: OpeningAnchor[] | undefined,
+  memory: RunStopOpeningMemory | undefined,
 ): OpeningAnchor[] {
-  if (!remembered || remembered.length === 0) return current;
-  return [...remembered, ...current].sort((a, b) => a.beforeStandardCount - b.beforeStandardCount);
+  if (!memory || memory.unbuilt.length === 0) return current;
+  const keptOrdinals = memory.preStop.filter((p) => !p.withheld).map((p) => p.beforeStandardCount);
+
+  if (keptOrdinals.length === current.length) {
+    const merged: OpeningAnchor[] = [];
+    let keptIndex = 0;
+    let unbuiltIndex = 0;
+    for (const position of memory.preStop) {
+      if (position.withheld) {
+        merged.push(memory.unbuilt[unbuiltIndex++]!);
+        continue;
+      }
+      const survivor = current[keptIndex]!;
+      const ordinal = keptOrdinals[keptIndex++]!;
+      merged.push(survivor.beforeStandardCount === ordinal ? survivor : { ...survivor, beforeStandardCount: ordinal });
+    }
+    // `preStop` was built from a sorted list, so `merged` is already
+    // non-decreasing by ordinal and `retileWithOpenings`' own stable sort
+    // cannot reorder it.
+    return merged;
+  }
+
+  // Openings were added or removed while the wall was stopped. Insert from the
+  // right, so an earlier recorded position is not shifted by a later
+  // insertion; ties keep left-to-right order for the same reason.
+  const spliced = [...current];
+  const afterKept = afterKeptCounts(memory.preStop);
+  for (let i = memory.unbuilt.length - 1; i >= 0; i--) {
+    spliced.splice(Math.min(afterKept[i]!, spliced.length), 0, memory.unbuilt[i]!);
+  }
+  let previous = Number.NEGATIVE_INFINITY;
+  return spliced.map((anchor) => {
+    const ordinal = Math.max(anchor.beforeStandardCount, previous);
+    previous = ordinal;
+    return anchor.beforeStandardCount === ordinal ? anchor : { ...anchor, beforeStandardCount: ordinal };
+  });
+}
+
+/** Per withheld entry of `preStop`, how many survivors preceded it. */
+function afterKeptCounts(preStop: readonly PreStopOpeningPosition[]): number[] {
+  const counts: number[] = [];
+  let kept = 0;
+  for (const position of preStop) {
+    if (position.withheld) counts.push(kept);
+    else kept++;
+  }
+  return counts;
 }
 
 export interface RunStopOpeningFit {
@@ -283,7 +469,15 @@ export function runStopOpeningFit(
     if (isOpeningSlot(slot)) {
       openingCount++;
       openingEighths += widthEighths;
-    } else if (slot.type === "corner") {
+      // `markSafetyCorner` rewrites ONE corner slot of a mitered footprint
+      // (the octagon) to "safety-oct-corner" — still a corner panel, still
+      // fixed content, and counting only "corner" understated an octagon's
+      // requirement by a whole 25.5in panel. Measured before this fix: a
+      // mitered run reported `cornerCount 1, requiredIn 87, plainBudgetIn 13`
+      // where the truth is `2, 112.5, -12.5` — so the refusal quoted wrong
+      // numbers, and there were stops where `refuses` stayed false and the
+      // user fell through to the old "does not add back up" sentence.
+    } else if (slot.type === "corner" || slot.type === "safety-oct-corner") {
       cornerCount++;
       cornerEighths += widthEighths;
     }

@@ -97,3 +97,47 @@ summed to more than the wall.
 
 Step 15 is the regression pin, and it exists because steps 6-13 could all pass
 on a wall the user could not actually stop.
+
+⚠ **What step 15 does NOT cover, and where that is covered instead.** Its wall
+carries **one** opening, so ordering cannot be observed on it — and the defect a
+code review found in this same work, the day it was written, was an **ordering**
+defect: a start stop that dropped one of two openings could restore them in each
+other's places, because a survivor's ordinal is re-derived against the shortened
+run while the remembered one still carries its long-run ordinal. Measured on a
+47ft wall with a window and a door, every whole-inch start stop from 0 to 532in:
+**116 of 533 came back swapped.** A door where a window was, on a shop drawing,
+is worse than a refusal.
+
+That is fixed (the memory now carries the pre-stop order, not just the withheld
+anchors — see `packages/geometry/src/runStopOpenings.ts`) and it is pinned in
+unit tests rather than here: `retile.test.ts` drives `start stop -> clear` with
+two openings of different types through the same function page.tsx calls, and
+`runStopOpenings.test.ts` pins the merge itself. **Giving step 15 a second
+opening would be a strict improvement and is not done here**, because the
+sweep's cost is already the largest step in this file and the unit sweep covers
+the same ground at every eighth rather than every inch.
+
+**The record this file should not lose: a browser harness that drives a feature
+end to end can still miss an ordering defect in it**, because it asserted the
+count and the sum — the things the field report was about — and nothing about
+which opening was which.
+
+## ⚠ Step 15’s numbers are NOT reproducible run to run, and that is the app
+
+`seedDefaultOpenings` picks each default opening’s ordinal with
+`randomFn()`, and page.tsx passes `openingSeed = {}` — so it falls back to
+`Math.random`. **The wall’s window lands on a different panel every run.**
+
+So in step 15’s checked-in evidence, `basePanelCount`, which of the five swept
+stops report `withheldOpenings`, whether the 0.6 stop is accepted or refused,
+and the `boundaryGrey*` pixel counts all move between runs with no code change
+at all. Observed directly on 2026-09-29: three runs of the same commit gave
+15/16 base panels and withheld at two, three or four of the five stops.
+
+**Every ASSERTION in the step is written to survive that** — it requires that
+the sum is conserved at every accepted stop, that the old “does not add back
+up” sentence never appears, that *at least one* stop swallows an opening, and
+that clearing gives the wall back panel for panel. None of them names a
+particular stop. **Read the numbers in `evidence.json` as one sample, not as a
+fixture**, and do not “fix” a diff in them. If a deterministic fixture is ever
+wanted here, the hook already exists: `OpeningSeed.randomFn`.

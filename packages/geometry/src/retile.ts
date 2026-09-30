@@ -5,7 +5,12 @@ import { getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall, type
 import { wallCompassDirection } from "./wallCompassDirection";
 import { wallFabricationLengthIn } from "./eighths";
 import { applyWallRunStop, hasWallRunStop } from "./wallRunStop";
-import { mergeRunStopOpenings, partitionOpeningsByRunStop } from "./runStopOpenings";
+import {
+  EMPTY_RUN_STOP_OPENING_MEMORY,
+  mergeRunStopOpenings,
+  partitionOpeningsByRunStop,
+  type RunStopOpeningMemory,
+} from "./runStopOpenings";
 import type { BracePattern, CornerId, Footprint, PanelSlot, Wall, WallEnd, WallRunStop } from "./types";
 
 /** The project's seismic-zone-driven suggestion for brand-new braced-panel
@@ -391,7 +396,7 @@ function tileOneWallPreservingOpenings(
    * saved before Stage 3) means the old openings are reused exactly as they
    * always were, byte-identical. */
   runStop?: WallRunStopContext,
-): { slots: PanelSlot[]; unbuilt: OpeningAnchor[] } {
+): { slots: PanelSlot[]; memory: RunStopOpeningMemory } {
   if (!oldSlots) {
     const plainSlots = tileWall(
       wallLengthIn,
@@ -409,7 +414,7 @@ function tileOneWallPreservingOpenings(
     // seeded opening is inside the built span by construction and there is
     // nothing to withhold. A wall with no old counterpart also has no memory
     // to restore — the same rule that makes it lose its openings.
-    if (seedAnchors.length === 0) return { slots: plainSlots, unbuilt: [] };
+    if (seedAnchors.length === 0) return { slots: plainSlots, memory: EMPTY_RUN_STOP_OPENING_MEMORY };
     return {
       slots: retileWithOpenings(
         wallLengthIn,
@@ -422,7 +427,7 @@ function tileOneWallPreservingOpenings(
         allowBorrow,
         cornerMayWiden,
       ).slots,
-      unbuilt: [],
+      memory: EMPTY_RUN_STOP_OPENING_MEMORY,
     };
   }
   // Everything this wall is MEANT to have: what it currently builds, plus
@@ -430,7 +435,7 @@ function tileOneWallPreservingOpenings(
   // lets the withheld ones back in, and they come back by their own original
   // anchors — see `mergeRunStopOpenings`.
   const intended = mergeRunStopOpenings(getOpeningAnchors(oldSlots), runStop?.remembered);
-  const { kept, unbuilt } = runStop
+  const { kept, memory } = runStop
     ? partitionOpeningsByRunStop({
         basisLengthIn: runStop.basisLengthIn,
         basisHasCornerStart: runStop.basisHasCornerStart,
@@ -447,7 +452,7 @@ function tileOneWallPreservingOpenings(
         cornerMayWiden,
         openings: intended,
       })
-    : { kept: intended, unbuilt: [] as OpeningAnchor[] };
+    : { kept: intended, memory: EMPTY_RUN_STOP_OPENING_MEMORY };
   return {
     slots: retileWithOpenings(
       wallLengthIn,
@@ -460,7 +465,7 @@ function tileOneWallPreservingOpenings(
       allowBorrow,
       cornerMayWiden,
     ).slots,
-    unbuilt,
+    memory,
   };
 }
 
@@ -516,21 +521,29 @@ interface WallRunStopContext {
   basisHasCornerEnd: boolean;
   startStopIn: number;
   endStopIn: number;
-  remembered: OpeningAnchor[] | undefined;
+  remembered: RunStopOpeningMemory | undefined;
 }
 
 export interface RetileWithRunStopMemoryResult {
   slotsByWallId: Record<string, PanelSlot[]>;
   /** Per wall, the openings an unbuilt span swallowed — **not built and not
-   * deleted**. A wall with nothing withheld has no entry at all, so an
-   * unstopped project's map is `{}`, exactly as it was before this existed.
+   * deleted** — together with the pre-stop order restore needs to put them
+   * back beside the survivors (see `RunStopOpeningMemory`). A wall with
+   * nothing withheld has no entry at all, so an unstopped project's map is
+   * `{}`, exactly as it was before this existed.
    *
    * ⚠ **A caller that writes `slotsByWallId` back must write this back too.**
    * They are two halves of one answer: the slots say what is built, this says
    * what was set aside so it can come back. Keeping the first and dropping
    * the second is exactly the window-data loss Tommy's "drop them, and
-   * remember" decision rules out. */
-  unbuiltOpeningsByWallId: Record<string, OpeningAnchor[]>;
+   * remember" decision rules out.
+   *
+   * ⚠ **A wall id that is no longer in `fp.walls` must not be carried
+   * forward.** A stale entry would attach to a NEW wall that later reuses the
+   * id and resurrect a window on an unrelated wall — see the prune in
+   * `projectStateNow` in page.tsx. This function only ever emits ids it was
+   * given walls for; the hazard is on the caller's side of the state. */
+  unbuiltOpeningsByWallId: Record<string, RunStopOpeningMemory>;
 }
 
 /**
@@ -547,10 +560,28 @@ export interface RetileWithRunStopMemoryResult {
  *
  * See `runStopOpenings.ts` for how "inside the unbuilt span" is derived (the
  * anchors are ordinals, not distances), for the measurement behind Tommy's
- * 174in, and for why the surviving openings are never re-anchored.
+ * 174in, for why the surviving openings are never re-anchored for the BUILT
+ * run, and for the pre-stop order the memory has to carry so that restoring
+ * cannot put two openings back in each other's places.
  *
  * An unstopped wall takes no new code path at all: `partitionOpeningsByRunStop`
  * returns its input array before it tiles anything.
+ *
+ * ### The one place this feature DOES lose window data, stated rather than left
+ * silent
+ *
+ * A wall with **no old counterpart** — `oldSlotsByNewWallId[wall.id]` absent —
+ * is plain-tiled with no openings at all, and the caller's id remap (see
+ * `handleAddBumpOut` and the collapse branch of the wall drag in page.tsx)
+ * drops that wall's run-stop memory along with its openings. So a bump-out or
+ * a corner collapse that destroys a wall's run destroys anything a stop on it
+ * had set aside, permanently. That is a genuine deletion inside a feature
+ * whose promise is "never deleted", and it is deliberate: the wall's old run
+ * no longer exists as a run, so there is no basis to measure a remembered
+ * opening's position against and no honest place to put it back. It matches
+ * how the same operations already treat the wall's BUILT openings, which they
+ * also drop. **If this is ever revisited, the fix is on the caller's side —
+ * a real old-to-new wall correlation — not here.**
  */
 export function retilePreservingOpeningsWithRunStopMemory(
   fp: Footprint,
@@ -567,10 +598,10 @@ export function retilePreservingOpeningsWithRunStopMemory(
   cornerMayWiden = true,
   /** What an earlier stop on each wall withheld. Omitted (every caller that
    * predates this, and every unstopped project) means nothing to restore. */
-  unbuiltOpeningsByWallId?: Record<string, OpeningAnchor[]>,
+  unbuiltOpeningsByWallId?: Record<string, RunStopOpeningMemory>,
 ): RetileWithRunStopMemoryResult {
   const next: Record<string, PanelSlot[]> = {};
-  const unbuiltOut: Record<string, OpeningAnchor[]> = {};
+  const unbuiltOut: Record<string, RunStopOpeningMemory> = {};
   const ownership = cornerOwnershipWithRunStops(fp, primary, thicknessIn, runStopsByWallId);
   const mitered = isMiteredShape(fp);
   for (const wall of fp.walls) {
@@ -587,8 +618,8 @@ export function retilePreservingOpeningsWithRunStopMemory(
     // from the SAME orphan-adjusted ownership as `run`, so the two cannot
     // disagree about where this wall's line begins.
     const basis = wallRunFor(wall, ownership[wall.id]!, undefined);
-    const hasStop = hasWallRunStop(runStop) || (unbuiltOpeningsByWallId?.[wall.id]?.length ?? 0) > 0;
-    const { slots, unbuilt } = tileOneWallPreservingOpenings(
+    const hasStop = hasWallRunStop(runStop) || (unbuiltOpeningsByWallId?.[wall.id]?.unbuilt.length ?? 0) > 0;
+    const { slots, memory } = tileOneWallPreservingOpenings(
       oldSlots,
       lengthIn,
       standardWidthIn,
@@ -612,7 +643,7 @@ export function retilePreservingOpeningsWithRunStopMemory(
           }
         : undefined,
     );
-    if (unbuilt.length > 0) unbuiltOut[wall.id] = unbuilt;
+    if (memory.unbuilt.length > 0) unbuiltOut[wall.id] = memory;
     // Preserves this wall's own prior braced-panel decisions (type, style,
     // mirror) by position, seeding only genuinely new standard-slot
     // positions via `bracedSeed` — see `reconcileBracedPlacement`'s own

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { toEighths } from "./eighths";
-import { retileWithOpenings, type OpeningAnchor } from "./tiling";
+import { getOpeningAnchors, markSafetyCorner, retileWithOpenings, type OpeningAnchor } from "./tiling";
 import {
   mergeRunStopOpenings,
   partitionOpeningsByRunStop,
   runStopOpeningFit,
+  type RunStopOpeningMemory,
   type RunStopOpeningPartitionInput,
 } from "./runStopOpenings";
 
@@ -47,6 +48,33 @@ function input(over: Partial<RunStopOpeningPartitionInput> & { basisLengthIn: nu
 
 const sumIn = (slots: { widthIn: number }[]) => slots.reduce((s, x) => s + x.widthIn, 0);
 
+/**
+ * The survivors as the APP sees them on the next re-tile: tiled onto the
+ * shortened run and read back with `getOpeningAnchors`, exactly what
+ * `tileOneWallPreservingOpenings` does.
+ *
+ * ⚠ **Restore tests must go through here and not feed `partition.kept` straight
+ * back.** Feeding `kept` back preserves the pre-stop ordinals for free and so
+ * cannot observe the defect this module's doc comment records: a survivor's
+ * ordinal is RE-DERIVED against the shortened run, and before the memory
+ * carried the pre-stop order, that could sort a survivor back past a remembered
+ * opening and swap the two on the drawing.
+ */
+function survivorsAfterRetile(i: RunStopOpeningPartitionInput, kept: OpeningAnchor[]): OpeningAnchor[] {
+  const { slots } = retileWithOpenings(
+    i.builtLengthIn,
+    i.standardWidthIn,
+    i.cornerWidthIn,
+    i.gapEnd,
+    i.builtHasCornerStart,
+    i.builtHasCornerEnd,
+    kept,
+    i.allowBorrow,
+    i.cornerMayWiden,
+  );
+  return getOpeningAnchors(slots);
+}
+
 /** Tiles the BUILT run the way `retile` would, and returns the sum error in
  * eighths — 0 is the invariant Tommy's message was complaining about. */
 function builtSumErrorEighths(i: RunStopOpeningPartitionInput, kept: OpeningAnchor[]): number {
@@ -76,8 +104,8 @@ describe("the 174in boundary Tommy hit", () => {
     expect(requiredIn).toBe(174);
 
     // Unfixed behaviour, asserted directly against the tiler so the boundary
-    // stays on the record: every run BELOW 174in breaks the sum invariant,
-    // and 174in itself is the first run that does not.
+    // stays on the record: 173.875in is the LAST run that breaks the sum
+    // invariant, and nothing at or above 174in breaks it.
     const broken: number[] = [];
     for (let e = toEighths(51); e < toEighths(200); e++) {
       const lengthIn = e / 8;
@@ -85,16 +113,22 @@ describe("the 174in boundary Tommy hit", () => {
       if (toEighths(sumIn(slots)) !== e) broken.push(lengthIn);
     }
     expect(broken[broken.length - 1]).toBe(173.875);
-    expect(broken).not.toContain(174);
+    expect(broken.filter((b) => b >= 174)).toEqual([]);
+    // ⚠ **NOT every eighth below the boundary breaks**, and the module doc
+    // comment used to say it did. Counted here so the figure cannot drift: of
+    // the 984 eighths from 51in to 173.875in, 793 break. The sharp thing is
+    // the boundary, not the density below it.
+    expect(broken.length).toBe(793);
+    expect(toEighths(173.875) - toEighths(51) + 1).toBe(984);
   });
 
   it("a stop that leaves less than 174in now drops a window instead of breaking the sum", () => {
     // A 25ft wall: 300in. Stopping 174in off the far end leaves 126in built —
     // the exact shape of Tommy's complaint.
     const i = input({ basisLengthIn: 300, endStopIn: 174, openings: twoWindows });
-    const { kept, unbuilt } = partitionOpeningsByRunStop(i);
-    expect(kept.length + unbuilt.length).toBe(2);
-    expect(unbuilt.length).toBeGreaterThan(0);
+    const { kept, memory } = partitionOpeningsByRunStop(i);
+    expect(kept.length + memory.unbuilt.length).toBe(2);
+    expect(memory.unbuilt.length).toBeGreaterThan(0);
     expect(builtSumErrorEighths(i, kept)).toBe(0);
   });
 
@@ -104,8 +138,8 @@ describe("the 174in boundary Tommy hit", () => {
       const endStopIn = e / 8;
       const i = input({ basisLengthIn: 300, endStopIn, openings: twoWindows });
       if (i.builtLengthIn <= 0) continue;
-      const { kept, unbuilt } = partitionOpeningsByRunStop(i);
-      if (kept.length + unbuilt.length !== 2) failures.push(`${endStopIn}: lost an opening`);
+      const { kept, memory } = partitionOpeningsByRunStop(i);
+      if (kept.length + memory.unbuilt.length !== 2) failures.push(`${endStopIn}: lost an opening`);
       const err = builtSumErrorEighths(i, kept);
       if (err !== 0) failures.push(`${endStopIn}: sum off by ${err} eighths`);
     }
@@ -121,9 +155,10 @@ describe("partitionOpeningsByRunStop", () => {
 
   it("returns an unstopped wall's openings untouched, by reference", () => {
     const i = input({ basisLengthIn: 300, openings: three });
-    const { kept, unbuilt } = partitionOpeningsByRunStop(i);
+    const { kept, memory } = partitionOpeningsByRunStop(i);
     expect(kept).toBe(three);
-    expect(unbuilt).toEqual([]);
+    expect(memory.unbuilt).toEqual([]);
+    expect(memory.preStop).toEqual([]);
   });
 
   // The 300in basis run these cases are read off, measured rather than
@@ -142,23 +177,35 @@ describe("partitionOpeningsByRunStop", () => {
     // 60in off the far end leaves [0, 240]: the door at 237-274.5 is inside
     // the unbuilt span, the two windows are not.
     const fromEnd = partitionOpeningsByRunStop(input({ basisLengthIn: 300, endStopIn: 60, openings: three }));
-    expect(fromEnd.unbuilt).toEqual([three[2]]);
+    expect(fromEnd.memory.unbuilt).toEqual([three[2]]);
     expect(fromEnd.kept).toEqual([three[0], three[1]]);
+    // The pre-stop order, recorded: two survivors then the withheld door, with
+    // the ordinals they had BEFORE the stop.
+    expect(fromEnd.memory.preStop).toEqual([
+      { beforeStandardCount: 1, withheld: false },
+      { beforeStandardCount: 3, withheld: false },
+      { beforeStandardCount: 5, withheld: true },
+    ]);
 
     // 120in off the start leaves [120, 300]: the first window (65.5-113.125)
     // is gone, the window and door past it are not.
     const fromStart = partitionOpeningsByRunStop(input({ basisLengthIn: 300, startStopIn: 120, openings: three }));
-    expect(fromStart.unbuilt).toEqual([three[0]]);
+    expect(fromStart.memory.unbuilt).toEqual([three[0]]);
     expect(fromStart.kept).toEqual([three[1], three[2]]);
+    expect(fromStart.memory.preStop).toEqual([
+      { beforeStandardCount: 1, withheld: true },
+      { beforeStandardCount: 3, withheld: false },
+      { beforeStandardCount: 5, withheld: false },
+    ]);
   });
 
   it("handles BOTH ends stopped at once, and keeps only what is left in the middle", () => {
     // [120, 260]: the first window falls off the start, the door off the far
     // end, and only the middle window is built.
     const i = input({ basisLengthIn: 300, startStopIn: 120, endStopIn: 40, openings: three });
-    const { kept, unbuilt } = partitionOpeningsByRunStop(i);
+    const { kept, memory } = partitionOpeningsByRunStop(i);
     expect(kept).toEqual([three[1]]);
-    expect(unbuilt).toEqual([three[0], three[2]]);
+    expect(memory.unbuilt).toEqual([three[0], three[2]]);
     // No corner panel survives when both ends are stopped.
     expect(i.builtHasCornerStart).toBe(false);
     expect(i.builtHasCornerEnd).toBe(false);
@@ -167,9 +214,10 @@ describe("partitionOpeningsByRunStop", () => {
 
   it("withholds every opening on a fully-stopped wall, and builds nothing", () => {
     const i = input({ basisLengthIn: 300, startStopIn: 300, openings: three });
-    const { kept, unbuilt } = partitionOpeningsByRunStop(i);
+    const { kept, memory } = partitionOpeningsByRunStop(i);
     expect(kept).toEqual([]);
-    expect(unbuilt).toEqual(three);
+    expect(memory.unbuilt).toEqual(three);
+    expect(memory.preStop.every((p) => p.withheld)).toBe(true);
   });
 
   it("carries every field of a withheld opening through untouched, so a restore is exact", () => {
@@ -183,22 +231,24 @@ describe("partitionOpeningsByRunStop", () => {
       zones: [{ type: "standard", heightIn: 42, sillHeightIn: 30, bracedPattern: "chevron", bracedMirrored: true }],
     });
     const openings = [three[0]!, three[1]!, rich];
-    const { unbuilt } = partitionOpeningsByRunStop(input({ basisLengthIn: 300, endStopIn: 60, openings }));
-    expect(unbuilt).toEqual([rich]);
+    const { memory } = partitionOpeningsByRunStop(input({ basisLengthIn: 300, endStopIn: 60, openings }));
+    expect(memory.unbuilt).toEqual([rich]);
     // Same object, not a rebuilt lookalike — nothing can be lost in a copy.
-    expect(unbuilt[0]).toBe(rich);
+    expect(memory.unbuilt[0]).toBe(rich);
   });
 
   it("un-stopping restores the wall to exactly the slots it had before the stop", () => {
     const basisLengthIn = 300;
     const before = retileWithOpenings(basisLengthIn, STANDARD_IN, CORNER_IN, "end", true, true, three, true, true).slots;
 
-    const stopped = partitionOpeningsByRunStop(input({ basisLengthIn, endStopIn: 60, openings: three }));
-    expect(stopped.unbuilt.length).toBe(1);
+    const stoppedInput = input({ basisLengthIn, endStopIn: 60, openings: three });
+    const stopped = partitionOpeningsByRunStop(stoppedInput);
+    expect(stopped.memory.unbuilt.length).toBe(1);
 
-    // Un-stop: the built openings and the remembered ones merge back, and the
-    // merged list re-tiles to the original slots, field for field.
-    const restoredOpenings = mergeRunStopOpenings(stopped.kept, stopped.unbuilt);
+    // Un-stop: the survivors come back off the SHORTENED run's own slots (the
+    // path the app takes), merge with the remembered ones, and the merged list
+    // re-tiles to the original slots, field for field.
+    const restoredOpenings = mergeRunStopOpenings(survivorsAfterRetile(stoppedInput, stopped.kept), stopped.memory);
     const after = retileWithOpenings(
       basisLengthIn,
       STANDARD_IN,
@@ -215,38 +265,109 @@ describe("partitionOpeningsByRunStop", () => {
 
   it("restores exactly after a partial un-stop too (the stop reduced, not cleared)", () => {
     const basisLengthIn = 300;
-    const deep = partitionOpeningsByRunStop(input({ basisLengthIn, endStopIn: 120, openings: three }));
-    expect(deep.unbuilt).toEqual([three[1], three[2]]);
+    const deepInput = input({ basisLengthIn, endStopIn: 120, openings: three });
+    const deep = partitionOpeningsByRunStop(deepInput);
+    expect(deep.memory.unbuilt).toEqual([three[1], three[2]]);
     // Pull the stop back to 60in: one of the two withheld openings is built
     // again, the other stays remembered.
-    const shallow = partitionOpeningsByRunStop(
-      input({ basisLengthIn, endStopIn: 60, openings: mergeRunStopOpenings(deep.kept, deep.unbuilt) }),
-    );
+    const merged = mergeRunStopOpenings(survivorsAfterRetile(deepInput, deep.kept), deep.memory);
+    const shallow = partitionOpeningsByRunStop(input({ basisLengthIn, endStopIn: 60, openings: merged }));
     expect(shallow.kept).toEqual([three[0], three[1]]);
-    expect(shallow.unbuilt).toEqual([three[2]]);
+    expect(shallow.memory.unbuilt).toEqual([three[2]]);
+  });
+
+  /**
+   * The defect a review found in the first version of this change, at the unit
+   * level; `retile.test.ts` drives the same shape end to end through
+   * `retilePreservingOpeningsWithRunStopMemory`.
+   *
+   * A START stop is the failing direction: it drops the LOW-ordinal openings
+   * and leaves the high-ordinal ones, and the survivors are then re-derived
+   * against a shorter run, so their ordinals collapse BELOW the remembered
+   * ones. A plain sort then restores them in the wrong order — a door where a
+   * window was.
+   */
+  it("a start stop restores the wall in its ORIGINAL order, not the re-derived one", () => {
+    const basisLengthIn = 300;
+    const swapped: number[] = [];
+    for (let startStopIn = 0; startStopIn <= 300; startStopIn += 0.125) {
+      const i = input({ basisLengthIn, startStopIn, openings: three });
+      if (i.builtLengthIn <= 0) continue;
+      const stopped = partitionOpeningsByRunStop(i);
+      if (stopped.memory.unbuilt.length === 0) continue;
+      const restored = mergeRunStopOpenings(survivorsAfterRetile(i, stopped.kept), stopped.memory);
+      // Same openings, same order, same widths — the drawing is the drawing.
+      const got = restored.map((o) => `${o.type}:${o.widthIn}`).join("|");
+      const want = three.map((o) => `${o!.type}:${o!.widthIn}`).join("|");
+      if (got !== want) swapped.push(startStopIn);
+    }
+    expect(swapped.slice(0, 12)).toEqual([]);
   });
 });
 
 describe("mergeRunStopOpenings", () => {
+  /** The memory a stop would have produced for `preStopAll`, withholding
+   * exactly `withheld`. */
+  const memoryFor = (preStopAll: OpeningAnchor[], withheld: OpeningAnchor[]): RunStopOpeningMemory => ({
+    unbuilt: preStopAll.filter((o) => withheld.includes(o)),
+    preStop: preStopAll.map((o) => ({ beforeStandardCount: o.beforeStandardCount, withheld: withheld.includes(o) })),
+  });
+
   it("is the identity when nothing is remembered", () => {
     const current = [anchor(1, 36)];
     expect(mergeRunStopOpenings(current, undefined)).toBe(current);
-    expect(mergeRunStopOpenings(current, [])).toBe(current);
+    expect(mergeRunStopOpenings(current, { unbuilt: [], preStop: [] })).toBe(current);
   });
 
   it("puts a remembered opening back in its own original position", () => {
     const first = anchor(1, 36);
     const middle = anchor(3, 36);
     const last = anchor(5, 36);
-    expect(mergeRunStopOpenings([first, last], [middle])).toEqual([first, middle, last]);
-    expect(mergeRunStopOpenings([middle, last], [first])).toEqual([first, middle, last]);
-    expect(mergeRunStopOpenings([first, middle], [last])).toEqual([first, middle, last]);
+    const all = [first, middle, last];
+    expect(mergeRunStopOpenings([first, last], memoryFor(all, [middle]))).toEqual(all);
+    expect(mergeRunStopOpenings([middle, last], memoryFor(all, [first]))).toEqual(all);
+    expect(mergeRunStopOpenings([first, middle], memoryFor(all, [last]))).toEqual(all);
   });
 
-  it("puts a remembered opening on the LEFT of a built one sharing its ordinal — fixed, not plausible", () => {
-    const remembered = anchor(2, 36, { widthIn: 30 });
-    const built = anchor(2, 36, { widthIn: 48 });
-    expect(mergeRunStopOpenings([built], [remembered])).toEqual([remembered, built]);
+  /**
+   * **The must-fix, in one assertion.** The survivor's ordinal has been
+   * re-derived against the shortened run and collapsed from 5 to 0, below the
+   * remembered opening's 1. The old plain-sort merge put the survivor FIRST
+   * here and swapped the two on the drawing; the recorded pre-stop order puts
+   * them back the way the wall had them.
+   */
+  it("rebases a survivor whose ordinal was re-derived on the shortened run", () => {
+    const withheldWindow = anchor(1, 61.5);
+    const survivingDoor = anchor(5, 37.5, { type: "door" });
+    const memory = memoryFor([withheldWindow, survivingDoor], [withheldWindow]);
+    // What `getOpeningAnchors` reads back off the stopped wall: same door,
+    // ordinal 0 instead of 5.
+    const reDerived = anchor(0, 37.5, { type: "door" });
+    expect(mergeRunStopOpenings([reDerived], memory)).toEqual([withheldWindow, survivingDoor]);
+  });
+
+  it("records which of two openings sharing an ordinal was on the left, rather than guessing", () => {
+    const left = anchor(2, 30);
+    const right = anchor(2, 48);
+    // Withhold the left one: it comes back on the left.
+    expect(mergeRunStopOpenings([right], memoryFor([left, right], [left]))).toEqual([left, right]);
+    // Withhold the right one: it comes back on the right. The old merge listed
+    // remembered entries first and could only ever produce the first answer.
+    expect(mergeRunStopOpenings([left], memoryFor([left, right], [right]))).toEqual([left, right]);
+  });
+
+  it("keeps the ORDER even when an opening was added on the wall while it was stopped", () => {
+    const withheld = anchor(1, 61.5);
+    const survivor = anchor(5, 37.5, { type: "door" });
+    const memory = memoryFor([withheld, survivor], [withheld]);
+    // The user inserted a column while stopped, so there is no longer a
+    // one-for-one correspondence to rebase through. Placement becomes
+    // approximate; the order does not.
+    const added = anchor(2, 21, { type: "column" });
+    const merged = mergeRunStopOpenings([anchor(0, 37.5, { type: "door" }), added], memory);
+    expect(merged.map((o) => o.type)).toEqual(["window", "door", "column"]);
+    // Monotone ordinals, so `retileWithOpenings`' own sort cannot reorder them.
+    expect(merged.map((o) => o.beforeStandardCount)).toEqual([1, 1, 2]);
   });
 });
 
@@ -293,6 +414,34 @@ describe("runStopOpeningFit", () => {
     const fit = runStopOpeningFit(slots, 100, MIN_PANEL_IN);
     expect(fit.requiredIn).toBe(174);
     expect(fit.plainBudgetIn).toBe(-74);
+    expect(fit.refuses).toBe(true);
+  });
+
+  /**
+   * **The octagon.** `retile` runs `markSafetyCorner` on every mitered
+   * footprint, which rewrites ONE corner slot to "safety-oct-corner". Counting
+   * only `type === "corner"` understated the run's fixed content by a whole
+   * 25.5in panel, so the new refusal quoted numbers that were wrong — and
+   * because the overstated budget could clear the shop minimum, there were
+   * stops where `refuses` stayed false and the user fell through to the old
+   * "does not add back up" sentence instead.
+   *
+   * The measurement, on the same 100in run as the case above: before the fix a
+   * mitered run read `cornerCount 1, requiredIn 87, plainBudgetIn 13`; the
+   * truth is `2, 112.5, -12.5`.
+   */
+  it("counts an octagon's safety-oct-corner as the corner panel it is", () => {
+    const plain = retileWithOpenings(100, STANDARD_IN, CORNER_IN, "end", true, true, [anchor(1, 61.5)], false, true).slots;
+    const mitered = markSafetyCorner(plain, "end");
+    // The fixture is only interesting if the rewrite actually happened.
+    expect(mitered.filter((s) => s.type === "safety-oct-corner").length).toBe(1);
+    expect(mitered.filter((s) => s.type === "corner").length).toBe(1);
+
+    const fit = runStopOpeningFit(mitered, 100, MIN_PANEL_IN);
+    expect(fit.cornerCount).toBe(2);
+    expect(fit.cornersTotalIn).toBe(51);
+    expect(fit.requiredIn).toBe(112.5);
+    expect(fit.plainBudgetIn).toBe(-12.5);
     expect(fit.refuses).toBe(true);
   });
 
