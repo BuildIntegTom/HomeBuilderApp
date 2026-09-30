@@ -74,6 +74,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const evidence = { app: APP_URL, ranAt: new Date().toISOString(), proveFailureMode: PROVE_FAILURE, steps: [] };
 const failures = [];
 const pageExceptions = [];
+/**
+ * What the harness had to WAIT FOR, and every click it had to spend twice.
+ * Both go into `evidence.json`: a green run that needed a retry says so, rather
+ * than recovering in silence and teaching the next reader to trust a silence.
+ * Declared up here beside `failures` on purpose — the exit handler reads them,
+ * and a crash in the CDP plumbing below must not hit a temporal dead zone.
+ */
+const editorReady = [];
+const iconToggleRetries = [];
+const lostSingleClicks = [];
 
 // `record()` also supports the sibling harnesses' `{ observationOnly }` escape
 // hatch for a measurement nobody can assert yet. Nothing in this run uses it:
@@ -108,9 +118,49 @@ const record = (name, detail, expected) => {
 let evidenceWritten = false;
 const writeEvidence = () => {
   if (evidenceWritten) return;
+  /**
+   * ⚠ A RUN THAT RECORDED NOTHING NEVER OVERWRITES THE LAST ONE THAT DID.
+   *
+   * `writeEvidence` is on `process.on("exit")` so that a crash mid-run still
+   * leaves its partial measurements behind — that part is right, and it is how
+   * the `plan: null` failure was diagnosed. But a run that cannot reach the
+   * browser throws in the CDP plumbing below before a single `record()`, and
+   * this handler then dutifully wrote a ~100-byte stub over a committed
+   * measurement. It fired repeatedly across agents on 2026-09-29/30, including
+   * over this file's own evidence. An empty evidence file is never worth having
+   * and is always worth less than what it replaced. (`ui-reorg-u1` grew the same
+   * guard first; this is the file that kept paying for its absence.)
+   */
+  if (evidence.steps.length === 0) {
+    evidenceWritten = true;
+    console.log("\nno steps were recorded — leaving the existing evidence file alone");
+    return;
+  }
+  /**
+   * ⚠ AND A PROVE-FAILURE RUN NEVER OVERWRITES A REAL ONE EITHER.
+   *
+   * The guard above only catches a run that recorded NOTHING.
+   * `UI_REORG_PROVE_FAILURE=1` records everything and then appends one
+   * deliberately false check, so it used to write a deliberately-failing
+   * evidence.json over a passing one — marked `proveFailureMode: true`, which is
+   * honest but is a flag a reader has to notice, and the checked-in artefact is
+   * what people read. The run exists to prove the harness CAN fail, not to
+   * produce evidence, so it now produces none.
+   */
+  if (PROVE_FAILURE) {
+    evidenceWritten = true;
+    console.log(
+      "\nprove-failure mode: NOT writing evidence — this run exists to show the harness can fail, " +
+        "and its artefact would be a failing record of a passing bar",
+    );
+    return;
+  }
   evidenceWritten = true;
   evidence.pageExceptions = pageExceptions;
   evidence.failures = failures;
+  evidence.editorReady = editorReady;
+  evidence.iconToggleRetries = iconToggleRetries;
+  evidence.lostSingleClicks = lostSingleClicks;
   fs.writeFileSync(path.join(HERE, "evidence.json"), JSON.stringify(evidence, null, 2));
   console.log("\nevidence -> evidence.json");
 };
@@ -283,12 +333,221 @@ const noteState = async (id) =>
     };
   })()`);
 
-const openIcon = async (label) => {
+// --- opening an icon's note, AND KNOWING WHICH WAY THE TOGGLE WENT ---------
+/**
+ * ⚠ **THE FRAGILITY THIS FILE WAS RED FOR ON 2026-09-30, AND WHAT REPLACED IT.**
+ *
+ * `openIcon` used to be three lines: find the icon, click where it is, sleep
+ * 500ms. It **toggled**, and nothing asserted which way it went. A click that
+ * was lost — or a note that was already open — left the note closed, and the
+ * next reader (`contextLine()`) returned `null`, which its step then reported as
+ * **"the app did not render the context line"**. A missed click and a broken app
+ * were indistinguishable, and about ten steps in this file went through that one
+ * helper.
+ *
+ * **What it cost, and what was ACTUALLY happening — measured, not inferred.**
+ * On `main` @ c85f122, `context-line-names-the-view-as-the-app-labels-it` failed
+ * with `plan: null` while `elevation` and `membranes` — read the same way, a few
+ * lines later — both passed; three agents saw the same bytes at three commits
+ * whose diffs render this page identically. Five controlled runs on 2026-09-30,
+ * one dev server, one browser, one commit:
+ *
+ *   1. **Reproduced.** Under 12x CDP CPU throttling — an honest stand-in for
+ *      this machine with four agents and three dev servers on it — the old file
+ *      fails byte for byte: `plan: null`, every later reading correct, one
+ *      failure, exit 1.
+ *   2. **Fixed.** This file, same server, same browser, same 12x throttle: all
+ *      checks pass.
+ *   3. **It was NOT a lost click.** Deliberately swallowing that one click makes
+ *      EVERY later reading `null` as well — the parity never recovers, because
+ *      `stepToNextStop()` drives the BAR menus, which close the bar's own notes
+ *      and not these. So the reported signature is not what a missed click looks
+ *      like, and a retry budget alone would not have fixed it.
+ *   4. **It was NOT the app being slow.** Reading the note with ZERO extra wait
+ *      passes on an idle machine: the note commits well inside the 450ms that
+ *      `click()` already sleeps.
+ *   5. **And it was NOT the page being unready.** Giving the old file 25s
+ *      instead of 9s at every load, under the same throttle, fails identically.
+ *      Elapsed time before the click is not the variable.
+ *
+ * So the click landed, the app was right, and **the harness read the result of
+ * the toggle against a deadline it never asserted**: a flat 500ms. Under load,
+ * the FIRST open of the bug note after the footprint drag — the heaviest commit
+ * in the run, the note mounting for the first time onto a page that has just
+ * panelised a building — takes longer than that, while every later open of the
+ * same note is warm and lands well inside it. One late toggle, exactly one
+ * `null`, every later reading correct: which is precisely why this was read as
+ * an app regression for a day and a half.
+ *
+ * Both failure modes are covered here anyway, and the evidence tells them apart:
+ * a LATE toggle costs `waitedMs` and no extra click, a LOST one shows up in
+ * `iconToggleRetries` with what was under the pointer at the time.
+ *
+ * So the note's state is now ASSERTED, and the budgets spent are named, bounded
+ * and written into `evidence.json` rather than being a silence to trust — the
+ * shape `ui-reorg-u1`'s `clickSelectorUntil` (2026-09-28) and the shared
+ * driver's `openMenu` already use for exactly this class of problem.
+ *
+ * ⚠ **NO ASSERTION IS WEAKENED TO GET THERE, and the split is the whole point.**
+ * Where the CLICK ITSELF is the subject — "the review icon opens the Review
+ * Log", "it is a toggle, not a one-way door", "the bug icon opens a note", "the
+ * Read Me icon opens a note" — the step still spends exactly ONE click and lets
+ * its own expectation report the outcome: `clickIconOnceAndWait` waits for the
+ * toggle to land but never clicks twice, so "one click opens it" is still
+ * asserted, once, where it belongs. Only the places where an open note is a
+ * FIXTURE for reading something else — the four context-line steps, the
+ * coexistence step, and the closes between them — may spend a second click,
+ * through `openIconNote` / `closeIconNote`, and every extra click is recorded.
+ */
+
+/**
+ * The note each icon owns. Keyed by the icon's own `aria-label`; the values are
+ * the `StickyNote` ids the steps below already assert, so this map adds no new
+ * locator. `Features of this page` is deliberately absent — the `?` carries its
+ * own popup rather than a StickyNote, and nothing in this run clicks it, so
+ * asking for it throws instead of being quietly treated as a note.
+ */
+const ICON_NOTE_IDS = {
+  "Review Log — Items for Engineer/Contractor Review": "review-log",
+  "Report Bug / Request Feature": "report-bug",
+  "Read Me": "read-me",
+};
+const noteIdOf = (label) => {
+  const id = ICON_NOTE_IDS[label];
+  if (!id) throw new Error(`no note id is known for the icon "${label}" — add it to ICON_NOTE_IDS rather than clicking blind`);
+  return id;
+};
+
+/** Named ceilings, so none of this is a magic number.
+ *  - SETTLE: how long ONE click is given to land before it is called lost. A
+ *    click that works shows its note within a frame or two; the ceiling is
+ *    generous because a busy dev server is not a lost click.
+ *  - BUDGET: how many clicks `ensureIconNote` may spend in total. Small, and
+ *    reported: a silent retry loop would hide an icon that genuinely stopped
+ *    working, which is worse than the flake it fixes. */
+const ICON_TOGGLE_SETTLE_MS = 2500;
+const ICON_TOGGLE_POLL_MS = 100;
+const ICON_CLICK_BUDGET = 3;
+
+/** `StickyNote` renders nothing at all when closed, so presence IS open-ness.
+ * Cheap on purpose — this one is polled. */
+const noteIsOpen = async (label) =>
+  await evaluate(`Boolean(document.getElementById(${JSON.stringify(noteIdOf(label))}))`);
+
+/** One real click at the icon's own coordinates, its rect re-read immediately
+ * before the press. Returns where it clicked, for the diagnosis below. */
+const clickIcon = async (label) => {
   const c = await iconCenter(label);
   if (!c) throw new Error(`no cluster icon labelled "${label}"`);
   await click(c.x, c.y);
-  await sleep(500);
+  return c;
 };
+
+/** Poll for the note to reach `wantOpen`. Returns the ms waited, or null if the
+ * ceiling was reached. Adds NO clicks: this is "read it when it is ready", not
+ * "try again". */
+const waitForNoteState = async (label, wantOpen, ceilingMs = ICON_TOGGLE_SETTLE_MS) => {
+  for (let waited = 0; ; waited += ICON_TOGGLE_POLL_MS) {
+    if ((await noteIsOpen(label)) === wantOpen) return waited;
+    if (waited >= ceilingMs) return null;
+    await sleep(ICON_TOGGLE_POLL_MS);
+  }
+};
+
+/**
+ * Why a click did not take, captured where it happened rather than guessed at
+ * afterwards: what is actually at the clicked point, whether that is the icon,
+ * where the icon is NOW (a cluster that moved between the rect read and the
+ * press is the most likely mechanism), and what the app itself thinks the
+ * icon's state is (`aria-pressed`, which the button renders from `active`).
+ */
+const lostClickDiagnosis = async (label, at) =>
+  await evaluate(`(() => {
+    const at = { x: ${at.x}, y: ${at.y} };
+    const el = document.elementFromPoint(at.x, at.y);
+    const btn = [...document.querySelectorAll('[data-sidebar-icon-cluster] button')]
+      .find((b) => (b.getAttribute('aria-label') || '') === ${JSON.stringify(label)});
+    const describe = (n) => n
+      ? n.tagName.toLowerCase()
+        + (n.getAttribute && n.getAttribute('aria-label') ? '[aria-label="' + n.getAttribute('aria-label') + '"]' : '')
+        + (typeof n.className === 'string' && n.className ? '.' + n.className.split(' ')[0] : '')
+      : null;
+    const r = btn ? btn.getBoundingClientRect() : null;
+    return {
+      clickedAt: [Math.round(at.x), Math.round(at.y)],
+      elementAtPoint: describe(el),
+      elementAtPointIsTheIcon: Boolean(btn && el && (btn === el || btn.contains(el))),
+      iconCentreNow: r ? [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)] : null,
+      iconSizeNow: r ? [Math.round(r.width), Math.round(r.height)] : null,
+      ariaPressed: btn ? btn.getAttribute('aria-pressed') : null,
+      noteInDom: Boolean(document.getElementById(${JSON.stringify(noteIdOf(label))})),
+      readyState: document.readyState,
+    };
+  })()`);
+
+/**
+ * ONE click, then wait for the toggle to land. **Never a second click** — this
+ * is for the steps whose subject IS the click. Returns the ms waited, or null,
+ * and records the diagnosis of a lost click without throwing: the step's own
+ * expectation is what must report it, exactly as it did before.
+ */
+const clickIconOnceAndWait = async (label, wantOpen) => {
+  const at = await clickIcon(label);
+  const waited = await waitForNoteState(label, wantOpen);
+  if (waited === null) {
+    const why = await lostClickDiagnosis(label, at);
+    lostSingleClicks.push({ label, wantOpen, settleCeilingMs: ICON_TOGGLE_SETTLE_MS, ...why });
+    console.log(
+      `  [lost click] one click on "${label}" did not ${wantOpen ? "open" : "close"} its note: ${JSON.stringify(why)}`,
+    );
+  }
+  return waited;
+};
+
+/**
+ * Bring an icon's note to a KNOWN state, and throw in the harness's own voice if
+ * it cannot — so that a `null` read downstream can only ever mean "the app
+ * rendered no context line", which is the one thing it should ever have meant.
+ */
+const ensureIconNote = async (label, wantOpen) => {
+  if ((await noteIsOpen(label)) === wantOpen) return 0;
+  const diagnoses = [];
+  for (let clicks = 1; clicks <= ICON_CLICK_BUDGET; clicks++) {
+    const at = await clickIcon(label);
+    const waited = await waitForNoteState(label, wantOpen);
+    if (waited !== null) {
+      if (clicks > 1) {
+        iconToggleRetries.push({
+          label,
+          wanted: wantOpen ? "open" : "closed",
+          clicksSpent: clicks,
+          waitedMs: waited,
+          diagnoses,
+        });
+        console.log(
+          `  [retried] "${label}" needed ${clicks} clicks to go ${wantOpen ? "open" : "closed"}: ${JSON.stringify(diagnoses)}`,
+        );
+      }
+      return clicks;
+    }
+    diagnoses.push(await lostClickDiagnosis(label, at));
+  }
+  iconToggleRetries.push({
+    label,
+    wanted: wantOpen ? "open" : "closed",
+    clicksSpent: ICON_CLICK_BUDGET,
+    reachedState: false,
+    diagnoses,
+  });
+  throw new Error(
+    `THE HARNESS COULD NOT ${wantOpen ? "OPEN" : "CLOSE"} THE "${label}" NOTE — ` +
+      `${ICON_CLICK_BUDGET} real clicks at the icon's own re-read coordinates, each given ${ICON_TOGGLE_SETTLE_MS}ms, ` +
+      `and #${noteIdOf(label)} ${wantOpen ? "never appeared" : "never went away"}. This is a HARNESS failure and it is ` +
+      `deliberately not reported as the app failing to render anything. What was under the clicks: ${JSON.stringify(diagnoses)}`,
+  );
+};
+const openIconNote = async (label) => await ensureIconNote(label, true);
+const closeIconNote = async (label) => await ensureIconNote(label, false);
 
 /**
  * The current view's own label, read out of the CONTROL rather than inferred
@@ -350,11 +609,101 @@ const contextLine = async () =>
     return el ? { attr: el.getAttribute('data-current-view'), text: el.textContent.replace(/\\s+/g,' ').trim() } : null;
   })()`);
 
+/**
+ * ⚠ **WAITED FOR, NOT WAITED OUT.** Every load in this run used to be a flat
+ * `sleep(9000)`, which is a guess about someone else's machine in both
+ * directions: too short on a busy one (the run then reports the app as broken)
+ * and pure dead time on a fast one.
+ *
+ * The canvas is the honest readiness marker, and it is a strong one: it comes
+ * from `dynamic(() => import("./FootprintCanvas"), { ssr: false })`, so it
+ * cannot exist until the page has hydrated AND the client chunks have arrived.
+ * Every reader below — the icon clicks, the footprint drag, the `?openNote=`
+ * effect — needs exactly that and nothing more. Its box must also have STOPPED
+ * MOVING (two equal reads, `EDITOR_READY_POLL_MS` apart) before the drag
+ * coordinates below are computed from it.
+ *
+ * The ceiling is a real failure, not a longer wait: reaching it means the
+ * editor never mounted, and the message says the one thing that has actually
+ * caused that here (127.0.0.1 instead of localhost) rather than leaving the
+ * next reader to find the README.
+ *
+ * ⚠ **AND THIS IS NOT A TIMING KNOB.** See the note on `openIcon` above: the
+ * run's real fragility was a toggle nobody asserted, which made it look
+ * sensitive to how long the harness waited. Do not tune these numbers to chase
+ * a red step — a wait that changes an outcome is telling you something else is
+ * unasserted.
+ *
+ * ## The two timing notes this harness has carried, reconciled
+ *
+ * Two notes were written about this wait on 2026-09-29, on two branches, and
+ * **they cannot both be acted on**:
+ *
+ *   1. *"three consecutive failures at a flat 9s on the same build that passes
+ *      with a poll"* — i.e. 9s is TOO SHORT and the canvas is not mounted yet.
+ *   2. *"9s passes, 3s passes, 9s + a 2s settle — 11s — FAILS, two runs out of
+ *      two, with `plan: null`"* — i.e. waiting LONGER is what breaks it.
+ *
+ * **The first is true about a different failure. The second is a real
+ * observation with the wrong cause, and acting on it would have been wrong.**
+ * Measured here on 2026-09-30, one server, one browser:
+ *
+ *   - Under 12x CPU throttling the canvas takes **~14.5s to appear** and **~21s
+ *     to stop moving** on the 1400x1000 reload, and the `?openNote=` load needs
+ *     **~11.8s**. At a flat 9s the run either throws "no canvas" or reads the
+ *     deep-link note before the app exists — which is claim 1, and which is why
+ *     the load is now waited FOR rather than waited out.
+ *   - But the load wait is **not** what `plan: null` was about: the old file at
+ *     **25s** per load, under the same throttle, fails **identically**. So the
+ *     11s "boundary" in claim 2 is not a boundary at all. What moved between
+ *     those runs was the machine, not the clock: the unasserted 500ms deadline
+ *     after the click sat close enough to the note's commit time that ordinary
+ *     load decided the outcome. **There is no 11s cliff to respect and no 9s
+ *     floor to preserve.**
+ *   - Under that same throttle, this file passes — because it waits for the
+ *     canvas to settle AND asserts the toggle, and neither is a number tuned to
+ *     a symptom.
+ *
+ * If a later reader finds a note saying a settle must not be added back on top
+ * of a floor, that note is describing this symptom: there is no floor here to
+ * add to, and the thing it was protecting is now asserted instead.
+ */
+const EDITOR_READY_CEILING_MS = 60000;
+const EDITOR_READY_POLL_MS = 250;
+
+const canvasBoxNow = async () =>
+  await evaluate(
+    `(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`,
+  );
+
+const waitForEditor = async (what) => {
+  const startedAt = Date.now();
+  let previous = null;
+  for (;;) {
+    const box = await canvasBoxNow();
+    if (box && previous && box.every((v, i) => Math.abs(v - previous[i]) < 0.5)) {
+      const ms = Date.now() - startedAt;
+      editorReady.push({ what, ms, canvas: box.map((v) => Math.round(v)) });
+      console.log(`  editor ready (${what}) after ${ms}ms — canvas ${Math.round(box[2])}x${Math.round(box[3])}`);
+      return box;
+    }
+    previous = box;
+    if (Date.now() - startedAt > EDITOR_READY_CEILING_MS) {
+      throw new Error(
+        `no settled canvas after ${EDITOR_READY_CEILING_MS}ms (${what}) — the editor never mounted. The canvas is a ` +
+          `{ ssr: false } dynamic import, so this means hydration or the client chunks never arrived: are you on ` +
+          `localhost rather than 127.0.0.1?`,
+      );
+    }
+    await sleep(EDITOR_READY_POLL_MS);
+  }
+};
+
 // --- the run ----------------------------------------------------------------
 console.log("0. loading the app at 1280px");
 await setViewport(1280, 900);
 await send("Page.navigate", { url: APP_URL }, sid);
-await sleep(9000);
+await waitForEditor("the first load, at 1280px");
 
 /**
  * The routes this stage reads its wording out of, fetched ONCE, up front, and
@@ -369,20 +718,58 @@ await sleep(9000);
  */
 const routeSectionsOf = async (route) =>
   await evaluate(`(async () => {
-    const html = await (await fetch(${JSON.stringify(route)})).text();
+    const res = await fetch(${JSON.stringify(route)});
+    const html = await res.text();
     const doc = new DOMParser().parseFromString(html, 'text/html');
     return {
+      status: res.status,
       sections: [...doc.querySelectorAll('section')].map((s) => s.textContent.replace(/\\s+/g, ' ').trim()),
       mailtos: [...new Set([...doc.querySelectorAll('a[href^="mailto:"]')].map((a) => a.getAttribute('href')))],
       h1: doc.querySelector('h1')?.textContent.trim() ?? null,
     };
   })()`);
+
+/**
+ * ⚠ **A ROUTE THAT IS NOT SERVING IS NAMED HERE, IN ITS OWN WORDS, AND THE RUN
+ * STOPS.** It is not left to surface ten steps later as "the note is missing
+ * three sentences" or "the app did not render the context line".
+ *
+ * Recorded 2026-09-30, and it cost several agents a day between them: a dev
+ * server left running for hours served `/read-me`, `/report-bug` and
+ * `/sandbox` as **404**, and this harness — which reads its comparison wording
+ * out of those routes — reported the failures against the APP. A server that
+ * has never compiled them is the same story from the other end. Either way the
+ * only honest thing to say is which route did not serve, and to stop: every
+ * check below this line would otherwise be comparing the page against nothing.
+ *
+ * The final `routes-still-exist-behind-the-notes` step is unchanged and still
+ * asserts all three at the END of the run — that one is about the routes
+ * surviving the reorganisation. This one is about the harness's own footing.
+ */
+const assertRouteServed = (route, read) => {
+  if (read && read.status === 200 && read.sections.length > 0) return;
+  throw new Error(
+    `${route} did not serve a page for this run to compare against: HTTP ${read?.status ?? "(no response)"}, ` +
+      `${read?.sections?.length ?? 0} <section>s. **THIS IS THE DEV SERVER, NOT THE APP.** A server left running ` +
+      `for hours has been seen to serve these routes as 404 until it is restarted, and a server that has never ` +
+      `compiled them can be slower than the fetch. Restart the dev server and re-run. Nothing below this line can ` +
+      `tell the difference between a route that will not serve and a page that renders nothing.`,
+  );
+};
 const routeText = await routeSectionsOf("/report-bug");
+assertRouteServed("/report-bug", routeText);
 const readMeRoute = await routeSectionsOf("/read-me");
-await evaluate(`fetch('/sandbox').then((r) => r.status)`);
+assertRouteServed("/read-me", readMeRoute);
+const sandboxWarmStatus = await evaluate(`fetch('/sandbox').then((r) => r.status)`);
+if (sandboxWarmStatus !== 200) {
+  throw new Error(
+    `/sandbox returned ${sandboxWarmStatus} while warming the routes. **THIS IS THE DEV SERVER, NOT THE APP** — ` +
+      `restart it and re-run. (The Single Wall Run step below would otherwise report the move into Settings as broken.)`,
+  );
+}
 await sleep(2500);
 await send("Page.navigate", { url: APP_URL }, sid);
-await sleep(9000);
+await waitForEditor("the reload after the routes were warmed");
 
 console.log("1. the cluster at 240px");
 const wide = await clusterGeometry();
@@ -430,7 +817,9 @@ await shot("00-cluster-240px");
 
 console.log("2. the Review Log's front door");
 const reviewBefore = await noteState("review-log");
-await openIcon("Review Log — Items for Engineer/Contractor Review");
+// ONE click — this step's subject IS the click, so it is never retried. The
+// wait only stops the note being read before it has rendered.
+const reviewOpenedAfterMs = await clickIconOnceAndWait("Review Log — Items for Engineer/Contractor Review", true);
 const reviewAfter = await noteState("review-log");
 record(
   "review-icon-opens-the-review-log",
@@ -439,6 +828,9 @@ record(
     presentAfter: reviewAfter.present,
     label: reviewAfter.label,
     bodyChars: reviewAfter.text?.length ?? 0,
+    // How long the one click took to show its note; null would mean it never
+    // did, and `presentAfter` then fails this step exactly as it always has.
+    openedAfterMs: reviewOpenedAfterMs,
   },
   // Absent before, present after: a check that would pass on a note that was
   // already open is not a check on the icon.
@@ -449,10 +841,12 @@ record(
     d.bodyChars > 20,
 );
 await shot("01-review-log-open-empty-project");
-await openIcon("Review Log — Items for Engineer/Contractor Review");
+// ONE click again: "it is a toggle, not a one-way door" is only proved by a
+// single click, so this one must never be retried either.
+const reviewClosedAfterMs = await clickIconOnceAndWait("Review Log — Items for Engineer/Contractor Review", false);
 record(
   "review-icon-closes-it-again",
-  { presentAfterSecondClick: (await noteState("review-log")).present },
+  { presentAfterSecondClick: (await noteState("review-log")).present, closedAfterMs: reviewClosedAfterMs },
   (d) => d.presentAfterSecondClick === false,
 );
 
@@ -461,7 +855,8 @@ record(
 // re-typed the sentences into this harness.
 console.log("3. the bug note, and that its words are the route's words");
 const bugBefore = await noteState("report-bug");
-await openIcon("Report Bug / Request Feature");
+// The click is the subject here too: one click, waited for, never retried.
+const bugOpenedAfterMs = await clickIconOnceAndWait("Report Bug / Request Feature", true);
 const bugAfter = await noteState("report-bug");
 const bugMailtos = await evaluate(
   `[...new Set([...document.querySelectorAll('#report-bug a[href^="mailto:"]')].map((a) => a.getAttribute('href')))]`,
@@ -469,7 +864,13 @@ const bugMailtos = await evaluate(
 const userAgent = await evaluate(`navigator.userAgent`);
 record(
   "bug-icon-opens-a-note",
-  { presentBefore: bugBefore.present, presentAfter: bugAfter.present, label: bugAfter.label, onScreen: bugAfter.onScreen },
+  {
+    presentBefore: bugBefore.present,
+    presentAfter: bugAfter.present,
+    label: bugAfter.label,
+    onScreen: bugAfter.onScreen,
+    openedAfterMs: bugOpenedAfterMs,
+  },
   (d) => d.presentBefore === false && d.presentAfter === true && d.label === "Report Bug / Request Feature" && d.onScreen === true,
 );
 record(
@@ -525,7 +926,12 @@ record(
   { ...reviewLogLinkOpens, afterFirstLinkClick, afterSecondLinkClick },
   (d) => d.found === true && d.afterFirstLinkClick === true && d.afterSecondLinkClick === true,
 );
-await openIcon("Review Log — Items for Engineer/Contractor Review"); // put it back
+await closeIconNote("Review Log — Items for Engineer/Contractor Review"); // put it back
+// The bug note is a FIXTURE for this reading, and `bug-icon-opens-a-note` above
+// has already asserted that one click opens it. So its state is made certain
+// rather than assumed: a `null` below can then only mean the app rendered no
+// context line, which is the only thing the step claims.
+await openIconNote("Report Bug / Request Feature");
 const ctxPlanNoFootprint = await contextLine();
 record(
   "context-line-before-a-footprint-names-only-the-tab",
@@ -535,11 +941,12 @@ record(
   (d) => d.line !== null && d.line.attr === "Wall",
 );
 await shot("02-bug-note-open");
-await openIcon("Report Bug / Request Feature");
+await closeIconNote("Report Bug / Request Feature");
 
 console.log("4. the Read Me note");
 const readMeBefore = await noteState("read-me");
-await openIcon("Read Me");
+// One click, waited for, never retried: this step's subject is the icon.
+const readMeOpenedAfterMs = await clickIconOnceAndWait("Read Me", true);
 const readMeAfter = await noteState("read-me");
 const qr = await evaluate(`(() => {
   const img = document.querySelector('#read-me img');
@@ -554,6 +961,7 @@ record(
     presentBefore: readMeBefore.present,
     presentAfter: readMeAfter.present,
     label: readMeAfter.label,
+    openedAfterMs: readMeOpenedAfterMs,
     routeSections: readMeRoute.sections.length,
     missingFromNote: readMeRoute.sections.filter((s) => !readMeAfter.text.includes(s)),
     liabilityVerbatim: readMeAfter.text.includes(
@@ -579,7 +987,7 @@ record(
   (d) => d.img === true && d.renderedWidth >= 200 && d.pdfLinks.length >= 1,
 );
 await shot("03-read-me-note-open");
-await openIcon("Read Me");
+await closeIconNote("Read Me");
 
 console.log("5. Single Wall Run in Settings, and gone from the tray");
 const sandboxBeforeSettings = await evaluate(`document.querySelectorAll('a[href="/sandbox"]').length`);
@@ -728,12 +1136,7 @@ record(
 console.log("7. the context line on an elevation, on Membranes, and on the Roof subject");
 await setViewport(1400, 1000);
 await send("Page.navigate", { url: APP_URL }, sid);
-await sleep(9000);
-const canvasBox = await evaluate(
-  `(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`,
-);
-if (!canvasBox) throw new Error("no canvas — are you on localhost rather than 127.0.0.1?");
-const [cx, cy, cw, ch] = canvasBox;
+const [cx, cy, cw, ch] = await waitForEditor("the 1400x1000 reload the footprint is drawn on");
 const x0 = cx + 60, y0 = cy + 80, x1 = cx + cw - 80, y1 = cy + ch - 120;
 await mouse("mousePressed", x0, y0);
 await sleep(80);
@@ -751,15 +1154,19 @@ record(
   (d) => d.stopLabel === "2D Floor Plan",
 );
 
-await openIcon("Report Bug / Request Feature");
+// ⚠ EVERY ONE OF THESE IS A FIXTURE OPEN/CLOSE, NOT A CLICK UNDER TEST — see
+// the note on `openIcon` above. This is the exact reading that came back
+// `plan: null` on `main`: the first open after the footprint drag was lost, and
+// the step reported a harness miss as "the app did not render the context line".
+await openIconNote("Report Bug / Request Feature");
 const ctxPlan = await contextLine();
-await openIcon("Report Bug / Request Feature");
+await closeIconNote("Report Bug / Request Feature");
 // One step on from the plan is the first wall's elevation.
 await stepToNextStop();
 const elevationStop = await stopLabel();
-await openIcon("Report Bug / Request Feature");
+await openIconNote("Report Bug / Request Feature");
 const ctxElevation = await contextLine();
-await openIcon("Report Bug / Request Feature");
+await closeIconNote("Report Bug / Request Feature");
 await shot("07-elevation-view");
 // Walk to Membranes, whichever stop index that is for this footprint.
 let membranesReached = null;
@@ -767,9 +1174,9 @@ for (let i = 0; i < 12 && membranesReached === null; i++) {
   await stepToNextStop();
   if ((await stopLabel()) === "Membranes") membranesReached = "Membranes";
 }
-await openIcon("Report Bug / Request Feature");
+await openIconNote("Report Bug / Request Feature");
 const ctxMembranes = await contextLine();
-await openIcon("Report Bug / Request Feature");
+await closeIconNote("Report Bug / Request Feature");
 record(
   "context-line-names-the-view-as-the-app-labels-it",
   {
@@ -831,7 +1238,7 @@ await sleep(500);
    with what WAS on offer rather than reporting a tab it could not find. */
 const roofTabClicked = (await view.selectSubject("roof")) ? "clicked" : "not-offered";
 await sleep(900);
-await openIcon("Report Bug / Request Feature");
+await openIconNote("Report Bug / Request Feature");
 const ctxRoof = await contextLine();
 record(
   "context-line-on-the-roof-tab-names-only-the-tab",
@@ -844,7 +1251,7 @@ record(
   (d) => d.roofChecked === "checked" && d.roofTabClicked === "clicked" && d.line === "Roof",
 );
 await shot("08-roof-tab-bug-note");
-await openIcon("Report Bug / Request Feature");
+await closeIconNote("Report Bug / Request Feature");
 
 console.log("8. a docked Selected Panel note and an icon note at the same time");
 // Back to the wall subject through the Design menu — the only door, now that
@@ -887,7 +1294,9 @@ record(
   // selects nothing, must fail the run rather than skip the step it was for.
   (d) => d.candidates > 0 && d.selected === true,
 );
-await openIcon("Review Log — Items for Engineer/Contractor Review");
+// A fixture again: what this step asserts is the GEOMETRY of the two notes and
+// the cluster, and that the review icon opens its note is asserted in step 2.
+await openIconNote("Review Log — Items for Engineer/Contractor Review");
 const withDocked = await clusterGeometry();
 const dockedNote = await noteState("selected-panel");
 const reviewWithDocked = await noteState("review-log");
@@ -923,11 +1332,38 @@ await shot("09-docked-note-plus-review-log");
 
 console.log("9. the ?openNote=review-log deep link /report-bug depends on");
 await send("Page.navigate", { url: `${APP_URL}?openNote=review-log` }, sid);
-await sleep(9000);
-const deepLinked = await noteState("review-log");
+await waitForEditor("the ?openNote=review-log load");
+/**
+ * ⚠ **THE COLD-PROFILE FLAKE THIS STEP WAS RED FOR (2026-09-30).** On a fresh
+ * Chrome profile — no HTTP cache, no compiled-chunk reuse — this load came back
+ * `{ present: false, clicksUsed: 0 }`, i.e. "the deep link stopped working",
+ * while the same run on a warm browser passed. It was read at a flat 9s after
+ * `Page.navigate`; the note is opened by a mount effect in `page.tsx`, so on a
+ * slow cold load the harness was simply reading before the app existed.
+ *
+ * Now the editor is waited FOR (above), and then the note is given a short,
+ * named window to appear. **The assertion is untouched and `clicksUsed` is
+ * still 0**: what changed is when the answer is read, not what counts as a
+ * right answer. A deep link that never opens the note still fails this step,
+ * and `waitedAfterEditorReadyMs` says how long it was given.
+ */
+const DEEP_LINK_CEILING_MS = 5000;
+let deepLinked = await noteState("review-log");
+let deepLinkWaitedMs = 0;
+while (!deepLinked.present && deepLinkWaitedMs < DEEP_LINK_CEILING_MS) {
+  await sleep(250);
+  deepLinkWaitedMs += 250;
+  deepLinked = await noteState("review-log");
+}
 record(
   "openNote-deep-link-still-opens-the-review-log",
-  { present: deepLinked.present, label: deepLinked.label, clicksUsed: 0 },
+  {
+    present: deepLinked.present,
+    label: deepLinked.label,
+    clicksUsed: 0,
+    waitedAfterEditorReadyMs: deepLinkWaitedMs,
+    ceilingMs: DEEP_LINK_CEILING_MS,
+  },
   (d) => d.present === true && d.label === "Review Log — Items for Engineer/Contractor Review",
 );
 await shot("10-deep-link-review-log");
