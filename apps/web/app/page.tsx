@@ -55,7 +55,9 @@ import {
   resolvePanelWidthEdit,
   reconcilePanelSlotZones,
   retile as retilePure,
-  retilePreservingOpenings as retilePreservingOpeningsPure,
+  retilePreservingOpeningsWithRunStopMemory as retilePreservingOpeningsPure,
+  runStopOpeningFit,
+  runStopRestoreFidelity,
   retileWithOpenings,
   wallCompassDirection,
   wallGeometryFor as wallGeometryForPure,
@@ -85,6 +87,8 @@ import {
   type PlacementPanel,
   type GableWindowReservation,
   type OpeningSeed,
+  type RetileWithRunStopMemoryResult,
+  type RunStopOpeningMemory,
   type RoofBearingAnchorMode,
   type RoofProfilePoint,
   type Story,
@@ -368,6 +372,14 @@ import WallElevationDiagram from "./WallElevationDiagram";
 import styles from "./page.module.css";
 import elevationStyles from "./ElevationControls.module.css";
 import { tilerWouldChangeThePanelCount } from "./handPlacedWallRetile";
+import { pruneOpeningMemoryToLiveWalls, type OpeningMemoryByStoryAndWallId } from "./runStopOpeningMemory";
+import {
+  runStopFitRefusalSentence,
+  withheldOpeningTotal,
+  withheldOpeningsElevationClause,
+  withheldOpeningsReviewNote,
+  type WithheldOpeningsOnStory,
+} from "./runStopNotices";
 import {
   placementCommitNotice,
   placementRefusalNotice,
@@ -1282,6 +1294,20 @@ export default function LayoutEditor() {
   // it yet: it round-trips through save/load so the file format settles once
   // this week instead of twice. See WallRunStop's own doc comment.
   const [wallRunStopsByWallId, setWallRunStopsByWallId] = useState<Record<string, WallRunStop>>({});
+  // Smearforn Stage 3's run-stop opening memory (Tommy, 2026-09-29: **"Drop
+  // them, and remember"**). An opening that falls inside a wall's unbuilt span
+  // is NOT in that wall's slots — an unbuilt section of wall has no window in
+  // it, so it is absent from the cut list, the fabrication groups and the shop
+  // drawings for free — and it is NOT deleted: it lives here, per story per
+  // wall, and reducing or clearing the stop hands it straight back to the
+  // tiler. Nothing is ever lost by stopping a wall and changing your mind.
+  //
+  // ⚠ This and `baseWallSlots`/`stories[].wallSlots` are two halves of one
+  // answer. Any handler that writes new slots out of
+  // `retilePreservingOpenings` must write the memory it came back with too —
+  // see that wrapper's own comment.
+  const [unbuiltOpeningsByStoryAndWallId, setUnbuiltOpeningsByStoryAndWallId] =
+    useState<OpeningMemoryByStoryAndWallId>({ ground: {}, second: {} });
   // Every beam-count/height/coverage change moves this wall's own band
   // boundaries — reconciled here so each slot's own zones[] survives the
   // change instead of falling back to effectiveZonesForSlot's dumb
@@ -1885,6 +1911,11 @@ export default function LayoutEditor() {
   // The design as one ProjectState. Save Project and Save to cloud both
   // serialize exactly this, so the cloud document is the local file's document.
   const buildProjectState = (): ProjectState => {
+    // Stage 3's opening memory, with any wall id the footprint no longer has
+    // dropped. Wall ids are reused, so a memory outliving its wall would
+    // resurrect a window on an unrelated one — see the module's own doc
+    // comment, which also records the one gap this does NOT close.
+    const prunedOpeningMemory = pruneOpeningMemoryToLiveWalls(unbuiltOpeningsByStoryAndWallId, footprint);
     const state: ProjectState = {
       editorTab,
       viewMode,
@@ -1956,6 +1987,7 @@ export default function LayoutEditor() {
       roofEnabled,
       foundationEnabled,
       wallRunStopsByWallId,
+      unbuiltOpeningsByStoryAndWallId: prunedOpeningMemory,
       wallReviewNotes,
     };
     return state;
@@ -2082,6 +2114,14 @@ export default function LayoutEditor() {
     // answer for the one other caller (a state object built by hand).
     setFoundationEnabled(s.foundationEnabled ?? true);
     setWallRunStopsByWallId(s.wallRunStopsByWallId ?? {});
+    // Stage 3's optional opening memory — a file saved before it existed
+    // simply withheld nothing, which is today's behaviour exactly. Normalized
+    // here (rather than in the parser, which must return what the file
+    // actually says) so state always has both halves.
+    setUnbuiltOpeningsByStoryAndWallId({
+      ground: s.unbuiltOpeningsByStoryAndWallId?.ground ?? {},
+      second: s.unbuiltOpeningsByStoryAndWallId?.second ?? {},
+    });
     setWallReviewNotes(s.wallReviewNotes ?? []);
   };
 
@@ -2489,13 +2529,25 @@ export default function LayoutEditor() {
   // see retile.ts's own doc comment. `oldSlotsByNewWallId` resolves the
   // old-to-new wall correlation; for an id-stable operation (dragWall,
   // editWallLength) callers just pass `baseWallSlots` straight through.
+  //
+  // **⚠ It returns TWO things now, and a caller must write back both.** Since
+  // Stage 3's "drop them, and remember" decision, an opening inside a wall's
+  // unbuilt span leaves the slots and is handed back in
+  // `unbuiltOpeningsByWallId` instead. Writing the slots and dropping the
+  // memory would be exactly the window-data loss that decision rules out, so
+  // `applyRetiledStory` below does both at once and every caller goes through
+  // it. `remembered` defaults to the live memory for that story — pass it
+  // explicitly only where wall ids are being renumbered, since a memory keyed
+  // by a stale id restores the wrong wall's window.
   const retilePreservingOpenings = (
     fp: Footprint,
     leastAccessible: CornerId,
     primary: Set<string>,
     oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined>,
     runStops: Record<string, WallRunStop> = wallRunStopsByWallId,
-  ): Record<string, PanelSlot[]> =>
+    story: "ground" | "second" = "ground",
+    remembered: Record<string, RunStopOpeningMemory> = unbuiltOpeningsByStoryAndWallId[story],
+  ): RetileWithRunStopMemoryResult =>
     retilePreservingOpeningsPure(
       fp,
       leastAccessible,
@@ -2508,7 +2560,16 @@ export default function LayoutEditor() {
       openingSeed,
       runStops,
       cornerMayWidenForTiling,
+      remembered,
     );
+  /** Both halves of a re-tile written back together — the slots that are
+   * built, and the openings an unbuilt span set aside. See the wrapper above
+   * for why they cannot be separated. */
+  const applyRetiledStory = (story: "ground" | "second", result: RetileWithRunStopMemoryResult) => {
+    if (story === "ground") setBaseWallSlots(result.slotsByWallId);
+    else setWallSlotsForStory("second", () => result.slotsByWallId);
+    setUnbuiltOpeningsByStoryAndWallId((prev) => ({ ...prev, [story]: result.unbuiltOpeningsByWallId }));
+  };
   /** `runStops` is the WHOLE map, not one wall's record: since the
    * orphan-corner rule a stop on the neighbour changes this wall's own inset
    * (see `cornerOwnershipWithRunStops`). Callers exploring a CANDIDATE stop
@@ -2539,6 +2600,20 @@ export default function LayoutEditor() {
     // building, so it goes with the building, exactly as this path already
     // discards openings and braced-panel decisions via `retile`.
     setWallRunStopsByWallId({});
+    // ⚠ **And Stage 3's opening memory with it — the prune CANNOT cover this
+    // one.** `pruneOpeningMemoryToLiveWalls` drops ids the footprint LACKS, and
+    // a fresh rectangle's walls are "AB".."DA" all over again: the very ids the
+    // old building's memory is keyed by. Left behind, it does not sit inert
+    // either, because `hasStop` in the tiler is true whenever the memory holds
+    // anything — so the next re-tile of ANY kind (wall-length edit, drag,
+    // bump-out, stop) merges a window from a building that no longer exists
+    // into this one as a real opening, with a cut list, a fabrication group, a
+    // shop drawing and a price. Measured before this line existed: a fresh
+    // 22x18 rectangle with a stale `AB` memory and no stop anywhere had 0
+    // openings on AB after the draw and 1 after one re-tile. Pinned in
+    // retile.test.ts, "a leftover memory puts a window on a wall nobody drew
+    // one on".
+    setUnbuiltOpeningsByStoryAndWallId({ ground: {}, second: {} });
     setBaseWallSlots(retile(fp, nextLeastAccessible, nextPrimary, {}));
     setShapeTool("edit");
     // A brand-new footprint has no meaningful relationship to whatever
@@ -2898,10 +2973,19 @@ export default function LayoutEditor() {
   // would be a second, subtly different copy of `cornerOwnership`'s
   // adjacency rules.
 
-  /** The whole footprint re-tiled against a candidate stop map, per story. */
+  /** The whole footprint re-tiled against a candidate stop map, per story —
+   * slots AND the openings that stop map withholds, since Stage 3's "drop
+   * them, and remember" decision makes those one answer. */
   const retileAllForRunStops = (story: "ground" | "second", runStops: Record<string, WallRunStop>) => {
     if (!footprint) return null;
-    return retilePreservingOpenings(footprint, leastAccessibleCorner, primaryCornerIds, wallSlotsForStory(story), runStops);
+    return retilePreservingOpenings(
+      footprint,
+      leastAccessibleCorner,
+      primaryCornerIds,
+      wallSlotsForStory(story),
+      runStops,
+      story,
+    );
   };
 
   /** The stop map as it would be with one end of one wall changed. Returned
@@ -3003,8 +3087,9 @@ export default function LayoutEditor() {
     // neighbour was butting into the corner it removes.
     const storiesToCheck: ("ground" | "second")[] = stories.length > 1 ? ["ground", "second"] : ["ground"];
     for (const story of storiesToCheck) {
-      const retiled = retileAllForRunStops(story, candidateStops);
-      if (!retiled) continue;
+      const retiledResult = retileAllForRunStops(story, candidateStops);
+      if (!retiledResult) continue;
+      const retiled = retiledResult.slotsByWallId;
       const storyLabel = story === "second" ? " on the second story" : "";
       for (const wall of footprint?.walls ?? []) {
         const wallGeometry = wallGeometryFor(wall.id, candidateStops);
@@ -3012,6 +3097,43 @@ export default function LayoutEditor() {
         const slots = retiled[wall.id] ?? [];
         const totalIn = slots.reduce((sum, s) => sum + s.widthIn, 0);
         const onWall = wall.id === wallId ? "" : ` on wall ${wall.id}`;
+        // **The real constraint, named, BEFORE the sum-invariant symptom and
+        // before the generic sub-minimum-panel message.**
+        //
+        // This is the defect Tommy hit: *"whenever i stop wall over a certain
+        // amount, for one wall this boundary was 174", it says that the panel
+        // wall doesnt add up"*. The openings that survive the stop plus the
+        // corner panels the run still builds are FIXED content; what is left
+        // over has to be either nothing at all or a panel the shop can
+        // actually build. When it is neither, the honest sentence names the
+        // windows and the corners and quotes their real total — the 174in
+        // Tommy was seeing is exactly `Σ openings + Σ corner panels` on that
+        // wall, and the old message reported the arithmetic consequence
+        // instead of the cause.
+        //
+        // Only for a run this stop actually shortens, and only where there
+        // ARE openings: everything else keeps the messages it already had.
+        const fit = runStopOpeningFit(slots, wallGeometry.lengthIn, fabricationMinPanelWidthIn.value);
+        const stopTouchesThisWall = wallGeometry.startStopIn > 0 || wallGeometry.endStopIn > 0;
+        if (stopTouchesThisWall && !wallGeometry.fullyStopped && fit.refuses) {
+          // Composed in `runStopNotices.ts`, where it has its own tests — this
+          // sentence is the whole user-visible point of the fix and was only
+          // covered indirectly from here.
+          return runStopFitRefusalSentence(
+            {
+              builtLengthIn: wallGeometry.lengthIn,
+              openingCount: fit.openingCount,
+              cornerCount: fit.cornerCount,
+              requiredIn: fit.requiredIn,
+              minPanelWidthIn: fabricationMinPanelWidthIn.value,
+              basisIn,
+              onWall,
+              storyLabel,
+            },
+            (valueIn) => formatLengthIn(valueIn, unitSystem),
+            formatFeetInches,
+          );
+        }
         // Against this wall's OWN tiled length under the candidate, not
         // against its unstopped length plus the stops. Those two differ by a
         // wall thickness on any neighbour the orphan-corner rule just made
@@ -3019,7 +3141,9 @@ export default function LayoutEditor() {
         // reached a corner, which is the main case this feature exists for.
         if (toEighths(totalIn) !== toEighths(wallGeometry.lengthIn)) {
           // The sum invariant outranks the edit. Refused whole rather than
-          // partly applied — same guard Stage 1's width edit carries.
+          // partly applied — same guard Stage 1's width edit carries. Since
+          // the opening-memory fix this is a genuine backstop rather than the
+          // message a user normally meets.
           return `That stop does not leave a run${onWall}${storyLabel} whose panels add back up to that wall. Nothing was changed.`;
         }
         const subMinimum = findSubMinimumPanelWidths({ [wall.id]: slots }, fabricationMinPanelWidthIn.value);
@@ -3144,12 +3268,15 @@ export default function LayoutEditor() {
     if (hasWallRunStop(next)) nextStops[wallId] = next;
     else delete nextStops[wallId];
     setWallRunStopsByWallId(nextStops);
-    // Every wall, both stories — see the orphan-corner note above.
-    const groundSlots = retileAllForRunStops("ground", nextStops);
-    if (groundSlots) setBaseWallSlots(groundSlots);
+    // Every wall, both stories — see the orphan-corner note above. Each story
+    // writes back BOTH halves: the slots that are built, and the openings this
+    // stop set aside so a later un-stop can bring them back (Tommy: "Drop
+    // them, and remember").
+    const groundResult = retileAllForRunStops("ground", nextStops);
+    if (groundResult) applyRetiledStory("ground", groundResult);
     if (stories.length > 1) {
-      const secondSlots = retileAllForRunStops("second", nextStops);
-      if (secondSlots) setWallSlotsForStory("second", () => secondSlots);
+      const secondResult = retileAllForRunStops("second", nextStops);
+      if (secondResult) applyRetiledStory("second", secondResult);
     }
     // The selection almost certainly points at a slot index that no longer
     // means what it did — same reset `handleToggleOpening` does.
@@ -3965,7 +4092,7 @@ export default function LayoutEditor() {
       // editWallLength never renumbers ids, so baseWallSlots' old keys are
       // still valid — every wall's own openings survive, re-tiled at its
       // (possibly new) length.
-      setBaseWallSlots(retilePreservingOpenings(fp, leastAccessibleCorner, primaryCornerIds, baseWallSlots));
+      applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, primaryCornerIds, baseWallSlots));
       return;
     }
     if (footprint.corners.length === 4) {
@@ -3982,7 +4109,7 @@ export default function LayoutEditor() {
       // buildRectangleFootprint always uses the same fixed "AB"/"BC"/"CD"/
       // "DA" wall ids regardless of dimensions, so baseWallSlots' keys stay
       // valid here too.
-      setBaseWallSlots(retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
+      applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
       return;
     }
 
@@ -3998,7 +4125,7 @@ export default function LayoutEditor() {
     setFootprint(fp);
     setPrimaryCornerIds(nextPrimary);
     // buildOctagonFootprint always uses the same fixed "0".."7" wall ids too.
-    setBaseWallSlots(retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
+    applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
   };
 
   const isWallLengthEditable = (wallId: string): boolean => {
@@ -4051,6 +4178,8 @@ export default function LayoutEditor() {
     const newCornersById = new Map(fp.corners.map((c) => [c.id, c.point]));
     const oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined> = {};
     const nextRunStops: Record<string, WallRunStop> = {};
+    const nextRemembered: Record<string, RunStopOpeningMemory> = {};
+    const nextRememberedSecond: Record<string, RunStopOpeningMemory> = {};
     for (const w of fp.walls) {
       const start = newCornersById.get(w.startCorner)!;
       const end = newCornersById.get(w.endCorner)!;
@@ -4063,6 +4192,20 @@ export default function LayoutEditor() {
       // (excluded from the map above), for the same reason its openings
       // aren't: its old run no longer exists as a run.
       if (oldWallId && wallRunStopsByWallId[oldWallId]) nextRunStops[w.id] = wallRunStopsByWallId[oldWallId]!;
+      // And so does Stage 3's opening memory, for exactly the same reason: a
+      // remembered window keyed by a stale id would come back on the wrong
+      // wall.
+      const remembered = oldWallId ? unbuiltOpeningsByStoryAndWallId.ground[oldWallId] : undefined;
+      if (remembered) nextRemembered[w.id] = remembered;
+      // **The SECOND story's memory rides the same correlation.** This gesture
+      // renumbers ids for both stories at once — the footprint is shared — so a
+      // second-story memory left on its old key is a remembered window waiting
+      // to come back on the wrong wall, exactly as on the ground. Lower stakes
+      // only because the second story's own slots are already left stale by this
+      // gesture; a stale key here is stale DESIGN data, which is the argument
+      // `pruneOpeningMemoryToLiveWalls` is built on.
+      const rememberedSecond = oldWallId ? unbuiltOpeningsByStoryAndWallId.second[oldWallId] : undefined;
+      if (rememberedSecond) nextRememberedSecond[w.id] = rememberedSecond;
     }
 
     setFootprint(fp);
@@ -4070,7 +4213,14 @@ export default function LayoutEditor() {
     setPrimaryCornerIds(nextPrimary);
     setLeastAccessibleCorner(nextLeastAccessible);
     setWallRunStopsByWallId(nextRunStops);
-    setBaseWallSlots(retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops));
+    applyRetiledStory(
+      "ground",
+      retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops, "ground", nextRemembered),
+    );
+    // `applyRetiledStory` writes the GROUND half; the second story is not
+    // re-tiled here (see this handler's own note on second-story data), so its
+    // memory is re-keyed rather than re-derived.
+    setUnbuiltOpeningsByStoryAndWallId((prev) => ({ ...prev, second: nextRememberedSecond }));
     setShapeTool("edit");
     // Only the bump-out's own new jog wall(s) (no old counterpart at all)
     // can be freshly seeded here — every OTHER wall keeps its real,
@@ -4107,7 +4257,7 @@ export default function LayoutEditor() {
 
       if (fp === dragged) {
         // No collapse fired — ids are unchanged, reuse baseWallSlots directly.
-        setBaseWallSlots(retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
+        applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
       } else {
         // A collapse fired — correlate by exact point-pair (a collapse never
         // moves a surviving corner's point, only removes one and relabels
@@ -4124,6 +4274,8 @@ export default function LayoutEditor() {
         const newCornersById = new Map(fp.corners.map((c) => [c.id, c.point]));
         const oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined> = {};
         const nextRunStops: Record<string, WallRunStop> = {};
+        const nextRemembered: Record<string, RunStopOpeningMemory> = {};
+        const nextRememberedSecond: Record<string, RunStopOpeningMemory> = {};
         for (const w of fp.walls) {
           const start = newCornersById.get(w.startCorner)!;
           const end = newCornersById.get(w.endCorner)!;
@@ -4134,6 +4286,14 @@ export default function LayoutEditor() {
           if (draggedWallId && wallRunStopsByWallId[draggedWallId]) {
             nextRunStops[w.id] = wallRunStopsByWallId[draggedWallId]!;
           }
+          // And Stage 3's opening memory rides the same correlation, or a
+          // remembered window comes back on the wrong wall — on BOTH stories,
+          // since a collapse renumbers the ids both of them are keyed by. See
+          // the same pair in `handleAddBumpOut`.
+          const remembered = draggedWallId ? unbuiltOpeningsByStoryAndWallId.ground[draggedWallId] : undefined;
+          if (remembered) nextRemembered[w.id] = remembered;
+          const rememberedSecond = draggedWallId ? unbuiltOpeningsByStoryAndWallId.second[draggedWallId] : undefined;
+          if (rememberedSecond) nextRememberedSecond[w.id] = rememberedSecond;
         }
         setWallRunStopsByWallId(nextRunStops);
 
@@ -4151,9 +4311,21 @@ export default function LayoutEditor() {
           : ([...nextPrimary][0] ?? fp.corners[0]!.id);
         setLeastAccessibleCorner(nextLeastAccessible);
 
-        setBaseWallSlots(
-          retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops),
+        applyRetiledStory(
+          "ground",
+          retilePreservingOpenings(
+            fp,
+            nextLeastAccessible,
+            nextPrimary,
+            oldSlotsByNewWallId,
+            nextRunStops,
+            "ground",
+            nextRemembered,
+          ),
         );
+        // Re-keyed, not re-derived: this branch does not re-tile the second
+        // story. Same as the bump-out path.
+        setUnbuiltOpeningsByStoryAndWallId((prev) => ({ ...prev, second: nextRememberedSecond }));
       }
       return;
     }
@@ -4177,7 +4349,7 @@ export default function LayoutEditor() {
     const nextPrimary = new Set(fp.corners.map((c) => c.id));
     setFootprint(fp);
     setPrimaryCornerIds(nextPrimary);
-    setBaseWallSlots(retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
+    applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
   };
 
   // For rendering: butting walls' content starts inset from the actual
@@ -6950,19 +7122,52 @@ export default function LayoutEditor() {
       if (geometry.startStopIn > 0) spans.push(`${formatLengthIn(geometry.startStopIn, unitSystem)} at the start end`);
       if (geometry.endStopIn > 0) spans.push(`${formatLengthIn(geometry.endStopIn, unitSystem)} at the far end`);
       const totalIn = geometry.startStopIn + geometry.endStopIn;
+      // **An opening the unbuilt span swallowed is named here, on every
+      // story it happened on.** A reviewer reading a drawing of a stopped
+      // wall cannot tell a window that was never drawn from one that was
+      // drawn and then set aside, and the difference is the whole point of
+      // Tommy's "drop them, and remember": it is coming back the moment the
+      // stop does. Silence here would make a non-destructive decision look
+      // like a deletion.
+      //
+      // ⚠ The sentence is composed in `runStopNotices.ts`, and whether
+      // it may say "exactly as drawn" comes from `runStopRestoreFidelity` —
+      // the geometry's own answer, read off this story's CURRENT openings.
+      // Promising exactness where the merge cannot deliver it is the defect
+      // that module exists to stop; see runStopOpenings.ts.
+      const withheldByStory: WithheldOpeningsOnStory[] = stories.map((s) => {
+        const memory = unbuiltOpeningsByStoryAndWallId[s.id]?.[wall.id];
+        return {
+          story: s.id,
+          count: memory?.unbuilt.length ?? 0,
+          fidelity: runStopRestoreFidelity(memory, getOpeningAnchors(s.wallSlots[wall.id] ?? [])),
+        };
+      });
+      const withheldSentence = withheldOpeningsReviewNote(withheldByStory);
       entries.push({
         label: geometry.fullyStopped
           ? `Wall ${direction} is not built at all (${wall.id})`
           : `Wall ${direction} stops short — ${formatLengthIn(totalIn, unitSystem)} unbuilt (${wall.id})`,
         status: "pending-BI-confirmation" as const,
-        note: geometry.fullyStopped
-          ? `The whole ${formatFeetInches(wall.lengthFt)} of this edge carries no panels — it is an edge of the building with no wall of ours on it. The footprint polygon still closes through it, so the floor, foundation and roof all still reach this line; only the panel run is absent. Nothing is drawn here in 3D, and no panel, price, weight or cut-list line comes from it.${geometry.stopClamped ? " The stored stop was longer than the wall and was reduced to fit — check it against the drawing." : ""}`
-          : `${spans.join(" and ")} of this ${formatFeetInches(wall.lengthFt)} wall is deliberately not panelized${geometry.hasCornerStart && geometry.hasCornerEnd ? "" : ", and the corner panel at a stopped end is not built either"}. The remaining ${formatLengthIn(geometry.lengthIn, unitSystem)} is panelized normally. The footprint stays closed, so floor, foundation and roof still reach the full wall line — this is an incomplete PANEL RUN, not an incomplete shape, and it needs a reviewer's eye for that reason.${geometry.stopClamped ? " The stored stop no longer fits this wall and was reduced to fit — check it against the drawing." : ""}`,
+        note:
+          (geometry.fullyStopped
+            ? `The whole ${formatFeetInches(wall.lengthFt)} of this edge carries no panels — it is an edge of the building with no wall of ours on it. The footprint polygon still closes through it, so the floor, foundation and roof all still reach this line; only the panel run is absent. Nothing is drawn here in 3D, and no panel, price, weight or cut-list line comes from it.${geometry.stopClamped ? " The stored stop was longer than the wall and was reduced to fit — check it against the drawing." : ""}`
+            : `${spans.join(" and ")} of this ${formatFeetInches(wall.lengthFt)} wall is deliberately not panelized${geometry.hasCornerStart && geometry.hasCornerEnd ? "" : ", and the corner panel at a stopped end is not built either"}. The remaining ${formatLengthIn(geometry.lengthIn, unitSystem)} is panelized normally. The footprint stays closed, so floor, foundation and roof still reach the full wall line — this is an incomplete PANEL RUN, not an incomplete shape, and it needs a reviewer's eye for that reason.${geometry.stopClamped ? " The stored stop no longer fits this wall and was reduced to fit — check it against the drawing." : ""}`) +
+          withheldSentence,
       });
     }
     return entries;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
-  }, [footprint, wallRunStopsByWallId, primaryCornerIds, leastAccessibleCorner, thicknessIn, unitSystem]);
+  }, [
+    footprint,
+    wallRunStopsByWallId,
+    unbuiltOpeningsByStoryAndWallId,
+    stories,
+    primaryCornerIds,
+    leastAccessibleCorner,
+    thicknessIn,
+    unitSystem,
+  ]);
 
   /**
    * One Review Log entry per spanning header — Smearforn Stage 2b.
@@ -8318,6 +8523,36 @@ export default function LayoutEditor() {
               ? " — this edge has no wall of ours on it at all."
               : `; the remaining ${formatLengthIn(wallGeometryFor(elevationWall.id)?.lengthIn ?? 0, unitSystem)} is panelized normally.`}{" "}
             This wall is listed in the Review Log as an incomplete design.{" "}
+            {(() => {
+              // Tommy, 2026-09-29: an opening inside the unbuilt span is not
+              // built and IS remembered. Saying so here is the difference
+              // between a non-destructive decision and one that looks like it
+              // ate a window.
+              //
+              // ⚠ **"back exactly as drawn" is conditional**, and this notice
+              // and the Review Log entry read the same answer for it — see
+              // `runStopNotices.ts`. It used to promise exactness
+              // unconditionally, which a delete or an insert on the wall while
+              // it was stopped makes false.
+              const byStory: WithheldOpeningsOnStory[] = stories.map((s) => {
+                const memory = unbuiltOpeningsByStoryAndWallId[s.id]?.[elevationWall.id];
+                return {
+                  story: s.id,
+                  count: memory?.unbuilt.length ?? 0,
+                  fidelity: runStopRestoreFidelity(memory, getOpeningAnchors(s.wallSlots[elevationWall.id] ?? [])),
+                };
+              });
+              const withheld = withheldOpeningTotal(byStory);
+              if (withheld === 0) return null;
+              return (
+                <>
+                  <strong>
+                    {withheld} {withheld === 1 ? "opening" : "openings"}
+                  </strong>{" "}
+                  {withheldOpeningsElevationClause(byStory)}{" "}
+                </>
+              );
+            })()}
             <button
               type="button"
               className={elevationStyles.actionButton}

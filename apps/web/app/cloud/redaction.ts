@@ -131,6 +131,12 @@ export const MONEY_CLASSIFICATION = {
   roofEnabled: "not-money",
   foundationEnabled: "not-money",
   wallRunStopsByWallId: "not-money",
+  // Smearforn Stage 3's opening memory: the window/door/column reservations a
+  // wall's unbuilt span swallowed, held so un-stopping brings them back. A
+  // width, a height, a sill height and a slot ordinal — a remembered window
+  // is geometry, and there is no price anywhere in it. Its absence from a
+  // redacted document costs a browsing company nothing it was entitled to.
+  unbuiltOpeningsByStoryAndWallId: "not-money",
   wallReviewNotes: "not-money",
 } as const satisfies Record<keyof ProjectState, MoneyClassification>;
 

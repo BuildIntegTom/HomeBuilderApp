@@ -984,6 +984,468 @@ record(
     Math.abs(d.cleared.gableLengthIn - d.unstopped.gableLengthIn) < 0.01,
 );
 
+console.log("15. openings inside the unbuilt span are DROPPED, REMEMBERED and RESTORED");
+/**
+ * **The defect Tommy reported on 2026-09-29, driven end to end.**
+ *
+ * > *"i am having trouble building the seahorn project using the stop wall
+ * > tool. whenever i stop wall over a certain amount, for one wall this
+ * > boundary was 174", it says that the panel wall doesnt add up and will not
+ * > let me edit the layout how i need to"*
+ *
+ * `retileWithOpenings` kept every opening on the wall at full width no matter
+ * how short the stop made the run, because an `OpeningAnchor` carries an
+ * ORDINAL and not a position. Once the run was narrower than
+ * `Σ openings + Σ corners` — 174in on his wall, exactly those two totals —
+ * the slots summed to more than the wall and the sum-invariant backstop
+ * refused every further stop with a message about arithmetic.
+ *
+ * His decision, given three options, was **"Drop them, and remember"**. So
+ * what this step drives is all three halves of that: the opening leaves the
+ * built run, the app SAYS it was set aside rather than deleted, and clearing
+ * the stop puts the wall back panel for panel.
+ *
+ * The sweep is the part that pins the bug itself: at no stop anywhere along
+ * the wall may the "does not add back up" sentence appear again.
+ */
+await closeOpenNotes();
+await reachView((l) => l === `Elevation: ${targetWallId}`, `Elevation: ${targetWallId}`);
+await sleep(1200);
+// Step 14 left a gable end on this wall, and a gable window has its own,
+// entirely separate refusal (a stop may not cut one in half). Turning it back
+// off keeps this step measuring the ONE thing it is about.
+await evaluate(`(() => {
+  const label = [...document.querySelectorAll('label')].find((l) => l.textContent.trim().startsWith('Add Gable End'));
+  const box = label && label.querySelector('input[type="checkbox"]');
+  if (box && !box.disabled && box.checked) box.click();
+})()`);
+await sleep(1400);
+await commitStop("start", 0);
+await commitStop("end", 0);
+
+/** How many openings the app says the unbuilt span swallowed — read off its
+ * own sentence in the Stop Wall panel, so this measures what Tommy would
+ * actually be told, not an internal. 0 when the sentence is absent. */
+const withheldOpeningCount = async () =>
+  await evaluate(`(() => {
+    const t = document.body.innerText || "";
+    const m = /([0-9]+)\\s+(?:opening|openings)\\s+in the unbuilt span/.exec(t);
+    return m ? Number(m[1]) : 0;
+  })()`);
+
+/**
+ * How many slots on this wall are OPENINGS, read off the 3D model rather than
+ * off the drawing.
+ *
+ * The elevation gives every slot a width label and no type, so a DOM count
+ * cannot tell a window from a standard panel. The OBJ can: an opening
+ * assembly contributes `header_` and `sill_` members, and its group name
+ * carries the slot index (`${wallId}_${slotIndex}_${memberId}`). Counting
+ * distinct slot indices with those members counts openings exactly — and it
+ * counts them in the SAME model the cut list, the fabrication groups and the
+ * shop drawings are built from, which is the claim "an unbuilt section of
+ * wall has no window in it" actually needs.
+ */
+const openingSlotCount = (groups, wallId) => {
+  const slots = new Set();
+  for (const name of groups.keys()) {
+    const m = new RegExp(`^${wallId}_(\\d+)_(header|sill)_`).exec(name);
+    if (m) slots.add(m[1]);
+  }
+  return slots.size;
+};
+const captureOpeningSlots = async () => {
+  await reachView((l) => l === "3D Framed", "3D Framed");
+  await sleep(2400);
+  const n = openingSlotCount(parseObjGroups(await captureObj()), targetWallId);
+  await reachView((l) => l === `Elevation: ${targetWallId}`, `Elevation: ${targetWallId}`);
+  await sleep(1200);
+  return n;
+};
+
+/**
+ * ⚠ **This step PLACES the opening it depends on, rather than relying on the
+ * seeded one — because relying on the seed made expectation 3 sample-dependent,
+ * which is a red step on green code.**
+ *
+ * `seedDefaultOpenings` picks a wall's default window at a RANDOM standard
+ * ordinal, and the sweep below only goes to 0.75 of the wall. Measured on the
+ * checked-in evidence of 2026-09-29: with one seeded opening, `withheldOpenings`
+ * was 1 at only the deepest stop — and a draw that puts that single window in
+ * the last quarter withholds nothing at any accepted stop, so
+ * `openingSlotsStopped < openingSlotsBefore` fails on code that is working. With
+ * the ordinal roughly uniform over ~11 candidates that is about a 1-in-5 flake.
+ *
+ * So the step arms the Stage 2 Window tool and inserts at a KNOWN boundary near
+ * the start of the wall. The seeded opening is left where it is; it is simply no
+ * longer what the expectation rests on, and the insert itself is asserted so
+ * this cannot quietly go back to depending on it.
+ */
+const toolButton = async (label) =>
+  await evaluate(`(() => {
+    const group = document.querySelector('[aria-label="Panel placement tool"]');
+    if (!group) return null;
+    const b = [...group.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(label)});
+    if (!b) return null;
+    const r = b.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, pressed: b.getAttribute('aria-pressed') === 'true' };
+  })()`);
+
+/** Arms a tool and CHECKS IT ARMED — the same guard the Stage 2 harness carries,
+ * because the left bar scrolls and a click that lands on nothing looks exactly
+ * like a tool that did nothing. */
+const armTool = async (label) => {
+  await evaluate(`(() => {
+    const group = document.querySelector('[aria-label="Panel placement tool"]');
+    const b = group && [...group.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(label)});
+    if (b) b.scrollIntoView({ block: 'center' });
+  })()`);
+  await sleep(250);
+  const btn = await toolButton(label);
+  if (!btn) throw new Error(`no "${label}" button in the placement group`);
+  if (!btn.pressed) {
+    await click(btn.x, btn.y);
+    await sleep(400);
+  }
+  const after = await toolButton(label);
+  if (!after || !after.pressed) throw new Error(`"${label}" did not arm — the click missed (button at ${btn.x},${btn.y})`);
+  // Scrolling the button into view can take the elevation off screen, and a
+  // click at an off-screen coordinate hits nothing and fails silently.
+  await evaluate(`(() => {
+    const svg = [...document.querySelectorAll('svg')].find((s) => s.querySelector('g[style*="pointer"]'));
+    if (svg) svg.scrollIntoView({ block: 'center' });
+  })()`);
+  await sleep(350);
+};
+
+/** Puts the tool away again, so the panel-boundary drag and the stop fields
+ * behave for the rest of this step exactly as they did before it. */
+const disarmTool = async (label) => {
+  const btn = await toolButton(label);
+  if (btn && btn.pressed) {
+    await click(btn.x, btn.y);
+    await sleep(400);
+  }
+  const after = await toolButton(label);
+  if (after && after.pressed) throw new Error(`"${label}" would not put itself away`);
+};
+
+/** Panel bodies (the clickable coloured groups), left to right, each with its
+ * own width label — the Stage 2 harness's own locator, note for note: "the
+ * first svg with a text in it" is the compass widget, which cost that harness a
+ * run. */
+const panelBodies = async () =>
+  await evaluate(`(() => {
+    return [...document.querySelectorAll('svg g')]
+      .filter((g) => (g.getAttribute('style') || '').includes('pointer'))
+      .filter((g) => [...g.querySelectorAll('text')].some((t) => /^[0-9]+(\\.[0-9]+)?"$/.test(t.textContent.trim())))
+      .map((g) => {
+        const r = g.getBoundingClientRect();
+        const label = [...g.querySelectorAll('text')].map((t) => t.textContent.trim()).find((t) => /^[0-9]+(\\.[0-9]+)?"$/.test(t));
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, label };
+      })
+      .filter((p) => p.w > 4 && p.x > 250 && p.x < window.innerWidth - 40 && p.y > 60 && p.y < window.innerHeight - 40)
+      .sort((a, b) => a.x - b.x);
+  })()`);
+
+/** The placement tool's own notice line, whatever it currently says. */
+const placementNotice = async () =>
+  await evaluate(`(() => {
+    const ps = [...document.querySelectorAll('p')].map((p) => p.textContent.trim());
+    return ps.find((t) => /^(Inserted|Replaced|Deleted|Refused|Corner and safety-gap|That panel is already)/.test(t)) ?? null;
+  })()`);
+
+const openingSlotsBeforePlacement = await captureOpeningSlots();
+const bodiesBeforePlacement = await panelBodies();
+/**
+ * ⚠ **REPLACE a standard panel, do not INSERT a new one — and the difference is
+ * not stylistic.** An insert is born at the project's standard width and takes
+ * that width out of the automatic panels, so the wall comes back from a stop
+ * with one panel FEWER than it went in with: measured on this very step,
+ * `basePanelCount: 17` against `restoredPanelCount: 16`, with the length still
+ * exact to the eighth and both openings back. That is the pre-existing rule that
+ * a re-tile does not preserve hand-set STANDARD widths (`handPlacedWallRetile.ts`
+ * guards the width-edit path against it and the stop path does not), it is not
+ * what this step is about, and asserting around it would have hidden it.
+ *
+ * Replacing the leftmost panel that is ALREADY at the wall's most common width —
+ * the project standard — changes no width and no count at all: one standard slot
+ * becomes one window slot of the same width. Deterministic, and it leaves
+ * expectation 4 ("panel for panel") meaning what it says.
+ */
+const standardLabel = (() => {
+  const counts = new Map();
+  for (const body of bodiesBeforePlacement) counts.set(body.label, (counts.get(body.label) ?? 0) + 1);
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || parseFloat(b[0]) - parseFloat(a[0]));
+  return ranked.length > 0 ? ranked[0][0] : null;
+})();
+const replaceTarget = bodiesBeforePlacement.find((body) => body.label === standardLabel) ?? null;
+if (!replaceTarget) throw new Error(`no panel at this wall's most common width (${standardLabel}) to replace with a window`);
+await armTool("Window");
+await click(replaceTarget.x, replaceTarget.y);
+await sleep(900);
+const placedOpeningNotice = await placementNotice();
+await disarmTool("Window");
+const placedOpeningWidthLabel = standardLabel;
+
+const memoryBaseWidths = await panelWidths();
+const memoryBaseEighths = sumEighths(memoryBaseWidths);
+const openingSlotsBefore = await captureOpeningSlots();
+await shot("14-openings-before-stop");
+// Stops are swept from the START end, which is where the opening just placed
+// is. A sweep with nothing in the way proves nothing, which is what
+// expectation 3 below exists to catch — and what the insert above makes
+// independent of the random seed.
+const sweep = [];
+for (const fraction of [0.15, 0.3, 0.45, 0.6, 0.75]) {
+  const stopIn = Math.round(memoryBaseEighths * fraction) / 8;
+  await commitStop("start", stopIn);
+  const field = await stopField("start");
+  const widths = await panelWidths();
+  sweep.push({
+    stopIn,
+    invalid: field?.invalid ?? null,
+    message: field?.message ?? null,
+    totalEighths: sumEighths(widths),
+    withheldOpenings: await withheldOpeningCount(),
+  });
+}
+// The deepest stop the app accepted — where the most has been set aside.
+const deepest = [...sweep].filter((s) => s.invalid === false).sort((a, b) => b.stopIn - a.stopIn)[0] ?? null;
+let openingSlotsStopped = null;
+if (deepest) {
+  await commitStop("start", deepest.stopIn);
+  openingSlotsStopped = await captureOpeningSlots();
+}
+await shot("15-openings-dropped-by-stop");
+// Back to a whole wall, and the openings must come back.
+await commitStop("start", 0);
+const restoredWidths = await panelWidths();
+const restoredWithheld = await withheldOpeningCount();
+const openingSlotsRestored = await captureOpeningSlots();
+await shot("16-openings-restored");
+record(
+  "openings-in-the-unbuilt-span-are-dropped-remembered-and-restored",
+  {
+    baseEighths: memoryBaseEighths,
+    basePanelCount: memoryBaseWidths.length,
+    openingSlotsBeforePlacement,
+    panelCountBeforePlacement: bodiesBeforePlacement.length,
+    placedOpeningNotice,
+    placedOpeningWidthLabel,
+    openingSlotsBefore,
+    sweep,
+    deepestAcceptedStopIn: deepest?.stopIn ?? null,
+    openingSlotsStopped,
+    restoredEighths: sumEighths(restoredWidths),
+    restoredPanelCount: restoredWidths.length,
+    restoredWithheld,
+    openingSlotsRestored,
+  },
+  (d) =>
+    // 0. Not vacuous — and not sample-dependent either: the opening this step
+    //    rests on was PLACED by the step, near the start end, and the insert is
+    //    asserted rather than assumed. `openingSlotsBefore` counts it in the
+    //    3D model, so a refused insert cannot pass here.
+    /^Replaced/.test(String(d.placedOpeningNotice ?? "")) &&
+    d.openingSlotsBefore === d.openingSlotsBeforePlacement + 1 &&
+    // The replacement neither widened nor narrowed anything: same panel count
+    // going in as the wall had before it.
+    d.basePanelCount === d.panelCountBeforePlacement &&
+    d.openingSlotsBefore >= 1 &&
+    // 1. THE BUG. The sentence Tommy was shown never appears again, at any
+    //    stop anywhere along this wall.
+    d.sweep.every((s) => !/add back up/i.test(String(s.message ?? ""))) &&
+    // 2. Every stop the app accepted still conserves the wall exactly, in
+    //    eighths — the invariant that was breaking.
+    d.sweep
+      .filter((s) => s.invalid === false)
+      .every((s) => s.totalEighths + Math.round(s.stopIn * 8) === d.baseEighths) &&
+    // 3. An opening really did leave the BUILT MODEL — not just the drawing —
+    //    and the app said so in words rather than swallowing it silently.
+    d.deepestAcceptedStopIn !== null &&
+    d.openingSlotsStopped !== null &&
+    d.openingSlotsStopped < d.openingSlotsBefore &&
+    d.sweep.some((s) => s.invalid === false && s.withheldOpenings >= 1) &&
+    // 4. And clearing the stop gives every one of them back, with nothing
+    //    left withheld. "Remembered, not deleted", measured.
+    d.restoredWithheld === 0 &&
+    d.restoredEighths === d.baseEighths &&
+    d.restoredPanelCount === d.basePanelCount &&
+    d.openingSlotsRestored === d.openingSlotsBefore,
+);
+
+console.log("16. a brand-new footprint must not inherit the old building's remembered openings");
+/**
+ * ⚠ **The only shape that can catch a regression in `handleDraw`'s memory
+ * reset, and it has to be here rather than in a unit test.**
+ *
+ * The third review's must-fix was that a remembered opening survived a brand-new
+ * footprint and landed on the new building: wall ids are reused
+ * (`buildRectangleFootprint` always emits "AB".."DA"), `pruneOpeningMemoryToLiveWalls`
+ * drops ids the footprint LACKS and so cannot see it, and `hasStop` in the tiler
+ * is true whenever the memory holds anything — so the next re-tile of any kind
+ * merges a window from a building that no longer exists into this one as a REAL
+ * opening, with a cut list line, a fabrication group, a shop drawing and a price.
+ * The fix is one line in `handleDraw`: `setUnbuiltOpeningsByStoryAndWallId({ ground: {}, second: {} })`.
+ *
+ * **Its regression test did not guard it.** `retile.test.ts`'s "a leftover memory
+ * puts a window on a wall nobody drew one on" is a geometry test — it never
+ * touches page.tsx, so it passes identically with and without that line. Delete
+ * the fix and the unit suite stays green. Nothing below `handleDraw` can guard
+ * `handleDraw`, and every other building-replacement path (file load, cloud
+ * open) goes through `applyProjectState`, so this gesture is the gap.
+ *
+ * So: stop the wall until it really is holding an opening, draw a new footprint
+ * over the top, and re-tile the reused wall id once. The opening count on that
+ * wall must not move. With the fix removed it goes up by one.
+ */
+const redrawWithheld = deepest ? await (async () => {
+  await commitStop("start", deepest.stopIn);
+  return await withheldOpeningCount();
+})() : 0;
+await reachView((l) => l === "2D Floor Plan", "2D Floor Plan");
+await sleep(900);
+await closeOpenNotes();
+// The Rectangle tool re-arms by title, not by text: each button's label sits
+// beside an icon glyph in the same element, so `textContent` is "▭Rectangle".
+const armRectangle = async () => {
+  const box = await evaluate(`(() => {
+    const group = document.querySelector('[aria-label="Shape tool"]');
+    if (!group) return null;
+    const b = [...group.querySelectorAll('button')].find((x) => x.getAttribute('title') === 'Rectangle');
+    if (!b) return null;
+    b.scrollIntoView({ block: 'center' });
+    const r = b.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, pressed: b.getAttribute('aria-pressed') === 'true' };
+  })()`);
+  if (!box) throw new Error('no Rectangle button in the Shape tool group');
+  if (!box.pressed) {
+    await click(box.x, box.y);
+    await sleep(400);
+  }
+  const after = await evaluate(`(() => {
+    const group = document.querySelector('[aria-label="Shape tool"]');
+    const b = group && [...group.querySelectorAll('button')].find((x) => x.getAttribute('title') === 'Rectangle');
+    return b ? b.getAttribute('aria-pressed') === 'true' : null;
+  })()`);
+  if (after !== true) throw new Error('the Rectangle tool did not arm');
+};
+await armRectangle();
+// A DIFFERENT rectangle, deliberately — the wall length is what proves the
+// draw actually happened, and a redraw at the same size would prove nothing.
+// Different but not much SMALLER: a short building has fewer stops the app
+// will accept (the pre-existing braced-combine residual refuses on the
+// neighbour), and the step needs one accepted stop to re-tile with.
+const redrawBox = await evaluate(`(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
+if (!redrawBox) throw new Error("no canvas to redraw on");
+const [rx, ry, rw, rh] = redrawBox;
+const nx0 = rx + 70;
+const ny0 = ry + 95;
+const nx1 = rx + rw - 110;
+const ny1 = ry + rh - 155;
+await mouse("mousePressed", nx0, ny0);
+await sleep(80);
+await mouse("mouseMoved", (nx0 + nx1) / 2, (ny0 + ny1) / 2);
+await sleep(80);
+await mouse("mouseMoved", nx1, ny1);
+await sleep(80);
+await mouse("mouseReleased", nx1, ny1);
+await sleep(1800);
+await shot("17-redrawn-footprint");
+await reachView((l) => l === `Elevation: ${targetWallId}`, `Elevation: ${targetWallId}`);
+await sleep(1200);
+const redrawnWidths = await panelWidths();
+const redrawnEighths = sumEighths(redrawnWidths);
+const openingSlotsAfterRedraw = await captureOpeningSlots();
+/**
+ * ONE further edit of any kind is all the stale memory ever needed — `hasStop`
+ * in the tiler is true whenever the memory holds anything — and a stop is
+ * simply the edit this harness can already drive.
+ *
+ * ⚠ **It has to be an ACCEPTED one, and the first version of this step did not
+ * check.** A refused stop changes nothing, so the count below would have been
+ * read off a wall that was never re-tiled and the whole step would have passed
+ * vacuously — it did, on its first run: every start stop on the redrawn wall
+ * came back `invalid` with *"does not leave a run on wall BC whose panels add
+ * back up to that wall"*, which is the known pre-existing braced-combine
+ * residual on the NEIGHBOUR wall (see "Six things left uncoded" in the spec),
+ * not anything this step is about.
+ *
+ * ⚠ **So the stop does not have to be on the wall being checked, and it is
+ * better that it is not.** `retilePreservingOpeningsWithRunStopMemory` walks
+ * EVERY wall on every call and merges each one's remembered openings, so a stop
+ * accepted anywhere in the building re-tiles the reused wall id too. The step
+ * therefore walks the elevations until the app accepts a stop somewhere,
+ * records every attempt with its refusal sentence, and requires one to have
+ * been taken.
+ */
+const nudgeAttempts = [];
+let nudgeTaken = null;
+const elevationStops = (await view.cycle()).filter((l) => l.startsWith("Elevation: "));
+for (const label of elevationStops) {
+  if (nudgeTaken) break;
+  await reachView((l) => l === label, label);
+  await sleep(1000);
+  const wallEighths = sumEighths(await panelWidths());
+  for (const fraction of [0.08, 0.05, 0.03]) {
+    const candidateIn = Math.round(wallEighths * fraction) / 8;
+    if (candidateIn <= 0) continue;
+    await commitStop("start", candidateIn);
+    const field = await stopField("start");
+    nudgeAttempts.push({ wall: label, stopIn: candidateIn, invalid: field?.invalid ?? null, message: field?.message ?? null });
+    const accepted = field?.invalid === false;
+    // Always put the field back, accepted or refused: the count below is read
+    // off a whole building, the same shape as the one taken after the draw.
+    // Clearing an accepted stop is itself a second re-tile, which is fine.
+    await commitStop("start", 0);
+    if (accepted) {
+      nudgeTaken = { wall: label, stopIn: candidateIn };
+      break;
+    }
+  }
+}
+await reachView((l) => l === `Elevation: ${targetWallId}`, `Elevation: ${targetWallId}`);
+await sleep(1200);
+const openingSlotsAfterRetile = await captureOpeningSlots();
+const withheldAfterRetile = await withheldOpeningCount();
+await shot("18-redrawn-after-one-retile");
+record(
+  "a-new-footprint-does-not-inherit-the-old-buildings-remembered-openings",
+  {
+    withheldWhenRedrawn: redrawWithheld,
+    baseEighthsBeforeRedraw: memoryBaseEighths,
+    redrawnEighths,
+    redrawnPanelCount: redrawnWidths.length,
+    openingSlotsAfterRedraw,
+    nudgeTaken,
+    nudgeAttempts,
+    nudgeAccepted: nudgeTaken !== null,
+    openingSlotsAfterRetile,
+    withheldAfterRetile,
+  },
+  (d) =>
+    // 0. Not vacuous: the old building really was holding an opening in memory
+    //    at the moment the new one was drawn. Without this the step would pass
+    //    on a wall that had nothing to inherit.
+    d.withheldWhenRedrawn >= 1 &&
+    // 1. A new building really was drawn over the old one, on the same reused
+    //    wall id — a different wall length is the proof.
+    d.redrawnEighths > 0 &&
+    d.redrawnEighths !== d.baseEighthsBeforeRedraw &&
+    d.redrawnPanelCount >= 3 &&
+    // 2. The re-tile really happened: a refused stop changes nothing, and a
+    //    step that never re-tiled would pass the next line for free.
+    d.nudgeAccepted === true &&
+    // 3. THE FIX. One re-tile of the reused wall id, and no opening from the
+    //    building that no longer exists appears on it.
+    d.openingSlotsAfterRedraw !== null &&
+    d.openingSlotsAfterRetile === d.openingSlotsAfterRedraw &&
+    // 4. …and nothing is being held back on the new building either, so the
+    //    count above is not just a withheld opening hiding a resurrected one.
+    d.withheldAfterRetile === 0,
+);
+
 record(
   "no-uncaught-exceptions",
   { count: pageExceptions.length, first: pageExceptions[0] ?? null },

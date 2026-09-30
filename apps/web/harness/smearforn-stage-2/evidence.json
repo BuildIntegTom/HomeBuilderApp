@@ -1,14 +1,7 @@
 {
-  "app": "http://localhost:3260/",
-  "ranAt": "2026-09-30T02:19:47.033Z",
+  "app": "http://localhost:3214/",
+  "ranAt": "2026-09-29T23:49:14.775Z",
   "steps": [
-    {
-      "name": "whole-wall-on-screen",
-      "clicks": 5,
-      "wholeWallVisible": true,
-      "asserted": true,
-      "passed": true
-    },
     {
       "name": "wall-as-tiled",
       "panelCount": 15,
@@ -24,8 +17,8 @@
         40,
         40,
         40,
-        40,
-        34.125,
+        37.125,
+        37,
         34.125,
         0.75,
         40
@@ -36,7 +29,7 @@
     {
       "name": "tool-armed",
       "insertMarkers": 16,
-      "dragStripsBefore": 10,
+      "dragStripsBefore": 11,
       "dragStripsArmed": 0,
       "asserted": true,
       "passed": true
@@ -69,7 +62,7 @@
     },
     {
       "name": "delete",
-      "notice": "Deleted a panel on wall AB: 16 panels → 15, 12 still automatic.",
+      "notice": "Deleted a panel on wall AB: 16 panels → 15, 11 still automatic.",
       "refusalsOnTheWay": [],
       "panelsBefore": 16,
       "panelsAfter": 15,
@@ -80,7 +73,6 @@
     },
     {
       "name": "rule-placed-panel-refuses",
-      "clickedLabel": "0.75\"",
       "notice": "Corner and safety-gap panels are placed by rule, not by hand — the app positions them and would overwrite a hand-placed one. Nothing was changed.",
       "panelsBefore": 15,
       "panelsAfter": 15,
@@ -89,7 +81,7 @@
     },
     {
       "name": "refused-insert-states-the-room",
-      "refusal": "Refused: there is 84¼\" of automatic panel width on this wall and this change needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
+      "refusal": "Refused: there is 53⅝\" of automatic panel width on this wall and this change needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
       "bigHeadersPlaced": 4,
       "panelsAtRefusal": 10,
       "asserted": true,

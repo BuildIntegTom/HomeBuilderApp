@@ -19,6 +19,7 @@ export * from "./absorbedCornerWalls";
 export * from "./panelPlacement";
 export * from "./retile";
 export * from "./wallRunStop";
+export * from "./runStopOpenings";
 export * from "./pierGrid";
 export * from "./floorPanelGrid";
 export * from "./joistLayout";
