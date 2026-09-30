@@ -13,6 +13,7 @@ import {
   renderedDrawingSizePx,
   screenXFromWallPosIn,
   steppedViewScale,
+  viewScaleForWall,
   wallPosInFromScreenX,
   wheelZoomedViewScale,
   zoomAnchorScrollDelta,
@@ -277,5 +278,40 @@ describe("zoomAnchorScrollDelta", () => {
     });
     expect(d.dxPx).toBeCloseTo(0, 9);
     expect(d.dyPx).toBeCloseTo(0, 9);
+  });
+});
+
+/**
+ * The one piece of the viewport's React state that a reader is likely to
+ * "tidy" — see `viewScaleForWall`'s own note, and
+ * `smearforn-stage-0-1`'s `each-wall-arrives-fitted-and-unscrolled`, which
+ * stands over the same property in a real browser.
+ */
+describe("viewScaleForWall", () => {
+  it("gives the stored zoom back for the wall it was stored against", () => {
+    expect(viewScaleForWall({ wallId: "AB", scale: 2.44 }, "AB")).toBe(2.44);
+  });
+
+  it("gives the FITTED view for any other wall — the whole point of storing the id", () => {
+    // A 244% zoom on a 48ft wall is a blank patch of paper on a 12ft one.
+    expect(viewScaleForWall({ wallId: "AB", scale: 2.44 }, "BC")).toBe(1);
+    expect(viewScaleForWall({ wallId: "AB", scale: ELEVATION_MAX_VIEW_SCALE }, "CD")).toBe(1);
+    expect(viewScaleForWall({ wallId: "AB", scale: ELEVATION_MIN_VIEW_SCALE }, "CD")).toBe(1);
+  });
+
+  it("is 1 for a fresh wall even though 1 is also a legitimate stored value", () => {
+    // Both routes to 1 are the same view, which is why the getter can be a
+    // plain fall-back rather than a nullable one.
+    expect(viewScaleForWall({ wallId: "AB", scale: 1 }, "AB")).toBe(1);
+    expect(viewScaleForWall({ wallId: "AB", scale: 1 }, "ZZ")).toBe(1);
+  });
+
+  it("matches on the id, not on identity — a re-created wall object with the same id keeps its zoom", () => {
+    // This is what stops editing the wall you are looking at from yanking the
+    // view back to fitted on every keystroke: the panel list is rebuilt, the
+    // id is not.
+    const state = { wallId: "wall-3", scale: 1.5625 };
+    expect(viewScaleForWall(state, "wall-3")).toBe(1.5625);
+    expect(viewScaleForWall(state, "wall-3 ")).toBe(1);
   });
 });

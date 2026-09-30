@@ -98,12 +98,20 @@ export const ELEVATION_RIGHT_MARGIN_PX = 24;
  * BORDER box (see the ResizeObserver in WallElevationDiagram) so that a
  * scrollbar appearing cannot feed back into the fit and oscillate. The cost
  * of that choice is that the scrollbar eats into the same space this slack
- * provides: measured on Chrome/Windows the default view leaves 17px spare
- * against a 15px scrollbar, i.e. 2px of margin. A THICKER scrollbar — an
- * accessibility setting, a different platform, a future browser default —
- * therefore puts a spurious VERTICAL scrollbar on a view that is supposed to
- * fit exactly. If that shows up, this number is the one to raise (or the fit
- * has to subtract a measured `offsetHeight - clientHeight` instead).
+ * provides. The arithmetic, since an earlier version of this note got it
+ * wrong by subtracting the scrollbar TWICE: the viewport div carries no
+ * padding, so with Chrome/Windows' 15px horizontal scrollbar its content box
+ * is `offsetHeight - 15` while the drawing is fitted to `offsetHeight - 32`.
+ * **17px is the spare, and 17px is the margin** — the slack's 32 less the
+ * scrollbar's 15, counted once.
+ *
+ * So a spurious VERTICAL scrollbar on a view that is supposed to fit exactly
+ * needs a horizontal scrollbar THICKER THAN 32px, not thicker than 17px: an
+ * accessibility setting, a different platform or a future browser default has
+ * more than twice the room the wrong figure implied. The conclusion does not
+ * change — if it ever shows up, this number is the one to raise, or the fit
+ * has to subtract a measured `offsetHeight - clientHeight` instead — but the
+ * trigger point is the reason the figure is worth getting right.
  */
 export const ELEVATION_FIT_SLACK_PX = 32;
 
@@ -178,6 +186,30 @@ export function steppedViewScale(viewScale: number, direction: "in" | "out"): nu
  */
 export function wheelZoomedViewScale(viewScale: number, deltaY: number): number {
   return clamp(viewScale * Math.exp(-deltaY / 400), ELEVATION_MIN_VIEW_SCALE, ELEVATION_MAX_VIEW_SCALE);
+}
+
+/**
+ * **A DIFFERENT WALL OPENS FITTED.** The zoom WallElevationDiagram should show
+ * for the wall it is currently drawing, given the one wall's zoom it remembers.
+ *
+ * The component is NOT remounted when the view control steps from one elevation
+ * stop to the next — same component, new `wall` prop — so a plain
+ * `useState(1)` let a new wall inherit the previous one's 400% zoom, which on a
+ * shorter wall is very often a blank patch of paper with nothing to say why.
+ * Hence the stored wall id, and the fall back to 1 the moment it stops
+ * matching. 1 is the fitted view, which is what 100% means in the zoom readout.
+ *
+ * ⚠ It is here rather than inline in the component for the reason the rest of
+ * this file is here: it was the last piece of the new viewport logic with no
+ * unit test available to it, while being the piece a reader is most likely to
+ * want to "tidy" into an effect. **Both call sites use it** — the render-time
+ * getter and the `setViewScale` updater, which has to ask the same question
+ * about `prev` — so a test over this function is a test over the real thing
+ * rather than over a copy of it, which is the mistake `wallPosInFromScreenX`
+ * below documents at length.
+ */
+export function viewScaleForWall(state: { wallId: string; scale: number }, wallId: string): number {
+  return state.wallId === wallId ? state.scale : 1;
 }
 
 /**

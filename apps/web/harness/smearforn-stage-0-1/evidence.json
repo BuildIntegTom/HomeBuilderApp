@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3399/",
-  "ranAt": "2026-09-30T00:52:45.737Z",
+  "app": "http://localhost:3260/",
+  "ranAt": "2026-09-30T04:22:08.590Z",
   "steps": [
     {
       "name": "stage0-new-project-tabs",
@@ -343,36 +343,36 @@
         ],
         [
           40,
-          40,
-          40,
-          40
-        ],
-        [
-          40,
-          34.125,
-          34.125,
-          40,
-          40,
-          40,
-          40,
-          40,
-          40,
-          40,
-          40,
-          40
-        ],
-        [
-          40,
           37.125,
           37,
+          40
+        ],
+        [
+          40,
+          34.125,
+          34.125,
+          40,
+          40,
+          40,
+          40,
+          40,
+          40,
+          40,
+          40,
+          40
+        ],
+        [
+          40,
+          34.125,
+          34.125,
           40
         ]
       ],
       "narrowestPerWall": [
         24,
-        40,
+        37,
         34.125,
-        37
+        34.125
       ],
       "readAttemptsPerWall": [
         1,
@@ -383,6 +383,44 @@
       "readAttemptBudget": 20,
       "narrowestAnywhere": 24,
       "elevationStopsOffered": 4,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "each-wall-arrives-fitted-and-unscrolled",
+      "views": [
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA"
+      ],
+      "leftTheFirstWallAt": {
+        "zoom": "156%",
+        "scrollLeft": 1266
+      },
+      "arrivals": [
+        {
+          "view": "Elevation: BC",
+          "zoom": "100%",
+          "scrollLeft": 0,
+          "scrollTop": 0,
+          "canScrollVertically": false
+        },
+        {
+          "view": "Elevation: CD",
+          "zoom": "100%",
+          "scrollLeft": 0,
+          "scrollTop": 0,
+          "canScrollVertically": false
+        },
+        {
+          "view": "Elevation: DA",
+          "zoom": "100%",
+          "scrollLeft": 0,
+          "scrollTop": 0,
+          "canScrollVertically": false
+        }
+      ],
       "asserted": true,
       "passed": true
     }

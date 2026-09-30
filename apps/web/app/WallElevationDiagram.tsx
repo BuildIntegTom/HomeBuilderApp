@@ -56,6 +56,7 @@ import {
   fitHeightScale,
   renderedDrawingSizePx,
   steppedViewScale,
+  viewScaleForWall,
   wallPosInFromScreenX,
   wheelZoomedViewScale,
   zoomAnchorScrollDelta,
@@ -575,13 +576,54 @@ export default function WallElevationDiagram({
    */
   const [viewState, setViewState] = useState<{ wallId: string; scale: number }>({ wallId: wall.id, scale: 1 });
   const wallIdRef = useRef(wall.id);
-  const viewScale = viewState.wallId === wall.id ? viewState.scale : 1;
-  const setViewScale = (next: number | ((current: number) => number)) =>
+  const viewScale = viewScaleForWall(viewState, wall.id);
+  /**
+   * **And the SCROLL of that same wall, so that A -> B -> A puts you back
+   * where you were looking and not merely back at the zoom you were using.**
+   *
+   * ⚠ This closes a third behaviour that nobody chose. `viewState` above
+   * remembers one wall's zoom, so stepping A -> B -> A matched the stored id
+   * and restored 244% — while the layout effect below unconditionally reset
+   * `scrollLeft`/`scrollTop` to 0. The wall came back at the right size and
+   * at the wrong place: half-remembered, and documented as neither.
+   *
+   * The two candidates were "always reset to 1 on any id change" and "remember
+   * the scroll alongside the scale". **This is the second, and the first was
+   * not a free choice.** Resetting on EVERY id change — including a return to
+   * a wall whose zoom is still in state — needs either `setState` during
+   * render or a `key`-based remount: the first is the same severity-2
+   * `react-hooks` error family as the `set-state-in-effect` the derived getter
+   * above exists to avoid, and the second would also throw away the editor's
+   * tool and label state on every step of the view dial. Remembering the
+   * scroll needs neither — it is DOM state written in a layout effect that
+   * already writes it.
+   *
+   * **ONE wall's view is remembered, zoom and scroll together.** They can
+   * never be restored for different walls, because the slot is only ever
+   * written while looking at the wall that owns the remembered SCALE, and is
+   * dropped the moment that scale changes hands (see `setViewScale`). Every
+   * other wall opens fitted, at the start of the wall.
+   *
+   * ⚠ TOMMY'S TO OVERRULE. "A wall you come back to is where you left it" is a
+   * judgement about how the elevation viewer should feel, not a building
+   * value; if he would rather every wall change reset the zoom outright, this
+   * ref and the restore branch below come out and the getter loses its stored
+   * id. `smearforn-stage-0-1`'s `each-wall-arrives-fitted-and-unscrolled` step
+   * pins the part that is NOT in question: a wall you have not adjusted opens
+   * at 100% and scrolled to 0.
+   */
+  const rememberedScrollRef = useRef<{ wallId: string; scrollLeft: number; scrollTop: number } | null>(null);
+  const setViewScale = (next: number | ((current: number) => number)) => {
+    // The remembered scroll belongs to whoever owns the remembered scale. The
+    // moment that changes hands, the old wall's place is forgotten with it.
+    const remembered = rememberedScrollRef.current;
+    if (remembered && remembered.wallId !== wallIdRef.current) rememberedScrollRef.current = null;
     setViewState((prev) => {
       const wallId = wallIdRef.current;
-      const current = prev.wallId === wallId ? prev.scale : 1;
+      const current = viewScaleForWall(prev, wallId);
       return { wallId, scale: typeof next === "function" ? next(current) : next };
     });
+  };
   const [isPanning, setIsPanning] = useState(false);
   const [panDragging, setPanDragging] = useState(false);
   const panStartRef = useRef<{ clientX: number; clientY: number; scrollLeft: number; scrollTop: number } | null>(null);
@@ -609,8 +651,12 @@ export default function WallElevationDiagram({
     // oscillation (scrollbar appears -> fit shrinks -> drawing fits ->
     // scrollbar goes -> fit grows -> ...). The border box does not move when
     // a scrollbar appears, and ELEVATION_FIT_SLACK_PX is what pays for the
-    // scrollbar's own thickness — 32px of slack against a 15px scrollbar,
-    // which leaves 2px of margin. See that constant's note.
+    // scrollbar's own thickness. ⚠ Counted ONCE, which an earlier version of
+    // this comment did not do: the div has no padding, so with a 15px
+    // horizontal scrollbar the content box is `offsetHeight - 15` while the
+    // drawing is fitted to `offsetHeight - 32` — 32 less 15 leaves **17px
+    // spare**, and a spurious VERTICAL scrollbar therefore needs a horizontal
+    // one thicker than 32px, not thicker than 17px. See that constant's note.
     const measure = () => {
       const w = el.offsetWidth;
       const h = el.offsetHeight;
@@ -658,13 +704,20 @@ export default function WallElevationDiagram({
   // time that one looks. Keyed on `wall.id` rather than on the wall object, so
   // that editing the wall you are looking at does not yank the view back.
   // `wallIdRef` is updated here, in an effect, rather than during render.
+  //
+  // The restore branch is the other half of `rememberedScrollRef` above: the
+  // ONE wall whose zoom is remembered gets its place back too, and every other
+  // wall starts at 0. Reading the ref here needs no dependency, which is the
+  // practical reason the scroll lives in a ref and not in `viewState`.
   useLayoutEffect(() => {
     wallIdRef.current = wall.id;
     zoomAnchorRef.current = null;
     const el = viewportRef.current;
     if (el) {
-      el.scrollLeft = 0;
-      el.scrollTop = 0;
+      const remembered = rememberedScrollRef.current;
+      const back = remembered && remembered.wallId === wall.id ? remembered : null;
+      el.scrollLeft = back ? back.scrollLeft : 0;
+      el.scrollTop = back ? back.scrollTop : 0;
     }
   }, [wall.id]);
   useLayoutEffect(() => {
@@ -1955,6 +2008,15 @@ export default function WallElevationDiagram({
       <div
         ref={viewportRef}
         style={{ flex: "1 1 auto", minHeight: 0, minWidth: 0, overflow: "auto", display: "flex" }}
+        // Where this wall is being looked at, kept in a ref so that scrolling
+        // never re-renders the drawing. Gated on the wall that owns the
+        // remembered SCALE, which is what keeps zoom and scroll from ever
+        // being restored for two different walls — see rememberedScrollRef.
+        onScroll={(e) => {
+          if (viewState.wallId !== wall.id) return;
+          const el = e.currentTarget;
+          rememberedScrollRef.current = { wallId: wall.id, scrollLeft: el.scrollLeft, scrollTop: el.scrollTop };
+        }}
       >
         <div style={{ margin: "auto", flex: "0 0 auto" }}>
           <svg

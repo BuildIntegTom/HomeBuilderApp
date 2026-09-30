@@ -555,9 +555,22 @@ record(
   //    `count >= 2` alone let the sample fall from 13 labels to 3 without a
   //    murmur when the elevation started scrolling; comparing the two readers
   //    is what makes that visible, because `onTheWall` counts labels whether
-  //    they are on screen or not. One label of slack for the two edges the
-  //    on-screen filter trims (the sidebar at x<250, and the right 200px).
-  (d) => d.count >= 2 && d.count >= d.onTheWall - 1,
+  //    they are on screen or not.
+  //
+  // ⚠ **`>= 8` is the real requirement, `onTheWall - 2` is the slack, and both
+  // numbers replace guesses.** The requirement first: steps 4-8 select from
+  // `labels.slice(1, 8)`, so EIGHT clickable labels is what this run actually
+  // consumes. `>= 2` was not that number — it was two labels from red when the
+  // sample collapsed from 13 to 3, and it did not say out loud what the run
+  // needs. The slack second: ONE label of slack is TIGHTER than the on-screen
+  // filter's own worst case, not looser. That filter trims at `x > 250` AND at
+  // `x < innerWidth - 200`, i.e. at BOTH ends, so a narrower window can
+  // legitimately lose one label at each — `11 >= 12` — and the step would go
+  // red on an app that is behaving. Two is the filter's own arithmetic. Either
+  // way the failure is a false alarm rather than a silent shrink, which errs in
+  // the right direction; but a canary that cries on a smaller window is a
+  // canary people learn to ignore.
+  (d) => d.count >= 8 && d.count >= d.onTheWall - 2,
 );
 let selected = null;
 for (const l of labels.slice(1, 8)) {
@@ -757,18 +770,40 @@ const widthsAfterFineDrag = await allVisibleAndOffscreenWidths();
 // labels instead of thirteen, so `labels.slice(1, 8)` selected a DIFFERENT
 // panel, and steps 5-8 hand-set and released a different one — which lands
 // the tiler's residual eighths on different slots. Restoring the label count
-// (see `whole-wall-on-screen` above) put it back: this step records 508.25
-// with `…34.125, 34.125, 40` again, byte-identical to `main`, and so does
-// wall AB in step 10's walk. smearforn-stage-2's wall AB was never affected
-// at all — `totalEighths: 4392` on both sides throughout.
+// (see `whole-wall-on-screen` above) put the SELECTED PANEL back: this step
+// drags the pair at index 1/2 — `40 / 40` — exactly as `main` does, and
+// smearforn-stage-2's wall AB was never affected at all
+// (`totalEighths: 4392` on both sides throughout).
 //
-// ⚠ Do NOT read step 10's OTHER walls the same way. BC and DA vary between
-// runs of this harness on the same code (`[40, 40, 40, 40]` one run,
-// `[40, 37.125, 37, 40]` the next) because the footprint is drawn with
-// synthetic mouse moves and the rectangle does not always land on the same
-// quantized corner — the timing sensitivity this file documents at length
-// under `SMEARFORN_CPU_THROTTLE`. Only AB, the wall the run actually edits,
-// is comparable between runs.
+// ⚠ **BUT DO NOT DIFF THESE LISTS AGAINST `main` LINE BY LINE, BECAUSE THEY
+// ARE NOT STABLE BETWEEN RUNS OF THE SAME CODE.** Measured on 2026-09-29:
+// three consecutive runs of this file with no code change affecting anything
+// above this step produced AB as `…34.125, 34.125, 40` (508.25) once and
+// `…37.125, 37, 40` (514.125) twice. The footprint is drawn with synthetic
+// mouse moves and the rectangle does not always land on the same quantized
+// corner, so wall AB's own LENGTH — and with it the tiler's residual eighths —
+// moves from run to run. An earlier version of this note said the committed
+// numbers were "byte-identical to `main`" and that "only AB is comparable
+// between runs": that was one pair of runs' worth of luck. **No wall's literal
+// width list is comparable across runs, AB included.** What IS stable, and
+// what this step actually asserts, is `runTotalConserved` — the same wall's
+// total before and after the drag, WITHIN one run.
+//
+// ⚠ **And the dragged pair in `after` is SUPPOSED to differ from `main`.**
+// This branch records `42.5 / 37.5` (both runs above) where `main` records
+// `44.5 / 35.5`, both conserving the same 80in across the pair. The drag is a
+// fixed number of SCREEN pixels (`+4.31`), and one screen pixel is a different
+// number of inches once the drawing is fitted to the viewport instead of
+// capped at 720, so the same gesture legitimately moves a different amount of
+// width. Someone diffing evidence against `main` should expect that line to
+// move, and should compare `runTotalConserved` rather than the lists.
+//
+// ⚠ Step 10's other walls are the same story, and were the first place it was
+// noticed: BC and DA vary between runs on the same code (`[40, 40, 40, 40]`
+// one run, `[40, 37.125, 37, 40]` the next) for exactly this reason — the
+// timing sensitivity this file documents at length under
+// `SMEARFORN_CPU_THROTTLE`. None of it touches an assertion: every check here
+// compares a run against itself.
 const pairBefore = widthsBeforeDrag.map(parseImperial).reduce((a, b) => a + b, 0);
 const pairAfter = widthsAfterFineDrag.map(parseImperial).reduce((a, b) => a + b, 0);
 record(
@@ -1175,14 +1210,51 @@ record(
   // Vertical overflow exists, the wheel moved the view DOWN and not along,
   // and the app deliberately did NOT consume the event — the browser's own
   // scrolling is doing the work.
+  //
+  // ⚠ `length === 1` FIRST, because `[].every()` is `true`: without it, a
+  // probe that saw no wheel event at all — a wheel dispatched at a coordinate
+  // outside the viewport, a probe that failed to arm — would read as "the app
+  // declined the event" and PASS. The sibling `scrollTop[1] > scrollTop[0]`
+  // does close the hole in practice today, which is exactly why the length
+  // check belongs here too: the day someone edits that sibling, this must not
+  // be the assertion that had quietly stopped asking anything. Both other
+  // wheel steps already check their probe's length; this one was the odd one
+  // out, and an inconsistency is what survives a later edit.
   (d) =>
     d.canScrollVertically === true &&
     d.scrollTop[1] > d.scrollTop[0] &&
     d.scrollLeft[1] === d.scrollLeft[0] &&
+    d.appTookTheEvent.length === 1 &&
     d.appTookTheEvent.every((v) => v === false),
 );
 await clickViewButton("Reset the view");
 await sleep(500);
+
+/**
+ * ⚠ **AND NOW LEAVE THIS WALL LOOKING NOTHING LIKE THE DEFAULT, DELIBERATELY.**
+ *
+ * This is the fixture for `each-wall-arrives-fitted-and-unscrolled` in step 10,
+ * and without it that step cannot fail. Every other step here ends by clicking
+ * Reset the view, so the wall the walk starts from was already at 100% and
+ * scroll 0 — meaning a wall change that reset NOTHING would still have been
+ * recorded as "arrived at 100%, scrolled to 0" and passed. A check whose
+ * fixture is the answer is not a check.
+ *
+ * So: scroll along the wall (a plain wheel, which at the fitted view reaches
+ * horizontally — proven two steps up), then zoom in twice. Both halves matter,
+ * because the reset has two halves: the zoom is React state DERIVED from a
+ * stored wall id, and the scroll is DOM state WRITTEN by a layout effect. A
+ * regression in either one now shows up on the very next wall.
+ */
+await wheel(wheelPointer[0], wheelPointer[1], 300, 0);
+await sleep(300);
+await wheel(wheelPointer[0], wheelPointer[1], 300, 0);
+await sleep(300);
+await clickViewButton("Zoom in");
+await sleep(400);
+await clickViewButton("Zoom in");
+await sleep(600);
+const leftTheFirstWallAt = await viewportState(wheelPointer[0]);
 
 // --- 10. every wall, not just the one being edited --------------------------
 // THE STAGE 1r ACCEPTANCE CHECK: no wall of a real drawn footprint carries a
@@ -1278,7 +1350,12 @@ for (let i = 0; i < 16; i++) {
       widths = (await allElevationWidths()).map(parseImperial).filter((w) => Number.isFinite(w));
       attemptsUsed = attempt + 1;
     }
-    if (widths.length > 0) wallsSeen.push({ view: stop, widths, narrowest: Math.min(...widths), attemptsUsed });
+    // ⚠ HOW THE WALL ARRIVED, read once the wall has rendered. This is the
+    // only committed check on "a different wall opens FITTED" — see the
+    // `each-wall-arrives-fitted-and-unscrolled` step below for why it lives
+    // inside a walk that already exists rather than in a probe of its own.
+    const arrival = widths.length > 0 ? await viewportState(0) : null;
+    if (widths.length > 0) wallsSeen.push({ view: stop, widths, narrowest: Math.min(...widths), attemptsUsed, arrival });
   }
   if (!(await stepViewerDial())) break;
   await sleep(600);
@@ -1319,6 +1396,70 @@ record(
     d.wallsWalked === d.elevationStopsOffered &&
     d.narrowestAnywhere !== null &&
     d.narrowestAnywhere >= FABRICATION_MIN_IN,
+);
+
+/**
+ * ⚠ **A DIFFERENT WALL OPENS FITTED AND AT THE START OF THE WALL — the only
+ * committed check on it.**
+ *
+ * WallElevationDiagram remembers the user's zoom per wall and resets the
+ * viewport's scroll on a wall change, and it does the zoom half by DERIVING
+ * from a stored wall id during render rather than by writing state in an
+ * effect. That is not a style preference: `setState` in an effect body is a
+ * severity-2 `react-hooks/set-state-in-effect` ERROR in this app, so the
+ * derived form is the only correct one — and it is also the form that looks
+ * "untidy" to the next person, who is therefore MOTIVATED to move it into an
+ * effect. Without this step that tidy-up gets a green harness run: the new
+ * wall would paint once at the previous wall's zoom before correcting itself,
+ * which no other assertion in this file can see.
+ *
+ * It rides the walk above because the walk already visits every elevation stop.
+ * An in-browser probe in a scratch directory is the arrangement this repo has
+ * been burned by twice, and the two refactors this change rests on should not
+ * be held to different standards — the wheel gestures got three permanent
+ * steps, so the wall-switch reset gets one.
+ *
+ * **`wallsSeen[0]` IS NOT AN ARRIVAL and is excluded on purpose.** It is the
+ * wall the run was already editing, left zoomed and scrolled a few lines above
+ * precisely so that the walls after it have something to inherit; asserting
+ * against it would assert that the fixture failed. So the fixture is checked
+ * first, then every genuine wall switch.
+ */
+record(
+  "each-wall-arrives-fitted-and-unscrolled",
+  {
+    views: wallsSeen.map((w) => w.view),
+    // The fixture: the wall we STEPPED OFF was not at the default view.
+    leftTheFirstWallAt: leftTheFirstWallAt && {
+      zoom: leftTheFirstWallAt.zoom,
+      scrollLeft: leftTheFirstWallAt.scrollLeft,
+    },
+    // ... and every wall stepped ON TO was.
+    arrivals: wallsSeen.slice(1).map((w) => ({
+      view: w.view,
+      zoom: w.arrival?.zoom ?? null,
+      scrollLeft: w.arrival?.scrollLeft ?? null,
+      scrollTop: w.arrival?.scrollTop ?? null,
+      // Recorded so this reads as evidence rather than as a bare pass: a
+      // fitted wall is one with nothing to scroll vertically.
+      canScrollVertically: w.arrival?.canScrollVertically ?? null,
+    })),
+  },
+  // `length >= 3` before any `every()`, for the same reason the wheel step now
+  // counts its probe: `[].every()` is `true`, and a walk that read no walls
+  // must not pass the step that checks how they arrived. Four elevation stops
+  // less the one we stepped off leaves three. A `null` from `viewportState`
+  // (no SVG, or no scrolling ancestor above it) fails here too.
+  (d) =>
+    d.leftTheFirstWallAt !== null &&
+    // A STRING that is not "100%", not merely "not 100%": an unread zoom comes
+    // back `null`, and `null !== "100%"` would have let a fixture that
+    // measured nothing stand in for a fixture that worked.
+    typeof d.leftTheFirstWallAt.zoom === "string" &&
+    d.leftTheFirstWallAt.zoom !== "100%" &&
+    d.leftTheFirstWallAt.scrollLeft > 0 &&
+    d.arrivals.length >= 3 &&
+    d.arrivals.every((a) => a.zoom === "100%" && a.scrollLeft === 0 && a.scrollTop === 0),
 );
 
 // --- the verdict ------------------------------------------------------------

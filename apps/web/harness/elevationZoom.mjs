@@ -35,14 +35,31 @@ export function makeElevationZoomControl({ evaluate, sleep, click }) {
       return null;
     })()`);
 
-  /** Is the whole drawing inside its scrolling viewport right now? */
+  /**
+   * Is the whole drawing inside its scrolling viewport right now?
+   *
+   * `true` / `false` are answers; **`null` means the question could not be
+   * asked** — no elevation SVG, or no scrolling ancestor above it — and every
+   * caller asserts `=== true`, so a `null` goes RED.
+   *
+   * ⚠ **The walk that fails to find the scrolling ancestor used to `return
+   * true`, and that was this helper's own failure mode inverted.** If anyone
+   * restructures the viewport div out from under this walk, "the whole wall is
+   * visible" would have come back `true` for a wall that was mostly off
+   * screen, `whole-wall-on-screen` would have passed, and every harness that
+   * depends on it would have gone back to sampling a WINDOW onto the wall
+   * while reporting that it had all of it — fewer elements, not an exception,
+   * which is the one failure mode this file exists to prevent.
+   * `viewportState` in `smearforn-stage-0-1` already gets this right by
+   * returning `null` when it cannot find the scroller; so does this now.
+   */
   const wholeWallVisible = async () =>
     await evaluate(`(() => {
       const svg = document.querySelector('svg[aria-label^="Elevation view of wall"]');
       if (!svg) return null;
       let el = svg.parentElement;
       while (el && !(el.scrollWidth > el.clientWidth + 1) && getComputedStyle(el).overflowX !== 'auto') el = el.parentElement;
-      if (!el) return true;
+      if (!el) return null;
       return el.scrollWidth <= el.clientWidth + 1;
     })()`);
 

@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3399/",
-  "ranAt": "2026-09-30T00:29:53.946Z",
+  "app": "http://localhost:3260/",
+  "ranAt": "2026-09-30T02:19:47.033Z",
   "steps": [
     {
       "name": "whole-wall-on-screen",
