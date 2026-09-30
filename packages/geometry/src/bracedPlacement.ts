@@ -251,15 +251,41 @@ export const SAFETY_PLYWOOD_BUFFER_IN = 0.75;
  * non-standard slot (corner, gap, window, door, or a slot already braced by
  * the first rule). Windows are no longer auto-flanked (Tommy).
  *
- * `slotIndicesArePinned` turns the corner-brace combine OFF for this wall
- * entirely (everything else runs unchanged), because the combine removes a
- * panel from the run and this wall has persisted state that is indexed by
- * slot POSITION: a Mid-Wall Bond Beam's coverage range, the roofline Box
- * Beam's, or a spanning header's. Those ranges are stored, not derived, and
- * nothing remaps them — `Building3DView.tsx` reads
- * `offsetsIn[header.startSlotIndex] ?? 0`, a silent fallback to zero — so a
- * combine that shortened the array would slide a fabricated part one panel
- * along on its way to a shop drawing.
+ * `slotIndicesArePinned` stops this wall's corner-brace combine from FIRING
+ * where it has not fired before (everything else runs unchanged), because the
+ * combine removes a panel from the run and this wall has persisted state that
+ * is indexed by slot POSITION: a Mid-Wall Bond Beam's coverage range, the
+ * roofline Box Beam's, or a spanning header's. Those ranges are stored, not
+ * derived, and `shiftSlotCoverageRecords` only remaps them on the
+ * insert/delete-panel path — nothing remaps them on a re-tile, and
+ * `Building3DView.tsx` reads `offsetsIn[header.startSlotIndex] ?? 0`, a silent
+ * fallback to zero — so a combine that shortened the array would slide a
+ * fabricated part one panel along on its way to a shop drawing.
+ *
+ * ⚠ **The pin freezes the slot structure in BOTH directions, and the second
+ * one is easy to miss.** A wall whose combine already fired is STORED one
+ * panel shorter, with its safety-gap slot carrying `secondaryType: "braced"`.
+ * If "pinned" only meant "do not combine", then the first reconcile after a
+ * beam or a header is placed on such a wall would UN-combine it and hand every
+ * stored index at or past the gap a panel that sits one place earlier —
+ * exactly the same slide, backwards, and reached by the most ordinary ordering
+ * there is (place a beam on a combined wall, then edit anything). So
+ * `preCombinedGapOrdinals` names the gaps that were ALREADY combined in the
+ * wall's stored run, and those are allowed to combine again even while pinned:
+ * re-combining reproduces the array the stored indices were drawn against.
+ * `reconcileBracedPlacement` computes that set; a caller that passes nothing
+ * gets the plain "no combine at all" behaviour.
+ *
+ * ⚠ **One case is still a slide and is deliberately not fixed here.** If a
+ * pre-combined gap's re-combine is REFUSED — the re-tiled run can no longer
+ * pay for it legally, which takes a real change to the wall, not a no-op pass
+ * — the wall un-combines and gains a panel back. It is reported rather than
+ * silent: the wall then carries a plain safety gap a corner walk steps over,
+ * so `findCornerBraceCombineRefusals` raises its Review Log entry and the
+ * caller's note names the pinning as a possible cause. Remapping the stored
+ * ranges instead would mean running `shiftSlotCoverageRecords`-style
+ * arithmetic from inside the geometry package, which is where the caller's
+ * state lives, not this function's.
  *
  * **Refusing rather than remapping is the precedent, not a new policy.**
  * Stage 2b already refuses a wall-run stop that would disturb a spanning
@@ -290,9 +316,26 @@ export function applyBracedPlacement(
   eligibleIndices?: Set<number>,
   preservedBracedIndices?: ReadonlySet<number>,
   slotIndicesArePinned?: boolean,
+  /** Only read when `slotIndicesArePinned` — the ordinals (counted over
+   * safety-gap slots from index 0, the same convention `oldMarkers` uses over
+   * standard-family slots) of the gaps this wall's STORED run had already
+   * combined. See the "both directions" note above. */
+  preCombinedGapOrdinals?: ReadonlySet<number>,
 ): PanelSlot[] {
   const result = slots.map((s) => ({ ...s }));
   const isEligible = (i: number) => eligibleIndices === undefined || eligibleIndices.has(i);
+
+  /** Slot index -> its ordinal among this run's safety-gap slots. Built once,
+   * before anything is marked: the combine never changes a slot's `type`
+   * away from "safety-gap" and never swallows one, so these stay valid for
+   * the whole pass. */
+  const gapOrdinalBySlotIndex = new Map<number, number>();
+  {
+    let seen = 0;
+    for (let i = 0; i < result.length; i++) {
+      if (result[i]!.type === "safety-gap") gapOrdinalBySlotIndex.set(i, seen++);
+    }
+  }
 
   /** Slots the corner-brace combine has swallowed — see
    * `planCornerBraceCombine`. They keep their index (so `eligibleIndices`,
@@ -355,7 +398,13 @@ export function applyBracedPlacement(
         // drawn against panels would slide onto different ones. See
         // `slotIndicesArePinned` on this function's own signature for who
         // decides and why refusing is the answer rather than remapping.
-        if (slotIndicesArePinned) continue;
+        //
+        // UNLESS this gap was ALREADY combined in the wall's stored run: then
+        // combining again is what KEEPS the array the stored indices were
+        // drawn against, and refusing is what would slide them — backwards,
+        // by one, at the gap. Same reasoning, opposite sign; see the "both
+        // directions" note on this function's own doc comment.
+        if (slotIndicesArePinned && !preCombinedGapOrdinals?.has(gapOrdinalBySlotIndex.get(i) ?? -1)) continue;
         const combinedEighths = toEighths(standardWidthIn + SAFETY_PLYWOOD_BUFFER_IN);
         const plan = planCornerBraceCombine(result, i, step, combinedEighths, consumedIndices, preservedBracedIndices);
         // REFUSED: the run cannot pay for this combine without breaking the
@@ -673,7 +722,25 @@ export function reconcileBracedPlacement(
       undefined,
       undefined,
       slotIndicesArePinned,
+      // No stored run, so nothing was already combined, so a pinned wall gets
+      // the plain "no combine" answer — there is no index here to preserve.
+      undefined,
     );
+  }
+
+  /** The gaps the STORED run had already combined, by their ordinal among its
+   * safety-gap slots. A pinned wall is allowed to re-combine exactly these, so
+   * that the pin freezes the wall's slot structure in both directions rather
+   * than un-combining it and sliding every stored index back by one — see
+   * `applyBracedPlacement`'s `preCombinedGapOrdinals`. */
+  const preCombinedGapOrdinals = new Set<number>();
+  {
+    let seen = 0;
+    for (const slot of oldSlots) {
+      if (slot.type !== "safety-gap") continue;
+      if (slot.secondaryType === "braced") preCombinedGapOrdinals.add(seen);
+      seen++;
+    }
   }
 
   const oldMarkers: {
@@ -784,6 +851,7 @@ export function reconcileBracedPlacement(
     eligibleIndices,
     preservedBracedIndices,
     slotIndicesArePinned,
+    preCombinedGapOrdinals,
   );
 
   // Re-force every carried-through locked width back to its own exact

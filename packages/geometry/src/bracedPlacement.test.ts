@@ -1058,6 +1058,15 @@ describe("the product sweep: every wall length, every corner, every opening", ()
               }
               const third = reconcileBracedPlacement(second, tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
               if (layout(third) !== layout(second)) violations.push(where + ": 2nd reconcile moved it");
+              // The SAME no-op reconcile with the wall PINNED — the ordering
+              // that happens the moment a beam or a header is placed on a wall
+              // that already combined. Un-combining here would slide every
+              // stored index at or past the gap one panel EARLIER, so a pinned
+              // no-op has to be just as still as a free one.
+              const pinned = reconcileBracedPlacement(first, tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false, true);
+              if (layout(pinned) !== layout(first)) {
+                violations.push(where + ": PINNED reconcile moved it; was " + layout(first) + "; now " + layout(pinned));
+              }
             }
           }
         }
@@ -1092,10 +1101,48 @@ describe("the product sweep: every wall length, every corner, every opening", ()
     expect(pinned.filter((sl) => sl.type === "braced").length).toBeGreaterThan(0);
     // Still exactly as long as itself, which the refusal path has always been.
     expect(pinned.reduce((a, sl) => a + Math.round(sl.widthIn * 8), 0)).toBe(Math.round(145 * 8));
-    // Same through the reconcile door, which is the one the app actually uses.
-    const reconciled = reconcileBracedPlacement(free, tiled, SEISMIC_SPACING_IN, 48, "chevron", false, true);
-    expect(reconciled.some((sl) => sl.type === "safety-gap" && sl.secondaryType === "braced")).toBe(false);
-    expect(reconciled.length).toBe(tiled.length);
+    // Same through the reconcile door, which is the one the app actually uses
+    // — for a wall whose stored run was NEVER combined. Its markers say
+    // "standard" at the gap-adjacent ordinal, nothing is pre-combined, and the
+    // pin holds the run at its tiled length.
+    const neverCombined = reconcileBracedPlacement(tiled, tiled, SEISMIC_SPACING_IN, 48, "chevron", false, true);
+    expect(neverCombined.some((sl) => sl.type === "safety-gap" && sl.secondaryType === "braced")).toBe(false);
+    expect(neverCombined.length).toBe(tiled.length);
+  });
+
+  it("a PINNED wall whose combine had ALREADY fired keeps it — un-combining is the same index slide, backwards", () => {
+    // ⚠ The case an earlier version of this file asserted the WRONG way round.
+    // The ordering is the ordinary one: the combine fires on a fresh wall, the
+    // user then drops a Mid-Wall Bond Beam / Box Beam coverage / spanning
+    // header on it (which is what pins it), and the next reconcile runs. If
+    // "pinned" meant only "do not combine", that reconcile would hand the wall
+    // its swallowed panel back — and every stored index at or past the gap
+    // would point one panel EARLIER, which is precisely the
+    // `offsetsIn[header.startSlotIndex] ?? 0` silent-fallback hazard the pin
+    // exists to prevent. The pin freezes the structure in both directions.
+    const { slots: tiled } = tileWall(145, 48, CORNER_WIDTH_IN, "end", true, true);
+    const stored = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, 48, "chevron", false);
+    expect(stored.some((sl) => sl.type === "safety-gap" && sl.secondaryType === "braced")).toBe(true);
+    expect(stored.length).toBe(tiled.length - 1);
+
+    const reconciled = reconcileBracedPlacement(stored, tiled, SEISMIC_SPACING_IN, 48, "chevron", false, true);
+    // Same length, same slot types, same widths as the run the stored indices
+    // were drawn against — a fixpoint, not a re-derivation that happens to
+    // agree.
+    expect(reconciled.length).toBe(stored.length);
+    expect(reconciled.map((sl) => sl.type)).toEqual(stored.map((sl) => sl.type));
+    expect(reconciled.map((sl) => sl.secondaryType)).toEqual(stored.map((sl) => sl.secondaryType));
+    expect(reconciled.map((sl) => sl.widthIn)).toEqual(stored.map((sl) => sl.widthIn));
+    // Still exactly as long as itself.
+    expect(reconciled.reduce((a, sl) => a + Math.round(sl.widthIn * 8), 0)).toBe(Math.round(145 * 8));
+    // And a second reconcile does not move it either.
+    const again = reconcileBracedPlacement(reconciled, tiled, SEISMIC_SPACING_IN, 48, "chevron", false, true);
+    expect(again.map((sl) => sl.type)).toEqual(stored.map((sl) => sl.type));
+    expect(again.length).toBe(stored.length);
+    // The permission is NARROW: it re-combines the gap that was already
+    // combined, and does not turn the pin off. A pinned wall reconciled
+    // against a stored run with no combined gap still refuses — asserted in
+    // the test above.
   });
 
   it("braced pattern and mirroring move no width anywhere", () => {
