@@ -37,6 +37,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeViewStopControl } from "../viewStopControl.mjs";
+import { makeElevationZoomControl } from "../elevationZoom.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHOTS = path.join(HERE, "screenshots");
@@ -231,10 +232,47 @@ const panelBodies = async () =>
       .filter((g) => (g.getAttribute('style') || '').includes('pointer'))
       .filter((g) => [...g.querySelectorAll('text')].some((t) => /^[0-9]+(\\.[0-9]+)?"$/.test(t.textContent.trim())))
       .map((g) => {
-        const r = g.getBoundingClientRect();
+        // ⚠ The click point is the PANEL RECT's centre, not the group's box.
+        // A group's box also contains its width label, which is drawn wider
+        // than a narrow panel is — so on the 0.75" safety-gap board the
+        // group's centre sits somewhere over the NEIGHBOURING panel, or over
+        // the seam between them. It was always the wrong point to click;
+        // whether it landed on anything at all depended on the drawing's
+        // scale, which is why the 2026-09-29 fit-height view moved it. What it
+        // actually cost, measured rather than asserted:
+        //   git show main:apps/web/harness/smearforn-stage-2/evidence.json
+        //   records the DELETE step with
+        //     refusalsOnTheWay: ["Replaced on wall AB: 16 panels → 16, ..."]
+        //   — a STALE notice left over from the previous step, i.e. the first
+        //   group-centre click hit nothing whatsoever and the loop moved on to
+        //   the next body. After this fix that list is empty and the first
+        //   click deletes.
+        //
+        // ⚠ **NOT "a green test was deleting a panel", which an earlier
+        // version of this note claimed.** That escalation does not survive the
+        // evidence: on main, step 8 recorded the correct rule-placed refusal
+        // with panelsBefore 15 / panelsAfter 15 while Delete was STILL ARMED
+        // from step 7, so a click on an ordinary panel there would have given
+        // 14 panels and a "Deleted…" notice and FAILED the predicate.
+        // Wall AB owns no corner panels, so that refusal can only have come
+        // from the gap itself. The bug was a wasted click, not a false pass —
+        // and the fix is worth having either way, because a click point that
+        // sometimes lands on nothing will eventually land on the wrong thing.
+        const box = g.getBoundingClientRect();
+        const rect = g.querySelector('rect');
+        const r = rect ? rect.getBoundingClientRect() : box;
         const label = [...g.querySelectorAll('text')].map((t) => t.textContent.trim()).find((t) => /^[0-9]+(\\.[0-9]+)?"$/.test(t));
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, label };
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: box.width, label };
       })
+      // ⚠ "w" IS THE GROUP BOX'S WIDTH, NOT THE RECT'S, AND THAT IS ON
+      // PURPOSE even though the click point above is the rect. It reads like
+      // an oversight, so: the "w > 4" filter is here to drop groups that are
+      // not really panels, and at the zoomed-out whole-wall fit the safety
+      // gap's own RECT is about 1.4px wide — filtering on the rect would throw
+      // away the 0.75" board that step 8 exists to click. The group box
+      // (panel + its width label) is a stable "is this a panel group" measure
+      // at any scale; the rect is the right place to CLICK. Two different
+      // questions, two different boxes.
       .filter((p) => p.w > 4 && p.x > 250 && p.x < window.innerWidth - 40 && p.y > 60 && p.y < window.innerHeight - 40);
   })()`);
 
@@ -289,6 +327,25 @@ if (!elevationReady) {
     `could not reach a wall elevation with two adjacent draggable panels; the view control offered ${JSON.stringify(stopsTried)}`,
   );
 }
+/**
+ * ⚠ AND NOW THE WHOLE WALL HAS TO BE BROUGHT ON SCREEN, WHICH USED TO BE FREE.
+ * Before 2026-09-29 an elevation rendered a few hundred pixels wide whatever
+ * the window, so every panel was always visible; since Tommy's fit-height /
+ * scroll-width change a 48ft wall is wider than the window and `panelBodies`
+ * — which filters to the viewport, correctly, because it returns things to
+ * CLICK — would simply not find the safety-gap board in step 8. That fails by
+ * finding fewer elements rather than by raising, so the step says out loud
+ * that it needs the whole wall, and records whether it got it.
+ */
+const wholeWall = await makeElevationZoomControl({ evaluate, sleep, click }).fitWholeWall();
+record(
+  "whole-wall-on-screen",
+  wholeWall,
+  // Everything below locates panels by reading the DOM and filtering to the
+  // viewport; if the wall does not fit, those readers see a subset and the
+  // steps go quietly vacuous.
+  (d) => d.wholeWallVisible === true,
+);
 await shot("00-wall-elevation");
 
 const before = await panelWidths();
@@ -426,12 +483,26 @@ const panelsAfterGapClick = await panelWidths();
 record(
   "rule-placed-panel-refuses",
   {
+    // ⚠ WHICH rule-placed panel was clicked, asserted alongside the notice.
+    // The refusal is worded identically for a corner and for the safety gap
+    // ("Corner and safety-gap panels are placed by rule…"), so the notice
+    // alone cannot tell them apart: on a wall that DOES own corner panels
+    // this step could pass having clicked a corner while the gap — the narrow
+    // one, the one whose click point was wrong — went untested. This wall
+    // (AB on a plain rectangle) owns no corners, but that is a property of the
+    // fixture, not of the check.
+    clickedLabel: gapBody.label,
     notice: gapNotice,
     panelsBefore: panelsBeforeGapClick.length,
     panelsAfter: panelsAfterGapClick.length,
   },
-  // Refused in those words, and the wall does not lose a panel.
-  (d) => typeof d.notice === "string" && d.notice.startsWith("Corner and safety-gap") && d.panelsAfter === d.panelsBefore,
+  // The 0.75" board specifically, refused in those words, and the wall does
+  // not lose a panel.
+  (d) =>
+    d.clickedLabel === '0.75"' &&
+    typeof d.notice === "string" &&
+    d.notice.startsWith("Corner and safety-gap") &&
+    d.panelsAfter === d.panelsBefore,
 );
 await shot("05-rule-placed-refusal");
 

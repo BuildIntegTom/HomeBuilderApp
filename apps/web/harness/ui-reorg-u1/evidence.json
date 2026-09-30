@@ -1,7 +1,7 @@
 {
-  "app": "http://localhost:3311/",
+  "app": "http://localhost:3260/",
   "pass": "built",
-  "ranAt": "2026-09-29T20:54:13.227Z",
+  "ranAt": "2026-09-30T03:33:11.686Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -50,7 +50,8 @@
     {
       "name": "the-cold-click-retry-is-a-safety-net-and-not-load-bearing",
       "coldClickAttempts": {
-        "settingsMenu": 1
+        "projectMenu": 1,
+        "panelizerItem": 1
       },
       "budget": 3,
       "ceiling": 2,
@@ -99,73 +100,9 @@
       "passed": true
     },
     {
-      "name": "the-panelizers-scope-checkboxes-still-gate-the-design-menu-from-their-new-home-in-settings",
-      "where": "the Panelizer, as a section inside #settings-note (U3)",
-      "atDefaultScope": {
-        "boxes": [
-          {
-            "text": "Floors",
-            "checked": false
-          },
-          {
-            "text": "Walls",
-            "checked": true
-          },
-          {
-            "text": "Roof",
-            "checked": false
-          },
-          {
-            "text": "Foundation",
-            "checked": false
-          }
-        ],
-        "wantSubjects": [
-          "wall"
-        ],
-        "designSubjects": [
-          "wall"
-        ]
-      },
-      "atFullScope": {
-        "boxes": [
-          {
-            "text": "Floors",
-            "checked": true
-          },
-          {
-            "text": "Walls",
-            "checked": true
-          },
-          {
-            "text": "Roof",
-            "checked": true
-          },
-          {
-            "text": "Foundation",
-            "checked": true
-          }
-        ],
-        "wantSubjects": [
-          "floor",
-          "wall",
-          "roof",
-          "foundation"
-        ],
-        "designSubjects": [
-          "wall",
-          "floor",
-          "roof",
-          "foundation"
-        ]
-      },
-      "asserted": true,
-      "passed": true
-    },
-    {
       "name": "four-company-simulation-renders-like-the-real-control",
       "ok": true,
-      "usedClass": "AccountControl-module__5hhbVW__actingAsSelect",
+      "usedClass": "AccountControl-module__QGnBCa__actingAsSelect",
       "width": 270,
       "chipText": "Acting asBuilding IntegrityThe Seed Collaborative (platform admin)Rare Forms (consortium)Building Integrity (company admin)",
       "chipWidth": 354.7,
@@ -859,100 +796,6 @@
         "role": 139,
         "settings": 34
       },
-      "asserted": true,
-      "passed": true
-    },
-    {
-      "name": "the-settings-notes-sections-in-the-dom-match-settingsmenusections-at-every-role",
-      "byRole": [
-        {
-          "role": "Public",
-          "want": [
-            "panelizer",
-            "site",
-            "units",
-            "sandbox"
-          ],
-          "sections": [
-            "panelizer",
-            "site",
-            "units",
-            "sandbox"
-          ],
-          "panelizerPresent": true,
-          "sitePresent": true,
-          "panelizerInsideAdmin": false,
-          "siteInsideAdmin": false,
-          "scopeGroupInsideThePanelizer": true
-        },
-        {
-          "role": "Fabricator",
-          "want": [
-            "panelizer",
-            "site",
-            "units",
-            "sandbox",
-            "admin"
-          ],
-          "sections": [
-            "panelizer",
-            "site",
-            "units",
-            "sandbox",
-            "admin"
-          ],
-          "panelizerPresent": true,
-          "sitePresent": true,
-          "panelizerInsideAdmin": false,
-          "siteInsideAdmin": false,
-          "scopeGroupInsideThePanelizer": true
-        },
-        {
-          "role": "Admin",
-          "want": [
-            "panelizer",
-            "site",
-            "units",
-            "sandbox",
-            "admin"
-          ],
-          "sections": [
-            "panelizer",
-            "site",
-            "units",
-            "sandbox",
-            "admin"
-          ],
-          "panelizerPresent": true,
-          "sitePresent": true,
-          "panelizerInsideAdmin": false,
-          "siteInsideAdmin": false,
-          "scopeGroupInsideThePanelizer": true
-        },
-        {
-          "role": "Engineer",
-          "want": [
-            "panelizer",
-            "site",
-            "units",
-            "sandbox",
-            "admin"
-          ],
-          "sections": [
-            "panelizer",
-            "site",
-            "units",
-            "sandbox",
-            "admin"
-          ],
-          "panelizerPresent": true,
-          "sitePresent": true,
-          "panelizerInsideAdmin": false,
-          "siteInsideAdmin": false,
-          "scopeGroupInsideThePanelizer": true
-        }
-      ],
-      "roles": 4,
       "asserted": true,
       "passed": true
     },
@@ -2260,6 +2103,34 @@
       "passed": true
     },
     {
+      "name": "region-3-renders-identically-for-every-stop-before-and-after",
+      "comparedStops": [
+        "2D Floor Plan",
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA",
+        "3D Framed",
+        "3D Boxes",
+        "Membranes"
+      ],
+      "baselineStops": [
+        "2D Floor Plan",
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA",
+        "3D Framed",
+        "3D Boxes",
+        "Membranes"
+      ],
+      "baselineDrivenBy": "the sidebar view dial at 1100px",
+      "differences": [],
+      "comparedOn": "shape (digits normalised — two runs draw two slightly different buildings)",
+      "asserted": true,
+      "passed": true
+    },
+    {
       "name": "the-same-stop-reached-two-ways-leaves-region-3-byte-for-byte-identical",
       "twoPath": [
         {
@@ -2313,17 +2184,6 @@
       ],
       "comparedOn": "the full signature, digits included",
       "stops": 8,
-      "comparedLabels": [
-        "2D Floor Plan",
-        "Elevation: AB",
-        "Elevation: BC",
-        "Elevation: CD",
-        "Elevation: DA",
-        "3D Framed",
-        "3D Boxes",
-        "Membranes"
-      ],
-      "expectedStops": 8,
       "asserted": true,
       "passed": true
     },
@@ -2335,7 +2195,8 @@
     }
   ],
   "coldClickAttempts": {
-    "settingsMenu": 1
+    "projectMenu": 1,
+    "panelizerItem": 1
   },
   "removalSweep": [
     {

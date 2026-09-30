@@ -46,6 +46,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeElevationZoomControl } from "../elevationZoom.mjs";
 import { makeViewStopControl } from "../viewStopControl.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -367,17 +368,102 @@ if (reached === null) {
 }
 console.log(`  working on ${reached.view} (${reached.dragStrips} drag strips)`);
 
-// Zoom the elevation in, so the drag below has enough pixels per inch to land
-// somewhere interesting (at 100% on a 48ft wall, one pixel is about two
-// inches, and every drag lands inside the ±2in snap window around the floor).
-const zoomIn = await evaluate(`(() => {
-  const b = [...document.querySelectorAll('button')].find((x) => x.title === 'Zoom in');
-  if (!b) return null;
-  const r = b.getBoundingClientRect();
-  return [r.left + r.width / 2, r.top + r.height / 2];
-})()`);
-for (let i = 0; i < 3 && zoomIn; i++) await click(zoomIn[0], zoomIn[1]);
-await sleep(500);
+/**
+ * How many real inches one screen pixel is worth on the elevation right now.
+ *
+ * ⚠ **THIS USED TO BE A CONSTANT IN A COMMENT, AND THAT IS WHY IT IS A
+ * FUNCTION NOW.** The drags below moved the cursor by hard-coded pixel
+ * distances (4.31px "a couple of inches", 90.9px "past the 24in floor")
+ * chosen against the drawing's size on 2026-09-24, when a wall elevation
+ * rendered a few hundred pixels wide whatever the window. On 2026-09-29 the
+ * elevation started fitting the editor's height and scrolling its length, so
+ * the same pixel distance is now worth a small fraction of the inches it
+ * used to be — a floor drag calibrated in pixels would simply stop reaching
+ * the floor, and would have failed looking like a drag bug.
+ *
+ * So the harness measures the scale instead of assuming it: the SVG's own
+ * viewBox width against its real rendered width gives internal-px per
+ * screen-px, and the elevation's internal scale is 1.6px per inch (uniform
+ * on both axes since 2026-09-29 — it is that uniformity the drag maths
+ * depends on, and step 9c is what proves it).
+ */
+const ELEVATION_PX_PER_IN = 1.6;
+const inchesPerScreenPx = async () =>
+  await evaluate(`(() => {
+    const svg = document.querySelector('svg[aria-label^="Elevation view of wall"]');
+    if (!svg) return null;
+    const r = svg.getBoundingClientRect();
+    const vbWidth = Number((svg.getAttribute('viewBox') || '').split(' ')[2]);
+    if (!(r.width > 0) || !(vbWidth > 0)) return null;
+    return (vbWidth / r.width) / ${ELEVATION_PX_PER_IN};
+  })()`);
+
+/**
+ * A view button's centre, by the START of its `title`, **re-read every time
+ * and required to be on screen**.
+ *
+ * ⚠ Three separate things this got wrong in one run, all of the same family:
+ *  - Matching the WHOLE title: Reset's title gained a description of what it
+ *    resets to, so a whole-string match went null and the click silently did
+ *    not happen.
+ *  - Caching the coordinates: the pan/zoom row's position moves down the
+ *    sidebar once a panel is selected and the Selected Panel note appears, so
+ *    coordinates captured at step 3 press empty space at step 9 — and a
+ *    press on empty space fails by doing nothing.
+ *  - Taking the first match: since 2026-09-29 these controls exist TWICE
+ *    (the sidebar copy and the copy docked over the drawing). The sidebar
+ *    copy can be scrolled out of its own scrolling panel; the docked one
+ *    cannot. So the on-screen one is preferred, and if neither is reachable
+ *    this THROWS rather than returning a coordinate that hits nothing.
+ */
+const viewButton = async (titlePrefix) => {
+  const found = await evaluate(`(() => {
+    const bs = [...document.querySelectorAll('button')].filter((x) => (x.title || '').startsWith(${JSON.stringify(titlePrefix)}));
+    if (!bs.length) return null;
+    const boxes = bs.map((b) => b.getBoundingClientRect());
+    const i = boxes.findIndex((r) => r.width > 0 && r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth);
+    if (i < 0) return { count: bs.length, onScreen: false };
+    return { count: bs.length, onScreen: true, xy: [boxes[i].left + boxes[i].width / 2, boxes[i].top + boxes[i].height / 2] };
+  })()`);
+  if (!found) throw new Error(`no button whose title starts with "${titlePrefix}"`);
+  if (!found.onScreen) throw new Error(`${found.count} button(s) titled "${titlePrefix}" but none on screen`);
+  return found.xy;
+};
+/** Click a view button, re-reading where it is at the moment of the click. */
+const clickViewButton = async (titlePrefix) => {
+  const xy = await viewButton(titlePrefix);
+  await click(xy[0], xy[1]);
+};
+
+/**
+ * GET THE WHOLE WALL ON SCREEN BEFORE READING ANYTHING OFF IT.
+ *
+ * ⚠ **This replaced three clicks of Zoom in, and the swap is a review fix
+ * rather than a preference.** The old three clicks predate 2026-09-29, when
+ * they were load-bearing: at 100% on a 48ft wall one pixel was about two
+ * inches and every drag landed inside the ±2in snap window around the floor.
+ * The fitted view is far finer than that, so the zoom bought nothing — and it
+ * COST the run its sample. Zoomed to 195% on a 13-panel wall only THREE width
+ * labels were still inside the window, so `panel-width-labels` quietly went
+ * from 13 to 3 and `labels.slice(1, 8)` — which steps 4-8 select from — was
+ * down to two candidates against an assertion of `count >= 2`. Two labels from
+ * red, by a route that raises nothing: exactly the "fewer elements, not an
+ * exception" failure `elevationZoom.mjs` was written for, in the one harness
+ * that carried the 13-panel wall and never called it.
+ *
+ * Step 9c does its own zooming (Reset, then three clicks of Zoom in) and never
+ * depended on this, so nothing here is lost.
+ */
+const elevationZoom = makeElevationZoomControl({ evaluate, sleep, click });
+const fittedWholeWall = await elevationZoom.fitWholeWall();
+record(
+  "whole-wall-on-screen",
+  fittedWholeWall,
+  // Recorded AND asserted: every reader below this line filters to what is
+  // inside the window, so if the whole wall is not in the window the run is
+  // silently testing a fraction of it.
+  (d) => d.wholeWallVisible === true,
+);
 await shot("02-wall-elevation");
 
 /**
@@ -419,6 +505,28 @@ const panelWidthLabels = async () =>
       .filter((l) => l.x > 250 && l.x < window.innerWidth - 200 && l.y > 60 && l.y < window.innerHeight - 60);
   })()`);
 
+/**
+ * EVERY panel width label on this elevation, on screen or not.
+ *
+ * ⚠ **The conservation checks below must not use the click-reachability
+ * filter, and used to.** `panelWidthLabels` only returns labels inside the
+ * window because a click at an off-screen coordinate hits nothing — correct
+ * for choosing what to click, wrong for a sum. Once the elevation started
+ * scrolling a long wall (2026-09-29), only two of a 13-panel wall's labels
+ * were on screen, so "the run total is conserved" was summing two panels and
+ * failed the moment a drag moved width across the edge of the window. The
+ * numbers were right; the question was wrong.
+ *
+ * (Hoisted above step 4 on the 2026-09-29 review pass, because step 4 now
+ * compares the two readers against each other: see `panel-width-labels`.)
+ */
+const allVisibleAndOffscreenWidths = async () =>
+  await evaluate(`(() => {
+    return [...document.querySelectorAll('svg text')]
+      .filter((t) => (t.getAttribute('style') || '').includes('pointer'))
+      .map((t) => t.textContent.trim());
+  })()`);
+
 /** The Selected Panel note's own width field, if one is open. */
 const widthField = async () =>
   await evaluate(`(() => {
@@ -430,13 +538,39 @@ const widthField = async () =>
 
 console.log("4. selecting a standard panel by clicking its width label");
 const labels = await panelWidthLabels();
+const everyLabelOnThisWall = await allVisibleAndOffscreenWidths();
 record(
   "panel-width-labels",
-  { count: labels.length, first: labels.slice(0, 4).map((l) => l.label) },
-  // The rest of the run clicks labels 1..7, so fewer than a couple means the
-  // gesture Stage 1 added is not on the drawing and every step after this is
-  // testing nothing.
-  (d) => d.count >= 2,
+  {
+    count: labels.length,
+    onTheWall: everyLabelOnThisWall.length,
+    first: labels.slice(0, 4).map((l) => l.label),
+  },
+  // Two separate promises, and the second is the one that was missing.
+  //
+  // 1. There is something to click at all: the rest of the run selects from
+  //    labels 1..7, so fewer than a couple means the gesture Stage 1 added is
+  //    not on the drawing and every step after this is testing nothing.
+  // 2. **The CLICKABLE sample is the whole wall, not a window onto it.**
+  //    `count >= 2` alone let the sample fall from 13 labels to 3 without a
+  //    murmur when the elevation started scrolling; comparing the two readers
+  //    is what makes that visible, because `onTheWall` counts labels whether
+  //    they are on screen or not.
+  //
+  // ⚠ **`>= 8` is the real requirement, `onTheWall - 2` is the slack, and both
+  // numbers replace guesses.** The requirement first: steps 4-8 select from
+  // `labels.slice(1, 8)`, so EIGHT clickable labels is what this run actually
+  // consumes. `>= 2` was not that number — it was two labels from red when the
+  // sample collapsed from 13 to 3, and it did not say out loud what the run
+  // needs. The slack second: ONE label of slack is TIGHTER than the on-screen
+  // filter's own worst case, not looser. That filter trims at `x > 250` AND at
+  // `x < innerWidth - 200`, i.e. at BOTH ends, so a narrower window can
+  // legitimately lose one label at each — `11 >= 12` — and the step would go
+  // red on an app that is behaving. Two is the filter's own arithmetic. Either
+  // way the failure is a false alarm rather than a silent shrink, which errs in
+  // the right direction; but a canary that cries on a smaller window is a
+  // canary people learn to ignore.
+  (d) => d.count >= 8 && d.count >= d.onTheWall - 2,
 );
 let selected = null;
 for (const l of labels.slice(1, 8)) {
@@ -571,21 +705,46 @@ record(
 await shot("08-after-reset-automatic");
 
 console.log("9. dragging a panel boundary");
-/** The drag handle between the pair of panels at `index`. */
-const dragHandle = async (index) =>
+/**
+ * The drag handle between the pair of panels at `index`, counting only the
+ * handles that are actually ON SCREEN.
+ *
+ * ⚠ **The on-screen filter is new, and it is the same lesson this file
+ * already learned twice.** Since the elevation fits the editor's height and
+ * scrolls its length (2026-09-29), a long wall's drawing is wider than the
+ * window and some of its drag strips sit outside it. A mousedown at an
+ * off-screen coordinate hits nothing and the drag reports no movement — i.e.
+ * it fails by doing nothing, the exact shape of failure `panelWidthLabels`
+ * has its own filter for. Counting only reachable handles keeps "index 1"
+ * meaning "a handle this run can actually press".
+ */
+const dragHandles = async () =>
   await evaluate(`(() => {
-    const h = [...document.querySelectorAll('rect[style*="ew-resize"]')][${index}];
-    if (!h) return null;
-    const b = h.getBoundingClientRect();
-    return [b.left + b.width / 2, b.top + b.height / 2];
+    return [...document.querySelectorAll('rect[style*="ew-resize"]')]
+      .map((h, i) => { const b = h.getBoundingClientRect(); return { i, x: b.left + b.width / 2, y: b.top + b.height / 2 }; })
+      .filter((h) => h.x > 250 && h.x < window.innerWidth - 200 && h.y > 60 && h.y < window.innerHeight - 60);
   })()`);
+/** Every strip's centre X, ON SCREEN OR NOT — for measuring where one landed. */
+const allStripXs = async () =>
+  await evaluate(`[...document.querySelectorAll('rect[style*="ew-resize"]')].map((h) => { const b = h.getBoundingClientRect(); return b.left + b.width / 2; })`);
+const dragHandle = async (index) => {
+  const h = (await dragHandles())[index];
+  return h ? [h.x, h.y] : null;
+};
 
-const widthsBeforeDrag = (await panelWidthLabels()).map((l) => l.label);
+const widthsBeforeDrag = await allVisibleAndOffscreenWidths();
 
-// (a) A SMALL drag, at a deliberately ugly fractional pixel offset. At this
-// zoom one pixel is a couple of inches, so the cursor lands nowhere near a
-// round number — the committed widths still have to be whole eighths, and
-// the pair still has to add up to exactly what it did before.
+// (a) A SMALL drag of a few pixels, landing at an arbitrary inch rather than
+// a round one — the committed widths still have to be whole eighths, and the
+// pair still has to add up to exactly what it did before.
+//
+// ⚠ The fractional `+2.37` / `+4.31` used to be described as "a deliberately
+// ugly fractional pixel offset", which was never true of what the APP saw:
+// `MouseEvent.clientX` is an integer and the fraction is dropped on the way
+// in (see step 9c, where that truncation was mistaken for snap noise). The
+// arbitrariness that matters here comes from the scale, not the fraction —
+// one screen pixel is some non-round number of inches — so the check is
+// unaffected and the pixels are left as they are.
 const handle = await dragHandle(1);
 if (!handle) throw new Error("no panel drag handle");
 await mouse("mousePressed", handle[0], handle[1]);
@@ -598,10 +757,53 @@ await mouse("mouseReleased", handle[0] + 4.31, handle[1]);
 await sleep(700);
 await shot("09-after-drag-snapped-to-eighths");
 
-const widthsAfterFineDrag = (await panelWidthLabels()).map((l) => l.label);
+const widthsAfterFineDrag = await allVisibleAndOffscreenWidths();
 // The run total, not just the dragged pair: a drag moves width between two
-// panels, so the sum of every visible panel on the wall must come out
-// unchanged to the inch.
+// panels, so the sum of every panel on the wall must come out unchanged to
+// the inch.
+//
+// ⚠ ONE SET OF NUMBERS HERE MOVED AND THEN MOVED BACK, AND IT IS WORTH
+// SAYING SO SO THAT NOBODY READS IT AS A TILER CHANGE. Between `main` and
+// the first cut of the fitted elevation, wall AB's recorded widths went from
+// `…34.125, 34.125, 40` (run total 508.25) to `…37.125, 37, 40` (514.125).
+// Nothing in the tiler moved: step 4 was down to three reachable width
+// labels instead of thirteen, so `labels.slice(1, 8)` selected a DIFFERENT
+// panel, and steps 5-8 hand-set and released a different one — which lands
+// the tiler's residual eighths on different slots. Restoring the label count
+// (see `whole-wall-on-screen` above) put the SELECTED PANEL back: this step
+// drags the pair at index 1/2 — `40 / 40` — exactly as `main` does, and
+// smearforn-stage-2's wall AB was never affected at all
+// (`totalEighths: 4392` on both sides throughout).
+//
+// ⚠ **BUT DO NOT DIFF THESE LISTS AGAINST `main` LINE BY LINE, BECAUSE THEY
+// ARE NOT STABLE BETWEEN RUNS OF THE SAME CODE.** Measured on 2026-09-29:
+// three consecutive runs of this file with no code change affecting anything
+// above this step produced AB as `…34.125, 34.125, 40` (508.25) once and
+// `…37.125, 37, 40` (514.125) twice. The footprint is drawn with synthetic
+// mouse moves and the rectangle does not always land on the same quantized
+// corner, so wall AB's own LENGTH — and with it the tiler's residual eighths —
+// moves from run to run. An earlier version of this note said the committed
+// numbers were "byte-identical to `main`" and that "only AB is comparable
+// between runs": that was one pair of runs' worth of luck. **No wall's literal
+// width list is comparable across runs, AB included.** What IS stable, and
+// what this step actually asserts, is `runTotalConserved` — the same wall's
+// total before and after the drag, WITHIN one run.
+//
+// ⚠ **And the dragged pair in `after` is SUPPOSED to differ from `main`.**
+// This branch records `42.5 / 37.5` (both runs above) where `main` records
+// `44.5 / 35.5`, both conserving the same 80in across the pair. The drag is a
+// fixed number of SCREEN pixels (`+4.31`), and one screen pixel is a different
+// number of inches once the drawing is fitted to the viewport instead of
+// capped at 720, so the same gesture legitimately moves a different amount of
+// width. Someone diffing evidence against `main` should expect that line to
+// move, and should compare `runTotalConserved` rather than the lists.
+//
+// ⚠ Step 10's other walls are the same story, and were the first place it was
+// noticed: BC and DA vary between runs on the same code (`[40, 40, 40, 40]`
+// one run, `[40, 37.125, 37, 40]` the next) for exactly this reason — the
+// timing sensitivity this file documents at length under
+// `SMEARFORN_CPU_THROTTLE`. None of it touches an assertion: every check here
+// compares a run against itself.
 const pairBefore = widthsBeforeDrag.map(parseImperial).reduce((a, b) => a + b, 0);
 const pairAfter = widthsAfterFineDrag.map(parseImperial).reduce((a, b) => a + b, 0);
 record(
@@ -621,16 +823,174 @@ record(
   (d) => d.everyWidthIsAWholeEighth && d.runTotalConserved && d.somethingActuallyMoved,
 );
 
+/**
+ * (a2) ⚠ **THE MULTI-ZOOM LANDING CHECK — does the boundary end up where the
+ * cursor let go of it, at more than one zoom level?**
+ *
+ * This is the check the 2026-09-29 elevation change owed. Every drag in
+ * `WallElevationDiagram` turns a cursor position into inches with its own
+ * per-event ratio, `svgWidthPx / svgRect.width` — which is exact at any
+ * rendered size ONLY while the drawing is scaled uniformly on both axes. It
+ * was not before that change (a 720px cap made the horizontal scale fall to
+ * 56% of the vertical on a 60ft wall) and it is now. `elevationViewport.ts`
+ * pins the arithmetic in unit tests; this pins the real thing in a browser,
+ * because the failure being guarded against is a drag that silently lands on
+ * the wrong panel boundary, and that is how Tommy sets his real panel widths.
+ *
+ * It is deliberately a MEASUREMENT of where the handle ended up, not an
+ * inference from the widths: a width that changed by roughly the right amount
+ * would also be produced by a scale that is wrong by a few percent.
+ */
+const boundaryLandingAtThisZoom = async (zoomLabel, travelIn) => {
+  const inPerPx = await inchesPerScreenPx();
+  const reachable = await dragHandles();
+  const h = reachable[1];
+  if (!h || !inPerPx) return { zoom: zoomLabel, reached: false };
+  // `h.i` is the strip's index in the FULL list, so the same boundary can be
+  // re-measured afterwards even if the drag pushed it off screen or changed
+  // which strips are reachable. Measuring `reachable[1]` again afterwards
+  // would silently be a different boundary.
+  const stripIndex = h.i;
+  // Move the boundary a real THREE INCHES, expressed in however many screen
+  // pixels three inches happens to be at this zoom — which is the point: the
+  // two runs of this function push the mouse different distances and must
+  // produce the same answer in inches. Three inches is clear of the ±2in
+  // floor snap (these panels are 40in nominal) and 24x the 1/8in grid, and
+  // the two calls go opposite ways so the wall ends where it started.
+  const dxPx = travelIn / inPerPx;
+  // ⚠ **INTEGER COORDINATES, AND THIS IS THE WHOLE REASON THE RESIDUAL BELOW
+  // IS 1/16in RATHER THAN A QUARTER INCH.** `MouseEvent.clientX` is an
+  // integer: CDP will happily dispatch `x: 763.59`, and the app is then
+  // handed 763. The harness would be measuring its own missing 0.59px as if
+  // the app had lost it — worth `0.59 x inchesPerScreenPx`, which at the
+  // fitted view is 0.145in and at a zoomed-OUT view would be more. Rounding
+  // here makes the harness and the browser agree where the cursor is, so the
+  // only error left in `missIn` is the app's own 1/8in snap.
+  const pressX = Math.round(h.x);
+  const releasedAtX = Math.round(h.x + dxPx);
+  await mouse("mousePressed", pressX, h.y);
+  await sleep(80);
+  await mouse("mouseMoved", Math.round(h.x + dxPx / 2), h.y);
+  await sleep(120);
+  await mouse("mouseMoved", releasedAtX, h.y);
+  await sleep(150);
+  await mouse("mouseReleased", releasedAtX, h.y);
+  await sleep(700);
+  const landedX = (await allStripXs())[stripIndex] ?? null;
+  return {
+    zoom: zoomLabel,
+    reached: true,
+    askedForIn: travelIn,
+    inchesPerScreenPx: Number(inPerPx.toFixed(5)),
+    cursorTravelPx: Number(dxPx.toFixed(2)),
+    stripIndex,
+    handleXBefore: Number(h.x.toFixed(2)),
+    // An integer, because that is what was dispatched and what the app saw.
+    cursorReleasedAtX: releasedAtX,
+    handleXAfter: landedX === null ? null : Number(landedX.toFixed(2)),
+    // The two numbers the check is about: how far the boundary really moved,
+    // and how far it is from where the cursor let go. Both in INCHES, so the
+    // two zoom levels are directly comparable.
+    movedIn: landedX === null ? null : Number(((landedX - h.x) * inPerPx).toFixed(4)),
+    missIn: landedX === null ? null : Number((Math.abs(landedX - releasedAtX) * inPerPx).toFixed(4)),
+  };
+};
+
+// At the FITTED 100% first — the new default view, which nothing had ever
+// dragged on before this change.
+await clickViewButton("Reset the view");
+await sleep(500);
+const landingAtFit = await boundaryLandingAtThisZoom("fitted 100%", 3);
+await shot("09b-landing-at-fitted-100");
+
+// Then zoomed in three clicks (1.25^3 = 195%), where one screen pixel is
+// worth about half the inches it was — and back the other way, so the wall
+// ends this step exactly where it started it.
+for (let i = 0; i < 3; i++) await clickViewButton("Zoom in");
+await sleep(500);
+const landingAtZoom = await boundaryLandingAtThisZoom("zoomed 195%", -3);
+await shot("09c-landing-at-zoomed-195");
+
+record(
+  "drag-lands-where-the-cursor-let-go-at-two-zooms",
+  {
+    landings: [landingAtFit, landingAtZoom],
+    // Stated out loud, because "the same answer at two zooms" means nothing
+    // if the two zooms were the same zoom.
+    theZoomsReallyDiffered:
+      landingAtFit.reached &&
+      landingAtZoom.reached &&
+      Math.abs(landingAtFit.inchesPerScreenPx - landingAtZoom.inchesPerScreenPx) / landingAtFit.inchesPerScreenPx > 0.2,
+    // 1/16in: HALF THE 1/8in GRID, which is the whole of the error a correct
+    // drag can have. `resolvePanelBoundaryDrag` rounds to eighths through
+    // `roundToEighthIn` -> `Math.round` (packages/geometry/src/eighths.ts),
+    // and round-to-NEAREST cannot be off by a whole eighth.
+    //
+    // ⚠ THIS USED TO BE 0.125, WITH A WRONG EXPLANATION, AND IT WAS FLAKY BY
+    // CONSTRUCTION. The comment said "the boundary snaps to the 1/8in grid" —
+    // but that same comment also said "off by at most 1/16in", which is the
+    // contradiction that gave the game away: round-to-nearest cannot produce
+    // the 0.125 both runs were recording.
+    //
+    // The real mechanism was the harness's own, and it is now fixed at
+    // source: the release coordinate was dispatched fractionally
+    // (`h.x + dxPx` = 763.59), `MouseEvent.clientX` is an integer, the app
+    // saw 763, and the harness then measured the 0.59px IT had thrown away as
+    // if the drag had lost it. Reconstructed exactly from the old numbers:
+    // 0.59px x 0.24638 in/px = 0.145in down, the eighth-snap gave 0.020in
+    // back, and the residual was 0.125in — at BOTH zooms, biased the same
+    // way, which is what says "not snap noise".
+    //
+    // It was also latently red rather than merely mis-explained. The old
+    // worst case was `frac(releaseX) x inchesPerScreenPx + 1/16`, i.e. up to
+    // 0.31in at the fitted view — more than double the 0.125 tolerance. Both
+    // recorded runs happened to land mid-range (frac 0.59 and 0.86); a
+    // different window size or wall length moves that fraction and the step
+    // would have gone red at ~0.25in, reading as a PANEL-DRAG REGRESSION on
+    // the one gesture Tommy uses to set real panel widths.
+    //
+    // **And the good news, which the old evidence hid: the app's real drag
+    // accuracy is better than it looked.** A human cursor is already at an
+    // integer `clientX`, so no user ever suffers the truncation the harness
+    // was inflicting on itself. The only error a person sees when they let go
+    // of a panel boundary is the <=1/16in snap to the shop's own grid.
+    toleranceIn: 0.0625,
+  },
+  // Each landing within half an eighth of where the cursor let go, each
+  // having really moved about the three inches asked for, and the two zoom
+  // levels genuinely different.
+  (d) =>
+    d.theZoomsReallyDiffered === true &&
+    d.landings.every(
+      (l) =>
+        l.reached === true && l.missIn !== null && l.missIn <= d.toleranceIn && Math.abs(l.movedIn - l.askedForIn) <= 0.25,
+    ),
+);
+
 // (b) A LONG drag past the floor: the shrinking panel stops at the catalog
 // minimum (24in) rather than going below what the shop can build.
+//
+// ⚠ The distance is now derived from the measured scale rather than being a
+// hard-coded 90.9px — see `inchesPerScreenPx` above. 90.9px was ~41in on the
+// 2026-09-24 drawing and is a small fraction of that on the fitted one, so
+// the drag would have stopped short of the floor and failed as though the
+// floor had gone.
+// Back to the fitted 100% for it: 60 inches at the zoomed-in scale is over
+// 500 screen pixels, which would release the mouse outside the window.
+await clickViewButton("Reset the view");
+await sleep(500);
+const floorDragIn = 60;
+const inPerPxForFloorDrag = await inchesPerScreenPx();
+const floorDragPx = floorDragIn / (inPerPxForFloorDrag ?? 1);
 const handle2 = await dragHandle(1);
+if (!handle2) throw new Error("no panel drag handle on screen for the floor drag");
 await mouse("mousePressed", handle2[0], handle2[1]);
 await sleep(80);
-await mouse("mouseMoved", handle2[0] + 90.9, handle2[1]);
+await mouse("mouseMoved", handle2[0] + floorDragPx, handle2[1]);
 await sleep(200);
-await mouse("mouseReleased", handle2[0] + 90.9, handle2[1]);
+await mouse("mouseReleased", handle2[0] + floorDragPx, handle2[1]);
 await sleep(700);
-const widthsAfterFloorDrag = (await panelWidthLabels()).map((l) => l.label);
+const widthsAfterFloorDrag = await allVisibleAndOffscreenWidths();
 record(
   "drag-to-the-floor",
   {
@@ -664,6 +1024,237 @@ record(
       "scope, reported for a decision rather than fixed here.",
   ),
 );
+
+/* --- 9d. THE WHEEL --------------------------------------------------------
+ *
+ * ⚠ **This step exists because the wheel handler is the most fragile thing
+ * the 2026-09-29 elevation change added and it shipped with nothing standing
+ * over it.** The drag got a permanent harness step; the wheel got a throwaway
+ * probe in a scratch directory, which is the arrangement this repo has
+ * already been burned by twice.
+ *
+ * What is fragile about it: the listener is attached natively with
+ * `{ passive: false }` instead of through React's `onWheel`, and the ONLY
+ * reason is that React registers wheel listeners on the root as PASSIVE, so a
+ * `preventDefault()` from an `onWheel` handler is ignored — and Ctrl+wheel
+ * then zooms the whole BROWSER PAGE instead of the drawing. It looks like
+ * unidiomatic React, so the first person to tidy it breaks it. Now they break
+ * this instead.
+ *
+ * ⚠ **`devicePixelRatio` is not the proof, and was wrongly offered as one.**
+ * A CDP-synthesised wheel is injected into the renderer; browser page zoom is
+ * browser-UI behaviour a synthetic event may never reach, so `pageZoom: 1`
+ * would be recorded whether or not `preventDefault()` landed. The real proof
+ * is `event.defaultPrevented`, read from a listener on `window` in the BUBBLE
+ * phase — i.e. after the viewport's own handler has had the event. If the
+ * registration goes passive, `preventDefault()` is dropped and this reads
+ * false.
+ */
+console.log("9d. the wheel gestures");
+
+/** A wheel event at a point, with `modifiers: 2` meaning Ctrl held. */
+const wheel = (x, y, deltaY, modifiers = 0) =>
+  send("Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: 0, deltaY, modifiers, pointerType: "mouse" }, sid);
+
+/**
+ * Arms the `defaultPrevented` probe and clears anything it saw before.
+ *
+ * Bubble phase on `window`, and `{ passive: true }` so the probe itself
+ * cannot influence the outcome it is measuring.
+ */
+const armWheelProbe = async () =>
+  await evaluate(`(() => {
+    window.__wheelProbe = [];
+    if (!window.__wheelProbeInstalled) {
+      window.__wheelProbeInstalled = true;
+      window.addEventListener('wheel', (e) => {
+        window.__wheelProbe.push({ ctrl: e.ctrlKey || e.metaKey, deltaY: e.deltaY, defaultPrevented: e.defaultPrevented });
+      }, { passive: true });
+    }
+    return true;
+  })()`);
+const wheelProbe = async () => (await evaluate(`window.__wheelProbe`)) ?? [];
+
+/** The scrolling viewport's own state, plus what inch is under a screen x. */
+const viewportState = async (clientX) =>
+  await evaluate(`(() => {
+    const svg = document.querySelector('svg[aria-label^="Elevation view of wall"]');
+    if (!svg) return null;
+    const r = svg.getBoundingClientRect();
+    let el = svg.parentElement;
+    while (el && getComputedStyle(el).overflowX !== 'auto' && getComputedStyle(el).overflow !== 'auto') el = el.parentElement;
+    const vb = Number((svg.getAttribute('viewBox') || '').split(' ')[2]);
+    const local = (${clientX} - r.left) * (vb / r.width);
+    return {
+      renderedWidth: Math.round(r.width),
+      renderedHeight: Math.round(r.height),
+      scrollLeft: el ? Math.round(el.scrollLeft) : null,
+      scrollTop: el ? Math.round(el.scrollTop) : null,
+      canScrollVertically: el ? el.scrollHeight - el.clientHeight > 1 : null,
+      canScrollHorizontally: el ? el.scrollWidth - el.clientWidth > 1 : null,
+      zoom: [...document.querySelectorAll('span')].map((s) => s.textContent).find((t) => /^\\d+%$/.test(t)) ?? null,
+      // The drawing inch under the cursor, which is what a zoom about the
+      // pointer has to preserve.
+      inchUnderPointer: Math.round(((local - 48) / 1.6) * 1000) / 1000,
+    };
+  })()`);
+
+// Back to the fitted default, which is the view the redirect below is about.
+await clickViewButton("Reset the view");
+await sleep(600);
+const wheelPointer = await evaluate(`(() => {
+  const svg = document.querySelector('svg[aria-label^="Elevation view of wall"]');
+  let el = svg.parentElement;
+  while (el && getComputedStyle(el).overflowX !== 'auto' && getComputedStyle(el).overflow !== 'auto') el = el.parentElement;
+  const r = (el ?? svg).getBoundingClientRect();
+  return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];
+})()`);
+
+// (a) A PLAIN wheel at the fitted view reaches along the wall. Tommy's
+// complaint was that the elevation had no scroll at all, and the wall is long
+// and short — so a vertical wheel is redirected to horizontal while there is
+// nothing to scroll vertically.
+const beforePlain = await viewportState(wheelPointer[0]);
+await armWheelProbe();
+await wheel(wheelPointer[0], wheelPointer[1], 300, 0);
+await sleep(400);
+await wheel(wheelPointer[0], wheelPointer[1], 300, 0);
+await sleep(600);
+const afterPlainDown = await viewportState(wheelPointer[0]);
+const plainProbe = await wheelProbe();
+await wheel(wheelPointer[0], wheelPointer[1], -300, 0);
+await sleep(400);
+await wheel(wheelPointer[0], wheelPointer[1], -300, 0);
+await sleep(600);
+const afterPlainBack = await viewportState(wheelPointer[0]);
+record(
+  "plain-wheel-reaches-along-the-wall",
+  {
+    fitsVertically: beforePlain.canScrollVertically === false,
+    scrollLeft: [beforePlain.scrollLeft, afterPlainDown.scrollLeft, afterPlainBack.scrollLeft],
+    scrollTopStayedPut: beforePlain.scrollTop === afterPlainDown.scrollTop,
+    zoomUnchanged: beforePlain.zoom === afterPlainDown.zoom,
+    defaultPrevented: plainProbe.map((p) => p.defaultPrevented),
+  },
+  // It scrolls ALONG the wall (not down), does not zoom, comes back exactly,
+  // and the app really did take the event — `preventDefault` landed, which is
+  // what stops the browser also scrolling the page behind it.
+  (d) =>
+    d.fitsVertically === true &&
+    d.scrollLeft[1] > d.scrollLeft[0] &&
+    d.scrollLeft[2] === d.scrollLeft[0] &&
+    d.scrollTopStayedPut === true &&
+    d.zoomUnchanged === true &&
+    d.defaultPrevented.length === 2 &&
+    d.defaultPrevented.every((v) => v === true),
+);
+
+// (b) CTRL + wheel zooms the DRAWING, about the pointer — and, the point of
+// the whole native-listener detour, the browser page does not zoom because
+// `preventDefault()` really landed.
+const beforeCtrl = await viewportState(wheelPointer[0]);
+await armWheelProbe();
+await wheel(wheelPointer[0], wheelPointer[1], -240, 2);
+await sleep(900);
+const afterCtrl = await viewportState(wheelPointer[0]);
+const ctrlProbe = await wheelProbe();
+record(
+  "ctrl-wheel-zooms-the-drawing-not-the-page",
+  {
+    zoom: [beforeCtrl.zoom, afterCtrl.zoom],
+    renderedWidth: [beforeCtrl.renderedWidth, afterCtrl.renderedWidth],
+    // exp(240/400) = 1.8221, so one 240-delta notch is 182%.
+    expectedZoomPercent: Math.round(Math.exp(240 / 400) * 100),
+    inchUnderPointer: [beforeCtrl.inchUnderPointer, afterCtrl.inchUnderPointer],
+    pointerDriftIn: Math.round(Math.abs(afterCtrl.inchUnderPointer - beforeCtrl.inchUnderPointer) * 1000) / 1000,
+    // ⚠ THE PROOF. Not `devicePixelRatio`: see this step's note.
+    ctrlSeen: ctrlProbe.map((p) => p.ctrl),
+    defaultPrevented: ctrlProbe.map((p) => p.defaultPrevented),
+  },
+  // The drawing got bigger by the amount the exponential says, the drawing
+  // point under the cursor is still under the cursor (within a quarter inch —
+  // it is re-pinned by a scroll offset in integer pixels), and the event was
+  // consumed so the page itself cannot have zoomed.
+  (d) =>
+    d.zoom[1] === `${d.expectedZoomPercent}%` &&
+    d.renderedWidth[1] > d.renderedWidth[0] * 1.5 &&
+    d.pointerDriftIn <= 0.25 &&
+    d.ctrlSeen.length === 1 &&
+    d.ctrlSeen[0] === true &&
+    d.defaultPrevented.length === 1 &&
+    d.defaultPrevented[0] === true,
+);
+await shot("09d-ctrl-wheel-zoomed");
+
+// (c) ⚠ AND THE LIMIT OF THE GESTURE, asserted so that the comment in
+// WallElevationDiagram cannot drift away from the behaviour again. An earlier
+// version of that comment claimed "the gesture is never dead". It is not:
+// once zoomed in there IS vertical overflow, so the redirect is skipped and a
+// plain wheel scrolls DOWN like any other scroll container. Reaching along the
+// wall then needs Shift+wheel, the scrollbar or Pan. Recorded here as real
+// behaviour rather than as a claim — if Tommy wants the redirect to win at
+// every zoom, this is the step that changes.
+const beforeZoomedPlain = await viewportState(wheelPointer[0]);
+await armWheelProbe();
+await wheel(wheelPointer[0], wheelPointer[1], 100, 0);
+await sleep(700);
+const afterZoomedPlain = await viewportState(wheelPointer[0]);
+record(
+  "zoomed-in-a-plain-wheel-scrolls-vertically-instead",
+  {
+    canScrollVertically: beforeZoomedPlain.canScrollVertically,
+    scrollTop: [beforeZoomedPlain.scrollTop, afterZoomedPlain.scrollTop],
+    scrollLeft: [beforeZoomedPlain.scrollLeft, afterZoomedPlain.scrollLeft],
+    appTookTheEvent: (await wheelProbe()).map((p) => p.defaultPrevented),
+  },
+  // Vertical overflow exists, the wheel moved the view DOWN and not along,
+  // and the app deliberately did NOT consume the event — the browser's own
+  // scrolling is doing the work.
+  //
+  // ⚠ `length === 1` FIRST, because `[].every()` is `true`: without it, a
+  // probe that saw no wheel event at all — a wheel dispatched at a coordinate
+  // outside the viewport, a probe that failed to arm — would read as "the app
+  // declined the event" and PASS. The sibling `scrollTop[1] > scrollTop[0]`
+  // does close the hole in practice today, which is exactly why the length
+  // check belongs here too: the day someone edits that sibling, this must not
+  // be the assertion that had quietly stopped asking anything. Both other
+  // wheel steps already check their probe's length; this one was the odd one
+  // out, and an inconsistency is what survives a later edit.
+  (d) =>
+    d.canScrollVertically === true &&
+    d.scrollTop[1] > d.scrollTop[0] &&
+    d.scrollLeft[1] === d.scrollLeft[0] &&
+    d.appTookTheEvent.length === 1 &&
+    d.appTookTheEvent.every((v) => v === false),
+);
+await clickViewButton("Reset the view");
+await sleep(500);
+
+/**
+ * ⚠ **AND NOW LEAVE THIS WALL LOOKING NOTHING LIKE THE DEFAULT, DELIBERATELY.**
+ *
+ * This is the fixture for `each-wall-arrives-fitted-and-unscrolled` in step 10,
+ * and without it that step cannot fail. Every other step here ends by clicking
+ * Reset the view, so the wall the walk starts from was already at 100% and
+ * scroll 0 — meaning a wall change that reset NOTHING would still have been
+ * recorded as "arrived at 100%, scrolled to 0" and passed. A check whose
+ * fixture is the answer is not a check.
+ *
+ * So: scroll along the wall (a plain wheel, which at the fitted view reaches
+ * horizontally — proven two steps up), then zoom in twice. Both halves matter,
+ * because the reset has two halves: the zoom is React state DERIVED from a
+ * stored wall id, and the scroll is DOM state WRITTEN by a layout effect. A
+ * regression in either one now shows up on the very next wall.
+ */
+await wheel(wheelPointer[0], wheelPointer[1], 300, 0);
+await sleep(300);
+await wheel(wheelPointer[0], wheelPointer[1], 300, 0);
+await sleep(300);
+await clickViewButton("Zoom in");
+await sleep(400);
+await clickViewButton("Zoom in");
+await sleep(600);
+const leftTheFirstWallAt = await viewportState(wheelPointer[0]);
 
 // --- 10. every wall, not just the one being edited --------------------------
 // THE STAGE 1r ACCEPTANCE CHECK: no wall of a real drawn footprint carries a
@@ -759,7 +1350,12 @@ for (let i = 0; i < 16; i++) {
       widths = (await allElevationWidths()).map(parseImperial).filter((w) => Number.isFinite(w));
       attemptsUsed = attempt + 1;
     }
-    if (widths.length > 0) wallsSeen.push({ view: stop, widths, narrowest: Math.min(...widths), attemptsUsed });
+    // ⚠ HOW THE WALL ARRIVED, read once the wall has rendered. This is the
+    // only committed check on "a different wall opens FITTED" — see the
+    // `each-wall-arrives-fitted-and-unscrolled` step below for why it lives
+    // inside a walk that already exists rather than in a probe of its own.
+    const arrival = widths.length > 0 ? await viewportState(0) : null;
+    if (widths.length > 0) wallsSeen.push({ view: stop, widths, narrowest: Math.min(...widths), attemptsUsed, arrival });
   }
   if (!(await stepViewerDial())) break;
   await sleep(600);
@@ -800,6 +1396,70 @@ record(
     d.wallsWalked === d.elevationStopsOffered &&
     d.narrowestAnywhere !== null &&
     d.narrowestAnywhere >= FABRICATION_MIN_IN,
+);
+
+/**
+ * ⚠ **A DIFFERENT WALL OPENS FITTED AND AT THE START OF THE WALL — the only
+ * committed check on it.**
+ *
+ * WallElevationDiagram remembers the user's zoom per wall and resets the
+ * viewport's scroll on a wall change, and it does the zoom half by DERIVING
+ * from a stored wall id during render rather than by writing state in an
+ * effect. That is not a style preference: `setState` in an effect body is a
+ * severity-2 `react-hooks/set-state-in-effect` ERROR in this app, so the
+ * derived form is the only correct one — and it is also the form that looks
+ * "untidy" to the next person, who is therefore MOTIVATED to move it into an
+ * effect. Without this step that tidy-up gets a green harness run: the new
+ * wall would paint once at the previous wall's zoom before correcting itself,
+ * which no other assertion in this file can see.
+ *
+ * It rides the walk above because the walk already visits every elevation stop.
+ * An in-browser probe in a scratch directory is the arrangement this repo has
+ * been burned by twice, and the two refactors this change rests on should not
+ * be held to different standards — the wheel gestures got three permanent
+ * steps, so the wall-switch reset gets one.
+ *
+ * **`wallsSeen[0]` IS NOT AN ARRIVAL and is excluded on purpose.** It is the
+ * wall the run was already editing, left zoomed and scrolled a few lines above
+ * precisely so that the walls after it have something to inherit; asserting
+ * against it would assert that the fixture failed. So the fixture is checked
+ * first, then every genuine wall switch.
+ */
+record(
+  "each-wall-arrives-fitted-and-unscrolled",
+  {
+    views: wallsSeen.map((w) => w.view),
+    // The fixture: the wall we STEPPED OFF was not at the default view.
+    leftTheFirstWallAt: leftTheFirstWallAt && {
+      zoom: leftTheFirstWallAt.zoom,
+      scrollLeft: leftTheFirstWallAt.scrollLeft,
+    },
+    // ... and every wall stepped ON TO was.
+    arrivals: wallsSeen.slice(1).map((w) => ({
+      view: w.view,
+      zoom: w.arrival?.zoom ?? null,
+      scrollLeft: w.arrival?.scrollLeft ?? null,
+      scrollTop: w.arrival?.scrollTop ?? null,
+      // Recorded so this reads as evidence rather than as a bare pass: a
+      // fitted wall is one with nothing to scroll vertically.
+      canScrollVertically: w.arrival?.canScrollVertically ?? null,
+    })),
+  },
+  // `length >= 3` before any `every()`, for the same reason the wheel step now
+  // counts its probe: `[].every()` is `true`, and a walk that read no walls
+  // must not pass the step that checks how they arrived. Four elevation stops
+  // less the one we stepped off leaves three. A `null` from `viewportState`
+  // (no SVG, or no scrolling ancestor above it) fails here too.
+  (d) =>
+    d.leftTheFirstWallAt !== null &&
+    // A STRING that is not "100%", not merely "not 100%": an unread zoom comes
+    // back `null`, and `null !== "100%"` would have let a fixture that
+    // measured nothing stand in for a fixture that worked.
+    typeof d.leftTheFirstWallAt.zoom === "string" &&
+    d.leftTheFirstWallAt.zoom !== "100%" &&
+    d.leftTheFirstWallAt.scrollLeft > 0 &&
+    d.arrivals.length >= 3 &&
+    d.arrivals.every((a) => a.zoom === "100%" && a.scrollLeft === 0 && a.scrollTop === 0),
 );
 
 // --- the verdict ------------------------------------------------------------

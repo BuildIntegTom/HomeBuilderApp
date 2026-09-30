@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3311/",
-  "ranAt": "2026-09-29T21:00:58.041Z",
+  "app": "http://localhost:3260/",
+  "ranAt": "2026-09-30T04:22:08.590Z",
   "steps": [
     {
       "name": "stage0-new-project-tabs",
@@ -17,8 +17,16 @@
       "passed": true
     },
     {
+      "name": "whole-wall-on-screen",
+      "clicks": 5,
+      "wholeWallVisible": true,
+      "asserted": true,
+      "passed": true
+    },
+    {
       "name": "panel-width-labels",
       "count": 13,
+      "onTheWall": 13,
       "first": [
         "40\"",
         "40\"",
@@ -145,8 +153,8 @@
       ],
       "after": [
         "40\"",
-        "44.5\"",
-        "35.5\"",
+        "42.5\"",
+        "37.5\"",
         "40\"",
         "40\"",
         "40\"",
@@ -163,6 +171,41 @@
       "runTotalAfter": 508.25,
       "runTotalConserved": true,
       "somethingActuallyMoved": true,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "drag-lands-where-the-cursor-let-go-at-two-zooms",
+      "landings": [
+        {
+          "zoom": "fitted 100%",
+          "reached": true,
+          "askedForIn": 3,
+          "inchesPerScreenPx": 0.21519,
+          "cursorTravelPx": 13.94,
+          "stripIndex": 1,
+          "handleXBefore": 834.82,
+          "cursorReleasedAtX": 849,
+          "handleXAfter": 848.76,
+          "movedIn": 3,
+          "missIn": 0.0509
+        },
+        {
+          "zoom": "zoomed 195%",
+          "reached": true,
+          "askedForIn": -3,
+          "inchesPerScreenPx": 0.11018,
+          "cursorTravelPx": -27.23,
+          "stripIndex": 1,
+          "handleXBefore": 871.99,
+          "cursorReleasedAtX": 845,
+          "handleXAfter": 844.76,
+          "movedIn": -3,
+          "missIn": 0.0261
+        }
+      ],
+      "theZoomsReallyDiffered": true,
+      "toleranceIn": 0.0625,
       "asserted": true,
       "passed": true
     },
@@ -195,6 +238,65 @@
       "anythingOverTheMaximum": true,
       "asserted": false,
       "observationOnly": "The panel-boundary drag has a floor (24in) but no ceiling; a long drag grows its neighbour past the 48in catalog maximum, which the typed width field clamps. Pre-existing Stage 1 behaviour, out of Stage 1r's scope, reported for a decision rather than fixed here."
+    },
+    {
+      "name": "plain-wheel-reaches-along-the-wall",
+      "fitsVertically": true,
+      "scrollLeft": [
+        0,
+        600,
+        0
+      ],
+      "scrollTopStayedPut": true,
+      "zoomUnchanged": true,
+      "defaultPrevented": [
+        true,
+        true
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "ctrl-wheel-zooms-the-drawing-not-the-page",
+      "zoom": [
+        "100%",
+        "182%"
+      ],
+      "renderedWidth": [
+        2904,
+        5292
+      ],
+      "expectedZoomPercent": 182,
+      "inchUnderPointer": [
+        95.671,
+        95.657
+      ],
+      "pointerDriftIn": 0.014,
+      "ctrlSeen": [
+        true
+      ],
+      "defaultPrevented": [
+        true
+      ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "zoomed-in-a-plain-wheel-scrolls-vertically-instead",
+      "canScrollVertically": true,
+      "scrollTop": [
+        322,
+        422
+      ],
+      "scrollLeft": [
+        480,
+        480
+      ],
+      "appTookTheEvent": [
+        false
+      ],
+      "asserted": true,
+      "passed": true
     },
     {
       "name": "every-wall-at-or-above-the-minimum",
@@ -281,6 +383,44 @@
       "readAttemptBudget": 20,
       "narrowestAnywhere": 24,
       "elevationStopsOffered": 4,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "each-wall-arrives-fitted-and-unscrolled",
+      "views": [
+        "Elevation: AB",
+        "Elevation: BC",
+        "Elevation: CD",
+        "Elevation: DA"
+      ],
+      "leftTheFirstWallAt": {
+        "zoom": "156%",
+        "scrollLeft": 1266
+      },
+      "arrivals": [
+        {
+          "view": "Elevation: BC",
+          "zoom": "100%",
+          "scrollLeft": 0,
+          "scrollTop": 0,
+          "canScrollVertically": false
+        },
+        {
+          "view": "Elevation: CD",
+          "zoom": "100%",
+          "scrollLeft": 0,
+          "scrollTop": 0,
+          "canScrollVertically": false
+        },
+        {
+          "view": "Elevation: DA",
+          "zoom": "100%",
+          "scrollLeft": 0,
+          "scrollTop": 0,
+          "canScrollVertically": false
+        }
+      ],
       "asserted": true,
       "passed": true
     }

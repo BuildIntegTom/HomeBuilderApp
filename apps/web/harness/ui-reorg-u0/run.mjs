@@ -1377,6 +1377,20 @@ while ((await stopLabel()) !== null && !(await stopLabel()).startsWith("Elevatio
  * single click on "the middle one" passed on one run and silently selected
  * nothing on the next. So: try candidates in turn, and assert a selection
  * happened rather than assuming it did.
+ *
+ * ⚠ **THE SAMPLE SHRANK ON 2026-09-29 AND IT IS CALLED OUT HERE RATHER THAN
+ * LEFT IN THE EVIDENCE FILE FOR SOMEBODY TO SPOT.** `candidates` went from 15
+ * to 4 that day: the wall elevation started fitting the editor's HEIGHT and
+ * scrolling its length, so most of a 48ft wall's panels are outside the window
+ * at the default view and the `b.x < window.innerWidth - 40` filter — which is
+ * correct, a click at an off-screen coordinate hits nothing — now trims them.
+ *
+ * Left as a 4-candidate sample ON PURPOSE. This step only needs ONE panel to
+ * select so it can dock the Selected Panel note; it is not a check about the
+ * wall, and zooming out to recover eleven candidates it does not use would add
+ * a zoom dependency to a UI-layout harness. What was wrong was saying nothing:
+ * three other harnesses had the same drop and reported it, and this one did
+ * not. The assertion below still fails if the sample reaches zero.
  */
 const candidates = await evaluate(`(() => {
   const gs = [...document.querySelectorAll('svg g')].filter((g) => (g.getAttribute('style') || '').includes('pointer'));

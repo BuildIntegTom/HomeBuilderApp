@@ -27,12 +27,19 @@ export interface ProjectedShape {
  * Projects a member list into 2D shapes via caller-supplied coordinate-
  * mapping callbacks (rather than one shared pxPerIn+origin) — every current
  * caller's own mapping is a plain affine function, but callers differ in
- * offset (a window's own local frame vs. a whole wall's run) and can even
- * differ in X/Y scale (WallElevationDiagram's scaleX shrinks below its fixed
- * vertical PX_PER_IN once a wall exceeds its canvas width cap), so a shared
- * projector can't assume a single uniform scale — it just needs `xToPx`/
- * `zToPx` to be affine and `zToPx` to be Y-flipping (decreasing as zIn
- * increases), which is true of every caller's own existing function.
+ * offset (a window's own local frame vs. a whole wall's run), so a shared
+ * projector can't assume one shared origin — it just needs `xToPx`/`zToPx`
+ * to be affine and `zToPx` to be Y-flipping (decreasing as zIn increases),
+ * which is true of every caller's own existing function.
+ *
+ * ⚠ This note used to record that callers could also differ in X/Y SCALE:
+ * `WallElevationDiagram`'s `scaleX` fell below its fixed vertical
+ * `PX_PER_IN` once a wall exceeded a 720px canvas-width cap, so a long
+ * wall's members drew narrow-and-tall. **That cap is gone as of 2026-09-29
+ * and the elevation now uses one uniform scale on both axes** (Tommy: a
+ * fabrication elevation must not lie about proportion). Nothing here needed
+ * to change — the projector never assumed a uniform scale — but the
+ * distortion it tolerated no longer exists to tolerate.
  *
  * Reuses `memberLocalCornersIn` (the exact function the live 3D view and
  * the OBJ exporter already share) for diagonal members instead of

@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3311/",
-  "ranAt": "2026-09-29T21:09:22.190Z",
+  "app": "http://localhost:3260/",
+  "ranAt": "2026-09-30T04:30:34.666Z",
   "stopIn": 60,
   "steps": [
     {
@@ -33,6 +33,13 @@
         "lengthIn": 580,
         "vertices": 24
       },
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "whole-wall-on-screen",
+      "clicks": 5,
+      "wholeWallVisible": true,
       "asserted": true,
       "passed": true
     },
@@ -108,8 +115,8 @@
       "name": "clearing-the-stop-restores-elevation-plan-and-3d",
       "totalEighthsCleared": 4392,
       "noPanelsLabelsCleared": 0,
-      "boundaryGreyWithStop": 1434,
-      "boundaryGreyWithoutStop": 1338,
+      "boundaryGreyWithStop": 1399,
+      "boundaryGreyWithoutStop": 1303,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
