@@ -322,6 +322,14 @@ export function retile(
    * nominal width (Square Bale's 39in whole-bale corner) — see
    * `resolveCorners`' own doc comment in tiling.ts. */
   cornerMayWiden = true,
+  /** Wall ids whose slot INDICES are pinned by persisted per-slot state — a
+   * Mid-Wall Bond Beam's coverage range, the roofline Box Beam's, or a
+   * spanning header's. On these walls the corner-brace combine is refused
+   * rather than allowed to shorten the run under a stored index; see
+   * `applyBracedPlacement`'s own `slotIndicesArePinned` for the whole
+   * reasoning. Omitted = no wall is pinned, which is every caller that
+   * predates this and every project with no beams or headers. */
+  slotIndexPinnedWallIds?: ReadonlySet<string>,
 ): Record<string, PanelSlot[]> {
   const next: Record<string, PanelSlot[]> = {};
   const ownership = cornerOwnershipWithRunStops(fp, primary, thicknessIn, runStopsByWallId);
@@ -367,6 +375,7 @@ export function retile(
       standardWidthIn,
       bracedSeed.defaultPattern,
       bracedSeed.defaultMirrored,
+      slotIndexPinnedWallIds?.has(wall.id) ?? false,
     );
     next[wall.id] = mitered ? markSafetyCorner(seeded, gapEnd) : seeded;
   }
@@ -496,6 +505,8 @@ export function retilePreservingOpenings(
   runStopsByWallId?: Record<string, WallRunStop>,
   /** See `retile`'s own parameter of the same name. */
   cornerMayWiden = true,
+  /** See `retile`'s own parameter of the same name. */
+  slotIndexPinnedWallIds?: ReadonlySet<string>,
 ): Record<string, PanelSlot[]> {
   return retilePreservingOpeningsWithRunStopMemory(
     fp,
@@ -509,6 +520,8 @@ export function retilePreservingOpenings(
     openingSeed,
     runStopsByWallId,
     cornerMayWiden,
+    undefined,
+    slotIndexPinnedWallIds,
   ).slotsByWallId;
 }
 
@@ -599,6 +612,8 @@ export function retilePreservingOpeningsWithRunStopMemory(
   /** What an earlier stop on each wall withheld. Omitted (every caller that
    * predates this, and every unstopped project) means nothing to restore. */
   unbuiltOpeningsByWallId?: Record<string, RunStopOpeningMemory>,
+  /** See `retile`'s own parameter of the same name. */
+  slotIndexPinnedWallIds?: ReadonlySet<string>,
 ): RetileWithRunStopMemoryResult {
   const next: Record<string, PanelSlot[]> = {};
   const unbuiltOut: Record<string, RunStopOpeningMemory> = {};
@@ -657,6 +672,7 @@ export function retilePreservingOpeningsWithRunStopMemory(
       standardWidthIn,
       bracedSeed.defaultPattern,
       bracedSeed.defaultMirrored,
+      slotIndexPinnedWallIds?.has(wall.id) ?? false,
     );
     next[wall.id] = mitered ? markSafetyCorner(reconciled, gapEnd) : reconciled;
   }

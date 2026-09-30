@@ -36,6 +36,7 @@ import {
   footprintIsAllRightAngles,
   gapEndFor,
   findAbsorbedCornerWalls,
+  findCornerBraceCombineRefusals,
   findSubMinimumPanelWidths,
   getOpeningAnchors,
   toEighths,
@@ -317,6 +318,7 @@ import {
   wallBandGeometry,
   type SpanningHeader,
 } from "./spanningHeader";
+import { pinnedSlotIndexWallIds } from "./pinnedSlotIndexWalls";
 import { spanningHeaderCommitNotice, spanningHeaderRefusalNotice, spanningHeaderRunStopRefusal } from "./spanningHeaderNotice";
 import type { WallReviewNote } from "./wallReviewNotes";
 import PierFoundationDiagram from "./PierFoundationDiagram";
@@ -1158,7 +1160,7 @@ export default function LayoutEditor() {
     }
     if (!bestSlots) return;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(bestSlots, geometry.gapEnd) : bestSlots;
-    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored, slotIndexPinnedWallIds.has(wallId));
     setWallSlotsForStory(topStory, (prev) => ({ ...prev, [wallId]: finalSlots }));
   };
   // Tommy: "make the default that... when the user adds a gable end, the
@@ -2029,9 +2031,20 @@ export default function LayoutEditor() {
     } else {
       const { pattern: loadDefaultPattern, mirrored: loadDefaultMirrored } = bracingStyleToPatternMirror(s.bracingStyle);
       const loadSpacingIn = seismicBracedPanelSpacingFt[s.seismicZone] * 12;
+      // The pins come out of the FILE, not out of live state: this runs
+      // inside the same handler that is still setting that state, so the
+      // live `slotIndexPinnedWallIds` memo is one render behind and would
+      // report the PREVIOUS project's beams.
+      const loadPinnedWallIds = pinnedSlotIndexWallIds({
+        boxBeamCoverageByWallId: s.boxBeamCoverageByWallId,
+        rangesByStoryAndWallId: [
+          s.midWallBeamsByStoryAndWallId,
+          { ground: s.spanningHeadersByStoryAndWallId?.ground ?? {}, second: s.spanningHeadersByStoryAndWallId?.second ?? {} },
+        ],
+      });
       const seeded: Record<string, PanelSlot[]> = {};
       for (const [wallId, slots] of Object.entries(s.baseWallSlots)) {
-        seeded[wallId] = reconcileBracedPlacement(undefined, slots, loadSpacingIn, s.standardWidthIn, loadDefaultPattern, loadDefaultMirrored);
+        seeded[wallId] = reconcileBracedPlacement(undefined, slots, loadSpacingIn, s.standardWidthIn, loadDefaultPattern, loadDefaultMirrored, loadPinnedWallIds.has(wallId));
       }
       setBaseWallSlots(seeded);
     }
@@ -2319,6 +2332,28 @@ export default function LayoutEditor() {
   // longer forces every braced panel project-wide (see reconcileBracedPlacement).
   const { pattern: defaultBracePattern, mirrored: defaultBracedMirrored } = bracingStyleToPatternMirror(bracingStyle);
   const bracedSeed = { spacingIn, defaultPattern: defaultBracePattern, defaultMirrored: defaultBracedMirrored };
+  /** Walls whose slot INDICES are pinned by persisted per-slot state, so the
+   * corner-brace combine is refused on them rather than allowed to remove a
+   * panel from under a stored index — see `pinnedSlotIndexWalls.ts` for the
+   * whole reasoning, and the `cornerBraceCombineRefusals` memo below for where
+   * a user is told. Derived, never stored.
+   *
+   * ⚠ A fresh `handleDraw` does NOT clear `boxBeamCoverageByWallId`,
+   * `midWallBeamsByStoryAndWallId` or `spanningHeadersByStoryAndWallId` (it
+   * clears the second story and the run stops, and has always left these), so
+   * drawing a new rectangle over a project that had beams can leave a wall id
+   * pinned that no longer carries anything. **That predates this and is not
+   * fixed here**, and the direction it fails in is the safe one: the wall keeps
+   * its 3/4in safety gap and one more panel, which is a visible difference and
+   * never a part in the wrong place. */
+  const slotIndexPinnedWallIds = useMemo(
+    () =>
+      pinnedSlotIndexWallIds({
+        boxBeamCoverageByWallId,
+        rangesByStoryAndWallId: [midWallBeamsByStoryAndWallId, spanningHeadersByStoryAndWallId],
+      }),
+    [boxBeamCoverageByWallId, midWallBeamsByStoryAndWallId, spanningHeadersByStoryAndWallId],
+  );
 
   // Closes an existing gap: only a Mid-Wall Bond Beam change actually
   // persisted zone reconciliation into state before this (see
@@ -2516,6 +2551,7 @@ export default function LayoutEditor() {
       openingSeed,
       runStops,
       cornerMayWidenForTiling,
+      slotIndexPinnedWallIds,
     );
   // Same as `retile` above, but preserves each wall's existing openings —
   // see retile.ts's own doc comment. `oldSlotsByNewWallId` resolves the
@@ -2553,6 +2589,7 @@ export default function LayoutEditor() {
       runStops,
       cornerMayWidenForTiling,
       remembered,
+      slotIndexPinnedWallIds,
     );
   /** Both halves of a re-tile written back together — the slots that are
    * built, and the openings an unbuilt span set aside. See the wrapper above
@@ -2888,7 +2925,7 @@ export default function LayoutEditor() {
     // retileWithOpenings itself only knows about window/door/column
     // anchors) and seeds any genuinely new standard-slot position via the
     // seismic rule — see reconcileBracedPlacement's own doc comment.
-    let finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    let finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored, slotIndexPinnedWallIds.has(wallId));
 
     if (next.type === "braced") {
       // The user's own explicit click always wins over whatever the
@@ -3356,7 +3393,7 @@ export default function LayoutEditor() {
       cornerMayWidenForTiling,
     ).slots;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(tiled, geometry.gapEnd) : tiled;
-    const finalSlots = reconcileBracedPlacement(nextSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    const finalSlots = reconcileBracedPlacement(nextSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored, slotIndexPinnedWallIds.has(wallId));
 
     // ⚠ Smearforn Stage 2 rider, and the one case this function cannot
     // answer with the tiler. The tiler derives the free run's COUNT from the
@@ -3809,7 +3846,7 @@ export default function LayoutEditor() {
     // wipe every one of them back to plain "standard" (see
     // reconcileBracedPlacement's own doc comment; same fix already applied
     // to handleToggleOpening's own retile branch).
-    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored, slotIndexPinnedWallIds.has(wallId));
     // Same relocation handleToggleOpening's own retile branch already does —
     // without it, selectedSlot keeps pointing at its old raw index, which a
     // width-driven retile can reassign to a totally different panel/type,
@@ -3890,7 +3927,7 @@ export default function LayoutEditor() {
       cornerMayWidenForTiling,
     ).slots;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
-    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored, slotIndexPinnedWallIds.has(wallId));
     const newIndex = findNthOpeningIndex(finalSlots, precedingOpenings);
     setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex, story });
     setWallSlotsForStory(story, (prev) => ({
@@ -3963,7 +4000,7 @@ export default function LayoutEditor() {
       cornerMayWidenForTiling,
     ).slots;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
-    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored, slotIndexPinnedWallIds.has(wallId));
     setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: finalSlots }));
   };
 
@@ -6986,6 +7023,22 @@ export default function LayoutEditor() {
     [baseWallSlots, secondStory, cornerWidthInForTiling],
   );
 
+  // Corner ends whose CORNER-BRACE COMBINE was refused — the same situation as
+  // `absorbedCornerWalls` above and the same answer. The combine now refuses
+  // rather than break the wall's own length (2026-09-29, Tommy: "this app needs
+  // to be perfectly tight with dimensions and wall lengths"), which is right;
+  // but the refusal moves a STRUCTURAL placement derived from two
+  // `pending-BI-confirmation` values, and on some walls it leaves one braced
+  // panel serving both corners where Tommy's rule asks for one per corner. The
+  // wall is legal. That is exactly why nobody would otherwise see it.
+  const cornerBraceCombineRefusals = useMemo(
+    () => [
+      ...findCornerBraceCombineRefusals(baseWallSlots).map((r) => ({ ...r, story: "ground" as const })),
+      ...findCornerBraceCombineRefusals(secondStory?.wallSlots ?? {}).map((r) => ({ ...r, story: "second" as const })),
+    ],
+    [baseWallSlots, secondStory],
+  );
+
   /**
    * **⚠ One entry per Square Bale wall whose ONLY panel is a corner slot off the
    * confirmed 39in bale width** — the part Tommy said cannot be built. Usually
@@ -7424,6 +7477,31 @@ export default function LayoutEditor() {
         status: "pending-BI-confirmation" as const,
         note: `This wall owns a corner at both ends and is too short to fit them plus a panel over the ${formatLengthIn(fabricationMinPanelWidthIn.value, unitSystem)} fabrication minimum, so its two corner panels share the whole wall: ${formatLengthIn(wall.cornerWidthsIn[0], unitSystem)} and ${formatLengthIn(wall.cornerWidthsIn[1], unitSystem)} instead of ${formatLengthIn(wall.nominalCornerWidthIn, unitSystem)} each, absorbing ${formatLengthIn(wall.absorbedIn, unitSystem)} that could not become a panel. This is the corner-geometry rule Tommy chose for this case over refusing the wall length ("I like the corner geometry rule"); the individual widths it produces are not separately confirmed. Each panel is still one corner panel with one return face, butt joined to its partner at mid-wall. ⚠ CHECK THIS WALL'S OPENINGS: a wall shortened into this case keeps only a window, door or column that still fits between the nominal corners — anything that no longer fit was REMOVED when the corner pair took the whole wall, and nothing else reports that.`,
       })),
+      // One entry per corner end whose corner-brace combine was refused. See
+      // `findCornerBraceCombineRefusals` for the whole rationale and for the
+      // 3/4in step it deliberately drops.
+      //
+      // ⚠ The status is `pending-BI-confirmation` for a real reason, not by
+      // default: brace placement derives from `seismicBracedPanelSpacingFt`
+      // AND `bracedWallLineSpacingFt`, both pending, and "Braced Panel
+      // geometry" sits in the spec's own "Provisional beyond the flags" list.
+      // The note carries that forward rather than presenting the new placement
+      // as settled.
+      ...cornerBraceCombineRefusals.map((refusal) => ({
+        label: `Corner brace is not against the corner: wall ${refusal.wallId}, ${refusal.end === "start" ? "start" : "end"} corner${refusal.story === "second" ? " (second story)" : ""}`,
+        status: "pending-BI-confirmation" as const,
+        note: `${
+          refusal.braceSlotIndex === null
+            ? `This corner has NO braced panel on its wall at all — the wall carries ${refusal.bracedPanelCountOnWall} of them.`
+            : refusal.braceSharedWithOtherCorner
+              ? `The one braced panel on this wall (slot ${refusal.braceSlotIndex}) is serving BOTH corners, and it sits ${formatLengthIn(refusal.braceOffsetFromCornerIn ?? 0, unitSystem)} in from this one. Tommy's rule is one per corner: "each wall must have two braced panels on it, touching each side of each corner panel."`
+              : `This corner's braced panel is slot ${refusal.braceSlotIndex}, ${formatLengthIn(refusal.braceOffsetFromCornerIn ?? 0, unitSystem)} in from the corner panel's inner face rather than against it — there is an opening in between, not just the spacer.`
+        } The wall's ${formatLengthIn(refusal.gapWidthIn, unitSystem)} Safety/Gap panel stayed a separate spacer instead of merging into the corner's brace, because that merge removes a panel from the run and this run could not pay for it legally${
+          slotIndexPinnedWallIds.has(refusal.wallId)
+            ? " — or, on this wall, because a Mid-Wall Bond Beam, Box Beam coverage or a spanning header is stored against these slot positions and the merge would slide it one panel"
+            : ""
+        }. **Refusing is deliberate and the wall's own length is exact because of it** (Tommy, 2026-09-29: "this app needs to be perfectly tight with dimensions and wall lengths") — the alternative, in force until then, made this wall longer than itself. What needs an engineer is the placement, not the arithmetic: braced-panel spacing comes from ${seismicBracedPanelSpacingFt[seismicZone]}ft seismic spacing and the braced-wall-line figure, neither of which Building Integrity has confirmed, and "legal, with one brace where the rule asks for two" is not a call this app can make for you.`,
+      })),
       ...(foundationTypeId === "concrete-pier"
         ? [
             { label: "Concrete pier dimensions", ...concretePierDimensions },
@@ -7453,6 +7531,9 @@ export default function LayoutEditor() {
     // whole note from the record. Fewer deps, and the number in the note is
     // guaranteed to be the one the wall was actually tiled against.
     absorbedCornerWalls,
+    cornerBraceCombineRefusals,
+    slotIndexPinnedWallIds,
+    seismicZone,
     unitSystem,
     wallRunStopReviewEntries,
     spanningHeaderReviewEntries,

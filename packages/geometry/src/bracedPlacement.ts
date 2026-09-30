@@ -77,6 +77,14 @@ function settleResidualEighths(
  * the combine physically IS, and it leaves every other panel at the width
  * the tiler chose apart from the one that settles the difference.
  *
+ * Plan A is tried FIRST even when the growth is tiny, so a legacy wide-gap
+ * wall can lose a whole panel where a 1¾in shave off two neighbours would have
+ * done. That ordering prefers the combine's PHYSICAL shape — one panel gone,
+ * which is what a combined slot actually is — over the minimal disturbance to
+ * the run. Unreachable from today's tiler (plan B fired 0 times in 677,520
+ * walls, because the tiler's gap is always 3/4in and the growth is therefore
+ * always a full standard width), so it is latent rather than live.
+ *
  * **B — take it out of the run's own slack**, removing no panel. Used when
  * there is nothing to pay at all (a slot already at the combined width —
  * the old rule's zero-delta behaviour, kept exactly), when the gap is WIDER
@@ -133,10 +141,37 @@ function settleResidualEighths(
  *   resize exactly one, the other 65 resize none). The loop is written for
  *   N anyway, because "one is always enough" is an observation about
  *   today's widths and not something any of these numbers promise.
- * - **Only plain "standard" slots take part.** A "braced" slot is a shear
- *   element the seismic rule has already placed, and the old search never
- *   touched one either; widening the candidate set would move widths on
- *   walls that are fine today.
+ * - **Swallowing and settling are not the same permission.** Two lists, and
+ *   the difference is the whole of it:
+ *
+ *     * **Swallowed** — only a plain, unlocked "standard" slot, ever. A
+ *       "braced" slot is a shear element the seismic rule has already placed;
+ *       letting the combine eat one would trade a VISIBLE 3/4in gap for a
+ *       silently missing brace, which is the one trade this rule may not
+ *       make. Walls the combine cannot pay for are refused and reported, not
+ *       bought back by spending a brace somewhere else.
+ *     * **Settled** (resized, never removed) — a plain "standard" slot, plus
+ *       a "braced" slot whose brace came from the WALL'S OWN HISTORY rather
+ *       than from this pass (`preservedBracedIndices`, supplied only by
+ *       `reconcileBracedPlacement`). A braced panel's WIDTH is re-derived by
+ *       the tiler on every retile already — only its type is sticky — so
+ *       moving it inside [24in, 48in] loses nothing and removes no brace.
+ *
+ *   **Why history is the discriminant, and not simply "any braced slot":** on
+ *   a first pass rule 1's own left-end brace is placed before the right-end
+ *   walk plans its combine, so letting the combine settle onto any braced
+ *   slot would fire the combine on thousands of walls that refuse today.
+ *   Measured: 7,878 first-pass combines either way with the history rule,
+ *   15,727 without it, over the 790,440-wall product sweep. Restricting it to
+ *   preserved braces leaves the first pass **byte for byte identical** and
+ *   fixes only the reconcile, which is where the bug was.
+ *
+ *   ⚠ **This is not cosmetic — the reconcile is unfixable without it.** On a
+ *   145in wall the combine's leftover is 1-3/8in and the ONLY panel left to
+ *   take it is the corner brace at the far end. With that panel off limits
+ *   the combine refuses on the second pass, the wall gains a panel back with
+ *   nobody touching it, and the cut list starts depending on edit history.
+ *   See the no-op-reconcile test.
  * - **A user-dragged (`lockedWidthIn`) slot is never swallowed or
  *   resized.** `reconcileBracedPlacement` re-forces those widths right
  *   after this runs, so any change here would be undone and re-shed
@@ -148,13 +183,24 @@ function planCornerBraceCombine(
   step: number,
   combinedEighths: number,
   consumedIndices: ReadonlySet<number>,
+  preservedBracedIndices: ReadonlySet<number> | undefined,
 ): CornerBraceCombinePlan | null {
-  const candidates: number[] = [];
+  // TWO lists, because swallowing and settling are not the same permission —
+  // see "Swallowing and settling" in the doc comment above.
+  const swallowCandidates: number[] = [];
+  const settleCandidates: number[] = [];
   const consider = (i: number) => {
     if (consumedIndices.has(i)) return;
     const slot = slots[i]!;
-    if (slot.type !== "standard" || slot.lockedWidthIn !== undefined) return;
-    candidates.push(i);
+    if (slot.lockedWidthIn !== undefined) return;
+    if (slot.type === "standard") {
+      swallowCandidates.push(i);
+      settleCandidates.push(i);
+    } else if (slot.type === "braced" && preservedBracedIndices?.has(i)) {
+      // Settle only — never swallowed. See "Swallowing and settling are not
+      // the same permission" above.
+      settleCandidates.push(i);
+    }
   };
   for (let i = gapIndex + step; i >= 0 && i < slots.length; i += step) consider(i);
   for (let i = gapIndex - step; i >= 0 && i < slots.length; i -= step) consider(i);
@@ -166,7 +212,7 @@ function planCornerBraceCombine(
   // swallowed and no width moves — the old rule's behaviour at zero delta,
   // kept exactly.
   if (growthEighths <= 0) {
-    const resizedEighths = settleResidualEighths(slots, candidates, -growthEighths);
+    const resizedEighths = settleResidualEighths(slots, settleCandidates, -growthEighths);
     return resizedEighths ? { consumedIndex: null, resizedEighths } : null;
   }
 
@@ -174,10 +220,14 @@ function planCornerBraceCombine(
   // that overpays or underpays against the panels past it. This is the one
   // that fits the real product space, where the growth is a full standard
   // width and no amount of shrinking could cover it legally.
-  const consumedIndex = candidates[0];
+  const consumedIndex = swallowCandidates[0];
   if (consumedIndex !== undefined) {
     const residualEighths = toEighths(slots[consumedIndex]!.widthIn) - growthEighths;
-    const resizedEighths = settleResidualEighths(slots, candidates.slice(1), residualEighths);
+    const resizedEighths = settleResidualEighths(
+      slots,
+      settleCandidates.filter((i) => i !== consumedIndex),
+      residualEighths,
+    );
     if (resizedEighths) return { consumedIndex, resizedEighths };
   }
 
@@ -186,7 +236,7 @@ function planCornerBraceCombine(
   // come out of what the panels can spare above the 24in floor, which the
   // tiler cannot produce today (its gap is always 3/4in, so the growth is
   // always a full standard width) but a stored legacy wall can.
-  const resizedEighths = settleResidualEighths(slots, candidates, -growthEighths);
+  const resizedEighths = settleResidualEighths(slots, settleCandidates, -growthEighths);
   return resizedEighths ? { consumedIndex: null, resizedEighths } : null;
 }
 
@@ -200,6 +250,25 @@ export const SAFETY_PLYWOOD_BUFFER_IN = 0.75;
  * point; periodic spacing fills the plain run and resets at every
  * non-standard slot (corner, gap, window, door, or a slot already braced by
  * the first rule). Windows are no longer auto-flanked (Tommy).
+ *
+ * `slotIndicesArePinned` turns the corner-brace combine OFF for this wall
+ * entirely (everything else runs unchanged), because the combine removes a
+ * panel from the run and this wall has persisted state that is indexed by
+ * slot POSITION: a Mid-Wall Bond Beam's coverage range, the roofline Box
+ * Beam's, or a spanning header's. Those ranges are stored, not derived, and
+ * nothing remaps them — `Building3DView.tsx` reads
+ * `offsetsIn[header.startSlotIndex] ?? 0`, a silent fallback to zero — so a
+ * combine that shortened the array would slide a fabricated part one panel
+ * along on its way to a shop drawing.
+ *
+ * **Refusing rather than remapping is the precedent, not a new policy.**
+ * Stage 2b already refuses a wall-run stop that would disturb a spanning
+ * header (`spanningHeaderRunStopRefusal`), on the grounds that a header's
+ * fabricated width IS the sum of the panels it spans and silently re-cutting
+ * a part already on a shop sheet is not a trade worth making. The refusal is
+ * visible — the wall keeps its 3/4in safety gap and the corner's brace lands
+ * on an ordinary standard panel one slot further in — and the Review Log says
+ * so per wall, so it is announced rather than quiet.
  *
  * Every "standard" slot is a candidate by default; `eligibleIndices`
  * (undefined = everything eligible — a brand-new wall, or a legacy project
@@ -219,6 +288,8 @@ export function applyBracedPlacement(
   defaultPattern: BracePattern,
   defaultMirrored: boolean,
   eligibleIndices?: Set<number>,
+  preservedBracedIndices?: ReadonlySet<number>,
+  slotIndicesArePinned?: boolean,
 ): PanelSlot[] {
   const result = slots.map((s) => ({ ...s }));
   const isEligible = (i: number) => eligibleIndices === undefined || eligibleIndices.has(i);
@@ -276,8 +347,17 @@ export function applyBracedPlacement(
         slot.bracedMirrored = defaultMirrored;
         marked++;
       } else if (slot.type === "safety-gap" && slot.secondaryType === undefined) {
+        // REFUSED BEFORE IT IS EVEN PLANNED, because this wall carries
+        // persisted state indexed BY SLOT POSITION — a Mid-Wall Bond Beam, a
+        // roofline Box Beam's coverage range, or a spanning header. The
+        // combine removes a panel from the run, so every stored index at or
+        // past it would point one panel further along, silently, and a header
+        // drawn against panels would slide onto different ones. See
+        // `slotIndicesArePinned` on this function's own signature for who
+        // decides and why refusing is the answer rather than remapping.
+        if (slotIndicesArePinned) continue;
         const combinedEighths = toEighths(standardWidthIn + SAFETY_PLYWOOD_BUFFER_IN);
-        const plan = planCornerBraceCombine(result, i, step, combinedEighths, consumedIndices);
+        const plan = planCornerBraceCombine(result, i, step, combinedEighths, consumedIndices, preservedBracedIndices);
         // REFUSED: the run cannot pay for this combine without breaking the
         // wall's length or producing an unbuildable panel. Nothing is
         // touched — the safety gap stays the 3/4in spacer the tiler laid
@@ -482,21 +562,33 @@ export function applyAdditionalRowBracedPattern(
  * near each other).
  *
  * ⚠ **THIS ONE STILL BREAKS THE WALL'S TOTAL, IN TWO WAYS, AND IT IS NOT
- * FIXED.** It is a no-op when no unlocked standard-family slot exists on the
- * run (the wall then comes out off by the whole `deltaIn`), and it clamps at
- * zero, which is the exact mistake the corner-brace combine was fixed for on
- * 2026-09-29. **Measured, not guessed:** sweeping every eighth of wall length
- * from 150in to 400in at standard widths {40, 48}, one 61.5in window, and a
- * lock of 24in or 48in on the first standard slot, **363 walls come out off
- * their own length by as much as ±12¾in** — a 150in two-corner wall whose one
- * standard panel is locked at 48in reconciles to 161¼in.
+ * FIXED HERE — Tommy has now decided what should replace it.** It is a no-op
+ * when no unlocked standard-family slot exists on the run (the wall then comes
+ * out off by the whole `deltaIn`), and it clamps at zero, which is the exact
+ * mistake the corner-brace combine was fixed for on 2026-09-29.
  *
- * Left alone on purpose: it is a different rule on a different path (a user's
- * own dragged width, not a derived one), the fix has to decide what happens
- * when a lock and a wall length genuinely cannot both be honoured, and that
- * is Tommy's call rather than a coder's. Written up in the spec's "Still
- * open" list on 2026-09-29 so it is a recorded item and not a comment nobody
- * reads. `planCornerBraceCombine` is the shape a fix would follow. */
+ * **Measured, and the magnitude was understated the first time.** Sweeping
+ * every eighth of wall length from 150in to 400in at standard widths {40, 48},
+ * one 61.5in window, and a lock of 24in or 48in on the first standard slot:
+ * **362 walls come out off their own length, from 23⅞in SHORT to 11¼in long**
+ * — not the ±12¾in first recorded, which was only the named 150in case's own
+ * pair of figures. The worst is a 161⅛in wall with a 24in lock that reconciles
+ * to 137¼in, i.e. very nearly two feet of wall that is not there. (The named
+ * case still reproduces exactly: a 150in two-corner wall, lock 48in → 161¼in,
+ * lock 24in → 137¼in.)
+ *
+ * **It is also the most REACHABLE defect of this whole set**: it needs only a
+ * dragged panel width plus any retile, on a 150in wall with one window and no
+ * unusual geometry at all.
+ *
+ * ⚠ **TOMMY'S DECISION, 2026-09-29:** a locked/dragged width the wall length
+ * cannot honour is **refused outright** — nothing changes, and the message
+ * names what is in the way and the widest legal value. The wall's real length
+ * is never violated. **Deliberately NOT built here:** it is queued to start
+ * from a clean `main`, because it is a new refusal on a shipped gesture rather
+ * than a fix to the combine, and bolting it onto this diff would put two
+ * unrelated behaviour changes behind one review.
+ * `planCornerBraceCombine` is the shape it will follow. */
 function shedWidthToNearestUnlocked(slots: PanelSlot[], fromIndex: number, deltaIn: number) {
   const isUnlockedStandardFamily = (s: PanelSlot) => (s.type === "standard" || s.type === "braced") && s.lockedWidthIn === undefined;
   for (let i = fromIndex + 1; i < slots.length; i++) {
@@ -513,6 +605,54 @@ function shedWidthToNearestUnlocked(slots: PanelSlot[], fromIndex: number, delta
   }
 }
 
+/**
+ * The standard-family ORDINALS a stored wall is missing because the
+ * corner-brace combine swallowed the panels that used to sit there.
+ *
+ * A combined safety-gap slot (`type: "safety-gap"` with
+ * `secondaryType: "braced"` — the only thing that produces that pair, see
+ * `applyBracedPlacement`) means one standard-family panel was removed from
+ * the run outright. So a stored wall carrying N combined gaps has N FEWER
+ * standard/braced slots than the tiling it came from, and
+ * `reconcileBracedPlacement`'s ordinal-matching walk has to know where the
+ * holes are or every marker past one lands on the wrong panel.
+ *
+ * **Where the hole is, derived rather than stored.** The combine always
+ * swallows `swallowCandidates[0]` — the nearest unlocked plain standard panel
+ * walking away from the corner first, then back toward it — so the panel that
+ * disappeared was immediately adjacent to the gap on one side or the other.
+ * Either way its ordinal in the pre-combine run was exactly `k`, the number
+ * of standard-family slots sitting before the gap in the STORED run:
+ *
+ *   * corner walk running inward from the start (`step = +1`): the swallowed
+ *     panel sat just after the gap, so ordinals before the gap are unchanged
+ *     at `0..k-1` and the missing one is `k`;
+ *   * corner walk running inward from the end (`step = -1`): the swallowed
+ *     panel sat just before the gap, so it was the LAST of the `k + 1`
+ *     ordinals that used to precede the gap — again `k`.
+ *
+ * ⚠ **This is a reconstruction, not a record.** If the combine ever stops
+ * taking the adjacent panel — a locked panel next to the gap already pushes
+ * `swallowCandidates[0]` one slot further out — the reconstructed ordinal is
+ * off by however far it reached, and the reconcile misaligns by one panel
+ * exactly the way it did before this function existed. The alternative is to
+ * persist the swallowed panel's ordinal on the combined slot, which is a
+ * project-file schema change (a new key on `PanelSlot`, a migration, and a
+ * value in every saved file) and is not worth it while the combine's own
+ * candidate order makes the adjacent panel the answer in every case today.
+ * A test pins the reconstruction against the real combine over the whole
+ * product sweep rather than trusting this comment.
+ */
+function combineSwallowedOrdinals(slots: PanelSlot[]): Set<number> {
+  const holes = new Set<number>();
+  let standardFamilySoFar = 0;
+  for (const slot of slots) {
+    if (slot.type === "standard" || slot.type === "braced") standardFamilySoFar++;
+    else if (slot.type === "safety-gap" && slot.secondaryType === "braced") holes.add(standardFamilySoFar);
+  }
+  return holes;
+}
+
 export function reconcileBracedPlacement(
   oldSlots: PanelSlot[] | undefined,
   newSlots: PanelSlot[],
@@ -520,9 +660,20 @@ export function reconcileBracedPlacement(
   standardWidthIn: number,
   defaultPattern: BracePattern,
   defaultMirrored: boolean,
+  /** See `applyBracedPlacement`'s own parameter of the same name. */
+  slotIndicesArePinned?: boolean,
 ): PanelSlot[] {
   if (!oldSlots) {
-    return applyBracedPlacement(newSlots, spacingIn, standardWidthIn, defaultPattern, defaultMirrored);
+    return applyBracedPlacement(
+      newSlots,
+      spacingIn,
+      standardWidthIn,
+      defaultPattern,
+      defaultMirrored,
+      undefined,
+      undefined,
+      slotIndicesArePinned,
+    );
   }
 
   const oldMarkers: {
@@ -558,14 +709,29 @@ export function reconcileBracedPlacement(
     oldOpeningCountAtOrdinal.set(anchor.beforeStandardCount, (oldOpeningCountAtOrdinal.get(anchor.beforeStandardCount) ?? 0) + 1);
   }
 
+  // The standard-family ordinals `oldSlots` does not HAVE, because the
+  // corner-brace combine swallowed the panel that sat there — see
+  // `combineSwallowedOrdinals`. Without these, every marker past a combined
+  // gap reads one position too early and the gap-adjacent slot inherits a
+  // "braced" marker, which is precisely the type `planCornerBraceCombine`
+  // cannot swallow: the combine then refuses on the SECOND pass and the wall
+  // gains a panel back with nobody touching it.
+  const holeOrdinals = combineSwallowedOrdinals(oldSlots);
+
   const reconciled = newSlots.map((s) => ({ ...s }));
   const eligibleIndices = new Set<number>();
+  // Slots whose "braced" type came from this wall's own HISTORY rather than
+  // from the pass below — see `planCornerBraceCombine`'s "Swallowing and
+  // settling" note for why the combine is allowed to change their width (and
+  // only their width).
+  const preservedBracedIndices = new Set<number>();
   let ordinal = 0; // new-side standard-family ordinal (count of "standard" slots seen so far in `reconciled`)
   let droppedOldMarkers = 0; // old standard-family entries consumed by newly-created openings, not yet reflected in `ordinal`
+  let swallowedOldMarkers = 0; // new-side ordinals the OLD side's combine had already swallowed, so `oldMarkers` has no entry for them
   for (let i = 0; i < reconciled.length; i++) {
     const slot = reconciled[i]!;
     if (slot.type === "window" || slot.type === "door" || slot.type === "column") {
-      const oldOrdinal = ordinal + droppedOldMarkers;
+      const oldOrdinal = ordinal + droppedOldMarkers - swallowedOldMarkers;
       const remaining = oldOpeningCountAtOrdinal.get(oldOrdinal) ?? 0;
       if (remaining > 0) {
         // Already an opening at this exact position in oldSlots — never a
@@ -582,12 +748,24 @@ export function reconcileBracedPlacement(
     // A fresh tiling/retile pass never itself produces a "braced" slot
     // (see tiling.ts) — only "standard" slots are candidates here.
     if (slot.type !== "standard") continue;
-    const marker = oldMarkers[ordinal + droppedOldMarkers];
+    // This ordinal is one the old side's combine had already eaten: there is
+    // no marker for it and there never was. Leave the slot exactly as the
+    // tiler laid it out and eligible, which is the state the FIRST pass saw,
+    // and do not advance the old-marker cursor — so the markers past it stay
+    // on the panels they actually belong to.
+    if (holeOrdinals.has(ordinal)) {
+      eligibleIndices.add(i);
+      swallowedOldMarkers++;
+      ordinal++;
+      continue;
+    }
+    const marker = oldMarkers[ordinal + droppedOldMarkers - swallowedOldMarkers];
     if (marker) {
       slot.type = marker.type;
       if (marker.type === "braced") {
         slot.bracedPattern = marker.bracedPattern;
         slot.bracedMirrored = marker.bracedMirrored;
+        preservedBracedIndices.add(i);
       }
       slot.zones = marker.zones;
       slot.lockedWidthIn = marker.lockedWidthIn;
@@ -597,7 +775,16 @@ export function reconcileBracedPlacement(
     ordinal++;
   }
 
-  const result = applyBracedPlacement(reconciled, spacingIn, standardWidthIn, defaultPattern, defaultMirrored, eligibleIndices);
+  const result = applyBracedPlacement(
+    reconciled,
+    spacingIn,
+    standardWidthIn,
+    defaultPattern,
+    defaultMirrored,
+    eligibleIndices,
+    preservedBracedIndices,
+    slotIndicesArePinned,
+  );
 
   // Re-force every carried-through locked width back to its own exact
   // value (Tommy: "when you click and drag a panel... it shrinks one panel

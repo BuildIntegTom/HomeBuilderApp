@@ -16,6 +16,7 @@ export * from "./tiling";
 export * from "./bracedPlacement";
 export * from "./panelWidthEdit";
 export * from "./absorbedCornerWalls";
+export * from "./cornerBraceCombineRefusals";
 export * from "./panelPlacement";
 export * from "./retile";
 export * from "./wallRunStop";
