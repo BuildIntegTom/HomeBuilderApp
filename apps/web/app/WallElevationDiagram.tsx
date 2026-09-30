@@ -56,6 +56,7 @@ import {
   fitHeightScale,
   renderedDrawingSizePx,
   steppedViewScale,
+  wallPosInFromScreenX,
   wheelZoomedViewScale,
   zoomAnchorScrollDelta,
 } from "./elevationViewport";
@@ -65,11 +66,20 @@ import {
 // 720px `CANVAS_WIDTH` cap that used to sit here is gone and why the scale is
 // now uniform on both axes.
 //
-// ⚠ FootprintCanvas.tsx, FoundationCanvas.tsx and FloorCanvas.tsx still carry
-// their own `CANVAS_WIDTH = 720` / `CANVAS_HEIGHT = 480` and have the same
-// underlying problem. They are deliberately NOT changed here: whether all
-// four canvases move to a fitted, scrollable viewport together is Tommy's
-// decision, not a side effect of fixing the elevation.
+// ⚠ FIVE other drawing surfaces still carry a 720px cap and have the same
+// underlying problem. An earlier version of this note said "all four
+// canvases" and named three of them; the true list, read off the files rather
+// than remembered, is:
+//   FootprintCanvas.tsx      CANVAS_WIDTH 720 / CANVAS_HEIGHT 480
+//   FoundationCanvas.tsx     CANVAS_WIDTH 720 / CANVAS_HEIGHT 480
+//   FloorCanvas.tsx          CANVAS_WIDTH 720 / CANVAS_HEIGHT 480
+//   RoofTrussLayoutView.tsx  CANVAS_WIDTH 720 (width cap only)
+//   Building3DView.tsx       CANVAS_WIDTH 720 / CANVAS_HEIGHT 480
+// (BaleFoundationCrossSectionDiagram.tsx caps at 480 and is a representative
+// detail rather than a to-scale plan, so it is not one of them.)
+// They are deliberately NOT changed here: whether they all move to a fitted,
+// scrollable viewport together is Tommy's decision, not a side effect of
+// fixing the elevation.
 const PX_PER_IN = ELEVATION_PX_PER_IN;
 const TOP_MARGIN_PX = 44; // 24 base + ~20 for the "Overall Width" dimension callout
 const BOTTOM_MARGIN_PX = 36;
@@ -543,7 +553,35 @@ export default function WallElevationDiagram({
   // shared toggle into page.tsx) — same "Panel ID Visibility" concept, just
   // not wired together.
   const [showPanelLabels, setShowPanelLabels] = useState(true);
-  const [viewScale, setViewScale] = useState(1);
+  /**
+   * The user's zoom, **remembered per wall so that a DIFFERENT WALL OPENS
+   * FITTED.** This component is not remounted when the view control steps from
+   * one elevation stop to the next — same `WallElevationDiagram`, new `wall`
+   * prop — so a plain `useState(1)` let a new wall inherit the previous one's
+   * 400% zoom together with its scroll offset, which on a shorter wall is very
+   * often a blank patch of paper with nothing to say why.
+   *
+   * ⚠ DERIVED, not written by an effect, and deliberately so on two counts:
+   * an effect that reset it would paint the new wall once at the old zoom
+   * before correcting itself, and `setState` in an effect body is a lint error
+   * in this app (`react-hooks/set-state-in-effect`) rather than a style
+   * preference. The stored wall id simply stops matching and the getter falls
+   * back to the fitted 1.
+   *
+   * ⚠ `wallIdRef`, not the `wall.id` in scope, because `setViewScale` is
+   * captured by the `[]`-dependency wheel effect below: a closure over the
+   * FIRST render's wall id would file every later wheel-zoom under the wrong
+   * wall and the zoom would silently stop responding after a stop change.
+   */
+  const [viewState, setViewState] = useState<{ wallId: string; scale: number }>({ wallId: wall.id, scale: 1 });
+  const wallIdRef = useRef(wall.id);
+  const viewScale = viewState.wallId === wall.id ? viewState.scale : 1;
+  const setViewScale = (next: number | ((current: number) => number)) =>
+    setViewState((prev) => {
+      const wallId = wallIdRef.current;
+      const current = prev.wallId === wallId ? prev.scale : 1;
+      return { wallId, scale: typeof next === "function" ? next(current) : next };
+    });
   const [isPanning, setIsPanning] = useState(false);
   const [panDragging, setPanDragging] = useState(false);
   const panStartRef = useRef<{ clientX: number; clientY: number; scrollLeft: number; scrollTop: number } | null>(null);
@@ -552,6 +590,15 @@ export default function WallElevationDiagram({
   // than assumed — the editor is fullscreen and resizes with the window.
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [viewportSizePx, setViewportSizePx] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  // ⚠ THIS EFFECT AND THE WHEEL EFFECT BELOW BOTH BAIL ON A NULL REF AND
+  // NEVER RETRY. That is safe *today* only because the viewport div is
+  // rendered unconditionally, so `viewportRef.current` is always set by the
+  // time an `[]`-dep effect runs. The day anyone wraps that div in a
+  // condition — a placeholder while the wall loads, a "no panels yet" state —
+  // these become silent no-ops: no ResizeObserver, so the fit stays at 1, and
+  // no wheel listener, so Ctrl+wheel zooms the whole browser page. Neither
+  // failure raises anything. If the div ever becomes conditional, key these
+  // effects on the element (a ref callback or a state-held node) instead.
   useEffect(() => {
     const el = viewportRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -561,8 +608,9 @@ export default function WallElevationDiagram({
     // drawing is only just wider than the viewport that is a genuine
     // oscillation (scrollbar appears -> fit shrinks -> drawing fits ->
     // scrollbar goes -> fit grows -> ...). The border box does not move when
-    // a scrollbar appears, and ELEVATION_FIT_SLACK_PX covers the scrollbar's
-    // own thickness.
+    // a scrollbar appears, and ELEVATION_FIT_SLACK_PX is what pays for the
+    // scrollbar's own thickness — 32px of slack against a 15px scrollbar,
+    // which leaves 2px of margin. See that constant's note.
     const measure = () => {
       const w = el.offsetWidth;
       const h = el.offsetHeight;
@@ -602,6 +650,23 @@ export default function WallElevationDiagram({
       el.scrollTop = 0;
     }
   };
+  // The other half of "a different wall opens fitted": the SCROLL position,
+  // which is DOM state rather than React state and so does have to be written.
+  // A layout effect, before the browser paints, so the new wall is never shown
+  // scrolled to the old wall's offset — and declared BEFORE the zoom-anchor
+  // layout effect below so that the anchor it clears is already gone by the
+  // time that one looks. Keyed on `wall.id` rather than on the wall object, so
+  // that editing the wall you are looking at does not yank the view back.
+  // `wallIdRef` is updated here, in an effect, rather than during render.
+  useLayoutEffect(() => {
+    wallIdRef.current = wall.id;
+    zoomAnchorRef.current = null;
+    const el = viewportRef.current;
+    if (el) {
+      el.scrollLeft = 0;
+      el.scrollTop = 0;
+    }
+  }, [wall.id]);
   useLayoutEffect(() => {
     const anchor = zoomAnchorRef.current;
     zoomAnchorRef.current = null;
@@ -631,15 +696,41 @@ export default function WallElevationDiagram({
   // would have left the app with a zoom gesture and no scroll gesture, which
   // is the exact complaint this change exists to fix. Ctrl/Cmd+wheel is also
   // what the browser itself, every map and every drawing tool already use
-  // for zoom. So: plain wheel scrolls the drawing (and when the drawing
-  // fits vertically — which it does by default — a vertical wheel is
-  // redirected to horizontal, so the gesture is never dead); Shift+wheel is
-  // the browser's own horizontal scroll and is left alone.
+  // for zoom. So: plain wheel scrolls the drawing, and while the drawing
+  // fits vertically — which it does at the default view, by definition of
+  // "fit height" — a vertical wheel is redirected to HORIZONTAL, because
+  // otherwise it would have nothing to scroll.
+  //
+  // ⚠ **That redirect only applies at the default view, and an earlier
+  // version of this note over-claimed by saying "the gesture is never
+  // dead".** Zoom in and there IS vertical overflow, so `canScrollVertically`
+  // is true, the redirect branch is skipped, and a plain wheel scrolls the
+  // drawing UP AND DOWN like any other scroller. Reaching along the wall then
+  // needs Shift+wheel, the horizontal scrollbar, or Pan. That is ordinary
+  // scroll-container behaviour and is left as it is on purpose — hijacking a
+  // vertical wheel on a surface that really can scroll vertically is worse —
+  // but it is a deliberate choice, not an accident, and Tommy has not been
+  // asked about it. Shift+wheel is the browser's own horizontal scroll and is
+  // left alone in both cases.
   //
   // Attached natively with `{ passive: false }` rather than via React's
   // `onWheel`: React registers wheel listeners on the root as PASSIVE, so a
   // `preventDefault()` from an `onWheel` handler is ignored and Ctrl+wheel
   // would zoom the whole browser page instead of the drawing.
+  //
+  // ⚠ **DO NOT "TIDY" THIS INTO `onWheel`.** That is the whole reason it looks
+  // unidiomatic, and it now has a committed check standing over it:
+  // `smearforn-stage-0-1`'s `ctrl-wheel-zooms-the-drawing-not-the-page` step
+  // dispatches a real Ctrl+wheel and asserts `event.defaultPrevented` from a
+  // bubble-phase listener on `window` — i.e. after this handler has run, so a
+  // true reading there means `preventDefault()` really landed. A passive
+  // registration makes that step go red.
+  //
+  // ⚠ `devicePixelRatio` is NOT a proof of this and was briefly claimed as
+  // one. A CDP-synthesised wheel is injected into the RENDERER; browser page
+  // zoom is browser-UI behaviour that a synthetic event may never reach at
+  // all, so `devicePixelRatio` reads 1 whether or not `preventDefault()`
+  // landed. `defaultPrevented` is the thing that actually distinguishes them.
   useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
@@ -883,9 +974,14 @@ export default function WallElevationDiagram({
       if (!svg) return;
       const rect = svg.getBoundingClientRect();
       if (rect.width === 0) return;
-      const pxPerScreenPx = svgWidthPx / rect.width;
-      const localPx = (e.clientX - rect.left) * pxPerScreenPx;
-      const posIn = Math.min(Math.max((localPx - LEFT_MARGIN_PX) / scaleX, 0), wallWidthIn);
+      const posIn = wallPosInFromScreenX({
+        clientX: e.clientX,
+        svgLeftPx: rect.left,
+        svgRenderedWidthPx: rect.width,
+        svgWidthPx,
+        wallWidthIn,
+        clampToWall: true,
+      });
       onChangeGableProfilePositionIn(pointIndex, posIn);
     };
     const handleUp = () => setDraggingPointIndex(null);
@@ -895,7 +991,7 @@ export default function WallElevationDiagram({
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
-  }, [draggingPointIndex, svgWidthPx, scaleX, wallWidthIn, onChangeGableProfilePositionIn]);
+  }, [draggingPointIndex, svgWidthPx, wallWidthIn, onChangeGableProfilePositionIn]);
 
   // Max-height line drag (Tommy: "a button that you highlight and then you
   // can drag the line down on the editor... it snaps to the height of each
@@ -957,9 +1053,14 @@ export default function WallElevationDiagram({
       if (!svg) return;
       const rect = svg.getBoundingClientRect();
       if (rect.width === 0) return;
-      const pxPerScreenPx = svgWidthPx / rect.width;
-      const localPx = (e.clientX - rect.left) * pxPerScreenPx;
-      const posIn = Math.min(Math.max((localPx - LEFT_MARGIN_PX) / scaleX, 0), wallWidthIn);
+      const posIn = wallPosInFromScreenX({
+        clientX: e.clientX,
+        svgLeftPx: rect.left,
+        svgRenderedWidthPx: rect.width,
+        svgWidthPx,
+        wallWidthIn,
+        clampToWall: true,
+      });
       let nearestIndex = 0;
       let nearestDistIn = Infinity;
       secondStoryOffsetsIn.forEach((offsetIn, i) => {
@@ -984,7 +1085,7 @@ export default function WallElevationDiagram({
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
-  }, [draggingBoxBeamHandle, boxBeamCoverage, svgWidthPx, scaleX, wallWidthIn, secondStoryOffsetsIn, onChangeBoxBeamCoverage]);
+  }, [draggingBoxBeamHandle, boxBeamCoverage, svgWidthPx, wallWidthIn, secondStoryOffsetsIn, onChangeBoxBeamCoverage]);
 
   // Mid-Wall Bond Beam vertical (height) drag — continuous/unsnapped (a
   // real height, not a slot index), mirroring the gable-point drag's own
@@ -1120,9 +1221,14 @@ export default function WallElevationDiagram({
       if (!svg) return;
       const rect = svg.getBoundingClientRect();
       if (rect.width === 0) return;
-      const pxPerScreenPx = svgWidthPx / rect.width;
-      const localPx = (e.clientX - rect.left) * pxPerScreenPx;
-      const posIn = Math.min(Math.max((localPx - LEFT_MARGIN_PX) / scaleX, 0), wallWidthIn);
+      const posIn = wallPosInFromScreenX({
+        clientX: e.clientX,
+        svgLeftPx: rect.left,
+        svgRenderedWidthPx: rect.width,
+        svgWidthPx,
+        wallWidthIn,
+        clampToWall: true,
+      });
       let nearestIndex = 0;
       let nearestDistIn = Infinity;
       offsetsIn.forEach((offsetIn, i) => {
@@ -1158,7 +1264,6 @@ export default function WallElevationDiagram({
     groundOffsetsIn,
     secondStoryOffsetsIn,
     svgWidthPx,
-    scaleX,
     wallWidthIn,
     onChangeMidWallBeamCoverage,
   ]);
@@ -1190,9 +1295,17 @@ export default function WallElevationDiagram({
       if (!svg) return;
       const rect = svg.getBoundingClientRect();
       if (rect.width === 0) return;
-      const pxPerScreenPx = svgWidthPx / rect.width;
-      const localPx = (e.clientX - rect.left) * pxPerScreenPx;
-      const cursorIn = (localPx - LEFT_MARGIN_PX) / scaleX;
+      // ⚠ NOT clamped to the wall, deliberately — the one X drag that isn't.
+      // `resolvePanelBoundaryDrag` needs to see a cursor that has gone past
+      // `pairStartIn`/`pairEndIn`, because that overshoot is what fires the
+      // 24in floor snap and the role handoff to the next pair out.
+      const cursorIn = wallPosInFromScreenX({
+        clientX: e.clientX,
+        svgLeftPx: rect.left,
+        svgRenderedWidthPx: rect.width,
+        svgWidthPx,
+        wallWidthIn,
+      });
       // Floor + role handoff (Tommy: "it shrinks one panel and adds it to
       // another, snapping to when a shrinking panel becomes 2' at which
       // point it snaps there for plus or minus 2 inches and then switches
@@ -1227,7 +1340,7 @@ export default function WallElevationDiagram({
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
     };
-  }, [draggingPanelBoundary, slots, secondStorySlots, groundOffsetsIn, secondStoryOffsetsIn, svgWidthPx, scaleX, wall.id, onDragResizePanels]);
+  }, [draggingPanelBoundary, slots, secondStorySlots, groundOffsetsIn, secondStoryOffsetsIn, svgWidthPx, wallWidthIn, wall.id, onDragResizePanels]);
 
   // A wall's own `slots` don't always cover its full geometric length —
   // for a plain rectangle, corner panels are only stored on one pair of

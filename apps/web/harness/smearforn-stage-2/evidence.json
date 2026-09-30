@@ -1,10 +1,10 @@
 {
-  "app": "http://localhost:3310/",
-  "ranAt": "2026-09-29T21:37:51.846Z",
+  "app": "http://localhost:3399/",
+  "ranAt": "2026-09-30T00:29:53.946Z",
   "steps": [
     {
       "name": "whole-wall-on-screen",
-      "clicks": 4,
+      "clicks": 5,
       "wholeWallVisible": true,
       "asserted": true,
       "passed": true
@@ -80,6 +80,7 @@
     },
     {
       "name": "rule-placed-panel-refuses",
+      "clickedLabel": "0.75\"",
       "notice": "Corner and safety-gap panels are placed by rule, not by hand — the app positions them and would overwrite a hand-placed one. Nothing was changed.",
       "panelsBefore": 15,
       "panelsAfter": 15,

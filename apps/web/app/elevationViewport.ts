@@ -12,8 +12,18 @@
  * per event from `svgWidthPx / svgRect.width`. Growing the drawing and
  * letting it be zoomed is only safe while that ratio stays exact, which in
  * turn is only true while the drawing is scaled UNIFORMLY on both axes.
- * `wallPosInFromScreenX` below is that mapping, byte-for-byte the arithmetic
- * the drag effects run, so `elevationViewport.test.ts` can pin it.
+ * `wallPosInFromScreenX` below is that mapping, and **all four X-axis drag
+ * effects in WallElevationDiagram now CALL it** rather than inlining the same
+ * three lines, so `elevationViewport.test.ts` is pinning the real handlers
+ * and not a copy of them.
+ *
+ * ⚠ It was a copy for one day, and the difference was not cosmetic: the
+ * extracted version clamped to `[0, wallWidthIn]` and the panel-boundary
+ * handler deliberately does not (it needs positions past `pairStartIn` /
+ * `pairEndIn` for the mid-drag role handoff). A test suite over a clamping
+ * copy could not have caught a change to the non-clamping original. Hence
+ * `clampToWall`, opt-in per call site — three drags pass it, the panel
+ * boundary does not.
  *
  * ⚠ Every number in this file is a SCREEN measurement — pixels per drawing
  * inch, margins, zoom limits. None of it is a building value; nothing here
@@ -21,10 +31,41 @@
  * `ELEVATION_PX_PER_IN` changes how big the drawing looks and nothing about
  * what gets built.
  *
- * NOT shared with FootprintCanvas / FoundationCanvas / FloorCanvas, which
- * carry their own copies of the same `CANVAS_WIDTH = 720` problem. Whether
- * all four canvases move together is Tommy's call, not a side effect of
- * fixing one of them — see the note in WallElevationDiagram.
+ * NOT shared with the app's other drawing surfaces, which carry their own
+ * copies of the same `CANVAS_WIDTH = 720` problem. **There are FIVE of them,
+ * not the "four canvases" an earlier version of this note claimed:**
+ * `FootprintCanvas` (720x480), `FoundationCanvas` (720x480), `FloorCanvas`
+ * (720x480), `RoofTrussLayoutView` (720) and `Building3DView` (720x480).
+ * Whether they all move to a fitted, scrollable viewport together is Tommy's
+ * call, not a side effect of fixing one of them — see the note in
+ * WallElevationDiagram.
+ */
+
+/**
+ * ⚠ FOR THE SPEC ENTRY THAT STILL OWES THIS CHANGE A WRITE-UP. It is not
+ * written here because three agents were editing `building_integrity_app_spec.md`
+ * on 2026-09-29 and a fourth would have manufactured a conflict; these are the
+ * three things it owes, measured rather than remembered, so they are not lost:
+ *
+ * 1. **THE ROOT CAUSE WAS NOT THE 720px CAP.** The cap made long walls draw
+ *    anisotropically (point 3), but it is not why Tommy's elevations were
+ *    tiny. The SVG was a SHRINK-TO-FIT FLEX ITEM: measured before the fix, at
+ *    1280x800, 1600x900 and 1920x1080, EVERY wall rendered exactly
+ *    **300px wide** inside a canvas layer 870 / 1190 / 1510px wide — including
+ *    a 12'-6" wall whose own internal drawing is 312px and never touches the
+ *    720 cap. Height used: 11-16% of the available layer on a 48ft wall.
+ *    Removing the cap alone would have changed nothing a user could see.
+ *    After: 96-97% of the available height, at every one of those viewports.
+ * 2. **The elevation no longer lies about proportion past 33.75ft.** That
+ *    figure is exact, not approximate: the old horizontal scale was
+ *    `(720 - 72) / wallWidthIn`, which equals the fixed vertical 1.6px/in at
+ *    exactly 405in = 33.75ft. Past it the drawing got narrower than it was
+ *    tall — the measured 48'-4" ADU wall drew its width at 1.117px/in against
+ *    a vertical 1.6px/in, i.e. **70%**, so a square window drew as a portrait
+ *    rectangle on a fabrication drawing.
+ * 3. **Five surfaces still have the 720 problem, not four** — the list is in
+ *    WallElevationDiagram's header and in this file's own, and it is the thing
+ *    the next coder inherits.
  */
 
 /**
@@ -33,9 +74,10 @@
  *
  * **This is the fix to the anisotropy.** It used to be the vertical scale
  * only; horizontal came from `(svgWidthPx - margins) / wallWidthIn` against
- * a hard 720px canvas cap, so past ~33.75ft the horizontal scale fell below
- * the vertical one and panels drew narrow-and-tall — a 60ft wall drew its
- * width at 56% of its height's scale. A fabrication elevation must not lie
+ * a hard 720px canvas cap, so past 33.75ft exactly — where
+ * `(720 - 72) / wallWidthIn` crosses 1.6 — the horizontal scale fell below
+ * the vertical one and panels drew narrow-and-tall: 70% on the measured
+ * 48'-4" ADU wall, 56% on a 60ft one. A fabrication elevation must not lie
  * about proportion, so the cap is gone and one scale serves both axes; the
  * drawing is then sized on screen by `fitHeightScale` x the user's zoom.
  */
@@ -50,6 +92,18 @@ export const ELEVATION_RIGHT_MARGIN_PX = 24;
  * Breathing room kept around the drawing when it is fitted to the viewport
  * height, so the top dimension callout and the bottom NO PANELS line never
  * sit flush against the editor's edges.
+ *
+ * ⚠ **It is also, silently, the horizontal scrollbar's budget, and that is a
+ * coupling rather than a coincidence.** The viewport is measured on its
+ * BORDER box (see the ResizeObserver in WallElevationDiagram) so that a
+ * scrollbar appearing cannot feed back into the fit and oscillate. The cost
+ * of that choice is that the scrollbar eats into the same space this slack
+ * provides: measured on Chrome/Windows the default view leaves 17px spare
+ * against a 15px scrollbar, i.e. 2px of margin. A THICKER scrollbar — an
+ * accessibility setting, a different platform, a future browser default —
+ * therefore puts a spurious VERTICAL scrollbar on a view that is supposed to
+ * fit exactly. If that shows up, this number is the one to raise (or the fit
+ * has to subtract a measured `offsetHeight - clientHeight` instead).
  */
 export const ELEVATION_FIT_SLACK_PX = 32;
 
@@ -127,9 +181,8 @@ export function wheelZoomedViewScale(viewScale: number, deltaY: number): number 
 }
 
 /**
- * **The mapping the drag handlers depend on.** Given the SVG's real rendered
- * box on screen, turn a cursor's client X into a position along the wall in
- * inches — exactly as every `handleMove` in WallElevationDiagram does:
+ * **The mapping the drag handlers run** — not a restatement of it. All four
+ * X-axis `handleMove`s in WallElevationDiagram call this function:
  *
  *   pxPerScreenPx = svgWidthPx / rect.width
  *   localPx       = (clientX - rect.left) * pxPerScreenPx
@@ -140,6 +193,19 @@ export function wheelZoomedViewScale(viewScale: number, deltaY: number): number 
  * zooming and scrolling are all invisible to it, PROVIDED the drawing is
  * scaled uniformly (a separate X scale would make `rect.width` the wrong
  * thing to divide by on the Y axis and vice versa).
+ *
+ * **`clampToWall` is opt-in because one caller must NOT clamp.** The gable
+ * profile point, the Box Beam coverage handle and the Mid-Wall Bond Beam
+ * coverage handle all want a position inside the wall and pass `true`. The
+ * panel-boundary drag passes nothing: `resolvePanelBoundaryDrag` is handed a
+ * raw cursor position and is entitled to see it beyond `pairStartIn` /
+ * `pairEndIn`, because that overshoot is exactly what triggers the floor snap
+ * and the mid-drag role handoff. Clamping it would quietly disable the
+ * handoff at the ends of a wall.
+ *
+ * `ELEVATION_PX_PER_IN` is the divisor here and `scaleX` is the multiplier in
+ * the drawing; they are the same constant by construction (`const scaleX =
+ * PX_PER_IN`), which is the property the uniform-scale tests pin.
  */
 export function wallPosInFromScreenX(args: {
   clientX: number;
@@ -147,11 +213,13 @@ export function wallPosInFromScreenX(args: {
   svgRenderedWidthPx: number;
   svgWidthPx: number;
   wallWidthIn: number;
+  clampToWall?: boolean;
 }): number {
   if (!(args.svgRenderedWidthPx > 0)) return 0;
   const pxPerScreenPx = args.svgWidthPx / args.svgRenderedWidthPx;
   const localPx = (args.clientX - args.svgLeftPx) * pxPerScreenPx;
-  return clamp((localPx - ELEVATION_LEFT_MARGIN_PX) / ELEVATION_PX_PER_IN, 0, args.wallWidthIn);
+  const posIn = (localPx - ELEVATION_LEFT_MARGIN_PX) / ELEVATION_PX_PER_IN;
+  return args.clampToWall ? clamp(posIn, 0, args.wallWidthIn) : posIn;
 }
 
 /** The inverse: where on screen a given position along the wall is drawn. */

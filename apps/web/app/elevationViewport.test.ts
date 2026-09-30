@@ -149,9 +149,25 @@ describe("zoom stepping", () => {
 /**
  * ⚠ THE DRAG-SAFETY PROOF, the unit half of it. The browser half is
  * `smearforn-stage-0-1`, which drags real panel boundaries at two different
- * zoom levels against the real app. This half pins the arithmetic: a point
- * drawn at N inches along the wall must read back as N inches when the
- * cursor is over it, at ANY rendered width.
+ * zoom levels against the real app.
+ *
+ * **What this half genuinely pins is SCALE-INVARIANCE, and it is worth being
+ * blunt about that, because "the round trip closes" sounds stronger than it
+ * is.** `screenXFromWallPosIn` and `wallPosInFromScreenX` are exact algebraic
+ * inverses written ten lines apart in one file: that they compose to the
+ * identity is close to a tautology and would survive almost any edit made to
+ * both. What is NOT tautological, and is the property that actually broke the
+ * drawing before 2026-09-29, is that the answer in INCHES does not depend on
+ * how big the drawing is rendered — the same wall position reads back
+ * identically at 25% and at 400%, at four wall lengths, from an un-round
+ * element origin. A mapping that quietly used one scale for X and another for
+ * Y, or that folded the zoom in twice, fails these cases and closes its own
+ * round trip perfectly while doing so.
+ *
+ * The other reason to keep it: since the review of 2026-09-29 the four X-axis
+ * drag handlers CALL `wallPosInFromScreenX` instead of restating it, so these
+ * cases now stand over the real handlers rather than over a copy that had
+ * already drifted (the copy clamped; the panel-boundary handler must not).
  */
 describe("screen <-> wall-inches round trip, at every zoom the UI can reach", () => {
   const wallLengthsFt = [10, 20, 48, 60];
@@ -178,12 +194,33 @@ describe("screen <-> wall-inches round trip, at every zoom the UI can reach", ()
     }
   }
 
-  it("clamps a cursor dragged off either end of the wall", () => {
+  it("clamps a cursor dragged off either end of the wall, WHEN ASKED TO", () => {
     const wallWidthIn = 20 * 12;
     const svgWidthPx = elevationSvgWidthPx(wallWidthIn);
-    const common = { svgLeftPx: 0, svgRenderedWidthPx: svgWidthPx * 2, svgWidthPx, wallWidthIn };
+    const common = { svgLeftPx: 0, svgRenderedWidthPx: svgWidthPx * 2, svgWidthPx, wallWidthIn, clampToWall: true };
     expect(wallPosInFromScreenX({ clientX: -5000, ...common })).toBe(0);
     expect(wallPosInFromScreenX({ clientX: 5000, ...common })).toBe(wallWidthIn);
+  });
+
+  /**
+   * ⚠ The clamp is OPT-IN, and this is the case that says why. The
+   * panel-boundary drag hands its raw cursor position to
+   * `resolvePanelBoundaryDrag`, which fires the 24in floor snap and the
+   * mid-drag role handoff precisely WHEN the cursor has gone past the pair's
+   * own ends. A clamping mapping silently disables the handoff at the ends of
+   * a wall — which is what an extracted-but-not-called copy of this function
+   * did for a day without anything going red.
+   */
+  it("does NOT clamp by default, because the panel-boundary drag needs the overshoot", () => {
+    const wallWidthIn = 20 * 12;
+    const svgWidthPx = elevationSvgWidthPx(wallWidthIn);
+    const common = { svgLeftPx: 0, svgRenderedWidthPx: svgWidthPx, svgWidthPx, wallWidthIn };
+    // One inch past each end, in the drawing's own px: negative before the
+    // wall starts, beyond wallWidthIn after it ends.
+    expect(wallPosInFromScreenX({ clientX: ELEVATION_LEFT_MARGIN_PX - ELEVATION_PX_PER_IN, ...common })).toBeCloseTo(-1, 9);
+    expect(
+      wallPosInFromScreenX({ clientX: ELEVATION_LEFT_MARGIN_PX + (wallWidthIn + 1) * ELEVATION_PX_PER_IN, ...common }),
+    ).toBeCloseTo(wallWidthIn + 1, 9);
   });
 
   it("a one-screen-pixel cursor move is a FINER inch step the more you zoom in", () => {
