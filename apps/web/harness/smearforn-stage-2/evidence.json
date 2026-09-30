@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3214/",
-  "ranAt": "2026-09-29T23:49:14.775Z",
+  "app": "http://localhost:3291",
+  "ranAt": "2026-09-30T13:33:55.107Z",
   "steps": [
     {
       "name": "wall-as-tiled",
@@ -18,8 +18,8 @@
         40,
         40,
         37.125,
-        37,
         34.125,
+        37,
         0.75,
         40
       ],
@@ -29,7 +29,7 @@
     {
       "name": "tool-armed",
       "insertMarkers": 16,
-      "dragStripsBefore": 11,
+      "dragStripsBefore": 10,
       "dragStripsArmed": 0,
       "asserted": true,
       "passed": true
@@ -63,7 +63,9 @@
     {
       "name": "delete",
       "notice": "Deleted a panel on wall AB: 16 panels → 15, 11 still automatic.",
-      "refusalsOnTheWay": [],
+      "refusalsOnTheWay": [
+        "Replaced on wall AB: 16 panels → 16, 12 still automatic."
+      ],
       "panelsBefore": 16,
       "panelsAfter": 15,
       "totalEighthsBefore": 4392,
