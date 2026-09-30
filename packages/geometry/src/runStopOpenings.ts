@@ -128,16 +128,55 @@ import type { PanelSlot, WallEnd } from "./types";
  * `retileWithOpenings` appends them toward the far end of the shortened run —
  * which is roughly where they are, since the start is what was removed.
  *
- * ### The one case restore is ordered-but-not-exact
+ * ### Where restore is exact, where it is not, and how a caller can tell
  *
- * If openings are INSERTED or DELETED on the wall while it is stopped, the
- * survivor count no longer matches `preStop`'s kept count and there is no
- * one-for-one correspondence to rebase through. Restore then falls back to
- * splicing each remembered opening back at the position it held relative to
- * the survivors and clamping the merged ordinals monotonically, which
- * guarantees the ORDER — no opening ever changes places with another — but
- * not the exact panel it lands beside. Nothing is lost either way; that is
- * the promise, and it is the one it keeps in every case.
+ * ⚠ **An earlier draft of this comment promised "order is still exact — no two
+ * openings can trade places" in every case, and the spec and two pieces of
+ * user-facing text repeated it. It was false in two reachable shapes, both
+ * measured.** Both need an intervening edit while the wall is stopped, which
+ * is the one thing a memory keyed by ordinals cannot see.
+ *
+ * 1. **Delete a survivor while stopped.** Pre-stop
+ *    `[door(1), WINDOW(3, withheld), column(5)]`; the user deletes the door;
+ *    the survivors read back as `[column]`. The counts no longer correspond,
+ *    and the old fallback spliced the remembered window in after 1 survivor:
+ *    `[column, window]` — the window back on the WRONG SIDE of a survivor.
+ *    Two openings traded places, which is the same class of defect as the
+ *    window/door swap that blocked the first review.
+ * 2. **Delete one and insert another, count unchanged.** Same memory,
+ *    survivors `[column, big-header]`. The counts still correspond, so the
+ *    exact path is taken — and it assumes survivor *i* is `preStop`'s *i*-th
+ *    kept entry. One delete plus one insert breaks that correspondence without
+ *    breaking the count, so nothing notices: merged `[column, window,
+ *    big-header]`, reported as byte-exact.
+ *
+ * **What is fixed: each `preStop` entry now records the opening's PAYLOAD as
+ * well as its ordinal** (`PreStopOpeningPosition.payload` — type, width,
+ * height). The fallback matches survivors to the kept entries they came from
+ * by payload, in order, rather than by index, so shape 1 restores the window
+ * on the correct side of the column and a single delete is no longer
+ * approximate at all.
+ *
+ * **What is NOT fixed, stated rather than glossed:** shape 2 still takes the
+ * index path. A count-preserving change is far more often a width or height
+ * EDIT on a survivor — where index correspondence is exactly right, and where
+ * the app's own opening tools make it easy — than a delete plus an insert, and
+ * without stable opening ids the two are indistinguishable. Choosing payload
+ * alignment there would break the common case to fix the rare one.
+ *
+ * So the promise, in the only form that is true everywhere:
+ *
+ * - **Nothing is ever lost.** Every remembered opening comes back on its own
+ *   wall, in every case. That is Tommy's decision and it holds unconditionally.
+ * - **Restore is exact when the wall's opening payloads still match the ones
+ *   `preStop` recorded.** `runStopRestoreFidelity` answers exactly that, and
+ *   the Review Log entry and the elevation notice condition their wording on
+ *   it — no user-facing text promises "exactly as drawn" unless it passes.
+ * - **Otherwise placement is approximate and order can differ**, because the
+ *   list changed underneath the memory.
+ *
+ * The full fix is stable opening ids, which all three bullets reduce to, and
+ * which is deliberately out of scope here.
  */
 
 const isOpeningSlot = (slot: PanelSlot): boolean =>
@@ -177,9 +216,51 @@ export interface PreStopOpeningPosition {
   beforeStandardCount: number;
   /** True if an unbuilt span swallowed it. Withheld entries correspond, in
    * order, to `RunStopOpeningMemory.unbuilt`; the rest correspond, in order,
-   * to the survivors `getOpeningAnchors` reads back off the stopped wall. */
+   * to the survivors `getOpeningAnchors` reads back off the stopped wall —
+   * **unless openings were inserted or deleted while the wall was stopped,
+   * which is what `payload` exists to detect.** */
   withheld: boolean;
+  /** What sat here, so a survivor can be matched to the entry it came from by
+   * WHAT IT IS rather than by its index in a list that may have changed
+   * underneath the memory. See the module doc comment's two measured shapes.
+   *
+   * Optional only so that a memory written without it — a hand-edited file, or
+   * one carrying an in-flight shape from this change's own earlier commits —
+   * degrades to positional correspondence instead of misaligning everything.
+   * Every memory this module writes sets it. */
+  payload?: PreStopOpeningPayload;
 }
+
+/**
+ * Type/width/height of one opening. **Payload, never identity:** two identical
+ * windows are indistinguishable here, which is precisely why restoring them in
+ * either order produces the same drawing.
+ *
+ * Deliberately NOT the whole `OpeningAnchor`. Zones, braced style and sill
+ * height are carried by the anchor itself (for a withheld opening) or by the
+ * live slot (for a survivor); duplicating them here would be a second copy of
+ * the same data that could disagree with the first.
+ */
+export interface PreStopOpeningPayload {
+  type: OpeningAnchor["type"];
+  widthIn: number;
+  heightIn?: number;
+}
+
+/** Eighth-grid equality, since every width and height in this app is on that
+ * grid and a raw `===` on halves of an inch would be comparing floats. */
+const sameLength = (a: number | undefined, b: number | undefined): boolean =>
+  a === undefined || b === undefined ? a === b : toEighths(a) === toEighths(b);
+
+const samePayload = (a: PreStopOpeningPayload, b: PreStopOpeningPayload): boolean =>
+  a.type === b.type && sameLength(a.widthIn, b.widthIn) && sameLength(a.heightIn, b.heightIn);
+
+/** `heightIn` is omitted rather than set to `undefined` so the stored shape
+ * round-trips through JSON unchanged. */
+const payloadOf = (opening: OpeningAnchor): PreStopOpeningPayload =>
+  opening.heightIn === undefined
+    ? { type: opening.type, widthIn: opening.widthIn }
+    : { type: opening.type, widthIn: opening.widthIn, heightIn: opening.heightIn };
 
 /**
  * What a stopped wall hands forward so a later un-stop can put it back: the
@@ -196,7 +277,8 @@ export interface RunStopOpeningMemory {
    * entries. Each carries its PRE-STOP `beforeStandardCount`. */
   readonly unbuilt: readonly OpeningAnchor[];
   /** The whole pre-stop sequence, left to right — survivors and withheld
-   * alike. Empty when nothing was withheld. */
+   * alike, each with the ordinal it had then and what it was. Empty when
+   * nothing was withheld. */
   readonly preStop: readonly PreStopOpeningPosition[];
 }
 
@@ -231,7 +313,7 @@ function withholdEverything(openings: OpeningAnchor[]): RunStopOpeningMemory {
   const sorted = [...openings].sort((a, b) => a.beforeStandardCount - b.beforeStandardCount);
   return {
     unbuilt: sorted,
-    preStop: sorted.map((o) => ({ beforeStandardCount: o.beforeStandardCount, withheld: true })),
+    preStop: sorted.map((o) => ({ beforeStandardCount: o.beforeStandardCount, withheld: true, payload: payloadOf(o) })),
   };
 }
 
@@ -342,7 +424,11 @@ export function partitionOpeningsByRunStop(input: RunStopOpeningPartitionInput):
     kept: openings.filter((o) => !unbuiltSet.has(o)),
     memory: {
       unbuilt: sorted.filter((o) => unbuiltSet.has(o)),
-      preStop: sorted.map((o) => ({ beforeStandardCount: o.beforeStandardCount, withheld: unbuiltSet.has(o) })),
+      preStop: sorted.map((o) => ({
+        beforeStandardCount: o.beforeStandardCount,
+        withheld: unbuiltSet.has(o),
+        payload: payloadOf(o),
+      })),
     },
   };
 }
@@ -365,12 +451,26 @@ export function partitionOpeningsByRunStop(input: RunStopOpeningPartitionInput):
  * ordinal and the remembered ones are interleaved where they sat. The merged
  * list is then the pre-stop list, ordinal for ordinal.
  *
- * The fallback path, taken only when openings were inserted or deleted on the
- * wall while it was stopped so the counts no longer correspond: splice each
- * remembered opening back at the position it held among the survivors and
- * clamp the ordinals monotonically. Order is still exact — no two openings can
- * trade places — but placement is approximate, which it has to be once the
- * list itself changed underneath the memory.
+ * The payload path, taken when openings were inserted or deleted on the wall
+ * while it was stopped so the counts no longer correspond: each survivor is
+ * matched — in order, by payload — to the kept entry it came from, the
+ * remembered ones go back at their own recorded positions, and the ordinals are
+ * clamped monotonically. A survivor with no match is one inserted while the
+ * wall was stopped; it keeps its own re-derived ordinal and stays between the
+ * same two survivors it was inserted between. **A single deletion restores
+ * exactly: the matched survivors carry their pre-stop ordinals, so the result
+ * is the pre-stop list minus the deleted opening.**
+ *
+ * The positional fallback, for a memory whose kept entries carry no payload at
+ * all (hand-edited, or an in-flight shape from this change's own earlier
+ * commits): splice each remembered opening back after the number of survivors
+ * that preceded it. This is what the payload path replaced, kept because
+ * degrading to it is strictly better than matching against nothing.
+ *
+ * ⚠ **Read the module doc comment before describing any of this as exact.**
+ * One reachable shape — a delete plus an insert, count unchanged — takes the
+ * exact path and is NOT exact, deliberately; `runStopRestoreFidelity` is how a
+ * caller tells, and it is what the user-facing wording is conditioned on.
  */
 export function mergeRunStopOpenings(
   current: OpeningAnchor[],
@@ -398,17 +498,118 @@ export function mergeRunStopOpenings(
     return merged;
   }
 
-  // Openings were added or removed while the wall was stopped. Insert from the
-  // right, so an earlier recorded position is not shifted by a later
-  // insertion; ties keep left-to-right order for the same reason.
+  // Openings were added or removed while the wall was stopped, so there is no
+  // one-for-one correspondence left to rebase through. Match each survivor to
+  // the kept entry it came from BY PAYLOAD instead — which is what puts a
+  // remembered opening back on the correct side of a survivor after a delete.
+  const keptEntries = memory.preStop
+    .map((position, preStopIndex) => ({ position, preStopIndex }))
+    .filter((entry) => !entry.position.withheld);
+  if (!keptEntries.every((entry) => entry.position.payload !== undefined)) {
+    return mergeByRecordedPosition(current, memory);
+  }
+  const matchedTo = matchSurvivorsByPayload(keptEntries, current);
+
+  // One list in PRE-STOP coordinates: a matched survivor sits at its kept
+  // entry's own index, a remembered one at its own, and a survivor inserted
+  // while the wall was stopped takes a fractional place just after the last
+  // matched one — which keeps it between the same two survivors it was
+  // inserted between, the only thing about it that is actually known.
+  const placed: { anchor: OpeningAnchor; position: number; ordinal: number }[] = [];
+  let lastMatchedIndex = -1;
+  let unmatchedSinceMatch = 0;
+  current.forEach((survivor, survivorIndex) => {
+    const preStopIndex = matchedTo[survivorIndex];
+    if (preStopIndex !== undefined) {
+      lastMatchedIndex = preStopIndex;
+      unmatchedSinceMatch = 0;
+      placed.push({
+        anchor: survivor,
+        position: preStopIndex,
+        ordinal: memory.preStop[preStopIndex]!.beforeStandardCount,
+      });
+      return;
+    }
+    unmatchedSinceMatch++;
+    placed.push({
+      anchor: survivor,
+      // Strictly between `lastMatchedIndex` and the next integer position, so
+      // it can never sort past a matched survivor either way.
+      position: lastMatchedIndex + unmatchedSinceMatch / (current.length + 1),
+      ordinal: survivor.beforeStandardCount,
+    });
+  });
+  let unbuiltIndex = 0;
+  memory.preStop.forEach((position, preStopIndex) => {
+    if (!position.withheld) return;
+    const anchor = memory.unbuilt[unbuiltIndex++]!;
+    placed.push({ anchor, position: preStopIndex, ordinal: anchor.beforeStandardCount });
+  });
+  placed.sort((a, b) => a.position - b.position);
+  return clampMonotonic(placed);
+}
+
+/**
+ * Per survivor, the index in `preStop` of the kept entry it came from, or
+ * `undefined` for one with no match — an opening inserted while the wall was
+ * stopped.
+ *
+ * A longest-in-order match (the classic LCS walk), not a greedy two-pointer:
+ * greedy has to guess, on a mismatch, whether an opening was deleted or one was
+ * inserted, and guessing wrong mis-matches everything after it. The lists here
+ * are one wall's openings — single digits — so the quadratic table is free.
+ */
+function matchSurvivorsByPayload(
+  keptEntries: { position: PreStopOpeningPosition; preStopIndex: number }[],
+  survivors: readonly OpeningAnchor[],
+): (number | undefined)[] {
+  const keptCount = keptEntries.length;
+  const survivorCount = survivors.length;
+  const matches = (keptIndex: number, survivorIndex: number): boolean => {
+    const payload = keptEntries[keptIndex]!.position.payload;
+    return payload !== undefined && samePayload(payload, payloadOf(survivors[survivorIndex]!));
+  };
+  // best[i][j] — the most pairs still matchable from keptEntries[i..] and
+  // survivors[j..].
+  const best: number[][] = Array.from({ length: keptCount + 1 }, () => new Array<number>(survivorCount + 1).fill(0));
+  for (let i = keptCount - 1; i >= 0; i--) {
+    for (let j = survivorCount - 1; j >= 0; j--) {
+      best[i]![j] = matches(i, j) ? best[i + 1]![j + 1]! + 1 : Math.max(best[i + 1]![j]!, best[i]![j + 1]!);
+    }
+  }
+  const matchedTo = new Array<number | undefined>(survivorCount).fill(undefined);
+  let i = 0;
+  let j = 0;
+  while (i < keptCount && j < survivorCount) {
+    if (matches(i, j)) {
+      matchedTo[j] = keptEntries[i]!.preStopIndex;
+      i++;
+      j++;
+    } else if (best[i + 1]![j]! >= best[i]![j + 1]!) i++;
+    else j++;
+  }
+  return matchedTo;
+}
+
+/** The pre-payload fallback: splice each remembered opening back after the
+ * number of survivors that preceded it, from the right so an earlier recorded
+ * position is not shifted by a later insertion. Reachable only from a memory
+ * whose kept entries carry no payload — see `mergeRunStopOpenings`. */
+function mergeByRecordedPosition(current: OpeningAnchor[], memory: RunStopOpeningMemory): OpeningAnchor[] {
   const spliced = [...current];
   const afterKept = afterKeptCounts(memory.preStop);
   for (let i = memory.unbuilt.length - 1; i >= 0; i--) {
     spliced.splice(Math.min(afterKept[i]!, spliced.length), 0, memory.unbuilt[i]!);
   }
+  return clampMonotonic(spliced.map((anchor) => ({ anchor, ordinal: anchor.beforeStandardCount })));
+}
+
+/** Ordinals non-decreasing, so `retileWithOpenings`' own stable sort cannot
+ * reorder the list this module just decided the order of. */
+function clampMonotonic(placed: { anchor: OpeningAnchor; ordinal: number }[]): OpeningAnchor[] {
   let previous = Number.NEGATIVE_INFINITY;
-  return spliced.map((anchor) => {
-    const ordinal = Math.max(anchor.beforeStandardCount, previous);
+  return placed.map(({ anchor, ordinal: recorded }) => {
+    const ordinal = Math.max(recorded, previous);
     previous = ordinal;
     return anchor.beforeStandardCount === ordinal ? anchor : { ...anchor, beforeStandardCount: ordinal };
   });
@@ -423,6 +624,47 @@ function afterKeptCounts(preStop: readonly PreStopOpeningPosition[]): number[] {
     else kept++;
   }
   return counts;
+}
+
+/** How faithfully a wall's withheld openings can be put back — see
+ * `runStopRestoreFidelity`. */
+export type RunStopRestoreFidelity = "nothing-withheld" | "exact" | "approximate";
+
+/**
+ * Whether restoring this wall's withheld openings puts them back where they
+ * were, or only approximately — the honest answer the user-facing wording has
+ * to be conditioned on.
+ *
+ * - `"nothing-withheld"` — no memory, or nothing in it. Nothing to restore.
+ * - `"exact"` — the wall's surviving openings still ARE the ones `preStop`
+ *   recorded as kept, payload for payload and in the same order, so
+ *   `mergeRunStopOpenings` takes its exact path and the merged list is the
+ *   pre-stop list. Two openings with identical payloads are indistinguishable
+ *   here, which is why this is still honest: restoring them in either order
+ *   produces the same drawing.
+ * - `"approximate"` — openings were inserted, deleted or edited on this wall
+ *   while it was stopped. Nothing is lost, but a remembered opening can come
+ *   back beside a different panel, and in the count-unchanged case on the wrong
+ *   side of a survivor. See the module doc comment's two measured shapes.
+ *
+ * ⚠ An EDIT to a survivor's width or height also reports `"approximate"`, and
+ * that restore is in fact exact. Deliberate, and the reason the wording this
+ * gates says "may": promising exactness and failing to deliver it is the defect
+ * this function exists to stop, and a caution the user did not strictly need is
+ * the cheap side of that trade.
+ */
+export function runStopRestoreFidelity(
+  memory: RunStopOpeningMemory | undefined,
+  currentOpenings: readonly OpeningAnchor[],
+): RunStopRestoreFidelity {
+  if (!memory || memory.unbuilt.length === 0) return "nothing-withheld";
+  const kept = memory.preStop.filter((position) => !position.withheld);
+  if (kept.length !== currentOpenings.length) return "approximate";
+  const corresponds = kept.every((position, index) => {
+    const payload = position.payload;
+    return payload !== undefined && samePayload(payload, payloadOf(currentOpenings[index]!));
+  });
+  return corresponds ? "exact" : "approximate";
 }
 
 export interface RunStopOpeningFit {

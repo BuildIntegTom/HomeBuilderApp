@@ -40,6 +40,20 @@ describe("pruneOpeningMemoryToLiveWalls", () => {
     expect(pruneOpeningMemoryToLiveWalls(before, fp)).toEqual({ ground: {}, second: { BC: memory(61.5) } });
   });
 
+  /**
+   * ⚠ **The blind spot, asserted rather than described.** Drawing a brand-new
+   * building reuses the same wall ids, so the old building's memory survives
+   * this prune untouched — and the next re-tile then merges a window from a
+   * building that no longer exists into the new one. A new footprint therefore
+   * has to CLEAR the memory, not prune it; `handleDraw` does, and
+   * retile.test.ts pins what happens when it does not.
+   */
+  it("keeps a stale memory whose id a BRAND-NEW building reuses — which is why handleDraw clears it", () => {
+    const newBuilding = buildRectangleFootprint(22, 18);
+    const leftOver: OpeningMemoryByStoryAndWallId = { ground: { AB: memory(61.5) }, second: {} };
+    expect(pruneOpeningMemoryToLiveWalls(leftOver, newBuilding)).toEqual(leftOver);
+  });
+
   /** Nothing drawn yet is not "every wall deleted". Emptying the memory here
    * would be the data loss the whole feature exists to avoid. */
   it("leaves the memory untouched when there is no footprint at all", () => {

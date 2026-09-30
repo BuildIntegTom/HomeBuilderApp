@@ -63,7 +63,7 @@ checks. The baseline step now asserts it found walls at all.
 | 11 | Clearing the stop restores the elevation total, the plan, and the plate |
 | 12 | A stop leaving a run under the 24in fabrication minimum is **refused**, and the wall is untouched |
 | 13 | A stop that **reaches a corner the wall owns** is **accepted**, and a neighbour really does grow by a wall thickness — the orphan corner, end to end. The neighbour is measured off the 3D scene, because the elevation only shows one wall. |
-| 15 | **Openings in the unbuilt span are dropped, remembered and restored** (Tommy, 2026-09-29: "Drop them, and remember"). Sweeps the stop along the wall: the "does not add back up" sentence never appears again, every accepted stop still conserves the wall to the eighth, at least one really does swallow an opening and the app says so, and clearing the stop gives the wall back panel for panel with nothing withheld. |
+| 15 | **Openings in the unbuilt span are dropped, remembered and restored** (Tommy, 2026-09-29: "Drop them, and remember"). The step **places its own opening** with the Stage 2 Window tool at a known boundary near the start end, and asserts the insert — relying on the random default seed instead made this step about a 1-in-5 flake on green code (see its own comment, and the third review of 2026-09-29). Then it sweeps the stop along the wall: the "does not add back up" sentence never appears again, every accepted stop still conserves the wall to the eighth, at least one really does swallow an opening and the app says so, and clearing the stop gives the wall back panel for panel with nothing withheld. |
 | — | No uncaught exception anywhere in the run |
 
 ## Two real defects this found that unit tests had not

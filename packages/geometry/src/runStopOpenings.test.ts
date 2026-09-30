@@ -5,6 +5,7 @@ import {
   mergeRunStopOpenings,
   partitionOpeningsByRunStop,
   runStopOpeningFit,
+  runStopRestoreFidelity,
   type RunStopOpeningMemory,
   type RunStopOpeningPartitionInput,
 } from "./runStopOpenings";
@@ -180,11 +181,13 @@ describe("partitionOpeningsByRunStop", () => {
     expect(fromEnd.memory.unbuilt).toEqual([three[2]]);
     expect(fromEnd.kept).toEqual([three[0], three[1]]);
     // The pre-stop order, recorded: two survivors then the withheld door, with
-    // the ordinals they had BEFORE the stop.
+    // the ordinals they had BEFORE the stop — and what each one WAS, so a
+    // survivor can be matched back to its own entry if the list changes while
+    // the wall is stopped.
     expect(fromEnd.memory.preStop).toEqual([
-      { beforeStandardCount: 1, withheld: false },
-      { beforeStandardCount: 3, withheld: false },
-      { beforeStandardCount: 5, withheld: true },
+      { beforeStandardCount: 1, withheld: false, payload: { type: "window", widthIn: 47.625 } },
+      { beforeStandardCount: 3, withheld: false, payload: { type: "window", widthIn: 41.5 } },
+      { beforeStandardCount: 5, withheld: true, payload: { type: "door", widthIn: 37.5 } },
     ]);
 
     // 120in off the start leaves [120, 300]: the first window (65.5-113.125)
@@ -193,9 +196,9 @@ describe("partitionOpeningsByRunStop", () => {
     expect(fromStart.memory.unbuilt).toEqual([three[0]]);
     expect(fromStart.kept).toEqual([three[1], three[2]]);
     expect(fromStart.memory.preStop).toEqual([
-      { beforeStandardCount: 1, withheld: true },
-      { beforeStandardCount: 3, withheld: false },
-      { beforeStandardCount: 5, withheld: false },
+      { beforeStandardCount: 1, withheld: true, payload: { type: "window", widthIn: 47.625 } },
+      { beforeStandardCount: 3, withheld: false, payload: { type: "window", widthIn: 41.5 } },
+      { beforeStandardCount: 5, withheld: false, payload: { type: "door", widthIn: 37.5 } },
     ]);
   });
 
@@ -307,8 +310,22 @@ describe("partitionOpeningsByRunStop", () => {
 
 describe("mergeRunStopOpenings", () => {
   /** The memory a stop would have produced for `preStopAll`, withholding
-   * exactly `withheld`. */
+   * exactly `withheld` — payloads included, exactly as
+   * `partitionOpeningsByRunStop` records them. */
   const memoryFor = (preStopAll: OpeningAnchor[], withheld: OpeningAnchor[]): RunStopOpeningMemory => ({
+    unbuilt: preStopAll.filter((o) => withheld.includes(o)),
+    preStop: preStopAll.map((o) => ({
+      beforeStandardCount: o.beforeStandardCount,
+      withheld: withheld.includes(o),
+      ...(o.heightIn === undefined
+        ? { payload: { type: o.type, widthIn: o.widthIn } }
+        : { payload: { type: o.type, widthIn: o.widthIn, heightIn: o.heightIn } }),
+    })),
+  });
+
+  /** The same memory as it was written before `payload` existed — an in-flight
+   * shape from this change's own earlier commits, or a hand-edited file. */
+  const payloadlessMemoryFor = (preStopAll: OpeningAnchor[], withheld: OpeningAnchor[]): RunStopOpeningMemory => ({
     unbuilt: preStopAll.filter((o) => withheld.includes(o)),
     preStop: preStopAll.map((o) => ({ beforeStandardCount: o.beforeStandardCount, withheld: withheld.includes(o) })),
   });
@@ -361,13 +378,114 @@ describe("mergeRunStopOpenings", () => {
     const survivor = anchor(5, 37.5, { type: "door" });
     const memory = memoryFor([withheld, survivor], [withheld]);
     // The user inserted a column while stopped, so there is no longer a
-    // one-for-one correspondence to rebase through. Placement becomes
-    // approximate; the order does not.
+    // one-for-one correspondence to rebase through. The door still matches its
+    // own recorded entry by payload, so it is rebased onto its pre-stop ordinal
+    // 5; the inserted column has no entry to match and stays where it was
+    // inserted relative to the door.
     const added = anchor(2, 21, { type: "column" });
     const merged = mergeRunStopOpenings([anchor(0, 37.5, { type: "door" }), added], memory);
     expect(merged.map((o) => o.type)).toEqual(["window", "door", "column"]);
     // Monotone ordinals, so `retileWithOpenings`' own sort cannot reorder them.
-    expect(merged.map((o) => o.beforeStandardCount)).toEqual([1, 1, 2]);
+    expect(merged.map((o) => o.beforeStandardCount)).toEqual([1, 5, 5]);
+  });
+
+  /**
+   * **Third-review must-fix, and the reason `payload` exists.** The promise
+   * "order is still exact — no two openings can trade places" was FALSE here:
+   * pre-stop `[door, WINDOW(withheld), column]`, the user deletes the door
+   * while the wall is stopped, and the survivors read back as `[column]`. The
+   * old fallback spliced the window in after 1 survivor and produced
+   * `[column, window]` — the remembered window on the wrong side of a survivor.
+   *
+   * Matching the survivor to the entry it came from by payload puts it back
+   * where it was, and the result is the pre-stop list minus the deleted door:
+   * one deletion is no longer approximate at all.
+   */
+  it("restores on the correct side of a survivor after another opening was DELETED while stopped", () => {
+    const door = anchor(1, 37.5, { type: "door" });
+    const window = anchor(3, 61.5);
+    const column = anchor(5, 21, { type: "column" });
+    const memory = memoryFor([door, window, column], [window]);
+    // The door is gone; the column is what `getOpeningAnchors` reads back off
+    // the stopped run, with its ordinal re-derived down to 0.
+    const merged = mergeRunStopOpenings([anchor(0, 21, { type: "column" })], memory);
+    expect(merged.map((o) => o.type)).toEqual(["window", "column"]);
+    expect(merged.map((o) => o.beforeStandardCount)).toEqual([3, 5]);
+  });
+
+  /** A memory written before `payload` existed cannot be matched that way, so
+   * it degrades to the pre-payload answer — approximate, the window on the
+   * wrong side here — rather than matching against nothing and scattering the
+   * list. Nothing in the app writes this shape any more. */
+  it("degrades to the recorded-position splice for a memory with no payloads", () => {
+    const door = anchor(1, 37.5, { type: "door" });
+    const window = anchor(3, 61.5);
+    const column = anchor(5, 21, { type: "column" });
+    const memory = payloadlessMemoryFor([door, window, column], [window]);
+    const merged = mergeRunStopOpenings([anchor(0, 21, { type: "column" })], memory);
+    expect(merged.map((o) => o.type)).toEqual(["column", "window"]);
+  });
+
+  /**
+   * **The case that is still NOT exact, pinned so it cannot be claimed
+   * otherwise.** One delete plus one insert leaves the count unchanged, so the
+   * merge takes its exact path, which assumes survivor *i* is the *i*-th kept
+   * entry — and here it is not. The window comes back between two openings it
+   * was never between.
+   *
+   * Nothing is lost, and `runStopRestoreFidelity` reports `"approximate"`, which
+   * is what stops the Review Log and the elevation notice promising "exactly as
+   * drawn" for it. The real fix is stable opening ids, which is out of scope.
+   */
+  it("is NOT exact when one opening was deleted and another inserted, and says so", () => {
+    const door = anchor(1, 37.5, { type: "door" });
+    const window = anchor(3, 61.5);
+    const column = anchor(5, 21, { type: "column" });
+    const memory = memoryFor([door, window, column], [window]);
+    const survivors = [anchor(0, 21, { type: "column" }), anchor(2, 96, { type: "big-header" })];
+    expect(mergeRunStopOpenings(survivors, memory).map((o) => o.type)).toEqual(["column", "window", "big-header"]);
+    expect(runStopRestoreFidelity(memory, survivors)).toBe("approximate");
+  });
+});
+
+describe("runStopRestoreFidelity", () => {
+  const memoryFor = (preStopAll: OpeningAnchor[], withheld: OpeningAnchor[]): RunStopOpeningMemory => ({
+    unbuilt: preStopAll.filter((o) => withheld.includes(o)),
+    preStop: preStopAll.map((o) => ({
+      beforeStandardCount: o.beforeStandardCount,
+      withheld: withheld.includes(o),
+      payload: { type: o.type, widthIn: o.widthIn },
+    })),
+  });
+  const withheldWindow = anchor(1, 61.5);
+  const survivingDoor = anchor(5, 37.5, { type: "door" });
+  const memory = memoryFor([withheldWindow, survivingDoor], [withheldWindow]);
+
+  it("says there is nothing to restore when nothing was withheld", () => {
+    expect(runStopRestoreFidelity(undefined, [])).toBe("nothing-withheld");
+    expect(runStopRestoreFidelity({ unbuilt: [], preStop: [] }, [survivingDoor])).toBe("nothing-withheld");
+  });
+
+  /** The ordinary case, and the only one any user-facing text may promise
+   * "exactly as drawn" for: the survivor is still the opening `preStop`
+   * recorded, ordinal re-derived or not. */
+  it("is exact while the wall's openings are still the ones the memory recorded", () => {
+    expect(runStopRestoreFidelity(memory, [anchor(0, 37.5, { type: "door" })])).toBe("exact");
+  });
+
+  it("is approximate once an opening was deleted or inserted while stopped", () => {
+    expect(runStopRestoreFidelity(memory, [])).toBe("approximate");
+    expect(runStopRestoreFidelity(memory, [anchor(0, 37.5, { type: "door" }), anchor(2, 21, { type: "column" })])).toBe(
+      "approximate",
+    );
+  });
+
+  /** A width EDIT on a survivor restores exactly, and this still reports
+   * `"approximate"` — deliberately conservative, because the alternative is a
+   * promise of exactness that a delete-plus-insert of the same count would
+   * break. The wording it gates says "may" for exactly this reason. */
+  it("is approximate when a survivor's own width was edited while stopped", () => {
+    expect(runStopRestoreFidelity(memory, [anchor(0, 41.5, { type: "door" })])).toBe("approximate");
   });
 });
 

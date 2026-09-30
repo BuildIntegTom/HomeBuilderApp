@@ -1016,14 +1016,139 @@ const captureOpeningSlots = async () => {
   return n;
 };
 
+/**
+ * ⚠ **This step PLACES the opening it depends on, rather than relying on the
+ * seeded one — because relying on the seed made expectation 3 sample-dependent,
+ * which is a red step on green code.**
+ *
+ * `seedDefaultOpenings` picks a wall's default window at a RANDOM standard
+ * ordinal, and the sweep below only goes to 0.75 of the wall. Measured on the
+ * checked-in evidence of 2026-09-29: with one seeded opening, `withheldOpenings`
+ * was 1 at only the deepest stop — and a draw that puts that single window in
+ * the last quarter withholds nothing at any accepted stop, so
+ * `openingSlotsStopped < openingSlotsBefore` fails on code that is working. With
+ * the ordinal roughly uniform over ~11 candidates that is about a 1-in-5 flake.
+ *
+ * So the step arms the Stage 2 Window tool and inserts at a KNOWN boundary near
+ * the start of the wall. The seeded opening is left where it is; it is simply no
+ * longer what the expectation rests on, and the insert itself is asserted so
+ * this cannot quietly go back to depending on it.
+ */
+const toolButton = async (label) =>
+  await evaluate(`(() => {
+    const group = document.querySelector('[aria-label="Panel placement tool"]');
+    if (!group) return null;
+    const b = [...group.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(label)});
+    if (!b) return null;
+    const r = b.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, pressed: b.getAttribute('aria-pressed') === 'true' };
+  })()`);
+
+/** Arms a tool and CHECKS IT ARMED — the same guard the Stage 2 harness carries,
+ * because the left bar scrolls and a click that lands on nothing looks exactly
+ * like a tool that did nothing. */
+const armTool = async (label) => {
+  await evaluate(`(() => {
+    const group = document.querySelector('[aria-label="Panel placement tool"]');
+    const b = group && [...group.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(label)});
+    if (b) b.scrollIntoView({ block: 'center' });
+  })()`);
+  await sleep(250);
+  const btn = await toolButton(label);
+  if (!btn) throw new Error(`no "${label}" button in the placement group`);
+  if (!btn.pressed) {
+    await click(btn.x, btn.y);
+    await sleep(400);
+  }
+  const after = await toolButton(label);
+  if (!after || !after.pressed) throw new Error(`"${label}" did not arm — the click missed (button at ${btn.x},${btn.y})`);
+  // Scrolling the button into view can take the elevation off screen, and a
+  // click at an off-screen coordinate hits nothing and fails silently.
+  await evaluate(`(() => {
+    const svg = [...document.querySelectorAll('svg')].find((s) => s.querySelector('g[style*="pointer"]'));
+    if (svg) svg.scrollIntoView({ block: 'center' });
+  })()`);
+  await sleep(350);
+};
+
+/** Puts the tool away again, so the panel-boundary drag and the stop fields
+ * behave for the rest of this step exactly as they did before it. */
+const disarmTool = async (label) => {
+  const btn = await toolButton(label);
+  if (btn && btn.pressed) {
+    await click(btn.x, btn.y);
+    await sleep(400);
+  }
+  const after = await toolButton(label);
+  if (after && after.pressed) throw new Error(`"${label}" would not put itself away`);
+};
+
+/** Panel bodies (the clickable coloured groups), left to right, each with its
+ * own width label — the Stage 2 harness's own locator, note for note: "the
+ * first svg with a text in it" is the compass widget, which cost that harness a
+ * run. */
+const panelBodies = async () =>
+  await evaluate(`(() => {
+    return [...document.querySelectorAll('svg g')]
+      .filter((g) => (g.getAttribute('style') || '').includes('pointer'))
+      .filter((g) => [...g.querySelectorAll('text')].some((t) => /^[0-9]+(\\.[0-9]+)?"$/.test(t.textContent.trim())))
+      .map((g) => {
+        const r = g.getBoundingClientRect();
+        const label = [...g.querySelectorAll('text')].map((t) => t.textContent.trim()).find((t) => /^[0-9]+(\\.[0-9]+)?"$/.test(t));
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, label };
+      })
+      .filter((p) => p.w > 4 && p.x > 250 && p.x < window.innerWidth - 40 && p.y > 60 && p.y < window.innerHeight - 40)
+      .sort((a, b) => a.x - b.x);
+  })()`);
+
+/** The placement tool's own notice line, whatever it currently says. */
+const placementNotice = async () =>
+  await evaluate(`(() => {
+    const ps = [...document.querySelectorAll('p')].map((p) => p.textContent.trim());
+    return ps.find((t) => /^(Inserted|Replaced|Deleted|Refused|Corner and safety-gap|That panel is already)/.test(t)) ?? null;
+  })()`);
+
+const openingSlotsBeforePlacement = await captureOpeningSlots();
+const bodiesBeforePlacement = await panelBodies();
+/**
+ * ⚠ **REPLACE a standard panel, do not INSERT a new one — and the difference is
+ * not stylistic.** An insert is born at the project's standard width and takes
+ * that width out of the automatic panels, so the wall comes back from a stop
+ * with one panel FEWER than it went in with: measured on this very step,
+ * `basePanelCount: 17` against `restoredPanelCount: 16`, with the length still
+ * exact to the eighth and both openings back. That is the pre-existing rule that
+ * a re-tile does not preserve hand-set STANDARD widths (`handPlacedWallRetile.ts`
+ * guards the width-edit path against it and the stop path does not), it is not
+ * what this step is about, and asserting around it would have hidden it.
+ *
+ * Replacing the leftmost panel that is ALREADY at the wall's most common width —
+ * the project standard — changes no width and no count at all: one standard slot
+ * becomes one window slot of the same width. Deterministic, and it leaves
+ * expectation 4 ("panel for panel") meaning what it says.
+ */
+const standardLabel = (() => {
+  const counts = new Map();
+  for (const body of bodiesBeforePlacement) counts.set(body.label, (counts.get(body.label) ?? 0) + 1);
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || parseFloat(b[0]) - parseFloat(a[0]));
+  return ranked.length > 0 ? ranked[0][0] : null;
+})();
+const replaceTarget = bodiesBeforePlacement.find((body) => body.label === standardLabel) ?? null;
+if (!replaceTarget) throw new Error(`no panel at this wall's most common width (${standardLabel}) to replace with a window`);
+await armTool("Window");
+await click(replaceTarget.x, replaceTarget.y);
+await sleep(900);
+const placedOpeningNotice = await placementNotice();
+await disarmTool("Window");
+const placedOpeningWidthLabel = standardLabel;
+
 const memoryBaseWidths = await panelWidths();
 const memoryBaseEighths = sumEighths(memoryBaseWidths);
 const openingSlotsBefore = await captureOpeningSlots();
 await shot("14-openings-before-stop");
-// Stops are swept from the START end: the default opening seed anchors a
-// wall's window at a low ordinal, so that is the end whose span actually has
-// something in it. A sweep with nothing in the way proves nothing, which is
-// what expectation 3 below exists to catch.
+// Stops are swept from the START end, which is where the opening just placed
+// is. A sweep with nothing in the way proves nothing, which is what
+// expectation 3 below exists to catch — and what the insert above makes
+// independent of the random seed.
 const sweep = [];
 for (const fraction of [0.15, 0.3, 0.45, 0.6, 0.75]) {
   const stopIn = Math.round(memoryBaseEighths * fraction) / 8;
@@ -1057,6 +1182,10 @@ record(
   {
     baseEighths: memoryBaseEighths,
     basePanelCount: memoryBaseWidths.length,
+    openingSlotsBeforePlacement,
+    panelCountBeforePlacement: bodiesBeforePlacement.length,
+    placedOpeningNotice,
+    placedOpeningWidthLabel,
     openingSlotsBefore,
     sweep,
     deepestAcceptedStopIn: deepest?.stopIn ?? null,
@@ -1067,7 +1196,15 @@ record(
     openingSlotsRestored,
   },
   (d) =>
-    // 0. Not vacuous: this wall has openings on it in the first place.
+    // 0. Not vacuous — and not sample-dependent either: the opening this step
+    //    rests on was PLACED by the step, near the start end, and the insert is
+    //    asserted rather than assumed. `openingSlotsBefore` counts it in the
+    //    3D model, so a refused insert cannot pass here.
+    /^Replaced/.test(String(d.placedOpeningNotice ?? "")) &&
+    d.openingSlotsBefore === d.openingSlotsBeforePlacement + 1 &&
+    // The replacement neither widened nor narrowed anything: same panel count
+    // going in as the wall had before it.
+    d.basePanelCount === d.panelCountBeforePlacement &&
     d.openingSlotsBefore >= 1 &&
     // 1. THE BUG. The sentence Tommy was shown never appears again, at any
     //    stop anywhere along this wall.

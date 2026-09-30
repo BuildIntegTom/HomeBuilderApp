@@ -241,6 +241,48 @@ describe("serializeProject / parseProjectFile round-trip", () => {
       expect(result.state.unbuiltOpeningsByStoryAndWallId).toEqual({ ground: { AB: { unbuilt: [], preStop: [] } }, second: {} });
     });
 
+    /**
+     * ⚠ **A memory shaped like this feature's own FIRST commit white-screened
+     * the editor rather than degrading.** The memory used to be a bare anchor
+     * array, that shape still exists on a live branch, and the tiler reads
+     * `…?.[wall.id]?.unbuilt.length` — so `undefined.length` threw straight out
+     * of the re-tile and left no building on screen. Read as what it was: the
+     * withheld anchors, with no pre-stop order to restore by.
+     */
+    it("reads a bare anchor array — the pre-`preStop` shape — as the withheld anchors", () => {
+      const withheld = { beforeStandardCount: 3, type: "window" as const, widthIn: 61.5 };
+      const file = serializeProject(makeState());
+      const legacyShape = {
+        ...file,
+        state: { ...file.state, unbuiltOpeningsByStoryAndWallId: { ground: { AB: [withheld] }, second: {} } },
+      };
+      const result = parseProjectFile(JSON.stringify(legacyShape));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.unbuiltOpeningsByStoryAndWallId).toEqual({
+        ground: { AB: { unbuilt: [withheld], preStop: [] } },
+        second: {},
+      });
+    });
+
+    /** Not a memory at all — the wall simply has nothing withheld, which is the
+     * state every project saved before this feature is in. Anything else here
+     * means a crash inside the tiler. */
+    it("drops a value that is not a memory rather than handing it to the tiler", () => {
+      const file = serializeProject(makeState());
+      const junk = {
+        ...file,
+        state: {
+          ...file.state,
+          unbuiltOpeningsByStoryAndWallId: { ground: { AB: "nonsense", BC: { preStop: [] } }, second: 7 },
+        },
+      };
+      const result = parseProjectFile(JSON.stringify(junk));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.unbuiltOpeningsByStoryAndWallId).toEqual({ ground: {}, second: {} });
+    });
+
     it("does not move PROJECT_FILE_VERSION — an additive optional key needs no bump", () => {
       // Stated in projectFile.ts's own v24->v25 note and asserted here so the
       // claim cannot drift: a file written with the new key is still a v25

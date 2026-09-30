@@ -29,6 +29,22 @@ export type OpeningMemoryByStoryAndWallId = Record<"ground" | "second", Record<s
  * deleted. Throwing the memory away on that basis would be exactly the
  * deletion Tommy's "drop them, and remember" decision rules out.
  *
+ * ### ⚠ The case this CANNOT close — a brand-new building
+ *
+ * **Drawing a new footprint is not a prune problem, and treating it as one is
+ * how a window from a demolished building ends up on a shop drawing of a
+ * different one.** A fresh rectangle's walls are "AB".."DA" again, so every id
+ * the old memory is keyed by is LIVE in the new footprint and this function
+ * keeps every one of them. It has to: it cannot tell "this wall still exists"
+ * from "a different wall took its name".
+ *
+ * So a new building must CLEAR the memory outright, which `handleDraw` does
+ * beside its `setWallRunStopsByWallId({})`. The mechanism is pinned in
+ * retile.test.ts ("a leftover memory puts a window on a wall nobody drew one
+ * on"): no stop is needed to cash a stale memory in, because `hasStop` in the
+ * tiler is true whenever the memory holds anything, so the next re-tile of any
+ * kind merges the remembered opening in as a real one.
+ *
  * ### The gap this does NOT close, stated rather than left silent
  *
  * A wall with no old counterpart at all — a bump-out or a corner collapse that

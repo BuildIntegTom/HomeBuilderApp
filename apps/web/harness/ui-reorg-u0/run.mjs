@@ -729,17 +729,31 @@ console.log("7. the context line on an elevation, on Membranes, and on the Roof 
 await setViewport(1400, 1000);
 await send("Page.navigate", { url: APP_URL }, sid);
 /**
- * ⚠ **Waited FOR, not waited OUT.** This used to be a flat `sleep(9000)`, and
- * on a busy machine the dev server's own compile of this reload lands a little
- * past that — the canvas mounted at about 6s on one run and past 9s on the
- * next three, and the harness died here with "no canvas — are you on localhost
- * rather than 127.0.0.1?", which sends the next person to look at the URL
- * scheme instead of at the clock. Measured 2026-09-29: three consecutive
- * failures at 9s on the same build that passes here.
+ * ⚠ **Waited FOR, not waited OUT — and read the block below this function
+ * before touching either number. The two comments measure DIFFERENT clocks,
+ * and an earlier draft of them read as a contradiction.**
+ *
+ * This used to be a flat `sleep(9000)`, and on a busy machine the dev server's
+ * own compile of this reload lands a little past that — the canvas mounted at
+ * about 6s on one run and past 9s on the next three, and the harness died here
+ * with "no canvas — are you on localhost rather than 127.0.0.1?", which sends
+ * the next person to look at the URL scheme instead of at the clock. Measured
+ * 2026-09-29: three consecutive failures at a flat 9s, on the same build that
+ * is green with this poll.
+ *
+ * **Why that does not contradict the 11s failure recorded below.** What failed
+ * at 11s was 2s of IDLE time AFTER the canvas already existed. What this poll
+ * adds is time BEFORE it exists, on a run whose compile was slow — and those
+ * three slow runs went past 9s through this very poll and were green end to
+ * end, `context-line-names-the-view-as-the-app-labels-it` included. So the
+ * bound that matters is post-mount idle, not elapsed time since
+ * `Page.navigate`: a floor waits FOR the mount, a settle waits AFTER it. That
+ * is why the floor stays at 9s, why the poll above it is safe, and why a
+ * settle must not be added back on top.
  *
  * Polling changes no assertion — every check below still runs against the same
- * page — it only stops a slow reload being reported as a missing canvas. The
- * ceiling is still a real failure if it is reached.
+ * page — it only stops a slow reload being reported as a missing canvas, and
+ * the 40s ceiling is still a real failure if it is reached.
  */
 const readCanvasBox = async () =>
   await evaluate(
@@ -760,9 +774,14 @@ const readCanvasBox = async () =>
 //    `openIcon("Report Bug / Request Feature")` after the drag does not leave
 //    the note on screen, while every later one does. The same run at this
 //    file’s previous commit is green.
-// 3. So the wait is bounded on BOTH sides here, which nobody knew. 9s with no
-//    settle is the timing this step was actually tuned at, and it is what this
-//    restores; the poll is pure insurance above it.
+// 3. So the wait is bounded on BOTH sides here, which nobody knew — but the two
+//    bounds are on two different clocks, and reading them as one clock is what
+//    made this file look self-contradictory. The LOWER bound is "the canvas must
+//    exist", which the 9s floor plus the poll in `readCanvasBox` satisfies
+//    however slow the compile is. The UPPER bound is "do not then sit idle",
+//    which is what the 2s settle violated. Time spent waiting FOR the mount is
+//    not time spent idling after it; see `readCanvasBox`'s own comment, and the
+//    three slow runs there that went past 9s through the poll and stayed green.
 //
 // ⚠ **Do not add a settle back on top of this floor**, and if a floor ever has
 // to move, re-run the whole file rather than this step — the failure lands two
@@ -770,6 +789,8 @@ const readCanvasBox = async () =>
 // that `openIcon` TOGGLES and nothing asserts which way it went; making it
 // assert the note’s resulting state would remove the upper bound entirely, and
 // it is left alone here because that helper serves about ten steps in this file.
+// **That fix is scheduled as its own change (third review, 2026-09-29: yes, fix
+// the fragility rather than name it — but not grown into this diff).**
 await sleep(9000);
 let canvasBox = await readCanvasBox();
 for (let waitedMs = 0; waitedMs < 40000 && !canvasBox; waitedMs += 1000) {

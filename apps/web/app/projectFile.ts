@@ -587,6 +587,46 @@ function remapLegacyBigHeaderBeamKind(
  * CURRENT-version file, so a Stage 2 escape stays visible instead of being
  * quietly absorbed here.
  */
+/**
+ * One story of Stage 3's opening memory, with any value that is not a
+ * `RunStopOpeningMemory` normalized rather than trusted.
+ *
+ * ⚠ **A malformed value here does not degrade, it WHITE-SCREENS the editor.**
+ * `retilePreservingOpeningsWithRunStopMemory` reads `…?.[wall.id]?.unbuilt.length`,
+ * so a value that is a bare ARRAY — the shape this feature's own first commit
+ * wrote, and which still exists on a live branch — gives `undefined.length` and
+ * throws straight out of the tiler: *"Cannot read properties of undefined
+ * (reading 'length')"*, with no building on screen and no way back. The rest of
+ * this parser validates the keys it requires; this one is optional, so nothing
+ * else would catch it.
+ *
+ * A bare array WAS the withheld anchors, so it is read as exactly that, with an
+ * empty pre-stop order — the openings come back approximately rather than not at
+ * all, which is the side of that trade Tommy's "remember them" decision picks.
+ * A value that is not a memory at all is dropped, leaving the wall with no
+ * entry: nothing withheld, which is the state every project saved before this
+ * feature is in.
+ *
+ * A well-formed value is passed through BY REFERENCE, so a round trip stays an
+ * identity and a field added to the memory later cannot be silently stripped
+ * here.
+ */
+function openingMemoryStory(value: unknown): Record<string, RunStopOpeningMemory> {
+  if (!value || typeof value !== "object") return {};
+  const story: Record<string, RunStopOpeningMemory> = {};
+  for (const [wallId, memory] of Object.entries(value as Record<string, unknown>)) {
+    if (Array.isArray(memory)) {
+      story[wallId] = { unbuilt: memory as RunStopOpeningMemory["unbuilt"], preStop: [] };
+      continue;
+    }
+    if (!memory || typeof memory !== "object") continue;
+    const candidate = memory as RunStopOpeningMemory;
+    if (!Array.isArray(candidate.unbuilt)) continue;
+    story[wallId] = Array.isArray(candidate.preStop) ? candidate : { ...candidate, preStop: [] };
+  }
+  return story;
+}
+
 function repairStateToEighths(state: ProjectState): ProjectState {
   if (!state.footprint) return state;
   const footprint = quantizeFootprint(state.footprint);
@@ -772,18 +812,12 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
       ...(state.unbuiltOpeningsByStoryAndWallId
         ? {
             unbuiltOpeningsByStoryAndWallId: {
-              ground:
-                (
-                  state.unbuiltOpeningsByStoryAndWallId as Partial<
-                    Record<"ground" | "second", Record<string, RunStopOpeningMemory>>
-                  >
-                ).ground ?? {},
-              second:
-                (
-                  state.unbuiltOpeningsByStoryAndWallId as Partial<
-                    Record<"ground" | "second", Record<string, RunStopOpeningMemory>>
-                  >
-                ).second ?? {},
+              ground: openingMemoryStory(
+                (state.unbuiltOpeningsByStoryAndWallId as Partial<Record<"ground" | "second", unknown>>).ground,
+              ),
+              second: openingMemoryStory(
+                (state.unbuiltOpeningsByStoryAndWallId as Partial<Record<"ground" | "second", unknown>>).second,
+              ),
             },
           }
         : {}),

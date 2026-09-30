@@ -667,6 +667,43 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     }
   });
 
+  /**
+   * **Third-review must-fix, at the level where it is provable.** A memory that
+   * outlives its building does not sit inert: **no stop is needed to cash it
+   * in.** `hasStop` is true whenever the memory holds anything, so the very
+   * next re-tile — any wall-length edit, drag, bump-out or stop — merges the
+   * remembered opening into the wall as a REAL one, and from there into the cut
+   * list, the fabrication groups, the shop drawings and the price.
+   *
+   * **`pruneOpeningMemoryToLiveWalls` cannot catch it**, because it drops ids
+   * the footprint LACKS and every rectangle this app builds reuses
+   * "AB"/"BC"/"CD"/"DA". The only thing that can is clearing the memory when
+   * the building is replaced, which is what `handleDraw` in page.tsx does
+   * beside its `setWallRunStopsByWallId({})` — and did not, until this test
+   * existed.
+   */
+  it("a leftover memory puts a window on a wall nobody drew one on, with no stop anywhere", () => {
+    // A brand-new building, plain-tiled: no openings on this wall at all.
+    const fp = buildRectangleFootprint(22, 18);
+    const primary = allPrimary(fp);
+    const fresh = retile(fp, "A", primary, STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    expect(fresh[WALL_ID]!.filter((s) => s.type === "window").length).toBe(0);
+    // The previous building's memory, keyed by the id this one reuses.
+    const stale: Record<string, RunStopOpeningMemory> = {
+      [WALL_ID]: {
+        unbuilt: [{ beforeStandardCount: 2, type: "window", widthIn: 61.5, heightIn: 60, sillHeightIn: 36 }],
+        preStop: [{ beforeStandardCount: 2, withheld: true, payload: { type: "window", widthIn: 61.5, heightIn: 60 } }],
+      },
+    };
+    const next = run(fp, primary, fresh, {}, stale);
+    expect(next.slotsByWallId[WALL_ID]!.filter((s) => s.type === "window").length).toBe(1);
+    // And it is a real opening from here on: nothing is withheld any more, so
+    // no later un-stop takes it away again.
+    expect(next.unbuiltOpeningsByWallId).toEqual({});
+    // The prune's blind spot, asserted rather than described: this id is LIVE.
+    expect(fp.walls.some((w) => w.id === WALL_ID)).toBe(true);
+  });
+
   it("a stop that swallows a window drops it from the run, remembers it, and keeps the sum exact", () => {
     const { fp, primary, slots } = buildFixture();
     expect(slots[WALL_ID]!.filter((s) => s.type === "window").length).toBe(2);
@@ -685,8 +722,8 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     // And the pre-stop order beside it, which is what makes the restore put it
     // back on the correct side of the window that survived.
     expect(withheld.preStop).toEqual([
-      { beforeStandardCount: 1, withheld: false },
-      { beforeStandardCount: 3, withheld: true },
+      { beforeStandardCount: 1, withheld: false, payload: { type: "window", widthIn: 61.5, heightIn: 60 } },
+      { beforeStandardCount: 3, withheld: true, payload: { type: "window", widthIn: 61.5, heightIn: 60 } },
     ]);
     // And the invariant whose failure produced Tommy's useless message.
     expect(sumEighths(after)).toBe(runEighths(fp, primary, stops));
