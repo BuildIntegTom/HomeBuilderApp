@@ -696,12 +696,13 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     expect(restored.slotsByWallId[WALL_ID]!.filter((s) => s.type === "window").length).toBe(2);
   });
 
-  it("holds at EVERY eighth of stop on that wall: no window lost, and the sum is exact wherever the tiler owns it", () => {
+  it("holds at EVERY eighth of stop on that wall: no window lost, and the sum is always exact", () => {
     const { fp, primary, slots } = buildFixture();
     const wall = fp.walls.find((w) => w.id === WALL_ID)!;
     const lost: string[] = [];
     const sumOff: number[] = [];
     const combinedGap: number[] = [];
+    const zeroWidth: number[] = [];
     for (let e = 0; e <= Math.round(wall.lengthFt * 12 * 8); e++) {
       const endStopIn = e / 8;
       const stops = { [WALL_ID]: { startStopIn: 0, endStopIn } };
@@ -712,28 +713,36 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
       if (accounted !== 2) lost.push(`${endStopIn}in: ${accounted} windows accounted for, expected 2`);
       if (sumEighths(built) !== runEighths(fp, primary, stops)) sumOff.push(endStopIn);
       if (built.some((s) => s.type === "safety-gap" && s.secondaryType === "braced")) combinedGap.push(endStopIn);
+      if (built.some((s) => Math.round(s.widthIn * 8) === 0)) zeroWidth.push(endStopIn);
     }
     // The property this change owns: a window is either built or remembered,
     // at every single eighth of stop, and never simply gone.
     expect(lost.slice(0, 10)).toEqual([]);
-    // ⚠ The sum is NOT asserted as universally exact here, and the reason is a
-    // SEPARATE, PRE-EXISTING defect that this change deliberately does not
-    // touch: `reconcileBracedPlacement`'s corner-brace combine fixes a
-    // safety-gap slot at `standardWidthIn + buffer` and sheds the difference
-    // onto the nearest standard panel, CLAMPED AT ZERO — so when that
-    // neighbour is narrower than the swing, the shed is partial and the wall
-    // comes out over its own length. Its own doc comment names the tradeoff
-    // ("the wall's total length will be off by a little"). Reproduced with no
-    // stop anywhere: `reconcileBracedPlacement(undefined,
-    // retileWithOpenings(240, 40, 25.5, "end", true, true, [{0, 61.5}, {1,
-    // 61.5}]).slots, ...)` turns `safety-gap 0.75 | standard 32.625` into
-    // `safety-gap 40.75 | standard 0` and sums 247.375 on a 240in wall.
+    // ⚠ **THIS ASSERTION USED TO CARRY AN EXCEPTION, AND NO LONGER DOES.**
+    // It used to read `sumOff.filter((s) => !combinedGap.includes(s))` —
+    // every stop whose total was off had to be one where
+    // `reconcileBracedPlacement`'s corner-brace combine had fired, because
+    // that combine fixed a safety-gap slot at `standardWidthIn + buffer` and
+    // shed the difference onto the nearest standard panel CLAMPED AT ZERO,
+    // leaving the wall longer than itself whenever that neighbour was
+    // narrower than the swing. With no stop anywhere,
+    // `reconcileBracedPlacement(undefined, retileWithOpenings(240, 40, 25.5,
+    // "end", true, true, [{0, 61.5}, {1, 61.5}]).slots, ...)` turned
+    // `safety-gap 0.75 | standard 32.625` into `safety-gap 40.75 | standard 0`
+    // and summed 247.375in on a 240in wall.
     //
-    // What IS asserted is the boundary: every stop whose total is off is one
-    // where that combine fired. Nothing else on this wall breaks the sum, so
-    // the tiler-side invariant — the one Tommy's message was reporting — is
-    // whole. The pure-tiler sweep in `runStopOpenings.test.ts` asserts exact
-    // sums at every eighth with no reconcile in the way.
-    expect(sumOff.filter((s) => !combinedGap.includes(s))).toEqual([]);
+    // That combine was fixed on 2026-09-29 (`planCornerBraceCombine`), so the
+    // characterisation is obsolete and the real invariant is asserted instead:
+    // **nothing on this wall breaks the sum, at any stop, ever** — which is
+    // the property Tommy's "panels don't add back up to that wall" refusal was
+    // reporting in the first place.
+    expect(sumOff).toEqual([]);
+    // And the other half of that fix, which this sweep is well placed to hold:
+    // the combine no longer pays for itself with a 0in panel.
+    expect(zeroWidth).toEqual([]);
+    // Non-vacuous: the combine really does fire somewhere in this sweep, so
+    // the two assertions above are covering the path they were written for
+    // rather than passing because it never ran.
+    expect(combinedGap.length).toBeGreaterThan(0);
   });
 });

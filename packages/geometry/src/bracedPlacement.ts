@@ -1,8 +1,194 @@
-import { getOpeningAnchors } from "./tiling";
+import { fromEighths, toEighths } from "./eighths";
+import { getOpeningAnchors, TILER_MAX_PANEL_WIDTH_IN, TILER_MIN_PANEL_WIDTH_IN } from "./tiling";
 import type { BracePattern, PanelSlot, PanelSlotType, PanelSlotZone } from "./types";
 
 const BRACE_NEAR_CORNER_COUNT = 1;
 const ADDITIONAL_ROW_BRACE_NEAR_CORNER_COUNT = 2;
+
+/** What the corner-brace combine would do to the rest of the run to pay for
+ * itself: at most one standard panel SWALLOWED (gone from the run, not
+ * resized to nothing), plus new widths for however many panels the leftover
+ * takes to settle. */
+interface CornerBraceCombinePlan {
+  /** `null` when nothing is swallowed — see plan B in
+   * `planCornerBraceCombine`. */
+  consumedIndex: number | null;
+  /** slot index -> its new width in whole eighths. */
+  resizedEighths: Map<number, number>;
+}
+
+/**
+ * Settles `residualEighths` across `candidates` in order and returns each
+ * one's new width, or `null` if it cannot reach exactly zero.
+ *
+ * Positive residual = surplus to hand BACK to the run (panels grow, none
+ * past the shop's ceiling). Negative = a shortfall to take OUT of it (panels
+ * shrink, none below the shop's floor). A panel the tiler already left
+ * outside those bounds is left alone in the direction that would make it
+ * worse, and is never "repaired" in the other one either — the tiler's own
+ * residual sub-minimum cases are reported, not corrected, and that is not
+ * this function's business to change.
+ */
+function settleResidualEighths(
+  slots: PanelSlot[],
+  candidates: number[],
+  residualEighths: number,
+): Map<number, number> | null {
+  const minEighths = toEighths(TILER_MIN_PANEL_WIDTH_IN);
+  const maxEighths = toEighths(TILER_MAX_PANEL_WIDTH_IN);
+  const resizedEighths = new Map<number, number>();
+  let remainingEighths = residualEighths;
+  for (const i of candidates) {
+    if (remainingEighths === 0) break;
+    const currentEighths = toEighths(slots[i]!.widthIn);
+    if (remainingEighths > 0 && currentEighths >= maxEighths) continue; // no room to grow
+    if (remainingEighths < 0 && currentEighths <= minEighths) continue; // no room to shrink
+    const nextEighths =
+      remainingEighths > 0
+        ? Math.min(maxEighths, currentEighths + remainingEighths)
+        : Math.max(minEighths, currentEighths + remainingEighths);
+    resizedEighths.set(i, nextEighths);
+    remainingEighths -= nextEighths - currentEighths;
+  }
+  return remainingEighths === 0 ? resizedEighths : null;
+}
+
+/**
+ * Plans the corner-brace combine, or returns `null` to refuse it outright.
+ *
+ * ### What the combine is, physically
+ *
+ * A combined slot is one braced standard panel with the 3/4in plywood
+ * safety spacer glued to it (Tommy: "maintain the rules of the safety
+ * panel, but have it combine with the braced panel near corners"), so it
+ * stands where a safety gap AND a standard panel used to stand. The run
+ * therefore loses a panel — the same shape the tiler's own ABSORB rule
+ * already takes ("the run loses one panel and keeps its exact total", see
+ * `computePlainSizing`). That is why plan A below SWALLOWS a panel rather
+ * than shedding a full standard width onto a neighbour and hoping it fits.
+ *
+ * ### Two ways to pay, tried in that order
+ *
+ * **A — swallow the nearest standard panel whole**, and settle whatever that
+ * overpays or underpays against the panels past it. The growth a real wall
+ * asks for is a whole standard width (the tiler's gap is always 3/4in), and
+ * no amount of shrinking can cover that legally: a panel is at most 48in and
+ * may not go under 24in, so it can spare at most 24in. Swallowing is what
+ * the combine physically IS, and it leaves every other panel at the width
+ * the tiler chose apart from the one that settles the difference.
+ *
+ * **B — take it out of the run's own slack**, removing no panel. Used when
+ * there is nothing to pay at all (a slot already at the combined width —
+ * the old rule's zero-delta behaviour, kept exactly), when the gap is WIDER
+ * than the combined slot and the surplus has to go back into the run, and as
+ * the fallback for a growth small enough to come out of what the panels can
+ * spare. Only a stored legacy wall reaches that last case: the tiler used to
+ * size the gap slot to whatever the run had left over (2 to 4ft, see
+ * `SAFETY_GAP_WIDTH_IN`'s own comment) and files from then still say so.
+ *
+ * ### What it guarantees — and this comment is the contract, not a hope
+ *
+ *   1. **The wall's total length does not move. At all.** Every quantity
+ *      below is a count of 1/8in, so "the parts still sum to the wall" is an
+ *      integer identity: the combined slot's width is paid for exactly by
+ *      the gap's own width plus the swallowed panel's, and any leftover is
+ *      handed to (or taken from) later panels until it is zero. If it
+ *      cannot reach zero, there is no plan and no mutation.
+ *   2. **No zero-width panel.** The swallowed panel is removed from the
+ *      run. Nothing is ever resized to 0.
+ *   3. **No panel pushed outside `[TILER_MIN_PANEL_WIDTH_IN,
+ *      TILER_MAX_PANEL_WIDTH_IN]` by this combine.** A panel the TILER
+ *      already left outside those bounds (see `computePlainSizing`'s
+ *      residual cases) is not touched in the direction that would make it
+ *      worse, and is never "repaired" either — that is the tiler's own
+ *      reported-not-corrected business, not this function's.
+ *   4. **Refusal is total.** A `null` plan means the caller changes
+ *      nothing: no width moves, no slot disappears, the safety gap stays
+ *      the 3/4in spacer the tiler laid out and the corner's brace lands on
+ *      an ordinary standard panel further in. A visible gap beats a
+ *      substituted value.
+ *
+ * ⚠ **The previous version of this comment promised the opposite and was
+ * wrong.** It said the difference was "shed onto the nearest standard panel
+ * so the wall's total length still comes out exactly right", with a clamp at
+ * zero for when the neighbour was too narrow — and the clamp is exactly
+ * where the length went missing. A 240in wall with two 61.5in windows came
+ * out 247-3/8in long, with a 0in panel on the cut list, and the app then
+ * refused to draw it because its panels did not add back up to the wall
+ * (Tommy, 2026-09-29: "this app needs to be perfectly tight with dimensions
+ * and wall lengths").
+ *
+ * ### The choices, made deliberately
+ *
+ * - **Swallow the nearest, settle across the rest.** The candidate order is
+ *   the one the old single-neighbour search already used — outward into the
+ *   run first (away from the corner), then back toward the corner — so the
+ *   panel that disappears is still "the nearest standard panel available".
+ *   The leftover then walks the SAME order, taking or giving whatever each
+ *   panel can legally take or give, rather than forcing it all onto one.
+ *   **Measured, on every eighth from 12in to 600in across standard widths
+ *   {39, 40, 48}, all four corner combinations, both gap ends and six
+ *   opening sets: the leftover has never needed more than ONE panel past
+ *   the swallowed one** (6,047 of the 6,112 walls where the combine fires
+ *   resize exactly one, the other 65 resize none). The loop is written for
+ *   N anyway, because "one is always enough" is an observation about
+ *   today's widths and not something any of these numbers promise.
+ * - **Only plain "standard" slots take part.** A "braced" slot is a shear
+ *   element the seismic rule has already placed, and the old search never
+ *   touched one either; widening the candidate set would move widths on
+ *   walls that are fine today.
+ * - **A user-dragged (`lockedWidthIn`) slot is never swallowed or
+ *   resized.** `reconcileBracedPlacement` re-forces those widths right
+ *   after this runs, so any change here would be undone and re-shed
+ *   somewhere else — see `shedWidthToNearestUnlocked`.
+ */
+function planCornerBraceCombine(
+  slots: PanelSlot[],
+  gapIndex: number,
+  step: number,
+  combinedEighths: number,
+  consumedIndices: ReadonlySet<number>,
+): CornerBraceCombinePlan | null {
+  const candidates: number[] = [];
+  const consider = (i: number) => {
+    if (consumedIndices.has(i)) return;
+    const slot = slots[i]!;
+    if (slot.type !== "standard" || slot.lockedWidthIn !== undefined) return;
+    candidates.push(i);
+  };
+  for (let i = gapIndex + step; i >= 0 && i < slots.length; i += step) consider(i);
+  for (let i = gapIndex - step; i >= 0 && i < slots.length; i -= step) consider(i);
+
+  const growthEighths = combinedEighths - toEighths(slots[gapIndex]!.widthIn);
+
+  // PLAN B, taken first when there is nothing to pay. A gap slot that is
+  // already the combined width costs the run nothing, so nothing is
+  // swallowed and no width moves — the old rule's behaviour at zero delta,
+  // kept exactly.
+  if (growthEighths <= 0) {
+    const resizedEighths = settleResidualEighths(slots, candidates, -growthEighths);
+    return resizedEighths ? { consumedIndex: null, resizedEighths } : null;
+  }
+
+  // PLAN A: swallow the nearest standard panel whole and settle whatever
+  // that overpays or underpays against the panels past it. This is the one
+  // that fits the real product space, where the growth is a full standard
+  // width and no amount of shrinking could cover it legally.
+  const consumedIndex = candidates[0];
+  if (consumedIndex !== undefined) {
+    const residualEighths = toEighths(slots[consumedIndex]!.widthIn) - growthEighths;
+    const resizedEighths = settleResidualEighths(slots, candidates.slice(1), residualEighths);
+    if (resizedEighths) return { consumedIndex, resizedEighths };
+  }
+
+  // PLAN B for a real payment: take the growth out of the run's own slack
+  // without removing a panel. Reachable only for a growth small enough to
+  // come out of what the panels can spare above the 24in floor, which the
+  // tiler cannot produce today (its gap is always 3/4in, so the growth is
+  // always a full standard width) but a stored legacy wall can.
+  const resizedEighths = settleResidualEighths(slots, candidates, -growthEighths);
+  return resizedEighths ? { consumedIndex: null, resizedEighths } : null;
+}
 
 /** Tommy: safety panels are the standard width plus a 3/4in plywood
  * buffer glued on to guard against install mistakes — see
@@ -37,39 +223,13 @@ export function applyBracedPlacement(
   const result = slots.map((s) => ({ ...s }));
   const isEligible = (i: number) => eligibleIndices === undefined || eligibleIndices.has(i);
 
-  /** Nearest standard-type slot to `fromIndex`, searched first in `step`'s
-   * direction (continuing further into the wall run, away from the
-   * corner) and, failing that, back toward the corner — Tommy: "shed the
-   * absorption to the nearest standard panel available" when a safety
-   * panel gets fixed-width'd to combine with a corner brace. Clamped at 0
-   * (never negative) — on a short wall the gap panel can end up directly
-   * corner-adjacent with only one small resized standard panel absorbing
-   * the wall's whole leftover budget (see tiling.ts's `computePlainSizing`,
-   * which always keeps the gap itself at a fixed 3/4in and pushes any
-   * slack into that neighbor instead); shedding this combine's full
-   * `standardWidthIn` swing to it could otherwise go negative, which would
-   * render as a visually inverted/broken panel. When there isn't enough to
-   * shed without going negative, it sheds as much as there is — same
-   * documented "wall's total length is off by a little" tradeoff as the
-   * "no standard panel at all" case below, just partial instead of total. */
-  const shedWidthToNearestStandard = (fromIndex: number, step: number, deltaIn: number) => {
-    for (let i = fromIndex + step; i >= 0 && i < result.length; i += step) {
-      if (result[i]!.type === "standard") {
-        result[i]!.widthIn = Math.max(0, result[i]!.widthIn + deltaIn);
-        return;
-      }
-    }
-    for (let i = fromIndex - step; i >= 0 && i < result.length; i -= step) {
-      if (result[i]!.type === "standard") {
-        result[i]!.widthIn = Math.max(0, result[i]!.widthIn + deltaIn);
-        return;
-      }
-    }
-    // No standard panel anywhere on this run to shed to — the combined
-    // panel keeps its fixed width; the wall's total length will be off by
-    // deltaIn. A rare edge case (a run with no plain standard panels at
-    // all), not silently hidden.
-  };
+  /** Slots the corner-brace combine has swallowed — see
+   * `planCornerBraceCombine`. They keep their index (so `eligibleIndices`,
+   * which is indexed against the caller's own array, stays aligned) and are
+   * dropped from the returned run at the very end. Every walk below steps
+   * straight over them: they are not braceable, not shed-to-able, and
+   * contribute no distance to rule 2. */
+  const consumedIndices = new Set<number>();
 
   // Rule 1: 1 braced panel touching each corner (Tommy: "each wall must have
   // two braced panels on it, touching each side of each corner panel" — one
@@ -81,9 +241,12 @@ export function applyBracedPlacement(
   // separate standard panel to brace, it becomes a combined panel (Tommy:
   // "maintain the rules of the safety panel, but have it combine with the
   // braced panel near corners") — fixed-width at standardWidthIn + the
-  // plywood buffer instead of its usual dynamically-absorbed width, with
-  // the difference shed onto the nearest standard panel so the wall's
-  // total length still comes out exactly right. This combine is NOT gated
+  // plywood buffer instead of its usual dynamically-absorbed width, paid
+  // for by swallowing the nearest standard panel whole and settling the
+  // residual against the ones past it, so the wall's total length comes out
+  // exactly right to the eighth or the combine does not happen at all. See
+  // `planCornerBraceCombine` for what it guarantees and when it refuses.
+  // This combine is NOT gated
   // by `eligibleIndices` — a combined safety-gap+brace slot has no
   // per-panel style of its own (see `PanelSlot.bracedPattern`'s own doc
   // comment) and isn't reachable from the click-cycle, so it's always
@@ -102,6 +265,7 @@ export function applyBracedPlacement(
   const markNearestBraceable = (start: number, step: number, count: number) => {
     let marked = 0;
     for (let i = start; i >= 0 && i < result.length && marked < count; i += step) {
+      if (consumedIndices.has(i)) continue; // already swallowed by a combine — not on the wall any more
       const slot = result[i]!;
       if (slot.type === "braced" || slot.secondaryType === "braced") {
         marked++;
@@ -112,10 +276,19 @@ export function applyBracedPlacement(
         slot.bracedMirrored = defaultMirrored;
         marked++;
       } else if (slot.type === "safety-gap" && slot.secondaryType === undefined) {
-        const fixedWidthIn = standardWidthIn + SAFETY_PLYWOOD_BUFFER_IN;
-        shedWidthToNearestStandard(i, step, slot.widthIn - fixedWidthIn);
+        const combinedEighths = toEighths(standardWidthIn + SAFETY_PLYWOOD_BUFFER_IN);
+        const plan = planCornerBraceCombine(result, i, step, combinedEighths, consumedIndices);
+        // REFUSED: the run cannot pay for this combine without breaking the
+        // wall's length or producing an unbuildable panel. Nothing is
+        // touched — the safety gap stays the 3/4in spacer the tiler laid
+        // out — and the walk carries on inward to brace a plain standard
+        // panel instead, which is what this rule did before the combine
+        // existed. A visible gap beats a substituted width.
+        if (!plan) continue;
+        for (const [index, eighths] of plan.resizedEighths) result[index]!.widthIn = fromEighths(eighths);
+        if (plan.consumedIndex !== null) consumedIndices.add(plan.consumedIndex);
         slot.secondaryType = "braced";
-        slot.widthIn = fixedWidthIn;
+        slot.widthIn = fromEighths(combinedEighths);
         marked++;
       }
     }
@@ -139,6 +312,7 @@ export function applyBracedPlacement(
   // "another standard panel becomes a braced panel on that same wall").
   let cumulativeIn = 0;
   for (let i = 0; i < result.length; i++) {
+    if (consumedIndices.has(i)) continue; // not on the wall — contributes no distance and takes no brace
     const slot = result[i]!;
     if (slot.type === "corner" || slot.type === "braced" || slot.secondaryType === "braced") {
       cumulativeIn = 0;
@@ -153,7 +327,12 @@ export function applyBracedPlacement(
     }
   }
 
-  return result;
+  // Drop the swallowed panels LAST, so every index above — including the
+  // caller's own `eligibleIndices` — stayed aligned with the array it was
+  // computed against. A swallowed panel is not a zero-width panel: it is
+  // not a part, and it does not appear on the cut list, the price sheet or
+  // the elevation at all.
+  return consumedIndices.size === 0 ? result : result.filter((_, i) => !consumedIndices.has(i));
 }
 
 /**
@@ -297,14 +476,27 @@ export function applyAdditionalRowBracedPattern(
  * standard family to begin with and nothing needs dropping.
  */
 /** Shifts `deltaIn` onto the nearest "standard"/"braced" slot that does NOT
- * itself have a `lockedWidthIn` — same search-outward-then-inward shape
- * `applyBracedPlacement`'s own `shedWidthToNearestStandard` already uses,
- * just also skipping any OTHER locked slot (shedding onto one would
- * silently corrupt a second user-dragged width the moment two locked
- * slots happen to sit near each other). No-op (wall's total length ends up
- * off by `deltaIn`) if every standard-family slot on the run is locked —
- * same rare, not-silently-hidden edge case `shedWidthToNearestStandard`
- * itself already accepts. */
+ * itself have a `lockedWidthIn` — a search-outward-then-inward shape,
+ * skipping any OTHER locked slot (shedding onto one would silently corrupt
+ * a second user-dragged width the moment two locked slots happen to sit
+ * near each other).
+ *
+ * ⚠ **THIS ONE STILL BREAKS THE WALL'S TOTAL, IN TWO WAYS, AND IT IS NOT
+ * FIXED.** It is a no-op when no unlocked standard-family slot exists on the
+ * run (the wall then comes out off by the whole `deltaIn`), and it clamps at
+ * zero, which is the exact mistake the corner-brace combine was fixed for on
+ * 2026-09-29. **Measured, not guessed:** sweeping every eighth of wall length
+ * from 150in to 400in at standard widths {40, 48}, one 61.5in window, and a
+ * lock of 24in or 48in on the first standard slot, **363 walls come out off
+ * their own length by as much as ±12¾in** — a 150in two-corner wall whose one
+ * standard panel is locked at 48in reconciles to 161¼in.
+ *
+ * Left alone on purpose: it is a different rule on a different path (a user's
+ * own dragged width, not a derived one), the fix has to decide what happens
+ * when a lock and a wall length genuinely cannot both be honoured, and that
+ * is Tommy's call rather than a coder's. Written up in the spec's "Still
+ * open" list on 2026-09-29 so it is a recorded item and not a comment nobody
+ * reads. `planCornerBraceCombine` is the shape a fix would follow. */
 function shedWidthToNearestUnlocked(slots: PanelSlot[], fromIndex: number, deltaIn: number) {
   const isUnlockedStandardFamily = (s: PanelSlot) => (s.type === "standard" || s.type === "braced") && s.lockedWidthIn === undefined;
   for (let i = fromIndex + 1; i < slots.length; i++) {
@@ -412,11 +604,13 @@ export function reconcileBracedPlacement(
   // and adds it to another" — a fresh tiling pass just gave this slot
   // whatever width the ordinary budget math computed, ignoring the lock
   // entirely) and shed the resulting delta onto the nearest still-unlocked
-  // standard-family neighbor, so the wall's total length still adds up
-  // exactly — same "fixed-width slot sheds its own delta to a neighbor"
-  // shape `applyBracedPlacement`'s own corner-brace-combining rule already
-  // uses, just for a user-dragged width instead of a combined safety-gap
-  // panel.
+  // standard-family neighbor — the same "fixed-width slot sheds its own delta
+  // to a neighbor" shape the corner-brace combine takes, for a user-dragged
+  // width instead of a combined safety-gap panel.
+  //
+  // ⚠ Unlike that combine, this one does NOT keep the wall's total exact: see
+  // `shedWidthToNearestUnlocked`'s own comment for the 363 measured walls it
+  // gets wrong and why it was left alone.
   for (let i = 0; i < result.length; i++) {
     const slot = result[i]!;
     if (slot.lockedWidthIn === undefined) continue;
