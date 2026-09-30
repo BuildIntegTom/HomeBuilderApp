@@ -23,6 +23,15 @@ node apps/web/harness/ui-reorg-u0/run.mjs
 
 Override with `UI_REORG_APP_URL` / `UI_REORG_CDP_PORT`.
 
+**Start the dev server fresh, and give the profile directory a name of your
+own.** A server left running for hours has been seen serving `/read-me`,
+`/report-bug` and `/sandbox` as **404**, and this harness reads its comparison
+wording out of those routes — so step 0 now checks all three and stops with the
+route and its status named, rather than letting an unserved route surface ten
+steps later as "the app renders nothing". Kill your browser by matching your own
+`--user-data-dir` path; several agents share this machine, and a cleanup by
+image name or by a loose `chrome-*` glob has taken out somebody else's.
+
 **Use `localhost`, not `127.0.0.1`.** Over `127.0.0.1` the client chunks for the
 `next/dynamic` canvas never arrive and the page renders its chrome with no
 canvas at all, silently — the Stage 0/1 harness's README explains it at length.
@@ -30,7 +39,12 @@ canvas at all, silently — the Stage 0/1 harness's README explains it at length
 **Prove it can fail:** `UI_REORG_PROVE_FAILURE=1 node apps/web/harness/ui-reorg-u0/run.mjs`
 adds one deliberately false expectation, and the run must then print `1 FAILED`
 and exit **1**. Both outcomes are measured; a harness that has never been seen
-to fail is not evidence.
+to fail is not evidence. **That mode writes no `evidence.json`** — it exists to
+show the harness can fail, not to produce an artefact, and it used to overwrite
+a passing measurement with a deliberately failing one. Nor does a run that
+records no steps at all: a crash in the CDP plumbing left a ~100-byte stub over
+a committed measurement repeatedly on 2026-09-29/30, and the exit handler now
+refuses to write anything when `steps` is empty.
 
 ## What it checks
 
@@ -58,6 +72,67 @@ to fail is not evidence.
 | `no-uncaught-exceptions` | nothing threw in the page all run |
 
 Screenshots land in `./screenshots`, measurements in `./evidence.json`.
+
+## The toggle this run reported as an app bug, and how to read a red one
+
+**`openIcon` used to click an icon and sleep 500ms, and nothing asserted which
+way the toggle went.** Every later reader — above all `contextLine()`, which
+returns `null` when the bug note is not on screen — then reported a harness
+miss as *"the app did not render the context line"*. That is what
+`context-line-names-the-view-as-the-app-labels-it` was red for on 2026-09-30,
+with `plan: null` and every later reading on the same run correct.
+
+**The cause was measured, not guessed, and it is the harness's clock, not the
+app.** Five controlled runs, one server, one browser, one commit:
+
+1. Under **12x CDP CPU throttling** — an honest stand-in for this machine with
+   four agents and three dev servers on it — the unfixed file reproduces the
+   reported failure byte for byte and exits 1.
+2. The fixed file is green against the same server, browser and throttle.
+3. A deliberately **swallowed click** makes *every* later reading `null` too —
+   a different signature, so a lost click was not what was happening.
+4. Reading the note with **zero** extra wait passes on an idle machine, so the
+   app is not slow: it commits the note inside the 450ms the click already
+   sleeps.
+5. Giving the unfixed file **25s** per load instead of 9s, under the same
+   throttle, fails **identically** — so "the page had not finished mounting" is
+   not it either.
+
+What was actually happening: the first bug-note open after the footprint drag is
+the heaviest commit of the run — the note mounts for the first time onto a page
+that has just panelised a building — and under load it finishes **after the flat
+500ms** the old helper waited before reading. Every later open of the same note
+is warm and lands well inside it. One late toggle, one `null`, every later
+reading correct.
+
+The loads are waited FOR as well, but for a different failure: under the same
+throttle the canvas takes ~14.5s to appear and ~21s to stop moving, and the
+`?openNote=` load needs ~11.8s — at a flat 9s that step reads the deep link
+before the app exists, which is the cold-profile flake it was also red for.
+
+So the run now **waits for things instead of waiting out guesses**:
+
+| what | how it is waited for | ceiling |
+|---|---|---|
+| a load | `waitForEditor` polls for the `{ ssr: false }` canvas and requires its box to stop moving | 60s, then a real failure naming localhost vs 127.0.0.1 |
+| an icon's note | `clickIconOnceAndWait` / `openIconNote` poll the note's own id | 2.5s per click |
+| a swallowed click | `openIconNote` / `closeIconNote` may re-click | 3 clicks, and every extra one is recorded in `evidence.json` |
+| `?openNote=` | polled after the editor is up | 5s |
+
+⚠ **No assertion was weakened to get there, and the split is the point.** Where
+the CLICK is the subject — `review-icon-opens-the-review-log`,
+`review-icon-closes-it-again`, `bug-icon-opens-a-note`,
+`read-me-icon-opens-a-note-with-the-route-wording` — the step still spends
+**exactly one click** and its own expectation still reports the outcome; only
+the reading waits. Retries are allowed **only** where an open note is a fixture
+for reading something else. `evidence.json` carries `editorReady`,
+`iconToggleRetries` and `lostSingleClicks`, so a green run that needed a second
+click says so rather than recovering in silence.
+
+**If this file goes red again:** look at those three arrays first. A red step
+with an empty `iconToggleRetries` and a fast `editorReady` is the app. A red
+step with three clicks spent on one icon is the harness or the machine — and if
+step 0 threw about a route, it is the dev server and nothing else.
 
 ## Four things this run got wrong first, written down
 
