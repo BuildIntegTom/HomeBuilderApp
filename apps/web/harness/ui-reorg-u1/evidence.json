@@ -1,7 +1,7 @@
 {
-  "app": "http://localhost:3214/",
+  "app": "http://localhost:3287/",
   "pass": "built",
-  "ranAt": "2026-09-29T23:53:16.290Z",
+  "ranAt": "2026-09-30T04:54:22.629Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -50,7 +50,7 @@
     {
       "name": "the-cold-click-retry-is-a-safety-net-and-not-load-bearing",
       "coldClickAttempts": {
-        "projectMenu": 1,
+        "projectMenu": 2,
         "panelizerItem": 1
       },
       "budget": 3,
@@ -102,7 +102,7 @@
     {
       "name": "four-company-simulation-renders-like-the-real-control",
       "ok": true,
-      "usedClass": "AccountControl-module__rlI0Tq__actingAsSelect",
+      "usedClass": "AccountControl-module__NOfinG__actingAsSelect",
       "width": 270,
       "chipText": "Acting asBuilding IntegrityThe Seed Collaborative (platform admin)Rare Forms (consortium)Building Integrity (company admin)",
       "chipWidth": 354.7,
@@ -2195,7 +2195,7 @@
     }
   ],
   "coldClickAttempts": {
-    "projectMenu": 1,
+    "projectMenu": 2,
     "panelizerItem": 1
   },
   "removalSweep": [

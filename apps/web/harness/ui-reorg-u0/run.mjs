@@ -350,6 +350,65 @@ const contextLine = async () =>
     return el ? { attr: el.getAttribute('data-current-view'), text: el.textContent.replace(/\\s+/g,' ').trim() } : null;
   })()`);
 
+/**
+ * The bug note's context line, read from a note this function has CONFIRMED is
+ * open — rather than from whichever side of a blind toggle the last click
+ * happened to land on.
+ *
+ * ⚠ **This replaces the upper timing bound the step below used to carry, and
+ * removing that bound is the whole point.** `openIcon` clicks and waits a flat
+ * 500ms without checking which way the toggle went, so the first open after the
+ * footprint drag could return `plan: null` — the note not on screen yet, or the
+ * click swallowed by a still-settling page. The old note on that step recorded
+ * the shape of it exactly: 9s of wait passed, 3s passed, **11s failed two runs
+ * out of two**, and the named root cause was that "`openIcon` TOGGLES and
+ * nothing asserts which way it went".
+ *
+ * It was left alone then because `openIcon` serves about ten steps in this
+ * file. This does not touch `openIcon`. It reads the STATE instead of counting
+ * clicks: if the line is already there the note is already open and it is
+ * returned as-is; otherwise the icon is clicked and the line polled for, and a
+ * swallowed click is retried rather than reported as a missing note.
+ *
+ * **It weakens no assertion.** The caller still asserts the same strings
+ * against the same dial labels; all this changes is that a null means "the app
+ * really does not show a context line here", which is the only thing that null
+ * should ever have meant. `null` is still returned, and still fails the check,
+ * if the line never appears.
+ *
+ * Found again 2026-09-29 by the corner-brace-combine pass, whose diff renders
+ * this page byte-identically — the Review Log on this building is the same 18
+ * entries and the same 5,666 characters either side of it — so the check was
+ * moving without the page moving, which is the definition of a harness race
+ * rather than a regression.
+ */
+const bugNoteContext = async () => {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    let line = await contextLine();
+    if (line) return line;
+    await openIcon("Report Bug / Request Feature");
+    for (let waitedMs = 0; waitedMs < 4000 && !line; waitedMs += 250) {
+      await sleep(250);
+      line = await contextLine();
+    }
+    if (line) return line;
+  }
+  return null;
+};
+
+/** Closes the bug note if this function can see that it is open, so a
+ * swallowed close cannot leave the next step clicking the wrong way either. */
+const closeBugNote = async () => {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (!(await contextLine())) return;
+    await openIcon("Report Bug / Request Feature");
+    for (let waitedMs = 0; waitedMs < 2000; waitedMs += 250) {
+      if (!(await contextLine())) return;
+      await sleep(250);
+    }
+  }
+};
+
 // --- the run ----------------------------------------------------------------
 console.log("0. loading the app at 1280px");
 await setViewport(1280, 900);
@@ -764,12 +823,25 @@ const readCanvasBox = async () =>
 //    settle is the timing this step was actually tuned at, and it is what this
 //    restores; the poll is pure insurance above it.
 //
-// ⚠ **Do not add a settle back on top of this floor**, and if a floor ever has
-// to move, re-run the whole file rather than this step — the failure lands two
-// steps later and does not look like a timing failure. The real fragility is
-// that `openIcon` TOGGLES and nothing asserts which way it went; making it
-// assert the note’s resulting state would remove the upper bound entirely, and
-// it is left alone here because that helper serves about ten steps in this file.
+// ⚠ **THE UPPER BOUND IS GONE, 2026-09-29 — points 2 and 3 above are now
+// HISTORY rather than instructions.** The note used to end by naming the real
+// fragility ("`openIcon` TOGGLES and nothing asserts which way it went") and
+// deferring the fix because that helper serves about ten steps in this file.
+// The fix landed, and it did not touch `openIcon`: `bugNoteContext` /
+// `closeBugNote` read the note's own STATE and poll for it, so the context-line
+// reads below no longer depend on where in a settle a flat 500ms happens to
+// land. `plan: null` now means the app really shows no context line, which is
+// the only thing it should ever have meant.
+//
+// What tripped it again: the corner-brace-combine pass, whose diff renders this
+// page BYTE-IDENTICALLY (the Review Log on this building is the same 18 entries
+// and the same 5,666 characters either side of it) and which still failed this
+// check three runs out of three while the base passed. A check that moves when
+// the page does not is measuring the harness.
+//
+// The 9s FLOOR below stays, and the poll above it stays: that part is about the
+// canvas existing before a drag, which is a different thing and is still real.
+// **Do not add a settle on top of the floor.**
 await sleep(9000);
 let canvasBox = await readCanvasBox();
 for (let waitedMs = 0; waitedMs < 40000 && !canvasBox; waitedMs += 1000) {
@@ -795,14 +867,12 @@ record(
   (d) => d.stopLabel === "2D Floor Plan",
 );
 
-await openIcon("Report Bug / Request Feature");
-const ctxPlan = await contextLine();
-await openIcon("Report Bug / Request Feature");
+const ctxPlan = await bugNoteContext();
+await closeBugNote();
 // One step on from the plan is the first wall's elevation.
 await stepToNextStop();
 const elevationStop = await stopLabel();
-await openIcon("Report Bug / Request Feature");
-const ctxElevation = await contextLine();
+const ctxElevation = await bugNoteContext();
 await openIcon("Report Bug / Request Feature");
 await shot("07-elevation-view");
 // Walk to Membranes, whichever stop index that is for this footprint.
@@ -811,8 +881,7 @@ for (let i = 0; i < 12 && membranesReached === null; i++) {
   await stepToNextStop();
   if ((await stopLabel()) === "Membranes") membranesReached = "Membranes";
 }
-await openIcon("Report Bug / Request Feature");
-const ctxMembranes = await contextLine();
+const ctxMembranes = await bugNoteContext();
 await openIcon("Report Bug / Request Feature");
 record(
   "context-line-names-the-view-as-the-app-labels-it",
@@ -875,8 +944,7 @@ await sleep(500);
    with what WAS on offer rather than reporting a tab it could not find. */
 const roofTabClicked = (await view.selectSubject("roof")) ? "clicked" : "not-offered";
 await sleep(900);
-await openIcon("Report Bug / Request Feature");
-const ctxRoof = await contextLine();
+const ctxRoof = await bugNoteContext();
 record(
   "context-line-on-the-roof-tab-names-only-the-tab",
   { roofEnabled, roofChecked, roofTabClicked, line: ctxRoof?.attr ?? null, stopLabel: await stopLabel() },
