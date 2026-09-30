@@ -200,3 +200,48 @@ that clearing gives the wall back panel for panel. None of them names a
 particular stop. **Read the numbers in `evidence.json` as one sample, not as a
 fixture**, and do not “fix” a diff in them. If a deterministic fixture is ever
 wanted here, the hook already exists: `OpeningSeed.randomFn`.
+
+## ⚠ Two readers of the same wall, and only one of them is cropped — 2026-09-30
+
+`panelWidths()` reads **every** pointer group in the document.
+`panelBodies()` reads only the ones whose box is inside the window, because
+every coordinate it returns is fed to a real mouse event and a click at an
+off-screen coordinate hits nothing. **They agree only while the whole wall is
+on screen**, and since the 2026-09-29 fit-height/scroll-width change a long
+wall is not: measured on this fixture, `scrollWidth` 2904 against
+`clientWidth` 1168.
+
+Step 15 compared the two across that gap — `basePanelCount` (from
+`panelWidths`) against `panelCountBeforePlacement` (from `panelBodies`) — and
+failed **15 === 6** on a wall that had not lost a panel. The app was right and
+said so on the same run: *"Replaced on wall AB: 15 panels → 15, 10 still
+automatic."* Every other clause of that step passed, including conservation in
+eighths and all four restore checks.
+
+The count now comes off `panelWidths`. `panelBodies` is still what picks the
+panel to click, which genuinely needs a hit-testable body; the run also
+records `clickTargetsOnScreen` so the gap between the two is visible in the
+artefact rather than inferred.
+
+**`fitWholeWall()` does not fix this for the later steps.** It is called once,
+before step 7. Steps 9–16 change the view repeatedly — gable, 3D, live plan,
+plan sheet, a redrawn footprint — and each of those resets the fit, so a step
+past that point which needs the whole wall on screen has to call it again
+itself.
+
+## ⚠ The notice reader could return a STALE sentence — 2026-09-30
+
+`placementNotice()` used to scan every `<p>` in the document for
+`/^(Inserted|Replaced|Deleted|Refused|Corner and safety-gap|That panel is
+already)/`. That misses *"There is nowhere on this wall to put a panel
+there."* — a real refusal in `apps/web/app/placementNotice.ts` — and because
+the app's notice is one paragraph that lingers for 8s and is replaced in
+place, a gesture refused with a sentence the regex could not match read back
+as **the previous step's notice**, not as nothing.
+
+It is now located structurally (the one optional `<p>` after the tool's help
+text in the "Place a panel" section), so it returns whatever the app wrote and
+**throws** if that section is missing or has a shape it does not recognise. The
+run also clears the line before the gesture and records
+`noticeBeforePlacement: null` in the evidence, so the sentence it asserts is
+provably that click's own.

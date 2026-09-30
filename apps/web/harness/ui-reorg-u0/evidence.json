@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3291",
-  "ranAt": "2026-09-30T13:44:41.864Z",
+  "app": "http://localhost:3240/",
+  "ranAt": "2026-09-30T17:09:28.468Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -35,12 +35,14 @@
       "presentAfter": true,
       "label": "Review Log — Items for Engineer/Contractor Review",
       "bodyChars": 5653,
+      "openedAfterMs": 0,
       "asserted": true,
       "passed": true
     },
     {
       "name": "review-icon-closes-it-again",
       "presentAfterSecondClick": false,
+      "closedAfterMs": 0,
       "asserted": true,
       "passed": true
     },
@@ -50,6 +52,7 @@
       "presentAfter": true,
       "label": "Report Bug / Request Feature",
       "onScreen": true,
+      "openedAfterMs": 0,
       "asserted": true,
       "passed": true
     },
@@ -103,6 +106,7 @@
       "presentBefore": false,
       "presentAfter": true,
       "label": "Read Me",
+      "openedAfterMs": 0,
       "routeSections": 3,
       "missingFromNote": [],
       "liabilityVerbatim": true,
@@ -127,13 +131,60 @@
       "inSettings": 1,
       "text": "Single Wall Run Calculation Sandbox →",
       "documentTotal": 1,
-      "onScreen": true,
+      "sandboxRouteStatus": 200,
+      "whenSettingsOpens": {
+        "inSettings": 1,
+        "link": {
+          "top": 1837,
+          "bottom": 1869,
+          "left": 868,
+          "right": 1233,
+          "width": 365,
+          "horizontallyWithinViewport": true,
+          "verticallyWithinViewport": false,
+          "withinTheNotesVisibleRegion": false,
+          "hitTestable": false
+        },
+        "note": {
+          "scrollTop": 0,
+          "scrollHeight": 1901,
+          "clientHeight": 630,
+          "scrolls": true,
+          "visibleTop": 94,
+          "visibleBottom": 724
+        },
+        "viewportHeight": 900
+      },
+      "visibleWithoutScrolling": false,
+      "afterScrollingTheNote": {
+        "inSettings": 1,
+        "link": {
+          "top": 692,
+          "bottom": 724,
+          "left": 868,
+          "right": 1233,
+          "width": 365,
+          "horizontallyWithinViewport": true,
+          "verticallyWithinViewport": true,
+          "withinTheNotesVisibleRegion": true,
+          "hitTestable": true
+        },
+        "note": {
+          "scrollTop": 1145,
+          "scrollHeight": 1901,
+          "clientHeight": 630,
+          "scrolls": true,
+          "visibleTop": 94,
+          "visibleBottom": 724
+        },
+        "viewportHeight": 900
+      },
+      "reachableByScrollingTheNote": true,
       "style": {
         "fontSize": "13px",
         "borderStyle": "solid",
         "padded": true
       },
-      "sandboxRouteStatus": 200,
       "asserted": true,
       "passed": true
     },
@@ -335,7 +386,7 @@
     },
     {
       "name": "context-line-on-the-roof-tab-names-only-the-tab",
-      "roofEnabled": "project-open",
+      "roofEnabled": "settings-open",
       "roofChecked": "checked",
       "roofTabClicked": "clicked",
       "line": "Roof",
@@ -345,8 +396,8 @@
     },
     {
       "name": "a-panel-was-selected-to-dock-its-note",
-      "candidates": 15,
-      "selectionAttempts": 1,
+      "candidates": 4,
+      "selectionAttempts": 2,
       "selected": true,
       "asserted": true,
       "passed": true
@@ -375,6 +426,8 @@
       "present": true,
       "label": "Review Log — Items for Engineer/Contractor Review",
       "clicksUsed": 0,
+      "waitedAfterEditorReadyMs": 0,
+      "ceilingMs": 5000,
       "asserted": true,
       "passed": true
     },
@@ -395,5 +448,49 @@
     }
   ],
   "pageExceptions": [],
-  "failures": []
+  "failures": [],
+  "editorReady": [
+    {
+      "what": "the first load, at 1280px",
+      "ms": 2834,
+      "canvas": [
+        316,
+        227,
+        720,
+        480
+      ]
+    },
+    {
+      "what": "the reload after the routes were warmed",
+      "ms": 2129,
+      "canvas": [
+        316,
+        227,
+        720,
+        480
+      ]
+    },
+    {
+      "what": "the 1400x1000 reload the footprint is drawn on",
+      "ms": 2462,
+      "canvas": [
+        376,
+        277,
+        720,
+        480
+      ]
+    },
+    {
+      "what": "the ?openNote=review-log load",
+      "ms": 3160,
+      "canvas": [
+        376,
+        277,
+        720,
+        480
+      ]
+    }
+  ],
+  "iconToggleRetries": [],
+  "lostSingleClicks": []
 }

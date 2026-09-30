@@ -568,8 +568,25 @@ await sleep(1200);
  * wider than the window. Step 7 presses "the middle drag strip" — and the
  * middle of a 48ft wall is off screen at the default view, so the mousedown
  * hit nothing, nothing moved, and the step failed as though the drag had
- * broken on a stopped wall. (The reading steps are unaffected: `panelWidths`
- * and friends here have never filtered to the viewport.)
+ * broken on a stopped wall.
+ *
+ * ⚠ **A PREVIOUS VERSION OF THIS COMMENT SAID "the reading steps are
+ * unaffected: `panelWidths` and friends here have never filtered to the
+ * viewport", AND HALF OF THAT IS FALSE.** It is true of `panelWidths`,
+ * `noPanelsLabels` and `dashedBoundaryRects`, which read every matching node
+ * in the document. It is NOT true of `panelBodies` (see its own comment
+ * further down), which filters to the visible window and therefore returns
+ * FEWER panels than the wall has whenever the elevation is scrolled — the
+ * exact "fewer elements, no exception" failure this whole file keeps getting
+ * bitten by. Step 15 compared the two readers' counts and failed 15 === 6 on
+ * a wall that had not changed at all.
+ *
+ * ⚠ **AND THIS CALL DOES NOT COVER THE LATER STEPS.** `fitWholeWall()` is
+ * called ONCE, here, for step 7. Steps 9-16 below change the view repeatedly
+ * — gable, 3D, live plan, the plan sheet, a redrawn footprint — and every one
+ * of those remounts the elevation and resets the fit. So a step past this
+ * point that needs the whole wall on screen has to say so by calling
+ * `fitWholeWall()` again itself; it does not inherit this one.
  */
 const wholeWall = await makeElevationZoomControl({ evaluate, sleep, click }).fitWholeWall();
 record(
@@ -1133,7 +1150,25 @@ const disarmTool = async (label) => {
 /** Panel bodies (the clickable coloured groups), left to right, each with its
  * own width label — the Stage 2 harness's own locator, note for note: "the
  * first svg with a text in it" is the compass widget, which cost that harness a
- * run. */
+ * run.
+ *
+ * ⚠ **THIS READER IS VIEWPORT-CROPPED AND `panelWidths` IS NOT. THEY ARE NOT
+ * INTERCHANGEABLE.** The filter on the last line keeps only groups whose box
+ * is inside the window, because every coordinate here is fed to a real mouse
+ * event and a click at an off-screen coordinate hits nothing. `panelWidths`
+ * has no such filter — it reads every pointer group in the document.
+ *
+ * Since the 2026-09-29 fit-height/scroll-width change a long wall is wider
+ * than the window (measured on the fixture wall: `scrollWidth` 2904 against
+ * `clientWidth` 1168), so the two readers agree ONLY when the whole wall
+ * happens to be on screen. Step 15 once asserted
+ * `basePanelCount === panelCountBeforePlacement` across the two and failed
+ * **15 === 6** on a wall that had not lost a single panel — the app's own
+ * notice on the same run read "Replaced on wall AB: 15 panels → 15, 10 still
+ * automatic."
+ *
+ * **Use this for a CLICK TARGET, which genuinely has to be hit-testable.
+ * Never for a COUNT — count with `panelWidths().length`.** */
 const panelBodies = async () =>
   await evaluate(`(() => {
     return [...document.querySelectorAll('svg g')]
@@ -1148,14 +1183,86 @@ const panelBodies = async () =>
       .sort((a, b) => a.x - b.x);
   })()`);
 
-/** The placement tool's own notice line, whatever it currently says. */
-const placementNotice = async () =>
-  await evaluate(`(() => {
-    const ps = [...document.querySelectorAll('p')].map((p) => p.textContent.trim());
-    return ps.find((t) => /^(Inserted|Replaced|Deleted|Refused|Corner and safety-gap|That panel is already)/.test(t)) ?? null;
+/**
+ * The placement tool's own notice line, whatever it currently says — or
+ * `null` when the app is showing none.
+ *
+ * ⚠ **THIS USED TO BE A REGEX OVER EVERY `<p>` IN THE DOCUMENT, AND THAT IS
+ * A STALE-VALUE READER.** Two things were wrong with it at once:
+ *
+ * 1. **It could not see every refusal.** It matched
+ *    `/^(Inserted|Replaced|Deleted|Refused|Corner and safety-gap|That panel is
+ *    already)/`, which misses "There is nowhere on this wall to put a panel
+ *    there." (`refuse-not-placeable` for any reason other than
+ *    `rule-placed-slot` — see `apps/web/app/placementNotice.ts`).
+ * 2. **What it returned instead was the PREVIOUS notice.** The app's notice
+ *    is one paragraph that lingers for 8s and is replaced in place, so a
+ *    gesture that was refused with a sentence this reader could not match
+ *    read back as whatever the app had said BEFORE it. A reader that returns
+ *    a stale value rather than nothing is the same false-green class this
+ *    harness has been bitten by repeatedly.
+ *
+ * So it is now located STRUCTURALLY instead of by sentence: the notice is the
+ * one optional `<p>` that follows the tool's permanent help text inside the
+ * "Place a panel" section header (`{panelPlacementNotice && <p …>}` in
+ * `page.tsx`). It returns whatever the app wrote, matching nothing and
+ * assuming nothing, and it **throws** rather than returning `null` if that
+ * section is not there or holds a shape it does not recognise — a locator
+ * that has stopped working must go RED, not quiet.
+ *
+ * Pair it with `clearNotice()` below before any gesture whose notice is
+ * asserted.
+ */
+const placementNotice = async () => {
+  const ps = await evaluate(`(() => {
+    const group = document.querySelector('[aria-label="Panel placement tool"]');
+    if (!group || !group.parentElement) return null;
+    return [...group.parentElement.querySelectorAll('p')].map((p) => p.textContent.trim());
   })()`);
+  if (ps === null) throw new Error("no \"Place a panel\" section on this view — the notice reader cannot even ask its question");
+  // [0] is the tool's permanent help text, which is rendered unconditionally.
+  if (ps.length === 1) return null;
+  if (ps.length === 2) return ps[1];
+  throw new Error(
+    `the "Place a panel" section now holds ${ps.length} paragraphs, not the help text plus at most one notice — ` +
+      `this locator no longer knows which one is the notice: ${JSON.stringify(ps)}`,
+  );
+};
+
+/**
+ * Waits for the app to put its notice away, so the next read cannot return
+ * an older sentence.
+ *
+ * **Waits rather than blanking the DOM, deliberately.** The obvious "clear"
+ * — setting the paragraph's `textContent` to "" — detaches the text node
+ * React is holding, so the NEXT real notice would be written to a node that
+ * is no longer on the page and this reader would return `null` for a notice
+ * the app really did show. That is the same false-green it is here to
+ * prevent, inverted. The app retires the notice itself after 8s
+ * (`showPanelPlacementNotice`), so this just polls for that.
+ */
+const clearNotice = async (budgetMs = 15000) => {
+  const deadline = Date.now() + budgetMs;
+  for (;;) {
+    const current = await placementNotice();
+    if (current === null) return null;
+    if (Date.now() > deadline) {
+      throw new Error(`the placement notice would not clear in ${budgetMs}ms — it still reads ${JSON.stringify(current)}`);
+    }
+    await sleep(500);
+  }
+};
 
 const openingSlotsBeforePlacement = await captureOpeningSlots();
+/**
+ * Two readers, deliberately: the COUNT off `panelWidths` (unfiltered — every
+ * panel on the wall, on screen or not) and the CLICK TARGET off
+ * `panelBodies` (viewport-cropped, because a click needs a body it can
+ * actually hit). See `panelBodies`' own comment for what happened when this
+ * step took its count off the cropped reader and compared it to the
+ * uncropped one.
+ */
+const panelCountBeforePlacement = (await panelWidths()).length;
 const bodiesBeforePlacement = await panelBodies();
 /**
  * ⚠ **REPLACE a standard panel, do not INSERT a new one — and the difference is
@@ -1182,6 +1289,10 @@ const standardLabel = (() => {
 const replaceTarget = bodiesBeforePlacement.find((body) => body.label === standardLabel) ?? null;
 if (!replaceTarget) throw new Error(`no panel at this wall's most common width (${standardLabel}) to replace with a window`);
 await armTool("Window");
+// Snapshot-and-clear: whatever the app said earlier is gone before the
+// gesture, so `placedOpeningNotice` below is this click's own answer or
+// nothing at all — never the previous step's.
+const noticeBeforePlacement = await clearNotice();
 await click(replaceTarget.x, replaceTarget.y);
 await sleep(900);
 const placedOpeningNotice = await placementNotice();
@@ -1230,7 +1341,9 @@ record(
     baseEighths: memoryBaseEighths,
     basePanelCount: memoryBaseWidths.length,
     openingSlotsBeforePlacement,
-    panelCountBeforePlacement: bodiesBeforePlacement.length,
+    panelCountBeforePlacement,
+    clickTargetsOnScreen: bodiesBeforePlacement.length,
+    noticeBeforePlacement,
     placedOpeningNotice,
     placedOpeningWidthLabel,
     openingSlotsBefore,
@@ -1247,6 +1360,9 @@ record(
     //    rests on was PLACED by the step, near the start end, and the insert is
     //    asserted rather than assumed. `openingSlotsBefore` counts it in the
     //    3D model, so a refused insert cannot pass here.
+    // On paper, in the artefact: the notice line was empty immediately
+    //    before the click, so the sentence below is this gesture's own.
+    d.noticeBeforePlacement === null &&
     /^Replaced/.test(String(d.placedOpeningNotice ?? "")) &&
     d.openingSlotsBefore === d.openingSlotsBeforePlacement + 1 &&
     // The replacement neither widened nor narrowed anything: same panel count

@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3291",
-  "ranAt": "2026-09-30T13:36:36.240Z",
+  "app": "http://localhost:3240/",
+  "ranAt": "2026-09-30T16:55:01.114Z",
   "stopIn": 60,
   "steps": [
     {
@@ -33,6 +33,13 @@
         "lengthIn": 580,
         "vertices": 24
       },
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "whole-wall-on-screen",
+      "clicks": 5,
+      "wholeWallVisible": true,
       "asserted": true,
       "passed": true
     },
@@ -108,8 +115,8 @@
       "name": "clearing-the-stop-restores-elevation-plan-and-3d",
       "totalEighthsCleared": 4392,
       "noPanelsLabelsCleared": 0,
-      "boundaryGreyWithStop": 1410,
-      "boundaryGreyWithoutStop": 1319,
+      "boundaryGreyWithStop": 1437,
+      "boundaryGreyWithoutStop": 1341,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
@@ -165,42 +172,48 @@
       "name": "openings-in-the-unbuilt-span-are-dropped-remembered-and-restored",
       "baseEighths": 4516,
       "basePanelCount": 15,
-      "openingSlotsBefore": 1,
+      "openingSlotsBeforePlacement": 1,
+      "panelCountBeforePlacement": 15,
+      "clickTargetsOnScreen": 6,
+      "noticeBeforePlacement": null,
+      "placedOpeningNotice": "Replaced on wall AB: 15 panels → 15, 10 still automatic.",
+      "placedOpeningWidthLabel": "40\"",
+      "openingSlotsBefore": 2,
       "sweep": [
         {
           "stopIn": 84.625,
           "invalid": false,
           "message": null,
           "totalEighths": 3839,
-          "withheldOpenings": 0
+          "withheldOpenings": 1
         },
         {
           "stopIn": 169.375,
           "invalid": false,
           "message": null,
           "totalEighths": 3161,
-          "withheldOpenings": 0
+          "withheldOpenings": 1
         },
         {
           "stopIn": 254,
           "invalid": false,
           "message": null,
           "totalEighths": 2484,
-          "withheldOpenings": 0
+          "withheldOpenings": 2
         },
         {
           "stopIn": 338.75,
           "invalid": false,
           "message": null,
           "totalEighths": 1806,
-          "withheldOpenings": 1
+          "withheldOpenings": 2
         },
         {
           "stopIn": 423.375,
           "invalid": false,
           "message": null,
           "totalEighths": 1129,
-          "withheldOpenings": 1
+          "withheldOpenings": 2
         }
       ],
       "deepestAcceptedStopIn": 423.375,
@@ -208,7 +221,32 @@
       "restoredEighths": 4516,
       "restoredPanelCount": 15,
       "restoredWithheld": 0,
-      "openingSlotsRestored": 1,
+      "openingSlotsRestored": 2,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "a-new-footprint-does-not-inherit-the-old-buildings-remembered-openings",
+      "withheldWhenRedrawn": 2,
+      "baseEighthsBeforeRedraw": 4516,
+      "redrawnEighths": 4072,
+      "redrawnPanelCount": 14,
+      "openingSlotsAfterRedraw": 1,
+      "nudgeTaken": {
+        "wall": "Elevation: AB",
+        "stopIn": 40.75
+      },
+      "nudgeAttempts": [
+        {
+          "wall": "Elevation: AB",
+          "stopIn": 40.75,
+          "invalid": false,
+          "message": null
+        }
+      ],
+      "nudgeAccepted": true,
+      "openingSlotsAfterRetile": 1,
+      "withheldAfterRetile": 0,
       "asserted": true,
       "passed": true
     },

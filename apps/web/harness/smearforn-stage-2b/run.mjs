@@ -92,6 +92,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeViewStopControl } from "../viewStopControl.mjs";
+import { makeElevationZoomControl } from "../elevationZoom.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHOTS = path.join(HERE, "screenshots");
@@ -335,13 +336,83 @@ const setHeaderSlot = async (name, which, value) => {
   await sleep(900);
 };
 
-/** The elevation's own notice line — the placement tool's and the spanning
- * header's share it, which is why "Placed" and "Refused" are both here. */
-const notice = async () =>
-  await evaluate(`(() => {
-    const ps = [...document.querySelectorAll('p')].map((p) => p.textContent.trim());
-    return ps.find((t) => /^(Placed|Inserted|Replaced|Deleted|Refused)/.test(t)) ?? null;
+/**
+ * The elevation's own notice line — the placement tool's and the spanning
+ * header's share it — or `null` when the app is showing none.
+ *
+ * ⚠ **THIS USED TO BE A REGEX OVER EVERY `<p>` IN THE DOCUMENT, AND IT WAS A
+ * STALE-VALUE READER.** It matched `/^(Placed|Inserted|Replaced|Deleted|
+ * Refused)/`, and **three real refusal sentences begin with none of those**
+ * (`apps/web/app/placementNotice.ts`):
+ *
+ *   - `rule-placed-slot`: "Corner and safety-gap panels are placed by rule,
+ *     not by hand — …"
+ *   - `refuse-not-placeable` otherwise: "There is nowhere on this wall to put
+ *     a panel there. Nothing was changed."
+ *   - `no-change`: "That panel is already what the tool is set to, so nothing
+ *     changed."
+ *
+ * The app's notice is ONE paragraph that lingers for 8s and is replaced in
+ * place, so a gesture refused with one of those sentences did not read back
+ * as nothing — it read back as **the previous step's notice**. Measured:
+ * arming Delete and clicking the 0.75in safety gap leaves the widths and the
+ * header untouched and returns `null` from a clean line, but with step 7's
+ * refusal still on screen the old reader returned *that* instead, verbatim,
+ * including its `span 160"` — which is exactly how a harness problem got read
+ * as a spanning-header regression. (The 0.75in gap is drawn at a minimum
+ * legible width of about 60px rather than to scale, so it always clears the
+ * `p.w > 4` filter in `panelBodies` and is always a clickable entry.)
+ *
+ * So the notice is now located STRUCTURALLY rather than by sentence: it is
+ * the one optional `<p>` that follows the tool's permanent help text inside
+ * the "Place a panel" section header (`{panelPlacementNotice && <p …>}` in
+ * `page.tsx`). It returns whatever the app wrote — every sentence above
+ * included — and it **throws** rather than returning `null` when that section
+ * is missing or holds a shape it does not recognise, because a locator that
+ * has stopped working must go RED and not quiet.
+ *
+ * Pair it with `clearNotice()` below before any gesture whose notice is
+ * asserted.
+ */
+const notice = async () => {
+  const ps = await evaluate(`(() => {
+    const group = document.querySelector('[aria-label="Panel placement tool"]');
+    if (!group || !group.parentElement) return null;
+    return [...group.parentElement.querySelectorAll('p')].map((p) => p.textContent.trim());
   })()`);
+  if (ps === null) throw new Error('no "Place a panel" section on this view — the notice reader cannot even ask its question');
+  // [0] is the tool's permanent help text, which is rendered unconditionally.
+  if (ps.length === 1) return null;
+  if (ps.length === 2) return ps[1];
+  throw new Error(
+    `the "Place a panel" section now holds ${ps.length} paragraphs, not the help text plus at most one notice — ` +
+      `this locator no longer knows which one is the notice: ${JSON.stringify(ps)}`,
+  );
+};
+
+/**
+ * Waits for the app to put its notice away, so the next read of it cannot
+ * return an older sentence.
+ *
+ * **Waits rather than blanking the DOM, deliberately.** The obvious "clear" —
+ * setting the paragraph's `textContent` to "" — detaches the text node React
+ * is holding, so the NEXT real notice would be written to a node that is no
+ * longer on the page and `notice()` would return `null` for a sentence the
+ * app really did show. That is the same false-green, inverted. The app
+ * retires the notice itself after 8s (`showPanelPlacementNotice`), so this
+ * polls for that and throws if it never happens.
+ */
+const clearNotice = async (budgetMs = 15000) => {
+  const deadline = Date.now() + budgetMs;
+  for (;;) {
+    const current = await notice();
+    if (current === null) return null;
+    if (Date.now() > deadline) {
+      throw new Error(`the notice line would not clear in ${budgetMs}ms — it still reads ${JSON.stringify(current)}`);
+    }
+    await sleep(500);
+  }
+};
 
 /** Text drawn inside the elevation SVG — the header's own H label lives here. */
 const svgTexts = async () =>
@@ -434,7 +505,27 @@ const setTool = async (label, wantArmed) => {
   return after;
 };
 
-/** Panel bodies (the coloured rects), left to right, with their own boxes. */
+/**
+ * Panel bodies (the coloured rects), left to right, with their own boxes.
+ *
+ * ⚠ **VIEWPORT-CROPPED, AND `panelWidths` IS NOT.** The last filter keeps
+ * only groups whose box is inside the window, because every coordinate here
+ * is fed to a real mouse event and a click at an off-screen coordinate hits
+ * nothing. Since the 2026-09-29 fit-height/scroll-width change a long wall is
+ * wider than the window, so **the index of an entry here is the index of a
+ * slot on the wall only when the whole wall is on screen.** Bring it on
+ * screen with `makeElevationZoomControl(...).fitWholeWall()` and assert that
+ * it worked before indexing into this — step 8 does both.
+ *
+ * `fill` is the colour of the largest filled rect in the group, which is how
+ * this reader tells a hand-placeable panel from a rule-placed one without an
+ * app change: `SLOT_COLORS` in `WallElevationDiagram.tsx` paints a standard
+ * slot #d9c9a3 and a braced one #b06fc9, while corner (#8a8a8a),
+ * safety-oct-corner (#5c4a2e) and safety-gap (#e08a3c) — exactly the types
+ * `PLACEABLE_PANEL_TYPES` leaves out — get their own. Matched POSITIVELY
+ * against the two placeable colours, so a palette change makes the pick fail
+ * to find a target and throw, rather than silently picking a corner.
+ */
 const panelBodies = async () =>
   await evaluate(`(() => {
     return [...document.querySelectorAll('svg g')]
@@ -443,10 +534,27 @@ const panelBodies = async () =>
       .map((g) => {
         const r = g.getBoundingClientRect();
         const label = [...g.querySelectorAll('text')].map((t) => t.textContent.trim()).find((t) => /^[0-9]+(\\.[0-9]+)?"$/.test(t));
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, label };
+        let fill = null;
+        let bestArea = -1;
+        for (const rect of g.querySelectorAll('rect')) {
+          const f = rect.getAttribute('fill');
+          if (!f || f === 'none') continue;
+          const rb = rect.getBoundingClientRect();
+          const area = rb.width * rb.height;
+          if (area > bestArea) { bestArea = area; fill = f; }
+        }
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, label, fill };
       })
-      .filter((p) => p.w > 4 && p.x > 250 && p.x < window.innerWidth - 40 && p.y > 60 && p.y < window.innerHeight - 40);
+      .filter((p) => p.w > 4 && p.x > 250 && p.x < window.innerWidth - 40 && p.y > 60 && p.y < window.innerHeight - 40)
+      .sort((a, b) => a.x - b.x);
   })()`);
+
+/**
+ * The two `SLOT_COLORS` a hand tool is allowed to delete — the standard
+ * family. Everything else on the wall is either an opening (which this step
+ * has no business deleting) or rule-placed (which the app refuses by name).
+ */
+const FREE_SLOT_FILLS = { "#d9c9a3": "standard", "#b06fc9": "braced" };
 
 /** The Stop Wall field for one end, plus whatever refusal it is showing. */
 const stopField = async (end) =>
@@ -726,6 +834,11 @@ console.log("5. adding a spanning header over two real panels");
 const SPAN_START = 2;
 const SPAN_END = 4;
 const expectedSpanIn = slotExtents[SPAN_START] && slotExtents[SPAN_END - 1] ? slotExtents[SPAN_START].lengthIn + slotExtents[SPAN_END - 1].lengthIn : null;
+// Snapshot-and-clear before every gesture whose notice is asserted — see
+// `clearNotice`. Nothing has spoken yet here, so this is free; it is done
+// anyway so the pattern is the same at all four sites rather than something
+// a reader has to decide about.
+const noticeBeforeAdd = await clearNotice();
 await clickByText("button", "+ Add Spanning Header", "Add Spanning Header button");
 await sleep(1000);
 const addNotice = await notice();
@@ -741,6 +854,7 @@ const labelsInSvg = await svgTexts();
 record(
   "header-spans-exactly-the-panels-beneath-it-and-adds-no-width",
   {
+    noticeBeforeAdd,
     addNotice,
     // ⚠ `headerName`, NOT `name`: `record()` spreads a step's detail into the
     // step object, so a detail key called `name` silently OVERWRITES the
@@ -762,6 +876,7 @@ record(
   // the wall's own total does not move by an eighth, and the header is
   // actually drawn.
   (d) =>
+    d.noticeBeforeAdd === null &&
     d.headerName !== null &&
     d.startSlotIndex === SPAN_START &&
     d.endSlotIndex === SPAN_END &&
@@ -816,12 +931,14 @@ await reachView((l) => l.startsWith("Elevation") && l.includes(targetWallId), `E
 await sleep(1200);
 rows = await spanningHeaderRows();
 const firstRowName = rows[0]?.name ?? headerName;
+const noticeBeforeSingleSlot = await clearNotice();
 await setHeaderSlot(firstRowName, "last panel", SPAN_START + 1);
 const singleSlotNotice = await notice();
 const rowsAfterSingle = await spanningHeaderRows();
 record(
   "a-one-panel-span-is-refused-and-changes-nothing",
   {
+    noticeBeforeSingleSlot,
     notice: singleSlotNotice,
     startSlotIndex: rowsAfterSingle[0]?.startSlotIndex ?? null,
     endSlotIndex: rowsAfterSingle[0]?.endSlotIndex ?? null,
@@ -830,6 +947,7 @@ record(
   // this record refuses it rather than quietly duplicating the concept — and
   // a refusal writes nothing at all.
   (d) =>
+    d.noticeBeforeSingleSlot === null &&
     typeof d.notice === "string" &&
     d.notice.startsWith("Refused") &&
     d.notice.includes("at least two panels") &&
@@ -856,12 +974,14 @@ if (overRangeEnd === null) {
     observationOnly("no run of panels on this wall exceeds the 144in maximum, so the refusal cannot be exercised here"),
   );
 } else {
+  const noticeBeforeOverRange = await clearNotice();
   await setHeaderSlot(firstRowName, "last panel", overRangeEnd);
   const overRangeNotice = await notice();
   const rowsAfterOver = await spanningHeaderRows();
   record(
     "a-span-past-12ft-is-refused-rather-than-the-range-widened",
     {
+      noticeBeforeOverRange,
       attemptedEnd: overRangeEnd,
       attemptedSpanIn: Number(overRangeSpanIn.toFixed(3)),
       notice: overRangeNotice,
@@ -872,6 +992,7 @@ if (overRangeEnd === null) {
     // drawing — so the app refuses, quotes the numbers, and says the range
     // is not confirmed.
     (d) =>
+      d.noticeBeforeOverRange === null &&
       typeof d.notice === "string" &&
       d.notice.startsWith("Refused") &&
       d.notice.includes("144") &&
@@ -882,21 +1003,81 @@ if (overRangeEnd === null) {
 }
 
 console.log("8. deleting a panel to the LEFT — the header rides Stage 2's shift");
+/**
+ * ⚠ **`bodies[1]` USED TO BE THE TARGET, AND IT IS NOT SLOT 1.**
+ *
+ * The comment that stood here said *"Index 1: inside the run, left of the
+ * span, and not the corner at index 0"*, which was false by construction from
+ * the moment the elevation learned to scroll. `panelBodies()` is
+ * viewport-cropped (see its own comment), so `bodies` is a WINDOW onto the
+ * wall, not the wall: with 15 panels and 6 on screen, `bodies[1]` is slot 1
+ * only because `scrollLeft` happens to default to 0. Forcing `scrollLeft` to
+ * its maximum reproduces the other case exactly — `bodies` becomes slots
+ * 8..14, `bodies[1]` is a panel to the RIGHT of the header, the delete
+ * succeeds, the header's range correctly does NOT shift, and this step fails
+ * on an app that did nothing wrong. It also cascades into step 9, which then
+ * measures a stop that no longer runs under the header.
+ *
+ * Two changes, and both are needed:
+ *
+ * 1. **Fit the whole wall first** — `elevation-fit` added this to stage-3,
+ *    `ui-reorg-u0` and `ui-reorg-u1` and never to stage-2b. With the whole
+ *    wall on screen the crop takes nothing out, so an index here IS a slot
+ *    index; that equality is asserted below rather than assumed.
+ * 2. **Choose the target by what it is, not by where it sits in an array** —
+ *    a slot LEFT of the header's first panel that is in the standard family,
+ *    i.e. not the corner and not a rule-placed safety gap. The pick is
+ *    recorded and asserted, so it can never silently drift again.
+ */
+// Step 7 scrolled a header's slot-index field into view, which can take the
+// elevation and its Zoom out button off screen — and `fitWholeWall` presses
+// that button by its screen coordinate. Same guard `setTool` carries.
+await evaluate(`(() => {
+  const svg = [...document.querySelectorAll('svg')].find((s) => s.querySelector('g[style*="pointer"]'));
+  if (svg) svg.scrollIntoView({ block: 'center' });
+})()`);
+await sleep(400);
+const wholeWallForDelete = await makeElevationZoomControl({ evaluate, sleep, click }).fitWholeWall();
 const spanBeforeDelete = (await spanningHeaderRows())[0];
 await setTool("Delete", true);
 const bodies = await panelBodies();
-let deleteNotice = null;
-// Index 1: inside the run, left of the span, and not the corner at index 0.
-if (bodies[1]) {
-  await click(bodies[1].x, bodies[1].y);
-  await sleep(900);
-  deleteNotice = await notice();
+const widthsBeforeDelete = await panelWidths();
+const startBeforeDelete = spanBeforeDelete?.startSlotIndex ?? null;
+const deleteTarget = (() => {
+  if (startBeforeDelete === null) return null;
+  for (let i = 1; i < startBeforeDelete && i < bodies.length; i++) {
+    const kind = FREE_SLOT_FILLS[bodies[i].fill];
+    if (kind) return { index: i, kind, ...bodies[i] };
+  }
+  return null;
+})();
+if (!deleteTarget) {
+  throw new Error(
+    `no standard-family slot between the corner and the header's first panel (${startBeforeDelete}) to delete — ` +
+      `fills left of it were ${JSON.stringify(bodies.slice(0, startBeforeDelete ?? 0).map((b) => b.fill))}`,
+  );
 }
+// Snapshot-and-clear, so `deleteNotice` below is this click's own answer or
+// nothing at all — never step 7's refusal read back as this step's result.
+const noticeBeforeDelete = await clearNotice();
+await click(deleteTarget.x, deleteTarget.y);
+await sleep(900);
+const deleteNotice = await notice();
 await setTool("Delete", false); // stand the tool down so later steps behave normally
 const rowsAfterDelete = await spanningHeaderRows();
 record(
   "deleting-a-panel-left-of-the-header-moves-its-range-not-its-span",
   {
+    wholeWallOnScreen: wholeWallForDelete.wholeWallVisible,
+    zoomOutClicks: wholeWallForDelete.clicks,
+    clickableBodies: bodies.length,
+    panelsOnTheWall: widthsBeforeDelete.length,
+    slotsInBaselineObj: slotExtents.length,
+    deleteTargetIndex: deleteTarget.index,
+    deleteTargetKind: deleteTarget.kind,
+    deleteTargetLabel: deleteTarget.label,
+    deleteTargetWidthLabelFromWidths: `${widthsBeforeDelete[deleteTarget.index]}"`,
+    noticeBeforeDelete,
     deleteNotice,
     startBefore: spanBeforeDelete?.startSlotIndex ?? null,
     startAfter: rowsAfterDelete[0]?.startSlotIndex ?? null,
@@ -923,6 +1104,23 @@ record(
   // demanding the clause anyway would be asserting an accident of the
   // fixture.)
   (d) =>
+    // ⚠ FIRST: the target really was the slot this step meant. Every clause
+    // below is about a panel LEFT of the header, so if the pick drifted the
+    // rest of this check is measuring a different gesture. The whole wall is
+    // on screen, the cropped reader therefore cropped nothing (three counts
+    // agreeing: clickable bodies, width labels, slots in the 3D model), the
+    // chosen index is between the corner and the header, it is a
+    // standard-family panel rather than a rule-placed one, and the label on
+    // the body matches the width label at that index.
+    d.wholeWallOnScreen === true &&
+    d.clickableBodies === d.panelsOnTheWall &&
+    d.clickableBodies === d.slotsInBaselineObj &&
+    d.deleteTargetIndex >= 1 &&
+    d.deleteTargetIndex < d.startBefore &&
+    (d.deleteTargetKind === "standard" || d.deleteTargetKind === "braced") &&
+    d.deleteTargetLabel === d.deleteTargetWidthLabelFromWidths &&
+    // …and the notice below is this gesture's, not a leftover.
+    d.noticeBeforeDelete === null &&
     typeof d.deleteNotice === "string" &&
     d.deleteNotice.startsWith("Deleted") &&
     d.startAfter === d.startBefore - 1 &&
@@ -931,6 +1129,23 @@ record(
 );
 
 console.log("9. a wall-run stop under the header is refused by name");
+/**
+ * ⚠ **IF THIS STEP FAILS, LOOK AT STEP 8 BEFORE YOU LOOK AT THE APP.** It has
+ * already produced one false alarm as a pure cascade.
+ *
+ * When step 8's `bodies[1]` picked a panel to the RIGHT of the header instead
+ * of the left (see step 8's own comment), the wall going into this step was
+ * not the one this step is about, and the app ACCEPTED the 60in stop. That
+ * acceptance was **correct**, and it was measured across the stop rather than
+ * argued: the header's covered slot count stayed at 2 and its span stayed
+ * 80in. The 60in came entirely out of the tail — two tail panels went
+ * 34.125in → 24.125in and one 40in panel was dropped — so not one of the
+ * header's own panels was re-cut. **Refusing there would have been a FALSE
+ * refusal**, and "make the app refuse" would have been the wrong fix.
+ *
+ * With step 8 deleting a panel left of the header, this step exercises its
+ * real intent again: a 14-panel wall whose stop genuinely runs under H1.
+ */
 const widthsBeforeStop = await panelWidths();
 await commitStop("start", 60);
 const stopAfter = await stopField("start");

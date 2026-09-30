@@ -155,9 +155,81 @@ failures:
 | 6 | A header on a **different wall** is `H2`: one building-wide series, not a per-wall counter |
 | 7 | A one-panel span is refused, in words, and changes nothing |
 | 7 | A span past 12ft is refused with the number quoted and the range named as unconfirmed — **not** widened to fit the drawing |
+| 8 | The whole wall is on screen first, and the panel deleted is the one the step MEANT: a standard-family slot between the corner and the header, asserted by index, kind and label rather than taken as `bodies[1]` |
 | 8 | Deleting a panel to the left moves the header's range so it still covers the same panels (Stage 2's `shiftSlotCoverage`) — **and if that re-tile changed the header's own cut width, the notice says so, with both numbers** |
 | 9 | A wall-run stop that would re-cut the header is refused **by name** (Stage 3) |
 | 10 | 3D: the header exists as real geometry, spanning the same run as the panels beneath, aligned to within an eighth |
 | 10 | Those panels stop exactly at the header's bottom face while their uncovered neighbour does not |
 | 11 | Both halves of the cross-reference are on paper: the header's sheet states its wall in words; a panel's sheet names the header above it |
 | 11 | No uncaught exception in the page across the whole run |
+
+## ⚠ Step 8's `bodies[1]` was never slot 1 — fixed 2026-09-30
+
+`panelBodies()` is viewport-cropped, so `bodies` is a WINDOW onto the wall,
+not the wall. With 15 panels and 6 on screen, `bodies[1]` was slot 1 only
+because `scrollLeft` happens to default to 0 — the comment that stood there,
+*"Index 1: inside the run, left of the span, and not the corner at index 0"*,
+was false by construction from the moment the elevation learned to scroll
+(2026-09-29). `run.mjs` is byte-identical on all five of the branches merged
+into `main` and passed 6 of 6 unmodified runs there, so this is a scroll-
+position flake and not anything a branch did.
+
+Reproduced deliberately by forcing `scrollLeft` to its maximum: `bodies`
+became slots 8–14, `bodies[1]` was a panel to the **right** of the header, the
+delete succeeded, the header's range correctly did not shift, and the step
+failed on an app that had done nothing wrong.
+
+Two changes, both needed:
+
+1. **`fitWholeWall()` before the step.** `elevation-fit` added this to
+   stage-3, `ui-reorg-u0` and `ui-reorg-u1` and never to stage-2b.
+2. **The target is chosen by what it is, not by array position** — the
+   leftmost standard-family slot between the corner and the header's first
+   panel, identified by its own `SLOT_COLORS` fill so a corner or a
+   safety gap cannot be picked. The pick is recorded
+   (`deleteTargetIndex`, `deleteTargetKind`, `deleteTargetLabel`) and
+   asserted, along with the three counts that have to agree before an index
+   here is a slot index at all (`clickableBodies`, `panelsOnTheWall`,
+   `slotsInBaselineObj`), so this cannot silently drift again.
+
+**Step 9 was a pure cascade of this, and the app was right there too.** With
+the wrong panel deleted, the 60in stop was ACCEPTED — correctly: measured
+across the stop, H1's covered slot count stayed 2 and its span stayed 80in,
+and the 60in came entirely out of the tail (two panels 34.125in → 24.125in,
+one 40in panel dropped). Refusing would have been a **false** refusal. Do not
+"fix" `a-stop-that-would-re-cut-a-header-is-refused-by-name` for it.
+
+## ⚠ The notice reader could return a STALE sentence — 2026-09-30
+
+`notice()` used to scan every `<p>` in the document for
+`/^(Placed|Inserted|Replaced|Deleted|Refused)/`. **Three real refusal
+sentences in `apps/web/app/placementNotice.ts` begin with none of those** —
+`rule-placed-slot` (*"Corner and safety-gap panels are placed by rule, not by
+hand — …"*), `refuse-not-placeable` otherwise (*"There is nowhere on this wall
+to put a panel there."*) and `no-change` (*"That panel is already what the
+tool is set to, so nothing changed."*).
+
+The app shows ONE notice paragraph, it lingers 8s, and it is replaced in
+place — so a refusal this reader could not match did not read back as
+nothing, it read back as **the previous step's notice**. Measured: arming
+Delete and clicking the 0.75in safety gap leaves widths and header untouched
+and returns `null` from a clean line, but with step 7's refusal still on
+screen the old reader returned *that* instead, verbatim `span 160"` and all.
+That is how a harness problem came to be read as a spanning-header
+regression. (The 0.75in gap is drawn at a minimum legible ~60px rather than to
+scale, so it always clears `panelBodies`' `p.w > 4` filter and is always
+clickable.)
+
+It is now located structurally — the one optional `<p>` after the tool's help
+text inside the "Place a panel" section — so it returns whatever the app
+wrote, all three sentences included, and **throws** rather than returning
+`null` if that section is missing or has a shape it does not recognise. Every
+gesture whose notice is asserted also calls `clearNotice()` first and records
+the confirmed-empty line (`noticeBeforeAdd`, `noticeBeforeSingleSlot`,
+`noticeBeforeOverRange`, `noticeBeforeDelete`), so no assertion in this file
+can be reading an older sentence.
+
+`clearNotice()` **waits** for the app's own 8s dismissal rather than blanking
+the paragraph. Blanking would detach the text node React is holding, and the
+next real notice would be written to a node no longer on the page — the same
+false-green, inverted.
