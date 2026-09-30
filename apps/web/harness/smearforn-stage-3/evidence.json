@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3218/",
-  "ranAt": "2026-09-29T14:43:21.005Z",
+  "app": "http://localhost:3311/",
+  "ranAt": "2026-09-29T21:09:22.190Z",
   "stopIn": 60,
   "steps": [
     {
@@ -66,7 +66,7 @@
     },
     {
       "name": "drag-still-lands-and-conserves-the-run",
-      "strips": 10,
+      "strips": 9,
       "totalEighthsBeforeDrag": 3912,
       "totalEighthsAfterDrag": 3912,
       "changed": true,
@@ -108,8 +108,8 @@
       "name": "clearing-the-stop-restores-elevation-plan-and-3d",
       "totalEighthsCleared": 4392,
       "noPanelsLabelsCleared": 0,
-      "boundaryGreyWithStop": 1378,
-      "boundaryGreyWithoutStop": 1281,
+      "boundaryGreyWithStop": 1434,
+      "boundaryGreyWithoutStop": 1338,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,

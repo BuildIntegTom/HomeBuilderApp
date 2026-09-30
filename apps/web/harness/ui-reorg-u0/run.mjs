@@ -1000,48 +1000,154 @@ const gear = await evaluate(`(() => {
 if (!gear) throw new Error("no Settings button on the top bar");
 await click(gear.x, gear.y);
 await sleep(600);
-const sandboxInSettings = await evaluate(`(() => {
-  const note = document.getElementById('settings-note');
-  const links = note ? [...note.querySelectorAll('a[href="/sandbox"]')] : [];
-  return {
-    inSettings: links.length,
-    text: links[0] ? links[0].textContent.replace(/\\s+/g, ' ').trim() : null,
-    documentTotal: document.querySelectorAll('a[href="/sandbox"]').length,
-    onScreen: links[0] ? (() => { const r = links[0].getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= window.innerWidth; })() : false,
-    // It has to READ as a menu item beside the other menu items, not as raw
-    // body text. CSS Modules' composes is not transitive here, so a link that
-    // .menuItem silently loses .tool's type, padding and outline — which is
-    // exactly what happened the first time, and it was invisible to every
-    // other check in this run.
-    style: links[0]
-      ? (() => { const cs = getComputedStyle(links[0]); return { fontSize: cs.fontSize, borderStyle: cs.borderTopStyle, padded: parseFloat(cs.paddingLeft) > 0 }; })()
-      : null,
-  };
+/**
+ * ⚠ WHAT "REACHABLE" MEANS HERE — REWRITTEN AT U3's REVIEW, 2026-09-29.
+ *
+ * This is the only assertion across all six harnesses that tests whether a
+ * RELOCATED control can still be got to, which is the single question this
+ * whole reorganisation exists to answer. Until now its predicate was
+ * HORIZONTAL ONLY — `r.width > 0 && r.left >= 0 && r.right <= innerWidth` —
+ * under the name `onScreen`.
+ *
+ * **U3 did not weaken that check; U3 invalidated its premise.** Before U3 the
+ * sandbox link sat near the top of a short note and could not be clipped
+ * vertically, so a horizontal test was a fair proxy. It now sits below the
+ * whole Panelizer and the whole of Site Properties inside a note capped at
+ * `max-height: 75vh`, and the old predicate went on reporting
+ * `onScreen: true` for a link the committed screenshot shows is far past the
+ * bottom of the note's visible region. A green check named `onScreen` that is
+ * false is worse than no check at all.
+ *
+ * So: the vertical truth is MEASURED AND RECORDED under names that say what
+ * was measured (`verticallyWithinViewport`, `withinTheNotesVisibleRegion`,
+ * the note's `scrollHeight` and `clientHeight`), it is NOT forced green, and
+ * the assertion moves to the claim that is both true and the one that
+ * matters: **the link is inside the note's scrollable content, and scrolling
+ * the note brings it fully into view and under the cursor.** `hitTestable`
+ * is `document.elementFromPoint` at the link's own centre, so "visible" means
+ * nothing is covering it either — the failure mode that made a control
+ * present-but-unclickable twice in this app's history.
+ */
+const measureSandboxLink = async () =>
+  await evaluate(`(() => {
+    const note = document.getElementById('settings-note');
+    const links = note ? [...note.querySelectorAll('a[href="/sandbox"]')] : [];
+    const link = links[0] || null;
+    /* StickyNote's scrolling body carries this GLOBAL class on purpose (its
+       print rules have to reach past the CSS module's hashed names), so it is
+       a stable locator where the module class is not. */
+    const body = note ? note.querySelector('.documentSectionBody') : null;
+    const px = (v) => Math.round(v * 10) / 10;
+    if (!note || !link || !body) return { inSettings: links.length, link: null, note: null };
+    const r = link.getBoundingClientRect();
+    const b = body.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return {
+      inSettings: links.length,
+      link: {
+        top: px(r.top),
+        bottom: px(r.bottom),
+        left: px(r.left),
+        right: px(r.right),
+        width: px(r.width),
+        /* The retired predicate, kept under a name that admits what it tests,
+           so the rewrite can be read against it instead of quietly replacing
+           it. */
+        horizontallyWithinViewport: r.width > 0 && r.left >= -1 && r.right <= window.innerWidth + 1,
+        verticallyWithinViewport: r.top >= -1 && r.bottom <= window.innerHeight + 1,
+        withinTheNotesVisibleRegion: r.top >= b.top - 1 && r.bottom <= b.bottom + 1,
+        hitTestable: !!hit && (hit === link || link.contains(hit)),
+      },
+      note: {
+        scrollTop: px(body.scrollTop),
+        scrollHeight: px(body.scrollHeight),
+        clientHeight: px(body.clientHeight),
+        scrolls: body.scrollHeight > body.clientHeight + 1,
+        visibleTop: px(b.top),
+        visibleBottom: px(b.bottom),
+      },
+      viewportHeight: window.innerHeight,
+    };
+  })()`);
+
+const sandboxStyle = await evaluate(`(() => {
+  const link = document.querySelector('#settings-note a[href="/sandbox"]');
+  // It has to READ as a menu item beside the other menu items, not as raw
+  // body text. CSS Modules' composes is not transitive here, so a link that
+  // .menuItem silently loses .tool's type, padding and outline — which is
+  // exactly what happened the first time, and it was invisible to every
+  // other check in this run.
+  if (!link) return null;
+  const cs = getComputedStyle(link);
+  return { fontSize: cs.fontSize, borderStyle: cs.borderTopStyle, padded: parseFloat(cs.paddingLeft) > 0 };
 })()`);
+const sandboxText = await evaluate(
+  `(() => { const l = document.querySelector('#settings-note a[href="/sandbox"]'); return l ? l.textContent.replace(/\\s+/g, ' ').trim() : null; })()`,
+);
+const sandboxDocumentTotal = await evaluate(`document.querySelectorAll('a[href="/sandbox"]').length`);
+const sandboxOnOpen = await measureSandboxLink();
+await shot("04-settings-single-wall-run");
+/* Scrolling the note is the user action the reachability claim rests on, so it
+   is PERFORMED rather than assumed. `block: 'nearest'` scrolls the minimum the
+   browser needs — the same call the rest of this harness makes before every
+   click, and the reason those clicks land. */
+await evaluate(
+  `(() => { const l = document.querySelector('#settings-note a[href="/sandbox"]'); if (l) l.scrollIntoView({ block: 'nearest' }); return true; })()`,
+);
+await sleep(400);
+const sandboxAfterScroll = await measureSandboxLink();
+await shot("04b-settings-single-wall-run-scrolled-to");
 const sandboxRouteOk = await evaluate(`(async () => { const r = await fetch('/sandbox'); return r.status; })()`);
 record(
   "single-wall-run-moved-into-settings",
   {
     sandboxLinksBeforeOpeningSettings: sandboxBeforeSettings,
-    ...sandboxInSettings,
+    inSettings: sandboxOnOpen.inSettings,
+    text: sandboxText,
+    documentTotal: sandboxDocumentTotal,
     sandboxRouteStatus: sandboxRouteOk,
+    /* ⚠ THE HONEST FINDING, RECORDED AND NOT ASSERTED. With the Panelizer and
+       Site Properties above it, the link is below the fold of the note's own
+       75vh scroller the moment Settings opens. That is a real consequence of
+       U3 and of the panelizer-first order, it is Tommy's to accept or send
+       back (grouping, collapsing, a wider note — all named as open in the
+       spec), and it is NOT something this harness gets to paint green. */
+    whenSettingsOpens: sandboxOnOpen,
+    visibleWithoutScrolling:
+      sandboxOnOpen.link !== null &&
+      sandboxOnOpen.link.withinTheNotesVisibleRegion === true &&
+      sandboxOnOpen.link.verticallyWithinViewport === true,
+    afterScrollingTheNote: sandboxAfterScroll,
+    reachableByScrollingTheNote:
+      sandboxAfterScroll.link !== null &&
+      sandboxAfterScroll.link.horizontallyWithinViewport === true &&
+      sandboxAfterScroll.link.verticallyWithinViewport === true &&
+      sandboxAfterScroll.link.withinTheNotesVisibleRegion === true &&
+      sandboxAfterScroll.link.hitTestable === true,
+    style: sandboxStyle,
   },
   // Counted BOTH ways: zero anywhere in the document until Settings is
   // opened (so it really did leave the tray footer), exactly one inside the
-  // Settings note, the label unchanged, and the route still resolving.
+  // Settings note, the label unchanged, and the route still resolving. Then
+  // REACHABILITY, which is the part the old horizontal-only predicate could
+  // not see: horizontally within the viewport at both readings (that much was
+  // always true and stays asserted), and after scrolling the note the link is
+  // vertically within the viewport, inside the note's visible region, and the
+  // topmost element at its own centre.
   (d) =>
     d.sandboxLinksBeforeOpeningSettings === 0 &&
     d.inSettings === 1 &&
     d.documentTotal === 1 &&
     d.text === "Single Wall Run Calculation Sandbox →" &&
-    d.onScreen === true &&
     d.sandboxRouteStatus === 200 &&
+    d.whenSettingsOpens.link !== null &&
+    d.whenSettingsOpens.link.horizontallyWithinViewport === true &&
+    d.reachableByScrollingTheNote === true &&
     d.style !== null &&
     d.style.fontSize === "13px" &&
     d.style.borderStyle === "solid" &&
     d.style.padded === true,
 );
-await shot("04-settings-single-wall-run");
 await click(gear.x, gear.y);
 await sleep(400);
 
@@ -1203,20 +1309,20 @@ record(
 // the Panelizer's own checkbox. The checkbox is a FIXTURE here, not the thing
 // under test, so it is toggled through the DOM; everything being measured is
 // clicked for real.
+// ⚠ U3 (2026-09-29) MOVED THE PANELIZER INTO ⚙ SETTINGS, so this is one click
+// where it used to be two through Project ▾ → Panelizer. The gear is icon-only
+// and is located by `data-bar-control`; the scope group is then looked for
+// INSIDE `#settings-note`, so a run that found it somewhere else would fail
+// rather than quietly pass.
 const roofEnabled = await evaluate(`(() => {
-  const openProject = [...document.querySelectorAll('button')].find((b) => b.textContent.trim().startsWith('Project'));
-  if (!openProject) return 'no-project-menu';
-  openProject.click();
-  return 'project-open';
-})()`);
-await sleep(500);
-await evaluate(`(() => {
-  const item = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Panelizer');
-  if (item) item.click();
+  const gear = document.querySelector('[data-bar-control="settings"]');
+  if (!gear) return 'no-settings-button';
+  gear.click();
+  return 'settings-open';
 })()`);
 await sleep(700);
 const roofChecked = await evaluate(`(() => {
-  const group = document.querySelector('[role="group"][aria-label="Scope of work"]');
+  const group = document.querySelector('#settings-note [role="group"][aria-label="Scope of work"]');
   if (!group) return 'no-scope-group';
   const label = [...group.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Roof');
   if (!label) return 'no-roof-label';
@@ -1226,7 +1332,7 @@ const roofChecked = await evaluate(`(() => {
 })()`);
 await sleep(600);
 await evaluate(`(() => {
-  const close = [...document.querySelectorAll('#panelizer-note button')].find((b) => (b.getAttribute('aria-label') || '') === 'Close' || b.textContent.trim() === '×');
+  const close = [...document.querySelectorAll('#settings-note button')].find((b) => (b.getAttribute('aria-label') || '') === 'Close' || (b.getAttribute('title') || '') === 'Hide this note' || b.textContent.trim() === '×');
   if (close) close.click();
 })()`);
 await sleep(500);

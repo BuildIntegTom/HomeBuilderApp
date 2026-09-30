@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { roleDisclaimers, type ViewerRole } from "./viewerRole";
 import StickyNote from "./StickyNote";
@@ -22,7 +22,13 @@ import {
   type ViewerStop,
 } from "./viewerMenus";
 import type { Footprint } from "@building-integrity/geometry";
-import { clampMenuLeft, roleControlLabel, roleOptions, settingsMenuHasAdminGroup } from "./topBarMenus";
+import {
+  clampMenuLeft,
+  roleControlLabel,
+  roleOptions,
+  settingsMenuSections,
+  type SettingsSectionId,
+} from "./topBarMenus";
 import type { CloudMenuModel } from "./cloud/useCloudProjects";
 import { CLOUD_FOLDERS, FOLDER_LABEL, isCloudFolder } from "./cloud/cloudTypes";
 import styles from "./TopBar.module.css";
@@ -78,7 +84,10 @@ export interface TopBarProps {
   footprint: Footprint | null;
 }
 
-type OpenMenu = "project" | "site" | "panelizer" | "role" | "settings" | "design" | "view" | null;
+/** ⚠ `site` and `panelizer` were entries here until U3 (2026-09-29). They are
+ * no longer MENUS at all — they are sections inside the Settings note — so the
+ * union shrinks with them rather than keeping two ids nothing can open. */
+type OpenMenu = "project" | "role" | "settings" | "design" | "view" | null;
 
 /**
  * The two bar words that hold a place for a page nobody has built yet.
@@ -157,12 +166,26 @@ function GearIcon() {
  * Stitch reorganisation", and Tommy's decisions of 2026-09-28/29).
  *
  * - LEFT, identity & document & where you are: the acting-as / sign-in control,
- *   then Project ▾ (Save, Load, Site Properties, Panelizer — the things that
- *   change the building or the file), then Design ▾ and View ▾, then the
- *   Summary and Print placeholders.
- * - RIGHT, presentation: Role ▾ and ⚙ Settings (units and Admin Options — the
- *   things that change only how you look at it). No help icon: there is
- *   nothing for it to open yet.
+ *   then Project ▾ (Save and Load — the file), then Design ▾ and View ▾, then
+ *   the Summary and Print placeholders.
+ * - RIGHT: Role ▾ and ⚙ Settings. ⚠ **SINCE U3 THIS ZONE IS NOT ONLY
+ *   PRESENTATION.** Settings absorbed Site Properties and the Panelizer
+ *   (Tommy, 2026-09-26: "we should move the content of the panelizer into the
+ *   settings in the top right"; 2026-09-28, on the scope checkboxes: "all
+ *   floor, foundation, and roof options should be a checkbox toggle under
+ *   settings"), so the gear now holds the seismic zone, the foundation type
+ *   and the scope of work as well as units and Admin Options. The zone's
+ *   original reading — "the things that change only how you look at it" — no
+ *   longer describes it, and saying so beats leaving a comment that quietly
+ *   stopped being true. No help icon: there is nothing for it to open yet.
+ *
+ * ⚠ **U3 CHANGED NO BAR CONTROL AND THEREFORE BOUGHT NO WIDTH.** Site
+ * Properties and the Panelizer were never on this row — they were items INSIDE
+ * the Project note, two clicks deep — so the controls measured in
+ * `apps/web/harness/ui-reorg-u1/evidence.json` are the same ones afterwards and
+ * every figure there still stands, including the 768–891px band in which the
+ * acting-as company name renders nothing. Recorded because the opposite was
+ * expected of this stage.
  *
  * ⚠ **THE MIDDLE ZONE IS GONE, AND SO IS EVERY `min-width: 1200px` RULE IN
  * THIS COMPONENT'S STYLESHEET.** It held the Wall / Foundation / Floor / Roof
@@ -334,6 +357,91 @@ export default function TopBar({
     </span>
   );
 
+  /**
+   * ⚙ Settings, section by section. The ORDER and the role gate are
+   * `settingsMenuSections`'s, not this record's — a Record has no order, which
+   * is the point: it cannot silently disagree with the tested list.
+   *
+   * ⚠ U3 — SITE PROPERTIES AND THE PANELIZER ARRIVE HERE BY REFERENCE. Both
+   * are the `siteContent` / `panelizerContent` ReactNodes page.tsx already
+   * built; not one field, note, `status` or `pending` style is re-typed. That
+   * is a written rule rather than a habit, because these two are the densest
+   * displays of flagged catalog values in the app —
+   * `seismicBracedPanelSpacingFt`, `bracedWallLineSpacingFt`,
+   * `groundScrewProductsStatus`, the `foundationTypes` vapor notes,
+   * `looseDensePackThicknessOptionsIn`, `targetDensityKgM3`,
+   * `fabricationMinPanelWidthIn`, `panelWidthInRange` — and a relocation is
+   * the easiest possible moment to silently retype a building number.
+   *
+   * Each moved section is headed by the `<h2>` its own content already
+   * carries, so nothing is headed twice and no heading was re-worded.
+   */
+  const settingsSections: Record<SettingsSectionId, ReactNode> = {
+    units: (
+      <div data-settings-section="units">
+        <UnitSystemSwitch value={unitSystem} onChange={onUnitSystemChange} />
+      </div>
+    ),
+    site: (
+      <div className={styles.menuSection} data-settings-section="site">
+        {siteContent}
+      </div>
+    ),
+    panelizer: (
+      <div className={styles.menuSection} data-settings-section="panelizer">
+        {panelizerContent}
+      </div>
+    ),
+    /* U0 of the navigation reorganisation. Tommy: "move single wall run into
+       the panelizer tab (speaking of which where is it? We should move the
+       content of the panelizer into the settings in the top right)" — so
+       Settings is where it lands, out of the right-hand tray's footer. Same
+       label, same route. Since U3 the Panelizer it names is in this same note,
+       at the top of it.
+
+       ⚠ It is still a NAVIGATION, exactly as it was in the tray: the sandbox
+       is a whole separate calculation page, not a note. There is no
+       localStorage anywhere in this app, so leaving the editor with an unsaved
+       design still loses it — unchanged by this move, and the reason Read Me
+       and Report Bug became notes instead. */
+    sandbox: (
+      <div className={`${styles.menuList} ${styles.menuListAfterSection}`} data-settings-section="sandbox">
+        <Link
+          href="/sandbox"
+          className={styles.menuItemLink}
+          title="A standalone sandbox for one wall run's panel layout and its numbers. Opens as its own page — save your design first."
+          onClick={closeMenu}
+        >
+          Single Wall Run Calculation Sandbox →
+        </Link>
+      </div>
+    ),
+    /* ⚠ THE ONLY ROLE-GATED SECTION, and `settingsMenuSections` is what
+       withholds it. Site Properties and the Panelizer sit OUTSIDE this gate
+       deliberately: both were reachable to every role from the Project menu,
+       and the Panelizer carries the scope-of-work checkboxes that decide which
+       editors exist at all, so gating them by accident of placement would hide
+       the app's central control from a signed-out visitor with no error
+       anywhere. */
+    admin: (
+      <div className={styles.menuSection} data-settings-section="admin">
+        <h3 className={styles.menuSectionTitle}>Admin Options</h3>
+        <label>
+          <input
+            type="checkbox"
+            checked={showAllDetailPages}
+            onChange={(e) => onShowAllDetailPagesChange(e.target.checked)}
+          />{" "}
+          Show All Detail Pages
+        </label>
+        <p className={styles.dropdownNote}>
+          Shows every Detail Guide and Shop Drawing page regardless of whether it applies to the current design. Off by
+          default.
+        </p>
+      </div>
+    ),
+  };
+
   const noteProps = (which: Exclude<OpenMenu, null>) => ({
     isOpen: openMenu === which,
     isFullscreen: fullscreenMenu === which,
@@ -371,7 +479,7 @@ export default function TopBar({
 
           <button
             type="button"
-            title="Save, load, site properties and panelizer — things that change the building or the file"
+            title="Save and load — the file. Site Properties and the Panelizer moved into ⚙ Settings."
             className={openMenu === "project" ? styles.toolActive : styles.tool}
             data-bar-control="project"
             aria-expanded={openMenu === "project"}
@@ -581,7 +689,7 @@ export default function TopBar({
           <button
             type="button"
             aria-label="Settings"
-            title="Settings — units and display options"
+            title="Settings — site properties, the Panelizer's scope of work and panel standards, units and display options"
             className={openMenu === "settings" ? styles.iconToolActive : styles.iconTool}
             data-bar-control="settings"
             aria-expanded={openMenu === "settings"}
@@ -762,24 +870,16 @@ export default function TopBar({
             )}
           </div>
         )}
-        <div className={`${styles.menuList} ${cloud && cloud.menu.kind !== "absent" ? styles.menuListAfterSection : ""}`}>
-          <button
-            type="button"
-            title="Zip code, seismic zone, foundation type, pier spacing"
-            className={styles.menuItem}
-            onClick={(e) => openMenuUnder("site", e.currentTarget)}
-          >
-            Site Properties
-          </button>
-          <button
-            type="button"
-            title="Which editor tools this project needs, panel-construction style, and panel width/thickness/density/wall height"
-            className={styles.menuItem}
-            onClick={(e) => openMenuUnder("panelizer", e.currentTarget)}
-          >
-            Panelizer
-          </button>
-        </div>
+        {/* ⚠ SITE PROPERTIES AND PANELIZER USED TO BE TWO ITEMS HERE, each
+            opening a note of its own. U3 moved both into ⚙ Settings, which is
+            Tommy's own instruction of 2026-09-26: "speaking of which where is
+            it? We should move the content of the panelizer into the settings in
+            the top right" — and, for the scope checkboxes specifically, "all
+            floor, foundation, and roof options should be a checkbox toggle
+            under settings". They were two clicks deep behind a button whose
+            name (Project) did not say they were there; they are one click deep
+            now, behind the icon he named. Nothing left the bar: neither was
+            ever a bar control, so this move costs and buys zero bar width. */}
       </StickyNote>
 
       {/* One note per view menu. Each lists ITS OWN stops and only its own,
@@ -877,14 +977,6 @@ export default function TopBar({
         </StickyNote>
       ))}
 
-      <StickyNote id="site-properties-note" label="Site Properties" {...noteProps("site")}>
-        {siteContent}
-      </StickyNote>
-
-      <StickyNote id="panelizer-note" label="Panelizer" {...noteProps("panelizer")}>
-        {panelizerContent}
-      </StickyNote>
-
       <StickyNote id="role-note" label="Role" {...noteProps("role")}>
         <p className={styles.dropdownNote}>Changes which disclaimer prints; it is not a permission.</p>
         <div className={styles.menuList} role="group" aria-label="Viewing as">
@@ -911,46 +1003,17 @@ export default function TopBar({
         </div>
       </StickyNote>
 
+      {/* ⚙ SETTINGS — and since U3 it is where Site Properties and the
+          Panelizer live. The sections render from `settingsMenuSections(role)`
+          rather than being written out in order here, so the ORDER and the role
+          gate have ONE definition with its own test instead of living in JSX
+          where only a reader can check them. `data-settings-section` is that
+          same list made observable, and is what the browser harnesses locate
+          by. */}
       <StickyNote id="settings-note" label="Settings" {...noteProps("settings")}>
-        <UnitSystemSwitch value={unitSystem} onChange={onUnitSystemChange} />
-        {/* U0 of the navigation reorganisation. Tommy: "move single wall run
-            into the panelizer tab (speaking of which where is it? We should
-            move the content of the panelizer into the settings in the top
-            right)" — so Settings is where it lands, out of the right-hand
-            tray's footer. Same label, same route.
-
-            ⚠ It is still a NAVIGATION, exactly as it was in the tray: the
-            sandbox is a whole separate calculation page, not a note. There is
-            no localStorage anywhere in this app, so leaving the editor with an
-            unsaved design still loses it — unchanged by this move, and the
-            reason Read Me and Report Bug became notes instead. */}
-        <div className={`${styles.menuList} ${styles.menuListAfterSection}`}>
-          <Link
-            href="/sandbox"
-            className={styles.menuItemLink}
-            title="A standalone sandbox for one wall run's panel layout and its numbers. Opens as its own page — save your design first."
-            onClick={closeMenu}
-          >
-            Single Wall Run Calculation Sandbox →
-          </Link>
-        </div>
-        {settingsMenuHasAdminGroup(role) && (
-          <div className={styles.menuSection}>
-            <h3 className={styles.menuSectionTitle}>Admin Options</h3>
-            <label>
-              <input
-                type="checkbox"
-                checked={showAllDetailPages}
-                onChange={(e) => onShowAllDetailPagesChange(e.target.checked)}
-              />{" "}
-              Show All Detail Pages
-            </label>
-            <p className={styles.dropdownNote}>
-              Shows every Detail Guide and Shop Drawing page regardless of whether it applies to the current design.
-              Off by default.
-            </p>
-          </div>
-        )}
+        {settingsMenuSections(role).map((section) => (
+          <Fragment key={section}>{settingsSections[section]}</Fragment>
+        ))}
       </StickyNote>
     </div>
   );

@@ -108,10 +108,11 @@
  *                                  name assertion FAILS at 1200px — the kept
  *                                  failing "before" for the shed-order fix.
  *   evidence-projection.json       the pre-U1 bar with four controls projected.
- *   region3-baseline.json          Region 3's signature at every stop, recorded
- *                                  off the DIAL before any of this. With the
- *                                  dial deleted this is the only cross-control
- *                                  comparison left, and it cannot be re-made.
+ *   region3-baseline.json          ⚠ RETIRED AT U3 (2026-09-29) and no longer
+ *                                  read by this script. Region 3's signature
+ *                                  at every stop, recorded off the DIAL before
+ *                                  any of this. Kept because it cannot be
+ *                                  re-made; never to be regenerated.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -125,7 +126,12 @@ const PASS = process.env.UI_REORG_U1_PASS === "projection" ? "projection" : "bui
 const PROVE_FAILURE = process.env.UI_REORG_U1_PROVE_FAILURE === "1";
 
 const EVIDENCE_FILE = path.join(HERE, PASS === "projection" ? "evidence-projection.json" : "evidence.json");
-const REGION3_FILE = path.join(HERE, "region3-baseline.json");
+/* ⚠ `region3-baseline.json` HAS NO CONSTANT HERE ANY MORE. It was RETIRED at
+   U3 by a decision taken in advance (see step 10's note, this file's README and
+   the spec) — the file is kept as an unrepeatable recording, and nothing reads
+   it. If a later stage finds itself adding this path back, read that note
+   first: regenerating it off the menus makes a self-comparison that passes by
+   construction. */
 
 /**
  * The widths this bar is judged at.
@@ -1067,13 +1073,41 @@ record(
   (d) => d.currentStop === "2D Floor Plan" && d.viewDisabled === false,
 );
 
+/* ⚠ U3'S REAL ACCEPTANCE CRITERION, HALF ONE — read BEFORE the checkboxes are
+   touched, and before Settings is even opened.
+
+   Moving the Panelizer into Settings is what satisfies Tommy's "all floor,
+   foundation, and roof options should be a checkbox toggle under settings",
+   and the thing that would make that move worthless is the checkboxes quietly
+   ceasing to gate anything. So the Design menu's subject groups are read here
+   against the default scope (Floors, Roof and Foundation OFF since Smearforn
+   Stage 0) and again below with all four on, and both times they are compared
+   to the CHECKBOXES THEMSELVES rather than to a hard-coded list — a gate that
+   had stopped working would otherwise look like a list that happened to
+   match. */
+const designSubjects = async () => {
+  await clickSelector('[data-view-menu="design"]', "the Design menu");
+  const entries = await evaluate(`window.__u1.openMenuEntries()`);
+  await clickSelector('[data-view-menu="design"]', "the Design menu");
+  return entries.map((g) => g.subject);
+};
+const SCOPE_LABEL_TO_SUBJECT = { Floors: "floor", Walls: "wall", Roof: "roof", Foundation: "foundation" };
+const subjectsFromBoxes = (boxes) =>
+  boxes.filter((b) => b.checked).map((b) => SCOPE_LABEL_TO_SUBJECT[b.text]);
+const designSubjectsAtDefaultScope = await designSubjects();
+
 console.log("2. all four scope branches on — the widest bar the keyhole allows");
+/* ⚠ U3 (2026-09-29): ONE CLICK, NOT TWO. The Panelizer is a section inside the
+   ⚙ Settings note now — Tommy, "we should move the content of the panelizer
+   into the settings in the top right" — so the old Project ▾ → Panelizer pair
+   of cold clicks is a single click on the gear, and what it waits for is the
+   Panelizer's own scope group INSIDE `#settings-note` rather than a note id
+   that no longer exists. */
 const coldClickAttempts = {
-  projectMenu: await clickSelectorUntil('[data-bar-control="project"]', "the Project menu", `Boolean(document.querySelector('#project-note'))`),
-  panelizerItem: await clickSelectorUntil(
-    '#project-note button[title^="Which editor tools"]',
-    "the Panelizer item",
-    `Boolean(document.querySelector('#panelizer-note'))`,
+  settingsMenu: await clickSelectorUntil(
+    '[data-bar-control="settings"]',
+    "the Settings menu",
+    `Boolean(document.querySelector('#settings-note [data-settings-section="panelizer"] [aria-label="Scope of work"]'))`,
   ),
 };
 evidence.coldClickAttempts = coldClickAttempts;
@@ -1089,7 +1123,7 @@ record(
   (d) => Object.values(d.coldClickAttempts).every((attempts) => attempts <= d.ceiling),
 );
 const scopeBoxes = await evaluate(`(() => {
-  const note = document.querySelector('#panelizer-note');
+  const note = document.querySelector('#settings-note [data-settings-section="panelizer"]');
   if (!note) return null;
   return [...note.querySelectorAll('label')]
     .map((l) => ({ text: l.textContent.replace(/\\s+/g,' ').trim(), checked: l.querySelector('input[type="checkbox"]')?.checked ?? null }))
@@ -1099,7 +1133,7 @@ if (!scopeBoxes || scopeBoxes.length !== 4) throw new Error(`expected 4 scope ch
 for (const box of scopeBoxes) {
   if (box.checked) continue;
   const at = await evaluate(`(() => {
-    const note = document.querySelector('#panelizer-note');
+    const note = document.querySelector('#settings-note [data-settings-section="panelizer"]');
     const label = [...note.querySelectorAll('label')].find((l) => l.textContent.replace(/\\s+/g,' ').trim() === ${JSON.stringify(box.text)});
     const input = label.querySelector('input[type="checkbox"]');
     input.scrollIntoView({ block: 'nearest' });
@@ -1109,18 +1143,20 @@ for (const box of scopeBoxes) {
   await click(at.x, at.y);
 }
 const scopeAfter = await evaluate(`(() => {
-  const note = document.querySelector('#panelizer-note');
+  const note = document.querySelector('#settings-note [data-settings-section="panelizer"]');
   return [...note.querySelectorAll('label')]
     .map((l) => ({ text: l.textContent.replace(/\\s+/g,' ').trim(), checked: l.querySelector('input[type="checkbox"]')?.checked ?? null }))
     .filter((l) => ['Floors','Walls','Roof','Foundation'].includes(l.text));
 })()`);
-await clickSelector('#panelizer-note button[title="Hide this note"]', "the Panelizer note's close button");
+await clickSelector('#settings-note button[title="Hide this note"]', "the Settings note's close button");
 await sleep(500);
 // Nothing may be left overlaying the editor: an open note sitting over a
 // control is how U0's harness once lost six clicks in a row and reported
 // "Membranes unreachable" — a locator problem wearing a feature bug's clothes.
+// ⚠ `#site-properties-note` and `#panelizer-note` are gone as of U3 — both are
+// sections of `#settings-note` now — so this list names the notes that exist.
 const notesStillOpen = await evaluate(
-  `[...document.querySelectorAll('#panelizer-note, #project-note, #site-properties-note')].filter((n) => n.getBoundingClientRect().width > 0).length`,
+  `[...document.querySelectorAll('#settings-note, #project-note')].filter((n) => n.getBoundingClientRect().width > 0).length`,
 );
 if (notesStillOpen > 0) throw new Error(`${notesStillOpen} top-bar note(s) left open over the editor`);
 record(
@@ -1131,6 +1167,35 @@ record(
   // menu would be measured two subject groups short, and option A two tabs
   // short.
   (d) => d.scopeAfter.length === 4 && d.scopeAfter.every((b) => b.checked === true),
+);
+
+/* ⚠ U3'S REAL ACCEPTANCE CRITERION, HALF TWO. The checkboxes were ticked in
+   their NEW home — inside ⚙ Settings — and the Design menu is read again. Both
+   readings are compared to the checkbox states they were taken under, so this
+   fails if the relocation left the boxes rendering but no longer wired to
+   `scopeOfWork` → `enabledEditorTabs` → the menu's subject groups. That is the
+   failure the move is most likely to cause and the one nothing else here would
+   catch: the note would still open, the boxes would still tick, and the Design
+   menu would simply stop changing. */
+const designSubjectsAtFullScope = await designSubjects();
+record(
+  "the-panelizers-scope-checkboxes-still-gate-the-design-menu-from-their-new-home-in-settings",
+  {
+    where: "the Panelizer, as a section inside #settings-note (U3)",
+    atDefaultScope: { boxes: scopeBoxes, wantSubjects: subjectsFromBoxes(scopeBoxes), designSubjects: designSubjectsAtDefaultScope },
+    atFullScope: { boxes: scopeAfter, wantSubjects: subjectsFromBoxes(scopeAfter), designSubjects: designSubjectsAtFullScope },
+  },
+  // Sets, not sequences: the menu's group ORDER is Tommy's (Wall, Floor, Roof,
+  // Foundation) and is asserted by its own unit test, not here. What is
+  // asserted here is that the set of subject groups the Design menu offers is
+  // exactly the set of scope branches checked in the Panelizer — twice, under
+  // two different scopes, so a menu that ignores the boxes cannot pass both.
+  (d) =>
+    [d.atDefaultScope, d.atFullScope].every(
+      (c) =>
+        c.designSubjects.length === c.wantSubjects.length &&
+        c.wantSubjects.every((s) => c.designSubjects.includes(s)),
+    ) && d.atDefaultScope.designSubjects.length !== d.atFullScope.designSubjects.length,
 );
 
 console.log("3. validating the four-company simulation against a real 2026-09-13 measurement");
@@ -1629,6 +1694,100 @@ const bisectBand = async (spec, predicateId, band, minWidth = 0) => {
   return hi;
 };
 
+console.log("6b. the Settings note's sections, read out of the DOM at all four roles");
+/**
+ * ⚠ THE ROLE-GATE HOLE, CLOSED AT THE DOM — added 2026-09-29 at U3's review.
+ *
+ * U3's named failure mode is the Panelizer ending up INSIDE the role-gated
+ * Admin Options group: the app's central control would simply stop existing
+ * for a signed-out visitor, with no error anywhere and nothing red.
+ *
+ * **`topBarMenus.test.ts` does not close that hole and cannot.** Its tests
+ * exercise a pure filter over a frozen five-element array of ids and have no
+ * view of JSX nesting whatsoever. Paste `{siteContent}` into TopBar's `admin:`
+ * entry and `settingsMenuSections("public")` still returns `"site"`, every one
+ * of those tests still passes, and `public` still loses Site Properties. What
+ * actually closes it is the `Record<SettingsSectionId, ReactNode>` shape — one
+ * entry per id, rendered as siblings — together with THIS check, which reads
+ * the live DOM at every role and compares it to the contract.
+ *
+ * ⚠ The expected lists are RESTATED here rather than imported, because a
+ * `.mjs` harness cannot import a `.ts` module — and the restatement is the
+ * point. Two independent statements of one list, one of them measured out of a
+ * running browser: if `SETTINGS_SECTION_IDS` changes, this goes red and has to
+ * be changed on purpose.
+ */
+const SETTINGS_SECTIONS_BY_ROLE = {
+  Public: ["panelizer", "site", "units", "sandbox"],
+  Fabricator: ["panelizer", "site", "units", "sandbox", "admin"],
+  Admin: ["panelizer", "site", "units", "sandbox", "admin"],
+  Engineer: ["panelizer", "site", "units", "sandbox", "admin"],
+};
+await setViewport(1440, 1000);
+await installToolkit();
+const settingsSectionsByRole = [];
+for (const role of ROLE_LABELS) {
+  await setRole(role);
+  await clickSelectorUntil(
+    '[data-bar-control="settings"]',
+    "the Settings menu",
+    `Boolean(document.querySelector('#settings-note [data-settings-section]'))`,
+  );
+  const reading = await evaluate(`(() => {
+    const note = document.getElementById('settings-note');
+    const sections = [...note.querySelectorAll('[data-settings-section]')];
+    const byId = (id) => note.querySelector('[data-settings-section="' + id + '"]');
+    const panelizer = byId('panelizer');
+    const site = byId('site');
+    const admin = byId('admin');
+    return {
+      sections: sections.map((e) => e.dataset.settingsSection),
+      panelizerPresent: !!panelizer,
+      sitePresent: !!site,
+      /* The hole stated directly, in the only terms that can see it: is the
+         relocated section a DESCENDANT of the role-gated group? The id list
+         cannot answer this; the DOM can. */
+      panelizerInsideAdmin: !!(panelizer && admin && admin !== panelizer && admin.contains(panelizer)),
+      siteInsideAdmin: !!(site && admin && admin !== site && admin.contains(site)),
+      scopeGroupInsideThePanelizer: !!note.querySelector('[data-settings-section="panelizer"] [aria-label="Scope of work"]'),
+    };
+  })()`);
+  settingsSectionsByRole.push({ role, want: SETTINGS_SECTIONS_BY_ROLE[role], ...reading });
+  await clickSelector('#settings-note button[title="Hide this note"]', "the Settings note's close button");
+  await sleep(300);
+}
+await setRole(ROLE_LABELS[0]);
+await clickSelectorUntil(
+  '[data-bar-control="settings"]',
+  "the Settings menu",
+  `Boolean(document.querySelector('#settings-note [data-settings-section]'))`,
+);
+await shot("06b-settings-sections-at-public");
+await clickSelector('#settings-note button[title="Hide this note"]', "the Settings note's close button");
+await sleep(300);
+record(
+  "the-settings-notes-sections-in-the-dom-match-settingsmenusections-at-every-role",
+  { byRole: settingsSectionsByRole, roles: settingsSectionsByRole.length },
+  // ORDER is included, not just membership: Panelizer FIRST is the answer to
+  // Tommy's "where is it?", so the right sections in the wrong order is a
+  // finding rather than a detail. `admin` is the only id ever withheld and it
+  // is withheld from `Public` alone — counted both ways so a gate that stopped
+  // gating and a gate that started over-gating both fail.
+  (d) =>
+    d.roles === 4 &&
+    d.byRole.every(
+      (r) =>
+        JSON.stringify(r.sections) === JSON.stringify(r.want) &&
+        r.panelizerPresent === true &&
+        r.sitePresent === true &&
+        r.panelizerInsideAdmin === false &&
+        r.siteInsideAdmin === false &&
+        r.scopeGroupInsideThePanelizer === true,
+    ) &&
+    d.byRole.find((r) => r.role === "Public").sections.includes("admin") === false &&
+    d.byRole.filter((r) => r.sections.includes("admin")).length === 3,
+);
+
 console.log("7. the thresholds, bisected in the browser");
 await setViewport(1440, 1000);
 await installToolkit();
@@ -1950,72 +2109,67 @@ record(
 
 console.log("10. Region 3's signature at every stop — the single-writer test");
 /**
- * ⚠ HOW THE PROOF CHANGED WHEN THE DIAL WENT.
+ * ⚠ HOW THE PROOF CHANGED WHEN THE DIAL WENT, AND AGAIN AT U3.
  *
  * U1 proved one writer two ways: ACROSS the change (Region 3's signature at
  * every stop, recorded off the DIAL before U1, compared against the menus
  * after) and WITHIN one run (the dial at one width vs the menus at another, on
- * one design, byte for byte). **The second half is impossible now — there is no
- * second control to compare against.**
+ * one design, byte for byte). The second half became impossible when the dial
+ * was removed — there is no second control to compare against — and was
+ * replaced by the TWO-PATH comparison below: each stop is reached twice, once
+ * directly and once after a detour through a stop of the other kind, and
+ * Region 3 must be byte-for-byte identical both times. That is the half the
+ * cross-run comparison could not make (it normalised digits away), and it
+ * catches precisely the failure the plan names as most likely — `showWraps`
+ * left true on a plan view arrived at from 3D — because the detour is what
+ * sets those flags in the first place.
  *
- * So the within-run half is replaced by a TWO-PATH comparison: each stop is
- * reached twice, once directly and once after a detour through a stop of the
- * other kind, and Region 3 must be byte-for-byte identical both times. That is
- * the half the cross-run comparison cannot make (it normalises digits away),
- * and it catches precisely the failure the plan names as most likely —
- * `showWraps` left true on a plan view arrived at from 3D — because the detour
- * is what sets those flags in the first place.
+ * ⚠⚠ **`region3-baseline.json` IS RETIRED AT U3, BY A DECISION TAKEN IN
+ * ADVANCE**, recorded in this harness's own README ("What happens to
+ * region3-baseline.json at U3 and U5 — decide now, not then") and in the spec.
+ * The reason it was decided early is that nobody decides it calmly on the day
+ * a red run blocks a merge: it is a recording of Region 3 as driven by the
+ * **view dial**, which no longer exists, so once it stops matching the only
+ * honest move is to retire it — regenerating it off the menus would turn a
+ * two-control comparison into a self-comparison that passes by construction
+ * while still looking like the strongest check in the file.
+ *
+ * **It was still GREEN when it was retired, and that is recorded rather than
+ * glossed.** U3 moved Site Properties and the Panelizer into Settings and
+ * touched none of the four view flags, so the comparison passed one last time
+ * on 2026-09-29 — all 8 stops, zero differences — and that run is in this
+ * repository's history, in the commit before the one that removed it. The
+ * retirement is therefore a deliberate simplification, not a red check being
+ * deleted to go green.
+ *
+ * **The file itself is KEPT, not deleted**: it is the only recording of
+ * Region 3 as a control other than these menus produced it, and it can never
+ * be re-made. It is simply no longer asserted against.
  */
 const stopSignatures = {};
 if (PASS === "projection") {
   throw new Error("the projection pass records Region 3 off the dial, which no longer exists");
 }
-if (!fs.existsSync(REGION3_FILE)) throw new Error(`no ${path.basename(REGION3_FILE)} — it is a kept artefact and cannot be regenerated`);
-const baseline = JSON.parse(fs.readFileSync(REGION3_FILE, "utf8"));
 await setViewport(1440, 1000);
 await installToolkit();
-const diffs = [];
-const compared = [];
-for (const [label, want] of Object.entries(baseline.stops)) {
-  const reached = await selectStopByMenu(label);
-  if (!reached) {
-    diffs.push({ label, why: "not reachable from the bar menus" });
-    continue;
-  }
-  const got = await evaluate(`window.__u1.region3()`);
-  stopSignatures[label] = got;
-  compared.push(label);
-  // `shape`, not `signature` — see region3()'s own note. Across two runs the
-  // drawn footprint differs by a pixel, so the wall weights Region 3 prints
-  // legitimately differ; everything else must not.
-  const wantShape = want.shape ?? String(want.signature).replace(/\d+/g, "#");
-  if (!got || got.shape !== wantShape) {
-    diffs.push({
-      label,
-      wantLines: want.lines,
-      gotLines: got ? got.lines : null,
-      firstDifference: got ? firstDifferingLine(wantShape, got.shape) : "region 3 was not found at all",
-    });
-  }
+/* The stop list now comes from the MENUS THEMSELVES — the labels read out of
+   the open Design and View menus in step 5 — rather than from the retired
+   baseline's key set. Deduplicated because a stop reachable from both menus
+   would otherwise be walked twice. */
+/**
+ * ⚠ THE STOP COUNT, PINNED — it is the number `region3-baseline.json` used to
+ * hold by listing its 8 keys, and after that file was retired at U3 nothing
+ * else in this harness held it. Eight is `2D Floor Plan` + four wall
+ * elevations + `3D Boxes` + `3D Framed` + `Membranes` on the rectangle step 1
+ * draws. If a stop is legitimately added or removed, this number moves WITH
+ * the change and says so; it does not get to drift on its own.
+ */
+const EXPECTED_VIEW_STOPS = 8;
+const compared = [...new Set(allStopLabels)];
+for (const label of compared) {
+  if (!(await selectStopByMenu(label))) throw new Error(`could not reach ${label} from the bar menus`);
+  stopSignatures[label] = await evaluate(`window.__u1.region3()`);
 }
-record(
-  "region-3-renders-identically-for-every-stop-before-and-after",
-  {
-    comparedStops: compared,
-    baselineStops: Object.keys(baseline.stops),
-    baselineDrivenBy: baseline.drivenBy,
-    differences: diffs,
-    comparedOn: "shape (digits normalised — two runs draw two slightly different buildings)",
-  },
-  // THE SINGLE-WRITER TEST, HALF ONE: across the change, and now also across the
-  // dial's removal. The baseline was recorded with the DIAL driving the stops,
-  // so this is still a two-control comparison — it is simply the only one left,
-  // and it cannot be re-made. Region 3 keys off elevationWall / viewMode /
-  // showWraps, so a second writer leaving a flag set shows up here as a changed
-  // shape. Every baseline stop must be compared: a stop the menus cannot reach
-  // is a difference, not an excuse to skip it.
-  (d) => d.differences.length === 0 && d.comparedStops.length === d.baselineStops.length,
-);
 
 const twoPath = [];
 const detourFor = (label) => (label.startsWith("3D") || label === "Membranes" ? "2D Floor Plan" : "3D Boxes");
@@ -2035,7 +2189,13 @@ for (const label of compared) {
 }
 record(
   "the-same-stop-reached-two-ways-leaves-region-3-byte-for-byte-identical",
-  { twoPath, comparedOn: "the full signature, digits included", stops: twoPath.length },
+  {
+    twoPath,
+    comparedOn: "the full signature, digits included",
+    stops: twoPath.length,
+    comparedLabels: compared,
+    expectedStops: EXPECTED_VIEW_STOPS,
+  },
   // THE SINGLE-WRITER TEST, HALF TWO, REBUILT. One design, one run, one
   // control — so the comparison can be exact rather than shape-only. Every stop
   // is visited directly and again after a detour through the OTHER menu, which
@@ -2043,7 +2203,15 @@ record(
   // first place. Any difference at all — a digit, a pressed state, a section
   // present one way and not the other — is `handleViewerStopChange` not being
   // the only writer, or not being idempotent about the flags it does not own.
-  (d) => d.stops >= 6 && d.twoPath.every((t) => t.identical === true),
+  // ⚠ A HARD PIN, NOT A FLOOR — restored 2026-09-29 at U3's review. The
+  // retired `region3-baseline` step asserted exactly its 8 keys; once it went,
+  // a `>= 6` floor was the only thing left holding the count, and a run that
+  // quietly walked two stops fewer would have gone green on every other
+  // assertion in this file. THE COUNT IS PART OF THE CHECK.
+  (d) =>
+    d.stops === EXPECTED_VIEW_STOPS &&
+    d.comparedLabels.length === EXPECTED_VIEW_STOPS &&
+    d.twoPath.every((t) => t.identical === true),
 );
 
 function firstDifferingLine(a, b) {

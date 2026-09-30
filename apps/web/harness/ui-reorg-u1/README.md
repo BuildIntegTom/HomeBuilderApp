@@ -240,6 +240,17 @@ wide-end only, and it is still substantial: the company name whole from
   only because they were checked on in the Panelizer.
 - **A real mouse reaches Membranes from the bar at 360, 710 and 1280** — pressed
   and released at the control's own coordinates, not an element dispatch.
+- ⚠ **U3 — the Panelizer's scope checkboxes still gate the Design menu, from
+  their new home inside ⚙ Settings.** The Design menu's subject groups are read
+  **twice**: once at the default scope (Floors, Roof and Foundation off since
+  Smearforn Stage 0) and again with all four ticked, and each reading is
+  compared to **the checkbox states it was taken under** rather than to a
+  hard-coded list — so a gate that had stopped working cannot pass by looking
+  like a list that happens to match, and one reading alone cannot pass either.
+  This is U3's actual acceptance criterion: moving the Panelizer is what
+  satisfies Tommy's *"all floor, foundation, and roof options should be a
+  checkbox toggle under settings"*, and the way that move fails silently is the
+  boxes still rendering and still ticking while the menu stops changing.
 
 ## The single-writer test, and how it survived the dial's removal
 
@@ -248,15 +259,20 @@ encoding five stops, and sidebar Region 3 keys off exactly those. So Region 3
 rendering identically is the direct test that `handleViewerStopChange` stayed the
 only writer.
 
-U1 proved it two ways. **One of them is impossible now** — it compared the dial
-against the menus within a single run, and there is no second control left. So:
+U1 proved it two ways. **One of them was impossible after the dial went** — it
+compared the dial against the menus within a single run, and there is no second
+control left. **The other was RETIRED AT U3**, by the decision taken in advance
+below. What remains is the two-path test, which is the one the decision says to
+keep:
 
-- **Across the change** — the eight stops' Region 3 signatures, recorded off the
-  **dial** in `region3-baseline.json` before any of this, and re-derived off the
-  **menus** now. Compared on `shape`, digits normalised, because two runs draw
-  two slightly different buildings by a pixel of mouse drag. ⚠ **That baseline
-  can never be re-made**: it is the only recording of Region 3 as a control other
-  than these menus produced it.
+- ~~**Across the change** — the eight stops' Region 3 signatures, recorded off
+  the **dial** in `region3-baseline.json`, re-derived off the **menus** and
+  compared on `shape`.~~ ⚠ **RETIRED AT U3, 2026-09-29.** It was **still green
+  when it was retired** — U3 moved Site Properties and the Panelizer into
+  Settings and touched none of the four view flags, so all 8 stops matched with
+  zero differences one last time, and that run is in the repository's history in
+  the commit before the one that removed the check. The baseline **file is
+  kept** (it cannot be re-made) and is simply no longer read.
 - **Two paths, one run** — the replacement for the lost half. Every stop is
   reached twice: directly, and again after a detour through a stop of the other
   kind. Region 3 must be **byte-for-byte identical** both times, digits included.
@@ -312,7 +328,10 @@ budget is 3 attempts; the run FAILS if any click needs more than 2, so the net
 can catch the known race without quietly becoming load-bearing. The counts are
 in `coldClickAttempts`.
 
-### ⚠ What happens to `region3-baseline.json` at U3 and U5 — decide now, not then
+### ⚠ What happens to `region3-baseline.json` at U3 and U5 — decided in advance, DONE at U3
+
+**Carried out on 2026-09-29, at U3.** The section below is kept verbatim as the
+reasoning; what follows it is what was actually done.
 
 U3 moves Site Properties and the Panelizer into Settings; U5 deletes the right
 sidebar. Neither touches the four view flags, but **U5 in particular will
@@ -327,6 +346,16 @@ check in the file. The within-run two-path test survives any such change and is
 the one to keep. Written down here because nobody will be deciding this calmly on
 the day a red run blocks a merge.
 
+**What was done, U3, 2026-09-29.** The comparison step is gone from `run.mjs`;
+the two-path test now takes its stop list from the **menus** (the labels read in
+step 5) rather than from the baseline's key set. ⚠ **It was still GREEN when it
+was retired** — U3 touched none of the four view flags, so all 8 stops matched
+with zero differences on its last run, and that run is committed one commit
+before the removal. So this is a deliberate simplification taken at the moment
+the decision named, not a red check deleted to go green; anyone who disagrees
+has the last passing evidence to argue from. **The file is KEPT and is never to
+be regenerated.**
+
 ## The evidence files
 
 | file | what it records |
@@ -336,13 +365,14 @@ the day a red run blocks a merge.
 | `evidence-u1-labelled-bar.json` | ⚠ **KEPT, NOT REGENERATED.** U1's built bar: labelled Design/View at 1454px, the dial, the wordmark, the four tab items. The "before" for everything above, and the only recording of a bar that no longer exists. |
 | `evidence-u1-as-built.json` | U1's first shipped form, menus at 1200px, where the company-name assertion **fails** — the kept failing "before" for the shed-order fix. |
 | `evidence-projection.json` | the pre-U1 bar with all four of Tommy's new controls projected onto it. Not re-runnable. |
-| `region3-baseline.json` | Region 3's signature at every stop, **driven by the dial**. Cannot be re-made. |
+| `region3-baseline.json` | ⚠ **RETIRED AT U3 — kept, never read, never to be regenerated.** Region 3's signature at every stop, **driven by the dial**. Cannot be re-made. |
 
 ## Locators
 
 Nothing is keyed to an incidental element. Controls by `data-bar-control`, the
 menus by `data-view-menu` / `-owner` / `-word` / `-current-stop`, entries by
-`data-view-stop` and `data-design-subject`, groups by `data-menu-group`, Region 3
+`data-view-stop` and `data-design-subject`, groups by `data-menu-group`, the
+Settings note's sections by `data-settings-section` (U3), Region 3
 by `data-sidebar-region-3`. CSS-module class names are hashed build artefacts and
 are never written down: they are found by the **stem** the source file uses.
 
