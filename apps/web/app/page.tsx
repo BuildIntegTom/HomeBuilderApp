@@ -2338,14 +2338,10 @@ export default function LayoutEditor() {
    * whole reasoning, and the `cornerBraceCombineRefusals` memo below for where
    * a user is told. Derived, never stored.
    *
-   * ⚠ A fresh `handleDraw` does NOT clear `boxBeamCoverageByWallId`,
-   * `midWallBeamsByStoryAndWallId` or `spanningHeadersByStoryAndWallId` (it
-   * clears the second story and the run stops, and has always left these), so
-   * drawing a new rectangle over a project that had beams can leave a wall id
-   * pinned that no longer carries anything. **That predates this and is not
-   * fixed here**, and the direction it fails in is the safe one: the wall keeps
-   * its 3/4in safety gap and one more panel, which is a visible difference and
-   * never a part in the wrong place. */
+   * A fresh `handleDraw` now clears all three records it reads, so a wall id
+   * cannot stay pinned by a beam or a header belonging to a building that no
+   * longer exists — see the reset in `handleDraw`, which is there for the
+   * stale RANGES rather than for the pin. */
   const slotIndexPinnedWallIds = useMemo(
     () =>
       pinnedSlotIndexWallIds({
@@ -2629,6 +2625,24 @@ export default function LayoutEditor() {
     // building, so it goes with the building, exactly as this path already
     // discards openings and braced-panel decisions via `retile`.
     setWallRunStopsByWallId({});
+    // Same statement, about the three records that are indexed by SLOT
+    // POSITION: the roofline Box Beam's coverage, every Mid-Wall Bond Beam and
+    // every spanning header. A fresh draw left all three standing, and a
+    // `[startSlotIndex, endSlotIndex)` range that outlives its building is not
+    // merely stale — wall ids are REUSED ("AB".."DA" for every rectangle,
+    // "0".."7" for every octagon, see `buildRectangleFootprint`), so the range
+    // reattaches to whatever wall takes the id and becomes a fabricated part
+    // pointing at panels of a building that no longer exists. That is the same
+    // class of bug `pruneOpeningMemoryToLiveWalls` fixed for the opening
+    // memory, one record over.
+    //
+    // It also closes the `slotIndexPinnedWallIds` case named in that memo's
+    // own comment: a stale wall id could keep a brand-new wall pinned, which
+    // failed safe (a visible 3/4in gap and one more panel) but for no reason
+    // anyone could see.
+    setBoxBeamCoverageByWallId({});
+    setMidWallBeamsByStoryAndWallId({ ground: {}, second: {} });
+    setSpanningHeadersByStoryAndWallId({ ground: {}, second: {} });
     setBaseWallSlots(retile(fp, nextLeastAccessible, nextPrimary, {}));
     setShapeTool("edit");
     // A brand-new footprint has no meaningful relationship to whatever
