@@ -17,6 +17,20 @@
   severity-1 warnings**. A "zero delta" claim that counted only errors once
   missed a live `react-hooks/exhaustive-deps` warning on a memo that fed the
   cut list, which is a warning that cuts real parts wrong.
+- **The zero-delta gate is not one rule — judge by which rule moved.** The
+  gate exists because a `react-hooks/exhaustive-deps` **warning** once hid a
+  live defect on a memo that fed the cut list, i.e. a warning that cut real
+  parts wrong. So: `exhaustive-deps`, `refs`, `set-state-in-effect`,
+  `set-state-in-render`, `purity` and `immutability` must **never** rise —
+  those track correctness. `preserve-manual-memoization` tracks React
+  Compiler memoization hints and **`page.tsx` is already saturated with it**
+  (61 on `ac55a39`, including 6854/6855/6872/6873 around the
+  `absorbedCornerWalls` memo). It may rise **only** when copying an existing
+  flagged pattern, and only if every new error is named individually in the
+  report with the pattern it came from. Recorded 2026-09-30 when the
+  corner-brace Review Log entry copied `absorbedCornerWalls` exactly and
+  took +4 of that rule, with `exhaustive-deps` unchanged at 12. **A rise you
+  cannot attribute is a failure, not an exception.**
 - **Lint does not work from a git worktree that has no root `node_modules`,
   and it fails in TWO different ways depending on how you invoke it.**
   `npm run lint --workspace=apps/web` from the worktree dies immediately
