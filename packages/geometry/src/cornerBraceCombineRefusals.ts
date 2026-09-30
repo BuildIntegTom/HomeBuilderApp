@@ -61,14 +61,26 @@ function isCorner(slot: PanelSlot | undefined): boolean {
  *   * the safety gap stays a visible 3/4in spacer rather than merging into the
  *     brace, and the corner's brace lands on an ordinary standard panel
  *     further in;
- *   * **on 1,158 measured ends that panel sits 3ft to 5ft in, past an
- *     opening**, not "adjacent but one";
- *   * and on **6,544 measured walls the wall goes from two braced panels to
+ *   * **on 4,064 measured ends that panel sits 3ft 3/4in in, past an
+ *     opening**, not "adjacent but one" — see the histogram under "the 3/4in
+ *     step" below for the other distances;
+ *   * and on **6,152 measured walls the wall goes from two braced panels to
  *     one**, because the brace the far corner's walk finds is the same panel
- *     the near corner's walk found. Tommy's rule is one brace per corner
- *     ("each wall must have two braced panels on it, touching each side of
- *     each corner panel"), so that wall is legal on its length and short of
- *     his rule at the same time.
+ *     the near corner's walk found. Every one of those 6,152 owns two corners
+ *     and carries exactly one brace on the whole wall. Tommy's rule is one
+ *     brace per corner ("each wall must have two braced panels on it, touching
+ *     each side of each corner panel"), so that wall is legal on its length
+ *     and short of his rule at the same time.
+ *
+ * ⚠ **Every count in this comment is measured on ONE sweep and no other: the
+ * 790,440-wall product sweep** (every eighth from 12in to 600in x standard
+ * widths {39, 40, 48} x 4 corner configs x 2 gap ends x 7 opening sets), the
+ * same one `bracedPlacement.test.ts` runs. An earlier version of this file
+ * quoted the first three figures from a smaller 6-opening-set sweep beside
+ * figures from this one, unlabelled, which is exactly the thing a file whose
+ * job is to be the honest record may not do. All of them are now pinned by
+ * `cornerBraceCombineRefusals.test.ts`'s census, so they fail rather than
+ * drift.
  *
  * A wall that is legal and carries one brace where the rule asks for two is a
  * fact only an engineer can bless, and the Review Log is the one document that
@@ -89,8 +101,20 @@ function isCorner(slot: PanelSlot | undefined): boolean {
  * Only ends where the wall actually BUILDS a corner panel. An end with no
  * corner has no corner panel for a brace to touch, so Tommy's rule has
  * nothing to say about it; the combine can still be refused there and that
- * refusal is simply not this entry's business. Measured: of the refusal walls
- * in the product sweep, 22,346 of 25,426 own at least one corner.
+ * refusal is simply not this entry's business. Measured on the same
+ * 790,440-wall product sweep: **28,979 of 32,644 refusal walls own at least
+ * one corner**, where a "refusal wall" is one whose rule-1 corner walk reached
+ * a plain safety gap — i.e. the combine was attempted there and did not fire.
+ *
+ * ⚠ **One related figure is NOT pinned and cannot be, so read it as dated:**
+ * of those 32,644, **13,355 come out carrying one fewer braced panel than they
+ * did before the 2026-09-29 rewrite, and 0 carry more.** That is a comparison
+ * against an implementation that is no longer in the tree (`applyBracedPlacement`
+ * as of commit b714fdb, whose combine paid by shedding width onto a neighbour
+ * clamped at zero). Re-verified against that commit on 2026-09-30; if the
+ * combine changes again, re-measure it the same way or delete the sentence
+ * rather than carrying it forward untested. The 32,644 and 28,979 halves ARE
+ * pinned, and they are measured from this code alone.
  *
  * ### The one case deliberately NOT reported: the 3/4in step
  *
