@@ -745,14 +745,38 @@ const readCanvasBox = async () =>
   await evaluate(
     `(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`,
   );
-let canvasBox = null;
+//
+// ⚠ **A FLOOR first, and the poll only EXTENDS it — and the floor REPLACES the
+// settle rather than adding to it.** Three things were measured here on
+// 2026-09-29 and all three matter:
+//
+// 1. Replacing the original flat `sleep(9000)` with a bare poll changed no
+//    assertion but dropped the MINIMUM wait from 9s to 3s, so on a fast machine
+//    the drag below started about six seconds earlier than the run these
+//    coordinates were tuned at.
+// 2. The original 9s passed, and 3s passes. **9s + the 2s settle — 11s — FAILS**,
+//    reproducibly, two runs out of two: `context-line-names-the-view-as-the-app-
+//    labels-it` comes back with `plan: null`, i.e. the FIRST
+//    `openIcon("Report Bug / Request Feature")` after the drag does not leave
+//    the note on screen, while every later one does. The same run at this
+//    file’s previous commit is green.
+// 3. So the wait is bounded on BOTH sides here, which nobody knew. 9s with no
+//    settle is the timing this step was actually tuned at, and it is what this
+//    restores; the poll is pure insurance above it.
+//
+// ⚠ **Do not add a settle back on top of this floor**, and if a floor ever has
+// to move, re-run the whole file rather than this step — the failure lands two
+// steps later and does not look like a timing failure. The real fragility is
+// that `openIcon` TOGGLES and nothing asserts which way it went; making it
+// assert the note’s resulting state would remove the upper bound entirely, and
+// it is left alone here because that helper serves about ten steps in this file.
+await sleep(9000);
+let canvasBox = await readCanvasBox();
 for (let waitedMs = 0; waitedMs < 40000 && !canvasBox; waitedMs += 1000) {
   await sleep(1000);
   canvasBox = await readCanvasBox();
 }
-if (!canvasBox) throw new Error("no canvas after 40s — are you on localhost rather than 127.0.0.1?");
-// The canvas element can mount a beat before the editor finishes laying out.
-await sleep(2000);
+if (!canvasBox) throw new Error("no canvas after 49s — are you on localhost rather than 127.0.0.1?");
 const [cx, cy, cw, ch] = canvasBox;
 const x0 = cx + 60, y0 = cy + 80, x1 = cx + cw - 80, y1 = cy + ch - 120;
 await mouse("mousePressed", x0, y0);

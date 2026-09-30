@@ -209,25 +209,36 @@ describe("serializeProject / parseProjectFile round-trip", () => {
         includeSillOnBigHeader: true,
         zones: [{ type: "standard" as const, heightIn: 60, sillHeightIn: 36 }],
       };
+      // The memory is BOTH halves: the withheld anchor and the pre-stop order
+      // that puts it back on the correct side of the opening that survived. A
+      // file that carried only the first would restore a window and a door in
+      // each other places — see runStopOpenings.ts.
+      const memory = {
+        unbuilt: [withheld],
+        preStop: [
+          { beforeStandardCount: 1, withheld: false },
+          { beforeStandardCount: 3, withheld: true },
+        ],
+      };
       const state = makeState({
-        unbuiltOpeningsByStoryAndWallId: { ground: { AB: [withheld] }, second: {} },
+        unbuiltOpeningsByStoryAndWallId: { ground: { AB: memory }, second: {} },
       });
       const result = parseProjectFile(JSON.stringify(serializeProject(state)));
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.state.unbuiltOpeningsByStoryAndWallId).toEqual({ ground: { AB: [withheld] }, second: {} });
+      expect(result.state.unbuiltOpeningsByStoryAndWallId).toEqual({ ground: { AB: memory }, second: {} });
     });
 
     it("normalizes a half-written record rather than handing a consumer an undefined story", () => {
       const file = serializeProject(makeState());
       const halfWritten = {
         ...file,
-        state: { ...file.state, unbuiltOpeningsByStoryAndWallId: { ground: { AB: [] } } },
+        state: { ...file.state, unbuiltOpeningsByStoryAndWallId: { ground: { AB: { unbuilt: [], preStop: [] } } } },
       };
       const result = parseProjectFile(JSON.stringify(halfWritten));
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.state.unbuiltOpeningsByStoryAndWallId).toEqual({ ground: { AB: [] }, second: {} });
+      expect(result.state.unbuiltOpeningsByStoryAndWallId).toEqual({ ground: { AB: { unbuilt: [], preStop: [] } }, second: {} });
     });
 
     it("does not move PROJECT_FILE_VERSION — an additive optional key needs no bump", () => {

@@ -85,9 +85,9 @@ import {
   type PlaceablePanelType,
   type PlacementPanel,
   type GableWindowReservation,
-  type OpeningAnchor,
   type OpeningSeed,
   type RetileWithRunStopMemoryResult,
+  type RunStopOpeningMemory,
   type RoofBearingAnchorMode,
   type RoofProfilePoint,
   type Story,
@@ -371,6 +371,7 @@ import WallElevationDiagram from "./WallElevationDiagram";
 import styles from "./page.module.css";
 import elevationStyles from "./ElevationControls.module.css";
 import { tilerWouldChangeThePanelCount } from "./handPlacedWallRetile";
+import { pruneOpeningMemoryToLiveWalls, type OpeningMemoryByStoryAndWallId } from "./runStopOpeningMemory";
 import {
   placementCommitNotice,
   placementRefusalNotice,
@@ -1297,9 +1298,8 @@ export default function LayoutEditor() {
   // answer. Any handler that writes new slots out of
   // `retilePreservingOpenings` must write the memory it came back with too —
   // see that wrapper's own comment.
-  const [unbuiltOpeningsByStoryAndWallId, setUnbuiltOpeningsByStoryAndWallId] = useState<
-    Record<"ground" | "second", Record<string, OpeningAnchor[]>>
-  >({ ground: {}, second: {} });
+  const [unbuiltOpeningsByStoryAndWallId, setUnbuiltOpeningsByStoryAndWallId] =
+    useState<OpeningMemoryByStoryAndWallId>({ ground: {}, second: {} });
   // Every beam-count/height/coverage change moves this wall's own band
   // boundaries — reconciled here so each slot's own zones[] survives the
   // change instead of falling back to effectiveZonesForSlot's dumb
@@ -1903,6 +1903,11 @@ export default function LayoutEditor() {
   // The design as one ProjectState. Save Project and Save to cloud both
   // serialize exactly this, so the cloud document is the local file's document.
   const buildProjectState = (): ProjectState => {
+    // Stage 3's opening memory, with any wall id the footprint no longer has
+    // dropped. Wall ids are reused, so a memory outliving its wall would
+    // resurrect a window on an unrelated one — see the module's own doc
+    // comment, which also records the one gap this does NOT close.
+    const prunedOpeningMemory = pruneOpeningMemoryToLiveWalls(unbuiltOpeningsByStoryAndWallId, footprint);
     const state: ProjectState = {
       editorTab,
       viewMode,
@@ -1974,7 +1979,7 @@ export default function LayoutEditor() {
       roofEnabled,
       foundationEnabled,
       wallRunStopsByWallId,
-      unbuiltOpeningsByStoryAndWallId,
+      unbuiltOpeningsByStoryAndWallId: prunedOpeningMemory,
       wallReviewNotes,
     };
     return state;
@@ -2533,7 +2538,7 @@ export default function LayoutEditor() {
     oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined>,
     runStops: Record<string, WallRunStop> = wallRunStopsByWallId,
     story: "ground" | "second" = "ground",
-    remembered: Record<string, OpeningAnchor[]> = unbuiltOpeningsByStoryAndWallId[story],
+    remembered: Record<string, RunStopOpeningMemory> = unbuiltOpeningsByStoryAndWallId[story],
   ): RetileWithRunStopMemoryResult =>
     retilePreservingOpeningsPure(
       fp,
@@ -4140,7 +4145,7 @@ export default function LayoutEditor() {
     const newCornersById = new Map(fp.corners.map((c) => [c.id, c.point]));
     const oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined> = {};
     const nextRunStops: Record<string, WallRunStop> = {};
-    const nextRemembered: Record<string, OpeningAnchor[]> = {};
+    const nextRemembered: Record<string, RunStopOpeningMemory> = {};
     for (const w of fp.walls) {
       const start = newCornersById.get(w.startCorner)!;
       const end = newCornersById.get(w.endCorner)!;
@@ -4222,7 +4227,7 @@ export default function LayoutEditor() {
         const newCornersById = new Map(fp.corners.map((c) => [c.id, c.point]));
         const oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined> = {};
         const nextRunStops: Record<string, WallRunStop> = {};
-        const nextRemembered: Record<string, OpeningAnchor[]> = {};
+        const nextRemembered: Record<string, RunStopOpeningMemory> = {};
         for (const w of fp.walls) {
           const start = newCornersById.get(w.startCorner)!;
           const end = newCornersById.get(w.endCorner)!;
@@ -7070,7 +7075,7 @@ export default function LayoutEditor() {
       // stop does. Silence here would make a non-destructive decision look
       // like a deletion.
       const withheldByStory = stories
-        .map((s) => ({ story: s.id, count: (unbuiltOpeningsByStoryAndWallId[s.id]?.[wall.id] ?? []).length }))
+        .map((s) => ({ story: s.id, count: unbuiltOpeningsByStoryAndWallId[s.id]?.[wall.id]?.unbuilt.length ?? 0 }))
         .filter((s) => s.count > 0);
       const withheldSentence =
         withheldByStory.length > 0
@@ -8466,7 +8471,7 @@ export default function LayoutEditor() {
               // between a non-destructive decision and one that looks like it
               // ate a window.
               const withheld = stories.reduce(
-                (n, s) => n + (unbuiltOpeningsByStoryAndWallId[s.id]?.[elevationWall.id] ?? []).length,
+                (n, s) => n + (unbuiltOpeningsByStoryAndWallId[s.id]?.[elevationWall.id]?.unbuilt.length ?? 0),
                 0,
               );
               if (withheld === 0) return null;

@@ -3,9 +3,9 @@ import type {
   BoxBeamCoverage,
   Footprint,
   GableWindowReservation,
-  OpeningAnchor,
   PanelSlot,
   RoofBearingAnchorMode,
+  RunStopOpeningMemory,
   Story,
   TrussDoublingStrategy,
   WallRunStop,
@@ -369,12 +369,23 @@ export interface ProjectState {
    * Physically honest — an unbuilt section has no windows — and
    * non-destructive."*).
    *
-   * Per story, per wall: the `OpeningAnchor`s an unbuilt span swallowed. They
-   * are not in `baseWallSlots`/`stories[].wallSlots` at all — an unbuilt
-   * section of wall has no window in it, so nothing derived from slots (cut
-   * list, fabrication groups, shop drawings, price, weight) sees them — and
-   * they are not deleted either: reducing or clearing the stop hands them
-   * back to the tiler and the wall comes back exactly as it was.
+   * Per story, per wall: the `OpeningAnchor`s an unbuilt span swallowed,
+   * plus the pre-stop ORDER they sat in (`RunStopOpeningMemory`). They are not
+   * in `baseWallSlots`/`stories[].wallSlots` at all — an unbuilt section of
+   * wall has no window in it, so nothing derived from slots (cut list,
+   * fabrication groups, shop drawings, price, weight) sees them — and they are
+   * not deleted either: reducing or clearing the stop hands them back to the
+   * tiler and the wall comes back exactly as it was.
+   *
+   * The `preStop` half is not redundant bookkeeping: without it a surviving
+   * opening's ordinal is re-derived against the SHORTENED run while the
+   * remembered one still carries its long-run ordinal, and restoring sorts the
+   * two back in the wrong order. See `runStopOpenings.ts`'s module doc comment
+   * and the measurement in it.
+   *
+   * **Keys are pruned to walls the footprint still has, at write time** — see
+   * `pruneOpeningMemoryToLiveWalls` in page.tsx. Wall ids are reused, so a
+   * memory outliving its wall would resurrect a window on an unrelated one.
    *
    * **Optional, and therefore NOT a `PROJECT_FILE_VERSION` bump**, by this
    * file's own stated rule: it is an additive optional key with ONE shared
@@ -387,7 +398,7 @@ export interface ProjectState {
    * project file that predates today unopenable, and this key's absence has an
    * unambiguous meaning. It still needs a classification in
    * `cloud/redaction.ts`, which it has (`not-money`). */
-  unbuiltOpeningsByStoryAndWallId?: Record<"ground" | "second", Record<string, OpeningAnchor[]>>;
+  unbuiltOpeningsByStoryAndWallId?: Record<"ground" | "second", Record<string, RunStopOpeningMemory>>;
   /** Engineer role's own per-wall attributed notes (Tommy's Engineer Lens
    * mockup: a free-text note signed "- Eng. Smith") — see
    * wallReviewNotes.ts's own doc comment on why this is a separate concept
@@ -762,11 +773,17 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
         ? {
             unbuiltOpeningsByStoryAndWallId: {
               ground:
-                (state.unbuiltOpeningsByStoryAndWallId as Partial<Record<"ground" | "second", Record<string, OpeningAnchor[]>>>)
-                  .ground ?? {},
+                (
+                  state.unbuiltOpeningsByStoryAndWallId as Partial<
+                    Record<"ground" | "second", Record<string, RunStopOpeningMemory>>
+                  >
+                ).ground ?? {},
               second:
-                (state.unbuiltOpeningsByStoryAndWallId as Partial<Record<"ground" | "second", Record<string, OpeningAnchor[]>>>)
-                  .second ?? {},
+                (
+                  state.unbuiltOpeningsByStoryAndWallId as Partial<
+                    Record<"ground" | "second", Record<string, RunStopOpeningMemory>>
+                  >
+                ).second ?? {},
             },
           }
         : {}),

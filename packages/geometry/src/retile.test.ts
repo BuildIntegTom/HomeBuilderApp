@@ -12,6 +12,7 @@ import {
   wallGeometryFor,
 } from "./retile";
 import { getOpeningAnchors, retileWithOpenings, type OpeningAnchor } from "./tiling";
+import type { RunStopOpeningMemory } from "./runStopOpenings";
 import type { Footprint, PanelSlot, WallRunStop } from "./types";
 
 const THICKNESS_IN = 15.5;
@@ -542,14 +543,14 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
    * Measured layout, which every position below is read off:
    *
    *   corner   0      .. 25.5
-   *   braced   25.5   .. 65.5
+   *   standard 25.5   .. 65.5
    *   window   65.5   .. 127        <- the first window
    *   standard 127    .. 167
    *   standard 167    .. 199.625
    *   window   199.625.. 261.125    <- the second window
    *   standard 261.125.. 293.75
    *   gap      293.75 .. 294.5
-   *   braced   294.5  .. 334.5
+   *   standard 294.5  .. 334.5
    *   corner   334.5  .. 360
    *
    * The baseline goes back through this same function with NO stop, so it
@@ -591,7 +592,7 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     primary: Set<string>,
     oldSlots: Record<string, PanelSlot[] | undefined>,
     stops: Record<string, WallRunStop>,
-    remembered?: Record<string, OpeningAnchor[]>,
+    remembered?: Record<string, RunStopOpeningMemory>,
   ) =>
     retilePreservingOpeningsWithRunStopMemory(
       fp,
@@ -625,13 +626,45 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
   const shape = (slots: PanelSlot[]) =>
     slots.map((s) => ({ type: s.type === "braced" ? "standard" : s.type, widthIn: s.widthIn }));
 
+  /**
+   * The unstopped-project byte-identity claim, pinned against something that
+   * can actually disagree with it.
+   *
+   * ⚠ **This test used to compare `result.slotsByWallId` to
+   * `retilePreservingOpenings(...)` with the same arguments, and that could
+   * not fail:** `retilePreservingOpenings` is now DEFINED as
+   * `retilePreservingOpeningsWithRunStopMemory(...).slotsByWallId`, so both
+   * sides were the same call. The claim is worth keeping — every project ever
+   * saved is unstopped, and this change must be invisible to all of them — so
+   * it is pinned instead against a captured fixture for the wall with the
+   * openings, and against `retile`'s own output for the walls without.
+   */
   it("an unstopped project takes no new path at all — same slots, empty memory", () => {
     const { fp, primary, slots } = buildFixture();
     const result = run(fp, primary, slots, {});
     expect(result.unbuiltOpeningsByWallId).toEqual({});
-    expect(result.slotsByWallId).toEqual(
-      retilePreservingOpenings(fp, "A", primary, STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, slots, BRACED_SEED),
-    );
+
+    // Captured, not computed: the ten slots this wall tiles to, in order.
+    // 25.5 + 40 + 61.5 + 40 + 32.625 + 61.5 + 32.625 + 0.75 + 40 + 25.5 = 360.
+    expect(result.slotsByWallId[WALL_ID]!.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 25.5],
+      ["standard", 40],
+      ["window", 61.5],
+      ["standard", 40],
+      ["standard", 32.625],
+      ["window", 61.5],
+      ["standard", 32.625],
+      ["safety-gap", 0.75],
+      ["standard", 40],
+      ["corner", 25.5],
+    ]);
+    // And every wall that carries no openings is exactly what a plain
+    // `retile` of this footprint produces — a second, independent function.
+    const plain = retile(fp, "A", primary, STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    for (const wall of fp.walls) {
+      if (wall.id === WALL_ID) continue;
+      expect(result.slotsByWallId[wall.id]).toEqual(plain[wall.id]);
+    }
   });
 
   it("a stop that swallows a window drops it from the run, remembers it, and keeps the sum exact", () => {
@@ -647,8 +680,14 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     expect(after.filter((s) => s.type === "window").length).toBe(1);
     // Remembered, with its own height and sill intact.
     const withheld = result.unbuiltOpeningsByWallId[WALL_ID]!;
-    expect(withheld.length).toBe(1);
-    expect(withheld[0]).toMatchObject({ type: "window", widthIn: 61.5, heightIn: 60, sillHeightIn: 36 });
+    expect(withheld.unbuilt.length).toBe(1);
+    expect(withheld.unbuilt[0]).toMatchObject({ type: "window", widthIn: 61.5, heightIn: 60, sillHeightIn: 36 });
+    // And the pre-stop order beside it, which is what makes the restore put it
+    // back on the correct side of the window that survived.
+    expect(withheld.preStop).toEqual([
+      { beforeStandardCount: 1, withheld: false },
+      { beforeStandardCount: 3, withheld: true },
+    ]);
     // And the invariant whose failure produced Tommy's useless message.
     expect(sumEighths(after)).toBe(runEighths(fp, primary, stops));
   });
@@ -656,7 +695,7 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
   it("un-stopping restores the dropped window exactly, slot for slot", () => {
     const { fp, primary, slots } = buildFixture();
     const stopped = run(fp, primary, slots, { [WALL_ID]: { startStopIn: 0, endStopIn: 120 } });
-    expect(stopped.unbuiltOpeningsByWallId[WALL_ID]!.length).toBe(1);
+    expect(stopped.unbuiltOpeningsByWallId[WALL_ID]!.unbuilt.length).toBe(1);
     const restored = run(fp, primary, stopped.slotsByWallId, {}, stopped.unbuiltOpeningsByWallId);
     expect(shape(restored.slotsByWallId[WALL_ID]!)).toEqual(shape(slots[WALL_ID]!));
     // Every field the opening carried, back exactly — this is the promise.
@@ -675,7 +714,7 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     expect(geometry.hasCornerStart).toBe(false);
     expect(geometry.hasCornerEnd).toBe(false);
     expect(sumEighths(result.slotsByWallId[WALL_ID]!)).toBe(runEighths(fp, primary, stops));
-    expect(result.unbuiltOpeningsByWallId[WALL_ID]!.length).toBe(2);
+    expect(result.unbuiltOpeningsByWallId[WALL_ID]!.unbuilt.length).toBe(2);
     expect(result.slotsByWallId[WALL_ID]!.some((s) => s.type === "window")).toBe(false);
     const restored = run(fp, primary, result.slotsByWallId, {}, result.unbuiltOpeningsByWallId);
     expect(shape(restored.slotsByWallId[WALL_ID]!)).toEqual(shape(slots[WALL_ID]!));
@@ -688,7 +727,7 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     const stops = { [WALL_ID]: { startStopIn: wall.lengthFt * 12, endStopIn: 0 } };
     const result = run(fp, primary, slots, stops);
     expect(result.slotsByWallId[WALL_ID]).toEqual([]);
-    expect(result.unbuiltOpeningsByWallId[WALL_ID]!.length).toBe(2);
+    expect(result.unbuiltOpeningsByWallId[WALL_ID]!.unbuilt.length).toBe(2);
     // A wall the tiler built nothing on has no slots left to read anchors
     // from, so its windows can only come back out of the memory — which is
     // the case the memory exists for.
@@ -709,7 +748,7 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
       const result = run(fp, primary, slots, stops);
       const built = result.slotsByWallId[WALL_ID]!;
       const accounted =
-        built.filter((s) => s.type === "window").length + (result.unbuiltOpeningsByWallId[WALL_ID]?.length ?? 0);
+        built.filter((s) => s.type === "window").length + (result.unbuiltOpeningsByWallId[WALL_ID]?.unbuilt.length ?? 0);
       if (accounted !== 2) lost.push(`${endStopIn}in: ${accounted} windows accounted for, expected 2`);
       if (sumEighths(built) !== runEighths(fp, primary, stops)) sumOff.push(endStopIn);
       if (built.some((s) => s.type === "safety-gap" && s.secondaryType === "braced")) combinedGap.push(endStopIn);
@@ -744,5 +783,99 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     // the two assertions above are covering the path they were written for
     // rather than passing because it never ran.
     expect(combinedGap.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * **A start stop that drops one of two openings must not swap them.**
+   *
+   * The defect a review found in the first version of this change, and the
+   * reason the memory now carries the pre-stop order as well as the withheld
+   * anchors. Nothing was deleted by it — it was a silently wrong drawing, a
+   * door where a window was, which on a shop drawing is worse than a refusal.
+   *
+   * Why it needs its OWN fixture rather than `buildFixture`'s: the two
+   * openings have to be **different types**, or a swap is invisible. And why
+   * it needs a START stop: an end stop drops the high-ordinal openings and
+   * leaves the low-ordinal ones, so the survivors' re-derived ordinals stay
+   * below the remembered ones and the old plain sort agreed by accident. A
+   * start stop inverts that. Tommy's 174in wall is stopped from both ends and
+   * carries two openings — this shape, exactly.
+   *
+   * The whole loop is `start stop -> clear`, through
+   * `retilePreservingOpeningsWithRunStopMemory`, which is the function
+   * page.tsx calls. On the unfixed code 116 of these 533 stops came back with
+   * the window and the door in each other's places.
+   */
+  it("a start stop that drops one of two openings restores them in the right order, at every inch", () => {
+    // 47ft, owning both corners (its neighbours are the 55ft sides), with a
+    // window and a door far enough apart that a start stop can take the window
+    // and leave the door.
+    const fp = buildRectangleFootprint(47, 55);
+    const primary = allPrimary(fp);
+    const geometry = wallGeometryFor(fp, WALL_ID, primary, "A", THICKNESS_IN)!;
+    expect(geometry.lengthIn).toBe(564);
+    const openings: OpeningAnchor[] = [
+      { beforeStandardCount: 6, type: "window", widthIn: 61.5, heightIn: 60, sillHeightIn: 36 },
+      { beforeStandardCount: 8, type: "door", widthIn: 38, heightIn: 80 },
+    ];
+    const seeded = retileWithOpenings(
+      geometry.lengthIn,
+      STANDARD_WIDTH_IN,
+      REAL_CORNER_WIDTH_IN,
+      geometry.gapEnd,
+      geometry.hasCornerStart,
+      geometry.hasCornerEnd,
+      openings,
+      geometry.allowBorrow,
+    ).slots;
+    const base = retile(fp, "A", primary, STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const slots = run(fp, primary, { ...base, [WALL_ID]: seeded }, {}).slotsByWallId;
+    const baseline = getOpeningAnchors(slots[WALL_ID]!);
+    expect(baseline.map((a) => a.type)).toEqual(["window", "door"]);
+
+    const wrongOrder: number[] = [];
+    const lost: number[] = [];
+    const notExactWithMemory: number[] = [];
+    const notExactWithoutMemory: number[] = [];
+    let withheldAtLeastOnce = 0;
+    for (let startStopIn = 0; startStopIn <= 532; startStopIn++) {
+      const stopped = run(fp, primary, slots, { [WALL_ID]: { startStopIn, endStopIn: 0 } });
+      const withheld = stopped.unbuiltOpeningsByWallId[WALL_ID]?.unbuilt.length ?? 0;
+      if (withheld > 0) withheldAtLeastOnce++;
+      const restored = run(fp, primary, stopped.slotsByWallId, {}, stopped.unbuiltOpeningsByWallId);
+      const got = getOpeningAnchors(restored.slotsByWallId[WALL_ID]!);
+      const signature = (a: OpeningAnchor[]) => a.map((o) => `${o.type}:${o.widthIn}`).join("|");
+      if (got.length !== baseline.length) lost.push(startStopIn);
+      else if (signature(got) !== signature(baseline)) wrongOrder.push(startStopIn);
+      if (JSON.stringify(got) !== JSON.stringify(baseline)) {
+        (withheld > 0 ? notExactWithMemory : notExactWithoutMemory).push(startStopIn);
+      }
+    }
+    // The sweep is only worth anything if it actually reaches the failing
+    // shape — a stop deep enough to swallow the first opening but not the
+    // second.
+    expect(withheldAtLeastOnce).toBeGreaterThan(50);
+    // Nothing lost — the property "drop them, and remember" promises.
+    expect(lost.slice(0, 12)).toEqual([]);
+    // Nothing SWAPPED — the property this test exists for.
+    expect(wrongOrder.slice(0, 12)).toEqual([]);
+    // And wherever the stop DID withhold something, the restore is byte-exact:
+    // the remembered anchor and the survivor both come back on their own
+    // pre-stop ordinals.
+    expect(notExactWithMemory.slice(0, 12)).toEqual([]);
+
+    // ⚠ **The other band is real, and it is NOT this feature's.** Where the
+    // stop shortens the run but swallows no opening, there is no memory to
+    // carry anything and the survivors' ordinals are simply re-derived against
+    // the shorter run — on this wall the door drops from ordinal 8 to 7 from a
+    // 151in start stop, and clearing the stop re-tiles it at 7. That is
+    // `retilePreservingOpenings` behaviour that predates Stage 3 entirely
+    // (`tileOneWallPreservingOpenings` has always read its anchors back out of
+    // `oldSlots`), it moves an opening by one standard panel and never past
+    // another opening, and an opening memory cannot fix it because there is
+    // nothing withheld to remember. Asserted as a KNOWN band rather than
+    // silently excluded, so that if it ever grows to include a stop that
+    // withheld something, this test fails.
+    expect(notExactWithoutMemory.every((s) => s >= 151)).toBe(true);
   });
 });
