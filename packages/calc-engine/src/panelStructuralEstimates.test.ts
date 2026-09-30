@@ -99,6 +99,33 @@ describe("computeBracedPanelShearCapacityLb", () => {
     expect(shearLb).toBeGreaterThan(0);
   });
 
+  it("moves with the panel's WIDTH, and the movement is bounded inside the tiler's [24in, 48in] band", () => {
+    // ⚠ This pins a claim made in prose elsewhere: `planCornerBraceCombine`
+    // (packages/geometry) lets the corner-brace combine RESIZE a pre-existing
+    // braced panel to settle its leftover, and the argument that this is safe
+    // rests on these numbers. They were quoted in a doc comment and nothing
+    // asserted them, which is how a figure drifts.
+    //
+    // ⚠ The model behind them derives from `pending-BI-confirmation` values.
+    // Asserting a number here pins the CODE's behaviour; it does not promote
+    // the underlying figure to confirmed.
+    const at = (widthIn: number) =>
+      Math.round(computeBracedPanelShearCapacityLb(buildBracedPanelMembers(widthIn, 15.75, 96, false, "chevron", false)));
+    // 96in tall, 15.75in thick, chevron — not monotonic: it rises off the
+    // narrow end, peaks near 40in and falls again as the brace lies flatter.
+    expect(at(24)).toBe(2_678);
+    expect(at(40)).toBe(3_177);
+    expect(at(48)).toBe(3_040);
+    // The band is what bounds the permission: at this shape the whole
+    // [24in, 48in] range sits within 16% of its own peak — the 24in end is the
+    // worst of it — which is a fraction of the cost of the thing the combine
+    // is forbidden to do instead, swallowing the brace, at -100%.
+    const inBand = [24, 30, 36, 40, 44, 48].map(at);
+    const spreadPct = (Math.min(...inBand) / Math.max(...inBand) - 1) * 100;
+    expect(spreadPct).toBeGreaterThan(-16);
+    expect(spreadPct).toBeLessThan(-15);
+  });
+
   it("contributes ~0 shear for a brace standing perfectly vertical (tiltDeg=0)", () => {
     const verticalBrace = {
       memberId: "test_brace",

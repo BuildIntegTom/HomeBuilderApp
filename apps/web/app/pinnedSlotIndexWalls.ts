@@ -14,32 +14,64 @@ import type { BoxBeamCoverage } from "@building-integrity/geometry";
  *     beam (`MidWallBeam.startSlotIndex`/`endSlotIndex`);
  *   * `spanningHeadersByStoryAndWallId` — every spanning ("triple") header.
  *
- * None of them is derived and nothing remaps them. `Building3DView.tsx` reads
+ * All three are stored rather than derived, and `Building3DView.tsx` reads
  * `offsetsIn[header.startSlotIndex] ?? 0` — a **silent fallback to zero**, not
  * an error — so an index that stops pointing at the panel it was drawn against
  * produces a part in the wrong place rather than a complaint.
  *
+ * ⚠ **"Nothing remaps them" would be false, and an earlier version of this
+ * comment said it.** `shiftSlotCoverageRecords` in `page.tsx` remaps all three
+ * — the Box Beam's coverage, every Mid-Wall Bond Beam and every spanning
+ * header — on the **insert/delete-panel path**, including the two-move case
+ * where an insert is paid for by absorbing a panel elsewhere, and it reports
+ * whatever it could not keep through `placementNotice.ts`. What has no
+ * remapper is the **re-tile** path, which is the one the corner-brace combine
+ * runs on.
+ *
  * The corner-brace combine (see `applyBracedPlacement`) removes one panel from
  * the run when it fires, which shifts every index at or past it by one. So a
- * wall carrying any of these ranges is **pinned**: the combine is refused
- * there, the wall keeps its visible 3/4in safety gap, and the Review Log says
- * so per wall.
+ * wall carrying any of these ranges is **pinned**: the combine does not fire
+ * anywhere new on it, the wall keeps its visible 3/4in safety gap, and the
+ * Review Log says so per wall. ⚠ **The pin runs in both directions** — a gap
+ * this wall had ALREADY combined stays combined, because un-combining is the
+ * same slide backwards; see `applyBracedPlacement`'s `preCombinedGapOrdinals`.
  *
- * ### Why refuse rather than remap
+ * ### Why refuse here, when the insert/delete path remaps
  *
- * Stage 2b already refuses a wall-run stop that would disturb a spanning
- * header (`spanningHeaderRunStopRefusal`) instead of adjusting the header,
- * because a header's fabricated width IS the sum of the panels it spans and
- * silently re-cutting a part already on a shop sheet is not a trade worth
- * making. The same answer, for the same reason, one rule over. Tommy's two
- * decisions of 2026-09-29 point the same way: refuse and explain rather than
- * change something silently.
+ * Because the two paths know different things, not because one is more
+ * careful than the other.
+ *
+ * An insert or a delete is **one named panel at one known index**, with every
+ * other panel unchanged; "which panel does this index mean now" has an exact
+ * answer, and `shiftSlotCoverageRecords` computes it. A re-tile re-derives the
+ * whole run wholesale — widths, count and contents all move together — so
+ * per-index identity is not a property this app can currently promise (see the
+ * Stage 2 base-vs-overlay slot-index mismatch in the spec, still open). There
+ * is no correct remapping to apply, so applying one would be inventing an
+ * answer, which is the failure this whole convention exists to prevent.
+ *
+ * ⚠ **This does not contradict the house rule `shiftSlotCoverageRecords`
+ * states** — *"Reported and not refused, which is this app's standing rule on
+ * a re-tile path: a visible flag beats an edit the user cannot complete."*
+ * What is refused here is **the app's own suggestion**, not the user's edit:
+ * the beam, the header, the wall drag and the re-tile all complete exactly as
+ * asked. The user never hits a wall; the combine simply does not fire, which
+ * costs a 3/4in gap and one more panel, and the Review Log says so. If this
+ * rule is ever narrowed, keep that distinction — refusing an *edit* on this
+ * path would be the thing the house rule forbids.
+ *
+ * Stage 2b's own refusal is the nearer precedent: a wall-run stop that would
+ * disturb a spanning header (`spanningHeaderRunStopRefusal`) is refused rather
+ * than the header adjusted, because a header's fabricated width IS the sum of
+ * the panels it spans and silently re-cutting a part already on a shop sheet
+ * is not a trade worth making. Tommy's two decisions of 2026-09-29 point the
+ * same way: refuse and explain rather than change something silently.
  *
  * ### What this is deliberately NOT
  *
  * It is **not narrowed to "would this particular combine actually move this
  * particular range"**, though that is computable from the plan. A wall carrying
- * a beam or a header simply does not get the combine. The reason is that a
+ * a beam or a header simply does not get a NEW combine. The reason is that a
  * retile re-derives the whole run anyway, so "the range still points at the
  * same panels" is not a property this app can currently promise per-index
  * (see the Stage 2 base-vs-overlay slot-index mismatch in the spec, which is

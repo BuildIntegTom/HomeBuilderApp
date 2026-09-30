@@ -151,20 +151,49 @@ function settleResidualEighths(
  *       make. Walls the combine cannot pay for are refused and reported, not
  *       bought back by spending a brace somewhere else.
  *     * **Settled** (resized, never removed) — a plain "standard" slot, plus
- *       a "braced" slot whose brace came from the WALL'S OWN HISTORY rather
- *       than from this pass (`preservedBracedIndices`, supplied only by
+ *       a "braced" slot that ALREADY EXISTED when this pass started
+ *       (`preservedBracedIndices`, supplied only by
  *       `reconcileBracedPlacement`). A braced panel's WIDTH is re-derived by
  *       the tiler on every retile already — only its type is sticky — so
- *       moving it inside [24in, 48in] loses nothing and removes no brace.
+ *       moving it inside [24in, 48in] removes no brace.
  *
- *   **Why history is the discriminant, and not simply "any braced slot":** on
- *   a first pass rule 1's own left-end brace is placed before the right-end
- *   walk plans its combine, so letting the combine settle onto any braced
- *   slot would fire the combine on thousands of walls that refuse today.
- *   Measured: 7,878 first-pass combines either way with the history rule,
- *   15,727 without it, over the 790,440-wall product sweep. Restricting it to
- *   preserved braces leaves the first pass **byte for byte identical** and
- *   fixes only the reconcile, which is where the bug was.
+ *   ⚠ **"Pre-existing" is temporal and nothing more — do NOT read it as "the
+ *   user chose this panel".** An earlier version of this comment said the
+ *   brace "came from the wall's own history", which a reader takes as a user
+ *   decision, and it is not. `reconcileBracedPlacement` marks a slot preserved
+ *   whenever the old run had a brace at that ordinal, and on the headline
+ *   145in fixture the panel the leftover resizes is a brace *this rule's own*
+ *   end-walk placed one pass earlier, untouched by any user. From pass 2
+ *   onward essentially every brace on a settled wall is a candidate.
+ *
+ *   **Why "pre-existing" is the discriminant, and not simply "any braced
+ *   slot":** on a first pass rule 1's own left-end brace is placed before the
+ *   right-end walk plans its combine, so letting the combine settle onto any
+ *   braced slot would fire the combine on thousands of walls that refuse
+ *   today. Measured: 7,878 first-pass combines either way with the rule,
+ *   15,727 without it, over the 790,440-wall product sweep. ⚠ **That pair of
+ *   numbers bounds the FIRST pass only, not the reconcile path** — it is
+ *   measured on walls seeded from scratch, where the restriction is at its
+ *   tightest; it says nothing about how often the permission is exercised once
+ *   a wall has been reconciled even once. Restricting it this way leaves the
+ *   first pass **byte for byte identical** and fixes only the reconcile, which
+ *   is where the bug was.
+ *
+ *   **Why resizing a brace is a safe permission, measured rather than
+ *   asserted.** It is not free: a brace's modelled shear does move with its
+ *   width. At 96in tall x 15.75in thick, chevron,
+ *   `computeBracedPanelShearCapacityLb` gives 2,678lb at 24in, a 3,177lb peak
+ *   at 40in and 3,040lb at 48in — pinned in
+ *   `panelStructuralEstimates.test.ts`, since this argument is the only thing
+ *   holding the permission up. The 145in fixture's 1-3/8in resize is **+1%**;
+ *   at that shape the whole band sits within **16%** of its own peak, and a
+ *   202,272-case sweep across shapes (the 2026-09-30 review's measurement, not
+ *   re-run here) put the worst shape at **-13%**. Two things bound it: every
+ *   resize stays inside [24in, 48in], which is the same band the tiler hands
+ *   braces on a fresh wall, and the alternative the rule refuses — swallowing
+ *   the brace — is -100%. ⚠ The shear model itself derives from
+ *   `pending-BI-confirmation` values; these percentages bound a change in a
+ *   provisional number, they do not make it confirmed.
  *
  *   ⚠ **This is not cosmetic — the reconcile is unfixable without it.** On a
  *   145in wall the combine's leftover is 1-3/8in and the ONLY panel left to
@@ -787,10 +816,15 @@ export function reconcileBracedPlacement(
 
   const reconciled = newSlots.map((s) => ({ ...s }));
   const eligibleIndices = new Set<number>();
-  // Slots whose "braced" type came from this wall's own HISTORY rather than
-  // from the pass below — see `planCornerBraceCombine`'s "Swallowing and
-  // settling" note for why the combine is allowed to change their width (and
-  // only their width).
+  // Slots that were ALREADY braced when this pass started, rather than braced
+  // by the pass below — which the combine may therefore change the width of,
+  // and only the width. See `planCornerBraceCombine`'s "Swallowing and
+  // settling" note.
+  //
+  // ⚠ "Already" is temporal and nothing more. A brace this same rule's own
+  // end-walk placed one pass earlier is preserved here exactly like one a user
+  // clicked, and on most walls that is what it is — do not read this set as
+  // "positions the user chose".
   const preservedBracedIndices = new Set<number>();
   let ordinal = 0; // new-side standard-family ordinal (count of "standard" slots seen so far in `reconciled`)
   let droppedOldMarkers = 0; // old standard-family entries consumed by newly-created openings, not yet reflected in `ordinal`
