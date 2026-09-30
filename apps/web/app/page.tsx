@@ -7490,7 +7490,19 @@ export default function LayoutEditor() {
       ...cornerBraceCombineRefusals.map((refusal) => ({
         label: `Corner brace is not against the corner: wall ${refusal.wallId}, ${refusal.end === "start" ? "start" : "end"} corner${refusal.story === "second" ? " (second story)" : ""}`,
         status: "pending-BI-confirmation" as const,
-        note: `${
+        // ⚠ **The wall id, the end and the story are repeated INSIDE the note,
+        // and that is not redundancy with the label — it is what keeps this
+        // entry off the dedupe's floor.** `deduped` below compares `note` and
+        // nothing else, so two entries whose notes match collapse into one
+        // however different their labels are. Everything else this note
+        // interpolates (`braceSlotIndex`, `braceOffsetFromCornerIn`,
+        // `gapWidthIn`, `bracedPanelCountOnWall`, the seismic spacing) is a
+        // function of the wall's TILING, and on a plain rectangle the north and
+        // south walls tile identically — so without the wall id in the note,
+        // one of the two walls simply never reached the engineer's list, and
+        // the same collision could drop one of a single wall's two ends. A
+        // symmetric building is the common case, not the rare one.
+        note: `Wall ${refusal.wallId}, ${refusal.end === "start" ? "start" : "end"} corner, ${refusal.story === "second" ? "second" : "ground"} story. ${
           refusal.braceSlotIndex === null
             ? `This corner has NO braced panel on its wall at all — the wall carries ${refusal.bracedPanelCountOnWall} of them.`
             : refusal.braceSharedWithOtherCorner
@@ -7511,6 +7523,20 @@ export default function LayoutEditor() {
       ...(foundationTypeId === "slab" ? [{ label: "Slab foundation dimensions", ...slabFoundationDimensions }] : []),
       ...PHASE2_ASSUMPTIONS,
     ]);
+    // ⚠ **This keys on `note` ALONE, and deliberately so** — it exists to
+    // collapse the many catalog values that share one note (every panel's
+    // `shearValue`/`loadBearingCapacity` carries the identical
+    // `STRUCTURAL_PENDING_NOTE` under a different label, 21 times over), and
+    // keying it on `label + note` instead would put every one of those back on
+    // the list. The cost is that any per-wall entry whose note does not NAME
+    // its wall is invisible the moment a second wall produces the same note,
+    // which on a symmetric building is immediately. The corner-brace refusal
+    // entry above names its wall, its end and its story inside the note for
+    // exactly that reason. ⚠ `absorbedCornerWalls` does NOT — its note is a
+    // function of the two corner widths and the absorbed length, so two
+    // identically-short walls still collapse to one entry. That is
+    // pre-existing, it is the same defect, and it is not fixed here because it
+    // is a different entry with its own wording to get right.
     const deduped = entries.filter((e, i) => entries.findIndex((o) => o.note === e.note) === i);
     // Appended AFTER toReviewLog, not passed through it: these entries are
     // `confirmed` and the filter drops confirmed values by design. See

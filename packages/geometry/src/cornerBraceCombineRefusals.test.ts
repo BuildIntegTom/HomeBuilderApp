@@ -126,6 +126,30 @@ describe("findCornerBraceCombineRefusals", () => {
     expect(found[1]!.braceOffsetFromCornerIn).toBe(0.75);
   });
 
+  it("two identically-tiled walls each get their OWN record — everything that tells them apart is the wall id", () => {
+    // The symmetric-rectangle case. A plain rectangle's north and south walls
+    // have the same length, the same openings and therefore the same tiling,
+    // so every number on the record — the slot indices, the offset, the gap
+    // width, the brace count — is identical between them. The ONLY field that
+    // differs is `wallId`, which is why the Review Log note in `page.tsx`
+    // interpolates it: that note is deduped on its own text, so a note that
+    // does not name its wall makes one of the two walls invisible.
+    const slots: PanelSlot[] = [
+      { type: "corner", widthIn: CORNER_WIDTH_IN },
+      { type: "safety-gap", widthIn: 0.75 },
+      { type: "window", widthIn: 61.5 },
+      { type: "braced", widthIn: 40 },
+      { type: "corner", widthIn: CORNER_WIDTH_IN },
+    ];
+    const found = findCornerBraceCombineRefusals({ AB: slots, CD: slots.map((s) => ({ ...s })) });
+    expect(found).toHaveLength(2);
+    expect(found.map((f) => f.wallId)).toEqual(["AB", "CD"]);
+    // Identical in every other respect — stated rather than implied, because
+    // that identity IS the collision.
+    const withoutWallId = ({ wallId: _id, ...rest }: (typeof found)[number]) => rest;
+    expect(withoutWallId(found[0]!)).toEqual(withoutWallId(found[1]!));
+  });
+
   it("every reported brace is still a real fabricable panel — the entry is about POSITION, not width", () => {
     // Sweeping the space the refusal actually lives in: the reported brace is
     // never a sub-minimum panel, so nobody reads this entry as a width defect.
