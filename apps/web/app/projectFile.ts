@@ -3,6 +3,7 @@ import type {
   BoxBeamCoverage,
   Footprint,
   GableWindowReservation,
+  OpeningAnchor,
   PanelSlot,
   RoofBearingAnchorMode,
   RunStopOpeningMemory,
@@ -587,6 +588,29 @@ function remapLegacyBigHeaderBeamKind(
  * CURRENT-version file, so a Stage 2 escape stays visible instead of being
  * quietly absorbed here.
  */
+/** The pre-stop order of a memory that has none worth reading: every anchor
+ * withheld, in the order they are stored, each carrying its own payload so the
+ * merge's payload path has something to match against. See `openingMemoryStory`
+ * on why this rather than an empty `preStop`, which loses them. */
+function synthesizedPreStopOrder(unbuilt: readonly OpeningAnchor[]): RunStopOpeningMemory {
+  return {
+    unbuilt,
+    preStop: unbuilt.map((anchor) => ({
+      beforeStandardCount: anchor.beforeStandardCount,
+      withheld: true,
+      // `heightIn` omitted rather than set to `undefined`, matching
+      // `payloadOf` in runStopOpenings.ts, so the shape round-trips through
+      // JSON unchanged.
+      payload:
+        anchor.heightIn === undefined
+          ? { type: anchor.type, widthIn: anchor.widthIn }
+          : { type: anchor.type, widthIn: anchor.widthIn, heightIn: anchor.heightIn },
+    })),
+  };
+}
+
+const isPlainObject = (value: unknown): boolean => !!value && typeof value === "object";
+
 /**
  * One story of Stage 3's opening memory, with any value that is not a
  * `RunStopOpeningMemory` normalized rather than trusted.
@@ -600,29 +624,75 @@ function remapLegacyBigHeaderBeamKind(
  * this parser validates the keys it requires; this one is optional, so nothing
  * else would catch it.
  *
- * A bare array WAS the withheld anchors, so it is read as exactly that, with an
- * empty pre-stop order — the openings come back approximately rather than not at
- * all, which is the side of that trade Tommy's "remember them" decision picks.
+ * A bare array WAS the withheld anchors, so it is read as exactly that — **and
+ * the pre-stop order is SYNTHESIZED from them, one all-withheld entry per
+ * anchor, rather than left empty.**
+ *
+ * ⚠ **An empty `preStop` beside a non-empty `unbuilt` is not a degraded memory,
+ * it is a memory that DELETES the openings it claims to hold, silently.**
+ * Measured on the fourth review: `mergeRunStopOpenings` emits withheld anchors
+ * only by walking `memory.preStop`, on BOTH of its paths, so an empty `preStop`
+ * emits none — `mergeRunStopOpenings([door], { unbuilt: [window], preStop: [] })`
+ * returns `[door]`. The payloadless fallback that would have spliced them
+ * straight out of `unbuilt` is gated on *every* kept entry carrying a payload,
+ * and with no kept entries at all that test is vacuously true, so it is never
+ * reached. Worse, `runStopRestoreFidelity` reports that same shape `"exact"`
+ * (nothing kept, nothing surviving, the `every` vacuous again) — so a fully
+ * stopped wall would tell the user its opening comes back *"exactly as drawn"*
+ * and then drop it. `retile.ts` writes a wall back into
+ * `unbuiltOpeningsByWallId` only when its memory still holds something, so the
+ * loss is permanent after one re-tile, and silent.
+ *
+ * Synthesizing is the option that keeps this function's promise: the anchors are
+ * what a bare array actually recorded, and an all-withheld sequence is the only
+ * pre-stop order that is TRUE of them — the same shape `withholdEverything`
+ * writes for a fully-stopped wall. It does assert there were no survivors, which
+ * a bare array cannot tell us; where there are, they sort ahead of the restored
+ * openings and `runStopRestoreFidelity` reports `"approximate"`, so nothing is
+ * lost and no text promises exactness. The alternative — dropping the value
+ * entirely — would be honest about the order and would delete the openings,
+ * which is the one thing Tommy's "remember them" decision rules out.
+ *
  * A value that is not a memory at all is dropped, leaving the wall with no
  * entry: nothing withheld, which is the state every project saved before this
  * feature is in.
  *
- * A well-formed value is passed through BY REFERENCE, so a round trip stays an
- * identity and a field added to the memory later cannot be silently stripped
- * here.
+ * **A well-formed value is passed through BY REFERENCE**, so a round trip stays
+ * an identity and a field added to the memory later cannot be silently stripped
+ * here. "Well-formed" now includes one CORRESPONDENCE check that costs one
+ * comparison: `preStop`'s withheld entries must number exactly as many anchors
+ * as `unbuilt` holds. The merge walks those two in lockstep
+ * (`memory.unbuilt[unbuiltIndex++]!` per withheld entry), so a hand-edited file
+ * with more withheld entries than anchors pushes `undefined` into the anchor
+ * list and `retileWithOpenings` dereferences it — the same white screen this
+ * guard exists for, one field over. A memory that fails the check keeps its
+ * anchors and loses its order, exactly as a bare array does.
  */
+
 function openingMemoryStory(value: unknown): Record<string, RunStopOpeningMemory> {
   if (!value || typeof value !== "object") return {};
   const story: Record<string, RunStopOpeningMemory> = {};
   for (const [wallId, memory] of Object.entries(value as Record<string, unknown>)) {
     if (Array.isArray(memory)) {
-      story[wallId] = { unbuilt: memory as RunStopOpeningMemory["unbuilt"], preStop: [] };
+      // The pre-`preStop` shape: the withheld anchors and nothing else. An
+      // element that is not an object cannot be restored and would throw on the
+      // way to the tiler, so the whole entry is dropped rather than half-read.
+      if (!memory.every(isPlainObject)) continue;
+      story[wallId] = synthesizedPreStopOrder(memory as RunStopOpeningMemory["unbuilt"]);
       continue;
     }
     if (!memory || typeof memory !== "object") continue;
     const candidate = memory as RunStopOpeningMemory;
-    if (!Array.isArray(candidate.unbuilt)) continue;
-    story[wallId] = Array.isArray(candidate.preStop) ? candidate : { ...candidate, preStop: [] };
+    if (!Array.isArray(candidate.unbuilt) || !candidate.unbuilt.every(isPlainObject)) continue;
+    // The recorded order is trustworthy only if it is an array of entries AND
+    // its withheld entries correspond one-for-one to the anchors the merge
+    // walks them against. Otherwise keep the anchors and synthesize the order.
+    const preStop = candidate.preStop;
+    const orderCorresponds =
+      Array.isArray(preStop) &&
+      preStop.every(isPlainObject) &&
+      preStop.filter((position) => position.withheld).length === candidate.unbuilt.length;
+    story[wallId] = orderCorresponds ? candidate : synthesizedPreStopOrder(candidate.unbuilt);
   }
   return story;
 }

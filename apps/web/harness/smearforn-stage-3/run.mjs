@@ -1228,6 +1228,177 @@ record(
     d.openingSlotsRestored === d.openingSlotsBefore,
 );
 
+console.log("16. a brand-new footprint must not inherit the old building's remembered openings");
+/**
+ * ⚠ **The only shape that can catch a regression in `handleDraw`'s memory
+ * reset, and it has to be here rather than in a unit test.**
+ *
+ * The third review's must-fix was that a remembered opening survived a brand-new
+ * footprint and landed on the new building: wall ids are reused
+ * (`buildRectangleFootprint` always emits "AB".."DA"), `pruneOpeningMemoryToLiveWalls`
+ * drops ids the footprint LACKS and so cannot see it, and `hasStop` in the tiler
+ * is true whenever the memory holds anything — so the next re-tile of any kind
+ * merges a window from a building that no longer exists into this one as a REAL
+ * opening, with a cut list line, a fabrication group, a shop drawing and a price.
+ * The fix is one line in `handleDraw`: `setUnbuiltOpeningsByStoryAndWallId({ ground: {}, second: {} })`.
+ *
+ * **Its regression test did not guard it.** `retile.test.ts`'s "a leftover memory
+ * puts a window on a wall nobody drew one on" is a geometry test — it never
+ * touches page.tsx, so it passes identically with and without that line. Delete
+ * the fix and the unit suite stays green. Nothing below `handleDraw` can guard
+ * `handleDraw`, and every other building-replacement path (file load, cloud
+ * open) goes through `applyProjectState`, so this gesture is the gap.
+ *
+ * So: stop the wall until it really is holding an opening, draw a new footprint
+ * over the top, and re-tile the reused wall id once. The opening count on that
+ * wall must not move. With the fix removed it goes up by one.
+ */
+const redrawWithheld = deepest ? await (async () => {
+  await commitStop("start", deepest.stopIn);
+  return await withheldOpeningCount();
+})() : 0;
+await reachView((l) => l === "2D Floor Plan", "2D Floor Plan");
+await sleep(900);
+await closeOpenNotes();
+// The Rectangle tool re-arms by title, not by text: each button's label sits
+// beside an icon glyph in the same element, so `textContent` is "▭Rectangle".
+const armRectangle = async () => {
+  const box = await evaluate(`(() => {
+    const group = document.querySelector('[aria-label="Shape tool"]');
+    if (!group) return null;
+    const b = [...group.querySelectorAll('button')].find((x) => x.getAttribute('title') === 'Rectangle');
+    if (!b) return null;
+    b.scrollIntoView({ block: 'center' });
+    const r = b.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, pressed: b.getAttribute('aria-pressed') === 'true' };
+  })()`);
+  if (!box) throw new Error('no Rectangle button in the Shape tool group');
+  if (!box.pressed) {
+    await click(box.x, box.y);
+    await sleep(400);
+  }
+  const after = await evaluate(`(() => {
+    const group = document.querySelector('[aria-label="Shape tool"]');
+    const b = group && [...group.querySelectorAll('button')].find((x) => x.getAttribute('title') === 'Rectangle');
+    return b ? b.getAttribute('aria-pressed') === 'true' : null;
+  })()`);
+  if (after !== true) throw new Error('the Rectangle tool did not arm');
+};
+await armRectangle();
+// A DIFFERENT rectangle, deliberately — the wall length is what proves the
+// draw actually happened, and a redraw at the same size would prove nothing.
+// Different but not much SMALLER: a short building has fewer stops the app
+// will accept (the pre-existing braced-combine residual refuses on the
+// neighbour), and the step needs one accepted stop to re-tile with.
+const redrawBox = await evaluate(`(() => { const c = document.querySelector('canvas'); if (!c) return null; const r = c.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; })()`);
+if (!redrawBox) throw new Error("no canvas to redraw on");
+const [rx, ry, rw, rh] = redrawBox;
+const nx0 = rx + 70;
+const ny0 = ry + 95;
+const nx1 = rx + rw - 110;
+const ny1 = ry + rh - 155;
+await mouse("mousePressed", nx0, ny0);
+await sleep(80);
+await mouse("mouseMoved", (nx0 + nx1) / 2, (ny0 + ny1) / 2);
+await sleep(80);
+await mouse("mouseMoved", nx1, ny1);
+await sleep(80);
+await mouse("mouseReleased", nx1, ny1);
+await sleep(1800);
+await shot("17-redrawn-footprint");
+await reachView((l) => l === `Elevation: ${targetWallId}`, `Elevation: ${targetWallId}`);
+await sleep(1200);
+const redrawnWidths = await panelWidths();
+const redrawnEighths = sumEighths(redrawnWidths);
+const openingSlotsAfterRedraw = await captureOpeningSlots();
+/**
+ * ONE further edit of any kind is all the stale memory ever needed — `hasStop`
+ * in the tiler is true whenever the memory holds anything — and a stop is
+ * simply the edit this harness can already drive.
+ *
+ * ⚠ **It has to be an ACCEPTED one, and the first version of this step did not
+ * check.** A refused stop changes nothing, so the count below would have been
+ * read off a wall that was never re-tiled and the whole step would have passed
+ * vacuously — it did, on its first run: every start stop on the redrawn wall
+ * came back `invalid` with *"does not leave a run on wall BC whose panels add
+ * back up to that wall"*, which is the known pre-existing braced-combine
+ * residual on the NEIGHBOUR wall (see "Six things left uncoded" in the spec),
+ * not anything this step is about.
+ *
+ * ⚠ **So the stop does not have to be on the wall being checked, and it is
+ * better that it is not.** `retilePreservingOpeningsWithRunStopMemory` walks
+ * EVERY wall on every call and merges each one's remembered openings, so a stop
+ * accepted anywhere in the building re-tiles the reused wall id too. The step
+ * therefore walks the elevations until the app accepts a stop somewhere,
+ * records every attempt with its refusal sentence, and requires one to have
+ * been taken.
+ */
+const nudgeAttempts = [];
+let nudgeTaken = null;
+const elevationStops = (await view.cycle()).filter((l) => l.startsWith("Elevation: "));
+for (const label of elevationStops) {
+  if (nudgeTaken) break;
+  await reachView((l) => l === label, label);
+  await sleep(1000);
+  const wallEighths = sumEighths(await panelWidths());
+  for (const fraction of [0.08, 0.05, 0.03]) {
+    const candidateIn = Math.round(wallEighths * fraction) / 8;
+    if (candidateIn <= 0) continue;
+    await commitStop("start", candidateIn);
+    const field = await stopField("start");
+    nudgeAttempts.push({ wall: label, stopIn: candidateIn, invalid: field?.invalid ?? null, message: field?.message ?? null });
+    const accepted = field?.invalid === false;
+    // Always put the field back, accepted or refused: the count below is read
+    // off a whole building, the same shape as the one taken after the draw.
+    // Clearing an accepted stop is itself a second re-tile, which is fine.
+    await commitStop("start", 0);
+    if (accepted) {
+      nudgeTaken = { wall: label, stopIn: candidateIn };
+      break;
+    }
+  }
+}
+await reachView((l) => l === `Elevation: ${targetWallId}`, `Elevation: ${targetWallId}`);
+await sleep(1200);
+const openingSlotsAfterRetile = await captureOpeningSlots();
+const withheldAfterRetile = await withheldOpeningCount();
+await shot("18-redrawn-after-one-retile");
+record(
+  "a-new-footprint-does-not-inherit-the-old-buildings-remembered-openings",
+  {
+    withheldWhenRedrawn: redrawWithheld,
+    baseEighthsBeforeRedraw: memoryBaseEighths,
+    redrawnEighths,
+    redrawnPanelCount: redrawnWidths.length,
+    openingSlotsAfterRedraw,
+    nudgeTaken,
+    nudgeAttempts,
+    nudgeAccepted: nudgeTaken !== null,
+    openingSlotsAfterRetile,
+    withheldAfterRetile,
+  },
+  (d) =>
+    // 0. Not vacuous: the old building really was holding an opening in memory
+    //    at the moment the new one was drawn. Without this the step would pass
+    //    on a wall that had nothing to inherit.
+    d.withheldWhenRedrawn >= 1 &&
+    // 1. A new building really was drawn over the old one, on the same reused
+    //    wall id — a different wall length is the proof.
+    d.redrawnEighths > 0 &&
+    d.redrawnEighths !== d.baseEighthsBeforeRedraw &&
+    d.redrawnPanelCount >= 3 &&
+    // 2. The re-tile really happened: a refused stop changes nothing, and a
+    //    step that never re-tiled would pass the next line for free.
+    d.nudgeAccepted === true &&
+    // 3. THE FIX. One re-tile of the reused wall id, and no opening from the
+    //    building that no longer exists appears on it.
+    d.openingSlotsAfterRedraw !== null &&
+    d.openingSlotsAfterRetile === d.openingSlotsAfterRedraw &&
+    // 4. …and nothing is being held back on the new building either, so the
+    //    count above is not just a withheld opening hiding a resurrected one.
+    d.withheldAfterRetile === 0,
+);
+
 record(
   "no-uncaught-exceptions",
   { count: pageExceptions.length, first: pageExceptions[0] ?? null },

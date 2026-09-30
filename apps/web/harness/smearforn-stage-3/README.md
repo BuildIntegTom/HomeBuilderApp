@@ -64,6 +64,7 @@ checks. The baseline step now asserts it found walls at all.
 | 12 | A stop leaving a run under the 24in fabrication minimum is **refused**, and the wall is untouched |
 | 13 | A stop that **reaches a corner the wall owns** is **accepted**, and a neighbour really does grow by a wall thickness — the orphan corner, end to end. The neighbour is measured off the 3D scene, because the elevation only shows one wall. |
 | 15 | **Openings in the unbuilt span are dropped, remembered and restored** (Tommy, 2026-09-29: "Drop them, and remember"). The step **places its own opening** with the Stage 2 Window tool at a known boundary near the start end, and asserts the insert — relying on the random default seed instead made this step about a 1-in-5 flake on green code (see its own comment, and the third review of 2026-09-29). Then it sweeps the stop along the wall: the "does not add back up" sentence never appears again, every accepted stop still conserves the wall to the eighth, at least one really does swallow an opening and the app says so, and clearing the stop gives the wall back panel for panel with nothing withheld. |
+| 16 | **A brand-new footprint does not inherit the old building's remembered openings.** Stops the wall until it really is holding one, draws a different rectangle over the top, and re-tiles the reused wall id once: the opening count on that wall must not move, and nothing may be withheld on the new building. |
 | — | No uncaught exception anywhere in the run |
 
 ## Two real defects this found that unit tests had not
@@ -121,6 +122,64 @@ the same ground at every eighth rather than every inch.
 end to end can still miss an ordering defect in it**, because it asserted the
 count and the sum — the things the field report was about — and nothing about
 which opening was which.
+
+## Why step 16 is here and not in a unit test
+
+`handleDraw`'s memory reset — `setUnbuiltOpeningsByStoryAndWallId({ ground: {}, second: {} })`,
+the third review's must-fix 1 — **had no test that could fail if it were deleted.**
+The regression test it shipped with, `retile.test.ts`'s *"a leftover memory puts a
+window on a wall nobody drew one on"*, is a **geometry** test: it never touches
+`page.tsx`, so it passes identically with and without the line. That was stated
+honestly at the time ("pinned at the level where it is provable"), and it still
+left the fix unguarded.
+
+Nothing below `handleDraw` can guard `handleDraw`. Every other path that
+replaces the building — file load, cloud open — goes through
+`applyProjectState`, and there is no undo and no separate New Project handler,
+so the draw gesture was the one gap. Step 16 drives that gesture in the browser,
+which is the only shape that can catch a regression here.
+
+**And it was measured both ways, not assumed** (2026-09-30, the same standard
+the rest of this file holds itself to):
+
+- with the line in `handleDraw`: `openingSlotsAfterRedraw: 1`,
+  `openingSlotsAfterRetile: 1`, exit `0`;
+- with the line commented out and nothing else changed:
+  `openingSlotsAfterRedraw: 1`, `openingSlotsAfterRetile: **3**` — both
+  openings the old building was withholding came back onto a wall of the new
+  one — step 16 `[FAIL]`, exit `1`.
+
+Two other things that run taught, both now built into the step:
+
+1. **The re-tile has to be an ACCEPTED stop.** A refused one changes nothing, so
+   an unchecked stop would make the whole step pass for free. The step records
+   every attempt with its refusal sentence and asserts one was taken.
+2. **The stop does not have to be on the wall being checked, and it is better
+   that it is not.** On the first redrawn footprint every start stop was refused
+   with *"does not leave a run on wall BC whose panels add back up to that
+   wall"* — the known pre-existing braced-combine residual on the NEIGHBOUR
+   wall, nothing to do with this step.
+   `retilePreservingOpeningsWithRunStopMemory` walks every wall on every call,
+   so a stop accepted anywhere in the building re-tiles the reused wall id too;
+   the step now walks the elevations until the app accepts one.
+
+## ⚠ What step 15 stopped covering when it switched to REPLACE — and nothing else covers it
+
+Step 15 places its opening by **replacing** a standard panel of the project's
+own standard width, deliberately, so the panel count going into the stop is the
+count coming out and expectation 4 ("panel for panel") means what it says. That
+choice was right and it has a cost worth naming: **the harness no longer drives
+the INSERT shape at all.**
+
+The insert is where the hand-edit defect lives — a hand-placed panel is born at
+the project's standard width, takes that width out of the automatic panels, and
+a stop does not preserve it, so the wall comes back from a stop with one panel
+FEWER than it went in with (measured on this very step before the switch: 17 in,
+16 out, length still exact to the eighth and both openings restored). **That
+defect is now described in two code comments and asserted nowhere.** It is not a
+regression this file can catch if it widens, and it is Tommy's call whether a
+stop should refuse on a hand-edited wall rather than silently revert it — see
+the spec's Stage 3 second-pass section.
 
 ## ⚠ Step 15’s numbers are NOT reproducible run to run, and that is the app
 

@@ -446,6 +446,33 @@ describe("mergeRunStopOpenings", () => {
     expect(mergeRunStopOpenings(survivors, memory).map((o) => o.type)).toEqual(["column", "window", "big-header"]);
     expect(runStopRestoreFidelity(memory, survivors)).toBe("approximate");
   });
+
+  /**
+   * ⚠ **The precondition, asserted as a loss rather than described as a rule.**
+   * A memory whose `preStop` does not account for its `unbuilt` anchors DELETES
+   * them: both paths emit a remembered opening only when they walk past a
+   * withheld entry, so an empty `preStop` emits none — with survivors and
+   * without. `runStopRestoreFidelity` compounds it by answering `"exact"` for
+   * the no-survivor case, because both of its lists are empty and `every` is
+   * vacuously true, so a wall in this shape would tell the user its opening
+   * comes back "exactly as drawn" and then drop it.
+   *
+   * **This is pinned, not blessed.** It is why `RunStopOpeningMemory.preStop`
+   * carries a correspondence invariant and why `openingMemoryStory` in
+   * `projectFile.ts` repairs a memory that breaks it instead of passing it
+   * through — a bare legacy anchor array used to normalise to exactly this.
+   * If this assertion ever starts failing because the merge learned to splice
+   * from `unbuilt` directly, that is an improvement: rewrite it, do not
+   * reinstate it.
+   */
+  it("LOSES anchors that its pre-stop order does not account for — the precondition, measured", () => {
+    const window = anchor(3, 61.5);
+    const door = anchor(1, 37.5, { type: "door" });
+    const orderless: RunStopOpeningMemory = { unbuilt: [window], preStop: [] };
+    expect(mergeRunStopOpenings([door], orderless)).toEqual([door]);
+    expect(mergeRunStopOpenings([], orderless)).toEqual([]);
+    expect(runStopRestoreFidelity(orderless, [])).toBe("exact");
+  });
 });
 
 describe("runStopRestoreFidelity", () => {

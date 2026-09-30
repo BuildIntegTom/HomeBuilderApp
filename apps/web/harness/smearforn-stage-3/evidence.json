@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3214/",
-  "ranAt": "2026-09-30T03:49:20.715Z",
+  "app": "http://localhost:3262",
+  "ranAt": "2026-09-30T08:01:32.704Z",
   "stopIn": 60,
   "steps": [
     {
@@ -108,8 +108,8 @@
       "name": "clearing-the-stop-restores-elevation-plan-and-3d",
       "totalEighthsCleared": 4392,
       "noPanelsLabelsCleared": 0,
-      "boundaryGreyWithStop": 1393,
-      "boundaryGreyWithoutStop": 1297,
+      "boundaryGreyWithStop": 1434,
+      "boundaryGreyWithoutStop": 1338,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
@@ -183,36 +183,61 @@
           "invalid": false,
           "message": null,
           "totalEighths": 3161,
-          "withheldOpenings": 1
+          "withheldOpenings": 2
         },
         {
           "stopIn": 254,
           "invalid": false,
           "message": null,
           "totalEighths": 2484,
-          "withheldOpenings": 1
+          "withheldOpenings": 2
         },
         {
           "stopIn": 338.75,
           "invalid": false,
           "message": null,
           "totalEighths": 1806,
-          "withheldOpenings": 1
+          "withheldOpenings": 2
         },
         {
           "stopIn": 423.375,
-          "invalid": true,
-          "message": "That leaves a 141⅛\" run, which cannot be panelized without a panel under the 24\" minimum the shop can build. Stop less of the wall, or stop all 47'-0½\" of it. (Esc to revert)",
-          "totalEighths": 1806,
-          "withheldOpenings": 1
+          "invalid": false,
+          "message": null,
+          "totalEighths": 1129,
+          "withheldOpenings": 2
         }
       ],
-      "deepestAcceptedStopIn": 338.75,
-      "openingSlotsStopped": 1,
+      "deepestAcceptedStopIn": 423.375,
+      "openingSlotsStopped": 0,
       "restoredEighths": 4516,
       "restoredPanelCount": 15,
       "restoredWithheld": 0,
       "openingSlotsRestored": 2,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "a-new-footprint-does-not-inherit-the-old-buildings-remembered-openings",
+      "withheldWhenRedrawn": 2,
+      "baseEighthsBeforeRedraw": 4516,
+      "redrawnEighths": 4072,
+      "redrawnPanelCount": 14,
+      "openingSlotsAfterRedraw": 1,
+      "nudgeTaken": {
+        "wall": "Elevation: AB",
+        "stopIn": 40.75
+      },
+      "nudgeAttempts": [
+        {
+          "wall": "Elevation: AB",
+          "stopIn": 40.75,
+          "invalid": false,
+          "message": null
+        }
+      ],
+      "nudgeAccepted": true,
+      "openingSlotsAfterRetile": 1,
+      "withheldAfterRetile": 0,
       "asserted": true,
       "passed": true
     },

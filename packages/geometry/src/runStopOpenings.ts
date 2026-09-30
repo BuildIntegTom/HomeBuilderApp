@@ -158,11 +158,25 @@ import type { PanelSlot, WallEnd } from "./types";
  * approximate at all.
  *
  * **What is NOT fixed, stated rather than glossed:** shape 2 still takes the
- * index path. A count-preserving change is far more often a width or height
- * EDIT on a survivor — where index correspondence is exactly right, and where
- * the app's own opening tools make it easy — than a delete plus an insert, and
- * without stable opening ids the two are indistinguishable. Choosing payload
- * alignment there would break the common case to fix the rare one.
+ * index path.
+ *
+ * **The decisive reason is not frequency, it is that payload alignment would
+ * MANUFACTURE an order defect in the case the index path gets exactly right.**
+ * An unmatched survivor is placed at `lastMatchedIndex + k/(n+1)`, and before
+ * the first match `lastMatchedIndex` is `-1` — a NEGATIVE position, which sorts
+ * ahead of a remembered opening recorded at `preStop` index 0. So pre-stop
+ * `[WINDOW(withheld), door]` with the door's width edited while stopped — no
+ * insert, no delete, the commonest edit there is — would stop matching the door
+ * to its kept entry and restore `[door, window]`: two openings traded places,
+ * the exact class of defect this module exists to prevent, introduced to fix a
+ * rarer one. The index path restores `[window, door]` there, correctly.
+ *
+ * Frequency is the secondary argument and it is **reasoned, not measured** — we
+ * believe a count-preserving change is far more often a width or height edit on
+ * a survivor (which the app's own opening tools make easy) than a delete plus an
+ * insert, but nobody has used this in anger yet and nobody will before November,
+ * so it cannot be more than a prior. Without stable opening ids the two are
+ * indistinguishable either way.
  *
  * So the promise, in the only form that is true everywhere:
  *
@@ -278,7 +292,19 @@ export interface RunStopOpeningMemory {
   readonly unbuilt: readonly OpeningAnchor[];
   /** The whole pre-stop sequence, left to right — survivors and withheld
    * alike, each with the ordinal it had then and what it was. Empty when
-   * nothing was withheld. */
+   * nothing was withheld.
+   *
+   * ⚠ **INVARIANT, and it is load-bearing rather than tidy: the withheld
+   * entries here correspond ONE FOR ONE with `unbuilt`.** `mergeRunStopOpenings`
+   * emits a remembered opening only when it walks past a withheld entry, on
+   * both of its paths, and it takes them from `unbuilt` in lockstep — so too
+   * FEW withheld entries silently deletes the extra anchors (an empty `preStop`
+   * beside a non-empty `unbuilt` deletes all of them, and
+   * `runStopRestoreFidelity` then vacuously calls that `"exact"`), and too many
+   * pushes `undefined` into the anchor list and throws out of the tiler.
+   * Everything this module writes holds it by construction; the one thing that
+   * can hand over a memory it did not build is `parseProjectFile`, and
+   * `openingMemoryStory` there checks and repairs it. */
   readonly preStop: readonly PreStopOpeningPosition[];
 }
 
@@ -471,6 +497,15 @@ export function partitionOpeningsByRunStop(input: RunStopOpeningPartitionInput):
  * One reachable shape — a delete plus an insert, count unchanged — takes the
  * exact path and is NOT exact, deliberately; `runStopRestoreFidelity` is how a
  * caller tells, and it is what the user-facing wording is conditioned on.
+ *
+ * ⚠ **PRECONDITION: `memory.preStop`'s withheld entries correspond one for one
+ * with `memory.unbuilt`** — see `RunStopOpeningMemory.preStop`. Both paths below
+ * emit remembered openings only by walking `preStop`, so a memory that breaks it
+ * loses anchors outright (`mergeRunStopOpenings([door], { unbuilt: [window],
+ * preStop: [] })` returns `[door]`) or reads past the end of `unbuilt`. This
+ * function does not re-check it per call — it is on the hot re-tile path and
+ * every writer in this module holds it by construction; `parseProjectFile` is
+ * where an outside memory is made to hold it.
  */
 export function mergeRunStopOpenings(
   current: OpeningAnchor[],
@@ -652,6 +687,16 @@ export type RunStopRestoreFidelity = "nothing-withheld" | "exact" | "approximate
  * gates says "may": promising exactness and failing to deliver it is the defect
  * this function exists to stop, and a caution the user did not strictly need is
  * the cheap side of that trade.
+ *
+ * ⚠ It answers `"exact"` for a memory with no kept entries and no survivors —
+ * a fully stopped wall — and that is right **only because
+ * `RunStopOpeningMemory`'s correspondence invariant holds**, which makes the
+ * merge hand every remembered opening back at its own recorded ordinal. On a
+ * memory that breaks the invariant the same `every` is vacuously true over an
+ * empty list and this would promise exactness for openings the merge is about to
+ * drop. That is not a shape the app can reach — see `openingMemoryStory` in
+ * `projectFile.ts` — and it is named here because it is the one way this
+ * predicate can lie.
  */
 export function runStopRestoreFidelity(
   memory: RunStopOpeningMemory | undefined,

@@ -10,7 +10,7 @@ import {
   type ProjectState,
 } from "./projectFile";
 import { resolveTitleBlockDate, titleBlockDateLabel } from "./titleBlockDate";
-import { findSubMinimumPanelWidths, type PanelSlot } from "@building-integrity/geometry";
+import { findSubMinimumPanelWidths, mergeRunStopOpenings, type PanelSlot } from "@building-integrity/geometry";
 import { fabricationMinPanelWidthIn } from "@building-integrity/panel-catalog";
 
 function makeState(overrides: Partial<ProjectState> = {}): ProjectState {
@@ -247,7 +247,8 @@ describe("serializeProject / parseProjectFile round-trip", () => {
      * array, that shape still exists on a live branch, and the tiler reads
      * `…?.[wall.id]?.unbuilt.length` — so `undefined.length` threw straight out
      * of the re-tile and left no building on screen. Read as what it was: the
-     * withheld anchors, with no pre-stop order to restore by.
+     * withheld anchors — **with a pre-stop order SYNTHESIZED from them, because
+     * an empty one deletes them.** The test below this one is the proof.
      */
     it("reads a bare anchor array — the pre-`preStop` shape — as the withheld anchors", () => {
       const withheld = { beforeStandardCount: 3, type: "window" as const, widthIn: 61.5 };
@@ -260,9 +261,84 @@ describe("serializeProject / parseProjectFile round-trip", () => {
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.state.unbuiltOpeningsByStoryAndWallId).toEqual({
-        ground: { AB: { unbuilt: [withheld], preStop: [] } },
+        ground: {
+          AB: {
+            unbuilt: [withheld],
+            preStop: [{ beforeStandardCount: 3, withheld: true, payload: { type: "window", widthIn: 61.5 } }],
+          },
+        },
         second: {},
       });
+    });
+
+    /**
+     * ⚠ **The guard is only worth having if the openings it rescues actually
+     * come back, and with an empty `preStop` they did NOT.** The fourth review
+     * measured it: `mergeRunStopOpenings` emits withheld anchors only by walking
+     * `memory.preStop`, so an empty one emits none and the window is gone — from
+     * the slots, and then from state on the next re-tile. This drives the parser
+     * output straight into the merge, which is the only place the rescue is
+     * observable.
+     */
+    it("a legacy bare array really does restore its openings through the merge", () => {
+      const withheld = { beforeStandardCount: 3, type: "window" as const, widthIn: 61.5 };
+      const survivor = { beforeStandardCount: 1, type: "door" as const, widthIn: 37.5 };
+      const file = serializeProject(makeState());
+      const legacyShape = {
+        ...file,
+        state: { ...file.state, unbuiltOpeningsByStoryAndWallId: { ground: { AB: [withheld] }, second: {} } },
+      };
+      const result = parseProjectFile(JSON.stringify(legacyShape));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const memory = result.state.unbuiltOpeningsByStoryAndWallId!.ground.AB!;
+      // With a survivor on the wall: nothing is lost. The order is approximate
+      // — a bare array never recorded where the survivor sat — and
+      // `runStopRestoreFidelity` says so, which is what keeps the user-facing
+      // wording honest here.
+      expect(mergeRunStopOpenings([survivor], memory).map((o) => o.type)).toEqual(["door", "window"]);
+      // Fully stopped: the wall gets its opening back, which is the whole point.
+      expect(mergeRunStopOpenings([], memory)).toEqual([withheld]);
+    });
+
+    /**
+     * The merge walks `preStop`'s withheld entries and `unbuilt` in lockstep
+     * (`memory.unbuilt[unbuiltIndex++]!`), so a hand-edited file claiming more
+     * withheld entries than it carries anchors pushes `undefined` into the
+     * anchor list and `retileWithOpenings` dereferences it — the same white
+     * screen as the bare array, one field over. The order is what is wrong, so
+     * the order is what is dropped; the anchors are kept.
+     */
+    it("rejects a pre-stop order that does not correspond to the anchors it indexes", () => {
+      const withheld = { beforeStandardCount: 3, type: "window" as const, widthIn: 61.5 };
+      const file = serializeProject(makeState());
+      const overclaiming = {
+        ...file,
+        state: {
+          ...file.state,
+          unbuiltOpeningsByStoryAndWallId: {
+            ground: {
+              AB: {
+                unbuilt: [withheld],
+                preStop: [
+                  { beforeStandardCount: 3, withheld: true },
+                  { beforeStandardCount: 5, withheld: true },
+                ],
+              },
+            },
+            second: {},
+          },
+        },
+      };
+      const result = parseProjectFile(JSON.stringify(overclaiming));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const memory = result.state.unbuiltOpeningsByStoryAndWallId!.ground.AB!;
+      expect(memory.preStop).toEqual([
+        { beforeStandardCount: 3, withheld: true, payload: { type: "window", widthIn: 61.5 } },
+      ]);
+      // And the shape that used to crash the tiler now merges cleanly.
+      expect(mergeRunStopOpenings([], memory)).toEqual([withheld]);
     });
 
     /** Not a memory at all — the wall simply has nothing withheld, which is the
