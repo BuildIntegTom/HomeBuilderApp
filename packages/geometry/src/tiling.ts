@@ -5,15 +5,80 @@ export interface TileWallResult {
   slots: PanelSlot[];
 }
 
-// The safety/gap panel is always this fixed width (Tommy: "a safety gap
-// should be a 3/4in wide piece of plywood... I want the 3/4in wide safety
-// gap plywood spacers to be flush with both adjacent panels" — not a
-// leftover-sized bay with the actual 3/4in board floating somewhere inside
-// it, unaccounted space on both sides). Must match panel-catalog's
-// SAFETY_GAP_THICKNESS_IN (packages/panel-catalog/src/safetyGapMembers.ts)
-// — duplicated here rather than imported since packages/geometry doesn't
-// depend on packages/panel-catalog.
-const SAFETY_GAP_WIDTH_IN = 0.75;
+/**
+ * The safety/gap panel's reserved wall-run width on a run OVER the threshold
+ * (Tommy: "a safety gap should be a 3/4in wide piece of plywood... I want the
+ * 3/4in wide safety gap plywood spacers to be flush with both adjacent
+ * panels" — not a leftover-sized bay with the actual 3/4in board floating
+ * somewhere inside it, unaccounted space on both sides).
+ *
+ * Must match panel-catalog's `SAFETY_GAP_THICKNESS_IN`
+ * (packages/panel-catalog/src/safetyGapMembers.ts) — duplicated here rather
+ * than imported since packages/geometry doesn't depend on
+ * packages/panel-catalog, and asserted equal by
+ * `apps/web/app/tilerFabricationLimits.test.ts`, the one place that imports
+ * both.
+ *
+ * **The reserved width and the sheet thickness are ONE physical fact, not
+ * two.** The gap IS the plywood (Tommy: "instead of a safety panel being a
+ * standard panel slightly altered, its actually just a 3/4in piece of plywood
+ * that is the panel thickness and panel height"), so a run that reserves 3/4in
+ * is reserving room for a 3/4in sheet and nothing else. They are two constants
+ * only because the two packages may not see each other.
+ */
+export const WIDE_SAFETY_GAP_WIDTH_IN = 0.75;
+
+/**
+ * The safety/gap panel's reserved wall-run width on a run AT OR UNDER the
+ * threshold — **Tommy, 2026-09-30, verbatim:** *"Can we make it so that once
+ * below the threshold (of 12'? If it's somewhere around 10-12' rn that's fine)
+ * the safety gap is 1/2"."* He was told the existing threshold is 144in (12ft)
+ * measured against the panel RUN and confirmed that matches what he meant.
+ *
+ * This is a decision of Building Integrity's, stated first-hand with a number
+ * and a unit — the same standing `fabricationMinPanelWidthIn` (24in) has — not
+ * a researched or industry-typical figure. Its catalog home is
+ * `safetyGapPanelRules` in packages/panel-catalog, where it carries that
+ * quotation as its provenance note.
+ *
+ * Must match panel-catalog's `SAFETY_GAP_THIN_THICKNESS_IN`, same duplication
+ * note and same cross-package assertion as the wide width above.
+ */
+export const NARROW_SAFETY_GAP_WIDTH_IN = 0.5;
+
+/**
+ * The longest RUN that gets the narrow (1/2in) gap; anything longer gets the
+ * wide (3/4in) one.
+ *
+ * ⚠ **This is measured against the RUN, not against the wall**, and the
+ * constant it replaced (`SAFETY_PANEL_MIN_WALL_LENGTH_IN`) said WALL while
+ * being tested against exactly the same run value — a latent trap, because a
+ * wall and its run are NOT the same length as soon as the wall butts into a
+ * neighbour at either end. A 12'11" (155in) wall that loses both of its
+ * corners is a 124in run and is therefore a SHORT run, which is precisely what
+ * happens to the short sides of Tommy's 241 x 155in rectangle under the
+ * corner-ownership flip of 2026-10-01. The name now says run. Nothing else
+ * about the number moved: it was 144in before this pass and it is 144in after.
+ *
+ * It used to gate whether a gap slot existed AT ALL; from 2026-10-01 it only
+ * decides how wide one is. **Every run gets a gap** — see
+ * `safetyGapWidthForRunIn`.
+ */
+export const SAFETY_GAP_NARROW_MAX_RUN_LENGTH_IN = 144;
+
+/**
+ * The two-tier safety gap: how much wall-run width a run of this length
+ * reserves for its safety/gap panel.
+ *
+ * Exported because the app needs the same answer the tiler used (which sheet
+ * a given gap slot is) and must not re-derive it from a second copy of the
+ * threshold.
+ */
+export function safetyGapWidthForRunIn(runLengthIn: number): number {
+  return roundToEighthIn(runLengthIn) > SAFETY_GAP_NARROW_MAX_RUN_LENGTH_IN
+    ? WIDE_SAFETY_GAP_WIDTH_IN
+    : NARROW_SAFETY_GAP_WIDTH_IN;
+}
 
 /**
  * The narrowest panel Building Integrity's shop can build, left to right in
@@ -21,7 +86,7 @@ const SAFETY_GAP_WIDTH_IN = 0.75;
  *
  * Must match panel-catalog's `fabricationMinPanelWidthIn` (24in, confirmed,
  * Tommy 2026-09-24). Duplicated here rather than imported for exactly the
- * reason `SAFETY_GAP_WIDTH_IN` above is: packages/geometry deliberately has
+ * reason the two safety-gap widths above are: packages/geometry deliberately has
  * no dependency on packages/panel-catalog. The duplication is not left to a
  * comment — `apps/web/app/tilerFabricationLimits.test.ts` is the one place
  * that imports both packages, and it asserts these two pairs agree.
@@ -51,72 +116,37 @@ export const TILER_MIN_PANEL_WIDTH_IN = 24;
  */
 export const TILER_MAX_PANEL_WIDTH_IN = 48;
 
-// Tommy: a safety/gap panel is only needed on walls longer than 12ft — a
-// shorter run doesn't accumulate enough dimensional tolerance to matter.
-const SAFETY_PANEL_MIN_WALL_LENGTH_IN = 144;
-
 /**
- * The no-gap-panel path for walls at or under 12ft: however many standard
- * panels roughly fit, evenly resized to exactly fill the budget — no
- * dedicated safety-gap slot, no borrowed/resized outlier panel. Uses
- * `Math.ceil`, not `Math.round` (Tommy: "the default auto spawn should be
- * capped at the standard width") — rounding DOWN can still leave
- * `widthEachIn` past `standardWidthIn` (e.g. a 50in budget at a 40in
- * standard rounds to 1 panel, not 2); ceiling guarantees an extra panel
- * gets added instead of ever exceeding the standard width.
+ * ⚠ **GONE as of 2026-10-01: `buildEvenMiddle`, the no-gap-panel path.**
  *
- * **ABSORB (2026-09-24) — the ceiling is no longer the only constraint.**
- * `Math.ceil` alone routinely produced panels the shop cannot build: a 40⅛in
- * budget at a 40in standard gives 2 panels of ~20in each. The count is now
- * also floored so that no part lands under `TILER_MIN_PANEL_WIDTH_IN`, which
- * is one panel FEWER and one panel WIDER — Tommy's choice over reporting it,
- * over widening the safety gap, and over refusing the wall length.
+ * A run of 144in or less used to get NO safety-gap slot at all and was tiled
+ * instead by an even split of the whole budget — `Math.ceil(budget /
+ * standardWidth)` panels, floored so none landed under
+ * `TILER_MIN_PANEL_WIDTH_IN`, all within one eighth of each other. That
+ * function no longer exists, because **every run now gets a gap** and the
+ * threshold only decides how wide it is (`safetyGapWidthForRunIn`). Deleted
+ * rather than left unreachable: a second tiling path nothing calls is a trap,
+ * and its even-split behaviour was the reason a short wall could silently end
+ * up with no dimensional-tolerance allowance at all — against Tommy's own
+ * *"on each wall"*.
  *
- * `distributeEighths` makes the smallest part exactly `floor(b / n)` eighths,
- * so "every part clears the floor" is precisely `n <= floor(b / F)`. Dropping
- * to that count cannot breach the 48in ceiling either: at `n` the budget is
- * under `(n + 1) x F`, so the widest part is under `F + F/n <= 2F = 48in`.
- *
- * `Math.max(1, …)` is untouched: a budget under 24in has nothing to absorb
- * INTO, so reaching this function with one still yields a single sub-minimum
- * panel, reported in the Review Log rather than corrected here.
- *
- * **What no longer reaches it (2026-09-25):** a wall owning corners at BOTH
- * ends can no longer hand this function a sub-24in budget at all — the
- * corner pair absorbs it first, which is the corner-geometry fix Tommy chose
- * for the 51in-75in band. See `resolveCorners`. Still reachable, and still
- * deliberately unfixed: a wall owning ONE corner and between 25.5in and
- * 49.5in long (nothing to pair the single corner with), and openings eating
- * all but a sliver of a long wall's middle.
+ * Its even-split arithmetic is not lost — `computeSillRunWidths` just below
+ * still does exactly that, for a window's sill run, and is now the one place
+ * in this file that reads that way.
  */
-function buildEvenMiddle(budgetLengthIn: number, standardWidthIn: number): PanelSlot[] {
-  // The standard width is a CAP, so this is the most panels the run may have.
-  const cappedCount = Math.ceil(budgetLengthIn / standardWidthIn);
-  // …and this is the most it may have without any of them being unbuildable.
-  const buildableCount = Math.floor(toEighths(budgetLengthIn) / toEighths(TILER_MIN_PANEL_WIDTH_IN));
-  const count = Math.max(1, Math.min(cappedCount, buildableCount));
-  // "Evenly" now means "as evenly as the 1/8in grid allows": siblings can
-  // differ by one eighth so that every width IS a whole eighth and the run
-  // still sums to the budget exactly (see `distributeEighths`). Zero-eighth
-  // parts are dropped for the same reason `buildMiddle` guards a zero
-  // budget — a zero-width slot renders invisibly but still counts as a real
-  // panel instance and price line.
-  return distributeEighths(toEighths(budgetLengthIn), count)
-    .filter((eighths) => eighths > 0)
-    .map((eighths) => ({ type: "standard" as const, widthIn: fromEighths(eighths) }));
-}
 
 /**
  * How many sill panels a window's rough-opening run needs, and how wide
  * each one is (Tommy: "sills are short standard panels... if the window
  * spacing or header length exceeds the standard panel width, then create
- * another sill to share the run") — the exact same even-split math as
- * `buildEvenMiddle` (a wall run under the safety-gap threshold), just
- * returning plain widths instead of PanelSlot[]: a sill isn't part of a
- * wall's own tiled slots array, it's derived per window opening. Uses
- * `Math.ceil` for the same reason `buildEvenMiddle` does — a sill is
+ * another sill to share the run") — an even split of the whole run, no
+ * safety-gap reservation of any kind (a sill run is inside a window's rough
+ * opening, not along a wall), returning plain widths instead of PanelSlot[]:
+ * a sill isn't part of a wall's own tiled slots array, it's derived per window
+ * opening. Uses `Math.ceil` because a sill is
  * fabricated as a real (short) Standard Panel, so it shouldn't exceed
- * `standardWidthIn` either.
+ * `standardWidthIn` either. This is now the only even-split tiling left in
+ * this file — see the note where `buildEvenMiddle` used to be.
  */
 export function computeSillRunWidths(roWidthIn: number, standardWidthIn: number): number[] {
   if (roWidthIn <= 0) return [];
@@ -173,7 +203,8 @@ interface PlainSizing {
  * how many standard panels fit and how wide the one or two next to the gap
  * end up being. See `tileWall`'s doc comment for the sizing rules.
  *
- * The gap panel itself is always exactly `SAFETY_GAP_WIDTH_IN` — everything
+ * The gap panel itself is always exactly `gapWidthIn`, the width
+ * `safetyGapWidthForRunIn` chose for this run — everything
  * else in the budget goes to standard panels. Whatever's left over past a
  * whole number of standard widths no longer grows a single panel past
  * `standardWidthIn` (Tommy: "I want to have a panel break down into an
@@ -190,8 +221,8 @@ interface PlainSizing {
  * before. (Previously the *gap itself* absorbed the leftover — sizing its
  * own slot to whatever remained, 2 to 4ft typically — while the
  * panel-catalog's actual 3D member for it is only 3/4in wide, leaving a
- * wide unrendered gap around the real board; see `SAFETY_GAP_WIDTH_IN`'s
- * comment.)
+ * wide unrendered gap around the real board; see
+ * `WIDE_SAFETY_GAP_WIDTH_IN`'s comment.)
  *
  * ### The leftover: SPLIT or ABSORB — decided 2026-09-24
  *
@@ -269,6 +300,7 @@ interface PlainSizing {
 function computePlainSizing(
   budgetLengthIn: number,
   standardWidthIn: number,
+  gapWidthIn: number,
   allowBorrow = true,
 ): PlainSizing {
   void allowBorrow; // kept for call-site compatibility — see doc comment above
@@ -279,24 +311,26 @@ function computePlainSizing(
   const standardEighths = Math.max(1, toEighths(standardWidthIn));
   // The shop's own floor, in eighths — see the absorb branch below.
   const minEighths = toEighths(TILER_MIN_PANEL_WIDTH_IN);
-  // The gap is always exactly SAFETY_GAP_WIDTH_IN — except on a budget too
+  // The gap is always exactly the width `safetyGapWidthForRunIn` chose for
+  // this run (3/4in over 144in, 1/2in at or under it) — except on a budget too
   // small to hold even that, where it clamps to whatever there is. That
   // case is only reachable through `retileWithOpenings` (openings eating
-  // all but a sliver of a >12ft wall's middle), and it used to overflow the
-  // wall by up to 3/4in; clamping is what keeps the sum exact there. It
-  // does NOT change SAFETY_GAP_WIDTH_IN, which is untouched at 0.75.
+  // all but a sliver of a wall's middle), and it used to overflow the
+  // wall by up to the gap's own width; clamping is what keeps the sum exact
+  // there. It does NOT change either tier's constant.
   //
   // KNOWN, DELIBERATE INCONSISTENCY in that degenerate case, written down
   // rather than left to be discovered: `buildSafetyGapMembers` still emits a
-  // full 0.75in plywood board into the clamped slot, so the model briefly
-  // asserts a safety gap narrower than the board it stands for, against the
-  // spec's confirmed "standard panel width minus 3/4in" detail. Chosen over
+  // whole plywood board into the clamped slot, so the model briefly
+  // asserts a safety gap narrower than the board it stands for. Chosen over
   // dropping the slot entirely, which would turn the sliver into a phantom
   // sub-inch standard panel — a real (priced, fabricated) panel instance,
   // which is worse than a too-narrow gap. BOM and fabrication output are
-  // unaffected: the gap's BOM width is zeroed and its members key off
-  // SAFETY_GAP_THICKNESS_IN, not off this slot's width.
-  const gapEighths = Math.min(toEighths(SAFETY_GAP_WIDTH_IN), budgetEighths);
+  // unaffected: the gap's BOM width is zeroed, and the app picks the sheet by
+  // THICKNESS TIER rather than off this slot's clamped width (see
+  // `safetyGapSheetThicknessIn` in page.tsx), so a clamped slot still carries
+  // a whole sheet of one of the two real specs rather than an invented one.
+  const gapEighths = Math.min(toEighths(gapWidthIn), budgetEighths);
   const availableEighths = budgetEighths - gapEighths;
   const rawStandardCount = Math.floor(availableEighths / standardEighths);
   const remainderEighths = availableEighths - rawStandardCount * standardEighths;
@@ -390,38 +424,36 @@ function buildPlainMiddle(sizing: PlainSizing, standardWidthIn: number, gapEnd: 
 }
 
 /**
- * Dispatches between the gap-panel middle (walls over 12ft) and the
- * even-standards middle (12ft or under, no safety panel needed at all —
- * Tommy: "safety panels only needed for walls more than 12' long"). A
- * budget of exactly 0 (both corners fit with nothing left over) returns no
- * middle slots at all — without this, `buildEvenMiddle`'s `Math.max(1, ...)`
- * floor (there to still show 1 evenly-sized standard for a small-but-
- * positive budget) and `buildPlainMiddle`'s "nothing to borrow from"
- * branch would otherwise both synthesize a phantom zero-width panel, which
- * renders invisibly but still counts as a real panel instance/price line.
+ * The middle of a run: standard panels plus exactly one safety-gap slot,
+ * `gapWidthIn` wide. **There is no longer a second, gapless path** — the
+ * threshold decides the gap's WIDTH, not its existence (see
+ * `safetyGapWidthForRunIn`, and the note where `buildEvenMiddle` used to be).
+ *
+ * A budget of exactly 0 (both corners fit with nothing left over) returns no
+ * middle slots at all — without this, `buildPlainMiddle`'s "nothing to borrow
+ * from" branch would synthesize a phantom zero-width panel, which renders
+ * invisibly but still counts as a real panel instance/price line.
  */
 function buildMiddle(
   budgetLengthIn: number,
   standardWidthIn: number,
   gapEnd: WallEnd,
   allowBorrow: boolean,
-  needsSafetyPanel: boolean,
+  gapWidthIn: number,
 ): PanelSlot[] {
   if (budgetLengthIn <= 0) return [];
   // Snapped ONCE here so that every downstream consumer sees the same
   // grid-exact width — including buildPlainMiddle, which emits it verbatim
   // for each full-width panel. See gridStandardWidthIn.
   const widthIn = gridStandardWidthIn(standardWidthIn);
-  if (!needsSafetyPanel) {
-    return buildEvenMiddle(budgetLengthIn, widthIn);
-  }
-  const sizing = computePlainSizing(budgetLengthIn, widthIn, allowBorrow);
+  const sizing = computePlainSizing(budgetLengthIn, widthIn, gapWidthIn, allowBorrow);
   return buildPlainMiddle(sizing, widthIn, gapEnd);
 }
 
 /**
- * The sub-minimum middle a wall owning BOTH corners is left with at a given
- * nominal corner width, or null when the wall is not in that band at all.
+ * The middle a wall owning BOTH corners is left with when that middle cannot
+ * legally hold a safety gap plus one buildable panel, or null when the wall is
+ * not in that band at all.
  *
  * Exported because two places need the SAME definition of "this wall is in
  * the corner band": `resolveCorners`, which absorbs it (see below), and the
@@ -432,19 +464,38 @@ function buildMiddle(
  * Null (not in the band) covers all three of: a wall that does not own both
  * corners, a wall whose middle is exactly 0 or negative (the nominal pair
  * fits with nothing left over, or does not fit at all — the merge case), and
- * a wall whose middle is already a legal panel.
+ * a wall whose middle is already a legal gap-plus-panel.
+ *
+ * ⚠ **The band's ceiling moved on 2026-10-01, from `TILER_MIN_PANEL_WIDTH_IN`
+ * to `TILER_MIN_PANEL_WIDTH_IN + gapWidthIn`, and that is a correction rather
+ * than a widening for its own sake.** Every run now reserves a safety gap, so
+ * a middle must pay for the gap BEFORE it can hold a legal panel: a 75in
+ * two-corner wall has a 24in middle, which was exactly one legal panel and is
+ * now a 1/2in gap plus a 23½in panel the shop cannot build. At
+ * `cornerPanelWidthIn` (25.5in) the band is therefore 51in to 75½in rather
+ * than 51in to 75.5in — four eighth-steps wider — and every one of those walls
+ * gets a legal corner pair instead of an unbuildable panel. **No building value
+ * moved to make this fit**: 24in, 48in and 25.5in are all untouched, and the
+ * pair is still checked for legality by `resolveCorners` before it absorbs.
+ *
+ * `gapWidthIn` is passed in rather than derived here because only the caller
+ * knows the run's length, and the run's length is what picks the tier
+ * (`safetyGapWidthForRunIn`). In practice every wall in this band is far under
+ * the 144in threshold and so always gets the narrow tier — the parameter keeps
+ * that a fact about the numbers rather than an assumption in the code.
  */
 export function cornerBandMiddleIn(
   wallLengthIn: number,
   cornerWidthIn: number,
   hasCornerStart: boolean,
   hasCornerEnd: boolean,
+  gapWidthIn: number,
 ): number | null {
   if (!hasCornerStart || !hasCornerEnd) return null;
   const cornerEighths = Math.max(0, toEighths(cornerWidthIn));
   const wallEighths = Math.max(0, toEighths(wallLengthIn));
   const middleEighths = wallEighths - 2 * cornerEighths;
-  if (middleEighths <= 0 || middleEighths >= toEighths(TILER_MIN_PANEL_WIDTH_IN)) return null;
+  if (middleEighths <= 0 || middleEighths >= toEighths(TILER_MIN_PANEL_WIDTH_IN + gapWidthIn)) return null;
   return fromEighths(middleEighths);
 }
 
@@ -599,7 +650,7 @@ interface ResolvedCorners {
  * It is NOT true of every corner this function is called with.
  * `squareBalePanel.widthIn` is a **confirmed 39in** whole-bale unit — two 18in
  * bales plus two 1.5in studs — and the app tiles Square Bale corners at that
- * width, which moves this band to **78in-102in** and would otherwise emit two
+ * width, which moves this band to **78in-102.5in** and would otherwise emit two
  * 48in "corner panels" on an ordinary 8ft wall. Tommy, asked directly:
  * **"No — refuse instead."** Bales do not stretch, so widening a bale corner
  * invents a product that does not exist.
@@ -648,6 +699,7 @@ function resolveCorners(
   cornerWidthIn: number,
   hasCornerStart: boolean,
   hasCornerEnd: boolean,
+  gapWidthIn: number,
   reservedIn = 0,
   cornerMayWiden = true,
 ): ResolvedCorners {
@@ -674,7 +726,7 @@ function resolveCorners(
     // `cornerBandMiddleIn`, which the app's own refusal uses — kept in
     // eighths here because everything below works in eighths.
     const middleEighths = wallEighths - 2 * cornerEighths;
-    if (middleEighths > 0 && middleEighths < toEighths(TILER_MIN_PANEL_WIDTH_IN)) {
+    if (middleEighths > 0 && middleEighths < toEighths(TILER_MIN_PANEL_WIDTH_IN + gapWidthIn)) {
       // CORNER ABSORB — see the doc comment above. A reservation total of 0
       // (every `tileWall` call) keeps this branch, so the pair simply shares
       // the whole wall.
@@ -739,7 +791,9 @@ function resolveCorners(
  * itself is a separate derived overlay (see `applyBracedPlacement`); this
  * function only fixes the *order* of standard/gap slots.
  *
- * The safety/gap panel's width is always exactly `SAFETY_GAP_WIDTH_IN`
+ * The safety/gap panel's width is always exactly the tier
+ * `safetyGapWidthForRunIn` picks for this run — 3/4in over 144in of run,
+ * 1/2in at or under it
  * (Tommy: "the 3/4in wide safety gap plywood spacers [should] be flush with
  * both adjacent panels") — everything else in the budget goes to whichever
  * standard panel sits next to the gap, resized wider than the nominal
@@ -759,25 +813,26 @@ function resolveCorners(
  * gets its own corner panel at each end independently — a wall can win the
  * corner at one end and butt against a longer neighbor at the other (e.g.
  * a bump-out wall), which a single wall-wide flag couldn't express. Tommy's
- * rule: at a plain 90deg corner, only the locally shorter of the two walls
- * meeting there owns the corner panel — the longer one butts flush against
- * it instead (conventional framing through-wall/butt-wall convention), so
- * it gets no corner slot at that end. Callers tiling a butting end should
+ * rule (2026-10-01): at a plain convex 90deg corner the locally LONGER of
+ * the two walls meeting there runs through and owns the corner panel — the
+ * shorter one butts flush against it instead, so it gets no corner slot at
+ * that end. Callers tiling a butting end should
  * already have shortened `wallLengthIn` by the perpendicular wall's
- * thickness there before calling this.
+ * thickness there before calling this. See `cornerOwnership` in retile.ts,
+ * which is where the rule and its tiebreak actually live.
  *
  * `allowBorrow` no longer affects sizing (see `computePlainSizing`'s doc
  * comment) — kept as a parameter so mitered (octagon) vs. non-mitered
  * callers don't need to change.
  *
- * A wall at or under 12ft skips the gap panel entirely (Tommy: "safety
- * panels only needed for walls more than 12' long") — see
- * `buildMiddle`/`buildEvenMiddle`.
+ * EVERY run gets a gap panel (2026-10-01). A run at or under 144in gets a
+ * 1/2in one instead of a 3/4in one — it no longer goes without. See
+ * `safetyGapWidthForRunIn` and `buildMiddle`.
  *
  * If the wall owns corners at both ends but is too short to fit them
  * without overlapping, they're merged into a single corner panel spanning
  * the wall's whole length instead; and if it is too short to fit them plus a
- * legal middle panel (the 51in-75in band), the two corner panels absorb that
+ * legal middle panel (the 51in-75.5in band), the two corner panels absorb that
  * middle and share the wall between them — see `resolveCorners` for both,
  * and for why the second is a PAIR rather than one wide panel.
  *
@@ -812,14 +867,19 @@ export function tileWall(
   cornerMayWiden = true,
 ): TileWallResult {
   const gridLengthIn = roundToEighthIn(wallLengthIn);
-  const corners = resolveCorners(gridLengthIn, cornerWidthIn, hasCornerStart, hasCornerEnd, 0, cornerMayWiden);
+  // Two-tier gap, measured against the RUN — which is what `gridLengthIn`
+  // already is: `wallRunFor` has taken any butt-joint inset out before this is
+  // called. See `SAFETY_GAP_NARROW_MAX_RUN_LENGTH_IN` on why that distinction
+  // is worth a sentence. Resolved BEFORE the corners, because the corner band's
+  // own ceiling now includes it (`cornerBandMiddleIn`).
+  const gapWidthIn = safetyGapWidthForRunIn(gridLengthIn);
+  const corners = resolveCorners(gridLengthIn, cornerWidthIn, hasCornerStart, hasCornerEnd, gapWidthIn, 0, cornerMayWiden);
   if (corners.merged) {
     return { slots: [corners.merged] };
   }
 
   const middleLengthIn = Math.max(0, gridLengthIn - corners.fixedEndsIn);
-  const needsSafetyPanel = gridLengthIn > SAFETY_PANEL_MIN_WALL_LENGTH_IN;
-  const middle = buildMiddle(middleLengthIn, standardWidthIn, gapEnd, allowBorrow, needsSafetyPanel);
+  const middle = buildMiddle(middleLengthIn, standardWidthIn, gapEnd, allowBorrow, gapWidthIn);
 
   return {
     slots: [...(corners.cornerStart ? [corners.cornerStart] : []), ...middle, ...(corners.cornerEnd ? [corners.cornerEnd] : [])],
@@ -905,7 +965,7 @@ export function getOpeningAnchors(slots: PanelSlot[]): OpeningAnchor[] {
  * for them either at that point) — see `resolveCorners` in `tileWall`'s
  * doc comment.
  *
- * In the 51in-75in band the corner pair absorbs the sub-minimum middle
+ * In the 51in-75.5in band the corner pair absorbs the sub-minimum middle
  * instead, and here it absorbs only what is left **after** these openings:
  * a wall shortened into the band KEEPS a window that still fits in its
  * nominal middle, rather than losing it the way the merged branch would.
@@ -930,11 +990,17 @@ export function retileWithOpenings(
   // rather than pushing every panel on the wall off it.
   const gridLengthIn = roundToEighthIn(wallLengthIn);
   const openingsTotalWidthIn = openings.reduce((sum, o) => sum + roundToEighthIn(o.widthIn), 0);
+  // Two-tier gap off the RUN's own length, exactly as `tileWall` does — NOT
+  // off the plain budget left after the openings, so adding a window never
+  // changes which sheet the gap is. Resolved before the corners because the
+  // corner band's ceiling includes it (`cornerBandMiddleIn`).
+  const gapWidthIn = safetyGapWidthForRunIn(gridLengthIn);
   const corners = resolveCorners(
     gridLengthIn,
     cornerWidthIn,
     hasCornerStart,
     hasCornerEnd,
+    gapWidthIn,
     openingsTotalWidthIn,
     cornerMayWiden,
   );
@@ -944,13 +1010,12 @@ export function retileWithOpenings(
 
   // Empty ONLY on the corner-absorb path that could not keep them — see
   // `resolveCorners`. Every other path leaves this as the caller's own list,
-  // so nothing outside the 51in-75in band sees any change at all.
+  // so nothing outside the 51in-75.5in band sees any change at all.
   const keptOpenings = corners.dropsReservations ? [] : openings;
   const keptOpeningsTotalWidthIn = corners.dropsReservations ? 0 : openingsTotalWidthIn;
   const middleLengthIn = gridLengthIn - corners.fixedEndsIn;
   const plainBudgetIn = middleLengthIn - keptOpeningsTotalWidthIn;
-  const needsSafetyPanel = gridLengthIn > SAFETY_PANEL_MIN_WALL_LENGTH_IN;
-  const plainMiddle = buildMiddle(Math.max(0, plainBudgetIn), standardWidthIn, gapEnd, allowBorrow, needsSafetyPanel);
+  const plainMiddle = buildMiddle(Math.max(0, plainBudgetIn), standardWidthIn, gapEnd, allowBorrow, gapWidthIn);
 
   // Carries heightIn/sillHeightIn/zones through unconditionally — undefined
   // for any anchor built without them (a brand-new opening) is a no-op on

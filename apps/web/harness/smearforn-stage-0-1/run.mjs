@@ -1822,9 +1822,34 @@ for (const l of await panelWidthLabels()) {
 const widthsBeforeRetile12b = await widthsNow();
 await shot("12b-pinned-pairs-before-retile");
 
-// (b) One unrelated retile, from a THIRD wall.
-const stopWall12b = await walkToElevation(async (stop) => stop !== wall12b && stop !== wallForStep12.view);
-if (!stopWall12b) throw new Error("no third elevation to take the unrelated retile on");
+// (b) One unrelated retile, from a wall that shares NO CORNER with ours.
+//
+// ⚠ **"A different wall" is not enough any more, and this is the orphan-corner
+// rule rather than a weakening of the step (2026-10-01).** Corner ownership now
+// gives a convex corner to the LONGER of the two walls meeting there, so on the
+// footprint this harness draws the two long walls own all four corners. A START
+// stop on a long wall therefore removes a corner panel it OWNS, and the
+// orphan-corner rule (Tommy, 2026-09-25: "the corner simply does not exist")
+// clears the butting neighbour's inset — which makes that neighbour's run one
+// wall thickness LONGER. Measured on this fixture before the fix: the wall under
+// test went from 184-1/8in to 199-5/8in, so its pinned set could no longer
+// possibly sum to it and every pin was correctly refused. That is the refusal
+// working, not the planner failing, but it is not what this step is about.
+//
+// A wall sharing no corner with ours (the OPPOSITE side of the rectangle) cannot
+// reach it through that rule, so the retile is genuinely unrelated: same length,
+// same openings, same panel count. The second preference drops the
+// "not step 12's wall" nicety rather than the adjacency requirement, because
+// step 12 has already made all of its own assertions by this point.
+const wallIdOf = (view) => String(view).replace(/^Elevation:s*/, "").trim();
+const sharesACorner = (a, b) => {
+  const idA = wallIdOf(a);
+  const idB = wallIdOf(b);
+  return [...idA].some((corner) => idB.includes(corner));
+};
+let stopWall12b = await walkToElevation(async (stop) => !sharesACorner(stop, wall12b) && stop !== wallForStep12.view);
+if (!stopWall12b) stopWall12b = await walkToElevation(async (stop) => !sharesACorner(stop, wall12b));
+if (!stopWall12b) throw new Error("no corner-disjoint elevation to take the unrelated retile on");
 await sleep(500);
 await commitStop("start", 12);
 const stopState12b = await stopFieldState("start");

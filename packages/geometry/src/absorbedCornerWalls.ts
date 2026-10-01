@@ -17,7 +17,7 @@ export interface AbsorbedCornerWall {
 
 /**
  * Every wall whose CORNER PAIR absorbed a middle too small to hold a legal
- * panel — the 51in-75in two-corner band (see `resolveCorners` in `tiling.ts`).
+ * panel — the 51in-75.5in two-corner band (see `resolveCorners` in `tiling.ts`).
  *
  * **Why this is reported at all, when the wall it describes is now legal.**
  * Corner absorb fixes a wall that previously had no legal tiling, so the

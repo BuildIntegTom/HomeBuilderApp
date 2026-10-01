@@ -43,7 +43,7 @@ export type PanelSlotType =
 
 /** Declared locally rather than imported from panel-catalog's own
  * `BracePattern` — `packages/geometry` doesn't depend on
- * `packages/panel-catalog` (same reason `SAFETY_GAP_WIDTH_IN` is
+ * `packages/panel-catalog` (same reason the safety-gap widths are
  * duplicated rather than imported there). Kept in sync by hand; see
  * `PanelSlot.bracedPattern`. */
 export type BracePattern = "chevron" | "hatch";

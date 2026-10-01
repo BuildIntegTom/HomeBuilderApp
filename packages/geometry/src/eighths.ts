@@ -9,7 +9,7 @@ import type { Corner, Footprint, PanelSlot, Wall } from "./types";
  * This is a *precision convention*, not a building dimension — it is not a
  * fastener spacing, a load, a density, or a cost, and it needs nobody's
  * engineering sign-off. Everything the grid rests on was already a whole
- * eighth before this module existed (SAFETY_GAP_WIDTH_IN 0.75,
+ * eighth before this module existed (the safety-gap widths 0.75 and 0.5,
  * cornerPanelWidthIn 25.5, panelWidthInRange 15.75-48, the 40in standard
  * default, Square Bale's 39in, and the 14 / 15.5 / 15.75 thickness
  * options); none of them change here.
@@ -85,8 +85,9 @@ export function isWholeEighthIn(valueIn: number): boolean {
  * site, not a change here. See the spec's Open Items.
  *
  * Returns exactly `count` entries, INCLUDING any that come out as 0 —
- * dropping zero-width parts is the caller's decision (see `buildEvenMiddle`
- * in tiling.ts, which drops them to stay consistent with `buildMiddle`'s
+ * dropping zero-width parts is the caller's decision (see
+ * `computeSillRunWidths` in tiling.ts, which drops them to stay consistent with
+ * `buildMiddle`'s
  * existing phantom-panel guard). A non-positive budget yields all zeros
  * rather than negatives: a negative width is never a sane panel, and
  * silently emitting one would hide the caller's own bug.

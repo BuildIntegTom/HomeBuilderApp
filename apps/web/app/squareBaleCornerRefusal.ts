@@ -1,4 +1,4 @@
-import { cornerBandMiddleIn, mergedCornerWidthIn, wallGeometryFor } from "@building-integrity/geometry";
+import { cornerBandMiddleIn, mergedCornerWidthIn, safetyGapWidthForRunIn, wallGeometryFor } from "@building-integrity/geometry";
 import type { CornerId, Footprint, PanelSlot, WallRunStop } from "@building-integrity/geometry";
 import type { FormatLengthIn } from "./placementNotice";
 
@@ -20,8 +20,8 @@ import type { FormatLengthIn } from "./placementNotice";
  *
  * A Square Bale corner is not that part. It is a `squareBalePanel.widthIn`
  * whole-bale unit — a **confirmed 39in**, two 18in bales plus two 1.5in studs
- * — and **bales do not stretch**. At 39in the band moves from 51in-75in to
- * **78in-102in**, which is where ordinary buildings live: an **8ft wall**
+ * — and **bales do not stretch**. At 39in the band moves from 51in-75.5in to
+ * **78in-102.5in**, which is where ordinary buildings live: an **8ft wall**
  * (`MIN_DIMENSION_FT`, the shortest side the rectangle tool will draw) would
  * emit two **48in** "corner panels", and a 7ft wall two 42in ones. Neither is
  * a product; each is a bale corner with inches of nothing added to it.
@@ -41,7 +41,7 @@ import type { FormatLengthIn } from "./placementNotice";
  * second only above the catalog ceiling, which is his own later narrowing, see
  * `findSquareBaleMergedCornerWalls`:
  *
- * 1. **ABSORB — the 78in-102in band.** Two nominal bale corners leave a middle
+ * 1. **ABSORB — the 78in-102.5in band.** Two nominal bale corners leave a middle
  *    under the 24in fabrication minimum, and absorb would widen them to share
  *    the wall. `findSquareBaleBandWalls` / `squareBaleCornerRefusal`.
  * 2. **MERGE — a two-corner wall under 78in whose merged slot is over 48in.**
@@ -147,7 +147,7 @@ export interface RefusalWallFacts {
  * 14in):
  *
  * - **12 positions were FALSE REFUSALS.** At a span start of 62 5/8in, wall
- *   `01` runs **78 1/8in at 15.5in** — in the 78in-102in bale band, middle
+ *   `01` runs **78 1/8in at 15.5in** — in the 78in-102.5in bale band, middle
  *   1/8in, refused by name — but **76 5/8in at 14in**, which is not in the band
  *   at all. The app refused Square Bale, quoting inches the building would not
  *   have had.
@@ -199,7 +199,17 @@ export function squareBaleRefusalWallFacts(
 export function findSquareBaleBandWalls(walls: RefusalWallFacts[], baleCornerWidthIn: number): SquareBaleBandWall[] {
   const found: SquareBaleBandWall[] = [];
   for (const wall of walls) {
-    const middleIn = cornerBandMiddleIn(wall.lengthIn, baleCornerWidthIn, wall.hasCornerStart, wall.hasCornerEnd);
+    // The band's ceiling includes the run's own safety gap since 2026-10-01 —
+    // the middle has to pay for the gap before it can hold a legal panel — so
+    // the same gap width the tiler used has to come in here too, or the
+    // refusal and the tiler disagree about four eighths of band.
+    const middleIn = cornerBandMiddleIn(
+      wall.lengthIn,
+      baleCornerWidthIn,
+      wall.hasCornerStart,
+      wall.hasCornerEnd,
+      safetyGapWidthForRunIn(wall.lengthIn),
+    );
     if (middleIn === null) continue;
     found.push({ wallId: wall.wallId, wallLengthIn: wall.lengthIn, middleIn });
   }
@@ -304,7 +314,7 @@ export interface SquareBaleMergedCornerWall {
  * are the octagons from **8ft to about 9.64ft** across — 8ft → 39.75in, 9ft →
  * 44.75in — each of which now builds eight merged bale corners that are not
  * whole-bale units, each carrying its own Review Log entry. Above that, and
- * through the 78in-102in band, nothing changed.
+ * through the 78in-102.5in band, nothing changed.
  */
 export function findSquareBaleMergedCornerWalls(
   walls: RefusalWallFacts[],

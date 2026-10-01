@@ -117,9 +117,11 @@ describe("the 174in boundary Tommy hit", () => {
     expect(broken.filter((b) => b >= 174)).toEqual([]);
     // ⚠ **NOT every eighth below the boundary breaks**, and the module doc
     // comment used to say it did. Counted here so the figure cannot drift: of
-    // the 984 eighths from 51in to 173.875in, 793 break. The sharp thing is
-    // the boundary, not the density below it.
-    expect(broken.length).toBe(793);
+    // the 984 eighths from 51in to 173.875in, 789 break. The sharp thing is
+    // the boundary, not the density below it. (**793 before 2026-10-01**: the
+    // four-eighth widening of the corner-absorb band takes four of those lengths
+    // onto the absorbed-pair path, where the sum closes.)
+    expect(broken.length).toBe(789);
     expect(toEighths(173.875) - toEighths(51) + 1).toBe(984);
   });
 

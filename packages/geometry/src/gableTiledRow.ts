@@ -65,14 +65,24 @@ export const GABLE_SHED_SNAP_THRESHOLD_IN = 24;
 
 /** Fixed width of the dedicated safety-gap tile a tiled run's own leftover
  * width gets absorbed into (mirrors packages/geometry/src/tiling.ts's own
- * SAFETY_GAP_WIDTH_IN — duplicated rather than imported, since this package
- * has no dependency on panel-catalog and that file can't be shared either). */
+ * `WIDE_SAFETY_GAP_WIDTH_IN` — duplicated rather than imported, since this
+ * package has no dependency on panel-catalog and that file can't be shared
+ * either). */
 export const GABLE_SAFETY_GAP_WIDTH_IN = 0.75;
 
-/** A run shorter than this never bothers with a dedicated safety-gap tile —
- * mirrors tiling.ts's own SAFETY_PANEL_MIN_WALL_LENGTH_IN (12ft), applied
- * per-segment here rather than per-wall, consistent with every other part
- * of this tiler already treating each rise/flat/fall segment independently. */
+/** A GABLE run shorter than this never bothers with a dedicated safety-gap tile,
+ * applied per rise/flat/fall segment rather than per wall.
+ *
+ * ⚠ **The MIRROR OF THE WALL TILER IS NOW ONLY PARTIAL, deliberately, and it is
+ * flagged rather than quietly fixed.** This used to mirror `tiling.ts`'s
+ * `SAFETY_PANEL_MIN_WALL_LENGTH_IN` exactly: 12ft, all or nothing. On 2026-10-01
+ * Tommy made the WALL rule two-tier — every wall run gets a gap, 3/4in over 144in
+ * of run and 1/2in at or under it (`safetyGapWidthForRunIn`) — and what he asked
+ * for was about walls. **A gable row is not a wall run:** it is the triangle
+ * above the eave, tiled per segment, and whether a short gable segment wants a
+ * 1/2in gap is his call and has not been asked. So this file keeps the old
+ * all-or-nothing gate and the old single 3/4in width. See the spec's Open Items;
+ * do not re-align it without a decision. */
 export const GABLE_SAFETY_GAP_MIN_RUN_LENGTH_IN = 144;
 
 /** How far below the true peak height the structural Column Panel's own
@@ -318,8 +328,9 @@ function tileEvenly(startIn: number, endIn: number, anchors: RoofAnchor[], targe
  * any panel oversized. The gap sits at the run's own eave-side end, never
  * the peak-adjacent end, so the "a panel boundary always lands exactly on
  * every control point" invariant near the peak/shoulder stays untouched.
- * Falls back to `tileEvenly` for runs too short to bother (mirrors
- * SAFETY_PANEL_MIN_WALL_LENGTH_IN's own 12ft gate). */
+ * Falls back to `tileEvenly` for runs too short to bother — see
+ * `GABLE_SAFETY_GAP_MIN_RUN_LENGTH_IN`, which deliberately did NOT follow the
+ * wall tiler's two-tier change of 2026-10-01. */
 function tileRun(
   startIn: number,
   endIn: number,

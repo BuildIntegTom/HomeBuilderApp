@@ -457,7 +457,7 @@ describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
   const offGridSlots = [
     { type: "standard" as const, widthIn: 23.5625 },
     { type: "standard" as const, widthIn: 23.5625 },
-    { type: "standard" as const, widthIn: 281.875 },
+    { type: "standard" as const, widthIn: 312.875 },
   ];
 
   function loadWithOffGridWall(extraOverrides: Partial<ProjectState> = {}) {
@@ -485,7 +485,10 @@ describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
     // Integer eighths, not toBeCloseTo — a tolerance would pass on exactly the
     // defect this migration exists to repair.
     const sumEighths = repaired.reduce((sum, slot) => sum + Math.round(slot.widthIn * 8), 0);
-    expect(sumEighths).toBe(Math.round((30 * 12 - 2 * 15.5) * 8));
+    // 360in, not 329in: AB is the LONGER wall of this fixture, so since
+    // 2026-10-01 it runs through both its corners instead of being inset at both
+    // (the fixture's widest slot grew by the 31in that frees up).
+    expect(sumEighths).toBe(Math.round(30 * 12 * 8));
   });
 
   it("repairs the second story's own wallSlots too, not just baseWallSlots", () => {
@@ -548,10 +551,10 @@ describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
   });
 
   it("does not stretch a wall whose slots were never a tiling of it", () => {
-    // The guard, on `rectangleFootprint` (so the target is 329in — see that
+    // The guard, on `rectangleFootprint` (so the target is 360in — see that
     // fixture's own comment): two 40in panels totalling 80in is not a
-    // rounding residual of a 329in wall, so the repair works against the
-    // wall's own stored total instead of inventing 249in of panel width.
+    // rounding residual of a 360in wall, so the repair works against the
+    // wall's own stored total instead of inventing 280in of panel width.
     const result = loadWithOffGridWall({
       baseWallSlots: { AB: [{ type: "standard", widthIn: 40 }, { type: "standard", widthIn: 40 }] },
     });
@@ -560,20 +563,27 @@ describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
     expect(result.state.baseWallSlots.AB!.map((s) => s.widthIn)).toEqual([40, 40]);
   });
 
-  /** Wall AB of `rectangleFootprint`, exactly as `tileWall(329, 40, 25.5,
-   * ...)` produces it: 10 slots summing to precisely 329in, every width
-   * already a whole eighth. */
+  /** Wall AB of `rectangleFootprint`, exactly as `tileWall(360, 40, 25.5,
+   * "end", true, true)` produces it: 11 slots summing to precisely 360in, every
+   * width already a whole eighth.
+   *
+   * ⚠ **Re-measured 2026-10-01.** It used to be the 10-slot, corner-less tiling
+   * of a 329in run, because AB was inset at both ends. AB is the LONGER wall
+   * here, so it now runs through and owns both corner panels. Keeping the old
+   * array would have left the test below passing through the GUARD instead of
+   * the no-op branch it exists to exercise — green, and measuring nothing. */
   const genuinelyTiledSlots = [
+    { type: "corner" as const, widthIn: 25.5 },
     { type: "standard" as const, widthIn: 40 },
     { type: "standard" as const, widthIn: 40 },
     { type: "standard" as const, widthIn: 40 },
     { type: "standard" as const, widthIn: 40 },
     { type: "standard" as const, widthIn: 40 },
-    { type: "standard" as const, widthIn: 40 },
-    { type: "standard" as const, widthIn: 24.125 },
-    { type: "standard" as const, widthIn: 24.125 },
+    { type: "standard" as const, widthIn: 34.125 },
+    { type: "standard" as const, widthIn: 34.125 },
     { type: "safety-gap" as const, widthIn: 0.75 },
     { type: "standard" as const, widthIn: 40 },
+    { type: "corner" as const, widthIn: 25.5 },
   ];
 
   it("is a true no-op on a genuinely tiled wall — the residual is zero, not merely guarded", () => {
@@ -597,7 +607,7 @@ describe("the standing 1/8in grid repair, exercised through a v24 file", () => {
     if (!result.ok) return;
     // The precondition that makes this the no-op branch rather than the guard:
     // the stored widths already sum to the wall's own tiled length.
-    expect(genuinelyTiledSlots.reduce((sum, s) => sum + s.widthIn, 0)).toBe(329);
+    expect(genuinelyTiledSlots.reduce((sum, s) => sum + s.widthIn, 0)).toBe(360);
     expect(result.state.baseWallSlots.AB).toEqual(genuinelyTiledSlots);
     expect(result.state.stories[0]!.wallSlots.AB).toEqual(genuinelyTiledSlots);
   });

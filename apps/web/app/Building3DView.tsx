@@ -235,7 +235,7 @@ function membersForSlot(
       //
       // ⚠ `slot.widthIn`, not the nominal 25.5in. A corner slot is NOT a fixed
       // unit: merge and clamp size it down, and corner absorb widens a pair to
-      // share a wall in the 51in-75in band (so a 72in wall is two 36in corner
+      // share a wall in the 51in-75.5in band (so a 72in wall is two 36in corner
       // panels, and every octagon 10.5ft-15ft across is built of them). With
       // the nominal hard-coded here, such a wall rendered 25.5in of framing in
       // a 36in box — visibly short by up to 21in in Framed 3D and in the OBJ

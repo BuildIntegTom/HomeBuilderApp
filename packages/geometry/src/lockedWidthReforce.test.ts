@@ -539,12 +539,17 @@ describe("the sweep: a pinned width never moves the wall's own total", () => {
     // length) on every single case, and it really did reach both outcomes rather
     // than only the easy one.
     //
-    // Measured 2026-09-30 on this grid: 684,588 cases, 889,606 pins set,
-    // **605,669 honoured and 283,937 refused**. The refusals are bounded rather
-    // than pinned exactly, because the split between them is a function of the
-    // TILER's free-run widths and would move for reasons that have nothing to do
-    // with this file; the invariant above is what is pinned.
-    expect(cases).toBe(684_588);
+    // ⚠ **RE-MEASURED 2026-10-01** for the corner-ownership flip and the two-tier
+    // safety gap, both of which change what the TILER hands this file on every
+    // wall. **684,360 cases (was 684,588), 887,248 pins set (was 889,606),
+    // 606,585 honoured (was 605,669) and 280,663 refused (was 283,937) — 0
+    // violations either way.** The case count fell by 228 because the
+    // corner-absorb band is four eighths wider (a wall whose corners absorb its
+    // whole run has no free panel to pin, so the grid skips it), and the
+    // honoured/refused split moved because the free-run widths moved. The
+    // refusals are bounded rather than pinned exactly, for exactly that reason;
+    // the invariant above is what is pinned, and it still holds on every case.
+    expect(cases).toBe(684_360);
     // The weaker form of the invariant — against the tiler's own total on a wall
     // the tiler itself does not sum — is reachable code that this grid never
     // reaches, because 100in is long enough to hold every opening set here. It
@@ -662,8 +667,10 @@ describe("the sweep: a pinned width never moves the wall's own total", () => {
       }
     }
     expect(violations.slice(0, 10)).toEqual([]);
-    // Measured 2026-09-30 on this grid: **60,777 cases, 0 violations.**
-    expect(cases).toBe(60_777);
+    // Measured 2026-09-30: 60,777 cases, 0 violations. **RE-MEASURED 2026-10-01
+    // after the ownership flip and the two-tier gap: 60,390 cases, still 0
+    // violations.**
+    expect(cases).toBe(60_390);
     // Non-vacuity, and the proof this row earns its runtime: how many of these
     // pairs have NO free panel to lean on, i.e. are payable ONLY because the two
     // residuals cancel. **Measured 7,296 — and run against the per-pin planner
@@ -712,7 +719,10 @@ describe("the sweep: a pinned width never moves the wall's own total", () => {
     }
     expect(violations.slice(0, 10)).toEqual([]);
     // Measured 2026-09-30: 3,228 cases, 727 of them with the pin refused.
+    // **RE-MEASURED 2026-10-01: the same 3,228 cases (this grid is over wall
+    // LENGTHS, which did not move), 678 refused.** 49 fewer: a wall that now runs
+    // through its corners has a longer free run to pay the pin out of.
     expect(cases).toBe(3_228);
-    expect(refused).toBe(727);
+    expect(refused).toBe(678);
   });
 });

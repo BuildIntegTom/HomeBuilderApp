@@ -58,15 +58,17 @@ function isCorner(slot: PanelSlot | undefined): boolean {
  * wall lengths"). But the refusal has a consequence nobody can see from the
  * drawing:
  *
- *   * the safety gap stays a visible 3/4in spacer rather than merging into the
+ *   * the safety gap stays a visible spacer (3/4in on a run over 144in, 1/2in at
+ *     or under it) rather than merging into the
  *     brace, and the corner's brace lands on an ordinary standard panel
  *     further in;
  *   * **on 4,064 measured ends that panel sits 3ft 3/4in in, past an
- *     opening**, not "adjacent but one" — see the histogram under "the 3/4in
+ *     opening**, and on 5,490 more it sits 3ft 1/2in in — the same case one gap
+ *     tier narrower — not "adjacent but one"; see the histogram under "the gap
  *     step" below for the other distances;
- *   * and on **6,152 measured walls the wall goes from two braced panels to
+ *   * and on **14,972 measured walls the wall goes from two braced panels to
  *     one**, because the brace the far corner's walk finds is the same panel
- *     the near corner's walk found. Every one of those 6,152 owns two corners
+ *     the near corner's walk found. Every one of those 14,972 owns two corners
  *     and carries exactly one brace on the whole wall. Tommy's rule is one
  *     brace per corner ("each wall must have two braced panels on it, touching
  *     each side of each corner panel"), so that wall is legal on its length
@@ -102,32 +104,58 @@ function isCorner(slot: PanelSlot | undefined): boolean {
  * corner has no corner panel for a brace to touch, so Tommy's rule has
  * nothing to say about it; the combine can still be refused there and that
  * refusal is simply not this entry's business. Measured on the same
- * 790,440-wall product sweep: **28,979 of 32,644 refusal walls own at least
+ * 790,440-wall product sweep: **75,480 of 100,451 refusal walls own at least
  * one corner**, where a "refusal wall" is one whose rule-1 corner walk reached
  * a plain safety gap — i.e. the combine was attempted there and did not fire.
  *
- * ⚠ **One related figure is NOT pinned and cannot be, so read it as dated:**
- * of those 32,644, **13,355 come out carrying one fewer braced panel than they
- * did before the 2026-09-29 rewrite, and 0 carry more.** That is a comparison
+ * ⚠ **EVERY COUNT IN THIS COMMENT WAS RE-MEASURED ON 2026-10-01** for the
+ * two-tier safety gap (the old figures are kept beside the new ones). The reason
+ * they all roughly tripled is one thing: a run of 144in or less used to get NO
+ * safety gap, so a short run had no plain gap for the corner walk to reach and
+ * no refusal to report. Now every run reserves one. **The flip of corner
+ * ownership on the same day does not touch this sweep at all** — it passes
+ * `hasCornerStart`/`hasCornerEnd` to `retileWithOpenings` explicitly — and the
+ * histogram below proves it: every wide-gap offset comes back bit-identical and
+ * every new entry is its narrow-gap twin.
+ *
+ * ⚠ **One related figure is NOT pinned and cannot be, so read it as dated —
+ * and it is now dated TWICE OVER:** of the 32,644 refusal walls as that sweep
+ * stood on 2026-09-30, **13,355 came out carrying one fewer braced panel than
+ * they did before the 2026-09-29 rewrite, and 0 carried more.** The refusal-wall
+ * population is now 100,451, so that fraction no longer describes this tree
+ * either; it is left as a record of what the rewrite cost on the sweep it was
+ * measured against, and nothing has re-measured it since. That is a comparison
  * against an implementation that is no longer in the tree (`applyBracedPlacement`
  * as of commit b714fdb, whose combine paid by shedding width onto a neighbour
  * clamped at zero). Re-verified against that commit on 2026-09-30; if the
  * combine changes again, re-measure it the same way or delete the sentence
  * rather than carrying it forward untested. The 32,644 and 28,979 halves ARE
- * pinned, and they are measured from this code alone.
+ * pinned (at their new values), and they are measured from this code alone.
  *
- * ### The one case deliberately NOT reported: the 3/4in step
+ * ### The one case deliberately NOT reported: the gap step
  *
  * When the ONLY thing between the corner panel and its brace is the safety gap
- * itself, the brace is the very next panel across a 3/4in plywood spacer. That
+ * itself, the brace is the very next panel across a plywood spacer — 3/4in on a
+ * run over 144in, 1/2in at or under it. That
  * is the "adjacent but one" case, and it is the refusal working as intended.
- * **Measured over the 790,440-wall product sweep: 21,080 refused corner ends,
- * of which 9,118 are that 3/4in step. 7,853 of those are dropped here** — the
- * other 1,265 report anyway because their brace is shared — leaving **13,227
- * reported ends**: 6,559 whose brace sits 62-1/4in in from the corner, 4,064 at
- * 36-3/4in, 1,100 at 80-3/4in, 95 at 30-3/4in, and 144 with no brace anywhere
- * on the wall at all. A shared brace and a missing brace are reported at any
- * offset, including that one, because those are facts about the wall rather
+ * **Measured over the 790,440-wall product sweep: 50,269 refused corner ends,
+ * of which 25,888 are that gap step. 20,129 of those are dropped here** — the
+ * other 5,759 report anyway because their brace is shared — leaving **30,140
+ * reported ends**, in two matched halves:
+ *
+ *   * the WIDE-gap (3/4in) offsets, every one of them unchanged from the
+ *     2026-09-30 census: 6,559 whose brace sits 62-1/4in in from the corner,
+ *     4,064 at 36-3/4in, 1,100 at 80-3/4in, 95 at 30-3/4in;
+ *   * the NARROW-gap (1/2in) offsets, all new on 2026-10-01 and each a quarter
+ *     inch nearer the corner than its twin: 2,098 at 62in, 5,490 at 36-1/2in,
+ *     1,212 at 80-1/2in, 3,091 at 30-1/2in;
+ *   * plus 672 ends with no brace anywhere on the wall at all (was 144), and the
+ *     step itself where the brace is shared: 1,265 at 3/4in (unchanged) and
+ *     4,494 at 1/2in (new).
+ *
+ * (Was 21,080 refused ends / 9,118 steps / 7,853 dropped / 1,265 reported
+ * anyway / 13,227 reported.) A shared brace and a missing brace are reported at
+ * any offset, including the step, because those are facts about the wall rather
  * than about a distance.
  *
  * It also cannot tell WHY the combine was refused — a run that could not pay

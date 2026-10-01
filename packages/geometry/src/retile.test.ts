@@ -48,13 +48,89 @@ describe("gapEndFor", () => {
 });
 
 describe("cornerOwnership", () => {
-  it("gives every corner of a plain rectangle to the (tied) shorter-or-lower-id wall", () => {
+  it("gives every corner of a plain rectangle to the LONGER wall, which runs through (2026-10-01)", () => {
     const fp = buildRectangleFootprint(30, 20);
     const ownership = cornerOwnership(fp, allPrimary(fp), THICKNESS_IN);
-    // AB (30ft) meets BC (20ft) at B: BC is shorter, so BC wins (owns its
-    // own start corner), AB insets by thicknessIn at its end.
-    expect(ownership["AB"]!.end).toEqual({ hasCorner: false, insetAmount: THICKNESS_IN, extraLengthIn: 0 });
-    expect(ownership["BC"]!.start).toEqual({ hasCorner: true, insetAmount: 0, extraLengthIn: 0 });
+    // AB (30ft) meets BC (20ft) at B: AB is LONGER, so AB runs through and owns
+    // the corner, and BC butts into it — inset by thicknessIn at its start.
+    //
+    // ⚠ This test used to assert the exact opposite ("the (tied)
+    // shorter-or-lower-id wall"). Tommy's decision of 2026-09-30/10-01 inverted
+    // it: on his 241 x 155in rectangle the short walls were running
+    // vertex-to-vertex past where the long walls' panels stopped — *"the short
+    // sides seem to protrude a little past where it should."*
+    expect(ownership["AB"]!.end).toEqual({ hasCorner: true, insetAmount: 0, extraLengthIn: 0 });
+    expect(ownership["BC"]!.start).toEqual({ hasCorner: false, insetAmount: THICKNESS_IN, extraLengthIn: 0 });
+    // Both long walls own BOTH their corners; both short walls own neither.
+    expect(ownership["AB"]!.start.hasCorner).toBe(true);
+    expect(ownership["CD"]!.start.hasCorner).toBe(true);
+    expect(ownership["CD"]!.end.hasCorner).toBe(true);
+    expect(ownership["BC"]!.end.hasCorner).toBe(false);
+    expect(ownership["DA"]!.start.hasCorner).toBe(false);
+    expect(ownership["DA"]!.end.hasCorner).toBe(false);
+  });
+
+  it("PINWHEELS a square, where every corner is a tie: each wall owns its START corner only", () => {
+    // The tiebreak, which is now the common case rather than an exception — a
+    // square has four tied corners. A tie goes to the SUCCESSOR wall, so every
+    // wall owns its start and butts at its end, every run comes out the same
+    // length, and all four walls are the same part. An id- or index-based
+    // tiebreak would instead give AB two corners and DA none.
+    const fp = buildRectangleFootprint(24, 24);
+    const ownership = cornerOwnership(fp, allPrimary(fp), THICKNESS_IN);
+    for (const id of ["AB", "BC", "CD", "DA"]) {
+      expect(ownership[id]!.start).toEqual({ hasCorner: true, insetAmount: 0, extraLengthIn: 0 });
+      expect(ownership[id]!.end).toEqual({ hasCorner: false, insetAmount: THICKNESS_IN, extraLengthIn: 0 });
+    }
+    // Exactly one owner per corner, which is the property that actually matters.
+    const owners = fp.walls.filter((w) => ownership[w.id]!.start.hasCorner).length;
+    expect(owners).toBe(4);
+  });
+
+  it("is decided on whole EIGHTHS of fabrication length, so a 1/8in difference really does decide it", () => {
+    // Not a tolerance, deliberately: the comparison is an integer identity on
+    // the same grid the tiler sizes runs from. An octagon — the one shape whose
+    // nominally-equal sides can differ by an eighth after snapping — never
+    // reaches this rule at all, because all its corners are mitered.
+    const square = buildRectangleFootprint(24, 24);
+    const tied = cornerOwnership(square, allPrimary(square), THICKNESS_IN);
+    expect(tied["AB"]!.end.hasCorner).toBe(false); // tie -> successor
+
+    // 24ft vs 24ft + 1/8in: no longer a tie, and AB (the longer) takes it.
+    const nudged = buildRectangleFootprint(24 + 0.125 / 12, 24);
+    const broken = cornerOwnership(nudged, allPrimary(nudged), THICKNESS_IN);
+    expect(broken["AB"]!.end.hasCorner).toBe(true);
+    expect(broken["BC"]!.start.hasCorner).toBe(false);
+  });
+
+  it("leaves every corner of an OCTAGON owned by both its walls — mitered corners never ask about length", () => {
+    // The flip of 2026-10-01 is gated behind `isRightAngleCorner`, so a mitered
+    // shape is untouched by it. Asserted rather than argued, because an octagon's
+    // eight sides are NOT bit-identically equal after snapping and a strict
+    // length comparison would otherwise flip ownership on a rounding difference.
+    for (const fp of [buildOctagonFootprint(30, 20), buildOctagonFootprint(30, 30)]) {
+      const ownership = cornerOwnership(fp, allPrimary(fp), THICKNESS_IN);
+      for (const wall of fp.walls) {
+        expect(ownership[wall.id]).toEqual({
+          start: { hasCorner: true, insetAmount: 0, extraLengthIn: 0 },
+          end: { hasCorner: true, insetAmount: 0, extraLengthIn: 0 },
+        });
+      }
+    }
+    // And on the REGULAR octagon the eight nominally-equal sides really are
+    // unequal after snapping, which is what makes this test worth having: a
+    // strict length comparison would decide ownership on a rounding difference
+    // if it ever ran here. It does not run here. **Measured spread on a 30ft
+    // regular octagon: just under 1/5in** — bigger than the 1/16in the corners
+    // themselves move, because a 45deg side's length amplifies a corner move
+    // (and because the clip ratio is itself irrational). Asserted loosely, since
+    // the number that matters is "not zero".
+    const regular = buildOctagonFootprint(30, 30);
+    const lengths = regular.walls.map((w) => w.lengthFt);
+    expect(new Set(lengths.map((l) => l.toFixed(9))).size).toBeGreaterThan(1);
+    const spreadIn = (Math.max(...lengths) - Math.min(...lengths)) * 12;
+    expect(spreadIn).toBeGreaterThan(1 / 8);
+    expect(spreadIn).toBeLessThan(0.25);
   });
 
   it("matches the pixel-verified reflex-corner rule on a bump-out'd shape", () => {
@@ -307,9 +383,10 @@ describe("wallGeometryFor", () => {
     const fp = buildRectangleFootprint(30, 20);
     const geometry = wallGeometryFor(fp, "AB", allPrimary(fp), "A", THICKNESS_IN);
     expect(geometry).not.toBeNull();
-    // AB is the longer wall at both corners (DA=20ft wins at A, BC=20ft
-    // wins at B), so it insets by thicknessIn at both ends.
-    expect(geometry!.lengthIn).toBeCloseTo(30 * 12 - 2 * THICKNESS_IN, 6);
+    // AB is the longer wall at both corners (30ft against DA/BC's 20ft), so
+    // since 2026-10-01 it RUNS THROUGH both of them and is inset at neither.
+    // (It used to be inset at both, for 329in.)
+    expect(geometry!.lengthIn).toBeCloseTo(30 * 12, 6);
     expect(geometry!.allowBorrow).toBe(true);
 
     expect(wallGeometryFor(fp, "nonexistent", allPrimary(fp), "A", THICKNESS_IN)).toBeNull();
@@ -323,7 +400,7 @@ describe("wallGeometryFor", () => {
 });
 
 // ---------------------------------------------------------------------------
-// CORNER ABSORB, END TO END — the 51in-75in two-corner band through the real
+// CORNER ABSORB, END TO END — the 51in-75.5in two-corner band through the real
 // retile path rather than through `tileWall` alone.
 //
 // The band's own arithmetic is covered in tiling.test.ts. What is covered
@@ -369,7 +446,7 @@ describe("corner absorb on real footprints", () => {
 
   it("a small octagon — every wall in the band — now tiles legally on every wall", () => {
     // A regular octagon's side is 0.41421x its bounding box, so EVERY wall of
-    // an octagon between 10.26ft and 15.09ft across sits in the 51in-75in
+    // an octagon between 10.26ft and 15.09ft across sits in the 51in-75.5in
     // band, and every wall of an octagon owns BOTH its corners because the
     // corners are mitered. Small octagons were therefore broken outright:
     // each of the eight walls produced a panel the shop cannot build.
@@ -534,8 +611,9 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
   const WALL_ID = "AB";
 
   /**
-   * A 30ft wall that OWNS both its corners (its two neighbours are the 35ft
-   * sides, so the shorter-wall rule gives AB both), carrying two 61.5in
+   * A 30ft wall that OWNS both its corners (its two neighbours are the 20ft
+   * sides, so the longer-wall rule of 2026-10-01 gives AB both — it was a
+   * 30 x 35ft rectangle under the old shorter-wall rule), carrying two 61.5in
    * windows. `2 x 61.5 + 2 x 25.5 = 174in` of openings and corner panels on a
    * 360in run — the same openings-plus-corners relationship that produced the
    * 174in boundary Tommy reported.
@@ -560,7 +638,7 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
    * quietly be measuring the re-tile instead of the stop.
    */
   function buildFixture() {
-    const fp = buildRectangleFootprint(30, 35);
+    const fp = buildRectangleFootprint(30, 20);
     const primary = allPrimary(fp);
     const openings: OpeningAnchor[] = [
       { beforeStandardCount: 1, type: "window", widthIn: 61.5, heightIn: 60, sillHeightIn: 36 },
@@ -844,10 +922,12 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
    * the window and the door in each other's places.
    */
   it("a start stop that drops one of two openings restores them in the right order, at every inch", () => {
-    // 47ft, owning both corners (its neighbours are the 55ft sides), with a
+    // 47ft, owning both corners (its neighbours are the 40ft sides, and the
+    // longer wall runs through since 2026-10-01 — it was 47 x 55ft under the old
+    // shorter-wall rule), with a
     // window and a door far enough apart that a start stop can take the window
     // and leave the door.
-    const fp = buildRectangleFootprint(47, 55);
+    const fp = buildRectangleFootprint(47, 40);
     const primary = allPrimary(fp);
     const geometry = wallGeometryFor(fp, WALL_ID, primary, "A", THICKNESS_IN)!;
     expect(geometry.lengthIn).toBe(564);

@@ -46,6 +46,7 @@ Standard · Corner · Column (reinforced/plywood-sided, >12' runs needing beam b
 ### Safety/Gap Panel — confirmed detail
 - Primary purpose is **dimensional tolerance absorption** between as-designed and as-built wall length, not primarily a structural feature (confirmed via NFW's own notes: "additional plywood to cover this tolerance and margin of error"). The strength increase is a genuine bonus, not the reason it exists.
 - Building Integrity's version: standard panel width **minus ¾"**, plus **½" plywood on one face**
+- ⚠ **SUPERSEDED on the tiling side, twice, and both supersessions are Tommy's own.** First the gap stopped being an altered standard panel and became just the plywood board itself (*"instead of a safety panel being a standard panel slightly altered, its actually just a 3/4in piece of plywood that is the panel thickness and panel height"*). Then, on 2026-09-30, the single thickness became **two tiers**: a wall RUN over 144in (12ft) reserves **3/4in of 5-ply CDX**, and a run of 144in or less reserves **1/2in of 3-ply CDX** — *"Can we make it so that once below the threshold (of 12'? If it's somewhere around 10-12' rn that's fine) the safety gap is 1/2"."* **Every run gets one.** See `safetyGapTwoTierRule` in the catalog and the as-built section "Corner ownership flips, the two-tier safety gap...". The ½" face-skin and 1¼" holdback details in this bullet and the next are fabrication details of the OLD altered-panel form and are kept as the NFW record, not as the tiling rule.
 - Plywood held back **1¼"** from top and bottom (full-height panels); sill panels hold back from bottom only; header panels hold back from top only
 - **Left/right side is always determined looking from the exterior** — universal convention, worth adopting to avoid field mistakes
 - Placed farthest from the site's least-accessible side
@@ -4800,6 +4801,178 @@ It is an edge case rather than routine: a bump-out return runs 60in at every dep
 4. **Structural figures using `PanelStructuralStatus` with no invented value?** **Yes — and this pass is where it would have been easiest to slip.** The combined-brace shear question got a new Open Item and **no code**: `PanelInstance` still does not carry `secondaryType`, the zero-bracing entry still counts `panelType === "braced"` only, and no shear or bearing number moved in either direction. Widening that count would have silenced a true report without fixing the model; fixing the model raises a displayed structural total, which needs Tommy's engineer.
 5. **Does the value surface in the Review Log?** **Yes, and that is the load-bearing half of item 1.** The narrowing removes a *refusal* and removes **no report**: the merged-corner entry still fires at every width, so every size the narrowing newly permits announces itself. The entry's label and note were corrected to be true of both single-slot shapes rather than being made vaguer, and nothing was silenced anywhere.
 6. **Where the spec marks something open, does the code treat it as provisional?** Yes, and this pass exists partly because the *claim* about that had drifted from the fact for the third pass running. Both missing items are now real `## Open Items` entries, every pointer names its item by title, and the flags-check sentence that overstated it is corrected in place rather than rewritten to look clean. The two things this pass deliberately did **not** build — refusing the drawing gestures, and the plywood 48in–51in merged corner — got no code, no invented value, and a named entry each.
+
+---
+
+## Corner ownership flips, the two-tier safety gap, and plywood totals that tell the truth (2026-10-01) — ALL THREE BUILT, branch `corner-ownership`
+
+Three changes shipped as one piece because each of them changes how **every wall of every shape** tiles, so the regression net is re-measured once instead of three times. All three are Tommy's decisions of 2026-09-30/10-01, and he cleared the consequence for existing work up front: *"Totally fine changing any current drawings/projects."*
+
+### His sentences, verbatim, because they are the provenance
+
+> *"Can we make it so that once below the threshold (of 12'? If it's somewhere around 10-12' rn that's fine) the safety gap is 1/2"."*
+
+> *"1/2" CDX plywood should be a material that we calculate with all the totals and summary pages next to 3/4" stats."*
+
+And the sentence that settles whether the reserved gap and the plywood are one thing or two:
+
+> *"Safety gaps should be .75" of plywood"*
+
+### CHANGE 1 — the LONGER wall runs through and owns both its corner panels
+
+Until this pass the **locally shorter** wall owned the corner panel at a convex 90deg corner and the longer one was inset by one wall thickness. That is the inverse of the conventional framing through-wall/butt-wall convention — the through wall is the long, continuous one — **and the code comment claimed that convention for the inverse rule.** It is what Tommy reported as a visual defect: on his 241 x 155in rectangle the two 12'11" walls ran vertex-to-vertex while both 20'1" walls were inset 15½in at each end, so *"the short sides seem to protrude a little past where it should."*
+
+**The arithmetic was never wrong.** Every run summed exactly, and the 62in of perimeter difference is precisely 4 x 15½in — one wall thickness per corner. It was the wrong wall. The rule is `cornerOwnership`'s convex branch in `packages/geometry/src/retile.ts`, and the comment that justified the old rule is replaced rather than left standing.
+
+**The tiebreak: equal-length walls give the corner to the SUCCESSOR, which pinwheels.** Ties are now the common case, not an exception — a square has four of them. A tie goes to `nextWall`, the next wall round the ring, which is exactly what the strict `>` in `toEighths(...) > toEighths(...)` encodes. On an equal-sided shape every wall then owns its START corner and butts at its end: all four runs come out the same length and every wall is the same part. An id- or index-based tiebreak instead hands one wall both of its corners and leaves another with none, which is precisely what the old `wall.id < nextWall.id` rule did to a square (AB owned two, DA owned none). The successor rule is a function of the ring's own succession — `walls.find(w => w.startCorner === wall.endCorner)` — so it depends on no object iteration order, no id spelling and no array index.
+
+**The comparison is on the eighth grid, exactly, with no tolerance**, against `wallFabricationLengthIn` — the same integer the tiler sizes the run from, never `lengthFt` as a float. Right-angle corners are the only place ownership is asked, and `quantizeFootprint` makes every wall of a rectilinear shape an exact eighth, so the comparison is an integer identity. **The near-tie worry about the octagon does not arise:** snapping an octagon's clip corners moves them by up to 1/16in and its eight nominally-equal sides really do differ (measured: just under 1/5in of spread on a 30ft regular octagon), but every octagon corner is MITERED, `isRightAngleCorner` is false there, and the loop returns before any length is compared. A tolerance would only paper over a case that cannot happen while silently ignoring a deliberately hand-set 1/8in difference between two real walls.
+
+**Mitered shapes: ownership does not apply there and nothing about them changed.** `cornerOwnership` skips every non-right-angle corner, so all eight octagon walls keep both of their corner panels, `computeSafetyEnd`'s "left corner seen from outside" gap rule and `markSafetyCorner`'s `safety-oct-corner` slot are reached exactly as before, and an octagon's eight runs are the lengths they always were. Asserted directly rather than argued.
+
+**Reflex corners compose with the flip, and the reflex FALLBACK was deliberately not flipped.** The reflex branch is unchanged: the *original* wall (one with a primary endpoint) still wins and is extended by one wall thickness, and the loser still takes `insetAmount: 0`. Its tiebreak — used only when neither or both walls are original, a reflex corner between two different bump-outs — is still shorter-wins-then-id, for two structural reasons. (1) Tommy's decision is about the through-wall/butt-wall convention at a CONVEX corner; a reflex winner extends instead of insetting, so "the longer wall runs through" is not a statement about it and he has not been asked. (2) **That expression exists in three places that must stay bit-identical** — `cornerOwnership`, `wallBoxes3D` and `computeInsetPerimeterRing` — because a disagreement puts a 3D wall box or a foundation ring segment a wall thickness away from the panel run it carries. Changing it means changing all three in lockstep. See the Open Items.
+
+**One consequence worth stating on its own: a run stop on a long wall now reaches its short neighbours.** The orphan-corner rule (2026-09-25: a stopped corner simply does not exist, and the butting neighbour stops insetting into air) used to fire when a SHORT wall was stopped. It now fires when a LONG one is, because the long wall is the one that owns corners. Measured end to end in the real app: a 30in start stop on the 580in wall grows its neighbour `DA` by exactly 15½in. Two harness steps were aimed at the old shape and had to be re-aimed — see "What the harnesses had to change" below.
+
+### CHANGE 2 — a two-tier safety gap, replacing an all-or-nothing threshold
+
+`SAFETY_PANEL_MIN_WALL_LENGTH_IN = 144` used to decide whether a gap slot existed **at all**; a run of 144in or less got none and was tiled by an even split instead. It now decides only how **thick** the gap is:
+
+| run | gap |
+|---|---|
+| over 144in | **3/4in**, 5-ply CDX |
+| 144in or under | **1/2in**, 3-ply CDX |
+
+**Every run gets a gap**, and that is what makes Change 1 safe: flipping ownership drops Tommy's short walls to a 124in run, which under the old rule would have left his rectangle with gaps on two walls instead of four — against his own *"on each wall"*.
+
+**The reserved wall-run width and the sheet thickness are ONE physical fact, not two.** Verified against `buildSafetyGapMembers` and the catalog description rather than assumed: the gap IS the plywood (*"instead of a safety panel being a standard panel slightly altered, its actually just a 3/4in piece of plywood that is the panel thickness and panel height"*), so a run reserving 3/4in is reserving room for a 3/4in board and nothing else. They are two constants only because `packages/geometry` deliberately imports nothing — and `apps/web/app/tilerFabricationLimits.test.ts`, the one place both packages are visible, now asserts all three numbers agree. The catalog's own description used to say the sheet was 3/4in *"regardless of how much wall-run width the tiling reserves"*; that sentence was true only in the sense that the sheet never GREW to fill an over-wide slot, and it is corrected.
+
+**Two slots are legitimately not their own thickness, and both are documented where they happen:** a corner-brace COMBINED slot (a standard width plus the plywood buffer) and the degenerate CLAMPED slot a wall whose openings ate its middle can produce. `safetyGapSheetThicknessIn` maps a reserved width onto one of the two real sheets as a floor rather than an equality, so a combined slot takes the 3/4in sheet and a clamped sub-1/2in slot takes the 1/2in sheet — a real spec in both cases, never an invented one.
+
+**The plySpec follows the thickness, using the two specs that already existed.** `SKIN_PLY_SPEC` (3/4in **5-ply** CDX, the standard panel's skins) and `GIRT_WEB_PLY_SPEC` (1/2in **3-ply** CDX, its girt webs). ⚠ **They differ in ply count as well as thickness**, which matters to whoever orders sheets. No new sheet, no new catalog entry and no new `status` was introduced for this.
+
+**The misnamed threshold is CLOSED by renaming, not by a comment.** `SAFETY_PANEL_MIN_WALL_LENGTH_IN` said WALL and was compared against the RUN. Those are different lengths the moment a wall butts into a neighbour, and the flip makes the difference ordinary: a 12'11" (155in) wall that loses both corners is a **124in run**, i.e. a short run. It is now `SAFETY_GAP_NARROW_MAX_RUN_LENGTH_IN`, with `safetyGapWidthForRunIn(runLengthIn)` as the one place the tier is decided. **The number itself did not move: 144in before, 144in after.**
+
+**Two things the two-tier gap forced, both arithmetic rather than policy:**
+
+1. **`buildEvenMiddle` is GONE.** The no-gap tiling path had no callers left, and a second tiling path nothing calls is a trap. Its even-split arithmetic survives in `computeSillRunWidths`, which is now the only even split in the file.
+2. **The corner-absorb band's ceiling moved from `TILER_MIN_PANEL_WIDTH_IN` to `TILER_MIN_PANEL_WIDTH_IN + gapWidthIn`, so the band is 51in–75½in rather than 51in–75in** (and 78in–102½in at the 39in Square Bale corner). The middle now has to pay for the gap *before* it can hold a legal panel: a 75in two-corner wall has a 24in middle, which was exactly one legal panel and is now a 1/2in gap plus a 23½in panel the shop cannot build. Four eighth-steps wider, every one of them getting a legal corner pair instead of an unbuildable panel. **No building value moved to make this fit** — 24in, 48in and the 25.5in corner are untouched, and `resolveCorners` still checks the absorbed pair for legality before absorbing.
+
+**What is honestly WORSE, measured rather than argued.** A run too short to hold a gap AND a buildable panel has no legal tiling at all, and the band of such runs **shifted up by exactly the narrow gap's 1/2in**. Measured at the 40in standard, every eighth from 0 to 200in:
+
+| corners owned | sub-minimum run lengths | count | before 2026-10-01 |
+|---|---|---|---|
+| neither | 5/8in – 24⅜in | 191 | 1/8in – 23⅞in, 191 |
+| one | 26⅛in – 49⅞in | 191 | 25⅝in – 49⅜in, 191 |
+| both | none | 0 | none, 0 |
+
+The band is the same SIZE; four lengths at the top are newly unbuildable and four at the bottom stop producing a panel at all (the whole run becomes the gap). The two-corner case has none either side, and that is only still true because of the band widening above. **There is no legal answer for the four lengths that moved in** — a 24in run holding a 1/2in gap leaves 23½in, under the shop's confirmed 24in minimum — and the only ways out are to drop the gap on short runs (reversing Tommy's decision) or to move the 24in minimum (off limits). So they are reported in the Review Log exactly as the rest of that band already was. **Tommy's call, not the code's.** Pinned by a sweep in `tiling.test.ts` so the band cannot move again unnoticed.
+
+**Deliberately NOT changed, and flagged in the code at the point of decision:**
+
+- **`SAFETY_PLYWOOD_BUFFER_IN` (the corner-brace combine's glued-on 3/4in) is still single-tier.** A combined slot on a short run is a standard width plus 3/4in while the gap it replaced was 1/2in, and the extra 1/4in settles against the panels further along the run. The combine's own contract is unaffected — the wall still sums exactly in whole eighths, no zero-width panel, nothing pushed outside [24in, 48in]. What is open is whether that buffer is physically the same board as the gap. It cannot simply read the gap slot's width, because a legacy stored file can carry a 2-to-4ft gap slot and that would glue on two feet of plywood.
+- **The GABLE row keeps the old all-or-nothing gate and the single 3/4in width.** `GABLE_SAFETY_GAP_MIN_RUN_LENGTH_IN` used to mirror the wall tiler exactly; the mirror is now only partial, deliberately. A gable row is not a wall run — it is the triangle above the eave, tiled per rise/flat/fall segment — and Tommy's words were about walls.
+
+### CHANGE 3 — the plywood totals say what is actually in them, and name the real spec
+
+`apps/web/app/page.tsx` already tallied both thicknesses by thickness (`computePlywoodAreaSqFt(allRealMembers, 0.5)`), so a 1/2in safety-gap sheet flows into the 1/2in row **for free** the moment the member carries that thickness. Two things were wrong and both are fixed:
+
+1. The row read **"1/2in plywood (girt webs)"**, which stops being true the moment safety gaps contribute to it.
+2. **Neither row said CDX**, though the catalog knew the full spec all along.
+
+Both rows now read from one shared module, `apps/web/app/plywoodRowLabels.ts`, whose text is **derived from the catalog's own `plySpec` strings** through a new `formatPlySpecLabel`, so the row says "3/4in 5-ply CDX" and "1/2in 3-ply CDX" because that is what the parts are rather than because somebody typed it:
+
+- `3/4in 5-ply CDX plywood (skins, side plies, header caps, roof-bearing caps, long-run safety gaps)`
+- `1/2in 3-ply CDX plywood (girt webs, short-run safety gaps)`
+
+**Both places that render the pair now use it** — the Material Totals detail page and the **Project Summary** page's Materials table, which carried the identical stale label. Those are the only two renderers of these rows in the repo (grepped, not assumed); `plywoodThreeQuarterSheetCount` / `plywoodHalfSheetCount` are consumed only by those two. The Material Totals notes now also say which run length puts a gap on which row, quote Tommy's sentence, and carry a standalone warning that the two sheets differ in ply count.
+
+**Three app-side consequences of the sheet becoming two sheets, each a real defect avoided:**
+
+- `safetyGapMembers3D`, a single memoized member list built on "the sheet is always 3/4in", is **gone**. Every instance is now built from its own slot's reserved width. A shared memo would have reported 3/4in plywood for every 1/2in gap in the building.
+- The **Shop Fabrication grouping** keyed every safety gap onto ONE page (`return panelTypeId`). A 1/2in sheet and a 3/4in sheet are different fabricated parts — the same reason two braced panels of one width but different patterns do not merge — so the key now carries the sheet thickness.
+- `buildSafetyGapSchema`'s `overallDimensions.widthIn` follows the tier too, so the component schema cannot describe a part the member list does not.
+
+### Flags check — run against the real diff, per the 6-point check
+
+1. **Does every real-world number in the diff carry a `status` and a `note`?** Yes. The one new building value is the **1/2in narrow tier**, and it lives in `safetyGapTwoTierRule` in `packages/panel-catalog/src/data.ts` alongside the 144in run threshold and the existing 3/4in tier, with Tommy's sentence quoted verbatim as its note. Nothing else in the diff is a real-world quantity: the renamed threshold is the same 144in it always was, `formatPlySpecLabel` is a label formatter, and the two plySpec strings already existed.
+2. **Anything marked `confirmed` that is actually researched or interpreted?** No, and this is the entry where it mattered. `safetyGapTwoTierRule` is `confirmed` on the same grounds `fabricationMinPanelWidthIn` (24in) is: a first-hand statement from Building Integrity with a number and a unit. Its note says in so many words that **12ft carries no engineering rationale beyond his choice**, so nobody can later read the flag as an engineering blessing. `pending-BI-confirmation` would have been the wrong flag — he is the source.
+3. **Does the note trace to a real source?** Yes — his own sentence, dated, with the fact that he was told the threshold is measured against the RUN and confirmed 144in matches. The note also records the 3/4in tier's own earlier quotation.
+4. **Structural figures using `PanelStructuralStatus` with no invented value?** Not in scope, and nothing drifted into it: no shear, bearing, load or density number moved in either direction. The safety gap's own `loadBearingCapacity`/`shearValue` entries are untouched `STRUCTURAL_PENDING_NOTE` as before.
+5. **Does the value surface in the Review Log where a reviewer expects it?** The two-tier rule is `confirmed`, so by the convention it correctly does not appear in the pending list. What DOES surface is the consequence: the sub-minimum panels in the bands above are reported by the existing sub-minimum Review Log entry, and the corner-brace combine refusal entry's own census was re-measured rather than left quoting stale figures.
+6. **Where the spec marks something open, does the code treat it as provisional?** Yes. Three things this pass deliberately did not decide got a named flag at the point of decision rather than a quiet default: the combine's 3/4in buffer, the gable row's single-tier gap, and the reflex-corner fallback's three-way duplication. Each is an Open Item below and each is argued in the code comment where a future reader will stand.
+
+**Off limits and untouched, checked against the diff:** `fabricationMinPanelWidthIn` (24in), `panelWidthInRange` (15.75–48in), `cornerPanelWidthIn` (25.5in), the standard widths, the 39in Square Bale corner and the `max >= 2 x min` coupling. `packages/calc-engine` has no diff at all.
+
+### What moved in the regression net — before and after, with the invariant confirmed
+
+Every one of these is a measured count from this branch's own run, not a restatement.
+
+| sweep | before | after | invariant |
+|---|---|---|---|
+| `bracedPlacement.test.ts` 790,440-case product sweep | green | **green, assertions unchanged** | sums exact, nothing outside [24, 48] the tiler had not already left there |
+| `retile.test.ts` stop sweep | green | **green** (two fixtures re-dimensioned — see below) | sum per wall exact against `wallGeometryFor` |
+| `lockedWidthReforce.test.ts` main sweep | 684,588 cases, 889,606 pins, 605,669 honoured / 283,937 refused, 0 violations | **684,360 cases, 887,248 pins, 606,585 honoured / 280,663 refused, 0 violations** | a pinned width never moves the wall's own total — held on every case |
+| its pinned-pair row | 60,777 cases, 0 violations | **60,390 cases, 0 violations** | same, with no free panel to lean on |
+| its pin-from-a-longer-wall row | 3,228 cases, 727 refused | **3,228 cases, 678 refused** | same; 49 fewer refusals because a through-running wall has a longer free run to pay from |
+| `cornerBraceCombineRefusals.test.ts` census | 32,644 refusal walls / 28,979 owning a corner / 6,152 shared / 21,080 refused ends / 13,227 reported | **100,451 / 75,480 / 14,972 / 50,269 / 30,140** | the census is a measurement, not an invariant; re-measured and kept, not deleted |
+| `tiling.test.ts` out-of-band digests | 169,768 cases / 4137668243 and 254,652 / 512805668 | **169,736 / 3712675599 and 254,604 / 3623257527** | re-baselined, with both old values recorded beside the new ones |
+| `runStopOpenings.test.ts` 174in boundary | 793 of 984 eighths break | **789 of 984** | the boundary itself is unmoved at 173.875in |
+
+Three notes on that table that are the point of it rather than footnotes:
+
+- **The 684,360 case count fell by 228** because the corner-absorb band is four eighths wider, and a wall whose corners absorb its whole run has no free panel to pin, so the grid skips it. The honoured/refused split moved because the tiler's free-run widths moved. **Zero violations either side.**
+- **The census roughly tripled for exactly one reason**, and the histogram proves it: that sweep passes `hasCornerStart`/`hasCornerEnd` to `retileWithOpenings` explicitly, so the ownership flip cannot touch it. Every WIDE-gap offset comes back **bit-identical** (6,559 at 62¼in, 4,064 at 36¾in, 1,100 at 80¾in, 95 at 30¾in) and every new entry is its NARROW-gap twin a quarter inch nearer the corner (2,098 at 62in, 5,490 at 36½in, 1,212 at 80½in, 3,091 at 30½in). Short runs joined the census wholesale because they now have a gap for the corner walk to reach.
+- **The "byte-identically to before corner absorb" digest pair no longer means what its title says**, and saying so was better than leaving a constant that fails loudly. It was a proof that corner absorb moved nothing outside its band; the two-tier gap moves every configuration in that sweep by design. It is kept as an unintended-change detector, re-baselined with the old values recorded.
+
+**One test's claim had to be narrowed rather than re-baselined, and the narrower version is the stronger one.** `cornerBraceCombineRefusals.test.ts` asserted "every reported brace is still a real fabricable panel". That is no longer true as stated: on 382 of 3,202 swept cases the reported brace is sub-minimum. It now asserts that **this entry never reports a sub-minimum brace the TILER had not already put on the wall** — verified per case against the pre-brace slots — so nobody can read the entry as a width defect it caused. Those 382 are all residual case 2 (openings eating all but a sliver of a wall's middle, nothing to absorb into), which was emitting a sub-minimum panel there before this pass; the panel is now 1/2in narrower and, because the wall now has a gap, the corner walk reaches it and names it.
+
+### Fixtures that had to be re-dimensioned, and why that is not re-baselining
+
+A fixture that says "AB owns both its corners" is a statement about which wall is longer. Six of them were written against the old rule and would have gone **vacuously green** rather than red if left alone, which is the worse failure. Each was moved, not weakened, and each carries the reason inline:
+
+- `retile.test.ts`'s 360in two-corner wall: a 30 x 35ft rectangle becomes 30 x 20ft, so AB is the longer wall and still owns both corners at 360in. Its 564in sibling: 47 x 55ft becomes 47 x 40ft.
+- `panelSlotBoxes3D.test.ts`: the wall under test swaps between AB and BC in four tests, and the reflex-extension test moves to a 30 x 10ft rectangle with the bump-out span at 15–20ft so wall "01" is longer than DA and still wins its convex corner.
+- `wallRunStop.test.ts`: the orphan-corner block swaps AB and BC throughout — the owner is now the long wall and the butting neighbour the short one.
+- `squareBaleCornerRefusal.test.ts`'s thickness-dependence fixture becomes an inward **notch** instead of an outward bump-out. Wall "01" can no longer own both ends (it loses the convex corner to the 240in side), and a wall that does not own both ends is never in the bale band — the three tests would have been green and measuring nothing. The notch's inner face wins both of its REFLEX corners and is therefore extended twice, which **reproduces the same two runs to the eighth: 78.125in / 75.125in and 103.5in / 100.5in.** Every number in those tests is the number measured before the flip.
+- `projectFile.test.ts`'s v24 fixtures: wall AB's run is 360in rather than 329in, so the off-grid fixture's widest slot grew by the 31in that frees up and the genuinely-tiled array gained its two corner slots. Without the second change that test would have passed through the load-time GUARD instead of the no-op branch it exists to exercise.
+
+### What the harnesses had to change
+
+All six are green from exit-0 runs of the final code. Three steps needed re-aiming, and in each case the app was behaving correctly:
+
+- **`smearforn-stage-0-1` step 12b** took its "one unrelated retile" from any other wall. On this footprint that was an adjacent LONG wall, and a start stop on a wall that owns its corner orphans that corner, so the orphan rule grew the wall under test from 184⅛in to 199⅝in — whereupon its pinned set could no longer sum to it and every pin was correctly refused. The step now stops a wall sharing **no corner** with the wall under test, which is genuinely unrelated. `automaticPanelsLeft === 0` still holds, so the step is still non-vacuous.
+- **`smearforn-stage-3` step 13** ("a stop that reaches a corner the wall OWNS") stopped the SHORT wall, which now owns no corner and so orphans nothing — it recorded `neighboursThatGrew: []`. It now stops the wall with the longest 3D extent, i.e. the one that owns its corners, and records `DA` growing by exactly 15.5in.
+- **`smearforn-stage-3` step 11** discriminated "the plan gained an unbuilt-span boundary" by counting `#8a8a8a` pixels on the live Konva canvas. **That colour is both the dashed boundary AND the fill of every corner panel** (`panelColors.ts`), so the proxy only worked while the stopped wall owned no corner to lose: 1,404 with the stop against 1,308 without on `main`, and 1,169 against 1,403 after the flip, with the app correct throughout. The discriminator is now the printable plan sheet's **NO PANELS dimension read from the DOM**, which names the thing itself; the grey pair stays in the evidence, recorded and unasserted, because a number somebody once trusted should be visible rather than deleted.
+
+### Tommy's 241 x 155in rectangle, re-measured at the app's 40in default standard width
+
+| wall | nominal | run | owns | gap tier | slot sequence |
+|---|---|---|---|---|---|
+| AB | 241in | **241in** | both corners | **3/4in** | corner 25.5 / braced 40 / standard 40 / standard 34.625 / braced 34.625 / gap 0.75 / braced 40 / corner 25.5 |
+| BC | 155in | **124in** | neither | **1/2in** | braced 40 / standard 43.5 / gap 0.5 / braced 40 |
+| CD | 241in | **241in** | both corners | **3/4in** | corner 25.5 / braced 40 / gap 0.75 / standard 34.625 / standard 34.625 / braced 40 / braced 40 / corner 25.5 |
+| DA | 155in | **124in** | neither | **1/2in** | braced 40 / gap 0.5 / standard 43.5 / braced 40 |
+
+Every run sums to itself exactly. The two long walls now run vertex-to-vertex and own all four corner panels; the short walls are inset 15½in at each end and own none, so **nothing protrudes past where the neighbouring wall's panels stop** — the defect he reported. The four runs total 730in against a 792in raw perimeter, a 62in difference that is exactly 4 x 15½in: the same arithmetic as before, now spent on the other pair of walls. **All four walls carry a safety gap**, which is what the two-tier rule bought; under the old threshold the two 124in runs would have had none.
+
+### Gates
+
+- **vitest: 139 files / 2,740 tests, all passing** (baseline on `main` @ `1403b42`, measured in this worktree: 138 / 2,710). One new file, `apps/web/app/plywoodRowLabels.test.ts` (4 tests); the rest of the +30 is new coverage in `tiling.test.ts`, `retile.test.ts`, `safetyGapMembers.test.ts`, `data.test.ts`, `panelMemberHelpers.test.ts` and `tilerFabricationLimits.test.ts`.
+- **`npx tsc --noEmit` clean in `apps/web`, `packages/calc-engine` and `packages/panel-catalog`. `packages/geometry` has exactly its one pre-existing error, `bracedPlacement.test.ts(727,76)`, unmoved** in file, line and column.
+- **Lint: zero delta, measured at both ends on this machine.** `main` @ `1403b42`: **173 problems = 125 errors / 48 warnings**. This branch: **173 = 125 / 48**, and a per-file-per-rule comparison shows **0 differences** (`preserve-manual-memoization` 67, `no-unused-vars` 36, `refs` 29, `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12, `purity` 1, `immutability` 1 — identical both sides). No correctness rule rose, and `preserve-manual-memoization` did not rise either: this pass removed a `useMemo` and added none.
+- **All six harnesses green from exit-0 runs of the final code**, each with a fresh Chrome profile at `--window-size=1600,1000`, against a dev server in this worktree with `/`, `/read-me`, `/report-bug` and `/sandbox` all polled to 200 before every run.
+
+### Open Items — this pass
+
+- ~~**The safety-gap threshold constant says WALL and is tested against the RUN.**~~ **CLOSED 2026-10-01 by renaming it** `SAFETY_GAP_NARROW_MAX_RUN_LENGTH_IN`, with the one decision point in `safetyGapWidthForRunIn` and the trap written out in both the geometry constant's own comment and the catalog entry's. The number did not move. (There was no pre-existing `## Open Items` bullet for this to strike — it lived only in the handoff — so it is recorded here as closed.)
+- **Does the corner-brace combine's glued-on plywood buffer follow the gap tier?** `SAFETY_PLYWOOD_BUFFER_IN` is 3/4in on every run, so a combined slot on a short run glues on a thicker board than the 1/2in gap it replaced and the extra 1/4in is settled against the panels further along. Harmless to the arithmetic and possibly wrong on the bench. **Tommy's call.** It cannot be solved by reading the gap slot's width, because a legacy file can carry a 2-to-4ft gap slot.
+- **Does a GABLE row's short segment want a 1/2in gap?** The gable tiler kept the all-or-nothing 12ft gate and the single 3/4in tile on purpose; his words were about walls. One decision away from a two-line change in `gableTiledRow.ts`.
+- **Should the REFLEX fallback flip too?** The convex rule is now longer-wins; the reflex fallback (both or neither wall original) is still shorter-wins-then-id, and it is duplicated verbatim in `wallBoxes3D` and `computeInsetPerimeterRing`. Flipping it means flipping all three in lockstep, and it only shows on a reflex corner between two different bump-outs.
+- **Should a wall whose corner pair absorbs its whole run carry a safety gap?** Walls in the 51in–75½in two-corner band (and the merged-corner case below 51in) have no plain panel at all and therefore no gap — true before this pass and still true. It could be given one by having the pair share `wallLength - gapWidth`, which would make "every run gets a gap" literally true at the cost of re-tiling 193 band lengths that are correct today.
+- **A project saved before this pass opens with its OLD tiling until something re-tiles that wall.** `repairStateToEighths`' guard (`residualEighths <= slots.length`) deliberately keeps a wall's stored total when it no longer matches the wall's geometry, rather than silently re-tiling and discarding hand work — the Smearforn principle. So an old file's walls keep their old corner ownership on screen until an edit touches them. Tommy cleared the consequence (*"Totally fine changing any current drawings/projects"*), and nothing is lost or wrong; it is simply not retroactive. A version bump with a re-tile migration is the alternative if he wants old drawings updated on open.
+
+---
 
 ---
 

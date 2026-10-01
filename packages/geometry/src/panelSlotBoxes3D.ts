@@ -38,13 +38,14 @@ export interface PanelSlotBox3D {
  * build the real `PanelSlot[]` arrays this function is placing — critical,
  * not just consistent-for-its-own-sake: a wall that loses a plain convex
  * corner is tiled `thicknessIn` SHORTER than its raw exterior-line length
- * at that end (the other, shorter wall owns the corner panel there
- * instead), and a wall that wins a reflex (bump-out inside) corner is
+ * at that end (the other, LONGER wall runs through and owns the corner panel
+ * there instead — Tommy, 2026-10-01), and a wall that wins a reflex (bump-out
+ * inside) corner is
  * tiled `thicknessIn` LONGER. Using the raw wall length instead (as an
  * earlier version of this function did, duplicating only `wallBoxes3D`'s
  * reflex-only extension logic) silently drifted the computed length away
  * from what the slots actually sum to — on a plain rectangle, the two
- * longer walls lose BOTH corners to the shorter perpendicular walls, so
+ * SHORTER walls lose BOTH corners to the longer perpendicular walls, so
  * their raw length overshot the real tiled length by a full 2x
  * `thicknessIn`, and the defensive rescale below (meant only for tiny
  * floating-point slop) silently stretched every one of that wall's panels

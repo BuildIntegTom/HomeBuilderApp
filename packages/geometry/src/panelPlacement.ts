@@ -50,7 +50,7 @@ import type { BracePattern, PanelSlot, PanelSlotType } from "./types";
  * version bump) and only the free run's WIDTHS are recomputed.
  *
  * The free run is re-tiled flat — `distributeEighths` over what is left,
- * exactly as `buildEvenMiddle` does for a short wall — so no two automatic
+ * the same even split `computeSillRunWidths` does for a sill run — so no two automatic
  * panels differ by more than 1/8in and every one of them lands inside
  * [`minIn`, `maxIn`] by construction (see `redistributeFreeRun`).
  */
@@ -61,8 +61,9 @@ import type { BracePattern, PanelSlot, PanelSlotType } from "./types";
  * are `bracedPattern` x `bracedMirrored` on this same "braced" entry.
  *
  * **Corner and safety-gap are deliberately NOT here.** Both are placed by
- * rules that exist for reasons — corner ownership (shorter-wall-wins, reflex
- * corners, the merged-corner case) and the gap-end/second-to-last-panel rule
+ * rules that exist for reasons — corner ownership (LONGER-wall-runs-through,
+ * reflex corners, the merged-corner case) and the gap-end/second-to-last-panel
+ * rule
  * — and hand-placing one would put the user in a fight with two systems that
  * will overwrite them on the next retile. The anchor mechanism would happily
  * carry them; leaving them out is a scope decision, not a technical limit,

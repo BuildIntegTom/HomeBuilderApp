@@ -1,5 +1,6 @@
 import SheetTitleBlock from "./SheetTitleBlock";
 import type { ViewerRole } from "./viewerRole";
+import { PLYWOOD_HALF_ROW_LABEL, PLYWOOD_THREE_QUARTER_ROW_LABEL } from "./plywoodRowLabels";
 import styles from "./DetailGuidePage.module.css";
 
 export interface ProjectSummaryPageProps {
@@ -281,11 +282,11 @@ export default function ProjectSummaryPage({
       <table className={styles.fastenerTable}>
         <tbody>
           <tr>
-            <td>3/4in plywood</td>
+            <td>{PLYWOOD_THREE_QUARTER_ROW_LABEL}</td>
             <td>{plywoodThreeQuarterSheetCount} sheets (4ft x 8ft)</td>
           </tr>
           <tr>
-            <td>1/2in plywood (girt webs)</td>
+            <td>{PLYWOOD_HALF_ROW_LABEL}</td>
             <td>{plywoodHalfSheetCount} sheets (4ft x 8ft)</td>
           </tr>
           {strawBaleNote && (

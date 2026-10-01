@@ -182,7 +182,7 @@ export function buildColumnPanelMembers(depthIn: number, heightIn: number, inclu
  * is always `COLUMN_TOTAL_WIDTH_IN`; nothing in the app ever asks for another
  * one. A **corner** slot is not fixed at all: the tiler clamps it down on a
  * wall too short for it, merges two of them into one, and — since corner
- * absorb — widens a pair to share a wall in the 51in-75in band. So a corner
+ * absorb — widens a pair to share a wall in the 51in-75.5in band. So a corner
  * slot's real width runs the whole `panelWidthInRange`, and Tommy confirmed
  * (2026-09-25) that the part can be built that way: *"Yes — any width in the
  * 24-48in band."*

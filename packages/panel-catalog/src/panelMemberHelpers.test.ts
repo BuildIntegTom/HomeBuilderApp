@@ -8,6 +8,9 @@ import {
   buildNailer,
   buildTrussWebBraces,
   computeBraceEndCutAngleDeg,
+  formatPlySpecLabel,
+  GIRT_WEB_PLY_SPEC,
+  SKIN_PLY_SPEC,
   computeBraceTrapezoidCornersIn,
   computeHeaderBraceTrapezoidCornersIn,
   computePlywoodAreaSqFt,
@@ -707,5 +710,23 @@ describe("memberFaceIndices / plan-polygon prism members", () => {
       { xIn: 1, yIn: 1 },
     ];
     expect(memberFaceIndices(polygonMember(stub))).toEqual([]);
+  });
+});
+describe("formatPlySpecLabel", () => {
+  it("renders both real specs the way a reader (and an order) needs them", () => {
+    expect(formatPlySpecLabel(SKIN_PLY_SPEC)).toBe("3/4in 5-ply CDX");
+    expect(formatPlySpecLabel(GIRT_WEB_PLY_SPEC)).toBe("1/2in 3-ply CDX");
+  });
+
+  it("keeps the PLY COUNT, which is the part the two sheets differ on besides thickness", () => {
+    // 5-ply against 3-ply. The Material Totals rows said neither, and whoever
+    // orders sheets needs both.
+    expect(formatPlySpecLabel(SKIN_PLY_SPEC)).toContain("5-ply");
+    expect(formatPlySpecLabel(GIRT_WEB_PLY_SPEC)).toContain("3-ply");
+  });
+
+  it("passes an unrecognised spec through rather than throwing or dropping it", () => {
+    expect(formatPlySpecLabel("1in_marine")).toBe("1in marine");
+    expect(formatPlySpecLabel("")).toBe("");
   });
 });

@@ -782,6 +782,18 @@ await shot("07-elevation-cleared");
 await reachView((l) => l === "2D Floor Plan", "2D Floor Plan");
 await sleep(1200);
 const greyWithoutStop = await boundaryGreyPixels();
+// The printable plan sheet, read from the DOM — see this step's own note for why
+// this replaced the grey-pixel comparison as the discriminator.
+let planSheetLabelsCleared = null;
+try {
+  await clickByText("button", "Plan View", "Plan View document page");
+  await sleep(1400);
+  planSheetLabelsCleared = await noPanelsLabels();
+  await shot("07b-plan-sheet-cleared");
+} catch (err) {
+  planSheetLabelsCleared = { error: String(err.message ?? err) };
+}
+await closeOpenNotes();
 await reachView((l) => l === "3D Framed", "3D Framed");
 await sleep(2500);
 const objCleared = parseObjGroups(await captureObj());
@@ -792,19 +804,41 @@ record(
   {
     totalEighthsCleared: sumEighths(widthsCleared),
     noPanelsLabelsCleared: noPanelsCleared.length,
+    planSheetLabelsWithStop: planSheetLabels,
+    planSheetLabelsCleared,
     boundaryGreyWithStop: greyWithStop,
     boundaryGreyWithoutStop: greyWithoutStop,
     plateClearedIn: plateCleared ? Number(plateCleared.lengthIn.toFixed(3)) : null,
     baselinePlateIn: Number(baselinePlateExtent.lengthIn.toFixed(3)),
   },
-  // The run comes back to its full total, the NO PANELS labels go away, the
-  // live canvas loses the boundary grey it gained, and the plate is full
+  // The run comes back to its full total, the NO PANELS dimension goes away on
+  // BOTH the elevation and the printable plan sheet, and the plate is full
   // length again. "Absent entry = today's behaviour" has to hold after a
   // round trip, not just on a fresh project.
+  //
+  // ⚠ **`boundaryGreyWithStop > boundaryGreyWithoutStop` WAS the plan-view
+  // discriminator here and is now recorded without being asserted, because it is
+  // not a measurement of what this step claims (found 2026-10-01).** The live
+  // plan is Konva, so the only reader available is a pixel count — and
+  // `#8a8a8a` is both the dashed unbuilt-span boundary AND the fill of every
+  // CORNER PANEL (`panelColors.ts`). It worked only as long as the stopped wall
+  // owned no corner to lose: on `main` @ 1403b42 the longest wall was inset at
+  // both ends, so the stop added 96 grey pixels of boundary and removed nothing
+  // (1,404 with the stop against 1,308 without). Since corner ownership flipped
+  // to the longer wall, the same stop REMOVES a corner panel's own grey fill as
+  // well as adding the boundary, and the count goes the other way (1,162 against
+  // 1,398) — with the app behaving correctly throughout. The discriminator is
+  // now the printable plan sheet's NO PANELS dimension, read from the DOM, which
+  // names the thing itself instead of a colour that two things share. The grey
+  // pair stays in the evidence because a number somebody once trusted should be
+  // visible, not deleted.
   (d) =>
     d.totalEighthsCleared === sumEighths(widthsBefore) &&
     d.noPanelsLabelsCleared === 0 &&
-    d.boundaryGreyWithStop > d.boundaryGreyWithoutStop &&
+    Array.isArray(d.planSheetLabelsWithStop) &&
+    d.planSheetLabelsWithStop.some((t) => t.startsWith("NO PANELS")) &&
+    Array.isArray(d.planSheetLabelsCleared) &&
+    d.planSheetLabelsCleared.length === 0 &&
     d.plateClearedIn !== null &&
     Math.abs(d.plateClearedIn - d.baselinePlateIn) < 1.0,
 );
@@ -839,14 +873,22 @@ record(
 );
 
 console.log("13. a stop that reaches a corner the wall OWNS is accepted, and the neighbour grows");
-// The ADU's own case, and the one the orphan-corner rule is for: on a
-// rectangle the SHORTER wall owns the corners, so stopping a short wall is
-// exactly what reaches a long neighbour. The neighbour must stop insetting
-// into a corner panel that is no longer built — and, just as importantly,
-// the stop must be ACCEPTED rather than refused for failing an invariant
-// stated against the neighbour's old length.
+// The ADU's own case, and the one the orphan-corner rule is for. The neighbour
+// must stop insetting into a corner panel that is no longer built — and, just as
+// importantly, the stop must be ACCEPTED rather than refused for failing an
+// invariant stated against the neighbour's old length.
+//
+// ⚠ **The wall this step stops moved from the SHORT wall to the LONG one on
+// 2026-10-01, and it had to.** Corner ownership now gives a convex corner to the
+// LONGER of the two walls meeting there (Tommy: the longer wall runs through), so
+// on a rectangle the long walls own all four corners and a short wall owns none
+// — and a wall with no corner to lose orphans nothing. Run against the short
+// wall after the flip, this step recorded `neighboursThatGrew: []` and failed:
+// not the orphan rule breaking, but the step aiming at the wrong wall. The wall
+// chosen here is the one with the longest 3D extent, i.e. the one that owns its
+// corners, which is exactly what the step's own name asks for.
 await closeOpenNotes();
-const shortWallId = wallIdsInObj.find((id) => id !== targetWallId && id !== null) ?? null;
+const shortWallId = targetWallId;
 let cornerStopResult = { error: "no second wall to try" };
 if (shortWallId) {
   // The neighbour's growth is measured off the 3D scene, because that is
@@ -886,6 +928,9 @@ if (shortWallId) {
     runBeforeIn: shortRunIn,
     runAfterIn: sumEighths(afterWidths) / 8,
     neighboursThatGrew: grew,
+    // Named so the evidence says WHY this wall was chosen rather than leaving it
+    // to the reader to work out from the id.
+    stoppedWallOwnsItsCorners: true,
   };
 }
 record(
