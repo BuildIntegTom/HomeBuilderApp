@@ -44,6 +44,29 @@ export const GIRT_WEB_PLY_SPEC = "1/2in_3ply_CDX";
 export const NAILER_THICKNESS_IN = standardPanelBom.nailer.thicknessIn; // 1.5
 export const NAILER_WIDTH_IN = standardPanelBom.nailer.widthIn; // 3.5
 
+/**
+ * A `plySpec` as a human reads it: `"3/4in_5ply_CDX"` -> `"3/4in 5-ply CDX"`.
+ *
+ * Exists so the Material Totals and Project Summary rows can SAY the real
+ * spec — thickness, ply count and grade — instead of carrying their own prose
+ * copy of it. Tommy asked for the grade by name (*"1/2\" CDX plywood should be
+ * a material that we calculate with all the totals and summary pages next to
+ * 3/4\" stats."*), and the two rows said neither "CDX" nor a ply count while
+ * this package had both all along. **The ply count is the part a reader would
+ * not guess: the 3/4in sheet is 5-ply and the 1/2in sheet is 3-ply**, which
+ * matters to whoever orders sheets.
+ *
+ * Deliberately a dumb token formatter, not a parser: an unrecognised spec
+ * comes back with its underscores turned to spaces rather than throwing or
+ * being silently dropped, because a label is never worth a crash.
+ */
+export function formatPlySpecLabel(plySpec: string): string {
+  return plySpec
+    .split("_")
+    .map((token) => (/^\d+ply$/.test(token) ? `${token.replace("ply", "")}-ply` : token))
+    .join(" ");
+}
+
 // Tommy: bottom/top plate 2x4s sit "centered on Nin width, 1.5in clear
 // each end" — a fixed clearance rule, independent of the selected width.
 export const PLATE_END_CLEARANCE_IN = 1.5;

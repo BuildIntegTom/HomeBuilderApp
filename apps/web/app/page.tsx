@@ -174,7 +174,7 @@ import {
   doorRoughOpeningSelectedHeightIn,
   jackStudThicknessIn,
   JACK_STUD_THICKNESS_IN,
-  SAFETY_GAP_THICKNESS_IN,
+  safetyGapSheetThicknessIn,
   PLATE_2X4_THICKNESS_IN,
   PLATE_2X4_WIDTH_IN,
   carbonFractionOfDryMass,
@@ -300,6 +300,7 @@ import BaleFoundationCrossSectionDiagram from "./BaleFoundationCrossSectionDiagr
 import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
+import { PLYWOOD_HALF_ROW_LABEL, PLYWOOD_THREE_QUARTER_ROW_LABEL } from "./plywoodRowLabels";
 import { resolveBracedStyle } from "./bracedStyle";
 import { shouldAutoUpgradeToBigHeader } from "./bigHeaderAutoUpgrade";
 import { capGableTileHeights, computeRiseFtForPitch, resolveGableProfilePoints, resolveHeelSeat, ROOF_PITCH_OPTIONS_IN12 } from "./gableProfilePoints";
@@ -397,6 +398,7 @@ import {
   type PlacementOp,
   type SpanningHeaderWidthChange,
 } from "./placementNotice";
+import { preChangeTilingReviewNote, type StoredWallRun } from "./preChangeTilingNotice";
 import {
   findSquareBaleBandWalls,
   findSquareBaleMergedCornerWalls,
@@ -1833,7 +1835,7 @@ export default function LayoutEditor() {
    *
    * **No for Square Bale Panels.** That corner is a `squareBalePanel.widthIn`
    * whole-bale unit — a CONFIRMED 39in, two 18in bales plus two 1.5in studs —
-   * and absorb at 39in moves the band to 78in-102in, where an ordinary 8ft wall
+   * and absorb at 39in moves the band to 78in-102.5in, where an ordinary 8ft wall
    * (`MIN_DIMENSION_FT`, the shortest side the rectangle tool will draw) would
    * emit two 48in "corner panels". Tommy, asked directly: **"No — refuse
    * instead."** Bales do not stretch, so widening a bale corner invents a
@@ -3245,7 +3247,7 @@ export default function LayoutEditor() {
    * **Square Bale Panels is REFUSED for a building whose corners it cannot
    * build** — both cases, not one:
    *
-   * 1. a wall in the moved **78in-102in band**, where absorb would widen the
+   * 1. a wall in the moved **78in-102.5in band**, where absorb would widen the
    *    bale corners (Tommy: *"No — refuse instead."*), and
    * 2. a two-corner wall **under 78in whose one merged slot is over the confirmed
    *    48in `panelWidthInRange.maxIn`** (Tommy, asked whether the same answer
@@ -5139,12 +5141,14 @@ export default function LayoutEditor() {
   const windowRoughOpeningWidthIn = computeRoughOpeningWidthIn(windowHeaderWidthIn, jackStudConfig);
   const windowSillRunWidthsIn = computeSillRunWidths(windowRoughOpeningWidthIn, standardWidthIn);
 
-  // Safety/Gap panel: fixed-size (doesn't scale with the slot's own
-  // widthIn) — one model covers every instance.
-  const safetyGapMembers3D = useMemo(
-    () => buildSafetyGapMembers(thicknessIn, wallHeightFt * 12),
-    [thicknessIn, wallHeightFt],
-  );
+  // ⚠ **`safetyGapMembers3D` is gone (2026-10-01).** It memoized ONE
+  // safety-gap member list on the premise that the sheet was a fixed 3/4in
+  // whatever the slot reserved, so one model covered every instance. There are
+  // now two sheets — 3/4in 5-ply CDX on a run over 144in, 1/2in 3-ply CDX at or
+  // under it (`safetyGapWidthForRunIn`) — so every instance is built from its
+  // OWN slot's reserved width through `safetyGapSheetThicknessIn`, at the two
+  // places that build members. A shared memo there would have quietly reported
+  // 3/4in plywood for every 1/2in gap in the building.
 
   // Truss Plate (single-story roof bearing) / Box Beam (two-story roof
   // bearing) — Tommy: whichever the building is, it needs one of these on
@@ -5298,14 +5302,17 @@ export default function LayoutEditor() {
               : inst.panelType === "corner" || inst.panelType === "safety-oct-corner"
                 ? // This instance's real width, like every other type here: the
                   // plywood-area and board-feet tallies below are material
-                  // quantities, and a 36in corner panel from the 51in-75in band
+                  // quantities, and a 36in corner panel from the 51in-75.5in band
                   // really does use more of both than a 25.5in one. Square
                   // Bale's corner is a fixed 39in unit and keeps its own build.
                   isSquareBalePanelization
                   ? cornerPanelMembers3D
                   : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer, inst.widthIn)
                 : inst.panelType === "safety-gap"
-                  ? safetyGapMembers3D
+                  ? // This instance's own sheet, picked off the width the tiler
+                    // reserved — a 1/2in gap must contribute 1/2in plywood to
+                    // Material Totals, not 3/4in.
+                    buildSafetyGapMembers(thicknessIn, heightIn, safetyGapSheetThicknessIn(inst.widthIn))
                   : inst.panelType === "sill"
                     ? buildSillPanelMembers(inst.widthIn, thicknessIn, inst.sillHeightIn ?? sillDefaultHeightIn.value, includeNailer)
                     : inst.panelType === "header"
@@ -5365,7 +5372,6 @@ export default function LayoutEditor() {
     includeNailer,
     columnPanelMembers,
     cornerPanelMembers3D,
-    safetyGapMembers3D,
     isSquareBalePanelization,
     squareBaleStudConfig,
     defaultBracePattern,
@@ -5750,7 +5756,7 @@ export default function LayoutEditor() {
               // the memoized nominal 25.5in panel. This is what the
               // per-unique-panel Shop Fabrication page draws and describes, and
               // those pages are already GROUPED by `inst.widthIn` — so before
-              // this, a 36in corner panel from the 51in-75in band (or from any
+              // this, a 36in corner panel from the 51in-75.5in band (or from any
               // octagon 10.5ft-15ft across) got its own page that then
               // described a 25.5in part. A shop sheet describing the wrong
               // width is a part cut wrong. It also feeds wood/fastener weight,
@@ -5776,7 +5782,9 @@ export default function LayoutEditor() {
                 : panelTypeId === "sill"
                   ? buildSillPanelMembers(widthIn, thicknessIn, resolvedSillHeightIn, includeNailer)
                   : panelTypeId === "safety-gap"
-                    ? buildSafetyGapMembers(thicknessIn, heightIn)
+                    ? // Two-tier sheet, off this slot's own reserved width —
+                      // see `safetyGapSheetThicknessIn`.
+                      buildSafetyGapMembers(thicknessIn, heightIn, safetyGapSheetThicknessIn(widthIn))
                     : null;
     if (!base) return base;
     // A vertical safety-gap filler (Tommy: "an ability to put a safety gap
@@ -6171,10 +6179,19 @@ export default function LayoutEditor() {
   // have no PanelInstance identity at all (no roof/ridge placement system,
   // no rough-opening height tracking yet) and stay on their existing
   // preview-only ShopDrawingPage. Safety/Gap is a special case: its real
-  // member geometry (buildSafetyGapMembers) ignores widthIn entirely — the
-  // sheet is a fixed-size edge-on plywood panel regardless of how wide a
-  // gap it's filling — so its instances are grouped as ONE page, not split
-  // by the (physically irrelevant) reserved wall-run width.
+  // member geometry (buildSafetyGapMembers) does not use the slot's widthIn as
+  // a width at all — the sheet is an edge-on plywood board whose THICKNESS is
+  // what the run reserved — so its instances are grouped by that thickness
+  // rather than by the reserved width, which lands a combined
+  // corner-brace slot (standard width + buffer) on the same page as a plain
+  // 3/4in gap, as it always has.
+  //
+  // ⚠ **Grouping by thickness, not by a single constant, is load-bearing since
+  // 2026-10-01.** With two sheets in play (3/4in 5-ply CDX / 1/2in 3-ply CDX),
+  // the old `return panelTypeId` key merged them onto one Shop Fabrication page
+  // titled with one thickness — a sheet ordered and cut wrong. They are
+  // genuinely different fabricated parts, the same reason two braced panels of
+  // one width but different patterns do not merge.
   const panelFabricationGroups = useMemo(() => {
     const resolvedSillHeightInFor = (inst: PanelInstance) => inst.sillHeightIn ?? sillDefaultHeightIn.value;
     const resolvedWindowHeightInFor = (inst: PanelInstance) => inst.windowHeightIn ?? standardWindowHeightDefaultIn.value;
@@ -6194,9 +6211,9 @@ export default function LayoutEditor() {
       return inst.heightOverrideIn ?? wallHeightFt * 12;
     };
     const panelWidthInFor = (panelTypeId: string, inst: PanelInstance): number =>
-      panelTypeId === "safety-gap" ? SAFETY_GAP_THICKNESS_IN : inst.widthIn;
+      panelTypeId === "safety-gap" ? safetyGapSheetThicknessIn(inst.widthIn) : inst.widthIn;
     const groupKeyFor = (panelTypeId: string, inst: PanelInstance): string => {
-      if (panelTypeId === "safety-gap") return panelTypeId;
+      if (panelTypeId === "safety-gap") return `${panelTypeId}:${safetyGapSheetThicknessIn(inst.widthIn).toFixed(3)}`;
       // heightOverrideIn folded in so a Mid-Wall Bond Beam's below-band
       // piece, above-band piece, and an unrelated full-height copy of the
       // same width never merge onto one Shop Fab page.
@@ -7112,7 +7129,7 @@ export default function LayoutEditor() {
     [baseWallSlots, secondStory],
   );
 
-  // Walls in the 51in-75in two-corner band, whose corner PAIR absorbed a
+  // Walls in the 51in-75.5in two-corner band, whose corner PAIR absorbed a
   // middle too small to hold a legal panel (see `resolveCorners`). The wall
   // is legal — that is the whole point of the fix — but its corner panels are
   // off their nominal 25.5in width, and `cornerPanelWidthIn` is a confirmed
@@ -7499,6 +7516,55 @@ export default function LayoutEditor() {
   }, [allInstances, panelizationType, unitSystem]);
 
   const reviewLog = useMemo(() => {
+    // Walls still carrying the panel run the OLD corner-ownership rule gave
+    // them — see `preChangeTilingNotice.ts` for why this is a notice and not a
+    // migration (a re-tile would silently discard every pinned width and
+    // locked-width plan in the file, because a pinned set that summed to the old
+    // run cannot sum to the new one).
+    //
+    // ⚠ **`wallGeometryForPure` is called here with the LIVE run stops**, not
+    // with `{}`. A stopped wall's slots sum to its STOPPED run, so measuring
+    // against the unstopped run would report every stopped wall in the building
+    // as stale. Note this is deliberately a stricter test than
+    // `repairStateToEighths`' own, which passes no stops at all — the load-time
+    // guard is allowed to be conservative about what it re-sizes; a Review Log
+    // entry is not allowed to be wrong.
+    //
+    // Derived inline rather than in its own memo on purpose: it reads only plain
+    // `useState` values and the module-level pure `wallGeometryForPure`, so no
+    // MEMO joins this array. It is not free even so — see the attribution on
+    // `secondStory` in the dependency list below.
+    const storedWallRuns: StoredWallRun[] = [];
+    if (footprint) {
+      const slotsByStory: [StoredWallRun["story"], Record<string, PanelSlot[]>][] = [
+        ["ground", baseWallSlots],
+        ["second", secondStory?.wallSlots ?? {}],
+      ];
+      for (const [story, slotsByWallId] of slotsByStory) {
+        for (const [wallId, slots] of Object.entries(slotsByWallId)) {
+          const geometry = wallGeometryForPure(
+            footprint,
+            wallId,
+            primaryCornerIds,
+            leastAccessibleCorner,
+            thicknessIn,
+            wallRunStopsByWallId,
+          );
+          if (!geometry) continue;
+          storedWallRuns.push({
+            wallId,
+            story,
+            storedTotalIn: slots.reduce((sum, slot) => sum + Math.max(0, slot.widthIn), 0),
+            currentRunIn: geometry.lengthIn,
+            slotCount: slots.length,
+          });
+        }
+      }
+    }
+    const preChangeTilingNote = preChangeTilingReviewNote(storedWallRuns, (inches) =>
+      formatLengthIn(inches, unitSystem),
+    );
+
     const entries = toReviewLog([
       ...zeroBracingReviewEntries,
       // Second, right behind zero bracing: an unbuildable part outranks every
@@ -7507,6 +7573,18 @@ export default function LayoutEditor() {
       ...squareBaleMergedCornerReviewEntries,
       ...wallRunStopReviewEntries,
       ...spanningHeaderReviewEntries,
+      // One line, above the material assumptions because it is about THIS file
+      // rather than about the catalog, and below the unbuildable-part reports
+      // because nothing here is unbuildable.
+      ...(preChangeTilingNote
+        ? [
+            {
+              label: "Walls still tiled by the pre-2026-10-01 corner rule",
+              status: "pending-BI-confirmation" as const,
+              note: preChangeTilingNote,
+            },
+          ]
+        : []),
       { label: "Target density", ...targetDensityKgM3 },
       { label: "Default panel thickness", ...looseDensePackDefaultThicknessIn },
       { ...interior, label: "Interior finish: " + interior.label },
@@ -7564,7 +7642,7 @@ export default function LayoutEditor() {
       // rare: Tommy's ABSORB rule landed 2026-09-24 and the tiler emits one
       // wider panel instead of two narrow ones.
       //
-      // **The 51in-75in two-corner band is no longer one of the residuals**
+      // **The 51in-75.5in two-corner band is no longer one of the residuals**
       // (corner absorb, 2026-09-25 — the corner-geometry route Tommy chose).
       // Those walls are legal now and report through
       // `absorbedCornerWalls` below instead, which says what the corners did
@@ -7717,6 +7795,25 @@ export default function LayoutEditor() {
     spanningHeaderReviewEntries,
     zeroBracingReviewEntries,
     squareBaleMergedCornerReviewEntries,
+    // The pre-2026-10-01 tiling notice's inputs. All seven are plain `useState`
+    // values, and the notice is derived inline rather than in its own memo
+    // precisely so that no MEMO joins this array.
+    //
+    // ⚠ It still costs exactly one `react-hooks/preserve-manual-memoization`
+    // error, and the honest attribution is `secondStory` — "this dependency may
+    // be mutated later". That is the FIFTH instance of a pattern this file
+    // already carries four times: `subMinimumPanels`, `absorbedCornerWalls`,
+    // `cornerBraceCombineRefusals` and `unhonouredLockedWidths` are each flagged
+    // on the identical `secondStory` dependency with the identical message. No
+    // correctness rule moved (`exhaustive-deps` 12, `refs` 29,
+    // `set-state-in-effect` 12, `purity` 1, `immutability` 1, all unchanged).
+    footprint,
+    baseWallSlots,
+    secondStory,
+    primaryCornerIds,
+    leastAccessibleCorner,
+    thicknessIn,
+    wallRunStopsByWallId,
   ]);
 
   // Site Properties dropdown content (Tommy: "middle of the left side of
@@ -11510,14 +11607,14 @@ export default function LayoutEditor() {
               <table className={styles.results} style={{ width: "100%" }}>
                 <tbody>
                   <tr>
-                    <td>3/4in plywood</td>
+                    <td>{PLYWOOD_THREE_QUARTER_ROW_LABEL}</td>
                     <td>
                       {plywoodAreaSqFt.threeQuarterSqFt.toFixed(1)} sqft → {plywoodThreeQuarterSheetCount} sheet
                       {plywoodThreeQuarterSheetCount === 1 ? "" : "s"} (4ft x 8ft, {PLYWOOD_SHEET_AREA_SQFT} sqft each)
                     </td>
                   </tr>
                   <tr>
-                    <td>1/2in plywood (girt webs)</td>
+                    <td>{PLYWOOD_HALF_ROW_LABEL}</td>
                     <td>
                       {plywoodAreaSqFt.halfSqFt.toFixed(1)} sqft → {plywoodHalfSheetCount} sheet
                       {plywoodHalfSheetCount === 1 ? "" : "s"} (4ft x 8ft, {PLYWOOD_SHEET_AREA_SQFT} sqft each)
@@ -11546,8 +11643,9 @@ export default function LayoutEditor() {
             }
             fastenerSchedule={[]}
             notes={[
-              "3/4in plywood: every Standard/Braced/Sill panel's 2 skins, every Column/Corner panel's 2 side plies, every Safety/Gap panel's single sheet (see the Safety/Gap redesign note on its own Shop Drawing page), every Door/Window Header's top+bottom plate caps, plus the roof-bearing assembly's own plywood cap(s) — a box beam's top+bottom caps if Second Story is enabled, a truss plate's single cap otherwise — across the drawn footprint's real BUILT wall perimeter (a wall run stopped short of its corner carries no panels and no plate, so it is excluded), not an illustrative preview length.",
-              "1/2in plywood is only the girt webs (girt bars themselves are dimensional lumber, tallied separately).",
+              `${PLYWOOD_THREE_QUARTER_ROW_LABEL}: every Standard/Braced/Sill panel's 2 skins, every Column/Corner panel's 2 side plies, every Door/Window Header's top+bottom plate caps, plus the roof-bearing assembly's own plywood cap(s) — a box beam's top+bottom caps if Second Story is enabled, a truss plate's single cap otherwise — across the drawn footprint's real BUILT wall perimeter (a wall run stopped short of its corner carries no panels and no plate, so it is excluded), not an illustrative preview length. It also carries the Safety/Gap sheet of every wall run OVER 12ft (see the Safety/Gap redesign note on its own Shop Drawing page).`,
+              `${PLYWOOD_HALF_ROW_LABEL}: the girt webs (girt bars themselves are dimensional lumber, tallied separately), plus the Safety/Gap sheet of every wall run of 12ft or LESS. Tommy, 2026-09-30: "Can we make it so that once below the threshold (of 12') the safety gap is 1/2in." Every run gets a safety gap; the 12ft line decides which of these two sheets it is, measured against the panel RUN rather than the wall (a wall that butts into a longer neighbour at both ends has a run two wall-thicknesses shorter than itself).`,
+              "⚠ The two sheets are not just two thicknesses: 3/4in CDX is 5-ply and 1/2in CDX is 3-ply. Order against the row, not against the thickness alone.",
               ...(panelizationType === "square-bale-panels"
                 ? [
                     "Straw bale count: 2 bales per Square Bale Panel instance (Tommy: \"two 18in bales\" per panel), counted as discrete purchase units rather than a density x volume estimate — real bales aren't infinitely resizable the way loose-pack straw is, even though the tiling math adjusts each panel's nominal width slightly to fit the wall run evenly.",

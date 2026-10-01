@@ -926,7 +926,7 @@ describe("the product sweep: every wall length, every corner, every opening", ()
     { name: "the two 61.5in windows from the report", openings: [win(0, 61.5), win(1, 61.5)] },
     { name: "one 36in window mid-run", openings: [win(1, 36)] },
     { name: "two 36in windows straddling the run", openings: [win(0, 36), win(2, 36)] },
-    // 61.5in sits inside the 51in-75in two-corner absorb band, 30in under it
+    // 61.5in sits inside the 51in-75.5in two-corner absorb band, 30in under it
     // and 80in over it — all three corner routes get swept.
     { name: "a 30in window against the corner", openings: [win(0, 30)] },
     { name: "an 80in opening mid-run", openings: [win(1, 80)] },

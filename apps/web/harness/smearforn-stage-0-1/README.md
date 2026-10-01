@@ -224,11 +224,37 @@ boundary on a run pins every panel on it and leaves **no automatic panel at all*
 which is exactly the state Tommy's 2026-09-30 "tile only on the first draw"
 decision makes the ordinary state of a wall.
 
-Then the step takes **one unrelated retile from a different wall** — a run-stop
-change, because `retileAllForRunStops` re-reconciles *every* wall in the building
-against its own stored slots, which is how `retile.ts`'s preserving path makes an
-edit anywhere in the building re-force the pins everywhere else. The wall under
-test is not touched: same length, same openings, same panel count.
+Then the step takes **one unrelated retile from a wall that shares no corner with
+ours** — a run-stop change, because `retileAllForRunStops` re-reconciles *every*
+wall in the building against its own stored slots, which is how `retile.ts`'s
+preserving path makes an edit anywhere in the building re-force the pins
+everywhere else. The wall under test is not touched: same length, same openings,
+same panel count.
+
+⚠ **"A different wall" was enough until 2026-10-01 and is not any more.** Corner
+ownership now gives a convex corner to the LONGER of the two walls meeting there,
+so the two long walls own all four corners — and a START stop on a wall that owns
+its corner removes that corner panel, which makes the orphan-corner rule clear the
+butting neighbour's inset and grow that neighbour by a wall thickness. Measured on
+this fixture before the step was re-aimed: the wall under test went from 184⅛" to
+199⅝", its pinned set could no longer possibly sum to it, and every pin was
+correctly refused. **That is the refusal working, not the planner failing** — but
+it is not what this step is about, so the step now picks the OPPOSITE side of the
+rectangle, which cannot reach it through that rule.
+
+⚠ **How "shares no corner" is decided, and the one assumption it rests on.**
+`sharesACorner` is **character overlap on the two wall ids**, because a wall id in
+this app is the concatenation of its two corner ids — `AB`, `CD` on a rectangle,
+`01`..`67` on an octagon and on bump-out segments. That is exact **only while every
+corner id is a single character**; the first footprint to carry a two-character
+corner id (say `A1`) would make this report adjacency between walls that do not
+touch, and the step would fall back to its second preference or throw. It is a
+harness convenience, not a geometry rule — `cornerOwnership`'s own
+`startCorner`/`endCorner` succession is the real answer and is not reachable from a
+CDP session. (The id is pulled off the dial's label with `/^Elevation:\s*/`; that
+pattern was missing its backslash until 2026-10-01 and worked only because of the
+trailing `.trim()`, which is the sort of accident this repo's encoding-pitfall note
+exists about.)
 
 It asserts that every hand-set width is still there afterwards, that it is still
 there after a **second** retile (the planner has to be a fixpoint), that the

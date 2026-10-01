@@ -72,7 +72,7 @@ describe("distributeEighths", () => {
   });
 
   it("returns zero-width parts (not negatives) when the budget is smaller than the count", () => {
-    // Dropping them is the caller's call — see buildEvenMiddle, which does.
+    // Dropping them is the caller's call — see computeSillRunWidths, which does.
     expect(distributeEighths(2, 5)).toEqual([1, 1, 0, 0, 0]);
   });
 

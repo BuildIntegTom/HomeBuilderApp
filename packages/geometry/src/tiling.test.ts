@@ -5,11 +5,13 @@ import {
   mergedCornerWidthIn,
   getOpeningAnchors,
   markSafetyCorner,
+  NARROW_SAFETY_GAP_WIDTH_IN,
   nextPanelCycleState,
   retileWithOpenings,
   tileWall,
   TILER_MAX_PANEL_WIDTH_IN,
   TILER_MIN_PANEL_WIDTH_IN,
+  WIDE_SAFETY_GAP_WIDTH_IN,
 } from "./tiling";
 import type { OpeningAnchor } from "./tiling";
 import type { PanelSlot, WallEnd } from "./types";
@@ -105,27 +107,52 @@ describe("tileWall", () => {
     ]);
   });
 
-  it("walls at or under 12ft skip the safety/gap panel entirely, using evenly-sized standards instead", () => {
-    // wallLengthIn=80 <= 144 (12ft) -> no gap panel at all, regardless of how
-    // the remainder would otherwise have degenerated. middle=40, ceil(40/40)=1
-    // -> 1 evenly-sized "standard" panel and no gap slot.
+  it("gives a run at or under 12ft a NARROW (1/2in) safety gap — it no longer goes without one", () => {
+    // ⚠ **Reversed on 2026-10-01**, and this test used to assert the opposite:
+    // "walls at or under 12ft skip the safety/gap panel entirely, using
+    // evenly-sized standards instead". Tommy's decision replaced the
+    // all-or-nothing threshold with a two-tier width — *"Can we make it so that
+    // once below the threshold (of 12'? If it's somewhere around 10-12' rn
+    // that's fine) the safety gap is 1/2"."* — so EVERY run gets a gap and 144in
+    // only decides which one.
     //
-    // **Lengthened from 55in to 80in by corner absorb (2026-09-25.)** At 55in
-    // the middle was 15in — a panel the shop cannot build — so the corner pair
-    // now absorbs it and there is no standard slot left to make this test's
-    // point with. The point itself (no safety-gap slot under 12ft) is
-    // unchanged; 80in is simply a length where a legal middle survives to
-    // demonstrate it.
+    // wallLengthIn=80 <= 144 (12ft) -> a 1/2in gap. middle=40, of which the gap
+    // takes 1/2in and the one standard panel takes the other 39.5in.
     const result = tileWall(80, 40, 20, "end");
-    expect(result.slots.map((s) => s.type)).toEqual(["corner", "standard", "corner"]);
-    expect(result.slots[1]!.widthIn).toBe(40);
+    expect(result.slots.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 20],
+      ["safety-gap", 0.5],
+      ["standard", 39.5],
+      ["corner", 20],
+    ]);
+    // The whole point of the pass: the run still sums to the wall exactly.
+    expect(result.slots.reduce((a, s) => a + Math.round(s.widthIn * 8), 0)).toBe(80 * 8);
+  });
+
+  it("gives a run OVER 12ft the WIDE (3/4in) gap, which is the tier that did not move", () => {
+    // The other side of the same decision, asserted next to it so the pair of
+    // tiers is visible in one place rather than inferred.
+    const result = tileWall(200, 40, 20, "end");
+    const gaps = result.slots.filter((s) => s.type === "safety-gap");
+    expect(gaps.map((s) => s.widthIn)).toEqual([0.75]);
+    expect(result.slots.reduce((a, s) => a + Math.round(s.widthIn * 8), 0)).toBe(200 * 8);
+  });
+
+  it("switches tier at exactly 144in of RUN: 144in is narrow, 144 1/8in is wide", () => {
+    // The boundary is `> 144`, not `>= 144`, and it is measured against the RUN
+    // — see SAFETY_GAP_NARROW_MAX_RUN_LENGTH_IN. Pinned at the eighth either
+    // side so the inequality cannot be flipped unnoticed.
+    const narrow = tileWall(144, 40, 20, "end").slots.filter((s) => s.type === "safety-gap");
+    const wide = tileWall(144.125, 40, 20, "end").slots.filter((s) => s.type === "safety-gap");
+    expect(narrow.map((s) => s.widthIn)).toEqual([0.5]);
+    expect(wide.map((s) => s.widthIn)).toEqual([0.75]);
   });
 
   it("...and a wall whose middle is too small to build has its corners absorb it instead", () => {
     // The 55in case the test above used to assert, kept as its own case so
     // the change is visible rather than merely gone: a 15in middle is under
     // the 24in fabrication minimum, so the two corner panels take the whole
-    // wall at 27.5in each. Same rule as the 51in-75in band, reached here with
+    // wall at 27.5in each. Same rule as the 51in-75.5in band, reached here with
     // a non-catalog 20in corner width.
     const result = tileWall(55, 40, 20, "end");
     expect(result.slots.map((s) => [s.type, s.widthIn])).toEqual([
@@ -134,19 +161,38 @@ describe("tileWall", () => {
     ]);
   });
 
-  it("still skips the gap panel under 12ft when more than 1 standard's worth fits, capped at standard width", () => {
-    // wallLengthIn=90 <= 144; middle=50, ceil(50/40)=2 -> 2 evenly-sized
-    // standards (25 each) instead of 1 oversized 50in panel.
+  it("never hands the shop an oversized panel on a short run either — the narrow gap plus a legal split", () => {
+    // wallLengthIn=90 <= 144; middle=50, less the 1/2in gap leaves 49.5in,
+    // which is more than one 40in standard, so the leftover SPLITS rather than
+    // growing one panel past the cap: 49.5 >= 2 x 24, so two panels of 24.75in.
+    //
+    // ⚠ This used to be 2 x 25in with no gap at all ("still skips the gap panel
+    // under 12ft"). The cap rule is unchanged; the gap now takes its 1/2in
+    // first.
     const result = tileWall(90, 40, 20, "end");
-    expect(result.slots.map((s) => s.type)).toEqual(["corner", "standard", "standard", "corner"]);
-    expect(result.slots.map((s) => s.widthIn)).toEqual([20, 25, 25, 20]);
+    expect(result.slots.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 20],
+      ["safety-gap", 0.5],
+      ["standard", 24.75],
+      ["standard", 24.75],
+      ["corner", 20],
+    ]);
+    expect(result.slots.reduce((a, s) => a + Math.round(s.widthIn * 8), 0)).toBe(90 * 8);
   });
 
-  it("splits evenly into multiple standards under 12ft when the budget calls for more than one", () => {
-    // wallLengthIn=110 <= 144; middle=70, round(70/40)=2 -> 2 evenly-sized standards (35 each)
+  it("splits into multiple standards on a short run when the budget calls for more than one", () => {
+    // wallLengthIn=110 <= 144; middle=70, less the 1/2in gap leaves 69.5in ->
+    // one 40in standard plus a 29.5in remainder; 69.5 >= 48 so it splits into
+    // two 34.75in panels. (It was 2 x 35in with no gap before 2026-10-01.)
     const result = tileWall(110, 40, 20, "end");
-    expect(result.slots.map((s) => s.type)).toEqual(["corner", "standard", "standard", "corner"]);
-    expect(result.slots.map((s) => s.widthIn)).toEqual([20, 35, 35, 20]);
+    expect(result.slots.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 20],
+      ["safety-gap", 0.5],
+      ["standard", 34.75],
+      ["standard", 34.75],
+      ["corner", 20],
+    ]);
+    expect(result.slots.reduce((a, s) => a + Math.round(s.widthIn * 8), 0)).toBe(110 * 8);
   });
 
   it("degrades gracefully when there's nothing to borrow a standard panel from (0 fit), on a wall over 12ft", () => {
@@ -258,21 +304,33 @@ describe("tileWall", () => {
     // length; there's no separate merge state to reset.
     const short = tileWall(30, 40, 20, "end");
     expect(short.slots).toEqual([{ type: "corner", widthIn: 30 }]);
-    // **Grown from 50in to 64in by corner absorb (2026-09-25).** At 50in the
+    // **Grown from 50in to 64in by corner absorb (2026-09-25), and from 64in to
+    // 64½in by the two-tier gap (2026-10-01).** At 50in the
     // unmerged wall had a 10in middle, which is under the fabrication
     // minimum, so the corner pair now absorbs it and there is still no
     // standard slot — the wall unmerges into two corners but not into a
-    // middle. 64in leaves a legal 24in middle, so it shows the full unmerge
-    // this test is about. The intermediate stage is asserted immediately
-    // below, so the staircase is visible rather than skipped over.
+    // middle. 64in used to leave a legal 24in middle; now that middle also has
+    // to pay for a 1/2in safety gap, so 24in buys a 23½in panel the shop cannot
+    // build and the pair absorbs that length too. 64½in is the first length with
+    // a middle that holds a gap AND a legal panel. The intermediate stages are
+    // asserted so the staircase is visible rather than skipped over.
     const absorbed = tileWall(50, 40, 20, "end");
     expect(absorbed.slots.map((s) => [s.type, s.widthIn])).toEqual([
       ["corner", 25],
       ["corner", 25],
     ]);
-    const grown = tileWall(64, 40, 20, "end");
-    expect(grown.slots.map((s) => s.type)).toEqual(["corner", "standard", "corner"]);
-    expect(grown.slots.map((s) => s.widthIn)).toEqual([20, 24, 20]);
+    const stillAbsorbed = tileWall(64, 40, 20, "end");
+    expect(stillAbsorbed.slots.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 32],
+      ["corner", 32],
+    ]);
+    const grown = tileWall(64.5, 40, 20, "end");
+    expect(grown.slots.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 20],
+      ["safety-gap", 0.5],
+      ["standard", 24],
+      ["corner", 20],
+    ]);
   });
 
   it("does NOT absorb when the absorbed pair would itself be unbuildable", () => {
@@ -504,7 +562,7 @@ const CORNER_COMBOS: [boolean, boolean][] = [
  * **The shortest wall length that is legal in ALL FOUR corner-ownership
  * combinations — the floor every sweep in this file starts from.**
  *
- * It used to be 96in, which is why the 51in-75in two-corner dead band could
+ * It used to be 96in, which is why the 51in-75.5in two-corner dead band could
  * sit in the tiler unnoticed while two sweeps reported clean: neither of them
  * ever looked at a wall short enough to have the disease. Corner absorb
  * (2026-09-25) fixed the band, so the sweeps now start where the arithmetic
@@ -953,9 +1011,25 @@ describe("the absorb rule: no tiler-generated panel the shop cannot build", () =
     expect(slots.map((s) => s.widthIn)).toEqual([30.875, 30.875]);
     expect(slots.some((s) => s.widthIn < TILER_MIN_PANEL_WIDTH_IN)).toBe(false);
     expect(slots.reduce((sum, s) => sum + Math.round(s.widthIn * 8), 0)).toBe(Math.round(61.75 * 8));
-    // 75in — the first two-corner wall with a real middle — is untouched.
-    const legal = tileWall(75, 40, CORNER_WIDTH_IN, "end", true, true).slots.filter((s) => s.type === "standard");
-    expect(legal[0]!.widthIn).toBe(24);
+    // ⚠ **The band's top edge moved from 75in to 75½in on 2026-10-01**, because
+    // the middle now has to pay for a safety gap before it can hold a legal
+    // panel. 75in leaves a 24in middle, which is a 1/2in gap plus a 23½in panel
+    // — unbuildable — so the pair absorbs it; 75½in is the first two-corner wall
+    // whose middle holds both. Both are asserted, because "the band ends here"
+    // is exactly the kind of edge that silently drifts.
+    const absorbedAt75 = tileWall(75, 40, CORNER_WIDTH_IN, "end", true, true).slots;
+    expect(absorbedAt75.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 37.5],
+      ["corner", 37.5],
+    ]);
+    const legal = tileWall(75.5, 40, CORNER_WIDTH_IN, "end", true, true).slots;
+    expect(legal.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 25.5],
+      ["safety-gap", 0.5],
+      ["standard", 24],
+      ["corner", 25.5],
+    ]);
+    expect(legal.some((s) => s.type !== "safety-gap" && s.widthIn < TILER_MIN_PANEL_WIDTH_IN)).toBe(false);
   });
 
   it("residual 1's ONE-corner twin is deliberately still unfixed", () => {
@@ -967,9 +1041,12 @@ describe("the absorb rule: no tiler-generated panel the shop cannot build", () =
     // reported in the Review Log, not corrected. Asserted so that "not
     // attempted" stays distinguishable from "still broken".
     const { slots } = tileWall(40, 40, CORNER_WIDTH_IN, "end", true, false);
-    expect(slots.map((s) => s.type)).toEqual(["corner", "standard"]);
-    expect(slots[1]!.widthIn).toBe(14.5);
-    expect(slots[1]!.widthIn).toBeLessThan(TILER_MIN_PANEL_WIDTH_IN);
+    expect(slots.map((s) => s.type)).toEqual(["corner", "safety-gap", "standard"]);
+    // ⚠ **1/2in narrower than before 2026-10-01 (it was 14½in)**, because the
+    // sliver now pays for a safety gap too. The CASE is the same case and the
+    // decision not to fix it is the same decision; the panel is just smaller.
+    expect(slots[2]!.widthIn).toBe(14);
+    expect(slots[2]!.widthIn).toBeLessThan(TILER_MIN_PANEL_WIDTH_IN);
     expect(slots.reduce((sum, s) => sum + Math.round(s.widthIn * 8), 0)).toBe(Math.round(40 * 8));
   });
 
@@ -1034,17 +1111,110 @@ describe("the absorb rule: no tiler-generated panel the shop cannot build", () =
     expect(violations.slice(0, 10)).toEqual([]);
   });
 
-  it("absorbs on a short wall too — buildEvenMiddle drops a panel rather than halving under the floor", () => {
-    // The no-safety-gap path (walls at or under 12ft). A 40⅛in budget at the
-    // 40in standard used to give two ~20in panels: ceil(40.125 / 40) is 2.
-    // It now gives one 40⅛in panel, because floor(40.125 / 24) is 1.
+  // -------------------------------------------------------------------------
+  // THE SUB-MINIMUM BANDS AFTER THE TWO-TIER GAP — measured, not argued.
+  //
+  // Every run now reserves a safety gap, so a run too short to hold a gap AND a
+  // buildable panel has no legal tiling at all. That is not a new KIND of case —
+  // it is residual 1's one-corner twin and its corner-less cousin, both already
+  // "reported, not corrected" — but the band MOVED, and a band that moves without
+  // being measured is how a regression ships.
+  //
+  // **Measured at the 40in standard, every eighth from 0 to 200in:**
+  //
+  //   | corners | sub-minimum run lengths | count | before 2026-10-01 |
+  //   |---|---|---|---|
+  //   | neither | 5/8in .. 24-3/8in | 191 | 1/8in .. 23-7/8in, 191 |
+  //   | one     | 26-1/8in .. 49-7/8in | 191 | 25-5/8in .. 49-3/8in, 191 |
+  //   | both    | none | 0 | none, 0 |
+  //
+  // Three things worth saying out loud about that table:
+  //
+  //   1. **The band is the same SIZE. It only shifted, by exactly the narrow
+  //      gap's own 1/2in.** Four lengths at the top are newly unbuildable; four
+  //      at the bottom stop producing a panel at all (the whole run becomes the
+  //      gap), so they leave the band.
+  //   2. **The TWO-CORNER case has none, before or after**, because corner absorb
+  //      reaches it — and that is only still true because the absorb band's
+  //      ceiling moved with the gap (`cornerBandMiddleIn`). Without that, a 75in
+  //      wall would have come out as a 1/2in gap and a 23½in panel.
+  //   3. **There is no legal answer for the four lengths that moved in**, and no
+  //      building value was touched to pretend otherwise. A 24in run holding a
+  //      1/2in gap leaves 23½in, which is under the shop's confirmed 24in
+  //      minimum; the only ways out are to drop the gap on short runs (which
+  //      reverses Tommy's decision) or to move the 24in minimum (off limits). So
+  //      it is reported in the Review Log, exactly as the rest of the band
+  //      already is. **Tommy's call, not this code's.**
+  // -------------------------------------------------------------------------
+  it("the sub-minimum run bands are the two residual cases, shifted by the gap and no wider", () => {
+    const bands: Record<string, { first: number | null; last: number | null; count: number; gaps: number }> = {};
+    for (const [label, hasStart, hasEnd] of [
+      ["neither", false, false],
+      ["one", true, false],
+      ["both", true, true],
+    ] as [string, boolean, boolean][]) {
+      let first: number | null = null;
+      let last: number | null = null;
+      let count = 0;
+      let gaps = 0; // non-contiguous jumps — a band with holes would be a different story
+      let prev: number | null = null;
+      for (let e = 1; e <= 200 * 8; e++) {
+        const lengthIn = e / 8;
+        const { slots } = tileWall(lengthIn, 40, CORNER_WIDTH_IN, "end", hasStart, hasEnd);
+        const panels = slots.filter((slot) => slot.type === "standard");
+        if (panels.length === 0) continue;
+        if (!panels.some((slot) => slot.widthIn < TILER_MIN_PANEL_WIDTH_IN)) continue;
+        count++;
+        if (first === null) first = lengthIn;
+        else if (prev !== null && Math.abs(lengthIn - prev - 0.125) > 1e-9) gaps++;
+        last = lengthIn;
+        prev = lengthIn;
+      }
+      bands[label] = { first, last, count, gaps };
+    }
+    expect(bands).toEqual({
+      neither: { first: 0.625, last: 24.375, count: 191, gaps: 0 },
+      one: { first: 26.125, last: 49.875, count: 191, gaps: 0 },
+      both: { first: null, last: null, count: 0, gaps: 0 },
+    });
+  });
+
+  it("and the gap is what shifted them: the same sweep with no gap reserved lands 1/2in lower", () => {
+    // Re-derives the "before" column of the table above from this code rather
+    // than quoting a number nobody can check: a run that keeps the gap's 1/2in
+    // for itself is exactly the pre-2026-10-01 arithmetic on these lengths,
+    // because below one standard width the whole budget became one panel.
+    const subMinimum = (runLengthIn: number, keepGap: boolean) => {
+      const budget = keepGap ? runLengthIn - 0.5 : runLengthIn;
+      return budget > 0 && budget < TILER_MIN_PANEL_WIDTH_IN;
+    };
+    expect(subMinimum(24, true)).toBe(true); // newly unbuildable
+    expect(subMinimum(24, false)).toBe(false); // was legal, exactly at the floor
+    expect(subMinimum(24.5, true)).toBe(false); // the first legal run again
+    expect(subMinimum(0.375, true)).toBe(false); // the whole run IS the gap now
+    expect(subMinimum(0.375, false)).toBe(true); // it used to be a 3/8in panel
+  });
+
+  it("absorbs on a short run too — one wider panel beside the narrow gap, never two under the floor", () => {
+    // A 40⅛in corner-less run at the 40in standard. Three successive rules have
+    // owned this case and all three answers are legal, which is why it is here:
+    //   - before absorb (2026-09-24): two ~20in panels, ceil(40.125 / 40) = 2;
+    //   - absorb, with no gap under 12ft: one 40⅛in panel;
+    //   - the two-tier gap (2026-10-01): a 1/2in gap plus one 39⅝in panel,
+    //     because the gap comes off the budget first and 39⅝in is still a single
+    //     legal panel (floor(39.625 / 40) = 0, so it is the whole remainder).
     const { slots } = tileWall(40.125, 40, CORNER_WIDTH_IN, "end", false, false);
-    expect(slots.map((s) => [s.type, s.widthIn])).toEqual([["standard", 40.125]]);
+    expect(slots.map((s) => [s.type, s.widthIn])).toEqual([
+      ["safety-gap", 0.5],
+      ["standard", 39.625],
+    ]);
+    expect(slots.reduce((a, s) => a + Math.round(s.widthIn * 8), 0)).toBe(Math.round(40.125 * 8));
   });
 });
 
 // ---------------------------------------------------------------------------
-// CORNER ABSORB — the 51in-75in two-corner dead band (2026-09-25).
+// CORNER ABSORB — the 51in-75½in two-corner dead band (2026-09-25; top edge
+// moved from 75in on 2026-10-01).
 //
 // A wall owning corners at both ends spends 2 x 25.5in = 51in on them, so its
 // middle is `L - 51`, which is under the shop's confirmed 24in fabrication
@@ -1052,6 +1222,13 @@ describe("the absorb rule: no tiler-generated panel the shop cannot build", () =
 // short to hold a legal middle panel: no legal tiling existed in that band at
 // all, and absorb could not reach it because there was nothing on the run to
 // absorb into.
+//
+// ⚠ **The band is four eighths wider since the two-tier safety gap (2026-10-01).**
+// Every run now reserves a gap, so the middle must hold the gap AND a legal
+// panel: at 75in the 24in middle became a 1/2in gap plus a 23½in panel, which is
+// the very thing this band exists to prevent. `cornerBandMiddleIn`'s ceiling is
+// now `TILER_MIN_PANEL_WIDTH_IN + gapWidthIn`. **No catalog number moved** —
+// 24in, 48in and the 25.5in corner are all untouched.
 //
 // Tommy, 2026-09-24: "I want to prioritize good building principles here with
 // the panelizer. I like the corner geometry rule." He chose the
@@ -1064,7 +1241,7 @@ describe("the absorb rule: no tiler-generated panel the shop cannot build", () =
 // rectangle can never have a wall in this band at all — a band test written
 // against a rectangle is silently testing nothing.
 // ---------------------------------------------------------------------------
-describe("corner absorb: the 51in-75in two-corner band", () => {
+describe("corner absorb: the 51in-75.5in two-corner band", () => {
   const band = (lengthIn: number, standardWidthIn = 40) =>
     tileWall(lengthIn, standardWidthIn, CORNER_WIDTH_IN, "end", true, true).slots.map((s) => [s.type, s.widthIn]);
 
@@ -1099,19 +1276,36 @@ describe("corner absorb: the 51in-75in two-corner band", () => {
     ]);
   });
 
-  it("74.875in — the top of the band, and the widest panel it can ever emit", () => {
+  it("75.375in — the top of the band, and the widest panel it can ever emit", () => {
     // The odd eighth goes to the lowest index, which is `distributeEighths`'
-    // own deliberately arbitrary but FIXED rule. 37.5in is the worst case for
-    // the whole band and it is 10.5in clear of the 48in ceiling.
-    expect(band(74.875)).toEqual([
-      ["corner", 37.5],
-      ["corner", 37.375],
+    // own deliberately arbitrary but FIXED rule. **The widest panel the band
+    // can ever emit is therefore 37.75in** — 10.25in clear of the 48in
+    // ceiling. (37.6875in is the MEAN of the pair, a sixteenth, and so is not
+    // a width this app can emit at all; it was quoted here as "the worst case"
+    // until 2026-10-01.)
+    //
+    // ⚠ Was 74.875in / 37.5in until 2026-10-01: the band's top edge moved out by
+    // the narrow gap's own 1/2in.
+    expect(band(75.375)).toEqual([
+      ["corner", 37.75],
+      ["corner", 37.625],
     ]);
   });
 
-  it("75in (6ft 3in) — the first two-corner wall with a real middle — is UNCHANGED", () => {
+  it("75in (6ft 3in) is now INSIDE the band — its 24in middle cannot hold a gap and a legal panel", () => {
+    // The case the two-tier gap moved, asserted from the inside rather than
+    // left to the sweep. 24in of middle is 1/2in of gap plus a 23½in panel; the
+    // pair takes the whole wall instead.
     expect(band(75)).toEqual([
+      ["corner", 37.5],
+      ["corner", 37.5],
+    ]);
+  });
+
+  it("75.5in — the first two-corner wall whose middle holds a gap AND a legal panel", () => {
+    expect(band(75.5)).toEqual([
       ["corner", 25.5],
+      ["safety-gap", 0.5],
       ["standard", 24],
       ["corner", 25.5],
     ]);
@@ -1146,21 +1340,25 @@ describe("corner absorb: the 51in-75in two-corner band", () => {
   });
 
   it("a wall owning only ONE corner never absorbs — there is no pair", () => {
-    // Same length, one corner: the middle survives as a (sub-minimum, and
-    // deliberately unfixed) standard panel rather than being swallowed.
+    // Same length, one corner: the middle survives as a standard panel beside
+    // its gap rather than being swallowed. (34½in before the two-tier gap took
+    // its 1/2in; still legal either way.)
     expect(tileWall(60, 40, CORNER_WIDTH_IN, "end", true, false).slots.map((s) => [s.type, s.widthIn])).toEqual([
       ["corner", 25.5],
-      ["standard", 34.5],
+      ["safety-gap", 0.5],
+      ["standard", 34],
     ]);
     expect(tileWall(60, 40, CORNER_WIDTH_IN, "end", false, false).slots.map((s) => [s.type, s.widthIn])).toEqual([
-      ["standard", 30],
-      ["standard", 30],
+      ["safety-gap", 0.5],
+      ["standard", 29.75],
+      ["standard", 29.75],
     ]);
   });
 
   it("sweeps the whole band at every eighth: two corner panels, in range, summing exactly", () => {
     const violations: string[] = [];
-    for (let eighths = 51 * 8 + 1; eighths < 75 * 8; eighths++) {
+    // Upper bound 75.5in, not 75in, since 2026-10-01 — see the band note above.
+    for (let eighths = 51 * 8 + 1; eighths < 75.5 * 8; eighths++) {
       const wallLengthIn = eighths / 8;
       for (const standardWidthIn of ABSORB_STANDARD_WIDTHS_IN) {
         for (const gapEnd of GAP_ENDS) {
@@ -1291,10 +1489,32 @@ describe("corner absorb: the 51in-75in two-corner band", () => {
 // the constant instead of explaining the change is how a silent regression
 // gets shipped.
 // ---------------------------------------------------------------------------
-describe("walls outside the band tile byte-identically to before corner absorb", () => {
-  /** In the band, behaviour changed on purpose; everywhere else it must not. */
+// ⚠ **RE-BASELINED 2026-10-01, and the title no longer means what it says.**
+// These two digests were measured on `a3843f1` to prove corner absorb moved
+// NOTHING outside its own band. The two-tier safety gap moves every
+// configuration in this sweep by design — every run now reserves a gap — so
+// "unchanged since a3843f1" is no longer a claim anyone can make, and
+// pretending otherwise by leaving the old constant in place would have been a
+// lie that failed loudly rather than a check that worked. What the pair is
+// worth keeping for is what it was always really doing: catching an
+// UNINTENDED change. Both digests and both counts are re-measured on this
+// branch, with the previous values recorded beside them so the re-baseline is
+// visible rather than quietly overwritten. The properties that must hold
+// absolutely — the sum invariant and the [24in, 48in] bounds — are asserted by
+// the sweeps above, not by these digests.
+// ⚠ **RENAMED 2026-10-01, because the old name had become false.** This block
+// was called "walls outside the band tile byte-identically to before corner
+// absorb" — a claim about `main` @ `a3843f1` that the two-tier gap retired, since
+// every configuration in this sweep now carries a gap it did not carry then.
+// Both digests are re-baselined ONTO THIS BRANCH, so what the pair detects is an
+// unintended future change, not identity with any earlier tree. A test whose
+// name is not true of what it asserts is the same defect class as an Open Items
+// pointer that names no item.
+describe("walls outside the band: a digest pair that catches an UNINTENDED change (baselined on this branch, 2026-10-01)", () => {
+  /** In the band, behaviour changed on purpose; everywhere else it must not.
+   * Top edge 75.5in since 2026-10-01 — see the band note above. */
   const inBand = (lengthIn: number, hasCornerStart: boolean, hasCornerEnd: boolean): boolean =>
-    hasCornerStart && hasCornerEnd && lengthIn > 51 && lengthIn < 75;
+    hasCornerStart && hasCornerEnd && lengthIn > 51 && lengthIn < 75.5;
 
   /** FNV-1a over a rendering that carries both the slot TYPES and their exact
    * widths in integer eighths — so a one-eighth move anywhere in the sweep
@@ -1337,8 +1557,13 @@ describe("walls outside the band tile byte-identically to before corner absorb",
         }
       }
     }
-    expect(compared).toBe(169768);
-    expect(digest).toBe(4137668243); // measured on a3843f1, before corner absorb
+    expect(compared).toBe(169736);
+    // RE-BASELINED 2026-10-01 for the two-tier safety gap, which moved every
+    // configuration here on purpose. Was 4137668243 over 169,768 configurations
+    // (measured on a3843f1, before corner absorb); the count dropped by 32
+    // because the band swallowed four more eighth-steps x 4 standard widths x 2
+    // gap ends. See this describe block's own note.
+    expect(digest).toBe(3712675599);
   });
 
   it("retileWithOpenings: 254,652 out-of-band configurations, unchanged", () => {
@@ -1373,8 +1598,10 @@ describe("walls outside the band tile byte-identically to before corner absorb",
         }
       }
     }
-    expect(compared).toBe(254652);
-    expect(digest).toBe(512805668); // measured on a3843f1, before corner absorb
+    expect(compared).toBe(254604);
+    // RE-BASELINED 2026-10-01, same reason as the row above. Was 512805668 over
+    // 254,652 configurations (measured on a3843f1).
+    expect(digest).toBe(3623257527);
   });
 });
 
@@ -1411,7 +1638,7 @@ describe("computeSillRunWidths on the 1/8in grid", () => {
 // `squareBalePanel.widthIn` is a CONFIRMED 39in whole-bale unit — two 18in
 // bales plus two 1.5in studs — and the app tiles Square Bale corners at that
 // width (`cornerWidthInForTiling` in page.tsx). That moves the two-corner band
-// from 51in-75in to 78in-102in, where absorb would emit corner "panels" up to
+// from 51in-75.5in to 78in-102.5in, where absorb would emit corner "panels" up to
 // 48in wide. Tommy, asked directly whether a bale corner may be widened the
 // way a plywood-faced corner panel may:
 //
@@ -1434,31 +1661,51 @@ describe("Square Bale's 39in corner: refuse, do not absorb", () => {
     ]);
 
   describe("cornerBandMiddleIn — the one definition of 'this wall is in the band'", () => {
+    // Every wall this function is ever asked about is far under the 144in run
+    // threshold, so the gap tier is always the narrow one. Named rather than
+    // inlined, because the gap width is now part of the band's own definition.
+    const GAP = NARROW_SAFETY_GAP_WIDTH_IN;
+
     it("names the sub-minimum middle at the 25.5in corner panel", () => {
-      expect(cornerBandMiddleIn(72, 25.5, true, true)).toBe(21);
-      expect(cornerBandMiddleIn(60, 25.5, true, true)).toBe(9);
+      expect(cornerBandMiddleIn(72, 25.5, true, true, GAP)).toBe(21);
+      expect(cornerBandMiddleIn(60, 25.5, true, true, GAP)).toBe(9);
       // 51in: the pair fits with a zero middle. Not the band.
-      expect(cornerBandMiddleIn(51, 25.5, true, true)).toBeNull();
-      // 75in: the first legal middle (exactly the 24in floor). Not the band.
-      expect(cornerBandMiddleIn(75, 25.5, true, true)).toBeNull();
+      expect(cornerBandMiddleIn(51, 25.5, true, true, GAP)).toBeNull();
+      // ⚠ 75in WAS the first legal middle (exactly the 24in floor) and is now
+      // inside the band: a 24in middle is a 1/2in gap plus a 23½in panel. The
+      // first legal middle is 24½in, at a 75½in wall.
+      expect(cornerBandMiddleIn(75, 25.5, true, true, GAP)).toBe(24);
+      expect(cornerBandMiddleIn(75.375, 25.5, true, true, GAP)).toBe(24.375);
+      expect(cornerBandMiddleIn(75.5, 25.5, true, true, GAP)).toBeNull();
       // Too short for the pair at all — that is the merge case, not this one.
-      expect(cornerBandMiddleIn(40, 25.5, true, true)).toBeNull();
+      expect(cornerBandMiddleIn(40, 25.5, true, true, GAP)).toBeNull();
     });
 
-    it("moves the band to 78in-102in at the 39in bale corner", () => {
-      expect(cornerBandMiddleIn(78, BALE_CORNER_IN, true, true)).toBeNull();
-      expect(cornerBandMiddleIn(78.125, BALE_CORNER_IN, true, true)).toBe(0.125);
+    it("the band's ceiling tracks the gap width it is given, which is the whole coupling", () => {
+      // Handed the WIDE tier, the ceiling moves out another quarter inch. No
+      // real wall in this band ever gets the wide tier (a 144in run cannot own
+      // two 25.5in corners and a sub-25in middle), but the coupling is what the
+      // parameter exists for and an untested parameter is a parameter that rots.
+      expect(cornerBandMiddleIn(75.5, 25.5, true, true, WIDE_SAFETY_GAP_WIDTH_IN)).toBe(24.5);
+      expect(cornerBandMiddleIn(75.75, 25.5, true, true, WIDE_SAFETY_GAP_WIDTH_IN)).toBeNull();
+    });
+
+    it("moves the band to 78in-102.5in at the 39in bale corner", () => {
+      expect(cornerBandMiddleIn(78, BALE_CORNER_IN, true, true, GAP)).toBeNull();
+      expect(cornerBandMiddleIn(78.125, BALE_CORNER_IN, true, true, GAP)).toBe(0.125);
       // An 8ft wall — MIN_DIMENSION_FT, the shortest side the rectangle tool
       // will draw, i.e. entirely ordinary — is inside the moved band.
-      expect(cornerBandMiddleIn(96, BALE_CORNER_IN, true, true)).toBe(18);
-      expect(cornerBandMiddleIn(101.875, BALE_CORNER_IN, true, true)).toBe(23.875);
-      expect(cornerBandMiddleIn(102, BALE_CORNER_IN, true, true)).toBeNull();
+      expect(cornerBandMiddleIn(96, BALE_CORNER_IN, true, true, GAP)).toBe(18);
+      expect(cornerBandMiddleIn(101.875, BALE_CORNER_IN, true, true, GAP)).toBe(23.875);
+      // ⚠ 102in was the top of this band before 2026-10-01; it is now 102.5in.
+      expect(cornerBandMiddleIn(102, BALE_CORNER_IN, true, true, GAP)).toBe(24);
+      expect(cornerBandMiddleIn(102.5, BALE_CORNER_IN, true, true, GAP)).toBeNull();
     });
 
     it("is null whenever the wall does not own BOTH corners", () => {
-      expect(cornerBandMiddleIn(84, BALE_CORNER_IN, true, false)).toBeNull();
-      expect(cornerBandMiddleIn(84, BALE_CORNER_IN, false, true)).toBeNull();
-      expect(cornerBandMiddleIn(84, BALE_CORNER_IN, false, false)).toBeNull();
+      expect(cornerBandMiddleIn(84, BALE_CORNER_IN, true, false, GAP)).toBeNull();
+      expect(cornerBandMiddleIn(84, BALE_CORNER_IN, false, true, GAP)).toBeNull();
+      expect(cornerBandMiddleIn(84, BALE_CORNER_IN, false, false, GAP)).toBeNull();
     });
   });
 
@@ -1530,9 +1777,11 @@ describe("Square Bale's 39in corner: refuse, do not absorb", () => {
     // and the 6in remainder is left VISIBLE as a sub-minimum panel, which the
     // Review Log's existing sub-minimum entry reports. A visible gap beats a
     // substituted value.
+    // (5½in, not 6in, since the two-tier gap takes its 1/2in first.)
     expect(bale(84, false)).toEqual([
       ["corner", 39],
-      ["standard", 6],
+      ["safety-gap", 0.5],
+      ["standard", 5.5],
       ["corner", 39],
     ]);
   });
@@ -1544,7 +1793,8 @@ describe("Square Bale's 39in corner: refuse, do not absorb", () => {
     ]);
     expect(bale(96, false)).toEqual([
       ["corner", 39],
-      ["standard", 18],
+      ["safety-gap", 0.5],
+      ["standard", 17.5],
       ["corner", 39],
     ]);
   });
@@ -1580,9 +1830,13 @@ describe("Square Bale's 39in corner: refuse, do not absorb", () => {
       // Nominal corners, and a middle under the shop floor either way.
       expect(withGate[0]).toEqual(["corner", BALE_CORNER_IN]);
       expect(withGate[withGate.length - 1]).toEqual(["corner", BALE_CORNER_IN]);
+      // Two middle slots since 2026-10-01: the narrow safety gap, then the
+      // sub-minimum panel. The gap is a plywood spacer, not a panel, so only
+      // the panel is held to the shop floor.
       const middle = withGate.slice(1, -1) as [string, number][];
-      expect(middle.length).toBe(1);
-      expect(middle[0]![1]).toBeLessThan(TILER_MIN_PANEL_WIDTH_IN);
+      expect(middle.map((m) => m[0])).toEqual(["safety-gap", "standard"]);
+      expect(middle[0]![1]).toBe(NARROW_SAFETY_GAP_WIDTH_IN);
+      expect(middle[1]![1]).toBeLessThan(TILER_MIN_PANEL_WIDTH_IN);
     }
     expect(steps).toBe(47);
   });

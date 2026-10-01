@@ -358,7 +358,7 @@ export function planLockedWidthReforce(slots: PanelSlot[]): LockedWidthReforceRe
       const other = working[j]!;
       // The same four types `runStopOpenings.ts`'s own `isOpeningSlot` lists.
       // Restated rather than imported because that one is private to its module,
-      // the same hand-kept duplication `SAFETY_GAP_WIDTH_IN` already carries in
+      // the same hand-kept duplication the safety-gap widths already carry in
       // this package. Kept in step with it by hand.
       if (other.type === "window" || other.type === "door" || other.type === "column" || other.type === "big-header") openings++;
       if (j === i) continue;

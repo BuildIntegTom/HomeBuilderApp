@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3210/",
-  "ranAt": "2026-10-01T04:40:15.359Z",
+  "app": "http://localhost:3310/",
+  "ranAt": "2026-10-01T18:19:04.518Z",
   "steps": [
     {
       "name": "whole-wall-on-screen",
@@ -11,9 +11,10 @@
     },
     {
       "name": "wall-as-tiled",
-      "panelCount": 15,
-      "totalEighths": 4392,
+      "panelCount": 17,
+      "totalEighths": 4640,
       "widths": [
+        25.5,
         40,
         40,
         40,
@@ -25,10 +26,11 @@
         40,
         40,
         40,
-        34.125,
-        34.125,
+        24.125,
+        24.125,
         0.75,
-        40
+        40,
+        25.5
       ],
       "asserted": true,
       "passed": true
@@ -43,21 +45,21 @@
     },
     {
       "name": "insert",
-      "notice": "Inserted on wall AB: 15 panels → 16, 13 still automatic.",
-      "panelsBefore": 15,
-      "panelsAfter": 16,
-      "totalEighthsBefore": 4392,
-      "totalEighthsAfter": 4392,
+      "notice": "Inserted on wall AB: 17 panels → 18, 13 still automatic.",
+      "panelsBefore": 17,
+      "panelsAfter": 18,
+      "totalEighthsBefore": 4640,
+      "totalEighthsAfter": 4640,
       "asserted": true,
       "passed": true
     },
     {
       "name": "replace",
-      "notice": "Replaced on wall AB: 16 panels → 16, 12 still automatic.",
-      "panels": 16,
-      "panelsBefore": 16,
-      "totalEighths": 4392,
-      "totalEighthsBefore": 4392,
+      "notice": "Replaced on wall AB: 18 panels → 18, 12 still automatic.",
+      "panels": 18,
+      "panelsBefore": 18,
+      "totalEighths": 4640,
+      "totalEighthsBefore": 4640,
       "asserted": true,
       "passed": true
     },
@@ -69,12 +71,12 @@
     },
     {
       "name": "delete",
-      "notice": "Deleted a panel on wall AB: 16 panels → 15, 12 still automatic.",
+      "notice": "Deleted a panel on wall AB: 18 panels → 17, 12 still automatic.",
       "refusalsOnTheWay": [],
-      "panelsBefore": 16,
-      "panelsAfter": 15,
-      "totalEighthsBefore": 4392,
-      "totalEighthsAfter": 4392,
+      "panelsBefore": 18,
+      "panelsAfter": 17,
+      "totalEighthsBefore": 4640,
+      "totalEighthsAfter": 4640,
       "asserted": true,
       "passed": true
     },
@@ -82,16 +84,16 @@
       "name": "rule-placed-panel-refuses",
       "clickedLabel": "0.75\"",
       "notice": "Corner and safety-gap panels are placed by rule, not by hand — the app positions them and would overwrite a hand-placed one. Nothing was changed.",
-      "panelsBefore": 15,
-      "panelsAfter": 15,
+      "panelsBefore": 17,
+      "panelsAfter": 17,
       "asserted": true,
       "passed": true
     },
     {
       "name": "refused-insert-states-the-room",
-      "refusal": "Refused: there is 84¼\" of automatic panel width on this wall and this change needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
+      "refusal": "Refused: there is 64¼\" of automatic panel width on this wall and this change needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
       "bigHeadersPlaced": 4,
-      "panelsAtRefusal": 10,
+      "panelsAtRefusal": 11,
       "asserted": true,
       "passed": true
     },

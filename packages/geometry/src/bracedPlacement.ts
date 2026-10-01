@@ -37,7 +37,8 @@ interface CornerBraceCombinePlan {
  *
  * **A — swallow the nearest standard panel whole**, and settle whatever that
  * overpays or underpays against the panels past it. The growth a real wall
- * asks for is a whole standard width (the tiler's gap is always 3/4in), and
+ * asks for is at least a whole standard width (the tiler's gap is 3/4in on a run
+ * over 144in and 1/2in at or under it — never more than the buffer), and
  * no amount of shrinking can cover that legally: a panel is at most 48in and
  * may not go under 24in, so it can spare at most 24in. Swallowing is what
  * the combine physically IS, and it leaves every other panel at the width
@@ -48,8 +49,12 @@ interface CornerBraceCombinePlan {
  * done. That ordering prefers the combine's PHYSICAL shape — one panel gone,
  * which is what a combined slot actually is — over the minimal disturbance to
  * the run. Unreachable from today's tiler (plan B fired 0 times in 677,520
- * walls, because the tiler's gap is always 3/4in and the growth is therefore
- * always a full standard width), so it is latent rather than live.
+ * walls, because the tiler's gap is never WIDER than this buffer and the growth
+ * is therefore always at least a full standard width), so it is latent rather
+ * than live. ⚠ **Still true after the two-tier gap of 2026-10-01, and for the
+ * same reason:** the narrow tier is 1/2in, SMALLER than the 3/4in buffer, so the
+ * growth on a short run is a standard width plus a further 1/4in rather than
+ * less.
  *
  * **B — take it out of the run's own slack**, removing no panel. Used when
  * there is nothing to pay at all (a slot already at the combined width —
@@ -58,7 +63,7 @@ interface CornerBraceCombinePlan {
  * the fallback for a growth small enough to come out of what the panels can
  * spare. Only a stored legacy wall reaches that last case: the tiler used to
  * size the gap slot to whatever the run had left over (2 to 4ft, see
- * `SAFETY_GAP_WIDTH_IN`'s own comment) and files from then still say so.
+ * `WIDE_SAFETY_GAP_WIDTH_IN`'s own comment) and files from then still say so.
  *
  * ### What it guarantees — and this comment is the contract, not a hope
  *
@@ -239,7 +244,26 @@ function planCornerBraceCombine(
 
 /** Tommy: safety panels are the standard width plus a 3/4in plywood
  * buffer glued on to guard against install mistakes — see
- * `markSafetyCorner`/the Shop Drawing page for the same constant. */
+ * `markSafetyCorner`/the Shop Drawing page for the same constant.
+ *
+ * ⚠ **DELIBERATELY NOT MADE TWO-TIER on 2026-10-01 — a question for Tommy, not a
+ * decision taken here.** Since that date a run of 144in or less reserves a 1/2in
+ * safety gap rather than a 3/4in one (`safetyGapWidthForRunIn`), but a COMBINED
+ * corner-brace slot on such a run is still a standard width plus this 3/4in
+ * buffer: the plywood glued onto the combined panel is thicker than the gap it
+ * replaced, and the extra 1/4in is settled against the panels further along the
+ * run. **Nothing about the combine's own contract breaks** — the wall still sums
+ * exactly in whole eighths, with no zero-width panel and nothing pushed outside
+ * [24in, 48in]. What is open is whether the glued-on buffer is physically the
+ * same board as the gap, in which case it should follow the tier. It cannot
+ * simply read the gap slot's own width, because a legacy stored file can carry a
+ * 2-to-4ft gap slot and that would glue on two feet of plywood.
+ *
+ * Recorded in the spec's top-level `## Open Items` under the title
+ * **"Does the corner-brace combine's glued-on plywood buffer follow the gap
+ * tier?"** — search that sentence, not this file. (A pointer that says only
+ * "see the Open Items" without naming its item is this document's own named
+ * defect class; four passes running have reintroduced it.) */
 export const SAFETY_PLYWOOD_BUFFER_IN = 0.75;
 
 /**

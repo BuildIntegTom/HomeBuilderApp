@@ -258,9 +258,9 @@ describe("spanningHeaderSpanOutOfRange — a span that changed under the header,
     });
   });
 
-  it("CANNOT catch the 51-75in two-corner absorb — that sub-route is guarded by the stranded flag instead", () => {
+  it("CANNOT catch the 51-75.5in two-corner absorb — that sub-route is guarded by the stranded flag instead", () => {
     // Written down because the spec once implied the opposite. On the
-    // 51-75in two-corner dead-band re-tile the wall's whole length goes to its
+    // 51-75.5in two-corner dead-band re-tile the wall's whole length goes to its
     // two corner panels, so their TOTAL is bounded by the band itself: at least
     // 2 x 25.5in = 51in, and at most one eighth under 75in = 74.875in. Both
     // ends are inside 48-144, so no out-of-range flag is reachable there

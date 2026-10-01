@@ -1822,9 +1822,54 @@ for (const l of await panelWidthLabels()) {
 const widthsBeforeRetile12b = await widthsNow();
 await shot("12b-pinned-pairs-before-retile");
 
-// (b) One unrelated retile, from a THIRD wall.
-const stopWall12b = await walkToElevation(async (stop) => stop !== wall12b && stop !== wallForStep12.view);
-if (!stopWall12b) throw new Error("no third elevation to take the unrelated retile on");
+// (b) One unrelated retile, from a wall that shares NO CORNER with ours.
+//
+// ⚠ **"A different wall" is not enough any more, and this is the orphan-corner
+// rule rather than a weakening of the step (2026-10-01).** Corner ownership now
+// gives a convex corner to the LONGER of the two walls meeting there, so on the
+// footprint this harness draws the two long walls own all four corners. A START
+// stop on a long wall therefore removes a corner panel it OWNS, and the
+// orphan-corner rule (Tommy, 2026-09-25: "the corner simply does not exist")
+// clears the butting neighbour's inset — which makes that neighbour's run one
+// wall thickness LONGER. Measured on this fixture before the fix: the wall under
+// test went from 184-1/8in to 199-5/8in, so its pinned set could no longer
+// possibly sum to it and every pin was correctly refused. That is the refusal
+// working, not the planner failing, but it is not what this step is about.
+//
+// A wall sharing no corner with ours (the OPPOSITE side of the rectangle) cannot
+// reach it through that rule, so the retile is genuinely unrelated: same length,
+// same openings, same panel count. The second preference drops the
+// "not step 12's wall" nicety rather than the adjacency requirement, because
+// step 12 has already made all of its own assertions by this point.
+// ⚠ The `\s*` was written `s*` here until 2026-10-01 — a missing backslash, so
+// the pattern meant "Elevation:" followed by any number of literal 's'
+// characters. It happened to produce the right answer anyway, because the
+// trailing `.trim()` removed the space the regex had not, which is exactly the
+// kind of silently-almost-right string handling this repo's encoding-pitfall
+// note exists about. Fixed rather than left working by accident.
+const wallIdOf = (view) => String(view).replace(/^Elevation:\s*/, "").trim();
+/**
+ * Do two elevation stops name walls that meet at a corner?
+ *
+ * ⚠ **This is CHARACTER OVERLAP on the wall ids, and it is exact only while
+ * every corner id is a single character.** A wall id in this app is the
+ * concatenation of its two corner ids — "AB", "CD" on a rectangle, "01".."67"
+ * on an octagon and on bump-out segments — so sharing a corner is sharing a
+ * character, today. The moment a footprint carries a two-character corner id
+ * (say "A1"), this starts reporting adjacency between walls that do not touch,
+ * and the step would quietly fall back to its second preference or throw. It is
+ * a harness convenience, not a geometry rule; `cornerOwnership`'s own
+ * `startCorner`/`endCorner` succession is the real answer and is not reachable
+ * from here.
+ */
+const sharesACorner = (a, b) => {
+  const idA = wallIdOf(a);
+  const idB = wallIdOf(b);
+  return [...idA].some((corner) => idB.includes(corner));
+};
+let stopWall12b = await walkToElevation(async (stop) => !sharesACorner(stop, wall12b) && stop !== wallForStep12.view);
+if (!stopWall12b) stopWall12b = await walkToElevation(async (stop) => !sharesACorner(stop, wall12b));
+if (!stopWall12b) throw new Error("no corner-disjoint elevation to take the unrelated retile on");
 await sleep(500);
 await commitStop("start", 12);
 const stopState12b = await stopFieldState("start");

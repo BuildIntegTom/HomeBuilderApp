@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3210/",
-  "ranAt": "2026-10-01T04:44:25.260Z",
+  "app": "http://localhost:3310/",
+  "ranAt": "2026-10-01T18:22:20.720Z",
   "stopIn": 60,
   "steps": [
     {
@@ -22,10 +22,10 @@
       "targetWallId": "AB",
       "targetAxis": 0,
       "wallExtent": {
-        "minIn": 15.5,
-        "maxIn": 564.5,
-        "lengthIn": 549,
-        "vertices": 2120
+        "minIn": 0,
+        "maxIn": 580,
+        "lengthIn": 580,
+        "vertices": 2632
       },
       "plateExtent": {
         "minIn": 0,
@@ -45,18 +45,18 @@
     },
     {
       "name": "elevation-before-stop",
-      "panelCount": 15,
-      "totalEighths": 4392,
+      "panelCount": 17,
+      "totalEighths": 4640,
       "stopFieldValue": "0",
       "asserted": true,
       "passed": true
     },
     {
       "name": "stop-shortens-the-run-and-conserves-the-wall",
-      "panelCountBefore": 15,
-      "panelCountAfter": 14,
-      "totalEighthsBefore": 4392,
-      "totalEighthsAfter": 3912,
+      "panelCountBefore": 17,
+      "panelCountAfter": 15,
+      "totalEighthsBefore": 4640,
+      "totalEighthsAfter": 4160,
       "stopEighths": 480,
       "asserted": true,
       "passed": true
@@ -74,8 +74,8 @@
     {
       "name": "drag-still-lands-and-conserves-the-run",
       "strips": 9,
-      "totalEighthsBeforeDrag": 3912,
-      "totalEighthsAfterDrag": 3912,
+      "totalEighthsBeforeDrag": 4160,
+      "totalEighthsAfterDrag": 4160,
       "changed": true,
       "asserted": true,
       "passed": true
@@ -90,8 +90,8 @@
     },
     {
       "name": "3d-draws-nothing-across-the-unbuilt-span",
-      "baselineWallLengthIn": 549,
-      "stoppedWallLengthIn": 489,
+      "baselineWallLengthIn": 580,
+      "stoppedWallLengthIn": 520,
       "wallShortenedBy": 60,
       "asserted": true,
       "passed": true
@@ -113,10 +113,14 @@
     },
     {
       "name": "clearing-the-stop-restores-elevation-plan-and-3d",
-      "totalEighthsCleared": 4392,
+      "totalEighthsCleared": 4640,
       "noPanelsLabelsCleared": 0,
-      "boundaryGreyWithStop": 1404,
-      "boundaryGreyWithoutStop": 1308,
+      "planSheetLabelsWithStop": [
+        "NO PANELS: 5'-0\""
+      ],
+      "planSheetLabelsCleared": [],
+      "boundaryGreyWithStop": 1158,
+      "boundaryGreyWithoutStop": 1430,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
@@ -124,27 +128,29 @@
     },
     {
       "name": "too-short-remaining-run-is-refused-and-nothing-changes",
-      "askedForIn": 539,
+      "askedForIn": 570,
       "invalid": true,
-      "message": "That leaves only 10\" of this wall built, under the 24\" minimum panel the shop can build. Stop less of the wall, or stop all 45'-9\" of it. (Esc to revert)",
-      "totalEighthsBefore": 4392,
-      "totalEighthsAfter": 4392,
+      "message": "That leaves only 10\" of this wall built, under the 24\" minimum panel the shop can build. Stop less of the wall, or stop all 48'-4\" of it. (Esc to revert)",
+      "totalEighthsBefore": 4640,
+      "totalEighthsAfter": 4640,
       "asserted": true,
       "passed": true
     },
     {
       "name": "corner-reaching-stop-is-accepted-not-refused",
-      "wallId": "BC",
+      "wallId": "AB",
       "refusalMessage": null,
       "invalid": false,
-      "runBeforeIn": 280,
-      "runAfterIn": 250,
+      "runBeforeIn": 580,
+      "runAfterIn": 550,
       "neighboursThatGrew": [
         {
-          "id": "AB",
+          "id": "DA",
           "byIn": 15.5
         }
       ],
+      "chosenAsLongestWallExtentIn": 580,
+      "stoppedWallOwnedACornerItDestroyed": true,
       "asserted": true,
       "passed": true
     },
@@ -153,73 +159,73 @@
       "unstopped": {
         "gableStartIn": 40,
         "gableLengthIn": 500,
-        "wallStartIn": 15.5
+        "wallStartIn": 30
       },
       "stopped": {
-        "gableStartIn": 75.5,
-        "gableLengthIn": 464.5,
-        "wallStartIn": 75.5
+        "gableStartIn": 60,
+        "gableLengthIn": 480,
+        "wallStartIn": 60
       },
       "cleared": {
         "gableStartIn": 40,
         "gableLengthIn": 500,
-        "wallStartIn": 15.5
+        "wallStartIn": 0
       },
       "asserted": true,
       "passed": true
     },
     {
       "name": "openings-in-the-unbuilt-span-are-dropped-remembered-and-restored",
-      "baseEighths": 4516,
-      "basePanelCount": 15,
+      "baseEighths": 4640,
+      "basePanelCount": 17,
       "openingSlotsBeforePlacement": 1,
-      "panelCountBeforePlacement": 15,
-      "clickTargetsOnScreen": 6,
+      "panelCountBeforePlacement": 17,
+      "clickTargetsOnScreen": 7,
       "noticeBeforePlacement": null,
-      "placedOpeningNotice": "Replaced on wall AB: 15 panels → 15, 10 still automatic.",
+      "placedOpeningNotice": "Replaced on wall AB: 17 panels → 17, 10 still automatic.",
       "placedOpeningWidthLabel": "40\"",
       "openingSlotsBefore": 2,
       "sweep": [
         {
-          "stopIn": 84.625,
+          "stopIn": 87,
           "invalid": false,
           "message": null,
-          "totalEighths": 3839,
+          "totalEighths": 3944,
           "withheldOpenings": 1
         },
         {
-          "stopIn": 169.375,
+          "stopIn": 174,
           "invalid": false,
           "message": null,
-          "totalEighths": 3161,
+          "totalEighths": 3248,
           "withheldOpenings": 2
         },
         {
-          "stopIn": 254,
+          "stopIn": 261,
           "invalid": false,
           "message": null,
-          "totalEighths": 2484,
+          "totalEighths": 2552,
           "withheldOpenings": 2
         },
         {
-          "stopIn": 338.75,
+          "stopIn": 348,
           "invalid": false,
           "message": null,
-          "totalEighths": 1806,
+          "totalEighths": 1856,
           "withheldOpenings": 2
         },
         {
-          "stopIn": 423.375,
+          "stopIn": 435,
           "invalid": false,
           "message": null,
-          "totalEighths": 1129,
+          "totalEighths": 1160,
           "withheldOpenings": 2
         }
       ],
-      "deepestAcceptedStopIn": 423.375,
+      "deepestAcceptedStopIn": 435,
       "openingSlotsStopped": 0,
-      "restoredEighths": 4516,
-      "restoredPanelCount": 15,
+      "restoredEighths": 4640,
+      "restoredPanelCount": 17,
       "restoredWithheld": 0,
       "openingSlotsRestored": 2,
       "asserted": true,
@@ -228,18 +234,18 @@
     {
       "name": "a-new-footprint-does-not-inherit-the-old-buildings-remembered-openings",
       "withheldWhenRedrawn": 2,
-      "baseEighthsBeforeRedraw": 4516,
-      "redrawnEighths": 4072,
-      "redrawnPanelCount": 14,
+      "baseEighthsBeforeRedraw": 4640,
+      "redrawnEighths": 4320,
+      "redrawnPanelCount": 16,
       "openingSlotsAfterRedraw": 1,
       "nudgeTaken": {
         "wall": "Elevation: AB",
-        "stopIn": 40.75
+        "stopIn": 43.25
       },
       "nudgeAttempts": [
         {
           "wall": "Elevation: AB",
-          "stopIn": 40.75,
+          "stopIn": 43.25,
           "invalid": false,
           "message": null
         }

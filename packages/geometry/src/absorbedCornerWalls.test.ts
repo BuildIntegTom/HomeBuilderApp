@@ -28,7 +28,10 @@ describe("findAbsorbedCornerWalls", () => {
   });
 
   it("is silent on an ordinary wall with nominal corners and a real middle", () => {
-    expect(findAbsorbedCornerWalls({ AB: tileWall(75, 40, NOMINAL_IN, "end", true, true).slots }, NOMINAL_IN)).toEqual([]);
+    // 75½in, not 75in: the band's top edge moved out by the narrow safety gap's
+    // own 1/2in on 2026-10-01 (see cornerBandMiddleIn), so a 75in wall is now
+    // absorbed and IS reported.
+    expect(findAbsorbedCornerWalls({ AB: tileWall(75.5, 40, NOMINAL_IN, "end", true, true).slots }, NOMINAL_IN)).toEqual([]);
     expect(findAbsorbedCornerWalls({ AB: tileWall(360, 40, NOMINAL_IN, "end", true, true).slots }, NOMINAL_IN)).toEqual([]);
     // Exactly 51in: the pair fits at nominal width with a zero middle, so
     // nothing was absorbed and nothing is reported.
@@ -74,7 +77,9 @@ describe("findAbsorbedCornerWalls", () => {
       const lengthIn = eighths / 8;
       const slots = tileWall(lengthIn, 40, NOMINAL_IN, "end", true, true).slots;
       const reported = findAbsorbedCornerWalls({ AB: slots }, NOMINAL_IN).length === 1;
-      expect(reported).toBe(lengthIn > 51 && lengthIn < 75);
+      // Band 51in-75½in since 2026-10-01 — the middle must hold the run's own
+      // safety gap AND a legal panel. Was lengthIn < 75.
+      expect(reported).toBe(lengthIn > 51 && lengthIn < 75.5);
     }
   });
 
@@ -141,7 +146,7 @@ describe("findAbsorbedCornerWalls", () => {
 
   it("never has anything to report under Square Bale, because bale corners do not widen", () => {
     // `cornerMayWiden: false` — Tommy: "No — refuse instead." Swept across the
-    // whole moved 78in-102in band: no absorbed pair is ever produced, so this
+    // whole moved 78in-102.5in band: no absorbed pair is ever produced, so this
     // entry never fires and the wall is refused by name instead.
     for (let eighths = 78 * 8; eighths <= 102 * 8; eighths++) {
       const lengthIn = eighths / 8;

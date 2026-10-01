@@ -14,7 +14,7 @@ import { COLUMN_TOTAL_WIDTH_IN, buildColumnStyleMembers } from "./columnPanelMem
  * 25.5in whatever width it really was.** That was wrong wherever the tiler sizes
  * a corner off nominal, which it does routinely:
  *
- * - **corner absorb** widens a pair to share a wall in the 51in-75in band, so a
+ * - **corner absorb** widens a pair to share a wall in the 51in-75.5in band, so a
  *   72in wall is two 36in corner panels — 10.5in of missing framing each;
  * - **every octagon 10.5ft to 15ft across** is built entirely out of such
  *   panels;

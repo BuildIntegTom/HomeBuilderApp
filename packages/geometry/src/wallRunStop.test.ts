@@ -190,12 +190,13 @@ describe("the sum invariant survives a run stop", () => {
   });
 
   it("holds in the plan's own form — against wallFabricationLengthIn — on a wall that owns both corners", () => {
-    // On a 30x20 rectangle the 20ft walls (BC, DA) win both their corners,
-    // so their tiling length IS their fabrication length, with no inset.
+    // On a 30x20 rectangle the 30ft walls (AB, CD) win both their corners —
+    // the LONGER wall runs through since 2026-10-01 — so their tiling length IS
+    // their fabrication length, with no inset. (It was BC and DA before.)
     const fp = buildRectangleFootprint(30, 20);
-    const wall = fp.walls.find((w) => w.id === "BC")!;
+    const wall = fp.walls.find((w) => w.id === "AB")!;
     const stop: WallRunStop = { startStopIn: 36, endStopIn: 0 };
-    const geometry = wallGeometryFor(fp, "BC", allPrimary(fp), "A", THICKNESS_IN, { BC: stop })!;
+    const geometry = wallGeometryFor(fp, "AB", allPrimary(fp), "A", THICKNESS_IN, { AB: stop })!;
     expect(geometry.unstoppedLengthIn).toBe(wallFabricationLengthIn(wall));
     const slots = retile(
       fp,
@@ -206,8 +207,8 @@ describe("the sum invariant survives a run stop", () => {
       THICKNESS_IN,
       BRACED_SEED,
       undefined,
-      { BC: stop },
-    )["BC"]!;
+      { AB: stop },
+    )["AB"]!;
     expect(toEighths(sumWidths(slots)) + toEighths(stop.startStopIn) + toEighths(stop.endStopIn)).toBe(
       toEighths(wallFabricationLengthIn(wall)),
     );
@@ -330,14 +331,20 @@ describe("retile / retilePreservingOpenings with run stops", () => {
       THICKNESS_IN,
       BRACED_SEED,
       undefined,
-      { AB: { startStopIn: 60, endStopIn: 0 } },
+      { BC: { startStopIn: 60, endStopIn: 0 } },
     );
     expect(JSON.stringify(withEmptyMap)).toBe(JSON.stringify(withoutArg));
     // Every OTHER wall is untouched too — a stop is local to its own wall.
-    for (const id of ["BC", "CD", "DA"]) {
+    //
+    // ⚠ **The stopped wall moved from AB to BC on 2026-10-01**, and it had to:
+    // AB now OWNS both its corners (the longer wall runs through), so stopping
+    // AB orphans a corner and the orphan rule deliberately re-tiles the
+    // neighbour. BC owns neither, so a stop on it is genuinely local — which is
+    // what this test is about. The orphan case has its own block below.
+    for (const id of ["AB", "CD", "DA"]) {
       expect(JSON.stringify(withOneStoppedWall[id])).toBe(JSON.stringify(withoutArg[id]));
     }
-    expect(JSON.stringify(withOneStoppedWall["AB"])).not.toBe(JSON.stringify(withoutArg["AB"]));
+    expect(JSON.stringify(withOneStoppedWall["BC"])).not.toBe(JSON.stringify(withoutArg["BC"]));
   });
 
   it("emits no slots at all for a fully stopped wall — an edge with no wall on it", () => {
@@ -356,6 +363,8 @@ describe("retile / retilePreservingOpenings with run stops", () => {
   });
 
   it("drops the corner panel at the stopped end and keeps the one at the other", () => {
+    // AB, not BC: only a wall that OWNS a corner has one to drop, and since
+    // 2026-10-01 that is the longer wall.
     const slots = retile(
       fp,
       "A",
@@ -365,8 +374,8 @@ describe("retile / retilePreservingOpenings with run stops", () => {
       THICKNESS_IN,
       BRACED_SEED,
       undefined,
-      { BC: { startStopIn: 36, endStopIn: 0 } },
-    )["BC"]!;
+      { AB: { startStopIn: 36, endStopIn: 0 } },
+    )["AB"]!;
     expect(slots[0]!.type).not.toBe("corner");
     expect(slots[slots.length - 1]!.type).toBe("corner");
   });
@@ -384,15 +393,16 @@ describe("retile / retilePreservingOpenings with run stops", () => {
       base,
       BRACED_SEED,
       undefined,
-      { BC: stop },
+      { AB: stop },
     );
-    const wall = fp.walls.find((w) => w.id === "BC")!;
-    expect(toEighths(sumWidths(next["BC"]!)) + toEighths(stop.startStopIn)).toBe(toEighths(wallFabricationLengthIn(wall)));
-    // AB is NOT untouched, and that is the orphan-corner rule working: BC
-    // owns corner B and has stopped there, so AB stops butting into a corner
+    const wall = fp.walls.find((w) => w.id === "AB")!;
+    expect(toEighths(sumWidths(next["AB"]!)) + toEighths(stop.startStopIn)).toBe(toEighths(wallFabricationLengthIn(wall)));
+    // DA is NOT untouched, and that is the orphan-corner rule working: AB
+    // owns corner A and has stopped there, so DA stops butting into a corner
     // panel that no longer exists and runs out to its own true end. See the
-    // dedicated block below.
-    expect(toEighths(sumWidths(next["AB"]!)) - toEighths(sumWidths(base["AB"]!))).toBe(toEighths(THICKNESS_IN));
+    // dedicated block below. (AB and DA have swapped roles here since
+    // 2026-10-01 — the longer wall now owns the corner.)
+    expect(toEighths(sumWidths(next["DA"]!)) - toEighths(sumWidths(base["DA"]!))).toBe(toEighths(THICKNESS_IN));
   });
 
   /**
@@ -409,20 +419,22 @@ describe("retile / retilePreservingOpenings with run stops", () => {
    * too, not just on the stopped wall.
    */
   describe("the orphan corner", () => {
-    // 30x20 rectangle. At corner B (AB.end / BC.start) the SHORTER wall wins,
-    // so BC owns it and AB butts — the exact configuration the ADU hits,
-    // since stopping a short wall is what reaches a long neighbour.
-    const stopAtCornerB = { BC: { startStopIn: 36, endStopIn: 0 } };
+    // 30x20 rectangle. At corner B (AB.end / BC.start) the LONGER wall wins
+    // since 2026-10-01, so AB owns it and BC butts — the exact configuration the
+    // ADU hits, since stopping a long wall is now what reaches a short
+    // neighbour. (The two walls have swapped roles in this block; the rule being
+    // tested has not changed.)
+    const stopAtCornerB = { AB: { startStopIn: 0, endStopIn: 36 } };
     const tile = (stops?: Record<string, WallRunStop>) =>
       retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED, undefined, stops);
 
     it("clears the butting neighbour's inset, and only at the corner that lost its panel", () => {
       const base = cornerOwnership(fp, allPrimary(fp), THICKNESS_IN);
       const adjusted = cornerOwnershipWithRunStops(fp, allPrimary(fp), THICKNESS_IN, stopAtCornerB);
-      expect(base["AB"]!.end.insetAmount).toBe(THICKNESS_IN);
-      expect(adjusted["AB"]!.end.insetAmount).toBe(0);
-      // AB's OTHER end is at corner A, which DA owns and is still building.
-      expect(adjusted["AB"]!.start.insetAmount).toBe(base["AB"]!.start.insetAmount);
+      expect(base["BC"]!.start.insetAmount).toBe(THICKNESS_IN);
+      expect(adjusted["BC"]!.start.insetAmount).toBe(0);
+      // BC's OTHER end is at corner C, which CD owns and is still building.
+      expect(adjusted["BC"]!.end.insetAmount).toBe(base["BC"]!.end.insetAmount);
       // Nobody gains a corner they did not own.
       for (const id of ["AB", "BC", "CD", "DA"]) {
         expect(adjusted[id]!.start.hasCorner).toBe(base[id]!.start.hasCorner);
@@ -440,7 +452,7 @@ describe("retile / retilePreservingOpenings with run stops", () => {
     it("the neighbour grows by exactly one wall thickness, on the eighth", () => {
       const before = tile();
       const after = tile(stopAtCornerB);
-      expect(toEighths(sumWidths(after["AB"]!)) - toEighths(sumWidths(before["AB"]!))).toBe(toEighths(THICKNESS_IN));
+      expect(toEighths(sumWidths(after["BC"]!)) - toEighths(sumWidths(before["BC"]!))).toBe(toEighths(THICKNESS_IN));
       // The far side of the building is genuinely untouched.
       expect(JSON.stringify(after["CD"])).toBe(JSON.stringify(before["CD"]));
     });
@@ -448,34 +460,34 @@ describe("retile / retilePreservingOpenings with run stops", () => {
     // Every assertion in this block uses `sumWidths === geometry.lengthIn`
     // rather than the plan's `sum + stops === unstoppedLengthIn`, and that is
     // the point rather than an oversight: on an orphan-affected wall the
-    // plan's form is measurably false (344.5 vs 329 here), because the rule
+    // plan's form is measurably false (224.5 vs 209 here), because the rule
     // deliberately lengthens the neighbour.
     it("the neighbour's own sum invariant still closes exactly", () => {
       const after = tile(stopAtCornerB);
-      const ab = fp.walls.find((w) => w.id === "AB")!;
-      const geometry = wallGeometryFor(fp, "AB", allPrimary(fp), "A", THICKNESS_IN, stopAtCornerB)!;
-      expect(toEighths(sumWidths(after["AB"]!))).toBe(toEighths(geometry.lengthIn));
-      // AB has no stop of its own, so its whole run is built; its length is
+      const bc = fp.walls.find((w) => w.id === "BC")!;
+      const geometry = wallGeometryFor(fp, "BC", allPrimary(fp), "A", THICKNESS_IN, stopAtCornerB)!;
+      expect(toEighths(sumWidths(after["BC"]!))).toBe(toEighths(geometry.lengthIn));
+      // BC has no stop of its own, so its whole run is built; its length is
       // its fabrication length less only the ONE inset it still has.
-      expect(toEighths(geometry.lengthIn)).toBe(toEighths(wallFabricationLengthIn(ab) - THICKNESS_IN));
-      for (const slot of after["AB"]!) expect(Number.isInteger(toEighths(slot.widthIn))).toBe(true);
+      expect(toEighths(geometry.lengthIn)).toBe(toEighths(wallFabricationLengthIn(bc) - THICKNESS_IN));
+      for (const slot of after["BC"]!) expect(Number.isInteger(toEighths(slot.widthIn))).toBe(true);
     });
 
     it("a FULLY stopped wall orphans BOTH of the corners it owned", () => {
       const adjusted = cornerOwnershipWithRunStops(fp, allPrimary(fp), THICKNESS_IN, {
-        BC: { startStopIn: 20 * 12, endStopIn: 0 },
+        AB: { startStopIn: 30 * 12, endStopIn: 0 },
       });
-      // BC owns corners B and C; AB butts at B and CD butts at C.
-      expect(adjusted["AB"]!.end.insetAmount).toBe(0);
-      expect(adjusted["CD"]!.start.insetAmount).toBe(0);
+      // AB owns corners A and B; DA butts at A and BC butts at B.
+      expect(adjusted["DA"]!.end.insetAmount).toBe(0);
+      expect(adjusted["BC"]!.start.insetAmount).toBe(0);
     });
 
     it("a stop at an end the wall does NOT own leaves the neighbour alone", () => {
-      // AB does not own corner A (DA does), so stopping AB's start orphans
-      // nothing — DA keeps building its corner and AB keeps its inset.
+      // BC does not own corner B (AB does), so stopping BC's start orphans
+      // nothing — AB keeps building its corner and BC keeps its inset.
       const base = cornerOwnership(fp, allPrimary(fp), THICKNESS_IN);
       const adjusted = cornerOwnershipWithRunStops(fp, allPrimary(fp), THICKNESS_IN, {
-        AB: { startStopIn: 60, endStopIn: 0 },
+        BC: { startStopIn: 60, endStopIn: 0 },
       });
       expect(adjusted).toEqual(base);
     });

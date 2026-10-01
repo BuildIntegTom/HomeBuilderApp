@@ -3,7 +3,7 @@ import { cornerTurnAngleRad, footprintIsAllRightAngles, isConvexCorner, isRightA
 import { reconcileBracedPlacement } from "./bracedPlacement";
 import { getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall, type OpeningAnchor } from "./tiling";
 import { wallCompassDirection } from "./wallCompassDirection";
-import { wallFabricationLengthIn } from "./eighths";
+import { toEighths, wallFabricationLengthIn } from "./eighths";
 import { applyWallRunStop, hasWallRunStop } from "./wallRunStop";
 import {
   EMPTY_RUN_STOP_OPENING_MEMORY,
@@ -114,14 +114,71 @@ export function gapEndFor(fp: Footprint, wall: Wall, leastAccessible: CornerId):
 }
 
 /**
- * At a plain CONVEX 90deg corner, only the locally shorter of the two
- * walls meeting there owns the corner panel — the longer one butts flush
- * against it (inset by wall thickness), no corner slot of its own there
- * (conventional framing through-wall/butt-wall convention). Ties are
- * broken by wall id so the result is deterministic.
+ * At a plain CONVEX 90deg corner, the locally LONGER of the two walls
+ * meeting there RUNS THROUGH and owns the corner panel — the shorter one
+ * butts flush against it (inset by one wall thickness), with no corner slot
+ * of its own there. That is the conventional framing through-wall/butt-wall
+ * convention: the through wall is the long, continuous one.
+ *
+ * ⚠ **This is the INVERSE of the rule that shipped until 2026-10-01, and the
+ * comment that stood here claimed that same convention for the inverse.** The
+ * old rule gave the corner to the SHORTER wall, so on Tommy's 241 x 155in
+ * rectangle the two 12'11" walls ran vertex-to-vertex while both 20'1" walls
+ * were inset 15.5in at each end — the long walls' panels stopped short of
+ * where the short walls' ended, which is what he reported: *"the short sides
+ * seem to protrude a little past where it should."* The arithmetic was never
+ * wrong (every run summed exactly; the 62in of perimeter difference is
+ * precisely 4 x 15.5in, one wall thickness per corner) — it was the wrong
+ * wall.
+ *
+ * **Tommy's decision, 2026-09-30/10-01: the longer wall runs through and owns
+ * BOTH its corner panels; the shorter wall butts into it and is inset at that
+ * end.** He also cleared the consequence for existing work:
+ * *"Totally fine changing any current drawings/projects."*
+ *
+ * ### The tie, and why it is encoded as a strict `>`
+ *
+ * Equal-length walls at a corner are the COMMON case here, not an edge one —
+ * a square has four of them. **A tie goes to the SUCCESSOR wall**
+ * (`nextWall`, the next wall round the ring), which is exactly what `a > b`
+ * says and is the whole reason the comparison is strict rather than `>=`. Do
+ * not "simplify" the strictness away: it carries the tiebreak.
+ *
+ * Why the successor: on a shape whose walls are all equal it PINWHEELS —
+ * every wall owns its start corner and butts at its end, so all four runs
+ * come out the same length and every wall is the same part. An id- or
+ * index-based tiebreak instead hands one wall both of its corners and leaves
+ * another with none (the old `wall.id < nextWall.id` rule did exactly that on
+ * a square: AB owned two, DA owned none). The successor rule is a function of
+ * the ring's own succession, so it depends on no object iteration order, no
+ * id spelling and no array index — `walls.find(w => w.startCorner ===
+ * wall.endCorner)` is the only ordering it uses, the same succession every
+ * other ring walker in this package uses.
+ *
+ * ### The comparison is on the EIGHTH GRID, exactly, with no tolerance
+ *
+ * `wallFabricationLengthIn` in whole eighths — the same integer the tiler
+ * sizes each run from — not `lengthFt` as a float. Two reasons, and the
+ * second is the one that matters:
+ *
+ *   - **Right-angle corners are the only place this is asked**, and on a
+ *     rectilinear shape `quantizeFootprint` makes every wall length an exact
+ *     eighth. So the comparison is an integer identity rather than a float
+ *     hope: two walls are either the same number of eighths long or they are
+ *     not.
+ *   - **The one shape whose sides are NOT bit-identically equal never reaches
+ *     this rule at all.** Snapping an octagon's clip corners moves them by up
+ *     to 1/16in, so its eight nominally-equal sides can differ by an eighth
+ *     (see `buildOctagonFootprint`) — which, under a strict comparison, would
+ *     flip ownership on a rounding difference. It cannot happen: every
+ *     octagon corner is MITERED, `isRightAngleCorner` is false there, and the
+ *     loop below `continue`s before any length is compared. A tolerance would
+ *     only paper over a case that does not exist, while silently ignoring a
+ *     deliberately hand-set 1/8in difference between two real walls.
+ *     Exactness is both the stricter and the more honest choice.
  *
  * At a REFLEX (inside) 90deg corner — only possible once a bump-out
- * exists — that same "shorter wins, flat inset" rule doesn't work: the
+ * exists — a plain "who wins, flat inset" rule doesn't work: the
  * owning wall's interior face doesn't cross the other wall's line within
  * that wall's own segment at all. Tommy's fix: the *original* (pre-
  * existing) wall always wins there, and its effective tiling length gets
@@ -135,16 +192,41 @@ export function gapEndFor(fp: Footprint, wall: Wall, leastAccessible: CornerId):
  * un-inset; combined with the winner's extension, the two panels then
  * meet exactly at the vertex with no gap. "Original" is derived from
  * `primaryCornerIds` (a wall counts as original if at least one of its two
- * endpoints is a primary corner) — falls back to locally-shorter-wins if
+ * endpoints is a primary corner) — and falls back to locally-SHORTER-wins if
  * neither wall has a primary endpoint (e.g. a reflex corner between two
  * different bump-outs, a rare compound case).
  *
+ * ⚠ **The reflex fallback was deliberately NOT flipped with the convex rule
+ * on 2026-10-01, and it is deliberately NOT compared on the eighth grid
+ * either.** Two reasons, both structural rather than stylistic. (1) Tommy's
+ * decision is about the through-wall/butt-wall convention at a convex corner;
+ * a reflex winner EXTENDS instead of insetting, so "the longer wall runs
+ * through" is not a statement about it, and he has not been asked. (2) The
+ * reflex rule exists in THREE places that must stay bit-identical, because a
+ * disagreement puts a 3D wall box or a foundation ring segment a wall
+ * thickness away from the panel run it is supposed to carry:
+ * `wallBoxes3D`'s and `computeInsetPerimeterRing`'s copies derive their own
+ * reflex extension from exactly this expression, `lengthFt` compare and all.
+ * Changing the fallback means changing all three in lockstep, which is a
+ * separate decision. **Recorded in the spec's top-level `## Open Items` under
+ * the title "Should the REFLEX corner fallback flip to longer-wins too?"** —
+ * search that sentence, and note the recommendation there is NOT to flip.
+ *
+ * ⚠ **A FOURTH place now depends on this staying unflipped**, created by this
+ * same pass: `apps/web/app/squareBaleCornerRefusal.test.ts`'s notch fixture
+ * reaches its two measured runs by having the notch's inner face win BOTH of
+ * its reflex corners, which is a statement about shorter-wins-then-id. Flipping
+ * the fallback re-aims that fixture; it does not just need the three copies
+ * changed in lockstep.
+ *
  * At a MITERED (non-90deg) corner — an octagon — both walls always own
- * their own corner panel there instead (symmetric), regardless of length.
- * This generalizes the old "shorter pair of a rectangle's 2 wall-pairs"
- * rule to any number of walls/corners: on a plain rectangle it reduces to
- * exactly the same 4 corners being owned by the same pair as before
- * (verified by hand).
+ * their own corner panel there instead (symmetric), regardless of length, and
+ * ownership never asks about length at all. **The flip of 2026-10-01 changes
+ * nothing whatsoever about a mitered shape**: the `isRightAngleCorner` gate
+ * below returns first, every octagon wall keeps both of its corner panels,
+ * `computeSafetyEnd`'s "left corner seen from outside" gap rule and
+ * `markSafetyCorner`'s `safety-oct-corner` slot are reached exactly as
+ * before, and an octagon's eight runs are the lengths they always were.
  */
 export function cornerOwnership(
   fp: Footprint,
@@ -165,11 +247,21 @@ export function cornerOwnership(
     const angle = cornerTurnAngleRad(wall, nextWall, fp.corners);
     if (!isRightAngleCorner(angle)) continue; // mitered — both keep owning (default above)
 
-    const shorterWins = () =>
+    /** The reflex-corner fallback ONLY — shorter-wins, tied on wall id. Kept
+     * byte-for-byte identical to `wallBoxes3D`'s and
+     * `computeInsetPerimeterRing`'s own copies (see the doc comment above for
+     * why those three must agree), which is also why it still compares
+     * `lengthFt` rather than whole eighths. The CONVEX rule below does not use
+     * it. */
+    const reflexFallbackWins = () =>
       wall.lengthFt !== nextWall.lengthFt ? wall.lengthFt < nextWall.lengthFt : wall.id < nextWall.id;
 
     if (isConvexCorner(wall, nextWall, fp.corners)) {
-      const wallWins = shorterWins();
+      // THE LONGER WALL RUNS THROUGH. `>` is strict on purpose: a tie goes to
+      // the successor (`nextWall`), which pinwheels an equal-sided shape — see
+      // the doc comment above. Whole eighths of the same fabrication length
+      // the tiler will size the run from, never `lengthFt` floats.
+      const wallWins = toEighths(wallFabricationLengthIn(wall)) > toEighths(wallFabricationLengthIn(nextWall));
       ownership[wall.id]!.end = { hasCorner: wallWins, insetAmount: wallWins ? 0 : thicknessIn, extraLengthIn: 0 };
       ownership[nextWall.id]!.start = {
         hasCorner: !wallWins,
@@ -179,7 +271,7 @@ export function cornerOwnership(
     } else {
       const wallIsOriginal = primary.has(wall.startCorner) || primary.has(wall.endCorner);
       const nextIsOriginal = primary.has(nextWall.startCorner) || primary.has(nextWall.endCorner);
-      const wallWins = wallIsOriginal !== nextIsOriginal ? wallIsOriginal : shorterWins();
+      const wallWins = wallIsOriginal !== nextIsOriginal ? wallIsOriginal : reflexFallbackWins();
       // Reflex: the loser gets insetAmount 0 (not thicknessIn) — see the
       // comment above for why a flat inset leaves a gap here.
       ownership[wall.id]!.end = { hasCorner: wallWins, insetAmount: 0, extraLengthIn: wallWins ? thicknessIn : 0 };

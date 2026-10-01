@@ -150,22 +150,73 @@ describe("findCornerBraceCombineRefusals", () => {
     expect(withoutWallId(found[0]!)).toEqual(withoutWallId(found[1]!));
   });
 
-  it("every reported brace is still a real fabricable panel — the entry is about POSITION, not width", () => {
-    // Sweeping the space the refusal actually lives in: the reported brace is
-    // never a sub-minimum panel, so nobody reads this entry as a width defect.
+  it("the entry is about POSITION, not width: the brace it names is sub-minimum only where THIS BRANCH's tiler already made it so", () => {
+    // Sweeping the space the refusal actually lives in.
+    //
+    // ⚠ **BE PRECISE ABOUT WHICH CLAIM THIS TEST MAKES, because the obvious
+    // reading is wrong.** The old assertion was `slot.widthIn >=
+    // TILER_MIN_PANEL_WIDTH_IN` — "the reported brace is never a sub-minimum
+    // panel" — which forbade a sub-minimum reported brace outright. That is no
+    // longer true, so it was replaced. The replacement is **better targeted but
+    // genuinely WEAKER**: it permits a sub-minimum reported brace, and only
+    // forbids this entry from being the thing that made it sub-minimum. It is
+    // not "the stronger version", and a 2026-10-01 note here claimed it was.
+    //
+    // ⚠ **And it establishes ATTRIBUTION WITHIN THIS BRANCH, not
+    // PRE-EXISTENCE.** `tiled` is this branch's own tiler output, so what is
+    // proved is that the brace walk did not invent the narrow panel — the TILER
+    // handed it over already narrow. Whether that wall was also sub-minimum on
+    // `main` is a different question this test cannot answer and does not: the
+    // set of sub-minimum wall lengths moved UP by the narrow gap's own 1/2in on
+    // this pass, so four lengths at the top of the band (136.5in, 136.625in,
+    // 136.75in, 136.875in) are sub-minimum here and were not before, and four at
+    // the bottom are the reverse. See the band table in the spec's as-built
+    // section, which owns that finding.
+    //
+    // ⚠ **What changed, 2026-10-01.** Every run now reserves a safety gap, so a
+    // wall whose openings have eaten all but a sliver of its middle spends 1/2in
+    // of that sliver on the gap and leaves the rest as the panel — the tiler's own
+    // documented residual case 2 ("openings eating all but a sliver of a long
+    // wall's middle", nothing to absorb into, reported not corrected). Because the
+    // wall now HAS a gap, the corner walk reaches that panel and the refusal names
+    // it. Measured on this grid: **382 of the 3,202 cases**, a contiguous run of
+    // 191 wall lengths (113.125in to 136.875in) at each of the two standard
+    // widths.
     const openings: OpeningAnchor[] = [{ beforeStandardCount: 0, type: "window", widthIn: 61.5 }];
+    let cases = 0;
+    let subMinimumReported = 0;
     for (let e = Math.round(100 * 8); e <= Math.round(300 * 8); e++) {
       const wallLengthIn = e / 8;
       for (const standardWidthIn of [39, 48]) {
+        cases++;
         const tiled = retileWithOpenings(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, "end", true, true, openings).slots;
         const braced = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
         for (const entry of findCornerBraceCombineRefusals({ w: braced })) {
           if (entry.braceSlotIndex === null) continue;
           const slot = braced[entry.braceSlotIndex]!;
-          expect(slot.widthIn).toBeGreaterThanOrEqual(TILER_MIN_PANEL_WIDTH_IN);
+          if (slot.widthIn >= TILER_MIN_PANEL_WIDTH_IN) continue;
+          subMinimumReported++;
+          // ⚠ **SLOT IDENTITY, not a wall-level `some()`.** Until 2026-10-01 this
+          // asserted "somewhere on this wall the tiler had already left a
+          // sub-minimum panel", which a brace newly made sub-minimum at index j
+          // would satisfy on any wall that happened to carry one at index i. The
+          // claim in the comment above is about THIS slot, so this is about this
+          // slot: the panel the tiler handed over AT THE SAME INDEX was already
+          // under the minimum.
+          //
+          // The index is shared only because `applyBracedPlacement` has not
+          // changed the array's length — it does on 314 of these 3,202 cases,
+          // whenever a combine fires and swallows a slot. It never has on a case
+          // that reaches here (a refusal means this end's combine did not fire),
+          // and that precondition is asserted rather than assumed, because a
+          // silent index shift would make the comparison read the wrong slot.
+          expect(braced.length).toBe(tiled.length);
+          expect(tiled[entry.braceSlotIndex]!.widthIn).toBeLessThan(TILER_MIN_PANEL_WIDTH_IN);
         }
       }
     }
+    expect(cases).toBe(3_202);
+    expect(subMinimumReported).toBe(382);
   });
 });
 
@@ -270,27 +321,54 @@ describe("the doc comment's census, measured on the 790,440-wall product sweep",
     }
 
     expect(cases).toBe(790_440);
-    // "28,979 of 32,644 refusal walls own at least one corner".
-    expect(refusalWalls).toBe(32_644);
-    expect(refusalWallsOwningACorner).toBe(28_979);
-    // "on 6,152 measured walls the wall goes from two braced panels to one".
-    expect(sharedWalls).toBe(6_152);
-    // "21,080 refused corner ends, of which 9,118 are that 3/4in step. 7,853
-    // of those are dropped here — the other 1,265 report anyway because their
-    // brace is shared — leaving 13,227 reported ends."
-    expect(refusedEnds).toBe(21_080);
-    expect(reportedEnds).toBe(13_227);
-    expect(stepEnds).toBe(1_265); // the 3/4in-step ends that report anyway
-    expect(reportedEnds + (9_118 - stepEnds)).toBe(refusedEnds); // 13,227 + 7,853 dropped = 21,080
-    // "6,559 whose brace sits 62-1/4in in from the corner, 4,064 at 36-3/4in,
-    // 1,100 at 80-3/4in, 95 at 30-3/4in, and 144 with no brace anywhere on the
-    // wall at all" — plus the 1,265 shared ends at the 3/4in step itself.
+    // ⚠ **RE-MEASURED 2026-10-01 for the two-tier safety gap, and every count in
+    // this census moved.** The old figures (left beside each new one) were taken
+    // when a run of 144in or less got NO safety gap at all, so the corner walk on
+    // a short run had no plain gap to reach and no refusal to report. Now every
+    // run reserves one, so short runs join the census wholesale.
+    //
+    // **The sweep is a `retileWithOpenings` sweep with hasCornerStart/End passed
+    // in explicitly, so the corner-ownership flip of the same day cannot touch
+    // it** — and the proof of that is in the histogram below: every
+    // WIDE-gap offset (62¼in, 36¾in, 80¾in, 30¾in) comes back bit-identical to
+    // its old count, and every new entry is its NARROW-gap twin a quarter inch
+    // nearer the corner. The census is doing what it was built to do.
+    //
+    // "75,480 of 100,451 refusal walls own at least one corner" (was 28,979 of
+    // 32,644).
+    expect(refusalWalls).toBe(100_451);
+    expect(refusalWallsOwningACorner).toBe(75_480);
+    // "on 14,972 measured walls the wall goes from two braced panels to one"
+    // (was 6,152).
+    expect(sharedWalls).toBe(14_972);
+    // "50,269 refused corner ends, of which 25,888 are the gap step. 20,129 of
+    // those are dropped here — the other 5,759 report anyway because their brace
+    // is shared — leaving 30,140 reported ends." (Was 21,080 / 9,118 / 7,853 /
+    // 1,265 / 13,227.)
+    expect(refusedEnds).toBe(50_269);
+    expect(reportedEnds).toBe(30_140);
+    expect(stepEnds).toBe(5_759); // the gap-step ends that report anyway
+    expect(reportedEnds + (25_888 - stepEnds)).toBe(refusedEnds); // 30,140 + 20,129 dropped = 50,269
+    // The histogram, in two halves that say the whole story:
+    //   - WIDE-gap (3/4in) offsets, every one UNCHANGED from the 2026-09-30
+    //     census: 6,559 at 62¼in, 4,064 at 36¾in, 1,100 at 80¾in, 95 at 30¾in;
+    //   - NARROW-gap (1/2in) offsets, all NEW, each a quarter inch nearer the
+    //     corner than its twin: 2,098 at 62in, 5,490 at 36½in, 1,212 at 80½in,
+    //     3,091 at 30½in;
+    //   - the gap step itself, reported only when the brace is shared: 1,265 at
+    //     3/4in (unchanged) and 4,494 at 1/2in (new);
+    //   - and 672 ends with no brace anywhere on the wall at all (was 144).
     expect(Object.fromEntries([...offsets].sort((a, b) => b[1] - a[1]))).toEqual({
       "62.25": 6_559,
+      "36.5": 5_490,
+      "0.5": 4_494,
       "36.75": 4_064,
+      "30.5": 3_091,
+      "62": 2_098,
       "0.75": 1_265,
+      "80.5": 1_212,
       "80.75": 1_100,
-      "no brace on the wall": 144,
+      "no brace on the wall": 672,
       "30.75": 95,
     });
   }, 120_000);

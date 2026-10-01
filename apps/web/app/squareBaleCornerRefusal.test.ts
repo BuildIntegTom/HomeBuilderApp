@@ -49,8 +49,10 @@ describe("findSquareBaleBandWalls", () => {
   it("is silent at both edges of the moved band", () => {
     // 78in: two nominal bale corners with exactly nothing between them.
     expect(findSquareBaleBandWalls([wall("AB", 78)], BALE_IN)).toEqual([]);
-    // 102in: the first legal middle, exactly the 24in floor.
-    expect(findSquareBaleBandWalls([wall("AB", 102)], BALE_IN)).toEqual([]);
+    // ⚠ 102.5in, not 102in, since 2026-10-01: the middle must hold the run's own
+    // safety gap AND a legal panel, so the first legal middle is 24½in.
+    expect(findSquareBaleBandWalls([wall("AB", 102.5)], BALE_IN)).toEqual([]);
+    expect(findSquareBaleBandWalls([wall("AB", 102)], BALE_IN)).toHaveLength(1);
     expect(findSquareBaleBandWalls([wall("AB", 101.875)], BALE_IN)).toHaveLength(1);
     expect(findSquareBaleBandWalls([wall("AB", 78.125)], BALE_IN)).toHaveLength(1);
   });
@@ -138,7 +140,7 @@ describe("squareBaleCornerRefusal", () => {
  * thickness (15.5in), while the button that runs it then sets Square Bale's own
  * 14in. A reflex corner adds `extraLengthIn = thicknessIn` to a wall's run, so
  * the two bases diverge by exactly 1.5in on any two-corner wall that owns one —
- * which is enough to move a wall in or out of the 78in-102in bale band.
+ * which is enough to move a wall in or out of the 78in-102.5in bale band.
  *
  * The fixture is a 6ft bump-out on the 30ft wall of a 30x20 rectangle, exactly
  * as measured: wall `01` is the segment of `AB` left of the bump-out, and it
@@ -148,30 +150,60 @@ describe("squareBaleCornerRefusal", () => {
 const BALE_THICKNESS_IN = squareBalePanel.thicknessIn;
 const PROJECT_DEFAULT_THICKNESS_IN = 15.5;
 
-function bumpOutFootprint(spanStartIn: number) {
+/**
+ * An inward NOTCH on the long wall of a 30x20 rectangle, `spanWidthIn` across
+ * and `depthFt` deep. Wall "23" is the notch's inner face: both of its corners
+ * are REFLEX, and it wins both of them (neither it nor its two jog-wall
+ * neighbours has a primary endpoint, so the fallback picks the shorter — which
+ * is "23" whenever the notch is deeper than it is wide). Winning a reflex corner
+ * means being EXTENDED by one wall thickness there, so this wall's run is
+ * `spanWidthIn + 2 x thicknessIn` — thickness-dependent twice over, which is
+ * what these tests need.
+ *
+ * ⚠ **This fixture was an OUTWARD bump-out until 2026-10-01**, where wall "01"
+ * owned a convex corner against the 20ft side and a reflex corner against the
+ * jog. It cannot be that any more: the longer wall now runs through, so "01"
+ * loses the convex corner to the 240in side and no longer owns both ends — and
+ * a wall that does not own both ends is never in the bale band at all, which
+ * would have left these three tests vacuously green.
+ *
+ * ⚠ **What the notch preserves, stated exactly, because "every number below is
+ * the number measured before the flip" was an OVER-CLAIM and said so here until
+ * 2026-10-01.** Two of the four numbers moved. **Preserved are the two the
+ * assertions turn on:** `78.125in` with its `0.125in` middle — the in-band wall
+ * the old glue falsely refused — and `100.5in` with its `22.5in` middle, the
+ * mirror case and the length the refusal sentence must quote. **Moved are their
+ * two out-of-band companions:** the 14in-thickness run, `76.625in` → `75.125in`,
+ * and the length the sentence must NOT quote, `102in` → `103.5in`. Both moved for
+ * one reason — the notch is extended at TWO reflex corners where the bump-out was
+ * extended at one, so the 1.5in thickness difference tells twice — and the test
+ * below asserts that doubling directly rather than hiding it in a constant.
+ * Neither moved number is quoted by the refusal or is a boundary of the band.
+ */
+function bumpOutFootprint(spanWidthIn: number, depthFt = 5) {
   const base = buildRectangleFootprint(30, 20);
   const basePrimary = new Set(base.corners.map((c) => c.id));
   const { footprint, primaryCornerIds } = insertBumpOut(
     base,
     "AB",
-    spanStartIn / 12,
-    spanStartIn / 12 + 6,
-    5,
+    10,
+    10 + spanWidthIn / 12,
+    -depthFt,
     basePrimary,
   );
   return { footprint, primaryCornerIds, leastAccessible: footprint.corners[0]!.id };
 }
 
-function bandWallsAt(spanStartIn: number, thicknessIn: number) {
-  const { footprint, primaryCornerIds, leastAccessible } = bumpOutFootprint(spanStartIn);
+function bandWallsAt(spanWidthIn: number, thicknessIn: number, depthFt = 5) {
+  const { footprint, primaryCornerIds, leastAccessible } = bumpOutFootprint(spanWidthIn, depthFt);
   return findSquareBaleBandWalls(
     squareBaleRefusalWallFacts(footprint, primaryCornerIds, leastAccessible, thicknessIn, {}),
     BALE_IN,
   );
 }
 
-function wallFacts(spanStartIn: number, thicknessIn: number, wallId: string): RefusalWallFacts {
-  const { footprint, primaryCornerIds, leastAccessible } = bumpOutFootprint(spanStartIn);
+function wallFacts(spanWidthIn: number, thicknessIn: number, wallId: string, depthFt = 5): RefusalWallFacts {
+  const { footprint, primaryCornerIds, leastAccessible } = bumpOutFootprint(spanWidthIn, depthFt);
   return squareBaleRefusalWallFacts(footprint, primaryCornerIds, leastAccessible, thicknessIn, {}).find(
     (f) => f.wallId === wallId,
   )!;
@@ -184,46 +216,48 @@ describe("squareBaleRefusalWallFacts — the thickness Square Bale is about to b
     expect(BALE_THICKNESS_IN).not.toBe(PROJECT_DEFAULT_THICKNESS_IN);
   });
 
-  it("a reflex corner makes the run thickness-dependent — 1.5in of difference on wall 01", () => {
-    // The mechanism, stated once so the two band tests below are not magic.
-    const at155 = wallFacts(62.625, PROJECT_DEFAULT_THICKNESS_IN, "01");
-    const at14 = wallFacts(62.625, BALE_THICKNESS_IN, "01");
+  it("reflex corners make the run thickness-dependent — 3in of difference on wall 23", () => {
+    // The mechanism, stated once so the two band tests below are not magic. TWO
+    // reflex ends now, so the difference is twice the thickness delta rather than
+    // once — see bumpOutFootprint for why the fixture moved.
+    const at155 = wallFacts(47.125, PROJECT_DEFAULT_THICKNESS_IN, "23");
+    const at14 = wallFacts(47.125, BALE_THICKNESS_IN, "23");
     expect(at155.hasCornerStart && at155.hasCornerEnd).toBe(true);
     expect(at14.hasCornerStart && at14.hasCornerEnd).toBe(true);
     expect(at155.lengthIn).toBe(78.125);
-    expect(at14.lengthIn).toBe(76.625);
-    expect(at155.lengthIn - at14.lengthIn).toBe(PROJECT_DEFAULT_THICKNESS_IN - BALE_THICKNESS_IN);
+    expect(at14.lengthIn).toBe(75.125);
+    expect(at155.lengthIn - at14.lengthIn).toBe(2 * (PROJECT_DEFAULT_THICKNESS_IN - BALE_THICKNESS_IN));
   });
 
   it("THE MEASURED FALSE REFUSAL: 78.125in at 15.5in is in the band, 76.625in at 14in is not", () => {
     // The old glue refused Square Bale by name here, quoting a 78.125in run and
     // a 0.125in middle for a building that is not in the band at all under
     // Square Bale's own thickness.
-    expect(bandWallsAt(62.625, PROJECT_DEFAULT_THICKNESS_IN)).toEqual([
-      { wallId: "01", wallLengthIn: 78.125, middleIn: 0.125 },
+    expect(bandWallsAt(47.125, PROJECT_DEFAULT_THICKNESS_IN)).toEqual([
+      { wallId: "23", wallLengthIn: 78.125, middleIn: 0.125 },
     ]);
     // Built at the thickness the button is about to set: nothing to refuse.
-    expect(bandWallsAt(62.625, BALE_THICKNESS_IN)).toEqual([]);
+    expect(bandWallsAt(47.125, BALE_THICKNESS_IN)).toEqual([]);
   });
 
   it("THE MIRROR CASE: out of band at 15.5in, in band at 14in — the refusal used to miss it", () => {
     // Not a shop-safety hole (cornerMayWiden: false still applies and the
     // sub-minimum middle still reports) but the refuse posture was incomplete.
-    expect(bandWallsAt(86.5, PROJECT_DEFAULT_THICKNESS_IN)).toEqual([]);
-    expect(bandWallsAt(86.5, BALE_THICKNESS_IN)).toEqual([
-      { wallId: "01", wallLengthIn: 100.5, middleIn: 22.5 },
+    expect(bandWallsAt(72.5, PROJECT_DEFAULT_THICKNESS_IN, 8)).toEqual([]);
+    expect(bandWallsAt(72.5, BALE_THICKNESS_IN, 8)).toEqual([
+      { wallId: "23", wallLengthIn: 100.5, middleIn: 22.5 },
     ]);
   });
 
   it("the refusal SENTENCE follows the fixed basis, so it can never quote a length the building will not have", () => {
-    const refused = squareBaleCornerRefusal(bandWallsAt(86.5, BALE_THICKNESS_IN), BALE_IN, MIN_IN, format)!;
+    const refused = squareBaleCornerRefusal(bandWallsAt(72.5, BALE_THICKNESS_IN, 8), BALE_IN, MIN_IN, format)!;
     expect(refused).toContain("100.5in");
-    expect(refused).not.toContain("102in");
-    expect(squareBaleCornerRefusal(bandWallsAt(62.625, BALE_THICKNESS_IN), BALE_IN, MIN_IN, format)).toBeNull();
+    expect(refused).not.toContain("103.5in");
+    expect(squareBaleCornerRefusal(bandWallsAt(47.125, BALE_THICKNESS_IN), BALE_IN, MIN_IN, format)).toBeNull();
   });
 
   it("returns one fact per wall of the footprint, in wall order", () => {
-    const { footprint, primaryCornerIds, leastAccessible } = bumpOutFootprint(62.625);
+    const { footprint, primaryCornerIds, leastAccessible } = bumpOutFootprint(47.125);
     const facts = squareBaleRefusalWallFacts(footprint, primaryCornerIds, leastAccessible, BALE_THICKNESS_IN, {});
     expect(facts.map((f) => f.wallId)).toEqual(footprint.walls.map((w) => w.id));
   });
@@ -500,9 +534,11 @@ describe("findSquareBaleMergedCorners — the Review Log walk over STORED slots"
     expect(tileWall(39, 40, BALE_IN, "end", true, false, true, false).slots).toEqual([{ type: "corner", widthIn: 39 }]);
 
     // It is an EDGE CASE rather than routine: a bump-out return runs 60in at
-    // every depth from 1.5ft to 4ft and tiles to TWO slots, so it is not matched.
+    // every depth from 1.5ft to 4ft and tiles to THREE slots (corner, the run's
+    // own narrow safety gap, and the remainder — it was two before the two-tier
+    // gap of 2026-10-01), so it is not matched.
     const returnWall = tileWall(60, 40, BALE_IN, "end", true, false, true, false);
-    expect(returnWall.slots).toHaveLength(2);
+    expect(returnWall.slots).toHaveLength(3);
     expect(findSquareBaleMergedCorners({ AB: returnWall.slots }, BALE_IN)).toEqual([]);
   });
 });
