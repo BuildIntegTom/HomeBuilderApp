@@ -1482,10 +1482,29 @@ console.log("12. a hand-set width this wall cannot pay for is REFUSED, and nothi
  * which is the thing a refusal must not cost) and that the one that cannot be
  * is refused whole.
  *
- * ⚠ **This step would be RED on `main` @ f100bd3**, and not marginally: the old
- * shed would have driven neighbours to 16in, then 6in, then clamped one at 0in,
- * with the wall's own total moving every time. The total-conservation check
- * below is the one that catches it.
+ * ⚠ **This step IS red on `main` @ f100bd3 — but the mechanism first written
+ * here did not reproduce, and the real one is worse.** The claim was that the old
+ * shed drove neighbours to 16in, then 6in, then clamped one at 0in, "with the
+ * wall's own total moving every time", and that `totalNeverMoved` catches it.
+ * `main` actually records `totals: [160,160,160,160,160]` and
+ * **`totalNeverMoved: true`**; the check that fails is
+ * **`narrowestAfter >= FABRICATION_MIN_IN`**.
+ *
+ * `shedWidthToNearestUnlocked` hands the whole delta to ONE neighbour with
+ * `Math.max(0, widthIn + deltaIn)` — no lower bound but zero — so the wall still
+ * sums and `retileWallAroundPins`' "the wall must still sum" guard waves it
+ * through. Measured against `main`'s own `bracedPlacement.ts` on a 160in
+ * four-panel wall at the 40in standard width: the first pin commits a **20¼in**
+ * panel, the second a **12¼in** one, both silently; the third is the only one
+ * that moves the total (160in -> 195¾in) and is therefore the only one `main`
+ * already refuses. **The 0in clamp is unreachable on this wall** — it needs a
+ * free panel narrower than the delta — and the no-free-slot case the refusal was
+ * really built for makes the shed a no-op instead.
+ *
+ * So `totalNeverMoved` is true on `main` too and is NOT the discriminator here:
+ * `narrowestAfter`, `widestAfter`, and the third pin being refused *with a
+ * sentence*, are. It is kept as an assertion because it is the property Tommy
+ * asked for and the no-free-slot walls DO violate it.
  */
 const widthsNow = async () => (await allElevationWidths()).map(parseImperial).filter((n) => Number.isFinite(n));
 // Get back onto an elevation — the wall walk above left the dial wherever it
@@ -1600,8 +1619,13 @@ record(
   //  3. nothing was committed on the refusal — the note still describes the
   //     panel as it was, and the typed draft is still in the box to correct.
   //  4. THE WALL'S OWN LENGTH NEVER MOVED, across every attempt including the
-  //     refused one. This is the defect itself: 362 walls of an 8,004-case
-  //     fixture used to come out off their own length here.
+  //     refused one. 362 walls of an 8,004-case fixture used to come out off
+  //     their own length here. ⚠ But on a FOUR-panel wall `main` holds this too
+  //     (see the note above): the old shed’s unbounded neighbour keeps the sum
+  //     while going unbuildable, and the one attempt that WOULD move the total
+  //     is the one `retileWallAroundPins` already refuses. Asserted because it is
+  //     the property Tommy asked for and the no-free-slot walls DO break it, not
+  //     because it is what makes this step red on `main`.
   //  5. no panel on the wall ended up outside the shop's range, which the old
   //     unbounded shed could not promise either.
   (d) =>
@@ -1617,6 +1641,264 @@ record(
     d.totalNeverMoved === true &&
     d.narrowestAfter >= FABRICATION_MIN_IN &&
     d.widestAfter <= 48,
+);
+
+console.log("12b. a residual-CANCELLING pin pair survives one unrelated retile");
+/**
+ * **MUST-FIX 1, end to end in a browser, 2026-09-30.** The first version of the
+ * locked-width refusal planned each pin against the FREE run only, so every
+ * other pin was an immovable obstacle and a wall whose standard-family slots
+ * were all pinned lost every one of its hand-set widths on the next retile —
+ * widths `main` kept correctly. `planLockedWidthReforce` now plans the pinned
+ * set JOINTLY, so pins whose residuals cancel cost nothing.
+ *
+ * This step is the gesture that produces that shape, which is not an edge case:
+ *
+ *   1. **The elevation boundary drag writes `lockedWidthIn` on BOTH halves of
+ *      the pair it moves** (`handleDragResizePanels`), each half to a different
+ *      width, and the pair's total is unchanged — i.e. every single drag leaves
+ *      a residual-cancelling pair. Dragging every boundary on a run pins every
+ *      panel on it and leaves no automatic panel at all.
+ *   2. **Then ONE unrelated retile, from a different wall.** A run-stop change
+ *      calls `retileAllForRunStops`, which re-reconciles EVERY wall in the
+ *      building against its own stored slots — so this wall's pins are all
+ *      re-forced although nothing about this wall changed. That is exactly how
+ *      the regression was reachable: `retile.ts`'s preserving path means an edit
+ *      anywhere wipes a pinned run that cannot be re-forced.
+ *
+ * ⚠ **On the per-pin planner every hand-set width on this wall is lost here**,
+ * silently, and the wall is left perfectly legal — which is why nothing else in
+ * this harness would have caught it. The fixture check `automaticPanelsLeft === 0`
+ * is load bearing: with one automatic panel left the pair can lean on it and the
+ * per-pin planner passes too.
+ */
+
+/** The Stop Wall field for one end — lifted from `smearforn-stage-3/run.mjs`,
+ * which is where this control's selector and its native-setter commit were
+ * worked out. Used here only as a cheap BUILDING-WIDE RETILE that leaves this
+ * wall's own length alone, not as a test of run stops. */
+const stopFieldState = async (end) =>
+  await evaluate(`(() => {
+    const el = document.querySelector('[id^="wall-run-stop-${end}-"]');
+    if (!el) return null;
+    const wrap = el.closest('label') || el.parentElement;
+    const msg = wrap ? [...wrap.querySelectorAll('p')].map((p) => p.textContent.trim()).find((t) => t.length > 0) ?? null : null;
+    return { id: el.id, value: el.value, invalid: el.getAttribute('aria-invalid') === 'true', message: msg };
+  })()`);
+const commitStop = async (end, text) => {
+  await evaluate(`(() => {
+    const el = document.querySelector('[id^="wall-run-stop-${end}-"]');
+    if (!el) throw new Error('no stop field');
+    el.scrollIntoView({ block: 'center' });
+    el.focus();
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(el, ${JSON.stringify(String(text))});
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  })()`);
+  await sleep(900);
+};
+/** Walks the dial to the first elevation stop that satisfies `ok`, or null. */
+const walkToElevation = async (ok) => {
+  for (let i = 0; i < 16; i++) {
+    const stop = await currentViewLabel();
+    if (typeof stop === "string" && stop.startsWith("Elevation:") && (await ok(stop))) return stop;
+    await stepViewerDial();
+    await sleep(500);
+  }
+  return null;
+};
+
+// A wall this run has NOT already pinned at 48in — step 12 left its own wall in
+// a refused state, and reusing it would conflate two things.
+const wall12b = await walkToElevation(async (stop) => {
+  if (stop === wallForStep12.view) return false;
+  const n = (await allElevationWidths()).length;
+  return n >= 3 && n <= 8;
+});
+if (!wall12b) throw new Error("no second elevation with 3-8 panel labels for the cancelling-pair check");
+await sleep(600);
+const total12bStart = (await widthsNow()).reduce((a, b) => a + b, 0);
+
+// ⚠ GET EVERY BOUNDARY ON SCREEN FIRST, and verify it rather than assume it.
+// `dragHandles` filters to strips inside the window because a mousedown at an
+// off-screen coordinate hits nothing — the same lesson step 12 and
+// `panelWidthLabels` already learned. The first version of this step did not
+// zoom, reached 1 of 3 boundaries on a 4-panel wall, and so left two automatic
+// panels on the run: the fixture check below caught it, but the loop had already
+// failed for a reason that has nothing to do with the app. Zoom out until the
+// count of REACHABLE strips equals the count of strips that exist.
+for (let z = 0; z < 8; z++) {
+  const reachable = (await dragHandles()).length;
+  const existing = (await allStripXs()).length;
+  if (existing > 0 && reachable === existing) break;
+  await clickViewButton("Zoom out");
+  await sleep(350);
+}
+const boundariesReachable = (await dragHandles()).length;
+const boundariesOnTheWall = (await allStripXs()).length;
+
+// ⚠ **A drag cannot reach every panel, and the order matters because of it.**
+// A drag strip only exists between two ADJACENT resizable panels, so a panel
+// isolated by the Safety/Gap spacer (or sitting against a corner with an opening
+// beside it) has no boundary to be dragged by and no drag will ever pin it. On
+// this run the first version of this step reached 2 of 3 panels that way and left
+// one automatic — and once the others are pinned that panel can NEVER be pinned
+// by typing either: it would be the only free slot, so the only width the wall
+// would accept there is the one it already has, and `LengthInput` does not commit
+// a no-op. **So the unreachable panels are typed FIRST, while there is still a
+// free run to pay for them, and the drags come second.**
+const stripsSorted = (await allStripXs()).slice().sort((a, b) => a - b);
+const labelsSorted = (await panelWidthLabels()).slice().sort((a, b) => a.x - b.x);
+const aStripLiesBetween = (a, b) => stripsSorted.some((sx) => sx > a && sx < b);
+const typedFirst12b = [];
+for (let i = 0; i < labelsSorted.length; i++) {
+  const l = labelsSorted[i];
+  const before = labelsSorted[i - 1];
+  const after = labelsSorted[i + 1];
+  const draggable = (before && aStripLiesBetween(before.x, l.x)) || (after && aStripLiesBetween(l.x, after.x));
+  if (draggable) continue;
+  await click(l.x, l.y);
+  await sleep(350);
+  const f = await widthField();
+  if (!f) continue; // a corner, an opening or the gap itself: no width to set
+  const nowIn = parseImperial(l.label);
+  if (!Number.isFinite(nowIn)) continue;
+  // A small real change, so the field actually commits, in whichever direction
+  // the wall can pay for.
+  let committedAt = null;
+  for (const wantIn of [nowIn + 2, nowIn - 2]) {
+    if (wantIn < FABRICATION_MIN_IN || wantIn > 48) continue;
+    await typeWidth(String(wantIn));
+    const note = await evaluate(`(() => {
+      const ps = [...document.querySelectorAll('p')].map((x) => x.textContent.trim());
+      return ps.find((t) => t.startsWith('Hand-set') || t.startsWith('Automatic')) ?? null;
+    })()`);
+    if (typeof note === "string" && note.startsWith("Hand-set")) {
+      committedAt = wantIn;
+      break;
+    }
+  }
+  typedFirst12b.push({ label: l.label, committedAt });
+}
+
+// (a) Drag every boundary on the run. Each drag pins the two panels it touches.
+const drags12b = [];
+const handleCount12b = (await dragHandles()).length;
+for (let i = 0; i < handleCount12b; i++) {
+  const h = (await dragHandles())[i];
+  if (!h) break;
+  const inPerPx = (await inchesPerScreenPx()) ?? 1;
+  // Alternating, and small: the point is to PIN both halves, not to re-test the
+  // drag's own arithmetic (step 9 does that). Alternating keeps a long run from
+  // walking one panel down onto the 24in floor drag after drag.
+  const dxPx = Math.round((i % 2 === 0 ? 3 : -3) / inPerPx) || (i % 2 === 0 ? 3 : -3);
+  await mouse("mousePressed", h.x, h.y);
+  await sleep(60);
+  await mouse("mouseMoved", h.x + dxPx, h.y);
+  await sleep(120);
+  await mouse("mouseReleased", h.x + dxPx, h.y);
+  await sleep(500);
+  drags12b.push({ handle: i, dxPx });
+}
+
+// Which panels are hand-set now, read off the Selected Panel note one at a time.
+// The automatic count is the fixture check.
+const pinned12b = [];
+let automaticPanelsLeft = 0;
+for (const l of await panelWidthLabels()) {
+  await click(l.x, l.y);
+  await sleep(300);
+  const st = await evaluate(`(() => {
+    const ps = [...document.querySelectorAll('p')].map((x) => x.textContent.trim());
+    const note = ps.find((t) => t.startsWith('Hand-set') || t.startsWith('Automatic')) ?? null;
+    const input = document.querySelector('input[aria-label="Panel width in inches"]');
+    return { note, field: input ? input.value : null };
+  })()`);
+  if (!st.note) continue; // a corner, an opening or the safety gap: no width field
+  if (st.note.startsWith("Hand-set")) pinned12b.push({ label: l.label, field: st.field });
+  else automaticPanelsLeft++;
+}
+const widthsBeforeRetile12b = await widthsNow();
+await shot("12b-pinned-pairs-before-retile");
+
+// (b) One unrelated retile, from a THIRD wall.
+const stopWall12b = await walkToElevation(async (stop) => stop !== wall12b && stop !== wallForStep12.view);
+if (!stopWall12b) throw new Error("no third elevation to take the unrelated retile on");
+await sleep(500);
+await commitStop("start", 12);
+const stopState12b = await stopFieldState("start");
+
+// Back to our wall, which nobody touched.
+const returned12b = await walkToElevation(async (stop) => stop === wall12b);
+await sleep(700);
+const widthsAfterRetile12b = await widthsNow();
+
+// And a SECOND retile, undoing the stop: the planner is a fixpoint, so the pins
+// have to survive this one too, and the wall must not depend on edit history.
+const stopWallAgain = await walkToElevation(async (stop) => stop === stopWall12b);
+await sleep(500);
+if (stopWallAgain) await commitStop("start", 0);
+await walkToElevation(async (stop) => stop === wall12b);
+await sleep(700);
+const widthsAfterUnstop12b = await widthsNow();
+await shot("12c-pinned-pairs-after-unrelated-retile");
+
+const sameWidths = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+const totalOf = (w) => w.reduce((a, b) => a + b, 0);
+record(
+  "locked-width-cancelling-pair-survives-a-retile",
+  {
+    wall: wall12b,
+    retiledFrom: stopWall12b,
+    returnedTo: returned12b,
+    stopCommitted: stopState12b,
+    typedFirst: typedFirst12b,
+    drags: drags12b,
+    pinnedPanels: pinned12b.length,
+    pinnedDetail: pinned12b,
+    // THE FIXTURE CHECK. The regression only bites when the pinned set has no
+    // automatic panel to lean on; with one left, the per-pin planner passes too
+    // and this step would be green for the wrong reason.
+    automaticPanelsLeft,
+    boundariesReachable,
+    boundariesOnTheWall,
+    widthsBeforeRetile: widthsBeforeRetile12b,
+    widthsAfterRetile: widthsAfterRetile12b,
+    widthsAfterUnstop: widthsAfterUnstop12b,
+    // ⚠ THE WHOLE POINT: identical, panel for panel. On the per-pin planner
+    // every one of these reverts to the width the tiler computes.
+    survivedTheRetile: sameWidths(widthsBeforeRetile12b, widthsAfterRetile12b),
+    survivedASecondRetile: sameWidths(widthsBeforeRetile12b, widthsAfterUnstop12b),
+    totals: [total12bStart, totalOf(widthsBeforeRetile12b), totalOf(widthsAfterRetile12b), totalOf(widthsAfterUnstop12b)],
+    totalNeverMoved: [widthsBeforeRetile12b, widthsAfterRetile12b, widthsAfterUnstop12b].every(
+      (w) => Math.abs(totalOf(w) - total12bStart) < 1e-6,
+    ),
+    narrowestAfter: widthsAfterUnstop12b.length > 0 ? Math.min(...widthsAfterUnstop12b) : null,
+    widestAfter: widthsAfterUnstop12b.length > 0 ? Math.max(...widthsAfterUnstop12b) : null,
+  },
+  // 1. the drag really pinned a pair (at least two panels hand-set), and
+  // 2. it pinned ALL of them, which is the shape per-pin planning refused, and
+  // 3. every hand-set width is still there after an unrelated retile, and
+  // 4. after a second one, because the planner has to be a fixpoint, and
+  // 5. the wall's own length never moved at any point, and
+  // 6. the unrelated retile really was applied rather than refused, and
+  // 7. nothing on the wall ended outside the shop's range.
+  (d) =>
+    d.pinnedPanels >= 2 &&
+    d.automaticPanelsLeft === 0 &&
+    d.boundariesReachable === d.boundariesOnTheWall &&
+    d.stopCommitted !== null &&
+    d.stopCommitted.invalid === false &&
+    d.survivedTheRetile === true &&
+    d.survivedASecondRetile === true &&
+    d.totalNeverMoved === true &&
+    // ⚠ `widestAfter` is RECORDED, not asserted: the boundary drag floors the
+    // shrinking panel at 24in but puts no ceiling on the growing one, which
+    // step 10 already records as `drag-has-no-ceiling`. Asserting it here would
+    // make this step red for a pre-existing finding of the DRAG’s rather than
+    // for anything about pin planning.
+    d.narrowestAfter >= FABRICATION_MIN_IN,
 );
 
 // --- the verdict ------------------------------------------------------------

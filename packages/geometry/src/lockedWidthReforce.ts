@@ -115,6 +115,27 @@ export interface LockedWidthRefusal {
   /** Total width they could ABSORB before one hit the catalog maximum — i.e.
    * the most this slot could SHRINK by. */
   canAbsorbIn: number;
+  /** How many of those `freePanelCount` panels are **braced** panels, whose
+   * position on the wall derives from `seismicBracedPanelSpacingFt` and the
+   * braced-wall-line figure — neither confirmed by Building Integrity.
+   * `isFreePanel` has always included them (so did `shedWidthToNearestUnlocked`,
+   * and so does `planCornerBraceCombine`), so paying for a pin can change a
+   * braced panel's width. Reported so the Review Log can SAY so rather than
+   * leaving an engineer to infer it. */
+  bracedFreePanelCount: number;
+  /** How many OTHER standard-family slots on this run carry a pin of their own —
+   * i.e. whether there is in fact another panel a user could reset to automatic.
+   * **The recovery sentence used to offer that remedy unconditionally**, and on
+   * the named 150in wall `freePanelCount` is 0 precisely because there is no
+   * other hand-set panel to reset. Since the pinned set is planned jointly,
+   * releasing one of these really is a remedy, which is why it is worth knowing
+   * whether one exists. */
+  otherPinnedPanelCount: number;
+  /** How many window/door/column slots this run carries. The only thing on a wall
+   * a user can DELETE to give its panel run more length, so it is the difference
+   * between "remove an opening" being advice and being a dead end — the recovery
+   * sentence used to offer it on walls that have none. */
+  openingCount: number;
 }
 
 export interface LockedWidthReforceResult {
@@ -141,6 +162,67 @@ function freeRunCandidates(slots: PanelSlot[], fromIndex: number): number[] {
   return candidates;
 }
 
+/** One pin that is not in force yet, and what applying it would owe the run. */
+interface OutstandingPin {
+  slotIndex: number;
+  /** `tiled - pinned`, in eighths. Never zero — a pin already at its own width
+   * owes nothing and never reaches the group. */
+  residualEighths: number;
+}
+
+/**
+ * The largest set of `outstanding` pins this run can pay for **together**, and
+ * what the free panels look like once it has — or `null` if it cannot pay for
+ * even one of them.
+ *
+ * ⚠ **The whole point is the word "together".** One `settleResidualEighths` call
+ * settles the group's AGGREGATE residual, so two pins whose residuals cancel sum
+ * to zero and are both payable with no free panel in the run at all. Planning
+ * them one at a time — which this function replaced on 2026-09-30 — made each
+ * pin's neighbours an obstacle to it, and refused a pinned set that already
+ * accounted for the wall's budget exactly.
+ *
+ * The free run is walked **outward from the group's first pin**, which is the
+ * same walk a single pin has always used, so a wall the old shed laid out
+ * settles the same way.
+ */
+function planPinnedGroup(
+  slots: PanelSlot[],
+  outstanding: OutstandingPin[],
+): { group: OutstandingPin[]; settled: Map<number, number> } | null {
+  const group = [...outstanding];
+  while (group.length > 0) {
+    let residualEighths = 0;
+    for (const pin of group) residualEighths += pin.residualEighths;
+    const settled = settleResidualEighths(slots, freeRunCandidates(slots, group[0]!.slotIndex), residualEighths);
+    if (settled) return { group, settled };
+    // Infeasible as a whole, so give up exactly ONE pin and try again — the one
+    // pulling hardest in the direction the aggregate is already too far, and the
+    // LATER slot of a tie, so the earlier slot keeps its width. Biggest-offender
+    // rather than last-pin is what makes the retry useful: with residuals of 9in
+    // and 2in and 4in of headroom, dropping the 2in leaves the 9in still
+    // unpayable and loses both.
+    const aggregateSign = Math.sign(residualEighths);
+    let dropAt = -1;
+    let worstEighths = 0;
+    for (let k = 0; k < group.length; k++) {
+      const pin = group[k]!;
+      if (Math.sign(pin.residualEighths) !== aggregateSign) continue;
+      if (Math.abs(pin.residualEighths) >= worstEighths) {
+        worstEighths = Math.abs(pin.residualEighths);
+        dropAt = k;
+      }
+    }
+    // Unreachable: a zero aggregate always settles (even over no candidates), so
+    // a failed settle has a signed aggregate, and a signed sum has at least one
+    // term of its own sign. Guarded rather than asserted, because an infinite
+    // loop inside a re-tile is not a failure anyone could diagnose.
+    if (dropAt === -1) return null;
+    group.splice(dropAt, 1);
+  }
+  return null;
+}
+
 /**
  * Re-forces every hand-set width this run carries, or refuses the ones it
  * cannot pay for.
@@ -149,29 +231,64 @@ function freeRunCandidates(slots: PanelSlot[], fromIndex: number): number[] {
  * is a count of 1/8in, the pinned slot's new width is paid for exactly by the
  * settle, and a settle that cannot reach zero produces no mutation at all.
  *
- * ⚠ **Locks are planned one at a time, in slot order, each against the run as
- * the earlier ones left it, and the walk REPEATS until a whole pass applies
- * nothing.** They share one free run, so order is load bearing: on a wall with
- * two pins and only enough slack for one, the earlier slot gets it. Each
- * INDIVIDUAL lock is still all-or-nothing.
+ * ⚠ **The pinned set is planned JOINTLY, not one pin at a time, and that is
+ * load-bearing rather than a refinement.** The first version of this function
+ * paid for each pin out of `freeRunCandidates` alone — which excludes every
+ * OTHER pinned slot — so every other pin was an immovable obstacle, and a run
+ * whose standard-family slots are ALL pinned lost every one of them however
+ * exactly they added up. The case that makes that a defect rather than a
+ * conservatism:
  *
- * The repeat is not tidiness — **it is what makes this function a fixpoint**,
- * and a fixpoint is a hard requirement rather than a nicety. `retile.ts`'s
- * preserving path re-reconciles EVERY wall, so an edit anywhere in the building
- * runs this over every other wall again; if a refused pin could become payable
- * on the second pass, a wall would change with no user action at all and the cut
- * list would depend on edit history. That is the exact defect the corner-brace
- * combine was fixed for on 2026-09-29 ("0 of 790,440 walls change under a no-op
- * reconcile"). **It is reachable here with two pins:** on
- * `[36in pinned 48in, 36in free, 30in pinned 24in]` the second pin hands 6in
- * back to the free panel, which is then exactly enough for the first — so a
- * single ordered pass refuses the first pin and the NEXT pass honours it.
- * Repeating settles both in one call instead. It also honours strictly more hand
- * edits, which is the right direction for a feature whose whole point is that a
- * user's width survives.
+ * ```
+ * corner 25.5 | standard 28.5 (pinned 24) | standard 28.5 (pinned 33) | corner 25.5
+ * ```
  *
- * Termination is immediate: every iteration either applies at least one pin, of
- * which there are finitely many, or ends the loop.
+ * 24 + 33 = 57 and the pair already holds 28.5 + 28.5 = 57, so **both pins are
+ * payable with zero net change anywhere else** — and per-pin planning refused
+ * both, because neither is payable on its own and there is no free panel. The
+ * repeat-to-fixpoint walk could not help: no pass applied anything, so it exited
+ * on the first iteration.
+ *
+ * **That shape is not contrived — it is what the shipped gestures produce.** The
+ * elevation boundary drag writes `lockedWidthIn` on **both** halves of the pair
+ * it moves, so it creates a residual-cancelling pair on every single use; and
+ * Tommy's 2026-09-30 decision that the app tiles **only on the first draw**,
+ * with everything after it direct manipulation, makes "every standard-family
+ * slot is pinned" the ORDINARY state of a wall rather than an edge case. **Joint
+ * pin planning is a prerequisite for that editing model**, not a patch on an
+ * edge of this one. Per-pin planning threw away hand edits that the code it
+ * replaced honoured correctly, which is the one thing this feature exists not to
+ * do.
+ *
+ * So: the group's **aggregate** residual is settled across the free run in one
+ * `settleResidualEighths` call. Pins whose residuals cancel cost nothing, and a
+ * pinned set that already accounts for the budget needs no free panel at all —
+ * the settle of a zero residual succeeds over an empty candidate list, which is
+ * exactly right. `planCornerBraceCombine`'s plan-then-commit is the precedent.
+ *
+ * **All-or-nothing is kept, and it is still per pin**: when the aggregate cannot
+ * be settled the group gives up exactly one pin at a time — the one pulling
+ * hardest in the direction the aggregate is already too far, the LATER slot of a
+ * tie, so the earlier slot keeps its width — and tries again. A pin is therefore
+ * either in force at its own exact width or refused whole; nothing is partially
+ * applied and no pin is ever cleared. Dropping the biggest offender rather than
+ * simply the last pin is deliberate: with residuals of 9in and 2in and 4in of
+ * headroom, dropping the 2in leaves the 9in still unpayable and loses both,
+ * where dropping the 9in pays the 2in.
+ *
+ * **The walk still REPEATS until a pass applies nothing**, and that is what makes
+ * this function a FIXPOINT — a hard requirement rather than a nicety.
+ * `retile.ts`'s preserving path re-reconciles EVERY wall, so an edit anywhere in
+ * the building runs this over every other wall again; if a refused pin could
+ * become payable on the second pass, a wall would change with no user action at
+ * all and the cut list would depend on edit history. That is the exact defect the
+ * corner-brace combine was fixed for on 2026-09-29 ("0 of 790,440 walls change
+ * under a no-op reconcile"). The repeat survives joint planning because a partial
+ * application frees capacity the pins it dropped may then be able to use.
+ *
+ * Termination is immediate on both loops: the group loses one pin per inner
+ * iteration, and every outer iteration either applies at least one pin, of which
+ * there are finitely many, or ends the walk.
  *
  * ⚠ **A locked width is snapped to the 1/8in grid as it is applied.** The old
  * code assigned `slot.widthIn = slot.lockedWidthIn` raw, so an off-grid pin
@@ -188,44 +305,64 @@ export function planLockedWidthReforce(slots: PanelSlot[]): LockedWidthReforceRe
   const minEighths = toEighths(TILER_MIN_PANEL_WIDTH_IN);
   const maxEighths = toEighths(TILER_MAX_PANEL_WIDTH_IN);
   const working = slots.map((s) => ({ ...s }));
-  let outstanding = lockedIndices;
+  // Snapped to the grid once, here, so "the pin's own exact width" means one
+  // number everywhere below — the plan, the commit and the refusal report.
+  const pinnedEighths = new Map(lockedIndices.map((i) => [i, toEighths(working[i]!.lockedWidthIn!)]));
 
-  for (;;) {
-    const stillOutstanding: number[] = [];
-    for (const i of outstanding) {
-      const slot = working[i]!;
-      const lockedEighths = toEighths(slot.lockedWidthIn!);
-      // Positive = the pin is NARROWER than the tiler's width, so there is
-      // surplus to hand back to the run. Negative = the pin is wider and the run
-      // has to give that much up. Same sign convention `settleResidualEighths`
-      // takes, which is why it is passed straight through.
-      const residualEighths = toEighths(slot.widthIn) - lockedEighths;
-      if (residualEighths === 0) continue; // already in force; nothing owed
-      const candidates = freeRunCandidates(working, i);
-      const settled = candidates.length === 0 ? null : settleResidualEighths(working, candidates, residualEighths);
-      if (!settled) {
-        stillOutstanding.push(i);
-        continue;
-      }
-      slot.widthIn = fromEighths(lockedEighths);
-      for (const [j, nextEighths] of settled) working[j]!.widthIn = fromEighths(nextEighths);
+  let refusedIndices: number[] = [];
+  for (let considering = lockedIndices; ; ) {
+    const outstanding: OutstandingPin[] = [];
+    for (const i of considering) {
+      // Positive = the pin is NARROWER than the width the slot carries, so
+      // applying it hands that much surplus BACK to the run. Negative = the pin
+      // is wider and the run has to find that much. Same sign convention
+      // `settleResidualEighths` takes, which is why the sum is passed straight
+      // through to it.
+      const residualEighths = toEighths(working[i]!.widthIn) - pinnedEighths.get(i)!;
+      // Already in force: it owes nothing, it costs the group nothing, and it is
+      // never refused. This is also what keeps a second call a no-op, since
+      // every pin applied by the first one lands here.
+      if (residualEighths !== 0) outstanding.push({ slotIndex: i, residualEighths });
     }
-    if (stillOutstanding.length === outstanding.length) {
-      outstanding = stillOutstanding;
+    if (outstanding.length === 0) break;
+    const plan = planPinnedGroup(working, outstanding);
+    if (!plan) {
+      refusedIndices = outstanding.map((p) => p.slotIndex);
       break;
     }
-    outstanding = stillOutstanding;
+    const applied = new Set(plan.group.map((p) => p.slotIndex));
+    for (const i of applied) working[i]!.widthIn = fromEighths(pinnedEighths.get(i)!);
+    for (const [j, nextEighths] of plan.settled) working[j]!.widthIn = fromEighths(nextEighths);
+    considering = outstanding.filter((p) => !applied.has(p.slotIndex)).map((p) => p.slotIndex);
+    if (considering.length === 0) break;
   }
 
-  const refusals: LockedWidthRefusal[] = outstanding.map((i) => {
+  const refusals: LockedWidthRefusal[] = refusedIndices.map((i) => {
     const slot = working[i]!;
     const candidates = freeRunCandidates(working, i);
     let canGiveUpEighths = 0;
     let canAbsorbEighths = 0;
+    let braced = 0;
     for (const j of candidates) {
       const e = toEighths(working[j]!.widthIn);
       canGiveUpEighths += Math.max(0, e - minEighths);
       canAbsorbEighths += Math.max(0, maxEighths - e);
+      if (working[j]!.type === "braced") braced++;
+    }
+    // The two counts the RECOVERY advice needs, which the free run cannot
+    // answer: is there another hand-set panel to release, and is there an
+    // opening to delete. Both walk the whole run rather than the candidates.
+    let otherPinned = 0;
+    let openings = 0;
+    for (let j = 0; j < working.length; j++) {
+      const other = working[j]!;
+      // The same four types `runStopOpenings.ts`'s own `isOpeningSlot` lists.
+      // Restated rather than imported because that one is private to its module,
+      // the same hand-kept duplication `SAFETY_GAP_WIDTH_IN` already carries in
+      // this package. Kept in step with it by hand.
+      if (other.type === "window" || other.type === "door" || other.type === "column" || other.type === "big-header") openings++;
+      if (j === i) continue;
+      if ((other.type === "standard" || other.type === "braced") && other.lockedWidthIn !== undefined) otherPinned++;
     }
     return {
       slotIndex: i,
@@ -234,6 +371,9 @@ export function planLockedWidthReforce(slots: PanelSlot[]): LockedWidthReforceRe
       freePanelCount: candidates.length,
       canGiveUpIn: fromEighths(canGiveUpEighths),
       canAbsorbIn: fromEighths(canAbsorbEighths),
+      bracedFreePanelCount: braced,
+      otherPinnedPanelCount: otherPinned,
+      openingCount: openings,
     };
   });
 

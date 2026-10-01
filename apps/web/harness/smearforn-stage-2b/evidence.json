@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3210/",
-  "ranAt": "2026-10-01T01:25:30.042Z",
+  "ranAt": "2026-10-01T04:41:17.425Z",
   "steps": [
     {
       "name": "baseline-3d-found-real-walls-and-slots",
@@ -101,7 +101,7 @@
     {
       "name": "deleting-a-panel-left-of-the-header-moves-its-range-not-its-span",
       "wholeWallOnScreen": true,
-      "zoomOutClicks": 4,
+      "zoomOutClicks": 5,
       "clickableBodies": 15,
       "panelsOnTheWall": 15,
       "slotsInBaselineObj": 15,

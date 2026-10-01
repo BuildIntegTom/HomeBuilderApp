@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3210/",
-  "ranAt": "2026-10-01T01:43:30.163Z",
+  "ranAt": "2026-10-01T05:06:16.079Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -452,7 +452,7 @@
   "editorReady": [
     {
       "what": "the first load, at 1280px",
-      "ms": 1882,
+      "ms": 2094,
       "canvas": [
         316,
         227,
@@ -462,7 +462,7 @@
     },
     {
       "what": "the reload after the routes were warmed",
-      "ms": 1179,
+      "ms": 1332,
       "canvas": [
         316,
         227,
@@ -472,7 +472,7 @@
     },
     {
       "what": "the 1400x1000 reload the footprint is drawn on",
-      "ms": 1464,
+      "ms": 1867,
       "canvas": [
         376,
         277,
@@ -482,7 +482,7 @@
     },
     {
       "what": "the ?openNote=review-log load",
-      "ms": 1652,
+      "ms": 2003,
       "canvas": [
         376,
         277,

@@ -77,9 +77,75 @@ function legalWidthClause(
   return `The widest this panel can be hand-set to right now is ${formatLengthIn(range.widestIn)}, and the narrowest is ${formatLengthIn(range.narrowestIn)}.`;
 }
 
-/** How to get the pin back, which is the one actionable half of the message. */
-const RECOVERY_CLAUSE =
-  "Nothing was changed to make it fit: lengthen the wall, remove an opening, or reset another panel to automatic, and this width comes back by itself.";
+/**
+ * How to get the pin back, which is the one actionable half of the message.
+ *
+ * ⚠ **This used to be a constant, and as a constant it over-promised.** It said
+ * flatly *"lengthen the wall, remove an opening, or reset another panel to
+ * automatic, and this width comes back by itself"*, and on the wall the spec
+ * names none of the three is reliable advice:
+ *
+ *   * **"reset another panel to automatic"** — on the named 150in case
+ *     `freePanelCount` is 0 precisely because there is no other hand-set panel
+ *     to reset. `otherPinnedPanelCount` is now what decides whether this is
+ *     offered, and since the pinned set is planned JOINTLY, releasing one of
+ *     those pins genuinely is a remedy.
+ *   * **"remove an opening"** — a wall with no openings has none to remove, and
+ *     it only frees length for a pin that needs length. Gated on
+ *     `openingCount` and on the sign of the residual.
+ *   * **"lengthen the wall"** — only helps a pin that is WIDER than the tiler's
+ *     width. For a pin that is narrower the problem is the opposite one, nowhere
+ *     to put the surplus, and lengthening makes it worse: at a 48in standard
+ *     width the tiler refills to the ceiling, so a longer wall has no absorb
+ *     headroom at all. The remedy there is a SHORTER wall, which is what this
+ *     says now.
+ *
+ * Deliberately not a complete list of everything that could ever free the pin —
+ * it is the list of things that are true of THIS wall, which is the only kind a
+ * message is allowed to make.
+ */
+function recoveryClause(refusal: LockedWidthRefusal): string {
+  // The pin is wider than the slot's width, so it needs length OUT of the run;
+  // the other way round it has surplus to hand back and nowhere to put it.
+  const needsRoom = refusal.lockedWidthIn > refusal.tiledWidthIn;
+  const remedies = [needsRoom ? "drag this wall longer" : "drag this wall shorter"];
+  if (needsRoom && refusal.openingCount > 0) {
+    remedies.push(refusal.openingCount === 1 ? "remove the opening on it" : "remove one of its openings");
+  }
+  if (refusal.otherPinnedPanelCount > 0) {
+    remedies.push(
+      refusal.otherPinnedPanelCount === 1
+        ? "reset the other hand-set panel on this wall to automatic"
+        : "reset one of the other hand-set panels on this wall to automatic",
+    );
+  }
+  const list =
+    remedies.length === 1 ? remedies[0]! : `${remedies.slice(0, -1).join(", ")} or ${remedies[remedies.length - 1]}`;
+  return `Nothing was changed to make it fit: ${list}, and this width comes back by itself.`;
+}
+
+/**
+ * The one thing about paying for a pin that an engineer cannot see and nobody
+ * else says: the panels that pay can include a **braced** panel.
+ *
+ * `isFreePanel` includes `"braced"` — as `shedWidthToNearestUnlocked` did before
+ * it and as `planCornerBraceCombine` does beside it, so this is a long-standing
+ * rule and not a new one — but a braced panel's position on the wall derives
+ * from two figures Building Integrity has not confirmed, and the corner-brace
+ * Review Log entry says so where this one did not.
+ *
+ * ⚠ **It is phrased in the future tense on purpose.** This note is about a pin
+ * that was REFUSED, so nothing moved; what is true is that the panel which would
+ * pay, if the wall could afford the pin again, is a braced one. The case where a
+ * braced panel really HAS been resized to pay for a pin is an honoured pin, which
+ * has no Review Log entry at all — see the spec's Stage 1x for why that is still
+ * open.
+ */
+function bracedPayerClause(refusal: LockedWidthRefusal): string {
+  if (refusal.bracedFreePanelCount === 0) return "";
+  const one = refusal.bracedFreePanelCount === 1;
+  return ` ⚠ If this wall gets the room back, ${one ? "the panel" : "one of the panels"} that would pay for this width is a **braced** panel, so honouring it would change a braced panel's width — and braced-panel placement comes from the seismic braced-panel spacing and the braced-wall-line spacing, neither of which Building Integrity has confirmed.`;
+}
 
 /**
  * The Selected Panel note's own sentence, replacing the *"it survives a re-tile
@@ -98,7 +164,7 @@ export function unhonouredLockedWidthSentence(
     refusal,
     limits,
     formatLengthIn,
-  )} ${RECOVERY_CLAUSE}`;
+  )} ${recoveryClause(refusal)}`;
 }
 
 /**
@@ -127,7 +193,9 @@ export function unhonouredLockedWidthReviewNote(
     refusal,
     limits,
     formatLengthIn,
-  )} The hand-set width is kept on the panel rather than deleted, so it reapplies by itself if the wall gets the room back; refusing to apply it is deliberate, and the wall's own length is exact because of it (Tommy, 2026-09-29: a locked width the wall cannot honour "is refused outright — nothing changes... The wall's real length is never violated"). What needs a human is which number was meant: a panel drawn at one width and built at another is the kind of thing nobody notices until it is cut.`;
+  )} The hand-set width is kept on the panel rather than deleted, so it reapplies by itself if the wall gets the room back; refusing to apply it is deliberate, and the wall's own length is exact because of it (Tommy, 2026-09-29: a locked width the wall cannot honour "is refused outright — nothing changes... The wall's real length is never violated").${bracedPayerClause(
+    refusal,
+  )} What needs a human is which number was meant: a panel drawn at one width and built at another is the kind of thing nobody notices until it is cut.`;
 }
 
 /**
