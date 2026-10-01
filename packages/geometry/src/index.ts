@@ -15,6 +15,8 @@ export * from "./gapPlacement";
 export * from "./tiling";
 export * from "./bracedPlacement";
 export * from "./panelWidthEdit";
+export * from "./settleResidualEighths";
+export * from "./lockedWidthReforce";
 export * from "./absorbedCornerWalls";
 export * from "./cornerBraceCombineRefusals";
 export * from "./panelPlacement";

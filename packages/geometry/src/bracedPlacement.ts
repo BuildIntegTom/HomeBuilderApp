@@ -1,4 +1,6 @@
 import { fromEighths, toEighths } from "./eighths";
+import { planLockedWidthReforce } from "./lockedWidthReforce";
+import { settleResidualEighths } from "./settleResidualEighths";
 import { getOpeningAnchors, TILER_MAX_PANEL_WIDTH_IN, TILER_MIN_PANEL_WIDTH_IN } from "./tiling";
 import type { BracePattern, PanelSlot, PanelSlotType, PanelSlotZone } from "./types";
 
@@ -15,42 +17,6 @@ interface CornerBraceCombinePlan {
   consumedIndex: number | null;
   /** slot index -> its new width in whole eighths. */
   resizedEighths: Map<number, number>;
-}
-
-/**
- * Settles `residualEighths` across `candidates` in order and returns each
- * one's new width, or `null` if it cannot reach exactly zero.
- *
- * Positive residual = surplus to hand BACK to the run (panels grow, none
- * past the shop's ceiling). Negative = a shortfall to take OUT of it (panels
- * shrink, none below the shop's floor). A panel the tiler already left
- * outside those bounds is left alone in the direction that would make it
- * worse, and is never "repaired" in the other one either — the tiler's own
- * residual sub-minimum cases are reported, not corrected, and that is not
- * this function's business to change.
- */
-function settleResidualEighths(
-  slots: PanelSlot[],
-  candidates: number[],
-  residualEighths: number,
-): Map<number, number> | null {
-  const minEighths = toEighths(TILER_MIN_PANEL_WIDTH_IN);
-  const maxEighths = toEighths(TILER_MAX_PANEL_WIDTH_IN);
-  const resizedEighths = new Map<number, number>();
-  let remainingEighths = residualEighths;
-  for (const i of candidates) {
-    if (remainingEighths === 0) break;
-    const currentEighths = toEighths(slots[i]!.widthIn);
-    if (remainingEighths > 0 && currentEighths >= maxEighths) continue; // no room to grow
-    if (remainingEighths < 0 && currentEighths <= minEighths) continue; // no room to shrink
-    const nextEighths =
-      remainingEighths > 0
-        ? Math.min(maxEighths, currentEighths + remainingEighths)
-        : Math.max(minEighths, currentEighths + remainingEighths);
-    resizedEighths.set(i, nextEighths);
-    remainingEighths -= nextEighths - currentEighths;
-  }
-  return remainingEighths === 0 ? resizedEighths : null;
 }
 
 /**
@@ -203,8 +169,10 @@ function settleResidualEighths(
  *   See the no-op-reconcile test.
  * - **A user-dragged (`lockedWidthIn`) slot is never swallowed or
  *   resized.** `reconcileBracedPlacement` re-forces those widths right
- *   after this runs, so any change here would be undone and re-shed
- *   somewhere else — see `shedWidthToNearestUnlocked`.
+ *   after this runs, so any change here would be undone and re-settled
+ *   somewhere else — see `planLockedWidthReforce`, which pays for a pinned
+ *   width out of the free run through this same `settleResidualEighths`, or
+ *   refuses the pin outright when it cannot.
  */
 function planCornerBraceCombine(
   slots: PanelSlot[],
@@ -633,56 +601,6 @@ export function applyAdditionalRowBracedPattern(
  * existed there in `oldSlots` too, in which case it was never part of the
  * standard family to begin with and nothing needs dropping.
  */
-/** Shifts `deltaIn` onto the nearest "standard"/"braced" slot that does NOT
- * itself have a `lockedWidthIn` — a search-outward-then-inward shape,
- * skipping any OTHER locked slot (shedding onto one would silently corrupt
- * a second user-dragged width the moment two locked slots happen to sit
- * near each other).
- *
- * ⚠ **THIS ONE STILL BREAKS THE WALL'S TOTAL, IN TWO WAYS, AND IT IS NOT
- * FIXED HERE — Tommy has now decided what should replace it.** It is a no-op
- * when no unlocked standard-family slot exists on the run (the wall then comes
- * out off by the whole `deltaIn`), and it clamps at zero, which is the exact
- * mistake the corner-brace combine was fixed for on 2026-09-29.
- *
- * **Measured, and the magnitude was understated the first time.** Sweeping
- * every eighth of wall length from 150in to 400in at standard widths {40, 48},
- * one 61.5in window, and a lock of 24in or 48in on the first standard slot:
- * **362 walls come out off their own length, from 23⅞in SHORT to 11¼in long**
- * — not the ±12¾in first recorded, which was only the named 150in case's own
- * pair of figures. The worst is a 161⅛in wall with a 24in lock that reconciles
- * to 137¼in, i.e. very nearly two feet of wall that is not there. (The named
- * case still reproduces exactly: a 150in two-corner wall, lock 48in → 161¼in,
- * lock 24in → 137¼in.)
- *
- * **It is also the most REACHABLE defect of this whole set**: it needs only a
- * dragged panel width plus any retile, on a 150in wall with one window and no
- * unusual geometry at all.
- *
- * ⚠ **TOMMY'S DECISION, 2026-09-29:** a locked/dragged width the wall length
- * cannot honour is **refused outright** — nothing changes, and the message
- * names what is in the way and the widest legal value. The wall's real length
- * is never violated. **Deliberately NOT built here:** it is queued to start
- * from a clean `main`, because it is a new refusal on a shipped gesture rather
- * than a fix to the combine, and bolting it onto this diff would put two
- * unrelated behaviour changes behind one review.
- * `planCornerBraceCombine` is the shape it will follow. */
-function shedWidthToNearestUnlocked(slots: PanelSlot[], fromIndex: number, deltaIn: number) {
-  const isUnlockedStandardFamily = (s: PanelSlot) => (s.type === "standard" || s.type === "braced") && s.lockedWidthIn === undefined;
-  for (let i = fromIndex + 1; i < slots.length; i++) {
-    if (isUnlockedStandardFamily(slots[i]!)) {
-      slots[i]!.widthIn = Math.max(0, slots[i]!.widthIn + deltaIn);
-      return;
-    }
-  }
-  for (let i = fromIndex - 1; i >= 0; i--) {
-    if (isUnlockedStandardFamily(slots[i]!)) {
-      slots[i]!.widthIn = Math.max(0, slots[i]!.widthIn + deltaIn);
-      return;
-    }
-  }
-}
-
 /**
  * The standard-family ORDINALS a stored wall is missing because the
  * corner-brace combine swallowed the panels that used to sit there.
@@ -888,28 +806,27 @@ export function reconcileBracedPlacement(
     preCombinedGapOrdinals,
   );
 
-  // Re-force every carried-through locked width back to its own exact
-  // value (Tommy: "when you click and drag a panel... it shrinks one panel
-  // and adds it to another" — a fresh tiling pass just gave this slot
-  // whatever width the ordinary budget math computed, ignoring the lock
-  // entirely) and shed the resulting delta onto the nearest still-unlocked
-  // standard-family neighbor — the same "fixed-width slot sheds its own delta
-  // to a neighbor" shape the corner-brace combine takes, for a user-dragged
-  // width instead of a combined safety-gap panel.
+  // Re-force every carried-through locked width back to its own exact value
+  // (Tommy: "when you click and drag a panel... it shrinks one panel and adds
+  // it to another" — a fresh tiling pass just gave this slot whatever width the
+  // ordinary budget math computed, ignoring the lock entirely), paying for it
+  // out of the still-unlocked standard-family slots, and REFUSING the re-force
+  // outright on a run that cannot pay legally.
   //
-  // ⚠ Unlike that combine, this one does NOT keep the wall's total exact: see
-  // `shedWidthToNearestUnlocked`'s own comment for the 363 measured walls it
-  // gets wrong and why it was left alone.
-  for (let i = 0; i < result.length; i++) {
-    const slot = result[i]!;
-    if (slot.lockedWidthIn === undefined) continue;
-    const deltaIn = slot.widthIn - slot.lockedWidthIn;
-    if (Math.abs(deltaIn) < 1e-9) continue;
-    slot.widthIn = slot.lockedWidthIn;
-    shedWidthToNearestUnlocked(result, i, deltaIn);
-  }
-
-  return result;
+  // ⚠ That refusal is new as of 2026-09-30 and it is Tommy’s decision, not an
+  // implementation detail: a locked width the wall length cannot honour "is
+  // refused outright — nothing changes... The wall’s real length is never
+  // violated." Until then this loop called a `shedWidthToNearestUnlocked`
+  // helper that no-opped when the run had no unlocked slot and clamped its
+  // neighbour at zero, and 362 walls of one 8,004-case fixture came out off
+  // their own length by up to 23⅞in. See `planLockedWidthReforce` for the whole
+  // of it, including why nothing here clears the pin.
+  //
+  // This function’s signature is deliberately unchanged — it has 7+ call sites
+  // and no business composing English. The refusals are re-derived from the
+  // committed wall by `findUnhonouredLockedWidths`, which asks this same
+  // planner, so the report and the behaviour cannot drift apart.
+  return planLockedWidthReforce(result).slots;
 }
 
 export function setWindowWidth(slots: PanelSlot[], index: number, widthIn: number): PanelSlot[] {

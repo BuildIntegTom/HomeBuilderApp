@@ -140,6 +140,111 @@ the images. Both are regenerated on every run.
 | drag | `09-after-drag-snapped-to-eighths.png` | a deliberately fractional-pixel drag commits **44½" / 35½"** — on the eighth, pair total conserved exactly |
 | drag floor | `10-drag-floors-at-24in.png` | dragging past the floor stops at the catalog minimum: **56" / 24"**, nothing below 24" |
 | every wall | `11-every-wall-walked.png` | the viewer dial is walked through **all four** wall elevations and every panel on every one is **at or above 24"** — the Stage 1r acceptance check, and the step that would have been red before the absorb rule, on walls nobody touched |
+| refused pin | `12-locked-width-refused.png` | **the locked-width refusal (2026-09-30).** Panels are pinned at 48" one after another on a 4-panel wall until the automatic run cannot pay for one; the third is **refused whole**, naming what is in the way and the widest legal value, and the wall's own total is identical after every attempt |
+| cancelling pair | `12b-pinned-pairs-before-retile.png`, `12c-pinned-pairs-after-unrelated-retile.png` | **joint pin planning (2026-09-30).** Every boundary on a run is dragged, which pins **every** panel on it (the drag writes `lockedWidthIn` on both halves of each pair it moves); then one **unrelated** retile is taken from a different wall via a run stop. Every hand-set width survives it, and a second retile too — on the per-pin planner this branch shipped first, all of them were silently discarded |
+
+### Step 12 and the wall it needs
+
+It walks the dial to an elevation with **3 to 8 panel labels** and pins there, which is not fussiness:
+
+- `panelWidthLabels` only returns labels **inside the window**, because a click at
+  an off-screen coordinate hits nothing. On the 13-panel wall the rest of this run
+  edits, the first version of step 12 pinned every label it could reach and then
+  ran out of **candidates** rather than out of slack — it never reached a refusal,
+  and failed for a reason that had nothing to do with the app. Running out of
+  candidates is now recorded (`ranOutOfCandidates`) and fails the step explicitly.
+- Four panels is also where the arithmetic bites: two pins at 48" leave one
+  automatic panel with about 5" to spare, and the third pin needs 11".
+
+On this fixture it refuses on the **third** pin, with:
+
+> Refused: 48" is not a width this wall can hold — it needs 11" from the rest of
+> the wall, and the 1 automatic panel here can only give up 8" before it drops
+> below the 24" fabrication minimum. The widest this panel can be hand-set to
+> right now is 45", and the narrowest is 24". Nothing was changed.
+
+⚠ **Two refusals in this file put different things in the box, and both are
+right.** Step 6's sub-minimum refusal is a `validate` refusal — the commit never
+happens and the user's own text stays there to be corrected. Step 12's is refused
+*inside* the commit, so `LengthInput` redisplays the stored width, which is itself
+the evidence that nothing changed.
+
+⚠ **This step IS red on `main` @ `f100bd3` — but not for the reason first written
+here, and the real reason is the better story.** The claim was that the old shed
+drove the neighbours to 16", then 6", then clamped one at 0", "with the wall's own
+total moving every time", and that `totalNeverMoved` is the check that catches it.
+That does not reproduce. What `main` actually records is **`totals:
+[160,160,160,160,160]` and `totalNeverMoved: true`** — the check that fails is
+**`narrowestAfter >= FABRICATION_MIN_IN`**.
+
+**Why the total holds on `main` while a panel goes unbuildable.** `main`'s
+`shedWidthToNearestUnlocked` hands the whole delta to one neighbour with
+`Math.max(0, widthIn + deltaIn)` and no lower bound but zero, so the wall still
+sums — it just sums with a panel no shop can build, and `retileWallAroundPins`'
+"the wall must still sum" guard is perfectly happy with that. Measured on this
+branch against `main`'s own `bracedPlacement.ts`, step 12's gesture on a 160"
+four-panel wall at the 40" standard width with two corners:
+
+| pin | `main`'s free run | total | what commits |
+| --- | --- | --- | --- |
+| 1st at 48" | `[48, 20¼, 40]` | 160" | a **20¼"** panel, committed, unbuildable |
+| 2nd at 48" | `[48, 48, 12¼]` | 160" | a **12¼"** panel, committed, unbuildable |
+| 3rd at 48" | `[48, 48, 48]` | **195¾"** | nothing — this one *does* move the total, so the sum guard refuses it before it reaches the drawing |
+
+So the only attempt that would have moved the wall's length is the only attempt
+`main` already refuses; everything that gets through sums exactly and is silently
+unbuildable. The independent review's own browser run on `main` recorded the same
+shape with a **16"** panel (a different wall — this run's earlier steps leave each
+wall at different widths), and it failed on exactly that assertion.
+
+⚠ **The 0" clamp is unreachable here**, and saying it was reachable overstated the
+case. `Math.max(0, …)` only bites when the one neighbour it picks is NARROWER than
+the delta, and a 40" automatic panel paying for an 11" pin never is. The clamp
+needs a free panel under ~12"; the no-free-slot case the module was really built
+for makes the shed a complete **no-op** instead, which is the one that moves the
+wall's length by the whole delta (the named 150" wall, 362 of 8,004 fixture walls).
+Neither of those shapes exists on a four-panel wall.
+
+**What the step therefore proves**, on `main` and on this branch: `totalNeverMoved`
+is true on both and is not the discriminator — `narrowestAfter`, `widestAfter` and
+the fact that the third pin is refused *with a sentence* are.
+
+### Step 12b — the residual-cancelling pair, which is the ordinary case and not an edge one
+
+Step 12 proves a pin the wall cannot pay for is refused. **Step 12b proves the
+opposite half, which the first version of this branch got wrong:** a pinned set
+the wall *can* pay for is honoured, even when no automatic panel is left to pay
+with.
+
+The elevation boundary drag writes `lockedWidthIn` on **both** halves of the pair
+it moves (`handleDragResizePanels`), each to a different width, with the pair's
+total unchanged — so every drag leaves a **residual-cancelling pair**: two pins
+that are unpayable one at a time and free when settled together. Dragging every
+boundary on a run pins every panel on it and leaves **no automatic panel at all**,
+which is exactly the state Tommy's 2026-09-30 "tile only on the first draw"
+decision makes the ordinary state of a wall.
+
+Then the step takes **one unrelated retile from a different wall** — a run-stop
+change, because `retileAllForRunStops` re-reconciles *every* wall in the building
+against its own stored slots, which is how `retile.ts`'s preserving path makes an
+edit anywhere in the building re-force the pins everywhere else. The wall under
+test is not touched: same length, same openings, same panel count.
+
+It asserts that every hand-set width is still there afterwards, that it is still
+there after a **second** retile (the planner has to be a fixpoint), that the
+wall's own total never moved, and that nothing ended outside [24", 48"].
+
+⚠ **`automaticPanelsLeft === 0` is a load-bearing fixture check, not decoration.**
+With even one automatic panel left, the pair can lean on it and the broken per-pin
+planner passes too — the step would be green for the wrong reason. It is recorded
+and asserted for the same reason `ranOutOfCandidates` is in step 12.
+
+⚠ **This step was red on this branch's own first commit** (`b30e128`), where
+`planLockedWidthReforce` paid for each pin out of the free run only: every
+hand-set width on the wall was silently discarded by the unrelated retile and the
+wall was left perfectly legal, so nothing else here would have seen it. It is
+green on `main`, which is the whole point — the refusal must not cost hand edits
+that the code it replaced kept.
 
 ### One thing it records without asserting
 

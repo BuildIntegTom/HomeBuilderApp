@@ -475,6 +475,44 @@ describe("reconcileBracedPlacement", () => {
     const oldSlots: PanelSlot[] = [
       { type: "corner", widthIn: 24 },
       { type: "standard", widthIn: 40 },
+      { type: "standard", widthIn: 36, lockedWidthIn: 36 },
+      { type: "standard", widthIn: 36, lockedWidthIn: 36 },
+      { type: "standard", widthIn: 48 },
+      { type: "corner", widthIn: 24 },
+    ];
+    const newSlots: PanelSlot[] = [
+      { type: "corner", widthIn: 24 },
+      { type: "standard", widthIn: 40 },
+      { type: "standard", widthIn: 40 },
+      { type: "standard", widthIn: 40 },
+      { type: "standard", widthIn: 40 },
+      { type: "corner", widthIn: 24 },
+    ];
+    const reconciled = reconcileBracedPlacement(oldSlots, newSlots, 100_000, 40, "chevron", false);
+    const standardFamily = reconciled.filter((s) => s.type === "standard" || s.type === "braced");
+    expect(standardFamily[1]!.widthIn).toBeCloseTo(36, 6);
+    expect(standardFamily[2]!.widthIn).toBeCloseTo(36, 6);
+    // Each pin's own 4in surplus went to the UNLOCKED panel past them, never to
+    // the other pin: 40 + 4 + 4 = 48.
+    expect(standardFamily[3]!.widthIn).toBeCloseTo(48, 6);
+    const totalWidthIn = reconciled.reduce((sum, s) => sum + s.widthIn, 0);
+    const newTotalWidthIn = newSlots.reduce((sum, s) => sum + s.widthIn, 0);
+    expect(totalWidthIn).toBeCloseTo(newTotalWidthIn, 6);
+  });
+
+  // ⚠ **This test's fixture used to be the one above, and it asserted a panel
+  // the shop cannot build.** Two 25in pins against four 46in panels need 42in of
+  // surplus absorbed by panels already within 2in of the 48in catalog maximum;
+  // the old shed put the whole lot on one neighbour and produced an **88in
+  // panel**, which the assertions then waved through because they only checked
+  // the two pins and the total. Since 2026-09-30 the re-force is refused
+  // instead — Tommy's decision, see `planLockedWidthReforce` — so the fixture
+  // is kept here, as a refusal, rather than deleted along with the behaviour it
+  // documented.
+  it("REFUSES two locked widths the run cannot absorb without passing the catalog maximum", () => {
+    const oldSlots: PanelSlot[] = [
+      { type: "corner", widthIn: 24 },
+      { type: "standard", widthIn: 40 },
       { type: "standard", widthIn: 25, lockedWidthIn: 25 },
       { type: "standard", widthIn: 25, lockedWidthIn: 25 },
       { type: "standard", widthIn: 70 },
@@ -490,11 +528,16 @@ describe("reconcileBracedPlacement", () => {
     ];
     const reconciled = reconcileBracedPlacement(oldSlots, newSlots, 100_000, 40, "chevron", false);
     const standardFamily = reconciled.filter((s) => s.type === "standard" || s.type === "braced");
-    expect(standardFamily[1]!.widthIn).toBeCloseTo(25, 6);
-    expect(standardFamily[2]!.widthIn).toBeCloseTo(25, 6);
+    // Nothing changed: every panel is the width the tiler laid out...
+    expect(standardFamily.map((s) => s.widthIn)).toEqual([46, 46, 46, 46]);
+    // ...both pins are still ON their slots, dormant rather than destroyed...
+    expect(standardFamily[1]!.lockedWidthIn).toBe(25);
+    expect(standardFamily[2]!.lockedWidthIn).toBe(25);
+    // ...no panel is over the catalog maximum (the old shed produced 88in)...
+    expect(Math.max(...standardFamily.map((s) => s.widthIn))).toBeLessThanOrEqual(48);
+    // ...and the wall is still exactly its own length.
     const totalWidthIn = reconciled.reduce((sum, s) => sum + s.widthIn, 0);
-    const newTotalWidthIn = newSlots.reduce((sum, s) => sum + s.widthIn, 0);
-    expect(totalWidthIn).toBeCloseTo(newTotalWidthIn, 6);
+    expect(totalWidthIn).toBeCloseTo(newSlots.reduce((sum, s) => sum + s.widthIn, 0), 6);
   });
 
   // Regression coverage for 2 related retile/reconciliation bugs found while
