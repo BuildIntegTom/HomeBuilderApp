@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3240/",
-  "ranAt": "2026-09-30T16:55:01.114Z",
+  "app": "http://localhost:3210/",
+  "ranAt": "2026-10-01T01:29:06.635Z",
   "stopIn": 60,
   "steps": [
     {
@@ -73,7 +73,7 @@
     },
     {
       "name": "drag-still-lands-and-conserves-the-run",
-      "strips": 9,
+      "strips": 10,
       "totalEighthsBeforeDrag": 3912,
       "totalEighthsAfterDrag": 3912,
       "changed": true,
@@ -115,8 +115,8 @@
       "name": "clearing-the-stop-restores-elevation-plan-and-3d",
       "totalEighthsCleared": 4392,
       "noPanelsLabelsCleared": 0,
-      "boundaryGreyWithStop": 1437,
-      "boundaryGreyWithoutStop": 1341,
+      "boundaryGreyWithStop": 1380,
+      "boundaryGreyWithoutStop": 1283,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
@@ -171,12 +171,12 @@
     {
       "name": "openings-in-the-unbuilt-span-are-dropped-remembered-and-restored",
       "baseEighths": 4516,
-      "basePanelCount": 15,
+      "basePanelCount": 16,
       "openingSlotsBeforePlacement": 1,
-      "panelCountBeforePlacement": 15,
+      "panelCountBeforePlacement": 16,
       "clickTargetsOnScreen": 6,
       "noticeBeforePlacement": null,
-      "placedOpeningNotice": "Replaced on wall AB: 15 panels → 15, 10 still automatic.",
+      "placedOpeningNotice": "Replaced on wall AB: 16 panels → 16, 11 still automatic.",
       "placedOpeningWidthLabel": "40\"",
       "openingSlotsBefore": 2,
       "sweep": [
@@ -199,27 +199,27 @@
           "invalid": false,
           "message": null,
           "totalEighths": 2484,
-          "withheldOpenings": 2
+          "withheldOpenings": 1
         },
         {
           "stopIn": 338.75,
           "invalid": false,
           "message": null,
           "totalEighths": 1806,
-          "withheldOpenings": 2
+          "withheldOpenings": 1
         },
         {
           "stopIn": 423.375,
           "invalid": false,
           "message": null,
           "totalEighths": 1129,
-          "withheldOpenings": 2
+          "withheldOpenings": 1
         }
       ],
       "deepestAcceptedStopIn": 423.375,
-      "openingSlotsStopped": 0,
+      "openingSlotsStopped": 1,
       "restoredEighths": 4516,
-      "restoredPanelCount": 15,
+      "restoredPanelCount": 16,
       "restoredWithheld": 0,
       "openingSlotsRestored": 2,
       "asserted": true,
@@ -227,7 +227,7 @@
     },
     {
       "name": "a-new-footprint-does-not-inherit-the-old-buildings-remembered-openings",
-      "withheldWhenRedrawn": 2,
+      "withheldWhenRedrawn": 1,
       "baseEighthsBeforeRedraw": 4516,
       "redrawnEighths": 4072,
       "redrawnPanelCount": 14,

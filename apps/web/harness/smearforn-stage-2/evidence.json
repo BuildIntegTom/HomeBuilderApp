@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3240/",
-  "ranAt": "2026-09-30T16:53:29.480Z",
+  "app": "http://localhost:3210/",
+  "ranAt": "2026-10-01T01:24:18.845Z",
   "steps": [
     {
       "name": "whole-wall-on-screen",
@@ -24,8 +24,8 @@
         40,
         40,
         40,
-        37.125,
-        37,
+        40,
+        34.125,
         34.125,
         0.75,
         40
@@ -36,7 +36,7 @@
     {
       "name": "tool-armed",
       "insertMarkers": 16,
-      "dragStripsBefore": 11,
+      "dragStripsBefore": 10,
       "dragStripsArmed": 0,
       "asserted": true,
       "passed": true
@@ -89,7 +89,7 @@
     },
     {
       "name": "refused-insert-states-the-room",
-      "refusal": "Refused: there is 90⅛\" of automatic panel width on this wall and this change needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
+      "refusal": "Refused: there is 84¼\" of automatic panel width on this wall and this change needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
       "bigHeadersPlaced": 4,
       "panelsAtRefusal": 10,
       "asserted": true,

@@ -1462,6 +1462,163 @@ record(
     d.arrivals.every((a) => a.zoom === "100%" && a.scrollLeft === 0 && a.scrollTop === 0),
 );
 
+console.log("12. a hand-set width this wall cannot pay for is REFUSED, and nothing changes");
+/**
+ * **The locked-width refusal, 2026-09-30.** A pinned width is re-forced after
+ * every re-tile, and until this change the difference was shed onto one
+ * neighbour with no bounds at all: the neighbour could go under the 24in
+ * fabrication minimum, past the 48in catalog maximum, or to 0in, and on a run
+ * with nothing unlocked left the shed was a no-op and the WALL CAME OUT A
+ * DIFFERENT LENGTH THAN ITSELF. Tommy's decision was to refuse outright —
+ * nothing changes, and the message names what is in the way and the widest
+ * legal value.
+ *
+ * **How this reaches the refusal without depending on the wall's length.**
+ * Pin successive panels at 48in, the catalog maximum. Each pin takes width OUT
+ * of the automatic run and removes one panel from it, so the run's slack is
+ * strictly decreasing and the loop is self-terminating: on any wall with a few
+ * panels, one of these pins eventually cannot be paid for. The step asserts
+ * both halves — that the earlier ones ARE honoured (the feature still works,
+ * which is the thing a refusal must not cost) and that the one that cannot be
+ * is refused whole.
+ *
+ * ⚠ **This step would be RED on `main` @ f100bd3**, and not marginally: the old
+ * shed would have driven neighbours to 16in, then 6in, then clamped one at 0in,
+ * with the wall's own total moving every time. The total-conservation check
+ * below is the one that catches it.
+ */
+const widthsNow = async () => (await allElevationWidths()).map(parseImperial).filter((n) => Number.isFinite(n));
+// Get back onto an elevation — the wall walk above left the dial wherever it
+// finished, and a 3D stop has no panel labels to click — and specifically onto
+// a SHORT wall.
+//
+// ⚠ **The wall matters, and the first version of this step picked the wrong
+// one.** `panelWidthLabels` only returns labels inside the window, because a
+// click at an off-screen coordinate hits nothing; on the 13-panel wall this run
+// has been editing, the loop below pinned every label it could reach and then
+// ran out of CANDIDATES rather than out of slack, so it never reached the
+// refusal at all and the step failed for a reason that had nothing to do with
+// the app. A 4-panel wall's labels are all on screen at once, and 4 panels is
+// also where the run's slack genuinely runs out after two pins.
+let wallForStep12 = null;
+for (let i = 0; i < 16 && wallForStep12 === null; i++) {
+  const stop12 = await currentViewLabel();
+  if (typeof stop12 === "string" && stop12.startsWith("Elevation:")) {
+    const count12 = (await allElevationWidths()).length;
+    if (count12 >= 3 && count12 <= 8) {
+      wallForStep12 = { view: stop12, labelCount: count12 };
+      break;
+    }
+  }
+  await stepViewerDial();
+  await sleep(500);
+}
+if (!wallForStep12) throw new Error("no elevation with 3-8 panel labels to run the locked-width refusal on");
+await sleep(600);
+const beforeWidths = await widthsNow();
+const beforeTotal = beforeWidths.reduce((a, b) => a + b, 0);
+const PIN_IN = 48; // panelWidthInRange.maxIn — the widest pin the field accepts
+const attempts = [];
+const totals = [beforeTotal];
+let refusal12 = null;
+for (let n = 0; n < 12 && !refusal12; n++) {
+  // Re-read the labels every time: a commit re-tiles the wall and moves them.
+  const labels12 = await panelWidthLabels();
+  let picked = null;
+  for (const l of labels12) {
+    if (parseImperial(l.label) === PIN_IN) continue; // already pinned at 48 by this loop
+    await click(l.x, l.y);
+    await sleep(400);
+    const f = await widthField();
+    if (f) {
+  picked = { label: l.label, field: f.value };
+      break;
+    }
+  }
+  if (!picked) {
+    // Recorded rather than swallowed: running out of selectable labels is a
+    // FIXTURE failure, not a refusal, and the assertion below has to be able to
+    // tell them apart.
+    attempts.push({ selectedAt: null, committed: false, note: null, notice: null, alert: null, ranOutOfCandidates: true });
+    break;
+  }
+  await typeWidth(String(PIN_IN));
+  const after12 = await evaluate(`(() => {
+    const input = document.querySelector('input[aria-label="Panel width in inches"]');
+    const ps = [...document.querySelectorAll('p')].map((x) => x.textContent.trim());
+    return {
+      draft: input ? input.value : null,
+      note: ps.find((t) => t.startsWith('Hand-set') || t.startsWith('Automatic')) ?? null,
+      notice: ps.find((t) => t.startsWith('Refused:') || t.startsWith('That width')) ?? null,
+      alert: (() => { const a = document.querySelector('[role="alert"]'); return a ? a.textContent.trim() : null; })(),
+    };
+  })()`);
+  const committed = typeof after12.note === "string" && /^Hand-set at 48/.test(after12.note);
+  attempts.push({ selectedAt: picked.label, committed, note: after12.note, notice: after12.notice, alert: after12.alert });
+  totals.push((await widthsNow()).reduce((a, b) => a + b, 0));
+  if (!committed) {
+    refusal12 = { ...after12, selectedAt: picked.label, widthBefore: picked.field };
+    await shot("12-locked-width-refused");
+    // Put the field back: the refused draft is still in the box, exactly as the
+    // sub-minimum refusal leaves it.
+    await pressKey("Escape", "Escape", 27);
+    await sleep(300);
+  }
+}
+const widthsAfter12 = await widthsNow();
+record(
+  "locked-width-refused-whole",
+  {
+    wall: wallForStep12,
+    attempts: attempts.length,
+    honoured: attempts.filter((a) => a.committed).length,
+    ranOutOfCandidates: attempts.some((a) => a.ranOutOfCandidates === true),
+    attemptDetail: attempts,
+    refusedAt: refusal12 ? refusal12.selectedAt : null,
+    noticeOnRefusal: refusal12 ? refusal12.notice : null,
+    noteOnRefusal: refusal12 ? refusal12.note : null,
+    // ⚠ Two refusals, two different things in the box, and both are right.
+    // The sub-minimum refusal (step 6) is a `validate` refusal: the commit never
+    // happens and the user's own text stays there to be corrected. THIS one is
+    // refused inside the commit, so LengthInput redisplays the stored width —
+    // which is itself the proof that the stored width did not change.
+    fieldAfterRefusal: refusal12 ? refusal12.draft : null,
+    widthBeforeRefusal: refusal12 ? refusal12.widthBefore : null,
+    // The invariant, read off the drawing after every single attempt.
+    totals,
+    totalNeverMoved: totals.every((t) => Math.abs(t - beforeTotal) < 1e-6),
+    widestAfter: widthsAfter12.length > 0 ? Math.max(...widthsAfter12) : null,
+    narrowestAfter: widthsAfter12.length > 0 ? Math.min(...widthsAfter12) : null,
+  },
+  // Five things, and the fixture check is one of them:
+  //  1. the feature still WORKS — at least two pins at the catalog maximum were
+  //     honoured before anything was refused. A refusal that refuses everything
+  //     is not what Tommy asked for.
+  //  2. one pin was refused, and the refusal SAYS something: it starts with
+  //     "Refused:" and quotes a width ("right now is ..."), which is the half of
+  //     his decision about the message.
+  //  3. nothing was committed on the refusal — the note still describes the
+  //     panel as it was, and the typed draft is still in the box to correct.
+  //  4. THE WALL'S OWN LENGTH NEVER MOVED, across every attempt including the
+  //     refused one. This is the defect itself: 362 walls of an 8,004-case
+  //     fixture used to come out off their own length here.
+  //  5. no panel on the wall ended up outside the shop's range, which the old
+  //     unbounded shed could not promise either.
+  (d) =>
+    d.honoured >= 2 &&
+    d.ranOutOfCandidates === false &&
+    d.refusedAt !== null &&
+    typeof d.noticeOnRefusal === "string" &&
+    d.noticeOnRefusal.startsWith("Refused:") &&
+    d.noticeOnRefusal.includes("right now is") &&
+    typeof d.noteOnRefusal === "string" &&
+    !/^Hand-set at 48/.test(d.noteOnRefusal) &&
+    asInches(d.fieldAfterRefusal) === asInches(d.widthBeforeRefusal) &&
+    d.totalNeverMoved === true &&
+    d.narrowestAfter >= FABRICATION_MIN_IN &&
+    d.widestAfter <= 48,
+);
+
 // --- the verdict ------------------------------------------------------------
 writeEvidence();
 const asserted = evidence.steps.filter((s) => s.asserted).length;

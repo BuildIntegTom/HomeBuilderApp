@@ -38,6 +38,9 @@ import {
   findAbsorbedCornerWalls,
   findCornerBraceCombineRefusals,
   findSubMinimumPanelWidths,
+  findUnhonouredLockedWidths,
+  planLockedWidthReforce,
+  type LockedWidthRefusal,
   getOpeningAnchors,
   toEighths,
   insertBumpOut,
@@ -375,6 +378,11 @@ import styles from "./page.module.css";
 import elevationStyles from "./ElevationControls.module.css";
 import { tilerWouldChangeThePanelCount } from "./handPlacedWallRetile";
 import { pruneOpeningMemoryToLiveWalls, type OpeningMemoryByStoryAndWallId } from "./runStopOpeningMemory";
+import {
+  lockedWidthEditRefusalSentence,
+  unhonouredLockedWidthReviewNote,
+  unhonouredLockedWidthSentence,
+} from "./lockedWidthNotices";
 import {
   runStopFitRefusalSentence,
   withheldOpeningTotal,
@@ -3424,7 +3432,14 @@ export default function LayoutEditor() {
      * `redistributeFreeRun`'s `rebalance`. */
     editIndex: number,
     rebalance: boolean,
-  ): { ok: true; slots: PanelSlot[]; index: number } | { ok: false; refusal: PanelPlacementResult | null } => {
+  ):
+    | { ok: true; slots: PanelSlot[]; index: number }
+    /** `lockedWidthRefusal` is set when the pin came back at a DIFFERENT width
+     * because `planLockedWidthReforce` refused to re-force it — the wall could
+     * only have paid by pushing a neighbour outside the shop's range. It carries
+     * the numbers so the caller can say which widths this wall would take; the
+     * generic "that moved the wall's length" sentence is not true of it. */
+    | { ok: false; refusal: PanelPlacementResult | null; lockedWidthRefusal?: LockedWidthRefusal } => {
     const geometry = wallGeometryFor(wallId);
     if (!geometry) return { ok: false, refusal: null };
     const anchors = getOpeningAnchors(nextSlots).map((a) => (a.type === "column" ? { ...a, widthIn: COLUMN_TOTAL_WIDTH_IN } : a));
@@ -3482,7 +3497,18 @@ export default function LayoutEditor() {
     if (totalIs(finalSlots) !== toEighths(geometry.lengthIn)) return { ok: false, refusal: null };
     const index = findNthStandardFamilyIndex(finalSlots, keepOrdinal);
     if (index === -1) return { ok: false, refusal: null };
-    if (expectWidthIn !== null && toEighths(finalSlots[index]!.widthIn) !== toEighths(expectWidthIn)) return { ok: false, refusal: null };
+    if (expectWidthIn !== null && toEighths(finalSlots[index]!.widthIn) !== toEighths(expectWidthIn)) {
+      // ⚠ The pin did not come back at its own width, and since 2026-09-30 there
+      // is exactly one reason that happens on a wall whose total is fine: the
+      // re-force was REFUSED because no legal way to pay for it existed. Ask the
+      // planner for the figures rather than guessing — it is a fixpoint, so
+      // re-planning the committed run reports the same refusal the reconcile made.
+      return {
+        ok: false,
+        refusal: null,
+        lockedWidthRefusal: planLockedWidthReforce(finalSlots).refusals.find((r) => r.slotIndex === index),
+      };
+    }
     return { ok: true, slots: finalSlots, index };
   };
 
@@ -3520,6 +3546,18 @@ export default function LayoutEditor() {
       // feasible width there would be a number attached to a refusal it does
       // not describe.
       if (!retiled.refusal) {
+        // The specific case first: a width the wall could only honour by pushing
+        // another panel out of the shop's range. It has numbers; the fallback
+        // below does not, and until 2026-09-30 this edit silently committed an
+        // unbuildable neighbour instead of refusing at all.
+        if (retiled.lockedWidthRefusal) {
+          showPanelWidthNotice(
+            lockedWidthEditRefusalSentence(retiled.lockedWidthRefusal, panelWidthLimitsIn, (valueIn) =>
+              formatLengthIn(valueIn, unitSystem),
+            ),
+          );
+          return;
+        }
         showPanelWidthNotice("That width couldn't be applied without moving this wall's own total length, so nothing was changed.");
         return;
       }
@@ -7108,6 +7146,21 @@ export default function LayoutEditor() {
     [baseWallSlots, secondStory],
   );
 
+  // Hand-set panel widths (`lockedWidthIn`) their own wall can no longer pay
+  // for. Since 2026-09-30 the re-force is REFUSED rather than applied — Tommy's
+  // decision, and the wall's own length is exact because of it — but the panel is
+  // then fabricated at the tiler's width and not the one somebody typed or
+  // dragged, which is a difference nobody can see from the drawing. Same
+  // situation and same answer as `cornerBraceCombineRefusals` directly above:
+  // the wall is legal, which is exactly why this needs the Review Log.
+  const unhonouredLockedWidths = useMemo(
+    () => [
+      ...findUnhonouredLockedWidths(baseWallSlots).map((r) => ({ ...r, story: "ground" as const })),
+      ...findUnhonouredLockedWidths(secondStory?.wallSlots ?? {}).map((r) => ({ ...r, story: "second" as const })),
+    ],
+    [baseWallSlots, secondStory],
+  );
+
   /**
    * **⚠ One entry per Square Bale wall whose ONLY panel is a corner slot off the
    * confirmed 39in bale width** — the part Tommy said cannot be built. Usually
@@ -7586,6 +7639,32 @@ export default function LayoutEditor() {
             : ""
         }. **Refusing is deliberate and the wall's own length is exact because of it** (Tommy, 2026-09-29: "this app needs to be perfectly tight with dimensions and wall lengths") — the alternative, in force until then, made this wall longer than itself. What needs an engineer is the placement, not the arithmetic: braced-panel spacing comes from ${seismicBracedPanelSpacingFt[seismicZone]}ft seismic spacing and the braced-wall-line figure, neither of which Building Integrity has confirmed, and "legal, with one brace where the rule asks for two" is not a call this app can make for you.`,
       })),
+      // One entry per hand-set panel width its wall cannot honour. The wall is
+      // legal and its length is exact; what is not visible anywhere else is that
+      // the panel is FABRICATED at the tiler's width rather than the hand-set
+      // one. See `unhonouredLockedWidthReviewNote` for the wording and
+      // `planLockedWidthReforce` for the refusal itself.
+      //
+      // ⚠ The status is `pending-BI-confirmation` because the vocabulary has
+      // exactly two values and `confirmed` would be a lie: nobody has confirmed
+      // WHICH width was meant, which is the whole question this entry raises. It
+      // is not a provisional building value like the entries around it.
+      ...unhonouredLockedWidths.map((refusal) => ({
+        label: `Hand-set panel width is not in force: wall ${refusal.wallId}, slot ${refusal.slotIndex}${refusal.story === "second" ? " (second story)" : ""}`,
+        status: "pending-BI-confirmation" as const,
+        // ⚠ The limits are built from the catalog values INLINE rather than from
+        // the `panelWidthLimitsIn` object above: that object is rebuilt every
+        // render, so naming it as a dependency here raises a
+        // `react-hooks/exhaustive-deps` warning, and that rule may never rise.
+        // `fabricationMinPanelWidthIn` and `panelWidthInRange` are module
+        // constants, exactly as the `absorbedCornerWalls` entry above already
+        // reads `fabricationMinPanelWidthIn.value` straight out of the catalog.
+        note: unhonouredLockedWidthReviewNote(
+          refusal,
+          { minIn: fabricationMinPanelWidthIn.value, maxIn: panelWidthInRange.maxIn },
+          (valueIn) => formatLengthIn(valueIn, unitSystem),
+        ),
+      })),
       ...(foundationTypeId === "concrete-pier"
         ? [
             { label: "Concrete pier dimensions", ...concretePierDimensions },
@@ -7630,6 +7709,7 @@ export default function LayoutEditor() {
     // guaranteed to be the one the wall was actually tiled against.
     absorbedCornerWalls,
     cornerBraceCombineRefusals,
+    unhonouredLockedWidths,
     slotIndexPinnedWallIds,
     seismicZone,
     unitSystem,
@@ -9982,9 +10062,10 @@ export default function LayoutEditor() {
             <div style={{ marginTop: "auto", width: "100%", display: "flex", flexDirection: "column", gap: 8 }}>
               {selectedSlot &&
                 (() => {
-                  const slot = (selectedSlot.story === "ground" ? baseWallSlots : (secondStory?.wallSlots ?? {}))[selectedSlot.wallId]?.[
-                    selectedSlot.slotIndex
+                  const selectedWallSlots = (selectedSlot.story === "ground" ? baseWallSlots : (secondStory?.wallSlots ?? {}))[
+                    selectedSlot.wallId
                   ];
+                  const slot = selectedWallSlots?.[selectedSlot.slotIndex];
                   if (!slot) return null;
                   const { wallId, slotIndex, story, zoneIndex } = selectedSlot;
                   const effectiveWallHeightFt = story === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt);
@@ -10019,6 +10100,18 @@ export default function LayoutEditor() {
                   // SLOT's width, which every zone stacked in this column
                   // shares, so it is offered on the slot's own type rather
                   // than on the selected zone's.
+                  // ⚠ Until 2026-09-30 the note below said a hand-set width
+                  // "survives a re-tile of this wall" unconditionally, and on a
+                  // wall that cannot pay for the pin that was simply untrue —
+                  // the re-force is refused and the panel is built at the tiler's
+                  // width instead. Asking the planner is what keeps the sentence
+                  // and the behaviour the same claim: it is the very function
+                  // `reconcileBracedPlacement` refuses with. One wall's slots,
+                  // integer arithmetic, no allocation unless something is pinned.
+                  const lockedWidthRefusal =
+                    slot.lockedWidthIn === undefined
+                      ? undefined
+                      : planLockedWidthReforce(selectedWallSlots ?? []).refusals.find((r) => r.slotIndex === slotIndex);
                   const panelWidthSection =
                     slot.type === "standard" || slot.type === "braced" ? (
                       <>
@@ -10040,8 +10133,12 @@ export default function LayoutEditor() {
                             Automatic — this width is whatever the tiler computes for this wall. Type one to hand-set it.
                           </p>
                         ) : (
-                          <p className={styles.note}>
-                            Hand-set at {formatLengthIn(slot.lockedWidthIn, unitSystem)}; it survives a re-tile of this wall.{" "}
+                          <p className={styles.note} style={lockedWidthRefusal ? { color: "#a67c00" } : undefined}>
+                            {lockedWidthRefusal
+                              ? unhonouredLockedWidthSentence(lockedWidthRefusal, panelWidthLimitsIn, (valueIn) =>
+                                  formatLengthIn(valueIn, unitSystem),
+                                )
+                              : `Hand-set at ${formatLengthIn(slot.lockedWidthIn, unitSystem)}; it survives a re-tile of this wall.`}{" "}
                             <button
                               type="button"
                               className={styles.tool}

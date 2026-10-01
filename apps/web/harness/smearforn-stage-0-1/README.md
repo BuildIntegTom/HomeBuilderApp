@@ -140,6 +140,38 @@ the images. Both are regenerated on every run.
 | drag | `09-after-drag-snapped-to-eighths.png` | a deliberately fractional-pixel drag commits **44½" / 35½"** — on the eighth, pair total conserved exactly |
 | drag floor | `10-drag-floors-at-24in.png` | dragging past the floor stops at the catalog minimum: **56" / 24"**, nothing below 24" |
 | every wall | `11-every-wall-walked.png` | the viewer dial is walked through **all four** wall elevations and every panel on every one is **at or above 24"** — the Stage 1r acceptance check, and the step that would have been red before the absorb rule, on walls nobody touched |
+| refused pin | `12-locked-width-refused.png` | **the locked-width refusal (2026-09-30).** Panels are pinned at 48" one after another on a 4-panel wall until the automatic run cannot pay for one; the third is **refused whole**, naming what is in the way and the widest legal value, and the wall's own total is identical after every attempt |
+
+### Step 12 and the wall it needs
+
+It walks the dial to an elevation with **3 to 8 panel labels** and pins there, which is not fussiness:
+
+- `panelWidthLabels` only returns labels **inside the window**, because a click at
+  an off-screen coordinate hits nothing. On the 13-panel wall the rest of this run
+  edits, the first version of step 12 pinned every label it could reach and then
+  ran out of **candidates** rather than out of slack — it never reached a refusal,
+  and failed for a reason that had nothing to do with the app. Running out of
+  candidates is now recorded (`ranOutOfCandidates`) and fails the step explicitly.
+- Four panels is also where the arithmetic bites: two pins at 48" leave one
+  automatic panel with about 5" to spare, and the third pin needs 11".
+
+On this fixture it refuses on the **third** pin, with:
+
+> Refused: 48" is not a width this wall can hold — it needs 11" from the rest of
+> the wall, and the 1 automatic panel here can only give up 8" before it drops
+> below the 24" fabrication minimum. The widest this panel can be hand-set to
+> right now is 45", and the narrowest is 24". Nothing was changed.
+
+⚠ **Two refusals in this file put different things in the box, and both are
+right.** Step 6's sub-minimum refusal is a `validate` refusal — the commit never
+happens and the user's own text stays there to be corrected. Step 12's is refused
+*inside* the commit, so `LengthInput` redisplays the stored width, which is itself
+the evidence that nothing changed.
+
+⚠ **This step would be red on `main` @ `f100bd3`.** The old shed had no bounds at
+all: it would have driven the neighbours to 16", then 6", then clamped one at 0",
+with the wall's own total moving every time. `totalNeverMoved` is the check that
+catches that.
 
 ### One thing it records without asserting
 

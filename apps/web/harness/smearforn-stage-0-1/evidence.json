@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3240/",
-  "ranAt": "2026-09-30T16:50:02.382Z",
+  "app": "http://localhost:3210/",
+  "ranAt": "2026-10-01T01:20:07.247Z",
   "steps": [
     {
       "name": "stage0-new-project-tabs",
@@ -363,8 +363,8 @@
         ],
         [
           40,
-          37.125,
-          37,
+          40,
+          40,
           40
         ]
       ],
@@ -372,7 +372,7 @@
         24,
         37,
         34.125,
-        37
+        40
       ],
       "readAttemptsPerWall": [
         1,
@@ -421,6 +421,55 @@
           "canScrollVertically": false
         }
       ],
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "locked-width-refused-whole",
+      "wall": {
+        "view": "Elevation: BC",
+        "labelCount": 4
+      },
+      "attempts": 3,
+      "honoured": 2,
+      "ranOutOfCandidates": false,
+      "attemptDetail": [
+        {
+          "selectedAt": "40\"",
+          "committed": true,
+          "note": "Hand-set at 48\"; it survives a re-tile of this wall. Reset to automatic",
+          "notice": null,
+          "alert": null
+        },
+        {
+          "selectedAt": "29.125\"",
+          "committed": true,
+          "note": "Hand-set at 48\"; it survives a re-tile of this wall. Reset to automatic",
+          "notice": null,
+          "alert": null
+        },
+        {
+          "selectedAt": "24\"",
+          "committed": false,
+          "note": "Automatic — this width is whatever the tiler computes for this wall. Type one to hand-set it.",
+          "notice": "Refused: 48\" is not a width this wall can hold — it needs 11\" from the rest of the wall, and the 1 automatic panel here can only give up 8\" before it drops below the 24\" fabrication minimum. The widest this panel can be hand-set to right now is 45\", and the narrowest is 24\". Nothing was changed.",
+          "alert": null
+        }
+      ],
+      "refusedAt": "24\"",
+      "noticeOnRefusal": "Refused: 48\" is not a width this wall can hold — it needs 11\" from the rest of the wall, and the 1 automatic panel here can only give up 8\" before it drops below the 24\" fabrication minimum. The widest this panel can be hand-set to right now is 45\", and the narrowest is 24\". Nothing was changed.",
+      "noteOnRefusal": "Automatic — this width is whatever the tiler computes for this wall. Type one to hand-set it.",
+      "fieldAfterRefusal": "24",
+      "widthBeforeRefusal": "24",
+      "totals": [
+        154.125,
+        154.125,
+        154.125,
+        154.125
+      ],
+      "totalNeverMoved": true,
+      "widestAfter": 48,
+      "narrowestAfter": 24,
       "asserted": true,
       "passed": true
     }
