@@ -991,9 +991,10 @@ export const panelTypes: PanelTypeDef[] = [
       "the panel renders hashed (its own orange over the braced panel's purple) to show both roles. Applies to " +
       "roof panels too. A combined panel doesn't yet get the Braced Panel's own real bracing modeled in 3D — " +
       "it's still tracked as a Safety/Gap panel structurally, just flagged as also brace-placed. ⚠ That " +
-      "combined slot's glued-on buffer is still 3/4\" even on a short run whose own gap is 1/2\" — see the " +
-      "Open Items. The Material Totals page carries its plywood contribution on whichever of the two rows " +
-      "matches its thickness.",
+      "combined slot's glued-on buffer is still 3/4\" even on a short run whose own gap is 1/2\" — open, and " +
+      "recorded in the spec's top-level Open Items under the title \"Does the corner-brace combine's glued-on " +
+      "plywood buffer follow the gap tier?\". The Material Totals page carries its plywood contribution on " +
+      "whichever of the two rows matches its thickness.",
     loadBearingCapacity: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
     shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
   },
@@ -1037,12 +1038,41 @@ export const safetyGapPanelRules = {
  * `GIRT_WEB_PLY_SPEC` (1/2in 3-ply CDX), both already in this package — see
  * `safetyGapPlySpecFor`. No new sheet was introduced for this.
  */
+/**
+ * ⚠ **SPLIT IN TWO ON 2026-10-01, because one `status` was covering two
+ * different KINDS of fact.** The two thicknesses below and the run-length
+ * threshold in `safetyGapNarrowMaxRunLengthIn` both came out of the same
+ * sentence from Tommy, but only the thicknesses are numbers he stated. He gave
+ * "1/2in" flat; he gave the threshold as a question with a range and a deferral.
+ * A single `confirmed` on the pair made the threshold look specified, and
+ * "do not present a hedged number as a stated one" is the whole point of this
+ * convention. The two entries are asserted to agree with the geometry
+ * constants in `tilerFabricationLimits.test.ts`, which is the one place both
+ * packages are visible.
+ */
 export const safetyGapTwoTierRule = {
-  narrowMaxRunLengthIn: 144,
   wideThicknessIn: 0.75,
   narrowThicknessIn: 0.5,
   status: "confirmed" as const,
-  note: "Tommy, 2026-09-30, verbatim: \"Can we make it so that once below the threshold (of 12'? If it's somewhere around 10-12' rn that's fine) the safety gap is 1/2\\\".\" He was told the threshold is measured against the panel RUN and that it currently reads 144in (12ft), and confirmed that matches what he meant. The 3/4in tier is his earlier, already-built figure: \"Safety gaps should be .75\\\" of plywood\" — which is also the sentence that settles the gap and the plywood being one thing rather than two. First-hand Building Integrity decision, same standing as fabricationMinPanelWidthIn; 12ft carries no engineering rationale beyond his choice.",
+  note: "Tommy, 2026-09-30, verbatim: \"Can we make it so that once below the threshold (of 12'? If it's somewhere around 10-12' rn that's fine) the safety gap is 1/2\\\".\" The 1/2in narrow tier is the stated figure here — a number and a unit, first-hand, unhedged — and it has the same standing as fabricationMinPanelWidthIn. The 3/4in wide tier is his earlier, already-built figure: \"Safety gaps should be .75\\\" of plywood\" — which is also the sentence that settles the gap and the plywood being one thing rather than two. ⚠ The RUN-LENGTH THRESHOLD from the same sentence is deliberately NOT covered by this status: see safetyGapNarrowMaxRunLengthIn, which carries its own, because it is the part he hedged.",
+};
+
+/**
+ * Which runs get the narrow tier: a run of this length or less takes the 1/2in
+ * sheet, a longer one takes the 3/4in sheet. `packages/geometry` holds the same
+ * number as `SAFETY_GAP_NARROW_MAX_RUN_LENGTH_IN` (geometry imports nothing), and
+ * `safetyGapWidthForRunIn` is the one place the tier is decided.
+ *
+ * ⚠ **`pending-BI-confirmation`, and the reason is the shape of his sentence
+ * rather than any doubt about the app's behaviour.** Everything else about the
+ * two-tier gap is settled; this one number is a point he was indifferent about
+ * inside a band. Nothing downstream is provisional — the tiler, the member
+ * builder and the Material Totals rows all work off whatever this says.
+ */
+export const safetyGapNarrowMaxRunLengthIn: CatalogValue<number> = {
+  value: 144,
+  status: "pending-BI-confirmation",
+  note: "⚠ 144in (12ft) is ONE CHOICE INSIDE A BAND TOMMY WAS INDIFFERENT TO, not a number he specified — do not read this flag as \"he said 144\". His words, 2026-09-30, with the hedge intact: \"once below the threshold (of 12'? If it's somewhere around 10-12' rn that's fine)\" — a question mark, a 10-12ft range, and deference to whatever the code already had. So what is CONFIRMED is the band 120in-144in and that the value the app already carried is acceptable within it; what is NOT confirmed is this specific point. 144in is unchanged from the old SAFETY_PANEL_MIN_WALL_LENGTH_IN precisely because he deferred to it, so nothing moved — and he was told the comparison is against the panel RUN, not the wall, which is a different length the moment a wall butts into a neighbour. 12ft carries no engineering rationale beyond his choice. If this figure ever has to be defended to an engineer or printed on a drawing, it needs him to pick a number rather than accept a range.",
 };
 
 // --- Fasteners -----------------------------------------------------------------

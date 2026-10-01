@@ -208,7 +208,16 @@ export function gapEndFor(fp: Footprint, wall: Wall, leastAccessible: CornerId):
  * `wallBoxes3D`'s and `computeInsetPerimeterRing`'s copies derive their own
  * reflex extension from exactly this expression, `lengthFt` compare and all.
  * Changing the fallback means changing all three in lockstep, which is a
- * separate decision — see the Open Items.
+ * separate decision. **Recorded in the spec's top-level `## Open Items` under
+ * the title "Should the REFLEX corner fallback flip to longer-wins too?"** —
+ * search that sentence, and note the recommendation there is NOT to flip.
+ *
+ * ⚠ **A FOURTH place now depends on this staying unflipped**, created by this
+ * same pass: `apps/web/app/squareBaleCornerRefusal.test.ts`'s notch fixture
+ * reaches its two measured runs by having the notch's inner face win BOTH of
+ * its reflex corners, which is a statement about shorter-wins-then-id. Flipping
+ * the fallback re-aims that fixture; it does not just need the three copies
+ * changed in lockstep.
  *
  * At a MITERED (non-90deg) corner — an octagon — both walls always own
  * their own corner panel there instead (symmetric), regardless of length, and

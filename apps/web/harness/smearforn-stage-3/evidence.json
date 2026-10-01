@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3287/",
-  "ranAt": "2026-10-01T15:26:56.163Z",
+  "app": "http://localhost:3310/",
+  "ranAt": "2026-10-01T18:22:20.720Z",
   "stopIn": 60,
   "steps": [
     {
@@ -119,8 +119,8 @@
         "NO PANELS: 5'-0\""
       ],
       "planSheetLabelsCleared": [],
-      "boundaryGreyWithStop": 1169,
-      "boundaryGreyWithoutStop": 1403,
+      "boundaryGreyWithStop": 1158,
+      "boundaryGreyWithoutStop": 1430,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
@@ -149,7 +149,8 @@
           "byIn": 15.5
         }
       ],
-      "stoppedWallOwnsItsCorners": true,
+      "chosenAsLongestWallExtentIn": 580,
+      "stoppedWallOwnedACornerItDestroyed": true,
       "asserted": true,
       "passed": true
     },

@@ -398,6 +398,7 @@ import {
   type PlacementOp,
   type SpanningHeaderWidthChange,
 } from "./placementNotice";
+import { preChangeTilingReviewNote, type StoredWallRun } from "./preChangeTilingNotice";
 import {
   findSquareBaleBandWalls,
   findSquareBaleMergedCornerWalls,
@@ -7515,6 +7516,55 @@ export default function LayoutEditor() {
   }, [allInstances, panelizationType, unitSystem]);
 
   const reviewLog = useMemo(() => {
+    // Walls still carrying the panel run the OLD corner-ownership rule gave
+    // them — see `preChangeTilingNotice.ts` for why this is a notice and not a
+    // migration (a re-tile would silently discard every pinned width and
+    // locked-width plan in the file, because a pinned set that summed to the old
+    // run cannot sum to the new one).
+    //
+    // ⚠ **`wallGeometryForPure` is called here with the LIVE run stops**, not
+    // with `{}`. A stopped wall's slots sum to its STOPPED run, so measuring
+    // against the unstopped run would report every stopped wall in the building
+    // as stale. Note this is deliberately a stricter test than
+    // `repairStateToEighths`' own, which passes no stops at all — the load-time
+    // guard is allowed to be conservative about what it re-sizes; a Review Log
+    // entry is not allowed to be wrong.
+    //
+    // Derived inline rather than in its own memo on purpose: it reads only plain
+    // `useState` values and the module-level pure `wallGeometryForPure`, so no
+    // MEMO joins this array. It is not free even so — see the attribution on
+    // `secondStory` in the dependency list below.
+    const storedWallRuns: StoredWallRun[] = [];
+    if (footprint) {
+      const slotsByStory: [StoredWallRun["story"], Record<string, PanelSlot[]>][] = [
+        ["ground", baseWallSlots],
+        ["second", secondStory?.wallSlots ?? {}],
+      ];
+      for (const [story, slotsByWallId] of slotsByStory) {
+        for (const [wallId, slots] of Object.entries(slotsByWallId)) {
+          const geometry = wallGeometryForPure(
+            footprint,
+            wallId,
+            primaryCornerIds,
+            leastAccessibleCorner,
+            thicknessIn,
+            wallRunStopsByWallId,
+          );
+          if (!geometry) continue;
+          storedWallRuns.push({
+            wallId,
+            story,
+            storedTotalIn: slots.reduce((sum, slot) => sum + Math.max(0, slot.widthIn), 0),
+            currentRunIn: geometry.lengthIn,
+            slotCount: slots.length,
+          });
+        }
+      }
+    }
+    const preChangeTilingNote = preChangeTilingReviewNote(storedWallRuns, (inches) =>
+      formatLengthIn(inches, unitSystem),
+    );
+
     const entries = toReviewLog([
       ...zeroBracingReviewEntries,
       // Second, right behind zero bracing: an unbuildable part outranks every
@@ -7523,6 +7573,18 @@ export default function LayoutEditor() {
       ...squareBaleMergedCornerReviewEntries,
       ...wallRunStopReviewEntries,
       ...spanningHeaderReviewEntries,
+      // One line, above the material assumptions because it is about THIS file
+      // rather than about the catalog, and below the unbuildable-part reports
+      // because nothing here is unbuildable.
+      ...(preChangeTilingNote
+        ? [
+            {
+              label: "Walls still tiled by the pre-2026-10-01 corner rule",
+              status: "pending-BI-confirmation" as const,
+              note: preChangeTilingNote,
+            },
+          ]
+        : []),
       { label: "Target density", ...targetDensityKgM3 },
       { label: "Default panel thickness", ...looseDensePackDefaultThicknessIn },
       { ...interior, label: "Interior finish: " + interior.label },
@@ -7733,6 +7795,25 @@ export default function LayoutEditor() {
     spanningHeaderReviewEntries,
     zeroBracingReviewEntries,
     squareBaleMergedCornerReviewEntries,
+    // The pre-2026-10-01 tiling notice's inputs. All seven are plain `useState`
+    // values, and the notice is derived inline rather than in its own memo
+    // precisely so that no MEMO joins this array.
+    //
+    // ⚠ It still costs exactly one `react-hooks/preserve-manual-memoization`
+    // error, and the honest attribution is `secondStory` — "this dependency may
+    // be mutated later". That is the FIFTH instance of a pattern this file
+    // already carries four times: `subMinimumPanels`, `absorbedCornerWalls`,
+    // `cornerBraceCombineRefusals` and `unhonouredLockedWidths` are each flagged
+    // on the identical `secondStory` dependency with the identical message. No
+    // correctness rule moved (`exhaustive-deps` 12, `refs` 29,
+    // `set-state-in-effect` 12, `purity` 1, `immutability` 1, all unchanged).
+    footprint,
+    baseWallSlots,
+    secondStory,
+    primaryCornerIds,
+    leastAccessibleCorner,
+    thicknessIn,
+    wallRunStopsByWallId,
   ]);
 
   // Site Properties dropdown content (Tommy: "middle of the left side of

@@ -242,6 +242,20 @@ correctly refused. **That is the refusal working, not the planner failing** — 
 it is not what this step is about, so the step now picks the OPPOSITE side of the
 rectangle, which cannot reach it through that rule.
 
+⚠ **How "shares no corner" is decided, and the one assumption it rests on.**
+`sharesACorner` is **character overlap on the two wall ids**, because a wall id in
+this app is the concatenation of its two corner ids — `AB`, `CD` on a rectangle,
+`01`..`67` on an octagon and on bump-out segments. That is exact **only while every
+corner id is a single character**; the first footprint to carry a two-character
+corner id (say `A1`) would make this report adjacency between walls that do not
+touch, and the step would fall back to its second preference or throw. It is a
+harness convenience, not a geometry rule — `cornerOwnership`'s own
+`startCorner`/`endCorner` succession is the real answer and is not reachable from a
+CDP session. (The id is pulled off the dial's label with `/^Elevation:\s*/`; that
+pattern was missing its backslash until 2026-10-01 and worked only because of the
+trailing `.trim()`, which is the sort of accident this repo's encoding-pitfall note
+exists about.)
+
 It asserts that every hand-set width is still there afterwards, that it is still
 there after a **second** retile (the planner has to be a fixpoint), that the
 wall's own total never moved, and that nothing ended outside [24", 48"].

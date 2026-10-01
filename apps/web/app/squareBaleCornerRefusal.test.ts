@@ -165,9 +165,20 @@ const PROJECT_DEFAULT_THICKNESS_IN = 15.5;
  * jog. It cannot be that any more: the longer wall now runs through, so "01"
  * loses the convex corner to the 240in side and no longer owns both ends — and
  * a wall that does not own both ends is never in the bale band at all, which
- * would have left these three tests vacuously green. The notch reproduces the
- * same two runs to the eighth (78.125in / 75.125in and 103.5in / 100.5in), so
- * every number below is the number that was measured before the flip.
+ * would have left these three tests vacuously green.
+ *
+ * ⚠ **What the notch preserves, stated exactly, because "every number below is
+ * the number measured before the flip" was an OVER-CLAIM and said so here until
+ * 2026-10-01.** Two of the four numbers moved. **Preserved are the two the
+ * assertions turn on:** `78.125in` with its `0.125in` middle — the in-band wall
+ * the old glue falsely refused — and `100.5in` with its `22.5in` middle, the
+ * mirror case and the length the refusal sentence must quote. **Moved are their
+ * two out-of-band companions:** the 14in-thickness run, `76.625in` → `75.125in`,
+ * and the length the sentence must NOT quote, `102in` → `103.5in`. Both moved for
+ * one reason — the notch is extended at TWO reflex corners where the bump-out was
+ * extended at one, so the 1.5in thickness difference tells twice — and the test
+ * below asserts that doubling directly rather than hiding it in a constant.
+ * Neither moved number is quoted by the refusal or is a boundary of the band.
  */
 function bumpOutFootprint(spanWidthIn: number, depthFt = 5) {
   const base = buildRectangleFootprint(30, 20);

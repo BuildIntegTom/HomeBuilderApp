@@ -257,8 +257,13 @@ function planCornerBraceCombine(
  * [24in, 48in]. What is open is whether the glued-on buffer is physically the
  * same board as the gap, in which case it should follow the tier. It cannot
  * simply read the gap slot's own width, because a legacy stored file can carry a
- * 2-to-4ft gap slot and that would glue on two feet of plywood. See the spec's
- * Open Items. */
+ * 2-to-4ft gap slot and that would glue on two feet of plywood.
+ *
+ * Recorded in the spec's top-level `## Open Items` under the title
+ * **"Does the corner-brace combine's glued-on plywood buffer follow the gap
+ * tier?"** — search that sentence, not this file. (A pointer that says only
+ * "see the Open Items" without naming its item is this document's own named
+ * defect class; four passes running have reintroduced it.) */
 export const SAFETY_PLYWOOD_BUFFER_IN = 0.75;
 
 /**

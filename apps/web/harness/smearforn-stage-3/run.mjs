@@ -888,9 +888,12 @@ console.log("13. a stop that reaches a corner the wall OWNS is accepted, and the
 // chosen here is the one with the longest 3D extent, i.e. the one that owns its
 // corners, which is exactly what the step's own name asks for.
 await closeOpenNotes();
-const shortWallId = targetWallId;
+// ⚠ Called `shortWallId` until 2026-10-01, which after the flip named the exact
+// opposite of its value: `targetWallId` is the wall with the LONGEST 3D extent,
+// which is why it is the one that owns its corners.
+const cornerOwningWallId = targetWallId;
 let cornerStopResult = { error: "no second wall to try" };
-if (shortWallId) {
+if (cornerOwningWallId) {
   // The neighbour's growth is measured off the 3D scene, because that is
   // the only place this harness can see a wall the elevation is not showing.
   // Without it this step only proved the stopped wall shortened, while its
@@ -901,10 +904,10 @@ if (shortWallId) {
   const extentsBefore = Object.fromEntries(
     wallIdsInObj.map((id) => [id, extentAlong(objBeforeCornerStop, `${id}_`, wallAxisFor(objBeforeCornerStop, id) ?? 0)?.lengthIn ?? null]),
   );
-  await reachView((l) => l === `Elevation: ${shortWallId}`, `Elevation: ${shortWallId}`);
+  await reachView((l) => l === `Elevation: ${cornerOwningWallId}`, `Elevation: ${cornerOwningWallId}`);
   await sleep(1200);
-  const shortWidths = await panelWidths();
-  const shortRunIn = sumEighths(shortWidths) / 8;
+  const widthsBeforeCornerStop = await panelWidths();
+  const runBeforeCornerStopIn = sumEighths(widthsBeforeCornerStop) / 8;
   // Stop 30in off the start end — enough to take a corner panel with it,
   // and far more than enough to leave a legal run behind.
   await commitStop("start", 30);
@@ -916,21 +919,31 @@ if (shortWallId) {
   const objAfterCornerStop = parseObjGroups(await captureObj());
   const grew = [];
   for (const id of wallIdsInObj) {
-    if (id === shortWallId) continue;
+    if (id === cornerOwningWallId) continue;
     const after = extentAlong(objAfterCornerStop, `${id}_`, wallAxisFor(objAfterCornerStop, id) ?? 0)?.lengthIn ?? null;
     const before = extentsBefore[id];
     if (before !== null && after !== null && after - before > 0.01) grew.push({ id, byIn: Number((after - before).toFixed(3)) });
   }
   cornerStopResult = {
-    wallId: shortWallId,
+    wallId: cornerOwningWallId,
     refusalMessage: field?.message ?? null,
     invalid: field?.invalid ?? null,
-    runBeforeIn: shortRunIn,
+    runBeforeIn: runBeforeCornerStopIn,
     runAfterIn: sumEighths(afterWidths) / 8,
     neighboursThatGrew: grew,
-    // Named so the evidence says WHY this wall was chosen rather than leaving it
-    // to the reader to work out from the id.
-    stoppedWallOwnsItsCorners: true,
+    // Why this wall was chosen, as two MEASURED facts rather than one asserted
+    // one. ⚠ This field was the literal `true` until 2026-10-01, which meant it
+    // would still have read "owns its corners" if ownership flipped back to the
+    // shorter wall — the one thing it existed to detect — and it was not in the
+    // predicate either.
+    //
+    // The selection above takes the wall with the longest 3D extent; that extent
+    // is recorded so the choice is checkable. Whether the wall actually OWNED a
+    // corner is then the app's own answer, not ours: a neighbour can only stop
+    // insetting (and so grow) at a corner the stopped wall owned and has just
+    // destroyed, so a grown neighbour IS the ownership. Asserted below.
+    chosenAsLongestWallExtentIn: extentsBefore[cornerOwningWallId] ?? null,
+    stoppedWallOwnedACornerItDestroyed: grew.length >= 1,
   };
 }
 record(
@@ -947,7 +960,10 @@ record(
     d.refusalMessage === null &&
     Math.abs(d.runBeforeIn - d.runAfterIn - 30) < 0.001 &&
     Array.isArray(d.neighboursThatGrew) &&
-    d.neighboursThatGrew.length >= 1 &&
+    // The ownership claim this step's own name makes, now asserted rather than
+    // recorded as a constant: at least one neighbour stopped insetting, which
+    // can only happen at a corner the stopped wall owned.
+    d.stoppedWallOwnedACornerItDestroyed === true &&
     d.neighboursThatGrew.every((n) => Math.abs(n.byIn - 15.5) < 0.6),
 );
 

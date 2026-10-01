@@ -1278,8 +1278,11 @@ describe("corner absorb: the 51in-75.5in two-corner band", () => {
 
   it("75.375in — the top of the band, and the widest panel it can ever emit", () => {
     // The odd eighth goes to the lowest index, which is `distributeEighths`'
-    // own deliberately arbitrary but FIXED rule. 37.6875in is the worst case
-    // for the whole band and it is over 10in clear of the 48in ceiling.
+    // own deliberately arbitrary but FIXED rule. **The widest panel the band
+    // can ever emit is therefore 37.75in** — 10.25in clear of the 48in
+    // ceiling. (37.6875in is the MEAN of the pair, a sixteenth, and so is not
+    // a width this app can emit at all; it was quoted here as "the worst case"
+    // until 2026-10-01.)
     //
     // ⚠ Was 74.875in / 37.5in until 2026-10-01: the band's top edge moved out by
     // the narrow gap's own 1/2in.
@@ -1499,7 +1502,15 @@ describe("corner absorb: the 51in-75.5in two-corner band", () => {
 // visible rather than quietly overwritten. The properties that must hold
 // absolutely — the sum invariant and the [24in, 48in] bounds — are asserted by
 // the sweeps above, not by these digests.
-describe("walls outside the band tile byte-identically to before corner absorb", () => {
+// ⚠ **RENAMED 2026-10-01, because the old name had become false.** This block
+// was called "walls outside the band tile byte-identically to before corner
+// absorb" — a claim about `main` @ `a3843f1` that the two-tier gap retired, since
+// every configuration in this sweep now carries a gap it did not carry then.
+// Both digests are re-baselined ONTO THIS BRANCH, so what the pair detects is an
+// unintended future change, not identity with any earlier tree. A test whose
+// name is not true of what it asserts is the same defect class as an Open Items
+// pointer that names no item.
+describe("walls outside the band: a digest pair that catches an UNINTENDED change (baselined on this branch, 2026-10-01)", () => {
   /** In the band, behaviour changed on purpose; everywhere else it must not.
    * Top edge 75.5in since 2026-10-01 — see the band note above. */
   const inBand = (lengthIn: number, hasCornerStart: boolean, hasCornerEnd: boolean): boolean =>

@@ -9,6 +9,7 @@ import {
   panelWidthInRange,
   sillDefaultHeightIn,
   sillHeaderHeightInRange,
+  safetyGapNarrowMaxRunLengthIn,
   safetyGapTwoTierRule,
   sillMinWidthIn,
   looseDensePackWidthIn,
@@ -238,11 +239,11 @@ describe("catalog dimensions sit on the 1/8in grid", () => {
     // constants are what the builder uses. They may not disagree.
     expect(safetyGapTwoTierRule.wideThicknessIn).toBe(SAFETY_GAP_THICKNESS_IN);
     expect(safetyGapTwoTierRule.narrowThicknessIn).toBe(SAFETY_GAP_THIN_THICKNESS_IN);
-    expect(isWholeEighth(safetyGapTwoTierRule.narrowMaxRunLengthIn)).toBe(true);
+    expect(isWholeEighth(safetyGapNarrowMaxRunLengthIn.value)).toBe(true);
   });
 });
 
-describe("safetyGapTwoTierRule — Tommy's own decision, 2026-09-30", () => {
+describe("safetyGapTwoTierRule — the two THICKNESSES, which are Tommy's own stated numbers", () => {
   it("is confirmed, not pending, and its note quotes him verbatim", () => {
     // Same standing as fabricationMinPanelWidthIn: a first-hand statement from
     // Building Integrity with a number and a unit, not a researched figure. See
@@ -253,12 +254,33 @@ describe("safetyGapTwoTierRule — Tommy's own decision, 2026-09-30", () => {
     expect(safetyGapTwoTierRule.note).toContain("2026-09-30");
   });
 
+  it("covers ONLY the thicknesses, and says where the threshold's own status lives", () => {
+    // ⚠ The split of 2026-10-01. One `status` used to cover three fields, two of
+    // which Tommy stated and one of which he hedged. This entry must not grow the
+    // threshold back, because a reader checking "is 144in confirmed?" would get
+    // this entry's `confirmed` as the answer.
+    expect("narrowMaxRunLengthIn" in safetyGapTwoTierRule).toBe(false);
+    expect(safetyGapTwoTierRule.note).toContain("safetyGapNarrowMaxRunLengthIn");
+  });
+});
+
+describe("safetyGapNarrowMaxRunLengthIn — the number he DID NOT state", () => {
+  it("is pending, because his sentence hedged it: a question mark, a range, and a deferral", () => {
+    // The whole reason this is its own entry. His words were "(of 12'? If it's
+    // somewhere around 10-12' rn that's fine)" — so the BAND is his and the point
+    // inside it is the app's pre-existing value that he accepted. Presenting that
+    // as `confirmed` would read as "he said 144".
+    expect(safetyGapNarrowMaxRunLengthIn.status).toBe("pending-BI-confirmation");
+    expect(safetyGapNarrowMaxRunLengthIn.value).toBe(144);
+    expect(safetyGapNarrowMaxRunLengthIn.note).toContain("ONE CHOICE INSIDE A BAND");
+    expect(safetyGapNarrowMaxRunLengthIn.note).toContain("10-12");
+  });
+
   it("says RUN rather than wall, which is the trap the old constant's name carried", () => {
-    expect(safetyGapTwoTierRule.note).toContain("RUN");
-    expect(safetyGapTwoTierRule.narrowMaxRunLengthIn).toBe(144);
+    expect(safetyGapNarrowMaxRunLengthIn.note).toContain("RUN");
   });
 
   it("does not claim an engineering rationale for 12ft that nobody gave", () => {
-    expect(safetyGapTwoTierRule.note).toContain("no engineering rationale");
+    expect(safetyGapNarrowMaxRunLengthIn.note).toContain("no engineering rationale");
   });
 });

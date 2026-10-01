@@ -81,8 +81,17 @@ export const GABLE_SAFETY_GAP_WIDTH_IN = 0.75;
  * for was about walls. **A gable row is not a wall run:** it is the triangle
  * above the eave, tiled per segment, and whether a short gable segment wants a
  * 1/2in gap is his call and has not been asked. So this file keeps the old
- * all-or-nothing gate and the old single 3/4in width. See the spec's Open Items;
- * do not re-align it without a decision. */
+ * all-or-nothing gate and the old single 3/4in width; do not re-align it
+ * without a decision.
+ *
+ * Recorded in the spec's top-level `## Open Items` under the title **"Does a
+ * GABLE row's short segment want a 1/2in gap?"** — search that sentence.
+ *
+ * ⚠ **And when it IS decided, do not re-point this constant at `tiling.ts`.**
+ * The "mirrors the wall tiler" lineage is what let one number serve two rules
+ * that have now diverged; whichever way the decision goes, this becomes an
+ * explicitly GABLE-owned threshold with its own justification, even if the
+ * number it holds happens to stay 144. */
 export const GABLE_SAFETY_GAP_MIN_RUN_LENGTH_IN = 144;
 
 /** How far below the true peak height the structural Column Panel's own

@@ -12,6 +12,7 @@ import {
   panelWidthInRange,
   SAFETY_GAP_THICKNESS_IN,
   SAFETY_GAP_THIN_THICKNESS_IN,
+  safetyGapNarrowMaxRunLengthIn,
   safetyGapTwoTierRule,
 } from "@building-integrity/panel-catalog";
 
@@ -62,10 +63,17 @@ describe("the two-tier safety gap agrees across both packages", () => {
     expect(NARROW_SAFETY_GAP_WIDTH_IN).toBe(SAFETY_GAP_THIN_THICKNESS_IN);
   });
 
-  it("the run threshold matches the catalog rule entry that carries Tommy quotation", () => {
-    expect(SAFETY_GAP_NARROW_MAX_RUN_LENGTH_IN).toBe(safetyGapTwoTierRule.narrowMaxRunLengthIn);
+  it("the run threshold matches the catalog entry that carries Tommy's hedge, and the thicknesses the one that carries his numbers", () => {
+    // ⚠ TWO catalog entries since the 2026-10-01 split, not one: the thicknesses
+    // are `confirmed` and the threshold is `pending-BI-confirmation`, because his
+    // one sentence stated the first and hedged the second. This is the only place
+    // in the repo where the geometry constants and the catalog are both visible,
+    // so it is where they are held to each other.
+    expect(SAFETY_GAP_NARROW_MAX_RUN_LENGTH_IN).toBe(safetyGapNarrowMaxRunLengthIn.value);
+    expect(safetyGapNarrowMaxRunLengthIn.status).toBe("pending-BI-confirmation");
     expect(safetyGapTwoTierRule.wideThicknessIn).toBe(WIDE_SAFETY_GAP_WIDTH_IN);
     expect(safetyGapTwoTierRule.narrowThicknessIn).toBe(NARROW_SAFETY_GAP_WIDTH_IN);
+    expect(safetyGapTwoTierRule.status).toBe("confirmed");
   });
 
   it("and the tiler decides the tier on the threshold, at the eighth either side of it", () => {

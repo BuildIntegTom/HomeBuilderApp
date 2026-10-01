@@ -328,7 +328,9 @@ function computePlainSizing(
   // which is worse than a too-narrow gap. BOM and fabrication output are
   // unaffected: the gap's BOM width is zeroed, and the app picks the sheet by
   // THICKNESS TIER rather than off this slot's clamped width (see
-  // `safetyGapSheetThicknessIn` in page.tsx), so a clamped slot still carries
+  // `safetyGapSheetThicknessIn`, which lives in
+  // `packages/panel-catalog/src/safetyGapMembers.ts`; page.tsx only calls it),
+  // so a clamped slot still carries
   // a whole sheet of one of the two real specs rather than an invented one.
   const gapEighths = Math.min(toEighths(gapWidthIn), budgetEighths);
   const availableEighths = budgetEighths - gapEighths;
@@ -473,7 +475,8 @@ function buildMiddle(
  * two-corner wall has a 24in middle, which was exactly one legal panel and is
  * now a 1/2in gap plus a 23½in panel the shop cannot build. At
  * `cornerPanelWidthIn` (25.5in) the band is therefore 51in to 75½in rather
- * than 51in to 75.5in — four eighth-steps wider — and every one of those walls
+ * than 51in to 75in — four eighth-steps wider, 195 eighth-steps where it used
+ * to be 191 — and every one of those walls
  * gets a legal corner pair instead of an unbuildable panel. **No building value
  * moved to make this fit**: 24in, 48in and 25.5in are all untouched, and the
  * pair is still checked for legality by `resolveCorners` before it absorbs.

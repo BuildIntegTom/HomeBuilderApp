@@ -150,24 +150,38 @@ describe("findCornerBraceCombineRefusals", () => {
     expect(withoutWallId(found[0]!)).toEqual(withoutWallId(found[1]!));
   });
 
-  it("the entry is about POSITION, not width: it never NAMES a brace the tiler did not already leave sub-minimum", () => {
-    // Sweeping the space the refusal actually lives in. The claim this test used
-    // to make — "the reported brace is never a sub-minimum panel" — is no longer
-    // true as stated, and the honest version is stronger rather than weaker:
-    // **this entry never reports a sub-minimum brace that the TILER had not
-    // already put on the wall**, so nobody can read the entry as a width defect
-    // it caused.
+  it("the entry is about POSITION, not width: the brace it names is sub-minimum only where THIS BRANCH's tiler already made it so", () => {
+    // Sweeping the space the refusal actually lives in.
+    //
+    // ⚠ **BE PRECISE ABOUT WHICH CLAIM THIS TEST MAKES, because the obvious
+    // reading is wrong.** The old assertion was `slot.widthIn >=
+    // TILER_MIN_PANEL_WIDTH_IN` — "the reported brace is never a sub-minimum
+    // panel" — which forbade a sub-minimum reported brace outright. That is no
+    // longer true, so it was replaced. The replacement is **better targeted but
+    // genuinely WEAKER**: it permits a sub-minimum reported brace, and only
+    // forbids this entry from being the thing that made it sub-minimum. It is
+    // not "the stronger version", and a 2026-10-01 note here claimed it was.
+    //
+    // ⚠ **And it establishes ATTRIBUTION WITHIN THIS BRANCH, not
+    // PRE-EXISTENCE.** `tiled` is this branch's own tiler output, so what is
+    // proved is that the brace walk did not invent the narrow panel — the TILER
+    // handed it over already narrow. Whether that wall was also sub-minimum on
+    // `main` is a different question this test cannot answer and does not: the
+    // set of sub-minimum wall lengths moved UP by the narrow gap's own 1/2in on
+    // this pass, so four lengths at the top of the band (136.5in, 136.625in,
+    // 136.75in, 136.875in) are sub-minimum here and were not before, and four at
+    // the bottom are the reverse. See the band table in the spec's as-built
+    // section, which owns that finding.
     //
     // ⚠ **What changed, 2026-10-01.** Every run now reserves a safety gap, so a
     // wall whose openings have eaten all but a sliver of its middle spends 1/2in
     // of that sliver on the gap and leaves the rest as the panel — the tiler's own
     // documented residual case 2 ("openings eating all but a sliver of a long
-    // wall's middle", nothing to absorb into, reported not corrected). It was
-    // already emitting a sub-minimum panel there before this pass; the panel is
-    // now 1/2in narrower and, because the wall now HAS a gap, the corner walk
-    // reaches it and the refusal names it. Measured on this grid: **382 of the
-    // 3,202 cases**, every one of them a wall the tiler had already left
-    // sub-minimum.
+    // wall's middle", nothing to absorb into, reported not corrected). Because the
+    // wall now HAS a gap, the corner walk reaches that panel and the refusal names
+    // it. Measured on this grid: **382 of the 3,202 cases**, a contiguous run of
+    // 191 wall lengths (113.125in to 136.875in) at each of the two standard
+    // widths.
     const openings: OpeningAnchor[] = [{ beforeStandardCount: 0, type: "window", widthIn: 61.5 }];
     let cases = 0;
     let subMinimumReported = 0;
@@ -176,19 +190,28 @@ describe("findCornerBraceCombineRefusals", () => {
       for (const standardWidthIn of [39, 48]) {
         cases++;
         const tiled = retileWithOpenings(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, "end", true, true, openings).slots;
-        // What the TILER alone left, before any brace placement: is there already
-        // a panel here the shop cannot build?
-        const tilerAlreadySubMinimum = tiled.some(
-          (s) => (s.type === "standard" || s.type === "braced") && s.widthIn < TILER_MIN_PANEL_WIDTH_IN,
-        );
         const braced = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
         for (const entry of findCornerBraceCombineRefusals({ w: braced })) {
           if (entry.braceSlotIndex === null) continue;
           const slot = braced[entry.braceSlotIndex]!;
           if (slot.widthIn >= TILER_MIN_PANEL_WIDTH_IN) continue;
           subMinimumReported++;
-          // The load-bearing assertion: this entry never invented it.
-          expect(tilerAlreadySubMinimum).toBe(true);
+          // ⚠ **SLOT IDENTITY, not a wall-level `some()`.** Until 2026-10-01 this
+          // asserted "somewhere on this wall the tiler had already left a
+          // sub-minimum panel", which a brace newly made sub-minimum at index j
+          // would satisfy on any wall that happened to carry one at index i. The
+          // claim in the comment above is about THIS slot, so this is about this
+          // slot: the panel the tiler handed over AT THE SAME INDEX was already
+          // under the minimum.
+          //
+          // The index is shared only because `applyBracedPlacement` has not
+          // changed the array's length — it does on 314 of these 3,202 cases,
+          // whenever a combine fires and swallows a slot. It never has on a case
+          // that reaches here (a refusal means this end's combine did not fire),
+          // and that precondition is asserted rather than assumed, because a
+          // silent index shift would make the comparison read the wrong slot.
+          expect(braced.length).toBe(tiled.length);
+          expect(tiled[entry.braceSlotIndex]!.widthIn).toBeLessThan(TILER_MIN_PANEL_WIDTH_IN);
         }
       }
     }

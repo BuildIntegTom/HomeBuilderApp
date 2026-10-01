@@ -1841,7 +1841,27 @@ await shot("12b-pinned-pairs-before-retile");
 // same openings, same panel count. The second preference drops the
 // "not step 12's wall" nicety rather than the adjacency requirement, because
 // step 12 has already made all of its own assertions by this point.
-const wallIdOf = (view) => String(view).replace(/^Elevation:s*/, "").trim();
+// ⚠ The `\s*` was written `s*` here until 2026-10-01 — a missing backslash, so
+// the pattern meant "Elevation:" followed by any number of literal 's'
+// characters. It happened to produce the right answer anyway, because the
+// trailing `.trim()` removed the space the regex had not, which is exactly the
+// kind of silently-almost-right string handling this repo's encoding-pitfall
+// note exists about. Fixed rather than left working by accident.
+const wallIdOf = (view) => String(view).replace(/^Elevation:\s*/, "").trim();
+/**
+ * Do two elevation stops name walls that meet at a corner?
+ *
+ * ⚠ **This is CHARACTER OVERLAP on the wall ids, and it is exact only while
+ * every corner id is a single character.** A wall id in this app is the
+ * concatenation of its two corner ids — "AB", "CD" on a rectangle, "01".."67"
+ * on an octagon and on bump-out segments — so sharing a corner is sharing a
+ * character, today. The moment a footprint carries a two-character corner id
+ * (say "A1"), this starts reporting adjacency between walls that do not touch,
+ * and the step would quietly fall back to its second preference or throw. It is
+ * a harness convenience, not a geometry rule; `cornerOwnership`'s own
+ * `startCorner`/`endCorner` succession is the real answer and is not reachable
+ * from here.
+ */
 const sharesACorner = (a, b) => {
   const idA = wallIdOf(a);
   const idB = wallIdOf(b);
