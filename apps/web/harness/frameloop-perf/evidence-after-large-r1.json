@@ -1,0 +1,180 @@
+{
+  "app": "http://localhost:3304/",
+  "label": "after-large-r1",
+  "ranAt": "2026-10-03T21:32:10.103Z",
+  "idleWindowMs": 2500,
+  "steps": [
+    {
+      "name": "panel count read off the app",
+      "panelCount": 110,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "canvases in the live DOM while in plan view",
+      "total": 2,
+      "offScreen": 1,
+      "canvases": [
+        {
+          "left": 465,
+          "top": 228,
+          "w": 720,
+          "h": 480,
+          "webgl": false,
+          "offScreen": false
+        },
+        {
+          "left": -9999,
+          "top": 0,
+          "w": 720,
+          "h": 480,
+          "webgl": true,
+          "offScreen": true
+        }
+      ],
+      "asserted": false,
+      "observationOnly": "the audit is read from this, not asserted — the expected shape differs before and after the fix"
+    },
+    {
+      "name": "live DOM node count",
+      "domNodes": 268,
+      "asserted": false,
+      "observationOnly": "cross-checks the profiler agent's 240-248 figure"
+    },
+    {
+      "name": "idle pass 1",
+      "what": "idle-pass-1",
+      "glDrawCalls": 0,
+      "glDrawCallsPerSec": 0,
+      "wallMs": 3387.2,
+      "busyMs": 1.6,
+      "busySharePct": 0,
+      "totalSamples": 4031,
+      "perSampleMs": 0.84,
+      "selfMsByBucket": {
+        "native/program": 0.8,
+        "idle": 3385.6
+      },
+      "topSelfFunctions": [
+        {
+          "frame": "idle:(idle)",
+          "selfMs": 3385.6
+        },
+        {
+          "frame": "native/program:(program)",
+          "selfMs": 0.8
+        }
+      ],
+      "longTasks": {
+        "count": 0,
+        "longestMs": 0,
+        "totalMs": 0,
+        "top": []
+      },
+      "asserted": false,
+      "observationOnly": "first pass of the session — see the header note on cold SwiftShader"
+    },
+    {
+      "name": "idle pass 2 (the one to believe)",
+      "what": "idle-pass-2",
+      "glDrawCalls": 0,
+      "glDrawCallsPerSec": 0,
+      "wallMs": 3071.8,
+      "busyMs": 1.5,
+      "busySharePct": 0,
+      "totalSamples": 4104,
+      "perSampleMs": 0.748,
+      "selfMsByBucket": {
+        "native/program": 0.7,
+        "idle": 3070.3
+      },
+      "topSelfFunctions": [
+        {
+          "frame": "idle:(idle)",
+          "selfMs": 3070.3
+        },
+        {
+          "frame": "native/program:(program)",
+          "selfMs": 0.7
+        }
+      ],
+      "longTasks": {
+        "count": 0,
+        "longestMs": 0,
+        "totalMs": 0,
+        "top": []
+      },
+      "asserted": false,
+      "observationOnly": "the reportable idle figure"
+    },
+    {
+      "name": "a summary PNG exists at all",
+      "bytes": 203150,
+      "sha256_16": "3a64c69953590fa2",
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the wall-height change actually committed",
+      "committedHeight": "22'-0\"",
+      "targetFt": 22,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the summary PNG reflects the CURRENT design (byte-different after a 10ft->16ft wall-height change)",
+      "beforeBytes": 203150,
+      "afterBytes": 244898,
+      "beforeSha": "3a64c69953590fa2",
+      "afterSha": "244503724987dc65",
+      "identical": false,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "idle after a design change and a capture",
+      "what": "idle-after-edit",
+      "glDrawCalls": 0,
+      "glDrawCallsPerSec": 0,
+      "wallMs": 3052.4,
+      "busyMs": 1.5,
+      "busySharePct": 0.1,
+      "totalSamples": 4065,
+      "perSampleMs": 0.751,
+      "selfMsByBucket": {
+        "native/program": 0.8,
+        "idle": 3050.9
+      },
+      "topSelfFunctions": [
+        {
+          "frame": "idle:(idle)",
+          "selfMs": 3050.9
+        },
+        {
+          "frame": "native/program:(program)",
+          "selfMs": 0.8
+        }
+      ],
+      "longTasks": {
+        "count": 0,
+        "longestMs": 0,
+        "totalMs": 0,
+        "top": []
+      },
+      "asserted": false,
+      "observationOnly": "proves the fix does not leave the loop running once re-armed"
+    },
+    {
+      "name": "no uncaught page exception",
+      "pageExceptions": [],
+      "asserted": true,
+      "passed": true
+    }
+  ],
+  "footprintPx": "full-canvas",
+  "secondStory": true,
+  "wallHeightFt": "16",
+  "panelCount": 110,
+  "pageExceptions": [],
+  "failures": []
+}

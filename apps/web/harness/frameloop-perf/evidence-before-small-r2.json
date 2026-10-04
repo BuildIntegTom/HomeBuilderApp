@@ -1,0 +1,309 @@
+{
+  "app": "http://localhost:3303/",
+  "label": "before-small-r2",
+  "ranAt": "2026-10-03T21:26:33.065Z",
+  "idleWindowMs": 2500,
+  "steps": [
+    {
+      "name": "panel count read off the app",
+      "panelCount": 55,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "canvases in the live DOM while in plan view",
+      "total": 2,
+      "offScreen": 1,
+      "canvases": [
+        {
+          "left": 465,
+          "top": 228,
+          "w": 720,
+          "h": 480,
+          "webgl": false,
+          "offScreen": false
+        },
+        {
+          "left": -9999,
+          "top": 0,
+          "w": 720,
+          "h": 480,
+          "webgl": true,
+          "offScreen": true
+        }
+      ],
+      "asserted": false,
+      "observationOnly": "the audit is read from this, not asserted — the expected shape differs before and after the fix"
+    },
+    {
+      "name": "live DOM node count",
+      "domNodes": 247,
+      "asserted": false,
+      "observationOnly": "cross-checks the profiler agent's 240-248 figure"
+    },
+    {
+      "name": "idle pass 1",
+      "what": "idle-pass-1",
+      "glDrawCalls": 157052,
+      "glDrawCallsPerSec": 53925,
+      "wallMs": 2912.4,
+      "busyMs": 2647.6,
+      "busySharePct": 90.9,
+      "totalSamples": 4334,
+      "perSampleMs": 0.672,
+      "selfMsByBucket": {
+        "native/program": 44.4,
+        "app+other-js": 2092.6,
+        "native/anonymous": 290.3,
+        "idle": 264.8,
+        "gc": 2.7
+      },
+      "topSelfFunctions": [
+        {
+          "frame": "app+other-js:(anonymous)",
+          "selfMs": 613.5
+        },
+        {
+          "frame": "idle:(idle)",
+          "selfMs": 264.8
+        },
+        {
+          "frame": "app+other-js:setup",
+          "selfMs": 201.6
+        },
+        {
+          "frame": "app+other-js:i",
+          "selfMs": 158.6
+        },
+        {
+          "frame": "app+other-js:eJ",
+          "selfMs": 153.2
+        },
+        {
+          "frame": "app+other-js:setMaterial",
+          "selfMs": 104.8
+        },
+        {
+          "frame": "native/anonymous:bindVertexArray",
+          "selfMs": 90.7
+        },
+        {
+          "frame": "app+other-js:update",
+          "selfMs": 79.3
+        },
+        {
+          "frame": "app+other-js:e0",
+          "selfMs": 75.3
+        },
+        {
+          "frame": "native/anonymous:uniformMatrix4fv",
+          "selfMs": 69.9
+        },
+        {
+          "frame": "native/anonymous:drawElements",
+          "selfMs": 61.8
+        },
+        {
+          "frame": "app+other-js:upload",
+          "selfMs": 56.4
+        }
+      ],
+      "longTasks": {
+        "count": 0,
+        "longestMs": 0,
+        "totalMs": 0,
+        "top": []
+      },
+      "asserted": false,
+      "observationOnly": "first pass of the session — see the header note on cold SwiftShader"
+    },
+    {
+      "name": "idle pass 2 (the one to believe)",
+      "what": "idle-pass-2",
+      "glDrawCalls": 159264,
+      "glDrawCallsPerSec": 57784,
+      "wallMs": 2756.2,
+      "busyMs": 2559.2,
+      "busySharePct": 92.9,
+      "totalSamples": 4393,
+      "perSampleMs": 0.627,
+      "selfMsByBucket": {
+        "native/program": 46.4,
+        "app+other-js": 2007.7,
+        "native/anonymous": 296.1,
+        "idle": 197,
+        "gc": 1.3
+      },
+      "topSelfFunctions": [
+        {
+          "frame": "app+other-js:(anonymous)",
+          "selfMs": 606.7
+        },
+        {
+          "frame": "idle:(idle)",
+          "selfMs": 197
+        },
+        {
+          "frame": "app+other-js:setup",
+          "selfMs": 180.1
+        },
+        {
+          "frame": "app+other-js:eJ",
+          "selfMs": 156.9
+        },
+        {
+          "frame": "app+other-js:i",
+          "selfMs": 138
+        },
+        {
+          "frame": "native/anonymous:bindVertexArray",
+          "selfMs": 96.6
+        },
+        {
+          "frame": "app+other-js:setMaterial",
+          "selfMs": 92.9
+        },
+        {
+          "frame": "app+other-js:e0",
+          "selfMs": 81.6
+        },
+        {
+          "frame": "native/anonymous:uniformMatrix4fv",
+          "selfMs": 73.4
+        },
+        {
+          "frame": "app+other-js:upload",
+          "selfMs": 60.2
+        },
+        {
+          "frame": "app+other-js:refreshMaterialUniforms",
+          "selfMs": 55.8
+        },
+        {
+          "frame": "app+other-js:update",
+          "selfMs": 55.2
+        }
+      ],
+      "longTasks": {
+        "count": 0,
+        "longestMs": 0,
+        "totalMs": 0,
+        "top": []
+      },
+      "asserted": false,
+      "observationOnly": "the reportable idle figure"
+    },
+    {
+      "name": "a summary PNG exists at all",
+      "bytes": 81134,
+      "sha256_16": "f060b26e138a986c",
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the wall-height change actually committed",
+      "committedHeight": "6'-0\"",
+      "targetFt": 6,
+      "asserted": true,
+      "passed": true
+    },
+    {
+      "name": "the summary PNG reflects the CURRENT design (byte-different after a 10ft->16ft wall-height change)",
+      "beforeBytes": 81134,
+      "afterBytes": 81134,
+      "beforeSha": "f060b26e138a986c",
+      "afterSha": "f060b26e138a986c",
+      "identical": true,
+      "asserted": true,
+      "passed": false
+    },
+    {
+      "name": "idle after a design change and a capture",
+      "what": "idle-after-edit",
+      "glDrawCalls": 139248,
+      "glDrawCallsPerSec": 48490,
+      "wallMs": 2871.7,
+      "busyMs": 2437.9,
+      "busySharePct": 84.9,
+      "totalSamples": 4323,
+      "perSampleMs": 0.664,
+      "selfMsByBucket": {
+        "native/program": 50.5,
+        "app+other-js": 1925.1,
+        "native/anonymous": 268.4,
+        "idle": 433.8,
+        "gc": 2.7
+      },
+      "topSelfFunctions": [
+        {
+          "frame": "app+other-js:(anonymous)",
+          "selfMs": 550.7
+        },
+        {
+          "frame": "idle:(idle)",
+          "selfMs": 433.8
+        },
+        {
+          "frame": "app+other-js:eJ",
+          "selfMs": 186.7
+        },
+        {
+          "frame": "app+other-js:setup",
+          "selfMs": 174.7
+        },
+        {
+          "frame": "app+other-js:i",
+          "selfMs": 136.8
+        },
+        {
+          "frame": "app+other-js:setMaterial",
+          "selfMs": 83
+        },
+        {
+          "frame": "native/anonymous:bindVertexArray",
+          "selfMs": 83
+        },
+        {
+          "frame": "app+other-js:e0",
+          "selfMs": 82.4
+        },
+        {
+          "frame": "native/anonymous:uniformMatrix4fv",
+          "selfMs": 74.4
+        },
+        {
+          "frame": "app+other-js:eQ",
+          "selfMs": 62.4
+        },
+        {
+          "frame": "app+other-js:refreshMaterialUniforms",
+          "selfMs": 58.5
+        },
+        {
+          "frame": "native/anonymous:drawElements",
+          "selfMs": 55.8
+        }
+      ],
+      "longTasks": {
+        "count": 0,
+        "longestMs": 0,
+        "totalMs": 0,
+        "top": []
+      },
+      "asserted": false,
+      "observationOnly": "proves the fix does not leave the loop running once re-armed"
+    },
+    {
+      "name": "no uncaught page exception",
+      "pageExceptions": [],
+      "asserted": true,
+      "passed": true
+    }
+  ],
+  "footprintPx": "full-canvas",
+  "panelCount": 55,
+  "pageExceptions": [],
+  "failures": [
+    "the summary PNG reflects the CURRENT design (byte-different after a 10ft->16ft wall-height change)"
+  ]
+}

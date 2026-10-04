@@ -1884,8 +1884,16 @@ export default function LayoutEditor() {
 
   // Static SE bird's-eye render for the Project Summary page (Tommy: "a
   // static 3d rendering image from a SE birdseye view") — captured by an
-  // off-screen BuildingSummaryRender instance, re-captured whenever the
-  // callback identity below changes (i.e. whenever the scene inputs do).
+  // off-screen BuildingSummaryRender instance, re-captured whenever that
+  // canvas renders a frame, which under its `frameloop="demand"` is
+  // whenever the scene itself changes. ⚠ This comment used to claim the
+  // re-capture was driven by "the callback identity below" changing — it is
+  // NOT and never was: `handleCaptureRenderImage` is a `useCallback(..., [])`
+  // and its identity is stable for the life of the page, so the capture
+  // fired exactly once and the summary image went stale on the first edit.
+  // Measured and fixed 2026-10-03; the mechanism now lives in
+  // Building3DView's CaptureFrame, which is where the comment describing it
+  // belongs.
   const [renderImageDataUrl, setRenderImageDataUrl] = useState<string | null>(null);
   const handleCaptureRenderImage = useCallback((dataUrl: string) => setRenderImageDataUrl(dataUrl), []);
 

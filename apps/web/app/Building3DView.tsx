@@ -765,11 +765,16 @@ interface Building3DViewProps {
    * (birdsEyeCameraPosition) as the interactive preview's own default
    * starting angle, so the two stay visually consistent. */
   captureMode?: boolean;
-  /** Called once, shortly after the capture-mode frame first renders, with
-   * a `data:image/png` URL of that frame — `captureMode`'s Canvas needs
+  /** Called with a `data:image/png` URL of the capture-mode frame, shortly
+   * after the scene first renders **and again after every change to it** —
+   * so the Project Summary's static rendering is the design the user
+   * currently has, not the one they had when the page loaded. (It used to
+   * be called literally once per mount; see CaptureFrame's own note for
+   * what that cost and how it was measured.) `captureMode`'s Canvas needs
    * `gl={{ preserveDrawingBuffer: true }}` for `toDataURL` to read back a
    * real image (off by default for the interactive view, since it has a
-   * small perf cost not worth paying there). */
+   * small perf cost not worth paying there). Never called twice with the
+   * same image, so it cannot drive a state-update loop. */
   onCapture?: (dataUrl: string) => void;
   /** Forwarded to CompassWidget's rotating face — see CompassTracker below. */
   compassRef?: RefObject<HTMLDivElement | null>;
@@ -820,17 +825,74 @@ interface Building3DViewProps {
   onSetWindowHeight?: (story: "ground" | "second", wallId: string, slotIndex: number, heightIn: number) => void;
 }
 
-/** Mounted only in `captureMode` — reads the Canvas's own `gl` via
- * `useThree` and grabs one frame as a PNG shortly after mount (a rAF tick
- * lets the scene's first real draw call land before reading pixels back). */
+/** How long a burst of design changes is allowed to settle before the
+ * capture canvas is read back. `toDataURL` encodes a 720x480 PNG and the
+ * resulting ~140KB string is pushed into `page.tsx` state, so a capture
+ * costs a full page re-render — this keeps a continuous gesture (a wall
+ * drag, holding an arrow key) to a few captures per second instead of one
+ * per frame. Pure debounce, no building number in it. Safe at any length
+ * because `captureMode`'s Canvas sets `preserveDrawingBuffer: true`, which
+ * is exactly the guarantee that the last rendered frame is still readable
+ * later. */
+const CAPTURE_SETTLE_MS = 300;
+
+/**
+ * Mounted only in `captureMode` — reads the Canvas's own `gl` via `useThree`
+ * and keeps the Project Summary's PNG equal to the current design.
+ *
+ * ### Why this hangs off `useFrame` and NOT off a list of scene inputs
+ *
+ * The capture Canvas runs `frameloop="demand"` (see the `<Canvas>` below),
+ * so react-three-fiber renders a frame **only** when its reconciler has
+ * committed an actual change to the scene graph. That makes "a frame was
+ * rendered" and "the design changed" the same event, which is why this
+ * needs no dependency array enumerating footprint/slots/heights/beams/
+ * headers/roof. An enumerated list is precisely what goes quietly stale:
+ * the version this replaces keyed its effect on `[gl, onCapture]`, and
+ * `onCapture` is a `useCallback(..., [])` in `page.tsx` — a stable identity
+ * — so **the capture fired exactly once per mount and never again.**
+ * Measured on a production build of `main` @ `2422fbd`: changing the wall
+ * height from 10ft to 16ft moved the summary's own totals (5223.0 lb ->
+ * 8114.3 lb, $28031.66 -> $44651.02) and left the rendering image
+ * byte-identical, SHA-256 `813dfc105388b943` both sides.
+ *
+ * ### The two guards, and what each is for
+ *
+ * - `timerRef` debounces: at most one readback in flight, so a gesture that
+ *   renders sixty frames produces one PNG, not sixty.
+ * - `lastRef` makes the capture idempotent: if a frame renders that happens
+ *   to draw the same pixels, `onCapture` is not called, so no `page.tsx`
+ *   state update and no re-render. That is what stops a
+ *   capture -> setState -> re-render -> capture cycle from existing at all,
+ *   rather than relying on r3f's commit diffing to not invalidate.
+ *
+ * The read itself still happens on the frame AFTER the draw (the timeout
+ * lands outside r3f's own rAF), which is the same ordering the original
+ * single-shot version relied on and the reason `preserveDrawingBuffer` is
+ * on.
+ */
 function CaptureFrame({ onCapture }: { onCapture: (dataUrl: string) => void }) {
   const { gl } = useThree();
-  useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      onCapture(gl.domElement.toDataURL("image/png"));
-    });
-    return () => cancelAnimationFrame(id);
-  }, [gl, onCapture]);
+  const timerRef = useRef<number | null>(null);
+  const lastDataUrlRef = useRef<string>("");
+
+  useFrame(() => {
+    if (timerRef.current !== null) return;
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      const dataUrl = gl.domElement.toDataURL("image/png");
+      if (dataUrl === lastDataUrlRef.current) return;
+      lastDataUrlRef.current = dataUrl;
+      onCapture(dataUrl);
+    }, CAPTURE_SETTLE_MS);
+  });
+
+  useEffect(
+    () => () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    },
+    [],
+  );
   return null;
 }
 
@@ -1905,6 +1967,23 @@ export default function Building3DView({
       <div style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT, border: captureMode ? "none" : "1px solid #ccc" }}>
         <Canvas
           camera={{ position: cameraPosition, fov: 50, near: 0.1, far: 10000 }}
+          /* react-three-fiber's default is `frameloop="always"`, which
+             renders at 60fps for as long as the Canvas is mounted. For the
+             interactive view that is correct and wanted: it has OrbitControls
+             and a user looking at it, and it is mounted only on the 3D view
+             stop (`page.tsx` renders it in the else-branch of
+             `viewMode === "elevation" ? ... : viewMode === "plan" ? ...`), so
+             it stops costing anything the moment the user leaves 3D.
+
+             `captureMode` is the opposite case and was the bug. Its Canvas is
+             `BuildingSummaryRender`'s, mounted unconditionally whenever a
+             footprint exists and parked at `left: -9999px`; measured on a
+             production build of `main` @ `2422fbd` it issued ~29,700 WebGL
+             draw calls per second while the user sat idle in plan view at 19
+             panels, for a PNG it had already taken. `demand` renders only
+             when r3f's reconciler commits a change to the scene, which is
+             also exactly when the PNG needs re-taking — see CaptureFrame. */
+          frameloop={captureMode ? "demand" : "always"}
           gl={captureMode ? { preserveDrawingBuffer: true } : undefined}
           onPointerMissed={() => {
             if (tool3D === "orbit") setOrbitTargetOverride(null);
