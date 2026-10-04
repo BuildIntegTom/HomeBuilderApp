@@ -9,29 +9,10 @@ import { useCallback, useRef } from "react";
  * time a user clicks (the `AudioContext` is created lazily on that same
  * user gesture, satisfying browsers' autoplay-gesture requirement).
  */
-/**
- * ⚠ **MUTED 2026-10-02 AT TOMMY'S REQUEST — TEMPORARY, RESTORE ON HIS WORD.**
- * *"If there are any sound effects or you make any noise can you please make
- * sure everything is muted/sound off until Sunday 11am"* (Sunday = 2026-10-04).
- *
- * This is the app's ONLY audio source — `useRustleSound` went with the view
- * dial on 2026-09-29, and a grep for `AudioContext` / `new Audio` / `.play()`
- * across `apps/web/app` returns this file alone. So returning early here
- * silences the whole app; there is no second place to check.
- *
- * Deliberately a one-line early return rather than a mute setting: he asked
- * for two days of quiet, not a feature. **Delete the two lines below and this
- * block to restore** — the synthesis underneath is untouched and still
- * carries his original "a light switch sound when you switch the metric and
- * imperial switch".
- */
-const MUTED_UNTIL_TOMMY_SAYS_OTHERWISE = true;
-
 export function useSwitchSound() {
   const ctxRef = useRef<AudioContext | null>(null);
 
   return useCallback(() => {
-    if (MUTED_UNTIL_TOMMY_SAYS_OTHERWISE) return;
     if (typeof window === "undefined") return;
     const AudioContextCtor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextCtor) return;
