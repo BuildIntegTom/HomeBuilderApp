@@ -11,9 +11,16 @@ import {
   type Wall,
 } from "@building-integrity/geometry";
 
-/** Screen-space (px) point — distinct from the ft-space `Point` used
+/** PLAN-space (px) point — distinct from the ft-space `Point` used
  * throughout `packages/geometry`. Everything in this module converts
- * between the two via `SCALE_PX_PER_FT`. */
+ * between the two via `SCALE_PX_PER_FT`.
+ *
+ * ⚠ **Plan px are NOT screen px.** This is the Konva stage's own
+ * untransformed coordinate space; the stage is then scaled by the view's
+ * zoom and shifted by its pan before anything reaches the screen, so the
+ * two coincide only at 100%. That is why every reading of the mouse must
+ * come from `getRelativePointerPosition()` (plan space) and never from
+ * `getPointerPosition()` (screen space) — see `FootprintCanvas`. */
 export interface DragPoint {
   x: number;
   y: number;
@@ -69,10 +76,20 @@ export function firstTouchId(evt: MouseEvent | TouchEvent | React.MouseEvent | R
   return "touches" in evt ? evt.touches[0]?.identifier : undefined;
 }
 
+/** How near a wall a click must land to pick it, in PLAN px at 100% zoom.
+ *
+ * ⚠ Plan px, not screen px — and the two only coincide at 100%. A caller
+ * that is zoomed out must divide this by the view scale, or the target it
+ * offers the user shrinks along with the drawing: at 10% zoom an unscaled
+ * 20 plan px is 2 px of screen, which is not hittable. `findNearestWall`
+ * and `findNearestWallCandidates` take the scaled value as an argument
+ * for exactly that reason. */
 export const WALL_PICK_TOLERANCE_PX = 20;
 const SPAN_SNAP_FLUSH_THRESHOLD_FT = 1; // under this distance from a corner, snap flush to it
 const SPAN_SNAP_MIN_REMAINDER_FT = 2; // Tommy: never leave a remainder wall shorter than this
-const OCTAGON_SQUARE_SNAP_PX = 20; // within this, a dragged octagon box snaps to a perfect square
+/** Within this, a dragged octagon box snaps to a perfect square. Plan px
+ * at 100% zoom — same scaling caveat as `WALL_PICK_TOLERANCE_PX`. */
+export const OCTAGON_SQUARE_SNAP_PX = 20;
 const LABEL_OFFSET_PX = 18;
 
 const CORNER_SLOT_TYPES: PanelSlot["type"][] = ["corner", "safety-oct-corner"];
@@ -98,13 +115,17 @@ export function snapSpanPointFt(rawFt: number, wallLengthFt: number): number {
  * to square anyway (Tommy). Snaps a dragged box's width/height together
  * (to their average) whenever they're within `OCTAGON_SQUARE_SNAP_PX` of
  * each other, leaving genuinely elongated drags untouched. */
-export function snapOctagonBoxPx(widthPx: number, heightPx: number): { widthPx: number; heightPx: number } {
-  if (Math.abs(widthPx - heightPx) > OCTAGON_SQUARE_SNAP_PX) return { widthPx, heightPx };
+export function snapOctagonBoxPx(
+  widthPx: number,
+  heightPx: number,
+  snapPx: number = OCTAGON_SQUARE_SNAP_PX,
+): { widthPx: number; heightPx: number } {
+  if (Math.abs(widthPx - heightPx) > snapPx) return { widthPx, heightPx };
   const avg = (widthPx + heightPx) / 2;
   return { widthPx: avg, heightPx: avg };
 }
 
-/** A wall's two endpoints in screen (px) space. */
+/** A wall's two endpoints in PLAN (px) space — see `DragPoint`. */
 export function wallPointsPx(
   wall: Wall,
   corners: Footprint["corners"],
@@ -118,7 +139,7 @@ export function wallPointsPx(
   };
 }
 
-/** Every wall within `WALL_PICK_TOLERANCE_PX` of a screen point, nearest
+/** Every wall within `tolerancePx` of a PLAN-space point, nearest
  * first, each with how far along it (in ft, clamped to the segment) the
  * point projects to. Near a corner, two perpendicular walls can both be
  * within tolerance — callers that care about picking the wall the user
@@ -129,6 +150,7 @@ export function findNearestWallCandidates(
   point: DragPoint,
   footprint: Footprint,
   offsetPx: DragPoint,
+  tolerancePx: number = WALL_PICK_TOLERANCE_PX,
 ): { wall: Wall; alongFt: number; distPx: number }[] {
   const results: { wall: Wall; alongFt: number; distPx: number }[] = [];
   for (const wall of footprint.walls) {
@@ -139,7 +161,7 @@ export function findNearestWallCandidates(
     const alongPxClamped = Math.max(0, Math.min(lengthPx, rel.x * dir.x + rel.y * dir.y));
     const closest = { x: startPx.x + dir.x * alongPxClamped, y: startPx.y + dir.y * alongPxClamped };
     const distPx = Math.hypot(point.x - closest.x, point.y - closest.y);
-    if (distPx <= WALL_PICK_TOLERANCE_PX) {
+    if (distPx <= tolerancePx) {
       results.push({ wall, alongFt: alongPxClamped / SCALE_PX_PER_FT, distPx });
     }
   }
@@ -147,15 +169,16 @@ export function findNearestWallCandidates(
   return results;
 }
 
-/** Which wall (if any, within `WALL_PICK_TOLERANCE_PX`) a screen point is
+/** Which wall (if any, within `tolerancePx`) a PLAN-space point is
  * nearest to, and how far along that wall (in ft, clamped to the segment)
  * the point projects to — the anchor for starting a bump-out's span drag. */
 export function findNearestWall(
   point: DragPoint,
   footprint: Footprint,
   offsetPx: DragPoint,
+  tolerancePx: number = WALL_PICK_TOLERANCE_PX,
 ): { wall: Wall; alongFt: number; distPx: number } | null {
-  const best = findNearestWallCandidates(point, footprint, offsetPx)[0];
+  const best = findNearestWallCandidates(point, footprint, offsetPx, tolerancePx)[0];
   if (!best) return null;
   return { ...best, alongFt: snapSpanPointFt(best.alongFt, best.wall.lengthFt) };
 }
@@ -195,7 +218,7 @@ export function pickWallByDragDirection(
   return best;
 }
 
-/** Projects a screen point onto a wall's line, clamped to the segment,
+/** Projects a PLAN-space point onto a wall's line, clamped to the segment,
  * returning the along-wall distance in ft from the wall's start corner. */
 export function projectOntoWallFt(
   point: DragPoint,

@@ -28,7 +28,9 @@ import {
 } from "@building-integrity/panel-catalog";
 import { resolveBracedStyle } from "./bracedStyle";
 import {
+  OCTAGON_SQUARE_SNAP_PX,
   SCALE_PX_PER_FT,
+  WALL_PICK_TOLERANCE_PX,
   clientPointFromEvent,
   computeSlotRects,
   cornerMarkerPosition,
@@ -133,6 +135,10 @@ interface BumpOutGesture {
 // we wait for the drag to move this far before committing, so the actual
 // drag direction can break the tie.
 const DRAG_DISAMBIGUATION_DEADZONE_PX = 8;
+
+// Under this, a press-and-release is an accidental click rather than a draw.
+// Screen px — scaled by the view below, like the other thresholds.
+const MIN_DRAG_PX = 10;
 
 interface PendingWallPick {
   downPos: DragPoint;
@@ -375,10 +381,23 @@ export default function FootprintCanvas({
   // component (unlike `offsetPx`, which positions the *footprint* within
   // the canvas's coordinate space, this just controls which portion of
   // that space is currently visible). Applied straight to the Stage's own
-  // x/y/scale, so every existing pointer-position-based calculation above
-  // (findNearestWall, signedDepthFt, etc.) needs no changes — Konva's
-  // `getPointerPosition()` already returns coordinates in the stage's own
-  // local space, already compensated for this transform.
+  // x/y/scale.
+  //
+  // ⚠ **This comment used to claim `getPointerPosition()` was "already
+  // compensated for this transform", so the pointer code needed no
+  // changes. That was false, and it cost the app its zoom.** Konva has
+  // two pointer accessors and they are not the same: `getPointerPosition()`
+  // is screen px inside the stage's container, while
+  // `getRelativePointerPosition()` runs that through the stage's inverse
+  // transform. Measured in the running app at 25% zoom, one pointer:
+  // `getPointerPosition()` → 599.3 (the app concluded 50ft) against
+  // `getRelativePointerPosition()` → 2397.3 (the truth, 199.8ft). A 4x
+  // error, exactly 1/scale, in the same direction everywhere — which is
+  // why it read as "zoom does nothing" rather than as a wrong number: a
+  // drag across the whole plan at 25% committed a building a quarter the
+  // size of the box the user had just dragged, and Measure under-reported
+  // by the same factor. Every reading now uses the relative accessor;
+  // panning below is the one deliberate exception and says why.
   const [viewOffset, setViewOffset] = useState<DragPoint>({ x: 0, y: 0 });
   const [viewScale, setViewScale] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
@@ -387,8 +406,29 @@ export default function FootprintCanvas({
   // transform we're trying to change here (using it would be circular).
   const panStartRef = useRef<{ clientX: number; clientY: number; viewOffset: DragPoint; touchId?: number } | null>(null);
 
+  /* Hit targets and gesture thresholds, converted from screen px to plan px.
+   *
+   * Every pointer reading is in plan space now, so a threshold left in plan
+   * px would shrink on screen as the user zooms out — at the 0.1 floor a 20
+   * plan-px wall-pick target is 2px under the cursor, and nothing is
+   * clickable. Dividing by the view scale keeps each of these the same size
+   * UNDER THE USER'S CURSOR at every zoom, which is the only frame in which
+   * "near enough to have meant it" means anything. */
+  const pickTolerancePx = WALL_PICK_TOLERANCE_PX / viewScale;
+  const octagonSnapPx = OCTAGON_SQUARE_SNAP_PX / viewScale;
+  const dragDeadzonePx = DRAG_DISAMBIGUATION_DEADZONE_PX / viewScale;
+  const minDragPx = MIN_DRAG_PX / viewScale;
+
   const zoomIn = () => setViewScale((s) => Math.min(3, s * 1.25));
-  const zoomOut = () => setViewScale((s) => Math.max(0.25, s / 1.25));
+  // ⚠ The floor is what caps how big a building can be DRAWN, because a
+  // single draw gesture cannot reach beyond the visible plan: at zoom z the
+  // canvas shows (720/z)/12 ft by (480/z)/12 ft. At the old 0.25 that was
+  // 240x160ft, and with the pointer bug above in place it was really 60x40ft
+  // — about 60 panels, against Tommy's "300+ panels should be doable in this
+  // app" (2026-10-02). 0.1 gives 600x400ft, roughly 600 panels at a 40in
+  // standard, which clears that with room to spare. Nothing downstream is
+  // bounded by this; it is a view limit, not a model limit.
+  const zoomOut = () => setViewScale((s) => Math.max(0.1, s / 1.25));
   const resetView = () => {
     setViewOffset({ x: 0, y: 0 });
     setViewScale(1);
@@ -465,7 +505,7 @@ export default function FootprintCanvas({
     }
 
     if (isMeasuring) {
-      const pos = e.target.getStage()!.getPointerPosition()!;
+      const pos = e.target.getStage()!.getRelativePointerPosition()!;
       const snapped = nearestPointOnSegments(pos, snapLines);
       if (snapped) {
         measureGestureRef.current = true;
@@ -475,11 +515,11 @@ export default function FootprintCanvas({
       return;
     }
 
-    const pos = e.target.getStage()!.getPointerPosition()!;
+    const pos = e.target.getStage()!.getRelativePointerPosition()!;
 
     if (shapeTool === "bump-out") {
       if (footprint && !bumpOutGestureRef.current && !pendingWallPickRef.current) {
-        const candidates = findNearestWallCandidates(pos, footprint, offsetPx);
+        const candidates = findNearestWallCandidates(pos, footprint, offsetPx, pickTolerancePx);
         if (candidates.length === 1) {
           const only = candidates[0]!;
           const spanStartFt = snapSpanPointFt(only.alongFt, only.wall.lengthFt);
@@ -497,7 +537,7 @@ export default function FootprintCanvas({
 
     if (shapeTool === "drag-wall") {
       if (footprint && !dragWallGestureRef.current) {
-        const found = findNearestWall(pos, footprint, offsetPx);
+        const found = findNearestWall(pos, footprint, offsetPx, pickTolerancePx);
         if (found && isWallLengthEditable(found.wall.id)) {
           dragWallGestureRef.current = { wallId: found.wall.id };
           setDragWallPointerPos(pos);
@@ -529,20 +569,20 @@ export default function FootprintCanvas({
 
     if (isMeasuring) {
       if (measureGestureRef.current) {
-        const pos = e.target.getStage()!.getPointerPosition()!;
+        const pos = e.target.getStage()!.getRelativePointerPosition()!;
         const snapped = nearestPointOnSegments(pos, snapLines);
         if (snapped) setMeasureEnd(snapped);
       }
       return;
     }
 
-    const pos = e.target.getStage()!.getPointerPosition()!;
+    const pos = e.target.getStage()!.getRelativePointerPosition()!;
 
     if (shapeTool === "bump-out") {
       if (pendingWallPickRef.current && !bumpOutGestureRef.current) {
         const pending = pendingWallPickRef.current;
         const dist = Math.hypot(pos.x - pending.downPos.x, pos.y - pending.downPos.y);
-        if (dist < DRAG_DISAMBIGUATION_DEADZONE_PX) {
+        if (dist < dragDeadzonePx) {
           setBumpOutPointerPos(pos);
           return; // still ambiguous — wait for more movement before committing
         }
@@ -584,12 +624,12 @@ export default function FootprintCanvas({
 
     if (shapeTool === "bump-out") {
       if (pendingWallPickRef.current && !bumpOutGestureRef.current) {
-        const pos = e.target.getStage()!.getPointerPosition() ?? bumpOutPointerPos;
+        const pos = e.target.getStage()!.getRelativePointerPosition() ?? bumpOutPointerPos;
         if (pos) resolvePendingWallPick(pos);
       }
       const gesture = bumpOutGestureRef.current;
       if (!gesture || !footprint) return;
-      const pos = e.target.getStage()!.getPointerPosition() ?? bumpOutPointerPos;
+      const pos = e.target.getStage()!.getRelativePointerPosition() ?? bumpOutPointerPos;
       if (!pos) return;
 
       if (gesture.stage === "span") {
@@ -610,7 +650,7 @@ export default function FootprintCanvas({
     if (shapeTool === "drag-wall") {
       const gesture = dragWallGestureRef.current;
       if (gesture && footprint) {
-        const pos = e.target.getStage()!.getPointerPosition() ?? dragWallPointerPos;
+        const pos = e.target.getStage()!.getRelativePointerPosition() ?? dragWallPointerPos;
         const wall = pos ? footprint.walls.find((w) => w.id === gesture.wallId) : undefined;
         if (pos && wall) {
           const offsetFt = signedPerpOffsetFt(pos, wall, footprint, offsetPx);
@@ -624,15 +664,15 @@ export default function FootprintCanvas({
 
     const dragStart = dragStartRef.current;
     if (!dragStart) return;
-    const pos = e.target.getStage()!.getPointerPosition() ?? dragCurrent;
+    const pos = e.target.getStage()!.getRelativePointerPosition() ?? dragCurrent;
     dragStartRef.current = null;
     setDragCurrent(null);
     if (!pos) return;
 
     let widthPx = Math.abs(pos.x - dragStart.x);
     let heightPx = Math.abs(pos.y - dragStart.y);
-    if (widthPx < 10 || heightPx < 10) return; // ignore accidental clicks
-    if (shapeTool === "octagon") ({ widthPx, heightPx } = snapOctagonBoxPx(widthPx, heightPx));
+    if (widthPx < minDragPx || heightPx < minDragPx) return; // ignore accidental clicks
+    if (shapeTool === "octagon") ({ widthPx, heightPx } = snapOctagonBoxPx(widthPx, heightPx, octagonSnapPx));
 
     const originPx = {
       x: Math.min(dragStart.x, pos.x),
@@ -648,7 +688,9 @@ export default function FootprintCanvas({
     const rawWidthPx = Math.abs(dragCurrent.x - dragStartRef.current.x);
     const rawHeightPx = Math.abs(dragCurrent.y - dragStartRef.current.y);
     const { widthPx, heightPx } =
-      shapeTool === "octagon" ? snapOctagonBoxPx(rawWidthPx, rawHeightPx) : { widthPx: rawWidthPx, heightPx: rawHeightPx };
+      shapeTool === "octagon"
+        ? snapOctagonBoxPx(rawWidthPx, rawHeightPx, octagonSnapPx)
+        : { widthPx: rawWidthPx, heightPx: rawHeightPx };
     return {
       x: Math.min(dragStartRef.current.x, dragCurrent.x),
       y: Math.min(dragStartRef.current.y, dragCurrent.y),

@@ -420,11 +420,16 @@ describe("corner absorb on real footprints", () => {
     fp: Footprint,
     slotsByWall: Record<string, import("./types").PanelSlot[]>,
     stops?: Record<string, import("./types").WallRunStop>,
+    /** The octagons this helper was written for all name their corners
+     * 0-7, so "0" stays the default and every existing caller is unchanged.
+     * A rectangle's corners are A-D, and `wallGeometryFor` -> `gapEndFor`
+     * throws outright on an id the shape does not have. */
+    leastAccessible: string = "0",
   ): string[] {
     const out: string[] = [];
     for (const wall of fp.walls) {
       const slots = slotsByWall[wall.id] ?? [];
-      const geometry = wallGeometryFor(fp, wall.id, allPrimary(fp), "0", THICKNESS_IN, stops)!;
+      const geometry = wallGeometryFor(fp, wall.id, allPrimary(fp), leastAccessible, THICKNESS_IN, stops)!;
       let sumEighths = 0;
       for (const slot of slots) {
         const fabricated =
@@ -594,6 +599,54 @@ describe("corner absorb on real footprints", () => {
     expect(slots[wall.id]!.reduce((s, slot) => s + Math.round(slot.widthIn * 8), 0)).toBe(
       Math.round(geometry.lengthIn * 8),
     );
+  });
+
+  /* ⚠ THE LARGE-BUILDING REGIME, reachable since 2026-10-05.
+   *
+   * Until the zoom fix the app could not DRAW a building bigger than about
+   * 60ft x 40ft — roughly 60 panels — because every mouse reading went
+   * through Konva's `getPointerPosition()` (screen px) instead of
+   * `getRelativePointerPosition()` (plan px), so zooming out bought no
+   * reach. Tommy's standing target is "300+ panels should be doable in this
+   * app" (2026-10-02), and one drag at the 10% zoom floor now spans
+   * 600ft x 400ft.
+   *
+   * None of the tiling changed — but nothing had ever exercised it at these
+   * lengths either, and "the drawing tool could not reach it" is not a
+   * property worth relying on. A 274ft wall carries ~80 standard panels and
+   * accumulates eighths across every one of them, which is exactly where a
+   * residual-distribution bug would show up and nowhere smaller would.
+   *
+   * The assertion is the same `fabricationViolations` the octagon tests
+   * use: every fabricated panel within [24in, 48in], and every wall's slots
+   * summing to its run EXACTLY in whole eighths. */
+  it("tiles legally at the sizes the zoom floor now allows — up to 600ft x 400ft", () => {
+    const violations: string[] = [];
+    let widestWallIn = 0;
+    let totalPanels = 0;
+    for (const [widthFt, depthFt] of [
+      [120, 80],
+      [240, 160],
+      [274 + 2 / 12, 178 + 10 / 12], // the shape actually drawn in the browser at 21% zoom
+      [400, 260],
+      [600, 400], // the 10% zoom floor, both axes at full canvas
+      [599 + 7 / 8 / 12, 399 + 5 / 8 / 12], // and off the foot grid, so eighths have to settle
+    ] as [number, number][]) {
+      const fp = buildRectangleFootprint(widthFt, depthFt);
+      const slots = retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+      for (const wall of fp.walls) {
+        widestWallIn = Math.max(widestWallIn, wallGeometryFor(fp, wall.id, allPrimary(fp), "A", THICKNESS_IN)!.lengthIn);
+        totalPanels += (slots[wall.id] ?? []).length;
+      }
+      violations.push(
+        ...fabricationViolations(fp, slots, undefined, "A").map((v) => `${widthFt}x${depthFt}ft — ${v}`),
+      );
+    }
+    expect(violations.slice(0, 10)).toEqual([]);
+    // If either of these collapses, the sweep has stopped covering the
+    // regime it was written for and the test above is passing on nothing.
+    expect(widestWallIn).toBeGreaterThan(7000); // ~600ft in inches
+    expect(totalPanels).toBeGreaterThan(1500);
   });
 });
 

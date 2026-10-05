@@ -23,6 +23,33 @@ node apps/web/harness/smearforn-stage-0-1/run.mjs
 
 Overridable with `SMEARFORN_APP_URL` and `SMEARFORN_CDP_PORT`.
 
+## ⚠ A one-off seen 2026-10-05: `drag-lands-where-the-cursor-let-go-at-two-zooms`
+
+Recorded so the next person does not chase it from zero. It failed **once**,
+with `{"zoom":"zoomed 195%","reached":false}` and `theZoomsReallyDiffered:
+false` — the elevation view's three "Zoom in" clicks did not take, so both
+landings were measured at the same zoom and the second found no handle. The
+check is working correctly when it reports this: that `theZoomsReallyDiffered`
+guard exists precisely so "the same answer at two zooms" cannot pass when the
+two zooms were one zoom.
+
+**It did not reproduce in six controlled runs** — three on the committed
+baseline and three with the 2026-10-05 zoom fix in place, same Chrome, all
+six `ok` with `theZoomsReallyDiffered: true`. It was A/B'd that way because
+the zoom fix touched `FootprintCanvas` and the suspicion had to be ruled out;
+it is **not** caused by that change, and the elevation view's controls
+("Reset the view", "Zoom in") are a different component from
+`FootprintCanvas`'s ("Reset pan and zoom to the default view").
+
+What it correlates with, unproven: it appeared only on re-runs **after five
+other harnesses had driven the same Chrome instance**, never on the first run
+in a fresh one. If it returns, suspect accumulated browser state and try
+`SMEARFORN_CPU_THROTTLE` above before suspecting the app.
+
+⚠ Seen in the same batch and unrelated: a run died writing
+`screenshots/09d-ctrl-wheel-zoomed.png` with `errno -4094 UNKNOWN` — a
+Windows file-lock on the screenshot, not a page fault. Re-running cleared it.
+
 ## `SMEARFORN_CPU_THROTTLE` — how to reproduce a "flaky" step on purpose
 
 `SMEARFORN_CPU_THROTTLE=12` slows the page down by that factor (CDP's

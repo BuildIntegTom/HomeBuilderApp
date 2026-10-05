@@ -5034,6 +5034,53 @@ The review verdict was that **all three changes are right and the band widening 
 
 ---
 
+## Zoom, and the building you are allowed to draw (2026-10-05) — BUILT
+
+**Tommy, 2026-10-04: _"The user should be able to zoom out and have access to a bigger footprint."_** He asked for it as a feature. It turned out to be a **bug**, and the same one-line confusion was also quietly corrupting measurement and wall-picking. Both are fixed together, because they are one fault.
+
+### What was wrong
+
+Konva has two pointer accessors and they are not interchangeable:
+
+- `stage.getPointerPosition()` — the pointer in **screen px**, as an offset inside the stage's container.
+- `stage.getRelativePointerPosition()` — the same pointer run through the stage's **inverse transform**, i.e. in the stage's own untransformed coordinate space.
+
+Everything in `canvasGeometry.ts` is built as `ft * SCALE_PX_PER_FT + offsetPx` — the stage's untransformed space, which this spec and that module now call **plan px**. The pan/zoom view is applied to the Stage's own `x`/`y`/`scale`. So plan px and screen px coincide **only at 100% zoom with no pan**, and all eight pointer readings in `FootprintCanvas.tsx` used `getPointerPosition()`.
+
+⚠ **A comment in that file asserted the opposite** — that `getPointerPosition()` "already returns coordinates in the stage's own local space, already compensated for this transform" — which is why the code had been read past more than once. That comment is now replaced by the measurement that disproves it.
+
+**Measured in the running app**, one pointer, at 25% zoom: `getPointerPosition()` returned **599.3**, from which the app concluded **50ft**; `getRelativePointerPosition()` returned **2397.3**, the truth, **199.8ft**. A **4x error, exactly 1/scale.**
+
+### What it cost
+
+1. **The drawable building was capped at about 60ft x 40ft, roughly 60 panels, at every zoom.** Zooming out bought nothing: a drag across the whole plan at 25% committed a building a quarter the size of the box just dragged. ⚠ This directly blocked Tommy's stated target, *"300+ panels should be doable in this app"* (2026-10-02). **Measured before the fix: a full-canvas drag at 25% gave 62.8ft x 40.9ft, 66 panels.**
+2. **The Measure tool under-reported by the same factor** — a quarter of the true distance at 25% zoom. A dimension tool that lies is the sharpest possible contradiction of *"this app needs to be perfectly tight with dimensions and wall lengths"*.
+3. **Wall-picking compared a screen-space pointer against plan-space walls**, so clicking a wall while zoomed picked the wrong wall or none. Panning broke it too, since `getPointerPosition()` does not subtract the stage offset either.
+
+### The fix
+
+- All eight readings use `getRelativePointerPosition()`. **No tiling, geometry or model code changed** — only which number the mouse reports.
+- **Thresholds are divided by the view scale** so they stay constant *under the user's cursor*: `WALL_PICK_TOLERANCE_PX` (20), `OCTAGON_SQUARE_SNAP_PX` (20), `DRAG_DISAMBIGUATION_DEADZONE_PX` (8) and the new named `MIN_DRAG_PX` (10, previously an inline `10`). Left unscaled, a 20 plan-px wall target is 2px of screen at the zoom floor and nothing is clickable. `findNearestWall`, `findNearestWallCandidates` and `snapOctagonBoxPx` take the scaled value as an argument, defaulting to the constant.
+- **The zoom floor moves 0.25 → 0.1.** This is what sets the maximum drawable building, because one draw gesture cannot reach past the visible plan: at zoom z the canvas shows `(720/z)/12` ft by `(480/z)/12` ft.
+
+| zoom | visible plan | approx. panels at a 40in standard |
+|---|---|---|
+| 100% | 60ft x 40ft | ~60 |
+| 25% (the old floor) | 240ft x 160ft | ~240 |
+| **10% (the new floor)** | **600ft x 400ft** | **~600** |
+
+⚠ **This is a view limit, not a model limit.** Nothing downstream is bounded by it, and a building can still be grown past it by drawing, panning and dragging walls outward.
+
+### Verified
+
+- **In the browser, after the fix:** a full-canvas drag at 21% zoom produced **274'-2" x 178'-10"** against a predicted 274ft x 179ft, and the app reported **280 panels** — against 66 for the equivalent drag before. The app computed weight, price, carbon, materials and fasteners for it without complaint.
+- **A new sweep in `retile.test.ts`** ("tiles legally at the sizes the zoom floor now allows") runs the real tiler over 120x80, 240x160, the 274'x178'10" shape actually drawn, 400x260, 600x400, and a 600x400 shifted off the foot grid so eighths have to settle. It asserts the same `fabricationViolations` the octagon cases use: every fabricated panel within [24in, 48in], and **every wall's slots summing to its run exactly in whole eighths**. It also asserts the sweep stayed non-vacuous (widest wall > 7000in, > 1500 panels total). ⚠ `fabricationViolations` previously hardcoded the octagons' `"0"` least-accessible corner and threw on a rectangle; it now takes one, defaulting to `"0"` so every existing caller is unchanged.
+- Full suite **2751 tests green**; `tsc` clean; **lint unchanged at 174 problems (126 errors, 48 warnings)**, verified by linting the committed baseline and comparing, not by recollection.
+
+⚠ **Still open, and Tommy has not been asked:** whether the **zoom control itself** should reach 10% in sensible steps. It is still `/1.25` per click, so the floor is now **11 clicks** from 100% rather than 7. Nobody has decided that 11 clicks is acceptable, and a "fit to building" or a wheel-zoom would both answer it. **Scroll-wheel zoom does not exist** — the wheel went with the view dial on 2026-09-29 and nothing replaced it.
+
+---
+
 ## The tile-once editing model — panelize on the first draw, then edit by hand (2026-09-30 / 2026-10-02) — SPEC'D, NOTHING BUILT
 
 **This is the largest architectural decision in the project so far.** It does not add a feature; it removes a class of behaviour. Today every wall edit anywhere in the building re-runs the tiler over every wall (`retile.ts`), and every mechanism that preserves user intent does it by *anchor + reconcile* across that re-tile — `lockedWidthIn` re-forced by `reconcileBracedPlacement`, openings re-anchored by ordinal out of `oldSlots`, run-stop openings withheld and remembered. Tile-once says: **tile once, on the first draw, and after that the user moves panels rather than the tiler re-deriving them.**
