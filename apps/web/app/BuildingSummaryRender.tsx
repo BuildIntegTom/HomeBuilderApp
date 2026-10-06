@@ -62,6 +62,20 @@ export interface BuildingSummaryRenderProps {
  * capture) so it never appears in the normal page flow. Reuses
  * Building3DView's exact scene-building logic via its `captureMode` prop
  * rather than duplicating it.
+ *
+ * ⚠ **This is the one heavy surface in the app that is mounted whenever a
+ * footprint exists** — `page.tsx` renders it at the top level of the editor,
+ * NOT inside a `StickyNote`, so unlike every Shop Drawing, the shipping view
+ * and the octagon ring preview it does not unmount when nobody is looking at
+ * it. That is deliberate (the Project Summary's image has to be ready for
+ * print/PDF without the note having been opened first), and it is the reason
+ * `captureMode`'s Canvas runs `frameloop="demand"`: on the default `always`
+ * this canvas redrew the whole building at 60fps for the entire session.
+ * Measured 2026-10-03 at ~46,000-70,000 WebGL draw calls per idle second.
+ * **If anything here is ever changed to mount conditionally instead, check
+ * the print and PDF-export paths first** — they read the captured PNG and
+ * have no way to ask for one. See the spec, "The hidden canvas that never
+ * stopped drawing".
  */
 export default function BuildingSummaryRender(props: BuildingSummaryRenderProps) {
   return (

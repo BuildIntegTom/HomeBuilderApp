@@ -6653,6 +6653,98 @@ The brief asked for this to be checked rather than assumed, because the Panelize
 - **⚠ Top bar & navigation reorganisation — two questions blocking a stage, and nine smaller ones**, in that section's own "Open Items — Top Bar & Navigation Reorganisation". **Both blocking questions were ANSWERED by Tommy 2026-09-26** — the acting-as switcher moves into Account while the company name stays on the bar (so the "visible at all times" decision is satisfied, not reversed), and Role nests as two clearly headed groups with the "not a permission" line kept prominent. U2 is unblocked. Still open: whether the keyhole still hides out-of-scope edit tabs, **what a twelve-item top bar should do now that it is MEASURED and does NOT fit** — U1 measured it 2026-09-28 (`apps/web/harness/ui-reorg-u1/evidence-projection.json`, and the built bar in `evidence-u1-as-built.json`): twelve controls want **~1634px of viewport / 1594.2px of row content as built** (~1618 / 1577.5 was the projection figure) and fit at no width in the brief, with `Print` pushed off screen at 360px and the acting-as company cut to 20px at 768 and at 1200. **⚠ AND THE BAR NOW HAS A FOURTH NUMBER THAT NEEDS HIS CONFIRMATION: `1454px`**, added 2026-09-28 when the shed order was corrected, because at 1200px U1's Design and View menus left **zero characters** of the acting-as company name at all four roles. 1454 is the bisected width at which those two cost the name nothing; 1381px (chip at its cap) and 1226px (first visible character) are the measured alternatives if he prefers a truncated-but-present name at a narrower width. **⚠ AND THE FINDING HE MOST NEEDS: Design and View therefore do not exist at 710px (his own viewport), nor at 1280 or 1366 — the sidebar `ViewerDial` is the real view control for him and for most users, and the top-bar menus are a wide-monitor affordance.** What else sheds is still Tommy's decision with those numbers in hand, the `2D Floor Plan` → `Plan View` rename, whether Print shows a value when active, whether the view dial's wheel and rustle sound survive at desktop width, where `Project name` belongs, whether Read Me becomes a note, what Design/View do on the non-Wall tabs, and **ten pre-existing sidebar buttons labelled *Open* that are wired to a toggle and therefore close the sheet they name** (counted 2026-09-28; owned by U5).
 - **Report bug / feature request backend — FLAGGED FOR LATER by Tommy (2026-09-26), not an open question.** *"Right now it goes to a note that is easy enough… Let's consider backend improvements to that as a flagged thing to do later."* The near-term surface is a sticky note carrying the existing `/report-bug` wording verbatim plus the current view's name. What a later decision needs to answer is written out in the reorganisation section: where a report goes, whether it needs its own table and RLS (every existing RLS pattern is company-scoped; a bug report is not obviously a company's property), whether the reporter's identity is attached (reports can come from signed-out guests), and whether any project state travels with it — which would make a bug report a data export and put it inside the redaction model.
 
+## The hidden canvas that never stopped drawing (2026-10-03) — BUILT, branch `frameloop`
+
+**One line of behaviour, two bugs, and the second one was not the one anybody was looking for.** The Project Summary's static 3D rendering is produced by `BuildingSummaryRender`, which mounts a full `Building3DView` inside a react-three-fiber `<Canvas>` parked at `position: fixed; left: -9999px` and grabs one frame as a PNG. `page.tsx` mounts it **unconditionally whenever a footprint exists** — it is not inside a `StickyNote`, so unlike every other heavy surface in this app it is alive for the entire session.
+
+### Bug 1, the one that was reported: the loop never stops
+
+react-three-fiber's default is `frameloop="always"`, which renders for as long as the Canvas is mounted. `grep -rn "frameloop" apps/web/app/` returned **zero occurrences** before this change, so nothing ever told any canvas to stop. The off-screen canvas therefore redrew the whole building at 60fps, forever, for a picture it had already taken.
+
+### Bug 2, found while verifying bug 1, and it is the more dangerous one
+
+The brief for this work stated the current behaviour was *"correct but wasteful — because the canvas always renders, the captured PNG is always current"*, and warned against a naive fix that made it *"cheap but stale"*. **That premise was false. It was already stale, and had been for as long as `CaptureFrame` has existed.**
+
+`CaptureFrame`'s effect was keyed on `[gl, onCapture]`. `gl` is stable for the life of the Canvas, and `onCapture` is `handleCaptureRenderImage` in `page.tsx` — a `useCallback(..., [])`, i.e. a **stable identity for the life of the page**. So the effect ran exactly once per mount, and `BuildingSummaryRender` is never remounted (same position, same type, no `key`; `footprint` going from one building to another does not unmount it). The comment at the `renderImageDataUrl` state said the capture was *"re-captured whenever the callback identity below changes (i.e. whenever the scene inputs do)"*, which is a description of a mechanism that was never there. **The summary image showed the building as of page load.**
+
+Measured on a production build (`next build` + `next start`) of `main` @ `2422fbd`, headless Chrome 154: draw a 55-panel building, open Project Summary, change the wall height, re-open. The summary's own numbers moved — **total weight 5223.0 lb → 8114.3 lb, price $28031.66 → $44651.02**, and the panel fabrication list gained a `Standard 25.5in (4 copies)` page — while the rendering image stayed **byte-identical, SHA-256 `813dfc105388b943` on both sides**. Reproduced in all four "before" harness runs across both panel counts.
+
+### The fix: `frameloop="demand"`, and capture per rendered frame
+
+Two changes, both in `Building3DView.tsx`:
+
+1. `frameloop={captureMode ? "demand" : "always"}` on the `<Canvas>`. In demand mode r3f renders **only** when its reconciler has committed a change to the scene graph.
+2. `CaptureFrame` now hangs off `useFrame` instead of a mount-time effect, debounced (`CAPTURE_SETTLE_MS = 300`) and deduped against the last data URL.
+
+**The property that makes this correct is worth stating on its own, because it is the whole argument.** Under `demand`, *"a frame was rendered"* and *"the design changed"* are **the same event**. So the capture needs no dependency list enumerating footprint/slots/heights/beams/headers/roof — it is derived rather than enumerated, and an enumerated list is exactly the thing that goes quietly stale. (That is not a theoretical worry here: the mechanism being replaced went stale because a dependency list of two items was wrong about one of them.)
+
+The dedupe guard is the second half: if a frame renders that happens to draw the same pixels, `onCapture` is not called, so there is no `page.tsx` state update and no re-render. That is what makes a capture → setState → re-render → capture cycle impossible by construction, rather than relying on r3f's commit diffing to not re-invalidate.
+
+### What was rejected, and why
+
+**Mount on demand** — have the Canvas exist only while a capture is needed, or while the Project Summary note is open, then unmount. It removes the cost entirely rather than reducing it, including the per-edit scene-graph reconcile that `demand` keeps. Rejected on three grounds:
+
+- `renderImageDataUrl` is not only the note's image; it is what the **print and PDF-export** paths put on the page. A canvas that mounts only when the note is open means a PDF exported without first opening that note and waiting on it carries a Project Summary with **no rendering at all** — silent content loss in a document that goes to a client. Making that safe means touching the export plumbing in `page.tsx`, which is adjacent to the `page.tsx` restructuring that is explicitly the next piece of work and not this one.
+- Mounting a WebGL context and building the entire scene on note-open is a multi-hundred-millisecond first-open stall, which `demand` does not have.
+- It needs new `page.tsx` state meaning *"a capture is wanted"*, whose correctness is an **enumerated condition** — the same class of thing that made the capture stale in the first place.
+
+**Honest about what `demand` does NOT remove:** the hidden canvas stays mounted, so r3f still reconciles its scene graph on every change to the design. That cost is real and it is per-edit, not per-frame. It is also precisely what keeps the PNG current, so it is a trade rather than an oversight. Removing it is the mount-on-demand design above, and it should be revisited **with** the `page.tsx` render-cost work rather than before it.
+
+### The measurement
+
+Harness: `apps/web/harness/frameloop-perf/run.mjs`, in the repo like the Smearforn and ui-reorg ones. Production build both sides, headless Chrome 154, `Profiler` domain at a 200µs sampling interval, a **2.5s idle window in plan view with no input at all**. Plan view is the fixture on purpose: the editor's own `Building3DView` is mounted only on the 3D view stop, so in plan view the off-screen summary canvas is the **only** WebGL surface on the page and anything three.js burns is attributable to it by construction. Each figure is the second of two consecutive idle passes (the first headless Chrome launch of a session draws a different footprint than later ones), and each configuration was run twice.
+
+| | panels | idle busy main-thread (of ~2.8s) | WebGL draw calls / idle second | draws / frame | longest idle task |
+|---|---|---|---|---|---|
+| **before**, 1 storey, 10ft | 55 | **2702.9 ms (97.5%)** / 2559.2 ms (92.9%) | 46,485 / 57,784 | ~775 / ~963 | 313 ms / none ≥50ms |
+| **after**, 1 storey, 10ft | 55 | **1.7 ms (0.1%)** / 1.3 ms (0.0%) | **0** / **0** | 0 | none |
+| **before**, 2 storeys, 16ft | 110 | **2805.8 ms (100%)** / 2845.4 ms (99.9%) | 70,281 / 58,483 | ~1171 / ~975 | 61 ms / 432 ms |
+| **after**, 2 storeys, 16ft | 110 | **1.5 ms (0.0%)** / 0.7 ms (0.0%) | **0** / **0** | 0 | none |
+
+**⚠ Which of these numbers to trust, and which not.** Headless Chrome rasterises WebGL in software (SwiftShader), so the **millisecond** figures on the "before" rows are an upper bound against a real machine with a real GPU — the rasterisation share is pessimistic. What is main-thread *anywhere* is the JavaScript, and the profile says plainly that a lot of it was: the top self-time frames on the before runs are `renderBufferDirect`, `updateMatrixWorld`, `setMaterial`, `setup`, `refreshMaterialUniforms`, `multiplyMatrices`.
+
+**The draw-call count is the figure that carries no caveat at all**, which is why the harness instruments it: `drawElements`/`drawArrays` are patched on both WebGL prototypes before any app script runs, so the count is a direct, hardware-independent statement of whether a render loop is running. ~46,000–70,000 draw calls issued per second while the user did nothing, versus **zero**. A millisecond figure can be argued about; that cannot.
+
+**And note the shape of the "after" column: it is flat, not proportional.** The fix does not make the loop cheaper, it stops the loop, so the after figure is zero at every panel count rather than scaling down from the before figure. That is why two panel counts are enough.
+
+⚠ **Why the two counts are 55 and 110 rather than the ~60 and ~300 the work was briefed with.** The panel count reachable by *drawing* is hard-capped: `FootprintCanvas` fixes the plan canvas at `CANVAS_WIDTH/CANVAS_HEIGHT = 720/480` and converts the drag at a fixed `SCALE_PX_PER_FT = 12`, so the largest footprint a drag can produce is about 59×39ft — **55 ground-floor panels, measured, and a second storey is the only lever that doubles it.** Zooming the plan view out first does **not** help, which was measured rather than assumed: the same 500×340px drag produced **41 panels at zoom 0, 41 at zoom 3 and 41 at zoom 5**. Whether that is intended is not something this pass investigated and it is listed in Open Items as a question, not a finding. A ~300-panel fixture has to come from somewhere other than the drawing gesture.
+
+### Verifying the PNG is still produced and still current
+
+Not asserted — measured, on both sides, in every run. The harness opens the Project Summary note, reads the `src` of the `data:image/png` `<img>` the page is actually showing, SHA-256s it, commits a real wall-height change through the Settings note's own `Wall height` field (typed then Enter, the full `LengthInput` commit gesture, with the committed value read back off the field), re-opens the note and SHA-256s the image again. **Before: identical hash, all four runs. After: different hash, all four runs**, and the after image is also substantially larger (89,710 → 124,018 bytes at 55 panels), consistent with a taller building drawing more geometry. Screenshots of the note either side of the change are checked in under `apps/web/harness/frameloop-perf/screenshots/` and show a short building becoming a tall two-band one.
+
+A separate idle window is measured **after** the edit and the re-capture, and reports **0 draw calls**, which is what proves the canvas goes quiet again rather than being re-armed into a permanent loop by its own capture.
+
+### The canvas audit — every react-three `<Canvas>` in the app
+
+Four files contain a `<Canvas>`. ⚠ **`RoofTrussLayoutView` and `BaleFoundationCrossSectionDiagram` are named on the suspect list but are not WebGL at all — both are SVG** (zero `@react-three/*` imports), so no frameloop applies to them. Mount conditions were read from `page.tsx` and then confirmed in the running app: the harness counts the canvases in the live DOM and identifies the WebGL ones **positively**, by tagging any canvas that asks `getContext` for a `webgl*` context, rather than inferring from position.
+
+| Canvas | Mounted when | Always mounted? | Verdict |
+|---|---|---|---|
+| `BuildingSummaryRender` → `Building3DView captureMode` | `footprint !== null`, at the top level of the editor — **not inside a `StickyNote`** | **YES** | **The bug.** Fixed: `frameloop="demand"`. |
+| `Building3DView` (the editor's own 3D view) | the else-branch of `viewMode === "elevation" ? … : viewMode === "plan" ? … :` — i.e. **only on a 3D view stop** | No | **Correct as-is.** It has `OrbitControls` and a user looking at it; an orbit camera legitimately wants a continuous loop *while being looked at*, and it stops costing anything the moment the user leaves 3D. Deliberately left on `always`. |
+| `OctagonRingPreview` | inside `roofToolsControls`, which is `editorTab === "roof" ? (…) : null`, and further gated on `footprint.corners.length === 8` | No | Fine. Visible when mounted; an 8-box scene. |
+| `StandardPanel3DView` (9 call sites) | all inside `StickyNote` children | No | Fine. |
+| `TruckLoad3DView` | inside the `detail-shipping` `StickyNote` | No | Fine. |
+
+**The `StickyNote` fact the audit rests on, verified rather than assumed:** `StickyNote` does `if (!isOpen) return null`, so a closed section's content is never mounted — the JSX elements are constructed by `page.tsx` but no component below them renders, so no WebGL context is created. Confirmed live: in plan view at both 55 and 110 panels the DOM held **exactly two canvases** — the plan editor's 2D Konva stage (not WebGL) and the summary canvas at `left: -9999px` (WebGL) — with **245–250 DOM nodes**, matching the 240–248 measured independently by the profiler pass.
+
+### Gates
+
+`npx vitest run`: **140 files / 2750 tests passed, delta 0.** No test file was added: the two packages that pair every source file with a `*.test.ts` were not touched, and what changed is a react-three-fiber render *mode* and a canvas pixel readback — neither is observable from a unit test. The browser harness is this change's test, which is the same reason the Smearforn harnesses are in the repo.
+
+`npx tsc --noEmit`: clean in `apps/web`, `packages/calc-engine`, `packages/panel-catalog`; `packages/geometry` has the one pre-existing error at `bracedPlacement.test.ts(727,76)` and no others.
+
+Lint, measured from `apps/web` with `--format json` and tallied by `ruleId` so the per-rule figures sum to the total rather than double-counting (they do: 174 = 174, both sides): **174 problems = 126 errors / 48 warnings**, and per rule `preserve-manual-memoization` 68, `no-unused-vars` 36, `refs` 29, `no-unescaped-entities` 15, `set-state-in-effect` 12, `exhaustive-deps` 12, `purity` 1, `immutability` 1. **Zero delta on every rule** — and the baseline was re-run from the reverted source in this same worktree rather than quoted, per this app's own "never restate a lint number you did not observe yourself". Worth noting specifically: `react-hooks/refs` did **not** rise despite `CaptureFrame` gaining two new refs, because both are read and written inside a `useFrame` callback and a cleanup, never during render.
+
+Browser harnesses: **five of six fully green** — `smearforn-stage-0-1` (20/20), `smearforn-stage-2`, `smearforn-stage-2b` (14/14), `smearforn-stage-3` and `ui-reorg-u0` all pass.
+
+⚠ **`ui-reorg-u1` has ONE check red, and it is red on `main` too — verified rather than assumed.** The failing check is `the-panelizers-scope-checkboxes-still-gate-the-design-menu-from-their-new-home-in-settings`: at default scope it reads the Design menu's subjects as `[]` when it wants `["wall"]`, while at full scope it reads all four correctly. It was run against a production build of this branch (twice, identical) **and against a production build of `main` @ `2422fbd` with the two changed files reverted** — the recorded step detail is byte-for-byte the same on both sides, down to `designSubjects: []`. So this is pre-existing and not attributable to this change. It is **not fixed here** — it is a top-bar/Settings question belonging to the U-series, and guessing at it from a perf branch is how an unrelated regression gets introduced. Whoever owns U2+ should pick it up; note the step's own `where` says *"(U3)"*, and U3 is recorded in this document as built on a branch and **not merged**, which is the first place to look.
+
+⚠ **Also noted while running these, as a trap for the next person:** `ui-reorg-u1` fails on a cold **dev** server with *"no canvas — are you on localhost rather than 127.0.0.1?"*, which names the wrong cause entirely. It uses a fixed `sleep(9000)` after `Page.navigate` instead of polling for the canvas the way the Smearforn harnesses do, and a cold `next dev` on a loaded machine does not hydrate the plan canvas in nine seconds. Run it against `next start`, or give it the Smearforn `waitForCanvas` poll.
+
+Flags check: **vacuously clean** — the diff introduces exactly one new constant, `CAPTURE_SETTLE_MS = 300`, which is a UI debounce interval with no building, material or safety meaning, so points 1–6 have nothing to bite on. No `CatalogValue`, no `data.ts` entry, no review-log surface.
+
 ## Provisional Values — the `status` flag convention
 
 Every spec-derived number in `packages/panel-catalog/src/data.ts` is wrapped in a `CatalogValue<T>`, `CatalogRange`, or `PanelStructuralStatus` carrying `status: "confirmed" | "pending-BI-confirmation"` plus a `note` tracing back to its source. This is the machine-readable half of this decisions log: **the log says what was decided, the flag says how solid it is.**
@@ -6702,6 +6794,8 @@ Things that are interpreted or unresolved but aren't a single flaggable number:
 ---
 
 ## Open Items
+
+- **⚠ Zooming the plan view out does NOT draw a bigger building — measured 2026-10-03, and nobody has decided whether that is correct.** `FootprintCanvas`'s draw gesture converts the drag through a fixed `SCALE_PX_PER_FT = 12`, so the same 500×340px drag produced **41 panels at zoom 0, 41 at zoom 3 and 41 at zoom 5** — zoom changes what you see, not what you draw. Combined with the hard-coded `CANVAS_WIDTH/CANVAS_HEIGHT = 720/480`, the **largest footprint anybody can draw in this app is about 59×39ft, i.e. ~55 ground-floor panels**, and a second storey is the only lever that doubles it. Found while building a perf fixture (see "The hidden canvas that never stopped drawing"), where it was the reason a ~300-panel building could not be produced through the UI at all. **Two separate questions for Tommy, and they are not the same one:** whether the zoom *should* scale the drawn footprint, and whether ~59×39ft is an acceptable ceiling on building size for a tool meant to draw real jobs. The second one matters more. Neither is a defect report — the behaviour is self-consistent and nothing is wrong with the buildings it does draw — but the ceiling is low enough to be worth confirming rather than discovering.
 
 <!-- The three entries immediately below were PROMOTED here on 2026-10-01 from
 "Open Items — this pass" in the corner-ownership section, because four code
