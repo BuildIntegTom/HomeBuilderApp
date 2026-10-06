@@ -5081,6 +5081,113 @@ Everything in `canvasGeometry.ts` is built as `ft * SCALE_PX_PER_FT + offsetPx` 
 
 ---
 
+## What an edit actually costs — measured 2026-10-06 — and the staged tile-once plan that follows from it
+
+Tommy asked for the tile-once work to be planned. It is planned below, but **the measurement came first and it reordered the plan**, so the measurement is here too.
+
+### The measurement
+
+Production build (`next build` + `next start`), one wall-height change, main-thread blocking via `PerformanceObserver('longtask')`:
+
+| edit | 40 panels | 232 panels |
+|---|---|---|
+| **wall height** (moves geometry) | **724 ms** | **5,335 ms** |
+| — first edit after load | 1,574 ms | 15,761 ms |
+| **target density** (moves only numbers) | — | **959 ms** |
+
+Both the 40 and 232 figures are the SECOND edit, so they are steady state and not JIT warm-up.
+
+⚠ **The "~22ms `page.tsx` render toll" that this work was scoped around was wrong by about two orders of magnitude.** It is seconds, not milliseconds. A typical 40–100 panel job pays roughly 0.7–1.5s per edit; the 300-panel buildings Tommy wants are unusable.
+
+### Where the time goes — a CPU profile, two runs, same answer
+
+V8 sampling profiler at 200µs, one wall-height edit on a **272-panel** building. Self time, idle removed (~4,920 ms of real work):
+
+| | share | what |
+|---|---|---|
+| **2,526 ms** | **51%** | **`toDataURL` — the Project Summary PNG readback** |
+| ~838 ms | 17% | JS in the main bundle (three.js + react-three-fiber + app, mixed) |
+| 573 ms | 12% | WebGL scene upload (`uniformMatrix4fv`, `bufferData`, `drawElements`…) |
+| 515 ms | 10% | V8 `(program)` |
+| 331 ms | 7% | garbage collector |
+
+**`toDataURL` ran twice per edit for 2,526 ms; one single call was 2,060 ms.** The warm-up edit was worse: 2 calls, **6,958 ms** (4,982 + 1,975).
+
+⚠ **A WRONG MEASUREMENT WAS PUBLISHED FIRST, AND THE WAY IT WAS WRONG IS WORTH KEEPING.** `toDataURL` was first hand-timed five times in a row on an **idle** canvas and reported as **15.7 ms, "0.3% of the edit — frameloop exonerated"**. Every one of those five was cheap *because the GPU had nothing queued*. During an edit the scene has just been rebuilt and `toDataURL` forces a synchronous flush, so it absorbs all the pending render work. **The same call, in two different states, differs by more than 100x.** This is the October zoom note's mistake in a new costume: a measurement taken in a state that could not show the problem, then believed. Corroboration for the corrected figure: the one edit observed where the capture did not fire blocked **1,136 ms** against 5,335 ms with it.
+
+### What that does to the plan
+
+- **The biggest single lever is not tile-once.** It is a PNG nobody is looking at, regenerated on the critical path of every edit.
+- **Tile-once is a smaller performance win than was claimed.** App + library JS is ~17% of an edit. Tile-once is still right — it deletes an entire class of reconciliation defects — but it must be justified on **correctness**, not on speed. Saying otherwise oversold it.
+- ⚠ **`frameloop` was still the right merge.** Before it the summary image was frozen at page-load state and silently wrong on every project. It traded *cheap and wrong* for *correct and slow*. Stage 0 below is the third option.
+
+---
+
+## The staged plan
+
+Each stage is separately mergeable, separately reviewable, and leaves the app working. Stage 0 is **not** tile-once and should land first.
+
+### Stage 0 — Take the summary capture off the edit path (PREREQUISITE, not tile-once)
+
+Measured at 51% of an edit. This is Tommy's own idea, 2026-10-02: *"We could maybe add a trigger somewhere - print and release shops for a particular edit... if it makes things easier we can compute shops upon a user initiated trigger?"*
+
+Capture when the image is actually wanted — the Summary note opening, print, PDF export — not on every scene change.
+
+⚠ **The trap, and it is why `BuildingSummaryRender` is mounted unconditionally today:** the print and PDF paths *read* `renderImageDataUrl` and have no way to ask for one. Stage 0 must give them a way to ask and must **never silently print a stale or blank image** — a visible "generating…" beats a wrong picture, which is the standing rule in this file.
+
+**Done when:** the 272-panel edit is measured again and the capture no longer appears in the profile. Predicted ~1.1s from the accidental zero-capture observation — **predicted, so it must be measured, not assumed.**
+
+### Stage 1 — Name the seam (no behaviour change)
+
+Inventory every call site of `retile`, `retilePreservingOpenings` and `retilePreservingOpeningsWithRunStopMemory` in `page.tsx`, and classify each as either **(a) a re-derivation that is legitimate** — first draw, shape change, panelization-type change — or **(b) an edit that should not re-derive anything.**
+
+Pure inventory plus a test that asserts the classification. Nothing moves. This is what makes every later stage reviewable instead of a 12,000-line judgement call.
+
+### Stage 2 — Stop re-deriving on edits that do not change wall length
+
+Panel width edit, panel type cycle, brace toggle, opening add/move. Each becomes a direct mutation of the slot array.
+
+**Each removal deletes its own reconcile counterpart**, and each is its own commit with the regression net re-run — never a batch.
+
+### Stage 3 — Drag a panel along the wall
+
+The core of what Tommy asked for. The swap **preserves the multiset of widths**, so wall length is conserved by the operation rather than policed by an invariant.
+
+- **Corner panels are pinned** (his decision, 2026-10-03: "Gap free, corners stuck") — a corner panel's position is not a rule about it, its position is what it is.
+- The safety gap is movable and reports an unsatisfied rule rather than being refused.
+- ⚠ **The drag must not go through `page.tsx` state.** The floor for a numbers-only change is **959 ms** at 232 panels against a 16 ms frame budget — **60x over**. Use the `CompassWidget` precedent: mutate the Konva nodes / refs per frame, commit to React once on release.
+
+### Stage 4 — Wall length change: panels enter and grow at the dragged end
+
+Tommy's verbatim spec of 2026-10-02. Live during the drag, not a recompute on release; panels shrink and disappear on the way back. Tiny panels mid-drag are acceptable **to him, explicitly**, because the elevation boundary-drag tool is the remedy.
+
+After this stage, this is the **only** path that creates or destroys width.
+
+### Stage 5 — Insert, delete, and undo/redo
+
+Undo is cheap here precisely because **the panel array IS the document** — an undo restores a previous array rather than unpicking a derivation. ⚠ Open: per-gesture vs per-frame granularity; a drag that grows panels sixty times a second must not push sixty entries.
+
+### Stage 6 — Retire the reconcile machinery
+
+`lockedWidthIn` re-forcing, opening re-anchoring by ordinal, run-stop opening memory. **Only** once nothing re-tiles. Every deletion must show the test that covered it either still passing or deliberately removed with a reason.
+
+### What stays re-derived, permanently
+
+First draw, shape change (bump-out, octagon, ring), and panelization-type change. Those are re-derivations by definition and tile-once does not touch them.
+
+### ⚠ The largest risk, named
+
+**The regression net is built around re-tiling.** The six browser harnesses and much of `retile.test.ts` assert post-re-tile outcomes. They will need rewriting stage by stage, and a harness rewritten in the same commit as the behaviour it guards is not a guard. Rewrite the assertion first, watch it fail, then change the behaviour.
+
+### Still open, and Tommy has not been asked
+
+- End-panel **delete** behaviour, and which direction **add** inserts.
+- **Undo depth and scope**, and the per-gesture/per-frame question above.
+- **Projects saved before tile-once** — they were produced by the tiler, so they should simply become documents with no migration. Believed, not verified.
+- Whether the zoom control should reach its new 0.1 floor in fewer than **11 clicks** (carried over from the zoom work; there is no wheel zoom).
+
+---
+
 ## The tile-once editing model — panelize on the first draw, then edit by hand (2026-09-30 / 2026-10-02) — SPEC'D, NOTHING BUILT
 
 **This is the largest architectural decision in the project so far.** It does not add a feature; it removes a class of behaviour. Today every wall edit anywhere in the building re-runs the tiler over every wall (`retile.ts`), and every mechanism that preserves user intent does it by *anchor + reconcile* across that re-tile — `lockedWidthIn` re-forced by `reconcileBracedPlacement`, openings re-anchored by ordinal out of `oldSlots`, run-stop openings withheld and remembered. Tile-once says: **tile once, on the first draw, and after that the user moves panels rather than the tiler re-deriving them.**
