@@ -5179,12 +5179,36 @@ First draw, shape change (bump-out, octagon, ring), and panelization-type change
 
 **The regression net is built around re-tiling.** The six browser harnesses and much of `retile.test.ts` assert post-re-tile outcomes. They will need rewriting stage by stage, and a harness rewritten in the same commit as the behaviour it guards is not a guard. Rewrite the assertion first, watch it fail, then change the behaviour.
 
+### Answered by Tommy, 2026-10-06
+
+**1. Deleting a panel — a button, and a refusal with a reason.** His words: *"Maybe it's a button and you cannot delete a panel if the other panels cannot expand you meet that panels dissapeerence based on whatever each panels maximum widths are. Delete panel should be next to stop wall tool on elevation and plan editors."*
+
+- **It is a button**, placed **next to the stop-wall tool, in BOTH the elevation and plan editors.**
+- **The rule:** a panel of width `w` may be deleted only if the wall's other **adjustable** panels can absorb `w` without any of them exceeding its maximum. Concretely, delete is allowed iff `Σ(maxWidthIn − currentWidthIn)` over the adjustable slots `>= w`. Corner panels, safety gaps and opening slots are not adjustable and contribute nothing.
+- **Otherwise refuse, and name what is in the way** — the same shape as the locked-width refusal (Stage 1x) and the run-stop refusal. This keeps the standing invariant: **a delete never changes the wall's length.**
+- ⚠ **Distribution must follow `repairWallToEighths`' discipline** — whole eighths, round-robin over adjustable slots, never forcing residual into a fixed-width slot. That function is the one place in the codebase that already does this correctly; do not write a second one.
+- ⚠ The 48in ceiling and the 24in floor interact here: absorbing `w` must not push a neighbour over 48in, and the delete must not be offered in a way that strands a sub-24in panel.
+
+**2. Undo granularity — he delegated it with a number.** His words: *"whatever is a good balance of user friendly and computing power. 6 times a second?"*
+
+⚠ **Recommendation, and it splits his number off the undo stack: 6/sec is right, but for a different thing.**
+
+- **The undo stack gets ONE entry per gesture** (mousedown → mouseup). This is what CAD and design tools do and what a user means by "undo that drag". At 6 entries/sec a three-second drag would need **eighteen** undos to put back, which is the opposite of user-friendly.
+- **~6/sec is the right rate for the LIVE COMMIT during a drag** — how often the dragged state is pushed into React and the derived numbers re-run, between the per-frame visual updates that bypass React entirely. That is the "computing power" half of his sentence, and it is a real budget: the floor for a numbers-only change is 959ms at 232 panels, so even 6/sec is unaffordable at that size and the live commit will have to be the cheap path only.
+- Recorded as a recommendation, **not as his decision** — the gesture/frame split was not put to him in those terms.
+
+**3. Projects drawn before tile-once — nothing to migrate.** His words: *"No one cares about any projects previously drawn in the app."* So the open question about pre-tile-once projects is **closed with no work**: they become documents as they are, and no migration, guard or version bump is owed. Consistent with [[no-real-users-until-november]].
+
+**4. Fit to building — yes, build it.** His words: *"Add fit to building sounds good."* This answers the zoom-control question carried over from the 2026-10-05 zoom fix: the 0.1 floor is 11 clicks of the ÷1.25 button from 100%, and **a "fit to building" control removes the need to click there at all.** Scroll-wheel zoom still does not exist (it went with the view dial on 2026-09-29) and is not what he asked for.
+
+⚠ **STILL UNANSWERED — he answered delete but not add:** which direction an **inserted** panel goes, and where its width comes from. Do not infer it from the delete rule; they are not symmetric (delete has width to give away, insert has to take it).
+
 ### Still open, and Tommy has not been asked
 
-- End-panel **delete** behaviour, and which direction **add** inserts.
-- **Undo depth and scope**, and the per-gesture/per-frame question above.
-- **Projects saved before tile-once** — they were produced by the tiler, so they should simply become documents with no migration. Believed, not verified.
-- Whether the zoom control should reach its new 0.1 floor in fewer than **11 clicks** (carried over from the zoom work; there is no wheel zoom).
+- ~~End-panel **delete** behaviour~~ — **ANSWERED 2026-10-06, see above.** Which direction **add** inserts is still open.
+- **Undo depth** is still open. The per-gesture/per-frame question has a recommendation above, not a decision.
+- ~~**Projects saved before tile-once**~~ — **CLOSED 2026-10-06: nothing to migrate.**
+- ~~Whether the zoom control should reach its new 0.1 floor in fewer than **11 clicks**~~ — **ANSWERED 2026-10-06: build "fit to building".**
 
 ---
 
