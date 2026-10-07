@@ -5232,11 +5232,18 @@ First draw, shape change (bump-out, octagon, ring), and panelization-type change
 
 **4. Fit to building — yes, build it.** His words: *"Add fit to building sounds good."* This answers the zoom-control question carried over from the 2026-10-05 zoom fix: the 0.1 floor is 11 clicks of the ÷1.25 button from 100%, and **a "fit to building" control removes the need to click there at all.** Scroll-wheel zoom still does not exist (it went with the view dial on 2026-09-29) and is not what he asked for.
 
-⚠ **STILL UNANSWERED — he answered delete but not add:** which direction an **inserted** panel goes, and where its width comes from. Do not infer it from the delete rule; they are not symmetric (delete has width to give away, insert has to take it).
+**5. Inserting a panel — it lands at the end of the run and is then dragged into place.** His words, 2026-10-07: *"Insert panel puts them at the end of the row and then the user can move them around with the drag tool."* and, asked which end: *"The end meaning I guess before the corner panel and safety gap"*.
+
+- **Position: the last adjustable position in the run** — inside the trailing **safety gap** and **corner panel**, not after them. Those two are the pinned/ruled slots at the end of a run (corners stuck by his 2026-10-03 decision; the gap second-to-last away from the least-accessible corner), so "the end of the row" means the end of the part the user can rearrange.
+- **It does not need a placement rule, and that is the point.** The panel appears in one predictable spot and the **drag tool** moves it anywhere — which is tile-once's whole premise, that direct manipulation replaces rules about where things land.
+
+⚠ **This leaves ONE sub-question genuinely open, and it is not pedantry: what WIDTH is the inserted panel?** A wall's length cannot change (the standing invariant), so an inserted panel's width has to be taken from the other adjustable panels by shrinking them — the exact mirror of the delete rule, bounded by the **24in minimum** instead of the 48in maximum.
+
+**Recommendation, not his decision:** insert at the **standard width** (40in by default) and **refuse when the run cannot free that much** without driving a panel under 24in — refusal naming how much room there actually is, the same shape as delete, Stage 1x's locked-width refusal and the run-stop refusal. Rejected alternative: inserting at "whatever width happens to be free", which silently produces an odd-width panel the user did not ask for and has to notice. ⚠ **Put this to Tommy before Stage 5 is built** — it is the last undecided piece of insert/delete.
 
 ### Still open, and Tommy has not been asked
 
-- ~~End-panel **delete** behaviour~~ — **ANSWERED 2026-10-06, see above.** Which direction **add** inserts is still open.
+- ~~End-panel **delete** behaviour, and which direction **add** inserts~~ — **BOTH ANSWERED (2026-10-06 and 2026-10-07), see above.** ⚠ The inserted panel's **width** is still undecided; a recommendation is recorded.
 - **Undo depth** is still open. The per-gesture/per-frame question has a recommendation above, not a decision.
 - ~~**Projects saved before tile-once**~~ — **CLOSED 2026-10-06: nothing to migrate.**
 - ~~Whether the zoom control should reach its new 0.1 floor in fewer than **11 clicks**~~ — **ANSWERED 2026-10-06: build "fit to building".**

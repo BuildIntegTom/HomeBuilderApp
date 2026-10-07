@@ -724,7 +724,14 @@ describe("the corner-brace combine vs. the tiler's fabrication bounds", () => {
           [false, false],
         ] as [boolean, boolean][]) {
           const { slots } = tileWall(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, "end", hasStart, hasEnd);
-          const braced = applyBracedPlacement(slots, 300, standardWidthIn, "x", false);
+          // "chevron" rather than the former "x", which is not a BracePattern
+          // and made `packages/geometry` fail to typecheck. Behaviour here is
+          // unchanged: `defaultPattern` is only ever written to a slot's
+          // `bracedPattern` and never reaches a width, and this sweep asserts
+          // widths. ⚠ vitest does not typecheck, so the suite ran green the
+          // whole time this was red — see apps/web/AGENTS.md on checking BOTH
+          // projects.
+          const braced = applyBracedPlacement(slots, 300, standardWidthIn, "chevron", false);
           // The combine is identifiable after the fact: it is the only thing
           // that gives a safety-gap slot a secondary type.
           if (braced.some((s) => s.type === "safety-gap" && s.secondaryType === "braced")) continue;
