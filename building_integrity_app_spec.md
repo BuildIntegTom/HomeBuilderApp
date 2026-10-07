@@ -5168,11 +5168,36 @@ Capture when the image is actually wanted — the Summary note opening, print, P
 
 ⚠ **Still on the edit path and NOT addressed here:** the hidden canvas's scene is still rebuilt on every edit even though nobody is looking — roughly 573ms of WebGL upload plus its share of the JS. Removing that means freezing its props until a capture is wanted, which is a larger change and deserves its own measurement rather than being bundled in.
 
-### Stage 1 — Name the seam (no behaviour change)
+### Stage 1 — Name the seam (no behaviour change) — **BUILT 2026-10-07**
 
 Inventory every call site of `retile`, `retilePreservingOpenings` and `retilePreservingOpeningsWithRunStopMemory` in `page.tsx`, and classify each as either **(a) a re-derivation that is legitimate** — first draw, shape change, panelization-type change — or **(b) an edit that should not re-derive anything.**
 
 Pure inventory plus a test that asserts the classification. Nothing moves. This is what makes every later stage reviewable instead of a 12,000-line judgement call.
+
+#### Stage 1 as built — the inventory
+
+**Eleven call sites, six handlers.** `apps/web/app/retileCallSites.test.ts` parses `page.tsx`, finds every `retile` / `retilePreservingOpenings` / `retilePreservingOpeningsPure` call, attributes each to its enclosing component-scope handler, and asserts the result against this table. **It asserts nothing about behaviour** — its entire job is that nobody adds a re-tile during Stages 2–6 without classifying it, which in a 12,000-line file is otherwise invisible in review.
+
+| handler | calls | fate | converted by | why |
+|---|---|---|---|---|
+| `handleDraw` | 1 | **REDERIVES** | — | The first draw IS the one tiling pass tile-once keeps. No prior array to preserve. |
+| `handleAddBumpOut` | 1 | **REDERIVES** | — | A bump-out changes the SHAPE: it adds walls and splits one. The new walls have no prior array. |
+| `handleEditWallLength` | 3 | **DIRECT** | Stage 4 | Panels enter and grow at the dragged end — manipulation of the existing array, not a re-derivation of it. |
+| `handleDragWall` | 3 | **DIRECT** | Stage 4 | The same as typing a length, driven by the mouse. |
+| `retileAllForRunStops` | 1 | **DIRECT** | Stage 4 | A run stop shortens the built part of a wall — a length change by another name. ⚠ It is also what the run-stop opening memory exists to survive, so **Stage 6 cannot delete that memory until this site is converted.** |
+| `handleSetLeastAccessibleCorner` | 1 | **DIRECT** | Stage 2 | It moves WHERE the safety gap sits and changes no length. Moving a slot within an array is a permutation: it preserves the multiset of widths and needs no tiler at all. |
+
+So **four of the six handlers have to change, and two are correct as they are.** The two that stay are exactly the shape-changing ones, which is the line tile-once draws.
+
+⚠ **The local `retilePreservingOpenings` wrapper (`page.tsx:2629`) is plumbing, not a site.** It is the single place `standardWidthIn`, `cornerWidthInForTiling`, `thicknessIn`, the braced and opening seeds and the pinned-index set are bound; every real site goes through it. The test excludes it deliberately, and that exclusion is why the count is 11 sites rather than 12.
+
+#### What already does NOT re-tile — found during the inventory
+
+⚠ **Changing the standard panel width re-tiles nothing.** `setStandardWidthIn` is called from the Settings input and from loading a project, and from nowhere else; no handler re-tiles in response. A user who changes the standard width keeps the panels they already had.
+
+**This is worth recording because it is surprising in both directions.** Today it looks like a bug — the setting appears not to work on an existing building. **Under tile-once it is exactly right**, and "fixing" it by adding a re-tile would be work to undo three stages later. The Stage 1 test asserts no re-tiling handler matches `/StandardWidth/i`, so that fix cannot be made by accident.
+
+**Gates:** 2756 vitest in 141 files (5 new); lint unchanged at 174 problems (126 errors / 48 warnings); `tsc` clean on **both** `apps/web` and `packages/geometry`. The guard was watched failing: removing one handler from the inventory fails 3 of its 5 tests, naming the handler.
 
 ### Stage 2 — Stop re-deriving on edits that do not change wall length
 
