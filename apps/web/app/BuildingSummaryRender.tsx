@@ -51,6 +51,15 @@ export interface BuildingSummaryRenderProps {
   secondStorySpanningHeadersByWallId?: Record<string, SpanningHeader[]>;
   spanningHeaderNameById?: Map<string, string>;
   onCapture: (dataUrl: string) => void;
+  /** Always fires when a requested capture is finished with, including when
+   * it was skipped as unnecessary — the PDF export waits on it. */
+  onCaptureDone?: () => void;
+  /** True only while the Project Summary note is open, i.e. while the image
+   * is actually on screen. Everything below about the cost of this canvas
+   * applies to `captureLive`, not to the canvas being mounted. */
+  captureLive?: boolean;
+  /** Bump to take one capture now even when not live. */
+  captureRequestId?: number;
 }
 
 /**

@@ -1894,8 +1894,45 @@ export default function LayoutEditor() {
   // Measured and fixed 2026-10-03; the mechanism now lives in
   // Building3DView's CaptureFrame, which is where the comment describing it
   // belongs.
+  //
+  // ⚠ **It is captured only while something is LOOKING at it (2026-10-06).**
+  // Profiled on a production build, one wall-height edit on a 272-panel
+  // building spent **2,526ms of ~4,920ms of real work inside `toDataURL`** —
+  // 51% of the edit, for a PNG that is on screen only when the Project
+  // Summary note is open. So `captureLive` is that note's open state, and
+  // when it is closed the capture canvas marks a ref and does no readback.
+  // Tommy's own framing, 2026-10-02: *"we can compute shops upon a user
+  // initiated trigger"*.
+  //
+  // `captureRequestId` is the trigger for the one case that needs an image
+  // without anybody watching: the PDF export, which opens its sections,
+  // prints, and closes them again.
   const [renderImageDataUrl, setRenderImageDataUrl] = useState<string | null>(null);
   const handleCaptureRenderImage = useCallback((dataUrl: string) => setRenderImageDataUrl(dataUrl), []);
+  const [captureRequestId, setCaptureRequestId] = useState(0);
+  /** Runs once when the next requested capture is finished with. A ref, not
+   * state, because the export has to read it from inside a callback that was
+   * created before the capture was asked for. */
+  const afterCaptureRef = useRef<(() => void) | null>(null);
+  const handleCaptureDone = useCallback(() => {
+    const fn = afterCaptureRef.current;
+    afterCaptureRef.current = null;
+    fn?.();
+  }, []);
+  /** Ask for one capture and run `then` when it has happened. ⚠ The timeout
+   * is not belt-and-braces: with no footprint there is no capture canvas
+   * mounted at all, so nothing would ever call `onCaptureDone` and the
+   * export would hang with the user's notes forced open. */
+  const requestCaptureThen = useCallback((then: () => void) => {
+    afterCaptureRef.current = then;
+    setCaptureRequestId((n) => n + 1);
+    window.setTimeout(() => {
+      if (afterCaptureRef.current === then) {
+        afterCaptureRef.current = null;
+        then();
+      }
+    }, 4000);
+  }, []);
 
   // Compass widget (Tommy: "spiffy the screen adjustment tools into a
   // compass widget... always corresponding to the camera angle, even
@@ -6867,9 +6904,17 @@ export default function LayoutEditor() {
   };
 
   const handlePrintNote = (id: string) => {
-    document.body.setAttribute("data-print-mode", "page");
-    document.getElementById(id)?.setAttribute("data-print-target", "true");
-    window.print();
+    const go = () => {
+      document.body.setAttribute("data-print-mode", "page");
+      document.getElementById(id)?.setAttribute("data-print-target", "true");
+      window.print();
+    };
+    // The Summary's image is captured on a 300ms settle while its note is
+    // open, so printing straight after an edit could put the previous
+    // design on paper. Take one fresh capture first — a printed drawing is
+    // the last place a stale picture should be allowed to reach.
+    if (id === "detail-summary") requestCaptureThen(go);
+    else go();
   };
 
   // Tommy: "at the top of the right bar, lets make an export pdf button for
@@ -6918,11 +6963,20 @@ export default function LayoutEditor() {
       window.print();
       if (needsOpening) setOpenNoteIds(wasOpen);
     };
+    // ⚠ The Summary's capture is dormant while its note is closed, and this
+    // is the one path that needs the image without anybody looking at it —
+    // it opens the sections, prints, and closes them again. Ask for a
+    // capture and print when it lands, or the packet gets whatever PNG
+    // happened to be left over from the last time the note was open.
+    const run = () => {
+      if (ids.has("detail-summary")) requestCaptureThen(doExport);
+      else doExport();
+    };
     if (needsOpening) {
       setOpenNoteIds((was) => new Set([...was, ...ids]));
-      requestAnimationFrame(doExport);
+      requestAnimationFrame(run);
     } else {
-      doExport();
+      run();
     }
   };
 
@@ -10724,6 +10778,9 @@ export default function LayoutEditor() {
               secondStorySpanningHeadersByWallId={spanningHeadersByStoryAndWallId.second}
               spanningHeaderNameById={spanningHeaderNameById}
               onCapture={handleCaptureRenderImage}
+              onCaptureDone={handleCaptureDone}
+              captureLive={openNoteIds.has("detail-summary")}
+              captureRequestId={captureRequestId}
             />
           )}
 

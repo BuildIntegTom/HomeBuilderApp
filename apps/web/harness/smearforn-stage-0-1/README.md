@@ -33,7 +33,7 @@ check is working correctly when it reports this: that `theZoomsReallyDiffered`
 guard exists precisely so "the same answer at two zooms" cannot pass when the
 two zooms were one zoom.
 
-**It did not reproduce in six controlled runs** — three on the committed
+**It has now been seen TWICE in roughly a dozen runs across 2026-10-06** — once before the Stage 0 capture change existed and once after, which is what rules that change out as the cause. It did not reproduce in nine controlled runs — three on the committed
 baseline and three with the 2026-10-05 zoom fix in place, same Chrome, all
 six `ok` with `theZoomsReallyDiffered: true`. It was A/B'd that way because
 the zoom fix touched `FootprintCanvas` and the suspicion had to be ruled out;

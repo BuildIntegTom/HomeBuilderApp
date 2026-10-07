@@ -1,0 +1,65 @@
+{
+  "app": "http://localhost:3304/",
+  "ranAt": "2026-10-07T03:20:19.398Z",
+  "proveFailureMode": false,
+  "checks": [
+    {
+      "name": "a building exists to summarise",
+      "ok": true,
+      "detail": {
+        "panels": 176
+      }
+    },
+    {
+      "name": "the note shows a rendering once opened",
+      "ok": true,
+      "detail": {
+        "hasImg": true,
+        "sha": "1b62bdde395e6e59",
+        "len": 57862,
+        "weight": "63412.8 lb"
+      }
+    },
+    {
+      "name": "opening it took at least one capture",
+      "ok": true,
+      "detail": {
+        "capturesWhileOpening": 2
+      }
+    },
+    {
+      "name": "THE STAGE 0 WIN: no capture at all while the note was closed",
+      "ok": true,
+      "detail": {
+        "n": 0,
+        "ms": 0
+      }
+    },
+    {
+      "name": "re-opening took a capture",
+      "ok": true,
+      "detail": {
+        "calls": 2
+      }
+    },
+    {
+      "name": "the summary's own numbers moved, so the edit really landed",
+      "ok": true,
+      "detail": {
+        "before": "63412.8 lb",
+        "after": "97446.4 lb"
+      }
+    },
+    {
+      "name": "THE STALE-SUMMARY GUARD: the re-opened image is NOT the one from before the edit",
+      "ok": true,
+      "detail": {
+        "beforeSha": "1b62bdde395e6e59",
+        "afterSha": "1351d828a494a6c2",
+        "beforeLen": 57862,
+        "afterLen": 72214
+      }
+    }
+  ],
+  "failures": []
+}

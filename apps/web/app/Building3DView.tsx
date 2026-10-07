@@ -776,6 +776,16 @@ interface Building3DViewProps {
    * small perf cost not worth paying there). Never called twice with the
    * same image, so it cannot drive a state-update loop. */
   onCapture?: (dataUrl: string) => void;
+  /** Called when a capture asked for via `captureRequestId` has been dealt
+   * with — including when it was skipped because the scene had not changed.
+   * A caller that is waiting to print depends on this always arriving. */
+  onCaptureDone?: () => void;
+  /** True while the captured image is actually on screen (the Project
+   * Summary note is open). False leaves the capture dormant — see
+   * CaptureFrame. */
+  captureLive?: boolean;
+  /** Bump to take one capture now regardless of `captureLive`. */
+  captureRequestId?: number;
   /** Forwarded to CompassWidget's rotating face — see CompassTracker below. */
   compassRef?: RefObject<HTMLDivElement | null>;
   /** Renders every panel as a single flat-colored box (its own panel-type
@@ -836,6 +846,10 @@ interface Building3DViewProps {
  * later. */
 const CAPTURE_SETTLE_MS = 300;
 
+/** A stable no-op, so the optional `onCaptureDone` never changes identity
+ * between renders and cannot churn CaptureFrame. */
+const NOOP = () => {};
+
 /**
  * Mounted only in `captureMode` — reads the Canvas's own `gl` via `useThree`
  * and keeps the Project Summary's PNG equal to the current design.
@@ -871,21 +885,78 @@ const CAPTURE_SETTLE_MS = 300;
  * single-shot version relied on and the reason `preserveDrawingBuffer` is
  * on.
  */
-function CaptureFrame({ onCapture }: { onCapture: (dataUrl: string) => void }) {
-  const { gl } = useThree();
+function CaptureFrame({
+  onCapture,
+  onCaptureDone,
+  live,
+  captureRequestId,
+}: {
+  onCapture: (dataUrl: string) => void;
+  /** Always called when a REQUESTED capture has been dealt with, including
+   * when it was skipped because nothing had changed — so a caller waiting
+   * to print cannot hang on a capture that was never needed. */
+  onCaptureDone: () => void;
+  /** True while something is actually displaying the image (the Project
+   * Summary note is open). See the "while nobody is looking" note above. */
+  live: boolean;
+  /** Bumped to ask for one capture now, whatever `live` is. */
+  captureRequestId: number;
+}) {
+  const { gl, invalidate } = useThree();
   const timerRef = useRef<number | null>(null);
   const lastDataUrlRef = useRef<string>("");
+  /** The scene has changed since the last readback. Set from `useFrame`, so
+   * it costs a boolean write per frame and never a React render. */
+  const dirtyRef = useRef(true);
+  const servedRequestRef = useRef(captureRequestId);
+
+  const readBack = () => {
+    const dataUrl = gl.domElement.toDataURL("image/png");
+    dirtyRef.current = false;
+    if (dataUrl === lastDataUrlRef.current) return;
+    lastDataUrlRef.current = dataUrl;
+    onCapture(dataUrl);
+  };
 
   useFrame(() => {
-    if (timerRef.current !== null) return;
+    // A frame rendered, so under `frameloop="demand"` the scene changed.
+    // Marking a ref is the whole cost when nobody is looking.
+    dirtyRef.current = true;
+
+    if (servedRequestRef.current !== captureRequestId) {
+      servedRequestRef.current = captureRequestId;
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      readBack();
+      onCaptureDone();
+      return;
+    }
+
+    if (!live || timerRef.current !== null) return;
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null;
-      const dataUrl = gl.domElement.toDataURL("image/png");
-      if (dataUrl === lastDataUrlRef.current) return;
-      lastDataUrlRef.current = dataUrl;
-      onCapture(dataUrl);
+      if (dirtyRef.current) readBack();
     }, CAPTURE_SETTLE_MS);
   });
+
+  // A request has to land on a frame, and `demand` renders none on its own
+  // when the scene has not changed — so ask for one explicitly.
+  useEffect(() => {
+    invalidate();
+  }, [captureRequestId, invalidate]);
+
+  // ⚠ And the same applies to going live, which is the whole open/close
+  // path: edits made while the note was CLOSED each rendered a frame and
+  // set `dirtyRef`, but re-opening the note changes nothing in this scene,
+  // so `demand` would render no further frame and `useFrame` would never
+  // run — leaving the note showing the image from before those edits. That
+  // is the original stale-summary bug wearing a different hat, so going
+  // live forces a frame exactly the way an explicit request does.
+  useEffect(() => {
+    if (live) invalidate();
+  }, [live, invalidate]);
 
   useEffect(
     () => () => {
@@ -959,6 +1030,9 @@ export default function Building3DView({
   spanningHeaderNameById = EMPTY_SPANNING_HEADER_NAMES,
   captureMode = false,
   onCapture,
+  onCaptureDone,
+  captureLive = false,
+  captureRequestId = 0,
   compassRef,
   simplified = false,
   showWraps = false,
@@ -1989,7 +2063,14 @@ export default function Building3DView({
             if (tool3D === "orbit") setOrbitTargetOverride(null);
           }}
         >
-          {captureMode && onCapture && <CaptureFrame onCapture={onCapture} />}
+          {captureMode && onCapture && (
+            <CaptureFrame
+              onCapture={onCapture}
+              onCaptureDone={onCaptureDone ?? NOOP}
+              live={captureLive}
+              captureRequestId={captureRequestId}
+            />
+          )}
           <ambientLight intensity={0.6} />
           <directionalLight position={[bounds.maxDim, bounds.maxDim * 2, bounds.maxDim]} intensity={0.8} />
           <mesh position={[bounds.centerX, -0.05, bounds.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>

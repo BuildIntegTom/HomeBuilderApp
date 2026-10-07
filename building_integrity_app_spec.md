@@ -5127,7 +5127,7 @@ V8 sampling profiler at 200µs, one wall-height edit on a **272-panel** building
 
 Each stage is separately mergeable, separately reviewable, and leaves the app working. Stage 0 is **not** tile-once and should land first.
 
-### Stage 0 — Take the summary capture off the edit path (PREREQUISITE, not tile-once)
+### Stage 0 — Take the summary capture off the edit path (PREREQUISITE, not tile-once) — **BUILT 2026-10-06**
 
 Measured at 51% of an edit. This is Tommy's own idea, 2026-10-02: *"We could maybe add a trigger somewhere - print and release shops for a particular edit... if it makes things easier we can compute shops upon a user initiated trigger?"*
 
@@ -5136,6 +5136,37 @@ Capture when the image is actually wanted — the Summary note opening, print, P
 ⚠ **The trap, and it is why `BuildingSummaryRender` is mounted unconditionally today:** the print and PDF paths *read* `renderImageDataUrl` and have no way to ask for one. Stage 0 must give them a way to ask and must **never silently print a stale or blank image** — a visible "generating…" beats a wrong picture, which is the standing rule in this file.
 
 **Done when:** the 272-panel edit is measured again and the capture no longer appears in the profile. Predicted ~1.1s from the accidental zero-capture observation — **predicted, so it must be measured, not assumed.**
+
+#### Stage 0 as built
+
+**The shape.** The capture canvas stays mounted — print and PDF export still need it — but the readback is gated on whether anything is displaying the image:
+
+- `useFrame` still fires exactly when the scene changes, which is `frameloop="demand"`'s whole point, so **there is still no dependency list to go stale**. It now only sets a ref. That is the entire per-edit cost while nobody is looking.
+- **`captureLive`** is the Project Summary note's open state. Open → the 2026-10-03 behaviour unchanged, a 300ms settle, the image tracking edits while the user watches it. Closed → dormant.
+- **`captureRequestId`** is the explicit trigger for the one case that needs an image with nobody watching: the PDF export, which opens its sections, prints, and closes them again. `onCaptureDone` always fires, including when the capture was skipped as unnecessary, because the export waits on it.
+- ⚠ `requestCaptureThen`'s timeout is **not** belt-and-braces: with no footprint there is no capture canvas mounted at all, so nothing would ever report completion and the export would hang with the user's notes forced open.
+- **Print of the Summary note also takes a fresh capture first.** The image is on a 300ms settle, so printing straight after an edit could otherwise put the previous design on paper, and a printed drawing is the last place a stale picture should reach.
+
+**⚠ The trap this walked into, and it is the ORIGINAL BUG WEARING A DIFFERENT HAT.** Gating on "is anyone looking" is correct, but **re-opening the note changes nothing in that hidden scene** — so under `demand` no further frame renders, `useFrame` never runs, and the note opens showing the image from before the edits made while it was closed. Caught by reasoning through the open/close path *before* testing it, not after. The fix is that going live forces a frame exactly the way an explicit request does (`useEffect(() => { if (live) invalidate(); }, [live, invalidate])`).
+
+**Measured, same building, same edit, same environment** (production build, 272 panels, one wall-height change):
+
+| | before | after |
+|---|---|---|
+| `toDataURL` calls per edit | 2 | **0** |
+| `toDataURL` time | 2,526 ms | **0 ms** |
+| real work per edit | 4,920 ms | **~2,200 ms** |
+| main-thread blocking | — | **1,579 ms**, longest task 990 ms |
+
+⚠ The predicted ~1.1s was close but **not** what happened; the measured blocking is 1,579ms at 272 panels. Recorded as measured rather than as predicted.
+
+**The new regression net: `apps/web/harness/summary-capture/`.** It asserts **both directions** — no capture while the note is closed, AND a current image when it is re-opened — because either one alone is satisfied by a broken implementation. It also asserts the summary's own numbers moved, so an edit that silently failed to apply cannot make the image check pass for the wrong reason. `SUMMARY_CAPTURE_PROVE_FAILURE=1` exits 1 and writes no evidence.
+
+**Gates:** 2751 vitest green; `tsc` clean on `apps/web`; lint unchanged at 174 problems (126 errors / 48 warnings); the new harness 7 of 7; five of the six existing harnesses green, with `smearforn-stage-0-1`'s known elevation-zoom flake seen once and then not reproducing in three re-runs — it was also seen once BEFORE this change existed, which is what rules this change out as its cause.
+
+⚠ **Found in passing and NOT caused by this work: `packages/geometry` does not typecheck.** `bracedPlacement.test.ts:727` passes `"x"` as a `BracePattern`. Vitest does not typecheck, so the suite runs green and it has been red for some time. Found only because `apps/web/AGENTS.md` says to check both projects. Worth a separate fix.
+
+⚠ **Still on the edit path and NOT addressed here:** the hidden canvas's scene is still rebuilt on every edit even though nobody is looking — roughly 573ms of WebGL upload plus its share of the JS. Removing that means freezing its props until a capture is wanted, which is a larger change and deserves its own measurement rather than being bundled in.
 
 ### Stage 1 — Name the seam (no behaviour change)
 
