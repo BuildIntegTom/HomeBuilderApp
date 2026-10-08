@@ -300,6 +300,7 @@ import BaleFoundationCrossSectionDiagram from "./BaleFoundationCrossSectionDiagr
 import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
+import type { TilingBasis } from "./tilingBasis";
 import { PLYWOOD_HALF_ROW_LABEL, PLYWOOD_THREE_QUARTER_ROW_LABEL } from "./plywoodRowLabels";
 import { resolveBracedStyle } from "./bracedStyle";
 import { shouldAutoUpgradeToBigHeader } from "./bigHeaderAutoUpgrade";
@@ -676,6 +677,12 @@ export default function LayoutEditor() {
   const [offsetPx, setOffsetPx] = useState({ x: 60, y: 60 });
   const [baseWallSlots, setBaseWallSlots] = useState<Record<string, PanelSlot[]>>({});
   const [leastAccessibleCorner, setLeastAccessibleCorner] = useState<CornerId>("A");
+  /** REPANELIZE R0 — the settings the CURRENT tiling was produced under,
+   * so a setting changed since then can be shown as pending rather than
+   * silently doing nothing. See `tilingBasis.ts`. Null until this project
+   * has been tiled at least once, and null on every file saved before R0;
+   * null claims nothing rather than claiming everything. */
+  const [tilingBasis, setTilingBasis] = useState<TilingBasis | null>(null);
 
   const [standardWidthIn, setStandardWidthIn] = useState(looseDensePackWidthIn.value);
   const [thicknessIn, setThicknessIn] = useState(looseDensePackDefaultThicknessIn.value);
@@ -2046,6 +2053,7 @@ export default function LayoutEditor() {
       wallRunStopsByWallId,
       unbuiltOpeningsByStoryAndWallId: prunedOpeningMemory,
       wallReviewNotes,
+      tilingBasis,
     };
     return state;
   };
@@ -2191,6 +2199,10 @@ export default function LayoutEditor() {
       second: s.unbuiltOpeningsByStoryAndWallId?.second ?? {},
     });
     setWallReviewNotes(s.wallReviewNotes ?? []);
+    // Absent on every file saved before R0: the basis is UNKNOWN, which
+    // claims nothing. See this key's own note in projectFile.ts for why it
+    // is not defaulted to the file's live settings.
+    setTilingBasis(s.tilingBasis ?? null);
   };
 
   const handleLoadFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2653,11 +2665,49 @@ export default function LayoutEditor() {
   /** Both halves of a re-tile written back together — the slots that are
    * built, and the openings an unbuilt span set aside. See the wrapper above
    * for why they cannot be separated. */
-  const applyRetiledStory = (story: "ground" | "second", result: RetileWithRunStopMemoryResult) => {
+  /* REPANELIZE R0. Exactly the values the wrapper above binds, plus the
+     least-accessible corner that travels with them — a deliberately plain
+     object rather than a memo, because every reader compares its VALUES
+     and none depends on its identity. */
+  const liveTilingBasis: TilingBasis = {
+    standardWidthIn,
+    thicknessIn,
+    leastAccessibleCorner,
+    cornerWidthIn: cornerWidthInForTiling,
+    cornerMayWiden: cornerMayWidenForTiling,
+    bracedSpacingIn: bracedSeed.spacingIn,
+    bracedDefaultPattern: bracedSeed.defaultPattern,
+    bracedDefaultMirrored: bracedSeed.defaultMirrored,
+  };
+
+  /** Called at every site that re-tiles, so the basis always describes the
+   * tiling that is actually on screen. ⚠ Takes the corner ACTUALLY USED
+   * rather than reading state: `handleDraw` and
+   * `handleSetLeastAccessibleCorner` both re-tile with a corner the state
+   * has not caught up to yet, and recording the stale one would mark the
+   * setting as pending the moment it was applied. */
+  const recordTilingBasis = (leastAccessibleUsed: string) => {
+    setTilingBasis({ ...liveTilingBasis, leastAccessibleCorner: leastAccessibleUsed });
+  };
+
+  const applyRetiledStory = (
+    story: "ground" | "second",
+    result: RetileWithRunStopMemoryResult,
+    /** ⚠ REPANELIZE R0: the least-accessible corner this result was ACTUALLY
+     * TILED WITH, which is not always the one in state — `handleAddBumpOut`
+     * and `handleDragWall` both re-tile with a corner the state has not
+     * caught up to. Required rather than defaulted so the compiler names
+     * every re-tiling site instead of letting one quietly record a stale
+     * basis, which would mark a setting as pending the instant it was
+     * applied. */
+    leastAccessibleUsed: string,
+  ) => {
     if (story === "ground") setBaseWallSlots(result.slotsByWallId);
     else setWallSlotsForStory("second", () => result.slotsByWallId);
     setUnbuiltOpeningsByStoryAndWallId((prev) => ({ ...prev, [story]: result.unbuiltOpeningsByWallId }));
+    recordTilingBasis(leastAccessibleUsed);
   };
+
   /** `runStops` is the WHOLE map, not one wall's record: since the
    * orphan-corner rule a stop on the neighbour changes this wall's own inset
    * (see `cornerOwnershipWithRunStops`). Callers exploring a CANDIDATE stop
@@ -2721,6 +2771,7 @@ export default function LayoutEditor() {
     setMidWallBeamsByStoryAndWallId({ ground: {}, second: {} });
     setSpanningHeadersByStoryAndWallId({ ground: {}, second: {} });
     setBaseWallSlots(retile(fp, nextLeastAccessible, nextPrimary, {}));
+    recordTilingBasis(nextLeastAccessible);
     setShapeTool("edit");
     // A brand-new footprint has no meaningful relationship to whatever
     // second-story data existed for the old one (see the `secondStory`
@@ -3379,10 +3430,10 @@ export default function LayoutEditor() {
     // stop set aside so a later un-stop can bring them back (Tommy: "Drop
     // them, and remember").
     const groundResult = retileAllForRunStops("ground", nextStops);
-    if (groundResult) applyRetiledStory("ground", groundResult);
+    if (groundResult) applyRetiledStory("ground", groundResult, leastAccessibleCorner);
     if (stories.length > 1) {
       const secondResult = retileAllForRunStops("second", nextStops);
-      if (secondResult) applyRetiledStory("second", secondResult);
+      if (secondResult) applyRetiledStory("second", secondResult, leastAccessibleCorner);
     }
     // The selection almost certainly points at a slot index that no longer
     // means what it did — same reset `handleToggleOpening` does.
@@ -3407,6 +3458,7 @@ export default function LayoutEditor() {
     setLeastAccessibleCorner(cornerId);
     if (footprint) {
       setBaseWallSlots(retile(footprint, cornerId, primaryCornerIds));
+      recordTilingBasis(cornerId);
     }
   };
 
@@ -4228,7 +4280,7 @@ export default function LayoutEditor() {
       // editWallLength never renumbers ids, so baseWallSlots' old keys are
       // still valid — every wall's own openings survive, re-tiled at its
       // (possibly new) length.
-      applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, primaryCornerIds, baseWallSlots));
+      applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, primaryCornerIds, baseWallSlots), leastAccessibleCorner);
       return;
     }
     if (footprint.corners.length === 4) {
@@ -4245,7 +4297,7 @@ export default function LayoutEditor() {
       // buildRectangleFootprint always uses the same fixed "AB"/"BC"/"CD"/
       // "DA" wall ids regardless of dimensions, so baseWallSlots' keys stay
       // valid here too.
-      applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
+      applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots), leastAccessibleCorner);
       return;
     }
 
@@ -4261,7 +4313,7 @@ export default function LayoutEditor() {
     setFootprint(fp);
     setPrimaryCornerIds(nextPrimary);
     // buildOctagonFootprint always uses the same fixed "0".."7" wall ids too.
-    applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
+    applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots), leastAccessibleCorner);
   };
 
   const isWallLengthEditable = (wallId: string): boolean => {
@@ -4352,6 +4404,7 @@ export default function LayoutEditor() {
     applyRetiledStory(
       "ground",
       retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops, "ground", nextRemembered),
+      nextLeastAccessible,
     );
     // `applyRetiledStory` writes the GROUND half; the second story is not
     // re-tiled here (see this handler's own note on second-story data), so its
@@ -4393,7 +4446,7 @@ export default function LayoutEditor() {
 
       if (fp === dragged) {
         // No collapse fired — ids are unchanged, reuse baseWallSlots directly.
-        applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
+        applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots), leastAccessibleCorner);
       } else {
         // A collapse fired — correlate by exact point-pair (a collapse never
         // moves a surviving corner's point, only removes one and relabels
@@ -4458,6 +4511,7 @@ export default function LayoutEditor() {
             "ground",
             nextRemembered,
           ),
+          nextLeastAccessible,
         );
         // Re-keyed, not re-derived: this branch does not re-tile the second
         // story. Same as the bump-out path.
@@ -4485,7 +4539,7 @@ export default function LayoutEditor() {
     const nextPrimary = new Set(fp.corners.map((c) => c.id));
     setFootprint(fp);
     setPrimaryCornerIds(nextPrimary);
-    applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots));
+    applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots), leastAccessibleCorner);
   };
 
   // For rendering: butting walls' content starts inset from the actual

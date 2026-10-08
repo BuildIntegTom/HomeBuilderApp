@@ -5220,11 +5220,29 @@ His words, offered unprompted while Stage 2 was being built: *"maybe we could ha
 
 Three pieces that only work together: **Repanelize**, the **deferred-setting marker**, and the **opening anchor**. Tommy's answers of 2026-10-07: *"Deferred setting, activates when retiled"*, *"Lets fix the bug"*, *"Agreed. Let's plan it out."*
 
-#### R0 — The tiling basis (the thing everything else reads)
+#### R0 — The tiling basis (the thing everything else reads) — **BUILT 2026-10-08**
 
 Store, alongside the panel arrays, **the settings the current tiling was produced under**: standard width, corner width, thickness, least-accessible corner, braced seed, seismic spacing. Call it the **tiling basis**. Saved with the project, so re-opening shows the same state rather than a clean slate.
 
 Everything below is a comparison against it. ⚠ **Without this there is nothing to put a marker on** — "changed but not applied" is meaningless unless the app remembers what it was applied *with*.
+
+##### R0 as built
+
+**`apps/web/app/tilingBasis.ts`** holds the type, the field labels and the comparison. The eight fields are exactly what reaches the tiler — the arguments `page.tsx`'s `retilePreservingOpenings` wrapper binds, plus the least-accessible corner that travels with them: `standardWidthIn`, `thicknessIn`, `leastAccessibleCorner`, `cornerWidthIn`, `cornerMayWiden`, `bracedSpacingIn`, `bracedDefaultPattern`, `bracedDefaultMirrored`.
+
+⚠ **Three of those are DERIVED, not typed by the user** — corner width and the widen rule come from the panelization type, braced spacing from the seismic zone. The basis stores the derived value because that is what determines the output; mapping a difference back to the control the user can see is R1's job.
+
+**`recordTilingBasis(leastAccessibleUsed)` is called at every site that re-tiles**, and takes the corner **actually used** rather than reading state. That is not defensive style: `handleDraw`, `handleSetLeastAccessibleCorner`, `handleAddBumpOut` and `handleDragWall` all re-tile with a corner the state has not caught up to yet, and recording the stale one would mark the setting as pending **the instant it was applied**.
+
+**The corner was made a REQUIRED parameter of `applyRetiledStory` so the compiler names every site.** It immediately found one that eye-reading had missed — a second multi-line call inside `handleDragWall` — which would have recorded a stale basis on every wall drag.
+
+**Persistence: an additive optional key, and NO `PROJECT_FILE_VERSION` bump**, by that file's own stated rule for a key with one shared default. ⚠ **Absent means the basis is UNKNOWN, and unknown claims nothing** — `tilingBasisDifferences` returns `[]` and `tilingBasisIsCurrent` returns the string `"unknown"` rather than a comforting boolean. It is deliberately **not** defaulted to the file's own live settings: that would assert nothing is pending about a building this app never tiled, which is substituting a value for a gap.
+
+⚠ **The Stage 4B redaction guard caught the new key**, as designed: every `ProjectState` key must be classified money or not-money, and the build failed until `tilingBasis` was. Classified **not-money** — widths, thickness, corner and bracing are geometry and fabrication rules, no price is in it and none is derivable from it.
+
+**Gates:** 2762 vitest in 142 files (6 new, including one that walks every field so a basis field added without a comparison cannot go unwatched, and one asserting a float artefact in a derived value raises no marker); `tsc` clean on **both** projects; lint unchanged at 174 problems.
+
+**Not built here, deliberately:** nothing reads the basis yet. The marker is R1.
 
 #### R1 — The deferred-setting marker
 

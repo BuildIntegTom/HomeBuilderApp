@@ -138,6 +138,12 @@ export const MONEY_CLASSIFICATION = {
   // redacted document costs a browsing company nothing it was entitled to.
   unbuiltOpeningsByStoryAndWallId: "not-money",
   wallReviewNotes: "not-money",
+  // REPANELIZE R0. Panel widths, thickness, corner width, bracing spacing and
+  // the least-accessible corner — the settings a tiling was produced under.
+  // Geometry and fabrication rules throughout; there is no price in it, and
+  // none of it is derivable into one. A browsing company seeing it learns how
+  // the walls were panelized, which the panel layout already tells them.
+  tilingBasis: "not-money",
 } as const satisfies Record<keyof ProjectState, MoneyClassification>;
 
 /** The keys classified `money`, as a literal union. Derived, never restated. */

@@ -40,6 +40,7 @@ import type { ViewerRole } from "./viewerRole";
 import type { MidWallBeam } from "./midWallBeam";
 import type { SpanningHeader } from "./spanningHeader";
 import type { WallReviewNote } from "./wallReviewNotes";
+import type { TilingBasis } from "./tilingBasis";
 // Stage 4B, for `parseRedactedProjectFile` only. `redaction.ts` imports
 // `ProjectState` back from here with `import type`, which is erased, so this is
 // not a runtime cycle.
@@ -408,6 +409,24 @@ export interface ProjectState {
    * own defaulting to an empty array (no notes), matching every such
    * file's pre-existing behavior exactly. */
   wallReviewNotes?: WallReviewNote[];
+  /**
+   * REPANELIZE R0 — the settings the saved tiling was PRODUCED UNDER, so a
+   * setting changed since then can be shown as pending rather than silently
+   * doing nothing. See `tilingBasis.ts`.
+   *
+   * **Optional, and therefore NOT a `PROJECT_FILE_VERSION` bump**, by this
+   * file's own stated rule: an additive optional key with ONE shared
+   * default. Absent — every file ever saved, and any project not yet tiled —
+   * means the basis is UNKNOWN, and `tilingBasisDifferences` reports nothing
+   * for an unknown basis, which is byte-identical to today's behaviour. See
+   * the precedents named in the v24->v25 note above.
+   *
+   * ⚠ Absent deliberately does NOT mean "up to date". Defaulting it to the
+   * file's own live settings would assert that nothing is pending, which is
+   * a guess about a building this app never tiled — substituting a value for
+   * a gap, which is the opposite of this app's rule. Deliberately NOT in
+   * `REQUIRED_STATE_KEYS` for the same reason. */
+  tilingBasis?: TilingBasis | null;
 }
 
 const REQUIRED_STATE_KEYS: (keyof ProjectState)[] = [
