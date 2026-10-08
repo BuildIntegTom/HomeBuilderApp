@@ -5216,6 +5216,53 @@ His words, offered unprompted while Stage 2 was being built: *"maybe we could ha
 
 **Open, and needs a real spec pass before anything is built:** exactly which settings carry the marker; whether Repanelize is whole-project only or also per-wall; whether it is undoable (it should be, once undo exists, since it is the most destructive single action in the app); and what the confirmation says when there are no hand edits to lose, where the warning would be a lie.
 
+### The Repanelize plan (2026-10-07) — PLANNED, NOTHING BUILT
+
+Three pieces that only work together: **Repanelize**, the **deferred-setting marker**, and the **opening anchor**. Tommy's answers of 2026-10-07: *"Deferred setting, activates when retiled"*, *"Lets fix the bug"*, *"Agreed. Let's plan it out."*
+
+#### R0 — The tiling basis (the thing everything else reads)
+
+Store, alongside the panel arrays, **the settings the current tiling was produced under**: standard width, corner width, thickness, least-accessible corner, braced seed, seismic spacing. Call it the **tiling basis**. Saved with the project, so re-opening shows the same state rather than a clean slate.
+
+Everything below is a comparison against it. ⚠ **Without this there is nothing to put a marker on** — "changed but not applied" is meaningless unless the app remembers what it was applied *with*.
+
+#### R1 — The deferred-setting marker
+
+A small red/orange caution triangle beside any setting whose live value differs from the basis, plus the Repanelize button marked as having work to do.
+
+- **This is the "a visible gap beats a substituted value" rule**, applied to settings instead of to catalogue values. It is the same principle as the provisional-value flags and should read the same way.
+- **Which settings:** every field in the basis. ⚠ **The inventory has to be built by checking what each setting actually does**, not assumed — Stage 1 already found that the standard width re-tiles nothing while other settings do, and the only way that was discovered was by looking.
+- **Least-accessible corner joins this set** (Tommy's decision), so `handleSetLeastAccessibleCorner` stops re-tiling and starts marking. That retires Stage 2's abandoned attempt above: no permutation, no window moves, and the user is told.
+
+#### R2 — The opening anchor: position, held as INTENT
+
+The defect: `beforeStandardCount` records a count, and **a count is not a position**. Changing the gap end reorders the borrowed panels, so N standards no longer sum to the same width and the opening drifts — measured at up to **+19in**.
+
+⚠ **The obvious fix fails, and it was tried on 2026-10-07.** Adding an `offsetIn` that `getOpeningAnchors` **re-derives from the current slots** breaks the run-stop round trip: the offset recorded while a wall is stopped describes the stopped layout, so restoring sorts by a meaningless key. Measured — a window and a door **swapped places** (baseline `window@265.5 door@407`, restored `door@225.5 window@263.5`). Reverted.
+
+**So the anchor must be USER INTENT, not a derived property.** An `anchorOffsetIn` carried on the opening slot itself, written **only when the user places or moves that opening**, and passed through every re-tile untouched. Then:
+
+- a re-tile places the opening at the slot boundary **nearest** its intent, which is as close as a discrete layout can get;
+- a stop/un-stop round trip restores it to the same intent, because nothing recomputed it in between — which is exactly what the failed attempt got wrong;
+- ordering uses the same stable key, so openings cannot cross.
+
+**Staging:** (a) add the field and write it on place/move; (b) use it for placement and ordering, falling back to the count while absent; (c) sweep stop/un-stop round trips and gap-end flips for position AND order; (d) retire the count once every opening carries an intent. ⚠ No migration is owed for existing projects — *"No one cares about any projects previously drawn in the app"* (2026-10-07).
+
+#### R3 — Repanelize itself
+
+The tiler, run deliberately, over the project.
+
+- ⚠ **The confirmation must not lie.** *"This will retile over any hand edits"* is false when there are none. Compute the comparison first — tile each wall fresh and count the walls that would actually change — and say the true thing: **"14 of 18 walls have hand edits that will be overwritten"**, or that nothing will be lost. The comparison is one tiling pass, which is exactly the work the app did on *every* edit until Stage 0, so it is affordable.
+- **Whole project in v1.** Per-wall is a later question; it is not needed to unblock the stages.
+- ⚠ **It is the single most destructive action in the app**, so it should land **with or after undo** (Stage 5), as **one** undo entry. Shipping it before undo means the confirmation dialog is the only thing between a user and losing a day's hand edits.
+- On commit it writes a fresh **tiling basis**, which clears every marker — that is what "activates when retiled" means.
+
+#### Order, and why
+
+**R0 → R1 → R2 → R3.** R0 is a prerequisite for R1. R2 is independent of both and can run in parallel, but **must precede R3**: Repanelize is a wholesale re-tile, so shipping it while openings still drift would relocate every window in the building on exactly the action that is advertised as safe for them.
+
+⚠ **R3 should not ship before undo.** If that ordering is unacceptable, the fallback is to make Repanelize per-wall first, where the blast radius of a mistake is one wall.
+
 ### ⚠ Stage 2 attempt 1 on `handleSetLeastAccessibleCorner`: ABANDONED, and what it found (2026-10-07)
 
 Stage 1 classified this handler as DIRECT on the reasoning that changing the least-accessible corner moves only **where the safety gap sits**, changes no length, and is therefore a permutation needing no tiler. **The first half is true. The conclusion was wrong, and the measurement says why.**
