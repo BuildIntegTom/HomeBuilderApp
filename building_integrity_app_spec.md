@@ -5199,6 +5199,43 @@ So **four of the six handlers have to change, and two are correct as they are.**
 
 **Gates:** 2756 vitest in 141 files (5 new); lint unchanged at 174 problems (126 errors / 48 warnings); `tsc` clean on **both** `apps/web` and `packages/geometry`. The guard was watched failing: removing one handler from the inventory fails 3 of its 5 tests, naming the handler.
 
+### ⚠ Repanelize, and the "changed but not applied" marker (Tommy, 2026-10-07) — DECIDED IN PRINCIPLE, NOT SPEC'D, NOT BUILT
+
+His words, offered unprompted while Stage 2 was being built: *"maybe we could have a repanelize button? It would retile the project and perhaps have a 'Are you sure? This will retile over any hand edits that have been made' or something like that. Perhaps a small triangle caution icon that's red and orange can appear next to any settings that have been changed but not implemented like changing panel size ect"*.
+
+**This is the missing half of tile-once and it should be adopted.** Tile-once says the tiler stops running behind the user's back; it never said what happens when the user genuinely wants a fresh layout. Two pieces:
+
+1. **A Repanelize button** — the tiler, run deliberately, over the whole project, behind a confirmation that says plainly that hand edits will be overwritten.
+2. **A caution marker** — a small red/orange triangle beside any setting whose change has not been applied to the existing building, e.g. the standard panel width.
+
+**Why it matters more than it looks:**
+
+- It turns the Stage 1 finding from an accident into a design. Changing the standard panel width already re-tiles nothing (see "What already does NOT re-tile"), which today reads as the setting being broken. With the marker it reads as *"changed, press Repanelize to apply"* — which is the truthful statement, and it is the same **"a visible gap beats a substituted value"** rule this file applies to provisional values.
+- It gives every later stage an escape hatch. Stages 2–6 remove implicit re-derivation; Repanelize is where that capability goes rather than being deleted.
+- ⚠ **It changes what Stage 2 should do with `handleSetLeastAccessibleCorner`**, which is why this is recorded here rather than in a backlog. See directly below.
+
+**Open, and needs a real spec pass before anything is built:** exactly which settings carry the marker; whether Repanelize is whole-project only or also per-wall; whether it is undoable (it should be, once undo exists, since it is the most destructive single action in the app); and what the confirmation says when there are no hand edits to lose, where the warning would be a lie.
+
+### ⚠ Stage 2 attempt 1 on `handleSetLeastAccessibleCorner`: ABANDONED, and what it found (2026-10-07)
+
+Stage 1 classified this handler as DIRECT on the reasoning that changing the least-accessible corner moves only **where the safety gap sits**, changes no length, and is therefore a permutation needing no tiler. **The first half is true. The conclusion was wrong, and the measurement says why.**
+
+**Probing the tiler at both `gapEnd`s** (rather than reading it) established that on a wall with **no openings** the flip is exactly *"reverse the movable slots, leaving corner panels where they are"* — verified against `tileWall` across **4,000+ runs** from 100in to 600in in half-inch steps and all four corner configurations, shape-for-shape identical.
+
+**On a wall WITH an opening it is not, and the reason is that slot order IS position along the wall.** An opening is placed after *N* standard slots, so changing what precedes it changes where it sits:
+
+| 240in wall, window after 2 standards | opening offset |
+|---|---|
+| tiler, gap at start | 113in |
+| tiler, gap at end | 112.25in — **the tiler moved the window 0.75in** |
+| reverse-the-movables | 113in |
+
+⚠ **THE FINDING THAT MATTERS, AND IT IS A LIVE DEFECT, NOT A TILE-ONCE CONCERN: changing which corner is least accessible MOVES WINDOWS ALONG THE WALL TODAY.** Measured against the current tiler: −0.75in on a 240in wall, **+5.875in** on a 300in wall, and **+19in** on a 360in wall with a 48in window after 3 standards. A setting about which end a sheet of plywood goes relocates rough openings by over a foot. Nothing reports it.
+
+⚠ **And the flattering version of this story was wrong too.** On the first of those cases the permutation held the window still while the tiler moved it, which read as "the permutation is better than the tiler". The sweep killed that: on the other cases the permutation moved the window **+29in, +39in and +59in** — far worse. Pinning an opening by its **index** does not pin it by its **position**, because reversing the slots before it changes the total width that precedes it. Recorded because the half-finished version of this entry would have claimed a win.
+
+**So the work is set aside rather than committed** (`flipGapEnd.ts` and its sweep, proven for openings-free walls and wrong for the rest). Under Repanelize above, the cleaner answer is likely that changing the least-accessible corner becomes one of the **deferred settings carrying the caution marker** rather than an instant edit at all — no permutation, no window moves, and the user is told. That is a decision for Tommy, not an implementation detail, so nothing is built until he takes it.
+
 ### Stage 2 — Stop re-deriving on edits that do not change wall length
 
 Panel width edit, panel type cycle, brace toggle, opening add/move. Each becomes a direct mutation of the slot array.
