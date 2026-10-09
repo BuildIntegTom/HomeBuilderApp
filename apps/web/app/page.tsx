@@ -308,6 +308,16 @@ import {
   type TilingBasis,
 } from "./tilingBasis";
 import PendingRetileMark from "./PendingRetileMark";
+import {
+  canRedo as historyCanRedo,
+  canUndo as historyCanUndo,
+  emptyUndoHistory,
+  pushUndoEntry,
+  redoTo,
+  sameDocument,
+  undoTo,
+  type UndoHistory,
+} from "./undoHistory";
 import { PLYWOOD_HALF_ROW_LABEL, PLYWOOD_THREE_QUARTER_ROW_LABEL } from "./plywoodRowLabels";
 import { resolveBracedStyle } from "./bracedStyle";
 import { shouldAutoUpgradeToBigHeader } from "./bigHeaderAutoUpgrade";
@@ -2089,10 +2099,45 @@ export default function LayoutEditor() {
   // callers is the viewer role — a cloud open ignores the document's `role`
   // and keeps the viewer's own toggle (Roles, decision 9), because opening a
   // colleague's project must not silently re-skin your session.
-  const applyProjectState = (s: ProjectState, { applyRole }: { applyRole: boolean }) => {
-    setEditorTab(s.editorTab);
-    setViewMode(s.viewMode);
-    setShapeTool(s.shapeTool);
+  /* UNDO / REDO. The history lives in a ref, not in state: it changes on
+     every edit and nothing renders from it except two booleans, so holding
+     it in state would re-render this whole file for a stack nobody looks at.
+     See `undoHistory.ts` for why a whole ProjectState per entry is cheap. */
+  const historyRef = useRef<UndoHistory>(emptyUndoHistory);
+  const restoringRef = useRef(false);
+  const coalesceTimerRef = useRef<number | null>(null);
+  const [undoAvailability, setUndoAvailability] = useState({ undo: false, redo: false });
+  const syncUndoAvailability = () => {
+    const next = { undo: historyCanUndo(historyRef.current), redo: historyCanRedo(historyRef.current) };
+    setUndoAvailability((prev) => (prev.undo === next.undo && prev.redo === next.redo ? prev : next));
+  };
+
+  /** How long a burst of changes is allowed to settle into ONE undo entry.
+   * Tommy, asked about granularity: *"whatever is a good balance of user
+   * friendly and computing power. 6 times a second?"* — and the recorded
+   * recommendation splits that: ~6/sec is right for committing a live drag,
+   * but the UNDO STACK gets one entry per gesture, because 6/sec would need
+   * eighteen undos to take back a three-second drag. A trailing debounce is
+   * how a continuous gesture becomes one entry here. */
+  const UNDO_COALESCE_MS = 500;
+
+  const applyProjectState = (
+    s: ProjectState,
+    {
+      applyRole,
+      /** UNDO: false leaves the user where they are standing. Restoring a
+       * document must not yank them to another tab or re-arm a tool they
+       * put down — that would be undoing something they did not do. Loading
+       * a FILE still passes true, because then the whole point is to go
+       * where that file was. */
+      applyViewState = true,
+    }: { applyRole: boolean; applyViewState?: boolean },
+  ) => {
+    if (applyViewState) {
+      setEditorTab(s.editorTab);
+      setViewMode(s.viewMode);
+      setShapeTool(s.shapeTool);
+    }
     setFootprint(s.footprint);
     setIsBumpedOut(s.isBumpedOut);
     setPrimaryCornerIds(s.primaryCornerIds);
@@ -2141,7 +2186,7 @@ export default function LayoutEditor() {
     setPierSpacingFt(s.pierSpacingFt);
     setZipCode(s.zipCode);
     if (applyRole) setRole(s.role);
-    setUnitSystem(s.unitSystem);
+    if (applyViewState) setUnitSystem(s.unitSystem);
     setPriceModifier(s.priceModifier);
     setFloorSystemId(s.floorSystemId as typeof floorSystemId);
     setPerpendicular2x4Enabled(s.perpendicular2x4Enabled);
@@ -4662,6 +4707,107 @@ export default function LayoutEditor() {
     const ground: Story = { id: "ground", label: "Ground Floor", wallHeightFt, wallSlots: overlayWallSlots };
     return secondStory ? [ground, secondStory] : [ground];
   }, [wallHeightFt, overlayWallSlots, secondStory]);
+
+  /* ⚠ THE UNDO MACHINERY LIVES HERE, BELOW `stories`, AND THAT IS NOT
+     ARBITRARY. The capture effect calls `buildProjectState`, which reads
+     `stories` — declared just above. Placed earlier in the file, the React
+     Compiler lint reports "accessed before it is declared, which prevents
+     the earlier access from updating when this value changes over time":
+     a staleness warning, and a fair one.
+
+     The out-of-order read is pre-existing — `buildProjectState` sits at the
+     top of the file and `stories` near the middle — but Save and Load only
+     ever called it from EVENT HANDLERS, which the compiler does not analyse
+     for staleness. An effect is a reactive scope, so putting one on that
+     path surfaced the ordering for the first time. Moving the effect below
+     the declaration is the honest fix available without hoisting a useMemo
+     2,800 lines; hoisting `stories` itself is the real one, and is not
+     being attempted in the same change as undo. */
+  /* UNDO: capture.
+
+     Watching the DOCUMENT rather than instrumenting every handler. page.tsx
+     has dozens of mutating handlers and a `pushUndo()` added to each would
+     be a list nobody can prove complete — the one that got missed would
+     simply not be undoable, and nothing would say so. Comparing the built
+     state against the top of the stack covers every edit there is, present
+     and future, because an edit is BY DEFINITION a change to that state.
+
+     The comparison is ~69 reference checks (`sameDocument`), and building
+     the state is an object literal plus one prune, so this is affordable
+     after every render. */
+  useEffect(() => {
+    if (restoringRef.current) {
+      restoringRef.current = false;
+      return;
+    }
+    const current = buildProjectState();
+    const history = historyRef.current;
+    if (history.index < 0) {
+      // The baseline. Without it the first edit would have nothing to go
+      // back TO, and undo would look broken exactly once.
+      historyRef.current = pushUndoEntry(history, current);
+      syncUndoAvailability();
+      return;
+    }
+    if (sameDocument(current, history.entries[history.index]!)) return;
+    if (coalesceTimerRef.current !== null) window.clearTimeout(coalesceTimerRef.current);
+    coalesceTimerRef.current = window.setTimeout(() => {
+      coalesceTimerRef.current = null;
+      historyRef.current = pushUndoEntry(historyRef.current, buildProjectState());
+      syncUndoAvailability();
+    }, UNDO_COALESCE_MS);
+  });
+
+  /** ⚠ Commit a change that is still inside its coalescing window.
+   * Without this, editing and immediately hitting undo would step back past
+   * the edit that was never recorded — the user would lose the thing they
+   * just did AND the thing before it, from one press. */
+  const flushPendingUndoEntry = () => {
+    if (coalesceTimerRef.current === null) return;
+    window.clearTimeout(coalesceTimerRef.current);
+    coalesceTimerRef.current = null;
+    historyRef.current = pushUndoEntry(historyRef.current, buildProjectState());
+  };
+
+  const stepHistory = (step: typeof undoTo) => {
+    flushPendingUndoEntry();
+    const next = step(historyRef.current);
+    if (!next) return;
+    historyRef.current = next.history;
+    restoringRef.current = true;
+    // `applyViewState: false` — see applyProjectState. The restored state is
+    // now identical to entries[index] by construction, so the capture effect
+    // above finds no change and records nothing even if the flag is missed.
+    applyProjectState(next.state, { applyRole: false, applyViewState: false });
+    syncUndoAvailability();
+  };
+  const handleUndo = () => stepHistory(undoTo);
+  const handleRedo = () => stepHistory(redoTo);
+
+  /* Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (plus Ctrl+Y, which Windows users reach
+     for). ⚠ Ignored while the user is typing in a field, where the browser's
+     own undo is what they mean — taking it over would make a mis-typed wall
+     length un-fixable by the shortcut everyone has in their fingers. */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      const key = e.key.toLowerCase();
+      if (key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) handleRedo();
+        else handleUndo();
+      } else if (key === "y") {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
 
   // Sum of every beam's own COVERED length (not the whole wall's run) —
   // Stage 1 could get away with the wall's full run since coverage was
@@ -10235,6 +10381,38 @@ export default function LayoutEditor() {
                 be byte-identical both times — which is what would catch
                 `showWraps` left true on a plan view arrived at from 3D. */}
             <div data-sidebar-region-3="" className={styles.sidebarRegion3}>
+            {/* UNDO / REDO. Here rather than on the top bar because U1 bought
+                that bar's width by deleting controls, and here rather than
+                inside DrawingToolPen because that only renders on the plan
+                view — undo has to be reachable from an elevation, the Floor
+                tab and the Roof tab too, which is exactly where a mis-drag is
+                hardest to put back by hand.
+
+                ⚠ Region 3 carries a "same stop reached two ways is
+                byte-identical" test. Navigation is classified transient in
+                undoHistory.ts, so a detour through 3D and back creates no
+                entry and leaves these two buttons in the same state — which
+                is what keeps that test honest rather than merely passing. */}
+            <div role="group" aria-label="History" className={styles.toolbar} data-history-controls="">
+              <button
+                type="button"
+                className={styles.tool}
+                onClick={handleUndo}
+                disabled={!undoAvailability.undo}
+                title="Undo the last edit (Ctrl+Z)"
+              >
+                ↶ Undo
+              </button>
+              <button
+                type="button"
+                className={styles.tool}
+                onClick={handleRedo}
+                disabled={!undoAvailability.redo}
+                title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
+              >
+                ↷ Redo
+              </button>
+            </div>
             {editorTab === "wall" && elevationWall && elevationControls}
             {editorTab === "wall" && !elevationWall && viewMode === "3d" && showWraps && wallAssemblyControls}
             {editorTab === "foundation" && foundationControls}

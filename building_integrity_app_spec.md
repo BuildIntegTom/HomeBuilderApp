@@ -5288,7 +5288,7 @@ The tiler, run deliberately, over the project.
 
 - ⚠ **The confirmation must not lie.** *"This will retile over any hand edits"* is false when there are none. Compute the comparison first — tile each wall fresh and count the walls that would actually change — and say the true thing: **"14 of 18 walls have hand edits that will be overwritten"**, or that nothing will be lost. The comparison is one tiling pass, which is exactly the work the app did on *every* edit until Stage 0, so it is affordable.
 - **Whole project in v1.** Per-wall is a later question; it is not needed to unblock the stages.
-- ⚠ **It is the single most destructive action in the app**, so it should land **with or after undo** (Stage 5), as **one** undo entry. Shipping it before undo means the confirmation dialog is the only thing between a user and losing a day's hand edits.
+- ⚠ **It is the single most destructive action in the app**, so it should land **with or after undo** (Stage 5), as **one** undo entry. Shipping it before undo means the confirmation dialog is the only thing between a user and losing a day's hand edits. ✅ **UNBLOCKED 2026-10-09: undo/redo is built** — see Stage 5. ⚠ Repanelize must still be ONE entry, which the 500ms coalesce gives it for free only if the whole re-tile lands inside that window; at 272 panels an edit takes over a second, so **this needs checking rather than assuming**.
 - On commit it writes a fresh **tiling basis**, which clears every marker — that is what "activates when retiled" means.
 
 #### Order, and why
@@ -5337,9 +5337,33 @@ Tommy's verbatim spec of 2026-10-02. Live during the drag, not a recompute on re
 
 After this stage, this is the **only** path that creates or destroys width.
 
-### Stage 5 — Insert, delete, and undo/redo
+### Stage 5 — Insert, delete, and undo/redo — **UNDO/REDO BUILT 2026-10-09** (insert/delete still to come)
 
 Undo is cheap here precisely because **the panel array IS the document** — an undo restores a previous array rather than unpicking a derivation. ⚠ Open: per-gesture vs per-frame granularity; a drag that grows panels sixty times a second must not push sixty entries.
+
+#### Undo/redo as built — pulled forward out of Stage 5
+
+Built ahead of the rest of Stage 5 because **R3 must not ship without it** (Tommy, 2026-10-09: *"Undo first will be fine"*). Repanelize is the most destructive single action in the app and a confirmation dialog is a poor substitute for being able to take it back.
+
+**It watches the document rather than instrumenting the handlers.** `page.tsx` has dozens of mutating handlers, and a `pushUndo()` added to each would be a list nobody can prove complete — the one that got missed would simply not be undoable and nothing would say so. An edit is **by definition** a change to the project state, so comparing the built state against the top of the stack covers every edit there is, including ones not written yet.
+
+**An entry is a whole `ProjectState`, and that is affordable** because React replaces state rather than mutating it: two entries differing by one wall hold the **same array** for every other wall. It also reuses `buildProjectState`/`applyProjectState`, the pair already trusted for Save and Load, rather than growing a second and subtly different idea of what the document is.
+
+**Undo restores what you built, not where you were standing.** Tab, view mode, tool, role and unit system are classified `transient`: changing one creates no entry and an undo does not put it back. ⚠ **All 74 `ProjectState` keys are classified, enforced at compile time** by `satisfies Record<keyof ProjectState, …>` — the same guard that forced R0's new key to be classified in `redaction.ts`.
+
+**Granularity: one entry per gesture**, via a 500ms trailing coalesce. Tommy delegated this with a number (*"6 times a second?"*); the recorded recommendation splits it, and this is that split — ~6/sec belongs to the live commit during a drag, while the undo stack gets one entry per gesture because 6/sec would need eighteen presses to take back a three-second drag. ⚠ A pending entry is **flushed before an undo**, or editing and immediately pressing undo would step back past the edit that was never recorded and lose two things from one press.
+
+**Controls:** buttons at the top of sidebar region 3 — not the top bar, whose width U1 bought by deleting controls, and not inside `DrawingToolPen`, which only renders on the plan view when undo has to be reachable from an elevation and the Floor and Roof tabs too. Plus Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl+Y, ⚠ **ignored while the user is typing in a field**, where the browser's own undo is what they mean.
+
+**Verified in the browser:** draw → 62 panels with Undo enabled and Redo not; undo → **0 panels** on ONE press, Undo disabled at the baseline; redo → 62 panels back at the same 48'-4" x 37'-6". Depth is capped at 50, which ⚠ **Tommy has not chosen** and is recorded as open.
+
+##### Two defects found while building it
+
+⚠ **One draw took TWO undos.** `pruneOpeningMemoryToLiveWalls` rebuilt its record on **every** call and so returned a value equal to its input but never `===` to it. It is the only freshly-allocated value in `buildProjectState`, so the reference comparison could never report "same" once a footprint existed, and every settled burst of renders recorded an entry. Fixed to preserve identity when there is nothing to prune — which also stops the save path allocating for nothing — with a test asserting **identity, not equality**.
+
+⚠ **Lint rose 174 → 176, and one of the two was real.** The trivial one was `prefer-const` in a new test. The other was **`stories` accessed before it is declared** — a staleness warning on **pre-existing** code at `page.tsx:1140`, where `stories` is declared 3,600 lines later at 4791. The change surfaced it because Save and Load only ever called `buildProjectState` from **event handlers**, which the React Compiler does not analyse for staleness; an effect is a reactive scope, so putting one on that path put the ordering under analysis for the first time. Moving the undo machinery below the `stories` declaration returned lint to **exactly 174**. ⚠ The real fix is hoisting that `useMemo`, deliberately **not** attempted in the same change as undo, and the reasoning is recorded at the code.
+
+**Gates:** 2777 vitest in 143 files (11 new); `tsc` clean on both projects; **lint delta zero** at 174; all **seven** browser harnesses green, 112 checks — including `ui-reorg-u1`'s region-3 "same stop two ways is byte-identical" test, which matters because this added controls to that region. Navigation being classified transient is what keeps that test honest rather than merely passing.
 
 ### Stage 6 — Retire the reconcile machinery
 

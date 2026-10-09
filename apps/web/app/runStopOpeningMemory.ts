@@ -63,6 +63,20 @@ export function pruneOpeningMemoryToLiveWalls(
 ): OpeningMemoryByStoryAndWallId {
   if (!footprint) return memory;
   const live = new Set(footprint.walls.map((w) => w.id));
+  const hasDeadWall = (byWallId: Record<string, RunStopOpeningMemory>) =>
+    Object.keys(byWallId).some((wallId) => !live.has(wallId));
+  /* ⚠ IDENTITY IS PRESERVED WHEN THERE IS NOTHING TO PRUNE, which is the
+     overwhelmingly common case — most projects never delete a wall at all.
+     This used to rebuild both records unconditionally, so every call returned
+     a value that was EQUAL to its input and never === to it.
+
+     That is not merely wasteful. Undo detects an edit by comparing the built
+     project state against the top of its stack by reference, and this is the
+     only freshly-allocated value in `buildProjectState` — so it made every
+     comparison report a change, and a single footprint draw recorded TWO undo
+     entries instead of one. Found 2026-10-09 by drawing a building and
+     needing two presses of Undo to take it back. */
+  if (!hasDeadWall(memory.ground) && !hasDeadWall(memory.second)) return memory;
   const pruneStory = (byWallId: Record<string, RunStopOpeningMemory>) =>
     Object.fromEntries(Object.entries(byWallId).filter(([wallId]) => live.has(wallId)));
   return { ground: pruneStory(memory.ground), second: pruneStory(memory.second) };

@@ -18,6 +18,24 @@ describe("pruneOpeningMemoryToLiveWalls", () => {
     expect(pruneOpeningMemoryToLiveWalls(before, fp)).toEqual(before);
   });
 
+  it("⚠ returns the SAME OBJECT when there is nothing to prune, not an equal one", () => {
+    // Identity, not just equality. This is the only freshly-allocated value in
+    // `buildProjectState`, and undo detects an edit by comparing the built
+    // state against the top of its stack BY REFERENCE. While this rebuilt
+    // unconditionally, every comparison reported a change and one footprint
+    // draw recorded two undo entries instead of one — found 2026-10-09 by
+    // needing two presses of Undo to take back a single draw.
+    const before: OpeningMemoryByStoryAndWallId = { ground: { AB: memory(61.5) }, second: {} };
+    expect(pruneOpeningMemoryToLiveWalls(before, fp)).toBe(before);
+    // Still the same object when there is no memory at all, the commonest case.
+    const empty: OpeningMemoryByStoryAndWallId = { ground: {}, second: {} };
+    expect(pruneOpeningMemoryToLiveWalls(empty, fp)).toBe(empty);
+    // ...but a dead wall still forces a rebuild, so the pruning itself works.
+    const withDead: OpeningMemoryByStoryAndWallId = { ground: { ZZ: memory(61.5) }, second: {} };
+    expect(pruneOpeningMemoryToLiveWalls(withDead, fp)).not.toBe(withDead);
+    expect(pruneOpeningMemoryToLiveWalls(withDead, fp)).toEqual({ ground: {}, second: {} });
+  });
+
   /**
    * The defect this exists for. Wall ids are REUSED — every rectangle this app
    * builds is "AB"/"BC"/"CD"/"DA" — so a memory outliving its wall does not sit
