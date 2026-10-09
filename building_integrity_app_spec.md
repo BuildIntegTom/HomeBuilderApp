@@ -5268,7 +5268,7 @@ A small red/orange caution triangle beside any setting whose live value differs 
 
 **Gates:** 2766 vitest in 142 files (4 new); `tsc` clean on both projects; lint unchanged at 174 problems.
 
-#### R2 — The opening anchor: position, held as INTENT
+#### R2 — The opening anchor: position, held as INTENT — **STEP 1 BUILT 2026-10-09**
 
 The defect: `beforeStandardCount` records a count, and **a count is not a position**. Changing the gap end reorders the borrowed panels, so N standards no longer sum to the same width and the opening drifts — measured at up to **+19in**.
 
@@ -5280,7 +5280,21 @@ The defect: `beforeStandardCount` records a count, and **a count is not a positi
 - a stop/un-stop round trip restores it to the same intent, because nothing recomputed it in between — which is exactly what the failed attempt got wrong;
 - ordering uses the same stable key, so openings cannot cross.
 
-**Staging:** (a) add the field and write it on place/move; (b) use it for placement and ordering, falling back to the count while absent; (c) sweep stop/un-stop round trips and gap-end flips for position AND order; (d) retire the count once every opening carries an intent. ⚠ No migration is owed for existing projects — *"No one cares about any projects previously drawn in the app"* (2026-10-07).
+**Staging:** (a) add the field and write it on place/move; (b) use it for placement and ordering, falling back to the count while absent; (c) sweep stop/un-stop round trips and gap-end flips for position AND order; (d) retire the count once every opening carries an intent.
+
+##### Step 1 as built — carry it, do not act on it
+
+⚠ **Placement still uses `beforeStandardCount`, so this step changes NO behaviour.** That is the point: the half that moves windows is step (b), and splitting it off means the carrying can be proven before anything depends on it. The first attempt at R2 had no persisted intent at all, which is why it had nothing to fall back on when the derived value turned out to describe a stopped layout.
+
+- **`PanelSlot.anchorOffsetIn`** — where the user put this opening, in inches from the wall start. Follows the established pattern of `heightIn` / `sillHeightIn` / `zones`, which already ride through re-tiles on the slot.
+- **`OpeningAnchor.offsetIn`** — **copied from the slot, never computed.** Its doc comment calls it *a courier, not a calculator*, because calculating it is exactly what failed.
+- **The panel-type cycle stamps it** when the user turns a panel into a window or door; **every other opening keeps the intent it already had** and is never re-measured. That handler is now the only place in the codebase that measures an offset.
+
+**The tests are the deliverable here.** The sharpest sets an intent of `400` on a window whose real position is `65.5` and asserts the anchor reports **400** — a function that measured would “correct” it, a courier does not. And `⚠ THE ONE THAT FAILED BEFORE` stops a 47ft wall at 200, 266, 268, 271 and 300in, withholds an opening, restores it, and asserts the intents still read `window:265.5 door:407` — the exact round trip that previously made a window and a door **swap places**.
+
+⚠ **No `PROJECT_FILE_VERSION` bump:** `anchorOffsetIn` is an optional field on a nested `PanelSlot`, not a `ProjectState` key. Absent means “no intent recorded”, which is every opening in every file ever saved, and placement falls back to the count for those.
+
+**Gates:** 2781 vitest in 144 files (4 new); `tsc` clean on both projects; lint unchanged at 174; all seven harnesses green at 112 checks — including `smearforn-stage-0-1` and `stage-2`, which drive the cycle handler this touched. ⚠ No migration is owed for existing projects — *"No one cares about any projects previously drawn in the app"* (2026-10-07).
 
 #### R3 — Repanelize itself
 

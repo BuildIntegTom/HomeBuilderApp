@@ -121,6 +121,36 @@ export interface PanelSlot {
    * openings, conditioned garages), but a sill panel can be opted in
    * underneath it. Undefined/false = no sill, the default. */
   includeSillOnBigHeader?: boolean;
+  /**
+   * REPANELIZE R2 — only meaningful for opening slots (window / door /
+   * column / big-header): **where along the wall the user put this opening**,
+   * in inches from the wall's start.
+   *
+   * ⚠ **This is INTENT, not a measurement, and the distinction is the whole
+   * point.** An opening's surviving anchor has always been
+   * `beforeStandardCount` — a COUNT of the standard slots before it — and a
+   * count is not a position: two layouts with the same number of standards
+   * before an opening can put it in completely different places, because the
+   * standards need not be the same widths. Measured 2026-10-07: changing
+   * which corner is least accessible, a setting about which end a sheet of
+   * plywood goes, moved a window by **-0.75in on a 240in wall, +5.875in at
+   * 300in and +19in on a 360in wall**. Nothing reported it.
+   *
+   * ⚠ **It must never be recomputed from the current slots during a re-tile.**
+   * That was tried on 2026-10-07 and it broke the run-stop round trip: an
+   * offset re-derived while a wall was STOPPED describes the stopped layout,
+   * so restoring sorted by a meaningless key and a window and a door **swapped
+   * places** (baseline `window@265.5 door@407`, restored `door@225.5
+   * window@263.5`). It is written when the user creates or moves the opening,
+   * and from then on it is carried through every re-tile untouched — out
+   * through `getOpeningAnchors` as `OpeningAnchor.offsetIn` and back in
+   * through `retileWithOpenings`.
+   *
+   * Undefined = no intent recorded yet, which is every opening predating this
+   * and every one the tiler seeds itself. Placement falls back to the count
+   * for those, exactly as before.
+   */
+  anchorOffsetIn?: number;
 }
 
 /** One independently-editable vertical zone of a PanelSlot column — same

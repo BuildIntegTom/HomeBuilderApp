@@ -3054,6 +3054,7 @@ export default function LayoutEditor() {
     // "standard" already is.
     const anchors: {
       beforeStandardCount: number;
+      offsetIn?: number;
       type: "window" | "door" | "column" | "big-header";
       widthIn: number;
       heightIn?: number;
@@ -3062,11 +3063,26 @@ export default function LayoutEditor() {
       includeSillOnBigHeader?: boolean;
     }[] = [];
     let standardsSeen = 0;
+    /* REPANELIZE R2 — how far along the wall each slot starts, so an opening
+       the user creates RIGHT NOW records where they put it. See
+       `PanelSlot.anchorOffsetIn`: the surviving anchor has always been a
+       COUNT of preceding standards, and a count is not a position, so an
+       opening drifts whenever those standards change width. ⚠ This is the
+       only place that measures an offset — everywhere downstream copies it.
+       An existing opening keeps the intent it already had and is never
+       re-measured here, which is precisely what broke the first attempt at
+       this on 2026-10-07. */
+    let offsetSoFarIn = 0;
     currentSlots.forEach((slot, i) => {
       const type = i === slotIndex ? next.type : slot.type;
       if (type === "window" || type === "door" || type === "column" || type === "big-header") {
         anchors.push({
           beforeStandardCount: standardsSeen,
+          // The slot being toggled INTO an opening is the user placing it, so
+          // its current position is the intent. Every other opening carries
+          // the intent it already has — including `undefined`, which means
+          // "never recorded" and leaves placement on the count.
+          offsetIn: i === slotIndex ? offsetSoFarIn : slot.anchorOffsetIn,
           type,
           // Column and Big Header are both fixed/default-width reservations
           // when freshly toggled in (Big Header's own width isn't fixed
@@ -3096,6 +3112,7 @@ export default function LayoutEditor() {
       } else if (type === "standard" || type === "braced") {
         standardsSeen++;
       }
+      offsetSoFarIn += slot.widthIn;
     });
     // Where the toggled slot itself will land among standard-family slots
     // post-retile — only meaningful when it's headed into the braced block

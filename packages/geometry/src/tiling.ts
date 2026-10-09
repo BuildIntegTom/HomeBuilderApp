@@ -892,8 +892,27 @@ export function tileWall(
 export interface OpeningAnchor {
   /** How many 'standard'-family-type slots (including corner-touching ones,
    * AND already-decided "braced" slots — see the doc comment below) precede
-   * this opening in the plain sequence. */
+   * this opening in the plain sequence.
+   *
+   * ⚠ A COUNT IS NOT A POSITION — see `offsetIn` below and
+   * `PanelSlot.anchorOffsetIn`. This is still what placement uses; the
+   * offset is carried alongside it and not yet acted on. */
   beforeStandardCount: number;
+  /**
+   * REPANELIZE R2 — the opening's intended position along the wall, in
+   * inches from the wall's start, **copied from `PanelSlot.anchorOffsetIn`
+   * and never computed here**.
+   *
+   * ⚠ Read that again, because computing it is exactly what failed on
+   * 2026-10-07: an offset derived from the current slots describes whatever
+   * layout happens to be in front of it, including a STOPPED one, and
+   * sorting by it then swapped a window and a door. This field is a courier,
+   * not a calculator. See `PanelSlot.anchorOffsetIn` for the measurements.
+   *
+   * Undefined = this opening has no recorded intent. Placement falls back to
+   * `beforeStandardCount`, which is what every caller did before.
+   */
+  offsetIn?: number;
   type: "window" | "door" | "column" | "big-header";
   widthIn: number;
   /** This opening's own vertical/style fields, carried through a re-tile so
@@ -939,6 +958,8 @@ export function getOpeningAnchors(slots: PanelSlot[]): OpeningAnchor[] {
     if (slot.type === "window" || slot.type === "door" || slot.type === "column" || slot.type === "big-header") {
       anchors.push({
         beforeStandardCount: standardsSeen,
+        // ⚠ COPIED, never measured from this array. See OpeningAnchor.offsetIn.
+        offsetIn: slot.anchorOffsetIn,
         type: slot.type,
         widthIn: slot.widthIn,
         heightIn: slot.heightIn,
@@ -1026,6 +1047,9 @@ export function retileWithOpenings(
   const openingSlotFromAnchor = (o: OpeningAnchor): PanelSlot => ({
     type: o.type,
     widthIn: roundToEighthIn(o.widthIn),
+    // The intent rides through the re-tile untouched, exactly like heightIn
+    // and sillHeightIn below. Undefined stays undefined.
+    anchorOffsetIn: o.offsetIn,
     heightIn: o.heightIn,
     sillHeightIn: o.sillHeightIn,
     zones: o.zones,
