@@ -5343,6 +5343,15 @@ Undo is cheap here precisely because **the panel array IS the document** — an 
 
 #### Undo/redo as built — pulled forward out of Stage 5
 
+⚠ **NOT HAND-TESTED BY TOMMY — he asked for it to be flagged (2026-10-09), so this stays here until he has driven it himself.** It was verified by script (draw → 62 panels → one Undo → 0 → one Redo → 62) and by seven harnesses, but nobody has used it the way a person uses an editor. Worth driving:
+
+1. **Several different edits in a row, then undo back through all of them** — a panel width, a type cycle, a wall drag, a window. Each should take exactly ONE press. More than one press for one action means the 500ms coalesce is shorter than that action takes, which is the defect that already appeared once with the footprint draw.
+2. **Edit, then press undo IMMEDIATELY** (inside half a second). The pending entry is supposed to be flushed first; if two things vanish from one press, that flush is wrong.
+3. **Undo, then make a different edit.** The redo branch should disappear, and Redo should grey out.
+4. **Undo while on an elevation, the Floor tab and the Roof tab.** The buttons are in the sidebar precisely so they are reachable there; confirm the view does NOT jump when the undo lands.
+5. **Ctrl+Z while typing in a wall-length field** should undo the TEXT, not the building.
+6. **Depth**: it stops at 50 entries, a number nobody has chosen. If that feels wrong in use, say so.
+
 Built ahead of the rest of Stage 5 because **R3 must not ship without it** (Tommy, 2026-10-09: *"Undo first will be fine"*). Repanelize is the most destructive single action in the app and a confirmation dialog is a poor substitute for being able to take it back.
 
 **It watches the document rather than instrumenting the handlers.** `page.tsx` has dozens of mutating handlers, and a `pushUndo()` added to each would be a list nobody can prove complete — the one that got missed would simply not be undoable and nothing would say so. An edit is **by definition** a change to the project state, so comparing the built state against the top of the stack covers every edit there is, including ones not written yet.
