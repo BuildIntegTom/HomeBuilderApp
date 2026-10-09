@@ -300,7 +300,14 @@ import BaleFoundationCrossSectionDiagram from "./BaleFoundationCrossSectionDiagr
 import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
-import type { TilingBasis } from "./tilingBasis";
+import {
+  TILING_BASIS_CONTROL_LABELS,
+  pendingTilingControls,
+  pendingTilingSummary,
+  tilingBasisDifferences,
+  type TilingBasis,
+} from "./tilingBasis";
+import PendingRetileMark from "./PendingRetileMark";
 import { PLYWOOD_HALF_ROW_LABEL, PLYWOOD_THREE_QUARTER_ROW_LABEL } from "./plywoodRowLabels";
 import { resolveBracedStyle } from "./bracedStyle";
 import { shouldAutoUpgradeToBigHeader } from "./bigHeaderAutoUpgrade";
@@ -2679,6 +2686,13 @@ export default function LayoutEditor() {
     bracedDefaultPattern: bracedSeed.defaultPattern,
     bracedDefaultMirrored: bracedSeed.defaultMirrored,
   };
+  /* REPANELIZE R1 — which settings no longer match what this building was
+     panelized with. Empty whenever the basis is unknown (every project
+     saved before R0, and any project not yet tiled), which claims nothing
+     rather than claiming everything. */
+  const pendingTilingFields = tilingBasisDifferences(tilingBasis, liveTilingBasis);
+  const pendingControls = pendingTilingControls(pendingTilingFields);
+  const pendingTilingText = pendingTilingSummary(pendingTilingFields);
 
   /** Called at every site that re-tiles, so the basis always describes the
    * tiling that is actually on screen. ⚠ Takes the corner ACTUALLY USED
@@ -7949,6 +7963,9 @@ export default function LayoutEditor() {
       </label>
       <label>
         Seismic zone{" "}
+        {pendingControls.has("seismic-zone") && (
+          <PendingRetileMark what={TILING_BASIS_CONTROL_LABELS["seismic-zone"]} />
+        )}
         <select value={seismicZone} onChange={(e) => setSeismicZone(e.target.value as SeismicZone)}>
           <option value="high">High ({seismicBracedPanelSpacingFt.high}ft braced PANEL spacing)</option>
           <option value="moderate">Moderate ({seismicBracedPanelSpacingFt.moderate}ft braced PANEL spacing)</option>
@@ -8166,6 +8183,9 @@ export default function LayoutEditor() {
         <>
       <label>
         Standard width (in){" "}
+        {pendingControls.has("standard-width") && (
+          <PendingRetileMark what={TILING_BASIS_CONTROL_LABELS["standard-width"]} />
+        )}
         {/* Was a bare type="number" with no `step` and no parse-on-commit,
             so it happily stored an off-grid width like 40.3 — the tiler is
             safe against that now, but the stored setting still needs to be
@@ -8193,6 +8213,7 @@ export default function LayoutEditor() {
       </label>
       <label>
         Thickness{" "}
+        {pendingControls.has("thickness") && <PendingRetileMark what={TILING_BASIS_CONTROL_LABELS.thickness} />}
         <select
           value={thicknessIn}
           disabled={isSquareBalePanelization}
@@ -8286,7 +8307,16 @@ export default function LayoutEditor() {
         {standardWindowHeightsIn.note}
       </p>
 
+      {pendingTilingText && (
+        <p className={styles.note} data-pending-retile="true">
+          ⚠ Changed since this building was panelized: <strong>{pendingTilingText}</strong>. Existing panels keep the old
+          values until the building is panelized again.
+        </p>
+      )}
       <div role="group" aria-label="Panelization type" className={styles.toolbar}>
+        {pendingControls.has("panelization-type") && (
+          <PendingRetileMark what={TILING_BASIS_CONTROL_LABELS["panelization-type"]} />
+        )}
         <button
           type="button"
           aria-pressed={panelizationType === "loose-packed-braced"}
@@ -8340,6 +8370,9 @@ export default function LayoutEditor() {
         </p>
       )}
       <div role="group" aria-label="Default bracing style" className={styles.toolbar}>
+        {pendingControls.has("bracing-style") && (
+          <PendingRetileMark what={TILING_BASIS_CONTROL_LABELS["bracing-style"]} />
+        )}
         <button
           type="button"
           aria-pressed={defaultBracePattern === "chevron"}

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  CONTROLS_WITHOUT_A_SETTINGS_ROW,
+  TILING_BASIS_CONTROL,
   TILING_BASIS_FIELD_LABELS,
+  pendingTilingControls,
+  pendingTilingSummary,
   tilingBasisDifferences,
   tilingBasisIsCurrent,
   type TilingBasis,
@@ -67,6 +71,35 @@ describe("tilingBasisDifferences", () => {
     expect(tilingBasisDifferences(undefined, { ...BASIS, standardWidthIn: 48 })).toEqual([]);
     expect(tilingBasisIsCurrent(null, BASIS)).toBe("unknown");
     expect(tilingBasisIsCurrent(undefined, BASIS)).toBe("unknown");
+  });
+
+  it("maps every field to a control, so nothing pending is unreportable", () => {
+    for (const field of Object.keys(TILING_BASIS_FIELD_LABELS) as TilingBasisField[]) {
+      expect(TILING_BASIS_CONTROL[field]).toBeTruthy();
+    }
+  });
+
+  it("collapses the two panelization-type fields onto one control", () => {
+    // The user changed ONE control; marking two would read as two problems.
+    expect([...pendingTilingControls(["cornerWidthIn", "cornerMayWiden"])]).toEqual(["panelization-type"]);
+    expect([...pendingTilingControls(["bracedDefaultPattern", "bracedDefaultMirrored"])]).toEqual(["bracing-style"]);
+  });
+
+  it("⚠ a field whose control has no Settings row is still named in the summary", () => {
+    // The least-accessible corner is clicked on the plan, not set in a field,
+    // so there is nothing to hang a marker on. If the summary did not name it
+    // the change would be invisible — the exact failure this feature exists
+    // to prevent.
+    const diffs: TilingBasisField[] = ["leastAccessibleCorner"];
+    const control = TILING_BASIS_CONTROL.leastAccessibleCorner;
+    expect(CONTROLS_WITHOUT_A_SETTINGS_ROW.has(control)).toBe(true);
+    expect(pendingTilingSummary(diffs)).toBe("Least-accessible corner");
+  });
+
+  it("the summary names each control once, not each field", () => {
+    expect(pendingTilingSummary(["cornerWidthIn", "cornerMayWiden"])).toBe("Panelization type");
+    expect(pendingTilingSummary(["standardWidthIn", "thicknessIn"])).toBe("Standard width, Thickness");
+    expect(pendingTilingSummary([])).toBeNull();
   });
 
   it("does not raise a marker for a float artefact in a derived value", () => {

@@ -90,6 +90,80 @@ export function tilingBasisDifferences(basis: TilingBasis | null | undefined, li
   );
 }
 
+/**
+ * REPANELIZE R1 — which control a user would reach for to change each basis
+ * field.
+ *
+ * ⚠ **This is the mapping back from a derived value to something the user
+ * can see.** Three basis fields are not typed directly: `cornerWidthIn` and
+ * `cornerMayWiden` both come from the panelization type, and `bracedSpacingIn`
+ * from the seismic zone. Marking "corner panel width" on a control that does
+ * not exist would be useless; marking the panelization type is the truthful
+ * thing, because that is what the user changed.
+ */
+export type TilingBasisControl =
+  | "standard-width"
+  | "thickness"
+  | "seismic-zone"
+  | "panelization-type"
+  | "bracing-style"
+  | "least-accessible-corner";
+
+export const TILING_BASIS_CONTROL: Record<TilingBasisField, TilingBasisControl> = {
+  standardWidthIn: "standard-width",
+  thicknessIn: "thickness",
+  leastAccessibleCorner: "least-accessible-corner",
+  cornerWidthIn: "panelization-type",
+  cornerMayWiden: "panelization-type",
+  bracedSpacingIn: "seismic-zone",
+  bracedDefaultPattern: "bracing-style",
+  bracedDefaultMirrored: "bracing-style",
+};
+
+/**
+ * ⚠ Controls with **no row in Settings to hang a marker on**. The
+ * least-accessible corner is chosen by clicking a corner marker on the plan,
+ * not from a settings field — so a marker alone would leave that change
+ * invisible, which is the failure this whole feature exists to prevent. Any
+ * field mapping here must be reported by the written summary instead; see
+ * `pendingTilingSummary`.
+ */
+export const CONTROLS_WITHOUT_A_SETTINGS_ROW: ReadonlySet<TilingBasisControl> = new Set<TilingBasisControl>([
+  "least-accessible-corner",
+]);
+
+/** What to call each CONTROL when naming it to the user. Separate from the
+ * field labels because a control can drive several fields: the panelization
+ * type sets both the corner width and whether the corner may widen, and the
+ * user changed one thing, not two. */
+export const TILING_BASIS_CONTROL_LABELS: Record<TilingBasisControl, string> = {
+  "standard-width": "Standard width",
+  thickness: "Thickness",
+  "seismic-zone": "Seismic zone",
+  "panelization-type": "Panelization type",
+  "bracing-style": "Default bracing style",
+  "least-accessible-corner": "Least-accessible corner",
+};
+
+/** The controls that should carry a caution marker right now. */
+export function pendingTilingControls(differences: readonly TilingBasisField[]): Set<TilingBasisControl> {
+  return new Set(differences.map((field) => TILING_BASIS_CONTROL[field]));
+}
+
+/**
+ * One sentence naming every pending field, for the written summary.
+ *
+ * Deduplicated by CONTROL, not by field: the panelization type drives two
+ * basis fields, and "Corner panel width, Corner panel width rule" reads as
+ * two separate problems when the user changed one control.
+ */
+export function pendingTilingSummary(differences: readonly TilingBasisField[]): string | null {
+  if (differences.length === 0) return null;
+  const seen = new Set<string>();
+  for (const control of pendingTilingControls(differences)) seen.add(TILING_BASIS_CONTROL_LABELS[control]);
+  return [...seen].join(", ");
+}
+
 /** True when a Repanelize would change nothing about how walls are tiled.
  * An absent basis is NOT "up to date" — it is unknown, and the caller has to
  * decide what to do about that rather than being told a comforting answer. */

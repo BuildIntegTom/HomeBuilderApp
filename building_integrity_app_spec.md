@@ -5244,13 +5244,29 @@ Everything below is a comparison against it. ⚠ **Without this there is nothing
 
 **Not built here, deliberately:** nothing reads the basis yet. The marker is R1.
 
-#### R1 — The deferred-setting marker
+#### R1 — The deferred-setting marker — **BUILT 2026-10-09**
 
 A small red/orange caution triangle beside any setting whose live value differs from the basis, plus the Repanelize button marked as having work to do.
 
 - **This is the "a visible gap beats a substituted value" rule**, applied to settings instead of to catalogue values. It is the same principle as the provisional-value flags and should read the same way.
 - **Which settings:** every field in the basis. ⚠ **The inventory has to be built by checking what each setting actually does**, not assumed — Stage 1 already found that the standard width re-tiles nothing while other settings do, and the only way that was discovered was by looking.
 - **Least-accessible corner joins this set** (Tommy's decision), so `handleSetLeastAccessibleCorner` stops re-tiling and starts marking. That retires Stage 2's abandoned attempt above: no permutation, no window moves, and the user is told.
+
+##### R1 as built
+
+**`PendingRetileMark.tsx`** is the triangle — orange fill, red edge, drawn as an SVG rather than an emoji so it renders identically everywhere. ⚠ **It is not `aria-hidden`**: a setting that silently does nothing is exactly as confusing read aloud as it is seen, so it carries a `title` and an `aria-label` saying which setting changed and that existing panels keep the old value.
+
+**Five controls carry one:** Standard width, Thickness, Seismic zone, Panelization type, Default bracing style. The mapping lives in `TILING_BASIS_CONTROL` — **this is the derived-value translation R0 deferred**: `cornerWidthIn` and `cornerMayWiden` both map to the panelization type, and `bracedSpacingIn` to the seismic zone, because marking "corner panel width" on a control that does not exist would help nobody.
+
+⚠ **A written summary sits beside them, and it is not redundant.** The least-accessible corner is chosen by **clicking a corner marker on the plan**, so it has no Settings row to hang a triangle on — a marker-only design would leave that change invisible, which is the exact failure this feature exists to prevent. The summary names every pending control, so a field whose control has no row is still reported. `CONTROLS_WITHOUT_A_SETTINGS_ROW` records which those are, and a test asserts the summary names it.
+
+**The summary deduplicates by CONTROL, not by field** — the panelization type drives two basis fields, and "Corner panel width, Corner panel width rule" reads as two separate problems when the user changed one control. ⚠ The first version of this deduplicated by label and a test written in the same pass caught the contradiction.
+
+**Verified in the browser**, production behaviour on a 62-panel building: with the basis freshly recorded, **no markers and no summary**. Setting the standard width 40 → 44 left the **62 panels unchanged** (so the deferral is real) and produced exactly **one marker, on Standard width**, with the summary *"Changed since this building was panelized: Standard width."* Changing the seismic zone as well gave **two markers on the two right controls** and *"Standard width, Seismic zone"* — the derived field correctly mapped back to the control the user actually touched.
+
+⚠ **`handleSetLeastAccessibleCorner` has NOT been made deferred yet, deliberately.** Tommy decided it should be ("Deferred setting, activates when retiled"), and the control mapping is in place for it — but **deferring a setting before R3 exists would leave it permanently unapplied**, with no button anywhere to apply it. It stays immediate until Repanelize lands, at which point the change is a two-line edit to that handler. Recorded so the mapping is not mistaken for dead code.
+
+**Gates:** 2766 vitest in 142 files (4 new); `tsc` clean on both projects; lint unchanged at 174 problems.
 
 #### R2 — The opening anchor: position, held as INTENT
 
