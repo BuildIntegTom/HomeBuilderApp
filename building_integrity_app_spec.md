@@ -5321,7 +5321,7 @@ Step 2 was nearest-boundary placement: given an intent, put the opening at the c
 
 **Gates:** 2781 vitest in 144 files (4 new); `tsc` clean on both projects; lint unchanged at 174; all seven harnesses green at 112 checks — including `smearforn-stage-0-1` and `stage-2`, which drive the cycle handler this touched. ⚠ No migration is owed for existing projects — *"No one cares about any projects previously drawn in the app"* (2026-10-07).
 
-#### R3 — Repanelize itself
+#### R3 — Repanelize itself — **BUILT 2026-10-10**
 
 The tiler, run deliberately, over the project.
 
@@ -5329,6 +5329,28 @@ The tiler, run deliberately, over the project.
 - **Whole project in v1.** Per-wall is a later question; it is not needed to unblock the stages.
 - ⚠ **It is the single most destructive action in the app**, so it should land **with or after undo** (Stage 5), as **one** undo entry. Shipping it before undo means the confirmation dialog is the only thing between a user and losing a day's hand edits. ✅ **UNBLOCKED 2026-10-09: undo/redo is built** — see Stage 5. ⚠ Repanelize must still be ONE entry, which the 500ms coalesce gives it for free only if the whole re-tile lands inside that window; at 272 panels an edit takes over a second, so **this needs checking rather than assuming**.
 - On commit it writes a fresh **tiling basis**, which clears every marker — that is what "activates when retiled" means.
+
+##### R3 as built
+
+**A two-step in-page confirmation, not a browser dialog** — the app has no `window.confirm` anywhere and uses in-page notices, so this matches.
+
+⚠ **The confirmation runs the REAL TILER rather than reading the basis.** A setting can differ without changing a given wall's layout at all, and telling the user that wall will be rebuilt when it will not is the same lie as warning about hand edits that do not exist. The prognosis compares the fresh tiling against what is on screen, wall by wall.
+
+⚠ **It holds the worked-out RESULT, not just a count.** The comparison and the application are the SAME tiling pass, so what the user approved is what they get, and confirming costs no second pass.
+
+Three sentences, because one cannot cover three true situations — nothing would change, some walls would, all would. The first is the one the generic *“this will retile over any hand edits”* warning gets wrong, and a warning that cries wolf on a project with nothing to lose teaches the user to click through the one that matters.
+
+It also **says openings may move**, per the 2026-10-10 decision, and **says “This can be undone”** — a user who does not know that will not risk the click, and being able to try it is the point.
+
+**Verified in the browser.** Freshly drawn: *“Nothing would change — all 4 walls already match the current settings. Repanelizing is safe but pointless.”* After changing the standard width 40→32: *“Repanelize will rebuild all 4 walls…”*; confirming took it **62 → 72 panels** and cleared the marker and the pending summary.
+
+✅ **THE FLAGGED CHECK, ANSWERED: Repanelize is ONE undo press.** 72 → 62 on a single click — and the caution triangle **came back**, because the tiling basis is part of the undo document, so the standard-width change is pending again. The 500ms coalesce was the worry; a Repanelize is one React batch, so it lands inside it.
+
+⚠ **The Stage 1 guard caught this change.** `retileCallSites.test.ts` failed because a new re-tile call site was added without a classification — three days after it was written, for exactly the case it exists for. Classified `REDERIVES`: Repanelize IS the deliberate re-derivation, the one call site whose entire purpose is to re-tile.
+
+**Gates:** 2795 vitest in 146 files (11 new); `tsc` clean on both projects; lint unchanged at 174 problems; all seven harnesses green at 112 checks.
+
+⚠ **Not built, and worth naming:** Repanelize is whole-project only (per the plan); it does **not** re-tile the second story; and `handleSetLeastAccessibleCorner` is **still immediate rather than deferred** — deferring it was waiting on this button existing, so it is now a small change that has not been made.
 
 #### Order, and why
 

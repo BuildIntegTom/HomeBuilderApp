@@ -308,6 +308,7 @@ import {
   type TilingBasis,
 } from "./tilingBasis";
 import PendingRetileMark from "./PendingRetileMark";
+import { repanelizeConfirmation, wallsThatWouldChange } from "./repanelize";
 import {
   canRedo as historyCanRedo,
   canUndo as historyCanUndo,
@@ -2749,6 +2750,16 @@ export default function LayoutEditor() {
     setTilingBasis({ ...liveTilingBasis, leastAccessibleCorner: leastAccessibleUsed });
   };
 
+  /* REPANELIZE R3 — the tiler, run deliberately.
+     Held as the WORKED-OUT RESULT, not just a count: the comparison and the
+     application must be the same tiling pass, or the user approves one thing
+     and gets another. It also means confirming costs no second pass. */
+  const [repanelizePrompt, setRepanelizePrompt] = useState<{
+    text: string;
+    changedCount: number;
+    result: RetileWithRunStopMemoryResult;
+  } | null>(null);
+
   const applyRetiledStory = (
     story: "ground" | "second",
     result: RetileWithRunStopMemoryResult,
@@ -2765,6 +2776,30 @@ export default function LayoutEditor() {
     else setWallSlotsForStory("second", () => result.slotsByWallId);
     setUnbuiltOpeningsByStoryAndWallId((prev) => ({ ...prev, [story]: result.unbuiltOpeningsByWallId }));
     recordTilingBasis(leastAccessibleUsed);
+  };
+
+  /** Work out what Repanelize would do, and ask. ⚠ The comparison runs the
+   * real tiler rather than guessing from the basis: a setting can differ
+   * without changing a given wall's layout at all, and telling the user that
+   * wall will be rebuilt when it will not is the same lie as warning about
+   * hand edits that do not exist. */
+  const handleRepanelizeRequest = () => {
+    if (!footprint) return;
+    const result = retilePreservingOpenings(footprint, leastAccessibleCorner, primaryCornerIds, baseWallSlots);
+    const changed = wallsThatWouldChange(baseWallSlots, result.slotsByWallId);
+    setRepanelizePrompt({
+      text: repanelizeConfirmation({ changedWallIds: changed, totalWalls: footprint.walls.length }),
+      changedCount: changed.length,
+      result,
+    });
+  };
+
+  /** Apply the EXACT result the user was shown. */
+  const handleRepanelizeConfirm = () => {
+    const prompt = repanelizePrompt;
+    if (!prompt) return;
+    applyRetiledStory("ground", prompt.result, leastAccessibleCorner);
+    setRepanelizePrompt(null);
   };
 
   /** `runStops` is the WHOLE map, not one wall's record: since the
@@ -8470,6 +8505,34 @@ export default function LayoutEditor() {
         {standardWindowHeightsIn.note}
       </p>
 
+      {footprint && (
+        <div data-repanelize="" style={{ marginTop: 8 }}>
+          <button
+            type="button"
+            className={styles.tool}
+            onClick={handleRepanelizeRequest}
+            title="Rebuild every wall's panels from the current settings"
+          >
+            Repanelize…
+          </button>
+          {repanelizePrompt && (
+            <div role="alertdialog" aria-label="Confirm repanelize" className={styles.note} data-repanelize-prompt="">
+              <p>{repanelizePrompt.text}</p>
+              {/* ⚠ Repanelize is one undo entry, so this IS reversible — said
+                  out loud, because a user who does not know that will not
+                  risk the click, and the whole point of the feature is that
+                  they can try it. */}
+              <p>This can be undone.</p>
+              <button type="button" className={styles.tool} onClick={handleRepanelizeConfirm}>
+                {repanelizePrompt.changedCount === 0 ? "Repanelize anyway" : "Yes, repanelize"}
+              </button>{" "}
+              <button type="button" className={styles.tool} onClick={() => setRepanelizePrompt(null)}>
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {pendingTilingText && (
         <p className={styles.note} data-pending-retile="true">
           ⚠ Changed since this building was panelized: <strong>{pendingTilingText}</strong>. Existing panels keep the old

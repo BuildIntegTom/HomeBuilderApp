@@ -47,6 +47,15 @@ const EXPECTED: Record<string, { calls: number; fate: Fate; stage: string; why: 
     stage: "—",
     why: "A bump-out changes the SHAPE — it adds walls and splits one. Re-deriving is correct; there is no prior array for the new walls.",
   },
+  handleRepanelizeRequest: {
+    calls: 1,
+    fate: "REDERIVES",
+    stage: "—",
+    why:
+      "Repanelize IS the deliberate re-derivation — the one call site whose entire purpose is to re-tile, asked for by name and behind a confirmation. " +
+      "⚠ It runs the tiler to WORK OUT THE PROGNOSIS, not to apply it: the result is held and applied only if the user confirms, so what they approved is what they get and confirming costs no second pass. " +
+      "⚠ This test caught it — added 2026-10-10 without a classification, which is exactly the invisible-in-review case the guard exists for.",
+  },
   handleEditWallLength: {
     calls: 3,
     fate: "DIRECT",
@@ -133,7 +142,7 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
       "handleSetLeastAccessibleCorner",
       "retileAllForRunStops",
     ]);
-    expect(rederives.map(([h]) => h).sort()).toEqual(["handleAddBumpOut", "handleDraw"]);
+    expect(rederives.map(([h]) => h).sort()).toEqual(["handleAddBumpOut", "handleDraw", "handleRepanelizeRequest"]);
   });
 });
 
