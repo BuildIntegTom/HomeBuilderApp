@@ -48,13 +48,14 @@ const EXPECTED: Record<string, { calls: number; fate: Fate; stage: string; why: 
     why: "A bump-out changes the SHAPE — it adds walls and splits one. Re-deriving is correct; there is no prior array for the new walls.",
   },
   handleRepanelizeRequest: {
-    calls: 1,
+    calls: 2,
     fate: "REDERIVES",
     stage: "—",
     why:
       "Repanelize IS the deliberate re-derivation — the one call site whose entire purpose is to re-tile, asked for by name and behind a confirmation. " +
       "⚠ It runs the tiler to WORK OUT THE PROGNOSIS, not to apply it: the result is held and applied only if the user confirms, so what they approved is what they get and confirming costs no second pass. " +
-      "⚠ This test caught it — added 2026-10-10 without a classification, which is exactly the invisible-in-review case the guard exists for.",
+      "⚠ TWO calls since 2026-10-10: the ground storey and the second. Repanelize exists to actuate a settings change (Tommy), so leaving half a building on the old settings while clearing the caution markers — which say it HAS been applied — would be the worst of both. " +
+      "⚠ This test caught this handler twice: once when it was added without a classification, and again when it grew its second call.",
   },
   handleEditWallLength: {
     calls: 3,
@@ -73,12 +74,6 @@ const EXPECTED: Record<string, { calls: number; fate: Fate; stage: string; why: 
     fate: "DIRECT",
     stage: "Stage 4",
     why: "A run stop shortens the built part of a wall, which is a length change by another name. ⚠ It is also what the run-stop opening memory exists to survive, so Stage 6 cannot delete that memory until this one is converted.",
-  },
-  handleSetLeastAccessibleCorner: {
-    calls: 1,
-    fate: "DIRECT",
-    stage: "Stage 2",
-    why: "This moves WHERE the safety gap sits on every wall and changes no length. Moving a slot within an array is a permutation — it preserves the multiset of widths, so it needs no tiler at all.",
   },
 };
 
@@ -136,12 +131,13 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
     const rederives = Object.entries(EXPECTED).filter(([, e]) => e.fate === "REDERIVES");
     // Not a behaviour assertion — a statement of scope that fails if someone
     // reclassifies a site without thinking about it.
-    expect(direct.map(([h]) => h).sort()).toEqual([
-      "handleDragWall",
-      "handleEditWallLength",
-      "handleSetLeastAccessibleCorner",
-      "retileAllForRunStops",
-    ]);
+    /* ⚠ `handleSetLeastAccessibleCorner` LEFT THIS LIST ON 2026-10-10 — the
+       first handler to stop re-tiling, and the one Stage 2 originally
+       targeted. Not by the permutation that was attempted and abandoned
+       (it moved windows up to 59in), but by becoming a DEFERRED setting:
+       it now changes nothing but the setting, shows a caution marker, and
+       is applied by Repanelize. Three of six handlers remain. */
+    expect(direct.map(([h]) => h).sort()).toEqual(["handleDragWall", "handleEditWallLength", "retileAllForRunStops"]);
     expect(rederives.map(([h]) => h).sort()).toEqual(["handleAddBumpOut", "handleDraw", "handleRepanelizeRequest"]);
   });
 });

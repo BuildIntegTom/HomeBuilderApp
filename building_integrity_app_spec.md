@@ -5350,7 +5350,27 @@ It also **says openings may move**, per the 2026-10-10 decision, and **says “T
 
 **Gates:** 2795 vitest in 146 files (11 new); `tsc` clean on both projects; lint unchanged at 174 problems; all seven harnesses green at 112 checks.
 
-⚠ **Not built, and worth naming:** Repanelize is whole-project only (per the plan); it does **not** re-tile the second story; and `handleSetLeastAccessibleCorner` is **still immediate rather than deferred** — deferring it was waiting on this button existing, so it is now a small change that has not been made.
+~~⚠ **Not built, and worth naming:** Repanelize is whole-project only (per the plan); it does **not** re-tile the second story; and `handleSetLeastAccessibleCorner` is **still immediate rather than deferred**.~~ — **TWO OF THE THREE CLOSED 2026-10-10, see below.** Whole-project-only stands.
+
+##### The second storey, and the corner finally deferred (2026-10-10)
+
+**Repanelize now re-tiles BOTH storeys.** Tommy's framing is the reason, and it is written at the code: *“The purpose of retile is to actuate settings changes: of which should definitely apply to the second story.”* Re-tiling only the ground floor while **clearing the caution markers — which state that the setting HAS been applied** — would be the worst of both outcomes.
+
+The prognosis counts **distinct walls, not wall-storeys**: a wall that changes on either floor is one wall the user will see change, and “2 of 8” on a four-wall building describes a different building.
+
+**`handleSetLeastAccessibleCorner` IS NOW DEFERRED.** It changes the setting and nothing else. ⚠ **This is the first handler to stop re-tiling** — the one Stage 2 originally targeted, reached not by the permutation that was attempted and abandoned (it moved windows up to 59in) but by deferral. Three of the six handlers in the Stage 1 inventory remain.
+
+Worth restating why it mattered: re-tiling on that change was not merely wasteful, it was **wrong**. Measured 2026-10-07, it moved windows along the wall by up to **+19in** — a setting about which end a sheet of plywood goes, relocating rough openings by over a foot, silently.
+
+⚠ **The repanelize handlers had to MOVE below `wallSlotsForStory`**, which they now read for the second storey. Left where they were, the React Compiler lint reports *“accessed before it is declared”* — the same staleness warning the undo machinery was moved for on 2026-10-09. **That is two features now shaped by one out-of-order `useMemo`** (`stories`, declared ~3,600 lines after its first read), which is becoming worth hoisting on its own rather than routing around a third time.
+
+**Verified in the browser:** clicking a corner marker left the wall layout **byte-identical** (deferral works); standard width → 28in then Repanelize rebuilt **both storeys** at 28in and cleared the markers.
+
+⚠ **One verification was nearly worthless and was fixed.** The two storeys' panel signatures are identical on an unedited building, so if the storey switch had silently failed the test would have read the ground floor twice and “both storeys changed” would have been trivially true. Confirmed via `aria-pressed` on the storey buttons that the view really follows.
+
+⚠ **The Stage 1 guard caught this change too** — the third time it has fired. `handleSetLeastAccessibleCorner` left the inventory and `handleRepanelizeRequest` grew its second call.
+
+**Gates:** 2795 vitest in 146 files; `tsc` clean on both projects; lint unchanged at 174; six of seven harnesses green, the seventh failing `smearforn-stage-0-1`'s known elevation-zoom flake. ⚠ That rate looked alarming at 2 failures in 4 runs, so it was A/B'd against the committed baseline: **0 of 4 on each side**. Across the whole day it is 2 failures in ~13 runs, which matches the rate already recorded in that harness's README — the alarm was a sampling artefact of two failures landing close together.
 
 #### Order, and why
 

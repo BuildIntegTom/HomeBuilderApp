@@ -2757,7 +2757,9 @@ export default function LayoutEditor() {
   const [repanelizePrompt, setRepanelizePrompt] = useState<{
     text: string;
     changedCount: number;
-    result: RetileWithRunStopMemoryResult;
+    ground: RetileWithRunStopMemoryResult;
+    /** Null when the project has no second storey. */
+    second: RetileWithRunStopMemoryResult | null;
   } | null>(null);
 
   const applyRetiledStory = (
@@ -2778,29 +2780,6 @@ export default function LayoutEditor() {
     recordTilingBasis(leastAccessibleUsed);
   };
 
-  /** Work out what Repanelize would do, and ask. ⚠ The comparison runs the
-   * real tiler rather than guessing from the basis: a setting can differ
-   * without changing a given wall's layout at all, and telling the user that
-   * wall will be rebuilt when it will not is the same lie as warning about
-   * hand edits that do not exist. */
-  const handleRepanelizeRequest = () => {
-    if (!footprint) return;
-    const result = retilePreservingOpenings(footprint, leastAccessibleCorner, primaryCornerIds, baseWallSlots);
-    const changed = wallsThatWouldChange(baseWallSlots, result.slotsByWallId);
-    setRepanelizePrompt({
-      text: repanelizeConfirmation({ changedWallIds: changed, totalWalls: footprint.walls.length }),
-      changedCount: changed.length,
-      result,
-    });
-  };
-
-  /** Apply the EXACT result the user was shown. */
-  const handleRepanelizeConfirm = () => {
-    const prompt = repanelizePrompt;
-    if (!prompt) return;
-    applyRetiledStory("ground", prompt.result, leastAccessibleCorner);
-    setRepanelizePrompt(null);
-  };
 
   /** `runStops` is the WHOLE map, not one wall's record: since the
    * orphan-corner rule a stop on the neighbour changes this wall's own inset
@@ -2927,6 +2906,55 @@ export default function LayoutEditor() {
   // also mutate, in place of a bespoke second copy of every handler.
   const wallSlotsForStory = (story: "ground" | "second"): Record<string, PanelSlot[]> =>
     story === "ground" ? baseWallSlots : (secondStory?.wallSlots ?? {});
+
+  /* ⚠ THE REPANELIZE HANDLERS LIVE HERE, BELOW `wallSlotsForStory`, AND
+     THAT IS NOT ARBITRARY. They read it for the second story. Placed
+     earlier, the React Compiler lint reports "accessed before it is
+     declared, which prevents the earlier access from updating when this
+     value changes over time" — the same staleness warning the undo
+     machinery had to be moved for on 2026-10-09. */
+  /** Work out what Repanelize would do, and ask. ⚠ The comparison runs the
+   * real tiler rather than guessing from the basis: a setting can differ
+   * without changing a given wall's layout at all, and telling the user that
+   * wall will be rebuilt when it will not is the same lie as warning about
+   * hand edits that do not exist. */
+  const handleRepanelizeRequest = () => {
+    if (!footprint) return;
+    const ground = retilePreservingOpenings(footprint, leastAccessibleCorner, primaryCornerIds, baseWallSlots);
+    /* ⚠ The second story is re-tiled too, or Repanelize would quietly leave
+       half a building on the old settings — and the caution markers would
+       clear, stating that it had all been applied. */
+    const second = secondStory
+      ? retilePreservingOpenings(
+          footprint,
+          leastAccessibleCorner,
+          primaryCornerIds,
+          wallSlotsForStory("second"),
+          wallRunStopsByWallId,
+          "second",
+        )
+      : null;
+    /* Counted as DISTINCT WALLS, not wall-stories: a wall that changes on
+       either storey is one wall the user will see change, and "2 of 8" on a
+       four-wall building reads as a different building. */
+    const changed = new Set(wallsThatWouldChange(baseWallSlots, ground.slotsByWallId));
+    if (second) for (const id of wallsThatWouldChange(wallSlotsForStory("second"), second.slotsByWallId)) changed.add(id);
+    setRepanelizePrompt({
+      text: repanelizeConfirmation({ changedWallIds: [...changed], totalWalls: footprint.walls.length }),
+      changedCount: changed.size,
+      ground,
+      second,
+    });
+  };
+
+  /** Apply the EXACT result the user was shown. */
+  const handleRepanelizeConfirm = () => {
+    const prompt = repanelizePrompt;
+    if (!prompt) return;
+    applyRetiledStory("ground", prompt.ground, leastAccessibleCorner);
+    if (prompt.second) applyRetiledStory("second", prompt.second, leastAccessibleCorner);
+    setRepanelizePrompt(null);
+  };
   const setWallSlotsForStory = (
     story: "ground" | "second",
     updater: (prev: Record<string, PanelSlot[]>) => Record<string, PanelSlot[]>,
@@ -3565,12 +3593,26 @@ export default function LayoutEditor() {
    * put the first stop straight back. */
   const handleClearWallRunStop = (wallId: string) => applyWallRunStopChange(wallId, NO_WALL_RUN_STOP);
 
+  /**
+   * ⚠ **DEFERRED, 2026-10-10 — this used to re-tile the whole building and
+   * now changes nothing but the setting.** Tommy: *"Deferred setting,
+   * activates when retiled."*
+   *
+   * It only decides which END of each run the safety gap sits at, which is a
+   * permutation of a wall and not a different wall. Re-tiling for it was
+   * wasteful AND wrong: measured 2026-10-07, re-tiling on this change
+   * **moved windows along the wall** by -0.75in on a 240in wall, +5.875in at
+   * 300in and **+19in** on a 360in wall with a 48in window. A setting about
+   * which end a sheet of plywood goes was relocating rough openings by over
+   * a foot, and nothing reported it.
+   *
+   * Now the change is shown as pending (R1's caution marker, which already
+   * maps this setting) and applied by Repanelize. ⚠ It was NOT deferred when
+   * that was decided, because deferring a setting before Repanelize existed
+   * would have left it permanently unapplied.
+   */
   const handleSetLeastAccessibleCorner = (cornerId: CornerId) => {
     setLeastAccessibleCorner(cornerId);
-    if (footprint) {
-      setBaseWallSlots(retile(footprint, cornerId, primaryCornerIds));
-      recordTilingBasis(cornerId);
-    }
   };
 
   // --- Smearforn Stage 1: hand-set panel widths ---------------------------
