@@ -5282,6 +5282,31 @@ The defect: `beforeStandardCount` records a count, and **a count is not a positi
 
 **Staging:** (a) add the field and write it on place/move; (b) use it for placement and ordering, falling back to the count while absent; (c) sweep stop/un-stop round trips and gap-end flips for position AND order; (d) retire the count once every opening carries an intent.
 
+##### ⚠ Step 2 was built, MEASURED, and ABANDONED — then answered by Tommy (2026-10-10)
+
+Step 2 was nearest-boundary placement: given an intent, put the opening at the closest slot boundary to it. Built, typechecked, 793 geometry tests green — **and then measured, which is the only reason it is not shipped.**
+
+| case | drift WITHOUT intent | drift WITH intent |
+|---|---|---|
+| 360in wall, 48in window | 19.0in | **19.0in** |
+| 300in wall, 36in window | 13.125in | **13.125in** |
+| 420in wall, 36in window | 27.0in | **13.0in** |
+| 240in wall, 61.5in window | 0.75in | **0** |
+
+**Mostly identical, and the headline 19in case did not improve at all.** The reason is structural: an opening can only sit **at a slot boundary**, the tiler builds the plain middle as a fixed sequence of ~40in panels and then inserts openings between whole ones, so the boundaries are ~40in apart and the nearest one to the intent can still be 19in away. **Knowing where the user wanted the window does not help if there is nowhere near there to put it.** Honouring an arbitrary offset would mean SIZING the panels before the opening to sum to it — building the plain middle in segments around the openings instead of whole-then-split — which is a deep change to the most load-bearing code in the app, with the 24–48in range making some offsets unreachable regardless. Reverted.
+
+**Tommy’s answer, offered the three options (leave it / rebuild the tiler / refuse the re-tile):** *“Drift but stay the same size would be great.”*
+
+##### The guarantee, as built 2026-10-10: DRIFT IS ACCEPTED, RESIZE IS NOT
+
+- **Position may move on a re-tile.** It is bounded by where slot boundaries fall, up to about 19in on the walls measured. Accepted.
+- **⚠ The WIDTH may not change.** A window is an ordered unit with a real rough opening, so a re-tile that quietly turned 48in into 40in would be ordering the wrong part. That is the line between an inconvenience and a wrong cut list.
+- **The urgency dropped on its own**, which is why leaving the drift is defensible: the defect fired when the least-accessible corner changed, and that is now a DEFERRED setting (R1), so after R3 it only happens on an explicit Repanelize — where the user has asked for a fresh layout and been told hand edits will be overwritten. ⚠ **The Repanelize confirmation should say openings may move**, since that is now a documented behaviour rather than a bug.
+
+**`openingSizeSurvives.test.ts` enforces it** across all three re-tile paths — a safety-gap flip over 7 wall lengths x 4 positions x 4 opening widths, a wall-length change driven up and down six times carrying anchors forward exactly as the app does, and a run-stop round trip at every 4in of stop from 0 to 520in with a non-vacuity assertion that stops which actually WITHHELD an opening were exercised.
+
+⚠ **The gap-flip sweep was wrong first, and watching it fail is what found that.** It compared the two layouts against EACH OTHER, so a resize applied by both — which is exactly what a broken width carry does — cancelled out. A deliberate 2in break was caught by the other two sweeps and NOT by that one. It now compares against the width that went in, and all three catch it.
+
 ##### Step 1 as built — carry it, do not act on it
 
 ⚠ **Placement still uses `beforeStandardCount`, so this step changes NO behaviour.** That is the point: the half that moves windows is step (b), and splitting it off means the carrying can be proven before anything depends on it. The first attempt at R2 had no persisted intent at all, which is why it had nothing to fall back on when the derived value turned out to describe a stopped layout.
