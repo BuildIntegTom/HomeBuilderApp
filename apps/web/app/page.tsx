@@ -1115,97 +1115,6 @@ export default function LayoutEditor() {
     const minLengthFt = Math.min(...footprint.walls.map((w) => w.lengthFt));
     return wall.lengthFt <= minLengthFt + 1e-6;
   };
-  const handleToggleGableStructuralPanel = (wallId: string, enabled: boolean) => {
-    setGableStructuralPanelWallIds((was) => {
-      const next = new Set(was);
-      if (enabled) next.add(wallId);
-      else next.delete(wallId);
-      return next;
-    });
-    // Only makes sense under a single real peak — a flat-topped profile has
-    // no one point for either column to center under (same gate
-    // computeGableTiledRow's own columnReservationWidthIn uses).
-    if (!enabled || roofProfileType !== "peaked") return;
-    const wall = footprint?.walls.find((w) => w.id === wallId);
-    if (!wall) return;
-    // Auto-place a centered main-level Column Panel (Tommy: "1 panel on
-    // the main level centered with edges flush to the one above it") — its
-    // top edge lands flush with the gable column's own bottom edge with no
-    // extra alignment math, since a normal full-height panel already
-    // reaches the eave, exactly where the gable column begins. Targets
-    // whichever story sits directly under the roofline (the top-most real
-    // story). Excludes the first/last standard-family ordinal — mirrors
-    // Stride 1's own default-window seeding, never at a corner-adjacent
-    // brace position; skipped entirely if there's no safe non-corner
-    // candidate (a wall with fewer than 3 standard-family slots).
-    const topStory: "ground" | "second" = stories.length > 1 ? "second" : "ground";
-    const currentSlots = wallSlotsForStory(topStory)[wallId] ?? [];
-    const standardFamilyIndices = currentSlots
-      .map((_, i) => i)
-      .filter((i) => currentSlots[i]!.type === "standard" || currentSlots[i]!.type === "braced");
-    if (standardFamilyIndices.length < 3) return;
-    const geometry = wallGeometryFor(wallId);
-    if (!geometry) return;
-    // Picks whichever candidate ordinal's ACTUAL post-retile center lands
-    // nearest the wall's real peak X — not a pre-retile estimate.
-    // retileWithOpenings rebuilds every standard-family slot's own width
-    // fresh around whatever the full anchor set (this wall's existing
-    // openings plus the new column) leaves in budget, so a width computed
-    // from the slots as they stood BEFORE inserting this reservation can't
-    // reliably predict where the column actually ends up — this tries
-    // every viable ordinal for real and keeps whichever result is
-    // genuinely closest, which is what actually makes it land "flush with"
-    // the gable column above it (itself always centered on this same real
-    // peak position — see computeGableTiledRow's own
-    // columnReservationWidthIn). Measured from the wall's own TRUE
-    // starting corner (x=0, computeGableTiledRow's own origin) — this
-    // story's own slots only start there when this wall owns its start
-    // corner and nothing is stopped off it; otherwise they start
-    // `runStartOffsetIn` in (the neighbor's own corner panel fills that
-    // initial sliver, and/or a Stage 3 run stop withholds more of it — see
-    // WallElevationDiagram's own startOffsetIn, which this mirrors).
-    const wallLengthIn = wall.lengthFt * 12;
-    const { resolvedPointXsIn } = resolveGableProfilePoints(roofProfilePointHeightsFt, gableProfilePositionsInByWallId[wallId] ?? [], wallLengthIn);
-    const peakXIn = resolvedPointXsIn[0] ?? wallLengthIn / 2;
-    const startOffsetIn = geometry.runStartOffsetIn;
-    const existingAnchors = getOpeningAnchors(currentSlots);
-    const candidateOrdinals: number[] = [];
-    for (let ordinal = 1; ordinal < standardFamilyIndices.length - 1; ordinal++) candidateOrdinals.push(ordinal);
-    if (candidateOrdinals.length === 0) return;
-
-    let bestSlots: PanelSlot[] | null = null;
-    let bestDistanceIn = Infinity;
-    for (const ordinal of candidateOrdinals) {
-      const anchors = [...existingAnchors, { beforeStandardCount: ordinal, type: "column" as const, widthIn: COLUMN_TOTAL_WIDTH_IN }];
-      const trialSlots = retileWithOpenings(
-        geometry.lengthIn,
-        standardWidthIn,
-        cornerWidthInForTiling,
-        geometry.gapEnd,
-        geometry.hasCornerStart,
-        geometry.hasCornerEnd,
-        anchors,
-        geometry.allowBorrow,
-        cornerMayWidenForTiling,
-      ).slots;
-      let cursorIn = startOffsetIn;
-      let distanceIn = Infinity;
-      for (const s of trialSlots) {
-        if (s.type === "column" && Math.abs(s.widthIn - COLUMN_TOTAL_WIDTH_IN) < 0.01) {
-          distanceIn = Math.min(distanceIn, Math.abs(cursorIn + s.widthIn / 2 - peakXIn));
-        }
-        cursorIn += s.widthIn;
-      }
-      if (distanceIn < bestDistanceIn) {
-        bestDistanceIn = distanceIn;
-        bestSlots = trialSlots;
-      }
-    }
-    if (!bestSlots) return;
-    const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(bestSlots, geometry.gapEnd) : bestSlots;
-    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored, slotIndexPinnedWallIds.has(wallId));
-    setWallSlotsForStory(topStory, (prev) => ({ ...prev, [wallId]: finalSlots }));
-  };
   // Tommy: "make the default that... when the user adds a gable end, the
   // opposing wall also spawns one, and they are symmetrical and parallel
   // to each other and move together" — default ON; a sidebar toggle lets
@@ -1833,6 +1742,45 @@ export default function LayoutEditor() {
   const [panelizationType, setPanelizationType] = useState<PanelizationType>("loose-packed-braced");
   const [timberFrameCurtainPanelType, setTimberFrameCurtainPanelType] = useState<"standard" | "braced">("standard");
   const [timberFrameCurtainWidthIn, setTimberFrameCurtainWidthIn] = useState(36);
+
+  /* ⚠ HOISTED 2026-10-11, and the reason is structural rather than tidiness.
+
+     `stories` and the `overlayWallSlots` it is built from used to be declared
+     around line 4800 while being READ from line ~1140 onward. That works at
+     runtime — the readers are functions that only run later — but the React
+     Compiler lint calls it correctly: "accessed before it is declared, which
+     prevents the earlier access from updating when this value changes over
+     time". A staleness risk, and a fair one.
+
+     It had also started dictating the shape of the file. The undo machinery
+     (2026-10-09) and the Repanelize handlers (2026-10-10) were both placed
+     below line 4800 ONLY to dodge that warning, not because they belong
+     there, and each carries a comment saying so. A third feature routed
+     around a four-line memo would have been the file winning.
+
+     They now sit immediately after the last state they read
+     (`timberFrameCurtainWidthIn`), which is as early as they can legally go. */
+  const overlayWallSlots = useMemo(() => {
+    if (panelizationType === "loose-packed-braced") return baseWallSlots;
+    const next: Record<string, PanelSlot[]> = {};
+    for (const [wallId, slots] of Object.entries(baseWallSlots)) {
+      const uniformType = panelizationType === "square-bale-panels" ? "standard" : timberFrameCurtainPanelType;
+      const uniformWidthIn = panelizationType === "square-bale-panels" ? squareBalePanel.widthIn : timberFrameCurtainWidthIn;
+      next[wallId] = applyUniformPanelization(slots, uniformType, uniformWidthIn);
+    }
+    return next;
+  }, [baseWallSlots, panelizationType, timberFrameCurtainPanelType, timberFrameCurtainWidthIn]);
+
+  // Real Story[] (Tommy: "how to do second story editing... maybe it sees
+  // the ground level, and then can shift upward to the next ring of
+  // panels") — stories[0] (ground floor) is a computed view over the
+  // existing ground-floor primitives (zero change to baseWallSlots/retile/
+  // handleToggleOpening/etc.); stories[1] (if present) is `secondStory`,
+  // the one genuinely independent piece of state above.
+  const stories: Story[] = useMemo(() => {
+    const ground: Story = { id: "ground", label: "Ground Floor", wallHeightFt, wallSlots: overlayWallSlots };
+    return secondStory ? [ground, secondStory] : [ground];
+  }, [wallHeightFt, overlayWallSlots, secondStory]);
   const isSquareBalePanelization = panelizationType === "square-bale-panels";
   /** The panelization control's own refusal text (Square Bale's fixed 39in
    * corner — see `squareBaleCornerRefusal.ts`). Its own state rather than
@@ -2964,6 +2912,106 @@ export default function LayoutEditor() {
     } else {
       setSecondStory((prev) => (prev ? { ...prev, wallSlots: updater(prev.wallSlots) } : prev));
     }
+  };
+
+  /* ⚠ MOVED DOWN 2026-10-11, with the `stories` hoist above. This handler
+     read `stories` earlier than even the hoisted position, and was already
+     reaching forward for `setWallSlotsForStory`, `spacingIn`,
+     `cornerWidthInForTiling`, `slotIndexPinnedWallIds` and the brace
+     defaults — all declared below where it used to sit. Placing it after the
+     last of them resolves every one of those at once, not just the one the
+     linter happened to name. Its only call site is in the elevation controls
+     far below, so nothing else moves. */
+  const handleToggleGableStructuralPanel = (wallId: string, enabled: boolean) => {
+    setGableStructuralPanelWallIds((was) => {
+      const next = new Set(was);
+      if (enabled) next.add(wallId);
+      else next.delete(wallId);
+      return next;
+    });
+    // Only makes sense under a single real peak — a flat-topped profile has
+    // no one point for either column to center under (same gate
+    // computeGableTiledRow's own columnReservationWidthIn uses).
+    if (!enabled || roofProfileType !== "peaked") return;
+    const wall = footprint?.walls.find((w) => w.id === wallId);
+    if (!wall) return;
+    // Auto-place a centered main-level Column Panel (Tommy: "1 panel on
+    // the main level centered with edges flush to the one above it") — its
+    // top edge lands flush with the gable column's own bottom edge with no
+    // extra alignment math, since a normal full-height panel already
+    // reaches the eave, exactly where the gable column begins. Targets
+    // whichever story sits directly under the roofline (the top-most real
+    // story). Excludes the first/last standard-family ordinal — mirrors
+    // Stride 1's own default-window seeding, never at a corner-adjacent
+    // brace position; skipped entirely if there's no safe non-corner
+    // candidate (a wall with fewer than 3 standard-family slots).
+    const topStory: "ground" | "second" = stories.length > 1 ? "second" : "ground";
+    const currentSlots = wallSlotsForStory(topStory)[wallId] ?? [];
+    const standardFamilyIndices = currentSlots
+      .map((_, i) => i)
+      .filter((i) => currentSlots[i]!.type === "standard" || currentSlots[i]!.type === "braced");
+    if (standardFamilyIndices.length < 3) return;
+    const geometry = wallGeometryFor(wallId);
+    if (!geometry) return;
+    // Picks whichever candidate ordinal's ACTUAL post-retile center lands
+    // nearest the wall's real peak X — not a pre-retile estimate.
+    // retileWithOpenings rebuilds every standard-family slot's own width
+    // fresh around whatever the full anchor set (this wall's existing
+    // openings plus the new column) leaves in budget, so a width computed
+    // from the slots as they stood BEFORE inserting this reservation can't
+    // reliably predict where the column actually ends up — this tries
+    // every viable ordinal for real and keeps whichever result is
+    // genuinely closest, which is what actually makes it land "flush with"
+    // the gable column above it (itself always centered on this same real
+    // peak position — see computeGableTiledRow's own
+    // columnReservationWidthIn). Measured from the wall's own TRUE
+    // starting corner (x=0, computeGableTiledRow's own origin) — this
+    // story's own slots only start there when this wall owns its start
+    // corner and nothing is stopped off it; otherwise they start
+    // `runStartOffsetIn` in (the neighbor's own corner panel fills that
+    // initial sliver, and/or a Stage 3 run stop withholds more of it — see
+    // WallElevationDiagram's own startOffsetIn, which this mirrors).
+    const wallLengthIn = wall.lengthFt * 12;
+    const { resolvedPointXsIn } = resolveGableProfilePoints(roofProfilePointHeightsFt, gableProfilePositionsInByWallId[wallId] ?? [], wallLengthIn);
+    const peakXIn = resolvedPointXsIn[0] ?? wallLengthIn / 2;
+    const startOffsetIn = geometry.runStartOffsetIn;
+    const existingAnchors = getOpeningAnchors(currentSlots);
+    const candidateOrdinals: number[] = [];
+    for (let ordinal = 1; ordinal < standardFamilyIndices.length - 1; ordinal++) candidateOrdinals.push(ordinal);
+    if (candidateOrdinals.length === 0) return;
+
+    let bestSlots: PanelSlot[] | null = null;
+    let bestDistanceIn = Infinity;
+    for (const ordinal of candidateOrdinals) {
+      const anchors = [...existingAnchors, { beforeStandardCount: ordinal, type: "column" as const, widthIn: COLUMN_TOTAL_WIDTH_IN }];
+      const trialSlots = retileWithOpenings(
+        geometry.lengthIn,
+        standardWidthIn,
+        cornerWidthInForTiling,
+        geometry.gapEnd,
+        geometry.hasCornerStart,
+        geometry.hasCornerEnd,
+        anchors,
+        geometry.allowBorrow,
+        cornerMayWidenForTiling,
+      ).slots;
+      let cursorIn = startOffsetIn;
+      let distanceIn = Infinity;
+      for (const s of trialSlots) {
+        if (s.type === "column" && Math.abs(s.widthIn - COLUMN_TOTAL_WIDTH_IN) < 0.01) {
+          distanceIn = Math.min(distanceIn, Math.abs(cursorIn + s.widthIn / 2 - peakXIn));
+        }
+        cursorIn += s.widthIn;
+      }
+      if (distanceIn < bestDistanceIn) {
+        bestDistanceIn = distanceIn;
+        bestSlots = trialSlots;
+      }
+    }
+    if (!bestSlots) return;
+    const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(bestSlots, geometry.gapEnd) : bestSlots;
+    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored, slotIndexPinnedWallIds.has(wallId));
+    setWallSlotsForStory(topStory, (prev) => ({ ...prev, [wallId]: finalSlots }));
   };
 
   // Panel drag-resize commit (Tommy: "when you click and drag a panel, it
@@ -4780,27 +4828,7 @@ export default function LayoutEditor() {
   // automatic corner-proximity rule), recomputed fresh from the base slots
   // every render — never stored, so switching panelization type just
   // falls out of recomputation instead of needing to be undone.
-  const overlayWallSlots = useMemo(() => {
-    if (panelizationType === "loose-packed-braced") return baseWallSlots;
-    const next: Record<string, PanelSlot[]> = {};
-    for (const [wallId, slots] of Object.entries(baseWallSlots)) {
-      const uniformType = panelizationType === "square-bale-panels" ? "standard" : timberFrameCurtainPanelType;
-      const uniformWidthIn = panelizationType === "square-bale-panels" ? squareBalePanel.widthIn : timberFrameCurtainWidthIn;
-      next[wallId] = applyUniformPanelization(slots, uniformType, uniformWidthIn);
-    }
-    return next;
-  }, [baseWallSlots, panelizationType, timberFrameCurtainPanelType, timberFrameCurtainWidthIn]);
 
-  // Real Story[] (Tommy: "how to do second story editing... maybe it sees
-  // the ground level, and then can shift upward to the next ring of
-  // panels") — stories[0] (ground floor) is a computed view over the
-  // existing ground-floor primitives (zero change to baseWallSlots/retile/
-  // handleToggleOpening/etc.); stories[1] (if present) is `secondStory`,
-  // the one genuinely independent piece of state above.
-  const stories: Story[] = useMemo(() => {
-    const ground: Story = { id: "ground", label: "Ground Floor", wallHeightFt, wallSlots: overlayWallSlots };
-    return secondStory ? [ground, secondStory] : [ground];
-  }, [wallHeightFt, overlayWallSlots, secondStory]);
 
   /* ⚠ THE UNDO MACHINERY LIVES HERE, BELOW `stories`, AND THAT IS NOT
      ARBITRARY. The capture effect calls `buildProjectState`, which reads

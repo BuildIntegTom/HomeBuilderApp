@@ -5507,6 +5507,31 @@ First draw, shape change (bump-out, octagon, ring), and panelization-type change
 
 ---
 
+## `stories` hoisted — the four-line memo that was shaping the file (2026-10-11) — BUILT
+
+`stories` and the `overlayWallSlots` it is built from were declared around **line 4800** of `page.tsx` while being **read from line ~1140 onward**. That works at runtime — the readers are functions that only run later — but the React Compiler lint calls it correctly: *“accessed before it is declared, which prevents the earlier access from updating when this value changes over time.”* A staleness risk, and a fair one.
+
+⚠ **It had started dictating the shape of the file.** The undo machinery (2026-10-09) and the Repanelize handlers (2026-10-10) were both placed low **only to dodge that warning**, not because they belonged there, and each carries a comment saying so. A third feature routed around a four-line memo would have been the file winning.
+
+**What moved:** `overlayWallSlots` and `stories` up to immediately after the last state they read (`timberFrameCurtainWidthIn`), which is as early as they can legally go — line ~1780 instead of ~4800. And `handleToggleGableStructuralPanel` **down**, past `setWallSlotsForStory`: it read `stories` earlier than even the hoisted position, and was already reaching forward for `spacingIn`, `cornerWidthInForTiling`, `slotIndexPinnedWallIds` and the brace defaults. Its only call site is in the elevation controls far below, so nothing else moved.
+
+**The lint gate went DOWN for the first time**, and by more than the one error this was aimed at:
+
+| | before | after |
+|---|---|---|
+| problems / errors | 174 / 126 | **167 / 119** |
+| `react-hooks/preserve-manual-memoization` | 68 | **61** |
+| accessed-before-declared | 2 | **1** |
+| `exhaustive-deps` / `set-state-in-effect` | 12 / 12 | unchanged |
+
+⚠ **Seven memoization errors went with it.** Moving the handler past its own forward references let the React Compiler memoize things it previously could not — the gain was not the one error the linter named. The remaining accessed-before-declared is the pre-existing `setPanelPlacementTool`.
+
+**Proven to be a pure move.** Every comment and blank line was stripped from `page.tsx` before and after, sorted, and diffed: **every executable line is identical**, and the only differences are the twenty lines of prose explaining why. 2795 vitest; `tsc` clean on both projects; all seven harnesses green at 112 checks.
+
+⚠ **And a lesson from the tooling, not the code.** The first harness run after this reported **seven harnesses exiting 1 with ZERO checks**, which reads like seven broken harnesses and was really one missing dev server — the readiness loop fell through on failure and printed “ready” regardless. The runner now **aborts** instead of proceeding, and reports zero checks as a FAILURE TO RUN rather than as “0 fails”. Same shape as the test defects caught this week: a result that passes or fails for a reason unrelated to what is being measured.
+
+---
+
 ## The tile-once editing model — panelize on the first draw, then edit by hand (2026-09-30 / 2026-10-02) — SPEC'D, NOTHING BUILT
 
 **This is the largest architectural decision in the project so far.** It does not add a feature; it removes a class of behaviour. Today every wall edit anywhere in the building re-runs the tiler over every wall (`retile.ts`), and every mechanism that preserves user intent does it by *anchor + reconcile* across that re-tile — `lockedWidthIn` re-forced by `reconcileBracedPlacement`, openings re-anchored by ordinal out of `oldSlots`, run-stop openings withheld and remembered. Tile-once says: **tile once, on the first draw, and after that the user moves panels rather than the tiler re-deriving them.**
