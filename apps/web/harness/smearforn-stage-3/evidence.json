@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T00:50:21.715Z",
+  "ranAt": "2026-10-12T03:03:02.765Z",
   "stopIn": 60,
   "steps": [
     {
@@ -38,7 +38,7 @@
     },
     {
       "name": "whole-wall-on-screen",
-      "clicks": 5,
+      "clicks": 4,
       "wholeWallVisible": true,
       "asserted": true,
       "passed": true
@@ -119,8 +119,8 @@
         "NO PANELS: 5'-0\""
       ],
       "planSheetLabelsCleared": [],
-      "boundaryGreyWithStop": 1170,
-      "boundaryGreyWithoutStop": 1433,
+      "boundaryGreyWithStop": 1155,
+      "boundaryGreyWithoutStop": 1432,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
@@ -180,46 +180,46 @@
       "basePanelCount": 17,
       "openingSlotsBeforePlacement": 1,
       "panelCountBeforePlacement": 17,
-      "clickTargetsOnScreen": 1,
+      "clickTargetsOnScreen": 7,
       "noticeBeforePlacement": null,
-      "placedOpeningNotice": "Corner and safety-gap panels are placed by rule, not by hand — the app positions them and would overwrite a hand-placed one. Nothing was changed.",
-      "placedOpeningWidthLabel": "25.5\"",
-      "openingSlotsBefore": 1,
+      "placedOpeningNotice": "Replaced on wall AB: 17 panels → 17, 10 still automatic.",
+      "placedOpeningWidthLabel": "40\"",
+      "openingSlotsBefore": 2,
       "sweep": [
         {
           "stopIn": 87,
           "invalid": false,
           "message": null,
           "totalEighths": 3944,
-          "withheldOpenings": 0
+          "withheldOpenings": 2
         },
         {
           "stopIn": 174,
           "invalid": false,
           "message": null,
           "totalEighths": 3248,
-          "withheldOpenings": 0
+          "withheldOpenings": 2
         },
         {
           "stopIn": 261,
           "invalid": false,
           "message": null,
           "totalEighths": 2552,
-          "withheldOpenings": 0
+          "withheldOpenings": 2
         },
         {
           "stopIn": 348,
           "invalid": false,
           "message": null,
           "totalEighths": 1856,
-          "withheldOpenings": 1
+          "withheldOpenings": 2
         },
         {
           "stopIn": 435,
           "invalid": false,
           "message": null,
           "totalEighths": 1160,
-          "withheldOpenings": 1
+          "withheldOpenings": 2
         }
       ],
       "deepestAcceptedStopIn": 435,
@@ -227,13 +227,13 @@
       "restoredEighths": 4640,
       "restoredPanelCount": 17,
       "restoredWithheld": 0,
-      "openingSlotsRestored": 1,
+      "openingSlotsRestored": 2,
       "asserted": true,
-      "passed": false
+      "passed": true
     },
     {
       "name": "a-new-footprint-does-not-inherit-the-old-buildings-remembered-openings",
-      "withheldWhenRedrawn": 1,
+      "withheldWhenRedrawn": 2,
       "baseEighthsBeforeRedraw": 4640,
       "redrawnEighths": 4320,
       "redrawnPanelCount": 16,
@@ -265,7 +265,5 @@
     }
   ],
   "pageExceptions": [],
-  "failures": [
-    "openings-in-the-unbuilt-span-are-dropped-remembered-and-restored"
-  ]
+  "failures": []
 }

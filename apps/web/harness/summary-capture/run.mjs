@@ -48,6 +48,24 @@ const clickSel = async (sel) => {
   if (!at) throw new Error("not clickable: " + sel);
   await click(at.x, at.y);
 };
+/**
+ * Open or close the Summary page, which since U4 is how the Project Summary
+ * section is shown.
+ *
+ * It used to click the right-hand trays button labelled "Project Summary".
+ * U5.2 deleted that tray, and this harness died with "no enabled button
+ * labelled exactly: Project Summary" — the locator failing loudly, which is
+ * what a locator should do. The section did not become unreachable; it is on
+ * the Summary page, and opening the page opens it.
+ *
+ * It TOGGLES, so calls must be paired — which suits this harness exactly,
+ * since what it measures is the capture going dormant when the section is
+ * closed and being current again the moment it reopens.
+ */
+const toggleTheSummaryPage = async () => {
+  await clickSel('[data-bar-control="summary"]');
+};
+
 /** The enabled button whose trimmed label is exactly `text` — the bar carries
  * a DISABLED "Summary" placeholder with similar wording. */
 const clickExact = async (text) => {
@@ -130,7 +148,7 @@ await evaluate(
 );
 
 console.log("\n1. open the Project Summary");
-await clickExact("Project Summary");
+await toggleTheSummaryPage();
 await sleep(5000);
 const first = await fingerprint();
 check("the note shows a rendering once opened", first.hasImg === true, first);
@@ -138,7 +156,7 @@ const capturesWhileOpening = await evaluate("window.__tdu.length");
 check("opening it took at least one capture", capturesWhileOpening >= 1, { capturesWhileOpening });
 
 console.log("\n2. close it, then edit the wall height with nobody looking");
-await clickExact("Project Summary");
+await toggleTheSummaryPage();
 await sleep(1500);
 await evaluate("window.__tdu.length = 0");
 
@@ -167,7 +185,7 @@ await clickSel('[data-bar-control="settings"]');
 await sleep(1200);
 
 console.log("\n3. re-open it — the image must be the building as it is NOW");
-await clickExact("Project Summary");
+await toggleTheSummaryPage();
 await sleep(6000);
 const second = await fingerprint();
 check("re-opening took a capture", (await evaluate("window.__tdu.length")) >= 1, { calls: await evaluate("window.__tdu.length") });

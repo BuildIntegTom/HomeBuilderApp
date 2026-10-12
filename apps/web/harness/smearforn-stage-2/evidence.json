@@ -1,10 +1,10 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T01:05:36.581Z",
+  "ranAt": "2026-10-12T03:13:19.811Z",
   "steps": [
     {
       "name": "whole-wall-on-screen",
-      "clicks": 5,
+      "clicks": 4,
       "wholeWallVisible": true,
       "asserted": true,
       "passed": true

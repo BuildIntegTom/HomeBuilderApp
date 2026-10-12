@@ -126,6 +126,8 @@ const surfaceState = async () =>
   // does not depend on a CSS module's hashed class name.
   const layer = canvas ? canvas.closest('div[class*="editorCanvasLayer"]') : null;
   const summaryBtn = document.querySelector('[data-bar-control="summary"]');
+  const printBtn = document.querySelector('[data-bar-control="print"]');
+  const editor = document.querySelector('[data-sections-unreachable]');
   const design = document.querySelector('[data-view-menu="design"]');
   const view = document.querySelector('[data-view-menu="view"]');
   const section = host ? host.querySelector('#detail-summary') : null;
@@ -136,6 +138,28 @@ const surfaceState = async () =>
     canvasLayerDisplay: layer ? getComputedStyle(layer).display : null,
     summaryOwner: summaryBtn ? summaryBtn.getAttribute('data-surface-owner') : null,
     summaryDisabled: summaryBtn ? summaryBtn.disabled : null,
+    printOwner: printBtn ? printBtn.getAttribute('data-surface-owner') : null,
+    printDisabled: printBtn ? printBtn.disabled : null,
+    printPagePresent: !!document.querySelector('[data-editor-surface="print"]'),
+    printHostSections: document.querySelectorAll('[data-print-page-host] > div.documentSection').length,
+    summaryHostSections: host ? host.querySelectorAll(':scope > div.documentSection').length : 0,
+    // Tommy's condition itself, read off the live editor rather than a fixture.
+    unreachable: editor ? editor.getAttribute('data-sections-unreachable') : null,
+    // Is the right-hand tray still in the document? U5.2 is what removes it.
+    trayPresent: !!document.querySelector('[class*="carousel"], [class*="Carousel"]'),
+    exportPdfPresent: [...document.querySelectorAll('button')].some((b) => /^Export PDF/.test(b.textContent.trim())),
+    /* ⚠ The COUNT, not just the button. \`effectiveExportIds\` defaults to
+       "whatever is currently open", and the Print page opens its sections
+       through a channel \`openNoteIds\` did not know about — so Export PDF read
+       (0) while the page showed twenty sheets. Reading the label is the only
+       way to see that from outside. */
+    exportPdfLabel: ([...document.querySelectorAll('button')].find((b) => /^Export PDF/.test(b.textContent.trim())) || {}).textContent ?? null,
+    exportPdfCount: (() => {
+      const b = [...document.querySelectorAll('button')].find((x) => /^Export PDF/.test(x.textContent.trim()));
+      if (!b) return null;
+      const m = b.textContent.match(/\\((\\d+)\\)/);
+      return m ? Number(m[1]) : 0;
+    })(),
     designOwner: design ? design.getAttribute('data-view-menu-owner') : null,
     viewOwner: view ? view.getAttribute('data-view-menu-owner') : null,
     sectionInHost: !!section,
@@ -264,6 +288,64 @@ record(
   // The hazard itself. Calibrated by step 3: this fingerprint is known to be
   // sensitive to both pan and zoom, so an exact match is a real guarantee and
   // not a tautology.
+  (d) => d.cameBackTo === d.leftWith && d.cameBackZoom === d.leftZoom,
+);
+
+console.log("6. Tommy's condition: nothing is left that no page can reach");
+record(
+  "every-section-is-reachable-on-a-REAL-building-not-just-in-a-fixture",
+  await surfaceState(),
+  /* ⚠ THE GATE ON DELETING THE TRAY. Tommy, 2026-10-11: *"As long as everything
+     is included in the tabs above, let's delete it."* `relevantDetailPages` is
+     derived from what the design contains, so the unit tests' fixtures are
+     guesses about which sections exist on a given building; this reads the real
+     list for the building this run drew. An empty string is the condition met. */
+  (d) => d.unreachable === "",
+);
+
+console.log("7. Print as a full page");
+await clickSel('[data-bar-control="print"]');
+await sleep(1500);
+const onPrint = await surfaceState();
+record(
+  "print-owns-the-surface-and-carries-the-shop-drawings",
+  onPrint,
+  // Print holds every formal document — Tommy: *"all the shop drawings"* — so a
+  // page with one section on it would mean the partition is wrong, not that the
+  // page works. More than one is the floor.
+  (d) =>
+    d.printPagePresent === true &&
+    d.printOwner === "true" &&
+    d.printDisabled === false &&
+    d.summaryOwner === "false" &&
+    d.designOwner === "false" &&
+    d.viewOwner === "false" &&
+    d.printHostSections > 1 &&
+    d.canvasLayerDisplay === "none" &&
+    d.canvasStillInDom === true,
+);
+record(
+  "the-three-print-controls-came-with-it-AND-Export-PDF-offers-the-sheets-on-screen",
+  onPrint,
+  /* Export PDF is the one that matters: it is the control the whole packet flow
+     hangs off, and a Print page without it is a reading view.
+     ⚠ AND ITS COUNT MUST MATCH WHAT THE PAGE SHOWS. `effectiveExportIds`
+     defaults to "whatever is currently open"; the page opens its sections
+     through a channel `openNoteIds` did not know about, so this read `(0)` on a
+     page displaying twenty sheets — a button that silently exports nothing.
+     Checking presence alone would have passed straight over it. */
+  (d) => d.exportPdfPresent === true && d.exportPdfCount === d.printHostSections,
+);
+
+console.log("8. and the drawing is STILL intact after both pages");
+await clickSel('[data-bar-control="print"]');
+await sleep(1500);
+const afterBoth = await viewFingerprint();
+record(
+  "pan-and-zoom-survived-SUMMARY-AND-PRINT-together",
+  { leftWith: moved.sha, leftZoom: moved.zoom, cameBackTo: afterBoth.sha, cameBackZoom: afterBoth.zoom },
+  // Two round trips through two different pages, against the same calibrated
+  // fingerprint from step 3.
   (d) => d.cameBackTo === d.leftWith && d.cameBackZoom === d.leftZoom,
 );
 

@@ -139,16 +139,6 @@ const EMPTY_MENU_REASON: Record<"no-footprint" | "walls-out-of-scope" | "nothing
   "nothing-in-scope": "Nothing is in the scope of work yet — check a branch in the Panelizer",
 };
 
-const BAR_PLACEHOLDERS: readonly { id: string; label: string; title: string }[] = [
-  /* ⚠ SUMMARY LEFT THIS LIST IN U4 (2026-10-11) — it is a real control now,
-     rendered below with the same owner treatment the view menus get. Print
-     is the last placeholder, and U5 is what removes it. */
-  {
-    id: "print",
-    label: "Print",
-    title: "Not built yet — a placeholder. Print will hold all the shop drawings.",
-  },
-];
 
 /** Icon-only, so the button carries a real aria-label and title. Inline SVG
  * rather than a Material Symbols webfont: no network dependency, no FOUT, no
@@ -688,19 +678,39 @@ export default function TopBar({
             Summary
           </button>
 
-          {BAR_PLACEHOLDERS.map((placeholder) => (
-            <button
-              key={placeholder.id}
-              type="button"
-              data-bar-control={placeholder.id}
-              data-bar-placeholder=""
-              disabled
-              title={placeholder.title}
-              className={styles.toolPlaceholder}
-            >
-              {placeholder.label}
-            </button>
-          ))}
+          {/* U5 — PRINT, A REAL CONTROL. The last placeholder on this bar is
+              gone, and with it the recorded exception that allowed it: Tommy,
+              2026-09-29, *"i like the add then now as disabled placeholders.
+              that is okay for THIS INSTANCE because i want to get a feel for
+              how this is going to be a user friendly experience"* — a
+              one-case exception that has now expired by being built. The bar
+              rule it suspended (a control that opens nothing does not go on
+              the bar) applies again with nothing standing outside it.
+
+              ⚠ ORDER: Summary then Print, which Tommy settled on 2026-10-11
+              (*"Order: Summary Print"*). It had been an open question since
+              2026-09-26, when his own list read "Design, View, Print, Summary"
+              while his example of the menus read "Summary Print". Decided, not
+              inferred; and the pair measures the same either way (71.8px and
+              55.4px), so nothing about the width budget turns on it.
+
+              It shows no value even when active, which was always its rule:
+              Print is one editor rather than a set of pages you are "on". */}
+          <button
+            type="button"
+            data-bar-control="print"
+            data-surface-owner={editorSurface === "print" ? "true" : "false"}
+            aria-current={editorSurface === "print" ? "true" : undefined}
+            title={
+              editorSurface === "print"
+                ? "You are in Print — click to go back to the drawing"
+                : "All the shop drawings, with the section picker, page size and Export PDF"
+            }
+            className={editorSurface === "print" ? styles.toolOwner : styles.tool}
+            onClick={() => onEditorSurfaceChange(editorSurface === "print" ? "drawing" : "print")}
+          >
+            Print
+          </button>
         </div>
 
         {/* ⚠ THE FOUR SCOPE TABS USED TO BE HERE — a middle zone of

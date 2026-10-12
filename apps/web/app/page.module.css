@@ -195,6 +195,20 @@
    the left sidebar is untouched: U0 put the Review Log, Read Me, Bug and `?`
    icons there precisely so safety-relevant output has a permanent front door,
    and covering them whenever Summary opens would undo that. */
+/* A page's own control strip — Print's Export PDF / Choose sections / Page
+   size. Sticky, because the sheet list below it is long and a user who has
+   scrolled to the sheet they want should not have to scroll back up to print
+   it. `z-index` above the sections so the picker's absolute dropdown is not
+   clipped by the sheet beneath it. */
+.editorPageControls {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 8px 0 10px;
+  background: #fbfbfa;
+  border-bottom: 1px solid #e2e2de;
+}
+
 .editorPageLayer {
   flex: 1 1 auto;
   height: 100%;
@@ -205,17 +219,6 @@
   flex-direction: column;
   gap: 12px;
   background: #fbfbfa;
-}
-
-/* Reserves the same width as SectionCarousel's fixed-position right-hand
-   strip (see SectionCarousel.module.css) so the canvas never centers
-   underneath it — the carousel itself isn't a flex child here (it's
-   rendered outside .editorSection, still `position: fixed`), this is just
-   empty layout space matching its width. */
-.editorRightSpacer {
-  flex: 0 0 170px;
-  width: 170px;
-  height: 100%;
 }
 
 .toolbarPortalInline {
@@ -243,11 +246,6 @@
     width: 64px;
     padding: 6px 4px;
     gap: 6px;
-  }
-
-  .editorRightSpacer {
-    flex-basis: 88px;
-    width: 88px;
   }
 
   .toolbar {

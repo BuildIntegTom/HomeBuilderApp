@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   applyAdditionalRowBracedPattern,
@@ -386,7 +385,8 @@ import RoofTrussLayoutView from "./RoofTrussLayoutView";
 import PanelLegend from "./PanelLegend";
 import { PANEL_TYPE_LABELS } from "./panelColors";
 import ProjectSummaryPage from "./ProjectSummaryPage";
-import SectionCarousel from "./SectionCarousel";
+import { SectionSurfaceProvider, type SectionSurfaceValue } from "./SectionSurfaceContext";
+import { hostSurfaceForSection, unreachableSections } from "./sectionSurfaces";
 import SlabFoundationDiagram from "./SlabFoundationDiagram";
 import StickyNote from "./StickyNote";
 import TopBar from "./TopBar";
@@ -677,6 +677,7 @@ export default function LayoutEditor() {
    * that never happens, and the page would come up empty until something
    * else moved. */
   const [summaryHostEl, setSummaryHostEl] = useState<HTMLDivElement | null>(null);
+  const [printHostEl, setPrintHostEl] = useState<HTMLDivElement | null>(null);
   /** Clicking an edit tab comes BACK to the drawing — the 2026-09-26 plan
    * §13: *"clicking any of them returns you to the drawing. Not a modal
    * mode."* One action sets both, so there is no frame in which the tab has
@@ -7240,6 +7241,12 @@ export default function LayoutEditor() {
   // own left sidebar while viewing the Membranes (3D Wraps) stop (Tommy:
   // "work the contents of the Wall Assembly into the editor tab on the
   // left when working on 3D Wraps").
+  /* U4.2 — WHERE EVERY SECTION RENDERS, answered in one place.
+
+     Declared after `formalDocumentNoteIds` below via a function that reads
+     it, not before: `hostSurfaceForSection` is a pure function of (id,
+     surface, formal ids), so the provider can be built from live values
+     without any of the three being copied. */
   const allNoteSections = useMemo(
     () => [
       { id: "detail-summary", label: "Project Summary" },
@@ -7255,6 +7262,65 @@ export default function LayoutEditor() {
   );
   const [openNoteIds, setOpenNoteIds] = useState<Set<string>>(new Set());
   const [noteOpenOrder, setNoteOpenOrder] = useState<string[]>([]);
+  /** Every section that is open RIGHT NOW, for whatever reason — the tray
+   * opened it, or the page it belongs to is showing.
+   *
+   * ⚠ **THIS EXISTS BECAUSE U4.2 BROKE TWO THINGS AND THE HARNESS CAUGHT
+   * THEM.** Opening a section via the page was a SECOND channel that
+   * `openNoteIds` knew nothing about, and two behaviours were keyed on
+   * `openNoteIds`:
+   *
+   *   1. `captureLive` — the 3D render the Project Summary sheet shows. The
+   *      Summary page came up with **no rendering on it at all**, because
+   *      the capture was still waiting for a note the tray had never
+   *      opened. `summary-capture` went 3/4 and said exactly that.
+   *   2. `openDetailPageIds`, which is `effectiveExportIds`' default —
+   *      *"whatever is currently open"*. So **Export PDF on the Print page
+   *      would have offered the sheets the TRAY had open**, which on a
+   *      fresh visit is none.
+   *
+   * So "is this section open" gets ONE answer, derived from the same
+   * `hostSurfaceForSection` that decides the rendering. They cannot drift
+   * because there is nothing to drift from.
+   *
+   * ⚠ Returns `openNoteIds` ITSELF on the drawing surface, not a copy. A
+   * fresh Set every render changes identity for every memo downstream — the
+   * same bug that once made one draw take two undos. */
+  const effectivelyOpenNoteIds = useMemo(() => {
+    if (editorSurface === "drawing") return openNoteIds;
+    const next = new Set(openNoteIds);
+    for (const section of allNoteSections) {
+      if (hostSurfaceForSection(section.id, editorSurface, formalDocumentNoteIds) !== null) next.add(section.id);
+    }
+    return next;
+  }, [openNoteIds, editorSurface, allNoteSections, formalDocumentNoteIds]);
+
+  /** The provider `StickyNote` reads. One object, two questions, and the
+   * partition itself lives in `sectionSurfaces.ts` with its tests. */
+  const sectionSurface: SectionSurfaceValue = useMemo(
+    () => ({
+      hostFor: (sectionId) => {
+        const owner = hostSurfaceForSection(sectionId, editorSurface, formalDocumentNoteIds);
+        if (owner === "summary") return summaryHostEl;
+        if (owner === "print") return printHostEl;
+        return null;
+      },
+      // The same set the capture and the export default read, so a section
+      // cannot be visibly open while those two believe it is closed.
+      opensOnItsPage: (sectionId) => effectivelyOpenNoteIds.has(sectionId),
+    }),
+    [editorSurface, formalDocumentNoteIds, summaryHostEl, printHostEl, effectivelyOpenNoteIds],
+  );
+  /** ⚠ TOMMY'S CONDITION FOR DELETING THE TRAY, 2026-10-11: *"As long as
+   * everything is included in the tabs above, let's delete it."* Computed
+   * against the LIVE derived list rather than checked by eye, because
+   * `relevantDetailPages` differs per building and the section that only
+   * exists on some buildings is exactly the one an eye would miss. U5.2 is
+   * not allowed to remove the tray while this is non-empty. */
+  const sectionsNoPageCanReach = useMemo(
+    () => unreachableSections(allNoteSections.map((s) => s.id), formalDocumentNoteIds),
+    [allNoteSections, formalDocumentNoteIds],
+  );
   const [fullscreenNoteId, setFullscreenNoteId] = useState<string | null>(null);
 
   // A link from elsewhere (Tommy: "review logs button... at the bottom of
@@ -7311,8 +7377,11 @@ export default function LayoutEditor() {
   // behavior) — once touched, it's an explicit set that no longer tracks
   // openNoteIds automatically.
   const openDetailPageIds = useMemo(
-    () => [...openNoteIds].filter((id) => formalDocumentNoteIds.has(id)),
-    [openNoteIds, formalDocumentNoteIds],
+    // ⚠ `effectivelyOpenNoteIds`: this feeds `effectiveExportIds`, whose
+    // default is *"whatever is currently open"*. Read off the tray alone, the
+    // Print page's own Export PDF would have offered nothing.
+    () => [...effectivelyOpenNoteIds].filter((id) => formalDocumentNoteIds.has(id)),
+    [effectivelyOpenNoteIds, formalDocumentNoteIds],
   );
   const exportableSections = useMemo(
     () => [{ id: "detail-summary", label: "Project Summary" }, ...relevantDetailPages],
@@ -10440,12 +10509,94 @@ export default function LayoutEditor() {
       </div>
     ) : null;
 
+  /* U5.1 — THE PRINT PAGE'S CONTROLS: exactly the three that were the
+     right-hand tray's header, lifted out as ONE definition so the page and
+     the tray cannot disagree while both exist.
+
+     ⚠ Exactly today's controls and nothing more — `Export PDF (n)`, `Choose
+     sections ▾`, `Page size`. The 2026-09-26 plan §14 is explicit that the
+     printing customization editor is U6 and deliberately deferred, because
+     the honest print blocker is pagination rather than the picker: Shipping,
+     Plaster Master and Project Summary each run 1–2.5 pages over on any page
+     size, and a customization editor built on unverified pagination would let
+     a user arrange sheets that do not paginate. */
+  const printPageControls = (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+              <div style={{ display: "flex", gap: 4, alignItems: "center", position: "relative" }}>
+                <button
+                  type="button"
+                  title="Export the checked sections as one PDF (opening any that aren't already, then restoring what was open)"
+                  disabled={effectiveExportIds.size === 0}
+                  onClick={handleExportSelectedPdf}
+                >
+                  Export PDF{effectiveExportIds.size > 0 ? ` (${effectiveExportIds.size})` : ""}
+                </button>
+                <button
+                  type="button"
+                  aria-expanded={exportPickerOpen}
+                  onClick={() => setExportPickerOpen((was) => !was)}
+                  style={{ fontSize: 12 }}
+                >
+                  Choose sections {exportPickerOpen ? "▴" : "▾"}
+                </button>
+                {exportPickerOpen && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      zIndex: 100,
+                      marginTop: 4,
+                      background: "#fff",
+                      border: "1px solid #ccc",
+                      borderRadius: 6,
+                      padding: 8,
+                      minWidth: 240,
+                      maxHeight: 260,
+                      overflowY: "auto",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                    }}
+                  >
+                    {exportableSections.map((s) => (
+                      <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "3px 0" }}>
+                        <input
+                          type="checkbox"
+                          checked={effectiveExportIds.has(s.id)}
+                          onChange={(e) => {
+                            const next = new Set(effectiveExportIds);
+                            if (e.target.checked) next.add(s.id);
+                            else next.delete(s.id);
+                            setManualExportIds(next);
+                          }}
+                        />
+                        {s.label}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                Page size{" "}
+                <select
+                  value={printPageSizeId}
+                  onChange={(e) => setPrintPageSizeId(e.target.value as "letter" | "tabloid")}
+                >
+                  <option value="letter">Letter (11x8.5in)</option>
+                  <option value="tabloid">Tabloid (17x11in)</option>
+                </select>
+              </label>
+            </div>
+  );
+
   return (
     <DocumentMetaProvider value={{ projectName, siteLabel: documentSiteLabel, date: documentDate }}>
     {/* Stage 4B: wraps the whole editor, so the two OBJ buttons — on the
         building preview and on every single-panel viewer, wherever they are
         rendered from — go while another company's design is on screen. */}
     <BrowseModeProvider browsing={costsRedacted}>
+    {/* U4.2 — one provider, and every StickyNote below reads it. See
+        SectionSurfaceContext.tsx for why this is not 27 props. */}
+    <SectionSurfaceProvider value={sectionSurface}>
     <div className={styles.page} ref={pageRef}>
       <div className="print-hidden-chrome">
         <TopBar
@@ -10490,7 +10641,21 @@ export default function LayoutEditor() {
           Chrome, so never printed. */}
       <div className="print-hidden-chrome">{cloud.notes}</div>
       <main className={styles.main}>
-        <div className={`${styles.editorSection} print-hidden-chrome`}>
+        <div
+          className={`${styles.editorSection} print-hidden-chrome`}
+          /* ⚠ TOMMY'S CONDITION, OBSERVABLE AT RUNTIME. 2026-10-11: *"As long
+             as everything is included in the tabs above, let's delete it."*
+             `sectionsNoPageCanReach` is that "as long as", computed against the
+             LIVE derived section list for the building actually on screen —
+             `relevantDetailPages` differs per building, so the section that
+             exists only on some of them is exactly the one a unit test's
+             fixture or a human eye would miss.
+
+             Published here so the browser harness can assert it is empty on a
+             real building rather than trusting the fixtures. Empty string when
+             all is well, so it costs nothing and reads as nothing. */
+          data-sections-unreachable={sectionsNoPageCanReach.join(",")}
+        >
           <div className={styles.editorSidebar}>
             {loadError && <p className={styles.disclaimer}>Couldn&apos;t load that file — {loadError}</p>}
             {/* Region 1 (always first, fixed): Tommy's "having the viewer
@@ -11257,7 +11422,11 @@ export default function LayoutEditor() {
               spanningHeaderNameById={spanningHeaderNameById}
               onCapture={handleCaptureRenderImage}
               onCaptureDone={handleCaptureDone}
-              captureLive={openNoteIds.has("detail-summary")}
+              /* ⚠ `effectivelyOpenNoteIds`, not `openNoteIds` — the Summary
+                 page opens this section without the tray, and keying the
+                 capture on the tray alone showed the Project Summary with no
+                 rendering on it. See that memo's comment. */
+              captureLive={effectivelyOpenNoteIds.has("detail-summary")}
               captureRequestId={captureRequestId}
             />
           )}
@@ -11276,17 +11445,31 @@ export default function LayoutEditor() {
             </div>
           )}
 
-          <div className={styles.editorRightSpacer} aria-hidden="true" />
+          {/* U5.1 — PRINT. Holds exactly today's controls and every formal
+              document (Tommy: Print holds *"all the shop drawings"*). ⚠ NOT a
+              printing customization editor: that is U6, and it is deliberately
+              deferred because the honest print blocker is pagination, not the
+              picker — Shipping, Plaster Master and Project Summary each run
+              1–2.5 pages over on any page size, and a customization editor
+              built on unverified pagination would let a user arrange sheets
+              that do not paginate. */}
+          {editorSurface === "print" && (
+            <div className={styles.editorPageLayer} data-editor-surface="print">
+              <div className={styles.editorPageControls}>{printPageControls}</div>
+              <div ref={setPrintHostEl} data-print-page-host="" />
+            </div>
+          )}
+
         </div>
 
         <StickyNote
           id="detail-summary"
           label="Project Summary"
-          /* U4.1 — the Summary page's first real section. Open because the
-             page is open, OR because the tray opened it; the tray still
-             works, and will until U5.2 deletes it. */
-          isOpen={openNoteIds.has("detail-summary") || editorSurface === "summary"}
-          portalTo={editorSurface === "summary" ? summaryHostEl : null}
+          /* ⚠ No `portalTo` and no page-aware `isOpen` here, deliberately.
+             U4.1 wired this one section by hand; U4.2 replaced that with
+             `SectionSurfaceContext`, which answers for all ~27 at once. Two
+             mechanisms for one behaviour is how they drift. */
+          isOpen={openNoteIds.has("detail-summary")}
           isFullscreen={fullscreenNoteId === "detail-summary"}
           cascadeIndex={noteOpenOrder.indexOf("detail-summary")}
           onClose={() => handleToggleNote("detail-summary")}
@@ -12883,93 +13066,31 @@ export default function LayoutEditor() {
           </>
         )}
 
-        <SectionCarousel
-          sections={allNoteSections}
-          openIds={openNoteIds}
-          onToggle={handleToggleNote}
-          header={
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
-              <div style={{ display: "flex", gap: 4, alignItems: "center", position: "relative" }}>
-                <button
-                  type="button"
-                  title="Export the checked sections as one PDF (opening any that aren't already, then restoring what was open)"
-                  disabled={effectiveExportIds.size === 0}
-                  onClick={handleExportSelectedPdf}
-                >
-                  Export PDF{effectiveExportIds.size > 0 ? ` (${effectiveExportIds.size})` : ""}
-                </button>
-                <button
-                  type="button"
-                  aria-expanded={exportPickerOpen}
-                  onClick={() => setExportPickerOpen((was) => !was)}
-                  style={{ fontSize: 12 }}
-                >
-                  Choose sections {exportPickerOpen ? "▴" : "▾"}
-                </button>
-                {exportPickerOpen && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: "100%",
-                      left: 0,
-                      zIndex: 100,
-                      marginTop: 4,
-                      background: "#fff",
-                      border: "1px solid #ccc",
-                      borderRadius: 6,
-                      padding: 8,
-                      minWidth: 240,
-                      maxHeight: 260,
-                      overflowY: "auto",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                    }}
-                  >
-                    {exportableSections.map((s) => (
-                      <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "3px 0" }}>
-                        <input
-                          type="checkbox"
-                          checked={effectiveExportIds.has(s.id)}
-                          onChange={(e) => {
-                            const next = new Set(effectiveExportIds);
-                            if (e.target.checked) next.add(s.id);
-                            else next.delete(s.id);
-                            setManualExportIds(next);
-                          }}
-                        />
-                        {s.label}
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
-                Page size{" "}
-                <select
-                  value={printPageSizeId}
-                  onChange={(e) => setPrintPageSizeId(e.target.value as "letter" | "tabloid")}
-                >
-                  <option value="letter">Letter (11x8.5in)</option>
-                  <option value="tabloid">Tabloid (17x11in)</option>
-                </select>
-              </label>
-            </div>
-          }
-          footer={
-            <>
-              {/* U0: the Single Wall Run sandbox link moved OUT of here and
-                  into the Settings menu (Tommy: "move single wall run into
-                  the panelizer tab... we should move the content of the
-                  panelizer into the settings in the top right" — one
-                  destination, nothing free-floating). Read Me and Report Bug
-                  keep their tray links as well as their new left-bar icons:
-                  the tray is the safety net until it is deleted wholesale in
-                  U5, so nothing loses a door in an intermediate stage. */}
-              <Link href="/read-me">Read Me →</Link>
-              <br />
-              <Link href="/report-bug">Report Bug / Request Feature →</Link>
-            </>
-          }
-        />
+        {/* ⚠ THE RIGHT-HAND TRAY WAS DELETED HERE — U5.2, 2026-10-11.
+
+            `SectionCarousel` lived here from the editor's beginning: a 170px
+            fixed strip listing every section, with `Export PDF`, `Choose
+            sections` and `Page size` in its header and the Read Me / Report
+            Bug links in its footer. It was the safety net for every stage of
+            the UI reorganisation — nothing could become unreachable while it
+            was open — which is exactly why it went last.
+
+            Tommy's condition, 2026-10-11: *"As long as everything is included
+            in the tabs above, let's delete it."* Where everything went:
+              · the three header controls → the Print page (`printPageControls`)
+              · every formal document → the Print page
+              · Project Summary, Project Totals, Material Totals → Summary
+              · the Review Log → its own left-sidebar icon (U0)
+              · Read Me and Report Bug → their own left-sidebar icons (U0)
+
+            And the condition is CHECKED rather than asserted: see
+            `sectionsNoPageCanReach`, computed from the live derived section
+            list, published as `data-sections-unreachable` on the editor, and
+            read by the ui-reorg-u4 harness on a real building. If a future
+            section belongs to no page it shows up there by name.
+
+            The canvas gains the 170px back — see `.editorRightSpacer`'s
+            removal below. */}
       </main>
       {/* Screen chrome only, like the TopBar wrapper above: printed sheets
           carry the role disclaimer in their own SheetTitleBlock. Last in the
@@ -12978,6 +13099,7 @@ export default function LayoutEditor() {
         <AppFooter role={role} />
       </div>
     </div>
+    </SectionSurfaceProvider>
     </BrowseModeProvider>
     </DocumentMetaProvider>
   );

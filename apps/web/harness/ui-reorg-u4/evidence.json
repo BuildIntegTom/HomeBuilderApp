@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3000/",
-  "ranAt": "2026-10-12T01:22:05.587Z",
+  "app": "http://localhost:3000",
+  "ranAt": "2026-10-12T02:56:29.804Z",
   "proveFailureMode": false,
   "checks": [
     {
@@ -13,6 +13,16 @@
         "canvasLayerDisplay": "flex",
         "summaryOwner": "false",
         "summaryDisabled": false,
+        "printOwner": "false",
+        "printDisabled": false,
+        "printPagePresent": false,
+        "printHostSections": 0,
+        "summaryHostSections": 0,
+        "unreachable": "",
+        "trayPresent": false,
+        "exportPdfPresent": false,
+        "exportPdfLabel": null,
+        "exportPdfCount": null,
         "designOwner": "true",
         "viewOwner": "false",
         "sectionInHost": false,
@@ -23,7 +33,7 @@
       "name": "footprint-drawn-and-the-canvas-has-pixels",
       "ok": true,
       "detail": {
-        "sha": "2cf4ed5b6c1e08888416",
+        "sha": "161e1e4445690b957d10",
         "zoom": "100%",
         "canvasW": 720,
         "canvasH": 480
@@ -33,9 +43,9 @@
       "name": "the-fingerprint-MOVES-when-the-view-moves",
       "ok": true,
       "detail": {
-        "before": "2cf4ed5b6c1e08888416",
+        "before": "161e1e4445690b957d10",
         "beforeZoom": "100%",
-        "after": "735b640d98d69ed0d394",
+        "after": "5c993b3d1fa59372d702",
         "afterZoom": "156%"
       }
     },
@@ -49,10 +59,20 @@
         "canvasLayerDisplay": "none",
         "summaryOwner": "true",
         "summaryDisabled": false,
+        "printOwner": "false",
+        "printDisabled": false,
+        "printPagePresent": false,
+        "printHostSections": 0,
+        "summaryHostSections": 3,
+        "unreachable": "",
+        "trayPresent": false,
+        "exportPdfPresent": false,
+        "exportPdfLabel": null,
+        "exportPdfCount": null,
         "designOwner": "false",
         "viewOwner": "false",
         "sectionInHost": true,
-        "sectionTextLength": 2260
+        "sectionTextLength": 2207
       }
     },
     {
@@ -65,10 +85,20 @@
         "canvasLayerDisplay": "none",
         "summaryOwner": "true",
         "summaryDisabled": false,
+        "printOwner": "false",
+        "printDisabled": false,
+        "printPagePresent": false,
+        "printHostSections": 0,
+        "summaryHostSections": 3,
+        "unreachable": "",
+        "trayPresent": false,
+        "exportPdfPresent": false,
+        "exportPdfLabel": null,
+        "exportPdfCount": null,
         "designOwner": "false",
         "viewOwner": "false",
         "sectionInHost": true,
-        "sectionTextLength": 2260
+        "sectionTextLength": 2207
       }
     },
     {
@@ -81,6 +111,16 @@
         "canvasLayerDisplay": "flex",
         "summaryOwner": "false",
         "summaryDisabled": false,
+        "printOwner": "false",
+        "printDisabled": false,
+        "printPagePresent": false,
+        "printHostSections": 0,
+        "summaryHostSections": 0,
+        "unreachable": "",
+        "trayPresent": false,
+        "exportPdfPresent": false,
+        "exportPdfLabel": null,
+        "exportPdfCount": null,
         "designOwner": "true",
         "viewOwner": "false",
         "sectionInHost": false,
@@ -91,9 +131,97 @@
       "name": "PAN-AND-ZOOM-SURVIVED-THE-ROUND-TRIP",
       "ok": true,
       "detail": {
-        "leftWith": "735b640d98d69ed0d394",
+        "leftWith": "5c993b3d1fa59372d702",
         "leftZoom": "156%",
-        "cameBackTo": "735b640d98d69ed0d394",
+        "cameBackTo": "5c993b3d1fa59372d702",
+        "cameBackZoom": "156%"
+      }
+    },
+    {
+      "name": "every-section-is-reachable-on-a-REAL-building-not-just-in-a-fixture",
+      "ok": true,
+      "detail": {
+        "pagePresent": false,
+        "hostPresent": false,
+        "canvasStillInDom": true,
+        "canvasLayerDisplay": "flex",
+        "summaryOwner": "false",
+        "summaryDisabled": false,
+        "printOwner": "false",
+        "printDisabled": false,
+        "printPagePresent": false,
+        "printHostSections": 0,
+        "summaryHostSections": 0,
+        "unreachable": "",
+        "trayPresent": false,
+        "exportPdfPresent": false,
+        "exportPdfLabel": null,
+        "exportPdfCount": null,
+        "designOwner": "true",
+        "viewOwner": "false",
+        "sectionInHost": false,
+        "sectionTextLength": 0
+      }
+    },
+    {
+      "name": "print-owns-the-surface-and-carries-the-shop-drawings",
+      "ok": true,
+      "detail": {
+        "pagePresent": false,
+        "hostPresent": false,
+        "canvasStillInDom": true,
+        "canvasLayerDisplay": "none",
+        "summaryOwner": "false",
+        "summaryDisabled": false,
+        "printOwner": "true",
+        "printDisabled": false,
+        "printPagePresent": true,
+        "printHostSections": 19,
+        "summaryHostSections": 0,
+        "unreachable": "",
+        "trayPresent": false,
+        "exportPdfPresent": true,
+        "exportPdfLabel": "Export PDF (19)",
+        "exportPdfCount": 19,
+        "designOwner": "false",
+        "viewOwner": "false",
+        "sectionInHost": false,
+        "sectionTextLength": 0
+      }
+    },
+    {
+      "name": "the-three-print-controls-came-with-it-AND-Export-PDF-offers-the-sheets-on-screen",
+      "ok": true,
+      "detail": {
+        "pagePresent": false,
+        "hostPresent": false,
+        "canvasStillInDom": true,
+        "canvasLayerDisplay": "none",
+        "summaryOwner": "false",
+        "summaryDisabled": false,
+        "printOwner": "true",
+        "printDisabled": false,
+        "printPagePresent": true,
+        "printHostSections": 19,
+        "summaryHostSections": 0,
+        "unreachable": "",
+        "trayPresent": false,
+        "exportPdfPresent": true,
+        "exportPdfLabel": "Export PDF (19)",
+        "exportPdfCount": 19,
+        "designOwner": "false",
+        "viewOwner": "false",
+        "sectionInHost": false,
+        "sectionTextLength": 0
+      }
+    },
+    {
+      "name": "pan-and-zoom-survived-SUMMARY-AND-PRINT-together",
+      "ok": true,
+      "detail": {
+        "leftWith": "5c993b3d1fa59372d702",
+        "leftZoom": "156%",
+        "cameBackTo": "5c993b3d1fa59372d702",
         "cameBackZoom": "156%"
       }
     }

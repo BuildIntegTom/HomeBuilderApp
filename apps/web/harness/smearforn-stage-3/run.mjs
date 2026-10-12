@@ -175,10 +175,38 @@ const evaluate = async (expression) => {
   return res.result.result?.value;
 };
 
+/**
+ * A screenshot is an ARTEFACT, not a check — so a failure to write one must
+ * not end a run that is otherwise measuring correctly.
+ *
+ * ⚠ On this Windows machine the write intermittently fails with
+ * `UNKNOWN: unknown error, open '…\screenshots\NN-name.png'` — a file lock,
+ * most likely an indexer or scanner holding a PNG that was just rewritten. It
+ * killed three separate harness runs on 2026-10-11, in three different
+ * harnesses, each time partway through and each time pointing at whatever
+ * step happened to be next rather than at the lock.
+ *
+ * So: retry once after a beat, and if it still will not write, SAY SO and
+ * carry on. The run's checks are unaffected and the missing artefact is
+ * reported rather than silently skipped.
+ */
 const shot = async (name) => {
   const png = await send("Page.captureScreenshot", { format: "png" }, sid);
-  fs.writeFileSync(path.join(SHOTS, `${name}.png`), Buffer.from(png.result.data, "base64"));
-  console.log(`  screenshot -> screenshots/${name}.png`);
+  const file = path.join(SHOTS, `${name}.png`);
+  const bytes = Buffer.from(png.result.data, "base64");
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      fs.writeFileSync(file, bytes);
+      console.log(`  screenshot -> screenshots/${name}.png`);
+      return;
+    } catch (err) {
+      if (attempt === 2) {
+        console.log(`  screenshot NOT WRITTEN (${name}.png): ${String(err.message ?? err)}`);
+        return;
+      }
+      await sleep(600);
+    }
+  }
 };
 
 const mouse = (type, x, y, extra = {}) =>
@@ -200,6 +228,42 @@ const click = async (x, y) => {
  * somewhere unrelated. Learned the hard way on the first pass of this
  * script.
  */
+/**
+ * Visit the Print page, do something there, and ALWAYS come back.
+ *
+ * ⚠ The restore is in a `finally` for a reason that cost a run. A plain
+ * "open, read, close" sequence inside a try/catch skips the close when the
+ * read throws — and a screenshot write failed on a locked file, so Print
+ * stayed open and the NEXT step died with "the view control did not move off
+ * null", pointing at the view control rather than at the real cause two
+ * steps earlier. A helper that restores state unconditionally cannot do that.
+ */
+const withThePrintPage = async (fn) => {
+  await openThePrintPage();
+  try {
+    return await fn();
+  } finally {
+    await openThePrintPage();
+  }
+};
+
+/** Toggle the Print page, which since U5.2 is where every formal document is.
+ *
+ * It TOGGLES, so every call must be paired. Leaving it open once cost a run:
+ * the next step asked the view control to move and got "did not move off
+ * null", because Print owned the surface and there was no view stop to be on.
+ */
+const openThePrintPage = async () => {
+  const at = await evaluate(
+    "(() => { const b = document.querySelector('[data-bar-control=\"print\"]');" +
+      " if (!b) return null; const r = b.getBoundingClientRect();" +
+      " return { x: r.left + r.width/2, y: r.top + r.height/2 }; })()",
+  );
+  if (!at) throw new Error('no Print control on the bar — U5.1 should have made it a real button');
+  await click(at.x, at.y);
+  await sleep(2000);
+};
+
 const clickByText = async (selector, label, what) => {
   const box = await evaluate(`(() => {
     const els = [...document.querySelectorAll(${JSON.stringify(selector)})]
@@ -691,10 +755,16 @@ await shot("04-live-plan-stopped");
 
 let planSheetLabels = null;
 try {
-  await clickByText("button", "Plan View", "Plan View document page");
-  await sleep(1400);
-  planSheetLabels = await noPanelsLabels();
-  await shot("05-plan-sheet-stopped");
+  /* ⚠ U5.2 (2026-10-11) deleted the right-hand tray whose button this used to
+     click, and this step went red with "no visible Plan View document page" —
+     a locator failing loudly rather than finding less. The plan sheet is a
+     formal document, so it is on the Print page and already open there. */
+  planSheetLabels = await withThePrintPage(async () => {
+    await sleep(1400);
+    const labels = await noPanelsLabels();
+    await shot("05-plan-sheet-stopped");
+    return labels;
+  });
 } catch (err) {
   planSheetLabels = { error: String(err.message ?? err) };
 }
@@ -786,10 +856,16 @@ const greyWithoutStop = await boundaryGreyPixels();
 // this replaced the grey-pixel comparison as the discriminator.
 let planSheetLabelsCleared = null;
 try {
-  await clickByText("button", "Plan View", "Plan View document page");
-  await sleep(1400);
-  planSheetLabelsCleared = await noPanelsLabels();
-  await shot("07b-plan-sheet-cleared");
+  /* ⚠ U5.2 (2026-10-11) deleted the right-hand tray whose button this used to
+     click, and this step went red with "no visible Plan View document page" —
+     a locator failing loudly rather than finding less. The plan sheet is a
+     formal document, so it is on the Print page and already open there. */
+  planSheetLabelsCleared = await withThePrintPage(async () => {
+    await sleep(1400);
+    const labels = await noPanelsLabels();
+    await shot("07b-plan-sheet-cleared");
+    return labels;
+  });
 } catch (err) {
   planSheetLabelsCleared = { error: String(err.message ?? err) };
 }

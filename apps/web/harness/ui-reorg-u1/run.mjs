@@ -793,9 +793,23 @@ const TOOLKIT = String.raw`
     };
   };
 
-  /** The two disabled placeholders Tommy asked for, read as they render. */
+  /**
+   * Summary and Print, read as they render.
+   *
+   * ⚠ THEY WERE data-bar-placeholder UNTIL U4/U5 (2026-10-11), and the
+   * selector change is the point. The attribute existed to mark two buttons
+   * that opened nothing — a deliberate, recorded one-case break of the Top Bar
+   * rule. U4 and U5 built the pages behind them, so the attribute is gone and
+   * the exception expired by being satisfied. This reads them by their
+   * data-bar-control instead, which is what they have always had, and the
+   * check below asserts the OPPOSITE of what it used to.
+   *
+   * ⚠ NO BACKTICKS IN HERE. This whole toolkit is injected into the page as a
+   * template literal, so a backtick in a comment ends the literal and the
+   * harness dies with a SyntaxError 500 lines away from the cause. It did.
+   */
   K.placeholders = () =>
-    [...document.querySelectorAll('[data-bar-placeholder]')].map((el) => {
+    [...document.querySelectorAll('[data-bar-control="summary"], [data-bar-control="print"]')].map((el) => {
       const r = el.getBoundingClientRect();
       return {
         control: el.getAttribute('data-bar-control'),
@@ -1300,29 +1314,39 @@ record(
 );
 
 record(
-  "Summary-and-Print-are-disabled-placeholders-at-every-width",
+  "Summary-and-Print-are-REAL-controls-at-every-width-and-still-fit",
   {
     cells: removalSweep.map((r) => ({ width: r.width, placeholders: r.placeholders })),
     widths: removalSweep.map((r) => r.width),
   },
-  // ⚠ THIS CHECKS A DELIBERATE RULE-BREAK, so it checks the terms of it. The
-  // Top Bar rule forbids a control that opens nothing; Tommy took the exception
-  // knowingly for these two ("i like the add then now as disabled
-  // placeholders… i want to get a feel for how this is going to be a user
-  // friendly experience"). What keeps it honest is that they are really
-  // DISABLED — nobody can click into a dead end — that each says in its title
-  // what is not built, and that they take no part in the view machinery: no
-  // aria-expanded, no data-view-menu, so they cannot own, be current, or open
-  // an empty note. All four of those are asserted, at every width, because the
-  // bar carries them everywhere.
+  /* ⚠ THIS CHECK WAS INVERTED BY U4/U5, 2026-10-11, AND THAT IS THE RECORD OF
+     THE EXCEPTION CLOSING.
+     It used to assert that Summary and Print were really DISABLED, because the
+     Top Bar rule forbids a control that opens nothing and Tommy took that
+     exception knowingly for these two: *"i like the add then now as disabled
+     placeholders… i want to get a feel for how this is going to be a user
+     friendly experience"*. U4 built the Summary page and U5 built Print, so the
+     exception expired by being satisfied, and the honest thing is to assert the
+     opposite rather than delete the check.
+     They must now be ENABLED and must open something — and they must still take
+     no part in the VIEW machinery, which has not changed: no `aria-expanded`
+     (each is one destination, not a menu) and no `data-view-menu` (ownership of
+     the surface is tracked by `data-surface-owner`, so they cannot be mistaken
+     for a view stop).
+     ⚠ AND `onScreen` IS STILL THE POINT, at every width including Tommy's own
+     710px. U1 existed to test whether twelve controls could share this bar
+     without re-creating the 2026-09-13 overflow bug; two of them becoming real
+     does not change their width, but that is a claim, and this is where it is
+     measured rather than assumed. */
   (d) =>
     d.cells.every(
       (c) =>
         c.placeholders.length === 2 &&
         c.placeholders.map((p) => p.control).join(",") === "summary,print" &&
+        // Order settled by Tommy on 2026-10-11: *"Order: Summary Print"*.
         c.placeholders.map((p) => p.label).join(",") === "Summary,Print" &&
         c.placeholders.every(
-          (p) => p.disabled === true && p.title.length > 0 && p.opensAMenu === false && p.isAViewMenu === false && p.onScreen === true,
+          (p) => p.disabled === false && p.title.length > 0 && p.opensAMenu === false && p.isAViewMenu === false && p.onScreen === true,
         ),
     ),
 );

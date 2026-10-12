@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T00:43:19.185Z",
+  "ranAt": "2026-10-12T02:51:24.606Z",
   "proveFailureMode": false,
   "steps": [
     {
@@ -396,7 +396,7 @@
     },
     {
       "name": "a-panel-was-selected-to-dock-its-note",
-      "candidates": 1,
+      "candidates": 5,
       "selectionAttempts": 1,
       "selected": true,
       "asserted": true,
@@ -452,9 +452,9 @@
   "editorReady": [
     {
       "what": "the first load, at 1280px",
-      "ms": 1111,
+      "ms": 1335,
       "canvas": [
-        316,
+        401,
         227,
         720,
         480
@@ -462,9 +462,9 @@
     },
     {
       "what": "the reload after the routes were warmed",
-      "ms": 841,
+      "ms": 1878,
       "canvas": [
-        316,
+        401,
         227,
         720,
         480
@@ -472,9 +472,9 @@
     },
     {
       "what": "the 1400x1000 reload the footprint is drawn on",
-      "ms": 1690,
+      "ms": 1594,
       "canvas": [
-        376,
+        461,
         277,
         720,
         480
@@ -482,9 +482,9 @@
     },
     {
       "what": "the ?openNote=review-log load",
-      "ms": 2001,
+      "ms": 1600,
       "canvas": [
-        376,
+        461,
         277,
         720,
         480

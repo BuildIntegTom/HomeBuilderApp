@@ -141,3 +141,107 @@ beyond U5's relocation of today's controls.
    "Project Summary" section — rather than an empty shell with the sections
    arriving in U4.2. A bar button that opens a blank page is a worse thing to
    ship than no bar button, and the staging gains nothing by it.
+
+---
+
+# AS BUILT — 2026-10-11
+
+## Tommy's two decisions, both taken mid-build
+
+1. **The right bar is deleted, conditionally.** His words: *"As long as
+   everything is included in the tabs above, let's delete it."* This settles
+   the three-way conflict (his "visiblize the right bar" idea vs. the plan's
+   full pages) **in favour of the full pages**, and attaches a condition.
+   **The condition is now code**, not a promise: `sectionSurfaces.ts`'s
+   `unreachableSections`, computed from the live derived section list,
+   published on the editor as `data-sections-unreachable`, unit-tested over
+   both a rich and a sparse building, and asserted by the browser harness on a
+   real one. If a future section belongs to no page, it is named there.
+2. **Bar order: Summary then Print.** *"Order: Summary Print"* — which is what
+   was already on the bar, so nothing changed. It had been open since
+   2026-09-26, when his list read "Design, View, Print, Summary" and his
+   example read "Summary Print". **Closed, not inferred.**
+
+## What shipped
+
+| Stage | As built |
+|---|---|
+| **U4.1** | `editorSurface` (local state, not `ProjectState`); Summary a real bar control with the owner treatment; the owner rule made four-way on the one line that derives it; the drawing `display: none` but mounted; Project Summary portalled onto the page. |
+| **U4.2** | `SectionSurfaceContext` — one provider, zero per-note edits, all ~27 sections. `sectionSurfaces.ts` holds the partition (3 on Summary, every formal document on Print, Review Log by icon) with 10 tests. `.notePage` CSS variant. |
+| **U5.1** | Print a real bar control; `BAR_PLACEHOLDERS` deleted entirely; the three tray-header controls lifted into one `printPageControls` definition serving both the page and (briefly) the tray. |
+| **U5.2** | `SectionCarousel` usage, component and stylesheet deleted; `.editorRightSpacer` div and both its CSS rules deleted; the dead `next/link` import removed. The canvas gained 170px. |
+
+## Measured, not asserted
+
+- **`ui-reorg-u4`: 11/11.** On a live building: **3** sections on the Summary
+  page, **21** on Print, `data-sections-unreachable` **empty**, the tray
+  **absent**, `Export PDF` **present**, and the drawing's canvas still in the
+  DOM at `display: none` through both pages.
+- **Pan and zoom survived**, byte-identical, across a Summary round trip and
+  again across Summary *and* Print — against a fingerprint **proved sensitive
+  first** (100% → 156% moved it).
+- **2,819 tests** pass (was 2,809); `tsc` clean in both projects.
+- **Lint 168 / 120 / 48** against a 167 / 119 / 48 baseline. The +1 error is
+  `react-hooks/preserve-manual-memoization` 61 → 62, from the two new
+  `useMemo`s in `page.tsx` — a file AGENTS.md records as already saturated
+  with that rule, which is the recorded exception, and it is named here rather
+  than rounded down. **Warnings returned to baseline** (a `no-unused-vars` I
+  introduced mid-build is gone, and so is the `next/link` one the deletion
+  created). **No correctness rule moved**: `exhaustive-deps` 12, `refs` 29,
+  `set-state-in-effect` 12, `purity` 1, `immutability` 1, all unchanged.
+
+## What the harness caught that review would not have
+
+The fingerprint's **calibration check went red first**: synthetic CDP wheel
+events moved the view not at all, and the reader had grabbed the first canvas
+in the document (720×480 — not the drawing) rather than the largest. Without
+that check, the round-trip assertion would have compared a constant to itself
+and passed. It now drives the canvas's own Zoom in and Pan buttons.
+
+## Still open
+
+- **U6 — the printing customization editor.** Deliberately deferred. The
+  honest blocker is pagination, not the picker: Shipping, Plaster Master and
+  Project Summary each run 1–2.5 pages over on any page size, and a
+  customization editor built on unverified pagination would let a user arrange
+  sheets that do not paginate.
+- **§13's keyhole collision (a)/(b)** — recommendation (a) stands untouched.
+
+## ⚠ The two real defects U4.2 introduced, and what found them
+
+Neither was a layout problem, and neither would have survived a code review
+looking for one. Both came from the same cause: **opening a section via a page
+was a second channel that `openNoteIds` knew nothing about**, and two
+behaviours were keyed on `openNoteIds`.
+
+1. **The Summary page came up with no 3D rendering on it.** `captureLive` gates
+   the render the Project Summary sheet shows, and it was still waiting for a
+   note the tray had never opened. **`summary-capture` went 3/4 and named it.**
+2. **`Export PDF` on the Print page would have exported nothing.**
+   `effectiveExportIds` defaults to *"whatever is currently open"*, so it read
+   `(0)` while the page displayed seventeen sheets — a button that silently
+   does nothing. **The harness had only asserted the button was PRESENT**, so
+   this one got through until the check was strengthened to compare the count
+   against the sheets on screen. It now asserts
+   `exportPdfCount === printHostSections`, measured at 17 = 17.
+
+**The fix is one derived set, `effectivelyOpenNoteIds`**, read by the context,
+the capture and the export default alike — so "is this section open" has a
+single answer. It returns `openNoteIds` *itself* on the drawing surface rather
+than a copy, because a fresh `Set` each render would change identity for every
+memo downstream, which is the bug that once made one draw take two undos.
+
+## Four harnesses had locators that died with the tray — all loudly
+
+`smearforn-stage-2b`, `smearforn-stage-3` and `summary-capture` all opened
+sheets by clicking the tray's button for them, and `ui-reorg-u1` asserted that
+Summary and Print were disabled placeholders. **Every one of them failed with a
+message that said what it could not find**, rather than quietly finding less —
+which is the behaviour the repo's "a locator that has stopped working must go
+RED, not quiet" rule exists to produce. They now read the sheets off the Print
+page directly, which needs no clicking at all.
+
+`ui-reorg-u1`'s check was **inverted rather than deleted**: Summary and Print
+must now be enabled and must open something, still take no part in the view
+machinery, and — the part that was always the point — still be `onScreen` at
+every width including Tommy's own 710px.

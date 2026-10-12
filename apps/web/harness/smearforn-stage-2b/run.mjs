@@ -201,10 +201,38 @@ const evaluate = async (expression) => {
   return res.result.result?.value;
 };
 
+/**
+ * A screenshot is an ARTEFACT, not a check — so a failure to write one must
+ * not end a run that is otherwise measuring correctly.
+ *
+ * ⚠ On this Windows machine the write intermittently fails with
+ * `UNKNOWN: unknown error, open '…\screenshots\NN-name.png'` — a file lock,
+ * most likely an indexer or scanner holding a PNG that was just rewritten. It
+ * killed three separate harness runs on 2026-10-11, in three different
+ * harnesses, each time partway through and each time pointing at whatever
+ * step happened to be next rather than at the lock.
+ *
+ * So: retry once after a beat, and if it still will not write, SAY SO and
+ * carry on. The run's checks are unaffected and the missing artefact is
+ * reported rather than silently skipped.
+ */
 const shot = async (name) => {
   const png = await send("Page.captureScreenshot", { format: "png" }, sid);
-  fs.writeFileSync(path.join(SHOTS, `${name}.png`), Buffer.from(png.result.data, "base64"));
-  console.log(`  screenshot -> screenshots/${name}.png`);
+  const file = path.join(SHOTS, `${name}.png`);
+  const bytes = Buffer.from(png.result.data, "base64");
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      fs.writeFileSync(file, bytes);
+      console.log(`  screenshot -> screenshots/${name}.png`);
+      return;
+    } catch (err) {
+      if (attempt === 2) {
+        console.log(`  screenshot NOT WRITTEN (${name}.png): ${String(err.message ?? err)}`);
+        return;
+      }
+      await sleep(600);
+    }
+  }
 };
 
 const mouse = (type, x, y, extra = {}) =>
@@ -1269,34 +1297,52 @@ console.log("11. the fabrication sheets, both halves of the cross-reference");
 await closeOpenNotes();
 let headerSheetText = null;
 let panelSheetText = null;
+/* ⚠ REWRITTEN FOR U5.2 (2026-10-11), AND THE OLD VERSION FAILED LOUDLY FIRST.
+ *
+ * This used to open each fabrication sheet by clicking the right-hand tray's
+ * button for it, label by label. U5.2 deleted the tray — Tommy: *"As long as
+ * everything is included in the tabs above, let's delete it."* — and this step
+ * went red with "no visible Spanning Header fabrication page", which is exactly
+ * the right failure: the LOCATOR died, and it said so rather than quietly
+ * finding fewer sheets.
+ *
+ * The sheets themselves did not move anywhere unreachable; they are all on the
+ * Print page, and opened by it. So there is nothing to click through at all now
+ * — go to Print once and read. Fewer steps, no per-label loop, and no
+ * dependence on a scrolled strip for something that is simply on the page. */
 try {
-  await clickByText("button", "Panel Fabrication: Spanning Header", "Spanning Header fabrication page");
-  await sleep(1600);
-  headerSheetText = await evaluate(`(() => {
-    const el = [...document.querySelectorAll('div')].find((d) => d.textContent.includes('Panel Fabrication — Spanning Header'));
+  const printBtn = await evaluate(
+    "(() => { const b = document.querySelector('[data-bar-control=\"print\"]');" +
+      " if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width/2, y: r.top + r.height/2 }; })()",
+  );
+  if (!printBtn) throw new Error('no Print control on the bar — U5.1 should have made it a real button');
+  await click(printBtn.x, printBtn.y);
+  await sleep(2200);
+  /* ⚠ SCOPED TO THE SHEETS THEMSELVES, not to any div that happens to contain
+     the words. A first attempt searched every <div> in the document and
+     `find` returned an ANCESTOR — the match came back starting "Acting as /
+     Not signed in / Sign in ▼ / Project ▼…", i.e. the whole chrome, which
+     would then have satisfied almost any text assertion made of it. Each
+     section is one `div.documentSection` on the Print page, so that is the
+     unit to read. */
+  const sheetWhoseTextIncludes = (needle) => `(() => {
+    const sheets = [...document.querySelectorAll('[data-print-page-host] div.documentSection')];
+    const el = sheets.find((d) => d.textContent.includes(${JSON.stringify(needle)}));
     return el ? el.textContent.replace(/\\s+/g, ' ').slice(0, 4000) : null;
-  })()`);
-  await shot("05-header-fabrication-sheet");
-  await closeOpenNotes();
-  // The reciprocal lives on a spanned panel's own sheet. Open the panel
-  // fabrication pages until one names the header above it — there are only a
-  // handful on a rectangle.
-  const panelPages = await evaluate(`(() => [...document.querySelectorAll('button')]
-    .map((b) => b.textContent.trim())
-    .filter((t) => t.startsWith('Panel Fabrication:') && !t.includes('Spanning Header'))
-    .slice(0, 8))()`);
-  for (const label of panelPages) {
-    await clickByText("button", label, label);
+  })()`;
+  /* ⚠ `finally`, so the editor is left as it was found even if a read throws.
+     Without it, a screenshot write failing on a locked file would leave Print
+     owning the surface, and the NEXT step would die somewhere else entirely —
+     which is exactly what happened in the stage-3 harness next door. */
+  try {
+    headerSheetText = await evaluate(sheetWhoseTextIncludes("Panel Fabrication — Spanning Header"));
+    await shot("05-header-fabrication-sheet");
+    // The reciprocal half lives on a spanned panel's own sheet, which is on the
+    // same page — so it is read rather than hunted for.
+    panelSheetText = await evaluate(sheetWhoseTextIncludes("Header above:"));
+  } finally {
+    await click(printBtn.x, printBtn.y);
     await sleep(1200);
-    const text = await evaluate(`(() => {
-      const el = [...document.querySelectorAll('div')].find((d) => d.textContent.includes('Header above:'));
-      return el ? el.textContent.replace(/\\s+/g, ' ').slice(0, 2000) : null;
-    })()`);
-    await closeOpenNotes();
-    if (text) {
-      panelSheetText = text;
-      break;
-    }
   }
 } catch (err) {
   headerSheetText = `error: ${String(err.message ?? err)}`;

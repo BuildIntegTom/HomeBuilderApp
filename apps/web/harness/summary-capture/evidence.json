@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3304/",
-  "ranAt": "2026-10-07T03:20:19.398Z",
+  "app": "http://localhost:3000",
+  "ranAt": "2026-10-12T02:56:53.430Z",
   "proveFailureMode": false,
   "checks": [
     {
@@ -15,8 +15,8 @@
       "ok": true,
       "detail": {
         "hasImg": true,
-        "sha": "1b62bdde395e6e59",
-        "len": 57862,
+        "sha": "a999ed587ccd239b",
+        "len": 57702,
         "weight": "63412.8 lb"
       }
     },
@@ -54,10 +54,10 @@
       "name": "THE STALE-SUMMARY GUARD: the re-opened image is NOT the one from before the edit",
       "ok": true,
       "detail": {
-        "beforeSha": "1b62bdde395e6e59",
-        "afterSha": "1351d828a494a6c2",
-        "beforeLen": 57862,
-        "afterLen": 72214
+        "beforeSha": "a999ed587ccd239b",
+        "afterSha": "84b0a5cf16e2dd86",
+        "beforeLen": 57702,
+        "afterLen": 72346
       }
     }
   ],

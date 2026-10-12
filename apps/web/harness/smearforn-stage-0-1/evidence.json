@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T01:00:56.842Z",
+  "ranAt": "2026-10-12T02:58:23.816Z",
   "steps": [
     {
       "name": "stage0-new-project-tabs",
@@ -18,14 +18,14 @@
     },
     {
       "name": "whole-wall-on-screen",
-      "clicks": 5,
+      "clicks": 4,
       "wholeWallVisible": true,
       "asserted": true,
       "passed": true
     },
     {
       "name": "panel-width-labels",
-      "count": 13,
+      "count": 12,
       "onTheWall": 13,
       "first": [
         "40\"",
@@ -147,14 +147,14 @@
         "40\"",
         "40\"",
         "40\"",
-        "24.125\"",
-        "24.125\"",
+        "32.125\"",
+        "32\"",
         "40\""
       ],
       "after": [
         "40\"",
-        "42.25\"",
-        "37.75\"",
+        "42\"",
+        "38\"",
         "40\"",
         "40\"",
         "40\"",
@@ -162,13 +162,13 @@
         "40\"",
         "40\"",
         "40\"",
-        "24.125\"",
-        "24.125\"",
+        "32.125\"",
+        "32\"",
         "40\""
       ],
       "everyWidthIsAWholeEighth": true,
-      "runTotalBefore": 488.25,
-      "runTotalAfter": 488.25,
+      "runTotalBefore": 504.125,
+      "runTotalAfter": 504.125,
       "runTotalConserved": true,
       "somethingActuallyMoved": true,
       "asserted": true,
@@ -184,11 +184,11 @@
           "inchesPerScreenPx": 0.21519,
           "cursorTravelPx": 13.94,
           "stripIndex": 1,
-          "handleXBefore": 880.13,
-          "cursorReleasedAtX": 894,
-          "handleXAfter": 894.07,
+          "handleXBefore": 878.97,
+          "cursorReleasedAtX": 893,
+          "handleXAfter": 892.91,
           "movedIn": 3,
-          "missIn": 0.0156
+          "missIn": 0.0193
         },
         {
           "zoom": "zoomed 195%",
@@ -197,11 +197,11 @@
           "inchesPerScreenPx": 0.11018,
           "cursorTravelPx": -27.23,
           "stripIndex": 1,
-          "handleXBefore": 960.49,
-          "cursorReleasedAtX": 933,
-          "handleXAfter": 933.26,
+          "handleXBefore": 878.22,
+          "cursorReleasedAtX": 851,
+          "handleXAfter": 850.99,
           "movedIn": -3,
-          "missIn": 0.0283
+          "missIn": 0.0013
         }
       ],
       "theZoomsReallyDiffered": true,
@@ -222,8 +222,8 @@
         "40\"",
         "40\"",
         "40\"",
-        "24.125\"",
-        "24.125\"",
+        "32.125\"",
+        "32\"",
         "40\""
       ],
       "hitsTheCatalogMinimum": true,
@@ -268,10 +268,10 @@
       ],
       "expectedZoomPercent": 182,
       "inchUnderPointer": [
-        95.671,
-        95.657
+        113.962,
+        113.963
       ],
-      "pointerDriftIn": 0.014,
+      "pointerDriftIn": 0.001,
       "ctrlSeen": [
         true
       ],
@@ -289,8 +289,8 @@
         422
       ],
       "scrollLeft": [
-        480,
-        480
+        550,
+        550
       ],
       "appTookTheEvent": [
         false
@@ -337,8 +337,8 @@
           40,
           40,
           40,
-          24.125,
-          24.125,
+          32.125,
+          32,
           40
         ],
         [
@@ -398,7 +398,7 @@
       ],
       "leftTheFirstWallAt": {
         "zoom": "156%",
-        "scrollLeft": 1266
+        "scrollLeft": 1314
       },
       "arrivals": [
         {
@@ -500,13 +500,9 @@
         {
           "handle": 1,
           "dxPx": -14
-        },
-        {
-          "handle": 2,
-          "dxPx": 14
         }
       ],
-      "pinnedPanels": 5,
+      "pinnedPanels": 4,
       "pinnedDetail": [
         {
           "label": "42\"",
@@ -521,37 +517,33 @@
           "field": "24"
         },
         {
-          "label": "47.875\"",
-          "field": "47⅞"
-        },
-        {
-          "label": "37.125\"",
-          "field": "37⅛"
+          "label": "45\"",
+          "field": "45"
         }
       ],
       "automaticPanelsLeft": 0,
-      "boundariesReachable": 3,
-      "boundariesOnTheWall": 3,
+      "boundariesReachable": 2,
+      "boundariesOnTheWall": 2,
       "widthsBeforeRetile": [
         42,
         33.125,
         24,
-        47.875,
-        37.125
+        45,
+        40
       ],
       "widthsAfterRetile": [
         42,
         33.125,
         24,
-        47.875,
-        37.125
+        45,
+        40
       ],
       "widthsAfterUnstop": [
         42,
         33.125,
         24,
-        47.875,
-        37.125
+        45,
+        40
       ],
       "survivedTheRetile": true,
       "survivedASecondRetile": true,
@@ -563,7 +555,7 @@
       ],
       "totalNeverMoved": true,
       "narrowestAfter": 24,
-      "widestAfter": 47.875,
+      "widestAfter": 45,
       "asserted": true,
       "passed": true
     }

@@ -2,6 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useSectionSurface } from "./SectionSurfaceContext";
 import styles from "./StickyNote.module.css";
 
 export interface StickyNoteProps {
@@ -44,6 +45,11 @@ export interface StickyNoteProps {
    * Elevation view's Selected Panel note, which lives in a 240px column). A
    * page must not inherit that cap, so `.notePage` is its own variant. */
   portalTo?: HTMLElement | null;
+  /** ⚠ `portalTo` is an EXPLICIT override and is normally left unset — the
+   * usual answer comes from `SectionSurfaceContext`, which answers for every
+   * section at once. Kept because a caller that is not a numbered editor
+   * section may still want a page, and because an override is easier to
+   * reason about than a context exception. */
 }
 
 /**
@@ -128,7 +134,7 @@ export default function StickyNote({
     };
   }, [dragging]);
 
-  if (!isOpen) return null;
+  // (see `openOnAPage` below — the real open test is after the hooks)
 
   const handleHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (isFullscreen || docked) return;
@@ -142,12 +148,25 @@ export default function StickyNote({
     setDragging(true);
   };
 
+  /* U4.2 — the page, if one claims this section. `portalTo` wins when given;
+     otherwise the provider decides, which is how all ~27 sections reach a
+     page without a single per-note edit. */
+  const surface = useSectionSurface();
+  const host = portalTo ?? surface.hostFor(id);
+  /* ⚠ ORed, never ANDed and never overridden: a page may OPEN a section but
+     may not close one. The tray is still live until U5.2 and must keep
+     working, and two writers of one boolean is how a control stops
+     responding for reasons the user cannot see. */
+  const openOnAPage = surface.opensOnItsPage(id);
+
   const dockedNotFullscreen = docked && !isFullscreen;
   /* Fullscreen still wins over the page, exactly as it wins over `docked`:
      a note's fullscreen overlay is `position: fixed; inset: 0` and is not
      the page's business. So a section opened fullscreen FROM the page still
      covers the viewport, and closing it returns it to the page. */
-  const onPageNotFullscreen = portalTo !== null && !isFullscreen;
+  if (!isOpen && !openOnAPage) return null;
+
+  const onPageNotFullscreen = host !== null && !isFullscreen;
 
   const note = (
     <div
@@ -209,5 +228,5 @@ export default function StickyNote({
      but the page is a scroll container, and putting a fixed overlay inside
      one invites a containing-block surprise from any future `transform` or
      `filter` on an ancestor. Left where it is, there is no such ancestor. */
-  return portalTo && !isFullscreen ? createPortal(note, portalTo) : note;
+  return host && !isFullscreen ? createPortal(note, host) : note;
 }
