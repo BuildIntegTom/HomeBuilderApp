@@ -1,5 +1,6 @@
 import type { MemberRole, PanelMember } from "./componentSchema";
 import { computeBraceEndCutAngleDeg, describeBraceEndCuts, type BraceEndCut } from "./panelMemberHelpers";
+import { cutNoteForEnds, formatShopDegrees, formatShopInches } from "./shopCutNotes";
 
 export interface PanelCutListRow {
   letter: string;
@@ -13,6 +14,32 @@ export interface PanelCutListRow {
    * bug). */
   qty: number;
   dimensions: string;
+  /**
+   * The stock a shop asks for by name — `2x4`, `2x6`, `3/4" Plywood`.
+   *
+   * Tommy, 2026-10-11: *"using common denominational names for dimensional
+   * lumber like 2x4 as materials"*. Split out of `partLabel` (which reads
+   * "2x4 Plate") so the material is its own column and can be totalled,
+   * scanned, or read off by someone pulling stock who does not care which
+   * role a given stick fills.
+   */
+  materialLabel: string;
+  /** The cut length — for lumber a single figure, for a sheet its two sides.
+   * A trapezoid's figure is its LONG POINT, and says so, because a bare
+   * number next to a bevel is ambiguous about which end it measures to. */
+  lengthLabel: string;
+  /** The angle(s) off square, or `"Square"`. Separate from `cutNote` so a
+   * crew can scan a column for the one row that needs the saw reset. */
+  angleLabel: string;
+  /**
+   * How to cut it, in words — the angle off square, what the finished end
+   * does, and the two legs of the waste triangle to build a jig from.
+   *
+   * Empty string for a plain square crosscut, so the table can leave that
+   * cell blank rather than printing a sentence on every row and burying the
+   * three that matter.
+   */
+  cutNote: string;
   /** The real members sharing this letter, at their own real positions —
    * for a diagram to place the same letter at every occurrence. */
   members: PanelMember[];
@@ -149,6 +176,36 @@ function describeCut(cut: BraceEndCut): string {
   return `${cut.angleDeg.toFixed(1)}° ${label}`;
 }
 
+/** The stock name on its own: nominal size for lumber, thickness for sheet. */
+function materialLabelFor(member: PanelMember): string {
+  if (member.material === "plywood") return `${sheetThicknessLabel(member)} Plywood`;
+  return member.nominalSize ?? formatDimIn(member.actualDimsIn.thicknessIn);
+}
+
+/** The cut length. A sheet gets both sides; a trapezoid names its long point. */
+function lengthLabelFor(member: PanelMember): string {
+  const { widthIn, lengthIn } = member.actualDimsIn;
+  if (member.material === "plywood") return `${formatShopInches(widthIn)} x ${formatShopInches(lengthIn)}`;
+  const base = formatShopInches(lengthIn);
+  return member.position.trapezoidCornersIn !== undefined ? `${base} long point` : base;
+}
+
+/** Both end cuts, sorted the way `dimensionsFor` already sorts them so the
+ *  angle column and the note can never list them in different orders. */
+function endCutsFor(member: PanelMember): BraceEndCut[] {
+  if (member.position.trapezoidCornersIn === undefined) return [];
+  const order = { level: 0, plumb: 1, angled: 2 };
+  return describeBraceEndCuts(member.position.trapezoidCornersIn)
+    .slice()
+    .sort((a, b) => order[a.kind] - order[b.kind]);
+}
+
+function angleLabelFor(cuts: readonly BraceEndCut[]): string {
+  if (cuts.length === 0) return "Square";
+  const angles = [...new Set(cuts.map((c) => formatShopDegrees(c.angleDeg)))];
+  return `${angles.join(" / ")} off square`;
+}
+
 function dimensionsFor(member: PanelMember): string {
   const { thicknessIn, widthIn, lengthIn } = member.actualDimsIn;
   if (member.material === "plywood") return `${formatDimIn(widthIn)} x ${formatDimIn(lengthIn)}`;
@@ -191,6 +248,17 @@ export function computePanelCutList(members: PanelMember[]): PanelCutListRow[] {
       role: first.role,
       material: first.material as "dimensional_lumber" | "plywood",
       partLabel: partLabelFor(first),
+      materialLabel: materialLabelFor(first),
+      lengthLabel: lengthLabelFor(first),
+      angleLabel: angleLabelFor(endCutsFor(first)),
+      // ⚠ Blank, not a sentence, for a square crosscut — see `cutNote`.
+      cutNote:
+        endCutsFor(first).length === 0
+          ? ""
+          : // The STOCK width, because the jig block is cut from stock — see
+            // `missingTriangleFor`, which was built off the modelled face first
+            // and found it disagreeing by up to 1/32in on a real brace.
+            cutNoteForEnds(endCutsFor(first), first.actualDimsIn.widthIn),
       qty: groupMembers.length,
       dimensions: dimensionsFor(first),
       members: groupMembers,
@@ -206,6 +274,10 @@ export function computePanelCutList(members: PanelMember[]): PanelCutListRow[] {
     role: row.role,
     material: row.material,
     partLabel: row.partLabel,
+    materialLabel: row.materialLabel,
+    lengthLabel: row.lengthLabel,
+    angleLabel: row.angleLabel,
+    cutNote: row.cutNote,
     qty: row.qty,
     dimensions: row.dimensions,
     members: row.members,

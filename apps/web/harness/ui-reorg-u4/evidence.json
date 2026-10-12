@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T02:56:29.804Z",
+  "app": "http://localhost:3000/",
+  "ranAt": "2026-10-12T04:26:47.473Z",
   "proveFailureMode": false,
   "checks": [
     {
@@ -33,7 +33,7 @@
       "name": "footprint-drawn-and-the-canvas-has-pixels",
       "ok": true,
       "detail": {
-        "sha": "161e1e4445690b957d10",
+        "sha": "e7c2d2079a08ad91d9a3",
         "zoom": "100%",
         "canvasW": 720,
         "canvasH": 480
@@ -43,9 +43,9 @@
       "name": "the-fingerprint-MOVES-when-the-view-moves",
       "ok": true,
       "detail": {
-        "before": "161e1e4445690b957d10",
+        "before": "e7c2d2079a08ad91d9a3",
         "beforeZoom": "100%",
-        "after": "5c993b3d1fa59372d702",
+        "after": "10b2e8443525d3bf22ca",
         "afterZoom": "156%"
       }
     },
@@ -131,9 +131,9 @@
       "name": "PAN-AND-ZOOM-SURVIVED-THE-ROUND-TRIP",
       "ok": true,
       "detail": {
-        "leftWith": "5c993b3d1fa59372d702",
+        "leftWith": "10b2e8443525d3bf22ca",
         "leftZoom": "156%",
-        "cameBackTo": "5c993b3d1fa59372d702",
+        "cameBackTo": "10b2e8443525d3bf22ca",
         "cameBackZoom": "156%"
       }
     },
@@ -176,13 +176,13 @@
         "printOwner": "true",
         "printDisabled": false,
         "printPagePresent": true,
-        "printHostSections": 19,
+        "printHostSections": 20,
         "summaryHostSections": 0,
         "unreachable": "",
         "trayPresent": false,
         "exportPdfPresent": true,
-        "exportPdfLabel": "Export PDF (19)",
-        "exportPdfCount": 19,
+        "exportPdfLabel": "Export PDF (20)",
+        "exportPdfCount": 20,
         "designOwner": "false",
         "viewOwner": "false",
         "sectionInHost": false,
@@ -202,13 +202,13 @@
         "printOwner": "true",
         "printDisabled": false,
         "printPagePresent": true,
-        "printHostSections": 19,
+        "printHostSections": 20,
         "summaryHostSections": 0,
         "unreachable": "",
         "trayPresent": false,
         "exportPdfPresent": true,
-        "exportPdfLabel": "Export PDF (19)",
-        "exportPdfCount": 19,
+        "exportPdfLabel": "Export PDF (20)",
+        "exportPdfCount": 20,
         "designOwner": "false",
         "viewOwner": "false",
         "sectionInHost": false,
@@ -219,9 +219,9 @@
       "name": "pan-and-zoom-survived-SUMMARY-AND-PRINT-together",
       "ok": true,
       "detail": {
-        "leftWith": "5c993b3d1fa59372d702",
+        "leftWith": "10b2e8443525d3bf22ca",
         "leftZoom": "156%",
-        "cameBackTo": "5c993b3d1fa59372d702",
+        "cameBackTo": "10b2e8443525d3bf22ca",
         "cameBackZoom": "156%"
       }
     }

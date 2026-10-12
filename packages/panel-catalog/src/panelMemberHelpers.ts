@@ -917,6 +917,21 @@ export interface BraceEndCut {
   /** Bevel angle off a square crosscut (perpendicular to the board's own
    * length), degrees, always in [0,90]. */
   angleDeg: number;
+  /**
+   * The cut edge's own length — the distance the saw actually travels across
+   * the face.
+   *
+   * ⚠ Reported because it is the HYPOTENUSE of the triangle the cut removes,
+   * and that triangle is what the shop builds a jig from. Tommy, 2026-10-11:
+   * *"we will have to build a reversed triangle block for it - knowing the
+   * missing rise and run dimensions would actually be critically helpful in
+   * creating accurate jig blocks."* With this and `angleDeg`, both legs follow
+   * exactly — `cutEdgeLengthIn * cos(angle)` across the face and
+   * `* sin(angle)` along the length — with no need to re-derive the board's
+   * width from somewhere else and no chance of disagreeing with the angle
+   * printed beside it. See `missingTriangleFor` in `shopCutNotes.ts`.
+   */
+  cutEdgeLengthIn: number;
 }
 
 // Real cuts here are always constructed from exact arithmetic (a literal
@@ -978,7 +993,7 @@ export function describeBraceEndCuts(
     const isPlumb = Math.abs(edge[0]) < SQUARE_TOLERANCE_IN;
     const isLevel = Math.abs(edge[1]) < SQUARE_TOLERANCE_IN;
     const kind = isPlumb ? "plumb" : isLevel ? "level" : "angled";
-    return { kind, angleDeg };
+    return { kind, angleDeg, cutEdgeLengthIn: edgeLen };
   }
 
   return [describe(shortEdgeA), describe(shortEdgeB)];

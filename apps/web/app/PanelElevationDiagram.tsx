@@ -19,8 +19,20 @@ export interface PanelElevationDiagramProps {
 
 // Same navy-badge/white-text/dashed-leader convention already established
 // by DiagramLegend.module.css's 8 other consumers (e.g. SlabFoundationDiagram.tsx).
-const BADGE_RADIUS_PX = 10;
-const INSIDE_THRESHOLD_PX = 26; // badge diameter (20px) + clearance
+/* ⚠ BADGES GREW ON 2026-10-11. Tommy, on the reference cut-list document he
+   likes the shape of: *"very clear and large view of the panel with labels
+   (although I don't like how the labels are small font here)"*. Ours were
+   smaller than the ones he was complaining about — 11px full and 9px compact,
+   and the fabrication sheet uses compact.
+
+   The radius grows with the text rather than staying put, because a badge can
+   carry TWO letters (`toSpreadsheetLetters` runs past Z on a dense header or
+   gable truss) and 12px bold "AA" is about 14px wide — it would spill out of
+   the old 16px-diameter circle. `collisionRadiusPx` and `badgeSpreadPx` are
+   both derived from the radius, so the placement algorithm adapts to the larger
+   badges on its own and nothing else needed retuning. */
+const BADGE_RADIUS_PX = 12;
+const INSIDE_THRESHOLD_PX = 30; // badge diameter (24px) + clearance
 const LEADER_OFFSET_IN = 3.5; // in real inches, so it scales with the drawing like everything else
 
 const MAX_CANVAS_HEIGHT_PX = 480;
@@ -28,8 +40,8 @@ const MIN_CANVAS_WIDTH_PX = 170; // a Safety/Gap panel is only 0.75in wide — f
 const MARGIN_PX = 44; // room for leader-line badges to sit outside the panel's own outline
 
 // compact mode's own equivalents — see the `compact` prop's own doc comment.
-const BADGE_RADIUS_PX_COMPACT = 8;
-const INSIDE_THRESHOLD_PX_COMPACT = 20; // badge diameter (16px) + clearance
+const BADGE_RADIUS_PX_COMPACT = 10;
+const INSIDE_THRESHOLD_PX_COMPACT = 24; // badge diameter (20px) + clearance
 const MAX_CANVAS_HEIGHT_PX_COMPACT = 190;
 const MIN_CANVAS_WIDTH_PX_COMPACT = 90;
 const MARGIN_PX_COMPACT = 20;
@@ -225,7 +237,8 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn, comp
   const marginPx = compact ? MARGIN_PX_COMPACT : MARGIN_PX;
   const badgeRadiusPx = compact ? BADGE_RADIUS_PX_COMPACT : BADGE_RADIUS_PX;
   const insideThresholdPx = compact ? INSIDE_THRESHOLD_PX_COMPACT : INSIDE_THRESHOLD_PX;
-  const badgeFontSizePx = compact ? 9 : 11;
+  // See BADGE_RADIUS_PX: 9/11 was smaller than the document Tommy called small.
+  const badgeFontSizePx = compact ? 12 : 14;
   const wrapMaxWidthPx = compact ? WRAP_MAX_WIDTH_PX_COMPACT : WRAP_MAX_WIDTH_PX;
 
   const pxPerIn = maxCanvasHeightPx / heightIn;

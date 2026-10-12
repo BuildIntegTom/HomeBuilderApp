@@ -80,22 +80,43 @@ export default function PanelFabricationPage({
         {cutList.length === 0 ? (
           <p className={styles.note}>No dimensional lumber or plywood members modeled for this panel.</p>
         ) : (
+          /* ⚠ COLUMNS ARE TOMMY'S, 2026-10-11: *"using common denominational
+             names for dimensional lumber like 2x4 as materials and then
+             length(s) and angles where appropriate (for any inclined panel and
+             with a note that clearly details how to cut it for the shop crew to
+             be able to determine how to cut it"*.
+
+             So Material is its own column (what you pull off the rack), Length
+             is its own column (what you set the stop to), and the cut note is
+             last and widest because it is a sentence, not a figure. The precise
+             `row.dimensions` (t x w x l) is deliberately NOT shown: the nominal
+             name plus the cut length is what a shop works from, and printing
+             1.5" x 3.5" beside "2x4" is the same fact twice. */
           <table className={styles.table}>
             <thead>
               <tr>
                 <th>Letter</th>
-                <th>Part</th>
                 <th>Qty</th>
-                <th>Dimensions</th>
+                <th>Part</th>
+                <th>Material</th>
+                <th>Length</th>
+                <th>Angle</th>
+                <th className={styles.cutNoteHeading}>How to cut it</th>
               </tr>
             </thead>
             <tbody>
               {cutList.map((row) => (
                 <tr key={row.letter}>
                   <td className={styles.letterCell}>{row.letter}</td>
-                  <td>{row.partLabel}</td>
                   <td>{row.qty}</td>
-                  <td>{row.dimensions}</td>
+                  <td>{row.partLabel}</td>
+                  <td className={styles.materialCell}>{row.materialLabel}</td>
+                  <td className={styles.lengthCell}>{row.lengthLabel}</td>
+                  <td>{row.angleLabel}</td>
+                  {/* Blank for a square crosscut rather than a sentence on every
+                      row — the rows that need the saw reset have to stand out,
+                      and they cannot if every row is talking. */}
+                  <td className={styles.cutNoteCell}>{row.cutNote}</td>
                 </tr>
               ))}
             </tbody>

@@ -13,8 +13,31 @@ const CANVAS_HEIGHT = 420;
 const CANVAS_WIDTH_COMPACT = 220;
 const CANVAS_HEIGHT_COMPACT = 130;
 const IN_PER_FT = 12;
-const ELEVATION_DEG = 25;
-const AZIMUTH_DEG = 35;
+/* ⚠ THE CAMERA LOOKS AT THE EXTERIOR FACE, FROM ABOVE AND TO THE LEFT.
+
+   Tommy, 2026-10-11: *"the shop drawing image of each panel should be what
+   that panel looks like from the exterior up and left tilted as it would
+   appear when isolated in the 3D view"*.
+
+   Read off the schema rather than guessed: componentSchema says the panel.s
+   depth axis is *"through the wall, 0 at the exterior face"*, and
+   memberBoxSizeIn maps that to three.js Z. So the exterior face normal points
+   at NEGATIVE Z, and a camera at +Z - which is where azimuth 35 put it - was
+   looking at the INTERIOR, nearly edge-on down the panel.s end.
+
+   Azimuth here is measured from +X toward +Z. Looking along +Z with +Y up,
+   screen-left is +X, so a camera at +X / -Z sits above and to the viewer.s
+   left of the exterior face: the face reads flat-on with a sliver of the top
+   and one end, which is the SketchUp-export look he is describing.
+
+   -62 and not -35: azimuth is measured from +X, and +X is the panel's WIDTH
+   axis, so an azimuth near 0 looks down the 15.5in END rather than at the 40in
+   face. The exterior normal is -Z, i.e. azimuth -90, and swinging 28deg back
+   off it leaves the face dominant while still showing the top and one end. A
+   45deg swing would weight face and end equally, which reads as a box rather
+   than as a panel. */
+const ELEVATION_DEG = 28;
+const AZIMUTH_DEG = -62;
 
 const STRAW_COLOR = "#e0c458";
 

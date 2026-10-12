@@ -95,3 +95,38 @@
     font-size: 11px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The shop columns (Tommy, 2026-10-11)
+   ------------------------------------------------------------------------- */
+
+/* The stock name a shop pulls off the rack. Bold and unwrappable: "2x4" must
+   never break across two lines, and it is the first thing scanned. */
+.materialCell {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The figure the stop gets set to. Tabular so a column of lengths lines up on
+   the decimal and a wrong one looks wrong. */
+.lengthCell {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ⚠ THE CUT NOTE IS THE ONE COLUMN THAT CAN COST A PAGE, and this sheet is
+   deliberately held to one — see the print block above, where a single
+   16px-inherited paragraph was the largest cause of a letter-page overrun.
+   So the note is a SENTENCE at 11px in a bounded column rather than a wide
+   full-size cell: on a braced panel only the brace rows carry one (every square
+   crosscut leaves the cell blank), so the realistic cost is two wrapped
+   paragraphs, not one per row. */
+.cutNoteHeading {
+  width: 34%;
+}
+
+.cutNoteCell {
+  font-size: 11px;
+  line-height: 1.35;
+  color: #333;
+}

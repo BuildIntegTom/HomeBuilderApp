@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T03:14:01.864Z",
+  "ranAt": "2026-10-12T04:24:47.801Z",
   "steps": [
     {
       "name": "baseline-3d-found-real-walls-and-slots",
