@@ -1,0 +1,102 @@
+{
+  "app": "http://localhost:3000/",
+  "ranAt": "2026-10-12T01:22:05.587Z",
+  "proveFailureMode": false,
+  "checks": [
+    {
+      "name": "summary-is-no-longer-a-disabled-placeholder",
+      "ok": true,
+      "detail": {
+        "pagePresent": false,
+        "hostPresent": false,
+        "canvasStillInDom": true,
+        "canvasLayerDisplay": "flex",
+        "summaryOwner": "false",
+        "summaryDisabled": false,
+        "designOwner": "true",
+        "viewOwner": "false",
+        "sectionInHost": false,
+        "sectionTextLength": 0
+      }
+    },
+    {
+      "name": "footprint-drawn-and-the-canvas-has-pixels",
+      "ok": true,
+      "detail": {
+        "sha": "2cf4ed5b6c1e08888416",
+        "zoom": "100%",
+        "canvasW": 720,
+        "canvasH": 480
+      }
+    },
+    {
+      "name": "the-fingerprint-MOVES-when-the-view-moves",
+      "ok": true,
+      "detail": {
+        "before": "2cf4ed5b6c1e08888416",
+        "beforeZoom": "100%",
+        "after": "735b640d98d69ed0d394",
+        "afterZoom": "156%"
+      }
+    },
+    {
+      "name": "summary-owns-the-surface-and-the-drawing-is-HIDDEN-not-unmounted",
+      "ok": true,
+      "detail": {
+        "pagePresent": true,
+        "hostPresent": true,
+        "canvasStillInDom": true,
+        "canvasLayerDisplay": "none",
+        "summaryOwner": "true",
+        "summaryDisabled": false,
+        "designOwner": "false",
+        "viewOwner": "false",
+        "sectionInHost": true,
+        "sectionTextLength": 2260
+      }
+    },
+    {
+      "name": "the-Project-Summary-section-is-rendered-INSIDE-the-page",
+      "ok": true,
+      "detail": {
+        "pagePresent": true,
+        "hostPresent": true,
+        "canvasStillInDom": true,
+        "canvasLayerDisplay": "none",
+        "summaryOwner": "true",
+        "summaryDisabled": false,
+        "designOwner": "false",
+        "viewOwner": "false",
+        "sectionInHost": true,
+        "sectionTextLength": 2260
+      }
+    },
+    {
+      "name": "clicking-Summary-again-returns-you-to-the-drawing",
+      "ok": true,
+      "detail": {
+        "pagePresent": false,
+        "hostPresent": false,
+        "canvasStillInDom": true,
+        "canvasLayerDisplay": "flex",
+        "summaryOwner": "false",
+        "summaryDisabled": false,
+        "designOwner": "true",
+        "viewOwner": "false",
+        "sectionInHost": false,
+        "sectionTextLength": 0
+      }
+    },
+    {
+      "name": "PAN-AND-ZOOM-SURVIVED-THE-ROUND-TRIP",
+      "ok": true,
+      "detail": {
+        "leftWith": "735b640d98d69ed0d394",
+        "leftZoom": "156%",
+        "cameBackTo": "735b640d98d69ed0d394",
+        "cameBackZoom": "156%"
+      }
+    }
+  ],
+  "failures": []
+}

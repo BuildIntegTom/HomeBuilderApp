@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import styles from "./StickyNote.module.css";
 
@@ -25,6 +26,24 @@ export interface StickyNoteProps {
    * viewport `isFullscreen` overlay as any other note — docked only
    * changes the NON-fullscreen presentation. */
   docked?: boolean;
+  /** U4 — render this note INSIDE the given element instead of where it sits
+   * in the tree, as a full-width page section.
+   *
+   * ⚠ **Why a portal and not a relocation.** The ~27 sections are
+   * `StickyNote` elements spread over 1,700 lines of `page.tsx`, each
+   * closing over its own props. Moving that JSX into a page component is a
+   * relocation of the most lint-saturated file in the repo for the sake of a
+   * layout change, and re-rendering the sections from data is not possible —
+   * there is no such data, so it would mean writing all 27 twice and letting
+   * the two copies drift. A portal leaves every note exactly where it is,
+   * with its own props, its fullscreen path and its per-sheet print button
+   * untouched, and only moves where the DOM lands.
+   *
+   * ⚠ **Not the same thing as `docked`.** `docked` also carries a
+   * `max-height: 45vh` cap, scoped on purpose to its single consumer (the
+   * Elevation view's Selected Panel note, which lives in a 240px column). A
+   * page must not inherit that cap, so `.notePage` is its own variant. */
+  portalTo?: HTMLElement | null;
 }
 
 /**
@@ -76,6 +95,7 @@ export default function StickyNote({
   onPrint,
   children,
   docked = false,
+  portalTo = null,
 }: StickyNoteProps) {
   // Default spawn point sits just below the sticky TopBar — Tommy: "sticky
   // notes to spawn directly below/stuck to the top bar - sometimes it
@@ -123,13 +143,18 @@ export default function StickyNote({
   };
 
   const dockedNotFullscreen = docked && !isFullscreen;
+  /* Fullscreen still wins over the page, exactly as it wins over `docked`:
+     a note's fullscreen overlay is `position: fixed; inset: 0` and is not
+     the page's business. So a section opened fullscreen FROM the page still
+     covers the viewport, and closing it returns it to the page. */
+  const onPageNotFullscreen = portalTo !== null && !isFullscreen;
 
-  return (
+  const note = (
     <div
       id={id}
-      className={`${styles.note} ${isFullscreen ? styles.noteFullscreen : dockedNotFullscreen ? styles.noteDocked : ""} documentSection`}
+      className={`${styles.note} ${isFullscreen ? styles.noteFullscreen : onPageNotFullscreen ? styles.notePage : dockedNotFullscreen ? styles.noteDocked : ""} documentSection`}
       style={
-        isFullscreen || dockedNotFullscreen
+        isFullscreen || dockedNotFullscreen || onPageNotFullscreen
           ? undefined
           : // max-height follows the SPAWN top, not the drag position, so a
             // note does not resize itself while being dragged.
@@ -178,4 +203,11 @@ export default function StickyNote({
       <div className={`${styles.body} documentSectionBody`}>{children}</div>
     </div>
   );
+
+  /* ⚠ A FULLSCREEN NOTE IS NOT PORTALLED. Its overlay is `position: fixed;
+     inset: 0`, so where it lands in the DOM does not affect where it draws —
+     but the page is a scroll container, and putting a fixed overlay inside
+     one invites a containing-block surprise from any future `transform` or
+     `filter` on an ancestor. Left where it is, there is no such ancestor. */
+  return portalTo && !isFullscreen ? createPortal(note, portalTo) : note;
 }

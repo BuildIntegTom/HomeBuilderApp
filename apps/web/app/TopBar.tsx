@@ -53,6 +53,16 @@ export interface TopBarProps {
    * one writer, not a second copy of the state. */
   editorTab: EditorTab;
   onEditorTabChange: (tab: EditorTab) => void;
+  /** U4 — which surface fills the editor: the drawing, Summary, or Print.
+   *
+   * ⚠ **Deliberately NOT in `ProjectState`**, unlike `editorTab` above, and
+   * for two reasons rather than one. Saving it would mean loading a project
+   * drops you onto the Summary page instead of your drawing. And undo must
+   * never undo *which page you are looking at* — keeping it out of the
+   * document means undo cannot see it at all, which is a stronger guarantee
+   * than classifying it `transient` and trusting the classification. */
+  editorSurface: "drawing" | "summary" | "print";
+  onEditorSurfaceChange: (surface: "drawing" | "summary" | "print") => void;
   /** Panelizer's keyhole — `page.tsx`'s `enabledEditorTabs`, which is derived
    * from the scope-of-work checkboxes. Read here, never duplicated: it decides
    * which subject groups the Design menu offers. */
@@ -130,12 +140,9 @@ const EMPTY_MENU_REASON: Record<"no-footprint" | "walls-out-of-scope" | "nothing
 };
 
 const BAR_PLACEHOLDERS: readonly { id: string; label: string; title: string }[] = [
-  {
-    id: "summary",
-    label: "Summary",
-    title:
-      "Not built yet — a placeholder. Summary will hold the project summary, project totals and materials totals pages that are in the right-hand tray today.",
-  },
+  /* ⚠ SUMMARY LEFT THIS LIST IN U4 (2026-10-11) — it is a real control now,
+     rendered below with the same owner treatment the view menus get. Print
+     is the last placeholder, and U5 is what removes it. */
   {
     id: "print",
     label: "Print",
@@ -252,6 +259,8 @@ export default function TopBar({
   panelizerContent,
   editorTab,
   onEditorTabChange,
+  editorSurface,
+  onEditorSurfaceChange,
   enabledTabs,
   viewerStops,
   currentViewerStop,
@@ -286,7 +295,14 @@ export default function TopBar({
    * user is working inside. Exactly one always owns — including on a cold load,
    * before any footprint exists, which is the screen Tommy described as making
    * "the design button highlighted". */
-  const owningMenu = viewerMenuOwner({ editorTab, currentStop: currentViewerStop });
+  /* ⚠ U4 — THE OWNER RULE IS NOW FOUR-WAY, NOT TWO-WAY. The plan's rule is
+     that *exactly one* of Design / View / Summary / Print owns the editor
+     surface at any moment, so when Summary or Print fills the editor
+     neither view menu owns it and neither may render as owner. Gating it
+     here, on the one line that derives ownership, rather than at each of
+     the places that read it — there is one owner because there is one
+     derivation. */
+  const owningMenu = editorSurface === "drawing" ? viewerMenuOwner({ editorTab, currentStop: currentViewerStop }) : null;
   /** What each menu offers, grouped by subject, out of the ONE list of stops and
    * the ONE enabled-tabs array the caller passed. Computed here rather than in
    * the render of each button so the bar's `disabled` state and the note's
@@ -639,6 +655,39 @@ export default function TopBar({
               opens and closes the right bar", which is an unresolved idea
               rather than a requirement, and one that interacts with U5, the
               stage that deletes the right sidebar. */}
+          {/* U4 — SUMMARY, A REAL CONTROL.
+
+              It renders the bare word and takes the owner treatment when it
+              owns the surface, exactly like Design and View. ⚠ It does NOT
+              render a LABEL+Value pair: the 2026-09-26 plan's §11 specified
+              `SUMMARY Project Summary`, but the 2026-09-29 bar rebuild
+              settled that the bar shows no stop name anywhere — see
+              `data-view-menu-current-stop` above, which exists only because
+              the bar deliberately stopped displaying it. Following the
+              newer decision; a bar where three controls show a value and
+              one does not is the inconsistency, not the fix.
+
+              It is a button, not a menu: it has one destination. Clicking it
+              while it already owns the surface goes back to the drawing, so
+              the control is never a door locked from the inside — the same
+              reasoning that un-keyed the Design button from `isViewStopLive`
+              above. */}
+          <button
+            type="button"
+            data-bar-control="summary"
+            data-surface-owner={editorSurface === "summary" ? "true" : "false"}
+            aria-current={editorSurface === "summary" ? "true" : undefined}
+            title={
+              editorSurface === "summary"
+                ? "You are reading the summary — click to go back to the drawing"
+                : "The project summary, project totals and materials totals, as a full page"
+            }
+            className={editorSurface === "summary" ? styles.toolOwner : styles.tool}
+            onClick={() => onEditorSurfaceChange(editorSurface === "summary" ? "drawing" : "summary")}
+          >
+            Summary
+          </button>
+
           {BAR_PLACEHOLDERS.map((placeholder) => (
             <button
               key={placeholder.id}

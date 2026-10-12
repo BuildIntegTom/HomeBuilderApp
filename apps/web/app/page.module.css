@@ -174,6 +174,39 @@
   border-right: 1px solid #ddd;
 }
 
+/* U4 — SUMMARY AND PRINT FILL THE CANVAS COLUMN, AND THE DRAWING IS HIDDEN
+   RATHER THAN UNMOUNTED. That distinction is the whole reason U4 is its own
+   stage. `FootprintCanvas` keeps `viewOffset`, `viewScale`, `showPanelLabels`
+   and the measuring-tool state in its own component state, and
+   `Building3DView` keeps its camera in the R3F store; unmounting the editor
+   to show Summary silently resets a user's pan, zoom, label toggle and 3D
+   camera. That reads as a glitch rather than a bug and no unit test catches it.
+
+   `display: none` and not `visibility: hidden`, because a hidden-but-present
+   layer still takes its `flex: 1 1 auto` and would squeeze the page beside it;
+   and not `position: absolute; inset: 0` either, because that widens its
+   measured box by the sidebar plus the spacer — a resize the canvas would see.
+   `display: none` changes no box at all. */
+.editorCanvasLayerHidden {
+  display: none;
+}
+
+/* The full page that replaces it. Takes the canvas column's own flex slot, so
+   the left sidebar is untouched: U0 put the Review Log, Read Me, Bug and `?`
+   icons there precisely so safety-relevant output has a permanent front door,
+   and covering them whenever Summary opens would undo that. */
+.editorPageLayer {
+  flex: 1 1 auto;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #fbfbfa;
+}
+
 /* Reserves the same width as SectionCarousel's fixed-position right-hand
    strip (see SectionCarousel.module.css) so the canvas never centers
    underneath it — the carousel itself isn't a flex child here (it's

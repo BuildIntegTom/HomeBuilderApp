@@ -44,6 +44,21 @@
    editor sidebar's own 240px column), instead of floating/draggable.
    Overrides every positioning property `.note` sets, since both classes
    apply together (see StickyNote.tsx). */
+/* U4 — a section rendered as part of a full page (Summary, and Print in U5).
+   Normal flow at the page's full width, like `.noteDocked` below, but WITHOUT
+   its `max-height: 45vh`: the page is the scroll container, so a section that
+   capped itself would put a second scrollbar inside the first one. No shadow
+   and no radius either — these read as sheets on a page, not as notes
+   floating over a drawing. */
+.notePage {
+  position: static;
+  width: 100%;
+  max-width: 100%;
+  max-height: none;
+  box-shadow: none;
+  border-radius: 4px;
+}
+
 .noteDocked {
   position: static;
   width: 100%;

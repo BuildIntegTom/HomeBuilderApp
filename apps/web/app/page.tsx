@@ -661,6 +661,30 @@ export default function LayoutEditor() {
   // its prompts from Foundation (same footprint + pier spacing, no
   // independent control of its own). Roof has no editor yet (future work).
   const [editorTab, setEditorTab] = useState<EditorTab>("wall");
+  /** U4 — which surface fills the editor's canvas column.
+   *
+   * ⚠ **Local state, deliberately not in `ProjectState`** — unlike
+   * `editorTab` directly above, which IS a saved field. Two reasons, and
+   * both are about not surprising the user: saving it would mean loading a
+   * project drops you on the Summary page instead of your drawing, and undo
+   * must never undo *which page you are looking at*. Keeping it out of the
+   * document means `undoHistory` cannot see it at all, which beats
+   * classifying it `transient` and trusting the classification to hold. */
+  const [editorSurface, setEditorSurface] = useState<"drawing" | "summary" | "print">("drawing");
+  /** The Summary page's host element, held as state rather than a ref so
+   * that the sections portalling into it re-render the moment it exists.
+   * A `useRef` would be filled during the same commit and read on a render
+   * that never happens, and the page would come up empty until something
+   * else moved. */
+  const [summaryHostEl, setSummaryHostEl] = useState<HTMLDivElement | null>(null);
+  /** Clicking an edit tab comes BACK to the drawing — the 2026-09-26 plan
+   * §13: *"clicking any of them returns you to the drawing. Not a modal
+   * mode."* One action sets both, so there is no frame in which the tab has
+   * changed but the surface has not. */
+  const handleEditorTabChange = (tab: EditorTab) => {
+    setEditorSurface("drawing");
+    setEditorTab(tab);
+  };
   const [viewMode, setViewMode] = useState<"plan" | "3d">("plan");
   // Tommy: "lets simplify (and have this be an option for the 3D view
   // somewhere) for panels to appear as their respective color and just
@@ -10437,7 +10461,9 @@ export default function LayoutEditor() {
           siteContent={siteContent}
           panelizerContent={panelizerContent}
           editorTab={editorTab}
-          onEditorTabChange={setEditorTab}
+          onEditorTabChange={handleEditorTabChange}
+          editorSurface={editorSurface}
+          onEditorSurfaceChange={setEditorSurface}
           enabledTabs={enabledEditorTabs}
           // The Design and View menus — since 2026-09-28 the ONLY view control
           // in the app, the sidebar dial having been removed at Tommy's
@@ -10982,7 +11008,18 @@ export default function LayoutEditor() {
             </div>
           </div>
 
-          <div className={styles.editorCanvasLayer}>
+          <div
+            className={
+              editorSurface === "drawing"
+                ? styles.editorCanvasLayer
+                : `${styles.editorCanvasLayer} ${styles.editorCanvasLayerHidden}`
+            }
+            /* Hidden from assistive technology too, not just from sight — a
+               `display: none` subtree is already out of the accessibility
+               tree, so this is belt-and-braces documentation of intent
+               rather than a behaviour change. */
+            aria-hidden={editorSurface === "drawing" ? undefined : "true"}
+          >
             {editorTab === "wall" && (
               <div className={styles.compassDock}>
                 <CompassWidget ref={compassNeedleRef} />
@@ -11225,13 +11262,31 @@ export default function LayoutEditor() {
             />
           )}
 
+          {/* U4 — THE SUMMARY PAGE. Takes the canvas column's flex slot while
+              it owns the surface; the left sidebar beside it is untouched, so
+              U0's Review Log / Read Me / Bug / `?` front doors stay reachable
+              from here.
+
+              ⚠ The tray is STILL BELOW, and that is the staging on purpose:
+              every section remains reachable the old way until U5.2 deletes
+              it, so no intermediate stage can make anything unreachable. */}
+          {editorSurface === "summary" && (
+            <div className={styles.editorPageLayer} data-editor-surface="summary">
+              <div ref={setSummaryHostEl} data-summary-page-host="" />
+            </div>
+          )}
+
           <div className={styles.editorRightSpacer} aria-hidden="true" />
         </div>
 
         <StickyNote
           id="detail-summary"
           label="Project Summary"
-          isOpen={openNoteIds.has("detail-summary")}
+          /* U4.1 — the Summary page's first real section. Open because the
+             page is open, OR because the tray opened it; the tray still
+             works, and will until U5.2 deletes it. */
+          isOpen={openNoteIds.has("detail-summary") || editorSurface === "summary"}
+          portalTo={editorSurface === "summary" ? summaryHostEl : null}
           isFullscreen={fullscreenNoteId === "detail-summary"}
           cascadeIndex={noteOpenOrder.indexOf("detail-summary")}
           onClose={() => handleToggleNote("detail-summary")}
