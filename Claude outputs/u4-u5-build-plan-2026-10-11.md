@@ -1,0 +1,102 @@
+# U4 + U5 — Summary and Print as full pages, then the tray dies
+
+**Written 2026-10-11, for Tommy's Tuesday 2026-10-13 meeting.** He asked to
+finish the UI queue — U4 and U5 — plus the shop-drawing updates, before it.
+
+**This supersedes nothing.** The authority is still
+`Claude outputs/ui-reorg-plan-2026-09-26.md` §13/§14 and its stage table.
+This file is the *build* plan: the decisions that document left open, in the
+order they have to be taken, with the gates.
+
+## Where the code actually is (verified 2026-10-11, not remembered)
+
+- **U0–U3 are shipped.** The bar has Design ▾ and View ▾ over one
+  `handleViewerStopChange`; Settings absorbed Site and the Panelizer; the
+  left-bar icon cluster exists; every dial was deleted on 2026-09-29.
+- **Summary and Print are `BAR_PLACEHOLDERS` in `TopBar.tsx`** — two
+  `disabled` buttons whose `title` says what is not built. **These two
+  entries are what U4 and U5 replace.**
+- **`editorSurface` does not exist yet** — zero matches in `app/`.
+- **The tray is `SectionCarousel` at `page.tsx:12831`**, over
+  `allNoteSections` (`page.tsx:7219`): `detail-summary` (Project Summary),
+  `project-totals`, `review-log`, then `...relevantDetailPages`. Its header
+  holds `Export PDF (n)`, `Choose sections ▾` and `Page size` — the three
+  controls U5 relocates. `.editorRightSpacer` is at `page.tsx:11228`.
+- **Every section is already a `StickyNote` rendered inline in `page.tsx`**,
+  opened via `openNoteIds` / `handleToggleNote`, with `isFullscreen` and a
+  per-note `🖶`.
+
+## The one structural decision, and why
+
+The sections are not a data list that a new page can re-render — they are ~27
+`StickyNote` elements spread over 1,700 lines of `page.tsx`, each closing over
+its own props. **So Summary-as-a-page must not re-implement them.**
+
+**Decision: the full page is a HOST, and the notes that belong to it render
+into that host.** Three candidates were considered:
+
+1. **Move the JSX.** Rejected — a 1,700-line relocation of the most
+   lint-saturated file in the repo, for a layout change.
+2. **Re-render from data.** Rejected — there is no such data; it would mean
+   writing 27 sections twice and letting them drift.
+3. **Host + portal.** Taken. The Summary page renders a scroll column; the
+   notes keep their place in the tree and `createPortal` into it when the
+   surface owns them. One mechanism, no duplication, and the notes' own
+   props, `isFullscreen` and `🖶` keep working untouched.
+
+⚠ **Read `StickyNote.tsx`'s positioning before writing the host.** If a note
+positions itself relative to the viewport rather than its parent, the host
+needs a containing block, and that is a CSS fact to check rather than assume.
+
+## The hazard U4 exists to prove against
+
+§13, verbatim: **the drawing must be HIDDEN, not unmounted.**
+`FootprintCanvas` holds `viewOffset`, `viewScale`, `showPanelLabels` and the
+measuring-tool state in its own component state; `Building3DView` holds its
+camera the same way. Unmounting silently resets a user's pan, zoom, label
+toggle and 3D camera — **a "nothing is lost" failure no unit test catches and
+that reads as a glitch, not a bug.** So: `display: none` on the drawing
+region, plus `aria-hidden`, and **a harness check that pans/zooms, leaves to
+Summary, returns, and asserts the pan and zoom survived.** That check is the
+deliverable of U4, not a follow-up.
+
+⚠ **And `frameloop="demand"` interacts with this.** A hidden `Building3DView`
+must not keep rendering. `captureLive` already keys off
+`openNoteIds.has("detail-summary")`; hiding the canvas while Summary is open
+is exactly the case where a frame would be requested for a canvas nobody can
+see. Check it, don't assume it.
+
+## Build order
+
+| Step | What | Gate |
+|---|---|---|
+| **U4.1** | `editorSurface` state + the bar: Summary stops being a placeholder, becomes the owner-rule control per §11 (`SUMMARY Project Summary`). Drawing hidden not unmounted. Edit tabs stay live and return you to the drawing. | Harness: pan + zoom + select a wall + switch story → Summary → back → all four survive. |
+| **U4.2** | The host column, and the Summary sections portal into it: `detail-summary`, `project-totals`, `detail-material-totals`, plus the rest per §9. `review-log` keeps its icon front door from U0 either way. | Harness: each section is present and readable on the page, and the tray still shows them too (the tray is the safety net until U5). |
+| **U5.1** | Print as a full page holding **exactly today's controls** — `Export PDF`, `Choose sections`, `Page size`, the per-sheet `🖶`, the card colour coding. **No customization editor; that is U6.** | Harness: `Export PDF (n)` still produces the same n, and the open-print-restore dance still restores what was open. |
+| **U5.2** | **Only now** delete `SectionCarousel` and `.editorRightSpacer`; canvas gains 170px. | Nothing is unreachable: every id in `allNoteSections` is reachable from Summary, Print or an icon. **Assert that as a check over the list, not by eye.** |
+
+**U5.2 is the point of no return** — the tray is the safety net in every
+stage before it, which is why it is last.
+
+## Open items this plan does NOT decide
+
+- **Summary/Print label order on the bar.** `TopBar.tsx` already records it:
+  his list said "Design, View, Print, Summary", his example said "Summary
+  Print". Costs nothing either way (71.8px and 55.4px). **Still his.**
+- **His right-bar idea, 2026-10-11:** *"perhaps simply by visiblizing the
+  right bar when one clicks summary?"* — that is a **third** design, and it
+  **conflicts with U5**, which deletes the right bar. Both cannot ship.
+  **This plan builds the specced U4/U5 (full pages) and leaves the tray alive
+  until U5.2**, so his idea remains buildable until the last step. It has to
+  be settled before U5.2 and not after.
+- **§13's keyhole collision (a)/(b).** Recommendation (a) stands: the bar
+  shows only in-scope tabs. Unchanged by this plan.
+
+## Not in scope, carried forward verbatim from the 2026-09-26 plan
+
+Anything in `supabase/`, `app/auth/**` session logic, `app/cloud/**`;
+`PROJECT_FILE_VERSION`; the Privacy Policy and Legal Disclaimer; any wording
+in `viewerRole.ts`; any catalog value; the canvas and drawing semantics; the
+member colours, panel legend or floor opacity bands; the report-bug backend;
+the numbered continuation sheets; and the printing customization editor
+beyond U5's relocation of today's controls.
