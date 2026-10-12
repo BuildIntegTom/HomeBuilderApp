@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3310/",
-  "ranAt": "2026-10-01T18:13:46.557Z",
+  "app": "http://localhost:3000",
+  "ranAt": "2026-10-12T00:26:15.994Z",
   "steps": [
     {
       "name": "stage0-new-project-tabs",
@@ -350,8 +350,8 @@
         ],
         [
           40,
-          24.125,
-          24.125,
+          32.125,
+          32,
           40,
           40,
           40,
@@ -364,8 +364,8 @@
         ],
         [
           40,
-          24.125,
-          24.125,
+          32.125,
+          32,
           40,
           40
         ]
@@ -373,8 +373,8 @@
       "narrowestPerWall": [
         24,
         32,
-        24.125,
-        24.125
+        32,
+        32
       ],
       "readAttemptsPerWall": [
         1,
@@ -490,6 +490,10 @@
         {
           "label": "40\"",
           "committedAt": 42
+        },
+        {
+          "label": "32.125\"",
+          "committedAt": 34.125
         }
       ],
       "drags": [
@@ -509,16 +513,16 @@
           "field": "42"
         },
         {
-          "label": "24\"",
-          "field": "24"
+          "label": "34.125\"",
+          "field": "34⅛"
         },
         {
-          "label": "24\"",
-          "field": "24"
+          "label": "30.875\"",
+          "field": "30⅞"
         },
         {
-          "label": "35.125\"",
-          "field": "35⅛"
+          "label": "34\"",
+          "field": "34"
         },
         {
           "label": "43.125\"",
@@ -530,35 +534,35 @@
       "boundariesOnTheWall": 2,
       "widthsBeforeRetile": [
         42,
-        24,
-        24,
-        35.125,
+        34.125,
+        30.875,
+        34,
         43.125
       ],
       "widthsAfterRetile": [
         42,
-        24,
-        24,
-        35.125,
+        34.125,
+        30.875,
+        34,
         43.125
       ],
       "widthsAfterUnstop": [
         42,
-        24,
-        24,
-        35.125,
+        34.125,
+        30.875,
+        34,
         43.125
       ],
       "survivedTheRetile": true,
       "survivedASecondRetile": true,
       "totals": [
-        168.25,
-        168.25,
-        168.25,
-        168.25
+        184.125,
+        184.125,
+        184.125,
+        184.125
       ],
       "totalNeverMoved": true,
-      "narrowestAfter": 24,
+      "narrowestAfter": 30.875,
       "widestAfter": 43.125,
       "asserted": true,
       "passed": true

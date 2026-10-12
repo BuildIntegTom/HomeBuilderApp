@@ -151,7 +151,7 @@ const panelWidths = async () =>
     // Only the labels INSIDE a panel's own clickable group — the elevation
     // draws other inch figures (a story height, for one) that would
     // otherwise be counted as panels.
-    const gs = [...document.querySelectorAll('svg g')].filter((g) => (g.getAttribute('style') || '').includes('pointer'));
+    const gs = [...document.querySelectorAll('svg g[data-panel-body]')];
     return gs
       .flatMap((g) => [...g.querySelectorAll('text')])
       .map((t) => t.textContent.trim())

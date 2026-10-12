@@ -7,6 +7,8 @@ import {
   computeRoofBearingSegments,
   computeWallVerticalBandsForSlotWithMaxHeight,
   effectiveZonesForSlot,
+  canMovePanel,
+  dropIndexForOffset,
   insertableBoundaryRange,
   isSlotBoxBeamCovered,
   resolvePanelBoundaryDrag,
@@ -153,6 +155,20 @@ const VERTICAL_GAP_COLOR = "#f0c08a";
 // is ergonomics, not a building value, and nothing sources it.
 const PANEL_DRAG_SNAP_TOLERANCE_IN = 2;
 const PANEL_DRAG_HANDLE_HALF_WIDTH_PX = 4;
+
+/* TILE-ONCE STAGE 3 — the two affordances, in Tommy's gold (2026-10-11):
+   *"When the cursor is over the body, highlight that body with an
+   translucent golder color to be able to drag the whole panel... When the
+   cursor is moved within a few pixels of the edge between two panels,
+   highlight the edge in gold"*.
+
+   ⚠ They are two different gestures on the same panel and the hit areas
+   already decide between them: the boundary strip is 8px wide and drawn
+   AFTER the bodies, so in SVG it wins the hit test near an edge and the
+   body wins everywhere else. Nothing needs to arbitrate; the z-order
+   already does. */
+const DRAG_GOLD = "#d4a017";
+const DRAG_GOLD_WASH = "rgba(212, 160, 23, 0.3)";
 
 export interface WallElevationDiagramProps {
   wall: Wall;
@@ -399,6 +415,15 @@ export interface WallElevationDiagramProps {
    * retile until mouseup" shape every other drag handler here already
    * uses. */
   onDragResizePanels: (story: "ground" | "second", wallId: string, leftSlotIndex: number, leftWidthIn: number, rightWidthIn: number) => void;
+  /** TILE-ONCE STAGE 3 — moves a panel to a new index, sliding everything
+   * between along by one (Tommy: *"drag a panel down the line, switching
+   * it's place with each panel it passes"*). Called as the dragged panel
+   * CROSSES each neighbour, not every frame: a swap can only happen once
+   * per panel passed, so it is throttled by panel width rather than by a
+   * timer. Same "patch parent state directly, no retile" shape as
+   * `onDragResizePanels` above — and here the patch is a permutation, so
+   * the wall's length is conserved with no arithmetic to get wrong. */
+  onMovePanel: (story: "ground" | "second", wallId: string, fromIndex: number, toIndex: number) => void;
   /** Same portal mechanism FootprintCanvas's own Pan/Zoom/Reset row uses
    * (Tommy: "include the pan/zoom in/out/reset pieces found in the plan
    * view editor in the foundation and elevation editors") — when supplied,
@@ -521,6 +546,7 @@ export default function WallElevationDiagram({
   onChangeMidWallBeamBigHeaderHeightIn,
   onChangeMidWallBeamCoverage,
   onDragResizePanels,
+  onMovePanel,
   toolbarPortalTarget,
 }: WallElevationDiagramProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -824,6 +850,18 @@ export default function WallElevationDiagram({
     };
   }, [panDragging]);
   const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
+  /* STAGE 3 hover + move. Hover is held per story+index rather than as a
+     boolean on each rect so only ONE thing is ever gold: moving from a
+     body onto the boundary strip beside it must not leave both lit. */
+  const [hoveredBody, setHoveredBody] = useState<{ story: "ground" | "second"; slotIndex: number } | null>(null);
+  const [hoveredBoundary, setHoveredBoundary] = useState<{ story: "ground" | "second"; leftSlotIndex: number } | null>(null);
+  const [draggingPanelMove, setDraggingPanelMove] = useState<{ story: "ground" | "second"; fromIndex: number } | null>(null);
+  /** ⚠ A drag ends with a mouseup over the panel, which the browser then
+   * also reports as a CLICK — and a click on a panel body cycles its type.
+   * Without this, every completed move would also turn the panel into a
+   * window. Set only when the panel actually changed index, so a click
+   * that merely twitched still cycles. */
+  const suppressNextBodyClickRef = useRef(false);
   const [draggingBoxBeamHandle, setDraggingBoxBeamHandle] = useState<"start" | "end" | null>(null);
   const [isDraggingMaxHeight, setIsDraggingMaxHeight] = useState(false);
   type MidWallBeamDragHandle = "height" | "big-header-beam-top" | "coverage-start" | "coverage-end";
@@ -1395,6 +1433,59 @@ export default function WallElevationDiagram({
     };
   }, [draggingPanelBoundary, slots, secondStorySlots, groundOffsetsIn, secondStoryOffsetsIn, svgWidthPx, wallWidthIn, wall.id, onDragResizePanels]);
 
+  /* TILE-ONCE STAGE 3 — the move drag.
+
+     Deliberately the same shape as the boundary drag above: listen on the
+     window so the gesture survives the cursor leaving the SVG, convert the
+     cursor to inches along the wall, and patch the parent directly.
+
+     ⚠ It calls the parent ONLY WHEN THE DESTINATION INDEX CHANGES, which is
+     what makes this affordable. An earlier worry was that a 60fps drag
+     would need sixty state updates a second against a measured ~959ms cost
+     per numbers-only change at 232 panels. It does not: a panel can only
+     pass one neighbour at a time, so the update rate is bounded by panel
+     width, not by frame rate — perhaps a dozen across a long drag. */
+  useEffect(() => {
+    if (!draggingPanelMove) return;
+    const { story, fromIndex } = draggingPanelMove;
+    const rowSlots = story === "ground" ? slots : (secondStorySlots ?? []);
+    const offsetsIn = story === "ground" ? groundOffsetsIn : secondStoryOffsetsIn;
+    const runStartIn = offsetsIn[0] ?? 0;
+    let lastIndex = fromIndex;
+    const handleMove = (e: MouseEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const cursorIn = wallPosInFromScreenX({
+        clientX: e.clientX,
+        svgLeftPx: rect.left,
+        svgRenderedWidthPx: rect.width,
+        svgWidthPx,
+        wallWidthIn,
+      });
+      // Measured from the RUN's start, not the wall's: a wall whose corner
+      // is built by its neighbour starts its slots partway along.
+      const to = dropIndexForOffset(rowSlots, lastIndex, cursorIn - runStartIn);
+      if (to === null || to === lastIndex) return;
+      onMovePanel(story, wall.id, lastIndex, to);
+      // The panel now LIVES at `to`, so the next comparison is against its
+      // new home. Tracked locally rather than read back from props because
+      // the parent's re-render has not landed yet when the next mousemove
+      // arrives, and reading a stale index would make the panel jitter.
+      lastIndex = to;
+      suppressNextBodyClickRef.current = true;
+      setDraggingPanelMove({ story, fromIndex: to });
+    };
+    const handleUp = () => setDraggingPanelMove(null);
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [draggingPanelMove, slots, secondStorySlots, groundOffsetsIn, secondStoryOffsetsIn, svgWidthPx, wallWidthIn, wall.id, onMovePanel]);
+
   // A wall's own `slots` don't always cover its full geometric length —
   // for a plain rectangle, corner panels are only stored on one pair of
   // opposite walls (drawn once per building corner, attributed to whichever
@@ -1457,6 +1548,10 @@ export default function WallElevationDiagram({
     // where to put it". The tool acts on the whole slot/column: a width
     // reservation is shared by every zone stacked in it.
     const bodyClick = (slotIndex: number, zoneIndexForClick: number) => () => {
+      if (suppressNextBodyClickRef.current) {
+        suppressNextBodyClickRef.current = false;
+        return;
+      }
       if (panelToolMode === "place") onReplacePanel(story, wall.id, slotIndex);
       else if (panelToolMode === "delete") onDeletePanel(story, wall.id, slotIndex);
       else onToggleOpening(story, wall.id, slotIndex, zoneIndexForClick);
@@ -1546,8 +1641,20 @@ export default function WallElevationDiagram({
           elements.push(
             <g
               key={`${story}-${bandIndex}-${i}`}
+              data-panel-body={i}
+              data-panel-story={story}
               onClick={bodyClick(i, zoneIndexForClick)}
-              style={{ cursor: "pointer" }}
+              onMouseEnter={() => setHoveredBody({ story, slotIndex: i })}
+              onMouseLeave={() => setHoveredBody((h) => (h?.story === story && h.slotIndex === i ? null : h))}
+              onMouseDown={(e) => {
+                // Only an unarmed cursor drags; with a tool armed a press
+                // means place/delete, per this file's existing rule.
+                if (panelToolMode !== null || e.button !== 0) return;
+                if (!canMovePanel(rowSlots, i)) return;
+                e.stopPropagation();
+                setDraggingPanelMove({ story, fromIndex: i });
+              }}
+              style={{ cursor: panelToolMode === null && canMovePanel(rowSlots, i) ? "grab" : "pointer" }}
             >
               <rect
                 x={xPx(x0)}
@@ -1590,8 +1697,20 @@ export default function WallElevationDiagram({
           elements.push(
             <g
               key={`${story}-${bandIndex}-${i}`}
+              data-panel-body={i}
+              data-panel-story={story}
               onClick={bodyClick(i, zoneIndexForClick)}
-              style={{ cursor: "pointer" }}
+              onMouseEnter={() => setHoveredBody({ story, slotIndex: i })}
+              onMouseLeave={() => setHoveredBody((h) => (h?.story === story && h.slotIndex === i ? null : h))}
+              onMouseDown={(e) => {
+                // Only an unarmed cursor drags; with a tool armed a press
+                // means place/delete, per this file's existing rule.
+                if (panelToolMode !== null || e.button !== 0) return;
+                if (!canMovePanel(rowSlots, i)) return;
+                e.stopPropagation();
+                setDraggingPanelMove({ story, fromIndex: i });
+              }}
+              style={{ cursor: panelToolMode === null && canMovePanel(rowSlots, i) ? "grab" : "pointer" }}
             >
               <rect
                 x={xPx(x0)}
@@ -1697,6 +1816,35 @@ export default function WallElevationDiagram({
     // (Stage 3's unbuilt-span line is going to sit below), and a row element
     // that vanishes only when a tool happens to be armed is the worst kind
     // of bug to find.
+    /* The translucent gold body wash. Drawn here rather than inside each
+       band because a slot's width is shared by every band stacked in it, so
+       ONE rect over the whole column is what the user is actually about to
+       pick up — including a window's header, sill and jack studs together,
+       which is the "panel set" Tommy described. `pointerEvents: none` so it
+       is purely a sign and never competes for the hit test. */
+    const litSlotIndex =
+      draggingPanelMove?.story === story
+        ? draggingPanelMove.fromIndex
+        : hoveredBody?.story === story && panelToolMode === null
+          ? hoveredBody.slotIndex
+          : null;
+    if (litSlotIndex !== null && rects[litSlotIndex] && canMovePanel(rowSlots, litSlotIndex)) {
+      const lit = rects[litSlotIndex]!;
+      elements.push(
+        <rect
+          key={`move-lit-${story}-${litSlotIndex}`}
+          x={xPx(lit.x0)}
+          y={yPx(rowFloorHeightIn + rowMaxHeightIn)}
+          width={(lit.x1 - lit.x0) * scaleX}
+          height={rowMaxHeightIn * PX_PER_IN}
+          fill={DRAG_GOLD_WASH}
+          stroke={DRAG_GOLD}
+          strokeWidth={2}
+          pointerEvents="none"
+        />,
+      );
+    }
+
     const isDraggablePanel = (s: PanelSlot) => s.type === "standard" || s.type === "braced";
     if (panelToolMode === null) {
       for (let i = 0; i < rects.length - 1; i++) {
@@ -1710,8 +1858,14 @@ export default function WallElevationDiagram({
             y={yPx(rowFloorHeightIn + rowMaxHeightIn)}
             width={PANEL_DRAG_HANDLE_HALF_WIDTH_PX * 2}
             height={rowMaxHeightIn * PX_PER_IN}
-            fill="transparent"
+            fill={hoveredBoundary?.story === story && hoveredBoundary.leftSlotIndex === i ? DRAG_GOLD : "transparent"}
+            fillOpacity={0.9}
             style={{ cursor: "ew-resize", pointerEvents: "all" }}
+            onMouseEnter={() => {
+              setHoveredBoundary({ story, leftSlotIndex: i });
+              setHoveredBody(null);
+            }}
+            onMouseLeave={() => setHoveredBoundary((h) => (h?.story === story && h.leftSlotIndex === i ? null : h))}
             onMouseDown={(e) => {
               e.stopPropagation();
               setDraggingPanelBoundary({ story, leftSlotIndex: i });

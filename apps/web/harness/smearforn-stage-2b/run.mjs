@@ -245,7 +245,7 @@ const clickByText = async (selector, label, what) => {
 /** Every panel width label on the elevation, in inches, left to right. */
 const panelWidths = async () =>
   await evaluate(`(() => {
-    const gs = [...document.querySelectorAll('svg g')].filter((g) => (g.getAttribute('style') || '').includes('pointer'));
+    const gs = [...document.querySelectorAll('svg g[data-panel-body]')];
     return gs
       .flatMap((g) => [...g.querySelectorAll('text')])
       .map((t) => t.textContent.trim())

@@ -62,6 +62,7 @@ import {
   retilePreservingOpeningsWithRunStopMemory as retilePreservingOpeningsPure,
   runStopOpeningFit,
   runStopRestoreFidelity,
+  movePanelWithinWall,
   retileWithOpenings,
   wallCompassDirection,
   wallGeometryFor as wallGeometryForPure,
@@ -3021,6 +3022,30 @@ export default function LayoutEditor() {
   // their new widthIn AND lockedWidthIn set together, so the width sticks
   // through a later unrelated retile (see reconcileBracedPlacement, which
   // is what re-applies a locked width after any such retile).
+  /**
+   * TILE-ONCE STAGE 3 — move a panel along its wall.
+   *
+   * ⚠ **No re-tile, and that is the entire point.** `movePanelWithinWall`
+   * returns a PERMUTATION of the slot array, so the multiset of widths and
+   * therefore the wall's exact length are conserved by the nature of the
+   * operation. Nothing to settle onto the eighth grid, nothing to
+   * reconcile, nothing for the invariant to catch — because there is no
+   * arithmetic in it. This is what tile-once is FOR.
+   *
+   * Null means the move was refused or was a no-op (picking up a corner,
+   * or dropping a panel where it already is), and the state is left alone
+   * rather than replaced with an equal copy — an equal copy would re-render
+   * the wall and, at 232 panels, that is not free.
+   */
+  const handleMovePanel = (story: "ground" | "second", wallId: string, fromIndex: number, toIndex: number) => {
+    setWallSlotsForStory(story, (prev) => {
+      const slots = prev[wallId];
+      if (!slots) return prev;
+      const next = movePanelWithinWall(slots, fromIndex, toIndex);
+      return next ? { ...prev, [wallId]: next } : prev;
+    });
+  };
+
   const handleDragResizePanels = (story: "ground" | "second", wallId: string, leftSlotIndex: number, leftWidthIn: number, rightWidthIn: number) => {
     setWallSlotsForStory(story, (prev) => {
       const slots = prev[wallId];
@@ -11043,6 +11068,7 @@ export default function LayoutEditor() {
                     handleChangeMidWallBeamCoverage(story, elevationWall.id, beamId, coverage)
                   }
                   onDragResizePanels={handleDragResizePanels}
+                  onMovePanel={handleMovePanel}
                   toolbarPortalTarget={elevationToolbarPortalNode}
                 />
               ) : viewMode === "plan" ? (

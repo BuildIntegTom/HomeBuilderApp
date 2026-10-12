@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3310/",
-  "ranAt": "2026-10-01T18:19:59.587Z",
+  "app": "http://localhost:3000",
+  "ranAt": "2026-10-12T00:43:50.350Z",
   "steps": [
     {
       "name": "baseline-3d-found-real-walls-and-slots",
@@ -45,7 +45,7 @@
     {
       "name": "the-app-under-test-actually-has-stage-2b-in-it",
       "addButtonPresent": true,
-      "url": "http://localhost:3310/",
+      "url": "http://localhost:3000",
       "asserted": true,
       "passed": true
     },
@@ -103,7 +103,7 @@
     {
       "name": "deleting-a-panel-left-of-the-header-moves-its-range-not-its-span",
       "wholeWallOnScreen": true,
-      "zoomOutClicks": 5,
+      "zoomOutClicks": 4,
       "clickableBodies": 17,
       "panelsOnTheWall": 17,
       "slotsInBaselineObj": 17,
@@ -157,8 +157,8 @@
       "name": "both-halves-of-the-cross-reference-are-on-paper",
       "headerSheetStatesItsWall": true,
       "panelSheetNamesTheHeader": true,
-      "headerSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼SummaryPrintRole: Fabricator ▼⤢OrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Spanning Header 81.5in (1)🖶⤢×Fabricator/detailer document — one sheet per unique spanning header (exact copies grouped together). Its name comes from a single building-w",
-      "panelSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼SummaryPrintRole: Fabricator ▼⤢OrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Standard 40.75in (2)🖶⤢×Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with a to-scale lettered elevation, a materials cut lis",
+      "headerSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼SummaryPrintRole: Fabricator ▼⤢↶ Undo↷ RedoOrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Spanning Header 81.5in (1)🖶⤢×Fabricator/detailer document — one sheet per unique spanning header (exact copies grouped together). Its name comes from a singl",
+      "panelSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼SummaryPrintRole: Fabricator ▼⤢↶ Undo↷ RedoOrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Standard 40.75in (2)🖶⤢×Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with a to-scale lettered elevation, a mater",
       "asserted": true,
       "passed": true
     },
