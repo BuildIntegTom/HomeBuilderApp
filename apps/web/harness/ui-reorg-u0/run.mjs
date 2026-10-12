@@ -1393,7 +1393,7 @@ while ((await stopLabel()) !== null && !(await stopLabel()).startsWith("Elevatio
  * not. The assertion below still fails if the sample reaches zero.
  */
 const candidates = await evaluate(`(() => {
-  const gs = [...document.querySelectorAll('svg g')].filter((g) => (g.getAttribute('style') || '').includes('pointer'));
+  const gs = [...document.querySelectorAll('svg g[data-panel-body]')];
   return gs
     .map((g) => { const r = g.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; })
     .filter((b) => b.w > 8 && b.x > 260 && b.x < window.innerWidth - 40 && b.y > 80 && b.y < window.innerHeight - 60);

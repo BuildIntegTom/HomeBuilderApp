@@ -528,8 +528,7 @@ const setTool = async (label, wantArmed) => {
  */
 const panelBodies = async () =>
   await evaluate(`(() => {
-    return [...document.querySelectorAll('svg g')]
-      .filter((g) => (g.getAttribute('style') || '').includes('pointer'))
+    return [...document.querySelectorAll('svg g[data-panel-body]')]
       .filter((g) => [...g.querySelectorAll('text')].some((t) => /^[0-9]+(\\.[0-9]+)?"$/.test(t.textContent.trim())))
       .map((g) => {
         const r = g.getBoundingClientRect();

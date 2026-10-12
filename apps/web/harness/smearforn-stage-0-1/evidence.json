@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T00:26:15.994Z",
+  "ranAt": "2026-10-12T01:00:56.842Z",
   "steps": [
     {
       "name": "stage0-new-project-tabs",
@@ -147,8 +147,8 @@
         "40\"",
         "40\"",
         "40\"",
-        "32.125\"",
-        "32\"",
+        "24.125\"",
+        "24.125\"",
         "40\""
       ],
       "after": [
@@ -162,13 +162,13 @@
         "40\"",
         "40\"",
         "40\"",
-        "32.125\"",
-        "32\"",
+        "24.125\"",
+        "24.125\"",
         "40\""
       ],
       "everyWidthIsAWholeEighth": true,
-      "runTotalBefore": 504.125,
-      "runTotalAfter": 504.125,
+      "runTotalBefore": 488.25,
+      "runTotalAfter": 488.25,
       "runTotalConserved": true,
       "somethingActuallyMoved": true,
       "asserted": true,
@@ -222,8 +222,8 @@
         "40\"",
         "40\"",
         "40\"",
-        "32.125\"",
-        "32\"",
+        "24.125\"",
+        "24.125\"",
         "40\""
       ],
       "hitsTheCatalogMinimum": true,
@@ -337,8 +337,8 @@
           40,
           40,
           40,
-          32.125,
-          32,
+          24.125,
+          24.125,
           40
         ],
         [
@@ -350,8 +350,8 @@
         ],
         [
           40,
-          32.125,
-          32,
+          24.125,
+          24.125,
           40,
           40,
           40,
@@ -373,7 +373,7 @@
       "narrowestPerWall": [
         24,
         32,
-        32,
+        24.125,
         32
       ],
       "readAttemptsPerWall": [
@@ -490,10 +490,6 @@
         {
           "label": "40\"",
           "committedAt": 42
-        },
-        {
-          "label": "32.125\"",
-          "committedAt": 34.125
         }
       ],
       "drags": [
@@ -504,6 +500,10 @@
         {
           "handle": 1,
           "dxPx": -14
+        },
+        {
+          "handle": 2,
+          "dxPx": 14
         }
       ],
       "pinnedPanels": 5,
@@ -513,45 +513,45 @@
           "field": "42"
         },
         {
-          "label": "34.125\"",
-          "field": "34⅛"
+          "label": "33.125\"",
+          "field": "33⅛"
         },
         {
-          "label": "30.875\"",
-          "field": "30⅞"
+          "label": "24\"",
+          "field": "24"
         },
         {
-          "label": "34\"",
-          "field": "34"
+          "label": "47.875\"",
+          "field": "47⅞"
         },
         {
-          "label": "43.125\"",
-          "field": "43⅛"
+          "label": "37.125\"",
+          "field": "37⅛"
         }
       ],
       "automaticPanelsLeft": 0,
-      "boundariesReachable": 2,
-      "boundariesOnTheWall": 2,
+      "boundariesReachable": 3,
+      "boundariesOnTheWall": 3,
       "widthsBeforeRetile": [
         42,
-        34.125,
-        30.875,
-        34,
-        43.125
+        33.125,
+        24,
+        47.875,
+        37.125
       ],
       "widthsAfterRetile": [
         42,
-        34.125,
-        30.875,
-        34,
-        43.125
+        33.125,
+        24,
+        47.875,
+        37.125
       ],
       "widthsAfterUnstop": [
         42,
-        34.125,
-        30.875,
-        34,
-        43.125
+        33.125,
+        24,
+        47.875,
+        37.125
       ],
       "survivedTheRetile": true,
       "survivedASecondRetile": true,
@@ -562,8 +562,8 @@
         184.125
       ],
       "totalNeverMoved": true,
-      "narrowestAfter": 30.875,
-      "widestAfter": 43.125,
+      "narrowestAfter": 24,
+      "widestAfter": 47.875,
       "asserted": true,
       "passed": true
     }

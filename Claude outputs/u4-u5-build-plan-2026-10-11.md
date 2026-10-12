@@ -100,3 +100,44 @@ in `viewerRole.ts`; any catalog value; the canvas and drawing semantics; the
 member colours, panel legend or floor opacity bands; the report-bug backend;
 the numbered continuation sheets; and the printing customization editor
 beyond U5's relocation of today's controls.
+
+---
+
+## U4.1 design decisions (taken 2026-10-11, after reading the code)
+
+**The editor's real structure**, `page.tsx:10467` and `page.module.css:117`:
+`.editorSection` (absolute, inset 0, flex row) holds three flex children —
+`.editorSidebar` (240px), `.editorCanvasLayer` (flex 1), and
+`.editorRightSpacer` (170px, reserving the tray's width).
+
+1. **The page replaces the CANVAS COLUMN, not the whole editor.** The left
+   sidebar stays. Reason: U0 put the Review Log, Read Me, Bug and `?` icons
+   in that sidebar precisely so safety-relevant output has *a permanent front
+   door*; covering them whenever Summary opens would undo that. §13 says
+   "fill the editor", which is ambiguous between the two — **this is the
+   conservative reading, recorded as a reading and not as his decision.**
+2. **Hiding is `display: none` on `.editorCanvasLayer`.** The alternatives
+   were worse: `visibility: hidden` leaves it taking `flex: 1` and squeezes
+   the page, and taking it out of flow with `position: absolute; inset: 0`
+   changes its measured width by 410px, which is a resize the canvas would
+   see. `display: none` changes no measured box, and pan, zoom, the label
+   toggle and the 3D camera are all plain JS state that `display: none`
+   cannot touch. **The residual risk is a ResizeObserver writing a 0 into
+   state on the way down — which is exactly what the U4.1 harness check
+   exists to catch, so it is a measured risk rather than an assumed one.**
+3. **A new `.notePage` variant, NOT a widening of `docked`.** `docked` is
+   `position: static; width: 100%` — already most of what a page needs — but
+   it also carries `max-height: 45vh`, deliberately scoped to its single
+   consumer (the Elevation view's Selected Panel note). A page must not
+   inherit a 45vh cap, and widening `docked` would leak that cap or force its
+   one consumer to change. Its own CSS comment anticipates this.
+4. **The notes reach the page by CONTEXT, not by 27 new props.** A
+   `StickyNote` reads a context mapping note id → host element; where the
+   context names a host, the note portals into it and renders `.notePage`.
+   One provider around the notes region, zero per-note edits. The rejected
+   alternative was threading a `portalTo` prop through all ~27 call sites,
+   which is 27 chances to miss one and no compiler to tell you.
+5. **U4.1 ships a Summary page with REAL content** — the `detail-summary`
+   "Project Summary" section — rather than an empty shell with the sections
+   arriving in U4.2. A bar button that opens a blank page is a worse thing to
+   ship than no bar button, and the staging gains nothing by it.

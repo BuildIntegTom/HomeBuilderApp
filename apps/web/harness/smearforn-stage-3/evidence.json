@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T00:33:36.781Z",
+  "ranAt": "2026-10-12T00:50:21.715Z",
   "stopIn": 60,
   "steps": [
     {
@@ -45,21 +45,21 @@
     },
     {
       "name": "elevation-before-stop",
-      "panelCount": 2,
-      "totalEighths": 408,
+      "panelCount": 17,
+      "totalEighths": 4640,
       "stopFieldValue": "0",
       "asserted": true,
-      "passed": false
+      "passed": true
     },
     {
       "name": "stop-shortens-the-run-and-conserves-the-wall",
-      "panelCountBefore": 2,
-      "panelCountAfter": 1,
-      "totalEighthsBefore": 408,
-      "totalEighthsAfter": 204,
+      "panelCountBefore": 17,
+      "panelCountAfter": 15,
+      "totalEighthsBefore": 4640,
+      "totalEighthsAfter": 4160,
       "stopEighths": 480,
       "asserted": true,
-      "passed": false
+      "passed": true
     },
     {
       "name": "unbuilt-span-draws-as-a-dashed-NO-PANELS-boundary",
@@ -74,11 +74,11 @@
     {
       "name": "drag-still-lands-and-conserves-the-run",
       "strips": 9,
-      "totalEighthsBeforeDrag": 204,
-      "totalEighthsAfterDrag": 204,
-      "changed": false,
+      "totalEighthsBeforeDrag": 4160,
+      "totalEighthsAfterDrag": 4160,
+      "changed": true,
       "asserted": true,
-      "passed": false
+      "passed": true
     },
     {
       "name": "plan-sheet-carries-a-NO-PANELS-dimension",
@@ -113,14 +113,14 @@
     },
     {
       "name": "clearing-the-stop-restores-elevation-plan-and-3d",
-      "totalEighthsCleared": 408,
+      "totalEighthsCleared": 4640,
       "noPanelsLabelsCleared": 0,
       "planSheetLabelsWithStop": [
         "NO PANELS: 5'-0\""
       ],
       "planSheetLabelsCleared": [],
-      "boundaryGreyWithStop": 1160,
-      "boundaryGreyWithoutStop": 1434,
+      "boundaryGreyWithStop": 1170,
+      "boundaryGreyWithoutStop": 1433,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
@@ -128,26 +128,31 @@
     },
     {
       "name": "too-short-remaining-run-is-refused-and-nothing-changes",
-      "askedForIn": 41,
-      "invalid": false,
-      "message": null,
-      "totalEighthsBefore": 408,
-      "totalEighthsAfter": 204,
+      "askedForIn": 570,
+      "invalid": true,
+      "message": "That leaves only 10\" of this wall built, under the 24\" minimum panel the shop can build. Stop less of the wall, or stop all 48'-4\" of it. (Esc to revert)",
+      "totalEighthsBefore": 4640,
+      "totalEighthsAfter": 4640,
       "asserted": true,
-      "passed": false
+      "passed": true
     },
     {
       "name": "corner-reaching-stop-is-accepted-not-refused",
       "wallId": "AB",
       "refusalMessage": null,
       "invalid": false,
-      "runBeforeIn": 25.5,
-      "runAfterIn": 25.5,
-      "neighboursThatGrew": [],
-      "chosenAsLongestWallExtentIn": 539,
-      "stoppedWallOwnedACornerItDestroyed": false,
+      "runBeforeIn": 580,
+      "runAfterIn": 550,
+      "neighboursThatGrew": [
+        {
+          "id": "DA",
+          "byIn": 15.5
+        }
+      ],
+      "chosenAsLongestWallExtentIn": 580,
+      "stoppedWallOwnedACornerItDestroyed": true,
       "asserted": true,
-      "passed": false
+      "passed": true
     },
     {
       "name": "gable-row-tracks-the-built-run-both-ways",
@@ -171,10 +176,10 @@
     },
     {
       "name": "openings-in-the-unbuilt-span-are-dropped-remembered-and-restored",
-      "baseEighths": 408,
-      "basePanelCount": 2,
+      "baseEighths": 4640,
+      "basePanelCount": 17,
       "openingSlotsBeforePlacement": 1,
-      "panelCountBeforePlacement": 2,
+      "panelCountBeforePlacement": 17,
       "clickTargetsOnScreen": 1,
       "noticeBeforePlacement": null,
       "placedOpeningNotice": "Corner and safety-gap panels are placed by rule, not by hand — the app positions them and would overwrite a hand-placed one. Nothing was changed.",
@@ -182,45 +187,45 @@
       "openingSlotsBefore": 1,
       "sweep": [
         {
-          "stopIn": 7.625,
+          "stopIn": 87,
           "invalid": false,
           "message": null,
-          "totalEighths": 204,
+          "totalEighths": 3944,
           "withheldOpenings": 0
         },
         {
-          "stopIn": 15.25,
+          "stopIn": 174,
           "invalid": false,
           "message": null,
-          "totalEighths": 204,
+          "totalEighths": 3248,
           "withheldOpenings": 0
         },
         {
-          "stopIn": 23,
+          "stopIn": 261,
           "invalid": false,
           "message": null,
-          "totalEighths": 204,
+          "totalEighths": 2552,
           "withheldOpenings": 0
         },
         {
-          "stopIn": 30.625,
+          "stopIn": 348,
           "invalid": false,
           "message": null,
-          "totalEighths": 204,
-          "withheldOpenings": 0
+          "totalEighths": 1856,
+          "withheldOpenings": 1
         },
         {
-          "stopIn": 38.25,
+          "stopIn": 435,
           "invalid": false,
           "message": null,
-          "totalEighths": 204,
-          "withheldOpenings": 0
+          "totalEighths": 1160,
+          "withheldOpenings": 1
         }
       ],
-      "deepestAcceptedStopIn": 38.25,
-      "openingSlotsStopped": 1,
-      "restoredEighths": 408,
-      "restoredPanelCount": 2,
+      "deepestAcceptedStopIn": 435,
+      "openingSlotsStopped": 0,
+      "restoredEighths": 4640,
+      "restoredPanelCount": 17,
       "restoredWithheld": 0,
       "openingSlotsRestored": 1,
       "asserted": true,
@@ -228,19 +233,19 @@
     },
     {
       "name": "a-new-footprint-does-not-inherit-the-old-buildings-remembered-openings",
-      "withheldWhenRedrawn": 0,
-      "baseEighthsBeforeRedraw": 408,
-      "redrawnEighths": 408,
-      "redrawnPanelCount": 2,
+      "withheldWhenRedrawn": 1,
+      "baseEighthsBeforeRedraw": 4640,
+      "redrawnEighths": 4320,
+      "redrawnPanelCount": 16,
       "openingSlotsAfterRedraw": 1,
       "nudgeTaken": {
         "wall": "Elevation: AB",
-        "stopIn": 4.125
+        "stopIn": 43.25
       },
       "nudgeAttempts": [
         {
           "wall": "Elevation: AB",
-          "stopIn": 4.125,
+          "stopIn": 43.25,
           "invalid": false,
           "message": null
         }
@@ -249,7 +254,7 @@
       "openingSlotsAfterRetile": 1,
       "withheldAfterRetile": 0,
       "asserted": true,
-      "passed": false
+      "passed": true
     },
     {
       "name": "no-uncaught-exceptions",
@@ -261,12 +266,6 @@
   ],
   "pageExceptions": [],
   "failures": [
-    "elevation-before-stop",
-    "stop-shortens-the-run-and-conserves-the-wall",
-    "drag-still-lands-and-conserves-the-run",
-    "too-short-remaining-run-is-refused-and-nothing-changes",
-    "corner-reaching-stop-is-accepted-not-refused",
-    "openings-in-the-unbuilt-span-are-dropped-remembered-and-restored",
-    "a-new-footprint-does-not-inherit-the-old-buildings-remembered-openings"
+    "openings-in-the-unbuilt-span-are-dropped-remembered-and-restored"
   ]
 }

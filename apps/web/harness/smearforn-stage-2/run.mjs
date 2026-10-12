@@ -228,8 +228,7 @@ const panelBodies = async () =>
     // Every clickable panel group in the document, NOT "the first svg that
     // has a text in it" — the compass widget is an svg with text in it and
     // it comes first, which cost this harness a run.
-    return [...document.querySelectorAll('svg g')]
-      .filter((g) => (g.getAttribute('style') || '').includes('pointer'))
+    return [...document.querySelectorAll('svg g[data-panel-body]')]
       .filter((g) => [...g.querySelectorAll('text')].some((t) => /^[0-9]+(\\.[0-9]+)?"$/.test(t.textContent.trim())))
       .map((g) => {
         // ⚠ The click point is the PANEL RECT's centre, not the group's box.

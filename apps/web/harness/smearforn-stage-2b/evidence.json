@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T00:43:50.350Z",
+  "ranAt": "2026-10-12T01:06:20.731Z",
   "steps": [
     {
       "name": "baseline-3d-found-real-walls-and-slots",
@@ -25,9 +25,9 @@
         40,
         40,
         40,
-        40,
+        32.125,
         24.125,
-        24.125,
+        32,
         0.75,
         40,
         25.5
@@ -103,7 +103,7 @@
     {
       "name": "deleting-a-panel-left-of-the-header-moves-its-range-not-its-span",
       "wholeWallOnScreen": true,
-      "zoomOutClicks": 4,
+      "zoomOutClicks": 5,
       "clickableBodies": 17,
       "panelsOnTheWall": 17,
       "slotsInBaselineObj": 17,
@@ -112,13 +112,13 @@
       "deleteTargetLabel": "40\"",
       "deleteTargetWidthLabelFromWidths": "40\"",
       "noticeBeforeDelete": null,
-      "deleteNotice": "Deleted a panel on wall AB: 17 panels → 16, 12 still automatic. Spanning header H1 still spans its panels, but those panels are now a different width: it is cut 81½\" instead of 80\".",
+      "deleteNotice": "Deleted a panel on wall AB: 17 panels → 16, 12 still automatic. Spanning header H1 still spans its panels, but those panels are now a different width: it is cut 84⅛\" instead of 80\".",
       "startBefore": 2,
       "startAfter": 1,
       "endBefore": 4,
       "endAfter": 3,
       "spanBeforeIn": 80,
-      "spanAfterIn": 81.5,
+      "spanAfterIn": 84.125,
       "asserted": true,
       "passed": true
     },
@@ -135,10 +135,10 @@
       "name": "3d-draws-the-header-over-exactly-the-panels-it-spans",
       "headerGroups": 18,
       "headerExtent": {
-        "lengthIn": 81.5,
+        "lengthIn": 84.125,
         "vertices": 144
       },
-      "coveredRunLengthIn": 81.5,
+      "coveredRunLengthIn": 84.125,
       "alignmentIn": 0,
       "asserted": true,
       "passed": true
@@ -157,8 +157,8 @@
       "name": "both-halves-of-the-cross-reference-are-on-paper",
       "headerSheetStatesItsWall": true,
       "panelSheetNamesTheHeader": true,
-      "headerSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼SummaryPrintRole: Fabricator ▼⤢↶ Undo↷ RedoOrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Spanning Header 81.5in (1)🖶⤢×Fabricator/detailer document — one sheet per unique spanning header (exact copies grouped together). Its name comes from a singl",
-      "panelSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼SummaryPrintRole: Fabricator ▼⤢↶ Undo↷ RedoOrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Standard 40.75in (2)🖶⤢×Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with a to-scale lettered elevation, a mater",
+      "headerSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼SummaryPrintRole: Fabricator ▼⤢↶ Undo↷ RedoOrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Spanning Header 84.1in (1)🖶⤢×Fabricator/detailer document — one sheet per unique spanning header (exact copies grouped together). Its name comes from a singl",
+      "panelSheetSample": "Acting asNot signed inSign in ▼Project ▼Design ▼View ▼SummaryPrintRole: Fabricator ▼⤢↶ Undo↷ RedoOrbitEditSill & Header?reviewNESWExport as OBJPanel Fabrication: Standard 42.125in (1)🖶⤢×Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with a to-scale lettered elevation, a mate",
       "asserted": true,
       "passed": true
     },
