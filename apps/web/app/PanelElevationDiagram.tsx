@@ -1,6 +1,7 @@
-import { computePanelCutList } from "@building-integrity/panel-catalog";
+import { computePanelCutList, memberBoxSizeIn } from "@building-integrity/panel-catalog";
 import type { PanelMember } from "@building-integrity/panel-catalog";
 import { MATERIAL_FILL, MATERIAL_STROKE, projectMemberShapes, type ProjectedShape } from "./MemberElevationShapes";
+import { projectPanelAxonometric, shadeHex } from "./panelAxonometric";
 import styles from "./DiagramLegend.module.css";
 
 export interface PanelElevationDiagramProps {
@@ -15,6 +16,22 @@ export interface PanelElevationDiagramProps {
    * legible size regardless of how small the drawing gets — the same
    * convention real technical drawings use. */
   compact?: boolean;
+  /**
+   * `"elevation"` (default) draws the flat, to-scale front view.
+   * `"axonometric"` draws the panel as it sits in 3D — exterior face, tilted up
+   * and to the left — with the SAME lettered badges on it.
+   *
+   * Tommy, 2026-10-11: *"the shop drawing image of each panel should be what
+   * that panel looks like from the exterior up and left tilted as it would
+   * appear when isolated in the 3D view"*, and, offered the choice between that
+   * and keeping the letters, he asked for both.
+   *
+   * ⚠ **The elevation is still the right default and is not going away.** It is
+   * the to-scale view, so it is the one you can measure off; the axonometric
+   * shows form and cannot be measured. Panels where the shape is obvious lose
+   * nothing by staying flat.
+   */
+  view?: "elevation" | "axonometric";
 }
 
 // Same navy-badge/white-text/dashed-leader convention already established
@@ -47,6 +64,9 @@ const MIN_CANVAS_WIDTH_PX_COMPACT = 90;
 const MARGIN_PX_COMPACT = 20;
 const WRAP_MAX_WIDTH_PX = 420;
 const WRAP_MAX_WIDTH_PX_COMPACT = 230;
+/** The width the axonometric fits itself into. Named rather than inlined so
+ * the fit and the rendered max-width can never disagree. */
+const WRAP_MAX_WIDTH_PX_FOR_FIT = (compact: boolean) => (compact ? WRAP_MAX_WIDTH_PX_COMPACT : WRAP_MAX_WIDTH_PX);
 
 interface LetteredShape extends ProjectedShape {
   letter: string;
@@ -225,7 +245,7 @@ function placeBadges(
  * table (PanelFabricationPage.tsx) also calls, so a letter always means
  * the same cut in both places.
  */
-export default function PanelElevationDiagram({ members, widthIn, heightIn, compact = false }: PanelElevationDiagramProps) {
+export default function PanelElevationDiagram({ members, widthIn, heightIn, compact = false, view = "elevation" }: PanelElevationDiagramProps) {
   const cutList = computePanelCutList(members);
   const letterByMemberId = new Map<string, string>();
   for (const row of cutList) {
@@ -234,16 +254,51 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn, comp
 
   const maxCanvasHeightPx = compact ? MAX_CANVAS_HEIGHT_PX_COMPACT : MAX_CANVAS_HEIGHT_PX;
   const minCanvasWidthPx = compact ? MIN_CANVAS_WIDTH_PX_COMPACT : MIN_CANVAS_WIDTH_PX;
-  const marginPx = compact ? MARGIN_PX_COMPACT : MARGIN_PX;
+  /* ⚠ THE MARGIN HAS TO HOLD A BADGE THAT HAS BEEN PUSHED OUT, not just the
+     panel outline. A badge for a thin member is moved `badgeSpreadPx` clear of
+     its own centroid and then occupies its own radius on top of that, so the
+     room needed is spread + radius — about 36px for the compact badges, where
+     the old fixed margin was 20. On the elevation the overflow was mostly
+     hidden because the panel outline sits well inside a wide viewBox; on the
+     axonometric the drawing fills more of the frame and badges were visibly
+     sliced in half at the edge. Taking the larger of the two keeps every
+     existing elevation at least as roomy as it was. */
+  const badgeRoomPx = badgeSpreadPx(compact ? BADGE_RADIUS_PX_COMPACT : BADGE_RADIUS_PX) + (compact ? BADGE_RADIUS_PX_COMPACT : BADGE_RADIUS_PX) + 4;
+  const marginPx = Math.max(compact ? MARGIN_PX_COMPACT : MARGIN_PX, badgeRoomPx);
   const badgeRadiusPx = compact ? BADGE_RADIUS_PX_COMPACT : BADGE_RADIUS_PX;
   const insideThresholdPx = compact ? INSIDE_THRESHOLD_PX_COMPACT : INSIDE_THRESHOLD_PX;
   // See BADGE_RADIUS_PX: 9/11 was smaller than the document Tommy called small.
   const badgeFontSizePx = compact ? 12 : 14;
   const wrapMaxWidthPx = compact ? WRAP_MAX_WIDTH_PX_COMPACT : WRAP_MAX_WIDTH_PX;
 
-  const pxPerIn = maxCanvasHeightPx / heightIn;
-  const panelHeightPx = heightIn * pxPerIn;
-  const panelWidthPx = Math.max(minCanvasWidthPx - 2 * marginPx, widthIn * pxPerIn);
+  // Only lumber/plywood cut-list members are part of this diagram's scope
+  // (matches computePanelCutList's own material filter).
+  const eligibleMembers = members.filter((m) => letterByMemberId.has(m.memberId));
+
+  /* ⚠ THE AXONOMETRIC IS THE SAME DIAGRAM, NOT A SECOND ONE — which is the
+     whole reason it lives in this file. Tommy asked for the shop drawing's
+     image to be the 3D view *and* to keep its labels; the labels are
+     `placeBadges` below, with its collision avoidance and leader lines, and it
+     works in plain SVG pixels. Feeding it projected centroids instead of
+     elevation centroids gets the badges onto the 3D view for free, with
+     identical behaviour, rather than a second placement implementation that
+     would drift from this one. Only the GEOMETRY branches; everything from
+     `panelCenterPx` down is shared. */
+  const axo = view === "axonometric" ? projectPanelAxonometric(eligibleMembers) : null;
+
+  const axoWidthIn = axo ? axo.bounds.maxU - axo.bounds.minU : 0;
+  const axoHeightIn = axo ? axo.bounds.maxV - axo.bounds.minV : 0;
+  // Fit the projected drawing to the same canvas the elevation gets, by
+  // whichever axis runs out first — a panel seen at an angle is wider than it
+  // is tall far more often than the flat elevation is.
+  const pxPerIn = axo
+    ? Math.min(
+        maxCanvasHeightPx / Math.max(axoHeightIn, 1e-6),
+        (WRAP_MAX_WIDTH_PX_FOR_FIT(compact) - 2 * marginPx) / Math.max(axoWidthIn, 1e-6),
+      )
+    : maxCanvasHeightPx / heightIn;
+  const panelHeightPx = (axo ? axoHeightIn : heightIn) * pxPerIn;
+  const panelWidthPx = Math.max(minCanvasWidthPx - 2 * marginPx, (axo ? axoWidthIn : widthIn) * pxPerIn);
 
   const viewBoxWidth = Math.max(minCanvasWidthPx, panelWidthPx + 2 * marginPx);
   const viewBoxHeight = panelHeightPx + 2 * marginPx;
@@ -252,14 +307,27 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn, comp
 
   const xToPx = (xIn: number) => originX + xIn * pxPerIn;
   const zToPx = (zIn: number) => originY + (heightIn - zIn) * pxPerIn;
+  const uToPx = (uIn: number) => originX + (uIn - (axo?.bounds.minU ?? 0)) * pxPerIn;
+  const vToPx = (vIn: number) => originY + (vIn - (axo?.bounds.minV ?? 0)) * pxPerIn;
 
-  // Only lumber/plywood cut-list members are part of this diagram's scope
-  // (matches computePanelCutList's own material filter).
-  const eligibleMembers = members.filter((m) => letterByMemberId.has(m.memberId));
-  const shapes: LetteredShape[] = projectMemberShapes(eligibleMembers, xToPx, zToPx).map((shape) => ({
-    ...shape,
-    letter: letterByMemberId.get(shape.member.memberId)!,
-  }));
+  const shapes: LetteredShape[] = axo
+    ? eligibleMembers.map((member, i) => {
+        const size = memberBoxSizeIn(member);
+        return {
+          member,
+          kind: "polygon" as const,
+          // `placeBadges` reads only `centroidPx` and `minorDimIn`; the faces are
+          // drawn from `axo.faces` instead, sorted back to front.
+          points: [],
+          centroidPx: { xPx: uToPx(axo.centroids[i]!.uIn), yPx: vToPx(axo.centroids[i]!.vIn) },
+          minorDimIn: Math.min(size.xIn, size.yIn, size.zIn),
+          letter: letterByMemberId.get(member.memberId)!,
+        };
+      })
+    : projectMemberShapes(eligibleMembers, xToPx, zToPx).map((shape) => ({
+        ...shape,
+        letter: letterByMemberId.get(shape.member.memberId)!,
+      }));
 
   const panelCenterPx = { xPx: originX + panelWidthPx / 2, yPx: originY + panelHeightPx / 2 };
 
@@ -271,12 +339,46 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn, comp
         viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
         style={{ width: "100%", maxWidth: wrapMaxWidthPx, height: "auto" }}
         role="img"
-        aria-label={`To-scale front elevation, ${widthIn}in wide x ${heightIn}in tall, with lettered part callouts`}
+        /* ⚠ AN AXONOMETRIC IS NOT TO SCALE, and must not say it is. Nothing on
+           a tilted view can be measured off the page, so a label promising
+           to-scale would be a false claim on a document a shop builds from —
+           and the one a screen reader hears. The dimensions are still named,
+           because they are the panel/s real size; only the promise changes. */
+        aria-label={
+          view === "axonometric"
+            ? `3D view from the exterior, tilted up and left, of a panel ${widthIn}in wide x ${heightIn}in tall, with lettered part callouts. Not to scale.`
+            : `To-scale front elevation, ${widthIn}in wide x ${heightIn}in tall, with lettered part callouts`
+        }
       >
-        {/* Panel outline, for reference */}
-        <rect x={originX} y={originY} width={panelWidthPx} height={panelHeightPx} fill="none" stroke="#bbb" strokeWidth={1} />
+        {/* Panel outline, for reference — on the flat elevation only. Around an
+            axonometric it would be a box the panel does not fill, which reads
+            as a drawing error rather than as a reference. */}
+        {!axo && (
+          <rect x={originX} y={originY} width={panelWidthPx} height={panelHeightPx} fill="none" stroke="#bbb" strokeWidth={1} />
+        )}
 
-        {shapes.map((shape) => {
+        {/* ⚠ EVERY FACE OF EVERY MEMBER, FARTHEST FIRST — the painter's
+            algorithm, sorted in `projectPanelAxonometric`. Drawn as one flat
+            list rather than grouped per member on purpose: members interleave
+            in depth (a brace passes behind one stud and in front of the next),
+            so grouping by member would paint whole boards over each other and
+            put the panel inside out. */}
+        {axo?.faces.map((face, i) => {
+          const member = eligibleMembers[face.memberIndex]!;
+          const material = member.material as "dimensional_lumber" | "plywood";
+          return (
+            <polygon
+              key={`face-${i}`}
+              points={face.points.map((p) => `${uToPx(p.uIn)},${vToPx(p.vIn)}`).join(" ")}
+              fill={shadeHex(MATERIAL_FILL[material], face.shade)}
+              stroke={MATERIAL_STROKE[material]}
+              strokeWidth={0.5}
+              strokeLinejoin="round"
+            />
+          );
+        })}
+
+        {!axo && shapes.map((shape) => {
           const isPlywood = shape.member.material === "plywood";
           const fill = MATERIAL_FILL[shape.member.material as "dimensional_lumber" | "plywood"];
           const stroke = MATERIAL_STROKE[shape.member.material as "dimensional_lumber" | "plywood"];

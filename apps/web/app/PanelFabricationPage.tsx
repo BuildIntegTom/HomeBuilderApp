@@ -73,7 +73,17 @@ export default function PanelFabricationPage({
       title={title}
       description={panelDescription}
       role={role}
-      sideDiagram={<PanelElevationDiagram members={members} widthIn={widthIn} heightIn={heightIn} compact />}
+      /* ⚠ THE SHOP DRAWING IMAGE IS THE 3D VIEW, WITH ITS LETTERS. Tommy,
+         2026-10-11: *"the shop drawing image of each panel should be what that
+         panel looks like from the exterior up and left tilted as it would
+         appear when isolated in the 3D view"* — and, told that swapping to 3D
+         would cost the lettered badges that tie each cut-list row to a piece in
+         the picture, he asked for both. So the badges are projected onto it;
+         see `PanelElevationDiagram`'s `view` prop for why that is the same
+         diagram rather than a second one. */
+      sideDiagram={
+        <PanelElevationDiagram members={members} widthIn={widthIn} heightIn={heightIn} compact view="axonometric" />
+      }
     >
       <div>
         <h4 className={styles.sectionHeading}>Materials cut list</h4>

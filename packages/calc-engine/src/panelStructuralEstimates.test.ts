@@ -122,8 +122,13 @@ describe("computeBracedPanelShearCapacityLb", () => {
 
        ⚠ The underlying model is still `pending-BI-confirmation`. Pinning a
        number here pins the CODE's behaviour; it does not promote the figure
-       to confirmed, and a 20% rise at the narrow end is worth a human
-       looking at before anyone leans on it.
+       to confirmed.
+
+       **Tommy reviewed and approved this MOVEMENT on 2026-10-13** — "Approved
+       for sheer estimate" — having been shown the ~20% rise at the narrow end
+       and the geometry change that caused it. That approves the CHANGE, not
+       the model: the estimate is still pending BI confirmation and is still
+       not a licensed engineer's calculation.
 
        96in tall, 15.75in thick, chevron — still not monotonic: it rises off
        the narrow end, peaks in the middle of the band and falls again as the
