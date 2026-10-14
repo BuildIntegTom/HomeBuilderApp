@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-14T04:58:44.313Z",
+  "ranAt": "2026-10-14T07:30:25.806Z",
   "steps": [
     {
       "name": "baseline-3d-found-real-walls-and-slots",
@@ -112,13 +112,13 @@
       "deleteTargetLabel": "40\"",
       "deleteTargetWidthLabelFromWidths": "40\"",
       "noticeBeforeDelete": null,
-      "deleteNotice": "Deleted a panel on wall AB: 17 panels → 16, 12 still automatic. Spanning header H1 still spans its panels, but those panels are now a different width: it is cut 81½\" instead of 80\".",
+      "deleteNotice": "Deleted a panel on wall AB: 17 panels → 16, 12 still automatic. Spanning header H1 still spans its panels, but those panels are now a different width: it is cut 80¾\" instead of 80\".",
       "startBefore": 2,
       "startAfter": 1,
       "endBefore": 4,
       "endAfter": 3,
       "spanBeforeIn": 80,
-      "spanAfterIn": 81.5,
+      "spanAfterIn": 80.75,
       "asserted": true,
       "passed": true
     },
@@ -135,10 +135,10 @@
       "name": "3d-draws-the-header-over-exactly-the-panels-it-spans",
       "headerGroups": 18,
       "headerExtent": {
-        "lengthIn": 81.5,
+        "lengthIn": 80.75,
         "vertices": 144
       },
-      "coveredRunLengthIn": 81.5,
+      "coveredRunLengthIn": 80.75,
       "alignmentIn": 0,
       "asserted": true,
       "passed": true
@@ -157,8 +157,8 @@
       "name": "both-halves-of-the-cross-reference-are-on-paper",
       "headerSheetStatesItsWall": true,
       "panelSheetNamesTheHeader": true,
-      "headerSheetSample": "Panel Fabrication: Spanning Header 81.5in (1)🖶⤢×Fabricator/detailer document — one sheet per unique spanning header (exact copies grouped together). Its name comes from a single building-wide H series carrying no direction, so the wall and the panels it spans are stated in words below; each of those panels' own sheets",
-      "panelSheetSample": "Panel Fabrication: Standard 40.75in (2)🖶⤢×Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with a to-scale lettered elevation, a materials cut list, which placed panels are copies of this one, and a weight checker with a blank line for the shop's own measured weight.Materials ",
+      "headerSheetSample": "Panel Fabrication: Spanning Header 80.8in (1)🖶⤢×Fabricator/detailer document — one sheet per unique spanning header (exact copies grouped together). Its name comes from a single building-wide H series carrying no direction, so the wall and the panels it spans are stated in words below; each of those panels' own sheets",
+      "panelSheetSample": "Panel Fabrication: Standard 40.75in (1)🖶⤢×Fabricator/detailer document — one sheet per unique panel (exact copies grouped together), with a to-scale lettered elevation, a materials cut list, which placed panels are copies of this one, and a weight checker with a blank line for the shop's own measured weight.Materials ",
       "asserted": true,
       "passed": true
     },

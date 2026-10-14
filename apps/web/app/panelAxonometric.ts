@@ -72,8 +72,15 @@ export interface AxonometricFace {
 
 export interface PanelAxonometric {
   faces: AxonometricFace[];
-  /** One per member, in the same order as the input list. */
-  centroids: { uIn: number; vIn: number }[];
+  /** One per member, in the same order as the input list.
+   *
+   * ⚠ Carries `depthIn` because the sheet labels only the NEAREST occurrence
+   * of each cut (Tommy, 2026-10-13). A 3D view shows both wythes, so every
+   * letter would otherwise appear twice — about 24 badges on a braced panel
+   * whose cut list has 7 letters — burying the drawing the badges are there
+   * to explain. Pointing a leader at a member hidden behind another is also
+   * worse than useless, so near is the right one to keep. */
+  centroids: { uIn: number; vIn: number; depthIn: number }[];
   bounds: { minU: number; minV: number; maxU: number; maxV: number };
 }
 
@@ -146,7 +153,7 @@ export function projectPanelAxonometric(
   angles: AxonometricAngles = SHOP_DRAWING_ANGLES,
 ): PanelAxonometric {
   const faces: AxonometricFace[] = [];
-  const centroids: { uIn: number; vIn: number }[] = [];
+  const centroids: { uIn: number; vIn: number; depthIn: number }[] = [];
   let minU = Infinity;
   let minV = Infinity;
   let maxU = -Infinity;
@@ -158,15 +165,21 @@ export function projectPanelAxonometric(
 
     let sumU = 0;
     let sumV = 0;
+    let sumDepth = 0;
     for (const p of projected) {
       sumU += p.uIn;
       sumV += p.vIn;
+      sumDepth += p.depthIn;
       if (p.uIn < minU) minU = p.uIn;
       if (p.uIn > maxU) maxU = p.uIn;
       if (p.vIn < minV) minV = p.vIn;
       if (p.vIn > maxV) maxV = p.vIn;
     }
-    centroids.push({ uIn: sumU / projected.length, vIn: sumV / projected.length });
+    centroids.push({
+      uIn: sumU / projected.length,
+      vIn: sumV / projected.length,
+      depthIn: sumDepth / projected.length,
+    });
 
     for (const indices of memberFaceIndices(member)) {
       const pts = indices.map((i) => projected[i - 1]!);

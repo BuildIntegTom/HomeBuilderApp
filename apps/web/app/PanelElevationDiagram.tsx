@@ -310,8 +310,31 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn, comp
   const uToPx = (uIn: number) => originX + (uIn - (axo?.bounds.minU ?? 0)) * pxPerIn;
   const vToPx = (vIn: number) => originY + (vIn - (axo?.bounds.minV ?? 0)) * pxPerIn;
 
+  // Tracks which cut letters already have a badge on the axonometric.
+  const seenLetters = new Set<string>();
   const shapes: LetteredShape[] = axo
-    ? eligibleMembers.map((member, i) => {
+    ? /* ⚠ ONE BADGE PER LETTER, ON THE NEAREST OCCURRENCE — Tommy, 2026-10-13.
+         A 3D view shows both wythes, so labelling every member put a braced
+         panel's 7 cut letters on screen about 24 times and buried the drawing.
+         The cut list already states the quantity: the table says HOW MANY, the
+         drawing says WHERE. Nearest rather than first, because a leader line
+         pointing at a member hidden behind another one is worse than no leader
+         at all. */
+      eligibleMembers
+        .map((member, i) => ({ member, c: axo.centroids[i]! }))
+        .sort((a, b) => a.c.depthIn - b.c.depthIn)
+        /* ⚠ An explicit seen-set, NOT `new Map(pairs)`. A Map built from
+           [key, value] pairs keeps the LAST entry for each key, so against a
+           nearest-first list it would have selected the FARTHEST occurrence of
+           every letter — the exact opposite of the intent, and invisible in a
+           rendered drawing where some badge is present either way. */
+        .filter((entry) => {
+          const letter = letterByMemberId.get(entry.member.memberId)!;
+          if (seenLetters.has(letter)) return false;
+          seenLetters.add(letter);
+          return true;
+        })
+        .map(({ member, c }) => {
         const size = memberBoxSizeIn(member);
         return {
           member,
@@ -319,7 +342,7 @@ export default function PanelElevationDiagram({ members, widthIn, heightIn, comp
           // `placeBadges` reads only `centroidPx` and `minorDimIn`; the faces are
           // drawn from `axo.faces` instead, sorted back to front.
           points: [],
-          centroidPx: { xPx: uToPx(axo.centroids[i]!.uIn), yPx: vToPx(axo.centroids[i]!.vIn) },
+          centroidPx: { xPx: uToPx(c.uIn), yPx: vToPx(c.vIn) },
           minorDimIn: Math.min(size.xIn, size.yIn, size.zIn),
           letter: letterByMemberId.get(member.memberId)!,
         };

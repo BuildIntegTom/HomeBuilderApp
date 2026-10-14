@@ -131,3 +131,49 @@ describe("shading a colour", () => {
     }
   });
 });
+
+describe("picking which occurrence gets the badge", () => {
+  /* ⚠ The sheet labels one occurrence per cut letter, and it must be the
+     NEAREST one: a leader pointing at a member hidden behind another is worse
+     than no leader. This lives here rather than in the component because the
+     failure mode is invisible on screen — a badge is present either way, just
+     attached to the wrong board, and the drawing looks fine. */
+  const members = buildBracedPanelMembers(40, 15.5, 120, false, "chevron", false);
+  const proj = projectPanelAxonometric(members);
+
+  it("centroids carry a depth, so nearest is decidable at all", () => {
+    expect(proj.centroids).toHaveLength(members.length);
+    for (const c of proj.centroids) expect(Number.isFinite(c.depthIn)).toBe(true);
+  });
+
+  it("⚠ the two wythes really are at different depths — otherwise there is nothing to pick between", () => {
+    // A braced panel builds each brace twice, once per wythe. If both came back
+    // at the same depth, "nearest" would be a coin toss and this whole rule
+    // would be decorative.
+    const ext = members.findIndex((m) => m.memberId === "diagonal_brace_upper_ext");
+    const int = members.findIndex((m) => m.memberId === "diagonal_brace_upper_int");
+    expect(ext).toBeGreaterThanOrEqual(0);
+    expect(int).toBeGreaterThanOrEqual(0);
+    expect(Math.abs(proj.centroids[ext]!.depthIn - proj.centroids[int]!.depthIn)).toBeGreaterThan(1);
+  });
+
+  it("sorting nearest-first and keeping the FIRST of each letter keeps the near one", () => {
+    // The shape of the component's own selection, asserted directly: a Map
+    // built from [key, value] pairs would keep the LAST and silently select the
+    // farthest instead.
+    const byDepth = members
+      .map((m, i) => ({ id: m.memberId, depth: proj.centroids[i]!.depthIn }))
+      .sort((a, b) => a.depth - b.depth);
+    const seen = new Set<string>();
+    const kept = byDepth.filter((e) => {
+      const key = e.id.replace(/_(ext|int)$/, "");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    for (const k of kept) {
+      const siblings = byDepth.filter((e) => e.id.replace(/_(ext|int)$/, "") === k.id.replace(/_(ext|int)$/, ""));
+      expect(k.depth).toBe(Math.min(...siblings.map((s) => s.depth)));
+    }
+  });
+});
