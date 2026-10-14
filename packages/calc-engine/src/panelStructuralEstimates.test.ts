@@ -111,19 +111,39 @@ describe("computeBracedPanelShearCapacityLb", () => {
     // the underlying figure to confirmed.
     const at = (widthIn: number) =>
       Math.round(computeBracedPanelShearCapacityLb(buildBracedPanelMembers(widthIn, 15.75, 96, false, "chevron", false)));
-    // 96in tall, 15.75in thick, chevron — not monotonic: it rises off the
-    // narrow end, peaks near 40in and falls again as the brace lies flatter.
-    expect(at(24)).toBe(2_678);
-    expect(at(40)).toBe(3_177);
-    expect(at(48)).toBe(3_040);
-    // The band is what bounds the permission: at this shape the whole
-    // [24in, 48in] range sits within 16% of its own peak — the 24in end is the
-    // worst of it — which is a fraction of the cost of the thing the combine
-    // is forbidden to do instead, swallowing the brace, at -100%.
+    /* ⚠ THESE NUMBERS MOVED ON 2026-10-13, and the reason is a geometry fix,
+       not a model change. Tommy re-anchored the chevron brace so its point
+       meets the girt bar's top face and its far long point stays flush with
+       the panel edge, with the angle as the output. The brace comes out
+       shorter and steeper, so every figure here rose:
+
+         24in  2,678 -> 3,225      40in  3,177 -> 3,474
+         48in  3,040 -> 3,250      peak moved from ~40in to ~36in
+
+       ⚠ The underlying model is still `pending-BI-confirmation`. Pinning a
+       number here pins the CODE's behaviour; it does not promote the figure
+       to confirmed, and a 20% rise at the narrow end is worth a human
+       looking at before anyone leans on it.
+
+       96in tall, 15.75in thick, chevron — still not monotonic: it rises off
+       the narrow end, peaks in the middle of the band and falls again as the
+       brace lies flatter. */
+    expect(at(24)).toBe(3_225);
+    expect(at(40)).toBe(3_474);
+    expect(at(48)).toBe(3_250);
+    /* The band is what bounds the permission: the whole [24in, 48in] range
+       sits within 9% of its own peak — the 24in end is still the worst of it
+       — which is a fraction of the cost of the thing the combine is forbidden
+       to do instead, swallowing the brace, at -100%.
+
+       ⚠ The new geometry made this band TIGHTER, from 16% to 8.5%. The
+       argument this test protects is therefore stronger than it was, not
+       weaker — worth saying explicitly, because a changed number in a
+       safety-adjacent test is otherwise indistinguishable from a regression. */
     const inBand = [24, 30, 36, 40, 44, 48].map(at);
     const spreadPct = (Math.min(...inBand) / Math.max(...inBand) - 1) * 100;
-    expect(spreadPct).toBeGreaterThan(-16);
-    expect(spreadPct).toBeLessThan(-15);
+    expect(spreadPct).toBeGreaterThan(-9);
+    expect(spreadPct).toBeLessThan(-8);
   });
 
   it("contributes ~0 shear for a brace standing perfectly vertical (tiltDeg=0)", () => {

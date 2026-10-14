@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T02:56:53.430Z",
+  "ranAt": "2026-10-14T04:23:14.544Z",
   "proveFailureMode": false,
   "checks": [
     {
@@ -15,9 +15,9 @@
       "ok": true,
       "detail": {
         "hasImg": true,
-        "sha": "a999ed587ccd239b",
-        "len": 57702,
-        "weight": "63412.8 lb"
+        "sha": "79f5753001e9f1cd",
+        "len": 57942,
+        "weight": "63366.2 lb"
       }
     },
     {
@@ -46,18 +46,18 @@
       "name": "the summary's own numbers moved, so the edit really landed",
       "ok": true,
       "detail": {
-        "before": "63412.8 lb",
-        "after": "97446.4 lb"
+        "before": "63366.2 lb",
+        "after": "97370.7 lb"
       }
     },
     {
       "name": "THE STALE-SUMMARY GUARD: the re-opened image is NOT the one from before the edit",
       "ok": true,
       "detail": {
-        "beforeSha": "a999ed587ccd239b",
-        "afterSha": "84b0a5cf16e2dd86",
-        "beforeLen": 57702,
-        "afterLen": 72346
+        "beforeSha": "79f5753001e9f1cd",
+        "afterSha": "3116f6764b9404ca",
+        "beforeLen": 57942,
+        "afterLen": 72506
       }
     }
   ],

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { describeBraceEndCuts } from "./panelMemberHelpers";
 import {
   bracedPanelDisplayLabel,
   bracingStyleToPatternMirror,
@@ -177,32 +178,50 @@ describe("buildDiagonalBraces", () => {
     // cancels between the +-halfWidth pair.
     const upperPlumb = upperExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.xIn - leftStudFaceX) < 1e-6);
     const lowerPlumb = lowerExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.xIn - leftStudFaceX) < 1e-6);
-    expect((upperPlumb[0]!.zIn + upperPlumb[1]!.zIn) / 2).toBeCloseTo(middleBarTopZ, 6);
-    expect((lowerPlumb[0]!.zIn + lowerPlumb[1]!.zIn) / 2).toBeCloseTo(middleBarBottomZ, 6);
+    /* ⚠ THE POINT MEETS THE BAR, NOT THE CENTRE OF THE CUT. Tommy, 2026-10-13:
+       *"the point should meet the top of the Girt bar"*. These lines used to
+       average the plumb cut's two corners onto the bar's face, which is what
+       pinned the board at its middle and forced the old stretched shape. The
+       upper brace rises away from the bar's top, so its point is the LOWEST of
+       its plumb corners; the lower brace falls away from the bar's bottom, so
+       its point is the HIGHEST. */
+    expect(Math.min(upperPlumb[0]!.zIn, upperPlumb[1]!.zIn)).toBeCloseTo(middleBarTopZ, 6);
+    expect(Math.max(lowerPlumb[0]!.zIn, lowerPlumb[1]!.zIn)).toBeCloseTo(middleBarBottomZ, 6);
     expect(topPlateZ - middleCenterZ).toBeCloseTo(middleCenterZ - bottomPlateZ, 6); // symmetric rise/fall
   });
 
-  it("shifts the whole overshooting level end inward so its long point lands flush with the panel edge WITHOUT shrinking the board's true width — Tommy: 'the long point ending where the vertical stud and the plate 2x4 runner intersect'", () => {
-    // Regression test for the exact bug reported live: an earlier version
-    // clamped only the ONE corner that overshot X=0/widthIn, which cut that
-    // corner's own apparent distance from its partner in half instead of
-    // shifting the whole cut — the 2 level corners' own X-spread should
-    // instead always equal the board's true PLATE_2X4_WIDTH_IN, projected
-    // onto X at this brace's own tilt (PLATE_2X4_WIDTH_IN / uz), regardless
-    // of whether the long point had to be pulled in from the raw edge.
+  it("⚠ IS A TRUE BOARD: exactly the stock width across BOTH end cuts, and the long point flush with the panel edge", () => {
+    /* The invariant this test has always been reaching for, now assertable
+       exactly. It used to compare the level cut's X-spread against
+       PLATE_2X4_WIDTH_IN / uz using the NOMINAL stud-to-stud direction — which
+       stopped being the brace's direction on 2026-10-13, when Tommy anchored
+       the board on two points and let the angle be whatever connects them.
+
+       So the direction is now read off the board's own long edge rather than
+       assumed, and the check is the stronger one: measured perpendicular to
+       that edge, each end cut spans EXACTLY the stock width. The old stretched
+       construction could not pass this — it measured 3.4628" at the plumb end
+       and 3.5156" at the level end on a 2x4, which is what sent a shop a jig
+       dimension that was nearly 1/16" wrong. */
     const braces = buildDiagonalBraces(WIDTH_IN, DEPTH_IN, HEIGHT_IN, rowCount, studSpanIn, "chevron", false);
     const upperExt = braces.find((b) => b.memberId === "diagonal_brace_upper_ext")!;
-    const dz = topPlateZ - middleBarTopZ;
-    const dx = rightStudFaceX - leftStudFaceX;
-    const uz = dz / Math.hypot(dx, dz);
-    const expectedCapWidthIn = PLATE_2X4_WIDTH_IN / uz;
+    const corners = upperExt.position.trapezoidCornersIn!;
 
-    const levelCorners = upperExt.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - topPlateZ) < 1e-6);
+    for (const cut of describeBraceEndCuts(corners)) {
+      const acrossIn = cut.cutEdgeLengthIn * Math.cos((cut.angleDeg * Math.PI) / 180);
+      expect(acrossIn).toBeCloseTo(PLATE_2X4_WIDTH_IN, 9);
+    }
+
+    // The two long edges are genuinely parallel — the property the old
+    // construction broke, and the reason the widths disagreed.
+    const dirOf = (a: PanelSpacePoint2D, b: PanelSpacePoint2D) => Math.atan2(b.zIn - a.zIn, b.xIn - a.xIn);
+    const edgeA = dirOf(corners[0]!, corners[1]!);
+    const edgeB = dirOf(corners[3]!, corners[2]!);
+    expect(Math.abs(Math.sin(edgeA - edgeB))).toBeLessThan(1e-12);
+
+    // ...and the long point still genuinely reaches the panel's own true edge.
+    const levelCorners = corners.filter((c) => Math.abs(c.zIn - topPlateZ) < 1e-6);
     expect(levelCorners).toHaveLength(2);
-    const actualCapWidthIn = Math.abs(levelCorners[0]!.xIn - levelCorners[1]!.xIn);
-    expect(actualCapWidthIn).toBeCloseTo(expectedCapWidthIn, 6);
-    // ...and the long point genuinely reaches the panel's own true edge —
-    // not a vacuous check now that the width is confirmed undistorted.
     expect(levelCorners.some((c) => Math.abs(c.xIn - WIDTH_IN) < 1e-6)).toBe(true);
   });
 
@@ -222,8 +241,15 @@ describe("buildDiagonalBraces", () => {
 
     const upperPlumb = upperExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.xIn - rightStudFaceX) < 1e-6);
     const lowerPlumb = lowerExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.xIn - rightStudFaceX) < 1e-6);
-    expect((upperPlumb[0]!.zIn + upperPlumb[1]!.zIn) / 2).toBeCloseTo(middleBarTopZ, 6);
-    expect((lowerPlumb[0]!.zIn + lowerPlumb[1]!.zIn) / 2).toBeCloseTo(middleBarBottomZ, 6);
+    /* ⚠ THE POINT MEETS THE BAR, NOT THE CENTRE OF THE CUT. Tommy, 2026-10-13:
+       *"the point should meet the top of the Girt bar"*. These lines used to
+       average the plumb cut's two corners onto the bar's face, which is what
+       pinned the board at its middle and forced the old stretched shape. The
+       upper brace rises away from the bar's top, so its point is the LOWEST of
+       its plumb corners; the lower brace falls away from the bar's bottom, so
+       its point is the HIGHEST. */
+    expect(Math.min(upperPlumb[0]!.zIn, upperPlumb[1]!.zIn)).toBeCloseTo(middleBarTopZ, 6);
+    expect(Math.max(lowerPlumb[0]!.zIn, lowerPlumb[1]!.zIn)).toBeCloseTo(middleBarBottomZ, 6);
   });
 
   it("hatch (unmirrored, formerly 'hatch-forward'): upper brace matches chevron's upper (left stud), lower brace flips to the RIGHT stud + left-side bottom plate", () => {
@@ -231,7 +257,7 @@ describe("buildDiagonalBraces", () => {
     const lowerExt = braces.find((b) => b.memberId === "diagonal_brace_lower_ext")!;
     const nearRightStud = lowerExt.position.trapezoidCornersIn!.filter((c) => Math.abs(c.xIn - rightStudFaceX) < 1e-6);
     expect(nearRightStud).toHaveLength(2);
-    expect((nearRightStud[0]!.zIn + nearRightStud[1]!.zIn) / 2).toBeCloseTo(middleBarBottomZ, 6);
+    expect(Math.max(nearRightStud[0]!.zIn, nearRightStud[1]!.zIn)).toBeCloseTo(middleBarBottomZ, 6);
     const nearBottomPlate = lowerExt.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - bottomPlateZ) < 1e-6);
     expectLevelEndClampedAtLeftEdge(nearBottomPlate, bottomPlateZ);
   });
@@ -241,7 +267,7 @@ describe("buildDiagonalBraces", () => {
     const upperExt = braces.find((b) => b.memberId === "diagonal_brace_upper_ext")!;
     const nearRightStud = upperExt.position.trapezoidCornersIn!.filter((c) => Math.abs(c.xIn - rightStudFaceX) < 1e-6);
     expect(nearRightStud).toHaveLength(2);
-    expect((nearRightStud[0]!.zIn + nearRightStud[1]!.zIn) / 2).toBeCloseTo(middleBarTopZ, 6);
+    expect(Math.min(nearRightStud[0]!.zIn, nearRightStud[1]!.zIn)).toBeCloseTo(middleBarTopZ, 6);
     const nearTopPlate = upperExt.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - topPlateZ) < 1e-6);
     expectLevelEndClampedAtLeftEdge(nearTopPlate, topPlateZ);
   });

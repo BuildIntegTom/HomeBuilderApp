@@ -1,6 +1,6 @@
 {
-  "app": "http://localhost:3000/",
-  "ranAt": "2026-10-12T04:26:47.473Z",
+  "app": "http://localhost:3000",
+  "ranAt": "2026-10-14T04:22:50.797Z",
   "proveFailureMode": false,
   "checks": [
     {
@@ -33,7 +33,7 @@
       "name": "footprint-drawn-and-the-canvas-has-pixels",
       "ok": true,
       "detail": {
-        "sha": "e7c2d2079a08ad91d9a3",
+        "sha": "880bd09207468a14f740",
         "zoom": "100%",
         "canvasW": 720,
         "canvasH": 480
@@ -43,9 +43,9 @@
       "name": "the-fingerprint-MOVES-when-the-view-moves",
       "ok": true,
       "detail": {
-        "before": "e7c2d2079a08ad91d9a3",
+        "before": "880bd09207468a14f740",
         "beforeZoom": "100%",
-        "after": "10b2e8443525d3bf22ca",
+        "after": "4172da8aad149648fa14",
         "afterZoom": "156%"
       }
     },
@@ -131,9 +131,9 @@
       "name": "PAN-AND-ZOOM-SURVIVED-THE-ROUND-TRIP",
       "ok": true,
       "detail": {
-        "leftWith": "10b2e8443525d3bf22ca",
+        "leftWith": "4172da8aad149648fa14",
         "leftZoom": "156%",
-        "cameBackTo": "10b2e8443525d3bf22ca",
+        "cameBackTo": "4172da8aad149648fa14",
         "cameBackZoom": "156%"
       }
     },
@@ -219,9 +219,9 @@
       "name": "pan-and-zoom-survived-SUMMARY-AND-PRINT-together",
       "ok": true,
       "detail": {
-        "leftWith": "10b2e8443525d3bf22ca",
+        "leftWith": "4172da8aad149648fa14",
         "leftZoom": "156%",
-        "cameBackTo": "10b2e8443525d3bf22ca",
+        "cameBackTo": "4172da8aad149648fa14",
         "cameBackZoom": "156%"
       }
     }

@@ -92,7 +92,7 @@ export default function PanelFabricationPage({
              `row.dimensions` (t x w x l) is deliberately NOT shown: the nominal
              name plus the cut length is what a shop works from, and printing
              1.5" x 3.5" beside "2x4" is the same fact twice. */
-          <table className={styles.table}>
+          <table className={`${styles.table} ${styles.cutListTable}`}>
             <thead>
               <tr>
                 <th>Letter</th>

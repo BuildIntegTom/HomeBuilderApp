@@ -183,27 +183,22 @@ describe("the shop columns Tommy asked for, 2026-10-11", () => {
     expect(along[0]).not.toBe(along[1]);
   });
 
-  it("⚠ RECORDS A LIVE FINDING: this brace's modelled face IS off the stock width", () => {
-    /* ⚠ **This is not a test of the note, it is a measurement of the panel, and
-       it is currently a FLAG awaiting Tommy's decision.**
+  it("⚠ RESOLVED 2026-10-13: the modelled face now agrees with the stock, so NO check fires", () => {
+    /* This test was written the other way round on 2026-10-12, asserting the
+       CHECK sentence was PRESENT, because it was: the modelled brace face
+       measured 3.4628" across at its plumb end against 3.5" of real 2x4, and
+       every braced panel's sheet carried a warning to confirm the geometry
+       before cutting a jig to it. It was deliberately written to fail once the
+       geometry was fixed — "that failure is the notification that it worked".
 
-       The default chevron brace's modelled face measures 3.4628" across at its
-       plumb end against 3.5" of real 2x4 — about 1/27", which trips
-       JIG_MODEL_TOLERANCE_IN. So every braced panel's sheet currently carries
-       the CHECK sentence.
-
-       Asserted as PRESENT rather than absent because that is the truth, and a
-       test written the comfortable way round would quietly license raising the
-       threshold until the flag went away. Two honest resolutions exist and both
-       are Tommy's, not mine: correct the brace geometry so the face really is
-       parallel-sided, or accept the CHECK as standing advice on braced panels.
-       Until he decides, the sheet says it out loud.
-
-       If the geometry is fixed, this test fails — and that failure is the
-       notification that it worked. */
+       It fired. Tommy anchored the brace on two points (the girt bar's top face
+       and the panel edge) and let the angle be the output, which makes the board
+       a true rigid board: measured perpendicular to its long edges, each end cut
+       now spans EXACTLY 3.5". So the sheet is quiet, and this test now guards
+       the quiet. */
     const brace = rows.find((r) => r.role === "brace")!;
-    expect(brace.cutNote).toContain("CHECK:");
-    expect(brace.cutNote).toContain("confirm the panel geometry");
+    expect(brace.cutNote).not.toContain("CHECK:");
+    expect(brace.cutNote).toContain("off square");
   });
 
   it("the angle column and the note never disagree about the order of the ends", () => {

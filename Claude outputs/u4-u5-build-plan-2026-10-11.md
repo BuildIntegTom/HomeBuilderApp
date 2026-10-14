@@ -245,3 +245,81 @@ page directly, which needs no clicking at all.
 must now be enabled and must open something, still take no part in the view
 machinery, and — the part that was always the point — still be `onScreen` at
 every width including Tommy's own 710px.
+
+---
+
+# Brace geometry, 2026-10-13 — and how the shop drawings found it
+
+The shop-drawing work needed the waste triangle's two legs so a shop could
+build a **reversed triangle jig block** (Tommy: *"knowing the missing rise and
+run dimensions would actually be critically helpful in creating accurate jig
+blocks"*). Measuring them on a real chevron brace found the modelled board was
+**3.4628" across at one end and 3.5156" at the other, on a 2x4.**
+
+## What was wrong
+
+The brace was built from its CENTRELINE, running girt bar to plate. That pinned
+the plumb end centred on the bar. Add "land level on the plate" and "bring the
+long point flush to the panel edge" and you have **four constraints on a rigid
+board's two degrees of freedom.** The code satisfied all four by shifting only
+the two level corners — which looks width-preserving, and the comment claimed
+it was, but adding one vector to two long edges of different length leaves them
+non-parallel. The result was a general quadrilateral: not a board.
+
+## Tommy's resolution, in two steps
+
+Offered clip / rotate / overhang / leave-it, he first chose **clip**. Then he
+supplied the fact that made the whole thing well-posed:
+
+> *"I know the math behind this is complicated but the point should meet the top
+> of the Girt bar."*
+
+— and, for the far end, **"Flush, and let the angle shift instead."**
+
+**So the board is placed by TWO ANCHORS THAT BOTH LIE ON ONE LONG EDGE:** the
+low point on the girt bar's top face at the stud face, and the far long point
+flush with the panel edge at the plate. Two points fix that edge; the stock
+width places the other; the end cuts are lines the board is crossed by, not
+extra constraints. Zero degrees of freedom left, nothing over-determined.
+**The brace's angle is now an OUTPUT, not an input.**
+
+Plus his fallback: *"If there happens to be no girt the center of the panel then
+just center it on the height."* That case was live and silent — `middleRow` is
+`(rowCount + 1) / 2`, so an EVEN rowCount lands on a half and there is no bar
+there at all, yet the code still offset by half a bar. Fixed for the braces and
+for the centre connector that locates itself from the same endpoints.
+
+## Scope
+
+He asked whether this applies to other panels with let-in diagonal bracing.
+**Checked: there is exactly one caller** — `buildDiagonalBraces`, which covers
+every braced pattern (chevron and hatch, mirrored and not, both wythes). The
+truss webs use `computeHeaderBraceTrapezoidCornersIn` and meet ANOTHER BRACE at
+a shared peak or foot, which is a different joint; left alone deliberately.
+
+## Measured after
+
+- **Across the face: exactly 3.500000" at BOTH end cuts**, and the two long
+  edges parallel to 1e-12. The CHECK sentence is gone from every braced sheet.
+- The point lands on (1.5, 60.75) — stud face, girt-bar top — and the far long
+  point on (40, 117.75), flush with the panel edge.
+- Brace is shorter and steeper: length 71.47" → 68.78", cuts ~32.6°/~57.4° →
+  ~34.0°/~56.0°.
+- **Golden OBJ: 88 vertex lines moved, ZERO structural changes** — no face,
+  group or ordering differences. Exactly what a geometry move should look like.
+- ⚠ **The shear estimate rose**, 24in 2,678 → 3,225 lb, 40in 3,177 → 3,474,
+  48in 3,040 → 3,250, peak shifting from ~40in to ~36in. The band also got
+  TIGHTER, 16% → 8.5%, which strengthens the argument that resizing a braced
+  panel inside the tiler's [24in, 48in] band is safe. **The underlying model is
+  still `pending-BI-confirmation`** — a 20% rise at the narrow end is worth a
+  human looking at before anyone leans on it.
+
+## A claim I made and had to retract
+
+The cut-list table overflowed its sheet, so I set a fixed layout — and wrote a
+comment asserting the two-column tables on the same sheet were unaffected
+"because their rows only ever have two cells". **False:** `nth-child(1)` and
+`(2)` match a two-column table perfectly well, and under fixed layout a 7%/6%
+pair squashes both columns into a seventh of the width. Caught before it
+shipped, but only because the claim was checked instead of trusted. The rules
+are now scoped to the cut list's own class.

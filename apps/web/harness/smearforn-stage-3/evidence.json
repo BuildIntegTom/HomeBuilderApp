@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T03:03:02.765Z",
+  "ranAt": "2026-10-14T04:07:55.675Z",
   "stopIn": 60,
   "steps": [
     {
@@ -73,7 +73,7 @@
     },
     {
       "name": "drag-still-lands-and-conserves-the-run",
-      "strips": 9,
+      "strips": 10,
       "totalEighthsBeforeDrag": 4160,
       "totalEighthsAfterDrag": 4160,
       "changed": true,
@@ -120,7 +120,7 @@
       ],
       "planSheetLabelsCleared": [],
       "boundaryGreyWithStop": 1155,
-      "boundaryGreyWithoutStop": 1432,
+      "boundaryGreyWithoutStop": 1425,
       "plateClearedIn": 580,
       "baselinePlateIn": 580,
       "asserted": true,
@@ -180,7 +180,7 @@
       "basePanelCount": 17,
       "openingSlotsBeforePlacement": 1,
       "panelCountBeforePlacement": 17,
-      "clickTargetsOnScreen": 7,
+      "clickTargetsOnScreen": 6,
       "noticeBeforePlacement": null,
       "placedOpeningNotice": "Replaced on wall AB: 17 panels → 17, 10 still automatic.",
       "placedOpeningWidthLabel": "40\"",
@@ -191,39 +191,39 @@
           "invalid": false,
           "message": null,
           "totalEighths": 3944,
-          "withheldOpenings": 2
+          "withheldOpenings": 1
         },
         {
           "stopIn": 174,
           "invalid": false,
           "message": null,
           "totalEighths": 3248,
-          "withheldOpenings": 2
+          "withheldOpenings": 1
         },
         {
           "stopIn": 261,
           "invalid": false,
           "message": null,
           "totalEighths": 2552,
-          "withheldOpenings": 2
+          "withheldOpenings": 1
         },
         {
           "stopIn": 348,
           "invalid": false,
           "message": null,
           "totalEighths": 1856,
-          "withheldOpenings": 2
+          "withheldOpenings": 1
         },
         {
           "stopIn": 435,
           "invalid": false,
           "message": null,
           "totalEighths": 1160,
-          "withheldOpenings": 2
+          "withheldOpenings": 1
         }
       ],
       "deepestAcceptedStopIn": 435,
-      "openingSlotsStopped": 0,
+      "openingSlotsStopped": 1,
       "restoredEighths": 4640,
       "restoredPanelCount": 17,
       "restoredWithheld": 0,
@@ -233,7 +233,7 @@
     },
     {
       "name": "a-new-footprint-does-not-inherit-the-old-buildings-remembered-openings",
-      "withheldWhenRedrawn": 2,
+      "withheldWhenRedrawn": 1,
       "baseEighthsBeforeRedraw": 4640,
       "redrawnEighths": 4320,
       "redrawnPanelCount": 16,

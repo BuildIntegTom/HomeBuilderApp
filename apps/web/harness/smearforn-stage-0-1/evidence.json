@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T02:58:23.816Z",
+  "ranAt": "2026-10-14T04:00:30.561Z",
   "steps": [
     {
       "name": "stage0-new-project-tabs",
@@ -344,8 +344,8 @@
         [
           40,
           40,
-          32.125,
-          32,
+          24.125,
+          24.125,
           40
         ],
         [
@@ -372,7 +372,7 @@
       ],
       "narrowestPerWall": [
         24,
-        32,
+        24.125,
         24.125,
         32
       ],
@@ -454,20 +454,20 @@
           "selectedAt": "24\"",
           "committed": false,
           "note": "Automatic — this width is whatever the tiler computes for this wall. Type one to hand-set it.",
-          "notice": "Refused: 48\" is not a width this wall can hold — it needs 15⅞\" from the rest of the wall, and the 2 automatic panels here can only give up 8\" before one of them drops below the 24\" fabrication minimum. The widest this panel can be hand-set to right now is 40⅛\", and the narrowest is 24\". Nothing was changed.",
+          "notice": "Refused: 48\" is not a width this wall can hold — it needs 23⅞\" from the rest of the wall, and the 2 automatic panels here can only give up ⅛\" before one of them drops below the 24\" fabrication minimum. The widest this panel can be hand-set to right now is 24¼\", and the narrowest is 24\". Nothing was changed.",
           "alert": null
         }
       ],
       "refusedAt": "24\"",
-      "noticeOnRefusal": "Refused: 48\" is not a width this wall can hold — it needs 15⅞\" from the rest of the wall, and the 2 automatic panels here can only give up 8\" before one of them drops below the 24\" fabrication minimum. The widest this panel can be hand-set to right now is 40⅛\", and the narrowest is 24\". Nothing was changed.",
+      "noticeOnRefusal": "Refused: 48\" is not a width this wall can hold — it needs 23⅞\" from the rest of the wall, and the 2 automatic panels here can only give up ⅛\" before one of them drops below the 24\" fabrication minimum. The widest this panel can be hand-set to right now is 24¼\", and the narrowest is 24\". Nothing was changed.",
       "noteOnRefusal": "Automatic — this width is whatever the tiler computes for this wall. Type one to hand-set it.",
       "fieldAfterRefusal": "24",
       "widthBeforeRefusal": "24",
       "totals": [
-        184.125,
-        184.125,
-        184.125,
-        184.125
+        168.25,
+        168.25,
+        168.25,
+        168.25
       ],
       "totalNeverMoved": true,
       "widestAfter": 48,
@@ -490,6 +490,10 @@
         {
           "label": "40\"",
           "committedAt": 42
+        },
+        {
+          "label": "32.125\"",
+          "committedAt": 34.125
         }
       ],
       "drags": [
@@ -502,23 +506,27 @@
           "dxPx": -14
         }
       ],
-      "pinnedPanels": 4,
+      "pinnedPanels": 5,
       "pinnedDetail": [
         {
           "label": "42\"",
           "field": "42"
         },
         {
-          "label": "33.125\"",
-          "field": "33⅛"
+          "label": "34.125\"",
+          "field": "34⅛"
         },
         {
-          "label": "24\"",
-          "field": "24"
+          "label": "30.875\"",
+          "field": "30⅞"
         },
         {
-          "label": "45\"",
-          "field": "45"
+          "label": "34\"",
+          "field": "34"
+        },
+        {
+          "label": "43.125\"",
+          "field": "43⅛"
         }
       ],
       "automaticPanelsLeft": 0,
@@ -526,24 +534,24 @@
       "boundariesOnTheWall": 2,
       "widthsBeforeRetile": [
         42,
-        33.125,
-        24,
-        45,
-        40
+        34.125,
+        30.875,
+        34,
+        43.125
       ],
       "widthsAfterRetile": [
         42,
-        33.125,
-        24,
-        45,
-        40
+        34.125,
+        30.875,
+        34,
+        43.125
       ],
       "widthsAfterUnstop": [
         42,
-        33.125,
-        24,
-        45,
-        40
+        34.125,
+        30.875,
+        34,
+        43.125
       ],
       "survivedTheRetile": true,
       "survivedASecondRetile": true,
@@ -554,8 +562,8 @@
         184.125
       ],
       "totalNeverMoved": true,
-      "narrowestAfter": 24,
-      "widestAfter": 45,
+      "narrowestAfter": 30.875,
+      "widestAfter": 43.125,
       "asserted": true,
       "passed": true
     }

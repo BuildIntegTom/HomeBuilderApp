@@ -1,6 +1,6 @@
 {
   "app": "http://localhost:3000",
-  "ranAt": "2026-10-12T03:13:19.811Z",
+  "ranAt": "2026-10-14T04:05:16.781Z",
   "steps": [
     {
       "name": "whole-wall-on-screen",
@@ -25,9 +25,9 @@
         40,
         40,
         40,
-        40,
+        32.125,
         24.125,
-        24.125,
+        32,
         0.75,
         40,
         25.5
@@ -91,9 +91,9 @@
     },
     {
       "name": "refused-insert-states-the-room",
-      "refusal": "Refused: there is 64¼\" of automatic panel width on this wall and this change needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
+      "refusal": "Refused: there is 80⅛\" of automatic panel width on this wall and this change needs 96\" of it — with whatever is left over still at least 24\". A corner or an opening is never shrunk to make room. Nothing was changed.",
       "bigHeadersPlaced": 4,
-      "panelsAtRefusal": 11,
+      "panelsAtRefusal": 12,
       "asserted": true,
       "passed": true
     },

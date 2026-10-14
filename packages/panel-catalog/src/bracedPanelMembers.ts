@@ -11,7 +11,7 @@ import {
   buildPlates,
   buildSkins,
   computeBraceEndCutAngleDeg,
-  computeBraceTrapezoidCornersIn,
+  computeBraceBoardCornersIn,
 } from "./panelMemberHelpers";
 
 const MAX_GIRT_BAY_IN = 36; // Tommy: another girt row if bays exceed 36in
@@ -136,8 +136,16 @@ function braceEndpoints(widthIn: number, studSide: "left" | "right", girtBarZIn:
   // is at widthIn - PLATE_2X4_THICKNESS_IN. Previously a fixed
   // `2 * PLATE_2X4_THICKNESS_IN` inset from the panel edge, which stopped
   // 1 stud-thickness short of the actual stud face.
-  const plateNearXIn = studSide === "left" ? widthIn - PLATE_2X4_THICKNESS_IN : PLATE_2X4_THICKNESS_IN;
-  return [studXIn, girtBarZIn, plateNearXIn, plateZIn];
+  /* ⚠ THE FAR ANCHOR IS THE PANEL EDGE, NOT THE OPPOSITE STUD'S FACE, and
+     these two values are now the brace's ANCHOR POINTS rather than its
+     centreline endpoints. Tommy, 2026-10-13: the brace's point meets the top
+     of the girt bar, and the far long point stays flush — *"Flush, and let
+     the angle shift instead."* Both anchors lie on ONE long edge of the
+     board, which is what makes the shape well-posed; see
+     computeBraceBoardCornersIn for why the old centreline version could not
+     be. */
+  const panelEdgeXIn = studSide === "left" ? widthIn : 0;
+  return [studXIn, girtBarZIn, panelEdgeXIn, plateZIn];
 }
 
 /**
@@ -202,8 +210,17 @@ export function buildDiagonalBraces(
   // buildGirtRows) — a thin 1.5in vertical band centered at
   // middleRowCenterZIn — so the braces flank its top/bottom face instead
   // of its (now much wider) left/right face.
-  const middleRowBarTopZIn = middleRowCenterZIn + PLATE_2X4_THICKNESS_IN / 2;
-  const middleRowBarBottomZIn = middleRowCenterZIn - PLATE_2X4_THICKNESS_IN / 2;
+  /* ⚠ NO BAR AT THE CENTRE? ANCHOR ON MID-HEIGHT. Tommy, 2026-10-13: *"If
+     there happens to be no girt the center of the panel then just center it
+     on the height if that ever happens."* It happens silently: `middleRow` is
+     `(rowCount + 1) / 2`, so an EVEN rowCount lands on a half (2 rows -> row
+     1.5) and there is no bar there at all — yet the old code still offset by
+     half a bar, anchoring braces to the faces of a bar that does not exist.
+     `middleRowCenterZIn` is already exactly mid-height for every rowCount, so
+     the fallback is just to stop adding the half-bar. */
+  const hasMiddleBar = Number.isInteger(middleRow);
+  const middleRowBarTopZIn = middleRowCenterZIn + (hasMiddleBar ? PLATE_2X4_THICKNESS_IN / 2 : 0);
+  const middleRowBarBottomZIn = middleRowCenterZIn - (hasMiddleBar ? PLATE_2X4_THICKNESS_IN / 2 : 0);
   const topPlate2x4ZIn = heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
   // Top face of the bottom plate (mirrors topPlate2x4ZIn's "underside of
   // the top plate") — the bottom plate assembly spans
@@ -212,9 +229,16 @@ export function buildDiagonalBraces(
   const bottomPlate2x4ZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
 
   function makeBrace(memberId: string, x1: number, z1: number, x2: number, z2: number, centerYIn: number, notes: string): PanelMember {
-    const centerX = (x1 + x2) / 2;
-    const centerZ = (z1 + z2) / 2;
-    const tiltDeg = (Math.atan2(-(x1 - centerX), z1 - centerZ) * 180) / Math.PI;
+    /* (x1,z1) is the LOW POINT, on the girt bar's face at the stud face;
+       (x2,z2) is the FAR LONG POINT, flush with the panel edge on the plate. */
+    const trapezoidCornersIn = computeBraceBoardCornersIn(x1, z1, x2, z2, PLATE_2X4_WIDTH_IN);
+    /* ⚠ The recorded centreline must agree with the corners, or the 3D view,
+       the OBJ export and the cut list describe different objects. Taken across
+       the two long edges rather than between the anchors: both anchors sit on
+       ONE edge, so their midpoint lies on that edge, not on the centreline. */
+    const centerX = (trapezoidCornersIn[0]!.xIn + trapezoidCornersIn[2]!.xIn) / 2;
+    const centerZ = (trapezoidCornersIn[0]!.zIn + trapezoidCornersIn[2]!.zIn) / 2;
+    const tiltDeg = (Math.atan2(-(x1 - x2), z1 - z2) * 180) / Math.PI;
     // x1 is always exactly the plumb (stud-face) target and z2 is always
     // exactly the level (plate-face) target — every endpoint pair this
     // file builds (via braceEndpoints) already places its 2 reference
@@ -239,8 +263,6 @@ export function buildDiagonalBraces(
     // buildHeaderTrussWebBraces in panelMemberHelpers.ts) before that fix;
     // this uses the same proven "shift the whole cut, don't clamp one
     // corner" approach instead.
-    const boundaryXIn = x1 < widthIn / 2 ? widthIn : 0;
-    const trapezoidCornersIn = computeBraceTrapezoidCornersIn(x1, z1, x2, z2, PLATE_2X4_WIDTH_IN, x1, z2, boundaryXIn);
     const lengthIn = braceLongestEdgeIn(trapezoidCornersIn);
     return {
       memberId,
@@ -317,8 +339,17 @@ export function buildDiagonalBraces(
 function buildBracedCenterConnector(widthIn: number, heightIn: number, rowCount: number, studSpanIn: number, mirrored: boolean): PanelMember {
   const middleRow = (rowCount + 1) / 2;
   const middleRowCenterZIn = SKIN_THICKNESS_IN + (studSpanIn * middleRow) / (rowCount + 1);
-  const middleRowBarTopZIn = middleRowCenterZIn + PLATE_2X4_THICKNESS_IN / 2;
-  const middleRowBarBottomZIn = middleRowCenterZIn - PLATE_2X4_THICKNESS_IN / 2;
+  /* ⚠ NO BAR AT THE CENTRE? ANCHOR ON MID-HEIGHT. Tommy, 2026-10-13: *"If
+     there happens to be no girt the center of the panel then just center it
+     on the height if that ever happens."* It happens silently: `middleRow` is
+     `(rowCount + 1) / 2`, so an EVEN rowCount lands on a half (2 rows -> row
+     1.5) and there is no bar there at all — yet the old code still offset by
+     half a bar, anchoring braces to the faces of a bar that does not exist.
+     `middleRowCenterZIn` is already exactly mid-height for every rowCount, so
+     the fallback is just to stop adding the half-bar. */
+  const hasMiddleBar = Number.isInteger(middleRow);
+  const middleRowBarTopZIn = middleRowCenterZIn + (hasMiddleBar ? PLATE_2X4_THICKNESS_IN / 2 : 0);
+  const middleRowBarBottomZIn = middleRowCenterZIn - (hasMiddleBar ? PLATE_2X4_THICKNESS_IN / 2 : 0);
   const topPlate2x4ZIn = heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
   const bottomPlate2x4ZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const studSide = mirrored ? "right" : "left";

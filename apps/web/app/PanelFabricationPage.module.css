@@ -107,10 +107,14 @@
   white-space: nowrap;
 }
 
-/* The figure the stop gets set to. Tabular so a column of lengths lines up on
-   the decimal and a wrong one looks wrong. */
+/* The figure the stop gets set to. Tabular so a column of lengths line up and
+   a wrong one looks wrong.
+
+   ⚠ NOT nowrap, though it was at first. Under the fixed layout below, a cell
+   that refuses to wrap overflows its column instead — "~68 13/16in long point"
+   ran straight across the angle beside it. The material cell keeps nowrap
+   because "2x4" always fits; a length with a qualifier on it does not. */
 .lengthCell {
-  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
@@ -130,3 +134,32 @@
   line-height: 1.35;
   color: #333;
 }
+
+/* ⚠ FIXED LAYOUT SO THE NOTE WRAPS INSTEAD OF SHOVING THE TABLE SIDEWAYS.
+   With auto layout the browser sizes columns to their content, and a sentence
+   in the last cell is very wide content — so the table grew past the sheet and
+   the shop cut note ended up off the right edge behind a horizontal scrollbar,
+   which on paper means off the page. Tommy rule when this sheet runs out of
+   room (2026-10-13) is "shrink the cut note first", and that is exactly what a
+   fixed layout does: every other column keeps the width it needs, and the note
+   takes what is left and wraps into it.
+
+   ⚠ SCOPED TO ITS OWN CLASS, NOT TO .table. This sheet has two other tables
+   (structural values, the weight checker) and they share .table. A first pass
+   put these rules on .table with an nth-child comment claiming the two-column
+   tables would not be affected "because their rows only ever have two cells" —
+   which is false: nth-child(1) and (2) match them perfectly well, and under
+   fixed layout a 7%/6% pair on a two-column table squashes both columns into
+   a seventh of the width. Caught before it shipped, but only because the claim
+   was checked rather than trusted. */
+.cutListTable {
+  table-layout: fixed;
+}
+
+.cutListTable th:nth-child(1), .cutListTable td:nth-child(1) { width: 7%; }
+.cutListTable th:nth-child(2), .cutListTable td:nth-child(2) { width: 6%; }
+.cutListTable th:nth-child(3), .cutListTable td:nth-child(3) { width: 16%; }
+.cutListTable th:nth-child(4), .cutListTable td:nth-child(4) { width: 11%; }
+.cutListTable th:nth-child(5), .cutListTable td:nth-child(5) { width: 16%; }
+.cutListTable th:nth-child(6), .cutListTable td:nth-child(6) { width: 12%; }
+.cutListTable th:nth-child(7), .cutListTable td:nth-child(7) { width: 32%; }

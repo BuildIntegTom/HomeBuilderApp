@@ -1400,3 +1400,94 @@ export function computePlywoodAreaSqFt(members: PanelMember[], thicknessIn: numb
     .filter((m) => m.material === "plywood" && Math.abs(m.actualDimsIn.thicknessIn - thicknessIn) < toleranceIn)
     .reduce((sum, m) => sum + (m.actualDimsIn.widthIn * m.actualDimsIn.lengthIn) / 144, 0);
 }
+
+/**
+ * A chevron brace as a TRUE RIGID BOARD, placed by two anchor points that both
+ * lie on ONE of its long edges.
+ *
+ * ⚠ **This replaces `computeBraceTrapezoidCornersIn`'s boundary-shift for
+ * chevron braces, on Tommy's ruling of 2026-10-13:** *"the point should meet
+ * the top of the Girt bar"*, and — asked whether the far end must still come
+ * flush to the panel edge — *"Flush, and let the angle shift instead."*
+ *
+ * **Why the old construction could not be right.** It ran the brace's
+ * CENTRELINE from the girt bar to the plate, which pinned the plumb end
+ * centred on the bar. That, plus landing level on the plate, plus bringing the
+ * long point flush to the panel edge, is four constraints on a rigid board's
+ * two degrees of freedom. The code satisfied all four by shifting only the two
+ * level corners — which looks width-preserving but is not, because the two long
+ * edges start parallel with DIFFERENT lengths and adding one vector to both
+ * leaves them non-parallel. The modelled board measured 3.4628" across at one
+ * end and 3.5156" at the other on a 2x4: nearly 1/16" of disagreement in the
+ * dimension a shop builds a cutting jig from, found by the shop-drawing work
+ * rather than by review.
+ *
+ * **What makes this well-posed.** Both anchors sit on the same long edge, so
+ * two points fix that edge — direction and position together. The stock width
+ * places the other edge. The end cuts are then just lines the board is crossed
+ * by (plumb at the stud face, level at the plate), not extra constraints. Zero
+ * degrees of freedom left, nothing over-determined, and the board stays a
+ * board. **The brace's angle is an OUTPUT of the anchors**, not the nominal
+ * stud-corner-to-plate-corner line it used to be.
+ *
+ * @param pointXIn/@param pointZIn  The LOW POINT: on the girt bar's own face,
+ *   at the stud face's X. This is the corner Tommy means by "the point".
+ * @param longPointXIn/@param longPointZIn  The FAR LONG POINT: flush with the
+ *   panel edge, on the plate's Z.
+ */
+export function computeBraceBoardCornersIn(
+  pointXIn: number,
+  pointZIn: number,
+  longPointXIn: number,
+  longPointZIn: number,
+  boardWidthIn: number,
+): [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] {
+  const dx = longPointXIn - pointXIn;
+  const dz = longPointZIn - pointZIn;
+  const lengthIn = Math.hypot(dx, dz);
+  const ux = dx / lengthIn;
+  const uz = dz / lengthIn;
+
+  /* The board sits on the PLATE side of its reference edge: an upper brace's
+     body is above the edge because the top plate is above, a lower brace's is
+     below. Derived from the anchors rather than passed in as a flag, so a
+     caller cannot hand in a brace that builds itself inside the girt bar. */
+  let nx = -uz;
+  let nz = ux;
+  if (nz * dz < 0) {
+    nx = -nx;
+    nz = -nz;
+  }
+
+  /* The two cuts, as lines crossing a strip of width `boardWidthIn`.
+
+     The far edge's corners are NOT `anchor + width * n` — that lands beside the
+     anchor, not on the cut line. Sliding along the strip to reach the cut gives
+     the exact offsets below: `width / ux` along Z at the plumb cut, and
+     `width / uz` along X at the level cut. (Both fall out of the same algebra:
+     move by `t` along `u` until the moved point meets the cut, then simplify
+     with `ux² + uz² = 1`.) Degenerate only for a perfectly vertical or
+     perfectly horizontal brace, neither of which is a diagonal brace. */
+  const plumbFar: PanelSpacePoint2D = { xIn: pointXIn, zIn: pointZIn + (boardWidthIn * Math.sign(nz)) / Math.abs(ux) };
+  const levelFar: PanelSpacePoint2D = {
+    xIn: longPointXIn - (boardWidthIn * Math.sign(nx === 0 ? 1 : -nx)) / Math.abs(uz),
+    zIn: longPointZIn,
+  };
+
+  const corners: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] = [
+    { xIn: pointXIn, zIn: pointZIn },
+    { xIn: longPointXIn, zIn: longPointZIn },
+    levelFar,
+    plumbFar,
+  ];
+
+  // Same winding normalization every other corner producer here uses, so the
+  // face table and the OBJ exporter see a consistent orientation.
+  let signedArea2x = 0;
+  for (let i = 0; i < 4; i++) {
+    const c = corners[i]!;
+    const next = corners[(i + 1) % 4]!;
+    signedArea2x += c.xIn * next.zIn - next.xIn * c.zIn;
+  }
+  return signedArea2x < 0 ? [corners[0]!, corners[3]!, corners[2]!, corners[1]!] : corners;
+}
