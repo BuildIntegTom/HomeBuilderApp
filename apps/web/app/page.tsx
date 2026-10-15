@@ -308,7 +308,7 @@ import {
   type TilingBasis,
 } from "./tilingBasis";
 import PendingRetileMark from "./PendingRetileMark";
-import { repanelizeConfirmation, wallsThatWouldChange } from "./repanelize";
+import { repanelizeConfirmation, repanelizeWallConfirmation, wallsThatWouldChange } from "./repanelize";
 import {
   canRedo as historyCanRedo,
   canUndo as historyCanUndo,
@@ -2731,10 +2731,63 @@ export default function LayoutEditor() {
   const [repanelizePrompt, setRepanelizePrompt] = useState<{
     text: string;
     changedCount: number;
+    /** The one wall this will rebuild, or null for the whole building. */
+    wallId: string | null;
     ground: RetileWithRunStopMemoryResult;
     /** Null when the project has no second storey. */
     second: RetileWithRunStopMemoryResult | null;
   } | null>(null);
+
+  /**
+   * Take ONE wall's slots out of a whole-building re-tile and leave every
+   * other wall exactly as it was.
+   *
+   * ⚠ **It does NOT record a tiling basis, and that is the point.** The
+   * basis is one building-wide record meaning "everything on screen was
+   * built from these settings". Recording it after rebuilding a single wall
+   * would clear every pending-settings marker while most of the building was
+   * still on the old settings — the same false all-clear the whole-building
+   * handler's own comment warns about for the second storey. The markers
+   * stay up until a full Repanelize, which is the truth.
+   *
+   * ⚠ Untouched walls keep their IDENTITY, not just their value: every other
+   * entry is the same object it already was, so memos downstream do not
+   * invalidate and a 232-panel building does not re-render because one wall
+   * was rebuilt.
+   */
+  const applyRetiledWall = (wallId: string, story: "ground" | "second", result: RetileWithRunStopMemoryResult) => {
+    const next = result.slotsByWallId[wallId];
+    if (!next) return;
+    setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: next }));
+    /* ⚠ A WALL WITH NO MEMORY GETS ITS KEY REMOVED, NOT SET TO SOMETHING EMPTY.
+       The first version wrote `?? []` here, and an empty ARRAY is not an empty
+       `RunStopOpeningMemory`: the tiler asks
+       `unbuiltOpeningsByWallId?.[wall.id]?.unbuilt.length`, which optional-chains
+       the wall but NOT `.unbuilt` — so `[].unbuilt.length` threw, and every
+       later Repanelize on the whole building died on a click with nothing shown
+       to the user. Found in the browser console, not by tsc.
+
+       ⚠ **And tsc's silence has a specific, reproducible cause worth knowing.**
+       The bad value sat in NESTED computed keys —
+       `{ ...prev, [story]: { ...prev[story], [wallId]: wrong } }`. Checked
+       against a minimal repro: a SINGLE computed key is caught
+       (`Type '{ [x: string]: Memory | never[] }' is not assignable...`), but
+       nest one computed-key literal inside another and the inner value stops
+       being checked against the outer type. So writing this as an assignment
+       through a typed local, as below, is not merely tidier — it is the version
+       the compiler actually inspects.
+
+       Omitting the key is also the honest encoding: "this wall has no unbuilt
+       openings" and "this wall has an empty record of them" are the same fact,
+       and only one of them can be malformed. */
+    setUnbuiltOpeningsByStoryAndWallId((prev) => {
+      const forStory = { ...prev[story] };
+      const memory = result.unbuiltOpeningsByWallId[wallId];
+      if (memory) forStory[wallId] = memory;
+      else delete forStory[wallId];
+      return { ...prev, [story]: forStory };
+    });
+  };
 
   const applyRetiledStory = (
     story: "ground" | "second",
@@ -2892,7 +2945,7 @@ export default function LayoutEditor() {
    * without changing a given wall's layout at all, and telling the user that
    * wall will be rebuilt when it will not is the same lie as warning about
    * hand edits that do not exist. */
-  const handleRepanelizeRequest = () => {
+  const handleRepanelizeRequest = (scopeWallId: string | null = null) => {
     if (!footprint) return;
     const ground = retilePreservingOpenings(footprint, leastAccessibleCorner, primaryCornerIds, baseWallSlots);
     /* ⚠ The second story is re-tiled too, or Repanelize would quietly leave
@@ -2913,9 +2966,20 @@ export default function LayoutEditor() {
        four-wall building reads as a different building. */
     const changed = new Set(wallsThatWouldChange(baseWallSlots, ground.slotsByWallId));
     if (second) for (const id of wallsThatWouldChange(wallSlotsForStory("second"), second.slotsByWallId)) changed.add(id);
+    /* ⚠ PER-WALL STILL RUNS THE WHOLE TILER, and that is not waste. A wall's
+       layout depends on corner OWNERSHIP, which is a building-wide decision
+       (`primaryCornerIds`, `leastAccessibleCorner`) — tiling one wall in
+       isolation would mean re-deriving that, and a second derivation is a
+       second thing to disagree. Running the real tiler with the real inputs
+       and then applying ONE wall's result gives a wall identical to what a
+       full Repanelize would have produced there, which is the property the
+       per-wall feature has to have. */
     setRepanelizePrompt({
-      text: repanelizeConfirmation({ changedWallIds: [...changed], totalWalls: footprint.walls.length }),
-      changedCount: changed.size,
+      wallId: scopeWallId,
+      text: scopeWallId
+        ? repanelizeWallConfirmation(scopeWallId, changed.has(scopeWallId))
+        : repanelizeConfirmation({ changedWallIds: [...changed], totalWalls: footprint.walls.length }),
+      changedCount: scopeWallId ? (changed.has(scopeWallId) ? 1 : 0) : changed.size,
       ground,
       second,
     });
@@ -2925,8 +2989,13 @@ export default function LayoutEditor() {
   const handleRepanelizeConfirm = () => {
     const prompt = repanelizePrompt;
     if (!prompt) return;
-    applyRetiledStory("ground", prompt.ground, leastAccessibleCorner);
-    if (prompt.second) applyRetiledStory("second", prompt.second, leastAccessibleCorner);
+    if (prompt.wallId) {
+      applyRetiledWall(prompt.wallId, "ground", prompt.ground);
+      if (prompt.second) applyRetiledWall(prompt.wallId, "second", prompt.second);
+    } else {
+      applyRetiledStory("ground", prompt.ground, leastAccessibleCorner);
+      if (prompt.second) applyRetiledStory("second", prompt.second, leastAccessibleCorner);
+    }
     setRepanelizePrompt(null);
   };
   const setWallSlotsForStory = (
@@ -8698,12 +8767,22 @@ export default function LayoutEditor() {
           <button
             type="button"
             className={styles.tool}
-            onClick={handleRepanelizeRequest}
+            /* ⚠ Wrapped, not passed bare. `handleRepanelizeRequest` now takes a
+               wall id, and React hands a click handler the MouseEvent — so the
+               bare reference made every building-wide Repanelize scope itself to
+               a wall named [object MouseEvent], which matches nothing and would
+               have silently rebuilt nothing at all. tsc caught it. */
+            onClick={() => handleRepanelizeRequest(null)}
             title="Rebuild every wall's panels from the current settings"
           >
             Repanelize…
           </button>
-          {repanelizePrompt && (
+          {/* ⚠ `wallId === null` — the building-wide dialog, not just any
+              prompt. Both scopes share one piece of state, so without this
+              guard, asking to repanelize ONE wall also opened the whole-building
+              dialog over in Wall Assembly, offering a confirm button that would
+              have rebuilt everything. */}
+          {repanelizePrompt && repanelizePrompt.wallId === null && (
             <div role="alertdialog" aria-label="Confirm repanelize" className={styles.note} data-repanelize-prompt="">
               <p>{repanelizePrompt.text}</p>
               {/* ⚠ Repanelize is one undo entry, so this IS reversible — said
@@ -9328,6 +9407,43 @@ export default function LayoutEditor() {
         >
           {stories.length > 1 ? "Remove Layer" : "Add Layer"}
         </button>
+      </div>
+      {/* PER-WALL REPANELIZE. Lives here, in the same note every other
+          wall-level decision already lives in, because it IS one: it rebuilds
+          the wall you are looking at and nothing else.
+
+          ⚠ It deliberately does not clear the pending-settings markers. Those
+          mean "the building was not built from these settings", which stays
+          true after one wall is rebuilt — see `applyRetiledWall`. */}
+      <div className={elevationStyles.beamSection} data-repanelize-wall="">
+        <span className={elevationStyles.sectionLabel}>Repanelize — Wall {elevationWall.id}</span>
+        <p className={elevationStyles.helpText}>
+          Rebuild just this wall&apos;s panels from the current settings, leaving every other wall&apos;s hand edits
+          alone. The building-wide <strong>Repanelize</strong> in Wall Assembly does all of them at once.
+        </p>
+        <button
+          type="button"
+          className={elevationStyles.actionButton}
+          onClick={() => handleRepanelizeRequest(elevationWall.id)}
+          title={`Rebuild wall ${elevationWall.id} from the current settings, and no other wall`}
+        >
+          Repanelize Wall {elevationWall.id}…
+        </button>
+        {repanelizePrompt?.wallId === elevationWall.id && (
+          <div role="alertdialog" aria-label="Confirm repanelize wall" data-repanelize-wall-prompt="">
+            <p className={elevationStyles.helpText}>{repanelizePrompt.text}</p>
+            {/* Said out loud for the same reason the building-wide prompt says
+                it: a user who does not know this is one undo entry will not
+                risk the click, and being able to try it is the whole point. */}
+            <p className={elevationStyles.helpText}>One undo press puts it back.</p>
+            <button type="button" className={elevationStyles.actionButton} onClick={handleRepanelizeConfirm}>
+              {repanelizePrompt.changedCount === 0 ? "Repanelize anyway" : `Repanelize wall ${elevationWall.id}`}
+            </button>
+            <button type="button" className={elevationStyles.actionButton} onClick={() => setRepanelizePrompt(null)}>
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
       {/* Stage 3 — stop this wall short. Two fields, one per end, in the
           same note every other wall-level decision already lives in. Not a

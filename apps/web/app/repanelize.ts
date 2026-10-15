@@ -77,3 +77,31 @@ export function repanelizeConfirmation({ changedWallIds, totalWalls }: Repaneliz
     `Windows and doors keep their sizes, but may shift position along the wall.`
   );
 }
+
+/**
+ * The sentence for repanelizing ONE wall.
+ *
+ * Tommy asked for this after the whole-building version shipped: a wall you
+ * are looking at, rebuilt from current settings, without touching the hand
+ * edits on every other wall.
+ *
+ * ⚠ Same rule as `repanelizeConfirmation` — **it must not warn about losing
+ * work that does not exist.** A wall already matching the settings loses
+ * nothing, and saying otherwise on the wall the user is staring at is the
+ * fastest way to teach them that this dialog lies.
+ *
+ * ⚠ And it says what it does NOT do, which the building-wide one has no need
+ * to: the whole point of reaching for this instead of Repanelize is that the
+ * rest of the building is left alone, and a user cannot act on that guarantee
+ * unless it is stated.
+ */
+export function repanelizeWallConfirmation(wallId: string, wouldChange: boolean): string {
+  if (!wouldChange) {
+    return `Nothing would change — wall ${wallId} already matches the current settings. Repanelizing it is safe but pointless.`;
+  }
+  return (
+    `Repanelize will rebuild wall ${wallId} from the current settings, and no other wall. ` +
+    `Hand-set panel widths, inserted panels and panel types on this wall will be replaced. ` +
+    `Windows and doors keep their sizes, but may shift position along the wall.`
+  );
+}

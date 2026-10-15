@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PanelSlot } from "@building-integrity/geometry";
-import { repanelizeConfirmation, wallSignature, wallsThatWouldChange } from "./repanelize";
+import { repanelizeConfirmation,
+  repanelizeWallConfirmation, wallSignature, wallsThatWouldChange } from "./repanelize";
 
 const std = (widthIn: number): PanelSlot => ({ type: "standard", widthIn });
 const corner = (): PanelSlot => ({ type: "corner", widthIn: 25.5 });
@@ -89,5 +90,40 @@ describe("⚠ the confirmation tells the truth, including when there is nothing 
     const text = repanelizeConfirmation({ changedWallIds: ["AB"], totalWalls: 2 });
     expect(text).toContain("keep their sizes");
     expect(text).toContain("shift position");
+  });
+});
+
+describe("repanelizeWallConfirmation — one wall at a time", () => {
+  it("⚠ does NOT warn about losing work on a wall that already matches", () => {
+    // The same rule the building-wide sentence follows. On the single wall the
+    // user is looking at, a false "your edits will be replaced" is the fastest
+    // possible way to teach them this dialog lies.
+    const text = repanelizeWallConfirmation("AB", false);
+    expect(text).toContain("Nothing would change");
+    expect(text).toContain("wall AB");
+    expect(text).not.toContain("will be replaced");
+  });
+
+  it("names the wall, and states what it will NOT touch", () => {
+    // "and no other wall" is the entire reason to reach for this instead of
+    // Repanelize, so the guarantee has to be stated or it cannot be relied on.
+    const text = repanelizeWallConfirmation("CD", true);
+    expect(text).toContain("wall CD");
+    expect(text).toContain("no other wall");
+    expect(text).toContain("will be replaced");
+  });
+
+  it("carries the openings warning, exactly as the building-wide one does", () => {
+    // A re-tile may MOVE an opening though it may never resize one (measured
+    // up to 19in). That surprise is no smaller for being confined to one wall.
+    const text = repanelizeWallConfirmation("AB", true);
+    expect(text).toContain("keep their sizes");
+    expect(text).toContain("may shift position");
+  });
+
+  it("says nothing about other walls when there is nothing to lose", () => {
+    // No "no other wall" promise on the no-op path: there is no action to
+    // scope, and a guarantee about an operation that does nothing is noise.
+    expect(repanelizeWallConfirmation("AB", false)).not.toContain("no other wall");
   });
 });
