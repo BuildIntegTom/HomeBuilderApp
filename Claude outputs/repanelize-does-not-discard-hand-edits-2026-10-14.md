@@ -43,8 +43,20 @@ the BEHAVIOUR moves, not the wording.
   - `wallRunStopsByWallId[wallId]` — **null**
   - `unbuiltOpeningsByStoryAndWallId.ground[wallId]` — **null**
   - `slotIndexPinnedWallIds.has(wallId)` — **false**
-  - stripping every slot's `anchorOffsetIn` before the re-tile — **no effect**
-    (this was the reverted fix)
+  - stripping every slot's `anchorOffsetIn` before the re-tile —
+    **INCONCLUSIVE, and my first write-up of this overstated it.** The UI
+    prognosis still read "nothing would change", but the re-tile's OUTPUT was
+    never logged in that run: the `PROBE same true` line I was reading came
+    from the EARLIER diagnostic, before the strip existed. So this is ruled
+    out of the symptom, not out of the mechanism. (It was still reverted —
+    an unverified fix with a confident comment is worse than none.)
+
+- **A wall with TWO openings reverts too.** The leading theory below — that an
+  edit bracketed by two anchored openings is what gets reproduced — was then
+  tested directly and is **WRONG**: a wall shaped
+  `window | … | standard 56 | … | door` re-tiles the 56 back to 40. The
+  geometry is exonerated on every shape tried, which moves the search entirely
+  into `page.tsx`.
 
 ## What distinguishes the failing case from the passing probe
 
