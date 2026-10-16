@@ -23,8 +23,12 @@ describe("what counts as the document", () => {
     // is added without a verdict, the same guard redaction.ts uses. This test
     // records the count so a silent mass-reclassification is still visible.
     const all = Object.keys(UNDO_CLASSIFICATION);
-    expect(all.length).toBe(74);
-    expect(DOCUMENT_KEYS.length).toBe(69);
+    // 74 → 75 on 2026-10-16: `stoppedSlotsByStoryAndWallId`, tile-once Stage
+    // 4d's record of the panels a run stop has set aside. Classified
+    // `document` — undoing a stop has to put those panels back.
+    expect(all.length).toBe(75);
+    // ...and 69 -> 70 document keys, since the new one is document state.
+    expect(DOCUMENT_KEYS.length).toBe(70);
   });
 
   it("where the user is standing is NOT the document", () => {

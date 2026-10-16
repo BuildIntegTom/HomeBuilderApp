@@ -137,6 +137,8 @@ export const MONEY_CLASSIFICATION = {
   // is geometry, and there is no price anywhere in it. Its absence from a
   // redacted document costs a browsing company nothing it was entitled to.
   unbuiltOpeningsByStoryAndWallId: "not-money",
+  /* Panel geometry set aside by a run stop — widths and types, no price. */
+  stoppedSlotsByStoryAndWallId: "not-money",
   wallReviewNotes: "not-money",
   // REPANELIZE R0. Panel widths, thickness, corner width, bracing spacing and
   // the least-accessible corner — the settings a tiling was produced under.

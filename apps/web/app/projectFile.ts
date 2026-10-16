@@ -7,6 +7,7 @@ import type {
   PanelSlot,
   RoofBearingAnchorMode,
   RunStopOpeningMemory,
+  StoppedSlots,
   Story,
   TrussDoublingStrategy,
   WallRunStop,
@@ -401,6 +402,28 @@ export interface ProjectState {
    * unambiguous meaning. It still needs a classification in
    * `cloud/redaction.ts`, which it has (`not-money`). */
   unbuiltOpeningsByStoryAndWallId?: Record<"ground" | "second", Record<string, RunStopOpeningMemory>>;
+  /**
+   * TILE-ONCE STAGE 4d — the PANELS a run stop has taken out of each wall,
+   * kept so that reducing the stop puts them back exactly as they were.
+   *
+   * ⚠ Document state, not transient, and that is why it rides the project
+   * file: a project saved with a stop and loaded a month later still has to
+   * restore its panels when the stop is reduced. Losing it on save would
+   * turn a reversible stop into a destructive one, silently.
+   *
+   * Succeeds `unbuiltOpeningsByStoryAndWallId` above, which remembered
+   * OPENINGS by anchor and re-derived their positions on the next re-tile.
+   * Remembering the slots restores hand-set widths, braced patterns and
+   * types too. Both exist during the changeover; Stage 6 retires the older
+   * one.
+   *
+   * Optional and deliberately NOT in `REQUIRED_STATE_KEYS`, for exactly the
+   * reason stated above it: requiring it would make every project file that
+   * predates today unopenable, and its absence has an unambiguous meaning
+   * (nothing is stopped aside). An additive optional key with one shared
+   * default is not a `PROJECT_FILE_VERSION` bump.
+   */
+  stoppedSlotsByStoryAndWallId?: Record<"ground" | "second", Record<string, StoppedSlots>>;
   /** Engineer role's own per-wall attributed notes (Tommy's Engineer Lens
    * mockup: a free-text note signed "- Eng. Smith") — see
    * wallReviewNotes.ts's own doc comment on why this is a separate concept

@@ -116,6 +116,9 @@ export const UNDO_CLASSIFICATION = {
   foundationEnabled: "document",
   wallRunStopsByWallId: "document",
   unbuiltOpeningsByStoryAndWallId: "document",
+  /* Undoing a stop must put back the panels that stop removed, so the
+     remembered span travels with the document rather than being rebuilt. */
+  stoppedSlotsByStoryAndWallId: "document",
   wallReviewNotes: "document",
   tilingBasis: "document",
 } as const satisfies Record<keyof ProjectState, "document" | "transient">;
