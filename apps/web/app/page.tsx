@@ -4896,13 +4896,32 @@ export default function LayoutEditor() {
       // opposing wall to the other side of the floor layout line").
       const dragged = dragWallBounded(footprint, wallId, offsetFt);
       const { footprint: fp, primaryCornerIds: nextPrimary } = collapseNearZeroWalls(dragged, primaryCornerIds);
-      setFootprint(fp);
-      setPrimaryCornerIds(nextPrimary);
 
       if (fp === dragged) {
-        // No collapse fired — ids are unchanged, reuse baseWallSlots directly.
-        applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots), leastAccessibleCorner);
+        /* TILE-ONCE STAGE 4 — no collapse fired, so every wall id survives and
+           this is a pure LENGTH change: the ordinary drag, and the one that
+           happens many times a second while the mouse is down. Panels are
+           resized at whichever end moved rather than the building being
+           re-tiled, which is Tommy's *"live during the drag, not a recompute
+           on release"*.
+
+           ⚠ Nothing is written unless the resize succeeds — including the
+           footprint, which is why `setFootprint` moved INSIDE the branch. A
+           drag that cannot be absorbed must leave the building exactly as it
+           was, not shaped one way with panels for another. */
+        if (!applyShapeChange(footprint, fp, nextPrimary)) return;
+        setFootprint(fp);
+        setPrimaryCornerIds(nextPrimary);
       } else {
+        /* ⚠ A COLLAPSE FIRED, AND THIS BRANCH KEEPS RE-DERIVING ON PURPOSE.
+           Tommy: *"walls can snap back into each other and reform a straight
+           one"* — a wall is REMOVED and every survivor is renumbered. That is
+           a shape change, not a length change, and the spec is explicit that
+           shape changes stay re-derived: the merged wall has no single prior
+           panel array to manipulate, so there is nothing for tile-once to
+           preserve. Re-tiling here is the correct answer, not a leftover. */
+        setFootprint(fp);
+        setPrimaryCornerIds(nextPrimary);
         // A collapse fired — correlate by exact point-pair (a collapse never
         // moves a surviving corner's point, only removes one and relabels
         // the rest), same technique handleAddBumpOut uses for insertBumpOut's
@@ -4992,9 +5011,12 @@ export default function LayoutEditor() {
       isDepthWall ? depthFt + 2 * offsetFt : depthFt,
     );
     const nextPrimary = new Set(fp.corners.map((c) => c.id));
+    // Same treatment as the typed-length editor's octagon branch: the shape
+    // regenerates symmetrically, every wall id survives, and each wall's
+    // panels are resized at the end that moved.
+    if (!applyShapeChange(footprint, fp, nextPrimary)) return;
     setFootprint(fp);
     setPrimaryCornerIds(nextPrimary);
-    applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots), leastAccessibleCorner);
   };
 
   // For rendering: butting walls' content starts inset from the actual

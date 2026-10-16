@@ -67,10 +67,14 @@ const EXPECTED: Record<string, { calls: number; fate: Fate; stage: string; why: 
      call disappeared, which is the signal that the inventory — not just the
      code — had to be updated deliberately. */
   handleDragWall: {
-    calls: 3,
-    fate: "DIRECT",
-    stage: "Stage 4",
-    why: "The same as typing a length, driven by the mouse. Same treatment.",
+    calls: 1,
+    fate: "REDERIVES",
+    stage: "—",
+    why:
+      "⚠ RECLASSIFIED 2026-10-16, Stage 4c, and this is a CHANGE OF MIND recorded rather than hidden. Two of its three calls are gone — the ordinary right-angle drag and the octagon drag are pure length changes and now resize panels directly. " +
+      "The one that remains is the COLLAPSE branch (Tommy: 'walls can snap back into each other and reform a straight one'), which REMOVES a wall and renumbers every survivor. " +
+      "That is a shape change, not a length change: the merged wall has no single prior panel array to manipulate, so there is nothing for tile-once to preserve and re-deriving is the correct answer. " +
+      "It is classified REDERIVES for the same reason `handleAddBumpOut` is, and it is NOT work left undone.",
   },
   retileAllForRunStops: {
     calls: 1,
@@ -145,8 +149,18 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
        (it moved windows up to 59in), but by becoming a DEFERRED setting:
        it now changes nothing but the setting, shows a caution marker, and
        is applied by Repanelize. Three of six handlers remain. */
-    expect(direct.map(([h]) => h).sort()).toEqual(["handleDragWall", "retileAllForRunStops"]);
-    expect(rederives.map(([h]) => h).sort()).toEqual(["handleAddBumpOut", "handleDraw", "handleRepanelizeRequest"]);
+    expect(direct.map(([h]) => h).sort()).toEqual(["retileAllForRunStops"]);
+    /* ⚠ Four REDERIVES sites now, up from three — `handleDragWall`'s collapse
+       branch joined them by reclassification, not by someone adding a re-tile.
+       Asserted so that growth has to be deliberate: a FIFTH would mean a
+       handler quietly went back to re-deriving. */
+    expect(rederives.length).toBe(4);
+    expect(rederives.map(([h]) => h).sort()).toEqual([
+      "handleAddBumpOut",
+      "handleDragWall",
+      "handleDraw",
+      "handleRepanelizeRequest",
+    ]);
   });
 });
 
