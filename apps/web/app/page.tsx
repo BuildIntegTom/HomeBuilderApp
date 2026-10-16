@@ -66,6 +66,8 @@ import {
   retileWithOpenings,
   wallCompassDirection,
   wallGeometryFor as wallGeometryForPure,
+  resizeWallRun,
+  wallGrowthEnd,
   hasWallRunStop,
   normalizeWallRunStop,
   NO_WALL_RUN_STOP,
@@ -2819,6 +2821,117 @@ export default function LayoutEditor() {
       ? wallGeometryForPure(footprint, wallId, primaryCornerIds, leastAccessibleCorner, thicknessIn, runStops)
       : null;
 
+  /**
+   * TILE-ONCE STAGE 4 — a shape change that alters wall LENGTHS, applied by
+   * manipulating each wall's existing panel array instead of re-tiling.
+   *
+   * Tommy, 2026-09-30: *"when a user drags the east side of a square building
+   * making it bigger, it auto populates standard panels that enter and grow
+   * with the drag. When that side is dragged back, each of those latest
+   * panels shrinks and disappears."*
+   *
+   * ⚠ **Every wall is asked, and most answer "nothing changed".** Typing one
+   * wall's length moves several walls at once — widening a rectangle changes
+   * AB and CD, and carries BC and DA sideways without changing their length
+   * at all. The ones that did not change keep their panel array BY IDENTITY,
+   * not by value: a fresh-but-equal array would invalidate every memo
+   * downstream and re-render a 232-panel building for nothing.
+   *
+   * ⚠ **The run length is what moves, not the wall's nominal length.** A
+   * wall's panels fill its RUN — the nominal length less whatever a
+   * neighbour's corner panel occupies at each end — so the delta is measured
+   * between the old and new `wallGeometryFor(...).lengthIn`. Taking it from
+   * `wall.lengthFt` instead would be wrong by an inset at either end, every
+   * time corner ownership differs between the two shapes.
+   *
+   * ⚠ **A shortfall REFUSES.** If a wall cannot give up the width asked of
+   * it, `resizeWallRun` says so rather than returning a short wall, and this
+   * returns null so the caller leaves the footprint alone. A wall whose
+   * panels do not sum to its own length is the one thing that may never
+   * ship — see the dimensional-tightness rule.
+   */
+  const resizeSlotsForShapeChange = (
+    oldFp: Footprint,
+    newFp: Footprint,
+    slotsByWallId: Record<string, PanelSlot[]>,
+    primary: Set<string>,
+    runStops: Record<string, WallRunStop>,
+  ): { slotsByWallId: Record<string, PanelSlot[]>; collapsedOpenings: number } | null => {
+    const cornerXY = (fp: Footprint) => new Map(fp.corners.map((c) => [c.id, { x: c.point.x, y: c.point.y }]));
+    const oldCorners = cornerXY(oldFp);
+    const newCorners = cornerXY(newFp);
+    const next: Record<string, PanelSlot[]> = {};
+    let collapsedOpenings = 0;
+    for (const wall of newFp.walls) {
+      const slots = slotsByWallId[wall.id];
+      if (!slots) continue; // a wall this shape did not have before
+      const end = wallGrowthEnd(oldCorners, newCorners, wall);
+      const oldWall = oldFp.walls.find((w) => w.id === wall.id);
+      if (!end || !oldWall) {
+        next[wall.id] = slots;
+        continue;
+      }
+      const oldGeom = wallGeometryForPure(oldFp, wall.id, primary, leastAccessibleCorner, thicknessIn, runStops);
+      const newGeom = wallGeometryForPure(newFp, wall.id, primary, leastAccessibleCorner, thicknessIn, runStops);
+      if (!oldGeom || !newGeom) {
+        // No geometry for this wall in one of the two shapes — leave its panels
+        // exactly as they are rather than guessing at a delta.
+        next[wall.id] = slots;
+        continue;
+      }
+      const deltaIn = newGeom.lengthIn - oldGeom.lengthIn;
+      if (Math.round(deltaIn * 8) === 0) {
+        next[wall.id] = slots;
+        continue;
+      }
+      const out = resizeWallRun(slots, deltaIn, end, standardWidthIn);
+      if (out.shortfallEighths > 0) return null;
+      collapsedOpenings += out.collapsedOpenings;
+      next[wall.id] = out.slots;
+    }
+    return { slotsByWallId: next, collapsedOpenings };
+  };
+
+  /**
+   * Commit a shape change by RESIZING each wall's panels — tile-once Stage 4's
+   * replacement for re-tiling the whole building on a length edit.
+   *
+   * Returns false when the change is impossible, and then NOTHING is written:
+   * no footprint, no panels. ⚠ That all-or-nothing matters because the
+   * footprint and the panels are two pieces of state. Setting the shape and
+   * then discovering a wall cannot shrink would leave a building whose walls
+   * disagree with their own panels — the one condition the dimensional
+   * tightness rule says may never exist. So the panels are computed FIRST and
+   * the caller only sets the footprint once they are known good.
+   */
+  const applyShapeChange = (oldFp: Footprint, newFp: Footprint, primary: Set<string>): boolean => {
+    const ground = resizeSlotsForShapeChange(oldFp, newFp, baseWallSlots, primary, wallRunStopsByWallId);
+    if (!ground) return false;
+    const second = secondStory
+      ? resizeSlotsForShapeChange(oldFp, newFp, secondStory.wallSlots, primary, wallRunStopsByWallId)
+      : null;
+    if (secondStory && !second) return false;
+    setBaseWallSlots(ground.slotsByWallId);
+    if (second) setWallSlotsForStory("second", () => second.slotsByWallId);
+    /* ⚠ No `recordTilingBasis` here, and that is deliberate. The basis means
+       "this building was BUILT from these settings", and a length change does
+       not apply any setting — it manipulates panels that were tiled under
+       whatever basis was already recorded. Recording one here would clear the
+       pending-settings markers and claim a Repanelize had happened. */
+    const collapsed = ground.collapsedOpenings + (second?.collapsedOpenings ?? 0);
+    if (collapsed > 0) {
+      /* Said out loud: an opening that shrank under a foot is no longer an
+         opening, which changes what gets fabricated. Tommy accepted the
+         behaviour; he did not ask for it to be silent. */
+      setPanelPlacementNotice(
+        collapsed === 1
+          ? "One window or door became a standard panel — it shrank below 1ft."
+          : `${collapsed} windows or doors became standard panels — they shrank below 1ft.`,
+      );
+    }
+    return true;
+  };
+
   const handleDraw = (widthFt: number, depthFt: number, origin: { x: number; y: number }) => {
     const fp =
       shapeTool === "octagon" ? buildOctagonFootprint(widthFt, depthFt) : buildRectangleFootprint(widthFt, depthFt);
@@ -4618,11 +4731,11 @@ export default function LayoutEditor() {
       // editor, which only ever moves the wall's own end corner and the
       // next wall's end corner (see editWallLength's own docs).
       const fp = editWallLength(footprint, wallId, newLengthFt);
-      setFootprint(fp);
       // editWallLength never renumbers ids, so baseWallSlots' old keys are
-      // still valid — every wall's own openings survive, re-tiled at its
-      // (possibly new) length.
-      applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, primaryCornerIds, baseWallSlots), leastAccessibleCorner);
+      // still valid — every wall keeps its own panels, resized at whichever
+      // end actually moved.
+      if (!applyShapeChange(footprint, fp, primaryCornerIds)) return;
+      setFootprint(fp);
       return;
     }
     if (footprint.corners.length === 4) {
@@ -4634,12 +4747,12 @@ export default function LayoutEditor() {
         isWidthWall ? currentDepthFt : newLengthFt,
       );
       const nextPrimary = new Set(fp.corners.map((c) => c.id));
-      setFootprint(fp);
-      setPrimaryCornerIds(nextPrimary);
       // buildRectangleFootprint always uses the same fixed "AB"/"BC"/"CD"/
       // "DA" wall ids regardless of dimensions, so baseWallSlots' keys stay
       // valid here too.
-      applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots), leastAccessibleCorner);
+      if (!applyShapeChange(footprint, fp, nextPrimary)) return;
+      setFootprint(fp);
+      setPrimaryCornerIds(nextPrimary);
       return;
     }
 
@@ -4652,10 +4765,10 @@ export default function LayoutEditor() {
       isDepthWall ? newLengthFt + 2 * clipFt : depthFt,
     );
     const nextPrimary = new Set(fp.corners.map((c) => c.id));
+    // buildOctagonFootprint always uses the same fixed "0".."7" wall ids too.
+    if (!applyShapeChange(footprint, fp, nextPrimary)) return;
     setFootprint(fp);
     setPrimaryCornerIds(nextPrimary);
-    // buildOctagonFootprint always uses the same fixed "0".."7" wall ids too.
-    applyRetiledStory("ground", retilePreservingOpenings(fp, leastAccessibleCorner, nextPrimary, baseWallSlots), leastAccessibleCorner);
   };
 
   const isWallLengthEditable = (wallId: string): boolean => {

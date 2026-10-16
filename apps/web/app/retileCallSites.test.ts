@@ -57,12 +57,15 @@ const EXPECTED: Record<string, { calls: number; fate: Fate; stage: string; why: 
       "⚠ TWO calls since 2026-10-10: the ground storey and the second. Repanelize exists to actuate a settings change (Tommy), so leaving half a building on the old settings while clearing the caution markers — which say it HAS been applied — would be the worst of both. " +
       "⚠ This test caught this handler twice: once when it was added without a classification, and again when it grew its second call.",
   },
-  handleEditWallLength: {
-    calls: 3,
-    fate: "DIRECT",
-    stage: "Stage 4",
-    why: "Tommy's spec: panels enter and grow at the dragged end, and shrink and disappear on the way back. That is manipulation of the existing array, not a re-derivation of it.",
-  },
+  /* ⚠ `handleEditWallLength` LEFT THIS LIST ON 2026-10-16 — Stage 4a/4b, and
+     the second handler to stop re-tiling after `handleSetLeastAccessibleCorner`.
+     All three of its calls are gone: the bump-out, rectangle and octagon paths
+     now resize each wall's existing panel array via `resizeWallRun`, at
+     whichever end actually moved (`wallGrowthEnd`). Two of six handlers remain.
+
+     This test did its job on the way through: it went red the moment the last
+     call disappeared, which is the signal that the inventory — not just the
+     code — had to be updated deliberately. */
   handleDragWall: {
     calls: 3,
     fate: "DIRECT",
@@ -123,7 +126,12 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
     const total = [...callSitesByHandler().values()].reduce((n, l) => n + l.length, 0);
     // If page.tsx is ever refactored so these live elsewhere, this test is
     // measuring nothing and should be moved rather than left passing.
-    expect(total).toBeGreaterThanOrEqual(10);
+    /* ⚠ Lowered from 10 to 6 as Stage 4 removes call sites. It is a
+       NON-VACUITY floor, not a target: its only job is to fail if a refactor
+       moves these calls out of page.tsx entirely and leaves this file
+       measuring nothing. It must keep dropping as the remaining handlers
+       convert, and when it reaches the three REDERIVES sites it stops. */
+    expect(total).toBeGreaterThanOrEqual(6);
   });
 
   it("⚠ records what tile-once still has to convert, so the size of the job is visible", () => {
@@ -137,7 +145,7 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
        (it moved windows up to 59in), but by becoming a DEFERRED setting:
        it now changes nothing but the setting, shows a caution marker, and
        is applied by Repanelize. Three of six handlers remain. */
-    expect(direct.map(([h]) => h).sort()).toEqual(["handleDragWall", "handleEditWallLength", "retileAllForRunStops"]);
+    expect(direct.map(([h]) => h).sort()).toEqual(["handleDragWall", "retileAllForRunStops"]);
     expect(rederives.map(([h]) => h).sort()).toEqual(["handleAddBumpOut", "handleDraw", "handleRepanelizeRequest"]);
   });
 });

@@ -211,3 +211,47 @@ export function resizeWallRun(
 
   return { slots: working, collapsedOpenings, shortfallEighths: remaining };
 }
+
+/**
+ * Which end of a wall the panels should enter at, worked out from which
+ * CORNER ACTUALLY MOVED between two footprints.
+ *
+ * ⚠ **Derived, not hard-coded per shape, and that is the point.** Editing one
+ * wall's length moves several walls: on a rectangle, typing a new width
+ * changes AB and CD, and the growth belongs at opposite ends of their two
+ * arrays because the walls run in opposite directions around the ring. A table
+ * of "for wall AB grow at the end" would be four entries for a rectangle,
+ * eight for an octagon, and wrong the first time a bump-out renumbered
+ * anything. The corner that moved is the same fact in every shape.
+ *
+ * Tommy's framing is exactly this: *"when a user drags the east side of a
+ * square building making it bigger, it auto populates standard panels"* — the
+ * panels appear where the hand is, which is the end that moved.
+ *
+ * Returns `null` when neither end moved, which means this wall's run did not
+ * change and its panels must not be touched at all.
+ */
+export function wallGrowthEnd(
+  oldCornerById: ReadonlyMap<string, { x: number; y: number }>,
+  newCornerById: ReadonlyMap<string, { x: number; y: number }>,
+  wall: { startCorner: string; endCorner: string },
+): "start" | "end" | null {
+  const moved = (id: string): number => {
+    const a = oldCornerById.get(id);
+    const b = newCornerById.get(id);
+    if (!a || !b) return 0;
+    return Math.hypot(b.x - a.x, b.y - a.y);
+  };
+  const startMoved = moved(wall.startCorner);
+  const endMoved = moved(wall.endCorner);
+  // Below an eighth of an inch in feet — below the grid, so not a move.
+  const EPS = 1 / 8 / 12 / 2;
+  if (startMoved < EPS && endMoved < EPS) return null;
+  /* ⚠ When BOTH ends moved — a wall carried bodily sideways, as the far wall
+     of a rectangle is when you widen it — the growth goes to the end that
+     moved FURTHER. On a pure translation the two are equal and this picks
+     `end` arbitrarily, which is harmless precisely because a translation does
+     not change the wall's length: `resizeWallRun` is then called with a delta
+     of zero and returns the array untouched. */
+  return endMoved >= startMoved ? "end" : "start";
+}

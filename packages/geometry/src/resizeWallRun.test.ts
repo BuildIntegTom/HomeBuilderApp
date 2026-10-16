@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OPENING_COLLAPSE_BELOW_IN, resizeWallRun } from "./resizeWallRun";
+import { OPENING_COLLAPSE_BELOW_IN, resizeWallRun, wallGrowthEnd } from "./resizeWallRun";
 import type { PanelSlot } from "./types";
 
 const corner = (w = 25.5): PanelSlot => ({ type: "corner", widthIn: w });
@@ -222,5 +222,47 @@ describe("round trips — a drag out and back", () => {
     const shrunk = resizeWallRun(wall, -40, "end", 40);
     const back = resizeWallRun(shrunk.slots, 40, "end", 40);
     expect(back.slots.some((s) => s.type === "window")).toBe(false);
+  });
+});
+
+describe("which end the panels enter at", () => {
+  const at = (x: number, y: number) => ({ x, y });
+  // A rectangle A(0,0) B(30,0) C(30,20) D(0,20), walls AB BC CD DA.
+  const before = new Map([["A", at(0, 0)], ["B", at(30, 0)], ["C", at(30, 20)], ["D", at(0, 20)]]);
+  // Widened to 40ft: B and C move, A and D stay.
+  const wider = new Map([["A", at(0, 0)], ["B", at(40, 0)], ["C", at(40, 20)], ["D", at(0, 20)]]);
+
+  it("⚠ the growth goes to the end whose CORNER MOVED, on each wall", () => {
+    // AB runs A->B and B moved, so panels enter at its END.
+    expect(wallGrowthEnd(before, wider, { startCorner: "A", endCorner: "B" })).toBe("end");
+    // CD runs C->D and C moved, so panels enter at its START — the opposite
+    // end of the array, because the walls run in opposite directions around
+    // the ring. This is exactly what a per-shape table would get wrong.
+    expect(wallGrowthEnd(before, wider, { startCorner: "C", endCorner: "D" })).toBe("start");
+  });
+
+  it("a wall neither of whose corners moved is left alone entirely", () => {
+    // DA: D and A both stayed put. Returning null is what stops its panel
+    // array being touched — identity preserved, no re-render, no edits lost.
+    expect(wallGrowthEnd(before, wider, { startCorner: "D", endCorner: "A" })).toBeNull();
+  });
+
+  it("a wall carried bodily sideways still reports an end, and it does not matter", () => {
+    // BC: both B and C moved by the same amount. Its LENGTH is unchanged, so
+    // resizeWallRun is called with a zero delta and returns the array as-is.
+    expect(wallGrowthEnd(before, wider, { startCorner: "B", endCorner: "C" })).toBe("end");
+  });
+
+  it("a sub-grid wobble is not a move", () => {
+    // Below an eighth of an inch, in feet. Floating-point noise from rebuilding
+    // a footprint must not be read as a drag.
+    const nudged = new Map([["A", at(0, 0)], ["B", at(30 + 1e-9, 0)]]);
+    expect(wallGrowthEnd(before, nudged, { startCorner: "A", endCorner: "B" })).toBeNull();
+  });
+
+  it("an unknown corner id counts as not moved rather than throwing", () => {
+    // A bump-out renumbers ids; a wall naming a corner the other footprint
+    // lacks must degrade to "leave it alone", not crash the editor.
+    expect(wallGrowthEnd(before, wider, { startCorner: "ZZ", endCorner: "YY" })).toBeNull();
   });
 });
