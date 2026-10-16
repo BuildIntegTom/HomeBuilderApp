@@ -1,4 +1,20 @@
-# Repanelize does not discard hand-set widths — open, with the search narrowed
+# Repanelize does not discard hand-set widths — **RESOLVED 2026-10-16**
+
+> **The cause was `lockedWidthIn`.** A boundary drag sets `widthIn` and
+> `lockedWidthIn` together, and `reconcileBracedPlacement`.s final step,
+> `planLockedWidthReforce`, re-forces that pin on every re-tile BY DESIGN.
+> From there Repanelize.s call is indistinguishable from an ordinary edit
+> elsewhere on the wall. Fixed by `discardLockedWidths`, applied in
+> `handleRepanelizeRequest` only — every other re-tile still preserves locks.
+> See commit "Repanelize discards hand-set widths".
+>
+> ⚠ **Everything ruled out below was correctly ruled out and none of it was
+> the cause.** The preserved width never came from the tiler; it came from the
+> reconcile step AFTER the tiler, which is why probing the tiler in isolation
+> kept exonerating it. The note is kept for that lesson: when a component and
+> its unit-tested core disagree, the suspect is the code BETWEEN them.
+
+## Original note, as written while it was open
 
 **Status: diagnosed to a contradiction, NOT fixed.** One speculative fix was
 written, measured, found not to work, and reverted rather than left in the tree
