@@ -16,6 +16,7 @@ export * from "./tiling";
 export * from "./bracedPlacement";
 export * from "./panelWidthEdit";
 export * from "./movePanel";
+export * from "./resizeWallRun";
 export * from "./settleResidualEighths";
 export * from "./lockedWidthReforce";
 export * from "./absorbedCornerWalls";
