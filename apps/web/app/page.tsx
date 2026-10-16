@@ -37,6 +37,7 @@ import {
   findAbsorbedCornerWalls,
   findCornerBraceCombineRefusals,
   findSubMinimumPanelWidths,
+  discardLockedWidths,
   findUnhonouredLockedWidths,
   planLockedWidthReforce,
   type LockedWidthRefusal,
@@ -2947,7 +2948,28 @@ export default function LayoutEditor() {
    * hand edits that do not exist. */
   const handleRepanelizeRequest = (scopeWallId: string | null = null) => {
     if (!footprint) return;
-    const ground = retilePreservingOpenings(footprint, leastAccessibleCorner, primaryCornerIds, baseWallSlots);
+    /* ⚠ Repanelize's own confirmation copy (`repanelizeConfirmation` /
+       `repanelizeWallConfirmation` in ./repanelize) promises "Hand-set panel
+       widths... will be replaced" — but `reconcileBracedPlacement`'s own
+       `planLockedWidthReforce` step re-forces a `lockedWidthIn` pin on EVERY
+       re-tile by design (that is the whole point of the field; see its own
+       doc comment). From there, Repanelize's call looks exactly like an
+       ordinary edit elsewhere on the wall that happens to retile this one
+       too, so without this strip the pin survived and the promise was false
+       on any wall carrying a hand-dragged width — silently, with no error
+       and no visible sign that anything had been skipped. Repanelize is the
+       one caller that must discard these before the old slots ever reach
+       the tiler; every other `retilePreservingOpenings` call site keeps
+       preserving them. See `discardLockedWidths`'s own doc comment for why
+       the fix belongs here rather than in the geometry package. */
+    const discardLockedWidthsByWallId = (slotsByWallId: Record<string, PanelSlot[]>): Record<string, PanelSlot[]> =>
+      Object.fromEntries(Object.entries(slotsByWallId).map(([id, slots]) => [id, discardLockedWidths(slots)]));
+    const ground = retilePreservingOpenings(
+      footprint,
+      leastAccessibleCorner,
+      primaryCornerIds,
+      discardLockedWidthsByWallId(baseWallSlots),
+    );
     /* ⚠ The second story is re-tiled too, or Repanelize would quietly leave
        half a building on the old settings — and the caution markers would
        clear, stating that it had all been applied. */
@@ -2956,7 +2978,7 @@ export default function LayoutEditor() {
           footprint,
           leastAccessibleCorner,
           primaryCornerIds,
-          wallSlotsForStory("second"),
+          discardLockedWidthsByWallId(wallSlotsForStory("second")),
           wallRunStopsByWallId,
           "second",
         )

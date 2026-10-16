@@ -4,6 +4,7 @@ import { buildOctagonFootprint } from "./octagon";
 import { insertBumpOut } from "./bumpOut";
 import {
   cornerOwnership,
+  discardLockedWidths,
   gapEndFor,
   isMiteredShape,
   retile,
@@ -11,6 +12,7 @@ import {
   retilePreservingOpeningsWithRunStopMemory,
   wallGeometryFor,
 } from "./retile";
+import { reconcileBracedPlacement } from "./bracedPlacement";
 import { getOpeningAnchors, retileWithOpenings, type OpeningAnchor } from "./tiling";
 import type { RunStopOpeningMemory } from "./runStopOpenings";
 import type { Footprint, PanelSlot, WallRunStop } from "./types";
@@ -1047,5 +1049,86 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     // silently excluded, so that if it ever grows to include a stop that
     // withheld something, this test fails.
     expect(notExactWithoutMemory.every((s) => s >= 151)).toBe(true);
+  });
+});
+
+describe("discardLockedWidths (REPANELIZE)", () => {
+  /**
+   * The real shape Repanelize was reported broken on: two openings (a
+   * window and a door, so a swap would be visible) bracketing a pair of
+   * plain standard panels the user hand-dragged — moving the shared
+   * boundary between them, so the PAIR's combined width is unchanged but
+   * the split is no longer what the tiler would ever compute on its own.
+   * `reconcileBracedPlacement`'s own final step, `planLockedWidthReforce`,
+   * re-forces a `lockedWidthIn` pin on every re-tile BY DESIGN (that is the
+   * whole point of the field — see its own doc comment) — which is exactly
+   * why Repanelize, which promises in its own confirmation copy that
+   * "Hand-set panel widths... will be replaced", has to strip the pin
+   * itself before the old slots ever reach `reconcileBracedPlacement`,
+   * rather than relying on anything in this file to treat Repanelize's call
+   * differently from an ordinary edit elsewhere on the wall.
+   */
+  function buildHandDraggedPair() {
+    const anchors: OpeningAnchor[] = [
+      { beforeStandardCount: 0, type: "window", widthIn: 40 },
+      { beforeStandardCount: 2, type: "door", widthIn: 40 },
+    ];
+    const wallLengthIn = 160;
+    const plain = retileWithOpenings(wallLengthIn, STANDARD_WIDTH_IN, 48, "end", false, false, anchors, true, true).slots;
+    const standards = plain.filter((s) => s.type === "standard");
+    expect(standards.length).toBe(2);
+    const pairTotalIn = standards.reduce((sum, s) => sum + s.widthIn, 0);
+    const draggedFirstIn = 56; // user drags the shared boundary between the pair
+    const draggedSecondIn = pairTotalIn - draggedFirstIn; // same combined width, new split
+    let seen = 0;
+    const oldSlots: PanelSlot[] = plain.map((s) => {
+      if (s.type !== "standard") return { ...s };
+      seen++;
+      const widthIn = seen === 1 ? draggedFirstIn : draggedSecondIn;
+      return { ...s, widthIn, lockedWidthIn: widthIn };
+    });
+    return { anchors, oldSlots };
+  }
+
+  it("without stripping: Repanelize's own retile re-forces the hand-dragged widths right back", () => {
+    const { oldSlots } = buildHandDraggedPair();
+    const wallLengthIn = oldSlots.reduce((sum, s) => sum + s.widthIn, 0);
+    const retiled = retileWithOpenings(wallLengthIn, STANDARD_WIDTH_IN, 48, "end", false, false, getOpeningAnchors(oldSlots), true, true).slots;
+    const reconciled = reconcileBracedPlacement(oldSlots, retiled, 100_000, STANDARD_WIDTH_IN, "chevron", false);
+    // Both hand-dragged widths survived — the bug: Repanelize's confirmation
+    // said these would be replaced, and they were not.
+    expect(reconciled.filter((s) => s.lockedWidthIn !== undefined).map((s) => s.widthIn)).toEqual([56, 23.25]);
+  });
+
+  it("with discardLockedWidths applied to oldSlots first: no lock survives, and the widths land where a NEVER-edited wall of this same opening arrangement would", () => {
+    const { oldSlots } = buildHandDraggedPair();
+    const wallLengthIn = oldSlots.reduce((sum, s) => sum + s.widthIn, 0);
+    const strippedOldSlots = discardLockedWidths(oldSlots);
+    expect(strippedOldSlots.some((s) => s.lockedWidthIn !== undefined)).toBe(false);
+    // Every other field survived the strip untouched — only the pin (and the
+    // width it was protecting, which the tiler recomputes regardless) moved.
+    expect(strippedOldSlots.map((s) => s.type)).toEqual(oldSlots.map((s) => s.type));
+
+    const anchors = getOpeningAnchors(strippedOldSlots);
+    const retiled = retileWithOpenings(wallLengthIn, STANDARD_WIDTH_IN, 48, "end", false, false, anchors, true, true).slots;
+    const reconciled = reconcileBracedPlacement(strippedOldSlots, retiled, 100_000, STANDARD_WIDTH_IN, "chevron", false);
+    expect(reconciled.some((s) => s.lockedWidthIn !== undefined)).toBe(false);
+
+    // ⚠ Not simply the plain tiler's own output (`retiled`, above) — the
+    // corner-brace combine `reconcileBracedPlacement` runs afterwards
+    // (`planCornerBraceCombine`) was blocked from touching the hand-dragged
+    // pair ONLY because they were locked. Once unlocked, the same combine
+    // that fires on every other wall of this shape fires here too: the
+    // safety-gap at the start swallows the first standard panel and settles
+    // the residual onto the second, same as if this wall had never been
+    // hand-edited at all. That is confirmed, not assumed, by comparing
+    // against a wall that truly has no prior state (`oldSlots: undefined`).
+    const neverEdited = reconcileBracedPlacement(undefined, retiled, 100_000, STANDARD_WIDTH_IN, "chevron", false);
+    expect(reconciled.map((s) => [s.type === "braced" ? "standard" : s.type, s.widthIn, s.secondaryType])).toEqual(
+      neverEdited.map((s) => [s.type === "braced" ? "standard" : s.type, s.widthIn, s.secondaryType]),
+    );
+    // Non-vacuous: the combine really fired (otherwise this assertion would
+    // hold trivially because nothing moved).
+    expect(reconciled.some((s) => s.type === "safety-gap" && s.secondaryType === "braced")).toBe(true);
   });
 });

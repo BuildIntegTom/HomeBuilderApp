@@ -584,6 +584,53 @@ function tileOneWallPreservingOpenings(
  * `handleAddBumpOut` in page.tsx. A missing entry (undefined) means "no
  * old counterpart" — that wall gets plain-tiled with no openings, same as
  * `retile`. */
+/**
+ * Strips every `lockedWidthIn` pin from a wall's slots — REPANELIZE's own
+ * opt-out from the pin `reconcileBracedPlacement` otherwise re-forces onto
+ * every other re-tile (see `PanelSlot.lockedWidthIn`'s own doc comment,
+ * "survives an unrelated retile elsewhere on the wall").
+ *
+ * **Why this exists, and why it is the caller's job, not this file's:**
+ * Repanelize's own confirmation copy already promises *"Hand-set panel
+ * widths... will be replaced"* (`repanelizeWallConfirmation`/
+ * `repanelizeConfirmation` in page.tsx) — but until this function existed,
+ * `handleRepanelizeRequest` handed `oldSlotsByNewWallId` straight to
+ * `retilePreservingOpenings` untouched, and `reconcileBracedPlacement`'s own
+ * final step (`planLockedWidthReforce`) dutifully re-forced every hand-set
+ * width right back, because from where it sits a lock is just a lock —
+ * it cannot tell Repanelize's call apart from an ordinary edit elsewhere on
+ * the wall that happens to retile this one too. So the confirmation's own
+ * promise was false on any wall carrying a locked width, silently: the
+ * dialog said widths would be replaced and then nothing was.
+ *
+ * The caller strips locks BEFORE the old slots ever reach the tiler —
+ * **every other field survives untouched** (braced pattern/mirror, zones,
+ * `anchorOffsetIn`, run-stop memory): only the pin itself, and the one thing
+ * it protects (`widthIn`, which the tiler recomputes from scratch for every
+ * unlocked slot anyway), are affected. A plain `.map` over the caller's own
+ * record of `PanelSlot[]`, not a geometry-package concept — see
+ * `handleRepanelizeRequest` in page.tsx for the one call site.
+ *
+ * ⚠ **Discovered empirically, not derived**: naively stripping only the
+ * lock and nothing else is NOT a no-op pass-through to the "nothing was ever
+ * locked" shape unless the wall's corner-brace combine (`planCornerBraceCombine`)
+ * was itself blocked by the very lock being removed — a locked standard slot
+ * is excluded from the combine's swallow/settle candidates, so un-locking it
+ * can let a safety-gap panel combine with a standard panel that previously
+ * couldn't be touched. That is not a bug this function introduces: it is
+ * `applyBracedPlacement` running exactly the pass it would have run on this
+ * same opening arrangement had it never been hand-edited at all (verified by
+ * comparing against `reconcileBracedPlacement(undefined, ...)` on the same
+ * retiled slots in `retile.test.ts`).
+ */
+export function discardLockedWidths(slots: PanelSlot[]): PanelSlot[] {
+  return slots.map((s) => {
+    if (s.lockedWidthIn === undefined) return s;
+    const { lockedWidthIn: _discarded, ...rest } = s;
+    return rest;
+  });
+}
+
 export function retilePreservingOpenings(
   fp: Footprint,
   leastAccessible: CornerId,
