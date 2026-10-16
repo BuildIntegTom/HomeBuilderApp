@@ -71,6 +71,21 @@ export interface ResizeWallRunResult {
    * not happen silently. */
   collapsedOpenings: number;
   /**
+   * What a shrink actually took off, INNERMOST FIRST — the piece nearest the
+   * surviving wall comes first.
+   *
+   * ⚠ Reported rather than reconstructed, and that is a correctness point, not
+   * a convenience. The first version recovered this by diffing the before and
+   * after arrays, which is AMBIGUOUS: `[40, 13⅜, 50⅝] → [40]` reads equally
+   * well as "50⅝ and 13⅜ removed" or as "50⅝ shrank to 40, and 13⅜ and 40 were
+   * removed". The diff picked the second and a restore then merged two panels
+   * into an 80in one. This function knows which it did, so it says so.
+   */
+  removed: PanelSlot[];
+  /** Whether `removed[0]` is the TAIL of a panel still in the wall rather than
+   * a whole panel — i.e. the shrink stopped part-way through one. */
+  removedInnermostIsPartial: boolean;
+  /**
    * Eighths the wall could NOT give up, because everything that was allowed
    * to shrink had already reached zero.
    *
@@ -99,7 +114,9 @@ export function resizeWallRun(
   standardWidthIn: number,
 ): ResizeWallRunResult {
   const budget = toEighths(deltaIn);
-  if (budget === 0) return { slots: slots.map((s) => s), collapsedOpenings: 0, shortfallEighths: 0 };
+  if (budget === 0) {
+    return { slots: slots.map((s) => s), collapsedOpenings: 0, shortfallEighths: 0, removed: [], removedInnermostIsPartial: false };
+  }
 
   const working = slots.map((s) => ({ ...s }));
   const standardEighths = toEighths(standardWidthIn);
@@ -143,7 +160,7 @@ export function resizeWallRun(
         type: "standard",
         widthIn: toInches(remaining),
       });
-      return { slots: working, collapsedOpenings, shortfallEighths: 0 };
+      return { slots: working, collapsedOpenings, shortfallEighths: 0, removed: [], removedInnermostIsPartial: false };
     }
 
     /* ⚠ Only the END-MOST panel grows, and only to `standardWidthIn`; past
@@ -168,11 +185,15 @@ export function resizeWallRun(
       if (atEnd) at += 1;
       remaining -= take;
     }
-    return { slots: working, collapsedOpenings, shortfallEighths: 0 };
+    return { slots: working, collapsedOpenings, shortfallEighths: 0, removed: [], removedInnermostIsPartial: false };
   }
 
   // ---- shrink ------------------------------------------------------------
   let remaining = -budget;
+  /* Collected in REMOVAL order (outermost first, since the shrink eats inward)
+     and reversed at the end, because a stopped span is held innermost-first. */
+  const removedOuterFirst: PanelSlot[] = [];
+  let removedInnermostIsPartial = false;
   while (remaining > 0) {
     const at = findAbsorber();
     if (at < 0) break; // nothing left that may shrink
@@ -188,9 +209,16 @@ export function resizeWallRun(
     remaining -= take;
 
     if (nextEighths === 0) {
+      removedOuterFirst.push({ ...slot });
+      removedInnermostIsPartial = false;
       working.splice(at, 1);
       continue;
     }
+    /* The shrink stopped part-way through this panel: what came off is a TAIL
+       of a panel that is still there, which the restore must give back to it
+       rather than re-inserting beside it. */
+    removedOuterFirst.push({ ...slot, widthIn: toInches(take) });
+    removedInnermostIsPartial = true;
 
     /* ⚠ The opening collapse, and it happens ON THE WAY DOWN rather than at
        the end: an opening narrower than a foot is not a window any more, it
@@ -209,7 +237,13 @@ export function resizeWallRun(
     working[at] = { ...slot, widthIn: toInches(nextEighths) };
   }
 
-  return { slots: working, collapsedOpenings, shortfallEighths: remaining };
+  return {
+    slots: working,
+    collapsedOpenings,
+    shortfallEighths: remaining,
+    removed: removedOuterFirst.reverse(),
+    removedInnermostIsPartial,
+  };
 }
 
 /**
@@ -254,4 +288,190 @@ export function wallGrowthEnd(
      not change the wall's length: `resizeWallRun` is then called with a delta
      of zero and returns the array untouched. */
   return endMoved >= startMoved ? "end" : "start";
+}
+
+/**
+ * The slots a run stop has taken out of a wall, kept so that reducing the stop
+ * puts them back exactly as they were.
+ *
+ * Keyed by the END the stop is at, because a wall can be stopped at both ends
+ * independently and the two spans must not mix.
+ */
+export interface StoppedSpan {
+  /** Innermost first — `slots[0]` is the piece nearest the built wall, at
+   * BOTH ends. One ordering means one restore loop. */
+  slots: PanelSlot[];
+  /**
+   * ⚠ The innermost held piece is the TAIL OF A PANEL STILL IN THE WALL, not
+   * a panel of its own.
+   *
+   * A stop lands wherever the user puts it, which is usually part-way through
+   * a panel: a 1in stop shaves 1in off a 40in panel and leaves 39in built.
+   * Without this flag the restore puts that 1in back as a SEPARATE panel, so a
+   * 40in panel returns as `1 | 39` — caught by three tests at once, including
+   * the stop-out-and-back identity. With it, the restore widens the panel the
+   * tail came from.
+   */
+  innermostIsPartial?: boolean;
+}
+
+export interface StoppedSlots {
+  start?: StoppedSpan;
+  end?: StoppedSpan;
+}
+
+export interface ApplyStopResult {
+  slots: PanelSlot[];
+  /** What is now set aside for this wall. Replaces the caller's previous
+   * record for it wholesale. */
+  stopped: StoppedSlots;
+  collapsedOpenings: number;
+  shortfallEighths: number;
+}
+
+/**
+ * Apply a change in a wall's BUILT run length caused by a run stop, setting
+ * aside what the stop removes and restoring it when the stop is reduced.
+ *
+ * ⚠ **Why this exists rather than just calling `resizeWallRun`.** A stop is a
+ * length change, so the resize does the arithmetic — but the stop path is the
+ * only thing in the app that is expected to be REVERSIBLE in content as well
+ * as in size. Tommy's run stop withholds what is inside the stopped span and
+ * gives it back when the stop is reduced; before tile-once that was
+ * `RunStopOpeningMemory`, which remembered OPENINGS by anchor and re-derived
+ * their positions on the next re-tile. Under tile-once the panel array is the
+ * document, so the honest memory is the slots themselves — which also restores
+ * hand-set widths, braced patterns and types that the anchor memory never
+ * could.
+ *
+ * ⚠ **Restoration comes BEFORE growth.** Reducing a stop by more than was
+ * taken puts every remembered slot back first and only then lets fresh
+ * standard panels enter, so a stop dragged out and back is an identity. If
+ * growth ran first the remembered panels would land in the wrong order and the
+ * round trip would silently rebuild a different wall.
+ */
+export function applyRunStopChange(
+  slots: readonly PanelSlot[],
+  deltaIn: number,
+  stopEnd: "start" | "end",
+  standardWidthIn: number,
+  stopped: StoppedSlots,
+): ApplyStopResult {
+  const budget = toEighths(deltaIn);
+  const held = stopped[stopEnd] ?? { slots: [] };
+
+  if (budget === 0) {
+    return { slots: slots.map((s) => s), stopped, collapsedOpenings: 0, shortfallEighths: 0 };
+  }
+
+  if (budget < 0) {
+    // The stop GREW: take width off that end and keep exactly what left.
+    const before = slots.map((s) => ({ ...s }));
+    const out = resizeWallRun(before, deltaIn, stopEnd, standardWidthIn);
+    const removed = out.removed;
+    const innermostIsPartial = out.removedInnermostIsPartial;
+    return {
+      slots: out.slots,
+      /* Newly removed pieces go INSIDE anything already held — they sat between
+         the built wall and the previously stopped span. Both lists are
+         innermost-first, so the new ones go in front. */
+      stopped: {
+        ...stopped,
+        [stopEnd]: {
+          slots: [...removed, ...held.slots],
+          /* Only the innermost piece can be a partial, and after merging that is
+             whichever one this pass just shaved — unless this pass removed
+             nothing new, in which case the previous flag still stands. */
+          innermostIsPartial: removed.length > 0 ? innermostIsPartial : held.innermostIsPartial,
+        },
+      },
+      collapsedOpenings: out.collapsedOpenings,
+      shortfallEighths: out.shortfallEighths,
+    };
+  }
+
+  // The stop SHRANK: give back what is held, innermost first, then grow.
+  let remaining = budget;
+  const working = slots.map((s) => ({ ...s }));
+  const stillHeld = held.slots.map((s) => ({ ...s }));
+  let partialPending = held.innermostIsPartial === true;
+  while (remaining > 0 && stillHeld.length > 0) {
+    // Innermost first, at either end — see `StoppedSpan.slots`.
+    const next = stillHeld.shift()!;
+    const want = toEighths(next.widthIn);
+
+    if (partialPending) {
+      /* This piece is the tail of a panel still in the wall, so the width goes
+         BACK ON that panel rather than becoming a new one. */
+      const give = Math.min(remaining, want);
+      const edge = edgeIndexInside(working, stopEnd);
+      if (edge >= 0) {
+        working[edge] = { ...working[edge]!, widthIn: toInches(toEighths(working[edge]!.widthIn) + give) };
+      } else {
+        insertInsideEnd(working, { ...next, widthIn: toInches(give) }, stopEnd);
+      }
+      remaining -= give;
+      if (give < want) {
+        stillHeld.unshift({ ...next, widthIn: toInches(want - give) });
+        break;
+      }
+      partialPending = false;
+      continue;
+    }
+
+    if (want > remaining) {
+      /* ⚠ Only part of this panel fits back, so it is SPLIT and the rest stays
+         held — flagged partial, so putting the remainder back later widens this
+         same panel instead of adding another one beside it. */
+      insertInsideEnd(working, { ...next, widthIn: toInches(remaining) }, stopEnd);
+      stillHeld.unshift({ ...next, widthIn: toInches(want - remaining) });
+      partialPending = true;
+      remaining = 0;
+      break;
+    }
+    insertInsideEnd(working, next, stopEnd);
+    remaining -= want;
+  }
+
+  const nextStopped: StoppedSlots = { ...stopped };
+  if (stillHeld.length > 0) nextStopped[stopEnd] = { slots: stillHeld, innermostIsPartial: partialPending };
+  else delete nextStopped[stopEnd];
+
+  if (remaining === 0) {
+    return { slots: working, stopped: nextStopped, collapsedOpenings: 0, shortfallEighths: 0 };
+  }
+  // Nothing left to restore — the rest is genuinely new wall.
+  const grown = resizeWallRun(working, toInches(remaining), stopEnd, standardWidthIn);
+  return {
+    slots: grown.slots,
+    stopped: nextStopped,
+    collapsedOpenings: grown.collapsedOpenings,
+    shortfallEighths: grown.shortfallEighths,
+  };
+}
+
+/** Put a restored slot back just inside the rule-placed parts at one end —
+ * the same position `resizeWallRun` grows into, so restoring and growing
+ * cannot disagree about where the edge of the run is. */
+function insertInsideEnd(working: PanelSlot[], slot: PanelSlot, end: "start" | "end"): void {
+  if (end === "end") {
+    let i = working.length;
+    while (i > 0 && isRulePlaced(working[i - 1]!)) i--;
+    working.splice(i, 0, slot);
+  } else {
+    let i = 0;
+    while (i < working.length && isRulePlaced(working[i]!)) i++;
+    working.splice(i, 0, slot);
+  }
+}
+
+/** The outermost slot at one end that is not rule-placed — the panel a stop
+ * shaves into, and the one a partial restore widens again. */
+function edgeIndexInside(working: PanelSlot[], end: "start" | "end"): number {
+  if (end === "end") {
+    for (let i = working.length - 1; i >= 0; i--) if (!isRulePlaced(working[i]!)) return i;
+    return -1;
+  }
+  for (let i = 0; i < working.length; i++) if (!isRulePlaced(working[i]!)) return i;
+  return -1;
 }

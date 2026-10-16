@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OPENING_COLLAPSE_BELOW_IN, resizeWallRun, wallGrowthEnd } from "./resizeWallRun";
+import { applyRunStopChange, OPENING_COLLAPSE_BELOW_IN, resizeWallRun, wallGrowthEnd } from "./resizeWallRun";
 import type { PanelSlot } from "./types";
 
 const corner = (w = 25.5): PanelSlot => ({ type: "corner", widthIn: w });
@@ -264,5 +264,97 @@ describe("which end the panels enter at", () => {
     // A bump-out renumbers ids; a wall naming a corner the other footprint
     // lacks must degrade to "leave it alone", not crash the editor.
     expect(wallGrowthEnd(before, wider, { startCorner: "ZZ", endCorner: "YY" })).toBeNull();
+  });
+});
+
+describe("run stops — what the stop removes comes back", () => {
+  const WALL2 = () => [corner(), std(40), win(36), std(40), std(24), corner()];
+
+  it("⚠ a stop out and back is an IDENTITY — the same panels, in the same order", () => {
+    /* The property the whole stop memory exists for. Before tile-once this was
+       RunStopOpeningMemory, which remembered OPENINGS by anchor and re-derived
+       their positions; remembering the slots themselves restores hand-set
+       widths, braced patterns and types too. Swept over many stop depths so
+       this is a property, not an example. */
+    for (const depthIn of [1, 12, 24, 40, 64, 103.5, 104]) {
+      for (const end of ["start", "end"] as const) {
+        const outward = applyRunStopChange(WALL2(), -depthIn, end, 40, {});
+        if (outward.shortfallEighths > 0) continue; // asked for more than exists
+        const back = applyRunStopChange(outward.slots, depthIn, end, 40, outward.stopped);
+        expect(shape(back.slots)).toBe(shape(WALL2()));
+        expect(back.stopped[end]).toBeUndefined();
+      }
+    }
+  });
+
+  it("⚠ a WINDOW inside the stopped span comes back as a window, not a standard", () => {
+    // The anchor memory's whole job, preserved. A stop deep enough to swallow
+    // the window and then reduced must not give back plain framing.
+    const out = applyRunStopChange(WALL2(), -104, "end", 40, {});
+    expect(out.slots.some((s) => s.type === "window")).toBe(false);
+    const back = applyRunStopChange(out.slots, 104, "end", 40, out.stopped);
+    const restored = back.slots.find((s) => s.type === "window");
+    expect(restored).toBeDefined();
+    expect(restored!.widthIn).toBe(36);
+    expect(restored!.heightIn).toBe(48);
+    expect(restored!.sillHeightIn).toBe(36);
+  });
+
+  it("⚠ a HAND-SET width inside the span comes back too — the anchor memory could not do this", () => {
+    const edited = [corner(), std(40), std(13.375), std(50.625), corner()];
+    const out = applyRunStopChange(edited, -64, "end", 40, {});
+    const back = applyRunStopChange(out.slots, 64, "end", 40, out.stopped);
+    expect(shape(back.slots)).toBe(shape(edited));
+  });
+
+  it("deepening a stop in two steps holds the same span as doing it at once", () => {
+    // The newly removed slots must sit OUTSIDE what was already held — they
+    // were between the wall and the previously stopped span.
+    const oneGo = applyRunStopChange(WALL2(), -64, "end", 40, {});
+    const first = applyRunStopChange(WALL2(), -24, "end", 40, {});
+    const second = applyRunStopChange(first.slots, -40, "end", 40, first.stopped);
+    expect(shape(second.slots)).toBe(shape(oneGo.slots));
+    expect(shape(second.stopped.end?.slots ?? [])).toBe(shape(oneGo.stopped.end?.slots ?? []));
+  });
+
+  it("the two ends are remembered separately and do not mix", () => {
+    const both = applyRunStopChange(WALL2(), -24, "end", 40, {});
+    const andStart = applyRunStopChange(both.slots, -40, "start", 40, both.stopped);
+    expect(andStart.stopped.end).toBeDefined();
+    expect(andStart.stopped.start).toBeDefined();
+    // Reducing one end restores only that end's slots.
+    const backEnd = applyRunStopChange(andStart.slots, 24, "end", 40, andStart.stopped);
+    expect(backEnd.stopped.end).toBeUndefined();
+    expect(backEnd.stopped.start).toBeDefined();
+  });
+
+  it("restoring PART of a held span keeps the remainder held", () => {
+    // Half a panel back is still reversible: dragging out and back again must
+    // not lose the remainder.
+    const out = applyRunStopChange(WALL2(), -40, "end", 40, {});
+    const half = applyRunStopChange(out.slots, 20, "end", 40, out.stopped);
+    expect(half.stopped.end).toBeDefined();
+    const rest = applyRunStopChange(half.slots, 20, "end", 40, half.stopped);
+    expect(shape(rest.slots)).toBe(shape(WALL2()));
+  });
+
+  it("⚠ restoration happens BEFORE any growth, so a round trip is exact", () => {
+    // Reducing a stop by more than was taken: everything held comes back
+    // first, and only then do fresh standards enter. Growth first would put
+    // the remembered panels in the wrong place.
+    const out = applyRunStopChange(WALL2(), -40, "end", 40, {});
+    const more = applyRunStopChange(out.slots, 80, "end", 40, out.stopped);
+    expect(more.stopped.end).toBeUndefined();
+    // The original 24in panel is back, and the extra 40in arrived as new.
+    expect(shape(more.slots)).toContain("standard:24");
+    expect(totalEighths(more.slots)).toBe(totalEighths(WALL2()) + 320);
+  });
+
+  it("conserves exactly, like every other length change", () => {
+    for (const depthIn of [8, 37.5, 64]) {
+      const out = applyRunStopChange(WALL2(), -depthIn, "end", 40, {});
+      const held = (out.stopped.end?.slots ?? []).reduce((n, s) => n + Math.round(s.widthIn * 8), 0);
+      expect(totalEighths(out.slots) + held).toBe(totalEighths(WALL2()));
+    }
   });
 });
