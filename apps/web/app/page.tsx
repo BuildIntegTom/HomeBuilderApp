@@ -2932,12 +2932,12 @@ export default function LayoutEditor() {
    * moved handles both walls with one rule; reading the stop record would
    * handle only the obvious one and leave the neighbour's panels wrong.
    */
-  const applyRunStopsToStory = (
+  const computeRunStopStory = (
     story: "ground" | "second",
     oldStops: Record<string, WallRunStop>,
     nextStops: Record<string, WallRunStop>,
-  ) => {
-    if (!footprint) return;
+  ): { slotsByWallId: Record<string, PanelSlot[]>; heldByWallId: Record<string, StoppedSlots> } | null => {
+    if (!footprint) return null;
     const slots = wallSlotsForStory(story);
     const held = stoppedSlotsByStoryAndWallId[story];
     const nextSlots: Record<string, PanelSlot[]> = {};
@@ -2980,8 +2980,22 @@ export default function LayoutEditor() {
       nextSlots[wall.id] = out.slots;
       if (out.stopped.start || out.stopped.end) nextHeld[wall.id] = out.stopped;
     }
-    setWallSlotsForStory(story, () => nextSlots);
-    setStoppedSlotsByStoryAndWallId((prev) => ({ ...prev, [story]: nextHeld }));
+    return { slotsByWallId: nextSlots, heldByWallId: nextHeld };
+  };
+
+  /** Commit what `computeRunStopStory` worked out. ⚠ Split from it so the
+   * legality probe can ask the SAME function what a candidate stop would do
+   * — the probe and the commit cannot disagree about the answer, which is
+   * the property the old code got by re-tiling twice with the same inputs. */
+  const applyRunStopsToStory = (
+    story: "ground" | "second",
+    oldStops: Record<string, WallRunStop>,
+    nextStops: Record<string, WallRunStop>,
+  ) => {
+    const out = computeRunStopStory(story, oldStops, nextStops);
+    if (!out) return;
+    setWallSlotsForStory(story, () => out.slotsByWallId);
+    setStoppedSlotsByStoryAndWallId((prev) => ({ ...prev, [story]: out.heldByWallId }));
   };
 
   const applyShapeChange = (oldFp: Footprint, newFp: Footprint, primary: Set<string>): boolean => {
@@ -3651,20 +3665,21 @@ export default function LayoutEditor() {
   // would be a second, subtly different copy of `cornerOwnership`'s
   // adjacency rules.
 
-  /** The whole footprint re-tiled against a candidate stop map, per story —
-   * slots AND the openings that stop map withholds, since Stage 3's "drop
-   * them, and remember" decision makes those one answer. */
-  const retileAllForRunStops = (story: "ground" | "second", runStops: Record<string, WallRunStop>) => {
-    if (!footprint) return null;
-    return retilePreservingOpenings(
-      footprint,
-      leastAccessibleCorner,
-      primaryCornerIds,
-      wallSlotsForStory(story),
-      runStops,
-      story,
-    );
-  };
+  /* ⚠ `retileAllForRunStops` WAS DELETED HERE — tile-once Stage 4d, and it was
+     the last re-tile the model set out to remove. It re-tiled the whole
+     footprint against a candidate stop map, and both the legality probe and the
+     commit called it.
+
+     Both now go through `computeRunStopStory`, which resizes panels and sets
+     aside what a stop removes. The probe asks it about a CANDIDATE stop and the
+     commit asks it about the real one, so the two share a single implementation
+     and can no longer disagree about whether a stop is legal — the old pair got
+     that property only by running the same expensive thing twice.
+
+     Its doc comment said the slots and the withheld openings "are one answer",
+     which was true of the anchor memory. Under tile-once the answer is better:
+     what a stop sets aside is the PANELS, so a hand-set width or a braced
+     pattern inside the stopped span comes back too. */
 
   /** The stop map as it would be with one end of one wall changed. Returned
    * as a MAP rather than a single record because every consumer now needs
@@ -3765,9 +3780,14 @@ export default function LayoutEditor() {
     // neighbour was butting into the corner it removes.
     const storiesToCheck: ("ground" | "second")[] = stories.length > 1 ? ["ground", "second"] : ["ground"];
     for (const story of storiesToCheck) {
-      const retiledResult = retileAllForRunStops(story, candidateStops);
-      if (!retiledResult) continue;
-      const retiled = retiledResult.slotsByWallId;
+      /* ⚠ The same function the commit uses, asked about a CANDIDATE. It
+         replaces a re-tile here, which is the last one tile-once had to
+         remove — and it is strictly better than what it replaces: the probe
+         and the commit now share one implementation, so a stop can no longer
+         be judged legal by one rule and applied by another. */
+      const candidate = computeRunStopStory(story, wallRunStopsByWallId, candidateStops);
+      if (!candidate) continue;
+      const retiled = candidate.slotsByWallId;
       const storyLabel = story === "second" ? " on the second story" : "";
       for (const wall of footprint?.walls ?? []) {
         const wallGeometry = wallGeometryFor(wall.id, candidateStops);

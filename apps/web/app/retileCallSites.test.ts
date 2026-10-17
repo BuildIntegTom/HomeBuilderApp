@@ -76,14 +76,22 @@ const EXPECTED: Record<string, { calls: number; fate: Fate; stage: string; why: 
       "That is a shape change, not a length change: the merged wall has no single prior panel array to manipulate, so there is nothing for tile-once to preserve and re-deriving is the correct answer. " +
       "It is classified REDERIVES for the same reason `handleAddBumpOut` is, and it is NOT work left undone.",
   },
-  retileAllForRunStops: {
-    calls: 1,
-    fate: "DIRECT",
-    stage: "Stage 4",
-    why:
-      "⚠ PARTLY CONVERTED 2026-10-17, Stage 4d. The APPLY path is gone: a stop now resizes panels and sets aside what it removes (`applyRunStopChange`), which also replaces what the run-stop opening memory did — and improves on it, since a remembered slot array restores hand-set widths and types, not just openings. " +
-      "The ONE call left is the legality PROBE: it re-tiles a candidate stop to ask whether the result would be panelizable, and applies nothing. Converting it means asking the same question of `applyRunStopChange` instead, and it is the last thing standing between here and Stage 6.",
-  },
+  /* ⚠ `retileAllForRunStops` LEFT THIS LIST ON 2026-10-17, and with it STAGE 4
+     IS COMPLETE: every handler that re-tiled on an EDIT now manipulates the
+     panel array instead. The four that remain all re-derive because the SHAPE
+     changed and there is no prior array to preserve — which is the line
+     tile-once draws, not work left over.
+
+     The function itself is deleted, not merely uncalled. Both its callers —
+     the legality probe and the commit — now share `computeRunStopStory`, so a
+     stop can no longer be judged legal by one rule and applied by another.
+
+     Stage 6 is now unblocked: nothing re-tiles on an edit, so the reconcile
+     machinery it exists to retire (lockedWidthIn re-forcing, opening
+     re-anchoring by ordinal, the run-stop opening memory) has no edit path
+     left depending on it. ⚠ Repanelize still re-tiles BY DESIGN and still
+     needs the lock strip, so `discardLockedWidths` is not Stage 6's to
+     delete. */
 };
 
 /** The component body of `page.tsx` is indented two spaces, so a declaration
@@ -137,7 +145,11 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
        moves these calls out of page.tsx entirely and leaves this file
        measuring nothing. It must keep dropping as the remaining handlers
        convert, and when it reaches the three REDERIVES sites it stops. */
-    expect(total).toBeGreaterThanOrEqual(6);
+    /* Down to 5 as Stage 4 finished. This is the floor it should now STAY at:
+       the four REDERIVES handlers, one of which calls twice. If it drops
+       further, these calls have moved out of page.tsx and this file is
+       measuring nothing — which is the only thing it is here to catch. */
+    expect(total).toBeGreaterThanOrEqual(5);
   });
 
   it("⚠ records what tile-once still has to convert, so the size of the job is visible", () => {
@@ -151,7 +163,9 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
        (it moved windows up to 59in), but by becoming a DEFERRED setting:
        it now changes nothing but the setting, shows a caution marker, and
        is applied by Repanelize. Three of six handlers remain. */
-    expect(direct.map(([h]) => h).sort()).toEqual(["retileAllForRunStops"]);
+    /* ⚠ EMPTY, and that is the finish line. Every remaining re-tile is a
+       deliberate re-derivation of a shape, not an edit re-deriving itself. */
+    expect(direct).toEqual([]);
     /* ⚠ Four REDERIVES sites now, up from three — `handleDragWall`'s collapse
        branch joined them by reclassification, not by someone adding a re-tile.
        Asserted so that growth has to be deliberate: a FIFTH would mean a
