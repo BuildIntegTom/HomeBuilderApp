@@ -67,6 +67,8 @@ import {
   wallCompassDirection,
   wallGeometryFor as wallGeometryForPure,
   resizeWallRun,
+  applyRunStopChange,
+  type StoppedSlots,
   wallGrowthEnd,
   hasWallRunStop,
   normalizeWallRunStop,
@@ -1281,6 +1283,12 @@ export default function LayoutEditor() {
   // answer. Any handler that writes new slots out of
   // `retilePreservingOpenings` must write the memory it came back with too —
   // see that wrapper's own comment.
+  /** TILE-ONCE STAGE 4d — the panels each run stop has set aside, per storey
+   * and wall, so reducing a stop gives back exactly what it took. Succeeds
+   * the anchor-based memory below, which Stage 6 retires. */
+  const [stoppedSlotsByStoryAndWallId, setStoppedSlotsByStoryAndWallId] = useState<
+    Record<"ground" | "second", Record<string, StoppedSlots>>
+  >({ ground: {}, second: {} });
   const [unbuiltOpeningsByStoryAndWallId, setUnbuiltOpeningsByStoryAndWallId] =
     useState<OpeningMemoryByStoryAndWallId>({ ground: {}, second: {} });
   // Every beam-count/height/coverage change moves this wall's own band
@@ -2047,6 +2055,9 @@ export default function LayoutEditor() {
       foundationEnabled,
       wallRunStopsByWallId,
       unbuiltOpeningsByStoryAndWallId: prunedOpeningMemory,
+      // Stage 4d: the panels each run stop set aside. Document state — a
+      // project saved with a stop must still restore them when it is reduced.
+      stoppedSlotsByStoryAndWallId,
       wallReviewNotes,
       tilingBasis,
     };
@@ -2227,6 +2238,12 @@ export default function LayoutEditor() {
     setUnbuiltOpeningsByStoryAndWallId({
       ground: s.unbuiltOpeningsByStoryAndWallId?.ground ?? {},
       second: s.unbuiltOpeningsByStoryAndWallId?.second ?? {},
+    });
+    /* Stage 4d, normalized the same way and for the same reason: absent means
+       nothing is stopped aside, which is every file saved before today. */
+    setStoppedSlotsByStoryAndWallId({
+      ground: s.stoppedSlotsByStoryAndWallId?.ground ?? {},
+      second: s.stoppedSlotsByStoryAndWallId?.second ?? {},
     });
     setWallReviewNotes(s.wallReviewNotes ?? []);
     // Absent on every file saved before R0: the basis is UNKNOWN, which
@@ -2904,6 +2921,69 @@ export default function LayoutEditor() {
    * tightness rule says may never exist. So the panels are computed FIRST and
    * the caller only sets the footprint once they are known good.
    */
+  /**
+   * Apply a run-stop change to one storey by resizing panels, keeping what
+   * the stop removes so reducing it gives the same panels back.
+   *
+   * ⚠ The end to resize at is derived from WHICH INSET MOVED rather than from
+   * which stop the user typed. A stop that reaches a corner takes that corner
+   * panel with it, so the neighbouring wall's run changes too — and the
+   * neighbour has no stop of its own to read. Asking the geometry which end
+   * moved handles both walls with one rule; reading the stop record would
+   * handle only the obvious one and leave the neighbour's panels wrong.
+   */
+  const applyRunStopsToStory = (
+    story: "ground" | "second",
+    oldStops: Record<string, WallRunStop>,
+    nextStops: Record<string, WallRunStop>,
+  ) => {
+    if (!footprint) return;
+    const slots = wallSlotsForStory(story);
+    const held = stoppedSlotsByStoryAndWallId[story];
+    const nextSlots: Record<string, PanelSlot[]> = {};
+    const nextHeld: Record<string, StoppedSlots> = {};
+    for (const wall of footprint.walls) {
+      const wallSlots = slots[wall.id];
+      if (!wallSlots) continue;
+      const before = wallGeometryForPure(footprint, wall.id, primaryCornerIds, leastAccessibleCorner, thicknessIn, oldStops);
+      const after = wallGeometryForPure(footprint, wall.id, primaryCornerIds, leastAccessibleCorner, thicknessIn, nextStops);
+      const current = held[wall.id] ?? {};
+      if (!before || !after) {
+        nextSlots[wall.id] = wallSlots;
+        if (current.start || current.end) nextHeld[wall.id] = current;
+        continue;
+      }
+      const deltaIn = after.lengthIn - before.lengthIn;
+      /* Which END moved: the inset that changed, or — when neither did, so
+         this is the stopped wall itself — the stop value that changed. */
+      const insetMoved: "start" | "end" | null =
+        Math.round((after.startInsetIn - before.startInsetIn) * 8) !== 0
+          ? "start"
+          : Math.round((after.endInsetIn - before.endInsetIn) * 8) !== 0
+            ? "end"
+            : null;
+      const oldStop = oldStops[wall.id] ?? NO_WALL_RUN_STOP;
+      const newStop = nextStops[wall.id] ?? NO_WALL_RUN_STOP;
+      const stopMoved: "start" | "end" | null =
+        Math.round((newStop.startStopIn - oldStop.startStopIn) * 8) !== 0
+          ? "start"
+          : Math.round((newStop.endStopIn - oldStop.endStopIn) * 8) !== 0
+            ? "end"
+            : null;
+      const end = stopMoved ?? insetMoved;
+      if (!end || Math.round(deltaIn * 8) === 0) {
+        nextSlots[wall.id] = wallSlots;
+        if (current.start || current.end) nextHeld[wall.id] = current;
+        continue;
+      }
+      const out = applyRunStopChange(wallSlots, deltaIn, end, standardWidthIn, current);
+      nextSlots[wall.id] = out.slots;
+      if (out.stopped.start || out.stopped.end) nextHeld[wall.id] = out.stopped;
+    }
+    setWallSlotsForStory(story, () => nextSlots);
+    setStoppedSlotsByStoryAndWallId((prev) => ({ ...prev, [story]: nextHeld }));
+  };
+
   const applyShapeChange = (oldFp: Footprint, newFp: Footprint, primary: Set<string>): boolean => {
     const ground = resizeSlotsForShapeChange(oldFp, newFp, baseWallSlots, primary, wallRunStopsByWallId);
     if (!ground) return false;
@@ -3870,12 +3950,18 @@ export default function LayoutEditor() {
     // writes back BOTH halves: the slots that are built, and the openings this
     // stop set aside so a later un-stop can bring them back (Tommy: "Drop
     // them, and remember").
-    const groundResult = retileAllForRunStops("ground", nextStops);
-    if (groundResult) applyRetiledStory("ground", groundResult, leastAccessibleCorner);
-    if (stories.length > 1) {
-      const secondResult = retileAllForRunStops("second", nextStops);
-      if (secondResult) applyRetiledStory("second", secondResult, leastAccessibleCorner);
-    }
+    /* TILE-ONCE STAGE 4d — a stop changes how much of a wall is BUILT, which
+       is a length change, so the panels are manipulated rather than re-tiled.
+       What the stop removes is SET ASIDE and comes back when the stop is
+       reduced (Tommy: "Drop them, and remember") — see `applyRunStopChange`.
+
+       ⚠ EVERY wall is asked, not just the stopped one. A stop at a corner
+       takes that corner panel with it, which changes the NEIGHBOUR's inset
+       and therefore the neighbour's run — the orphan-corner rule. The end to
+       resize at is derived from which inset moved, so a neighbour is handled
+       by the same code as the wall the user actually stopped. */
+    applyRunStopsToStory("ground", wallRunStopsByWallId, nextStops);
+    if (stories.length > 1) applyRunStopsToStory("second", wallRunStopsByWallId, nextStops);
     // The selection almost certainly points at a slot index that no longer
     // means what it did — same reset `handleToggleOpening` does.
     setSelectedSlot(null);

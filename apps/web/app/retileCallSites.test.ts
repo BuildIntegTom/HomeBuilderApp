@@ -80,7 +80,9 @@ const EXPECTED: Record<string, { calls: number; fate: Fate; stage: string; why: 
     calls: 1,
     fate: "DIRECT",
     stage: "Stage 4",
-    why: "A run stop shortens the built part of a wall, which is a length change by another name. ⚠ It is also what the run-stop opening memory exists to survive, so Stage 6 cannot delete that memory until this one is converted.",
+    why:
+      "⚠ PARTLY CONVERTED 2026-10-17, Stage 4d. The APPLY path is gone: a stop now resizes panels and sets aside what it removes (`applyRunStopChange`), which also replaces what the run-stop opening memory did — and improves on it, since a remembered slot array restores hand-set widths and types, not just openings. " +
+      "The ONE call left is the legality PROBE: it re-tiles a candidate stop to ask whether the result would be panelizable, and applies nothing. Converting it means asking the same question of `applyRunStopChange` instead, and it is the last thing standing between here and Stage 6.",
   },
 };
 
