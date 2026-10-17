@@ -17,6 +17,7 @@ export * from "./bracedPlacement";
 export * from "./panelWidthEdit";
 export * from "./movePanel";
 export * from "./resizeWallRun";
+export * from "./tidyLeftovers";
 export * from "./settleResidualEighths";
 export * from "./lockedWidthReforce";
 export * from "./absorbedCornerWalls";

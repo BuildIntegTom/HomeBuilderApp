@@ -68,6 +68,7 @@ import {
   wallGeometryFor as wallGeometryForPure,
   resizeWallRun,
   applyRunStopChange,
+  tidyUnbuildableLeftovers,
   type StoppedSlots,
   wallGrowthEnd,
   hasWallRunStop,
@@ -2873,12 +2874,13 @@ export default function LayoutEditor() {
     slotsByWallId: Record<string, PanelSlot[]>,
     primary: Set<string>,
     runStops: Record<string, WallRunStop>,
-  ): { slotsByWallId: Record<string, PanelSlot[]>; collapsedOpenings: number } | null => {
+  ): { slotsByWallId: Record<string, PanelSlot[]>; collapsedOpenings: number; tidiedParts: number } | null => {
     const cornerXY = (fp: Footprint) => new Map(fp.corners.map((c) => [c.id, { x: c.point.x, y: c.point.y }]));
     const oldCorners = cornerXY(oldFp);
     const newCorners = cornerXY(newFp);
     const next: Record<string, PanelSlot[]> = {};
     let collapsedOpenings = 0;
+    let tidiedParts = 0;
     for (const wall of newFp.walls) {
       const slots = slotsByWallId[wall.id];
       if (!slots) continue; // a wall this shape did not have before
@@ -2904,9 +2906,19 @@ export default function LayoutEditor() {
       const out = resizeWallRun(slots, deltaIn, end, standardWidthIn);
       if (out.shortfallEighths > 0) return null;
       collapsedOpenings += out.collapsedOpenings;
-      next[wall.id] = out.slots;
+      /* ⚠ THE RELEASE TIDY, and this IS the release. `onDragWall` fires on
+         mouse-up only — there is a live preview during the drag and one
+         commit at the end — and a typed length is a single committed change
+         too, so both arrive here already 'let go of'.
+
+         Tommy, 2026-10-17: tidy ONLY a panel the shop cannot build, never a
+         legal one. A pass that normalised every release would be the tiler
+         running behind his back again, just later. */
+      const tidied = tidyUnbuildableLeftovers(out.slots);
+      tidiedParts += tidied.changedParts;
+      next[wall.id] = tidied.slots;
     }
-    return { slotsByWallId: next, collapsedOpenings };
+    return { slotsByWallId: next, collapsedOpenings, tidiedParts };
   };
 
   /**
@@ -2977,7 +2989,13 @@ export default function LayoutEditor() {
         continue;
       }
       const out = applyRunStopChange(wallSlots, deltaIn, end, standardWidthIn, current);
-      nextSlots[wall.id] = out.slots;
+      /* The same release tidy a length change gets: a stop commits once, so
+         what it leaves behind is already let go of, and only a panel the shop
+         cannot build is moved. ⚠ Applied to the BUILT slots only — never to
+         what the stop set aside, because those come back verbatim when the
+         stop is reduced and tidying them would change panels while they are
+         out of the wall. */
+      nextSlots[wall.id] = tidyUnbuildableLeftovers(out.slots).slots;
       if (out.stopped.start || out.stopped.end) nextHeld[wall.id] = out.stopped;
     }
     return { slotsByWallId: nextSlots, heldByWallId: nextHeld };
@@ -3012,6 +3030,17 @@ export default function LayoutEditor() {
        not apply any setting — it manipulates panels that were tiled under
        whatever basis was already recorded. Recording one here would clear the
        pending-settings markers and claim a Repanelize had happened. */
+    /* ⚠ Only when a PART changed, which is his answer of 2026-10-17: a merged
+       or split panel is a different thing to fabricate, but a notice on every
+       ordinary drag becomes noise nobody reads. */
+    const tidied = ground.tidiedParts + (second?.tidiedParts ?? 0);
+    if (tidied > 0) {
+      setPanelPlacementNotice(
+        tidied === 1
+          ? "One panel was too small for the shop to build, so it was merged with its neighbour."
+          : `${tidied} panels were too small for the shop to build, so they were merged with their neighbours.`,
+      );
+    }
     const collapsed = ground.collapsedOpenings + (second?.collapsedOpenings ?? 0);
     if (collapsed > 0) {
       /* Said out loud: an opening that shrank under a foot is no longer an
