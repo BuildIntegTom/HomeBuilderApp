@@ -475,3 +475,48 @@ function edgeIndexInside(working: PanelSlot[], end: "start" | "end"): number {
   for (let i = 0; i < working.length; i++) if (!isRulePlaced(working[i]!)) return i;
   return -1;
 }
+
+/**
+ * How many OPENINGS a run stop is currently holding out of a wall.
+ *
+ * ⚠ **This exists because Stage 4d orphaned the Review Log.** The withheld-
+ * openings entry used to count `RunStopOpeningMemory.unbuilt`, which the
+ * re-tile produced. Run stops no longer re-tile, so that memory stopped being
+ * written — and `runStopRestoreFidelity` answers `"nothing-withheld"` for an
+ * absent memory, so the Review Log quietly reported ZERO withheld openings on
+ * a wall whose stop had swallowed a window. Safety-relevant output that
+ * under-reports is the exact failure flags-check point 5 exists for.
+ */
+export function withheldOpeningCount(stopped: StoppedSlots | undefined): number {
+  if (!stopped) return 0;
+  const count = (span?: StoppedSpan) => {
+    if (!span) return 0;
+    /* ⚠ A PARTIAL innermost piece is the tail of an opening that is STILL IN
+       THE WALL, just narrower — it has not been withheld, and counting it
+       reports a window the user can still see. Caught by a test that stopped
+       one wall from both ends and got 3 openings out of 2: the door was
+       counted once as a tail here and once, correctly, as a whole opening in
+       the other end's span. */
+    const slots = span.innermostIsPartial ? span.slots.slice(1) : span.slots;
+    return slots.filter((s) => s.type === "window" || s.type === "door").length;
+  };
+  return count(stopped.start) + count(stopped.end);
+}
+
+/**
+ * Whether the openings a stop is holding would come back exactly as drawn.
+ *
+ * ⚠ **Always `"exact"` when anything is held, and that is a real improvement
+ * rather than a shortcut.** The old anchor memory remembered openings by
+ * ordinal and re-derived their positions on the next re-tile, so it genuinely
+ * could not promise exactness — `runStopRestoreFidelity` existed to answer
+ * "can we?" and often said no. A stopped span holds the PANELS themselves, so
+ * reducing the stop puts back the same window at the same width with the same
+ * sill, along with the hand-set widths and braced patterns around it. There is
+ * no approximation left to warn about.
+ */
+export function stoppedSlotsRestoreFidelity(
+  stopped: StoppedSlots | undefined,
+): "nothing-withheld" | "exact" {
+  return withheldOpeningCount(stopped) === 0 ? "nothing-withheld" : "exact";
+}

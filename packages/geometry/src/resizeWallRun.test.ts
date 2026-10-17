@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { applyRunStopChange, OPENING_COLLAPSE_BELOW_IN, resizeWallRun, wallGrowthEnd } from "./resizeWallRun";
+import {
+  applyRunStopChange,
+  OPENING_COLLAPSE_BELOW_IN,
+  resizeWallRun,
+  stoppedSlotsRestoreFidelity,
+  wallGrowthEnd,
+  withheldOpeningCount,
+} from "./resizeWallRun";
 import type { PanelSlot } from "./types";
 
 const corner = (w = 25.5): PanelSlot => ({ type: "corner", widthIn: w });
@@ -356,5 +363,50 @@ describe("run stops — what the stop removes comes back", () => {
       const held = (out.stopped.end?.slots ?? []).reduce((n, s) => n + Math.round(s.widthIn * 8), 0);
       expect(totalEighths(out.slots) + held).toBe(totalEighths(WALL2()));
     }
+  });
+});
+
+describe("what a stop is holding, for the Review Log", () => {
+  it("⚠ counts the openings a stop swallowed — the report Stage 4d orphaned", () => {
+    /* The Review Log's withheld-openings entry used to count the anchor
+       memory's `unbuilt`, which run stops stopped writing when they stopped
+       re-tiling. `runStopRestoreFidelity` answers "nothing-withheld" for an
+       absent memory, so the entry quietly reported ZERO on a wall whose stop
+       had swallowed a window. This is the replacement, and this test is the
+       thing that would have caught it. */
+    const wall = [corner(), std(40), win(36), std(24), corner()];
+    const out = applyRunStopChange(wall, -100, "end", 40, {});
+    expect(out.slots.some((s) => s.type === "window")).toBe(false);
+    expect(withheldOpeningCount(out.stopped)).toBe(1);
+  });
+
+  it("reports nothing when a stop took only plain framing", () => {
+    const wall = [corner(), std(40), std(40), corner()];
+    const out = applyRunStopChange(wall, -40, "end", 40, {});
+    expect(withheldOpeningCount(out.stopped)).toBe(0);
+    expect(stoppedSlotsRestoreFidelity(out.stopped)).toBe("nothing-withheld");
+  });
+
+  it("counts doors as well as windows, at either end", () => {
+    const wall = [door(36), std(40), win(36), corner()];
+    const fromEnd = applyRunStopChange(wall, -80, "end", 40, {});
+    const bothEnds = applyRunStopChange(fromEnd.slots, -40, "start", 40, fromEnd.stopped);
+    expect(withheldOpeningCount(bothEnds.stopped)).toBe(2);
+  });
+
+  it("⚠ fidelity is EXACT whenever anything is held — the panels come back verbatim", () => {
+    // The old anchor memory remembered openings by ordinal and re-derived
+    // their positions, so it often could not promise exactness. A stopped span
+    // holds the panels themselves, so there is no approximation left to warn
+    // about — which is a real improvement, not a shortcut.
+    const wall = [corner(), std(40), win(36), corner()];
+    const out = applyRunStopChange(wall, -60, "end", 40, {});
+    expect(stoppedSlotsRestoreFidelity(out.stopped)).toBe("exact");
+  });
+
+  it("an empty or absent record holds nothing", () => {
+    expect(withheldOpeningCount(undefined)).toBe(0);
+    expect(withheldOpeningCount({})).toBe(0);
+    expect(stoppedSlotsRestoreFidelity(undefined)).toBe("nothing-withheld");
   });
 });

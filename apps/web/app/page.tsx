@@ -61,7 +61,6 @@ import {
   retile as retilePure,
   retilePreservingOpeningsWithRunStopMemory as retilePreservingOpeningsPure,
   runStopOpeningFit,
-  runStopRestoreFidelity,
   movePanelWithinWall,
   retileWithOpenings,
   wallCompassDirection,
@@ -69,6 +68,8 @@ import {
   resizeWallRun,
   applyRunStopChange,
   tidyUnbuildableLeftovers,
+  withheldOpeningCount,
+  stoppedSlotsRestoreFidelity,
   type StoppedSlots,
   wallGrowthEnd,
   hasWallRunStop,
@@ -8149,12 +8150,17 @@ export default function LayoutEditor() {
       // the geometry's own answer, read off this story's CURRENT openings.
       // Promising exactness where the merge cannot deliver it is the defect
       // that module exists to stop; see runStopOpenings.ts.
+      /* ⚠ Reads the STOPPED SLOTS, not the old anchor memory. Stage 4d moved
+         run stops off the re-tile, so nothing writes that memory for a stop
+         any more — and `runStopRestoreFidelity` answers "nothing-withheld"
+         for an absent one, so this entry silently reported ZERO withheld
+         openings on a wall whose stop had swallowed a window. */
       const withheldByStory: WithheldOpeningsOnStory[] = stories.map((s) => {
-        const memory = unbuiltOpeningsByStoryAndWallId[s.id]?.[wall.id];
+        const held = stoppedSlotsByStoryAndWallId[s.id]?.[wall.id];
         return {
           story: s.id,
-          count: memory?.unbuilt.length ?? 0,
-          fidelity: runStopRestoreFidelity(memory, getOpeningAnchors(s.wallSlots[wall.id] ?? [])),
+          count: withheldOpeningCount(held),
+          fidelity: stoppedSlotsRestoreFidelity(held),
         };
       });
       const withheldSentence = withheldOpeningsReviewNote(withheldByStory);
@@ -9803,12 +9809,13 @@ export default function LayoutEditor() {
               // `runStopNotices.ts`. It used to promise exactness
               // unconditionally, which a delete or an insert on the wall while
               // it was stopped makes false.
+              // Same correction as the Review Log entry above — see its note.
               const byStory: WithheldOpeningsOnStory[] = stories.map((s) => {
-                const memory = unbuiltOpeningsByStoryAndWallId[s.id]?.[elevationWall.id];
+                const held = stoppedSlotsByStoryAndWallId[s.id]?.[elevationWall.id];
                 return {
                   story: s.id,
-                  count: memory?.unbuilt.length ?? 0,
-                  fidelity: runStopRestoreFidelity(memory, getOpeningAnchors(s.wallSlots[elevationWall.id] ?? [])),
+                  count: withheldOpeningCount(held),
+                  fidelity: stoppedSlotsRestoreFidelity(held),
                 };
               });
               const withheld = withheldOpeningTotal(byStory);
