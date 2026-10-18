@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyRulePlacedParts,
   applyRunStopChange,
   OPENING_COLLAPSE_BELOW_IN,
   resizeWallRun,
@@ -408,5 +409,92 @@ describe("what a stop is holding, for the Review Log", () => {
     expect(withheldOpeningCount(undefined)).toBe(0);
     expect(withheldOpeningCount({})).toBe(0);
     expect(stoppedSlotsRestoreFidelity(undefined)).toBe("nothing-withheld");
+  });
+});
+
+describe("rule-placed parts move when their RULE changes", () => {
+  const state = (s: boolean, e: boolean, gap: "start" | "end" = "end") => ({
+    hasCornerStart: s,
+    hasCornerEnd: e,
+    gapEnd: gap,
+  });
+
+  it("⚠ GAINING a corner inserts the panel AND takes its width out of the delta", () => {
+    /* The bug this exists for: widening 30x30 to 40x30 takes AB from one corner
+       panel to two. The run grows by exactly the corner it now builds, so the
+       ordinary panels owe nothing — if the delta were passed through whole, the
+       wall would gain a corner AND 25.5in of framing it has no room for. */
+    const wall = [corner(), std(40), std(40)];
+    const out = applyRulePlacedParts(wall, state(true, false), state(true, true), 25.5, 25.5);
+    expect(out.slots[out.slots.length - 1]!.type).toBe("corner");
+    expect(out.remainingDeltaIn).toBe(0);
+    expect(out.cornerMoved).toBe(true);
+  });
+
+  it("⚠ LOSING a corner removes the panel and GIVES its width back to the framing", () => {
+    // BC goes from one corner panel to zero. Its run shrinks by the corner it
+    // no longer builds, so the framing is unchanged — not shortened twice.
+    const wall = [corner(), std(40), std(40)];
+    const out = applyRulePlacedParts(wall, state(true, false), state(false, false), -25.5, 25.5);
+    expect(out.slots.some((s) => s.type === "corner")).toBe(false);
+    expect(out.remainingDeltaIn).toBe(0);
+  });
+
+  it("gives back a WIDENED corner's own width, not the nominal one", () => {
+    // The tiler may widen a corner panel; handing back 25.5 when the slot was
+    // 31.5 would leave the wall 6in short.
+    const wall = [{ type: "corner" as const, widthIn: 31.5 }, std(40)];
+    const out = applyRulePlacedParts(wall, state(true, false), state(false, false), -31.5, 25.5);
+    expect(out.remainingDeltaIn).toBe(0);
+    expect(out.slots.some((s) => s.type === "corner")).toBe(false);
+  });
+
+  it("a length change that does NOT flip ownership leaves the corners alone", () => {
+    const wall = [corner(), std(40), corner()];
+    const out = applyRulePlacedParts(wall, state(true, true), state(true, true), 16, 25.5);
+    expect(shape(out.slots)).toBe(shape(wall));
+    expect(out.remainingDeltaIn).toBe(16);
+    expect(out.cornerMoved).toBe(false);
+  });
+
+  it("⚠ the SAFETY GAP moves to the other end when its rule flips", () => {
+    // computeGapEnd picks by distance from the least-accessible corner, and
+    // changing lengths moves corners. The gap belonged at one end; now it does
+    // not, and nothing else was going to move it.
+    const wall = [corner(), std(40), std(40), gap(), corner()];
+    const out = applyRulePlacedParts(wall, state(true, true, "end"), state(true, true, "start"), 0, 25.5);
+    expect(out.gapMoved).toBe(true);
+    // Just inside the leading corner, which is where the tiler puts it.
+    expect(out.slots[1]!.type).toBe("safety-gap");
+    expect(out.slots[0]!.type).toBe("corner");
+  });
+
+  it("moving the gap costs the delta nothing and never displaces a corner", () => {
+    const wall = [corner(), gap(), std(40), corner()];
+    const out = applyRulePlacedParts(wall, state(true, true, "start"), state(true, true, "end"), 8, 25.5);
+    expect(out.remainingDeltaIn).toBe(8);
+    expect(out.slots[0]!.type).toBe("corner");
+    expect(out.slots[out.slots.length - 1]!.type).toBe("corner");
+    expect(out.slots[out.slots.length - 2]!.type).toBe("safety-gap");
+  });
+
+  it("⚠ CORNER AND FRAMING TOGETHER still conserve exactly", () => {
+    /* The whole point: gain a corner and grow the wall at once, and the result
+       must equal the old total plus the delta — no more, no less. This is the
+       check that would have caught the original bug, because the composition
+       and the sum are asserted together. */
+    const wall = [corner(), std(40), std(40)];
+    const deltaIn = 65.5; // 25.5 of corner + 40 of new framing
+    const moved = applyRulePlacedParts(wall, state(true, false), state(true, true), deltaIn, 25.5);
+    const grown = resizeWallRun(moved.slots, moved.remainingDeltaIn, "end", 40);
+    expect(totalEighths(grown.slots)).toBe(totalEighths(wall) + Math.round(deltaIn * 8));
+    expect(grown.slots.filter((s) => s.type === "corner")).toHaveLength(2);
+  });
+
+  it("a wall with no gap slot survives a gap-end flip without inventing one", () => {
+    const wall = [corner(), std(40), corner()];
+    const out = applyRulePlacedParts(wall, state(true, true, "end"), state(true, true, "start"), 0, 25.5);
+    expect(out.gapMoved).toBe(false);
+    expect(shape(out.slots)).toBe(shape(wall));
   });
 });

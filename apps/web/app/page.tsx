@@ -66,6 +66,8 @@ import {
   wallCompassDirection,
   wallGeometryFor as wallGeometryForPure,
   resizeWallRun,
+  applyRulePlacedParts,
+  runChangeEndFromInsets,
   applyRunStopChange,
   tidyUnbuildableLeftovers,
   withheldOpeningCount,
@@ -2875,19 +2877,19 @@ export default function LayoutEditor() {
     slotsByWallId: Record<string, PanelSlot[]>,
     primary: Set<string>,
     runStops: Record<string, WallRunStop>,
-  ): { slotsByWallId: Record<string, PanelSlot[]>; collapsedOpenings: number; tidiedParts: number } | null => {
+  ): { slotsByWallId: Record<string, PanelSlot[]>; collapsedOpenings: number; tidiedParts: number; cornersMoved: number } | null => {
     const cornerXY = (fp: Footprint) => new Map(fp.corners.map((c) => [c.id, { x: c.point.x, y: c.point.y }]));
     const oldCorners = cornerXY(oldFp);
     const newCorners = cornerXY(newFp);
     const next: Record<string, PanelSlot[]> = {};
     let collapsedOpenings = 0;
     let tidiedParts = 0;
+    let cornersMoved = 0;
     for (const wall of newFp.walls) {
       const slots = slotsByWallId[wall.id];
       if (!slots) continue; // a wall this shape did not have before
-      const end = wallGrowthEnd(oldCorners, newCorners, wall);
       const oldWall = oldFp.walls.find((w) => w.id === wall.id);
-      if (!end || !oldWall) {
+      if (!oldWall) {
         next[wall.id] = slots;
         continue;
       }
@@ -2899,12 +2901,53 @@ export default function LayoutEditor() {
         next[wall.id] = slots;
         continue;
       }
+      /* ⚠ A WALL WHOSE OWN CORNERS DID NOT MOVE CAN STILL CHANGE LENGTH, and
+         skipping it was a dimensional-tightness violation shipping in plain
+         sight. Widening a 30x30 to 40x30 moves only B and C, so DA has no
+         growth end — yet DA's run goes 344.5in -> 329in because AB now
+         builds the corner at A. Bailing out on a null end left DA's panels
+         summing 15.5in longer than the wall holding them. Found by
+         measurement on 2026-10-18, after the audit that found the corner
+         composition bug missed this one.
+
+         No early bail at all now: a wall with nothing to do falls through to
+         the zero-delta shortcut below and keeps its panel array by identity. */
+      const end =
+        wallGrowthEnd(oldCorners, newCorners, wall) ??
+        runChangeEndFromInsets(
+          newGeom.startInsetIn - oldGeom.startInsetIn,
+          newGeom.endInsetIn - oldGeom.endInsetIn,
+        ) ??
+        /* Neither a corner nor an inset moved, so the run is the same length
+           and the resize below is a no-op — but a rule-placed part may still
+           have changed side, so the wall is NOT skipped. */
+        "end";
       const deltaIn = newGeom.lengthIn - oldGeom.lengthIn;
-      if (Math.round(deltaIn * 8) === 0) {
+      /* ⚠ THE RULE-PLACED PARTS MOVE FIRST, and skipping this is what made
+         a length change build the wrong corners. Ownership reads wall LENGTH
+         ("the longer wall runs through"), so widening a square flips it:
+         measured, 30x30 -> 40x30 takes AB from one corner panel to two and BC
+         from one to zero. Resizing standard panels alone left two corner
+         panels at one corner with the wall TOTALS still correct, which is why
+         nothing caught it. Same story for the safety gap, whose end is picked
+         by distance from the least-accessible corner.
+
+         Checked BEFORE the zero-delta shortcut below: a wall can flip
+         ownership at both ends and come out the same length, and bailing on
+         the delta would skip the very wall that needed fixing. */
+      const ruled = applyRulePlacedParts(
+        slots,
+        { hasCornerStart: oldGeom.hasCornerStart, hasCornerEnd: oldGeom.hasCornerEnd, gapEnd: oldGeom.gapEnd },
+        { hasCornerStart: newGeom.hasCornerStart, hasCornerEnd: newGeom.hasCornerEnd, gapEnd: newGeom.gapEnd },
+        deltaIn,
+        cornerWidthInForTiling,
+      );
+      if (ruled.cornerMoved) cornersMoved += 1;
+      if (Math.round(ruled.remainingDeltaIn * 8) === 0 && !ruled.cornerMoved && !ruled.gapMoved) {
         next[wall.id] = slots;
         continue;
       }
-      const out = resizeWallRun(slots, deltaIn, end, standardWidthIn);
+      const out = resizeWallRun(ruled.slots, ruled.remainingDeltaIn, end, standardWidthIn);
       if (out.shortfallEighths > 0) return null;
       collapsedOpenings += out.collapsedOpenings;
       /* ⚠ THE RELEASE TIDY, and this IS the release. `onDragWall` fires on
@@ -2915,11 +2958,40 @@ export default function LayoutEditor() {
          Tommy, 2026-10-17: tidy ONLY a panel the shop cannot build, never a
          legal one. A pass that normalised every release would be the tiler
          running behind his back again, just later. */
-      const tidied = tidyUnbuildableLeftovers(out.slots);
+      /* ⚠ BRACING FOLLOWS A WALL THAT GREW — his answer of 2026-10-18.
+         `reconcileBracedPlacement` seeds ONLY genuinely new standard-slot
+         positions from the spacing rule and leaves every pattern the user
+         chose exactly where it is, which is why it is the right tool rather
+         than re-deriving the wall's bracing. Without it a wall grown from
+         30ft to 50ft gained 20ft of unbraced framing. */
+      const braced = reconcileBracedPlacement(
+        /* ⚠ `ruled.slots`, NOT `slots` — the array `resizeWallRun` was
+           actually given. The reconcile matches by standard-family ordinal
+           and reads gap positions, so handing it a run from before the
+           corner and gap moved would describe a wall that no longer exists. */
+        ruled.slots,
+        out.slots,
+        bracedSeed.spacingIn,
+        standardWidthIn,
+        bracedSeed.defaultPattern,
+        bracedSeed.defaultMirrored,
+        slotIndexPinnedWallIds.has(wall.id),
+      );
+      const tidied = tidyUnbuildableLeftovers(braced);
       tidiedParts += tidied.changedParts;
+      /* ⚠ DIMENSIONAL TIGHTNESS, CHECKED RATHER THAN ASSUMED. Every step
+         above conserves width by construction — the resize moves a budget
+         in eighths, the tidy moves width between neighbours, and the
+         corner-brace combine redistributes what it swallows. Four steps
+         each conserving is not the same as the chain conserving, and a
+         wall whose panels do not sum to its own length is the one thing
+         that may never reach the shop. So it is measured, and a mismatch
+         REFUSES the whole edit the same way a shortfall does. */
+      const sumEighths = tidied.slots.reduce((n, sl) => n + Math.round(sl.widthIn * 8), 0);
+      if (sumEighths !== Math.round(newGeom.lengthIn * 8)) return null;
       next[wall.id] = tidied.slots;
     }
-    return { slotsByWallId: next, collapsedOpenings, tidiedParts };
+    return { slotsByWallId: next, collapsedOpenings, tidiedParts, cornersMoved };
   };
 
   /**
@@ -3034,6 +3106,14 @@ export default function LayoutEditor() {
     /* ⚠ Only when a PART changed, which is his answer of 2026-10-17: a merged
        or split panel is a different thing to fabricate, but a notice on every
        ordinary drag becomes noise nobody reads. */
+    /* ⚠ A corner panel changing walls is two walls' parts changing, and he
+       did not directly ask for it — so it is said out loud (2026-10-18). */
+    const corners = ground.cornersMoved + (second?.cornersMoved ?? 0);
+    if (corners > 0) {
+      setPanelPlacementNotice(
+        "A corner panel moved to the other wall — the longer wall runs through a corner, and that changed with this edit.",
+      );
+    }
     const tidied = ground.tidiedParts + (second?.tidiedParts ?? 0);
     if (tidied > 0) {
       setPanelPlacementNotice(

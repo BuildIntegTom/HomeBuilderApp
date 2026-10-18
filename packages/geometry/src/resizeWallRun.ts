@@ -262,8 +262,19 @@ export function resizeWallRun(
  * square building making it bigger, it auto populates standard panels"* — the
  * panels appear where the hand is, which is the end that moved.
  *
- * Returns `null` when neither end moved, which means this wall's run did not
- * change and its panels must not be touched at all.
+ * Returns `null` when neither end moved.
+ *
+ * ⚠ **`null` does NOT mean this wall's run is unchanged, and an earlier
+ * version of this comment said it did.** A wall can keep both its own
+ * corner points and still change length, because its RUN is its nominal
+ * length less whatever a neighbour's corner panel occupies at each end —
+ * and that ownership is decided by comparative wall length. Measured:
+ * widening a 30x30 to 40x30 moves only B and C, so DA returns `null` here,
+ * while DA's run goes from 344.5in to 329in because AB now builds the
+ * corner at A. Treating `null` as "leave the panels alone" left DA's
+ * panels summing 15.5in longer than the wall they sit in — a dimensional
+ * tightness violation, not merely a composition one. Callers must fall
+ * back to `runChangeEndFromInsets` rather than skipping the wall.
  */
 export function wallGrowthEnd(
   oldCornerById: ReadonlyMap<string, { x: number; y: number }>,
@@ -519,4 +530,140 @@ export function stoppedSlotsRestoreFidelity(
   stopped: StoppedSlots | undefined,
 ): "nothing-withheld" | "exact" {
   return withheldOpeningCount(stopped) === 0 ? "nothing-withheld" : "exact";
+}
+
+/**
+ * The end to resize at when NO corner of this wall moved but its run
+ * changed anyway — the companion to `wallGrowthEnd`'s `null`.
+ *
+ * The only thing that can change a run without moving a corner point is an
+ * INSET change at one end or the other: a neighbour started or stopped
+ * building the corner panel there. So the end that changed is the end whose
+ * inset moved, which is where the panels should enter or leave.
+ *
+ * Returns `null` when neither inset moved, which genuinely does mean the run
+ * is the same length — though a rule-placed part can still have changed
+ * side, so a caller must not read `null` as "nothing to do".
+ */
+export function runChangeEndFromInsets(
+  startInsetDeltaIn: number,
+  endInsetDeltaIn: number,
+): "start" | "end" | null {
+  const startE = Math.round(startInsetDeltaIn * 8);
+  const endE = Math.round(endInsetDeltaIn * 8);
+  if (startE === 0 && endE === 0) return null;
+  /* Both ends can change at once — a wall can lose the corner at one end
+     and gain the neighbour's at the other. The larger movement is the one
+     that decides, and a tie goes to the start so the answer is at least
+     deterministic rather than depending on argument order. */
+  return Math.abs(startE) >= Math.abs(endE) ? "start" : "end";
+}
+
+export interface RulePlacedState {
+  /** Does this wall BUILD a corner panel at its start end? */
+  hasCornerStart: boolean;
+  hasCornerEnd: boolean;
+  /** Which end the safety gap belongs at. */
+  gapEnd: "start" | "end";
+}
+
+export interface RulePlacedResult {
+  slots: PanelSlot[];
+  /** Width still to be absorbed by the wall's ordinary panels after the
+   * rule-placed parts have taken their share of the length change. */
+  remainingDeltaIn: number;
+  cornerMoved: boolean;
+  gapMoved: boolean;
+}
+
+/**
+ * Move the parts that are placed BY RULE when the rule itself has changed.
+ *
+ * ⚠ **This is the half of a length change Stage 4 forgot, and it produced
+ * physically wrong buildings.** Corner ownership is decided by *"the longer
+ * wall runs through"*, so it reads `wall.lengthFt` — widening 30ft x 30ft to
+ * 40ft x 30ft takes AB from one corner panel to two and BC from one to zero.
+ * `resizeWallRun` moves STANDARD panels only, so neither moved: the model
+ * ended up with two corner panels at one corner and BC's framing 25.5in short
+ * of its own run. ⚠ The wall TOTALS stayed correct the whole time, because the
+ * delta is measured from `wallGeometryFor(...).lengthIn` which already
+ * accounts for the inset — the sum was right and the composition was wrong,
+ * which is why no invariant caught it.
+ *
+ * The safety gap has the same shape of problem: `computeGapEnd` picks its end
+ * by distance from the least-accessible corner, and changing lengths moves
+ * corners.
+ *
+ * ⚠ **This is not a retreat to re-tiling.** The model's own rule 4 says the
+ * corner panels and the safety gap *"remain rule-placed and therefore keep
+ * moving by themselves"*. Nothing the user chose is re-derived here — only the
+ * two parts that were never theirs.
+ *
+ * Returns the delta still owed to the ordinary panels: a corner panel this
+ * wall has GAINED consumes its own width out of the length change, because the
+ * run grew by exactly the corner it now builds.
+ */
+export function applyRulePlacedParts(
+  slots: readonly PanelSlot[],
+  before: RulePlacedState,
+  after: RulePlacedState,
+  deltaIn: number,
+  cornerWidthIn: number,
+): RulePlacedResult {
+  const working = slots.map((s) => ({ ...s }));
+  let remaining = toEighths(deltaIn);
+  let cornerMoved = false;
+
+  const leadingCornerIndex = working.findIndex((s) => s.type === "corner");
+  const hasLeadingCorner = leadingCornerIndex === 0;
+  const trailingCornerIndex = working.length - 1;
+  const hasTrailingCorner = working[trailingCornerIndex]?.type === "corner";
+
+  // ---- the END corner --------------------------------------------------
+  if (after.hasCornerEnd && !before.hasCornerEnd) {
+    working.push({ type: "corner", widthIn: cornerWidthIn });
+    remaining -= toEighths(cornerWidthIn);
+    cornerMoved = true;
+  } else if (!after.hasCornerEnd && before.hasCornerEnd && hasTrailingCorner) {
+    // Its OWN width back, not the nominal one — a corner panel may have been
+    // widened by the tiler's own cornerMayWiden rule.
+    remaining += toEighths(working[trailingCornerIndex]!.widthIn);
+    working.splice(trailingCornerIndex, 1);
+    cornerMoved = true;
+  }
+
+  // ---- the START corner ------------------------------------------------
+  if (after.hasCornerStart && !before.hasCornerStart) {
+    working.unshift({ type: "corner", widthIn: cornerWidthIn });
+    remaining -= toEighths(cornerWidthIn);
+    cornerMoved = true;
+  } else if (!after.hasCornerStart && before.hasCornerStart && hasLeadingCorner) {
+    remaining += toEighths(working[0]!.widthIn);
+    working.splice(0, 1);
+    cornerMoved = true;
+  }
+
+  // ---- the safety gap --------------------------------------------------
+  let gapMoved = false;
+  if (after.gapEnd !== before.gapEnd) {
+    const gapIndex = working.findIndex((s) => s.type === "safety-gap");
+    if (gapIndex >= 0) {
+      const [gap] = working.splice(gapIndex, 1);
+      /* Re-inserted just INSIDE the corner at the other end — the position the
+         tiler puts it in — so moving it never displaces a corner panel. Its
+         width is unchanged, so this costs the delta nothing. */
+      if (after.gapEnd === "end") {
+        let i = working.length;
+        while (i > 0 && working[i - 1]!.type === "corner") i--;
+        working.splice(i, 0, gap!);
+      } else {
+        let i = 0;
+        while (i < working.length && working[i]!.type === "corner") i++;
+        working.splice(i, 0, gap!);
+      }
+      gapMoved = true;
+    }
+  }
+
+  return { slots: working, remainingDeltaIn: toInches(remaining), cornerMoved, gapMoved };
 }
