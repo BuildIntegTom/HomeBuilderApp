@@ -1,4 +1,5 @@
 import { distributeEighths, fromEighths, roundToEighthIn, toEighths } from "./eighths";
+import { applySafetyGapSpacing } from "./safetyGapSpacing";
 import type { BracePattern, PanelSlot, PanelSlotType, PanelSlotZone, WallEnd } from "./types";
 
 export interface TileWallResult {
@@ -885,8 +886,31 @@ export function tileWall(
   const middle = buildMiddle(middleLengthIn, standardWidthIn, gapEnd, allowBorrow, gapWidthIn);
 
   return {
-    slots: [...(corners.cornerStart ? [corners.cornerStart] : []), ...middle, ...(corners.cornerEnd ? [corners.cornerEnd] : [])],
+    slots: withSafetyGapSpacing(
+      [...(corners.cornerStart ? [corners.cornerStart] : []), ...middle, ...(corners.cornerEnd ? [corners.cornerEnd] : [])],
+      gapEnd,
+      gapWidthIn,
+    ),
   };
+}
+
+/**
+ * The 24ft safety-gap rule, applied to a finished run — Tommy, 2026-10-18.
+ *
+ * ⚠ **Applied HERE, inside the tiler, rather than by the tiler’s callers.**
+ * It was wired into `retile`’s two per-wall loops first, and that broke the
+ * run-stop opening memory: `partitionOpeningsByRunStop` tiles the run TWICE
+ * itself — once as the unstopped basis, once as the built span — to work
+ * out which openings still fit. Those two tilings came back WITHOUT the extra
+ * gaps while the wall the user saw had them, so positions disagreed by 3/4in
+ * per gap and an opening at the boundary flipped in or out. Two tests caught
+ * it, one of them sweeping every inch.
+ *
+ * Putting it at the tiler’s own return is what makes every derived tiling
+ * agree, because there is exactly one place a run gets built.
+ */
+function withSafetyGapSpacing(slots: PanelSlot[], gapEnd: WallEnd, gapWidthIn: number): PanelSlot[] {
+  return applySafetyGapSpacing(slots, gapEnd, gapWidthIn, TILER_MIN_PANEL_WIDTH_IN).slots;
 }
 
 export interface OpeningAnchor {
@@ -1073,7 +1097,11 @@ export function retileWithOpenings(
   }
 
   return {
-    slots: [...(corners.cornerStart ? [corners.cornerStart] : []), ...middle, ...(corners.cornerEnd ? [corners.cornerEnd] : [])],
+    slots: withSafetyGapSpacing(
+      [...(corners.cornerStart ? [corners.cornerStart] : []), ...middle, ...(corners.cornerEnd ? [corners.cornerEnd] : [])],
+      gapEnd,
+      gapWidthIn,
+    ),
   };
 }
 

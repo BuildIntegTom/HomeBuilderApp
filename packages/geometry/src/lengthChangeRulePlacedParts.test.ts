@@ -3,6 +3,8 @@ import { buildRectangleFootprint } from "./footprint";
 import { retile, wallGeometryFor } from "./retile";
 import { reconcileBracedPlacement } from "./bracedPlacement";
 import { applyRulePlacedParts, resizeWallRun, runChangeEndFromInsets, wallGrowthEnd } from "./resizeWallRun";
+import { applySafetyGapSpacing } from "./safetyGapSpacing";
+import { TILER_MIN_PANEL_WIDTH_IN, safetyGapWidthForRunIn } from "./tiling";
 import { tidyUnbuildableLeftovers } from "./tidyLeftovers";
 import type { Footprint, PanelSlot } from "./types";
 
@@ -108,9 +110,10 @@ function resizeForShapeChange(
     }
     const out = resizeWallRun(ruled.slots, ruled.remainingDeltaIn, end, STANDARD_WIDTH_IN);
     if (out.shortfallEighths > 0) return null;
+    const gapSpaced = applySafetyGapSpacing(out.slots, newGeom.gapEnd, safetyGapWidthForRunIn(newGeom.lengthIn), TILER_MIN_PANEL_WIDTH_IN);
     const braced = reconcileBracedPlacement(
       ruled.slots,
-      out.slots,
+      gapSpaced.slots,
       BRACED_SEED.spacingIn,
       STANDARD_WIDTH_IN,
       BRACED_SEED.defaultPattern,
@@ -242,7 +245,12 @@ describe("⚠ a wall whose OWN corners never moved can still change length", () 
 });
 
 describe("the safety gap is rule-placed too", () => {
-  it("is never lost, duplicated, or resized by a length change", () => {
+  it("is never lost or RESIZED by a length change — though a long wall gains more", () => {
+    /* ⚠ This test asserted an unchanged gap COUNT until 2026-10-18, which his
+       24ft spacing rule makes wrong: a wall taken from 20ft to 60ft is
+       supposed to gain gaps. What must still hold is that no gap is ever
+       resized and no run ever loses its last one — a gap IS a 3/4in sheet of
+       plywood, so a gap of some other width is not a part the shop has. */
     const fp = buildRectangleFootprint(30, 20);
     const grown = buildRectangleFootprint(30, 60);
     const start = tiled(fp);
@@ -250,7 +258,10 @@ describe("the safety gap is rule-placed too", () => {
     for (const id of Object.keys(out.slotsByWallId)) {
       const gaps = out.slotsByWallId[id]!.filter((s) => s.type === "safety-gap");
       const was = start[id]!.filter((s) => s.type === "safety-gap");
-      expect(gaps.map((s) => s.widthIn)).toEqual(was.map((s) => s.widthIn));
+      expect(gaps.length).toBeGreaterThanOrEqual(Math.min(1, was.length));
+      // Every gap is the width the run's own length calls for, not a leftover.
+      const geom = wallGeometryFor(grown, id, allPrimary(grown), "A", THICKNESS_IN)!;
+      for (const g of gaps) expect(g.widthIn).toBe(safetyGapWidthForRunIn(geom.lengthIn));
     }
     expectWallsAgreeWithGeometry(grown, out.slotsByWallId);
   });
@@ -265,25 +276,79 @@ describe("the safety gap is rule-placed too", () => {
     expect(new Set(gapEnds).size).toBe(2); // both sides really do occur
   });
 
-  it("⚠ OPEN QUESTION, 2026-10-18: a gap does not slide outward when its end grows", () => {
-    /* Measured: growing BC from 20ft to 60ft at its END leaves the gap at
-       index 6 of 21, so it ends up 20ft inboard of the end the rule points
-       at, where a fresh tile of the same wall puts it near that end.
+  it("⚠ ANSWERED 2026-10-18: a wall that grows gains gaps every ~24ft", () => {
+    /* This test used to pin the open question — a gap stranded ~20ft inboard
+       of the end the rule pointed at, after growing BC from 20ft to 60ft.
+       His answer turned it into a SPACING rule rather than a sliding one:
 
-       This is recorded rather than fixed because WHICH is right is a building
-       decision, not a code one: the gap exists for access on the least
-       accessible side, so it may want to stay adjacent to that end — or it may
-       be a joint in a specific place that should not wander. Tommy decides.
-       ⚠ Asserting the CURRENT behaviour so that whichever way he answers, the
-       change is deliberate and this test has to be rewritten to allow it. */
+       > "There should be a 3/4-in safety cap approximately every 24 ft. This
+       > starts with a safety Gap right next to each corner on each wall
+       > according to the least accessibility placement."
+
+       So the first gap does not move, and the long stretch it left behind
+       gets gaps of its own. The spacing itself is pinned in
+       `safetyGapSpacing.test.ts`; what this asserts is that the
+       length-change path applies it at all. */
     const fp = buildRectangleFootprint(30, 20);
     const grown = buildRectangleFootprint(30, 60);
-    const out = resizeForShapeChange(fp, grown, tiled(fp), true)!;
+    const start = tiled(fp);
+    const out = resizeForShapeChange(fp, grown, start, true)!;
+    const before = start["BC"]!.filter((s) => s.type === "safety-gap").length;
     const bc = out.slotsByWallId["BC"]!;
-    expect(wallGeometryFor(grown, "BC", allPrimary(grown), "A", THICKNESS_IN)!.gapEnd).toBe("end");
-    const idx = gapIndex(bc);
-    // Today: nearer the START than the end, despite the rule saying "end".
-    expect(idx).toBeLessThan((bc.length - 1) / 2);
+    expect(bc.filter((s) => s.type === "safety-gap").length).toBeGreaterThan(before);
+    /* ⚠ The property that matters on a real wall: no run of framing is ever
+       further than 28ft from a gap, which is his +4ft bound. Asserted as the
+       PROPERTY rather than as a slot index, because the index was what made
+       the first version of this test wrong. */
+    let sinceGapIn = 0;
+    let worstIn = 0;
+    for (const s of bc) {
+      if (s.type === "safety-gap") sinceGapIn = 0;
+      else sinceGapIn += s.widthIn;
+      worstIn = Math.max(worstIn, sinceGapIn);
+    }
+    expect(worstIn).toBeLessThanOrEqual(28 * 12);
+    expectWallsAgreeWithGeometry(grown, out.slotsByWallId);
+  });
+
+  it("⚠ his 20ft-to-40ft example gets ONE gap, not the two he described", () => {
+    /* HIS EXAMPLE, and the app does not yet match it. Recorded as the real
+       behaviour rather than skipped, because a skipped test is a thing nobody
+       reads.
+
+       He said: a 20ft wall grown to 40ft should end up with a gap beside the
+       corner panel AND another 24ft along. What happens: `resizeWallRun`
+       inserts the new panels at the end that MOVED, which is between the
+       corner and the existing gap, so the gap ends up 15.3ft in. The two
+       stretches are then 15.3ft and 24.6ft, both inside his 28ft bound, so
+       the spacing rule is satisfied and adds nothing.
+
+       Getting his two gaps means MOVING the anchor back beside the corner.
+       That was built and measured working (two gaps, 280in apart) and then
+       reverted: a gap adjacent to the corner-touching panel is the exact
+       configuration the corner-brace combine exists for, and making it common
+       broke 36 tests including the 790,440-wall sweep that keeps every panel
+       inside [24in, 48in]. See `safetyGapSpacing.ts`.
+
+       ⚠ The PROPERTY he cares about does hold: nothing is further than 28ft
+       from a gap. Asserted below, so this test stays useful rather than just
+       recording a number. */
+    const fp = buildRectangleFootprint(20, 20);
+    const grown = buildRectangleFootprint(40, 20);
+    const start = tiled(fp);
+    expect(start["AB"]!.filter((s) => s.type === "safety-gap")).toHaveLength(1);
+    const out = resizeForShapeChange(fp, grown, start, true)!;
+    const ab = out.slotsByWallId["AB"]!;
+    expect(ab.filter((s) => s.type === "safety-gap")).toHaveLength(1);
+    let sinceGapIn = 0;
+    let worstIn = 0;
+    for (const sl of ab) {
+      if (sl.type === "safety-gap") sinceGapIn = 0;
+      else sinceGapIn += sl.widthIn;
+      worstIn = Math.max(worstIn, sinceGapIn);
+    }
+    expect(worstIn).toBeLessThanOrEqual(28 * 12);
+    expectWallsAgreeWithGeometry(grown, out.slotsByWallId);
   });
 });
 

@@ -68,6 +68,9 @@ import {
   resizeWallRun,
   applyRulePlacedParts,
   runChangeEndFromInsets,
+  applySafetyGapSpacing,
+  safetyGapWidthForRunIn,
+  TILER_MIN_PANEL_WIDTH_IN,
   applyRunStopChange,
   tidyUnbuildableLeftovers,
   withheldOpeningCount,
@@ -2877,7 +2880,14 @@ export default function LayoutEditor() {
     slotsByWallId: Record<string, PanelSlot[]>,
     primary: Set<string>,
     runStops: Record<string, WallRunStop>,
-  ): { slotsByWallId: Record<string, PanelSlot[]>; collapsedOpenings: number; tidiedParts: number; cornersMoved: number } | null => {
+  ): {
+    slotsByWallId: Record<string, PanelSlot[]>;
+    collapsedOpenings: number;
+    tidiedParts: number;
+    cornersMoved: number;
+    gapsAdded: number;
+    gapsRemoved: number;
+  } | null => {
     const cornerXY = (fp: Footprint) => new Map(fp.corners.map((c) => [c.id, { x: c.point.x, y: c.point.y }]));
     const oldCorners = cornerXY(oldFp);
     const newCorners = cornerXY(newFp);
@@ -2885,6 +2895,8 @@ export default function LayoutEditor() {
     let collapsedOpenings = 0;
     let tidiedParts = 0;
     let cornersMoved = 0;
+    let gapsAdded = 0;
+    let gapsRemoved = 0;
     for (const wall of newFp.walls) {
       const slots = slotsByWallId[wall.id];
       if (!slots) continue; // a wall this shape did not have before
@@ -2964,13 +2976,27 @@ export default function LayoutEditor() {
          chose exactly where it is, which is why it is the right tool rather
          than re-deriving the wall's bracing. Without it a wall grown from
          30ft to 50ft gained 20ft of unbraced framing. */
+      /* ⚠ THE 24FT SAFETY GAP RULE — Tommy, 2026-10-18, and this is the
+         half of it he asked for by name: "When a wall GROWS or when a very
+         long wall is created." A wall taken from 20ft to 40ft gains a gap
+         about 24ft from the one beside the corner; one cut back loses the
+         gap it can no longer justify.
+
+         ⚠ This is a rule-placed part being re-placed, NOT the tiler coming
+         back: the gap lands on a joint the wall already has and takes its
+         3/4in out of the panel beside it, so no panel the user sized is
+         re-derived. Applied before the bracing so the braces see the joints
+         the wall actually ends up with — the same order `retile` uses. */
+      const gapSpaced = applySafetyGapSpacing(out.slots, newGeom.gapEnd, safetyGapWidthForRunIn(newGeom.lengthIn), TILER_MIN_PANEL_WIDTH_IN);
+      gapsAdded += gapSpaced.added;
+      gapsRemoved += gapSpaced.removed;
       const braced = reconcileBracedPlacement(
         /* ⚠ `ruled.slots`, NOT `slots` — the array `resizeWallRun` was
            actually given. The reconcile matches by standard-family ordinal
            and reads gap positions, so handing it a run from before the
            corner and gap moved would describe a wall that no longer exists. */
         ruled.slots,
-        out.slots,
+        gapSpaced.slots,
         bracedSeed.spacingIn,
         standardWidthIn,
         bracedSeed.defaultPattern,
@@ -2991,7 +3017,7 @@ export default function LayoutEditor() {
       if (sumEighths !== Math.round(newGeom.lengthIn * 8)) return null;
       next[wall.id] = tidied.slots;
     }
-    return { slotsByWallId: next, collapsedOpenings, tidiedParts, cornersMoved };
+    return { slotsByWallId: next, collapsedOpenings, tidiedParts, cornersMoved, gapsAdded, gapsRemoved };
   };
 
   /**
@@ -3108,6 +3134,18 @@ export default function LayoutEditor() {
        ordinary drag becomes noise nobody reads. */
     /* ⚠ A corner panel changing walls is two walls' parts changing, and he
        did not directly ask for it — so it is said out loud (2026-10-18). */
+    /* ⚠ A new safety gap is a new PART and a new joint in a real wall, so it
+       is said out loud rather than appearing silently in the cut list. */
+    const gapsIn = ground.gapsAdded + (second?.gapsAdded ?? 0);
+    const gapsOut = ground.gapsRemoved + (second?.gapsRemoved ?? 0);
+    if (gapsIn > 0 || gapsOut > 0) {
+      const parts: string[] = [];
+      if (gapsIn > 0) parts.push(`${gapsIn} safety ${gapsIn === 1 ? "gap" : "gaps"} added`);
+      if (gapsOut > 0) parts.push(`${gapsOut} removed`);
+      setPanelPlacementNotice(
+        `${parts.join(", ")} — a safety gap sits about every 24ft along a wall, at the nearest panel joint.`,
+      );
+    }
     const corners = ground.cornersMoved + (second?.cornersMoved ?? 0);
     if (corners > 0) {
       setPanelPlacementNotice(

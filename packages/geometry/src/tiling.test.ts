@@ -447,6 +447,13 @@ describe("retileWithOpenings", () => {
     // minus the fixed 0.75in gap leaves 289.25 for standards -> 7 fit (280)
     // with a 9.25 remainder, split into 2 panels of 24.625 each next to the
     // gap — window anchored after 2 standard slots
+    //
+    // ⚠ A SECOND gap from 2026-10-18, at the joint just before the window.
+    // Walking back from the anchor gap, the joints inside his 20-28ft window
+    // are 269.25in (the window's near edge) and 309.25in; 269.25 is nearer
+    // 24ft, so that is where it goes. Its 3/4in comes out of the standard
+    // beside it (40 -> 39.25), never out of the window — see
+    // `safetyGapSpacing.ts` on the donor bug that did exactly that.
     const result = retileWithOpenings(430, 40, 20, "end", true, true, [
       { beforeStandardCount: 2, type: "window", widthIn: 100 },
     ]);
@@ -456,6 +463,7 @@ describe("retileWithOpenings", () => {
       "corner",
       "standard",
       "standard",
+      "safety-gap",
       "window",
       "standard",
       "standard",
@@ -466,7 +474,7 @@ describe("retileWithOpenings", () => {
       "standard",
       "corner",
     ]);
-    expect(widths).toEqual([20, 40, 40, 100, 40, 40, 40, 24.625, 24.625, 0.75, 40, 20]);
+    expect(widths).toEqual([20, 40, 39.25, 0.75, 100, 40, 40, 40, 24.625, 24.625, 0.75, 40, 20]);
     // total unchanged — the gap's fixed width never introduces slack
     expect(widths.reduce((a, b) => a + b, 0)).toBe(430);
   });
@@ -484,6 +492,7 @@ describe("retileWithOpenings", () => {
       "corner",
       "standard",
       "standard",
+      "safety-gap",
       "window",
       "standard",
       "standard",
@@ -1511,6 +1520,24 @@ describe("corner absorb: the 51in-75.5in two-corner band", () => {
 // name is not true of what it asserts is the same defect class as an Open Items
 // pointer that names no item.
 describe("walls outside the band: a digest pair that catches an UNINTENDED change (baselined on this branch, 2026-10-01)", () => {
+  /* ⚠ RE-BASELINED 2026-10-18, DELIBERATELY, and this is the record of why.
+     Both digests moved because the 24ft safety-gap rule now applies to the
+     tiler's own output: any run long enough for a second gap gets one, which
+     changes the slot sequence and the widths either side of each new gap. That
+     is the intended change, so these numbers are the new truth —
+
+       tileWall           3712675599 -> 1132207683
+       retileWithOpenings 3623257527 ->  733474795
+
+     ⚠ A digest going red is NOT licence to re-baseline it. What justifies it
+     here is that the sweeps which encode fabrication rules rather than
+     fingerprints all stayed GREEN through the same change: the 1/8in grid
+     invariant over every eighth from 51in to 720in, and the absorb rule's "no
+     tiler-generated panel the shop cannot build", both for `tileWall` and for
+     `retileWithOpenings`. The digest says the output moved; those say it moved
+     to somewhere still buildable. Re-baselining on a red invariant sweep would
+     be erasing the evidence instead of reading it. */
+
   /** In the band, behaviour changed on purpose; everywhere else it must not.
    * Top edge 75.5in since 2026-10-01 — see the band note above. */
   const inBand = (lengthIn: number, hasCornerStart: boolean, hasCornerEnd: boolean): boolean =>
@@ -1563,7 +1590,7 @@ describe("walls outside the band: a digest pair that catches an UNINTENDED chang
     // (measured on a3843f1, before corner absorb); the count dropped by 32
     // because the band swallowed four more eighth-steps x 4 standard widths x 2
     // gap ends. See this describe block's own note.
-    expect(digest).toBe(3712675599);
+    expect(digest).toBe(1132207683);
   });
 
   it("retileWithOpenings: 254,652 out-of-band configurations, unchanged", () => {
@@ -1601,7 +1628,7 @@ describe("walls outside the band: a digest pair that catches an UNINTENDED chang
     expect(compared).toBe(254604);
     // RE-BASELINED 2026-10-01, same reason as the row above. Was 512805668 over
     // 254,652 configurations (measured on a3843f1).
-    expect(digest).toBe(3623257527);
+    expect(digest).toBe(733474795);
   });
 });
 

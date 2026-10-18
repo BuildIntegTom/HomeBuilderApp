@@ -23,12 +23,20 @@ describe("applyBracedPlacement", () => {
     // remainder, split into 2 panels of 47.625 each next to the gap
     // (capped-width tiling, see tiling.test.ts); gapEnd 'end' puts the gap
     // second-to-last, corner-touching standard last.
+    //
+    // ⚠ A SECOND safety gap appears from 2026-10-18: a 480in run is 40ft, and
+    // the 24ft spacing rule puts a gap at the joint nearest 24ft from the
+    // first one (Tommy: a 3/4in safety cap approximately every 24ft, plus or
+    // minus 4ft, whichever is closer). This fixture is about the BRACE walk,
+    // and what it shows is that the walk still brackets each corner and still
+    // steps periodically — over one more slot than it used to.
     const { slots } = tileWall(480, 48, 24, "end");
     const result = applyBracedPlacement(slots, 96 /* 8ft high-seismic spacing */, 48, "chevron", false);
     expect(result.map((s) => s.type)).toEqual([
       "corner",
       "braced", // touches the start corner
       "standard",
+      "safety-gap", // the 24ft spacing rule, 2026-10-18
       "braced", // periodic
       "standard",
       "braced", // periodic

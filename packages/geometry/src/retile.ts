@@ -1,7 +1,14 @@
 import { computeGapEnd, computeSafetyEnd } from "./gapPlacement";
 import { cornerTurnAngleRad, footprintIsAllRightAngles, isConvexCorner, isRightAngleCorner } from "./cornerAngle";
 import { reconcileBracedPlacement } from "./bracedPlacement";
-import { getOpeningAnchors, markSafetyCorner, retileWithOpenings, tileWall, type OpeningAnchor } from "./tiling";
+import {
+  getOpeningAnchors,
+  markSafetyCorner,
+  retileWithOpenings,
+  safetyGapWidthForRunIn,
+  tileWall,
+  type OpeningAnchor,
+} from "./tiling";
 import { wallCompassDirection } from "./wallCompassDirection";
 import { toEighths, wallFabricationLengthIn } from "./eighths";
 import { applyWallRunStop, hasWallRunStop } from "./wallRunStop";
@@ -460,6 +467,12 @@ export function retile(
             cornerMayWiden,
           ).slots
         : plainSlots;
+    /* ⚠ THE 24FT GAP RULE, applied before the bracing is seeded so the
+       braces see the joints the wall actually ends up with — Tommy,
+       2026-10-18: "There should be a 3/4-in safety cap approximately every
+       24 ft... plus or minus 4 ft whatever is closer." The tiler still
+       places the FIRST gap from `gapEnd`; this adds the rest at joints the
+       run already has, and conserves the run's total width. */
     const seeded = reconcileBracedPlacement(
       undefined,
       slots,
@@ -804,6 +817,10 @@ export function retilePreservingOpeningsWithRunStopMemory(
     // doc comment. `oldSlots` undefined (no old counterpart for this wall
     // id) means every standard slot here is new — full fresh seed, same
     // as `retile`.
+    /* ⚠ Same 24ft gap rule as `retile`'s own loop, and applied in the same
+       place for the same reason — the bracing must see the final joints.
+       `run.lengthIn` is the BUILT run (a stop already taken out of it),
+       which is the length the gap width rule is stated against. */
     const reconciled = reconcileBracedPlacement(
       oldSlots,
       slots,
