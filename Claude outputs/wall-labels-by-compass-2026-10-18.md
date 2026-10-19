@@ -1,4 +1,10 @@
-# Side quest, queued — wall labels by compass instead of AB/BC
+# Side quest, SHIPPED 2026-10-18 — wall labels by compass instead of AB/BC
+
+> **Shipped the same day in `239a950`.** He picked `N2` for the duplicate case.
+> Verified in the browser: a rectangle reads Elevation: N / E / S / W, and a
+> bumped-out rectangle reads N, E, S, E2, S2, W, S3, W2. The one thing below
+> still outstanding is `squareBaleCornerRefusal`, whose messages have no
+> footprint to derive a label from.
 
 **Tommy, 2026-10-18:**
 
