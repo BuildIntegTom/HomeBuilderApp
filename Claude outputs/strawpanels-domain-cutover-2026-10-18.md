@@ -1,5 +1,25 @@
 # strawpanels.com — the cutover, in the order that does not break sign-in
 
+> **DONE 2026-10-18. All four steps complete and verified.** Measured from
+> outside: `www` resolves to Vercel's per-project target on every resolver and
+> returns **308 → https://strawpanels.com/**; the apex serves the app over HTTPS
+> with HSTS; the password-reset endpoint answers 200 rather than 502 or 429.
+> Tommy confirmed the definitive check — **a real password reset arrived and its
+> link landed on strawpanels.com.**
+>
+> ⚠ **Two things were found along the way and are worth keeping.** Squarespace
+> auto-creates a `www → ext-sq.squarespace.com` CNAME when a domain is
+> registered there; it survived the first pass and served a "Coming Soon" page
+> to whichever resolver had it cached, while another resolver already saw
+> Vercel. And the password-reset route was swallowing Supabase's error — a
+> refused redirect, a hit rate limit and a sent email all answered "ok". Fixed
+> in the same work.
+>
+> **Optional, not required:** the `.vercel.app` entry can now come out of the
+> Supabase redirect allowlist. Worth doing — with it gone, a stale
+> `NEXT_PUBLIC_SITE_URL` fails loudly instead of quietly pointing people at the
+> old host.
+
 The repo side is done and pushed. What is left is three dashboards, and **the
 order matters**: two of the steps break authentication if they are done in the
 wrong sequence.
