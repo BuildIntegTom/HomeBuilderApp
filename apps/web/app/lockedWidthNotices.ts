@@ -182,8 +182,18 @@ export function unhonouredLockedWidthReviewNote(
   refusal: UnhonouredLockedWidth & { story: "ground" | "second" },
   limits: PanelWidthLimitsIn,
   formatLengthIn: FormatLengthIn,
+  /**
+   * What to call the wall — the compass label with its id in
+   * parentheses, e.g. `N2 (CD)`, from `wallDisplayLabelWithId`.
+   *
+   * ⚠ Passed in rather than derived, because the label needs the whole
+   * footprint to number two walls facing the same way and this module has
+   * no footprint. Omitted falls back to the raw id, which is what every
+   * caller printed before 2026-10-18.
+   */
+  wallLabel?: string,
 ): string {
-  return `Wall ${refusal.wallId}, panel slot ${refusal.slotIndex}, ${
+  return `Wall ${wallLabel ?? refusal.wallId}, panel slot ${refusal.slotIndex}, ${
     refusal.story === "second" ? "second" : "ground"
   } story. Somebody hand-set this panel to ${formatLengthIn(
     refusal.lockedWidthIn,

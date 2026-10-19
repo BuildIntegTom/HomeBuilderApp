@@ -172,6 +172,16 @@ const DRAG_GOLD_WASH = "rgba(212, 160, 23, 0.3)";
 
 export interface WallElevationDiagramProps {
   wall: Wall;
+  /**
+   * What to call this wall on screen — its compass label, e.g. `N` or `N2`
+   * (`wallDisplayLabelsByWallId`). Tommy, 2026-10-18: the wall ids made it
+   * hard to tell which elevation he was looking at.
+   *
+   * ⚠ Passed in rather than derived: numbering two walls that face the
+   * same way needs the whole footprint, which this component does not have.
+   * Omitted falls back to `wall.id`.
+   */
+  wallLabel?: string;
   slots: PanelSlot[];
   wallHeightFt: number;
   /** This wall's own real named panel instances (page.tsx's own
@@ -496,6 +506,7 @@ function instancesForSlotBand(
  */
 export default function WallElevationDiagram({
   wall,
+  wallLabel,
   slots,
   wallHeightFt,
   allInstances,
@@ -2186,7 +2197,7 @@ export default function WallElevationDiagram({
               cursor: isPanning ? "grab" : undefined,
             }}
             role="img"
-            aria-label={`Elevation view of wall ${wall.id}`}
+            aria-label={`Elevation view of wall ${wallLabel ?? wall.id}`}
           >
         {/* "Overall Width" dimension callout — this wall's own true
             lengthFt (not groundRunWidthIn, which can stop short at an end

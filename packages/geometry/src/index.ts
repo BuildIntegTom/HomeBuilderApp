@@ -33,6 +33,7 @@ export * from "./joistLayout";
 export * from "./pointInPolygon";
 export * from "./clipSegmentToPolygon";
 export * from "./wallCompassDirection";
+export * from "./wallDisplayLabel";
 export * from "./gableTiledRow";
 export * from "./roofBearingSegments";
 export * from "./panelSlotZones";

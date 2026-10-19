@@ -64,6 +64,8 @@ import {
   movePanelWithinWall,
   retileWithOpenings,
   wallCompassDirection,
+  wallDisplayLabelWithId,
+  wallDisplayLabelsByWallId,
   wallGeometryFor as wallGeometryForPure,
   resizeWallRun,
   applyRulePlacedParts,
@@ -2327,11 +2329,31 @@ export default function LayoutEditor() {
   // (the sidebar dial was removed 2026-09-28). `viewerMenus.ts` splits it by
   // filtering this array, so the two menus together are exactly this list — and
   // a stop missing from here is a stop nobody can reach at all.
+  /* ⚠ THE ELEVATION STOPS READ COMPASS LABELS, NOT WALL IDS — Tommy,
+     2026-10-18: "Labeling walls Ab, BC etc. makes it difficult for me to
+     conceptualize which elevation view I want to look at and which wall is
+     which wall."
+
+     The naming itself is not new — `wallCompassDirection` has produced
+     N/NE/E/... since before he asked, and the shop has been reading it on
+     panel names and sheet headers for weeks. The EDITOR was the last place
+     still showing the internal id, so the app had two vocabularies and gave
+     the shop the better one.
+
+     ⚠ Not memoized, deliberately. `wallDisplayLabelsByWallId` walks at most
+     eight walls, and a new `useMemo` in this file costs
+     `react-hooks/preserve-manual-memoization` errors it does not need to — see
+     AGENTS.md. It is computed where it is used instead. */
+  const wallLabels = footprint ? wallDisplayLabelsByWallId(footprint) : {};
   // See viewerMenus.ts.
   const viewerStops = useMemo<ViewerStop[]>(
     () => [
       { kind: "plan" },
-      ...(footprint?.walls.map((w) => ({ kind: "elevation" as const, wallId: w.id, label: w.id })) ?? []),
+      ...(footprint?.walls.map((w) => ({
+        kind: "elevation" as const,
+        wallId: w.id,
+        label: wallDisplayLabelsByWallId(footprint)[w.id] ?? w.id,
+      })) ?? []),
       { kind: "3d-framed" },
       { kind: "3d-boxes" },
       { kind: "3d-wraps" },
@@ -2339,7 +2361,7 @@ export default function LayoutEditor() {
     [footprint],
   );
   const currentViewerStop: ViewerStop = elevationViewWallId
-    ? { kind: "elevation", wallId: elevationViewWallId, label: elevationViewWallId }
+    ? { kind: "elevation", wallId: elevationViewWallId, label: wallLabels[elevationViewWallId] ?? elevationViewWallId }
     : viewMode === "plan"
       ? { kind: "plan" }
       : showWraps
@@ -8729,7 +8751,7 @@ export default function LayoutEditor() {
       // WHICH width was meant, which is the whole question this entry raises. It
       // is not a provisional building value like the entries around it.
       ...unhonouredLockedWidths.map((refusal) => ({
-        label: `Hand-set panel width is not in force: wall ${refusal.wallId}, slot ${refusal.slotIndex}${refusal.story === "second" ? " (second story)" : ""}`,
+        label: `Hand-set panel width is not in force: wall ${footprint ? wallDisplayLabelWithId(footprint, refusal.wallId) : refusal.wallId}, slot ${refusal.slotIndex}${refusal.story === "second" ? " (second story)" : ""}`,
         status: "pending-BI-confirmation" as const,
         // ⚠ The limits are built from the catalog values INLINE rather than from
         // the `panelWidthLimitsIn` object above: that object is rebuilt every
@@ -8742,6 +8764,11 @@ export default function LayoutEditor() {
           refusal,
           { minIn: fabricationMinPanelWidthIn.value, maxIn: panelWidthInRange.maxIn },
           (valueIn) => formatLengthIn(valueIn, unitSystem),
+          // Compass name plus the id. `footprint` is ALREADY a dependency of
+          // this memo (see its array below), so this costs no new dependency
+          // and no lint delta — which is the whole reason the label is
+          // derived here rather than in a memo of its own.
+          footprint ? wallDisplayLabelWithId(footprint, refusal.wallId) : undefined,
         ),
       })),
       ...(foundationTypeId === "concrete-pier"
@@ -11732,6 +11759,7 @@ export default function LayoutEditor() {
               (elevationWall ? (
                 <WallElevationDiagram
                   wall={elevationWall}
+                  wallLabel={wallLabels[elevationWall.id]}
                   slots={overlayWallSlots[elevationWall.id] ?? []}
                   wallHeightFt={wallHeightFt}
                   allInstances={allInstances}
