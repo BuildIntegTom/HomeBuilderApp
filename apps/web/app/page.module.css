@@ -120,6 +120,39 @@
   overflow: hidden;
   display: flex;
   flex-direction: row;
+  /* ⚠ NO TEXT SELECTION IN THE DESIGN VIEWS — Tommy, 2026-10-19, hit while
+     drawing proposals: *"whenever I'm dragging it often highlights a lot of
+     the text and drags the text as well. Aside from clicking into a value to
+     be able to edit it, I don't think there's any reason to highlight the text
+     in the browser in specifically the design views."*
+
+     Two separate annoyances, one cause. A drag that starts on the canvas and
+     crosses a label selects every run of text it passes, and once a selection
+     exists the browser's own text drag-and-drop takes over the next drag —
+     so the pointer is moving a ghost of the label instead of the wall.
+     `user-select: none` ends both, because a selection that cannot be made
+     cannot be dragged.
+
+     Scoped to `.editorSection`, which is the drawing surface plus its tool
+     sidebar, and NOT to the page: *"Highlighting text in the summary print
+     pages as it is right now is very nice."* Those are `.editorPageLayer`,
+     which sits in this same flex slot and is exempted below. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The exemptions, and each is a place where selecting text is the point.
+
+   ⚠ `user-select` INHERITS, so a blanket `none` above would reach a text box
+   the user has clicked into. Chrome is forgiving about this today and Safari
+   historically was not; relying on that would be relying on a browser bug not
+   to bite. Stated outright instead. */
+.editorSection input,
+.editorSection textarea,
+.editorSection [contenteditable="true"],
+.editorSection .selectableText {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Docks the compass at the canvas's own top-left corner — Tommy: "the
@@ -219,6 +252,14 @@
   flex-direction: column;
   gap: 12px;
   background: #fbfbfa;
+  /* ⚠ Summary and Print are DOCUMENTS, and they stay selectable — Tommy,
+     2026-10-19: *"Highlighting text in the summary print pages as it is right
+     now is very nice."* They share the canvas column's flex slot, so they
+     inherit `.editorSection`'s `user-select: none` and have to opt back in.
+     Nothing on these pages is dragged, so there is nothing for a selection to
+     interfere with. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .toolbarPortalInline {

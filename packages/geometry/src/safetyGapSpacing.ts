@@ -316,7 +316,35 @@ export function applySafetyGapSpacing(
      guaranteeing the anchor sits beside the corner after an edit. On his own
      example that is one gap where he described two, and both are legal under
      the 28ft bound. Moving the anchor needs the combine's interaction designed
-     rather than discovered, which is its own piece of work. */
+     rather than discovered, which is its own piece of work.
+
+     ⚠ **HE RESTATED THE RULE ON 2026-10-19, and the restatement is the thing
+     to build against** — verbatim, because the wording is the decision:
+
+     > *"For right next to the corner panel. Maybe let's not focus on the
+     > corner panel but rather just put it on the inside of the last panel,
+     > whatever the last panel is"*
+
+     So the anchor is NOT defined relative to the corner panel. It is defined
+     relative to the end of the run: the gap sits immediately inboard of the
+     end-most panel, whatever that panel happens to be. That is a better rule
+     than the one it replaces — it says the same thing for a wall that owns its
+     corner and one that does not, where "next to the corner panel" said nothing
+     at all about the second case.
+
+     ⚠ **One thing to settle before building it, and it decides the size of the
+     job.** Is the corner panel itself "the last panel"?
+
+       - If YES, a wall owning its corner reads `corner | gap | ...`, which is
+         exactly the corner-adjacent configuration the combine exists for, and
+         it changes FRESH tilings too, not just edited ones.
+       - If NO — "panel" meaning the framing, with the corner panel read as the
+         end of the wall rather than a panel in the run — it reads
+         `corner | standard | gap | ...`, which is what the tiler builds today,
+         and the work is only ever returning a drifted anchor to that spot.
+
+     Do not guess between those. The first is a change to every wall in the
+     app; the second is a repair to walls that have been edited. */
   const away = planDirection(slots, anchor, 1, gapEighths, minEighths);
   const back = planDirection(slots, anchor, -1, gapEighths, minEighths);
 

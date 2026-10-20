@@ -118,4 +118,16 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* ⚠ A NOTE'S CONTENTS STAY SELECTABLE, wherever the note is docked. The
+     header above already sets `user-select: none` because it is a drag handle;
+     the body is the opposite — Review Log entries, refusal notes and panel
+     figures are things people copy into an email or a conversation.
+
+     Stated here rather than relied upon, because from 2026-10-19 the editor
+     section sets `user-select: none` on everything inside it (Tommy: dragging
+     a wall was selecting and then dragging the labels it crossed), and a
+     docked note lives inside it. The property inherits, so without this line
+     docking a note would silently take away the ability to copy out of it. */
+  user-select: text;
+  -webkit-user-select: text;
 }
