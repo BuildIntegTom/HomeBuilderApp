@@ -232,3 +232,110 @@ assume the opposite.
 **4. Is the courtyard open to the sky?** It changes whether the roof is one
 surface with a valley or two independent roofs, and that is its own piece of
 work either way.
+
+
+---
+
+# DECIDED — Tommy, 2026-10-21
+
+All four answered, plus a scope widening. One of them makes the job cheaper
+than the document above assumed.
+
+## 1. Split and choose a side — yes
+
+> *"For number one I like your suggestion there."*
+
+A wall drawn across the building cuts it into two closed regions and the app
+asks which to keep. A true delete-wall tool stays on the list behind it, for
+the cases split-and-choose does not reach.
+
+## 2. ⚠ Nobody gives up panel width — this is cheaper than planned
+
+> *"The new corner panel just gets flush with the wall that's there, it does
+> [not] protrude into the new wall. That's what I'm thinking, unless
+> structurally really want it embedded. I figure that tying it together with
+> GRKs to the old panel would really hold it structurally."*
+
+The document above asked which panel loses the width a new corner needs. His
+answer is **neither** — the new wall **butts flush** against the existing
+wall's face and is **tied through with GRK structural screws** into the panel
+it lands on.
+
+That is not a new convention. It is the app's existing butt-joint rule — *"the
+locally LONGER of the two walls meeting there RUNS THROUGH and owns the corner
+panel; the shorter one butts flush against it, inset by one wall thickness"* —
+applied to a T-junction. So:
+
+- the **existing wall is untouched**: same panels, same widths, no corner slot
+  inserted, nothing re-tiled;
+- the **new wall** is inset one wall thickness at that end and gets no corner
+  panel there;
+- the joint is **fastened, not framed**.
+
+**Two junctions, two behaviours, and they do not conflict:**
+
+| The new wall lands... | What happens to the corner panel |
+|---|---|
+| on an existing **corner** | that corner panel keeps its dimension; one side is **raked** to meet the new wall (his 2026-10-20 description) |
+| **mid-wall**, at a panel joint | no corner panel at all — the new wall **butts and is screwed** (this answer) |
+
+⚠ **This reading is mine, from a sentence with a typo in it** (*"it does it
+protrude"*). The principle — flush, fastened, nothing embedded — is
+unambiguous; which of the two readings of that clause he meant is not. Worth
+one sentence from him before the tool is built, because it is the difference
+between a fastened joint and a framed one.
+
+## 3 & 4. The courtyard is outside, and open to the sky
+
+> *"The interior side of the inner courtyard wall is the outside. The courtyard
+> is open to the sky."*
+
+So on an inner ring wall, the face toward the courtyard is the **exterior**:
+weatherproofing, wraps and plaster go on that side, and the compass label
+follows it. This confirms the hazard flagged above — `wallCompassDirection`
+decides "outward" as *away from the centroid*, which is backwards for every
+inner-ring wall, and it would be silent.
+
+Open to the sky means the courtyard is **not roofed**: the outer ring and inner
+ring carry a roof between them, and the hole is a hole. On his own estimate:
+
+> *"Octagon ring roof certainly will be somewhat complicated, but that's the
+> point of this app to be able to make all this math easy."*
+
+Recorded as accepted scope, and still its own project.
+
+## ⚠ Scope widened: not an octagon feature
+
+> *"This should also be compatible with concentric Square/rectangle buildings."*
+
+The ring is **a second loop**, not an octagon ring. Nothing in the topology work
+may assume eight sides. A concentric rectangle has to work the same way, and
+the simplest proof that the work is general is that the first test fixture is a
+rectangle inside a rectangle rather than an octagon inside an octagon.
+
+---
+
+# BUILT — step 1 groundwork, 2026-10-21
+
+`packages/geometry/src/miteredCorners.ts` — `wallEndIsMitered`,
+`wallTouchesMiteredCorner`, `miteredCornerIds`, `cornerRakeRad` /
+`cornerRakeDeg`.
+
+⚠ **It changes no behaviour, deliberately.** Every shape the app can draw today
+is uniform — rectangles and bump-outs all square, octagons all mitered — so per
+corner and per building give the same answer, and a sweep over every drawable
+shape asserts exactly that. The difference appears only for shapes the
+draw-wall tool will create, which is why this lands first and alone.
+
+Two things worth keeping from building it:
+
+- **The mixed wall is now a test fixture**: a rectangle with one corner cut
+  off, which has two mitered corners and three square ones, and a wall with a
+  mitered end and a square end. `isMiteredShape` calls that whole building
+  mitered — the bug, stated as a passing test.
+- **`cornerRakeRad` generalises a number he already approved.** The cut note he
+  signed off on 2026-10-13 reads *"22 1/2 degrees off square"*. An octagon
+  turns 45° at each clipped corner and the two walls split it. So 22.5 was
+  never an octagon constant — it is half the turn, evaluated at the only angle
+  the app could draw. A wall at any other angle gets its own number from the
+  same rule, and the shop reads it the same way.
