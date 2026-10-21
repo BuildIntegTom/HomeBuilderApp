@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 
 import { createPortal } from "react-dom";
 import { Stage, Layer, Rect, Circle, Text, Group, Line, Arrow } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
+import type { ShapeTool } from "./DrawingToolPen";
 import {
   buildOctagonFootprint,
   dragWallBounded,
@@ -147,7 +148,14 @@ interface PendingWallPick {
 
 export interface FootprintCanvasProps {
   footprint: Footprint | null;
-  shapeTool: "rectangle" | "octagon" | "bump-out" | "edit" | "drag-wall";
+  shapeTool: ShapeTool;
+  /** The first corner picked for a new wall, or null before the first
+   * click. Ephemeral — never saved. */
+  drawWallFirstCornerId: string | null;
+  onPickDrawWallCorner: (cornerId: string) => void;
+  /** The two candidate regions once both corners are picked, outlined in
+   * the same two colours the sidebar chooser uses. */
+  drawWallRegions: { points: { x: number; y: number }[] }[] | null;
   offsetPx: DragPoint;
   wallSlots: Record<string, PanelSlot[]>;
   wallStartOffsetIn: Record<string, number>;
@@ -201,6 +209,9 @@ export interface FootprintCanvasProps {
 export default function FootprintCanvas({
   footprint,
   shapeTool,
+  drawWallFirstCornerId,
+  onPickDrawWallCorner,
+  drawWallRegions,
   offsetPx,
   wallSlots,
   wallStartOffsetIn,
@@ -1130,6 +1141,47 @@ export default function FootprintCanvas({
                 </Group>
               );
             })()}
+          {/* ⚠ DRAW WALL puts a target on EVERY corner, on every shape. The
+              least-accessible-corner markers below are a different thing —
+              they appear only on all-right-angle shapes and only for primary
+              corners — so this draws its own rather than borrowing them. */}
+          {footprint &&
+            shapeTool === "draw-wall" &&
+            footprint.corners.map((c) => {
+              const picked = c.id === drawWallFirstCornerId;
+              return (
+                <Circle
+                  key={`draw-wall-${c.id}`}
+                  x={c.point.x * SCALE_PX_PER_FT + offsetPx.x}
+                  y={c.point.y * SCALE_PX_PER_FT + offsetPx.y}
+                  radius={picked ? 10 : 7}
+                  fill={picked ? "#2d6cdf" : "#fff"}
+                  stroke="#2d6cdf"
+                  strokeWidth={2}
+                  onClick={() => onPickDrawWallCorner(c.id)}
+                  onTap={() => onPickDrawWallCorner(c.id)}
+                />
+              );
+            })}
+          {/* The two candidate regions, colour-matched to the chooser's own
+              buttons. `DrawWallChooser` carries the same two colours rather
+              than importing them: one side draws in Konva and the other in
+              CSS, and a shared constant one of them quietly stopped using
+              would be worse than two that disagree visibly. */}
+          {drawWallRegions?.map((region, i) => (
+            <Line
+              key={`split-region-${i}`}
+              points={region.points.flatMap((p) => [
+                p.x * SCALE_PX_PER_FT + offsetPx.x,
+                p.y * SCALE_PX_PER_FT + offsetPx.y,
+              ])}
+              closed
+              stroke={i === 0 ? "#2d6cdf" : "#c76a1f"}
+              strokeWidth={3}
+              fill={i === 0 ? "rgba(45,108,223,0.12)" : "rgba(199,106,31,0.12)"}
+              listening={false}
+            />
+          ))}
           {footprint &&
             footprintIsAllRightAngles(footprint) &&
             footprint.corners.filter((c) => primaryCornerIds.has(c.id)).map((c) => {

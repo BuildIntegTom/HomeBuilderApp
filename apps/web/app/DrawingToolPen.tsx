@@ -5,13 +5,14 @@ import { formatFeetInches } from "./canvasGeometry";
 import LengthInput from "./LengthInput";
 import styles from "./DrawingToolPen.module.css";
 
-export type ShapeTool = "rectangle" | "octagon" | "bump-out" | "drag-wall" | "edit";
+export type ShapeTool = "rectangle" | "octagon" | "bump-out" | "drag-wall" | "draw-wall" | "edit";
 
 export interface DrawingToolPenProps {
   value: ShapeTool;
   onChange: (tool: ShapeTool) => void;
   bumpOutDisabled: boolean;
   dragWallDisabled: boolean;
+  drawWallDisabled: boolean;
   editDisabled: boolean;
   secondStoryEnabled: boolean;
   onToggleSecondStory: () => void;
@@ -28,11 +29,16 @@ export interface DrawingToolPenProps {
   onChangeViewedStoryId: (id: "ground" | "second") => void;
 }
 
-const TOOLS: { id: ShapeTool; label: string; short: string; disabledKey?: "bumpOutDisabled" | "dragWallDisabled" | "editDisabled" }[] = [
+const TOOLS: { id: ShapeTool; label: string; short: string; disabledKey?: "bumpOutDisabled" | "dragWallDisabled" | "drawWallDisabled" | "editDisabled" }[] = [
   { id: "rectangle", label: "Rectangle", short: "▭" },
   { id: "octagon", label: "Octagon", short: "⯃" },
   { id: "bump-out", label: "Add Bump-out", short: "+", disabledKey: "bumpOutDisabled" },
   { id: "drag-wall", label: "Drag Wall", short: "↔", disabledKey: "dragWallDisabled" },
+  /* ⚠ Draw Wall, 2026-10-21. Click one corner, then another: the new wall cuts
+     the building in two and you keep one side. Split-and-choose, which Tommy
+     picked over a delete-wall tool on the grounds that the result is a valid
+     closed ring by construction rather than by checking afterwards. */
+  { id: "draw-wall", label: "Draw Wall", short: "╱", disabledKey: "drawWallDisabled" },
   { id: "edit", label: "Edit", short: "✎" },
 ];
 
@@ -48,6 +54,7 @@ export default function DrawingToolPen({
   onChange,
   bumpOutDisabled,
   dragWallDisabled,
+  drawWallDisabled,
   editDisabled,
   secondStoryEnabled,
   onToggleSecondStory,
@@ -61,6 +68,7 @@ export default function DrawingToolPen({
   const disabledFor: Record<string, boolean> = {
     bumpOutDisabled,
     dragWallDisabled,
+    drawWallDisabled,
     editDisabled,
   };
 

@@ -66,6 +66,18 @@ const EXPECTED: Record<string, { calls: number; fate: Fate; stage: string; why: 
      This test did its job on the way through: it went red the moment the last
      call disappeared, which is the signal that the inventory — not just the
      code — had to be updated deliberately. */
+  handleKeepSplitRegion: {
+    calls: 1,
+    fate: "REDERIVES",
+    stage: "—",
+    why:
+      "⚠ ADDED 2026-10-21 with the Draw Wall tool, and classified rather than quietly accepted — which is the only reason this file exists. " +
+      "A wall drawn corner to corner cuts the building in two and the user keeps one side (Tommy, 2026-10-21: \"I like your suggestion there\"). " +
+      "That is a SHAPE change, not a length change: every corner renumbers, the walls at the cut have different runs because corner ownership moved, " +
+      "and the chord is a wall that did not exist a moment ago and has no panels to preserve. Re-deriving is the correct answer for the same reason it is in `handleAddBumpOut`. " +
+      "⚠ What tile-once still gets: openings, braced placement and hand-set widths ride across on `splitFootprintByChord`'s own `wallIdMap` (new id -> old id, null for the chord), " +
+      "so a wall that merely changed its NAME keeps everything. Without that map every wall in the kept half would silently lose its windows.",
+  },
   handleDragWall: {
     calls: 1,
     fate: "REDERIVES",
@@ -149,7 +161,10 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
        the four REDERIVES handlers, one of which calls twice. If it drops
        further, these calls have moved out of page.tsx and this file is
        measuring nothing — which is the only thing it is here to catch. */
-    expect(total).toBeGreaterThanOrEqual(5);
+    /* Up to 6 with Draw Wall's commit. ⚠ Still a NON-VACUITY floor and not a
+       target: its only job is to fail if a refactor moves these calls out of
+       page.tsx entirely and leaves this file measuring nothing. */
+    expect(total).toBeGreaterThanOrEqual(6);
   });
 
   it("⚠ records what tile-once still has to convert, so the size of the job is visible", () => {
@@ -170,11 +185,17 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
        branch joined them by reclassification, not by someone adding a re-tile.
        Asserted so that growth has to be deliberate: a FIFTH would mean a
        handler quietly went back to re-deriving. */
-    expect(rederives.length).toBe(4);
+    /* ⚠ FIVE since 2026-10-21, up from four — `handleKeepSplitRegion`, the
+       Draw Wall tool's commit. This number went up because a genuinely new
+       SHAPE-CHANGING gesture was added, not because an edit went back to
+       re-deriving itself, and the distinction is the whole point of counting.
+       A sixth still means somebody should explain themselves. */
+    expect(rederives.length).toBe(5);
     expect(rederives.map(([h]) => h).sort()).toEqual([
       "handleAddBumpOut",
       "handleDragWall",
       "handleDraw",
+      "handleKeepSplitRegion",
       "handleRepanelizeRequest",
     ]);
   });

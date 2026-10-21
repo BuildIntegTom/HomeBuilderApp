@@ -8,7 +8,11 @@ import {
   applyZonesToSlot,
   areWallsOppositePair,
   buildOctagonFootprint,
+  isSplitRefusal,
   octagonBoxOf,
+  splitFootprintByChord,
+  splitRefusalMessage,
+  type SplitResult,
   setStraightWall,
   buildRectangleFootprint,
   collapseNearZeroWalls,
@@ -395,8 +399,9 @@ import { currentViewLabel, isViewStopLive } from "./viewLabels";
 import { DocumentMetaProvider } from "./DocumentMetaContext";
 import { BrowseModeProvider } from "./BrowseModeContext";
 import { PRICE_GAP, PRICE_REDACTED_NOTE, VIEWER_OWN_DEFAULTS_NOTE } from "./cloud/browseDisplay";
-import DrawingToolPen from "./DrawingToolPen";
+import DrawingToolPen, { type ShapeTool as DrawingToolPenShapeTool } from "./DrawingToolPen";
 import OctagonSizePanel from "./OctagonSizePanel";
+import DrawWallChooser from "./DrawWallChooser";
 import OctagonRingPreview from "./OctagonRingPreview";
 import RoofTrussLayoutView from "./RoofTrussLayoutView";
 import PanelLegend from "./PanelLegend";
@@ -571,7 +576,12 @@ const CATALOG_SUPERSESSIONS = [
   },
 ];
 
-type ShapeTool = "rectangle" | "octagon" | "bump-out" | "edit" | "drag-wall";
+/* ⚠ IMPORTED, not redeclared. This file carried its own copy of the union
+   until 2026-10-21, and the two drifted the moment `draw-wall` was added to
+   one of them — tsc caught it, which is the only reason it was a minute's
+   work rather than a puzzle. `DrawingToolPen` owns the list because it owns
+   the buttons. */
+type ShapeTool = DrawingToolPenShapeTool;
 type PanelizationType = "loose-packed-braced" | "square-bale-panels" | "timber-frame-curtain";
 
 // Every wall panel type with real member geometry gets a Shop Drawing page
@@ -5095,6 +5105,115 @@ export default function LayoutEditor() {
   // FootprintCanvas's corner-marker rendering). The result stays a
   // butt-joint (all right angles), so it keeps using the least-accessible-
   // corner marker, not the octagon's per-wall safety-corner rule.
+  /* ⚠ DRAW WALL state is EPHEMERAL and deliberately not in `ProjectState`.
+     A half-picked corner and an undecided split are mid-gesture, not part of
+     the building: saving them would reload someone into a question they have
+     long forgotten, and undo would step through them. */
+  const [drawWallFirstCornerId, setDrawWallFirstCornerId] = useState<string | null>(null);
+  const [pendingSplit, setPendingSplit] = useState<SplitResult | null>(null);
+
+  const cancelDrawWall = () => {
+    setDrawWallFirstCornerId(null);
+    setPendingSplit(null);
+  };
+
+  /**
+   * First click arms the wall, second click cuts.
+   *
+   * ⚠ A refused chord does NOT clear the first pick. Every refusal is
+   * something a pointer can do by accident — the same corner twice, the
+   * neighbour that already has a wall to it, a line that would leave the
+   * building through a bump-out's notch — so a refused second click is
+   * treated as a miss and he can just pick a different second corner.
+   * Clearing it would make every misclick cost two.
+   */
+  const handlePickDrawWallCorner = (cornerId: string) => {
+    if (!footprint) return;
+    if (drawWallFirstCornerId === null) {
+      setDrawWallFirstCornerId(cornerId);
+      setPendingSplit(null);
+      return;
+    }
+    if (cornerId === drawWallFirstCornerId) {
+      setDrawWallFirstCornerId(null); // clicking the armed corner disarms it
+      return;
+    }
+    const result = splitFootprintByChord(footprint, drawWallFirstCornerId, cornerId);
+    if (isSplitRefusal(result)) {
+      setPanelPlacementNotice(splitRefusalMessage(result));
+      return;
+    }
+    setPendingSplit(result);
+  };
+
+  /**
+   * Keep one side of the cut — Tommy's split-and-choose, 2026-10-21.
+   *
+   * ⚠ Modelled on `handleAddBumpOut`, and for the same reason: a split
+   * RENUMBERS every corner, so panels, run stops and the run-stop opening
+   * memory are all keyed by ids that no longer exist. The bump-out recovers
+   * the correlation by matching start/end POINTS; a split does not have to,
+   * because `splitFootprintByChord` already returns `wallIdMap` — new id to
+   * the old id it came from, with `null` for the chord. Same mechanism, a
+   * better source for it.
+   *
+   * ⚠ This re-tiles, and that is correct rather than a tile-once regression.
+   * The SHAPE changed: walls at the cut have different runs, and the chord is
+   * a wall that did not exist a moment ago and has no panels to preserve.
+   * That is the same line `handleAddBumpOut` sits on. See
+   * `retileCallSites.test.ts`, where it is classified.
+   */
+  const handleKeepSplitRegion = (regionIndex: 0 | 1) => {
+    if (!footprint || !pendingSplit) return;
+    const region = pendingSplit.regions[regionIndex]!;
+    const fp = region.footprint;
+    const nextPrimary = new Set(fp.corners.map((c) => c.id));
+    const nextLeastAccessible = [...nextPrimary][0] ?? fp.corners[0]!.id;
+
+    const oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined> = {};
+    const nextRunStops: Record<string, WallRunStop> = {};
+    const nextRemembered: Record<string, RunStopOpeningMemory> = {};
+    const nextRememberedSecond: Record<string, RunStopOpeningMemory> = {};
+    for (const [newWallId, oldWallId] of Object.entries(region.wallIdMap)) {
+      if (oldWallId === null) continue; // the chord: new wall, nothing to carry
+      oldSlotsByNewWallId[newWallId] = baseWallSlots[oldWallId];
+      if (wallRunStopsByWallId[oldWallId]) nextRunStops[newWallId] = wallRunStopsByWallId[oldWallId]!;
+      const remembered = unbuiltOpeningsByStoryAndWallId.ground[oldWallId];
+      if (remembered) nextRemembered[newWallId] = remembered;
+      const rememberedSecond = unbuiltOpeningsByStoryAndWallId.second[oldWallId];
+      if (rememberedSecond) nextRememberedSecond[newWallId] = rememberedSecond;
+    }
+
+    setFootprint(fp);
+    /* ⚠ Not a bump-out, but the same thing this flag actually gates: the
+       shape is no longer a pristine rectangle or octagon, so wall lengths are
+       edited by the general per-wall editor rather than regenerated from two
+       numbers. The name is older than its job. */
+    setIsBumpedOut(true);
+    setPrimaryCornerIds(nextPrimary);
+    setLeastAccessibleCorner(nextLeastAccessible);
+    setWallRunStopsByWallId(nextRunStops);
+    applyRetiledStory(
+      "ground",
+      retilePreservingOpenings(fp, nextLeastAccessible, nextPrimary, oldSlotsByNewWallId, nextRunStops, "ground", nextRemembered),
+      nextLeastAccessible,
+    );
+    setUnbuiltOpeningsByStoryAndWallId((prev) => ({ ...prev, second: nextRememberedSecond }));
+    for (const w of fp.walls) {
+      if (oldSlotsByNewWallId[w.id] === undefined) reconcileNewWallZones("ground", w.id);
+    }
+    cancelDrawWall();
+    setShapeTool("edit");
+    setPanelPlacementNotice(
+      "The new wall is in and the other side was discarded. Every wall that stayed kept its openings; the new wall was tiled fresh.",
+    );
+  };
+
+  /** The candidate outlines the canvas draws, in footprint feet. */
+  const drawWallRegions = pendingSplit
+    ? pendingSplit.regions.map((r) => ({ points: r.footprint.corners.map((c) => c.point) }))
+    : null;
+
   const handleAddBumpOut = (wallId: string, spanStartFt: number, spanEndFt: number, depthFt: number) => {
     if (!footprint) return;
     const { footprint: fp, primaryCornerIds: nextPrimary } = insertBumpOut(
@@ -11392,6 +11511,7 @@ export default function LayoutEditor() {
                   onChange={setShapeTool}
                   bumpOutDisabled={!footprint || effectiveViewedStoryId !== "ground"}
                   dragWallDisabled={!footprint || effectiveViewedStoryId !== "ground"}
+                  drawWallDisabled={!footprint || effectiveViewedStoryId !== "ground"}
                   editDisabled={!footprint}
                   secondStoryEnabled={stories.length > 1}
                   onToggleSecondStory={handleToggleSecondStory}
@@ -11416,6 +11536,16 @@ export default function LayoutEditor() {
                     bump-out away. */}
                 {octagonBox && !isBumpedOut && (
                   <OctagonSizePanel box={octagonBox} onChange={handleResizeOctagon} />
+                )}
+                {pendingSplit && (
+                  <DrawWallChooser split={pendingSplit} onKeep={handleKeepSplitRegion} onCancel={cancelDrawWall} />
+                )}
+                {shapeTool === "draw-wall" && !pendingSplit && (
+                  <span style={{ fontSize: 11, color: "#555", lineHeight: 1.35 }}>
+                    {drawWallFirstCornerId === null
+                      ? "Click a corner to start the new wall."
+                      : "Now click the corner it runs to — or the same corner again to start over."}
+                  </span>
                 )}
                 <div ref={setToolbarSecondaryPortalNode} className={styles.toolbarPortalInline} />
                 <PanelLegend />
@@ -11891,6 +12021,9 @@ export default function LayoutEditor() {
                 <FootprintCanvas
                   footprint={footprint}
                   shapeTool={shapeTool}
+              drawWallFirstCornerId={drawWallFirstCornerId}
+              onPickDrawWallCorner={handlePickDrawWallCorner}
+              drawWallRegions={drawWallRegions}
                   offsetPx={offsetPx}
                   wallSlots={effectiveViewedStoryId === "ground" ? overlayWallSlots : (secondStory?.wallSlots ?? {})}
                   wallStartOffsetIn={wallRenderOffsetIn}

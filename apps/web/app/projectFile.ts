@@ -134,7 +134,15 @@ export const PROJECT_FILE_VERSION = 25;
 export interface ProjectState {
   editorTab: "wall" | "foundation" | "floor" | "roof";
   viewMode: "plan" | "3d";
-  shapeTool: "rectangle" | "octagon" | "bump-out" | "edit" | "drag-wall";
+  /** ⚠ Must track `ShapeTool` in `DrawingToolPen`. Spelled out rather than
+   * imported because this is a FILE SCHEMA and importing a component's type
+   * into it would make a rename of a button a silent change to what old
+   * projects mean. `draw-wall` joined on 2026-10-21; an older build reading
+   * a file saved in that mode sees a tool it does not know, which is
+   * harmless — the tool is ephemeral UI, and nothing about the BUILDING is
+   * carried here. The half-picked corner and the pending split are
+   * deliberately not saved at all. */
+  shapeTool: "rectangle" | "octagon" | "bump-out" | "edit" | "drag-wall" | "draw-wall";
   footprint: Footprint | null;
   isBumpedOut: boolean;
   primaryCornerIds: Set<string>;
