@@ -3,6 +3,7 @@ export * from "./eighths";
 export * from "./footprint";
 export * from "./footprintArea";
 export * from "./octagon";
+export * from "./octagonSize";
 export * from "./cornerAngle";
 export * from "./bumpOut";
 export * from "./editWallLength";

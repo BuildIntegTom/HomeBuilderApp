@@ -7,7 +7,10 @@ import { MIN_DIMENSION_FT } from "./footprint";
  * of length S, clip = S / (2 + sqrt(2)) = S * (1 - 1/sqrt(2)). A non-square
  * bounding box still gets all 45deg/135deg corners, just elongated.
  */
-const CLIP_RATIO = 1 - 1 / Math.SQRT2;
+export const CLIP_RATIO = 1 - 1 / Math.SQRT2;
+// Exported since 2026-10-20 so `octagonSize.ts` can SOLVE for the box
+// rather than keep a second copy of the ratio. Two copies of a shape
+// constant is how a sizing control and the shape it sizes drift apart.
 
 /**
  * Clips the 4 corners of a widthFt x depthFt bounding box at 45deg to form

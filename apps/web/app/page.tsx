@@ -8,6 +8,8 @@ import {
   applyZonesToSlot,
   areWallsOppositePair,
   buildOctagonFootprint,
+  octagonBoxOf,
+  setStraightWall,
   buildRectangleFootprint,
   collapseNearZeroWalls,
   computeFieldFramingLayout,
@@ -394,6 +396,7 @@ import { DocumentMetaProvider } from "./DocumentMetaContext";
 import { BrowseModeProvider } from "./BrowseModeContext";
 import { PRICE_GAP, PRICE_REDACTED_NOTE, VIEWER_OWN_DEFAULTS_NOTE } from "./cloud/browseDisplay";
 import DrawingToolPen from "./DrawingToolPen";
+import OctagonSizePanel from "./OctagonSizePanel";
 import OctagonRingPreview from "./OctagonRingPreview";
 import RoofTrussLayoutView from "./RoofTrussLayoutView";
 import PanelLegend from "./PanelLegend";
@@ -4982,15 +4985,28 @@ export default function LayoutEditor() {
     setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: nextSlots }));
   };
 
-  // An octagon is still just 2 numbers (widthFt/depthFt) under the hood —
-  // recover them from whatever's currently drawn by reading the clip size
-  // straight off one of the mitered diagonal walls (length = clip*sqrt2)
-  // and adding it back onto a straight wall's length.
-  const currentOctagonDims = (fp: Footprint) => {
-    const clipFt = fp.walls.find((w) => w.id === "70")!.lengthFt / Math.SQRT2;
-    const widthFt = fp.walls.find((w) => w.id === "01")!.lengthFt + 2 * clipFt;
-    const depthFt = fp.walls.find((w) => w.id === "23")!.lengthFt + 2 * clipFt;
-    return { widthFt, depthFt, clipFt };
+
+  /** The `W x D` box behind the drawn octagon, or null when this is not an
+   * octagon. Not memoized: it reads three wall lengths, and a new `useMemo`
+   * in this file costs `preserve-manual-memoization` errors for nothing. */
+  const octagonBox = footprint ? octagonBoxOf(footprint) : null;
+
+  /**
+   * Commit a new octagon box from the size panel.
+   *
+   * ⚠ Goes through `applyShapeChange` like every other shape edit, so the
+   * panels are RESIZED rather than re-tiled — resizing an octagon must not
+   * throw away the windows, doors and hand-set widths already on its walls.
+   * `buildOctagonFootprint` always emits the same `"0".."7"` ids, so every
+   * wall keeps its own panel array by key.
+   */
+  const handleResizeOctagon = (next: { widthFt: number; depthFt: number }) => {
+    if (!footprint) return;
+    const fp = buildOctagonFootprint(next.widthFt, next.depthFt);
+    const nextPrimary = new Set(fp.corners.map((c) => c.id));
+    if (!applyShapeChange(footprint, fp, nextPrimary)) return;
+    setFootprint(fp);
+    setPrimaryCornerIds(nextPrimary);
   };
 
   // Editing one wall's length resizes the whole shape so the parallel wall
@@ -5035,11 +5051,26 @@ export default function LayoutEditor() {
     const isWidthWall = wallId === "01" || wallId === "45";
     const isDepthWall = wallId === "23" || wallId === "67";
     if (!isWidthWall && !isDepthWall) return; // diagonal walls: not editable yet
-    const { widthFt, depthFt, clipFt } = currentOctagonDims(footprint);
-    const fp = buildOctagonFootprint(
-      isWidthWall ? newLengthFt + 2 * clipFt : widthFt,
-      isDepthWall ? newLengthFt + 2 * clipFt : depthFt,
-    );
+    /* ⚠ SOLVED, NOT APPROXIMATED — this line used to read
+       `newLengthFt + 2 * clipFt` with `clipFt` taken off the OLD shape,
+       while `buildOctagonFootprint` recomputes `clip` from `min(W, D)` of
+       the NEW box. Editing the longer axis left `min` alone and worked;
+       editing the SHORTER axis moved `clip` under the arithmetic, so the
+       number typed was not the number you got and the opposite wall
+       quietly resized. Measured on 2026-10-20: typing 16 into a 40x24
+       octagon's side wall returned 12.458 and moved the untouched wall
+       from 25.938 to 22.396. Tommy, same day: "they start to get really
+       weird numbers and splitting the difference between panels that
+       shoundnt be changing values."
+
+       `setStraightWall` solves for the box in both branches, so a typed
+       length lands within an eighth either side of the crossover. The
+       coupling itself is REAL and remains — one shape, two degrees of
+       freedom — and `OctagonSizePanel` is where it is said out loud. */
+    const box = octagonBoxOf(footprint);
+    if (!box) return;
+    const resized = setStraightWall(box, isWidthWall ? "straightWidth" : "straightDepth", newLengthFt);
+    const fp = buildOctagonFootprint(resized.box.widthFt, resized.box.depthFt);
     const nextPrimary = new Set(fp.corners.map((c) => c.id));
     // buildOctagonFootprint always uses the same fixed "0".."7" wall ids too.
     if (!applyShapeChange(footprint, fp, nextPrimary)) return;
@@ -5281,7 +5312,14 @@ export default function LayoutEditor() {
     const isWidthWall = wallId === "01" || wallId === "45";
     const isDepthWall = wallId === "23" || wallId === "67";
     if (!isWidthWall && !isDepthWall) return; // diagonal walls: not draggable
-    const { widthFt, depthFt } = currentOctagonDims(footprint);
+    /* The same reader the typed editor and the size panel use. A drag has
+       no typed number to honour, so applying an OFFSET to the box is correct
+       here — but the coupling still shows: dragging the shorter axis moves
+       `clip`, and the perpendicular walls with it. That is the shape, not a
+       bug, and `OctagonSizePanel` is where it is explained. */
+    const dragBox = octagonBoxOf(footprint);
+    if (!dragBox) return;
+    const { widthFt, depthFt } = dragBox;
     const fp = buildOctagonFootprint(
       isWidthWall ? widthFt + 2 * offsetFt : widthFt,
       isDepthWall ? depthFt + 2 * offsetFt : depthFt,
@@ -11364,6 +11402,21 @@ export default function LayoutEditor() {
                   viewedStoryId={effectiveViewedStoryId}
                   onChangeViewedStoryId={setViewedStoryId}
                 />
+                {/* ⚠ OCTAGON SIZING LIVES WITH THE SHAPE TOOLS, and only
+                    appears when there is an octagon to size — Tommy,
+                    2026-10-20: "Can we add a left sidebar button when an
+                    octagon is drawn to edit the diameter (point to point and
+                    flat to flat) and also size of each wall that shares the
+                    same size."
+
+                    Gated on `octagonBox`, which is null for a rectangle and
+                    for a bumped-out shape — a bump-out gives the footprint
+                    more free parameters than a `W x D` box can describe, so
+                    sizing it from two numbers would silently throw the
+                    bump-out away. */}
+                {octagonBox && !isBumpedOut && (
+                  <OctagonSizePanel box={octagonBox} onChange={handleResizeOctagon} />
+                )}
                 <div ref={setToolbarSecondaryPortalNode} className={styles.toolbarPortalInline} />
                 <PanelLegend />
               </>
