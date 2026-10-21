@@ -6,6 +6,7 @@ export * from "./octagon";
 export * from "./octagonSize";
 export * from "./cornerAngle";
 export * from "./miteredCorners";
+export * from "./splitFootprint";
 export * from "./bumpOut";
 export * from "./editWallLength";
 export * from "./dragWall";
