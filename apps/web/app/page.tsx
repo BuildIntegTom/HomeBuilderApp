@@ -10,6 +10,7 @@ import {
   buildOctagonFootprint,
   allWallPanelJoints,
   isCourtyardFootprint,
+  ringRoofGableBlockReason,
   removeCourtyards,
   insertCornerAtWallOffset,
   isSplitRefusal,
@@ -1119,6 +1120,15 @@ export default function LayoutEditor() {
   // them, so a 3rd or a non-opposite 2nd would leave that run undefined.
   const gableEndToggleBlockReason = (wallId: string): string | null => {
     if (gableEndWallIds.has(wallId)) return null; // always allowed to turn back off
+    /* ⚠ A RING HAS NO OPPOSITE PAIR to span a roof-catcher beam between — it
+       has two closed rings and a hole. The reason lives in `ringRoof.ts`,
+       beside the geometry that makes it true, rather than being written out
+       again here. A courtyard roof follows the building all the way round and
+       slopes OUTWARD, high at the courtyard (Tommy, 2026-10-22). */
+    if (footprint) {
+      const ringReason = ringRoofGableBlockReason(footprint);
+      if (ringReason) return ringReason;
+    }
     if (gableEndWallIds.size >= 2) {
       return "Only 2 Gable End walls are allowed — the roof-catcher beam spans between exactly 2. Turn one off first.";
     }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   footprintAreaWithHolesSqFt,
   isCourtyardFootprint,
+  ringRoofUniformSpanFt,
   isOffsetRefusal,
   offsetRefusalMessage,
   addCourtyard,
@@ -81,6 +82,21 @@ export default function CourtyardPanel({ footprint, onAddCourtyard, onRemoveCour
             This building is a ring around an open courtyard. Its walls total{" "}
             {Math.round(footprintAreaWithHolesSqFt(footprint))} sq ft of floor — the courtyard is not counted.
           </span>
+          {/* ⚠ The rafter run is the one roof number that does not depend on
+              the pitch, so it is useful before a ring roof has any pitch
+              control of its own. Null when the two rings have been edited
+              apart, because then there is no single run — see
+              `ringRoofUniformSpanFt`. */}
+          {(() => {
+            const spanFt = ringRoofUniformSpanFt(footprint);
+            return (
+              <span style={{ fontSize: 11, color: "#444", lineHeight: 1.35 }}>
+                {spanFt === null
+                  ? "The two rings are no longer the same distance apart, so the roof has no single rafter run."
+                  : `Roof: slopes outward, high at the courtyard. Rafter run ${Math.round(spanFt * 10) / 10}ft all the way round.`}
+              </span>
+            );
+          })()}
           <button type="button" onClick={onRemoveCourtyard} style={{ fontSize: 12, padding: "5px 8px" }}>
             Remove the courtyard
           </button>

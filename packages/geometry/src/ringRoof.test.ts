@@ -5,7 +5,14 @@ import { addCourtyard } from "./footprintLoops";
 import { isOffsetRefusal } from "./offsetFootprint";
 import { computeRoofBearingSegments } from "./roofBearingSegments";
 import { retile } from "./retile";
-import { ringRoofGableBlockReason, ringRoofPlanes, ringRoofUniformSpanFt } from "./ringRoof";
+import {
+  ringRoofGableBlockReason,
+  ringRoofPlanes,
+  ringRoofSlopedPlanes,
+  ringRoofSurfaceAreaSqFt,
+  ringRoofUniformSpanFt,
+} from "./ringRoof";
+import { footprintAreaWithHolesSqFt } from "./footprintLoops";
 import type { Footprint } from "./types";
 
 const allCorners = (fp: Footprint) => new Set(fp.corners.map((c) => c.id));
@@ -122,5 +129,75 @@ describe("a ring whose loops have been edited apart", () => {
     expect(ringRoofUniformSpanFt(moved)).toBeNull();
     // The planes are still there — only the single-number answer is gone.
     expect(ringRoofPlanes(moved)).not.toBeNull();
+  });
+});
+
+describe("⚠ the slope: outward, high at the courtyard — his decision of 2026-10-22", () => {
+  const options = { pitchIn12: 4, outerEaveHeightFt: 10 };
+
+  it("the RIDGE is over the inner wall and the EAVE over the outer one", () => {
+    /* Which means the inner ring is the TALL one — the opposite of what most
+       people picture when they imagine a courtyard, and worth a test saying so
+       rather than a comment. */
+    const fp = ring(buildRectangleFootprint(60, 40), 10);
+    for (const p of ringRoofSlopedPlanes(fp, options)!) {
+      expect(p.innerHeightFt).toBeGreaterThan(p.outerHeightFt);
+      expect(p.outerHeightFt).toBe(10);
+    }
+  });
+
+  it("the rise follows the app's own pitch convention, rise per 12 of run", () => {
+    const fp = ring(buildRectangleFootprint(60, 40), 10);
+    for (const p of ringRoofSlopedPlanes(fp, options)!) {
+      // 10ft span at 4:12 is a 3.333ft rise.
+      expect(near(p.riseFt, 10 * (4 / 12))).toBe(true);
+      expect(near(p.innerHeightFt, 10 + 10 * (4 / 12))).toBe(true);
+    }
+  });
+
+  it("a rafter is longer than the span it crosses, by the pitch", () => {
+    const fp = ring(buildRectangleFootprint(60, 40), 10);
+    for (const p of ringRoofSlopedPlanes(fp, options)!) {
+      expect(p.rafterLengthFt).toBeGreaterThan(p.spanFt);
+      expect(near(p.rafterLengthFt, Math.hypot(p.spanFt, p.riseFt))).toBe(true);
+    }
+  });
+
+  it("⚠ the planes TILE THE ANNULUS EXACTLY — in plan, they are the building", () => {
+    /* The invariant that catches a mis-paired wall, a bow-tie quad or a
+       dropped corner all at once: flattened, the roof planes cover the
+       building's floor and nothing else. 60x40 with a 10ft-wide building is
+       2400 - 800 = 1600 sq ft, and the four trapezoids come to the same. */
+    for (const [outer, widthFt] of [
+      [buildRectangleFootprint(60, 40), 10],
+      [buildRectangleFootprint(50, 50), 8],
+      [buildOctagonFootprint(70, 70), 12],
+    ] as [Footprint, number][]) {
+      const fp = ring(outer, widthFt);
+      const planes = ringRoofSlopedPlanes(fp, { pitchIn12: 0, outerEaveHeightFt: 10 })!;
+      // pitch 0 makes the sloped area equal the plan area, which is the
+      // quantity being compared against the floor.
+      const planArea = planes.reduce((n, p) => n + p.surfaceAreaSqFt, 0);
+      const floor = footprintAreaWithHolesSqFt(fp);
+      expect({ floor: Math.round(floor), roof: Math.round(planArea) }).toEqual({
+        floor: Math.round(floor),
+        roof: Math.round(floor),
+      });
+    }
+  });
+
+  it("⚠ and a PITCHED roof is bigger than the floor it covers, by exactly 1/cos", () => {
+    const fp = ring(buildRectangleFootprint(60, 40), 10);
+    const floor = footprintAreaWithHolesSqFt(fp);
+    const sloped = ringRoofSurfaceAreaSqFt(fp, options)!;
+    expect(sloped).toBeGreaterThan(floor);
+    const span = 10;
+    const rafter = Math.hypot(span, span * (4 / 12));
+    expect(near(sloped, (floor * rafter) / span)).toBe(true);
+  });
+
+  it("is null for anything that is not a ring", () => {
+    expect(ringRoofSlopedPlanes(buildRectangleFootprint(40, 20), options)).toBeNull();
+    expect(ringRoofSurfaceAreaSqFt(buildRectangleFootprint(40, 20), options)).toBeNull();
   });
 });

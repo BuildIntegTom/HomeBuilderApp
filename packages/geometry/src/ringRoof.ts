@@ -160,3 +160,94 @@ export function ringRoofGableBlockReason(footprint: Footprint): string | null {
     "span between. Its roof follows the building all the way round instead."
   );
 }
+
+
+/* ──────────────────────────────────────────────────────────────────────────
+   THE SLOPE — decided by Tommy on 2026-10-22, asked because it is a building
+   decision with water consequences rather than a coding one.
+
+   > **Outward: high at the courtyard, falling to the outer eave.**
+
+   So the ridge runs over the INNER wall and the eave is the OUTER wall. Roof
+   water sheds away from the enclosed courtyard and drains off an overhang all
+   the way round, rather than collecting in a space with no easy way out. The
+   courtyard-facing straw stays the driest part of the building, which is the
+   argument that matters most for a bale wall.
+
+   ⚠ The consequence to keep in view: the INNER ring is the tall one. Its walls
+   carry the ridge, so on a ring the inner walls are higher than the outer ones
+   — the opposite of what most people picture when they imagine a courtyard.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export interface RingRoofSlopeOptions {
+  /** Rise per 12 of run — the app's existing pitch convention, the same
+   * numbers `ROOF_PITCH_OPTIONS_IN12` offers. */
+  pitchIn12: number;
+  /** Height of the OUTER eave above the floor, in feet. The low side. */
+  outerEaveHeightFt: number;
+}
+
+export interface RingRoofSlopedPlane extends RingRoofPlane {
+  /** The low edge, over the outer wall. */
+  outerHeightFt: number;
+  /** The high edge, over the inner wall — the ridge. */
+  innerHeightFt: number;
+  riseFt: number;
+  /** True rafter length across the plane: the sloped distance, not the span. */
+  rafterLengthFt: number;
+  /** Real sloped area of this plane, in square feet. */
+  surfaceAreaSqFt: number;
+}
+
+const distance = (a: Point, b: Point) => Math.hypot(b.x - a.x, b.y - a.y);
+
+/**
+ * The ring's roof planes with heights on them.
+ *
+ * ⚠ **Every plane is genuinely PLANAR**, which is not automatic and is worth
+ * knowing: its outer and inner edges are parallel horizontal lines at
+ * different heights, and a surface ruled between two parallel lines is flat.
+ * That is what makes the sloped area exactly the plan area over `cos(theta)`
+ * rather than something that has to be integrated — and it is only true
+ * because the inner ring was made by OFFSETTING the outer, which keeps the
+ * walls parallel. A ring whose loops were edited apart loses it.
+ */
+export function ringRoofSlopedPlanes(
+  footprint: Footprint,
+  options: RingRoofSlopeOptions,
+): RingRoofSlopedPlane[] | null {
+  const planes = ringRoofPlanes(footprint);
+  if (!planes) return null;
+  return planes.map((plane) => {
+    const riseFt = plane.spanFt * (options.pitchIn12 / 12);
+    const rafterLengthFt = Math.hypot(plane.spanFt, riseFt);
+    const outerLenFt = distance(plane.outerStart, plane.outerEnd);
+    const innerLenFt = distance(plane.innerStart, plane.innerEnd);
+    const planAreaSqFt = ((outerLenFt + innerLenFt) / 2) * plane.spanFt;
+    return {
+      ...plane,
+      outerHeightFt: options.outerEaveHeightFt,
+      innerHeightFt: options.outerEaveHeightFt + riseFt,
+      riseFt,
+      rafterLengthFt,
+      // plan / cos(theta), and cos(theta) = span / rafter.
+      surfaceAreaSqFt: plane.spanFt > 0 ? (planAreaSqFt * rafterLengthFt) / plane.spanFt : 0,
+    };
+  });
+}
+
+/**
+ * The ring roof's real sloped area.
+ *
+ * ⚠ **A real number, where the rest of the app still uses a placeholder.**
+ * `computeFootprintAreaSqFt`'s own doc comment says the flat plan-view area is
+ * "a clearly-labeled stand-in, not a claim that roofs are flat", because
+ * nothing modelled slope. A ring does: its planes have a pitch and a span, so
+ * this is the actual surface a roofer covers. Nothing else should be switched
+ * to it until it models slope too.
+ */
+export function ringRoofSurfaceAreaSqFt(footprint: Footprint, options: RingRoofSlopeOptions): number | null {
+  const planes = ringRoofSlopedPlanes(footprint, options);
+  if (!planes) return null;
+  return planes.reduce((sum, p) => sum + p.surfaceAreaSqFt, 0);
+}
