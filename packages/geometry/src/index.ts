@@ -8,6 +8,7 @@ export * from "./cornerAngle";
 export * from "./miteredCorners";
 export * from "./splitFootprint";
 export * from "./wallJoints";
+export * from "./offsetFootprint";
 export * from "./bumpOut";
 export * from "./editWallLength";
 export * from "./dragWall";

@@ -83,8 +83,15 @@ function ringFrom(fp: Footprint, cornerId: string): Wall[] | null {
   return null; // not a closed ring
 }
 
-/** Do segments AB and CD properly cross — sharing an endpoint does not count. */
-function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
+/**
+ * Do segments AB and CD properly cross — sharing an endpoint does not count.
+ *
+ * Exported since 2026-10-22 so `offsetFootprint` can ask the same question
+ * rather than keep a second copy. A geometric predicate with two
+ * implementations is one that will eventually disagree with itself about an
+ * edge case, and both callers use it to decide whether a shape is valid.
+ */
+export function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
   const side = (p: Point, q: Point, r: Point) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
   const EPS = 1e-9;
   const shares = (p: Point, q: Point) => Math.abs(p.x - q.x) < EPS && Math.abs(p.y - q.y) < EPS;
