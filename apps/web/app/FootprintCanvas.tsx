@@ -1154,10 +1154,19 @@ export default function FootprintCanvas({
                   key={`draw-wall-${c.id}`}
                   x={c.point.x * SCALE_PX_PER_FT + offsetPx.x}
                   y={c.point.y * SCALE_PX_PER_FT + offsetPx.y}
-                  radius={picked ? 10 : 7}
+                  radius={picked ? 11 : 9}
                   fill={picked ? "#2d6cdf" : "#fff"}
                   stroke="#2d6cdf"
                   strokeWidth={2}
+                  /* ⚠ A FORGIVING TARGET, found by failing to hit it. Driving
+                     this tool from a script, clicks landing within a few pixels
+                     of a corner missed it repeatedly — and a tool whose entire
+                     interaction is "click a corner, click another corner" is
+                     exactly the wrong place for a target that needs precision.
+                     `hitStrokeWidth` widens the hit area without drawing
+                     anything bigger, so the dot stays small and the click does
+                     not have to be. */
+                  hitStrokeWidth={18}
                   onClick={() => onPickDrawWallCorner(c.id)}
                   onTap={() => onPickDrawWallCorner(c.id)}
                 />

@@ -57,9 +57,21 @@ export default function DrawWallChooser({ split, onKeep, onCancel }: DrawWallCho
       <span style={{ fontSize: 11, color: "#555", lineHeight: 1.35 }}>
         The new wall cuts the building in two. The side you keep becomes the building; the other is discarded.
       </span>
+      {/* ⚠ Keyed by POSITION, not by `chordWallId`, and the difference is a
+          real bug rather than a style point. Each region renumbers its own
+          corners from "0", so a rectangle cut corner to corner gives two
+          triangles whose walls are BOTH named "01", "12", "20" — the chord id
+          is identical in both, and React logged "two children with the same
+          key, 20" the moment the chooser rendered.
+
+          The ids overlapping is correct and not worth avoiding: the regions are
+          alternatives, only one of them survives, and each is numbered as the
+          building it would become. It is only as a REACT KEY that two walls
+          called "20" are a problem. Two fixed alternatives have no identity
+          worth preserving across renders, so the index is the honest key. */}
       {split.regions.map((region, i) => (
         <button
-          key={region.chordWallId}
+          key={`region-${i}`}
           type="button"
           onClick={() => onKeep(i as 0 | 1)}
           style={{
