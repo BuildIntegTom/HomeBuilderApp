@@ -156,6 +156,12 @@ export interface FootprintCanvasProps {
   /** The two candidate regions once both corners are picked, outlined in
    * the same two colours the sidebar chooser uses. */
   drawWallRegions: { points: { x: number; y: number }[] }[] | null;
+  /** Every panel joint a new wall may land on, in footprint feet. Drawn
+   * as small squares so a joint never looks like a corner. */
+  drawWallJoints: { wallId: string; offsetFt: number; point: { x: number; y: number } }[];
+  onPickDrawWallJoint: (wallId: string, offsetFt: number) => void;
+  /** The armed joint, if the first pick was one rather than a corner. */
+  drawWallFirstJoint: { wallId: string; offsetFt: number } | null;
   offsetPx: DragPoint;
   wallSlots: Record<string, PanelSlot[]>;
   wallStartOffsetIn: Record<string, number>;
@@ -212,6 +218,9 @@ export default function FootprintCanvas({
   drawWallFirstCornerId,
   onPickDrawWallCorner,
   drawWallRegions,
+  drawWallJoints,
+  onPickDrawWallJoint,
+  drawWallFirstJoint,
   offsetPx,
   wallSlots,
   wallStartOffsetIn,
@@ -1169,6 +1178,38 @@ export default function FootprintCanvas({
                   hitStrokeWidth={18}
                   onClick={() => onPickDrawWallCorner(c.id)}
                   onTap={() => onPickDrawWallCorner(c.id)}
+                />
+              );
+            })}
+          {/* ⚠ JOINT TARGETS, drawn as SQUARES so they never read as corners.
+              Tommy, 2026-10-20: the tool "snaps to corners or snaps to the
+              edge at each intersection of panels". The shape difference is
+              the whole signal — a corner and a joint behave differently
+              when the building is cut, so they must not look alike. */}
+          {footprint &&
+            shapeTool === "draw-wall" &&
+            drawWallJoints.map((j) => {
+              const armed =
+                drawWallFirstJoint !== null &&
+                drawWallFirstJoint.wallId === j.wallId &&
+                Math.abs(drawWallFirstJoint.offsetFt - j.offsetFt) < 1e-6;
+              const size = armed ? 13 : 10;
+              return (
+                <Rect
+                  key={`joint-${j.wallId}-${j.offsetFt.toFixed(4)}`}
+                  x={j.point.x * SCALE_PX_PER_FT + offsetPx.x - size / 2}
+                  y={j.point.y * SCALE_PX_PER_FT + offsetPx.y - size / 2}
+                  width={size}
+                  height={size}
+                  cornerRadius={2}
+                  fill={armed ? "#2d6cdf" : "#fff"}
+                  stroke="#2d6cdf"
+                  strokeWidth={2}
+                  /* Same forgiving target as the corner dots, for the same
+                     reason: this tool is nothing but clicking small things. */
+                  hitStrokeWidth={16}
+                  onClick={() => onPickDrawWallJoint(j.wallId, j.offsetFt)}
+                  onTap={() => onPickDrawWallJoint(j.wallId, j.offsetFt)}
                 />
               );
             })}

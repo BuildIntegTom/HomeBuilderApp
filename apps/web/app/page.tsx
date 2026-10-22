@@ -8,7 +8,10 @@ import {
   applyZonesToSlot,
   areWallsOppositePair,
   buildOctagonFootprint,
+  allWallPanelJoints,
+  insertCornerAtWallOffset,
   isSplitRefusal,
+  splitSlotsAtJoint,
   octagonBoxOf,
   splitFootprintByChord,
   splitRefusalMessage,
@@ -5109,11 +5112,21 @@ export default function LayoutEditor() {
      A half-picked corner and an undecided split are mid-gesture, not part of
      the building: saving them would reload someone into a question they have
      long forgotten, and undo would step through them. */
-  const [drawWallFirstCornerId, setDrawWallFirstCornerId] = useState<string | null>(null);
-  const [pendingSplit, setPendingSplit] = useState<SplitResult | null>(null);
+  /** A pick is a CORNER the building already has, or a JOINT between two
+   * panels on a wall. The second kind is the one that needs a corner
+   * inserted before the building can be cut. */
+  type DrawWallPick = { kind: "corner"; cornerId: string } | { kind: "joint"; wallId: string; offsetFt: number };
+  const [drawWallFirstPick, setDrawWallFirstPick] = useState<DrawWallPick | null>(null);
+  /** The split, plus the panels for any wall the cut divided — see
+   * `beginSplit` for why they cannot be read from `baseWallSlots`. */
+  const [pendingSplit, setPendingSplit] = useState<{
+    split: SplitResult;
+    slotsByHostWallId: Record<string, PanelSlot[]>;
+  } | null>(null);
+
 
   const cancelDrawWall = () => {
-    setDrawWallFirstCornerId(null);
+    setDrawWallFirstPick(null);
     setPendingSplit(null);
   };
 
@@ -5127,24 +5140,77 @@ export default function LayoutEditor() {
    * treated as a miss and he can just pick a different second corner.
    * Clearing it would make every misclick cost two.
    */
-  const handlePickDrawWallCorner = (cornerId: string) => {
+  /**
+   * Turn two picks into a split.
+   *
+   * ⚠ A JOINT PICK NEEDS A CORNER INSERTED FIRST, and the host wall's
+   * panels have to be divided at the same time. `insertCornerAtWallOffset`
+   * replaces the host wall with two, so `baseWallSlots` no longer has an
+   * entry for either of them — the panels are carried here instead, split at
+   * the joint with `splitSlotsAtJoint`, which cuts NO panel: the slots before
+   * the joint go to one half and those after it to the other, exactly as they
+   * are.
+   *
+   * ⚠ Both picks are inserted BEFORE the chord is taken, so the second
+   * insert sees the first one's footprint. Inserting into the original twice
+   * would silently discard the first corner.
+   */
+  const beginSplit = (a: DrawWallPick, b: DrawWallPick) => {
     if (!footprint) return;
-    if (drawWallFirstCornerId === null) {
-      setDrawWallFirstCornerId(cornerId);
-      setPendingSplit(null);
+    let working = footprint;
+    const slotsByHostWallId: Record<string, PanelSlot[]> = {};
+    const cornerIdOf = (pick: DrawWallPick): string | null => {
+      if (pick.kind === "corner") return pick.cornerId;
+      const slots = baseWallSlots[pick.wallId] ?? [];
+      const joints = wallPanelJointsFor(working, pick.wallId, slots);
+      const joint = joints.find((j) => Math.abs(j.offsetFt - pick.offsetFt) < 1e-6);
+      if (!joint) return null;
+      const inserted = insertCornerAtWallOffset(working, pick.wallId, pick.offsetFt);
+      if (!inserted) return null;
+      const halves = splitSlotsAtJoint(slots, joint.slotIndex);
+      slotsByHostWallId[inserted.beforeWallId] = halves.before;
+      slotsByHostWallId[inserted.afterWallId] = halves.after;
+      working = inserted.footprint;
+      return inserted.cornerId;
+    };
+    const idA = cornerIdOf(a);
+    const idB = cornerIdOf(b);
+    if (!idA || !idB) {
+      setPanelPlacementNotice("That point is no longer on the building — try picking it again.");
       return;
     }
-    if (cornerId === drawWallFirstCornerId) {
-      setDrawWallFirstCornerId(null); // clicking the armed corner disarms it
-      return;
-    }
-    const result = splitFootprintByChord(footprint, drawWallFirstCornerId, cornerId);
+    const result = splitFootprintByChord(working, idA, idB);
     if (isSplitRefusal(result)) {
       setPanelPlacementNotice(splitRefusalMessage(result));
       return;
     }
-    setPendingSplit(result);
+    setPendingSplit({ split: result, slotsByHostWallId });
   };
+
+  const samePick = (a: DrawWallPick, b: DrawWallPick) =>
+    a.kind === "corner" && b.kind === "corner"
+      ? a.cornerId === b.cornerId
+      : a.kind === "joint" && b.kind === "joint"
+        ? a.wallId === b.wallId && Math.abs(a.offsetFt - b.offsetFt) < 1e-6
+        : false;
+
+  const pickDrawWallPoint = (pick: DrawWallPick) => {
+    if (!footprint) return;
+    if (drawWallFirstPick === null) {
+      setDrawWallFirstPick(pick);
+      setPendingSplit(null);
+      return;
+    }
+    if (samePick(drawWallFirstPick, pick)) {
+      setDrawWallFirstPick(null); // clicking the armed point disarms it
+      return;
+    }
+    beginSplit(drawWallFirstPick, pick);
+  };
+
+  const handlePickDrawWallCorner = (cornerId: string) => pickDrawWallPoint({ kind: "corner", cornerId });
+  const handlePickDrawWallJoint = (wallId: string, offsetFt: number) =>
+    pickDrawWallPoint({ kind: "joint", wallId, offsetFt });
 
   /**
    * Keep one side of the cut — Tommy's split-and-choose, 2026-10-21.
@@ -5165,7 +5231,7 @@ export default function LayoutEditor() {
    */
   const handleKeepSplitRegion = (regionIndex: 0 | 1) => {
     if (!footprint || !pendingSplit) return;
-    const region = pendingSplit.regions[regionIndex]!;
+    const region = pendingSplit.split.regions[regionIndex]!;
     const fp = region.footprint;
     const nextPrimary = new Set(fp.corners.map((c) => c.id));
     const nextLeastAccessible = [...nextPrimary][0] ?? fp.corners[0]!.id;
@@ -5176,7 +5242,9 @@ export default function LayoutEditor() {
     const nextRememberedSecond: Record<string, RunStopOpeningMemory> = {};
     for (const [newWallId, oldWallId] of Object.entries(region.wallIdMap)) {
       if (oldWallId === null) continue; // the chord: new wall, nothing to carry
-      oldSlotsByNewWallId[newWallId] = baseWallSlots[oldWallId];
+      /* ⚠ A wall the cut DIVIDED has its panels here rather than in
+         `baseWallSlots`, which only knows the wall before it was split. */
+      oldSlotsByNewWallId[newWallId] = pendingSplit.slotsByHostWallId[oldWallId] ?? baseWallSlots[oldWallId];
       if (wallRunStopsByWallId[oldWallId]) nextRunStops[newWallId] = wallRunStopsByWallId[oldWallId]!;
       const remembered = unbuiltOpeningsByStoryAndWallId.ground[oldWallId];
       if (remembered) nextRemembered[newWallId] = remembered;
@@ -5211,8 +5279,9 @@ export default function LayoutEditor() {
 
   /** The candidate outlines the canvas draws, in footprint feet. */
   const drawWallRegions = pendingSplit
-    ? pendingSplit.regions.map((r) => ({ points: r.footprint.corners.map((c) => c.point) }))
+    ? pendingSplit.split.regions.map((r) => ({ points: r.footprint.corners.map((c) => c.point) }))
     : null;
+
 
   const handleAddBumpOut = (wallId: string, spanStartFt: number, spanEndFt: number, depthFt: number) => {
     if (!footprint) return;
@@ -5476,6 +5545,23 @@ export default function LayoutEditor() {
     return offsets;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- wallGeometryFor is a per-render partial application; its inputs are listed
   }, [footprint, thicknessIn, primaryCornerIds, leastAccessibleCorner, wallRunStopsByWallId]);
+
+  /* ⚠ BOTH OF THESE READ `wallRenderOffsetIn`, so they live AFTER it. They
+     were written next to the rest of the draw-wall code and tsc caught the
+     block-scope error immediately — a joint measured from an offset that is
+     not yet assigned would be a target that does not sit where it looks. */
+
+  /** Every panel joint a new wall may land on. Not memoized: it walks the
+   * walls once and only while the tool is open, and a new `useMemo` in this
+   * file costs `preserve-manual-memoization` errors for nothing. */
+  const drawWallJoints =
+    footprint && shapeTool === "draw-wall" ? allWallPanelJoints(footprint, baseWallSlots, wallRenderOffsetIn) : [];
+
+  /** The joints of one wall on an arbitrary footprint — `beginSplit` needs
+   * this against its own WORKING footprint, which already has the first
+   * pick's corner in it, not against the one on screen. */
+  const wallPanelJointsFor = (fp: Footprint, wallId: string, slots: PanelSlot[]) =>
+    allWallPanelJoints(fp, { [wallId]: slots }, wallRenderOffsetIn).filter((j) => j.wallId === wallId);
 
   /**
    * Stage 3 — where each wall's unbuilt span(s) actually sit, as inches
@@ -11538,13 +11624,13 @@ export default function LayoutEditor() {
                   <OctagonSizePanel box={octagonBox} onChange={handleResizeOctagon} />
                 )}
                 {pendingSplit && (
-                  <DrawWallChooser split={pendingSplit} onKeep={handleKeepSplitRegion} onCancel={cancelDrawWall} />
+                  <DrawWallChooser split={pendingSplit.split} onKeep={handleKeepSplitRegion} onCancel={cancelDrawWall} />
                 )}
                 {shapeTool === "draw-wall" && !pendingSplit && (
                   <span style={{ fontSize: 11, color: "#555", lineHeight: 1.35 }}>
-                    {drawWallFirstCornerId === null
-                      ? "Click a corner to start the new wall."
-                      : "Now click the corner it runs to — or the same corner again to start over."}
+                    {drawWallFirstPick === null
+                      ? "Click a corner or a panel joint to start the new wall. Corners are round, joints are square."
+                      : "Now click the corner or joint it runs to — or the same point again to start over."}
                   </span>
                 )}
                 <div ref={setToolbarSecondaryPortalNode} className={styles.toolbarPortalInline} />
@@ -12021,8 +12107,11 @@ export default function LayoutEditor() {
                 <FootprintCanvas
                   footprint={footprint}
                   shapeTool={shapeTool}
-              drawWallFirstCornerId={drawWallFirstCornerId}
+              drawWallFirstCornerId={drawWallFirstPick?.kind === "corner" ? drawWallFirstPick.cornerId : null}
               onPickDrawWallCorner={handlePickDrawWallCorner}
+              onPickDrawWallJoint={handlePickDrawWallJoint}
+              drawWallJoints={drawWallJoints}
+              drawWallFirstJoint={drawWallFirstPick?.kind === "joint" ? drawWallFirstPick : null}
               drawWallRegions={drawWallRegions}
                   offsetPx={offsetPx}
                   wallSlots={effectiveViewedStoryId === "ground" ? overlayWallSlots : (secondStory?.wallSlots ?? {})}
