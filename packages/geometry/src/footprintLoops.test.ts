@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { buildRectangleFootprint } from "./footprint";
 import { buildOctagonFootprint } from "./octagon";
 import { insertBumpOut } from "./bumpOut";
+import { retile, wallGeometryFor } from "./retile";
+import { wallCompassDirection } from "./wallCompassDirection";
 import { computeFootprintAreaSqFt } from "./footprintArea";
 import { isOffsetRefusal } from "./offsetFootprint";
 import {
@@ -202,5 +204,62 @@ describe("⚠ which side of a wall is the weather side", () => {
         expect(n.x * (mid.x - cx) + n.y * (mid.y - cy)).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe("⚠ a courtyard building actually TILES, which is the test that matters", () => {
+  const THICKNESS_IN = 15.5;
+  const SEED = { spacingIn: 100_000, defaultPattern: "chevron" as const, defaultMirrored: false };
+
+  it("every wall on BOTH loops has panels summing exactly to its own run", () => {
+    /* Dimensional tightness is the rule this app will not break — a wall whose
+       parts do not add up to the wall may never reach the shop. Measured
+       across a 60x40 ring with a 10ft-wide building: all eight walls, both
+       loops, exact. Nothing in the tiler needed changing, which is the
+       strongest evidence that deriving loops from the existing linkage was the
+       right shape for this change. */
+    const fp = ring(buildRectangleFootprint(60, 40), 10);
+    const slots = retile(fp, fp.corners[0]!.id, allCorners(fp), 40, 24, THICKNESS_IN, SEED);
+    for (const wall of fp.walls) {
+      const geom = wallGeometryFor(fp, wall.id, allCorners(fp), fp.corners[0]!.id, THICKNESS_IN)!;
+      const sum = (slots[wall.id] ?? []).reduce((n, s) => n + s.widthIn, 0);
+      expect({ wall: wall.id, tight: Math.abs(sum - geom.lengthIn) < 0.01 }).toEqual({ wall: wall.id, tight: true });
+      expect((slots[wall.id] ?? []).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("⚠ the inner ring's corners are REFLEX, and the tiler already knew what to do", () => {
+    /* From the building material's point of view the courtyard's corners turn
+       the other way, so the wall that runs through EXTENDS into its neighbour
+       rather than being inset. Measured: a 20ft inner wall comes out with a
+       271in run against a 240in nominal length. That is the existing
+       reflex-corner rule, which was written for a bump-out's inside corners
+       and turns out to be exactly what a hole needs. */
+    const fp = ring(buildRectangleFootprint(60, 40), 10);
+    const inner = footprintLoops(fp).find((l) => !l.isOuter)!;
+    const extended = inner.walls.some((wall) => {
+      const geom = wallGeometryFor(fp, wall.id, allCorners(fp), fp.corners[0]!.id, THICKNESS_IN)!;
+      return geom.lengthIn > wall.lengthFt * 12 + 1;
+    });
+    expect(extended).toBe(true);
+  });
+
+  it("⚠ the compass labels the two rings as OPPOSITES, end to end", () => {
+    /* The whole point of the winding rule, checked through the real function
+       the drawings use rather than through the normal it is built on. */
+    const fp = ring(buildRectangleFootprint(60, 40), 10);
+    const label = (id: string) => wallCompassDirection(fp.walls.find((w) => w.id === id)!, fp);
+    const loops = footprintLoops(fp);
+    const outer = loops.find((l) => l.isOuter)!;
+    const inner = loops.find((l) => !l.isOuter)!;
+    // Every direction appears once on each ring, and the ring's own four are
+    // all different — so no two walls of a ring claim the same face.
+    expect(new Set(outer.walls.map((w) => label(w.id))).size).toBe(4);
+    expect(new Set(inner.walls.map((w) => label(w.id))).size).toBe(4);
+    // And the pair that face each other across the building are opposites.
+    const opposite: Record<string, string> = { N: "S", S: "N", E: "W", W: "E" };
+    const outerTop = outer.walls.reduce((best, w) => (midOf(fp, w.id).y < midOf(fp, best.id).y ? w : best));
+    const innerTop = inner.walls.reduce((best, w) => (midOf(fp, w.id).y < midOf(fp, best.id).y ? w : best));
+    expect(label(innerTop.id)).toBe(opposite[label(outerTop.id)]);
   });
 });

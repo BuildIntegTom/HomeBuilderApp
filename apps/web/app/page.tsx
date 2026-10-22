@@ -9,6 +9,8 @@ import {
   areWallsOppositePair,
   buildOctagonFootprint,
   allWallPanelJoints,
+  isCourtyardFootprint,
+  removeCourtyards,
   insertCornerAtWallOffset,
   isSplitRefusal,
   splitSlotsAtJoint,
@@ -405,6 +407,7 @@ import { PRICE_GAP, PRICE_REDACTED_NOTE, VIEWER_OWN_DEFAULTS_NOTE } from "./clou
 import DrawingToolPen, { type ShapeTool as DrawingToolPenShapeTool } from "./DrawingToolPen";
 import OctagonSizePanel from "./OctagonSizePanel";
 import DrawWallChooser from "./DrawWallChooser";
+import CourtyardPanel from "./CourtyardPanel";
 import OctagonRingPreview from "./OctagonRingPreview";
 import RoofTrussLayoutView from "./RoofTrussLayoutView";
 import PanelLegend from "./PanelLegend";
@@ -5282,6 +5285,63 @@ export default function LayoutEditor() {
     ? pendingSplit.split.regions.map((r) => ({ points: r.footprint.corners.map((c) => c.point) }))
     : null;
 
+
+  /**
+   * Add or remove a courtyard — the second loop.
+   *
+   * ⚠ A SHAPE CHANGE, so it re-tiles, for the same reason a bump-out does:
+   * the inner ring's walls did not exist a moment ago and have no panels to
+   * preserve. The OUTER ring's walls keep their ids, so their openings,
+   * bracing and hand-set widths ride across on the correlation map — which
+   * is just identity here, because `addCourtyard` renames nothing.
+   *
+   * ⚠ Nothing in the tiler needed changing for this. Measured on a 60x40
+   * ring with a 10ft-wide building: all eight walls on both loops come out
+   * with panels summing exactly to their own runs, and the courtyard's
+   * reflex corners are handled by the rule already written for a bump-out's
+   * inside corners.
+   */
+  const commitFootprintShapeChange = (fp: Footprint) => {
+    if (!footprint) return;
+    const nextPrimary = new Set(fp.corners.map((c) => c.id));
+    const nextLeastAccessible = leastAccessibleCorner && nextPrimary.has(leastAccessibleCorner)
+      ? leastAccessibleCorner
+      : ([...nextPrimary][0] ?? fp.corners[0]!.id);
+    const oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined> = {};
+    for (const wall of fp.walls) oldSlotsByNewWallId[wall.id] = baseWallSlots[wall.id];
+    setFootprint(fp);
+    setPrimaryCornerIds(nextPrimary);
+    setLeastAccessibleCorner(nextLeastAccessible);
+    applyRetiledStory(
+      "ground",
+      retilePreservingOpenings(
+        fp,
+        nextLeastAccessible,
+        nextPrimary,
+        oldSlotsByNewWallId,
+        wallRunStopsByWallId,
+        "ground",
+        unbuiltOpeningsByStoryAndWallId.ground,
+      ),
+      nextLeastAccessible,
+    );
+    for (const wall of fp.walls) {
+      if (oldSlotsByNewWallId[wall.id] === undefined) reconcileNewWallZones("ground", wall.id);
+    }
+  };
+
+  const handleAddCourtyard = (fp: Footprint) => {
+    commitFootprintShapeChange(fp);
+    setPanelPlacementNotice(
+      "Courtyard added. The inner walls’ weather side faces into it, so their compass labels are the opposite of the outer ring’s.",
+    );
+  };
+
+  const handleRemoveCourtyard = () => {
+    if (!footprint) return;
+    commitFootprintShapeChange(removeCourtyards(footprint));
+    setPanelPlacementNotice("Courtyard removed. The inner ring’s panels went with it.");
+  };
 
   const handleAddBumpOut = (wallId: string, spanStartFt: number, spanEndFt: number, depthFt: number) => {
     if (!footprint) return;
@@ -11620,8 +11680,18 @@ export default function LayoutEditor() {
                     more free parameters than a `W x D` box can describe, so
                     sizing it from two numbers would silently throw the
                     bump-out away. */}
-                {octagonBox && !isBumpedOut && (
+                {octagonBox && !isBumpedOut && footprint && !isCourtyardFootprint(footprint) && (
                   <OctagonSizePanel box={octagonBox} onChange={handleResizeOctagon} />
+                )}
+                {/* ⚠ Offered on ANY shape, not just an octagon — Tommy,
+                    2026-10-21: "This should also be compatible with
+                    concentric Square/ rectangle buildings." */}
+                {footprint && (
+                  <CourtyardPanel
+                    footprint={footprint}
+                    onAddCourtyard={handleAddCourtyard}
+                    onRemoveCourtyard={handleRemoveCourtyard}
+                  />
                 )}
                 {pendingSplit && (
                   <DrawWallChooser split={pendingSplit.split} onKeep={handleKeepSplitRegion} onCancel={cancelDrawWall} />

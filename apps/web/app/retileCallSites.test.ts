@@ -78,6 +78,15 @@ const EXPECTED: Record<string, { calls: number; fate: Fate; stage: string; why: 
       "⚠ What tile-once still gets: openings, braced placement and hand-set widths ride across on `splitFootprintByChord`'s own `wallIdMap` (new id -> old id, null for the chord), " +
       "so a wall that merely changed its NAME keeps everything. Without that map every wall in the kept half would silently lose its windows.",
   },
+  commitFootprintShapeChange: {
+    calls: 1,
+    fate: "REDERIVES",
+    stage: "—",
+    why:
+      "⚠ ADDED 2026-10-22 with the courtyard — the second loop. Shared by adding a courtyard and removing one, because they are the same gesture in two directions: the footprint gains or loses a whole ring of walls. " +
+      "A SHAPE change, like `handleAddBumpOut`: the inner ring's walls did not exist a moment ago and have no panels to preserve, so there is nothing for tile-once to keep. " +
+      "⚠ The OUTER ring keeps everything. `addCourtyard` renames no existing wall, so the correlation map is identity and every outer wall carries its openings, bracing and hand-set widths across untouched.",
+  },
   handleDragWall: {
     calls: 1,
     fate: "REDERIVES",
@@ -164,7 +173,7 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
     /* Up to 6 with Draw Wall's commit. ⚠ Still a NON-VACUITY floor and not a
        target: its only job is to fail if a refactor moves these calls out of
        page.tsx entirely and leaves this file measuring nothing. */
-    expect(total).toBeGreaterThanOrEqual(6);
+    expect(total).toBeGreaterThanOrEqual(7);
   });
 
   it("⚠ records what tile-once still has to convert, so the size of the job is visible", () => {
@@ -190,8 +199,15 @@ describe("tile-once Stage 1: every re-tile call site is classified", () => {
        SHAPE-CHANGING gesture was added, not because an edit went back to
        re-deriving itself, and the distinction is the whole point of counting.
        A sixth still means somebody should explain themselves. */
-    expect(rederives.length).toBe(5);
+    /* ⚠ SIX since 2026-10-22 — `commitFootprintShapeChange`, the courtyard's
+       commit. Up again, and again because a new SHAPE-CHANGING gesture was
+       added rather than an edit regressing into re-deriving itself. Three of
+       these six now exist because the app can make shapes it could not make a
+       week ago, which is the opposite of the problem this file was written to
+       catch. A seventh still needs explaining. */
+    expect(rederives.length).toBe(6);
     expect(rederives.map(([h]) => h).sort()).toEqual([
+      "commitFootprintShapeChange",
       "handleAddBumpOut",
       "handleDragWall",
       "handleDraw",

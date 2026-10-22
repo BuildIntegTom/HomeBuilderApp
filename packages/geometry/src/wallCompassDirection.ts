@@ -1,3 +1,4 @@
+import { wallExteriorNormal } from "./footprintLoops";
 import type { Footprint, Wall } from "./types";
 
 export type CompassDirection = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
@@ -21,17 +22,44 @@ export function wallCompassDirection(wall: Wall, footprint: Footprint): CompassD
   const corners = footprint.corners;
   const start = corners.find((c) => c.id === wall.startCorner)!.point;
   const end = corners.find((c) => c.id === wall.endCorner)!.point;
-  const dir = { x: end.x - start.x, y: end.y - start.y };
-  const len = Math.hypot(dir.x, dir.y) || 1;
-  const unitDir = { x: dir.x / len, y: dir.y / len };
-  const perp = { x: -unitDir.y, y: unitDir.x };
+  /* ⚠ THE OUTWARD FACE COMES FROM THE LOOP'S WINDING, NOT FROM THE CENTROID,
+     since 2026-10-22.
 
-  const centerX = corners.reduce((sum, c) => sum + c.point.x, 0) / corners.length;
-  const centerY = corners.reduce((sum, c) => sum + c.point.y, 0) / corners.length;
-  const midX = (start.x + end.x) / 2;
-  const midY = (start.y + end.y) / 2;
-  const pointsAwayFromCenter = perp.x * (midX - centerX) + perp.y * (midY - centerY) >= 0;
-  const outward = pointsAwayFromCenter ? perp : { x: -perp.x, y: -perp.y };
+     The old rule asked whether the wall's perpendicular pointed AWAY FROM THE
+     MIDDLE of all the corners. That is right for a single ring and wrong for a
+     courtyard: an inner-ring wall's weather side faces INTO the courtyard,
+     which is toward the middle, not away from it. Tommy, 2026-10-21: *"The
+     interior side of the inner courtyard wall is the outside."*
+
+     ⚠ Measured before switching, because a silent relabelling of every wall in
+     the app would be the worst possible way to find out this was wrong:
+
+       rectangle 40x20   4 walls, 0 differ
+       octagon 40x24     8 walls, 0 differ
+       bump-out          8 walls, 0 differ
+       courtyard ring    8 walls, 4 differ — every INNER wall, each by 180°
+
+     So nothing drawable before today changes, including the concave bump-out,
+     and exactly the walls that were wrong are the ones that move. Without this
+     the ring's drawings would have said S where they meant N, with nothing
+     crashing and nothing to notice. */
+  const exterior = wallExteriorNormal(footprint, wall.id);
+  const outward =
+    exterior ??
+    (() => {
+      /* A wall in no closed ring — a malformed footprint mid-edit. Falls back
+         to the old centroid rule rather than picking a direction at random, so
+         a half-built shape still labels itself the way it used to. */
+      const dir = { x: end.x - start.x, y: end.y - start.y };
+      const len = Math.hypot(dir.x, dir.y) || 1;
+      const perp = { x: -dir.y / len, y: dir.x / len };
+      const centerX = corners.reduce((sum, c) => sum + c.point.x, 0) / corners.length;
+      const centerY = corners.reduce((sum, c) => sum + c.point.y, 0) / corners.length;
+      const midX = (start.x + end.x) / 2;
+      const midY = (start.y + end.y) / 2;
+      const away = perp.x * (midX - centerX) + perp.y * (midY - centerY) >= 0;
+      return away ? perp : { x: -perp.x, y: -perp.y };
+    })();
 
   // Screen space: +x = East, +y = South (down), -y = North (up) — atan2(y,x)
   // in degrees gives 0=E, 90=S, 180=W, 270(or -90)=N.
