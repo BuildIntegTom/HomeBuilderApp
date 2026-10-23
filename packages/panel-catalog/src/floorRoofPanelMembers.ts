@@ -133,10 +133,28 @@ export interface FloorRoofPanelOptions {
   structuralGirtEnds?: ("start" | "end")[];
 }
 
+/**
+ * ⚠ `actualDimsIn` IS THE PIECE AS THE SHOP CUTS IT — thickness x width x
+ * LENGTH — and `orientation` is what maps that onto the panel's box. The first
+ * version of this file passed a bounding box instead, and the cut list came
+ * back telling the shop to cut 2x4s "1 1/2in" long, because the box's Z extent
+ * happened to be the board's thickness. Found by running `computePanelCutList`
+ * on a real panel rather than assuming it would work.
+ *
+ * The mapping, from `memberBoxSizeIn`:
+ *   vertical            -> box (t, w, l)   length runs along Z
+ *   horizontal          -> box (l, t, w)   length along X
+ *   horizontal, rot 90  -> box (t, l, w)   length along Y
+ *   horizontal, rot 180 -> box (w, l, t)   length along Y, width along X
+ *   flat                -> box (l, w, t)   length along X, width along Y
+ */
 const lumber = (
   memberId: string,
   role: PanelMember["role"],
-  dims: { xIn: number; yIn: number; zIn: number },
+  nominalSize: "2x4" | "2x6",
+  dims: { thicknessIn: number; widthIn: number; lengthIn: number },
+  orientation: PanelMember["orientation"],
+  rotationDeg: number,
   position: { xIn: number; yIn: number; zIn: number },
   notes?: string,
 ): PanelMember => ({
@@ -144,20 +162,22 @@ const lumber = (
   material: "dimensional_lumber",
   speciesGrade: LUMBER_SPECIES_GRADE,
   plySpec: null,
-  nominalSize: dims.yIn === JOIST_2X6_WIDTH_IN || dims.xIn === JOIST_2X6_WIDTH_IN || dims.zIn === JOIST_2X6_WIDTH_IN ? "2x6" : "2x4",
-  actualDimsIn: { thicknessIn: dims.xIn, widthIn: dims.yIn, lengthIn: dims.zIn },
-  orientation: "vertical",
-  position: { ...position, rotationDeg: 0 },
+  nominalSize,
+  actualDimsIn: dims,
+  orientation,
+  position: { ...position, rotationDeg },
   role,
   qty: 1,
   ...(notes ? { notes } : {}),
 });
 
+/** A sheet lying in the panel's X-Y plane: length along X, width along Y,
+ * thickness along Z. That is exactly `orientation: "flat"`. */
 const sheet = (
   memberId: string,
   role: PanelMember["role"],
   plySpec: string,
-  dims: { xIn: number; yIn: number; zIn: number },
+  dims: { thicknessIn: number; widthIn: number; lengthIn: number },
   position: { xIn: number; yIn: number; zIn: number },
   notes?: string,
 ): PanelMember => ({
@@ -166,8 +186,8 @@ const sheet = (
   speciesGrade: null,
   plySpec,
   nominalSize: null,
-  actualDimsIn: { thicknessIn: dims.zIn, widthIn: dims.yIn, lengthIn: dims.xIn },
-  orientation: "vertical",
+  actualDimsIn: dims,
+  orientation: "flat",
   position: { ...position, rotationDeg: 0 },
   role,
   qty: 1,
@@ -197,7 +217,10 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
         lumber(
           `joist-${side}-${face}`,
           "stud",
-          { xIn: JOIST_2X6_THICKNESS_IN, yIn: JOIST_2X6_WIDTH_IN, zIn: o.lengthIn },
+          "2x6",
+          { thicknessIn: JOIST_2X6_THICKNESS_IN, widthIn: JOIST_2X6_WIDTH_IN, lengthIn: o.lengthIn },
+          "vertical",
+          0,
           { xIn, yIn, zIn: 0 },
           `${side} joist, ${face} member of the pair`,
         ),
@@ -222,7 +245,7 @@ function buildStructuralGirt(o: FloorRoofPanelOptions, zIn: number, label: strin
       `structural-girt-${label}-web`,
       "girt_web",
       STRUCTURAL_GIRT_PLY_SPEC,
-      { xIn: o.widthIn, yIn: o.depthIn, zIn: STRUCTURAL_GIRT_PLY_THICKNESS_IN },
+      { thicknessIn: STRUCTURAL_GIRT_PLY_THICKNESS_IN, widthIn: o.depthIn, lengthIn: o.widthIn },
       { xIn: 0, yIn: 0, zIn },
       "structural girt web — carries the wall above",
     ),
@@ -233,7 +256,10 @@ function buildStructuralGirt(o: FloorRoofPanelOptions, zIn: number, label: strin
       lumber(
         `structural-girt-${label}-${side}`,
         "blocking",
-        { xIn: PLATE_2X4_WIDTH_IN, yIn: o.depthIn, zIn: PLATE_2X4_THICKNESS_IN },
+        "2x4",
+        { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: o.depthIn },
+        "horizontal",
+        180,
         { xIn, yIn: 0, zIn: zIn + STRUCTURAL_GIRT_PLY_THICKNESS_IN },
         "cut ends exposed at the panel's inside and outside faces",
       ),
@@ -258,7 +284,7 @@ function buildAntiTwistGirt(o: FloorRoofPanelOptions, zIn: number, index: number
       `anti-twist-${index}-web`,
       "girt_web",
       ANTI_TWIST_WEB_PLY_SPEC,
-      { xIn: o.widthIn, yIn: o.depthIn, zIn: ANTI_TWIST_WEB_THICKNESS_IN },
+      { thicknessIn: ANTI_TWIST_WEB_THICKNESS_IN, widthIn: o.depthIn, lengthIn: o.widthIn },
       { xIn: 0, yIn: 0, zIn },
       "anti-twist girt web",
     ),
@@ -269,7 +295,10 @@ function buildAntiTwistGirt(o: FloorRoofPanelOptions, zIn: number, index: number
       lumber(
         `anti-twist-${index}-${face}`,
         "blocking",
-        { xIn: o.widthIn, yIn: PLATE_2X4_WIDTH_IN, zIn: PLATE_2X4_THICKNESS_IN },
+        "2x4",
+        { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: o.widthIn },
+        "flat",
+        0,
         { xIn: 0, yIn, zIn: zIn + ANTI_TWIST_WEB_THICKNESS_IN },
         `ties the ${face} chords laterally`,
       ),
@@ -297,9 +326,12 @@ function buildBlocking(o: FloorRoofPanelOptions, zIn: number, index: number): Pa
     lumber(
       `blocking-${index}-${side}`,
       "blocking",
-      { xIn: JOIST_2X6_THICKNESS_IN, yIn: fitIn, zIn: PLATE_2X4_WIDTH_IN },
+      "2x4",
+      { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: fitIn },
+      "horizontal",
+      90,
       { xIn, yIn: JOIST_2X6_WIDTH_IN, zIn },
-      "cut to fit between the 2x6s",
+      `cut to fit the ${fitIn}in between the 2x6s`,
     ),
   );
 }
@@ -324,7 +356,7 @@ function buildStructuralLid(o: FloorRoofPanelOptions, atEnd: "start" | "end"): P
       `lid-${atEnd}-skin`,
       "skin",
       SKIN_PLY_SPEC,
-      { xIn: o.widthIn, yIn: o.depthIn, zIn: SKIN_THICKNESS_IN },
+      { thicknessIn: SKIN_THICKNESS_IN, widthIn: o.depthIn, lengthIn: o.widthIn },
       { xIn: 0, yIn: 0, zIn: zBase },
       `${atEnd} lid skin`,
     ),
@@ -339,9 +371,12 @@ function buildStructuralLid(o: FloorRoofPanelOptions, atEnd: "start" | "end"): P
       lumber(
         `lid-${atEnd}-face-${index}`,
         "stud",
-        { xIn: widthIn, yIn: o.depthIn, zIn: PLATE_2X4_THICKNESS_IN },
+        "2x4",
+        { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn, lengthIn: o.depthIn },
+        "horizontal",
+        180,
         { xIn, yIn: 0, zIn: zBase + SKIN_THICKNESS_IN },
-        ripped ? `ripped to ${widthIn}in — the last one on the lid` : undefined,
+        ripped ? `ripped to ${widthIn}in wide — the last one on the lid` : undefined,
       ),
     );
     xIn += PLATE_2X4_WIDTH_IN;
@@ -545,14 +580,18 @@ export function buildRoofPanelCapMembers(
       `cap-${atEnd}-web`,
       "girt_web",
       STRUCTURAL_GIRT_PLY_SPEC,
-      { xIn: options.widthIn, yIn: geom.plumbHeightIn, zIn: STRUCTURAL_GIRT_PLY_THICKNESS_IN },
+      { thicknessIn: STRUCTURAL_GIRT_PLY_THICKNESS_IN, widthIn: geom.plumbHeightIn, lengthIn: options.widthIn },
       { xIn: 0, yIn: 0, zIn },
       `${atEnd} cap plumb leg — ${cutNote}`,
     ),
-    lumber(
+    /* ⚠ The seat is a SHEET, not a 2x4. He called the whole thing an "L
+       plate" — a 2x4 is 3.5in wide and could not bear the 15.5in top plate
+       he described it sitting flat on. */
+    sheet(
       `cap-${atEnd}-seat`,
       "plate",
-      { xIn: options.widthIn, yIn: geom.seatWidthIn, zIn: PLATE_2X4_THICKNESS_IN },
+      STRUCTURAL_GIRT_PLY_SPEC,
+      { thicknessIn: STRUCTURAL_GIRT_PLY_THICKNESS_IN, widthIn: geom.seatWidthIn, lengthIn: options.widthIn },
       { xIn: 0, yIn: 0, zIn },
       "flat leg — bears on the wall's top plate",
     ),
@@ -565,9 +604,12 @@ export function buildRoofPanelCapMembers(
       lumber(
         `cap-${atEnd}-stiffener-${i}`,
         "stud",
-        { xIn: widthIn, yIn: geom.plumbHeightIn, zIn: PLATE_2X4_THICKNESS_IN },
+        "2x4",
+        { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn, lengthIn: geom.plumbHeightIn },
+        "horizontal",
+        180,
         { xIn, yIn: 0, zIn },
-        widthIn < PLATE_2X4_WIDTH_IN - 1e-9 ? `ripped to ${widthIn}in` : undefined,
+        widthIn < PLATE_2X4_WIDTH_IN - 1e-9 ? `ripped to ${widthIn}in wide` : undefined,
       ),
     );
     xIn += PLATE_2X4_WIDTH_IN;

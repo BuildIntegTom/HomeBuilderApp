@@ -18,6 +18,7 @@ import {
   type FloorRoofPanelOptions,
 } from "./floorRoofPanelMembers";
 import { PLATE_2X4_WIDTH_IN } from "./panelMemberHelpers";
+import { computePanelCutList } from "./panelCutList";
 
 const floor = (over: Partial<FloorRoofPanelOptions> = {}): FloorRoofPanelOptions => ({
   kind: "floor",
@@ -162,8 +163,11 @@ describe("⚠ blocking and anti-twist girts are two members, not one", () => {
   it("blocking is cut to fit between the 2x6s", () => {
     const members = buildFloorRoofPanelMembers(floor({ lengthIn: 240 }));
     const block = idsLike(members, "blocking-")[0]!;
-    // 15.5 depth less the two 5.5in joists = 4.5in of gap.
-    expect(block.actualDimsIn.widthIn).toBe(15.5 - 2 * JOIST_2X6_WIDTH_IN);
+    /* 15.5 depth less the two 5.5in joists = 4.5in of gap, and that gap is the
+       piece's CUT LENGTH — it is a 2x4 stood between the joists, so its own
+       width stays 3.5in. */
+    expect(block.actualDimsIn.lengthIn).toBe(15.5 - 2 * JOIST_2X6_WIDTH_IN);
+    expect(block.actualDimsIn.widthIn).toBe(PLATE_2X4_WIDTH_IN);
   });
 
   it("⚠ the anti-twist girt's 2x4s are HORIZONTAL, tying top and bottom chords", () => {
@@ -173,8 +177,10 @@ describe("⚠ blocking and anti-twist girts are two members, not one", () => {
     const members = buildFloorRoofPanelMembers(floor({ lengthIn: 240 }));
     const top = members.find((m) => m.memberId === "anti-twist-0-top")!;
     const bottom = members.find((m) => m.memberId === "anti-twist-0-bottom")!;
-    // Spanning the full width, which is what "horizontal" means in the panel.
-    expect(top.actualDimsIn.thicknessIn).toBe(FLOOR_ROOF_PANEL_WIDTH_IN);
+    // Spanning the full width, which is what "horizontal" means in the panel
+    // — so the panel's width is the piece's cut LENGTH.
+    expect(top.actualDimsIn.lengthIn).toBe(FLOOR_ROOF_PANEL_WIDTH_IN);
+    expect(top.actualDimsIn.widthIn).toBe(PLATE_2X4_WIDTH_IN);
     expect(bottom.position.yIn).toBe(0);
     expect(top.position.yIn).toBe(15.5 - PLATE_2X4_WIDTH_IN);
   });
@@ -188,12 +194,17 @@ describe("⚠ blocking and anti-twist girts are two members, not one", () => {
 describe("⚠ both lids are structural, and the last 2x4 is ripped", () => {
   it("covers the whole lid face: five full 2x4s and a sixth ripped", () => {
     /* "As many 2x4s (vertically when installed) to the face of the lid to
-       entirely cover it - the last may need to be ripped." 19 3/16in over
-       3.5in is 5.48, so five full and one at 1 11/16in. */
+       entirely cover it - the last may need to be ripped." 19 1/4in over
+       3.5in is 5.5, so five full and one ripped to 1 3/4in.
+
+       Each piece runs through the panel's DEPTH and they stack across its
+       width, so the dimension that varies is widthIn. */
     const members = buildFloorRoofPanelMembers(floor());
     const face = idsLike(members, "lid-start-face-");
     expect(face).toHaveLength(6);
-    const widths = face.map((m) => m.actualDimsIn.thicknessIn);
+    const widths = face.map((m) => m.actualDimsIn.widthIn);
+    // Every one of them is cut to the panel's depth, not to its own width.
+    for (const m of face) expect(m.actualDimsIn.lengthIn).toBe(15.5);
     expect(widths.filter((w) => w === PLATE_2X4_WIDTH_IN)).toHaveLength(5);
     const ripped = widths.find((w) => w !== PLATE_2X4_WIDTH_IN)!;
     expect(ripped).toBeCloseTo(FLOOR_ROOF_PANEL_WIDTH_IN - 5 * PLATE_2X4_WIDTH_IN, 9);
@@ -202,7 +213,7 @@ describe("⚠ both lids are structural, and the last 2x4 is ripped", () => {
 
   it("the ripped one says so, so the shop is not left guessing", () => {
     const members = buildFloorRoofPanelMembers(floor());
-    const ripped = idsLike(members, "lid-start-face-").find((m) => m.actualDimsIn.thicknessIn !== PLATE_2X4_WIDTH_IN)!;
+    const ripped = idsLike(members, "lid-start-face-").find((m) => m.actualDimsIn.widthIn !== PLATE_2X4_WIDTH_IN)!;
     expect(ripped.notes).toContain("ripped");
   });
 
@@ -217,7 +228,7 @@ describe("⚠ both lids are structural, and the last 2x4 is ripped", () => {
 
   it("an edge panel's lid needs one fewer 2x4, and still comes out exact", () => {
     const members = buildFloorRoofPanelMembers(floor({ widthIn: FLOOR_ROOF_EDGE_PANEL_WIDTH_IN }));
-    const widths = idsLike(members, "lid-start-face-").map((m) => m.actualDimsIn.thicknessIn);
+    const widths = idsLike(members, "lid-start-face-").map((m) => m.actualDimsIn.widthIn);
     expect(widths.reduce((a, b) => a + b, 0)).toBeCloseTo(FLOOR_ROOF_EDGE_PANEL_WIDTH_IN, 9);
   });
 });
@@ -414,5 +425,74 @@ describe("the component schema a SketchUp exporter would read", () => {
     const schema = buildFloorRoofPanelSchema({ ...roofPanel, kind: "floor", structuralGirtEnds: ["start"] }, 4);
     expect(schema.members.some((m) => m.memberId.startsWith("cap-"))).toBe(false);
     expect(schema.id).toBe("floor_panel");
+  });
+});
+
+describe("⚠ the cut list the shop actually gets", () => {
+  const opts = {
+    kind: "floor" as const,
+    widthIn: FLOOR_ROOF_PANEL_WIDTH_IN,
+    depthIn: 15.5,
+    lengthIn: 240,
+    structuralGirtEnds: ["start" as const],
+  };
+
+  it("⚠ NO board is cut to its own thickness — the bug this test exists for", () => {
+    /* The first version of this builder passed a BOUNDING BOX where the schema
+       wants the piece as cut, so `lengthIn` came out as whatever the box
+       measured along Z. The cut list dutifully told the shop to cut 2x4s
+       "1 1/2in" long — twelve of them. Found by running `computePanelCutList`
+       on a real panel instead of assuming a generic function would be fed
+       sensible input.
+
+       A board is never cut shorter than it is wide. That one sentence catches
+       the whole class. */
+    for (const members of [
+      buildFloorRoofPanelMembers(opts),
+      buildFloorRoofPanelMembers({ ...opts, kind: "roof", structuralGirtEnds: [] }),
+      buildRoofPanelCapMembers({ ...opts, kind: "roof", structuralGirtEnds: [] }, "eave", 4),
+    ]) {
+      for (const m of members) {
+        if (m.material !== "dimensional_lumber") continue;
+        expect({ id: m.memberId, ok: m.actualDimsIn.lengthIn >= m.actualDimsIn.widthIn }).toEqual({ id: m.memberId, ok: true });
+        expect({ id: m.memberId, thick: m.actualDimsIn.thicknessIn }).toEqual({ id: m.memberId, thick: 1.5 });
+      }
+    }
+  });
+
+  it("every length on the list is a real part of the panel", () => {
+    /* Pinned as the set of distinct cut lengths, so a silently changed
+       dimension shows up here rather than in a shop. */
+    const rows = computePanelCutList(buildFloorRoofPanelMembers(opts));
+    const lumberLengths = new Set(
+      rows.filter((r) => r.material === "dimensional_lumber").map((r) => r.lengthLabel),
+    );
+    expect(lumberLengths).toEqual(
+      new Set([
+        '240"', // the joists, the panel's full span
+        '15½"', // lid face pieces, running through the depth
+        '19¼"', // anti-twist ties, spanning the width
+        '4½"', // blocking, cut to fit between the 2x6s
+      ]),
+    );
+  });
+
+  it("⚠ a roof cap's stiffeners are cut to the PLUMB height, not the depth", () => {
+    /* 15.5in of depth at 4:12 stands 16 5/16in tall. A cap cut to 15 1/2 would
+       not reach, and the error grows with the pitch. */
+    const roof = { ...opts, kind: "roof" as const, structuralGirtEnds: [] };
+    const rows = computePanelCutList(buildRoofPanelCapMembers(roof, "eave", 4));
+    const stiffener = rows.find((r) => r.partLabel.includes("2x4"))!;
+    expect(stiffener.lengthLabel).not.toBe('15½"');
+    expect(stiffener.lengthLabel).toContain("16");
+  });
+
+  it("the whole list is non-empty and every row names its material", () => {
+    const rows = computePanelCutList(buildFloorRoofPanelMembers(opts));
+    expect(rows.length).toBeGreaterThan(5);
+    for (const r of rows) {
+      expect(r.materialLabel.length).toBeGreaterThan(0);
+      expect(r.lengthLabel.length).toBeGreaterThan(0);
+    }
   });
 });
