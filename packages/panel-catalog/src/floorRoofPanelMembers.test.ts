@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   ANTI_TWIST_SPACING_IN,
+  FLOOR_ROOF_RUN_CLOSER_WIDTH_IN,
+  JOIST_2X6_THICKNESS_IN,
+  planFloorRoofPanelWidthsIn,
   BLOCKING_SPACING_IN,
   FLOOR_ROOF_EDGE_PANEL_WIDTH_IN,
   FLOOR_ROOF_PANEL_WIDTH_IN,
@@ -24,29 +27,34 @@ const idsLike = (members: ReturnType<typeof buildFloorRoofPanelMembers>, prefix:
   members.filter((m) => m.memberId.startsWith(prefix));
 
 describe("⚠ the numbers he gave, as numbers", () => {
-  it("⚠ 19 3/16in is a SIXTEENTH SHORT of five to the 8ft, and off the eighth grid", () => {
-    /* Tommy: "that is how wide each floor and roof panel should be - so that
-       the panels land on the money." Measured, they land a sixteenth shy:
+  it("⚠ 19 1/4in, chosen for the plywood's black diamonds — and what it costs", () => {
+    /* The module exists because sheathing is marked at 19.2in, five to the
+       8ft: a seam under a diamond is one the crew nails without measuring.
+       19.2 is not a fraction anyone cuts, so both roundings cost something,
+       and this is the measurement that settled it:
 
-         19 3/16 x 5 = 95 15/16, not 96.
+         19 3/16  worst drift 1/16in,  closes 8ft 1/16 short,  OFF the 1/8 grid
+         19 1/4   worst drift 1/4in,   closes 8ft 1/4 over,    ON the 1/8 grid
 
-       The exact fifth of 8ft is 19.2in, which is not a fraction anyone cuts.
-       19 3/16 is the nearest sixteenth to it, and five of them lose 1/16in —
-       over a 40ft run, 25 panels, that is 5/16in.
+       He took 19 1/4. The drift is four times bigger and still does not
+       matter, because every seam is a DOUBLE JOIST — two 2x6s, 3in of nailing
+       surface — so a diamond 1/4in off its seam is well inside the target. */
+    expect(FLOOR_ROOF_PANEL_WIDTH_IN).toBe(19.25);
+    expect(Number.isInteger(FLOOR_ROOF_PANEL_WIDTH_IN * 8)).toBe(true);
+    const worstDrift = Math.max(...[1, 2, 3, 4].map((n) => Math.abs(n * FLOOR_ROOF_PANEL_WIDTH_IN - n * 19.2)));
+    expect(worstDrift).toBeCloseTo(0.2, 9);
+    // Inside the 3in of doubled joist, by a wide margin.
+    expect(worstDrift).toBeLessThan(2 * JOIST_2X6_THICKNESS_IN);
+  });
 
-       ⚠ And 19 3/16 is a SIXTEENTH, so it is not on the app's own 1/8in grid:
-       19.1875 x 8 = 153.5, not a whole number of eighths. Neither eighth
-       either side lands on 96 either — 19 1/8 x 5 is 3/8in under, 19 1/4 x 5
-       is 1/4in over.
-
-       Recorded as the measured truth rather than asserted as 96, and raised
-       with him, because "land on the money" and the dimensional-tightness rule
-       both say this is his call and not one to round away quietly. */
-    expect(FLOOR_ROOF_PANEL_WIDTH_IN).toBe(19.1875);
-    expect(FLOOR_ROOF_PANEL_WIDTH_IN * 5).toBe(95.9375);
-    expect(96 - FLOOR_ROOF_PANEL_WIDTH_IN * 5).toBe(1 / 16);
-    // Off the eighth grid, stated so it cannot be discovered later by surprise.
-    expect(Number.isInteger(FLOOR_ROOF_PANEL_WIDTH_IN * 8)).toBe(false);
+  it("⚠ the closer brings every 8ft run back to EXACTLY 96in", () => {
+    /* "have whatever is at the end of every 8' run where plywood would be
+       absorb it." Four field panels are 77in, so the fifth is 19in and the
+       drift resets to zero instead of accumulating — over a 40ft floor, the
+       difference between every sheet landing true and the last being 1 1/4in
+       out. */
+    expect(FLOOR_ROOF_RUN_CLOSER_WIDTH_IN).toBe(19);
+    expect(4 * FLOOR_ROOF_PANEL_WIDTH_IN + FLOOR_ROOF_RUN_CLOSER_WIDTH_IN).toBe(96);
   });
 
   it("the first and last panel plus its girt is the wall depth", () => {
@@ -224,5 +232,47 @@ describe("nothing lands outside the panel", () => {
         expect({ id: m.memberId, zMax: m.position.zIn <= opts.lengthIn + 1e-9 }).toEqual({ id: m.memberId, zMax: true });
       }
     }
+  });
+});
+
+describe("⚠ laying out a run so the sheets keep landing true", () => {
+  it("every 8ft of field lands exactly on a sheet edge, at every run length", () => {
+    /* The property the whole module choice was made for. Swept across real
+       building widths rather than spot-checked, because the failure mode is
+       drift that only shows up a few sheets along. */
+    for (let runFt = 20; runFt <= 60; runFt += 0.5) {
+      const widths = planFloorRoofPanelWidthsIn(runFt * 12)!;
+      expect(widths).not.toBeNull();
+      // Field panels only — the edge ones carry the wall and sit outside the
+      // sheet module (see the planner's own note on the datum).
+      const field = widths.slice(1, -1);
+      let running = 0;
+      for (let i = 0; i < field.length; i++) {
+        running += field[i]!;
+        const isFifth = (i + 1) % 5 === 0;
+        // A full group of five closes on 96; a part-group at the end does not
+        // have to, because the run simply stops there.
+        if (isFifth && i < field.length - 1) {
+          expect({ runFt, at: i + 1, running }).toEqual({ runFt, at: i + 1, running: ((i + 1) / 5) * 96 });
+        }
+      }
+    }
+  });
+
+  it("the widths add up to the run, exactly", () => {
+    for (let runFt = 20; runFt <= 60; runFt += 0.5) {
+      const widths = planFloorRoofPanelWidthsIn(runFt * 12)!;
+      expect(widths.reduce((a, b) => a + b, 0)).toBeCloseTo(runFt * 12, 9);
+    }
+  });
+
+  it("the first and last are the wall-bearing edge panels", () => {
+    const widths = planFloorRoofPanelWidthsIn(40 * 12)!;
+    expect(widths[0]).toBe(FLOOR_ROOF_EDGE_PANEL_WIDTH_IN);
+    expect(widths[widths.length - 1]).toBe(FLOOR_ROOF_EDGE_PANEL_WIDTH_IN);
+  });
+
+  it("refuses a run too short to hold the two edge panels", () => {
+    expect(planFloorRoofPanelWidthsIn(12)).toBeNull();
   });
 });

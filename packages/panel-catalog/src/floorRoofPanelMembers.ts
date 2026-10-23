@@ -45,9 +45,49 @@ import { LUMBER_SPECIES_GRADE, PLATE_2X4_THICKNESS_IN, PLATE_2X4_WIDTH_IN, SKIN_
 export const JOIST_2X6_THICKNESS_IN = 1.5;
 export const JOIST_2X6_WIDTH_IN = 5.5;
 
-/** The module: five panels to the 8ft — *"so that the panels land on the
- * money"*. 19 3/16in. */
-export const FLOOR_ROOF_PANEL_WIDTH_IN = 19.1875;
+/**
+ * The field panel: **19 1/4in**, his decision of 2026-10-22.
+ *
+ * ⚠ **The module exists because of the black diamonds on the plywood.**
+ *
+ * > *"the goal I had in mind was making 3/4" tounge and groove plywood super
+ * > easy to install using the black diamonds on the plywood. Best to sheath
+ * > the floor on site to really tie all the panels together."*
+ *
+ * Sheathing is marked at 19.2in — five to the 8ft — so a seam under a diamond
+ * is a seam the crew can nail without measuring. 19.2in is not a fraction
+ * anyone cuts, so the question was which side to round to, and both answers
+ * cost something. Measured:
+ *
+ * | width | worst drift from a diamond | closes 8ft | on the 1/8in grid |
+ * |-------|---------------------------|------------|-------------------|
+ * | 19 3/16 | 1/16in | 1/16in short | no |
+ * | **19 1/4** | 1/4in | 1/4in over | **yes** |
+ *
+ * He chose 19 1/4: *"I'd rather cut small like 19 1/4 and 5 panels later it's
+ * a little bigger to absorb that 1/4"."*
+ *
+ * ⚠ **A quarter inch of drift does not matter here, and that is why the
+ * cheaper cut wins.** Every seam between panels is a DOUBLE JOIST — two 2x6s
+ * side by side, 3in of nailing surface — so a diamond 1/4in off its seam is
+ * still well inside the target. The diamond is a guide, not a tolerance. And
+ * 19 1/4 is on the 1/8in grid the whole app works in, which 19 3/16 is not.
+ */
+export const FLOOR_ROOF_PANEL_WIDTH_IN = 19.25;
+
+/**
+ * The panel that closes an 8ft run.
+ *
+ * > *"have whatever is at the end of every 8' run where plywood would be
+ * > absorb it."*
+ *
+ * Four field panels come to 77in, so the fifth is 19in and the run lands
+ * exactly on 96 — back under a sheet edge, with the drift reset to zero rather
+ * than accumulating down the building. Over a 40ft floor that is the
+ * difference between every sheet landing true and the last one being 1.25in
+ * out.
+ */
+export const FLOOR_ROOF_RUN_CLOSER_WIDTH_IN = 96 - 4 * 19.25;
 
 /**
  * The first and last panel in a run.
@@ -352,4 +392,40 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
   }
 
   return members;
+}
+
+/**
+ * Lay out one run of floor or roof panels across a building.
+ *
+ * The first and last panels are the narrow ones that sit under the walls; the
+ * rest are field panels, with a closer at every 8ft so the plywood above keeps
+ * landing on sheet edges.
+ *
+ * ⚠ **The 8ft datum is the first FIELD panel, not the building edge**, and
+ * that is an interpretation rather than something he said. The edge panel is
+ * 13.25in and carries the wall, so counting it into the sheet module would put
+ * every seam at a number no diamond is near. Starting the count after it keeps
+ * the field — where the diamonds actually help — on the module. Worth one
+ * sentence of confirmation before this reaches a cut list.
+ *
+ * Returns the widths in order, or null when the run cannot hold the two edge
+ * panels at all.
+ */
+export function planFloorRoofPanelWidthsIn(runLengthIn: number, edgePanelWidthIn = FLOOR_ROOF_EDGE_PANEL_WIDTH_IN): number[] | null {
+  const fieldIn = runLengthIn - 2 * edgePanelWidthIn;
+  if (fieldIn < 0) return null;
+  if (fieldIn === 0) return [edgePanelWidthIn, edgePanelWidthIn];
+
+  const widths: number[] = [];
+  let placedIn = 0;
+  let sinceRunStart = 0;
+  while (placedIn < fieldIn - 1e-9) {
+    const atCloser = Math.abs(sinceRunStart - 4 * FLOOR_ROOF_PANEL_WIDTH_IN) < 1e-9;
+    const nominal = atCloser ? FLOOR_ROOF_RUN_CLOSER_WIDTH_IN : FLOOR_ROOF_PANEL_WIDTH_IN;
+    const widthIn = Math.min(nominal, fieldIn - placedIn);
+    widths.push(widthIn);
+    placedIn += widthIn;
+    sinceRunStart = atCloser ? 0 : sinceRunStart + widthIn;
+  }
+  return [edgePanelWidthIn, ...widths, edgePanelWidthIn];
 }
