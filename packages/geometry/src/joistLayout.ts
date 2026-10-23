@@ -35,7 +35,31 @@ export interface JoistLayout {
  * -> rim joist -> field joists) is illustrated separately as a schematic,
  * not built into these live centerlines.
  */
-export function computeJoistLayout(footprint: Footprint, spacingIn: number): JoistLayout {
+export interface FootprintSpanAndRun {
+  /** The direction a spanning member runs, as JoistAxis means it. */
+  axis: JoistAxis;
+  /** How far a single member has to reach — the SHORTER bounding dimension,
+   * because a floor spans the short way. */
+  spanFt: number;
+  /** How far the row of members has to be repeated — the longer one. */
+  runFt: number;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+/**
+ * The span/run split that anything laid across a floor or roof has to agree
+ * on: a member spans the SHORTER bounding dimension and the row repeats along
+ * the longer one, which is what "perpendicular to the longest walls" means.
+ *
+ * Extracted from computeJoistLayout when floor/roof PANELS needed the same
+ * split, because two copies of this rule would eventually disagree and the
+ * disagreement would show up as a joist layout and a panel layout running at
+ * right angles to each other on the same building.
+ */
+export function footprintSpanAndRun(footprint: Footprint): FootprintSpanAndRun {
   const corners = footprint.corners.map((c) => c.point);
   const minX = Math.min(...corners.map((p) => p.x));
   const maxX = Math.max(...corners.map((p) => p.x));
@@ -43,9 +67,24 @@ export function computeJoistLayout(footprint: Footprint, spacingIn: number): Joi
   const maxY = Math.max(...corners.map((p) => p.y));
   const width = maxX - minX;
   const depth = maxY - minY;
+  const axis: JoistAxis = width >= depth ? "y" : "x";
+  return {
+    axis,
+    spanFt: Math.min(width, depth),
+    runFt: Math.max(width, depth),
+    minX,
+    maxX,
+    minY,
+    maxY,
+  };
+}
+
+export function computeJoistLayout(footprint: Footprint, spacingIn: number): JoistLayout {
+  const { axis, minX, maxX, minY, maxY } = footprintSpanAndRun(footprint);
+  const width = maxX - minX;
+  const depth = maxY - minY;
   const spacingFt = spacingIn / 12;
 
-  const axis: JoistAxis = width >= depth ? "y" : "x";
   const joists: JoistLine[] = [];
 
   if (axis === "y") {

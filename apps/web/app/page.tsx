@@ -29,6 +29,7 @@ import {
   computeGableTiledRow,
   computeInsetPerimeterRing,
   computeJoistLayout,
+  footprintSpanAndRun,
   GABLE_COLUMN_FLAT_TOP_DROP_IN,
   GABLE_SHED_SNAP_THRESHOLD_IN,
   computePanelLoadOrder,
@@ -306,6 +307,8 @@ import {
   type OctagonRingDiameterFt,
   type PanelMember,
   type PanelStructuralStatus,
+  planFloorRoofPanelRun,
+  floorRoofPanelMinimumWidthIn,
   type RoofCatcherBeamShape,
   type RoofSystemType,
   type RoofTrussSpacingIn,
@@ -7654,6 +7657,67 @@ export default function LayoutEditor() {
     });
   }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, boxBeamSizeId, thicknessIn, trussPlateInsetIn, builtWallLengthInByWallId]);
 
+  /* Floor and roof PANELS' own Shop Fabrication pages.
+
+     Same "walk the building directly, bypass allInstances" shape as
+     roofBearingFabricationGroups above, because a floor panel is not a wall
+     slot and never passes through the tiler. The span/run split comes from
+     `footprintSpanAndRun`, the same rule the joist layout uses, so a
+     building's joists and its floor panels can never be shown running at
+     right angles to each other.
+
+     ⚠ The run is the footprint's OUTER dimension, because the walls bear on
+     the floor rather than sitting beside it. */
+  const floorRoofPanelFabricationGroups = useMemo(() => {
+    if (!footprint) return [];
+    const { spanFt, runFt } = footprintSpanAndRun(footprint);
+    const spanIn = spanFt * 12;
+    const runIn = runFt * 12;
+    const densityKgM3 = densityLbFt3 * LB_FT3_TO_KG_M3;
+
+    return (["floor", "roof"] as const).flatMap((kind) => {
+      const plan = planFloorRoofPanelRun({
+        kind,
+        runLengthIn: runIn,
+        spanIn,
+        depthIn: thicknessIn,
+        /* No pitch means no caps, and the schema says so in its own notes
+           rather than inventing an angle. */
+        pitchIn12: kind === "roof" ? roofTrussLayoutContext?.pitchIn12 : undefined,
+      });
+      return plan.groups.map((group) => {
+        const straw = computeStandardPanelStrawVolume(group.members, {
+          heightIn: spanIn,
+          widthIn: group.widthIn,
+          depthIn: thicknessIn,
+        });
+        const woodWeightKg = computeMemberSetWoodWeight(group.members).weightKg;
+        const weightBreakdown = computePanelWeightBreakdown({
+          /* The flat width x thickness x height estimate is moot here — a
+             floor panel's cavity is carved up by four 2x6 joists, girts and
+             blocking, so the real member-aware volume goes in as the
+             override and this is just its fallback. */
+          widthIn: 0,
+          strawWeightKgOverride: straw.strawVolumeFt3 * FT3_TO_M3 * densityKgM3,
+          thicknessIn,
+          heightIn: spanIn,
+          densityKgM3,
+          woodWeightKg,
+          /* ⚠ Honestly null, not 0: the schema carries `fasteners: []` and
+             nobody has given a nailing schedule for a floor or roof panel.
+             Reporting 0 would read as "no fasteners" for a panel that is
+             nailed together throughout. */
+          fastenerWeightKg: null,
+          /* Neither straw face is exposed — both lids are plywood-skinned
+             and structural, so no plaster coat lands on this panel. */
+          hasClayPlaster: false,
+          hasLimePlaster: false,
+        });
+        return { ...group, kind, plan, spanIn, runIn, weightBreakdown };
+      });
+    });
+  }, [footprint, thicknessIn, densityLbFt3, roofTrussLayoutContext]);
+
   // Mid-Wall Bond Beam's own Shop Fabrication pages — same "walk
   // walls/stories directly, bypass allInstances" shape as
   // roofBearingFabricationGroups above (each beam's own member is a real
@@ -7908,6 +7972,17 @@ export default function LayoutEditor() {
           label: `Panel Fabrication: Spanning Header ${group.widthIn.toFixed(1)}in (${group.instances.length})`,
         });
       }
+      /* Floor and roof panels. Registered here rather than under the floor
+         or roof gates above because they are panels: a building has them
+         whether or not a joisted floor system or a truss roof is selected,
+         and leaving them out of this list is what keeps a sheet out of both
+         the tray and Export PDF — it renders, and nobody can reach it. */
+      for (const group of floorRoofPanelFabricationGroups) {
+        pages.push({
+          id: `shop-fab-${group.key}`,
+          label: `Panel Fabrication: ${group.kind === "floor" ? "Floor" : "Roof"} Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
+        });
+      }
     }
     // Box Beam's own Detail Guide page — the same assembly whether it's a
     // roofline roof-bearing member (2-story only, roof concern) or a
@@ -7984,6 +8059,7 @@ export default function LayoutEditor() {
     midWallBeamWallLengthTotalIn,
     midWallBondBeamFabricationGroups,
     spanningHeaderFabricationGroups,
+    floorRoofPanelFabricationGroups,
     shopDrawings,
     panelFabricationGroups,
     roofBearingFabricationGroups,
@@ -13781,8 +13857,9 @@ export default function LayoutEditor() {
                 <p className={styles.note}>
                   Preview-only (3D model + illustrative default dimensions) — not placed anywhere in the current
                   layout system yet: jack studs need a real rough-opening height, which headers/sills don&apos;t
-                  track yet either. Floor/roof panels don&apos;t exist as modeled panel systems yet either — all
-                  deferred until those systems are built.
+                  track yet either. Floor and roof panels now DO exist as modeled panels with their own
+                  fabrication sheets further down this tab — still not placed on the canvas, but no longer
+                  deferred.
                 </p>
               </StickyNote>
               ))}
@@ -13976,6 +14053,91 @@ export default function LayoutEditor() {
                     shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
                     role={role}
                   />
+                </StickyNote>
+              );
+            })}
+
+            {floorRoofPanelFabricationGroups.map((group) => {
+              const kindLabel = group.kind === "floor" ? "Floor" : "Roof";
+              const roleLabel =
+                group.role === "edge"
+                  ? "Edge"
+                  : group.role === "field"
+                    ? "Field"
+                    : group.role === "closer"
+                      ? "8ft Closer"
+                      : "Remainder";
+              const noteId = `shop-fab-${group.key}`;
+              const impossible = group.plan.impossiblePanels.some((i) =>
+                group.instances.some((g) => g.name === i.name),
+              );
+              return (
+                <StickyNote
+                  key={group.key}
+                  id={noteId}
+                  label={`Panel Fabrication: ${kindLabel} Panel ${formatLengthIn(group.widthIn, unitSystem)} (${group.instances.length})`}
+                  isOpen={openNoteIds.has(noteId)}
+                  isFullscreen={fullscreenNoteId === noteId}
+                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
+                  onClose={() => handleToggleNote(noteId)}
+                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
+                  onPrint={() => handlePrintNote(noteId)}
+                >
+                  <p className={`${styles.note} print-hidden-chrome`}>
+                    Fabricator/detailer document — one sheet per unique {group.kind}{" "}panel, with the same to-scale
+                    lettered view and cut list every other panel gets. Draft: these panels are built from the
+                    fabrication spec Tommy gave verbally and are not placed in the layout system yet, so the run
+                    below is derived from this building&apos;s own outer dimensions rather than laid out panel by
+                    panel on the canvas.
+                  </p>
+                  <PanelFabricationPage
+                    title={`Panel Fabrication — ${kindLabel} Panel (${roleLabel})`}
+                    panelDescription={
+                      <>
+                        A standard panel on its side, with 2x6 joists in place of 2x4 studs — each joist a{" "}
+                        <strong>pair</strong> of 2x6s, top and bottom, so every seam between two installed panels
+                        carries four of them. Straw goes in loose and is compressed in the table, one joist laid in
+                        each side. Both lids are structural: a plywood skin faced with 2x4s laid edge to edge across
+                        the whole lid, the last ripped to fit. {group.kind === "floor"
+                          ? `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries a structural girt at each end, where a wall lands on it.`
+                          : `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries no structural girt — a roof panel bears on both wythes of the inclined wall panel below it.`}{" "}
+                        It is panel {group.instances.map((i) => i.name).join(", ")} of{" "}
+                        {group.plan.instances.length} across a {formatLengthIn(group.runIn, unitSystem)} run.
+                      </>
+                    }
+                    widthIn={group.widthIn}
+                    heightIn={group.spanIn}
+                    members={group.members}
+                    instances={group.instances.map((i) => ({
+                      name: i.name,
+                      note: `${formatLengthIn(i.atIn, unitSystem)} from the start of the run`,
+                    }))}
+                    weightBreakdown={group.weightBreakdown}
+                    loadBearingCapacity={{
+                      status: "pending-BI-confirmation",
+                      note: `No load-bearing figure exists for a ${group.kind} panel. Nothing has been engineered for this panel type — it is modeled from a verbal fabrication spec, and a span table is exactly the kind of number that cannot be guessed at.`,
+                    }}
+                    shearValue={{
+                      status: "pending-BI-confirmation",
+                      note: "No shear figure either. A floor or roof panel's diaphragm value would come from its plywood lids and their nailing, and no nailing schedule has been given.",
+                    }}
+                    role={role}
+                  />
+                  {impossible && (
+                    <p className={styles.disclaimer}>
+                      ⚠ {group.plan.impossibleWarning}
+                    </p>
+                  )}
+                  <p className={styles.note}>
+                    Draft — floor and roof panels are modeled from Tommy&apos;s verbal fabrication spec and have
+                    not been confirmed back to him or to Building Integrity. Open items on this sheet: no fastener
+                    schedule exists for these panels, so the weight checker shows fasteners as not modeled rather
+                    than zero; the eave/ridge cap&apos;s flat leg is modeled bearing the full {thicknessIn}in wall
+                    depth, which is a reading of &quot;the L plate sits flat on the top plate&quot; and not a
+                    dimension he gave; and the narrowest panel these widths can hold together is{" "}
+                    {floorRoofPanelMinimumWidthIn(group.kind === "floor")}in, measured off the members themselves
+                    because no minimum panel width has been set for floors or roofs.
+                  </p>
                 </StickyNote>
               );
             })}

@@ -17,7 +17,7 @@ import {
   buildFloorRoofPanelMembers,
   type FloorRoofPanelOptions,
 } from "./floorRoofPanelMembers";
-import { PLATE_2X4_WIDTH_IN } from "./panelMemberHelpers";
+import { PLATE_2X4_WIDTH_IN, memberBoxSizeIn } from "./panelMemberHelpers";
 import { computePanelCutList } from "./panelCutList";
 
 const floor = (over: Partial<FloorRoofPanelOptions> = {}): FloorRoofPanelOptions => ({
@@ -246,6 +246,18 @@ describe("nothing lands outside the panel", () => {
         expect({ id: m.memberId, y: m.position.yIn >= -1e-9 }).toEqual({ id: m.memberId, y: true });
         expect({ id: m.memberId, z: m.position.zIn >= -1e-9 }).toEqual({ id: m.memberId, z: true });
         expect({ id: m.memberId, zMax: m.position.zIn <= opts.lengthIn + 1e-9 }).toEqual({ id: m.memberId, zMax: true });
+        /* ⚠ The FAR faces, which this test used to leave unchecked — it
+           asserted only that members start inside the panel, never that they
+           end inside it. A 2.25in-wide panel measurably overflows its own box
+           by 1.25in, because the two joists are 1.5in each and cannot both
+           fit; that is where floorRoofPanelMinimumWidthIn comes from, and it
+           went unnoticed for exactly this reason. Caps are excluded: a cap
+           seat extends past the panel's end on purpose. */
+        if (m.memberId.startsWith("cap-")) continue;
+        const box = memberBoxSizeIn(m);
+        expect({ id: m.memberId, xMax: m.position.xIn + box.xIn <= opts.widthIn + 1e-9 }).toEqual({ id: m.memberId, xMax: true });
+        expect({ id: m.memberId, yMax: m.position.yIn + box.yIn <= opts.depthIn + 1e-9 }).toEqual({ id: m.memberId, yMax: true });
+        expect({ id: m.memberId, zMaxFar: m.position.zIn + box.zIn <= opts.lengthIn + 1e-9 }).toEqual({ id: m.memberId, zMaxFar: true });
       }
     }
   });
