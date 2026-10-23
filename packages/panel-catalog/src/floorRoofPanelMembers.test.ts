@@ -8,6 +8,7 @@ import {
   roofCapGeometry,
   buildRoofPanelCapMembers,
   ROOF_CAP_SEAT_WIDTH_IN,
+  buildFloorRoofPanelSchema,
   BLOCKING_SPACING_IN,
   FLOOR_ROOF_EDGE_PANEL_WIDTH_IN,
   FLOOR_ROOF_PANEL_WIDTH_IN,
@@ -366,5 +367,52 @@ describe("⚠ the caps — the L is square, the PANEL meets it at the odd angle"
   it("the seat bears the full depth of the wall's top plate", () => {
     const eave = buildRoofPanelCapMembers(roofPanel, "eave", 4);
     expect(eave.find((m) => m.memberId === "cap-eave-seat")!.actualDimsIn.widthIn).toBe(ROOF_CAP_SEAT_WIDTH_IN);
+  });
+});
+
+describe("the component schema a SketchUp exporter would read", () => {
+  const roofPanel = { kind: "roof" as const, widthIn: FLOOR_ROOF_PANEL_WIDTH_IN, depthIn: 15.5, lengthIn: 180, structuralGirtEnds: [] };
+
+  it("⚠ says DRAFT, because it has not been through a fabrication round", () => {
+    /* Everything in this panel came from one verbal interview and two readings
+       of mine are still awaiting a sentence from him. A schema claiming
+       "locked" would be claiming a confidence nobody has. */
+    const schema = buildFloorRoofPanelSchema({ ...roofPanel, kind: "floor", structuralGirtEnds: ["start"] });
+    expect(schema.status).toBe("draft");
+    expect(schema.derivedFrom).toBe("standard_panel");
+  });
+
+  it("⚠ carries my two interpretations as NOTES, not as comments nobody exports", () => {
+    const schema = buildFloorRoofPanelSchema({ ...roofPanel, kind: "floor", structuralGirtEnds: ["start"] });
+    const text = schema.notes.map((n) => n.text).join(" ");
+    expect(text).toContain("sits flat on the top plate");
+    expect(text).toContain("a little bigger");
+  });
+
+  it("⚠ overallDimensions is the panel AS FABRICATED, not as installed", () => {
+    /* It is built lying in the compressor table: height is its span, depth the
+       15.5in through-thickness. A roof panel is installed inclined and a floor
+       flat, and neither is built that way — the shop drawing has to match the
+       table, not the building. */
+    const schema = buildFloorRoofPanelSchema(roofPanel, 4);
+    expect(schema.overallDimensions).toEqual({ heightIn: 180, widthIn: FLOOR_ROOF_PANEL_WIDTH_IN, depthIn: 15.5 });
+  });
+
+  it("a roof panel WITH a pitch gets both caps", () => {
+    const schema = buildFloorRoofPanelSchema(roofPanel, 4);
+    expect(schema.members.some((m) => m.memberId === "cap-eave-web")).toBe(true);
+    expect(schema.members.some((m) => m.memberId === "cap-ridge-web")).toBe(true);
+  });
+
+  it("⚠ and WITHOUT one gets no caps, and says so rather than guessing a pitch", () => {
+    const schema = buildFloorRoofPanelSchema(roofPanel);
+    expect(schema.members.some((m) => m.memberId.startsWith("cap-"))).toBe(false);
+    expect(schema.notes.some((n) => n.type === "deviation" && n.text.includes("NO eave or ridge cap"))).toBe(true);
+  });
+
+  it("a floor panel never gets caps, pitch or no pitch", () => {
+    const schema = buildFloorRoofPanelSchema({ ...roofPanel, kind: "floor", structuralGirtEnds: ["start"] }, 4);
+    expect(schema.members.some((m) => m.memberId.startsWith("cap-"))).toBe(false);
+    expect(schema.id).toBe("floor_panel");
   });
 });

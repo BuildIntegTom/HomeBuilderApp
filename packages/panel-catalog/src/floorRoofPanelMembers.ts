@@ -1,4 +1,4 @@
-import type { PanelMember } from "./componentSchema";
+import type { PanelComponentSchema, PanelMember } from "./componentSchema";
 import { LUMBER_SPECIES_GRADE, PLATE_2X4_THICKNESS_IN, PLATE_2X4_WIDTH_IN, SKIN_PLY_SPEC, SKIN_THICKNESS_IN } from "./panelMemberHelpers";
 
 /**
@@ -573,4 +573,68 @@ export function buildRoofPanelCapMembers(
     xIn += PLATE_2X4_WIDTH_IN;
   }
   return members;
+}
+
+/**
+ * The full component schema for a floor or roof panel — the shape a SketchUp
+ * exporter would read `members` from, the same wrapper
+ * `buildStandardPanelSchema` produces for a wall.
+ *
+ * ⚠ **`status: "draft"`, deliberately, and it is not pessimism.** Everything
+ * here came from one verbal interview on 2026-10-22 and has not been through a
+ * fabrication round. Two readings of mine are still awaiting a sentence from
+ * him — the cap seat's bearing width and the direction of the 8ft closer — and
+ * both are carried as notes on the schema rather than left in a comment
+ * nobody exports. A panel that said "locked" while those were open would be
+ * claiming a confidence nobody has.
+ *
+ * ⚠ **`overallDimensions` is the panel AS FABRICATED**, lying in the
+ * compressor table: height is its span, depth is the 15.5in through-thickness,
+ * width is the module. A roof panel is installed inclined and a floor flat,
+ * but neither is built that way, and the shop drawing has to match the table.
+ */
+export function buildFloorRoofPanelSchema(options: FloorRoofPanelOptions, pitchIn12?: number): PanelComponentSchema {
+  const isRoof = options.kind === "roof";
+  const members = [...buildFloorRoofPanelMembers(options)];
+  if (isRoof && pitchIn12 !== undefined) {
+    members.push(
+      ...buildRoofPanelCapMembers(options, "eave", pitchIn12),
+      ...buildRoofPanelCapMembers(options, "ridge", pitchIn12),
+    );
+  }
+
+  const notes: PanelComponentSchema["notes"] = [
+    {
+      type: "warning",
+      text:
+        "The cap's flat leg is modelled bearing the full wall depth (15.5in), read from \"the L plate sits flat on the top plate\". " +
+        "A reading of his sentence, not a dimension he gave.",
+    },
+    {
+      type: "warning",
+      text:
+        `The panel that closes each 8ft run is ${FLOOR_ROOF_RUN_CLOSER_WIDTH_IN}in — a quarter inch SMALLER than a field panel, ` +
+        "which is what lands the run on 96in. He said \"5 panels later it's a little bigger\"; the arithmetic needs smaller.",
+    },
+  ];
+  if (isRoof && pitchIn12 === undefined) {
+    notes.push({
+      type: "deviation",
+      text: "No pitch given, so this roof panel carries NO eave or ridge cap. Their geometry depends on the pitch and cannot be guessed.",
+    });
+  }
+
+  return {
+    schemaVersion: "0.1",
+    componentType: "panel",
+    id: isRoof ? "roof_panel" : "floor_panel",
+    displayName: isRoof ? "Roof Panel" : "Floor Panel",
+    status: "draft",
+    derivedFrom: "standard_panel",
+    overallDimensions: { heightIn: options.lengthIn, widthIn: options.widthIn, depthIn: options.depthIn },
+    members,
+    fasteners: [],
+    notes,
+    disclaimer: "Reference only — not engineered, not for construction.",
+  };
 }
