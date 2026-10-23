@@ -4,6 +4,10 @@ import {
   FLOOR_ROOF_RUN_CLOSER_WIDTH_IN,
   JOIST_2X6_THICKNESS_IN,
   planFloorRoofPanelWidthsIn,
+  firstPlywoodSheetWidthIn,
+  roofCapGeometry,
+  buildRoofPanelCapMembers,
+  ROOF_CAP_SEAT_WIDTH_IN,
   BLOCKING_SPACING_IN,
   FLOOR_ROOF_EDGE_PANEL_WIDTH_IN,
   FLOOR_ROOF_PANEL_WIDTH_IN,
@@ -274,5 +278,93 @@ describe("⚠ laying out a run so the sheets keep landing true", () => {
 
   it("refuses a run too short to hold the two edge panels", () => {
     expect(planFloorRoofPanelWidthsIn(12)).toBeNull();
+  });
+});
+
+describe("⚠ the installer cuts the first sheet, and everything after it lands true", () => {
+  it("the first sheet's cut is on the 1/8in grid", () => {
+    /* Tommy, 2026-10-22: "The installers will most likely cut the first piece
+       of plywood to fit, so however that could work out with being on the
+       grid." That answer dissolves the datum question — the edge panel simply
+       is not part of the sheet module, and the first sheet is trimmed to the
+       last seam it can reach. On a 40ft run that is 90 1/4in. */
+    const widths = planFloorRoofPanelWidthsIn(40 * 12)!;
+    const first = firstPlywoodSheetWidthIn(widths)!;
+    expect(first).toBe(90.25);
+    expect(Number.isInteger(first * 8)).toBe(true);
+    expect(first).toBeLessThanOrEqual(96);
+  });
+
+  it("⚠ and EVERY full sheet after it lands exactly on a panel seam", () => {
+    /* The property the closer exists for, checked end to end across real
+       building widths rather than on one example. */
+    for (let runFt = 24; runFt <= 60; runFt += 0.5) {
+      const widths = planFloorRoofPanelWidthsIn(runFt * 12)!;
+      const first = firstPlywoodSheetWidthIn(widths)!;
+      const seams = new Set<number>();
+      let at = 0;
+      for (const w of widths) {
+        at = Math.round((at + w) * 16) / 16;
+        seams.add(at);
+      }
+      /* ⚠ Only across the FIELD. The last sheet can land inside the closing
+         edge panel, which is not a seam — and does not need to be, because the
+         installer cuts the last sheet exactly as they cut the first. My first
+         version of this asserted it anyway and failed on a 24ft run at
+         282.25in, two thirds of the way into the final 13.25in panel. */
+      const fieldEndsAt = runFt * 12 - FLOOR_ROOF_EDGE_PANEL_WIDTH_IN;
+      for (let k = 1; first + 96 * k <= fieldEndsAt + 1e-9; k++) {
+        const edge = Math.round((first + 96 * k) * 16) / 16;
+        expect({ runFt, edge, lands: seams.has(edge) }).toEqual({ runFt, edge, lands: true });
+      }
+    }
+  });
+});
+
+describe("⚠ the caps — the L is square, the PANEL meets it at the odd angle", () => {
+  const roofPanel = { kind: "roof" as const, widthIn: FLOOR_ROOF_PANEL_WIDTH_IN, depthIn: 15.5, lengthIn: 180, structuralGirtEnds: [] };
+
+  it("the odd angle is the pitch, not the angle between the legs", () => {
+    /* "the L plate sits flat on the top plate and wraps up plum" — flat and
+       plumb are square to each other. What is odd is where the inclined panel
+       lands on it. */
+    expect(roofCapGeometry(4, 15.5, 19.25).panelAngleDeg).toBeCloseTo((Math.atan2(4, 12) * 180) / Math.PI, 9);
+    expect(roofCapGeometry(0, 15.5, 19.25).panelAngleDeg).toBe(0);
+  });
+
+  it("⚠ the plumb leg is TALLER than the panel is deep, by 1/cos(pitch)", () => {
+    /* An inclined panel's end face stands taller than its depth — the same
+       reason a rafter is longer than its run. Getting this wrong makes a cap
+       that does not reach, and it fails by more the steeper the roof. */
+    for (const pitch of [2, 4, 6, 9, 12]) {
+      const g = roofCapGeometry(pitch, 15.5, 19.25);
+      expect(g.plumbHeightIn).toBeGreaterThan(15.5);
+      expect(g.plumbHeightIn).toBeCloseTo(15.5 / Math.cos(Math.atan2(pitch, 12)), 9);
+    }
+    // Flat: the cap is exactly the panel's depth.
+    expect(roofCapGeometry(0, 15.5, 19.25).plumbHeightIn).toBeCloseTo(15.5, 9);
+  });
+
+  it("the stiffeners cover the cap's width, last one ripped", () => {
+    const g = roofCapGeometry(4, 15.5, FLOOR_ROOF_PANEL_WIDTH_IN);
+    expect(g.stiffenerCount).toBe(6);
+    expect((g.stiffenerCount - 1) * PLATE_2X4_WIDTH_IN + g.lastStiffenerWidthIn).toBeCloseTo(FLOOR_ROOF_PANEL_WIDTH_IN, 9);
+  });
+
+  it("⚠ eave and ridge are the SAME part — only the end cut differs", () => {
+    // "The ridge cap is the same thing except to end plumbing cut."
+    const eave = buildRoofPanelCapMembers(roofPanel, "eave", 4);
+    const ridge = buildRoofPanelCapMembers(roofPanel, "ridge", 4);
+    expect(eave.length).toBe(ridge.length);
+    const dims = (ms: typeof eave) => ms.map((m) => `${m.actualDimsIn.thicknessIn}x${m.actualDimsIn.widthIn}x${m.actualDimsIn.lengthIn}`);
+    expect(dims(eave)).toEqual(dims(ridge));
+    // What differs is what the shop is told to do at the end.
+    expect(eave.find((m) => m.memberId === "cap-eave-web")!.notes).toContain("off square");
+    expect(ridge.find((m) => m.memberId === "cap-ridge-web")!.notes).toContain("plumb");
+  });
+
+  it("the seat bears the full depth of the wall's top plate", () => {
+    const eave = buildRoofPanelCapMembers(roofPanel, "eave", 4);
+    expect(eave.find((m) => m.memberId === "cap-eave-seat")!.actualDimsIn.widthIn).toBe(ROOF_CAP_SEAT_WIDTH_IN);
   });
 });

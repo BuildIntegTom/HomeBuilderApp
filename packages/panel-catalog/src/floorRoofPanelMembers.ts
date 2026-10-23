@@ -429,3 +429,148 @@ export function planFloorRoofPanelWidthsIn(runLengthIn: number, edgePanelWidthIn
   }
   return [edgePanelWidthIn, ...widths, edgePanelWidthIn];
 }
+
+/**
+ * How wide to cut the FIRST sheet of plywood so every sheet after it lands on
+ * a panel seam.
+ *
+ * > *"The installers will most likely cut the first piece of plywood to fit,
+ * > so however that could work out with being on the grid."* — Tommy,
+ * > 2026-10-22, settling where the 8ft module starts.
+ *
+ * That answer makes the datum question go away. The edge panel is 13.25in and
+ * does not belong to the sheet module, so the first sheet is simply trimmed to
+ * the last seam it can reach. Measured on a 40ft run: **90 1/4in**, which is
+ * on the 1/8in grid, and every full sheet after it lands exactly on a seam —
+ * 186.25, 282.25, 378.25, 474.25. The closer does the rest.
+ *
+ * Returns null when no seam falls within one sheet, which cannot happen on a
+ * real building but is not worth asserting away.
+ */
+export function firstPlywoodSheetWidthIn(panelWidthsIn: readonly number[], sheetLengthIn = 96): number | null {
+  let at = 0;
+  let best: number | null = null;
+  for (const widthIn of panelWidthsIn) {
+    at += widthIn;
+    if (at <= sheetLengthIn + 1e-9) best = at;
+    else break;
+  }
+  return best;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   THE CAPS — the roof panel's two ends.
+
+   > *"We need to put a fancy cap on the exterior/bottom side of the roof
+   > panels. Something like a structural girt except perhaps it's odd angle L
+   > shaped. That structural cap. The ridge cap is the same thing except to end
+   > plumbing cut."*
+
+   and, asked which leg is which:
+
+   > *"on an installed panel roof, the L plate sits flat on the top plate and
+   > wraps up plum and has structural small vertical 2x4s."*
+
+   So the L lives in a VERTICAL plane: one leg flat on the wall's top plate,
+   the other turning up plumb, stiffened by small vertical 2x4s the way a
+   structural lid is. ⚠ The *"odd angle"* is not between the legs — those are
+   square to each other. It is where the INCLINED PANEL meets the L, and it is
+   the roof's own pitch.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/** The flat leg's bearing width. Defaults to the wall depth, since it *"sits
+ * flat on the top plate"* and a top plate is the full depth of its wall.
+ * ⚠ A reading of his sentence, not a number he gave. */
+export const ROOF_CAP_SEAT_WIDTH_IN = 15.5;
+
+export interface RoofCapGeometry {
+  /** The roof's pitch, rise per 12 of run. */
+  pitchIn12: number;
+  /** Degrees off square that the panel meets the cap — the "odd angle". */
+  panelAngleDeg: number;
+  /** The flat leg, bearing on the top plate. */
+  seatWidthIn: number;
+  /**
+   * The plumb leg's height. An inclined panel's end face stands taller than
+   * the panel is deep, by exactly `1 / cos(pitch)` — the same reason a rafter
+   * is longer than its run.
+   */
+  plumbHeightIn: number;
+  /** How many small 2x4s stiffen the plumb leg, and how wide the last is cut. */
+  stiffenerCount: number;
+  lastStiffenerWidthIn: number;
+}
+
+/**
+ * The cap's geometry for a given pitch and panel depth.
+ *
+ * ⚠ The EAVE and RIDGE caps are the same part — *"The ridge cap is the same
+ * thing except to end plumbing cut"* — so this returns one geometry and the
+ * caller says which end it is building. What differs is the end cut, not the
+ * shape.
+ */
+export function roofCapGeometry(pitchIn12: number, panelDepthIn: number, panelWidthIn: number, seatWidthIn = ROOF_CAP_SEAT_WIDTH_IN): RoofCapGeometry {
+  const panelAngleRad = Math.atan2(pitchIn12, 12);
+  const full = Math.floor(panelWidthIn / PLATE_2X4_WIDTH_IN);
+  const remainder = panelWidthIn - full * PLATE_2X4_WIDTH_IN;
+  return {
+    pitchIn12,
+    panelAngleDeg: (panelAngleRad * 180) / Math.PI,
+    seatWidthIn,
+    plumbHeightIn: panelDepthIn / Math.cos(panelAngleRad),
+    stiffenerCount: remainder > 1e-9 ? full + 1 : full,
+    lastStiffenerWidthIn: remainder > 1e-9 ? remainder : PLATE_2X4_WIDTH_IN,
+  };
+}
+
+/**
+ * The cap's members: the plywood web, its flat seat, and the small 2x4s.
+ *
+ * Built in the same fabrication frame as the rest of the panel, at the Z end
+ * the caller names. The plumb leg runs through Y and the seat extends beyond
+ * the panel's end, which is why its members sit outside the panel box — that
+ * is the point of a cap.
+ */
+export function buildRoofPanelCapMembers(
+  options: FloorRoofPanelOptions,
+  atEnd: "eave" | "ridge",
+  pitchIn12: number,
+): PanelMember[] {
+  const geom = roofCapGeometry(pitchIn12, options.depthIn, options.widthIn);
+  const zIn = atEnd === "eave" ? 0 : options.lengthIn;
+  const cutNote = atEnd === "ridge" ? "plumb end cut at the ridge" : `seat cut ${geom.panelAngleDeg.toFixed(2)}deg off square`;
+
+  const members: PanelMember[] = [
+    sheet(
+      `cap-${atEnd}-web`,
+      "girt_web",
+      STRUCTURAL_GIRT_PLY_SPEC,
+      { xIn: options.widthIn, yIn: geom.plumbHeightIn, zIn: STRUCTURAL_GIRT_PLY_THICKNESS_IN },
+      { xIn: 0, yIn: 0, zIn },
+      `${atEnd} cap plumb leg — ${cutNote}`,
+    ),
+    lumber(
+      `cap-${atEnd}-seat`,
+      "plate",
+      { xIn: options.widthIn, yIn: geom.seatWidthIn, zIn: PLATE_2X4_THICKNESS_IN },
+      { xIn: 0, yIn: 0, zIn },
+      "flat leg — bears on the wall's top plate",
+    ),
+  ];
+
+  let xIn = 0;
+  for (let i = 0; i < geom.stiffenerCount; i++) {
+    const widthIn = Math.min(PLATE_2X4_WIDTH_IN, options.widthIn - xIn);
+    members.push(
+      lumber(
+        `cap-${atEnd}-stiffener-${i}`,
+        "stud",
+        { xIn: widthIn, yIn: geom.plumbHeightIn, zIn: PLATE_2X4_THICKNESS_IN },
+        { xIn, yIn: 0, zIn },
+        widthIn < PLATE_2X4_WIDTH_IN - 1e-9 ? `ripped to ${widthIn}in` : undefined,
+      ),
+    );
+    xIn += PLATE_2X4_WIDTH_IN;
+  }
+  return members;
+}
