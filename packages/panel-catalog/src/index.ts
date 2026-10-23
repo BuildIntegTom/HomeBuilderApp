@@ -4,6 +4,7 @@ export * from "./foundationDetails";
 export * from "./componentSchema";
 export * from "./panelMemberHelpers";
 export * from "./standardPanelMembers";
+export * from "./floorRoofPanelMembers";
 export * from "./bracedPanelMembers";
 export * from "./columnPanelMembers";
 export * from "./cornerPanelMembers";

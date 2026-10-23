@@ -159,11 +159,59 @@ and the ring geometry have to be reconciled.
 
 ---
 
-## Still to settle
+## Settled 2026-10-22, same interview
 
-- The eave cap's *"odd angle L shaped"* geometry — which leg is which, and
-  whether the L wraps the panel's bottom face or only its end.
-- Whether the anti-twist girt's two 2x4s differ between floor and roof, given a
-  roof has no top/bottom in the same sense once it is inclined.
-- Whether a floor panel carries a structural girt at **both** ends or only
-  where a wall actually lands.
+**The eave and ridge caps**
+
+> *"on an installed panel roof, the L plate sits flat on the top plate and
+> wraps up plum and has structural small vertical 2x4s."*
+
+So the L is in a vertical plane: one leg flat on the wall's top plate, the
+other turning up plumb, with small vertical 2x4s stiffening it — the same idea
+as a structural lid. The *"odd angle"* is where the inclined panel meets it,
+not between the legs, which are square to each other. The **ridge cap is the
+same part with a plumb end cut**.
+
+**The girts' 2x4 orientation**
+
+> *"The structural girts are vertical, all the OSB girts are horizontal 2x4s."*
+
+⚠ The orientation follows the **girt type**, not the panel type. The question
+that prompted this assumed a floor's might differ from a roof's; his answer is
+one rule for both, which is simpler than the question.
+
+**Where a structural girt goes**
+
+> *"only on exterior ends where panel walls are above."*
+
+Not automatic at both ends. A floor panel gets one where a wall actually lands
+and nowhere else; a roof panel never gets one.
+
+---
+
+## ⚠ ONE NUMBER THAT DOES NOT ADD UP, found by building it
+
+> *"19 3/16. that is how wide each floor and roof panel should be - so that the
+> panels land on the money"*
+
+Measured: **19 3/16 x 5 = 95 15/16, not 96.** They land a sixteenth shy of 8ft.
+
+The exact fifth of 8ft is **19.2in**, which is not a fraction anyone cuts.
+19 3/16 is the nearest sixteenth to it, and five of them lose 1/16in — over a
+40ft run, 25 panels, that is 5/16in.
+
+⚠ **And 19 3/16 is a SIXTEENTH, so it is not on the app's own 1/8in grid**:
+19.1875 x 8 = 153.5. Neither eighth either side lands on 96 either — 19 1/8
+five times is 3/8in under, 19 1/4 five times is 1/4in over.
+
+So "land on the money" and the dimensional-tightness rule pull against each
+other here, and which gives is Tommy's call:
+
+1. **Keep 19 3/16** and accept 1/16in per 8ft, absorbed somewhere — but it is
+   off the eighth grid, which nothing else in this app is.
+2. **Use 19 1/4** — on the grid, 1/4in over per 8ft.
+3. **Let the END panels absorb it**, the way they already absorb the wall
+   depth: field panels at a round 19 1/4 and the edge ones trimmed to suit.
+
+The builder currently uses 19 3/16 exactly as he said it, and a test records
+the shortfall rather than asserting a 96 that is not there.
