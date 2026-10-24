@@ -744,6 +744,11 @@ export default function LayoutEditor() {
      per-layer toggles beside the viewer. */
   const [showFloorDeck3D, setShowFloorDeck3D] = useState(true);
   const [showRoofDeck3D, setShowRoofDeck3D] = useState(true);
+  /* ⚠ A gable end means a pitched roof, and the deck can only be placed
+     FLAT so far — drawn on a gabled building it runs straight through the
+     gable panels, which Tommy saw immediately and which is exactly the
+     overlap the app is not allowed to have. So it is withheld there, with
+     the sidebar saying why, rather than drawn wrong. */
   // The 3D viewer's own, deliberately smaller tool vocabulary (Tommy: "build
   // the 3d viewer into an editor with all the same tools as the 2d plan
   // editor" — Phase 1 ships Edit-cycle parity + the Sill & Header drag
@@ -10993,10 +10998,17 @@ export default function LayoutEditor() {
             Roof panels
           </label>
         )}
-        {roofEnabled && showRoofDeck3D && (
+        {roofEnabled && showRoofDeck3D && gableEndWallIds.size > 0 && (
           <p className={styles.disclaimer}>
-            ⚠ The roof deck is drawn FLAT, resting on the top plate. Roof panels are installed inclined; tipping
-            them needs this roof&apos;s own pitch, which only resolves on a gable today.
+            ⚠ Not drawn on this building. The deck can only be placed FLAT so far, and this roof has{" "}
+            {gableEndWallIds.size} gable end{gableEndWallIds.size === 1 ? "" : "s"} — a flat deck would cut straight
+            through them. Inclining it needs the roof&apos;s own pitch, which is the next piece of work.
+          </p>
+        )}
+        {roofEnabled && showRoofDeck3D && gableEndWallIds.size === 0 && (
+          <p className={styles.disclaimer}>
+            ⚠ The roof deck is drawn FLAT, resting on the top plate. Right for a flat roof; a pitched one needs
+            its panels inclined, which is the next piece of work.
           </p>
         )}
       </div>
@@ -12368,7 +12380,7 @@ export default function LayoutEditor() {
                   simplified={simplified3D}
                   showWraps={showWraps}
                   showFloorPanels={floorsEnabled && showFloorDeck3D}
-                  showRoofPanels={roofEnabled && showRoofDeck3D}
+                  showRoofPanels={roofEnabled && showRoofDeck3D && gableEndWallIds.size === 0}
                   checkedInteriorIds={checkedInteriorIds}
                   checkedExteriorIds={checkedExteriorIds}
                   tool3D={tool3D}
