@@ -473,6 +473,67 @@ export function buildPlates(widthIn: number, depthIn: number, heightIn: number):
   return members;
 }
 
+/**
+ * The spacing a wall panel's studs may never exceed.
+ *
+ * Equal to the floor/roof panel module on purpose. A floor or roof panel
+ * carries its joists on its two side edges, so a seam lands every 24in; a
+ * stud under every one of those seams is what makes the load path run
+ * straight down instead of through a top plate in bending.
+ *
+ * > *"I like the idea of 4' panels potentially getting a nailer stud of
+ * > different type of braced piece, allowing them to work with the floor and
+ * > roof panels and be 4'."* — Tommy, 2026-10-23
+ */
+export const MAX_STUD_SPACING_IN = 24;
+
+/**
+ * The centre nailers a panel needs so no stud bay is wider than
+ * `MAX_STUD_SPACING_IN`.
+ *
+ * A 48in panel gets one pair at mid-width; a 24in panel gets none. They are
+ * built exactly like corner studs — one on each wythe, full stud span
+ * between the skins — because that is what the floor seam above and below
+ * needs to land on.
+ */
+export function buildCentreNailerStuds(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
+  const bays = Math.max(1, Math.ceil(widthIn / MAX_STUD_SPACING_IN - 1e-9));
+  if (bays < 2) return [];
+  /* ⚠ A centre nailer is a real stud: it sits ON the bottom plate and the
+     top plate sits on IT. The corner posts run the full height instead,
+     because they stand outside the plates' span in x and nothing is in their
+     way. A centre nailer is not — it lands mid-plate, so it stops at the
+     plate faces. Measured before this: four interferences, one per plate. */
+  const plateFaceIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  const studSpanIn = heightIn - 2 * plateFaceIn;
+  const members: PanelMember[] = [];
+  for (let bay = 1; bay < bays; bay++) {
+    const centreXIn = (widthIn * bay) / bays - PLATE_2X4_THICKNESS_IN / 2;
+    for (const [face, yIn] of [
+      ["exterior", 0],
+      ["interior", depthIn - PLATE_2X4_WIDTH_IN],
+    ] as [string, number][]) {
+      members.push({
+        memberId: `stud_centre_${bay}_${face}`,
+        material: "dimensional_lumber",
+        speciesGrade: LUMBER_SPECIES_GRADE,
+        plySpec: null,
+        nominalSize: "2x4",
+        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: studSpanIn },
+        orientation: "vertical",
+        position: { xIn: centreXIn, yIn, zIn: plateFaceIn, rotationDeg: 0 },
+        role: "stud",
+        qty: 1,
+        notes:
+          bay === 1 && face === "exterior"
+            ? `centre nailer — keeps every stud bay at or under ${MAX_STUD_SPACING_IN}in so a floor or roof seam always lands on a stud`
+            : undefined,
+      });
+    }
+  }
+  return members;
+}
+
 /** All 4 corner studs, spanning the full stud height between the 2 skins. */
 export function buildCornerStuds(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
   const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
@@ -1332,6 +1393,14 @@ export function buildGirtRows(rowCount: number, widthIn: number, depthIn: number
   const barLeftXIn = leftStudInnerFaceXIn;
   const barRightXIn = rightStudInnerFaceXIn - PLATE_2X4_WIDTH_IN;
   const studFaceSpanIn = widthIn - 2 * PLATE_2X4_THICKNESS_IN;
+  /* ⚠ The web is RIPPED to the clear space between the studs it runs past.
+     The BOM calls it 8 3/4in, but a 15.5in panel leaves only 8 1/2in between
+     the studs' inner faces, so the nominal web measurably stood 1/8in into
+     every stud it crossed — 8 interferences per panel, and 4 more for every
+     centre nailer a 4ft panel now carries. Two solids cannot share a volume:
+     *"It doesn't make sense to allow any overlapping because these need to
+     possible to build."* A 1/4in rip at the shop is what that costs. */
+  const webHeightIn = Math.min(GIRT_WEB_HEIGHT_IN, depthIn - 2 * PLATE_2X4_WIDTH_IN);
 
   for (let row = 1; row <= rowCount; row++) {
     const centerZIn = SKIN_THICKNESS_IN + (studSpanIn * row) / (rowCount + 1);
@@ -1364,13 +1433,13 @@ export function buildGirtRows(rowCount: number, widthIn: number, depthIn: number
       nominalSize: null,
       actualDimsIn: {
         thicknessIn: GIRT_WEB_THICKNESS_IN,
-        widthIn: GIRT_WEB_HEIGHT_IN,
+        widthIn: webHeightIn,
         lengthIn: studFaceSpanIn + WEB_OVERHANG_TOTAL_IN,
       },
       orientation: "flat",
       position: {
         xIn: barLeftXIn - WEB_OVERHANG_TOTAL_IN / 2,
-        yIn: depthIn / 2 - GIRT_WEB_HEIGHT_IN / 2,
+        yIn: depthIn / 2 - webHeightIn / 2,
         zIn: barTopZIn,
         rotationDeg: 0,
       },

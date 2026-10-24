@@ -104,31 +104,30 @@ const KNOWN_ROTATED: { name: string; members: PanelMember[]; why: string }[] = [
  * They are NOT fixed here because each traces back to a dimension Tommy gave,
  * and choosing which of two of his numbers gives way is his call, not mine:
  *
- *   1. `stud_corner_N x girt_N_web`, 1/4 x 1/8 x 1/2in, 8 per panel, in every
- *      standard-family panel. The web is 8 3/4in tall (his BOM) but the clear
- *      space between the corner studs is 8 1/2in, and his 1/2in web overhang
- *      (*"0.25in overlap onto each girt bar's span — extra bearing surface"*)
- *      pushes it 1/4in past the stud's inner face. Read one way that is a
- *      housed joint and the stud wants a 1/4in notch modelled; read another,
- *      the web is 1/4in too long or 1/4in too tall.
+ *   1. ~~`stud_corner_N x girt_N_web`~~ — **FIXED 2026-10-23.** The web is
+ *      now ripped to the clear space between the studs it runs past. The BOM
+ *      calls it 8 3/4in but a 15.5in panel leaves 8 1/2in, so the nominal web
+ *      stood 1/8in into every stud it crossed. 8 gone per standard-family
+ *      panel, and it unblocked the centre nailer, which would have added 4
+ *      more.
  *   2. `bottom_plate_2x4_ext x nailer`, 1 1/2 x 3 1/2 x 1 1/2in — a whole 2x4
  *      cross-section. Not a joint at all: the nailer is placed inside the
- *      plate. Where it should actually sit is the open question.
- *   3. `girt_N_web x nailer`, 1 1/2 x 1/8 x 1/2in — the same 1/8in as (1),
- *      against the nailer instead of a stud.
- *   4. `girt_1_bar_* x blocking_2_*`, 3 1/2 x 1 1/2 x 1/4in, in column and
+ *      plate. ⚠ This is the OLD `includeNailer` member, not the new centre
+ *      nailer stud — that one sits on the plate properly. Where the old one
+ *      should actually sit is still open.
+ *   3. `girt_1_bar_* x blocking_2_*`, 3 1/2 x 1 1/2 x 1/4in, in column and
  *      corner panels — a girt bar and a blocking row 1/4in into each other.
- *   5. Header chords run 3/4in into the end plywood, 20 pairs per header —
+ *   4. Header chords run 3/4in into the end plywood, 20 pairs per header —
  *      the same error the floor panel's joists had against its lids — plus
  *      the W-truss braces into the chords they land on.
  */
 const BASELINE: Record<string, number> = {
-  standard: 8,
-  "standard + nailer": 11,
-  "standard narrow": 8,
-  column: 12,
-  "column style": 12,
-  corner: 12,
+  // "standard", "standard narrow" and "floor"/"roof" are solid and so are
+  // absent: a panel only appears here while it is still wrong.
+  "standard + nailer": 2,
+  column: 4,
+  "column style": 4,
+  corner: 4,
   "door header": 20,
   "window header": 20,
 };
@@ -165,6 +164,8 @@ describe("⚠ no member occupies the same space as another", () => {
     // Named so a regression reads as a list getting shorter, not a number.
     const clean = CASES.filter(({ name }) => BASELINE[name] === undefined).map(({ name }) => name);
     expect(clean).toEqual([
+      "standard",
+      "standard narrow",
       "safety gap",
       "jack stud",
       "truss plate",

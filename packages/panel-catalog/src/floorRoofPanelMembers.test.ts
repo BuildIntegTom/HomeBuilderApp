@@ -35,41 +35,39 @@ const idsLike = (members: ReturnType<typeof buildFloorRoofPanelMembers>, prefix:
   members.filter((m) => m.memberId.startsWith(prefix));
 
 describe("⚠ the numbers he gave, as numbers", () => {
-  it("⚠ 19 1/4in, chosen for the plywood's black diamonds — and what it costs", () => {
-    /* The module exists because sheathing is marked at 19.2in, five to the
-       8ft: a seam under a diamond is one the crew nails without measuring.
-       19.2 is not a fraction anyone cuts, so both roundings cost something,
-       and this is the measurement that settled it:
+  it("⚠ 24in, and what replacing 19 1/4 with it bought", () => {
+    /* The module started at 19 3/16 — five to the 8ft, so a seam lands under
+       the sheathing's 19.2in black diamonds. It cost a closer panel, a
+       trimmed first sheet, and drift that had to be reset every 8ft, and it
+       never actually divided 8ft.
 
-         19 3/16  worst drift 1/16in,  closes 8ft 1/16 short,  OFF the 1/8 grid
-         19 1/4   worst drift 1/4in,   closes 8ft 1/4 over,    ON the 1/8 grid
+       Tommy, 2026-10-23, once the load path mattered more than the diamonds:
+       *"floors default to 15.5in edge panels, 2' wide panels everywhere else
+       with 4' wall panels with a center nailer, as default"*.
 
-       He took 19 1/4. The drift is four times bigger and still does not
-       matter, because every seam is a DOUBLE JOIST — two 2x6s, 3in of nailing
-       surface — so a diamond 1/4in off its seam is well inside the target. */
-    expect(FLOOR_ROOF_PANEL_WIDTH_IN).toBe(19.25);
-    expect(Number.isInteger(FLOOR_ROOF_PANEL_WIDTH_IN * 8)).toBe(true);
-    const worstDrift = Math.max(...[1, 2, 3, 4].map((n) => Math.abs(n * FLOOR_ROOF_PANEL_WIDTH_IN - n * 19.2)));
-    expect(worstDrift).toBeCloseTo(0.2, 9);
-    // Inside the 3in of doubled joist, by a wide margin.
-    expect(worstDrift).toBeLessThan(2 * JOIST_2X6_THICKNESS_IN);
+       24 divides 8ft exactly — four panels, no drift, no closer — and lines
+       a floor seam up under every wall panel edge and every wall panel's
+       centre nailer. */
+    expect(FLOOR_ROOF_PANEL_WIDTH_IN).toBe(24);
+    expect(96 % FLOOR_ROOF_PANEL_WIDTH_IN).toBe(0);
+    expect(48 % FLOOR_ROOF_PANEL_WIDTH_IN).toBe(0);
   });
 
-  it("⚠ the closer brings every 8ft run back to EXACTLY 96in", () => {
-    /* "have whatever is at the end of every 8' run where plywood would be
-       absorb it." Four field panels are 77in, so the fifth is 19in and the
-       drift resets to zero instead of accumulating — over a 40ft floor, the
-       difference between every sheet landing true and the last being 1 1/4in
-       out. */
-    expect(FLOOR_ROOF_RUN_CLOSER_WIDTH_IN).toBe(19);
-    expect(4 * FLOOR_ROOF_PANEL_WIDTH_IN + FLOOR_ROOF_RUN_CLOSER_WIDTH_IN).toBe(96);
+  it("⚠ there is no closer panel any more, and 0 says so", () => {
+    /* It existed only to drag a 19 1/4 run back onto 96. Four 24s are 96, so
+       there is nothing left for it to close. */
+    expect(FLOOR_ROOF_RUN_CLOSER_WIDTH_IN).toBe(0);
+    expect(4 * FLOOR_ROOF_PANEL_WIDTH_IN).toBe(96);
   });
 
-  it("the first and last panel plus its girt is the wall depth", () => {
-    // "the first and last being the 15.5"-2.25 so that it's load bearing
-    // over/under the wall."
-    expect(FLOOR_ROOF_EDGE_PANEL_WIDTH_IN).toBe(13.25);
-    expect(FLOOR_ROOF_EDGE_PANEL_WIDTH_IN + STRUCTURAL_GIRT_TOTAL_THICKNESS_IN).toBe(15.5);
+  it("⚠ the first and last panel is as wide as the wall is thick", () => {
+    /* *"The edge panels for floors and roofs still have to be 15.5in because
+       thata the wall thickness."* It was 13.25 — 15.5 less a structural girt
+       running along its length — until he settled that no such girt exists:
+       *"The walls that sit overtop one span of a panel do not need more than
+       the one structural girt at the end."* */
+    expect(FLOOR_ROOF_EDGE_PANEL_WIDTH_IN).toBe(15.5);
+    expect(FLOOR_ROOF_EDGE_PANEL_WIDTH_IN).not.toBe(15.5 - STRUCTURAL_GIRT_TOTAL_THICKNESS_IN);
   });
 
   it("blocking every 3ft, anti-twist girts every 5ft", () => {
@@ -201,22 +199,22 @@ describe("⚠ blocking and anti-twist girts are two members, not one", () => {
 });
 
 describe("⚠ both lids are structural, and the last 2x4 is ripped", () => {
-  it("covers the whole lid face: five full 2x4s and a sixth ripped", () => {
+  it("covers the whole lid face: six full 2x4s and a seventh ripped", () => {
     /* "As many 2x4s (vertically when installed) to the face of the lid to
-       entirely cover it - the last may need to be ripped." 19 1/4in over
-       3.5in is 5.5, so five full and one ripped to 1 3/4in.
+       entirely cover it - the last may need to be ripped." 24in over 3.5in
+       is 6.86, so six full and one ripped to 3in.
 
        Each piece runs through the panel's DEPTH and they stack across its
        width, so the dimension that varies is widthIn. */
     const members = buildFloorRoofPanelMembers(floor());
     const face = idsLike(members, "lid-start-face-");
-    expect(face).toHaveLength(6);
+    expect(face).toHaveLength(7);
     const widths = face.map((m) => m.actualDimsIn.widthIn);
     // Every one of them is cut to the panel's depth, not to its own width.
     for (const m of face) expect(m.actualDimsIn.lengthIn).toBe(15.5);
-    expect(widths.filter((w) => w === PLATE_2X4_WIDTH_IN)).toHaveLength(5);
+    expect(widths.filter((w) => w === PLATE_2X4_WIDTH_IN)).toHaveLength(6);
     const ripped = widths.find((w) => w !== PLATE_2X4_WIDTH_IN)!;
-    expect(ripped).toBeCloseTo(FLOOR_ROOF_PANEL_WIDTH_IN - 5 * PLATE_2X4_WIDTH_IN, 9);
+    expect(ripped).toBeCloseTo(FLOOR_ROOF_PANEL_WIDTH_IN - 6 * PLATE_2X4_WIDTH_IN, 9);
     expect(widths.reduce((a, b) => a + b, 0)).toBeCloseTo(FLOOR_ROOF_PANEL_WIDTH_IN, 9);
   });
 
@@ -287,8 +285,9 @@ describe("⚠ laying out a run so the sheets keep landing true", () => {
       let running = 0;
       for (let i = 0; i < field.length; i++) {
         running += field[i]!;
-        const isFifth = (i + 1) % 5 === 0;
-        // A full group of five closes on 96; a part-group at the end does not
+        // Four 24in panels to the sheet now, where it used to take five.
+        const isFifth = (i + 1) % 4 === 0;
+        // A full group of four closes on 96; a part-group at the end does not
         // have to, because the run simply stops there.
         /* ⚠ ...and only before the redistributed tail. A group whose panels
            were pooled into the tail no longer closes on 96, which is the one
@@ -296,7 +295,7 @@ describe("⚠ laying out a run so the sheets keep landing true", () => {
            starts, and the run's own sheet says so. */
         const inRedistributedTail = running > lastTrueFieldIn + 1e-9;
         if (isFifth && i < field.length - 1 && !inRedistributedTail) {
-          expect({ runFt, at: i + 1, running }).toEqual({ runFt, at: i + 1, running: ((i + 1) / 5) * 96 });
+          expect({ runFt, at: i + 1, running }).toEqual({ runFt, at: i + 1, running: ((i + 1) / 4) * 96 });
         }
       }
     }
@@ -329,7 +328,8 @@ describe("⚠ the installer cuts the first sheet, and everything after it lands 
        last seam it can reach. On a 40ft run that is 90 1/4in. */
     const widths = planFloorRoofPanelWidthsIn(40 * 12)!;
     const first = firstPlywoodSheetWidthIn(widths)!;
-    expect(first).toBe(90.25);
+    // 15 1/2in of edge panel plus three 24in field panels.
+    expect(first).toBe(87.5);
     expect(Number.isInteger(first * 8)).toBe(true);
     expect(first).toBeLessThanOrEqual(96);
   });
@@ -397,7 +397,8 @@ describe("⚠ the caps — the L is square, the PANEL meets it at the odd angle"
 
   it("the stiffeners cover the cap's width, last one ripped", () => {
     const g = roofCapGeometry(4, 15.5, FLOOR_ROOF_PANEL_WIDTH_IN);
-    expect(g.stiffenerCount).toBe(6);
+    // 24in of cap over 3.5in stiffeners: six full and a seventh ripped to 3in.
+    expect(g.stiffenerCount).toBe(7);
     expect((g.stiffenerCount - 1) * PLATE_2X4_WIDTH_IN + g.lastStiffenerWidthIn).toBeCloseTo(FLOOR_ROOF_PANEL_WIDTH_IN, 9);
   });
 
@@ -435,7 +436,10 @@ describe("the component schema a SketchUp exporter would read", () => {
     const schema = buildFloorRoofPanelSchema({ ...roofPanel, kind: "floor", structuralGirtEnds: ["start"] });
     const text = schema.notes.map((n) => n.text).join(" ");
     expect(text).toContain("sits flat on the top plate");
-    expect(text).toContain("a little bigger");
+    /* The closer panel's note went with the closer panel — four 24in field
+       panels are exactly 8ft, so nothing has to be trimmed to get back onto
+       the sheet, and the "a little bigger" discrepancy it recorded is moot. */
+    expect(text).toContain("no closer panel and no drift");
   });
 
   it("⚠ overallDimensions is the panel AS FABRICATED, not as installed", () => {
@@ -509,7 +513,7 @@ describe("⚠ the cut list the shop actually gets", () => {
       new Set([
         '235½"', // the joists: the 240in span less 2.25in of lid at each end
         '15½"', // lid face pieces, running through the depth
-        '16¼"', // anti-twist ties: the width less both joists
+        '21"', // anti-twist ties: the 24in width less both joists
         '4½"', // blocking, cut to fit between the 2x6s
       ]),
     );

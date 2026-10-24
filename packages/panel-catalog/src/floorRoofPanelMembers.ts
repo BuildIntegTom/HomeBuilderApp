@@ -73,32 +73,37 @@ export const JOIST_2X6_WIDTH_IN = 5.5;
  * still well inside the target. The diamond is a guide, not a tolerance. And
  * 19 1/4 is on the 1/8in grid the whole app works in, which 19 3/16 is not.
  */
-export const FLOOR_ROOF_PANEL_WIDTH_IN = 19.25;
+export const FLOOR_ROOF_PANEL_WIDTH_IN = 24;
 
 /**
- * The panel that closes an 8ft run.
+ * ⚠ There is no longer a closer panel, and this is kept at 0 to say so.
  *
- * > *"have whatever is at the end of every 8' run where plywood would be
- * > absorb it."*
- *
- * Four field panels come to 77in, so the fifth is 19in and the run lands
- * exactly on 96 — back under a sheet edge, with the drift reset to zero rather
- * than accumulating down the building. Over a 40ft floor that is the
- * difference between every sheet landing true and the last one being 1.25in
- * out.
+ * It existed because four 19 1/4in field panels came to 77in and a fifth had
+ * to be 19in to land the run back on 96. At 24in the module divides 8ft
+ * exactly — four panels, no drift, nothing to reset — so the closer has
+ * nothing left to do.
  */
-export const FLOOR_ROOF_RUN_CLOSER_WIDTH_IN = 96 - 4 * 19.25;
+export const FLOOR_ROOF_RUN_CLOSER_WIDTH_IN = 0;
 
 /**
- * The first and last panel in a run.
+ * The first and last panel in a run: **as wide as the wall is thick**.
  *
- * > *"except for the first and last being the 15.5"-2.25 so that it's load
- * > bearing over/under the wall."*
+ * > *"The edge panels for floors and roofs still have to be 15.5" because
+ * > thata the wall thickness."* — Tommy, 2026-10-23
  *
- * 13.25in, so that the panel PLUS its 2.25in structural girt comes to the
- * 15.5in wall depth and the wall bears fully on the pair.
+ * ⚠ This replaces 13.25in (15.5 less a 2.25in structural girt). That
+ * subtraction assumed a girt running along the edge panel's length, under a
+ * wall parallel to the panels — and he settled that there is no such girt:
+ * *"The walls that sit overtop one span of a panel do not need more than the
+ * one structural girt at the end."* With the girt gone the reason to narrow
+ * the panel went with it, and the edge panel simply carries the wall's full
+ * thickness itself.
+ *
+ * It is a DEFAULT, not a constant of the universe: a building with a
+ * different wall depth wants its own number, which is why
+ * `planFloorRoofPanelWidthsIn` takes it as an argument.
  */
-export const FLOOR_ROOF_EDGE_PANEL_WIDTH_IN = 15.5 - 2.25;
+export const FLOOR_ROOF_EDGE_PANEL_WIDTH_IN = 15.5;
 
 /** Structural girt: 3/4in CDX with a 2x4 at each edge — 2.25in overall. */
 export const STRUCTURAL_GIRT_PLY_THICKNESS_IN = 0.75;
@@ -496,16 +501,15 @@ export function planFloorRoofPanelWidthsIn(runLengthIn: number, edgePanelWidthIn
   if (fieldIn < 0) return null;
   if (fieldIn === 0) return [edgePanelWidthIn, edgePanelWidthIn];
 
+  /* ⚠ No closer panel any more. Four 24in panels are exactly 8ft, so the
+     module never drifts off the sheet and there is nothing to reset. The
+     whole field is one width until the run runs out. */
   const widths: number[] = [];
   let placedIn = 0;
-  let sinceRunStart = 0;
   while (placedIn < fieldIn - 1e-9) {
-    const atCloser = Math.abs(sinceRunStart - 4 * FLOOR_ROOF_PANEL_WIDTH_IN) < 1e-9;
-    const nominal = atCloser ? FLOOR_ROOF_RUN_CLOSER_WIDTH_IN : FLOOR_ROOF_PANEL_WIDTH_IN;
-    const widthIn = Math.min(nominal, fieldIn - placedIn);
+    const widthIn = Math.min(FLOOR_ROOF_PANEL_WIDTH_IN, fieldIn - placedIn);
     widths.push(widthIn);
     placedIn += widthIn;
-    sinceRunStart = atCloser ? 0 : sinceRunStart + widthIn;
   }
 
   const field = redistributeNarrowTail(widths);
@@ -794,9 +798,9 @@ export function buildFloorRoofPanelSchema(options: FloorRoofPanelOptions, pitchI
     {
       type: "deviation",
       text:
-        `The panel that closes each 8ft run is ${FLOOR_ROOF_RUN_CLOSER_WIDTH_IN}in — a quarter inch SMALLER than a field panel, ` +
-        "which is what lands the run on 96in. He had said \"5 panels later it's a little bigger\" and the arithmetic needed " +
-        "smaller; confirmed smaller 2026-10-23 (\"Smaller sounds fine\").",
+        `Field panels are ${FLOOR_ROOF_PANEL_WIDTH_IN}in and the edge ones are as wide as the wall is thick. Four field panels ` +
+        "make exactly 8ft, so the sheathing above lands on a panel seam every sheet with no closer panel and no drift. " +
+        "This replaced a 19 3/16in module whose fifth panel had to be trimmed to 19in to get back onto 96in.",
     },
   ];
   if (isRoof && pitchIn12 === undefined) {

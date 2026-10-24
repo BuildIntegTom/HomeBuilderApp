@@ -37,8 +37,19 @@ describe("computeMemberSetWoodWeight", () => {
     const members = buildStandardPanelMembers(48, 15.5, 120, false);
     const fromMembers = computeMemberSetWoodWeight(members);
     const fromFlatBom = computeStandardPanelWoodWeight(false);
+    /* ⚠ The real panel is now about a QUARTER heavier than the flat BOM
+       says, and the gap is the point rather than noise to widen a window
+       around. On 2026-10-23 a 4ft panel gained two centre nailer studs, so
+       that the 2ft floor and roof module lands a seam on a stud every time.
+       The flat BOM predates them and does not know they exist.
+
+       So `computeMemberSetWoodWeight` is the accurate one and
+       `computeStandardPanelWoodWeight` is a reference that has drifted. This
+       bound is deliberately asymmetric to record which way. */
     expect(fromMembers.weightLb).toBeGreaterThan(fromFlatBom.weightLb * 0.8);
-    expect(fromMembers.weightLb).toBeLessThan(fromFlatBom.weightLb * 1.2);
+    expect(fromMembers.weightLb).toBeLessThan(fromFlatBom.weightLb * 1.35);
+    const twoNailersLb = 2 * ((1.5 * 3.5 * 115.5) / 1728) * 32;
+    expect(fromMembers.weightLb - fromFlatBom.weightLb).toBeLessThan(twoNailersLb * 1.5);
   });
 
   it("gives a braced panel more wood weight than a standard panel at the same dimensions (real brace/connector geometry, not the flat same-BOM assumption)", () => {

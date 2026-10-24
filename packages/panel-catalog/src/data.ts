@@ -18,9 +18,9 @@ export const squareBalePanel = {
 };
 
 export const looseDensePackWidthIn: CatalogValue<number> = {
-  value: 40,
+  value: 48,
   status: "confirmed",
-  note: "40\" (Tommy) — updated default; panel sizes are meant to stay adjustable on the back end since this is still an engineering work in progress. NOTE: Panel Set 1's wood BOM (bottom/top plates, studs, girts) is dimensioned specifically for the 48\" panel, so computeStandardPanelWoodWeight() won't be exactly accurate for a 40\" panel until the BOM is made parametric to width — flagged in the Review Log.",
+  note: "48\" (Tommy, 2026-10-23): \"floors default to 15.5\" edge panels, 2' wide panels everywhere else with 4' wall panels with a center nailer, as default\". Chosen so the load path runs straight down: a 4ft wall panel is exactly two 2ft floor/roof panels, so every floor seam lands under either a wall panel edge or its centre nailer, and every roof joist lands on a stud. Was 40\". NOTE: this also retires a Review Log item — Panel Set 1's wood BOM was always dimensioned for the 48\" panel, so computeStandardPanelWoodWeight() is accurate again at this default rather than approximate.",
 };
 
 export const standardPanelHeightIn: CatalogValue<number> = {

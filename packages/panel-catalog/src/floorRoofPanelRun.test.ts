@@ -58,10 +58,12 @@ describe("one building's worth of floor panels", () => {
     }
   });
 
-  it("a 40ft run needs only four sheets to describe its whole floor", () => {
-    /* The point of grouping: 26 placed panels, a handful of unique ones. */
+  it("a 40ft run needs only a few sheets to describe its whole floor", () => {
+    /* The point of grouping: 21 placed panels, a handful of unique ones.
+       At the old 19 1/4 module it took 26, and three of the groups existed
+       only to manage drift. */
     const plan = planFloorRoofPanelRun(floor());
-    expect(plan.instances).toHaveLength(26);
+    expect(plan.instances).toHaveLength(21);
     expect(plan.groups.length).toBeLessThan(6);
     expect(plan.groups[0]!.role).toBe("edge");
   });
@@ -77,7 +79,8 @@ describe("one building's worth of floor panels", () => {
 describe("the plywood that ties the panels together", () => {
   it("the trimmed first sheet puts every sheet after it on a seam", () => {
     const plan = planFloorRoofPanelRun(floor());
-    expect(plan.firstSheetWidthIn).toBe(90.25);
+    // 15 1/2in of edge panel plus three 24in field panels.
+    expect(plan.firstSheetWidthIn).toBe(87.5);
     // Which is a seam: the edge panel plus four field panels.
     const seams = new Set<number>();
     let at = 0;

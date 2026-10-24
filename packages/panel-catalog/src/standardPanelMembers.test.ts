@@ -39,7 +39,10 @@ describe("buildStandardPanelMembers", () => {
 
   it("places all 4 corner studs at the panel's 4 corners, spanning the full stud height between the skins", () => {
     const members = buildStandardPanelMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN, false);
-    const studs = members.filter((m) => m.role === "stud");
+    /* Corner posts only — a 4ft panel also carries centre nailer studs, which
+       are the same role but stop at the plates rather than running the full
+       height, and have their own test below. */
+    const studs = members.filter((m) => m.memberId.startsWith("stud_corner_"));
     expect(studs).toHaveLength(4);
     for (const stud of studs) {
       expect(stud.actualDimsIn.lengthIn).toBeCloseTo(118.5, 6); // 120 - 2*0.75
@@ -91,13 +94,15 @@ describe("buildStandardPanelMembers", () => {
   it("omits the nailer when includeNailer is false, includes it centered on the exterior wythe when true", () => {
     const without = buildStandardPanelMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN, false);
     expect(without.find((m) => m.role === "nailer")).toBeUndefined();
-    expect(without).toHaveLength(16); // 2 skins + 4 plate 2x4s + 4 studs + 4 girt bars + 2 girt webs
+    // 2 skins + 4 plate 2x4s + 4 corner studs + 4 girt bars + 2 girt webs,
+    // plus 2 centre nailers now that the default panel is 4ft wide.
+    expect(without).toHaveLength(18);
 
     const withNailer = buildStandardPanelMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN, true);
     const nailer = findMember(withNailer, "nailer");
     expect(nailer.actualDimsIn.lengthIn).toBeCloseTo(115.5, 6); // 120 - 4.5 (deficit derived from the 120in reference)
     expect(nailer.position).toEqual({ xIn: WIDTH_IN / 2 - 0.75, yIn: 0, zIn: 0.75, rotationDeg: 0 });
-    expect(withNailer).toHaveLength(17);
+    expect(withNailer).toHaveLength(19); // 18 plus the nailer
   });
 
   it("stays parametric to a different selected width/depth (not hardcoded to the 48in x 15.5in reference)", () => {
@@ -212,5 +217,60 @@ describe("buildStandardPanelSchema", () => {
     const deviated = buildStandardPanelSchema(WIDTH_IN, DEPTH_IN, HEIGHT_IN, false);
     expect(deviated.notes).toHaveLength(1);
     expect(deviated.notes[0]!.type).toBe("deviation");
+  });
+});
+
+describe("⚠ the centre nailer that lets a 4ft panel carry 2ft floors", () => {
+  /* > *"I like the idea of 4' panels potentially getting a nailer stud of
+     > different type of braced piece, allowing them to work with the floor and
+     > roof panels and be 4'."* — Tommy, 2026-10-23
+
+     A floor or roof panel carries its joists on its two side edges, so at the
+     2ft module a seam lands every 24in. Without a stud at mid-panel, every
+     other one of those seams would land on 4ft of top plate in bending. */
+
+  it("a 4ft panel gets one pair; a 2ft panel needs none", () => {
+    const wide = buildStandardPanelMembers(48, DEPTH_IN, HEIGHT_IN, false);
+    expect(wide.filter((m) => m.memberId.startsWith("stud_centre_"))).toHaveLength(2);
+    const narrow = buildStandardPanelMembers(24, DEPTH_IN, HEIGHT_IN, false);
+    expect(narrow.filter((m) => m.memberId.startsWith("stud_centre_"))).toHaveLength(0);
+  });
+
+  it("⚠ no stud bay is ever wider than the floor module", () => {
+    /* The property that matters, swept rather than spot-checked: whatever
+       width a wall tiles to, a 24in floor seam always has a stud under it. */
+    for (let widthIn = 24; widthIn <= 48; widthIn += 0.125) {
+      const members = buildStandardPanelMembers(widthIn, DEPTH_IN, HEIGHT_IN, false);
+      const xs = [
+        0,
+        ...members.filter((m) => m.memberId.startsWith("stud_centre_") && m.memberId.endsWith("exterior")).map((m) => m.position.xIn + 0.75),
+        widthIn,
+      ].sort((a, b) => a - b);
+      for (let i = 1; i < xs.length; i++) {
+        expect({ widthIn, bay: xs[i]! - xs[i - 1]! <= 24 + 1e-9 }).toEqual({ widthIn, bay: true });
+      }
+    }
+  });
+
+  it("⚠ it sits ON the bottom plate, unlike a corner post", () => {
+    /* A corner post runs the full height because it stands outside the
+       plates' span in x. A centre nailer lands mid-plate, so it stops at the
+       plate faces — and until it did, it measurably occupied the same space
+       as all four of them. */
+    const members = buildStandardPanelMembers(48, DEPTH_IN, HEIGHT_IN, false);
+    const nailer = members.find((m) => m.memberId === "stud_centre_1_exterior")!;
+    const corner = members.find((m) => m.memberId === "stud_corner_1")!;
+    expect(nailer.position.zIn).toBeCloseTo(2.25, 9);
+    expect(corner.position.zIn).toBeCloseTo(0.75, 9);
+    expect(nailer.actualDimsIn.lengthIn).toBeCloseTo(corner.actualDimsIn.lengthIn - 3, 9);
+  });
+
+  it("one on each wythe, so both faces have something to nail to", () => {
+    const members = buildStandardPanelMembers(48, DEPTH_IN, HEIGHT_IN, false);
+    const ext = members.find((m) => m.memberId === "stud_centre_1_exterior")!;
+    const int = members.find((m) => m.memberId === "stud_centre_1_interior")!;
+    expect(ext.position.yIn).toBe(0);
+    expect(int.position.yIn).toBeCloseTo(DEPTH_IN - 3.5, 9);
+    expect(ext.position.xIn).toBeCloseTo(int.position.xIn, 9);
   });
 });

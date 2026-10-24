@@ -4,6 +4,51 @@ import type { PanelMember } from "./componentSchema";
 import { buildGablePanelMembers } from "./gablePanelMembers";
 import type { WorldPlacedPanel } from "./panelObjExport";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
+
+/**
+ * ⚠ The standard panel AS IT WAS when the fixture was captured.
+ *
+ * The fixture is a frozen record of the EXPORTER's output and must never be
+ * regenerated. But its input was never frozen: it calls the live builder, so
+ * any member added to the standard panel later changes the input and breaks
+ * the comparison without the exporter having moved at all.
+ *
+ * That happened on 2026-10-23, when 4ft wall panels gained a centre nailer
+ * stud. The nailer is not a new member SHAPE — it is an ordinary vertical
+ * box, already represented several times over in this fixture — so dropping
+ * it loses no coverage, and keeping the input fixed is what lets the fixture
+ * go on proving what it was written to prove.
+ */
+function goldenStandardPanelMembers(): PanelMember[] {
+  return buildStandardPanelMembers(48, 14, 96, true).filter((m) => !m.memberId.startsWith("stud_centre_"));
+}
+
+/**
+ * ⚠ The girt web AS IT WAS when the fixture was captured, for the same
+ * reason.
+ *
+ * On 2026-10-23 the web stopped being a flat 8 3/4in and started being ripped
+ * to the clear space between the studs it runs past, because at 8 3/4 it
+ * measurably stood 1/8in inside every one of them. On this fixture's 14in-deep
+ * panels that takes the web to 7in — a change to the PANEL, not to the
+ * exporter, and the fixture exists to pin the exporter.
+ *
+ * A web is a plain flat box, a shape this fixture covers many times over, so
+ * holding it at its captured size loses no coverage.
+ */
+const CAPTURED_GIRT_WEB_HEIGHT_IN = 8.75;
+
+function asCaptured(members: PanelMember[]): PanelMember[] {
+  return members.map((m) => {
+    if (!/^girt_\d+_web$/.test(m.memberId)) return m;
+    const nowIn = m.actualDimsIn.widthIn;
+    return {
+      ...m,
+      actualDimsIn: { ...m.actualDimsIn, widthIn: CAPTURED_GIRT_WEB_HEIGHT_IN },
+      position: { ...m.position, yIn: m.position.yIn + (nowIn - CAPTURED_GIRT_WEB_HEIGHT_IN) / 2 },
+    };
+  });
+}
 import { buildTrussPlateMembers } from "./trussPlateMembers";
 
 /**
@@ -111,10 +156,10 @@ export function goldenMembers(): PanelMember[] {
   ];
 
   return [
-    ...buildStandardPanelMembers(48, 14, 96, true),
-    ...buildBracedPanelMembers(48, 14, 96, true, "chevron", false),
-    ...buildBracedPanelMembers(48, 14, 96, false, "hatch", true),
-    ...buildGablePanelMembers(48, 14, 12, 60, false),
+    ...asCaptured(goldenStandardPanelMembers()),
+    ...asCaptured(buildBracedPanelMembers(48, 14, 96, true, "chevron", false)),
+    ...asCaptured(buildBracedPanelMembers(48, 14, 96, false, "hatch", true)),
+    ...asCaptured(buildGablePanelMembers(48, 14, 12, 60, false)),
     ...buildTrussPlateMembers(96, 14),
     ...buildBoxBeamMembers(96, 14),
     ...handBuilt,
@@ -131,7 +176,7 @@ export function goldenPanels(): WorldPlacedPanel[] {
       worldXIn: 0,
       worldZIn: 0,
       rotationRad: 0,
-      members: buildStandardPanelMembers(48, 14, 96, true),
+      members: asCaptured(goldenStandardPanelMembers()),
     },
     {
       label: "panel_b",
@@ -139,7 +184,7 @@ export function goldenPanels(): WorldPlacedPanel[] {
       worldZIn: -37.25,
       worldYIn: 96,
       rotationRad: Math.PI / 2,
-      members: buildBracedPanelMembers(48, 14, 96, true, "chevron", true),
+      members: asCaptured(buildBracedPanelMembers(48, 14, 96, true, "chevron", true)),
     },
     {
       label: "panel_c_blob",

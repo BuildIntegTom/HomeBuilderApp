@@ -1,6 +1,6 @@
 import { standardPanelBomReferenceWidthIn, standardPanelHeightIn } from "./data";
 import type { PanelComponentSchema, PanelMember } from "./componentSchema";
-import { SKIN_THICKNESS_IN, buildCornerStuds, buildGirtRows, buildNailer, buildPlates, buildSkins } from "./panelMemberHelpers";
+import { SKIN_THICKNESS_IN, buildCentreNailerStuds, buildCornerStuds, buildGirtRows, buildNailer, buildPlates, buildSkins } from "./panelMemberHelpers";
 
 const STANDARD_GIRT_ROW_COUNT = 2;
 
@@ -48,6 +48,7 @@ export function buildStandardPanelMembers(
     ...buildSkins(widthIn, depthIn, heightIn),
     ...buildPlates(widthIn, depthIn, heightIn),
     ...buildCornerStuds(widthIn, depthIn, heightIn),
+    ...buildCentreNailerStuds(widthIn, depthIn, heightIn),
     ...buildGirtRows(computeStandardGirtRowCount(heightIn), widthIn, depthIn, studSpanIn),
   ];
   if (includeNailer) members.push(buildNailer(widthIn, heightIn));
