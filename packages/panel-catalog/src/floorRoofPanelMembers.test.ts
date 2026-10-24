@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ANTI_TWIST_SPACING_IN,
+  lastTrueSheetSeamIn,
   FLOOR_ROOF_RUN_CLOSER_WIDTH_IN,
   JOIST_2X6_THICKNESS_IN,
   planFloorRoofPanelWidthsIn,
@@ -18,6 +19,7 @@ import {
   type FloorRoofPanelOptions,
 } from "./floorRoofPanelMembers";
 import { PLATE_2X4_WIDTH_IN, memberBoxSizeIn } from "./panelMemberHelpers";
+import type { PanelMember } from "./componentSchema";
 import { computePanelCutList } from "./panelCutList";
 
 const floor = (over: Partial<FloorRoofPanelOptions> = {}): FloorRoofPanelOptions => ({
@@ -105,9 +107,14 @@ describe("⚠ a joist is a PAIR, and the seams make it a double double", () => {
     expect(a.length + b.length).toBe(4);
   });
 
-  it("the joists run the panel's full length", () => {
+  it("⚠ the joists run between the LIDS, not the panel's full length", () => {
+    /* 2.25in of lid at each end — a 3/4in skin plus the 2x4s facing it — and
+       the joists stop short of both, the way a standard panel's studs stop
+       short of its plates. They used to run the full length and measurably
+       occupied the same space as the lids: 16 overlapping pairs. */
     const members = buildFloorRoofPanelMembers(floor({ lengthIn: 180 }));
-    for (const m of idsLike(members, "joist-")) expect(m.actualDimsIn.lengthIn).toBe(180);
+    for (const m of idsLike(members, "joist-")) expect(m.actualDimsIn.lengthIn).toBe(180 - 4.5);
+    for (const m of idsLike(members, "joist-")) expect(m.position.zIn).toBe(2.25);
   });
 });
 
@@ -177,9 +184,11 @@ describe("⚠ blocking and anti-twist girts are two members, not one", () => {
     const members = buildFloorRoofPanelMembers(floor({ lengthIn: 240 }));
     const top = members.find((m) => m.memberId === "anti-twist-0-top")!;
     const bottom = members.find((m) => m.memberId === "anti-twist-0-bottom")!;
-    // Spanning the full width, which is what "horizontal" means in the panel
-    // — so the panel's width is the piece's cut LENGTH.
-    expect(top.actualDimsIn.lengthIn).toBe(FLOOR_ROOF_PANEL_WIDTH_IN);
+    /* Horizontal means it runs ACROSS the panel — so that direction is its
+       cut LENGTH. It is cut to the space between the joists, not the panel's
+       full width: *"Girts should all be dynamic components kind of thing to
+       the size of the space in-between the joists."* */
+    expect(top.actualDimsIn.lengthIn).toBe(FLOOR_ROOF_PANEL_WIDTH_IN - 2 * JOIST_2X6_THICKNESS_IN);
     expect(top.actualDimsIn.widthIn).toBe(PLATE_2X4_WIDTH_IN);
     expect(bottom.position.yIn).toBe(0);
     expect(top.position.yIn).toBe(15.5 - PLATE_2X4_WIDTH_IN);
@@ -274,13 +283,19 @@ describe("⚠ laying out a run so the sheets keep landing true", () => {
       // Field panels only — the edge ones carry the wall and sit outside the
       // sheet module (see the planner's own note on the datum).
       const field = widths.slice(1, -1);
+      const lastTrueFieldIn = (lastTrueSheetSeamIn(widths) ?? 0) - widths[0]!;
       let running = 0;
       for (let i = 0; i < field.length; i++) {
         running += field[i]!;
         const isFifth = (i + 1) % 5 === 0;
         // A full group of five closes on 96; a part-group at the end does not
         // have to, because the run simply stops there.
-        if (isFifth && i < field.length - 1) {
+        /* ⚠ ...and only before the redistributed tail. A group whose panels
+           were pooled into the tail no longer closes on 96, which is the one
+           thing his 12in minimum costs. `lastTrueSheetSeamIn` is where that
+           starts, and the run's own sheet says so. */
+        const inRedistributedTail = running > lastTrueFieldIn + 1e-9;
+        if (isFifth && i < field.length - 1 && !inRedistributedTail) {
           expect({ runFt, at: i + 1, running }).toEqual({ runFt, at: i + 1, running: ((i + 1) / 5) * 96 });
         }
       }
@@ -336,11 +351,22 @@ describe("⚠ the installer cuts the first sheet, and everything after it lands 
          installer cuts the last sheet exactly as they cut the first. My first
          version of this asserted it anyway and failed on a 24ft run at
          282.25in, two thirds of the way into the final 13.25in panel. */
-      const fieldEndsAt = runFt * 12 - FLOOR_ROOF_EDGE_PANEL_WIDTH_IN;
-      for (let k = 1; first + 96 * k <= fieldEndsAt + 1e-9; k++) {
+      /* ⚠ And only as far as `lastTrueSheetSeamIn` says. Redistributing a
+         too-narrow tail eats backwards into the last complete 8ft group, so
+         the seam that group would have closed on is gone. That is the price
+         of his 12in minimum, and the sheet itself tells the installer where
+         the true seams stop rather than leaving them to find out. */
+      const lastTrue = lastTrueSheetSeamIn(widths)!;
+      for (let k = 1; first + 96 * k <= lastTrue + 1e-9; k++) {
         const edge = Math.round((first + 96 * k) * 16) / 16;
         expect({ runFt, edge, lands: seams.has(edge) }).toEqual({ runFt, edge, lands: true });
       }
+      /* And the part past it is bounded. Measured over every run from 26.5in
+         to 120ft: the worst is 107.875in, on a 17.6ft run. So the installer
+         cuts the first sheet, the middle of the run lands true, and at most
+         a sheet and a bit at the far end gets cut as well. */
+      const pastIn = runFt * 12 - FLOOR_ROOF_EDGE_PANEL_WIDTH_IN - lastTrue;
+      expect({ runFt, overBound: pastIn > 107.875 + 1e-9 }).toEqual({ runFt, overBound: false });
     }
   });
 });
@@ -481,9 +507,9 @@ describe("⚠ the cut list the shop actually gets", () => {
     );
     expect(lumberLengths).toEqual(
       new Set([
-        '240"', // the joists, the panel's full span
+        '235½"', // the joists: the 240in span less 2.25in of lid at each end
         '15½"', // lid face pieces, running through the depth
-        '19¼"', // anti-twist ties, spanning the width
+        '16¼"', // anti-twist ties: the width less both joists
         '4½"', // blocking, cut to fit between the 2x6s
       ]),
     );
@@ -506,5 +532,97 @@ describe("⚠ the cut list the shop actually gets", () => {
       expect(r.materialLabel.length).toBeGreaterThan(0);
       expect(r.lengthLabel.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("⚠ no two members occupy the same space", () => {
+  /* The check that found the whole class. Girts were cut to the panel's full
+     width and ran straight THROUGH both joists — 50 overlapping pairs on one
+     floor panel — and the joists ran past the lids for another 16. Bounds
+     tests could not see any of it, because every member was inside the panel.
+
+     For comparison: a standard panel has 8, all girt-web-over-corner-stud,
+     which is an accepted modelling convention across the app. Floor and roof
+     panels are held to zero because nothing in them needs that licence. */
+  const overlappingPairs = (members: PanelMember[]) => {
+    const boxes = members.map((m) => {
+      const size = memberBoxSizeIn(m);
+      return {
+        id: m.memberId,
+        x0: m.position.xIn, x1: m.position.xIn + size.xIn,
+        y0: m.position.yIn, y1: m.position.yIn + size.yIn,
+        z0: m.position.zIn, z1: m.position.zIn + size.zIn,
+      };
+    });
+    const found: string[] = [];
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]!;
+        const b = boxes[j]!;
+        const ox = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+        const oy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+        const oz = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0);
+        if (ox > 1e-6 && oy > 1e-6 && oz > 1e-6) found.push(`${a.id} x ${b.id}`);
+      }
+    }
+    return found;
+  };
+
+  it("on a floor panel, at every width a run can produce", () => {
+    for (const widthIn of [FLOOR_ROOF_EDGE_PANEL_WIDTH_IN, 12, 13.5, 15.5, 19, FLOOR_ROOF_PANEL_WIDTH_IN, 21.5, 23.875]) {
+      for (const girtEnds of [[], ["start"], ["start", "end"]] as ("start" | "end")[][]) {
+        const members = buildFloorRoofPanelMembers({
+          kind: "floor", widthIn, depthIn: 15.5, lengthIn: 300, structuralGirtEnds: girtEnds,
+        });
+        expect({ widthIn, girtEnds: girtEnds.join("+"), overlaps: overlappingPairs(members) }).toEqual({
+          widthIn, girtEnds: girtEnds.join("+"), overlaps: [],
+        });
+      }
+    }
+  });
+
+  it("on a roof panel, caps and all", () => {
+    const options = { kind: "roof" as const, widthIn: FLOOR_ROOF_PANEL_WIDTH_IN, depthIn: 15.5, lengthIn: 300, structuralGirtEnds: [] };
+    const members = [
+      ...buildFloorRoofPanelMembers(options),
+      ...buildRoofPanelCapMembers(options, "eave", 4),
+    ];
+    /* ⚠ Caps are excluded, and that is a real gap rather than a licence.
+       Measured: every cap member sits at the same z as every other, so the
+       web, the seat and all six stiffeners occupy one plane at the panel's
+       end and run back into the lid. It is a stack, not an L.
+
+       Not fixed here because placing the L properly needs the seat's bearing
+       width settled first, and that is still one of the readings of his
+       sentence awaiting a word from him. The rest of the panel is held to
+       zero. */
+    const offending = overlappingPairs(members).filter((pair) => !pair.includes("cap-"));
+    expect(offending).toEqual([]);
+  });
+
+  it("⚠ the girts are cut to the space between the joists, which is what fixed it", () => {
+    // "Girts should all be dynamic components kind of thing to the size of the
+    // space in-between the joists." A girt is the panel width less both joists.
+    const members = buildFloorRoofPanelMembers({
+      kind: "floor", widthIn: FLOOR_ROOF_PANEL_WIDTH_IN, depthIn: 15.5, lengthIn: 300, structuralGirtEnds: ["start"],
+    });
+    const expectedIn = FLOOR_ROOF_PANEL_WIDTH_IN - 2 * JOIST_2X6_THICKNESS_IN;
+    const web = members.find((m) => m.memberId === "anti-twist-0-web")!;
+    expect(web.actualDimsIn.lengthIn).toBe(expectedIn);
+    expect(web.position.xIn).toBe(JOIST_2X6_THICKNESS_IN);
+    const tie = members.find((m) => m.memberId === "anti-twist-0-top")!;
+    expect(tie.actualDimsIn.lengthIn).toBe(expectedIn);
+    const girtWeb = members.find((m) => m.memberId === "structural-girt-start-web")!;
+    expect(girtWeb.actualDimsIn.lengthIn).toBe(expectedIn);
+  });
+
+  it("⚠ the joists are cut to run BETWEEN the lids", () => {
+    // 2.25in of lid at each end: a 3/4in skin plus the 2x4s facing it.
+    const members = buildFloorRoofPanelMembers({
+      kind: "floor", widthIn: FLOOR_ROOF_PANEL_WIDTH_IN, depthIn: 15.5, lengthIn: 300, structuralGirtEnds: [],
+    });
+    const joist = members.find((m) => m.memberId === "joist-left-top")!;
+    expect(joist.actualDimsIn.lengthIn).toBe(295.5);
+    expect(joist.position.zIn).toBe(2.25);
   });
 });

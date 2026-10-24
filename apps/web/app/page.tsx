@@ -308,7 +308,7 @@ import {
   type PanelMember,
   type PanelStructuralStatus,
   planFloorRoofPanelRun,
-  floorRoofPanelMinimumWidthIn,
+  FLOOR_ROOF_MIN_PANEL_WIDTH_IN,
   type RoofCatcherBeamShape,
   type RoofSystemType,
   type RoofTrussSpacingIn,
@@ -14102,7 +14102,18 @@ export default function LayoutEditor() {
                           ? `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries a structural girt at each end, where a wall lands on it.`
                           : `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries no structural girt — a roof panel bears on both wythes of the inclined wall panel below it.`}{" "}
                         It is panel {group.instances.map((i) => i.name).join(", ")} of{" "}
-                        {group.plan.instances.length} across a {formatLengthIn(group.runIn, unitSystem)} run.
+                        {group.plan.instances.length} across a {formatLengthIn(group.runIn, unitSystem)} run.{" "}
+                        {group.plan.lastTrueSheetSeamIn !== null && (
+                          <>
+                            Sheathing above: cut the first sheet to{" "}
+                            <strong>{formatLengthIn(group.plan.firstSheetWidthIn ?? 0, unitSystem)}</strong> and every
+                            full sheet after it lands on a panel seam as far as{" "}
+                            <strong>{formatLengthIn(group.plan.lastTrueSheetSeamIn, unitSystem)}</strong> along the run
+                            ({group.plan.sheetCount} sheets). Past that the panels were re-divided to keep every one of
+                            them at or above the {FLOOR_ROOF_MIN_PANEL_WIDTH_IN}in minimum, so the last sheet or so
+                            gets cut the same way the first one does.
+                          </>
+                        )}
                       </>
                     }
                     widthIn={group.widthIn}
@@ -14134,9 +14145,11 @@ export default function LayoutEditor() {
                     schedule exists for these panels, so the weight checker shows fasteners as not modeled rather
                     than zero; the eave/ridge cap&apos;s flat leg is modeled bearing the full {thicknessIn}in wall
                     depth, which is a reading of &quot;the L plate sits flat on the top plate&quot; and not a
-                    dimension he gave; and the narrowest panel these widths can hold together is{" "}
-                    {floorRoofPanelMinimumWidthIn(group.kind === "floor")}in, measured off the members themselves
-                    because no minimum panel width has been set for floors or roofs.
+                    dimension he gave; and on that same cap the web, seat and stiffeners are still stacked at the
+                    panel&apos;s end rather than placed as a true L, which is the next thing to fix once that
+                    bearing width is settled. Panel widths themselves are settled: a {FLOOR_ROOF_MIN_PANEL_WIDTH_IN}in
+                    minimum, redistributed into the neighbouring panels when a run would otherwise close with a
+                    sliver.
                   </p>
                 </StickyNote>
               );

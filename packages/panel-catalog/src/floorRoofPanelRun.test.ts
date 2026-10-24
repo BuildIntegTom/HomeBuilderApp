@@ -109,39 +109,43 @@ describe("⚠ what this plan will not pretend about", () => {
     expect(exact.instances).toHaveLength(2);
   });
 
-  it("⚠ names the panel a 20ft run plans that CANNOT be built", () => {
-    /* Measured: a 240in run closes with a panel 2.25in wide, and at that
-       width the two joists overlap and members spill 1.25in outside the
-       panel box. The run is still returned — a 20ft floor is an ordinary
-       thing to want, and what gives is a decision about widths. */
+  it("⚠ the 20ft run that used to plan a 2 1/4in sliver now redistributes it", () => {
+    /* This is the test that used to assert the sliver. A 240in run closed
+       with a panel 2.25in wide — narrower than its own two joists, which
+       measurably overlapped. Tommy, 2026-10-23: *"Real minimum is 12in for
+       width, though it should Redistribute if not possible"*. */
     const plan = planFloorRoofPanelRun(floor({ runLengthIn: 240 }));
-    expect(plan.narrowestWidthIn).toBe(2.25);
-    expect(plan.impossiblePanels.map((i) => i.name)).toEqual(["F13"]);
-    expect(plan.impossibleWarning).toContain("2.25in");
-    expect(plan.impossibleWarning).toContain("spill outside the panel");
-    expect(plan.refusal).toBeNull();
-    expect(plan.groups.length).toBeGreaterThan(0);
+    expect(plan.narrowestWidthIn).toBe(FLOOR_ROOF_EDGE_PANEL_WIDTH_IN);
+    expect(Math.min(...plan.instances.slice(1, -1).map((i) => i.widthIn))).toBeGreaterThanOrEqual(12);
+    expect(plan.impossiblePanels).toEqual([]);
+    expect(plan.impossibleWarning).toBeNull();
+    // Still exact, which is the whole point of redistributing rather than trimming.
+    expect(plan.instances.reduce((a, i) => a + i.widthIn, 0)).toBe(240);
   });
 
-  it("⚠ the minimum is the members own width, and the girt raises it", () => {
-    /* 3in is the two joists; 7in is the structural girt's two 2x4s laid side
-       by side. Both measured off the built panel, not chosen. */
+  it("⚠ no run anywhere plans a panel under his 12in minimum", () => {
+    /* Swept, because redistribution has to hold at every length, not at the
+       handful anybody thinks to try. */
+    for (let runIn = 26.5; runIn <= 900; runIn += 0.125) {
+      const plan = planFloorRoofPanelRun(floor({ runLengthIn: runIn }));
+      if (plan.refusal !== null) continue;
+      const field = plan.instances.slice(1, -1);
+      if (field.length === 0) continue;
+      const narrowest = Math.min(...field.map((i) => i.widthIn));
+      expect({ runIn, under12: narrowest < 12 - 1e-9 }).toEqual({ runIn, under12: false });
+      expect({ runIn, impossible: plan.impossiblePanels.length }).toEqual({ runIn, impossible: 0 });
+    }
+  });
+
+  it("the geometric minimum is now a backstop his 12in sits above", () => {
+    /* floorRoofPanelMinimumWidthIn says what can physically hold together —
+       3in for the joists alone, 7in once a structural girt's two 2x4s are in.
+       Both are below 12, so his decision governs and this never fires. It is
+       kept because it is measured off the members: if a member ever grows,
+       the backstop moves with it and the 12in may stop being enough. */
     expect(floorRoofPanelMinimumWidthIn(false)).toBe(3);
     expect(floorRoofPanelMinimumWidthIn(true)).toBe(7);
-    // So the same run is fine on a roof and not on a girted floor.
-    const sevenish = planFloorRoofPanelRun(floor({ runLengthIn: 360 }));
-    expect(sevenish.narrowestWidthIn).toBe(7);
-    expect(sevenish.impossiblePanels).toEqual([]);
-    const roof = planFloorRoofPanelRun(floor({ runLengthIn: 240, kind: "roof" }));
-    expect(roof.narrowestWidthIn).toBe(2.25);
-    expect(roof.impossiblePanels.map((i) => i.name)).toEqual(["R13"]);
-  });
-
-  it("stays quiet when every panel holds its own members", () => {
-    const plan = planFloorRoofPanelRun(floor({ runLengthIn: 480 }));
-    expect(plan.narrowestWidthIn).toBeGreaterThanOrEqual(floorRoofPanelMinimumWidthIn(true));
-    expect(plan.impossibleWarning).toBeNull();
-    expect(plan.impossiblePanels).toEqual([]);
+    expect(floorRoofPanelMinimumWidthIn(true)).toBeLessThan(12);
   });
 
   it("a run with no building behind it says so instead of returning nothing", () => {
@@ -180,6 +184,7 @@ describe("the members each sheet will print", () => {
     const plan = planFloorRoofPanelRun(floor({ spanIn: 180 }));
     const joists = plan.groups[0]!.members.filter((m) => m.memberId.startsWith("joist-"));
     expect(joists.length).toBeGreaterThan(0);
-    for (const j of joists) expect(j.actualDimsIn.lengthIn).toBe(180);
+    // Less 2.25in of lid at each end, which the joists run between.
+    for (const j of joists) expect(j.actualDimsIn.lengthIn).toBe(180 - 4.5);
   });
 });

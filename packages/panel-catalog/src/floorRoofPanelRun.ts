@@ -7,6 +7,7 @@ import {
   FLOOR_ROOF_RUN_CLOSER_WIDTH_IN,
   buildFloorRoofPanelSchema,
   firstPlywoodSheetWidthIn,
+  lastTrueSheetSeamIn,
   planFloorRoofPanelWidthsIn,
   type FloorRoofPanelOptions,
 } from "./floorRoofPanelMembers";
@@ -18,9 +19,10 @@ export type FloorRoofPanelRole = "edge" | "field" | "closer" | "remainder";
 export interface FloorRoofPanelInstance {
   /** `F1`/`R1`, numbered along the run.
    *
-   * ⚠ A naming convention nobody has approved. Wall panels carry a compass
-   * direction because a wall has one; a floor panel does not, so this is the
-   * simplest series that still reads as a floor panel. */
+   * Confirmed by Tommy 2026-10-23: *"F1 R1 etc naming stragy is great, I like
+   * it."* Wall panels carry a compass direction because a wall has one; a
+   * floor panel does not, so this is the simplest series that still reads as
+   * a floor panel. */
   name: string;
   widthIn: number;
   /** Distance from the run's start to this panel's near edge. */
@@ -48,6 +50,10 @@ export interface FloorRoofPanelRunPlan {
   firstSheetWidthIn: number | null;
   /** How many 8ft sheets the run takes, first trimmed sheet included. */
   sheetCount: number;
+  /** How far down the run the sheets keep landing on a panel seam. Past it
+   * the installer cuts, the same as they cut the first sheet — see
+   * `lastTrueSheetSeamIn`. */
+  lastTrueSheetSeamIn: number | null;
   narrowestWidthIn: number;
   /** Every planned panel narrower than its own members — see
    * `floorRoofPanelMinimumWidthIn`. Empty on a run that works. */
@@ -129,6 +135,7 @@ export function planFloorRoofPanelRun(options: FloorRoofPanelRunOptions): FloorR
     groups: [],
     firstSheetWidthIn: null,
     sheetCount: 0,
+    lastTrueSheetSeamIn: null,
     narrowestWidthIn: 0,
     impossiblePanels: [],
     impossibleWarning: null,
@@ -203,6 +210,7 @@ export function planFloorRoofPanelRun(options: FloorRoofPanelRunOptions): FloorR
     instances,
     groups,
     firstSheetWidthIn,
+    lastTrueSheetSeamIn: lastTrueSheetSeamIn(widths),
     sheetCount:
       firstSheetWidthIn === null
         ? Math.ceil(options.runLengthIn / 96)

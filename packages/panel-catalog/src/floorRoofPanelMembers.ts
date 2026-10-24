@@ -204,6 +204,20 @@ const sheet = (
  */
 function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
   const out: PanelMember[] = [];
+  /* ⚠ The joists run BETWEEN the two lids, not past them.
+   *
+   * A standard panel does the same thing — `studSpanIn = heightIn - 2 *
+   * SKIN_THICKNESS_IN` — and this panel is *"just like a standard panel
+   * except on its side"*. The lid is a skin plus 2x4s laid face to face,
+   * 2.25in of it, and those 2x4s run in line with the joists rather than
+   * beside them the way a standard panel's plate 2x4s do, so the joists give
+   * up the full 2.25 at each end, not just the skin.
+   *
+   * Measured before this: 16 pairs of members occupying the same space, every
+   * one a joist against a lid. On a 25ft span the joists are cut 295.5in, not
+   * 300in. */
+  const lidThicknessIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  const joistLengthIn = o.lengthIn - 2 * lidThicknessIn;
   const edges: [string, number][] = [
     ["left", 0],
     ["right", o.widthIn - JOIST_2X6_THICKNESS_IN],
@@ -218,16 +232,32 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
           `joist-${side}-${face}`,
           "stud",
           "2x6",
-          { thicknessIn: JOIST_2X6_THICKNESS_IN, widthIn: JOIST_2X6_WIDTH_IN, lengthIn: o.lengthIn },
+          { thicknessIn: JOIST_2X6_THICKNESS_IN, widthIn: JOIST_2X6_WIDTH_IN, lengthIn: joistLengthIn },
           "vertical",
           0,
-          { xIn, yIn, zIn: 0 },
+          { xIn, yIn, zIn: lidThicknessIn },
           `${side} joist, ${face} member of the pair`,
         ),
       );
     }
   }
   return out;
+}
+
+/**
+ * The clear space between the two joists, which is what every girt is cut to.
+ *
+ * > *"Girts should all be dynamic components kind of thing to the size of the
+ * > space in-between the joists."* — Tommy, 2026-10-23
+ *
+ * ⚠ Before this, every girt was cut to the panel's FULL width and ran
+ * straight THROUGH both joists. Measured on a 19 1/4in floor panel: 50
+ * overlapping member pairs, every girt against every joist. The joists own the
+ * outer 1.5in of each side for the panel's whole length, so a girt starts
+ * where they end.
+ */
+function girtSpanIn(o: FloorRoofPanelOptions): { lengthIn: number; xIn: number } {
+  return { lengthIn: o.widthIn - 2 * JOIST_2X6_THICKNESS_IN, xIn: JOIST_2X6_THICKNESS_IN };
 }
 
 /**
@@ -240,18 +270,19 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
  * > the panel is installed.
  */
 function buildStructuralGirt(o: FloorRoofPanelOptions, zIn: number, label: string): PanelMember[] {
+  const span = girtSpanIn(o);
   return [
     sheet(
       `structural-girt-${label}-web`,
       "girt_web",
       STRUCTURAL_GIRT_PLY_SPEC,
-      { thicknessIn: STRUCTURAL_GIRT_PLY_THICKNESS_IN, widthIn: o.depthIn, lengthIn: o.widthIn },
-      { xIn: 0, yIn: 0, zIn },
-      "structural girt web — carries the wall above",
+      { thicknessIn: STRUCTURAL_GIRT_PLY_THICKNESS_IN, widthIn: o.depthIn, lengthIn: span.lengthIn },
+      { xIn: span.xIn, yIn: 0, zIn },
+      "structural girt web — carries the wall above, cut to the space between the joists",
     ),
     ...([
-      ["left", 0],
-      ["right", o.widthIn - PLATE_2X4_WIDTH_IN],
+      ["left", span.xIn],
+      ["right", span.xIn + span.lengthIn - PLATE_2X4_WIDTH_IN],
     ] as [string, number][]).map(([side, xIn]) =>
       lumber(
         `structural-girt-${label}-${side}`,
@@ -279,14 +310,15 @@ function buildStructuralGirt(o: FloorRoofPanelOptions, zIn: number, label: strin
  * which is simpler than the question assumed.
  */
 function buildAntiTwistGirt(o: FloorRoofPanelOptions, zIn: number, index: number): PanelMember[] {
+  const span = girtSpanIn(o);
   return [
     sheet(
       `anti-twist-${index}-web`,
       "girt_web",
       ANTI_TWIST_WEB_PLY_SPEC,
-      { thicknessIn: ANTI_TWIST_WEB_THICKNESS_IN, widthIn: o.depthIn, lengthIn: o.widthIn },
-      { xIn: 0, yIn: 0, zIn },
-      "anti-twist girt web",
+      { thicknessIn: ANTI_TWIST_WEB_THICKNESS_IN, widthIn: o.depthIn, lengthIn: span.lengthIn },
+      { xIn: span.xIn, yIn: 0, zIn },
+      "anti-twist girt web, cut to the space between the joists",
     ),
     ...([
       ["bottom", 0],
@@ -296,10 +328,10 @@ function buildAntiTwistGirt(o: FloorRoofPanelOptions, zIn: number, index: number
         `anti-twist-${index}-${face}`,
         "blocking",
         "2x4",
-        { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: o.widthIn },
+        { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: span.lengthIn },
         "flat",
         0,
-        { xIn: 0, yIn, zIn: zIn + ANTI_TWIST_WEB_THICKNESS_IN },
+        { xIn: span.xIn, yIn, zIn: zIn + ANTI_TWIST_WEB_THICKNESS_IN },
         `ties the ${face} chords laterally`,
       ),
     ),
@@ -443,8 +475,21 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
  * the field — where the diamonds actually help — on the module. Worth one
  * sentence of confirmation before this reaches a cut list.
  *
- * Returns the widths in order, or null when the run cannot hold the two edge
- * panels at all.
+ * ⚠ **A tail narrower than the minimum is REDISTRIBUTED, not left as a
+ * sliver.** Tommy, 2026-10-23: *"Real minimum is 12in for width, though it
+ * should Redistribute if not possible"*. Without this a 20ft run closed with a
+ * 2.25in panel, which cannot even hold its own two joists. The sliver is
+ * pooled backwards into the field panels before it until the pool can be cut
+ * into whole panels between the minimum and the module width, and the pool is
+ * then divided as evenly as the 1/8in grid allows.
+ *
+ * ⚠ The redistributed tail no longer lands on the 8ft sheet module — that is
+ * unavoidable, and it is why the pool grows backwards from the end rather than
+ * spreading the difference over the whole run, which would move every seam.
+ *
+ * Returns the widths in order, or null when the run cannot be panelised: too
+ * short for its two edge panels, or left with a field too small to be a panel
+ * and nothing to redistribute it into.
  */
 export function planFloorRoofPanelWidthsIn(runLengthIn: number, edgePanelWidthIn = FLOOR_ROOF_EDGE_PANEL_WIDTH_IN): number[] | null {
   const fieldIn = runLengthIn - 2 * edgePanelWidthIn;
@@ -462,7 +507,69 @@ export function planFloorRoofPanelWidthsIn(runLengthIn: number, edgePanelWidthIn
     placedIn += widthIn;
     sinceRunStart = atCloser ? 0 : sinceRunStart + widthIn;
   }
-  return [edgePanelWidthIn, ...widths, edgePanelWidthIn];
+
+  const field = redistributeNarrowTail(widths);
+  if (field === null) return null;
+  return [edgePanelWidthIn, ...field, edgePanelWidthIn];
+}
+
+/** His minimum, given 2026-10-23: *"Real minimum is 12in for width"*. Unlike
+ * `floorRoofPanelMinimumWidthIn` — which is measured off the members and says
+ * what is geometrically possible — this is a decision about what is worth
+ * fabricating, and it is the wider of the two. */
+export const FLOOR_ROOF_MIN_PANEL_WIDTH_IN = 12;
+
+/**
+ * Divide `totalIn` into `count` panels on the 1/8in grid, summing to exactly
+ * `totalIn`.
+ *
+ * ⚠ Equal division almost never lands on an eighth — 40.75 over 3 is
+ * 13.5833 — so the extra eighths are handed out one panel at a time and the
+ * last panel absorbs any float residue by subtraction. That keeps his standing
+ * rule (the parts sum to the whole, exactly) without pretending the division
+ * was even.
+ */
+function divideOnEighthGrid(totalIn: number, count: number): number[] {
+  const eighths = Math.floor((totalIn / count) * 8) / 8;
+  const parts = Array.from({ length: count }, () => eighths);
+  let placed = eighths * count;
+  for (let i = 0; i < count && totalIn - placed > 0.125 - 1e-9; i++) {
+    parts[i] = parts[i]! + 0.125;
+    placed += 0.125;
+  }
+  parts[count - 1] = totalIn - parts.slice(0, count - 1).reduce((a, b) => a + b, 0);
+  return parts;
+}
+
+/**
+ * Pool a too-narrow last panel backwards into the field until what is pooled
+ * can be cut into whole panels of a legal width, then re-divide it.
+ *
+ * Returns the field widths, or null when there is nothing left to pool into
+ * and the remainder still cannot be a panel.
+ */
+function redistributeNarrowTail(field: readonly number[]): number[] | null {
+  const last = field[field.length - 1];
+  if (last === undefined || last >= FLOOR_ROOF_MIN_PANEL_WIDTH_IN - 1e-9) return [...field];
+
+  for (let pooled = 1; pooled <= field.length; pooled++) {
+    const keep = field.slice(0, field.length - pooled);
+    const totalIn = field.slice(field.length - pooled).reduce((a, b) => a + b, 0);
+    /* Try the most panels the module allows first and work down, so the tail
+       stays as close to 19 1/4 as it can.
+
+       ⚠ The search has to be allowed to reach a panel WIDER than the module.
+       Capping it there instead refused a 20in field outright — two panels
+       would be 10in each, under his minimum, and one 20in panel was ruled out
+       by a maximum he never set. Measured: it refused every run from 45 7/8
+       to 50 3/8 before this. Redistribution bottoms out just under 24in,
+       because above that two panels are both over the minimum and win. */
+    for (let count = Math.max(1, Math.ceil(totalIn / FLOOR_ROOF_PANEL_WIDTH_IN - 1e-9)); count >= 1; count--) {
+      if (totalIn / count < FLOOR_ROOF_MIN_PANEL_WIDTH_IN - 1e-9) continue;
+      return [...keep, ...divideOnEighthGrid(totalIn, count)];
+    }
+  }
+  return null;
 }
 
 /**
@@ -491,6 +598,38 @@ export function firstPlywoodSheetWidthIn(panelWidthsIn: readonly number[], sheet
     else break;
   }
   return best;
+}
+
+/**
+ * How far down the run the plywood keeps landing on a panel seam.
+ *
+ * ⚠ **Redistribution costs at most one sheet boundary, and this is what
+ * reports it.** Pooling a too-narrow tail backwards eats into the last
+ * complete 8ft group, so the seam that group would have closed on is gone.
+ * Measured across 20–60ft runs: the panels past the last true seam come to at
+ * most 105.5in, a sheet and a bit. Before redistribution the tail was a
+ * sliver instead, which did not land either — so this is not a cost of
+ * redistribution so much as where the run simply stops dividing by 8ft.
+ *
+ * Returns the distance from the start of the run, or null when not even the
+ * first sheet lands on a seam.
+ */
+export function lastTrueSheetSeamIn(panelWidthsIn: readonly number[], sheetLengthIn = 96): number | null {
+  const firstIn = firstPlywoodSheetWidthIn(panelWidthsIn, sheetLengthIn);
+  if (firstIn === null) return null;
+
+  const seams = new Set<number>();
+  let at = 0;
+  for (const widthIn of panelWidthsIn) {
+    at += widthIn;
+    seams.add(Number(at.toFixed(6)));
+  }
+
+  let last = firstIn;
+  for (let next = firstIn + sheetLengthIn; seams.has(Number(next.toFixed(6))); next += sheetLengthIn) {
+    last = next;
+  }
+  return last;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -653,10 +792,11 @@ export function buildFloorRoofPanelSchema(options: FloorRoofPanelOptions, pitchI
         "A reading of his sentence, not a dimension he gave.",
     },
     {
-      type: "warning",
+      type: "deviation",
       text:
         `The panel that closes each 8ft run is ${FLOOR_ROOF_RUN_CLOSER_WIDTH_IN}in — a quarter inch SMALLER than a field panel, ` +
-        "which is what lands the run on 96in. He said \"5 panels later it's a little bigger\"; the arithmetic needs smaller.",
+        "which is what lands the run on 96in. He had said \"5 panels later it's a little bigger\" and the arithmetic needed " +
+        "smaller; confirmed smaller 2026-10-23 (\"Smaller sounds fine\").",
     },
   ];
   if (isRoof && pitchIn12 === undefined) {
