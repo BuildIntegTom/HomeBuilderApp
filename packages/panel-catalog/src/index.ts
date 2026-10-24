@@ -6,6 +6,7 @@ export * from "./panelMemberHelpers";
 export * from "./standardPanelMembers";
 export * from "./floorRoofPanelMembers";
 export * from "./floorRoofPanelRun";
+export * from "./ringFacetPanels";
 export * from "./bracedPanelMembers";
 export * from "./columnPanelMembers";
 export * from "./cornerPanelMembers";

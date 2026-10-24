@@ -529,7 +529,7 @@ export const FLOOR_ROOF_MIN_PANEL_WIDTH_IN = 12;
  * rule (the parts sum to the whole, exactly) without pretending the division
  * was even.
  */
-function divideOnEighthGrid(totalIn: number, count: number): number[] {
+export function divideOnEighthGrid(totalIn: number, count: number): number[] {
   const eighths = Math.floor((totalIn / count) * 8) / 8;
   const parts = Array.from({ length: count }, () => eighths);
   let placed = eighths * count;
