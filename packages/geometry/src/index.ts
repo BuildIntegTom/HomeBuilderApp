@@ -37,6 +37,7 @@ export * from "./runStopOpenings";
 export * from "./pierGrid";
 export * from "./floorPanelGrid";
 export * from "./joistLayout";
+export * from "./deckPanelPlacement";
 export * from "./pointInPolygon";
 export * from "./clipSegmentToPolygon";
 export * from "./wallCompassDirection";

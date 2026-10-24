@@ -737,6 +737,13 @@ export default function LayoutEditor() {
   // view-state, same category as viewMode/simplified3D — not persisted in
   // ProjectState.
   const [showWraps, setShowWraps] = useState(false);
+  /* Which decks the 3D viewer draws. Default ON so that checking Floors or
+     Roof in the scope of work actually shows you something — Tommy: "If the
+     floors and roof are check marked, the 3D viewer framed/boxes/membrane
+     should show them". The scope checkbox is the outer gate; these are the
+     per-layer toggles beside the viewer. */
+  const [showFloorDeck3D, setShowFloorDeck3D] = useState(true);
+  const [showRoofDeck3D, setShowRoofDeck3D] = useState(true);
   // The 3D viewer's own, deliberately smaller tool vocabulary (Tommy: "build
   // the 3d viewer into an editor with all the same tools as the 2d plan
   // editor" — Phase 1 ships Edit-cycle parity + the Sill & Header drag
@@ -10963,6 +10970,38 @@ export default function LayoutEditor() {
   // `showWraps` — since that's the one place these checkboxes' own visual
   // effect (wrapSkins in Building3DView) is actually visible; every other
   // stop leaves this same state untouched but out of the way.
+  /* 3D layer visibility. Only offered for decks that are in the scope of
+     work — an unchecked Floors box means there is no floor to show, so a
+     toggle for one would be a dead control. */
+  const deckLayerControls =
+    floorsEnabled || roofEnabled ? (
+      <div className={elevationStyles.panel}>
+        <strong>3D Layers</strong>
+        <p className={styles.note}>
+          What the viewer draws besides the walls. Turn a deck off to see inside the building — a floor or roof
+          deck is solid and will hide everything under it.
+        </p>
+        {floorsEnabled && (
+          <label style={{ display: "block" }}>
+            <input type="checkbox" checked={showFloorDeck3D} onChange={(e) => setShowFloorDeck3D(e.target.checked)} />{" "}
+            Floor panels
+          </label>
+        )}
+        {roofEnabled && (
+          <label style={{ display: "block" }}>
+            <input type="checkbox" checked={showRoofDeck3D} onChange={(e) => setShowRoofDeck3D(e.target.checked)} />{" "}
+            Roof panels
+          </label>
+        )}
+        {roofEnabled && showRoofDeck3D && (
+          <p className={styles.disclaimer}>
+            ⚠ The roof deck is drawn FLAT, resting on the top plate. Roof panels are installed inclined; tipping
+            them needs this roof&apos;s own pitch, which only resolves on a gable today.
+          </p>
+        )}
+      </div>
+    ) : null;
+
   const wallAssemblyControls = (
     <div className={elevationStyles.panel}>
       <strong>Wall Assembly</strong>
@@ -11729,6 +11768,7 @@ export default function LayoutEditor() {
               </button>
             </div>
             {editorTab === "wall" && elevationWall && elevationControls}
+            {viewMode === "3d" && deckLayerControls}
             {editorTab === "wall" && !elevationWall && viewMode === "3d" && showWraps && wallAssemblyControls}
             {editorTab === "foundation" && foundationControls}
             {editorTab === "floor" && baleFoundationControls}
@@ -12327,6 +12367,8 @@ export default function LayoutEditor() {
                   compassRef={compassNeedleRef}
                   simplified={simplified3D}
                   showWraps={showWraps}
+                  showFloorPanels={floorsEnabled && showFloorDeck3D}
+                  showRoofPanels={roofEnabled && showRoofDeck3D}
                   checkedInteriorIds={checkedInteriorIds}
                   checkedExteriorIds={checkedExteriorIds}
                   tool3D={tool3D}

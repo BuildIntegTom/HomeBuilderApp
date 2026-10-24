@@ -14,6 +14,8 @@ import {
   effectiveZonesForSlot,
   isSlotBoxBeamCovered,
   builtWallSpan,
+  deckPanelPlacements,
+  footprintSpanAndRun,
   panelSlotBoxes3D,
   wallAxis,
   type BoxBeamCoverage,
@@ -39,6 +41,8 @@ import {
   buildDoubledStackPair,
   buildFloorBottomSkinMembers,
   buildFramingStackMembers,
+  buildFloorRoofPanelMembers,
+  planFloorRoofPanelWidthsIn,
   STEEL_MESH_THICKNESS_IN,
   SUBFLOOR_DEPTH_DEFAULT_IN,
   BOX_BEAM_SIZE_DEFAULT,
@@ -669,6 +673,11 @@ interface Building3DViewProps {
    * geometry renders only when true, purely additive below the wall's own
    * existing Z=0 (see baleFoundationTopFaceZIn in panel-catalog). */
   isBaleFoundationFloor?: boolean;
+  /** Draw the floor deck's own panels. Gated by the Floors scope checkbox
+   * in page.tsx, then by the layer toggle beside the 3D view. */
+  showFloorPanels?: boolean;
+  /** Draw the roof deck's panels. Same two gates, Roof scope. */
+  showRoofPanels?: boolean;
   baleFoundationTopDepthIn?: number;
   baleFoundationBottomDepthIn?: number;
   baleFoundationGapIn?: number;
@@ -1012,6 +1021,8 @@ export default function Building3DView({
   jackStudConfig,
   standardWidthIn,
   isBaleFoundationFloor = false,
+  showFloorPanels = false,
+  showRoofPanels = false,
   baleFoundationTopDepthIn = BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
   baleFoundationBottomDepthIn = BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
   baleFoundationGapIn = BALE_FOUNDATION_GAP_DEFAULT_IN,
@@ -1527,6 +1538,71 @@ export default function Building3DView({
   // wall/roof placement changes. Each ring segment/field line becomes one
   // positioned group, same "anchor at the segment's own start point,
   // rotate by -rotationRad" convention roofBearingRenderData uses.
+  /* The floor and roof decks, placed the same way the bale foundation's
+     framing is: one group per panel, anchored in plan, with its members drawn
+     in the panel's own frame.
+
+     ⚠ A panel's members are built AS FABRICATED — lying in the compressor
+     table, so the panel's own Z is its span, the same axis a wall panel uses
+     for its height. Installing a floor means tipping it flat, which is the
+     inner group's job below. Nothing bakes that into the members, because the
+     shop drawing has to keep showing the panel the way it is built. */
+  const deckRenderData = useMemo(() => {
+    if (!footprint || (!showFloorPanels && !showRoofPanels)) return [];
+    const result: {
+      id: string;
+      kind: "floor" | "roof";
+      anchorX: number;
+      anchorZ: number;
+      anchorYFt: number;
+      rotationRad: number;
+      members: PanelMember[];
+    }[] = [];
+
+    const widths = planFloorRoofPanelWidthsIn(footprintSpanAndRun(footprint).runFt * IN_PER_FT, thicknessIn);
+    if (widths === null) return [];
+    const placed = deckPanelPlacements(footprint, widths);
+    if (placed.refusal !== null) return [];
+
+    const decks: { kind: "floor" | "roof"; topYFt: number }[] = [];
+    /* The floor deck hangs below Z=0, which is the finished floor the walls
+       stand on — the same datum the bale foundation hangs its framing from. */
+    if (showFloorPanels) decks.push({ kind: "floor", topYFt: 0 });
+    /* The roof deck's UNDERSIDE lands on the top plate, so its top sits a
+       panel-depth above it.
+
+       ⚠ Flat, at the top of the topmost story. A pitched roof's panels are
+       inclined and this does not tip them yet — that needs the roof's own
+       pitch, which only resolves on a gable today. Drawn flat is wrong for a
+       pitched roof, so the layer is off unless asked for, and the toggle says
+       what it is. */
+    if (showRoofPanels) {
+      const topOfWallsFt = wallHeightFt + (secondStory ? secondStory.wallHeightFt : 0);
+      decks.push({ kind: "roof", topYFt: topOfWallsFt + thicknessIn / IN_PER_FT });
+    }
+
+    for (const deck of decks) {
+      for (const p of placed.placements) {
+        result.push({
+          id: `${deck.kind}-${p.index}`,
+          kind: deck.kind,
+          anchorX: p.anchorX,
+          anchorZ: p.anchorZ,
+          anchorYFt: deck.topYFt,
+          rotationRad: p.rotationRad,
+          members: buildFloorRoofPanelMembers({
+            kind: deck.kind,
+            widthIn: p.widthIn,
+            depthIn: thicknessIn,
+            lengthIn: p.spanIn,
+            structuralGirtEnds: deck.kind === "floor" ? ["start", "end"] : [],
+          }),
+        });
+      }
+    }
+    return result;
+  }, [footprint, showFloorPanels, showRoofPanels, thicknessIn, wallHeightFt, secondStory]);
+
   const baleFoundationRenderData = useMemo(() => {
     if (!footprint || !isBaleFoundationFloor) return [];
     const result: { id: string; anchorX: number; anchorZ: number; anchorYFt: number; rotationRad: number; members: PanelMember[] }[] = [];
@@ -1914,6 +1990,10 @@ export default function Building3DView({
           members,
         }),
       ),
+      /* ⚠ NOT included: the OBJ exporter has no way to express the tip the
+         view applies above, so a deck panel would land in the file standing on
+         end. Left out deliberately rather than exported wrong — the decks are
+         a view layer until the exporter can place them. */
       ...baleFoundationRenderData.map(
         ({ id, anchorX, anchorZ, anchorYFt, rotationRad, members }): WorldPlacedPanel => ({
           label: `balefoundation_${id}`,
@@ -2255,6 +2335,18 @@ export default function Building3DView({
               ) : (
                 <PanelMembersGroup members={members} />
               )}
+            </group>
+          ))}
+          {deckRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, members }) => (
+            <group key={`deck-${id}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
+              {/* ⚠ Tips the panel flat. Its members are built lying in the
+                  compressor table, so the panel's own Z — its span — comes
+                  through as three.js Y, standing on end. This rotation sends
+                  the span to +Z and the panel's depth to -Y, which is why the
+                  anchor is the deck's TOP face and the panel hangs below it. */}
+              <group rotation={[Math.PI / 2, 0, 0]}>
+                <PanelMembersGroup members={members} />
+              </group>
             </group>
           ))}
           {baleFoundationRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, members }) => (
