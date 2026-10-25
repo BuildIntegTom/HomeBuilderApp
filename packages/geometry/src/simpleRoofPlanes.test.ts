@@ -1,0 +1,137 @@
+import { describe, expect, it } from "vitest";
+import { simpleRoofPlanes } from "./simpleRoofPlanes";
+import { wallCompassDirection } from "./wallCompassDirection";
+import type { Footprint } from "./types";
+
+function rect(widthFt: number, depthFt: number): Footprint {
+  const pts = [
+    { x: 0, y: 0 },
+    { x: widthFt, y: 0 },
+    { x: widthFt, y: depthFt },
+    { x: 0, y: depthFt },
+  ];
+  return {
+    corners: pts.map((point, i) => ({ id: `c${i}`, point })),
+    walls: pts.map((_, i) => ({ id: `w${i}`, startCorner: `c${i}`, endCorner: `c${(i + 1) % pts.length}` })),
+  } as Footprint;
+}
+
+const peaked = { form: "peaked" as const, pitchIn12: 4, eaveHeightFt: 10 };
+const shed = { form: "shed" as const, pitchIn12: 4, eaveHeightFt: 10 };
+
+describe("where the ridge runs", () => {
+  it("⚠ gable ends land on the SHORT walls, so the ridge runs the long way", () => {
+    const wide = simpleRoofPlanes(rect(40, 24), peaked);
+    expect(wide.ridgeAxis).toBe("x");
+    const tall = simpleRoofPlanes(rect(24, 40), peaked);
+    expect(tall.ridgeAxis).toBe("y");
+  });
+
+  it("⚠ a square ties to east/west gables, so half the roof faces the sun", () => {
+    /* "On a square building gable ends should be east and west with half the
+       roof facing the sun." There is no short wall to follow, so the tie is
+       the rule. */
+    const square = simpleRoofPlanes(rect(30, 30), peaked);
+    expect(square.ridgeAxis).toBe("x");
+    const footprint = rect(30, 30);
+    const dirs = square.gableWallIds.map((id) =>
+      wallCompassDirection(footprint.walls.find((w) => w.id === id)!, footprint),
+    );
+    expect(new Set(dirs)).toEqual(new Set(["E", "W"]));
+  });
+
+  it("⚠ says so when the short-wall rule costs a south-facing roof", () => {
+    /* A building long north-to-south has its short walls east and west, so
+       the ridge runs north-south and the planes face EAST and WEST. Both of
+       his rules cannot hold at once; the short-wall one wins and this says
+       which was given up. */
+    const tall = simpleRoofPlanes(rect(24, 40), peaked);
+    expect(tall.orientationNote).toContain("EAST and WEST");
+    expect(tall.orientationNote).toContain("short walls");
+    expect(simpleRoofPlanes(rect(40, 24), peaked).orientationNote).toBeNull();
+  });
+
+  it("gable walls are the ones at the ends of the ridge", () => {
+    const footprint = rect(40, 24);
+    const roof = simpleRoofPlanes(footprint, peaked);
+    expect(roof.gableWallIds).toHaveLength(2);
+    const dirs = roof.gableWallIds.map((id) =>
+      wallCompassDirection(footprint.walls.find((w) => w.id === id)!, footprint),
+    );
+    expect(new Set(dirs)).toEqual(new Set(["E", "W"]));
+  });
+});
+
+describe("the planes themselves", () => {
+  it("⚠ a peak halves the run, which is the whole reason it exists", () => {
+    const roof = simpleRoofPlanes(rect(40, 24), peaked);
+    expect(roof.planes).toHaveLength(2);
+    // 24ft deep, split at the ridge: 12ft of ground each side.
+    for (const p of roof.planes) expect(p.runFt).toBe(12);
+    const shedRoof = simpleRoofPlanes(rect(40, 24), shed);
+    expect(shedRoof.planes).toHaveLength(1);
+    expect(shedRoof.planes[0]!.runFt).toBe(24);
+  });
+
+  it("the rise follows the pitch, and the slope follows both", () => {
+    const roof = simpleRoofPlanes(rect(40, 24), peaked);
+    const p = roof.planes[0]!;
+    // 12ft of run at 4:12 rises 4ft.
+    expect(p.lowHeightFt).toBe(10);
+    expect(p.highHeightFt).toBe(14);
+    expect(p.slopeFt).toBeCloseTo(Math.hypot(12, 4), 9);
+    // And the panel is longer than the ground it covers, always.
+    expect(p.slopeFt).toBeGreaterThan(p.runFt);
+  });
+
+  it("both planes of a peak meet on the same ridge line", () => {
+    const roof = simpleRoofPlanes(rect(40, 24), peaked);
+    const [a, b] = roof.planes;
+    expect(a!.highStart).toEqual(b!.highStart);
+    expect(a!.highEnd).toEqual(b!.highEnd);
+    expect(a!.highHeightFt).toBe(b!.highHeightFt);
+  });
+
+  it("a flat roof is a legal roof, and its slope is its run", () => {
+    const flat = simpleRoofPlanes(rect(40, 24), { form: "shed", pitchIn12: 0, eaveHeightFt: 10 });
+    expect(flat.planes[0]!.highHeightFt).toBe(10);
+    expect(flat.planes[0]!.slopeFt).toBe(24);
+  });
+});
+
+describe("⚠ which way a shed falls", () => {
+  it("tall side NORTH by default, so the roof faces south", () => {
+    /* "it should auto spawn tall side on the north but have a way to then
+       switch it around." North is screen-up — the same simplification
+       wallCompassDirection already makes — so the high edge is at minY. */
+    const roof = simpleRoofPlanes(rect(40, 24), shed);
+    const p = roof.planes[0]!;
+    expect(p.highStart.y).toBe(0);
+    expect(p.lowStart.y).toBe(24);
+  });
+
+  it("and it switches round when asked", () => {
+    const roof = simpleRoofPlanes(rect(40, 24), { ...shed, tallSideNorth: false });
+    const p = roof.planes[0]!;
+    expect(p.highStart.y).toBe(24);
+    expect(p.lowStart.y).toBe(0);
+  });
+
+  it("⚠ a north-south building's shed cannot face south at all", () => {
+    // The ridge runs north-south, so the shed falls east or west. The note
+    // above is what tells the user, since the geometry cannot.
+    const roof = simpleRoofPlanes(rect(24, 40), shed);
+    expect(roof.orientationNote).toContain("EAST and WEST");
+    expect(roof.planes[0]!.highStart.x).toBe(0);
+  });
+});
+
+describe("what it refuses", () => {
+  it("a footprint with no extent", () => {
+    expect(simpleRoofPlanes(rect(0, 24), peaked).refusal).toContain("no footprint");
+  });
+
+  it("a roof with no pitch given at all", () => {
+    expect(simpleRoofPlanes(rect(40, 24), { ...peaked, pitchIn12: Number.NaN }).refusal).toContain("needs a pitch");
+  });
+});

@@ -16,6 +16,7 @@ import {
   builtWallSpan,
   deckPanelPlacements,
   footprintSpanAndRun,
+  simpleRoofPlanes,
   panelSlotBoxes3D,
   wallAxis,
   type BoxBeamCoverage,
@@ -678,6 +679,15 @@ interface Building3DViewProps {
   showFloorPanels?: boolean;
   /** Draw the roof deck's panels. Same two gates, Roof scope. */
   showRoofPanels?: boolean;
+  /** The roof's pitch, so its panels can be laid on the slope instead of
+   * flat. Without one there is no plane to lay them on and the deck is
+   * withheld. */
+  roofPitchIn12?: number;
+  /** Height of the roof's LOW edge above the floor. */
+  roofEaveHeightFt?: number;
+  /** Two planes meeting at a ridge, or one falling across the building. */
+  roofForm?: "shed" | "peaked";
+  roofTallSideNorth?: boolean;
   baleFoundationTopDepthIn?: number;
   baleFoundationBottomDepthIn?: number;
   baleFoundationGapIn?: number;
@@ -1023,6 +1033,10 @@ export default function Building3DView({
   isBaleFoundationFloor = false,
   showFloorPanels = false,
   showRoofPanels = false,
+  roofPitchIn12,
+  roofEaveHeightFt,
+  roofForm = "peaked",
+  roofTallSideNorth,
   baleFoundationTopDepthIn = BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
   baleFoundationBottomDepthIn = BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
   baleFoundationGapIn = BALE_FOUNDATION_GAP_DEFAULT_IN,
@@ -1556,6 +1570,9 @@ export default function Building3DView({
       anchorZ: number;
       anchorYFt: number;
       rotationRad: number;
+      /** How far the panel is tipped off flat: 0 for a floor, the roof's own
+       * pitch for a roof plane. */
+      tiltRad: number;
       members: PanelMember[];
     }[] = [];
 
@@ -1564,44 +1581,82 @@ export default function Building3DView({
     const placed = deckPanelPlacements(footprint, widths);
     if (placed.refusal !== null) return [];
 
-    const decks: { kind: "floor" | "roof"; topYFt: number }[] = [];
-    /* The floor deck hangs below Z=0, which is the finished floor the walls
-       stand on — the same datum the bale foundation hangs its framing from. */
-    if (showFloorPanels) decks.push({ kind: "floor", topYFt: 0 });
-    /* The roof deck's UNDERSIDE lands on the top plate, so its top sits a
-       panel-depth above it.
-
-       ⚠ Flat, at the top of the topmost story. A pitched roof's panels are
-       inclined and this does not tip them yet — that needs the roof's own
-       pitch, which only resolves on a gable today. Drawn flat is wrong for a
-       pitched roof, so the layer is off unless asked for, and the toggle says
-       what it is. */
-    if (showRoofPanels) {
-      const topOfWallsFt = wallHeightFt + (secondStory ? secondStory.wallHeightFt : 0);
-      decks.push({ kind: "roof", topYFt: topOfWallsFt + thicknessIn / IN_PER_FT });
-    }
-
-    for (const deck of decks) {
+    if (showFloorPanels) {
+      /* The floor deck hangs below Z=0, the finished floor the walls stand on
+         — the same datum the bale foundation hangs its framing from. */
       for (const p of placed.placements) {
         result.push({
-          id: `${deck.kind}-${p.index}`,
-          kind: deck.kind,
+          id: `floor-${p.index}`,
+          kind: "floor",
           anchorX: p.anchorX,
           anchorZ: p.anchorZ,
-          anchorYFt: deck.topYFt,
+          anchorYFt: 0,
           rotationRad: p.rotationRad,
+          tiltRad: 0,
           members: buildFloorRoofPanelMembers({
-            kind: deck.kind,
+            kind: "floor",
             widthIn: p.widthIn,
             depthIn: thicknessIn,
             lengthIn: p.spanIn,
-            structuralGirtEnds: deck.kind === "floor" ? ["start", "end"] : [],
+            structuralGirtEnds: ["start", "end"],
           }),
         });
       }
     }
+
+    /* ⚠ The roof deck is laid on its real PLANES now, not flat. Tommy saw
+       the flat one cut straight through his gable panels, which is the
+       overlap the app is not allowed to have. Without a pitch there is no
+       plane to lay anything on, so it stays withheld rather than guessed. */
+    if (showRoofPanels && roofPitchIn12 !== undefined && roofEaveHeightFt !== undefined) {
+      const roof = simpleRoofPlanes(footprint, {
+        form: roofForm,
+        pitchIn12: roofPitchIn12,
+        eaveHeightFt: roofEaveHeightFt,
+        tallSideNorth: roofTallSideNorth,
+      });
+      if (roof.refusal === null) {
+        const tiltRad = Math.atan2(roofPitchIn12, 12);
+        for (const [planeIndex, plane] of roof.planes.entries()) {
+          const edgeDx = plane.lowEnd.x - plane.lowStart.x;
+          const edgeDy = plane.lowEnd.y - plane.lowStart.y;
+          const edgeLengthIn = Math.hypot(edgeDx, edgeDy) * IN_PER_FT;
+          /* Panels repeat ALONG the eave and span UP the slope, so the run is
+             the eave's own length and the span is the real sloped length —
+             longer than the ground it covers, which is the whole reason the
+             shed-or-peak limit is computed from the pitch. */
+          const roofWidths = planFloorRoofPanelWidthsIn(edgeLengthIn, thicknessIn);
+          if (roofWidths === null) continue;
+          const rotationRad = Math.atan2(edgeDy, edgeDx);
+          const ux = edgeDx / (edgeLengthIn / IN_PER_FT);
+          const uy = edgeDy / (edgeLengthIn / IN_PER_FT);
+          let atIn = 0;
+          for (const [i, widthIn] of roofWidths.entries()) {
+            const alongFt = atIn / IN_PER_FT;
+            result.push({
+              id: `roof-${planeIndex}-${i}`,
+              kind: "roof",
+              anchorX: plane.lowStart.x + ux * alongFt,
+              anchorZ: plane.lowStart.y + uy * alongFt,
+              anchorYFt: plane.lowHeightFt + thicknessIn / IN_PER_FT,
+              rotationRad,
+              tiltRad,
+              members: buildFloorRoofPanelMembers({
+                kind: "roof",
+                widthIn,
+                depthIn: thicknessIn,
+                lengthIn: plane.slopeFt * IN_PER_FT,
+                structuralGirtEnds: [],
+              }),
+            });
+            atIn += widthIn;
+          }
+        }
+      }
+    }
+
     return result;
-  }, [footprint, showFloorPanels, showRoofPanels, thicknessIn, wallHeightFt, secondStory]);
+  }, [footprint, showFloorPanels, showRoofPanels, thicknessIn, roofPitchIn12, roofEaveHeightFt, roofForm, roofTallSideNorth]);
 
   const baleFoundationRenderData = useMemo(() => {
     if (!footprint || !isBaleFoundationFloor) return [];

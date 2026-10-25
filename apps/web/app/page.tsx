@@ -10998,17 +10998,17 @@ export default function LayoutEditor() {
             Roof panels
           </label>
         )}
-        {roofEnabled && showRoofDeck3D && gableEndWallIds.size > 0 && (
+        {roofEnabled && showRoofDeck3D && roofTrussLayoutContext === null && (
           <p className={styles.disclaimer}>
-            ⚠ Not drawn on this building. The deck can only be placed FLAT so far, and this roof has{" "}
-            {gableEndWallIds.size} gable end{gableEndWallIds.size === 1 ? "" : "s"} — a flat deck would cut straight
-            through them. Inclining it needs the roof&apos;s own pitch, which is the next piece of work.
+            ⚠ Not drawn on this building. Roof panels are laid on the roof&apos;s own planes now, which needs a
+            resolvable pitch — today that means two opposite Gable End walls and a Peaked roofline profile. Add
+            those and the deck appears, on the slope.
           </p>
         )}
-        {roofEnabled && showRoofDeck3D && gableEndWallIds.size === 0 && (
-          <p className={styles.disclaimer}>
-            ⚠ The roof deck is drawn FLAT, resting on the top plate. Right for a flat roof; a pitched one needs
-            its panels inclined, which is the next piece of work.
+        {roofEnabled && showRoofDeck3D && roofTrussLayoutContext !== null && (
+          <p className={styles.note}>
+            Laid on the roof&apos;s two planes at {roofTrussLayoutContext.pitchIn12.toFixed(1)}/12, panels spanning
+            up the slope from each eave to the ridge.
           </p>
         )}
       </div>
@@ -12380,7 +12380,10 @@ export default function LayoutEditor() {
                   simplified={simplified3D}
                   showWraps={showWraps}
                   showFloorPanels={floorsEnabled && showFloorDeck3D}
-                  showRoofPanels={roofEnabled && showRoofDeck3D && gableEndWallIds.size === 0}
+                  showRoofPanels={roofEnabled && showRoofDeck3D}
+                  roofPitchIn12={roofTrussLayoutContext?.pitchIn12}
+                  roofEaveHeightFt={gableEaveHeightIn / 12}
+                  roofForm="peaked"
                   checkedInteriorIds={checkedInteriorIds}
                   checkedExteriorIds={checkedExteriorIds}
                   tool3D={tool3D}
