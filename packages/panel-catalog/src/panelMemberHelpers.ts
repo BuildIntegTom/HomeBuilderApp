@@ -496,6 +496,21 @@ export const MAX_STUD_SPACING_IN = 24;
  * between the skins — because that is what the floor seam above and below
  * needs to land on.
  */
+/**
+ * Where a panel's centre nailer studs sit across its width, as [start, end]
+ * pairs. Exported so anything laying a member across the panel can break
+ * around them instead of running through them.
+ */
+export function centreNailerStudSpansIn(widthIn: number): [number, number][] {
+  const bays = Math.max(1, Math.ceil(widthIn / MAX_STUD_SPACING_IN - 1e-9));
+  const spans: [number, number][] = [];
+  for (let bay = 1; bay < bays; bay++) {
+    const xIn = (widthIn * bay) / bays - PLATE_2X4_THICKNESS_IN / 2;
+    spans.push([xIn, xIn + PLATE_2X4_THICKNESS_IN]);
+  }
+  return spans;
+}
+
 export function buildCentreNailerStuds(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
   const bays = Math.max(1, Math.ceil(widthIn / MAX_STUD_SPACING_IN - 1e-9));
   if (bays < 2) return [];

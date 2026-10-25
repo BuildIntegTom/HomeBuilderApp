@@ -68,7 +68,11 @@ export interface FastenerWeightResult {
  *   known gap, not silently included.
  * - Every plywood "lid" (skins + girt webs) gets 8x 4in GRK screws.
  * - Every girt bar gets 8x 3in GRK screws.
- * - Every brace member (braced panels only) gets 4x 6in GRK screws.
+ * - Every brace member gets 4x 4in GRK screws — TWO AT EACH END.
+ *   ⚠ These were 6in until 2026-10-25, when Tommy gave the real spec:
+ *   *"Each end of each 2x4 on the diagonals has 2 5/16in GRKs 4in screws
+ *   predrilled and driven."* The count of four was already right; the length
+ *   was not, and 6in screws weigh half again what 4in ones do.
  * Blocking (Column/Corner panels) has no fastener rule specified yet —
  * left out rather than guessed.
  */
@@ -104,10 +108,10 @@ export function computeFastenerWeight(members: PanelMember[]): FastenerWeightRes
   ];
   if (braceCount > 0) {
     items.push({
-      label: "6in GRK screw (braced-panel brace members, 4 each)",
+      label: "4in GRK screw (brace members, 2 at each end)",
       count: braceCount * 4,
-      unitWeightLb: GRK_6IN_WEIGHT_LB,
-      totalWeightLb: braceCount * 4 * GRK_6IN_WEIGHT_LB,
+      unitWeightLb: GRK_4IN_WEIGHT_LB,
+      totalWeightLb: braceCount * 4 * GRK_4IN_WEIGHT_LB,
     });
   }
 

@@ -3,6 +3,7 @@ import { buildStandardPanelMembers, buildBracedPanelMembers } from "@building-in
 import {
   GRK_3IN_WEIGHT_LB,
   GRK_4IN_WEIGHT_LB,
+  GRK_4IN_WEIGHT_LB,
   GRK_6IN_WEIGHT_LB,
   PLYWOOD_NAIL_WEIGHT_LB,
   T25_NO9_4IN_WEIGHT_LB,
@@ -62,15 +63,23 @@ describe("computeFastenerWeight", () => {
     expect(result.items.some((i) => i.label.includes("6in GRK"))).toBe(false);
   });
 
-  it("gives every brace member (4, for a braced panel: upper+lower x ext+int wythe) 4x 6in GRK screws", () => {
+  it("⚠ gives every brace member 4x 4in GRK screws — two at each end", () => {
+    /* These were 6in until 2026-10-25, when Tommy gave the real spec: "Each
+       end of each 2x4 on the diagonals has 2 5/16in GRKs 4in screws
+       predrilled and driven." The count of four was already right, and it is
+       four because it is TWO PER END, which is worth saying in the label so
+       nobody re-derives it as four in one place. */
     const members = buildBracedPanelMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN, false, "chevron", false);
     const braceCount = members.filter((m) => m.role === "brace").length;
     expect(braceCount).toBe(4); // upper+lower, each on both wythes
 
     const result = computeFastenerWeight(members);
-    const braceItem = result.items.find((i) => i.label.includes("6in GRK"))!;
+    expect(result.items.some((i) => i.label.includes("6in GRK"))).toBe(false);
+    const braceItem = result.items.find((i) => i.label.includes("brace members"))!;
     expect(braceItem.count).toBe(braceCount * 4);
-    expect(braceItem.totalWeightLb).toBeCloseTo(braceCount * 4 * GRK_6IN_WEIGHT_LB, 9);
+    expect(braceItem.totalWeightLb).toBeCloseTo(braceCount * 4 * GRK_4IN_WEIGHT_LB, 9);
+    // A 4in screw weighs two thirds of a 6in one, so the total really moved.
+    expect(braceItem.totalWeightLb).toBeLessThan(braceCount * 4 * GRK_6IN_WEIGHT_LB);
   });
 
   it("sums every line item into totalWeightLb/Kg", () => {

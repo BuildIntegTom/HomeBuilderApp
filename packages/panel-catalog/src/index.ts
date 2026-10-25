@@ -8,6 +8,8 @@ export * from "./floorRoofPanelMembers";
 export * from "./floorRoofPanelRun";
 export * from "./ringFacetPanels";
 export * from "./roofPanelSpanLimit";
+export * from "./bracePairPatterns";
+export * from "./panelRecipe";
 export * from "./bracedPanelMembers";
 export * from "./columnPanelMembers";
 export * from "./cornerPanelMembers";
