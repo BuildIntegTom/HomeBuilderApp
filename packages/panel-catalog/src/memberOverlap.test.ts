@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PanelMember } from "./componentSchema";
-import { memberBoxSizeIn } from "./panelMemberHelpers";
+import { overlappingMemberPairs } from "./memberPrism";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
 import { buildBracedPanelMembers } from "./bracedPanelMembers";
 import { buildColumnPanelMembers, buildColumnStyleMembers } from "./columnPanelMembers";
@@ -30,39 +30,18 @@ import { buildFloorRoofPanelMembers } from "./floorRoofPanelMembers";
  * its panel. It took comparing every pair.
  */
 export function overlappingPairsIn(members: PanelMember[]): string[] {
-  const boxes = members.map((m) => {
-    const size = memberBoxSizeIn(m);
-    return {
-      id: m.memberId,
-      x0: m.position.xIn, x1: m.position.xIn + size.xIn,
-      y0: m.position.yIn, y1: m.position.yIn + size.yIn,
-      z0: m.position.zIn, z1: m.position.zIn + size.zIn,
-    };
-  });
-  const found: string[] = [];
-  for (let i = 0; i < boxes.length; i++) {
-    for (let j = i + 1; j < boxes.length; j++) {
-      const a = boxes[i]!;
-      const b = boxes[j]!;
-      /* A shared face is contact, not overlap — the tolerance has to be
-         tighter than the thinnest real member (1/16in hardware) and looser
-         than float noise. */
-      const ox = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
-      const oy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
-      const oz = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0);
-      if (ox > 1e-6 && oy > 1e-6 && oz > 1e-6) {
-        found.push(`${a.id} x ${b.id} (${ox.toFixed(3)} x ${oy.toFixed(3)} x ${oz.toFixed(3)}in)`);
-      }
-    }
-  }
-  return found;
+  return overlappingMemberPairs(members);
 }
 
-/* Rotated members are excluded from the comparison, not from the rule: an
-   axis-aligned box around a tilted brace claims space the brace does not
-   fill, so comparing those boxes reports overlaps that are not real. Every
-   panel below either has no rotated members or is listed as a known gap. */
-const isAxisAligned = (m: PanelMember) => (m.position.rotationDeg ?? 0) % 90 === 0;
+/* ⚠ Nothing is excluded any more. Until 2026-10-25 braced, gable and big
+   header panels were left out because an axis-aligned box round a tilted
+   brace claims space the brace does not fill. `memberPrism` compares the real
+   cut instead — every member in this app is a convex polygon extruded along
+   one axis, braces included — so they are all checked now, and the counts
+   below are exact rather than conservative.
+
+   It immediately mattered: a door header dropped from 20 reported overlaps
+   to 12, so eight of them were never real. */
 
 const D = 15.5;
 const H = 96;
@@ -83,17 +62,16 @@ const CASES: { name: string; members: PanelMember[] }[] = [
   { name: "window header", members: buildWindowHeaderMembers(40, D, 24) },
   { name: "floor panel", members: buildFloorRoofPanelMembers({ kind: "floor", widthIn: 19.25, depthIn: D, lengthIn: 300, structuralGirtEnds: ["start", "end"] }) },
   { name: "roof panel", members: buildFloorRoofPanelMembers({ kind: "roof", widthIn: 19.25, depthIn: D, lengthIn: 300, structuralGirtEnds: [] }) },
+  /* Previously unchecked, for want of a test that could see a diagonal. */
+  { name: "braced chevron", members: buildBracedPanelMembers(48, D, H, false, "chevron", false) },
+  { name: "braced hatch", members: buildBracedPanelMembers(48, D, H, false, "hatch", true) },
+  { name: "gable", members: buildGablePanelMembers(48, D, 48, 72, false) },
+  { name: "big header", members: buildBigHeaderMembers(40, D, 24, false, "plywood") },
 ];
 
 /* Panels whose members are not all axis-aligned, or that are known to
    overlap and are tracked elsewhere. Each one needs a reason, and the reason
    has to be better than "it was already like that". */
-const KNOWN_ROTATED: { name: string; members: PanelMember[]; why: string }[] = [
-  { name: "braced chevron", members: buildBracedPanelMembers(40, D, H, false, "chevron", false), why: "diagonal braces: an axis-aligned box round a tilted board claims space it does not fill" },
-  { name: "gable", members: buildGablePanelMembers(40, D, 48, 72, false), why: "sloped top plate" },
-  { name: "big header", members: buildBigHeaderMembers(40, D, 24, false, "plywood"), why: "W-truss web is diagonal" },
-];
-
 /**
  * ⚠ THE PANELS THAT STILL OVERLAP, AND WHY EACH ONE IS NOT SILENTLY FIXED.
  *
@@ -133,21 +111,28 @@ const KNOWN_ROTATED: { name: string; members: PanelMember[]; why: string }[] = [
  *      the W-truss braces into the chords they land on.
  */
 const BASELINE: Record<string, number> = {
-  // "standard", "standard narrow" and "floor"/"roof" are solid and so are
-  // absent: a panel only appears here while it is still wrong.
   "standard + nailer": 2,
   column: 4,
   "column style": 4,
   corner: 4,
-  "door header": 20,
-  "window header": 20,
+  "door header": 12,
+  "window header": 12,
+  /* ⚠ Newly VISIBLE, not newly broken. These panels have always been like
+     this; nothing could see them until the prism test. Most of what is here
+     is a brace lapping a corner post, which is his own 2026-10-13 geometry —
+     *the far point flush to the panel edge* — so the post is exactly where
+     the brace is going. Lapped on purpose is still two solids in one place
+     on a drawing, and the shop still has to be told which one is notched,
+     so they are counted rather than waved through. */
+  "braced chevron": 6,
+  "braced hatch": 4,
+  gable: 1,
+  "big header": 26,
 };
 
 describe("⚠ no member occupies the same space as another", () => {
   for (const { name, members } of CASES) {
     it(`${name} panel builds solid`, () => {
-      const rotated = members.filter((m) => !isAxisAligned(m));
-      expect({ panel: name, rotated: rotated.map((m) => m.memberId) }).toEqual({ panel: name, rotated: [] });
       const overlaps = overlappingPairsIn(members);
       const allowed = BASELINE[name] ?? 0;
       if (allowed === 0) {
@@ -159,17 +144,6 @@ describe("⚠ no member occupies the same space as another", () => {
       }
     });
   }
-
-  it("⚠ the panels with tilted members are listed, not forgotten", () => {
-    /* These cannot be checked this way, and saying so out loud is the point:
-       a reader should not conclude from this file that every panel in the app
-       has been proven solid. Checking them properly needs real oriented-box
-       intersection, which nothing here does yet. */
-    for (const { name, members, why } of KNOWN_ROTATED) {
-      expect({ name, hasMembers: members.length > 0, why: why.length > 0 }).toEqual({ name, hasMembers: true, why: true });
-    }
-    expect(KNOWN_ROTATED.map((k) => k.name)).toEqual(["braced chevron", "gable", "big header"]);
-  });
 
   it("the panels that ARE solid stay that way", () => {
     // Named so a regression reads as a list getting shorter, not a number.

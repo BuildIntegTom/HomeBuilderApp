@@ -9,6 +9,8 @@ export * from "./floorRoofPanelRun";
 export * from "./ringFacetPanels";
 export * from "./roofPanelSpanLimit";
 export * from "./bracePairPatterns";
+export * from "./wallBracingOverlay";
+export * from "./memberPrism";
 export * from "./panelRecipe";
 export * from "./bracedPanelMembers";
 export * from "./columnPanelMembers";
