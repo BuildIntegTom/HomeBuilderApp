@@ -157,8 +157,8 @@ export function goldenMembers(): PanelMember[] {
 
   return [
     ...asCaptured(goldenStandardPanelMembers()),
-    ...asCaptured(buildBracedPanelMembers(48, 14, 96, true, "chevron", false)),
-    ...asCaptured(buildBracedPanelMembers(48, 14, 96, false, "hatch", true)),
+    ...asCaptured(buildBracedPanelMembers(48, 14, 96, true, "chevron", false, true)),
+    ...asCaptured(buildBracedPanelMembers(48, 14, 96, false, "hatch", true, true)),
     ...asCaptured(buildGablePanelMembers(48, 14, 12, 60, false)),
     ...buildTrussPlateMembers(96, 14),
     ...buildBoxBeamMembers(96, 14),
@@ -184,7 +184,7 @@ export function goldenPanels(): WorldPlacedPanel[] {
       worldZIn: -37.25,
       worldYIn: 96,
       rotationRad: Math.PI / 2,
-      members: asCaptured(buildBracedPanelMembers(48, 14, 96, true, "chevron", true)),
+      members: asCaptured(buildBracedPanelMembers(48, 14, 96, true, "chevron", true, true)),
     },
     {
       label: "panel_c_blob",

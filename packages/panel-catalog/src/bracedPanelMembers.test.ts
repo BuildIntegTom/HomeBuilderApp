@@ -1,3 +1,4 @@
+import { PLATE_2X4_THICKNESS_IN } from "./panelMemberHelpers";
 import { describe, expect, it } from "vitest";
 import { describeBraceEndCuts } from "./panelMemberHelpers";
 import {
@@ -85,25 +86,31 @@ describe("buildDiagonalBraces", () => {
   // buildDiagonalBraces's own makeBrace doc comment). For a level end NEAR
   // the left edge, this shift lands one corner exactly at X=0; both
   // corners still land on the correct Z (the plate face).
-  function expectLevelEndClampedAtLeftEdge(corners: PanelSpacePoint2D[], targetZIn: number) {
+  function expectLevelEndFlushToLeftPost(corners: PanelSpacePoint2D[], targetZIn: number) {
     expect(corners).toHaveLength(2);
     for (const c of corners) {
       expect(c.zIn).toBeCloseTo(targetZIn, 6);
       expect(c.xIn).toBeGreaterThanOrEqual(0);
       expect(c.xIn).toBeLessThanOrEqual(WIDTH_IN);
     }
-    expect(corners.some((c) => Math.abs(c.xIn) < 1e-6)).toBe(true);
+    // Flush with the LEFT post's inner face — see the note below.
+    expect(corners.some((c) => Math.abs(c.xIn - PLATE_2X4_THICKNESS_IN) < 1e-6)).toBe(true);
   }
 
   // Same as above, mirrored — a level end near the RIGHT edge instead.
-  function expectLevelEndClampedAtRightEdge(corners: PanelSpacePoint2D[], targetZIn: number) {
+  function expectLevelEndFlushToRightPost(corners: PanelSpacePoint2D[], targetZIn: number) {
     expect(corners).toHaveLength(2);
     for (const c of corners) {
       expect(c.zIn).toBeCloseTo(targetZIn, 6);
       expect(c.xIn).toBeGreaterThanOrEqual(0);
       expect(c.xIn).toBeLessThanOrEqual(WIDTH_IN);
     }
-    expect(corners.some((c) => Math.abs(c.xIn - WIDTH_IN) < 1e-6)).toBe(true);
+    /* ⚠ Flush with the POST's inner face, not the panel edge. Tommy,
+       2026-10-25: "Braces should be flush with the post, not the edge of the
+       panel. No overlapping, my bad for misleading there." Reaching the edge
+       meant reaching THROUGH the corner post standing there, which the exact
+       overlap test made visible: six such pairs on a chevron panel. */
+    expect(corners.some((c) => Math.abs(c.xIn - (WIDTH_IN - PLATE_2X4_THICKNESS_IN)) < 1e-6)).toBe(true);
   }
 
   for (const { pattern, mirrored } of BRACE_CONFIGS) {
@@ -169,8 +176,8 @@ describe("buildDiagonalBraces", () => {
     // the bottom plate face — both near the RIGHT side.
     const nearTopPlate = upperExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - topPlateZ) < 1e-6);
     const nearBottomPlate = lowerExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - bottomPlateZ) < 1e-6);
-    expectLevelEndClampedAtRightEdge(nearTopPlate, topPlateZ);
-    expectLevelEndClampedAtRightEdge(nearBottomPlate, bottomPlateZ);
+    expectLevelEndFlushToRightPost(nearTopPlate, topPlateZ);
+    expectLevelEndFlushToRightPost(nearBottomPlate, bottomPlateZ);
 
     // The 2 plumb corners' own Z-midpoint lands exactly on the girt row's
     // top/bottom face respectively (upper flanks the top, lower flanks
@@ -190,7 +197,7 @@ describe("buildDiagonalBraces", () => {
     expect(topPlateZ - middleCenterZ).toBeCloseTo(middleCenterZ - bottomPlateZ, 6); // symmetric rise/fall
   });
 
-  it("⚠ IS A TRUE BOARD: exactly the stock width across BOTH end cuts, and the long point flush with the panel edge", () => {
+  it("⚠ IS A TRUE BOARD: exactly the stock width across BOTH end cuts, and the long point flush with the POST", () => {
     /* The invariant this test has always been reaching for, now assertable
        exactly. It used to compare the level cut's X-spread against
        PLATE_2X4_WIDTH_IN / uz using the NOMINAL stud-to-stud direction — which
@@ -222,7 +229,8 @@ describe("buildDiagonalBraces", () => {
     // ...and the long point still genuinely reaches the panel's own true edge.
     const levelCorners = corners.filter((c) => Math.abs(c.zIn - topPlateZ) < 1e-6);
     expect(levelCorners).toHaveLength(2);
-    expect(levelCorners.some((c) => Math.abs(c.xIn - WIDTH_IN) < 1e-6)).toBe(true);
+    // Flush with the far POST's face — see the note above.
+    expect(levelCorners.some((c) => Math.abs(c.xIn - (WIDTH_IN - PLATE_2X4_THICKNESS_IN)) < 1e-6)).toBe(true);
   });
 
   it("mirrored chevron: both braces' inner (plumb) end is flush to the RIGHT stud instead, outer (level) end near the left plate", () => {
@@ -236,8 +244,8 @@ describe("buildDiagonalBraces", () => {
 
     const nearTopPlate = upperExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - topPlateZ) < 1e-6);
     const nearBottomPlate = lowerExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - bottomPlateZ) < 1e-6);
-    expectLevelEndClampedAtLeftEdge(nearTopPlate, topPlateZ);
-    expectLevelEndClampedAtLeftEdge(nearBottomPlate, bottomPlateZ);
+    expectLevelEndFlushToLeftPost(nearTopPlate, topPlateZ);
+    expectLevelEndFlushToLeftPost(nearBottomPlate, bottomPlateZ);
 
     const upperPlumb = upperExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.xIn - rightStudFaceX) < 1e-6);
     const lowerPlumb = lowerExt!.position.trapezoidCornersIn!.filter((c) => Math.abs(c.xIn - rightStudFaceX) < 1e-6);
@@ -259,7 +267,7 @@ describe("buildDiagonalBraces", () => {
     expect(nearRightStud).toHaveLength(2);
     expect(Math.max(nearRightStud[0]!.zIn, nearRightStud[1]!.zIn)).toBeCloseTo(middleBarBottomZ, 6);
     const nearBottomPlate = lowerExt.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - bottomPlateZ) < 1e-6);
-    expectLevelEndClampedAtLeftEdge(nearBottomPlate, bottomPlateZ);
+    expectLevelEndFlushToLeftPost(nearBottomPlate, bottomPlateZ);
   });
 
   it("hatch mirrored (formerly 'hatch-back'): lower brace matches chevron's lower (left stud), upper brace flips to the RIGHT stud + left-side top plate", () => {
@@ -269,7 +277,7 @@ describe("buildDiagonalBraces", () => {
     expect(nearRightStud).toHaveLength(2);
     expect(Math.min(nearRightStud[0]!.zIn, nearRightStud[1]!.zIn)).toBeCloseTo(middleBarTopZ, 6);
     const nearTopPlate = upperExt.position.trapezoidCornersIn!.filter((c) => Math.abs(c.zIn - topPlateZ) < 1e-6);
-    expectLevelEndClampedAtLeftEdge(nearTopPlate, topPlateZ);
+    expectLevelEndFlushToLeftPost(nearTopPlate, topPlateZ);
   });
 
   it("every brace, across all 4 configs, shares the same folded tilt magnitude (panel's own vertical symmetry)", () => {

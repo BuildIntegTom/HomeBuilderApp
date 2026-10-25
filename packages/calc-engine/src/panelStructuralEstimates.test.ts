@@ -133,22 +133,42 @@ describe("computeBracedPanelShearCapacityLb", () => {
        96in tall, 15.75in thick, chevron — still not monotonic: it rises off
        the narrow end, peaks in the middle of the band and falls again as the
        brace lies flatter. */
-    expect(at(24)).toBe(3_225);
-    expect(at(40)).toBe(3_474);
-    expect(at(48)).toBe(3_250);
+    /* ⚠ MOVED AGAIN ON 2026-10-25, and this time DOWNWARD at the narrow end.
+       Tommy corrected the far anchor from the panel edge to the opposite
+       post's inner face — *"Braces should be flush with the post, not the
+       edge of the panel. No overlapping, my bad for misleading there."* The
+       brace is shorter by a post thickness, and the effect is not uniform:
+
+         24in  3,225 -> 3,122   (-103, the worst of it)
+         36in  3,526 -> 3,530   (+4, the peak barely moves)
+         48in  3,250 -> 3,300   (+50)
+
+       So narrow panels lost and wide ones gained. ⚠ He approved a RISE in
+       this estimate on 2026-10-13; this is a partial reversal of it at the
+       narrow end, and it has not been put to him. Pinned so it cannot move
+       again unnoticed. */
+    expect(at(24)).toBe(3_122);
+    expect(at(40)).toBe(3_500);
+    expect(at(48)).toBe(3_300);
     /* The band is what bounds the permission: the whole [24in, 48in] range
        sits within 9% of its own peak — the 24in end is still the worst of it
        — which is a fraction of the cost of the thing the combine is forbidden
        to do instead, swallowing the brace, at -100%.
 
-       ⚠ The new geometry made this band TIGHTER, from 16% to 8.5%. The
-       argument this test protects is therefore stronger than it was, not
-       weaker — worth saying explicitly, because a changed number in a
-       safety-adjacent test is otherwise indistinguishable from a regression. */
+       ⚠ The 2026-10-13 geometry made this band TIGHTER, from 16% to 8.5%,
+       and the 2026-10-25 post-flush correction widened it again to 11.6% —
+       still far better than 16%. Worth saying explicitly, because a changed
+       number in a safety-adjacent test is otherwise indistinguishable from a
+       regression. */
     const inBand = [24, 30, 36, 40, 44, 48].map(at);
     const spreadPct = (Math.min(...inBand) / Math.max(...inBand) - 1) * 100;
-    expect(spreadPct).toBeGreaterThan(-9);
-    expect(spreadPct).toBeLessThan(-8);
+    /* Still well inside the bound the permission rests on, and still far
+       better than the 16% it was before 2026-10-13. The post-flush correction
+       widened it a little — the narrow end fell while the peak held — so
+       this reads 11.6%, not the 8.5% above. The argument survives; the
+       sentence above would have been wrong if left alone. */
+    expect(spreadPct).toBeGreaterThan(-12);
+    expect(spreadPct).toBeLessThan(-11);
   });
 
   it("contributes ~0 shear for a brace standing perfectly vertical (tiltDeg=0)", () => {

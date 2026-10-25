@@ -78,8 +78,14 @@ export function bracePairAddedMembers(options: BracePairOptions): AddedMemberSpe
      edge of the left panel, the left edge of the right panel. Every leg of
      an X runs from the seam outward, which is what makes the two panels'
      legs line up across it. */
-  const seamXIn = half === "left" ? widthIn : 0;
-  const outerXIn = half === "left" ? 0 : widthIn;
+  /* ⚠ Flush with the POSTS, not the panel edges. *"Braces should be flush
+     with the post, not the edge of the panel. No overlapping."* A leg run to
+     the edge measurably occupies the same space as the corner post standing
+     there, so both ends stop at a post's inner face. The two panels' legs
+     therefore stop 3in apart across the seam — two post thicknesses — which
+     is exactly the material that is in the way. */
+  const seamXIn = half === "left" ? widthIn - CORNER_POST_THICKNESS_IN : CORNER_POST_THICKNESS_IN;
+  const outerXIn = half === "left" ? CORNER_POST_THICKNESS_IN : widthIn - CORNER_POST_THICKNESS_IN;
 
   const out: AddedMemberSpec[] = [];
   for (const wythe of wythes) {

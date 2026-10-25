@@ -92,12 +92,15 @@ describe("the three patterns from his sketch", () => {
     expect(left.every((s) => s.kind === "diagonal")).toBe(true);
   });
 
-  it("⚠ every leg starts at the SEAM, which is what lines the X up across it", () => {
+  it("⚠ every leg starts at the seam-side POST, which is what lines the X up across it", () => {
     const left = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", wythes: ["exterior"] });
     const right = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "right", wythes: ["exterior"] });
-    // Left panel's seam is its right edge; the right panel's is its left.
-    for (const s of left) expect(s.kind === "diagonal" && s.fromXIn).toBe(W);
-    for (const s of right) expect(s.kind === "diagonal" && s.fromXIn).toBe(0);
+    /* ⚠ The seam-side POST's inner face, not the seam itself. Tommy,
+       2026-10-25: "Braces should be flush with the post, not the edge of the
+       panel." So the two panels' legs stop 3in apart across the seam — two
+       post thicknesses — which is exactly the material in the way. */
+    for (const s of left) expect(s.kind === "diagonal" && s.fromXIn).toBe(W - 1.5);
+    for (const s of right) expect(s.kind === "diagonal" && s.fromXIn).toBe(1.5);
     // And they meet at the same height, or the X would be a zigzag.
     const leftMid = left.map((s) => (s.kind === "diagonal" ? s.fromZIn : 0));
     const rightMid = right.map((s) => (s.kind === "diagonal" ? s.fromZIn : 0));

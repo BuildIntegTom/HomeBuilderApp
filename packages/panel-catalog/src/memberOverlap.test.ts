@@ -124,8 +124,17 @@ const BASELINE: Record<string, number> = {
      the brace is going. Lapped on purpose is still two solids in one place
      on a drawing, and the shop still has to be told which one is notched,
      so they are counted rather than waved through. */
-  "braced chevron": 6,
-  "braced hatch": 4,
+  /* ⚠ 6 → 2 and 4 → 0 on 2026-10-25, when he corrected the far anchor from
+     the panel edge to the opposite post's face. Every brace had been running
+     into the post it reached past. A hatch panel is now clean outright.
+
+     The chevron's remaining two are its legs clipping `brace_center_connector`,
+     the vertical post the two legs meet at mid-panel — the same shape of
+     problem as a diagonal crossing a centre nailer stud, and it wants the
+     same answer. */
+  "braced chevron": 2,
+  /* The sloped top plate clipping its own skin — unrelated to bracing, and
+     the only thing the exact test found on a gable. */
   gable: 1,
   "big header": 26,
 };
@@ -158,6 +167,7 @@ describe("⚠ no member occupies the same space as another", () => {
       "vertical gap filler",
       "floor panel",
       "roof panel",
+      "braced hatch",
     ]);
   });
 });

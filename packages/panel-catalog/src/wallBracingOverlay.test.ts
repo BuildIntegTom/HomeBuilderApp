@@ -83,8 +83,9 @@ describe("laying a pattern across a wall", () => {
       startFrom: "start",
       wythes: ["exterior"],
     });
-    for (const s of r.addedByPanelId["a"]!) expect(s.kind === "diagonal" && s.fromXIn).toBe(48);
-    for (const s of r.addedByPanelId["b"]!) expect(s.kind === "diagonal" && s.fromXIn).toBe(0);
+    // Flush with each panel's seam-side POST, 1.5in in from the seam itself.
+    for (const s of r.addedByPanelId["a"]!) expect(s.kind === "diagonal" && s.fromXIn).toBe(48 - 1.5);
+    for (const s of r.addedByPanelId["b"]!) expect(s.kind === "diagonal" && s.fromXIn).toBe(1.5);
   });
 
   it("each panel's members are cut to ITS width, not the pair's", () => {
@@ -98,9 +99,9 @@ describe("laying a pattern across a wall", () => {
       const s = r.addedByPanelId[id]![i]!;
       return s.kind === "diagonal" ? s.toXIn : -1;
     };
-    expect(outer("wide", 0)).toBe(0);
-    // The right-hand panel's legs run out to ITS own far edge.
-    expect(outer("narrow", 0)).toBe(24);
+    expect(outer("wide", 0)).toBe(1.5);
+    // The right-hand panel's legs run out to ITS own far post.
+    expect(outer("narrow", 0)).toBe(24 - 1.5);
   });
 
   it("a nailer wall pairs the same way and adds no surgery members", () => {

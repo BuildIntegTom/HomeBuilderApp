@@ -124,7 +124,7 @@ function flipStudSide(side: "left" | "right"): "left" | "right" {
  * every bracing style; only `studSide` changes which physical stud the
  * inner nose lands on.
  */
-function braceEndpoints(widthIn: number, studSide: "left" | "right", girtBarZIn: number, plateZIn: number): [number, number, number, number] {
+function braceEndpoints(widthIn: number, studSide: "left" | "right", girtBarZIn: number, plateZIn: number, legacyPanelEdgeAnchor = false): [number, number, number, number] {
   const studXIn = studSide === "left" ? PLATE_2X4_THICKNESS_IN : widthIn - PLATE_2X4_THICKNESS_IN;
   // The wide/"long point" end lands on the OPPOSITE stud's own real inner
   // face (Tommy: "i want the 2x4 trapezoid to end on the top plate with
@@ -136,16 +136,30 @@ function braceEndpoints(widthIn: number, studSide: "left" | "right", girtBarZIn:
   // is at widthIn - PLATE_2X4_THICKNESS_IN. Previously a fixed
   // `2 * PLATE_2X4_THICKNESS_IN` inset from the panel edge, which stopped
   // 1 stud-thickness short of the actual stud face.
-  /* ⚠ THE FAR ANCHOR IS THE PANEL EDGE, NOT THE OPPOSITE STUD'S FACE, and
-     these two values are now the brace's ANCHOR POINTS rather than its
-     centreline endpoints. Tommy, 2026-10-13: the brace's point meets the top
-     of the girt bar, and the far long point stays flush — *"Flush, and let
-     the angle shift instead."* Both anchors lie on ONE long edge of the
-     board, which is what makes the shape well-posed; see
-     computeBraceBoardCornersIn for why the old centreline version could not
-     be. */
-  const panelEdgeXIn = studSide === "left" ? widthIn : 0;
-  return [studXIn, girtBarZIn, panelEdgeXIn, plateZIn];
+  /* ⚠ THE FAR ANCHOR IS THE OPPOSITE POST'S INNER FACE, not the panel edge.
+     Tommy, 2026-10-25, correcting himself: *"Braces should be flush with the
+     post, not the edge of the panel. No overlapping, my bad for misleading
+     there."*
+
+     It had been the panel edge since 2026-10-13 (*"Flush, and let the angle
+     shift instead"*), and the exact overlap test showed what that cost: every
+     brace measurably ran into the corner post it was reaching past — six
+     such pairs on a chevron panel, four on a hatch. Landing on the post's
+     face instead is both what he wants and what makes the panel buildable.
+
+     Both anchors still lie on ONE long edge of the board, which is what keeps
+     the shape well-posed — see computeBraceBoardCornersIn. */
+  /* ⚠ `legacyPanelEdgeAnchor` reproduces the pre-2026-10-25 anchor, where
+     the far end reached the panel EDGE and so ran through the post standing
+     there. It exists for one caller: the OBJ golden fixture, which is a
+     frozen record of the EXPORTER's output and must not be regenerated. Its
+     input was never frozen, so a change to this panel would otherwise break
+     it without the exporter having moved at all. Nothing else should pass
+     true. */
+  const farStudXIn = legacyPanelEdgeAnchor
+    ? (studSide === "left" ? widthIn : 0)
+    : (studSide === "left" ? widthIn - PLATE_2X4_THICKNESS_IN : PLATE_2X4_THICKNESS_IN);
+  return [studXIn, girtBarZIn, farStudXIn, plateZIn];
 }
 
 /**
@@ -203,6 +217,7 @@ export function buildDiagonalBraces(
   studSpanIn: number,
   pattern: BracePattern,
   mirrored: boolean,
+  legacyPanelEdgeAnchor = false,
 ): PanelMember[] {
   const middleRow = (rowCount + 1) / 2;
   const middleRowCenterZIn = SKIN_THICKNESS_IN + (studSpanIn * middleRow) / (rowCount + 1);
@@ -282,8 +297,8 @@ export function buildDiagonalBraces(
   const sides = BRACE_STUD_SIDES[pattern];
   const upperStudSide = mirrored ? flipStudSide(sides.upper) : sides.upper;
   const lowerStudSide = mirrored ? flipStudSide(sides.lower) : sides.lower;
-  const [upperX1, upperZ1, upperX2, upperZ2] = braceEndpoints(widthIn, upperStudSide, middleRowBarTopZIn, topPlate2x4ZIn);
-  const [lowerX1, lowerZ1, lowerX2, lowerZ2] = braceEndpoints(widthIn, lowerStudSide, middleRowBarBottomZIn, bottomPlate2x4ZIn);
+  const [upperX1, upperZ1, upperX2, upperZ2] = braceEndpoints(widthIn, upperStudSide, middleRowBarTopZIn, topPlate2x4ZIn, legacyPanelEdgeAnchor);
+  const [lowerX1, lowerZ1, lowerX2, lowerZ2] = braceEndpoints(widthIn, lowerStudSide, middleRowBarBottomZIn, bottomPlate2x4ZIn, legacyPanelEdgeAnchor);
   const styleLabel = `${pattern}${mirrored ? "-mirrored" : ""}`;
 
   const members: PanelMember[] = [];
@@ -336,7 +351,7 @@ export function buildDiagonalBraces(
  * `BRACE_STUD_SIDES.chevron`), so a single stud-side flip covers both
  * reference braces here.
  */
-function buildBracedCenterConnector(widthIn: number, heightIn: number, rowCount: number, studSpanIn: number, mirrored: boolean): PanelMember {
+function buildBracedCenterConnector(widthIn: number, heightIn: number, rowCount: number, studSpanIn: number, mirrored: boolean, legacyPanelEdgeAnchor = false): PanelMember {
   const middleRow = (rowCount + 1) / 2;
   const middleRowCenterZIn = SKIN_THICKNESS_IN + (studSpanIn * middleRow) / (rowCount + 1);
   /* ⚠ NO BAR AT THE CENTRE? ANCHOR ON MID-HEIGHT. Tommy, 2026-10-13: *"If
@@ -354,8 +369,10 @@ function buildBracedCenterConnector(widthIn: number, heightIn: number, rowCount:
   const bottomPlate2x4ZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const studSide = mirrored ? "right" : "left";
 
-  const [upperX1, upperZ1, upperX2, upperZ2] = braceEndpoints(widthIn, studSide, middleRowBarTopZIn, topPlate2x4ZIn);
-  const [lowerX1, lowerZ1, lowerX2, lowerZ2] = braceEndpoints(widthIn, studSide, middleRowBarBottomZIn, bottomPlate2x4ZIn);
+  /* The connector spans where each brace's centreline crosses mid-width,
+     so it has to read the SAME anchors the braces were built from. */
+  const [upperX1, upperZ1, upperX2, upperZ2] = braceEndpoints(widthIn, studSide, middleRowBarTopZIn, topPlate2x4ZIn, legacyPanelEdgeAnchor);
+  const [lowerX1, lowerZ1, lowerX2, lowerZ2] = braceEndpoints(widthIn, studSide, middleRowBarBottomZIn, bottomPlate2x4ZIn, legacyPanelEdgeAnchor);
 
   const centerXIn = widthIn / 2;
   function crossZAt(x1: number, z1: number, x2: number, z2: number): number {
@@ -399,6 +416,7 @@ export function buildBracedPanelMembers(
   includeNailer: boolean,
   pattern: BracePattern,
   mirrored: boolean,
+  legacyPanelEdgeAnchor = false,
 ): PanelMember[] {
   const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
   const rowCount = computeBracedGirtRowCount(studSpanIn);
@@ -407,10 +425,10 @@ export function buildBracedPanelMembers(
     ...buildPlates(widthIn, depthIn, heightIn),
     ...buildCornerStuds(widthIn, depthIn, heightIn),
     ...buildGirtRows(rowCount, widthIn, depthIn, studSpanIn),
-    ...buildDiagonalBraces(widthIn, depthIn, heightIn, rowCount, studSpanIn, pattern, mirrored),
+    ...buildDiagonalBraces(widthIn, depthIn, heightIn, rowCount, studSpanIn, pattern, mirrored, legacyPanelEdgeAnchor),
   ];
   if (pattern === "chevron") {
-    members.push(buildBracedCenterConnector(widthIn, heightIn, rowCount, studSpanIn, mirrored));
+    members.push(buildBracedCenterConnector(widthIn, heightIn, rowCount, studSpanIn, mirrored, legacyPanelEdgeAnchor));
   }
   if (includeNailer) members.push(buildNailer(widthIn, heightIn));
   return members;
