@@ -111,3 +111,32 @@ because that is the one blocking the 3D view he is looking at now.
 ⚠ Not behind it forever, though: question 8 decides whether bracing is a panel
 property or a wall property, and the longer the roof work builds on the
 current per-panel assumption, the more there is to unpick.
+
+---
+
+# ANSWERED 2026-10-25 — see `panel-editor-plan-2026-10-25.md`
+
+All thirteen answered, and the shape changed: this is no longer a bracing
+rework, it is a **Panel Editor** with bracing as its first use.
+
+| Q | His answer |
+|---|---|
+| 1 | One of many patterns. Wants pattern overlays AND individual lumber edits. |
+| 2 | ⚠ Nothing crosses the seam. The X is **4 pieces**, one leg each, on two panels. Diagonals go on **after pressing, by panel surgery**. Each end gets **2 x 5/16in GRK 4in screws**, predrilled — count them. |
+| 3 | Additional member, also panel surgery. |
+| 4 | Standard panel **plus** a nailer; a plain standard panel should NOT have one. For shear coverings — Timber HP, Power Wool. |
+| 5 | Default SuperBrace for now. Merge the scattered bracing tools. |
+| 6 | Start at the **least accessible** side, pair until the wall runs out. |
+| 7 | Per wall, start to finish. No straddling corners. |
+| 8 | ⚠ Store on the **PANEL**. Panel surgery is why this works rather than being a compromise. |
+| 9 | Fold it all into the editor, library, pattern-overlay button, and per-member edits. |
+| 10 | For 2x4 counts, **the longest tip's length**. |
+| 11–13 | Part of the follow-through, to be carried by the editor work. |
+
+Plus, unprompted and load-bearing: **a Panel Editor and a user panel library**,
+with editing in the **2D elevation view**, where the diagonals should be drawn.
+
+⚠ Still open, and it decides geometry: **are surgery-added members inside the
+panel's depth or proud of its face?** Measured, today's braces sit inside,
+flush with each face. The same question fixes the nailer, whose whole 90in
+measurably sits inside the centre nailer stud on a 4ft panel.

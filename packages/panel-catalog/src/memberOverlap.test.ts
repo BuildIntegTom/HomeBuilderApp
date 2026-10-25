@@ -110,11 +110,22 @@ const KNOWN_ROTATED: { name: string; members: PanelMember[]; why: string }[] = [
  *      stood 1/8in into every stud it crossed. 8 gone per standard-family
  *      panel, and it unblocked the centre nailer, which would have added 4
  *      more.
- *   2. `bottom_plate_2x4_ext x nailer`, 1 1/2 x 3 1/2 x 1 1/2in — a whole 2x4
- *      cross-section. Not a joint at all: the nailer is placed inside the
- *      plate. ⚠ This is the OLD `includeNailer` member, not the new centre
- *      nailer stud — that one sits on the plate properly. Where the old one
- *      should actually sit is still open.
+ *   2. The nailer, twice over, and the cause is now known. Measured: the
+ *      whole 90in of it sits inside `stud_centre_1_exterior`, and another
+ *      1 1/2in of it inside the bottom plate.
+ *
+ *      ⚠ Both follow from the nailer being modelled INSIDE the panel's
+ *      depth (y 0–3.5) when it is really applied to the FACE. Tommy,
+ *      2026-10-25, describing how braces go on: *"The diagonals for each
+ *      panel are added after it comes out of the compression table via panel
+ *      surgery."* A member screwed to a pressed panel's face sits proud of
+ *      it and collides with nothing inside — which would clear both of
+ *      these at once.
+ *
+ *      Not changed here, because moving the nailer out of the cavity changes
+ *      the wall's built thickness, and that is his call. Suppressing the
+ *      nailer where the stud already is was tried and reverted: it silently
+ *      drops a member the user asked for.
  *   3. `girt_1_bar_* x blocking_2_*`, 3 1/2 x 1 1/2 x 1/4in, in column and
  *      corner panels — a girt bar and a blocking row 1/4in into each other.
  *   4. Header chords run 3/4in into the end plywood, 20 pairs per header —
