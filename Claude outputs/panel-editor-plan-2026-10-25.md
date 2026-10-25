@@ -143,3 +143,56 @@ designing a single screen.
 ⚠ But if the roof work is still the priority, this waits — with the caveat
 already recorded: every day the roof builds on per-panel bracing assumptions
 is more to unpick.
+
+---
+
+# Progress, 2026-10-25
+
+**Stages 1 and 2 are built** (`panelRecipe.ts`, `bracePairPatterns.ts`, 35
+tests). No UI. A recipe with nothing added is member-for-member identical to
+`buildStandardPanelMembers`, which is the guarantee everything else rests on.
+
+**The face-vs-inside question is ANSWERED** — *"Inside the panels depth - the
+straw router bit'ed out a little groove for a wooden member to sit where straw
+was."* So today's geometry was right all along and my face-mounting idea was
+wrong. ⚠ **That also means the nailer collision is NOT solved by moving it to
+the face.** The whole 90in of the nailer still sits inside the centre nailer
+stud on a 4ft panel, and it still needs an answer of its own.
+
+**Corrected along the way:** brace screws were counted as 6in; his spec is
+**4in**, two at each end. Count was right, length was not.
+
+---
+
+## Still to do, in order
+
+3. **Pattern overlay on a wall** — pair from the least accessible end, per
+   wall, never round a corner.
+4. **Oriented-box overlap check** — ⚠ still gating stage 5, and now more
+   urgently: the recipe path makes diagonals ordinary.
+5. **Editor UI in the 2D elevation view**, with the diagonals drawn.
+6. **Library + storage.**
+7. **Follow-through:** fabrication grouping must key on the recipe, migration
+   of existing `bracedPattern`/`bracedMirrored` slots.
+
+---
+
+# Also queued, 2026-10-25
+
+**Seed Collaborate membrane + furring strips + siding.**
+
+> *"We will eventually need an option for Seed Collaborate labeled Membrane
+> from 475 Mento wrap and model furring strips and siding options."*
+
+Belongs with the Membranes tab (to be renamed **Install**), beside the
+sleepers/decking/roof-material work already queued there. What it needs:
+
+- The membrane as a selectable product in the wall assembly layer list, where
+  Intello, Exto Seal and Tescon Vana already live with their coverage rules.
+  ⚠ 475's SOLITEX MENTO under a Seed Collaborate label — confirm the exact
+  product and whether its perm rating and coverage rule differ from the
+  Pro Clima original, because the assembly's vapour check reads that number.
+- **Furring strips** modelled as real members, which the existing member
+  pipeline will then count, weigh and draw for free.
+- **Siding options** — ⚠ an open list, and the one place this could balloon.
+  Worth pinning down how many he actually wants before building a catalogue.
