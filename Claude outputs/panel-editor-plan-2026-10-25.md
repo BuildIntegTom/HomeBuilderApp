@@ -196,3 +196,64 @@ sleepers/decking/roof-material work already queued there. What it needs:
   pipeline will then count, weigh and draw for free.
 - **Siding options** — ⚠ an open list, and the one place this could balloon.
   Worth pinning down how many he actually wants before building a catalogue.
+
+---
+
+# The editing model, settled 2026-10-25
+
+His rules, which between them decide most of the UI:
+
+| | |
+|---|---|
+| **Pattern overlay** | One click, auto-fills the wall. |
+| **Hand edit** | Takes effect **immediately** — it does not wait for a re-tile. |
+| **Uniqueness** | A hand-edited panel *"becomes unique immediately and gets its own separate shop drawing page because only exact copies of panels should be grouped together."* |
+| **Re-patternising a wall** | **Overwrites hand edits on that wall.** Which is exactly why saving a panel to a library matters — it is the only way an edit survives. |
+| **Library** | Cloud, per company, with umbrella orgs (Seed Collaborative) seeing each other's libraries by the same access rules cloud projects already use. |
+
+⚠ **Uniqueness is not a flag.** `recipeFingerprint` keys on the panel's base
+size plus its added members, sorted and without their ids or the user's name
+for it. So two panels hand-edited into the same shape ARE exact copies and
+share a sheet, and a panel edited back to where it started rejoins its group
+by itself. A `handEdited` boolean would get both of those wrong, and his own
+sentence says why: *only exact copies should be grouped*.
+
+⚠ **Overwrite-on-re-tile is a data-loss path**, and the library is the
+mitigation he already named. Worth a confirmation prompt that says how many
+hand-edited panels are about to go, and offers to save them first.
+
+---
+
+# The nailer question, dissolved rather than answered
+
+I asked which member gets notched where a diagonal crosses a vertical. His
+answer was that the combination should not exist:
+
+> *"it doesn't make sense structurally to have vertical nailers and diagonals,
+> they interfere with each other's jobs if either one is notched... much
+> easier to shoot GRKs through the top and sides of a panel to ensure a solid
+> connection than toenail a diagonal to a vertical nailer stud."*
+
+And the reason they are alternatives is a building one, not a geometric one:
+
+> *"I do not want to incentivise [CDX plywood on the exterior] because CDX
+> plywood has a much lower perm rating... hence diagonals jobs are to provide
+> sheer in a way where the exterior could then be plastered or at least
+> membranes, furred out, and then siding installed."*
+
+A nailer receives a sheet good; diagonals mean no sheet good is needed, which
+is what keeps the wall vapour-open. **Built:** `recipeConflicts` reports the
+combination in those terms so a UI can disable the option rather than honour
+it silently, and diagonals suppress both the nailer and the intermediate
+studs. A braced recipe panel now has **zero** member overlaps.
+
+⚠ **One gap this leaves, stated plainly.** A 4ft panel carries an intermediate
+stud so a 2ft floor seam always lands on a stud. A braced 4ft panel now does
+not, so that seam lands on 4ft of top plate in bending. Braced panels never
+had intermediate studs, so this is consistent rather than new — but nobody has
+answered it, and the 2ft/4ft module was chosen precisely to make that load
+path straight.
+
+The vertical nailer is already off by default (`includeNailer` starts false),
+which matches *"simply a setting to add if the structure will have a sheet
+good attached to it"*.

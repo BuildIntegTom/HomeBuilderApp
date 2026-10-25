@@ -180,21 +180,116 @@ function buildStraightFromSpec(spec: Extract<AddedMemberSpec, { kind: "straight"
 }
 
 /**
+ * ⚠ WHY A PANEL CANNOT HAVE BOTH A VERTICAL NAILER AND DIAGONALS.
+ *
+ * > *"it doesn't make sense structurally to have vertical nailers and
+ * > diagonals, they interfere with each other's jobs if either one is
+ * > notched."* — Tommy, 2026-10-25
+ *
+ * That sentence dissolves a question rather than answering it. A diagonal
+ * crossing a vertical has to be notched one way or the other, and *"notching
+ * one or the other would be difficult to really make a strong connection to
+ * (much easier to shoot GRKs through the top and sides of a panel... than
+ * toenail a diagonal to a vertical nailer stud)"*. So the pair is not a
+ * detailing problem to solve, it is a combination not to build.
+ *
+ * The reason they are alternatives in the first place is a building one:
+ *
+ * > *"although we have done a few houses with CDX plywood on the exterior, I
+ * > do not want to incentivise that because CDX plywood has a much lower perm
+ * > rating and that is something I want to avoid with straw panels — hence
+ * > diagonals jobs are to provide sheer in a way where the exterior could then
+ * > be plastered or at least membranes, furred out, and then siding
+ * > installed."*
+ *
+ * A nailer exists to receive a sheet good. Diagonals exist so that no sheet
+ * good is needed, which is what keeps the wall vapour-open. Wanting both at
+ * once is usually a sign of wanting neither properly.
+ */
+export function recipeConflicts(recipe: PanelRecipe): string[] {
+  const out: string[] = [];
+  const hasDiagonals = recipe.added.some((spec) => spec.kind === "diagonal");
+  if (hasDiagonals && recipe.includeNailer) {
+    out.push(
+      "A vertical nailer and diagonal bracing do the same job by different means, and whichever one is notched " +
+        "where they cross loses the connection that made it worth having. Diagonals brace the panel so the " +
+        "exterior can be plastered or membraned rather than sheathed in CDX, which is the point of them.",
+    );
+  }
+  return out;
+}
+
+/**
  * Build a panel from its recipe.
  *
  * ⚠ With no added members this is EXACTLY `buildStandardPanelMembers`, and a
  * test holds it to that. The whole value of composition is that the base is
  * untouched — if the recipe path drifted from the builder it replaces, every
  * panel in every existing project would quietly change.
+ *
+ * ⚠ **Diagonals suppress the nailer and the intermediate studs**, for the
+ * reason in `recipeConflicts` — and a UI should disable those options rather
+ * than let somebody ask for a panel that then silently loses members. Showing
+ * the conflict is better than honouring it.
+ *
+ * ⚠ **Suppressing the intermediate studs leaves a real gap**, and it is not
+ * being hidden: a 4ft panel carries one so a 2ft floor seam always lands on a
+ * stud, and a braced 4ft panel therefore puts that seam back onto 4ft of top
+ * plate in bending. Braced panels have always been like this — they never had
+ * intermediate studs — so this is consistent rather than new, but it is a
+ * question nobody has answered.
  */
 export function buildPanelFromRecipe(recipe: PanelRecipe): PanelMember[] {
-  const base = buildStandardPanelMembers(recipe.widthIn, recipe.depthIn, recipe.heightIn, recipe.includeNailer ?? false);
+  const hasDiagonals = recipe.added.some((spec) => spec.kind === "diagonal");
+  const base = buildStandardPanelMembers(
+    recipe.widthIn,
+    recipe.depthIn,
+    recipe.heightIn,
+    recipe.includeNailer === true && !hasDiagonals,
+  ).filter((m) => !(hasDiagonals && m.memberId.startsWith("stud_centre_")));
   return [
     ...base,
     ...recipe.added.map((spec) =>
       spec.kind === "diagonal" ? buildDiagonalFromSpec(spec, recipe.depthIn) : buildStraightFromSpec(spec, recipe.depthIn),
     ),
   ];
+}
+
+/**
+ * What makes two panels the same panel.
+ *
+ * > *"When any panel is hand edited and physically made different, it becomes
+ * > unique immediately and gets its own separate shop drawing page because
+ * > only exact copies of panels should be grouped together."* — Tommy,
+ * > 2026-10-25
+ *
+ * ⚠ Note what the second half of that sentence does: uniqueness is not a flag
+ * somebody sets when they edit. It falls out of the panel being different. So
+ * there is no `handEdited` boolean here — two panels edited into the same
+ * shape ARE exact copies and should share a sheet, and a panel edited back to
+ * where it started rejoins its group on its own.
+ *
+ * The fabrication sheet's promise — one sheet per unique panel, exact copies
+ * grouped — therefore becomes: group by this.
+ */
+export function recipeFingerprint(recipe: PanelRecipe): string {
+  const parts = [
+    `w${recipe.widthIn}`,
+    `d${recipe.depthIn}`,
+    `h${recipe.heightIn}`,
+    recipe.includeNailer ? "nailer" : "plain",
+    ...recipe.added
+      .map((spec) =>
+        spec.kind === "diagonal"
+          ? `D:${spec.wythe}:${spec.fromXIn},${spec.fromZIn}>${spec.toXIn},${spec.toZIn}`
+          : `S:${spec.wythe}:${spec.fromXIn},${spec.fromZIn}>${spec.toXIn},${spec.toZIn}`,
+      )
+      /* Sorted, because two panels with the same members added in a different
+         order are the same panel. Member IDs are deliberately left out for the
+         same reason. */
+      .sort(),
+  ];
+  return parts.join("|");
 }
 
 /** The usable height between the plate faces, which is what a surgery member

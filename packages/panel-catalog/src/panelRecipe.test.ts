@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildPanelFromRecipe, recipeClearHeightIn, wytheInsetYIn } from "./panelRecipe";
+import {
+  buildPanelFromRecipe,
+  recipeClearHeightIn,
+  recipeConflicts,
+  recipeFingerprint,
+  wytheInsetYIn,
+} from "./panelRecipe";
 import {
   BRACE_PAIR_PATTERNS,
   BRACE_SCREWS_PER_DIAGONAL,
@@ -215,5 +221,93 @@ describe("the clear height a surgery member has to fit inside", () => {
         }
       }
     }
+  });
+});
+
+describe("⚠ a vertical nailer and diagonals are alternatives, not companions", () => {
+  const diagonals = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left" });
+
+  it("asking for both is reported as a conflict, in building terms", () => {
+    /* *"it doesn't make sense structurally to have vertical nailers and
+       diagonals, they interfere with each other's jobs if either one is
+       notched."* A UI should disable the option rather than honour it
+       silently, which is why this returns words and not a boolean. */
+    const conflicts = recipeConflicts({ name: "both", widthIn: W, depthIn: D, heightIn: H, includeNailer: true, added: diagonals });
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]).toContain("CDX");
+    expect(recipeConflicts({ name: "braced", widthIn: W, depthIn: D, heightIn: H, added: diagonals })).toEqual([]);
+    expect(recipeConflicts({ name: "nailer", widthIn: W, depthIn: D, heightIn: H, includeNailer: true, added: [] })).toEqual([]);
+  });
+
+  it("and the nailer loses, because the diagonals are the ones doing the bracing", () => {
+    const members = buildPanelFromRecipe({ name: "both", widthIn: W, depthIn: D, heightIn: H, includeNailer: true, added: diagonals });
+    expect(members.some((m) => m.memberId === "nailer")).toBe(false);
+  });
+
+  it("⚠ diagonals also clear the intermediate studs, and that leaves a known gap", () => {
+    /* A diagonal crossing any vertical has the same notching problem. So a
+       braced panel has no intermediate stud — which braced panels never had
+       — and a 2ft floor seam over a 4ft braced panel therefore lands on top
+       plate rather than on a stud. Consistent with what the app already did,
+       and still an open question. */
+    const braced = buildPanelFromRecipe({ name: "braced", widthIn: 48, depthIn: D, heightIn: H, added: diagonals });
+    expect(braced.some((m) => m.memberId.startsWith("stud_centre_"))).toBe(false);
+    const plain = buildPanelFromRecipe({ name: "plain", widthIn: 48, depthIn: D, heightIn: H, added: [] });
+    expect(plain.some((m) => m.memberId.startsWith("stud_centre_"))).toBe(true);
+  });
+
+  it("⚠ and with them gone, a braced recipe panel is finally solid", () => {
+    const members = buildPanelFromRecipe({ name: "braced", widthIn: 48, depthIn: D, heightIn: H, added: diagonals });
+    expect(overlappingPairsIn(members)).toEqual([]);
+  });
+});
+
+describe("what makes two panels the same panel", () => {
+  const base = { widthIn: W, depthIn: D, heightIn: H };
+
+  it("⚠ uniqueness falls out of being different, it is not a flag somebody sets", () => {
+    /* *"only exact copies of panels should be grouped together."* So two
+       panels hand-edited into the same shape ARE exact copies and share a
+       sheet, and a panel edited back to where it started rejoins its group
+       on its own. A `handEdited` boolean would get both of those wrong. */
+    const a = recipeFingerprint({ name: "from a pattern", ...base, added: [] });
+    const b = recipeFingerprint({ name: "hand built, identical", ...base, added: [] });
+    expect(a).toBe(b);
+  });
+
+  it("any change to the members changes it immediately", () => {
+    const plain = recipeFingerprint({ name: "p", ...base, added: [] });
+    const braced = recipeFingerprint({
+      name: "p",
+      ...base,
+      added: bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left" }),
+    });
+    expect(braced).not.toBe(plain);
+  });
+
+  it("the order members were added in does not make a different panel", () => {
+    const added = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left" });
+    const forwards = recipeFingerprint({ name: "p", ...base, added });
+    const backwards = recipeFingerprint({ name: "p", ...base, added: [...added].reverse() });
+    expect(forwards).toBe(backwards);
+  });
+
+  it("neither does what the user called it", () => {
+    expect(recipeFingerprint({ name: "Tommy's panel", ...base, added: [] })).toBe(
+      recipeFingerprint({ name: "something else entirely", ...base, added: [] }),
+    );
+  });
+
+  it("⚠ the two halves of a pair are NOT the same panel", () => {
+    // Their legs run opposite ways, so they need separate sheets.
+    const left = recipeFingerprint({ name: "l", ...base, added: bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left" }) });
+    const right = recipeFingerprint({ name: "r", ...base, added: bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "right" }) });
+    expect(left).not.toBe(right);
+  });
+
+  it("a different size is a different panel", () => {
+    expect(recipeFingerprint({ name: "p", ...base, added: [] })).not.toBe(
+      recipeFingerprint({ name: "p", ...base, widthIn: 24, added: [] }),
+    );
   });
 });
