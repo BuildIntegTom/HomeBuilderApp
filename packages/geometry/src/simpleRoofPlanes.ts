@@ -1,6 +1,6 @@
 import type { Footprint, Point } from "./types";
 import { footprintSpanAndRun } from "./joistLayout";
-import { wallCompassDirection } from "./wallCompassDirection";
+import { wallCompassDirection, type CompassDirection } from "./wallCompassDirection";
 
 /**
  * The roof over an ordinary rectangular building: one sloped plane, or two
@@ -29,6 +29,9 @@ export interface SimpleRoofPlane {
   runFt: number;
   /** The real sloped length a panel has to reach. */
   slopeFt: number;
+  /** Which way the plane looks, taken from the eave wall under its low edge
+   * so it can never disagree with the compass labels the user reads. */
+  facing: CompassDirection;
 }
 
 export interface SimpleRoofResult {
@@ -71,6 +74,29 @@ export interface SimpleRoofOptions {
  * first and it is the structural one, and `orientationNote` says so rather
  * than letting a south-facing roof be quietly assumed.
  */
+export function roofRidgeAxis(footprint: Footprint): "x" | "y" {
+  const { minX, maxX, minY, maxY } = footprintSpanAndRun(footprint);
+  /* Ridge along the longer dimension, so the gables land on the short walls.
+     A square ties to X, which is east-west. */
+  return maxY - minY <= maxX - minX ? "x" : "y";
+}
+
+/**
+ * The two walls that should carry a gable end: the ones at the ends of the
+ * ridge, which are the building's SHORT walls.
+ *
+ * Exported so the app can spawn them automatically when a roof is switched
+ * on, using the same rule the planes themselves are built from. Two copies of
+ * "which walls are the gable ends" would eventually disagree, and the symptom
+ * would be a roof whose planes do not sit on its gables.
+ */
+export function gableEndWallIdsFor(footprint: Footprint): string[] {
+  const alongRidge = roofRidgeAxis(footprint) === "x" ? ["E", "W"] : ["N", "S"];
+  return footprint.walls
+    .filter((wall) => alongRidge.includes(wallCompassDirection(wall, footprint)))
+    .map((wall) => wall.id);
+}
+
 export function simpleRoofPlanes(footprint: Footprint, options: SimpleRoofOptions): SimpleRoofResult {
   const { minX, maxX, minY, maxY } = footprintSpanAndRun(footprint);
   const widthFt = maxX - minX;
@@ -84,20 +110,12 @@ export function simpleRoofPlanes(footprint: Footprint, options: SimpleRoofOption
     return { ...empty, form: options.form, ridgeAxis: "x", refusal: "A roof needs a pitch before its planes can be placed." };
   }
 
-  /* Ridge along the longer dimension, so the gables land on the short walls.
-     A square ties to X, which is east-west. */
-  const ridgeAxis: "x" | "y" = depthFt <= widthFt ? "x" : "y";
+  const ridgeAxis = roofRidgeAxis(footprint);
   const runFt = (ridgeAxis === "x" ? depthFt : widthFt) / (options.form === "peaked" ? 2 : 1);
   const riseFt = (runFt * options.pitchIn12) / 12;
   const slopeFt = Math.hypot(runFt, riseFt);
 
-  /* Which walls get the gable: the ones whose outward face points along the
-     ridge. Taken from `wallCompassDirection` rather than from coordinates, so
-     this cannot disagree with the labels the user already reads. */
-  const alongRidge = ridgeAxis === "x" ? ["E", "W"] : ["N", "S"];
-  const gableWallIds = footprint.walls
-    .filter((wall) => alongRidge.includes(wallCompassDirection(wall, footprint)))
-    .map((wall) => wall.id);
+  const gableWallIds = gableEndWallIdsFor(footprint);
 
   const facesSouth = ridgeAxis === "x";
   const orientationNote = facesSouth
@@ -111,6 +129,29 @@ export function simpleRoofPlanes(footprint: Footprint, options: SimpleRoofOption
   const midY = (minY + maxY) / 2;
   const highFt = options.eaveHeightFt + riseFt;
 
+  /* A plane looks the way its own eave wall looks. Found by which eave wall
+     the low edge sits nearest, rather than by snapping a vector to a compass
+     here, so there is exactly one compass rule in this app. */
+  const eaveWalls = footprint.walls.filter((w) => !gableWallIds.includes(w.id));
+  const byId = new Map(footprint.corners.map((c) => [c.id, c.point]));
+  const facingOf = (lowA: Point, lowB: Point): CompassDirection => {
+    const midX = (lowA.x + lowB.x) / 2;
+    const midY = (lowA.y + lowB.y) / 2;
+    let best = eaveWalls[0];
+    let bestDist = Infinity;
+    for (const wall of eaveWalls) {
+      const a = byId.get(wall.startCorner);
+      const b = byId.get(wall.endCorner);
+      if (!a || !b) continue;
+      const d = Math.hypot((a.x + b.x) / 2 - midX, (a.y + b.y) / 2 - midY);
+      if (d < bestDist) {
+        bestDist = d;
+        best = wall;
+      }
+    }
+    return best ? wallCompassDirection(best, footprint) : "S";
+  };
+
   const planes: SimpleRoofPlane[] = [];
   const plane = (lowA: Point, lowB: Point, highA: Point, highB: Point): SimpleRoofPlane => ({
     lowStart: lowA,
@@ -121,6 +162,7 @@ export function simpleRoofPlanes(footprint: Footprint, options: SimpleRoofOption
     highHeightFt: highFt,
     runFt,
     slopeFt,
+    facing: facingOf(lowA, lowB),
   });
 
   if (options.form === "peaked") {
@@ -149,4 +191,23 @@ export function simpleRoofPlanes(footprint: Footprint, options: SimpleRoofOption
   }
 
   return { form: options.form, planes, ridgeAxis, gableWallIds, orientationNote, refusal: null };
+}
+
+/**
+ * Which of a roof's planes should be drawn see-through, so the building can
+ * be looked into from outside.
+ *
+ * > *"east default is transparent or south if n/s>e/w"* — Tommy, 2026-10-26
+ *
+ * ⚠ Only one of those can ever apply. A roof's two planes depend on which way
+ * its ridge runs: a wide building's face north and south, a tall one's face
+ * east and west. So this reads his sentence as "whichever of this roof's own
+ * planes faces east or south", preferring east where it exists — which
+ * honours both halves in the only way the geometry allows.
+ */
+export function defaultTransparentRoofFacing(planes: readonly SimpleRoofPlane[]): CompassDirection | null {
+  for (const preferred of ["E", "S"] as CompassDirection[]) {
+    if (planes.some((plane) => plane.facing === preferred)) return preferred;
+  }
+  return planes[0]?.facing ?? null;
 }

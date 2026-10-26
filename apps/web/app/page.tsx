@@ -30,6 +30,7 @@ import {
   computeInsetPerimeterRing,
   computeJoistLayout,
   footprintSpanAndRun,
+  gableEndWallIdsFor,
   GABLE_COLUMN_FLAT_TOP_DROP_IN,
   GABLE_SHED_SNAP_THRESHOLD_IN,
   computePanelLoadOrder,
@@ -744,6 +745,17 @@ export default function LayoutEditor() {
      per-layer toggles beside the viewer. */
   const [showFloorDeck3D, setShowFloorDeck3D] = useState(true);
   const [showRoofDeck3D, setShowRoofDeck3D] = useState(true);
+  /* ⚠ Half the roof is see-through by default, so a new project shows the
+     inside of the building rather than a lid.
+
+     Tommy, 2026-10-26: *"east default is transparent or south if n/s>e/w"*.
+     Only one of those can ever apply, because the two planes a roof has
+     depend on which way its ridge runs: a wide building's planes face N and
+     S, a tall one's face E and W. So the rule is read as "whichever of this
+     roof's own two planes faces east or south" — east when it exists, south
+     otherwise — which honours both halves of his sentence in the only way
+     the geometry allows. */
+  const [showRoofDeck3DSolid, setShowRoofDeck3DSolid] = useState(false);
   /* ⚠ A gable end means a pitched roof, and the deck can only be placed
      FLAT so far — drawn on a gabled building it runs straight through the
      gable panels, which Tommy saw immediately and which is exactly the
@@ -1786,8 +1798,13 @@ export default function LayoutEditor() {
   // Tommy: "default is that walls are the only checked of these three
   // original branches"); Floors/Roof default off.
   const [wallsEnabled, setWallsEnabled] = useState(true);
-  const [floorsEnabled, setFloorsEnabled] = useState(false);
-  const [roofEnabled, setRoofEnabled] = useState(false);
+  /* ⚠ Floors and roof are IN SCOPE by default as of 2026-10-26 ("Let's turn
+     on roof and floor panels as default"). A building has a floor and a roof;
+     starting with only walls checked meant a new project drew a ring of
+     panels standing in mid-air, and meant the floor and roof decks — which
+     now exist — were invisible until somebody found the Panelizer settings. */
+  const [floorsEnabled, setFloorsEnabled] = useState(true);
+  const [roofEnabled, setRoofEnabled] = useState(true);
   // Smearforn Stage 0 (Tommy: "I would like the turn off the floor and
   // foundation tools as default for now and primarily focus on panelizing
   // wall systems. This setting should still be visible") — Foundation used
@@ -3251,6 +3268,15 @@ export default function LayoutEditor() {
     const nextLeastAccessible = fp.corners[0]!.id;
     const nextPrimary = new Set(fp.corners.map((c) => c.id));
     setFootprint(fp);
+    /* ⚠ Gable ends spawn with the building, on its two SHORT walls — his
+       2026-10-24 rule, and `gableEndWallIdsFor` is the same function the roof
+       planes are built from, so the two cannot disagree about which walls
+       those are.
+       ⚠ Set here in the draw handler rather than in an effect watching the
+       footprint: this repo's lint gate holds `set-state-in-effect` at its
+       current count and it may never rise. A ring has no opposite pair to
+       span a beam between, so it gets none. */
+    setGableEndWallIds(roofEnabled && ringRoofGableBlockReason(fp) === null ? new Set(gableEndWallIdsFor(fp)) : new Set());
     setIsBumpedOut(false);
     setPrimaryCornerIds(nextPrimary);
     setOffsetPx(origin);
@@ -10998,6 +11024,16 @@ export default function LayoutEditor() {
             Roof panels
           </label>
         )}
+        {roofEnabled && showRoofDeck3D && (
+          <label style={{ display: "block" }}>
+            <input
+              type="checkbox"
+              checked={showRoofDeck3DSolid}
+              onChange={(e) => setShowRoofDeck3DSolid(e.target.checked)}
+            />{" "}
+            Solid roof (off = see through one half)
+          </label>
+        )}
         {roofEnabled && showRoofDeck3D && roofTrussLayoutContext === null && (
           <p className={styles.disclaimer}>
             ⚠ Not drawn on this building. Roof panels are laid on the roof&apos;s own planes now, which needs a
@@ -12384,6 +12420,7 @@ export default function LayoutEditor() {
                   roofPitchIn12={roofTrussLayoutContext?.pitchIn12}
                   roofEaveHeightFt={gableEaveHeightIn / 12}
                   roofForm="peaked"
+                  roofDeckSolid={showRoofDeck3DSolid}
                   checkedInteriorIds={checkedInteriorIds}
                   checkedExteriorIds={checkedExteriorIds}
                   tool3D={tool3D}

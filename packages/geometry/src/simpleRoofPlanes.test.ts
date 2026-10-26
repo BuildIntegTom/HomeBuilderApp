@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { simpleRoofPlanes } from "./simpleRoofPlanes";
+import { defaultTransparentRoofFacing, simpleRoofPlanes } from "./simpleRoofPlanes";
 import { wallCompassDirection } from "./wallCompassDirection";
 import type { Footprint } from "./types";
 
@@ -133,5 +133,35 @@ describe("what it refuses", () => {
 
   it("a roof with no pitch given at all", () => {
     expect(simpleRoofPlanes(rect(40, 24), { ...peaked, pitchIn12: Number.NaN }).refusal).toContain("needs a pitch");
+  });
+});
+
+describe("⚠ which half of the roof you can see through", () => {
+  it("a plane looks the way its own eave wall looks", () => {
+    const roof = simpleRoofPlanes(rect(40, 24), peaked);
+    expect(new Set(roof.planes.map((p) => p.facing))).toEqual(new Set(["N", "S"]));
+    const tall = simpleRoofPlanes(rect(24, 40), peaked);
+    expect(new Set(tall.planes.map((p) => p.facing))).toEqual(new Set(["E", "W"]));
+  });
+
+  it("⚠ east when the roof has an east plane, south when it does not", () => {
+    /* "east default is transparent or south if n/s>e/w". Only one can ever
+       apply, because a wide building's planes face N and S and a tall one's
+       face E and W — so this is his sentence read as "whichever of these two
+       faces east or south". */
+    const tall = simpleRoofPlanes(rect(24, 40), peaked);
+    expect(defaultTransparentRoofFacing(tall.planes)).toBe("E");
+    const wide = simpleRoofPlanes(rect(40, 24), peaked);
+    expect(defaultTransparentRoofFacing(wide.planes)).toBe("S");
+  });
+
+  it("a shed has only one plane, and it is that one", () => {
+    const roof = simpleRoofPlanes(rect(40, 24), shed);
+    expect(roof.planes).toHaveLength(1);
+    expect(defaultTransparentRoofFacing(roof.planes)).toBe(roof.planes[0]!.facing);
+  });
+
+  it("no planes, nothing to see through", () => {
+    expect(defaultTransparentRoofFacing([])).toBeNull();
   });
 });

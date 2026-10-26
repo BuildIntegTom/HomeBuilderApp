@@ -17,6 +17,7 @@ import {
   deckPanelPlacements,
   footprintSpanAndRun,
   simpleRoofPlanes,
+  defaultTransparentRoofFacing,
   panelSlotBoxes3D,
   wallAxis,
   type BoxBeamCoverage,
@@ -624,6 +625,9 @@ function renderSimplifiedSlot(
   );
 }
 
+/** Enough to see the framing through, not so little it vanishes. */
+const ROOF_SEE_THROUGH_OPACITY = 0.25;
+
 interface Building3DViewProps {
   footprint: Footprint | null;
   wallSlots: Record<string, PanelSlot[]>;
@@ -688,6 +692,9 @@ interface Building3DViewProps {
   /** Two planes meeting at a ridge, or one falling across the building. */
   roofForm?: "shed" | "peaked";
   roofTallSideNorth?: boolean;
+  /** Draw the whole roof solid. Off by default: half of it is see-through so
+   * the building can be looked into without turning the deck off entirely. */
+  roofDeckSolid?: boolean;
   baleFoundationTopDepthIn?: number;
   baleFoundationBottomDepthIn?: number;
   baleFoundationGapIn?: number;
@@ -1037,6 +1044,7 @@ export default function Building3DView({
   roofEaveHeightFt,
   roofForm = "peaked",
   roofTallSideNorth,
+  roofDeckSolid = false,
   baleFoundationTopDepthIn = BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
   baleFoundationBottomDepthIn = BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
   baleFoundationGapIn = BALE_FOUNDATION_GAP_DEFAULT_IN,
@@ -1617,6 +1625,12 @@ export default function Building3DView({
       });
       if (roof.refusal === null) {
         const tiltRad = Math.atan2(roofPitchIn12, 12);
+        /* ⚠ Half the roof is see-through so a new project shows the inside of
+           the building rather than a lid. Applied as each member's own
+           `opacityOverride`, which the renderer already honours, rather than
+           as a whole-group material — so the framing still reads as framing
+           through it instead of becoming a flat ghost. */
+        const seeThroughFacing = roofDeckSolid ? null : defaultTransparentRoofFacing(roof.planes);
         for (const [planeIndex, plane] of roof.planes.entries()) {
           const edgeDx = plane.lowEnd.x - plane.lowStart.x;
           const edgeDy = plane.lowEnd.y - plane.lowStart.y;
@@ -1647,7 +1661,9 @@ export default function Building3DView({
                 depthIn: thicknessIn,
                 lengthIn: plane.slopeFt * IN_PER_FT,
                 structuralGirtEnds: [],
-              }),
+              }).map((m) =>
+                plane.facing === seeThroughFacing ? { ...m, opacityOverride: ROOF_SEE_THROUGH_OPACITY } : m,
+              ),
             });
             atIn += widthIn;
           }
@@ -1656,7 +1672,7 @@ export default function Building3DView({
     }
 
     return result;
-  }, [footprint, showFloorPanels, showRoofPanels, thicknessIn, roofPitchIn12, roofEaveHeightFt, roofForm, roofTallSideNorth]);
+  }, [footprint, showFloorPanels, showRoofPanels, thicknessIn, roofPitchIn12, roofEaveHeightFt, roofForm, roofTallSideNorth, roofDeckSolid]);
 
   const baleFoundationRenderData = useMemo(() => {
     if (!footprint || !isBaleFoundationFloor) return [];
