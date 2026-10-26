@@ -12,6 +12,7 @@ export * from "./bracePairPatterns";
 export * from "./wallBracingOverlay";
 export * from "./memberPrism";
 export * from "./structuralColumnMembers";
+export * from "./ridgeBeamLayout";
 export * from "./panelRecipe";
 export * from "./bracedPanelMembers";
 export * from "./columnPanelMembers";

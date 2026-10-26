@@ -154,3 +154,32 @@ model**, which should be designed as the same mechanism rather than beside it.
 The pieces this app already has that this leans on: per-company cloud projects
 and their access rules, version history, the Review Log, and the disclaimer
 itself — which is the thing this feature finally gets to switch off.
+
+---
+
+# Export formats, asked 2026-10-26
+
+> *"Hopefully revvit can read .obj files. What other types of exports would be
+> useful, for other cad and engineering softwares?"*
+
+⚠ **Revit does not read OBJ.** It imports DWG, DXF, DGN, SAT (ACIS), SKP and
+IFC natively; OBJ needs a plugin or a round trip through Rhino or 3ds Max. The
+OBJ export this app already has is right for SketchUp, Blender and Rhino, and
+is the wrong format for an engineer on Revit.
+
+| Format | Who reads it | Verdict |
+|---|---|---|
+| **CSV** takeoff | Every estimator, every spreadsheet | **First.** The cut lists already exist, so this is nearly free, and it is probably the most-used export once shipped |
+| **DXF** (2D) | AutoCAD and every CAD there is; open, documented | **Second.** Fabrication sheets and elevations as real linework to mark up. DWG is proprietary and needs a licensed library; DXF gets nearly all the benefit with none of that |
+| **IFC** | Revit, ArchiCAD, Tekla, Solibri — the open BIM standard | **The one that matters.** Carries semantics, not just shapes: a panel becomes an `IfcElementAssembly` with its members inside, each with properties. Hardest to build, highest ceiling, and the thing that makes "send it to the engineer's Revit" true rather than aspirational |
+| **STEP** (.stp) | SolidWorks, Inventor, Rhino, FreeCAD, most FEA | Worth it if mechanical or analysis users appear |
+| **glTF/GLB** | Browsers, phones, viewers | For looking at, not for working from |
+| **SKP** | SketchUp, and Revit reads it | Already queued with the dynamic-component work |
+
+⚠ **There is no universal interchange for wood-frame analysis.** ForteWEB,
+WoodWorks and RISA largely take manual input. So the goal is not "export into
+the engineer's solver" — it is **IFC + DXF + a clean PDF + a CSV takeoff**,
+which is enough for any engineer to work from.
+
+Suggested order: **CSV now, DXF next, IFC alongside the engineer review
+above**, since IFC and the review are the same promise made two ways.
