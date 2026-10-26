@@ -11,6 +11,7 @@ export * from "./roofPanelSpanLimit";
 export * from "./bracePairPatterns";
 export * from "./wallBracingOverlay";
 export * from "./memberPrism";
+export * from "./structuralColumnMembers";
 export * from "./panelRecipe";
 export * from "./bracedPanelMembers";
 export * from "./columnPanelMembers";
