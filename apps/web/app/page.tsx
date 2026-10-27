@@ -3331,9 +3331,34 @@ export default function LayoutEditor() {
          clear across, a peak halves that, and 18ft of panel at 4:12 reaches
          about 17.1ft of ground. */
       const form = decideRoofForm({ buildingWidthIn: acrossFt * 12, pitchIn12: DEFAULT_ROOF_PITCH_IN12 });
-      const runFt = form.kind === "shed" ? acrossFt : acrossFt / 2;
       setRoofProfileType("peaked");
-      setRoofProfilePointHeightsFt([Math.round(runFt * (DEFAULT_ROOF_PITCH_IN12 / 12) * 12) / 12]);
+      /* ⚠ THE RISE IS SEAT-AWARE, and it has to be, or the pitch comes out
+         wrong by a third.
+
+         The pitch the app reports is read off the first real TILE — rise from
+         that tile's own edge height, run from its own start — not from the
+         wall's corner and the eave. A heel seat moves both. My first version
+         computed the rise as (wall length / 2) x 4/12 and the roof came out
+         at about 5.4:12 instead of 4:12.
+
+         `resolveHeelSeat` + `computeRiseFtForPitch` is exactly what the
+         elevation sidebar's own pitch dropdowns use, so the default now
+         lands on the same number picking "4/12" by hand would. The 1-vs-2
+         point count matches those handlers: a shed runs the wall's full
+         width, a centred peak runs half of it. */
+      const wallWidthIn = acrossFt * 12;
+      const seat = resolveHeelSeat(
+        wallWidthIn,
+        standardWidthIn,
+        heelHeightIn,
+        form.kind === "shed" ? 1 : 2,
+        roofBearingAnchorMode,
+        trussPlateInsetIn,
+      );
+      const runForPitchIn = (form.kind === "shed" ? wallWidthIn : wallWidthIn / 2) - seat.runOffsetIn;
+      setRoofProfilePointHeightsFt([
+        computeRiseFtForPitch(DEFAULT_ROOF_PITCH_IN12, runForPitchIn, seat.heelOffsetIn),
+      ]);
       /* A shed is the same one-point profile with its point at the wall's
          start edge rather than centred; null means centred. */
       setGableProfilePositionsInByWallId(
