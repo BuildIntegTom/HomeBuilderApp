@@ -309,6 +309,7 @@ import {
   type PanelMember,
   type PanelStructuralStatus,
   planFloorRoofPanelRun,
+  decideRoofForm,
   FLOOR_ROOF_MIN_PANEL_WIDTH_IN,
   type RoofCatcherBeamShape,
   type RoofSystemType,
@@ -471,6 +472,11 @@ const BEARING_ELIGIBLE_TYPES = new Set(["standard", "corner", "safety-oct-corner
 // it's a real plywood wall panel, just with no straw cavity, see
 // strawSlots' own exclusion of it below).
 const WALL_PANEL_SLOT_TYPES = new Set(["corner", "safety-oct-corner", "standard", "safety-gap", "braced", "column"]);
+/** ⚠ His default, 2026-10-26: a real pitch, replacing a 16ft default RISE
+ * that was never chosen as one — it was picked so the ridge always sat
+ * above the eave, and only became a 24:12 roof once gables auto-spawned. */
+const DEFAULT_ROOF_PITCH_IN12 = 4;
+
 const STRAW_BALE_WEIGHT_LB = 40;
 const KG_TO_LB = 2.20462;
 const LB_FT3_TO_KG_M3 = 16.018463;
@@ -1145,6 +1151,22 @@ export default function LayoutEditor() {
   // the 2nd must be its geometric opposite (parallel, facing away) — the
   // roof-catcher beam needs exactly 2 walls forming a straight run between
   // them, so a 3rd or a non-opposite 2nd would leave that run undefined.
+  /* ⚠ A SHED'S TALL WALL WANTS GABLE PANELS TOO, AND THIS GUARDRAIL FORBIDS
+     IT. Tommy, 2026-10-26: *"Shed roof on small building should spawn with
+     inclined Gable end panels all along the wall of the taller side too."*
+
+     That is a third gable wall, and it is not opposite the other two — both
+     of which the rule below refuses. The rule's stated reason is the
+     roof-catcher beam needing exactly two walls to span between, and a SHED
+     HAS NO CATCHER BEAM, so the reason does not apply to the case he is
+     asking for. The fix is therefore to make the guardrail conditional on the
+     roof form rather than to widen it generally.
+
+     Not done here, because it also needs the tall wall's panels to carry an
+     INCLINED TOP to receive the roof flush — which is his earlier open
+     question about whether the main wall panels take the incline or a
+     smaller stacked panel does (he leaned to the stacked one). Queued rather
+     than half-built. */
   const gableEndToggleBlockReason = (wallId: string): string | null => {
     if (gableEndWallIds.has(wallId)) return null; // always allowed to turn back off
     /* ⚠ A RING HAS NO OPPOSITE PAIR to span a roof-catcher beam between — it
@@ -3276,7 +3298,36 @@ export default function LayoutEditor() {
        footprint: this repo's lint gate holds `set-state-in-effect` at its
        current count and it may never rise. A ring has no opposite pair to
        span a beam between, so it gets none. */
-    setGableEndWallIds(roofEnabled && ringRoofGableBlockReason(fp) === null ? new Set(gableEndWallIdsFor(fp)) : new Set());
+    const autoGableWallIds = roofEnabled && ringRoofGableBlockReason(fp) === null ? gableEndWallIdsFor(fp) : [];
+    setGableEndWallIds(new Set(autoGableWallIds));
+
+    /* ⚠ THE DEFAULT ROOF IS 4:12, and its form is decided, not fixed.
+       Tommy, 2026-10-26: *"Make it default 4/12 shed roof if smaller than 18'
+       roof panels, otherwise gable peaks 4/12 with a center beam and posts."*
+
+       This replaces a 16ft default RISE, which was never a pitch at all — it
+       was chosen so the ridge *"always sits above the eave regardless of
+       story count"*. Harmless while gable ends were off by default; the
+       moment they spawned automatically, every new building got a roof at
+       about 24:12. */
+    const gableWall = fp.walls.find((w) => autoGableWallIds.includes(w.id));
+    if (gableWall) {
+      const a = fp.corners.find((c) => c.id === gableWall.startCorner)!.point;
+      const b = fp.corners.find((c) => c.id === gableWall.endCorner)!.point;
+      const acrossFt = Math.hypot(b.x - a.x, b.y - a.y);
+      /* `decideRoofForm` is his rule exactly: a shed runs one set of panels
+         clear across, a peak halves that, and 18ft of panel at 4:12 reaches
+         about 17.1ft of ground. */
+      const form = decideRoofForm({ buildingWidthIn: acrossFt * 12, pitchIn12: DEFAULT_ROOF_PITCH_IN12 });
+      const runFt = form.kind === "shed" ? acrossFt : acrossFt / 2;
+      setRoofProfileType("peaked");
+      setRoofProfilePointHeightsFt([Math.round(runFt * (DEFAULT_ROOF_PITCH_IN12 / 12) * 12) / 12]);
+      /* A shed is the same one-point profile with its point at the wall's
+         start edge rather than centred; null means centred. */
+      setGableProfilePositionsInByWallId(
+        form.kind === "shed" ? Object.fromEntries(autoGableWallIds.map((id) => [id, [0]])) : {},
+      );
+    }
     setIsBumpedOut(false);
     setPrimaryCornerIds(nextPrimary);
     setOffsetPx(origin);

@@ -44,6 +44,10 @@ import {
   buildFloorBottomSkinMembers,
   buildFramingStackMembers,
   buildFloorRoofPanelMembers,
+  buildRoofCatcherBeamMembers,
+  buildStructuralColumnMembers,
+  ridgeBeamLayout,
+  ROOF_CATCHER_BEAM_DEPTH_IN,
   planFloorRoofPanelWidthsIn,
   STEEL_MESH_THICKNESS_IN,
   SUBFLOOR_DEPTH_DEFAULT_IN,
@@ -1674,6 +1678,66 @@ export default function Building3DView({
     return result;
   }, [footprint, showFloorPanels, showRoofPanels, thicknessIn, roofPitchIn12, roofEaveHeightFt, roofForm, roofTallSideNorth, roofDeckSolid]);
 
+  /* The ridge beam and the columns under it.
+
+     > *"two sets of roof panels... resting on a center beam... the center
+     > beam now must be supported by column panels directly below it all the
+     > way to the foundation."*
+
+     Peaked roofs only: a shed has no ridge to run a beam along. */
+  const ridgeRenderData = useMemo(() => {
+    if (!footprint || !showRoofPanels || roofPitchIn12 === undefined || roofEaveHeightFt === undefined) return [];
+    if (roofForm !== "peaked") return [];
+    const roof = simpleRoofPlanes(footprint, { form: "peaked", pitchIn12: roofPitchIn12, eaveHeightFt: roofEaveHeightFt });
+    const plane = roof.planes[0];
+    if (roof.refusal !== null || !plane) return [];
+
+    const layout = ridgeBeamLayout({ ridgeStartFt: plane.highStart, ridgeEndFt: plane.highEnd });
+    if (layout.refusal !== null) return [];
+
+    const out: {
+      id: string;
+      anchorX: number;
+      anchorZ: number;
+      anchorYFt: number;
+      rotationRad: number;
+      members: PanelMember[];
+    }[] = [];
+    const ridgeRad = Math.atan2(plane.highEnd.y - plane.highStart.y, plane.highEnd.x - plane.highStart.x);
+    /* The beam hangs UNDER the ridge line, so its top face is the ridge. */
+    const beamUnderFt = plane.highHeightFt - ROOF_CATCHER_BEAM_DEPTH_IN / IN_PER_FT;
+
+    for (const segment of layout.segments) {
+      out.push({
+        id: `beam-${segment.index}`,
+        anchorX: segment.startFt.x,
+        anchorZ: segment.startFt.y,
+        anchorYFt: beamUnderFt,
+        rotationRad: ridgeRad,
+        members: buildRoofCatcherBeamMembers(segment.spanIn),
+      });
+    }
+
+    /* ⚠ Columns run from the floor up to the beam's underside. He asked for
+       them continuous TO THE FOUNDATION; this is as far as a single-story
+       model reaches. Carrying them through a second story, and the extra
+       girts in the floor panel beneath each one, are both still to do. */
+    for (const column of layout.columns) {
+      const built = buildStructuralColumnMembers({ heightIn: beamUnderFt * IN_PER_FT });
+      if (built.refusal !== null) continue;
+      out.push({
+        id: `column-${column.index}`,
+        /* Centred on the ridge, so the beam lands on the middle of it. */
+        anchorX: column.atFt.x - (Math.cos(ridgeRad) * column.widthIn) / 2 / IN_PER_FT,
+        anchorZ: column.atFt.y - (Math.sin(ridgeRad) * column.widthIn) / 2 / IN_PER_FT,
+        anchorYFt: 0,
+        rotationRad: ridgeRad,
+        members: built.members,
+      });
+    }
+    return out;
+  }, [footprint, showRoofPanels, roofPitchIn12, roofEaveHeightFt, roofForm]);
+
   const baleFoundationRenderData = useMemo(() => {
     if (!footprint || !isBaleFoundationFloor) return [];
     const result: { id: string; anchorX: number; anchorZ: number; anchorYFt: number; rotationRad: number; members: PanelMember[] }[] = [];
@@ -2408,14 +2472,26 @@ export default function Building3DView({
               )}
             </group>
           ))}
-          {deckRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, members }) => (
+          {ridgeRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, members }) => (
+            <group key={`ridge-${id}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
+              <PanelMembersGroup members={members} />
+            </group>
+          ))}
+          {deckRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, tiltRad, members }) => (
             <group key={`deck-${id}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
-              {/* ⚠ Tips the panel flat. Its members are built lying in the
-                  compressor table, so the panel's own Z — its span — comes
-                  through as three.js Y, standing on end. This rotation sends
-                  the span to +Z and the panel's depth to -Y, which is why the
-                  anchor is the deck's TOP face and the panel hangs below it. */}
-              <group rotation={[Math.PI / 2, 0, 0]}>
+              {/* ⚠ Tips the panel off its end and onto the plane it belongs
+                  on. Its members are built lying in the compressor table, so
+                  the panel's own Z — its span — comes through as three.js Y,
+                  standing upright. A quarter turn LESS the roof's pitch sends
+                  that span out along the slope; a floor passes tiltRad 0 and
+                  gets the flat case exactly.
+
+                  ⚠ This read `Math.PI / 2` with no tilt term until
+                  2026-10-26. The commit that was meant to introduce it was
+                  written by a script that threw before writing the file, so
+                  the deck went on drawing FLAT while the data carried a tilt
+                  nothing used. */}
+              <group rotation={[Math.PI / 2 - tiltRad, 0, 0]}>
                 <PanelMembersGroup members={members} />
               </group>
             </group>
