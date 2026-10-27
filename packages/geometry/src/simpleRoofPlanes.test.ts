@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultTransparentRoofFacing, simpleRoofPlanes } from "./simpleRoofPlanes";
+import { defaultTransparentRoofFacing, roofNeedsRidgeBeam, simpleRoofPlanes } from "./simpleRoofPlanes";
 import { wallCompassDirection } from "./wallCompassDirection";
 import type { Footprint } from "./types";
 
@@ -163,5 +163,29 @@ describe("⚠ which half of the roof you can see through", () => {
 
   it("no planes, nothing to see through", () => {
     expect(defaultTransparentRoofFacing([])).toBeNull();
+  });
+});
+
+describe("⚠ which roofs have a ridge beam", () => {
+  it("a peak does, a shed does not", () => {
+    /* "No catcher beam for the shed roof, all the load goes down the walls."
+       A shed's panels reach wall to wall, so both ends are already over
+       bearing; only a peak leaves panel ends in mid-air. */
+    expect(roofNeedsRidgeBeam("peaked")).toBe(true);
+    expect(roofNeedsRidgeBeam("shed")).toBe(false);
+  });
+
+  it("⚠ and a shed has only ONE plane, which is the same fact twice", () => {
+    // Two planes meet at a ridge; one plane has no ridge to meet at.
+    expect(simpleRoofPlanes(rect(40, 24), shed).planes).toHaveLength(1);
+    expect(simpleRoofPlanes(rect(40, 24), peaked).planes).toHaveLength(2);
+  });
+
+  it("no beam means no columns, and nothing follows from them either", () => {
+    /* The beam carries the columns, the columns want a path to the
+       foundation and extra girts in the floor below. A shed inherits none of
+       that, which is the real content of his sentence. */
+    const roof = simpleRoofPlanes(rect(40, 24), shed);
+    expect(roofNeedsRidgeBeam(roof.form)).toBe(false);
   });
 });

@@ -1713,6 +1713,18 @@ export default function LayoutEditor() {
   // entry means "not yet customized" (auto-centered) — see
   // computeGableTiledRow's own resolution + snap-to-shed logic.
   const [gableProfilePositionsInByWallId, setGableProfilePositionsInByWallId] = useState<Record<string, (number | null)[]>>({});
+  /* ⚠ Shed or peak, read off the roofline rather than assumed.
+     A shed is the same one-point profile with its point snapped to a wall's
+     start edge; a peak leaves it centred, which `null` means. The 3D view had
+     this hardcoded to "peaked", so a shed building was being given two planes
+     AND a ridge beam — and Tommy was explicit on 2026-10-26: *"No catcher
+     beam for the shed roof, all the load goes down the walls."* */
+  const roofFormFromProfile: "shed" | "peaked" = [...gableEndWallIds].some((wallId) => {
+    const positionIn = gableProfilePositionsInByWallId[wallId]?.[0];
+    return positionIn !== null && positionIn !== undefined;
+  })
+    ? "shed"
+    : "peaked";
   const handleChangeGableProfilePositionIn = useCallback(
     (wallId: string, pointIndex: number, positionIn: number | undefined) => {
       const wall = footprint?.walls.find((w) => w.id === wallId);
@@ -12470,7 +12482,7 @@ export default function LayoutEditor() {
                   showRoofPanels={roofEnabled && showRoofDeck3D}
                   roofPitchIn12={roofTrussLayoutContext?.pitchIn12}
                   roofEaveHeightFt={gableEaveHeightIn / 12}
-                  roofForm="peaked"
+                  roofForm={roofFormFromProfile}
                   roofDeckSolid={showRoofDeck3DSolid}
                   checkedInteriorIds={checkedInteriorIds}
                   checkedExteriorIds={checkedExteriorIds}

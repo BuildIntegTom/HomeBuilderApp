@@ -211,3 +211,21 @@ export function defaultTransparentRoofFacing(planes: readonly SimpleRoofPlane[])
   }
   return planes[0]?.facing ?? null;
 }
+
+/**
+ * ⚠ Whether this roof has a ridge beam at all.
+ *
+ * > *"No catcher beam for the shed roof, all the load goes down the walls."*
+ * > — Tommy, 2026-10-26
+ *
+ * A shed's panels reach from one wall to the other, so both ends of every
+ * panel are already over bearing and there is nothing for a beam to do. Only
+ * a peak puts panel ends in mid-air, and the beam is what catches them.
+ *
+ * This matters beyond the beam itself: the beam is what the columns carry,
+ * and the columns are what wants a continuous load path to the foundation
+ * and extra girts in the floor beneath. No beam means none of that follows.
+ */
+export function roofNeedsRidgeBeam(form: RoofForm): boolean {
+  return form === "peaked";
+}
