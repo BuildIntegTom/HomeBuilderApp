@@ -46,6 +46,8 @@ import {
   buildFloorRoofPanelMembers,
   buildRoofCatcherBeamMembers,
   buildStructuralColumnMembers,
+  buildCrossTiltPanelMembers,
+  PLATE_2X4_WIDTH_IN,
   ridgeBeamLayout,
   ROOF_CATCHER_BEAM_DEPTH_IN,
   planFloorRoofPanelWidthsIn,
@@ -699,6 +701,8 @@ interface Building3DViewProps {
   /** Draw the whole roof solid. Off by default: half of it is see-through so
    * the building can be looked into without turning the deck off entirely. */
   roofDeckSolid?: boolean;
+  /** Walls whose top panels tilt front to back to receive a shed roof. */
+  crossTiltWallIds?: Set<string>;
   baleFoundationTopDepthIn?: number;
   baleFoundationBottomDepthIn?: number;
   baleFoundationGapIn?: number;
@@ -1049,6 +1053,7 @@ export default function Building3DView({
   roofForm = "peaked",
   roofTallSideNorth,
   roofDeckSolid = false,
+  crossTiltWallIds,
   baleFoundationTopDepthIn = BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
   baleFoundationBottomDepthIn = BALE_FOUNDATION_BOTTOM_DEPTH_DEFAULT_IN,
   baleFoundationGapIn = BALE_FOUNDATION_GAP_DEFAULT_IN,
@@ -1685,6 +1690,62 @@ export default function Building3DView({
      > way to the foundation."*
 
      Peaked roofs only: a shed has no ridge to run a beam along. */
+  /* The cross-tilted panels along a shed's tall wall. Their tops rise from
+     the outside face to the inside one, so the inclined roof lands flush
+     instead of on a corner. */
+  const crossTiltRenderData = useMemo(() => {
+    if (!footprint || !crossTiltWallIds || crossTiltWallIds.size === 0) return [];
+    if (roofPitchIn12 === undefined) return [];
+    const byId = new Map(footprint.corners.map((c) => [c.id, c.point]));
+    const out: {
+      id: string;
+      anchorX: number;
+      anchorZ: number;
+      anchorYFt: number;
+      rotationRad: number;
+      members: PanelMember[];
+    }[] = [];
+
+    for (const wallId of crossTiltWallIds) {
+      const wall = footprint.walls.find((w) => w.id === wallId);
+      const a = wall && byId.get(wall.startCorner);
+      const b = wall && byId.get(wall.endCorner);
+      if (!wall || !a || !b) continue;
+      const lengthFt = Math.hypot(b.x - a.x, b.y - a.y);
+      const lengthIn = lengthFt * IN_PER_FT;
+      const widths = planFloorRoofPanelWidthsIn(lengthIn, thicknessIn);
+      if (widths === null) continue;
+      const rotationRad = Math.atan2(b.y - a.y, b.x - a.x);
+      const ux = (b.x - a.x) / lengthFt;
+      const uy = (b.y - a.y) / lengthFt;
+      let atIn = 0;
+      for (const [i, widthIn] of widths.entries()) {
+        /* ⚠ A SHORT panel sitting ON the wall, not a replacement for it —
+           his *"smaller set of gable line panels on top of the main wall"*.
+           Its own low height is just the tilt's rise, so the pair comes to
+           the wall height plus what the roof needs. */
+        const built = buildCrossTiltPanelMembers({
+          widthIn,
+          depthIn: thicknessIn,
+          lowHeightIn: PLATE_2X4_WIDTH_IN,
+          pitchIn12: roofPitchIn12,
+        });
+        if (built.refusal !== null) continue;
+        const alongFt = atIn / IN_PER_FT;
+        out.push({
+          id: `crosstilt-${wallId}-${i}`,
+          anchorX: a.x + ux * alongFt,
+          anchorZ: a.y + uy * alongFt,
+          anchorYFt: wallHeightFt,
+          rotationRad,
+          members: built.members,
+        });
+        atIn += widthIn;
+      }
+    }
+    return out;
+  }, [footprint, crossTiltWallIds, roofPitchIn12, thicknessIn, wallHeightFt]);
+
   const ridgeRenderData = useMemo(() => {
     if (!footprint || !showRoofPanels || roofPitchIn12 === undefined || roofEaveHeightFt === undefined) return [];
     if (roofForm !== "peaked") return [];
@@ -2470,6 +2531,11 @@ export default function Building3DView({
               ) : (
                 <PanelMembersGroup members={members} />
               )}
+            </group>
+          ))}
+          {crossTiltRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, members }) => (
+            <group key={`crosstilt-${id}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
+              <PanelMembersGroup members={members} />
             </group>
           ))}
           {ridgeRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, members }) => (

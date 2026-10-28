@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { defaultTransparentRoofFacing, roofNeedsRidgeBeam, simpleRoofPlanes } from "./simpleRoofPlanes";
+import {
+  defaultTransparentRoofFacing,
+  roofNeedsRidgeBeam,
+  shedTallWallId,
+  simpleRoofPlanes,
+} from "./simpleRoofPlanes";
 import { wallCompassDirection } from "./wallCompassDirection";
 import type { Footprint } from "./types";
 
@@ -187,5 +192,41 @@ describe("⚠ which roofs have a ridge beam", () => {
        that, which is the real content of his sentence. */
     const roof = simpleRoofPlanes(rect(40, 24), shed);
     expect(roofNeedsRidgeBeam(roof.form)).toBe(false);
+  });
+});
+
+describe("⚠ the wall a shed's tall side stands on", () => {
+  it("is the wall under the high edge, and it is NOT a gable wall", () => {
+    const footprint = rect(40, 24);
+    const tallId = shedTallWallId(footprint, shed);
+    expect(tallId).not.toBeNull();
+    const roof = simpleRoofPlanes(footprint, shed);
+    expect(roof.gableWallIds).not.toContain(tallId);
+    // Tall side north by default, and north is screen-up.
+    const wall = footprint.walls.find((w) => w.id === tallId)!;
+    expect(wallCompassDirection(wall, footprint)).toBe("N");
+  });
+
+  it("follows the tall side when it is switched round", () => {
+    const footprint = rect(40, 24);
+    const flipped = shedTallWallId(footprint, { ...shed, tallSideNorth: false });
+    const wall = footprint.walls.find((w) => w.id === flipped)!;
+    expect(wallCompassDirection(wall, footprint)).toBe("S");
+  });
+
+  it("⚠ a peaked roof has no tall side at all", () => {
+    // Both its walls are the same height; the ridge is in the middle.
+    expect(shedTallWallId(rect(40, 24), peaked)).toBeNull();
+  });
+
+  it("⚠ adding it would have made a THIRD gable wall, which is why it is its own set", () => {
+    /* The app allows at most two gable walls and insists they be opposite,
+       because a catcher beam spans between exactly two. This wall is neither
+       — so it gets its own concept rather than a weakened rule. */
+    const footprint = rect(40, 24);
+    const roof = simpleRoofPlanes(footprint, shed);
+    const tallId = shedTallWallId(footprint, shed)!;
+    expect(roof.gableWallIds).toHaveLength(2);
+    expect([...roof.gableWallIds, tallId]).toHaveLength(3);
   });
 });

@@ -31,6 +31,7 @@ import {
   computeJoistLayout,
   footprintSpanAndRun,
   gableEndWallIdsFor,
+  shedTallWallId,
   GABLE_COLUMN_FLAT_TOP_DROP_IN,
   GABLE_SHED_SNAP_THRESHOLD_IN,
   computePanelLoadOrder,
@@ -1054,6 +1055,16 @@ export default function LayoutEditor() {
   // elevationViewWallId is which wall's elevation view is currently open
   // (only one at a time).
   const [gableEndWallIds, setGableEndWallIds] = useState<Set<string>>(new Set());
+  /* ⚠ Walls whose top panels tilt FRONT TO BACK, to receive a shed roof
+     flush — a shed's tall side.
+     > *"Shed roof on small building should spawn with inclined Gable end
+     > panels all along the wall of the taller side too."*
+     Its own set, not `gableEndWallIds`, for two reasons that agree: a third
+     gable wall would break the "at most two, and opposite" guardrail that a
+     catcher beam genuinely needs, and these are not gable panels anyway —
+     a gable's top slopes along its WIDTH, these slope through their DEPTH
+     and look level head-on. */
+  const [crossTiltWallIds, setCrossTiltWallIds] = useState<Set<string>>(new Set());
   // Which gable-end wall(s) are in "panels/beam" mode — a subset of
   // gableEndWallIds (Tommy: "the gable end panels [should] be the
   // determining factor for roof options... layout of trusses needs to
@@ -3364,6 +3375,17 @@ export default function LayoutEditor() {
       setGableProfilePositionsInByWallId(
         form.kind === "shed" ? Object.fromEntries(autoGableWallIds.map((id) => [id, [0]])) : {},
       );
+      /* A shed's tall wall takes cross-tilted panels; a peak has no tall
+         side, so the set empties. */
+      const tallWallId =
+        form.kind === "shed"
+          ? shedTallWallId(fp, {
+              form: "shed",
+              pitchIn12: DEFAULT_ROOF_PITCH_IN12,
+              eaveHeightFt: wallHeightFt,
+            })
+          : null;
+      setCrossTiltWallIds(tallWallId ? new Set([tallWallId]) : new Set());
     }
     setIsBumpedOut(false);
     setPrimaryCornerIds(nextPrimary);
@@ -11131,8 +11153,20 @@ export default function LayoutEditor() {
         )}
         {roofEnabled && showRoofDeck3D && roofTrussLayoutContext !== null && (
           <p className={styles.note}>
-            Laid on the roof&apos;s two planes at {roofTrussLayoutContext.pitchIn12.toFixed(1)}/12, panels spanning
-            up the slope from each eave to the ridge.
+            {/* ⚠ A shed has ONE plane and no ridge. This read "two planes...
+                to the ridge" for every roof until 2026-10-28, which was
+                wrong on exactly the roofs the shed work had just made
+                common. */}
+            {roofFormFromProfile === "shed"
+              ? `Laid on the roof's single plane at ${roofTrussLayoutContext.pitchIn12.toFixed(1)}/12, panels spanning up the slope from the low wall to the tall one.`
+              : `Laid on the roof's two planes at ${roofTrussLayoutContext.pitchIn12.toFixed(1)}/12, panels spanning up the slope from each eave to the ridge.`}
+          </p>
+        )}
+        {roofEnabled && crossTiltWallIds.size > 0 && (
+          <p className={styles.note}>
+            This shed&apos;s tall wall carries panels tilted front to back, so the roof lands flush on them rather
+            than on a corner. They look level head-on — the slope runs through the wall&apos;s depth, not along
+            its length.
           </p>
         )}
       </div>
@@ -12509,6 +12543,7 @@ export default function LayoutEditor() {
                   roofEaveHeightFt={gableEaveHeightIn / 12}
                   roofForm={roofFormFromProfile}
                   roofDeckSolid={showRoofDeck3DSolid}
+                  crossTiltWallIds={crossTiltWallIds}
                   checkedInteriorIds={checkedInteriorIds}
                   checkedExteriorIds={checkedExteriorIds}
                   tool3D={tool3D}

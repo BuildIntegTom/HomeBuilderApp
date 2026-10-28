@@ -229,3 +229,54 @@ export function defaultTransparentRoofFacing(planes: readonly SimpleRoofPlane[])
 export function roofNeedsRidgeBeam(form: RoofForm): boolean {
   return form === "peaked";
 }
+
+/**
+ * The wall a shed's TALL side stands on — the one whose panels need their
+ * tops tilted front to back to receive the roof flush.
+ *
+ * > *"Shed roof on small building should spawn with inclined Gable end panels
+ * > all along the wall of the taller side too."* — Tommy, 2026-10-26
+ *
+ * ⚠ **This is deliberately NOT a gable end wall**, and the distinction is
+ * what keeps an existing guardrail intact. The app allows at most two gable
+ * walls and insists they be opposite, because a roof-catcher beam spans
+ * between exactly two. A shed's tall wall would be a third, and not opposite
+ * either of them — so adding it to that set would mean weakening a rule that
+ * is right for every roof that does have a beam.
+ *
+ * It does not belong in that set anyway. A gable wall's panels slope along
+ * their WIDTH, making the triangle you see in elevation. These slope through
+ * their DEPTH and look level head-on. Two different panels, two different
+ * sets, and the guardrail goes untouched.
+ *
+ * Returns null unless this really is a shed with a tall side to find.
+ */
+export function shedTallWallId(footprint: Footprint, options: SimpleRoofOptions): string | null {
+  if (options.form !== "shed") return null;
+  const roof = simpleRoofPlanes(footprint, options);
+  const plane = roof.planes[0];
+  if (roof.refusal !== null || !plane) return null;
+
+  /* The high edge's midpoint, and whichever wall centre sits nearest it. The
+     gable walls are excluded: they run alongside the slope and meet the high
+     edge at its ends, so one of them can be nearer than the wall actually
+     under it on a short building. */
+  const midX = (plane.highStart.x + plane.highEnd.x) / 2;
+  const midY = (plane.highStart.y + plane.highEnd.y) / 2;
+  const byId = new Map(footprint.corners.map((c) => [c.id, c.point]));
+
+  let bestId: string | null = null;
+  let bestDist = Infinity;
+  for (const wall of footprint.walls) {
+    if (roof.gableWallIds.includes(wall.id)) continue;
+    const a = byId.get(wall.startCorner);
+    const b = byId.get(wall.endCorner);
+    if (!a || !b) continue;
+    const d = Math.hypot((a.x + b.x) / 2 - midX, (a.y + b.y) / 2 - midY);
+    if (d < bestDist) {
+      bestDist = d;
+      bestId = wall.id;
+    }
+  }
+  return bestId;
+}
