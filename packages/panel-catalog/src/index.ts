@@ -13,6 +13,7 @@ export * from "./wallBracingOverlay";
 export * from "./memberPrism";
 export * from "./structuralColumnMembers";
 export * from "./ridgeBeamLayout";
+export * from "./crossTiltPanelMembers";
 export * from "./panelRecipe";
 export * from "./bracedPanelMembers";
 export * from "./columnPanelMembers";

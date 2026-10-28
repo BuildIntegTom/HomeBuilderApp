@@ -90,24 +90,25 @@ describe("⚠ asking for 4:12 and reading back what you get", () => {
        existed, keeps the old 16ft RISE — which is not a pitch at all and
        reads back as whatever the building's width makes it.
 
-       ⚠ Recorded because I nearly reported the opposite. My first run of this
-       passed an anchor-mode string that is not one of the two real values; it
-       fell down another path and produced a tidy, plausible, wrong story
-       about the truss-plate inset, and I had already written the fix for it
-       into the draw handler before checking the type.
+       ⚠ TWO WRONG STORIES CAME BEFORE THIS ONE, both from bad data rather
+       than bad reasoning, which is why they were convincing.
 
-       ⚠ AND IT STILL DOES NOT REPRODUCE THE LIVE APP. Instrumenting the real
-       draw handler on a 21.67ft building showed it setting a 33in rise over
-       a nominal 82in run — about 4.83 — which the app then reports as 5.4,
-       so the reporter is measuring roughly 73in of run where resolveHeelSeat
-       predicts 82. This replay gets 3.95 on the same width, so some input
-       the app passes to the tiler and this test does not is moving the first
-       tile: the window anchors, the structural-column width, the built-run
-       stop, or the real eave height. That is where to look next. */
-    /* ⚠ Exact at every width but one, and that one is the clue.
-       21.667ft reads 3.95 rather than 4 because a 260in wall divides into a
-       rise of 33in over 82in of run, and whole-inch rounding cannot land it
-       cleanly. A twentieth of a pitch point, not a defect. */
+       The first: I passed an anchor-mode string that is not one of the two
+       real values. It fell down another path and produced a tidy table
+       blaming the truss-plate inset, and I had written that fix into the
+       draw handler before checking the type.
+
+       The second: I kept reading 5.4 in the running app and concluded the
+       reporter disagreed with the setter. It did not. Those readings were of
+       a stale bundle — the dev server had not finished rebuilding when the
+       test drew, which the same session proved later when instrumentation
+       failed to fire for exactly that reason. Instrumenting the reporter on
+       a real 260in wall gives run 82, rise 27, pitch 3.95, and the app's own
+       sidebar then reads 4.0/12.
+
+       The lesson both times: a number read from a live dev server is only
+       worth what the bundle behind it is worth. */
+
     expect(results).toEqual({
       "16ft": 4,
       "20ft": 4,
