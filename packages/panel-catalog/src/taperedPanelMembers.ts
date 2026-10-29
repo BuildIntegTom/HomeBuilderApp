@@ -108,11 +108,16 @@ export function buildTaperedPanelMembers(options: TaperedPanelOptions): TaperedP
     }
   }
 
-  /* The two lids, each cut to its own end's width. */
-  for (const [atEnd, zIn, widthAtEndIn] of [
+  /* ⚠ BOTH LIDS ARE STRUCTURAL, same as the rectangular panel's: a skin
+     faced with 2x4s laid edge to edge across the whole lid, the last ripped
+     to fit. His spec, and it was missing here — a tapered panel came out
+     with 7 members where the rectangular one has 23, which is why a ring
+     roof looked thin next to everything else. */
+  for (const [atEnd, zBase, widthAtEndIn] of [
     ["inner", 0, innerWidthIn],
-    ["outer", lengthIn - SKIN_THICKNESS_IN, outerWidthIn],
+    ["outer", lengthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN, outerWidthIn],
   ] as [string, number, number][]) {
+    const startXIn = innerWidthIn / 2 - widthAtEndIn / 2;
     members.push({
       memberId: `tapered_lid_${atEnd}_skin`,
       material: "plywood",
@@ -121,11 +126,40 @@ export function buildTaperedPanelMembers(options: TaperedPanelOptions): TaperedP
       nominalSize: null,
       actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: depthIn, lengthIn: widthAtEndIn },
       orientation: "flat",
-      position: { xIn: innerWidthIn / 2 - widthAtEndIn / 2, yIn: 0, zIn, rotationDeg: 0 },
+      position: { xIn: startXIn, yIn: 0, zIn: zBase, rotationDeg: 0 },
       role: "skin",
       qty: 1,
       notes: `${atEnd} lid — ${widthAtEndIn}in wide, which is NOT the other end's width`,
     });
+
+    /* The lid's own 2x4 faces, each running through the DEPTH and stacked
+       across this end's width, the last ripped. */
+    const fullCount = Math.floor(widthAtEndIn / PLATE_2X4_WIDTH_IN);
+    const rippedIn = widthAtEndIn - fullCount * PLATE_2X4_WIDTH_IN;
+    const faceWidths = [
+      ...Array.from({ length: fullCount }, () => PLATE_2X4_WIDTH_IN),
+      ...(rippedIn > 1e-9 ? [rippedIn] : []),
+    ];
+    let faceXIn = startXIn;
+    for (const [faceIndex, faceWidthIn] of faceWidths.entries()) {
+      members.push({
+        memberId: `tapered_lid_${atEnd}_face_${faceIndex}`,
+        material: "dimensional_lumber",
+        speciesGrade: LUMBER_SPECIES_GRADE,
+        plySpec: null,
+        nominalSize: "2x4",
+        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: faceWidthIn, lengthIn: depthIn },
+        orientation: "horizontal",
+        position: { xIn: faceXIn, yIn: 0, zIn: zBase + SKIN_THICKNESS_IN, rotationDeg: 180 },
+        role: "stud",
+        qty: 1,
+        notes:
+          faceWidthIn < PLATE_2X4_WIDTH_IN - 1e-9
+            ? `ripped to ${faceWidthIn.toFixed(3)}in wide — the last one on the ${atEnd} lid`
+            : undefined,
+      });
+      faceXIn += faceWidthIn;
+    }
   }
 
   /* ⚠ Anti-twist girts are cut to the width AT THEIR OWN STATION, which
@@ -138,6 +172,7 @@ export function buildTaperedPanelMembers(options: TaperedPanelOptions): TaperedP
     const widthHereIn = innerWidthIn + (outerWidthIn - innerWidthIn) * t;
     const clearIn = widthHereIn - 2 * JOIST_2X6_THICKNESS_IN;
     if (clearIn <= 0) continue;
+    const girtXIn = innerWidthIn / 2 - clearIn / 2;
     members.push({
       memberId: `tapered_anti_twist_${index}_web`,
       material: "osb",
@@ -146,11 +181,32 @@ export function buildTaperedPanelMembers(options: TaperedPanelOptions): TaperedP
       nominalSize: null,
       actualDimsIn: { thicknessIn: ANTI_TWIST_WEB_THICKNESS_IN, widthIn: depthIn, lengthIn: clearIn },
       orientation: "flat",
-      position: { xIn: innerWidthIn / 2 - clearIn / 2, yIn: 0, zIn, rotationDeg: 0 },
+      position: { xIn: girtXIn, yIn: 0, zIn, rotationDeg: 0 },
       role: "girt_web",
       qty: 1,
       notes: index === 0 ? "cut to the panel's width at THIS station — every one differs" : undefined,
     });
+    /* Its two 2x4 ties, horizontal, one tying the top chords and one the
+       bottom — the same part the rectangular panel's girts carry, and
+       likewise cut to the clear width at this station. */
+    for (const [face, yIn] of [
+      ["bottom", 0],
+      ["top", depthIn - PLATE_2X4_WIDTH_IN],
+    ] as [string, number][]) {
+      members.push({
+        memberId: `tapered_anti_twist_${index}_${face}`,
+        material: "dimensional_lumber",
+        speciesGrade: LUMBER_SPECIES_GRADE,
+        plySpec: null,
+        nominalSize: "2x4",
+        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: clearIn },
+        orientation: "flat",
+        position: { xIn: girtXIn, yIn, zIn: zIn + ANTI_TWIST_WEB_THICKNESS_IN, rotationDeg: 0 },
+        role: "blocking",
+        qty: 1,
+        notes: index === 0 && face === "bottom" ? `ties the ${face} chords laterally` : undefined,
+      });
+    }
     index++;
   }
 

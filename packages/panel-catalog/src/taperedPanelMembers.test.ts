@@ -42,7 +42,9 @@ describe("⚠ a panel whose ends are different widths", () => {
   it("⚠ every anti-twist girt is a different length, because the panel widens", () => {
     /* One cut length for all of them would be right in at most one place. */
     const built = buildTaperedPanelMembers({ kind: "roof", innerWidthIn: 16, outerWidthIn: 40, depthIn: 15.5, lengthIn: 240 });
-    const girts = built.members.filter((m) => m.memberId.startsWith("tapered_anti_twist_"));
+    /* Webs only — each girt also carries two 2x4 ties cut to the same clear
+       width, so counting them all would compare each length with itself. */
+    const girts = built.members.filter((m) => m.memberId.startsWith("tapered_anti_twist_") && m.memberId.endsWith("_web"));
     expect(girts.length).toBeGreaterThan(1);
     const lengths = girts.map((g) => g.actualDimsIn.lengthIn);
     expect(new Set(lengths).size).toBe(lengths.length);
@@ -99,5 +101,46 @@ describe("⚠ the panels a real ring facet asks for are all buildable", () => {
       });
       expect({ index: panel.index, gentle: built.rakeDeg < 6 }).toEqual({ index: panel.index, gentle: true });
     }
+  });
+});
+
+describe("⚠ a tapered panel is built to the SAME spec as a rectangular one", () => {
+  it("both lids are structural, faced with 2x4s and the last ripped", () => {
+    /* It was not, and that is what made a ring roof look thin: 7 members
+       against the rectangular panel's 23. His spec says both lids carry
+       "as many 2x4s to the face of the lid to entirely cover it — the last
+       may need to be ripped", and a tapered panel is still a panel. */
+    const built = buildTaperedPanelMembers({ kind: "roof", innerWidthIn: 20, outerWidthIn: 40, depthIn: 15.5, lengthIn: 120 });
+    for (const [end, widthIn] of [["inner", 20], ["outer", 40]] as [string, number][]) {
+      const faces = built.members.filter((m) => m.memberId.startsWith(`tapered_lid_${end}_face_`));
+      expect({ end, any: faces.length > 0 }).toEqual({ end, any: true });
+      const total = faces.reduce((a, m) => a + m.actualDimsIn.widthIn, 0);
+      expect({ end, total }).toEqual({ end, total: widthIn });
+    }
+  });
+
+  it("⚠ the WIDE lid takes more 2x4s than the narrow one, as it must", () => {
+    const built = buildTaperedPanelMembers({ kind: "roof", innerWidthIn: 20, outerWidthIn: 40, depthIn: 15.5, lengthIn: 120 });
+    const inner = built.members.filter((m) => m.memberId.startsWith("tapered_lid_inner_face_")).length;
+    const outer = built.members.filter((m) => m.memberId.startsWith("tapered_lid_outer_face_")).length;
+    expect(outer).toBeGreaterThan(inner);
+  });
+
+  it("every anti-twist girt carries its two 2x4 ties", () => {
+    const built = buildTaperedPanelMembers({ kind: "roof", innerWidthIn: 20, outerWidthIn: 40, depthIn: 15.5, lengthIn: 240 });
+    const webs = built.members.filter((m) => m.memberId.endsWith("_web"));
+    const ties = built.members.filter((m) => /_anti_twist_\d+_(top|bottom)$/.test(m.memberId));
+    expect(ties).toHaveLength(webs.length * 2);
+    // And a tie matches its own web's length, not some fixed number.
+    for (const web of webs) {
+      const i = web.memberId.match(/_(\d+)_web$/)![1];
+      const pair = ties.filter((t) => t.memberId.includes(`_anti_twist_${i}_`));
+      for (const t of pair) expect(t.actualDimsIn.lengthIn).toBe(web.actualDimsIn.lengthIn);
+    }
+  });
+
+  it("⚠ it is no longer the sparse panel it was", () => {
+    const built = buildTaperedPanelMembers({ kind: "roof", innerWidthIn: 19.875, outerWidthIn: 39.75, depthIn: 15.5, lengthIn: 120 });
+    expect(built.members.length).toBeGreaterThan(20);
   });
 });
