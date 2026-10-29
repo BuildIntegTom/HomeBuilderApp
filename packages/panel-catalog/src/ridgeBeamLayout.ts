@@ -46,6 +46,9 @@ export interface RidgeBeamLayout {
    * standing inside a wall that does the same job. */
   columns: RidgeColumn[];
   ridgeLengthIn: number;
+  /** ⚠ Segments that came out longer than the maximum because a column was
+   * dragged. Empty unless somebody moved one. */
+  overlongSegments: RidgeBeamSegment[];
   refusal: string | null;
 }
 
@@ -54,6 +57,17 @@ export interface RidgeBeamOptions {
   ridgeEndFt: PlanPoint;
   maxSpanIn?: number;
   columnWidthIn?: number;
+  /**
+   * Columns the user has dragged, by index, as a distance from the ridge's
+   * start in inches. Tommy: *"they should be moveable."*
+   *
+   * ⚠ Moving one re-cuts the BEAM, because a beam segment runs between the
+   * posts that carry it. The even spacing is only a default; once a post
+   * moves, the spans either side of it change and one of them may go over
+   * the maximum — which `overlongSegments` reports rather than silently
+   * drawing a beam nobody should build.
+   */
+  columnOverridesAlongIn?: Record<number, number>;
 }
 
 /**
@@ -77,10 +91,10 @@ export function ridgeBeamLayout(options: RidgeBeamOptions): RidgeBeamLayout {
   const ridgeLengthIn = ridgeLengthFt * 12;
 
   if (!(ridgeLengthIn > 0)) {
-    return { segments: [], columns: [], ridgeLengthIn: 0, refusal: "This roof has no ridge to run a beam along." };
+    return { segments: [], columns: [], ridgeLengthIn: 0, overlongSegments: [], refusal: "This roof has no ridge to run a beam along." };
   }
   if (!(maxSpanIn > 0)) {
-    return { segments: [], columns: [], ridgeLengthIn, refusal: "A beam needs a maximum span before it can be split." };
+    return { segments: [], columns: [], ridgeLengthIn, overlongSegments: [], refusal: "A beam needs a maximum span before it can be split." };
   }
 
   const ux = dxFt / ridgeLengthFt;
@@ -90,21 +104,43 @@ export function ridgeBeamLayout(options: RidgeBeamOptions): RidgeBeamLayout {
     y: ridgeStartFt.y + (uy * inches) / 12,
   });
 
-  const segments = computeRoofCatcherBeamSegments(ridgeLengthIn, maxSpanIn).map((segment, index) => ({
-    index,
-    startFt: alongTo(segment.xStartIn),
-    endFt: alongTo(segment.xEndIn),
-    spanIn: segment.spanIn,
-  }));
+  /* Even spacing is the default; a dragged column replaces its own position
+     and everything is re-sorted, because dragging one past another should
+     renumber the beam's bays rather than cross them over. */
+  const overrides = options.columnOverridesAlongIn ?? {};
+  const columnAlongIn = computeRoofCatcherBeamPostPositions(ridgeLengthIn, maxSpanIn)
+    .map((defaultAlongIn, index) => {
+      const moved = overrides[index];
+      return moved === undefined ? defaultAlongIn : Math.min(Math.max(moved, 0), ridgeLengthIn);
+    })
+    .sort((a, b) => a - b);
 
-  const columns = computeRoofCatcherBeamPostPositions(ridgeLengthIn, maxSpanIn).map((alongIn, index) => ({
+  const columns = columnAlongIn.map((alongIn, index) => ({
     index,
     atFt: alongTo(alongIn),
     alongIn,
     widthIn: columnWidthIn,
   }));
 
-  return { segments, columns, ridgeLengthIn, refusal: null };
+  /* ⚠ The beam is cut BETWEEN its posts, so the segments come from the
+     columns rather than the other way round. With no overrides this
+     reproduces the even division exactly. */
+  const cuts = [0, ...columnAlongIn, ridgeLengthIn];
+  const segments: RidgeBeamSegment[] = [];
+  for (let i = 0; i < cuts.length - 1; i++) {
+    const startIn = cuts[i]!;
+    const endIn = cuts[i + 1]!;
+    if (endIn - startIn <= 1e-9) continue;
+    segments.push({ index: segments.length, startFt: alongTo(startIn), endFt: alongTo(endIn), spanIn: endIn - startIn });
+  }
+
+  return {
+    segments,
+    columns,
+    ridgeLengthIn,
+    overlongSegments: segments.filter((segment) => segment.spanIn > maxSpanIn + 1e-9),
+    refusal: null,
+  };
 }
 
 /**

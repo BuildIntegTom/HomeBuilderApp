@@ -27,10 +27,9 @@ export interface FloorCanvasProps {
     endFt: { x: number; y: number };
     columns: { index: number; atFt: { x: number; y: number }; widthIn: number }[];
   } | null;
-  /* ⚠ Dragging is NOT built yet. A callback prop was written here and then
-     removed rather than shipped doing nothing — an API that looks finished
-     and is not is worse than an obvious gap. The columns draw; moving them
-     is the next piece. */
+  /** Called when a column is dragged, with its new distance from the ridge's
+   * start in inches. Omit to leave them read-only. */
+  onMoveRidgeColumn?: (index: number, alongIn: number) => void;
   /** Bale Foundation's own 2 doubled rings BRACKETING the wall above —
    * Ring A under the exterior wythe (its outboard face on the wall's
    * exterior face), Ring B under the interior wythe (its inboard face on
@@ -65,6 +64,7 @@ export default function FloorCanvas({
   piers,
   joistLayout,
   ridgeBeam,
+  onMoveRidgeColumn,
   baleFoundationRingA,
   baleFoundationRingB,
   baleFoundationRingAInner,
@@ -228,6 +228,42 @@ export default function FloorCanvas({
                   stroke="#3d250f"
                   strokeWidth={1.5}
                   data-ridge-column={column.index}
+                  style={{ cursor: onMoveRidgeColumn ? "grab" : "default" }}
+                  onPointerDown={
+                    onMoveRidgeColumn
+                      ? (event) => {
+                          event.stopPropagation();
+                          const svg = event.currentTarget.ownerSVGElement;
+                          if (!svg) return;
+                          event.currentTarget.setPointerCapture(event.pointerId);
+                          /* ⚠ The column slides ALONG THE RIDGE, not freely.
+                             A post off the beam carries nothing, so the
+                             pointer is projected onto the ridge line and
+                             only that distance is reported. */
+                          const ax = ridgeBeam.startFt.x * SCALE_PX_PER_FT + offsetPx.x;
+                          const ay = ridgeBeam.startFt.y * SCALE_PX_PER_FT + offsetPx.y;
+                          const bx = ridgeBeam.endFt.x * SCALE_PX_PER_FT + offsetPx.x;
+                          const by = ridgeBeam.endFt.y * SCALE_PX_PER_FT + offsetPx.y;
+                          const dx = bx - ax;
+                          const dy = by - ay;
+                          const lenPx = Math.hypot(dx, dy);
+                          if (lenPx <= 0) return;
+                          const rect = svg.getBoundingClientRect();
+                          const move = (moveEvent: PointerEvent) => {
+                            const px = moveEvent.clientX - rect.left - ax;
+                            const py = moveEvent.clientY - rect.top - ay;
+                            const alongPx = Math.min(Math.max((px * dx + py * dy) / lenPx, 0), lenPx);
+                            onMoveRidgeColumn(column.index, (alongPx / SCALE_PX_PER_FT) * 12);
+                          };
+                          const up = () => {
+                            window.removeEventListener("pointermove", move);
+                            window.removeEventListener("pointerup", up);
+                          };
+                          window.addEventListener("pointermove", move);
+                          window.addEventListener("pointerup", up);
+                        }
+                      : undefined
+                  }
                 />
               );
             })}

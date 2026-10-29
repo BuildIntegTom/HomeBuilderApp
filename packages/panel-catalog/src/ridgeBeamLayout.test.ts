@@ -158,3 +158,45 @@ describe("⚠ a column reaching the foundation, broken at every floor", () => {
     ]);
   });
 });
+
+describe("⚠ moving a column", () => {
+  it("the beam is re-cut around it, because a span runs post to post", () => {
+    /* Not just the marker moving: drag a post and the bays either side of it
+       change length. A beam drawn to the old spans would be wrong wood. */
+    const moved = ridgeBeamLayout({ ...along(30), columnOverridesAlongIn: { 0: 60 } });
+    expect(moved.columns.map((c) => c.alongIn)).toEqual([60, 240]);
+    expect(moved.segments.map((s) => s.spanIn)).toEqual([60, 180, 120]);
+    // And it still covers the whole ridge.
+    expect(moved.segments.reduce((a, s) => a + s.spanIn, 0)).toBe(360);
+  });
+
+  it("⚠ reports a span the drag made too long, rather than drawing it quietly", () => {
+    const moved = ridgeBeamLayout({ ...along(30), columnOverridesAlongIn: { 0: 20 } });
+    expect(moved.overlongSegments.length).toBeGreaterThan(0);
+    expect(moved.overlongSegments[0]!.spanIn).toBeGreaterThan(144);
+    // Untouched, nothing is overlong.
+    expect(ridgeBeamLayout(along(30)).overlongSegments).toEqual([]);
+  });
+
+  it("⚠ dragging one past another renumbers the bays instead of crossing them", () => {
+    const crossed = ridgeBeamLayout({ ...along(30), columnOverridesAlongIn: { 0: 300 } });
+    const positions = crossed.columns.map((c) => c.alongIn);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(positions).toEqual([240, 300]);
+  });
+
+  it("a column cannot be dragged off the end of its own beam", () => {
+    const off = ridgeBeamLayout({ ...along(30), columnOverridesAlongIn: { 0: -500, 1: 99999 } });
+    for (const c of off.columns) {
+      expect({ at: c.alongIn, inside: c.alongIn >= 0 && c.alongIn <= 360 }).toEqual({ at: c.alongIn, inside: true });
+    }
+  });
+
+  it("with nothing moved it reproduces the even division exactly", () => {
+    const plain = ridgeBeamLayout(along(30));
+    const empty = ridgeBeamLayout({ ...along(30), columnOverridesAlongIn: {} });
+    expect(empty.segments.map((s) => s.spanIn)).toEqual(plain.segments.map((s) => s.spanIn));
+    expect(empty.columns.map((c) => c.alongIn)).toEqual(plain.columns.map((c) => c.alongIn));
+    for (const s of plain.segments) expect(s.spanIn).toBe(120);
+  });
+});

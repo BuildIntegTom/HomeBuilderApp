@@ -312,6 +312,7 @@ import {
   type PanelStructuralStatus,
   planFloorRoofPanelRun,
   ridgeBeamLayout,
+  ROOF_CATCHER_BEAM_MAX_SPAN_IN,
   decideRoofForm,
   FLOOR_ROOF_MIN_PANEL_WIDTH_IN,
   type RoofCatcherBeamShape,
@@ -1067,6 +1068,9 @@ export default function LayoutEditor() {
      a gable's top slopes along its WIDTH, these slope through their DEPTH
      and look level head-on. */
   const [crossTiltWallIds, setCrossTiltWallIds] = useState<Set<string>>(new Set());
+  /* Columns the user has dragged along the ridge, by index, in inches from
+     the ridge's start. Empty means evenly spaced, which is the default. */
+  const [ridgeColumnOverridesAlongIn, setRidgeColumnOverridesAlongIn] = useState<Record<number, number>>({});
   // Which gable-end wall(s) are in "panels/beam" mode — a subset of
   // gableEndWallIds (Tommy: "the gable end panels [should] be the
   // determining factor for roof options... layout of trusses needs to
@@ -3382,6 +3386,9 @@ export default function LayoutEditor() {
             })
           : null;
       setCrossTiltWallIds(tallWallId ? new Set([tallWallId]) : new Set());
+      /* ⚠ A new footprint has a new ridge, so a column dragged on the old one
+         points at nothing. Cleared with everything else a fresh draw resets. */
+      setRidgeColumnOverridesAlongIn({});
     }
     setIsBumpedOut(false);
     setPrimaryCornerIds(nextPrimary);
@@ -6345,7 +6352,11 @@ export default function LayoutEditor() {
     });
     const plane = roof.planes[0];
     if (roof.refusal !== null || !plane) return null;
-    const layout = ridgeBeamLayout({ ridgeStartFt: plane.highStart, ridgeEndFt: plane.highEnd });
+    const layout = ridgeBeamLayout({
+      ridgeStartFt: plane.highStart,
+      ridgeEndFt: plane.highEnd,
+      columnOverridesAlongIn: ridgeColumnOverridesAlongIn,
+    });
     if (layout.refusal !== null) return null;
     return {
       startFt: plane.highStart,
@@ -6355,8 +6366,11 @@ export default function LayoutEditor() {
         atFt: c.atFt,
         widthIn: c.widthIn,
       })),
+      /* ⚠ Spans a drag made too long. The beam is cut between its posts, so
+         moving one lengthens a bay either side of it. */
+      overlongSpansFt: layout.overlongSegments.map((seg: { spanIn: number }) => seg.spanIn / 12),
     };
-  }, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn]);
+  }, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, ridgeColumnOverridesAlongIn]);
 
 
   // Which gable-enabled walls have at least one tile whose real roofline
@@ -11341,6 +11355,14 @@ export default function LayoutEditor() {
     editorTab === "floor" ? (
       <div className={elevationStyles.panel}>
         <strong>Floor Tools</strong>
+        {(ridgeBeamForPlan?.overlongSpansFt.length ?? 0) > 0 && (
+          <p className={styles.disclaimer}>
+            ⚠ Moving a post left{" "}
+            {ridgeBeamForPlan!.overlongSpansFt.map((ft) => `${ft.toFixed(1)}ft`).join(" and ")} of beam between
+            supports. The roof catcher beam is built to span {(ROOF_CATCHER_BEAM_MAX_SPAN_IN / 12).toFixed(0)}ft at
+            most — drag it back, or add another post.
+          </p>
+        )}
         <label className={elevationStyles.checkboxLabel} title={isLastEnabledScopeBranch(scopeOfWork, "floors") ? LAST_SCOPE_BRANCH_TITLE : undefined}>
           <input
             type="checkbox"
@@ -12614,6 +12636,9 @@ export default function LayoutEditor() {
                 baleFoundationRingBInner={baleFoundationRingB?.inner ?? null}
                 baleFoundationFieldLayout={baleFoundationFieldLayout}
                 ridgeBeam={ridgeBeamForPlan}
+                onMoveRidgeColumn={(index, alongIn) =>
+                  setRidgeColumnOverridesAlongIn((was) => ({ ...was, [index]: alongIn }))
+                }
               />
             )}
             {editorTab === "roof" &&
