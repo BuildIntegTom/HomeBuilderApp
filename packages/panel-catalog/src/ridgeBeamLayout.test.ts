@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { columnBearingGirtPositionsIn, ridgeBeamLayout } from "./ridgeBeamLayout";
+import { columnBearingGirtPositionsIn, columnStorySegments, ridgeBeamLayout } from "./ridgeBeamLayout";
 import { ROOF_CATCHER_BEAM_MAX_SPAN_IN } from "./roofCatcherBeamMembers";
 import { STRUCTURAL_COLUMN_WIDTH_IN } from "./structuralColumnMembers";
 
@@ -111,5 +111,50 @@ describe("⚠ the extra bearing a column needs from the floor under it", () => {
     const pct = (straddles / total) * 100;
     expect(pct).toBeGreaterThan(60);
     expect(pct).toBeLessThan(70);
+  });
+});
+
+describe("⚠ a column reaching the foundation, broken at every floor", () => {
+  it("one story: one segment, straight to the foundation", () => {
+    const segs = columnStorySegments([10], 14);
+    expect(segs).toHaveLength(2);
+    expect(segs[0]).toEqual({ storyIndex: 0, baseFt: 0, heightIn: 120, landsOnFloor: false });
+    // The last stretch is the gable wall's own height above the top plate.
+    expect(segs[1]!.heightIn).toBe(48);
+  });
+
+  it("⚠ two stories: it BREAKS at the floor between them", () => {
+    /* A single stick from foundation to beam would pass straight through
+       the upper floor deck, which is unbuildable and exactly the overlap
+       this app forbids. What is continuous is the PATH, not the stick. */
+    const segs = columnStorySegments([10, 10], 22);
+    expect(segs.map((s) => s.baseFt)).toEqual([0, 10, 20]);
+    expect(segs.map((s) => s.heightIn)).toEqual([120, 120, 24]);
+  });
+
+  it("⚠ marks which segments bear on a FLOOR rather than the foundation", () => {
+    // Those are the ones needing extra girts in the deck beneath.
+    const segs = columnStorySegments([10, 10], 22);
+    expect(segs.map((s) => s.landsOnFloor)).toEqual([false, true, true]);
+  });
+
+  it("the segments add up to the beam's underside exactly", () => {
+    for (const [stories, beamFt] of [[[10], 14], [[10, 10], 22], [[9, 9, 9], 30]] as [number[], number][]) {
+      const segs = columnStorySegments(stories, beamFt);
+      const total = segs.reduce((a, s) => a + s.heightIn, 0);
+      expect({ beamFt, total }).toEqual({ beamFt, total: beamFt * 12 });
+    }
+  });
+
+  it("a beam below the top of a story stops there rather than overshooting", () => {
+    const segs = columnStorySegments([10, 10], 15);
+    expect(segs.map((s) => s.heightIn)).toEqual([120, 60]);
+    expect(segs.reduce((a, s) => a + s.heightIn, 0)).toBe(180);
+  });
+
+  it("no stories at all still reaches the beam", () => {
+    expect(columnStorySegments([], 12)).toEqual([
+      { storyIndex: 0, baseFt: 0, heightIn: 144, landsOnFloor: false },
+    ]);
   });
 });

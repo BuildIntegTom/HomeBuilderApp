@@ -136,6 +136,21 @@ export interface FloorRoofPanelOptions {
    * on both the inner and outer wyth of the wall panel"*).
    */
   structuralGirtEnds?: ("start" | "end")[];
+  /**
+   * ⚠ Extra structural girts at arbitrary positions along the span, for
+   * where a COLUMN lands on this panel.
+   *
+   * > *"When a column panel is resting on a floor box, that floor box also
+   * > needs a couple extra structural pieces such as more structural girts,
+   * > one under each side of the panel resting above it."* — Tommy,
+   * > 2026-10-23
+   *
+   * Each number is the distance along the span to a girt's near face. The
+   * caller works out where a column's two sides fall — see
+   * `columnBearingGirtPositionsIn` — because only the caller knows where the
+   * columns are.
+   */
+  extraStructuralGirtsAtIn?: number[];
 }
 
 /**
@@ -441,6 +456,18 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
   for (const end of girtEnds) {
     const zIn = end === "start" ? SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN : o.lengthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN - STRUCTURAL_GIRT_TOTAL_THICKNESS_IN;
     members.push(...buildStructuralGirt(o, zIn, end));
+  }
+
+  /* ⚠ The extra girts under a column, built from exactly the same part as
+     the end ones — *"more structural girts"*, his words, not a new member.
+     Clamped inside the panel so a column near an end cannot push a girt out
+     through the lid. */
+  const firstFaceIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  const lastFaceIn = o.lengthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN - STRUCTURAL_GIRT_TOTAL_THICKNESS_IN;
+  for (const [i, atIn] of (o.extraStructuralGirtsAtIn ?? []).entries()) {
+    const zIn = Math.min(Math.max(atIn, firstFaceIn), lastFaceIn);
+    if (lastFaceIn < firstFaceIn) break;
+    members.push(...buildStructuralGirt(o, zIn, `column_${i}`));
   }
 
   /* Both spacings are measured from the structural girt on a floor and from

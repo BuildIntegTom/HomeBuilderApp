@@ -20,6 +20,7 @@ import {
 } from "./floorRoofPanelMembers";
 import { PLATE_2X4_WIDTH_IN, memberBoxSizeIn } from "./panelMemberHelpers";
 import type { PanelMember } from "./componentSchema";
+import { overlappingMemberPairs } from "./memberPrism";
 import { computePanelCutList } from "./panelCutList";
 
 const floor = (over: Partial<FloorRoofPanelOptions> = {}): FloorRoofPanelOptions => ({
@@ -628,5 +629,53 @@ describe("⚠ no two members occupy the same space", () => {
     const joist = members.find((m) => m.memberId === "joist-left-top")!;
     expect(joist.actualDimsIn.lengthIn).toBe(295.5);
     expect(joist.position.zIn).toBe(2.25);
+  });
+});
+
+describe("⚠ the extra girts a column needs from the floor under it", () => {
+  const base = { kind: "floor" as const, widthIn: FLOOR_ROOF_PANEL_WIDTH_IN, depthIn: 15.5, lengthIn: 300 };
+
+  it("one girt per position asked for, built from the SAME part as the end ones", () => {
+    /* *"more structural girts, one under each side of the panel resting
+       above it"* — his words say more of the same part, not a new member. */
+    const members = buildFloorRoofPanelMembers({ ...base, structuralGirtEnds: ["start", "end"], extraStructuralGirtsAtIn: [100, 120] });
+    const webs = members.filter((m) => m.memberId.includes("girt") && m.memberId.includes("web") && !m.memberId.includes("anti"));
+    // Two ends plus two extras.
+    expect(webs).toHaveLength(4);
+    /* The web spans the space between the joists, same as an end girt's. Its
+       own two 2x4s run through the depth, so they are filtered out here. */
+    const extraWebs = members.filter((m) => m.memberId.startsWith("structural-girt-column_") && m.memberId.endsWith("-web"));
+    expect(extraWebs).toHaveLength(2);
+    for (const m of extraWebs) expect(m.actualDimsIn.lengthIn).toBe(FLOOR_ROOF_PANEL_WIDTH_IN - 3);
+  });
+
+  it("they land where they were asked for", () => {
+    const members = buildFloorRoofPanelMembers({ ...base, structuralGirtEnds: [], extraStructuralGirtsAtIn: [100] });
+    const web = members.find((m) => m.memberId === "structural-girt-column_0-web")!;
+    expect(web.position.zIn).toBe(100);
+  });
+
+  it("⚠ a column near the end cannot push a girt out through the lid", () => {
+    const members = buildFloorRoofPanelMembers({ ...base, structuralGirtEnds: [], extraStructuralGirtsAtIn: [-50, 9999] });
+    const webs = members.filter((m) => m.memberId.startsWith("structural-girt-column_") && m.memberId.endsWith("-web"));
+    expect(webs).toHaveLength(2);
+    for (const w of webs) {
+      expect({ id: w.memberId, inside: w.position.zIn >= 2.25 - 1e-9 && w.position.zIn <= 300 }).toEqual({
+        id: w.memberId,
+        inside: true,
+      });
+    }
+  });
+
+  it("a panel nobody put a column on is unchanged", () => {
+    const withNone = buildFloorRoofPanelMembers({ ...base, structuralGirtEnds: ["start", "end"] });
+    const withEmpty = buildFloorRoofPanelMembers({ ...base, structuralGirtEnds: ["start", "end"], extraStructuralGirtsAtIn: [] });
+    expect(withEmpty).toEqual(withNone);
+  });
+
+  it("⚠ and the panel is still solid with them in", () => {
+    // The whole reason the overlap check exists: new members, same rule.
+    const members = buildFloorRoofPanelMembers({ ...base, structuralGirtEnds: ["start", "end"], extraStructuralGirtsAtIn: [100, 140] });
+    expect(overlappingMemberPairs(members)).toEqual([]);
   });
 });

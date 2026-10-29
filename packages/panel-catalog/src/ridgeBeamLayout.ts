@@ -132,3 +132,57 @@ export function columnBearingGirtPositionsIn(
   const straddlesSeam = panelSeamsAlongIn.some((seam) => seam > left + 1e-9 && seam < right - 1e-9);
   return { girtAtIn: [left, right], straddlesSeam };
 }
+
+export interface ColumnStorySegment {
+  storyIndex: number;
+  /** Height of this segment's base above the foundation, in feet. */
+  baseFt: number;
+  heightIn: number;
+  /** ⚠ True when this segment lands on a FLOOR rather than on the
+   * foundation — which is the case that needs the extra girts under it. */
+  landsOnFloor: boolean;
+}
+
+/**
+ * A column, broken at every floor it passes.
+ *
+ * > *"the center beam now must be supported by column panels directly below
+ * > it all the way to the foundation."* — Tommy, 2026-10-23
+ *
+ * ⚠ **Continuous load path does not mean one continuous stick.** A single
+ * column drawn from the foundation to the beam would pass straight THROUGH
+ * every floor deck on the way, which is both unbuildable and exactly the kind
+ * of overlap this app is not allowed to have. What has to be continuous is
+ * the path: a segment per story, each bearing on the floor below it, each one
+ * directly over the one beneath.
+ *
+ * `landsOnFloor` marks the segments whose bearing is a floor panel rather
+ * than the foundation — those are the ones that need *"more structural
+ * girts, one under each side"* in the deck below.
+ */
+export function columnStorySegments(storyHeightsFt: readonly number[], beamUnderFt: number): ColumnStorySegment[] {
+  const segments: ColumnStorySegment[] = [];
+  let baseFt = 0;
+  for (const [storyIndex, storyHeightFt] of storyHeightsFt.entries()) {
+    const topFt = Math.min(baseFt + storyHeightFt, beamUnderFt);
+    if (topFt - baseFt <= 1e-9) break;
+    segments.push({
+      storyIndex,
+      baseFt,
+      heightIn: (topFt - baseFt) * 12,
+      landsOnFloor: storyIndex > 0,
+    });
+    baseFt = topFt;
+  }
+  /* Whatever is left between the topmost story and the beam — the gable
+     wall's own height above the top plate. */
+  if (beamUnderFt - baseFt > 1e-9) {
+    segments.push({
+      storyIndex: storyHeightsFt.length,
+      baseFt,
+      heightIn: (beamUnderFt - baseFt) * 12,
+      landsOnFloor: storyHeightsFt.length > 0,
+    });
+  }
+  return segments;
+}

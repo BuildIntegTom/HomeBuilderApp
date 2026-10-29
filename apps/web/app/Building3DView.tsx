@@ -49,6 +49,8 @@ import {
   buildCrossTiltPanelMembers,
   PLATE_2X4_WIDTH_IN,
   ridgeBeamLayout,
+  columnStorySegments,
+  columnBearingGirtPositionsIn,
   ROOF_CATCHER_BEAM_DEPTH_IN,
   planFloorRoofPanelWidthsIn,
   STEEL_MESH_THICKNESS_IN,
@@ -1598,6 +1600,28 @@ export default function Building3DView({
     const placed = deckPanelPlacements(footprint, widths);
     if (placed.refusal !== null) return [];
 
+    /* ⚠ Where the ridge columns come down, so the floor panels under them can
+       carry the extra girts he asked for: *"one under each side of the panel
+       resting above it"*. Measured in the run's own frame, which is what the
+       placements are indexed by. */
+    const columnGirtAlongIn: number[] = [];
+    if (showRoofPanels && roofForm === "peaked" && roofPitchIn12 !== undefined && roofEaveHeightFt !== undefined) {
+      const roof = simpleRoofPlanes(footprint, { form: "peaked", pitchIn12: roofPitchIn12, eaveHeightFt: roofEaveHeightFt });
+      const plane = roof.planes[0];
+      if (roof.refusal === null && plane) {
+        const layout = ridgeBeamLayout({ ridgeStartFt: plane.highStart, ridgeEndFt: plane.highEnd });
+        /* ⚠ The ridge runs along the building's LONG axis, which is the same
+           axis the floor panels repeat along — so a column's distance down
+           the ridge IS its distance along the run. That is only true because
+           both follow `footprintSpanAndRun`; if either ever stopped, these
+           girts would land in the wrong panels. */
+        for (const column of layout.columns) {
+          const { girtAtIn } = columnBearingGirtPositionsIn(column.alongIn, column.widthIn, []);
+          columnGirtAlongIn.push(...girtAtIn);
+        }
+      }
+    }
+
     if (showFloorPanels) {
       /* The floor deck hangs below Z=0, the finished floor the walls stand on
          — the same datum the bale foundation hangs its framing from. */
@@ -1616,6 +1640,12 @@ export default function Building3DView({
             depthIn: thicknessIn,
             lengthIn: p.spanIn,
             structuralGirtEnds: ["start", "end"],
+            /* ⚠ A column sits over the middle of the SPAN, so its girts go at
+               mid-span of whichever panels it crosses. The girts' positions
+               along the run pick which panels those are. */
+            extraStructuralGirtsAtIn: columnGirtAlongIn
+              .filter((alongIn) => alongIn >= p.atIn && alongIn < p.atIn + p.widthIn)
+              .map(() => p.spanIn / 2),
           }),
         });
       }
@@ -1779,25 +1809,30 @@ export default function Building3DView({
       });
     }
 
-    /* ⚠ Columns run from the floor up to the beam's underside. He asked for
-       them continuous TO THE FOUNDATION; this is as far as a single-story
-       model reaches. Carrying them through a second story, and the extra
-       girts in the floor panel beneath each one, are both still to do. */
+    /* ⚠ Columns reach the foundation, BROKEN AT EVERY FLOOR. A single stick
+       from the foundation to the beam would pass straight through each floor
+       deck on the way, which is unbuildable and exactly the overlap this app
+       forbids. What has to be continuous is the load PATH: a segment per
+       story, each bearing on the floor below and directly over the one
+       beneath. */
+    const storyHeightsFt = secondStory ? [wallHeightFt, secondStory.wallHeightFt] : [wallHeightFt];
     for (const column of layout.columns) {
-      const built = buildStructuralColumnMembers({ heightIn: beamUnderFt * IN_PER_FT });
-      if (built.refusal !== null) continue;
-      out.push({
-        id: `column-${column.index}`,
-        /* Centred on the ridge, so the beam lands on the middle of it. */
-        anchorX: column.atFt.x - (Math.cos(ridgeRad) * column.widthIn) / 2 / IN_PER_FT,
-        anchorZ: column.atFt.y - (Math.sin(ridgeRad) * column.widthIn) / 2 / IN_PER_FT,
-        anchorYFt: 0,
-        rotationRad: ridgeRad,
-        members: built.members,
-      });
+      for (const segment of columnStorySegments(storyHeightsFt, beamUnderFt)) {
+        const built = buildStructuralColumnMembers({ heightIn: segment.heightIn });
+        if (built.refusal !== null) continue;
+        out.push({
+          id: `column-${column.index}-story-${segment.storyIndex}`,
+          /* Centred on the ridge, so the beam lands on the middle of it. */
+          anchorX: column.atFt.x - (Math.cos(ridgeRad) * column.widthIn) / 2 / IN_PER_FT,
+          anchorZ: column.atFt.y - (Math.sin(ridgeRad) * column.widthIn) / 2 / IN_PER_FT,
+          anchorYFt: segment.baseFt,
+          rotationRad: ridgeRad,
+          members: built.members,
+        });
+      }
     }
     return out;
-  }, [footprint, showRoofPanels, roofPitchIn12, roofEaveHeightFt, roofForm]);
+  }, [footprint, showRoofPanels, roofPitchIn12, roofEaveHeightFt, roofForm, wallHeightFt, secondStory]);
 
   const baleFoundationRenderData = useMemo(() => {
     if (!footprint || !isBaleFoundationFloor) return [];
