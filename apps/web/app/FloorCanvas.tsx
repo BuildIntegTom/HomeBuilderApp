@@ -19,6 +19,18 @@ export interface FloorCanvasProps {
   floorPanels: FloorPanelRect[];
   piers: PierPosition[];
   joistLayout?: JoistLayout | null;
+  /** The ridge beam's run and the columns under it, so the plan shows where
+   * they land. Tommy: *"2d should show them and they should be moveable."*
+   * Absent on a shed, which has no beam at all. */
+  ridgeBeam?: {
+    startFt: { x: number; y: number };
+    endFt: { x: number; y: number };
+    columns: { index: number; atFt: { x: number; y: number }; widthIn: number }[];
+  } | null;
+  /* ⚠ Dragging is NOT built yet. A callback prop was written here and then
+     removed rather than shipped doing nothing — an API that looks finished
+     and is not is worse than an obvious gap. The columns draw; moving them
+     is the next piece. */
   /** Bale Foundation's own 2 doubled rings BRACKETING the wall above —
    * Ring A under the exterior wythe (its outboard face on the wall's
    * exterior face), Ring B under the interior wythe (its inboard face on
@@ -52,6 +64,7 @@ export default function FloorCanvas({
   floorPanels,
   piers,
   joistLayout,
+  ridgeBeam,
   baleFoundationRingA,
   baleFoundationRingB,
   baleFoundationRingAInner,
@@ -187,6 +200,39 @@ export default function FloorCanvas({
             strokeWidth={2}
           />
         ))}
+        {ridgeBeam && (
+          <g>
+            {/* The beam itself: one heavy line down the ridge. */}
+            <line
+              x1={ridgeBeam.startFt.x * SCALE_PX_PER_FT + offsetPx.x}
+              y1={ridgeBeam.startFt.y * SCALE_PX_PER_FT + offsetPx.y}
+              x2={ridgeBeam.endFt.x * SCALE_PX_PER_FT + offsetPx.x}
+              y2={ridgeBeam.endFt.y * SCALE_PX_PER_FT + offsetPx.y}
+              stroke="#7a4a1e"
+              strokeWidth={5}
+              strokeLinecap="round"
+              opacity={0.85}
+            />
+            {ridgeBeam.columns.map((column) => {
+              const sidePx = (column.widthIn / 12) * SCALE_PX_PER_FT;
+              const cx = column.atFt.x * SCALE_PX_PER_FT + offsetPx.x;
+              const cy = column.atFt.y * SCALE_PX_PER_FT + offsetPx.y;
+              return (
+                <rect
+                  key={`ridge-column-${column.index}`}
+                  x={cx - sidePx / 2}
+                  y={cy - sidePx / 2}
+                  width={sidePx}
+                  height={sidePx}
+                  fill="#7a4a1e"
+                  stroke="#3d250f"
+                  strokeWidth={1.5}
+                  data-ridge-column={column.index}
+                />
+              );
+            })}
+          </g>
+        )}
         {baleFoundationFieldLayout?.map((line) => (
           <line
             key={line.id}

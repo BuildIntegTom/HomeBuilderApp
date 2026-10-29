@@ -32,6 +32,7 @@ import {
   footprintSpanAndRun,
   gableEndWallIdsFor,
   shedTallWallId,
+  simpleRoofPlanes,
   GABLE_COLUMN_FLAT_TOP_DROP_IN,
   GABLE_SHED_SNAP_THRESHOLD_IN,
   computePanelLoadOrder,
@@ -310,6 +311,7 @@ import {
   type PanelMember,
   type PanelStructuralStatus,
   planFloorRoofPanelRun,
+  ridgeBeamLayout,
   decideRoofForm,
   FLOOR_ROOF_MIN_PANEL_WIDTH_IN,
   type RoofCatcherBeamShape,
@@ -1730,12 +1732,6 @@ export default function LayoutEditor() {
      this hardcoded to "peaked", so a shed building was being given two planes
      AND a ridge beam — and Tommy was explicit on 2026-10-26: *"No catcher
      beam for the shed roof, all the load goes down the walls."* */
-  const roofFormFromProfile: "shed" | "peaked" = [...gableEndWallIds].some((wallId) => {
-    const positionIn = gableProfilePositionsInByWallId[wallId]?.[0];
-    return positionIn !== null && positionIn !== undefined;
-  })
-    ? "shed"
-    : "peaked";
   const handleChangeGableProfilePositionIn = useCallback(
     (wallId: string, pointIndex: number, positionIn: number | undefined) => {
       const wall = footprint?.walls.find((w) => w.id === wallId);
@@ -6322,6 +6318,46 @@ export default function LayoutEditor() {
 
     return { spanIn: wallWidthIn, runIn: ridge.runIn, pitchIn12, asymmetricNote };
   }, [footprint, roofProfileType, gableEndWallIds, gableTilesByWallId, roofProfilePointHeightsFt, gableProfilePositionsInByWallId, gableEaveHeightIn]);
+
+  /* The ridge beam's run and its columns, for the plan view. Derived here
+     rather than in the canvas so the 2D and 3D cannot disagree about where
+     the beam is — both read the same `simpleRoofPlanes` + `ridgeBeamLayout`
+     pair. Null on a shed, which has no beam at all. */
+  const roofFormFromProfile: "shed" | "peaked" = [...gableEndWallIds].some((wallId) => {
+    const positionIn = gableProfilePositionsInByWallId[wallId]?.[0];
+    return positionIn !== null && positionIn !== undefined;
+  })
+    ? "shed"
+    : "peaked";
+
+  /* The ridge beam's run and its columns, for the plan view. Derived here
+     rather than inside the canvas so 2D and 3D cannot disagree about where
+     the beam is — both read the same `simpleRoofPlanes` + `ridgeBeamLayout`
+     pair. Null on a shed, which has no beam at all. */
+  const ridgeBeamForPlan = useMemo(() => {
+    if (!footprint || !roofEnabled || roofFormFromProfile !== "peaked") return null;
+    const pitchIn12 = roofTrussLayoutContext?.pitchIn12;
+    if (pitchIn12 === undefined) return null;
+    const roof = simpleRoofPlanes(footprint, {
+      form: "peaked",
+      pitchIn12,
+      eaveHeightFt: gableEaveHeightIn / 12,
+    });
+    const plane = roof.planes[0];
+    if (roof.refusal !== null || !plane) return null;
+    const layout = ridgeBeamLayout({ ridgeStartFt: plane.highStart, ridgeEndFt: plane.highEnd });
+    if (layout.refusal !== null) return null;
+    return {
+      startFt: plane.highStart,
+      endFt: plane.highEnd,
+      columns: layout.columns.map((c: { index: number; atFt: { x: number; y: number }; widthIn: number }) => ({
+        index: c.index,
+        atFt: c.atFt,
+        widthIn: c.widthIn,
+      })),
+    };
+  }, [footprint, roofEnabled, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn]);
+
 
   // Which gable-enabled walls have at least one tile whose real roofline
   // rise exceeds maxGablePanelHeightIn (i.e. got a real vertical
@@ -12577,6 +12613,7 @@ export default function LayoutEditor() {
                 baleFoundationRingAInner={baleFoundationRingA?.inner ?? null}
                 baleFoundationRingBInner={baleFoundationRingB?.inner ?? null}
                 baleFoundationFieldLayout={baleFoundationFieldLayout}
+                ridgeBeam={ridgeBeamForPlan}
               />
             )}
             {editorTab === "roof" &&
