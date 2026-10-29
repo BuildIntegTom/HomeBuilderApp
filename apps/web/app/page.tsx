@@ -11212,6 +11212,14 @@ export default function LayoutEditor() {
               : `Laid on the roof's two planes at ${roofTrussLayoutContext.pitchIn12.toFixed(1)}/12, panels spanning up the slope from each eave to the ridge.`}
           </p>
         )}
+        {roofEnabled && footprint && ringRoofGableBlockReason(footprint) !== null && (
+          <p className={styles.note}>
+            This courtyard ring&apos;s roof is tiled with tapered panels fanning across each facet — every one
+            reaching from the inner wall to the outer, so every joist bears at both ends and the roof needs no
+            hips. ⚠ It is drawn at the default {DEFAULT_ROOF_PITCH_IN12}/12; a ring roof has no pitch control of
+            its own yet.
+          </p>
+        )}
         {roofEnabled && crossTiltWallIds.size > 0 && (
           <p className={styles.note}>
             This shed&apos;s tall wall carries panels tilted front to back, so the roof lands flush on them rather
@@ -12597,7 +12605,14 @@ export default function LayoutEditor() {
                   showWraps={showWraps}
                   showFloorPanels={floorsEnabled && showFloorDeck3D}
                   showRoofPanels={roofEnabled && showRoofDeck3D}
-                  roofPitchIn12={roofTrussLayoutContext?.pitchIn12}
+                  /* ⚠ A ring has no gable ends — they are blocked on it, so
+                     roofTrussLayoutContext is null and there is no pitch to
+                     read. It falls back to the default until a ring roof has
+                     a pitch control of its own, which it still does not. */
+                  roofPitchIn12={
+                    roofTrussLayoutContext?.pitchIn12 ??
+                    (footprint && ringRoofGableBlockReason(footprint) !== null ? DEFAULT_ROOF_PITCH_IN12 : undefined)
+                  }
                   roofEaveHeightFt={gableEaveHeightIn / 12}
                   roofForm={roofFormFromProfile}
                   roofDeckSolid={showRoofDeck3DSolid}

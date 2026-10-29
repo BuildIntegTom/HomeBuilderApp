@@ -17,6 +17,7 @@ import {
   deckPanelPlacements,
   footprintSpanAndRun,
   simpleRoofPlanes,
+  ringRoofPlanes,
   defaultTransparentRoofFacing,
   panelSlotBoxes3D,
   wallAxis,
@@ -51,6 +52,8 @@ import {
   ridgeBeamLayout,
   columnStorySegments,
   columnBearingGirtPositionsIn,
+  divideRingFacet,
+  buildTaperedPanelMembers,
   ROOF_CATCHER_BEAM_DEPTH_IN,
   planFloorRoofPanelWidthsIn,
   STEEL_MESH_THICKNESS_IN,
@@ -1776,6 +1779,68 @@ export default function Building3DView({
     return out;
   }, [footprint, crossTiltWallIds, roofPitchIn12, thicknessIn, wallHeightFt]);
 
+  /* A COURTYARD RING's roof: tapered panels fanning across each facet.
+     Scheme B — no hips, every panel reaching from the inner wall to the
+     outer one, which is what makes every joist bear at both ends. */
+  const ringRoofRenderData = useMemo(() => {
+    if (!footprint || !showRoofPanels || roofPitchIn12 === undefined || roofEaveHeightFt === undefined) return [];
+    const planes = ringRoofPlanes(footprint);
+    if (!planes) return [];
+
+    const out: {
+      id: string;
+      anchorX: number;
+      anchorZ: number;
+      anchorYFt: number;
+      rotationRad: number;
+      tiltRad: number;
+      members: PanelMember[];
+    }[] = [];
+    const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+
+    for (const [planeIndex, plane] of planes.entries()) {
+      const innerEdgeIn = dist(plane.innerStart, plane.innerEnd) * IN_PER_FT;
+      const outerEdgeIn = dist(plane.outerStart, plane.outerEnd) * IN_PER_FT;
+      const spanIn = plane.spanFt * IN_PER_FT;
+      const division = divideRingFacet({ innerEdgeIn, outerEdgeIn, spanIn });
+      if (division.refusal !== null) continue;
+
+      /* The facet's inner edge is the datum: panels repeat along it and span
+         outward. ⚠ A ring roof is HIGH AT THE COURTYARD and falls outward
+         (his 2026-10-22 answer), so the panel descends as it goes, which is
+         the opposite sign from a gable's climb to the ridge. */
+      const innerLenFt = dist(plane.innerStart, plane.innerEnd);
+      if (innerLenFt <= 0) continue;
+      const ux = (plane.innerEnd.x - plane.innerStart.x) / innerLenFt;
+      const uy = (plane.innerEnd.y - plane.innerStart.y) / innerLenFt;
+      const rotationRad = Math.atan2(uy, ux);
+      const tiltRad = -Math.atan2(roofPitchIn12, 12);
+      const innerHeightFt = roofEaveHeightFt + (plane.spanFt * roofPitchIn12) / 12;
+
+      for (const panel of division.panels) {
+        const built = buildTaperedPanelMembers({
+          kind: "roof",
+          innerWidthIn: panel.innerWidthIn,
+          outerWidthIn: panel.outerWidthIn,
+          depthIn: thicknessIn,
+          lengthIn: spanIn,
+        });
+        if (built.refusal !== null) continue;
+        const alongFt = panel.innerAtIn / IN_PER_FT;
+        out.push({
+          id: `ring-${planeIndex}-${panel.index}`,
+          anchorX: plane.innerStart.x + ux * alongFt,
+          anchorZ: plane.innerStart.y + uy * alongFt,
+          anchorYFt: innerHeightFt,
+          rotationRad,
+          tiltRad,
+          members: built.members,
+        });
+      }
+    }
+    return out;
+  }, [footprint, showRoofPanels, roofPitchIn12, roofEaveHeightFt, thicknessIn]);
+
   const ridgeRenderData = useMemo(() => {
     if (!footprint || !showRoofPanels || roofPitchIn12 === undefined || roofEaveHeightFt === undefined) return [];
     if (roofForm !== "peaked") return [];
@@ -2566,6 +2631,13 @@ export default function Building3DView({
               ) : (
                 <PanelMembersGroup members={members} />
               )}
+            </group>
+          ))}
+          {ringRoofRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, tiltRad, members }) => (
+            <group key={`ring-${id}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
+              <group rotation={[Math.PI / 2 - tiltRad, 0, 0]}>
+                <PanelMembersGroup members={members} />
+              </group>
             </group>
           ))}
           {crossTiltRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, members }) => (

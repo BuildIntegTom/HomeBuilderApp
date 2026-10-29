@@ -14,6 +14,7 @@ export * from "./memberPrism";
 export * from "./structuralColumnMembers";
 export * from "./ridgeBeamLayout";
 export * from "./crossTiltPanelMembers";
+export * from "./taperedPanelMembers";
 export * from "./panelRecipe";
 export * from "./bracedPanelMembers";
 export * from "./columnPanelMembers";
