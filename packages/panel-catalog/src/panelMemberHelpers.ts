@@ -299,10 +299,17 @@ function earClipRingTriangles(ring: PlanSpacePoint2D[]): [number, number, number
  * assumed identically in two files.
  */
 export function memberFaceIndices(member: PanelMember): number[][] {
-  const ring = member.position.planPolygonCornersIn;
-  /* A section prism is 2 rings of 4 in matching order, exactly like a box and
-     a trapezoid prism, so `BOX_FACES` already describes it. */
-  if (!ring || member.position.trapezoidCornersIn || member.position.sectionCornersIn) return BOX_FACES;
+  /* ⚠ A SECTION prism goes down the same n-gon path a plan prism does, and
+     has to: its ring can be a TRIANGLE (the tall end's bearing wedge), which
+     `BOX_FACES`' fixed 4-and-4 table cannot describe. The plane differs but
+     the topology does not — both are two matching rings joined by side
+     quads — so the section ring is relabelled into the same {xIn,yIn} shape
+     purely to reuse that code. Winding may come out reversed for a section
+     prism, the same caveat `memberLocalCornersIn` already carries. */
+  const ring = member.position.trapezoidCornersIn
+    ? undefined
+    : (member.position.planPolygonCornersIn ?? member.position.sectionCornersIn?.map((c) => ({ xIn: c.zIn, yIn: c.yIn })));
+  if (!ring) return BOX_FACES;
   const n = ring.length;
   if (n < 3) return [];
 

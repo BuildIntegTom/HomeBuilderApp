@@ -1827,6 +1827,12 @@ export default function Building3DView({
                    a vertical wall and had him reporting the roof *"spawning
                    without tapered ends"*. */
                 pitchIn12: roofPitchIn12,
+                /* ⚠ And the wall depth is what gives the tall end its LEVEL
+                   bearing, via the wedge, which hangs BELOW the panel into
+                   the void already there over the tall wall. The plane is
+                   deliberately not lifted to make room — see the note on
+                   `SimpleRoofOptions`; lifting it floated the eave. */
+                bearingSeatDepthIn: thicknessIn,
               }).map((m) =>
                 plane.facing === seeThroughFacing ? { ...m, opacityOverride: ROOF_SEE_THROUGH_OPACITY } : m,
               ),

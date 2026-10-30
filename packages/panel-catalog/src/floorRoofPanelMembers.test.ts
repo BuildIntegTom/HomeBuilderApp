@@ -814,3 +814,136 @@ describe("⚠ the tall end is PLUMB CUT, not square", () => {
     expect(underside(steep)).toBeLessThan(underside(shallow));
   });
 });
+
+describe("⚠ the tall end's BEARING WEDGE", () => {
+  /* > "I want the 3.5in edge in the pic be equal to the wall depth, 15.5in"
+     ... "Let's go with wedge. Make the roof taller." — Tommy, 2026-10-29.
+     The panel's underside runs at the pitch and a top plate is level; the
+     wedge is what lets them meet across the whole wall without cutting the
+     panel. */
+  const DEPTH = 15.5;
+  const SEAT = 15.5;
+  const PITCH = 4;
+  const hyp = Math.hypot(12, PITCH);
+  const COS = 12 / hyp;
+  const SIN = PITCH / hyp;
+  const TAN = PITCH / 12;
+  const LENGTH = 216;
+  const wedged = (over: Partial<FloorRoofPanelOptions> = {}) =>
+    buildFloorRoofPanelMembers({
+      ...floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: PITCH, lengthIn: LENGTH }),
+      depthIn: DEPTH,
+      bearingSeatDepthIn: SEAT,
+      ...over,
+    });
+
+  /* The panel's own frame: member Z is the span and member Y runs DOWNWARD
+     through the depth once installed, so world height and world horizontal
+     come out of the section corners like this. */
+  const heightOf = (c: { yIn: number; zIn: number }) => c.zIn * SIN - c.yIn * COS;
+  const horizOf = (c: { yIn: number; zIn: number }) => c.zIn * COS + c.yIn * SIN;
+
+  it("⚠ its bottom is LEVEL — the only face in the panel that is", () => {
+    const cheek = wedged().find((m) => m.memberId === "wedge-cheek-left")!;
+    const corners = cheek.position.sectionCornersIn!;
+    expect(corners).toHaveLength(3);
+    /* The two ends of the bottom edge: the tip on the panel's underside and
+       the foot of the plumb face. Level means they are at the same height. */
+    const tip = corners.find((c) => c.zIn === Math.min(...corners.map((k) => k.zIn)))!;
+    const foot = corners.find((c) => c.yIn > DEPTH)!;
+    expect(heightOf(foot)).toBeCloseTo(heightOf(tip), 9);
+  });
+
+  it("⚠ the PLATE plus the cheeks give the full wall depth of flat bearing", () => {
+    /* 15 1/2in measured ALONG the panel would be 14.70in of wall once the
+       pitch is taken out — it is the horizontal run that has to be the wall.
+       The plumb plate owns the outer 2 1/4in of it (full width, skin plus
+       2x4 face) and the cheeks the remaining 13 1/4in. */
+    const corners = wedged().find((m) => m.memberId === "wedge-cheek-left")!.position.sectionCornersIn!;
+    const tip = corners.find((c) => c.zIn === Math.min(...corners.map((k) => k.zIn)))!;
+    const foot = corners.find((c) => c.yIn > DEPTH)!;
+    const PLATE_IN = 0.75 + 1.5;
+    expect(horizOf(foot) - horizOf(tip)).toBeCloseTo(SEAT - PLATE_IN, 9);
+    // The plate is plumb, so its perpendicular thickness IS its horizontal run.
+    expect(horizOf(foot) - horizOf(tip) + PLATE_IN).toBeCloseTo(SEAT, 9);
+  });
+
+  it("⚠ the plate's outer face is PLUMB and the cheek stops behind it", () => {
+    const members = wedged();
+    const cheek = members.find((m) => m.memberId === "wedge-cheek-left")!;
+    const plate = members.find((m) => m.memberId === "lid-end-skin")!;
+    const outerFaceX = horizOf({ yIn: 0, zIn: LENGTH });
+    // Every corner of the plate's OUTER edge is on one vertical plane...
+    const outer = plate.position.sectionCornersIn!.filter((c) => horizOf(c) > outerFaceX - 1e-6);
+    expect(outer.length).toBeGreaterThanOrEqual(2);
+    for (const c of outer) expect(horizOf(c)).toBeCloseTo(outerFaceX, 9);
+    // ...and the cheek is set back behind it by the plate's own thickness.
+    const foot = cheek.position.sectionCornersIn!.find((c) => c.yIn > DEPTH)!;
+    expect(outerFaceX - horizOf(foot)).toBeCloseTo(0.75 + 1.5, 9);
+    // The plate is cut to cover panel AND wedge together.
+    expect(plate.actualDimsIn.widthIn).toBeCloseTo(DEPTH / COS + SEAT * TAN, 9);
+    expect(plate.actualDimsIn.widthIn).toBeCloseTo(21.505, 3);
+  });
+
+  it("⚠ the plate's bottom is cut LEVEL, not parallel to the panel", () => {
+    /* It lands on a top plate. Cutting it at one depth — which is what
+       every other end in this panel does — would leave it riding the pitch
+       and bearing on a line instead of a face. */
+    const plate = wedged().find((m) => m.memberId === "lid-end-skin")!;
+    const bottom = plate.position.sectionCornersIn!.filter((c) => c.yIn > 1e-9);
+    expect(bottom).toHaveLength(2);
+    expect(heightOf(bottom[0]!)).toBeCloseTo(heightOf(bottom[1]!), 9);
+    // The two bottom corners are at DIFFERENT depths, which is the point.
+    expect(bottom[0]!.yIn).not.toBeCloseTo(bottom[1]!.yIn, 6);
+  });
+
+  it("⚠ it is ADDED, never notched — the panel keeps its whole depth", () => {
+    /* The rejected option, and why: a 15 1/2in seat cut INTO the panel takes
+       15.5 x sin(18.43deg) = 4.90in of a 15 1/2in depth, which is 31.6% —
+       past NDS d/4 — and leaves 0.60in of the bottom 2x6. */
+    const members = wedged();
+    const joist = members.find((m) => m.memberId === "joist-left-top")!;
+    const noWedge = buildFloorRoofPanelMembers({
+      ...floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: PITCH, lengthIn: LENGTH }),
+      depthIn: DEPTH,
+    });
+    // Same joists either way: the wedge took nothing off them.
+    expect(joist).toEqual(noWedge.find((m) => m.memberId === "joist-left-top"));
+    expect(SEAT * SIN).toBeCloseTo(4.9, 2);
+    expect(JOIST_2X6_WIDTH_IN - SEAT * SIN).toBeCloseTo(0.6, 2);
+  });
+
+  it("a cheek sits under each joist, so the load goes down the lines that carried it", () => {
+    const members = wedged();
+    for (const side of ["left", "right"]) {
+      const cheek = members.find((m) => m.memberId === `wedge-cheek-${side}`)!;
+      const joist = members.find((m) => m.memberId === `joist-${side}-top`)!;
+      expect({ side, x: cheek.position.xIn }).toEqual({ side, x: joist.position.xIn });
+    }
+    /* No separate bearing skin: the plumb plate's own 2 1/4in of full-width
+       solid is the outermost bearing, and the cheeks carry the rest. */
+    expect(members.some((m) => m.memberId === "wedge-bearing-skin")).toBe(false);
+  });
+
+  it("⚠ and nothing in the panel overlaps, wedge included", () => {
+    for (const lengthIn of [96, 144, 216]) {
+      expect({ lengthIn, pairs: overlappingMemberPairs(wedged({ lengthIn })) }).toEqual({ lengthIn, pairs: [] });
+    }
+  });
+
+  it("no seat asked for means no wedge, and the panel is what it was", () => {
+    const bare = wedged({ bearingSeatDepthIn: 0 });
+    expect(bare.some((m) => m.memberId.startsWith("wedge-"))).toBe(false);
+    expect(bare.find((m) => m.memberId === "lid-end-skin")!.actualDimsIn.widthIn).toBeCloseTo(DEPTH / COS, 9);
+  });
+
+  it("⚠ a deeper seat buys more bearing and costs exactly its own rise", () => {
+    for (const seatIn of [3.5, 15.5]) {
+      const plate = wedged({ bearingSeatDepthIn: seatIn }).find((m) => m.memberId === "lid-end-skin")!;
+      expect({ seatIn, h: Number((plate.actualDimsIn.widthIn - DEPTH / COS).toFixed(6)) }).toEqual({
+        seatIn,
+        h: Number((seatIn * TAN).toFixed(6)),
+      });
+    }
+  });
+});

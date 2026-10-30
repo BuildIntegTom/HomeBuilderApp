@@ -168,8 +168,15 @@ export interface MemberPosition {
    * two do. `actualDimsIn` stays the piece AS CUT — for a plumb-cut joist
    * that is its LONG point, which is the number the shop cuts to — and the
    * bevel angle belongs in `notes`.
+   *
+   * ⚠ THREE corners is a real case, not a degenerate four. The bearing
+   * wedge under a roof panel's tall end is a true triangle: a level bottom,
+   * a plumb outer face, and the panel's own sloped underside closing it.
+   * Topology comes from `memberFaceIndices`' n-gon path rather than
+   * `BOX_FACES`, so a triangle is drawn and exported as a triangle instead
+   * of as a quad with two corners sitting on top of each other.
    */
-  sectionCornersIn?: [SectionSpacePoint2D, SectionSpacePoint2D, SectionSpacePoint2D, SectionSpacePoint2D];
+  sectionCornersIn?: SectionSpacePoint2D[];
 }
 
 export interface PanelMember {

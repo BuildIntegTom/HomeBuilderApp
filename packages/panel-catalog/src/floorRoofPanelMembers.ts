@@ -166,6 +166,31 @@ export interface FloorRoofPanelOptions {
    * ignores it outright.
    */
   pitchIn12?: number;
+  /**
+   * ⚠ How much LEVEL BEARING the tall end needs — the wall depth.
+   *
+   * > *"I want the 3.5in edge in the pic be equal to the wall depth, 15.5in"*
+   * > — Tommy, 2026-10-29, of the horizontal bottom plate on his older
+   * > SketchUp panel.
+   *
+   * The panel's underside runs at the roof's pitch and a wall's top plate is
+   * level, so the two cannot meet across 15 1/2in without something giving.
+   * This asks for the WEDGE: a triangular bearing boot under the tall end,
+   * level on the bottom, plumb on the outside, closed above by the panel's
+   * own sloped underside. Nothing is cut.
+   *
+   * ⚠ **The alternative was to NOTCH the seat up into the panel, and it
+   * was rejected on the numbers.** At 4:12 a 15 1/2in level seat is 4.90in
+   * measured perpendicular — 31.6% of the panel's depth, past the NDS d/4
+   * end-notch limit, and it leaves 0.60in of the bottom 2x6 chord. The wedge
+   * costs only height: the plumb face grows from `depth/cos` to
+   * `depth/cos + seat x tan`, 16 3/8in to 21 1/2in at 4:12. *"Let's go with
+   * wedge. Make the roof taller."*
+   *
+   * 0 or omitted builds no wedge, which is what a tall end with no wall or
+   * beam under it wants.
+   */
+  bearingSeatDepthIn?: number;
 }
 
 /**
@@ -191,28 +216,69 @@ export interface FloorRoofPanelOptions {
  * which sends member-Y to world (0, -cos tilt, sin tilt). Getting this
  * backwards would cut the bevel the wrong way and still look plausible.
  */
-function plumbEndCut(o: FloorRoofPanelOptions): {
+interface PlumbEndCut {
   tan: number;
+  sin: number;
+  cos: number;
   /** How much further the top face runs than the underside. */
   bevelIn: number;
-  /** The end plate's real cut height, standing vertical. */
+  /** The plumb face's real cut height — the panel AND its bearing wedge. */
   plumbHeightIn: number;
   tiltDeg: number;
+  /** The level bearing the wedge provides; 0 when there is no wedge. */
+  seatIn: number;
+  /** How far through the depth the wedge reaches, at the plumb face. */
+  wedgeBottomYIn: number;
+  /**
+   * ⚠ Where the assembly's LEVEL bottom crosses a plane set back by
+   * `perpendicularIn`, as a depth.
+   *
+   * A line at constant depth is parallel to the PANEL, not to the ground, so
+   * cutting the plate's bottom at one depth would leave it riding the pitch
+   * instead of sitting on the plate. Each plane through the assembly meets
+   * the level bottom a little higher up than the one outside it, by
+   * `perpendicular x sin`.
+   */
+  levelBottomYIn: (perpendicularIn: number) => number;
+  /** A plumb edge's real cut length, at a given set-back. */
+  plumbEdgeHeightIn: (perpendicularIn: number) => number;
   /** Where the panel's outer end face sits, at a given depth. */
   outerAtYIn: (yIn: number) => number;
   /** A plane parallel to it, set back by a perpendicular thickness. */
   setBackAtYIn: (yIn: number, perpendicularIn: number) => number;
-} | null {
+}
+
+function plumbEndCut(o: FloorRoofPanelOptions): PlumbEndCut | null {
   const pitchIn12 = o.pitchIn12;
   if (o.kind !== "roof" || pitchIn12 === undefined || !(pitchIn12 > 0)) return null;
   const tan = pitchIn12 / 12;
-  const cos = 12 / Math.hypot(12, pitchIn12);
+  const hyp = Math.hypot(12, pitchIn12);
+  const cos = 12 / hyp;
+  const sin = pitchIn12 / hyp;
   const outerAtYIn = (yIn: number) => o.lengthIn - yIn * tan;
+  const seatIn = Math.max(0, o.bearingSeatDepthIn ?? 0);
   return {
     tan,
+    sin,
+    cos,
     bevelIn: o.depthIn * tan,
-    plumbHeightIn: o.depthIn / cos,
+    /* ⚠ Panel PLUS wedge. Cutting this to the panel alone would leave the
+       wedge's outer face bare, which is the one face the exterior wall laps
+       over. */
+    plumbHeightIn: o.depthIn / cos + seatIn * tan,
     tiltDeg: (Math.atan2(pitchIn12, 12) * 180) / Math.PI,
+    seatIn,
+    /* ⚠ Stepping DOWN the plumb face by a vertical `seat x tan` moves
+       `seat x sin` through the panel's depth, not `seat x tan`: the plumb
+       face leans against the depth axis, so a vertical drop is not a depth
+       of the same size. */
+    wedgeBottomYIn: o.depthIn + seatIn * sin,
+    /* No wedge means no level bottom to find: the plate simply stops flush
+       with the panel's underside, parallel to it, as it always did. */
+    levelBottomYIn: (perpendicularIn: number) =>
+      seatIn > 0 ? o.depthIn + seatIn * sin - perpendicularIn * sin : o.depthIn,
+    plumbEdgeHeightIn: (perpendicularIn: number) =>
+      (seatIn > 0 ? o.depthIn + seatIn * sin - perpendicularIn * sin : o.depthIn) / cos,
     outerAtYIn,
     /* ⚠ A thickness measured PERPENDICULAR to a plumb face is longer than
        that along the span, by 1/cos — the same reason the plate itself is
@@ -220,6 +286,84 @@ function plumbEndCut(o: FloorRoofPanelOptions): {
        leave the parts not quite meeting. */
     setBackAtYIn: (yIn: number, perpendicularIn: number) => outerAtYIn(yIn) - perpendicularIn / cos,
   };
+}
+
+/**
+ * The bearing wedge under the tall end: level on the bottom, plumb on the
+ * outside, closed above by the panel's own sloped underside.
+ *
+ * ⚠ **A true triangle, and the only part of a roof panel whose bottom is
+ * LEVEL rather than parallel to the panel.** Everything else here is square
+ * to the panel, because the panel is what it is built against; this one is
+ * square to the world, because a top plate is. Its three corners, in the
+ * panel's own (depth, span):
+ *
+ *   tip     (depthIn, zB)  where the level bottom runs out at the underside
+ *   corner  (depthIn, zU)  the panel's own bottom-outer corner
+ *   foot    (yA,      zA)  the bottom of the plumb face
+ *
+ * A cheek sits under each joist, so the reaction goes down the same two
+ * lines that carried it along the panel, and a level skin closes the bottom
+ * into one bearing surface.
+ */
+function buildTallEndWedge(o: FloorRoofPanelOptions, plumb: PlumbEndCut): PanelMember[] {
+  if (!(plumb.seatIn > 0)) return [];
+  const yA = plumb.wedgeBottomYIn;
+  /* Where the level bottom runs out at the panel's own underside, which is
+     the wedge's inner tip. */
+  const zB = plumb.outerAtYIn(yA) - plumb.seatIn * plumb.cos;
+  const riseIn = plumb.seatIn * plumb.tan;
+
+  /* ⚠ The cheeks stop at the PLATE'S INNER FACE, the same place the joists
+     stop. Running them out to the plumb face instead put 14 member pairs in
+     the same space as the plate — the overlap check caught it. The plate's
+     own 2 1/4in of full-width solid is the outermost bearing; the cheeks
+     carry the remaining 13 1/4in under the joist lines. */
+  const lidThicknessIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  const footYIn = plumb.levelBottomYIn(lidThicknessIn);
+
+  const out: PanelMember[] = [];
+  for (const [side, xIn] of [
+    ["left", 0],
+    ["right", o.widthIn - JOIST_2X6_THICKNESS_IN],
+  ] as [string, number][]) {
+    out.push({
+      memberId: `wedge-cheek-${side}`,
+      material: "dimensional_lumber",
+      speciesGrade: LUMBER_SPECIES_GRADE,
+      plySpec: null,
+      nominalSize: "2x6",
+      /* The board it is cut FROM: the sloped face against the panel is the
+         longest edge and the one the shop lays out along. */
+      actualDimsIn: {
+        thicknessIn: JOIST_2X6_THICKNESS_IN,
+        widthIn: riseIn,
+        lengthIn: plumb.seatIn / plumb.cos,
+      },
+      orientation: "vertical",
+      position: {
+        xIn,
+        yIn: o.depthIn,
+        zIn: zB,
+        rotationDeg: 0,
+        sectionCornersIn: [
+          { yIn: o.depthIn, zIn: zB },
+          { yIn: o.depthIn, zIn: plumb.setBackAtYIn(o.depthIn, lidThicknessIn) },
+          { yIn: footYIn, zIn: plumb.setBackAtYIn(footYIn, lidThicknessIn) },
+        ],
+      },
+      role: "blocking",
+      qty: 1,
+      notes:
+        side === "left"
+          ? `bearing wedge — ${plumb.seatIn}in of level bottom, ${riseIn.toFixed(3)}in tall at the plumb face, ` +
+            `tapering to nothing. ADDED, not notched: the same seat cut INTO the panel would take ` +
+            `${(plumb.seatIn * plumb.sin).toFixed(2)}in of its ${o.depthIn}in depth and all but 0.6in of the bottom chord.`
+          : undefined,
+    });
+  }
+
+  return out;
 }
 
 /**
@@ -570,14 +714,21 @@ function buildStructuralLid(o: FloorRoofPanelOptions, atEnd: "start" | "end"): P
  * plate at 4:12. Cutting these to the panel's depth would leave the underside
  * corner open, which is the exact corner the membrane has to turn.
  */
-function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: NonNullable<ReturnType<typeof plumbEndCut>>): PanelMember[] {
-  const slab = (perpendicularStartIn: number, perpendicularEndIn: number) =>
-    [
+function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: PlumbEndCut): PanelMember[] {
+  /* ⚠ Down to the WEDGE's bottom, not the panel's — the plate is the face
+     the exterior wall laps over, and the wedge is part of that face — and
+     cut LEVEL there, because it lands on a top plate. Each of the slab's two
+     plumb edges meets that level bottom at its own depth. */
+  const slab = (perpendicularStartIn: number, perpendicularEndIn: number): SectionSpacePoint2D[] => {
+    const outerBottomYIn = plumb.levelBottomYIn(perpendicularStartIn);
+    const innerBottomYIn = plumb.levelBottomYIn(perpendicularEndIn);
+    return [
       { yIn: 0, zIn: plumb.setBackAtYIn(0, perpendicularEndIn) },
       { yIn: 0, zIn: plumb.setBackAtYIn(0, perpendicularStartIn) },
-      { yIn: o.depthIn, zIn: plumb.setBackAtYIn(o.depthIn, perpendicularStartIn) },
-      { yIn: o.depthIn, zIn: plumb.setBackAtYIn(o.depthIn, perpendicularEndIn) },
-    ] as [SectionSpacePoint2D, SectionSpacePoint2D, SectionSpacePoint2D, SectionSpacePoint2D];
+      { yIn: outerBottomYIn, zIn: plumb.setBackAtYIn(outerBottomYIn, perpendicularStartIn) },
+      { yIn: innerBottomYIn, zIn: plumb.setBackAtYIn(innerBottomYIn, perpendicularEndIn) },
+    ];
+  };
 
   const out: PanelMember[] = [
     {
@@ -586,12 +737,12 @@ function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: NonNullable<ReturnT
       speciesGrade: null,
       plySpec: SKIN_PLY_SPEC,
       nominalSize: null,
-      actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: plumb.plumbHeightIn, lengthIn: o.widthIn },
+      actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: plumb.plumbEdgeHeightIn(0), lengthIn: o.widthIn },
       orientation: "flat",
       position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0, sectionCornersIn: slab(0, SKIN_THICKNESS_IN) },
       role: "skin",
       qty: 1,
-      notes: `tall-end skin, standing PLUMB — cut ${plumb.plumbHeightIn.toFixed(3)}in, not the panel's ${o.depthIn}in depth`,
+      notes: `tall-end skin, standing PLUMB — cut ${plumb.plumbEdgeHeightIn(0).toFixed(3)}in, not the panel's ${o.depthIn}in depth`,
     },
   ];
 
@@ -606,7 +757,9 @@ function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: NonNullable<ReturnT
       speciesGrade: LUMBER_SPECIES_GRADE,
       plySpec: null,
       nominalSize: "2x4",
-      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn, lengthIn: plumb.plumbHeightIn },
+      /* ⚠ Its own edge, not the skin's. A 2x4 face sits 3/4in further in,
+         and a level bottom means every plane further in is cut shorter. */
+      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn, lengthIn: plumb.plumbEdgeHeightIn(SKIN_THICKNESS_IN) },
       orientation: "horizontal",
       position: {
         xIn,
@@ -642,6 +795,7 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
   const o = options;
   const plumb = plumbEndCut(o);
   const members: PanelMember[] = [...buildJoists(o), ...buildStructuralLid(o, "start"), ...buildStructuralLid(o, "end")];
+  if (plumb) members.push(...buildTallEndWedge(o, plumb));
 
   const girtEnds = o.kind === "roof" ? [] : (o.structuralGirtEnds ?? []);
   for (const end of girtEnds) {

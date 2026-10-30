@@ -57,6 +57,30 @@ export interface SimpleRoofOptions {
 }
 
 /**
+ * ⚠ **THE PLANE IS NOT LIFTED FOR THE TALL END'S BEARING WEDGE, and that
+ * was tried first.**
+ *
+ * A roof panel's underside runs at the pitch and a top plate is level, so
+ * the panel carries a wedge under its tall end to bear across the whole
+ * wall (`bearingSeatDepthIn` in the panel catalogue). The obvious move is to
+ * lift this plane by the wedge's height so it clears the plate. Lifting both
+ * edges keeps the pitch honest — but it also lifts the EAVE edge off its own
+ * bearing, and nothing fills that.
+ *
+ * The wedge is purely ADDITIVE instead: it hangs below the panel into the
+ * void that already exists over the tall wall, between the level plate and
+ * the underside rising away from it. The tall wall's plate therefore sits
+ * `seat x pitch/12` below the roof's high edge — the roof standing proud of
+ * the wall, which is what *"make the roof taller"* asks for, rather than the
+ * wall being built up to meet it.
+ *
+ * The eave end has the same void mirrored, and his earlier spec already
+ * fills it: `buildRoofPanelCapMembers(..., "eave", pitch)` is an L whose
+ * seat is *"cut off square"* by exactly the pitch and bears on the top
+ * plate. The two ends are the same idea from opposite directions.
+ */
+
+/**
  * ⚠ WHICH WAY THE RIDGE RUNS, and why it is not simply "the long way".
  *
  * > *"it should default to have the largest roof surface area face south. On
