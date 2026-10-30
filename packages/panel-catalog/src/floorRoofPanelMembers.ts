@@ -242,21 +242,61 @@ interface PlumbEndCut {
   levelBottomYIn: (perpendicularIn: number) => number;
   /** A plumb edge's real cut length, at a given set-back. */
   plumbEdgeHeightIn: (perpendicularIn: number) => number;
+  atEnd: "start" | "end";
+  /** +1 at the tall end, -1 at the eave: which way "further into the panel"
+   * runs along the span. Every set-back and every wedge corner needs it. */
+  dir: number;
   /** Where the panel's outer end face sits, at a given depth. */
   outerAtYIn: (yIn: number) => number;
   /** A plane parallel to it, set back by a perpendicular thickness. */
   setBackAtYIn: (yIn: number, perpendicularIn: number) => number;
 }
 
-function plumbEndCut(o: FloorRoofPanelOptions): PlumbEndCut | null {
+function plumbEndCut(o: FloorRoofPanelOptions, atEnd: "start" | "end" = "end"): PlumbEndCut | null {
   const pitchIn12 = o.pitchIn12;
   if (o.kind !== "roof" || pitchIn12 === undefined || !(pitchIn12 > 0)) return null;
   const tan = pitchIn12 / 12;
   const hyp = Math.hypot(12, pitchIn12);
   const cos = 12 / hyp;
   const sin = pitchIn12 / hyp;
-  const outerAtYIn = (yIn: number) => o.lengthIn - yIn * tan;
-  const seatIn = Math.max(0, o.bearingSeatDepthIn ?? 0);
+  /**
+   * ⚠ **BOTH ENDS ARE PLUMB, AND THEY LEAN OPPOSITE WAYS.**
+   *
+   * > *"The roof panel bottom edges still are just squared off and not
+   * > correct."* — Tommy, 2026-10-30
+   *
+   * At the TALL end the long point is the TOP: travelling up the panel gains
+   * height, so the top edge reaches a given vertical plane only after
+   * running further along the panel than the bottom edge did. At the EAVE
+   * the same fact runs the other way and the long point is the UNDERSIDE —
+   * which is exactly the fascia cut on a rafter tail. A single formula for
+   * both would have one of them backwards, and it would still look
+   * plausible.
+   *
+   * The eave's plumb plane is placed so the UNDERSIDE reaches z = 0: the
+   * underside is what bears, and letting the top keep z = 0 instead would
+   * push the underside to a negative span.
+   */
+  const dir = atEnd === "end" ? 1 : -1;
+  const baseZIn = atEnd === "end" ? o.lengthIn : o.depthIn * tan;
+  const outerAtYIn = (yIn: number) => baseZIn - yIn * tan;
+  /* ⚠ **THE BEARING SEAT IS THE TALL END'S ALONE**, and trying to mirror it
+     is what forced this comment.
+
+     The two voids are not mirror images. At the tall end the underside
+     rises AWAY from the wall going outward, so the void over the plate is
+     thickest at the exterior face and the plate reaches down over it. At the
+     eave the underside rises INWARD, so the void grows away from the plate
+     and the thick end is 15 1/2in inside the building — a different shape
+     with its vertical face on the other side. His seat spec was the tall
+     end's: *"the bottom of it should meet flush with the entire wall depth"*
+     (2026-10-29), and the eave already has his earlier L-plate cap, whose
+     seat is *"cut off square"* by exactly the pitch.
+
+     So the eave gets the PLUMB CUT he asked for on 2026-10-30 — *"the roof
+     panel bottom edges still are just squared off and not correct"* — and
+     its plate stops at the panel's underside rather than hanging below it. */
+  const seatIn = atEnd === "end" ? Math.max(0, o.bearingSeatDepthIn ?? 0) : 0;
   return {
     tan,
     sin,
@@ -275,16 +315,24 @@ function plumbEndCut(o: FloorRoofPanelOptions): PlumbEndCut | null {
     wedgeBottomYIn: o.depthIn + seatIn * sin,
     /* No wedge means no level bottom to find: the plate simply stops flush
        with the panel's underside, parallel to it, as it always did. */
+    /* ⚠ The per-plane step MIRRORS with the end. Each plane further into
+       the panel meets the level bottom at a different depth, and which way
+       depends on which way "into the panel" leans — away from the plumb
+       face at the tall end, toward it at the eave. Holding it at one sign
+       left the eave plate's bottom 1/2in out of level, which is a plate
+       bearing on a line instead of a face. */
     levelBottomYIn: (perpendicularIn: number) =>
-      seatIn > 0 ? o.depthIn + seatIn * sin - perpendicularIn * sin : o.depthIn,
+      seatIn > 0 ? o.depthIn + seatIn * sin - dir * perpendicularIn * sin : o.depthIn,
     plumbEdgeHeightIn: (perpendicularIn: number) =>
-      (seatIn > 0 ? o.depthIn + seatIn * sin - perpendicularIn * sin : o.depthIn) / cos,
+      (seatIn > 0 ? o.depthIn + seatIn * sin - dir * perpendicularIn * sin : o.depthIn) / cos,
     outerAtYIn,
     /* ⚠ A thickness measured PERPENDICULAR to a plumb face is longer than
        that along the span, by 1/cos — the same reason the plate itself is
        taller than the panel is deep. Subtracting the raw thickness would
        leave the parts not quite meeting. */
-    setBackAtYIn: (yIn: number, perpendicularIn: number) => outerAtYIn(yIn) - perpendicularIn / cos,
+    atEnd,
+    dir,
+    setBackAtYIn: (yIn: number, perpendicularIn: number) => outerAtYIn(yIn) - dir * (perpendicularIn / cos),
   };
 }
 
@@ -311,7 +359,11 @@ function buildTallEndWedge(o: FloorRoofPanelOptions, plumb: PlumbEndCut): PanelM
   const yA = plumb.wedgeBottomYIn;
   /* Where the level bottom runs out at the panel's own underside, which is
      the wedge's inner tip. */
-  const zB = plumb.outerAtYIn(yA) - plumb.seatIn * plumb.cos;
+  /* ⚠ MINUS dir, not plus. The tip runs INTO the panel — down-slope from
+     the tall end, up-slope from the eave — and `dir` points the other way,
+     outward. Getting it backwards put the tall end's cheek 8in past the end
+     of the panel it belongs to, which the overlap check caught. */
+  const zB = plumb.outerAtYIn(yA) - plumb.dir * plumb.seatIn * plumb.cos;
   const riseIn = plumb.seatIn * plumb.tan;
 
   /* ⚠ The cheeks stop at the PLATE'S INNER FACE, the same place the joists
@@ -328,7 +380,7 @@ function buildTallEndWedge(o: FloorRoofPanelOptions, plumb: PlumbEndCut): PanelM
     ["right", o.widthIn - JOIST_2X6_THICKNESS_IN],
   ] as [string, number][]) {
     out.push({
-      memberId: `wedge-cheek-${side}`,
+      memberId: `wedge-${plumb.atEnd}-cheek-${side}`,
       material: "dimensional_lumber",
       speciesGrade: LUMBER_SPECIES_GRADE,
       plySpec: null,
@@ -356,7 +408,7 @@ function buildTallEndWedge(o: FloorRoofPanelOptions, plumb: PlumbEndCut): PanelM
       qty: 1,
       notes:
         side === "left"
-          ? `bearing wedge — ${plumb.seatIn}in of level bottom, ${riseIn.toFixed(3)}in tall at the plumb face, ` +
+          ? `${plumb.atEnd === "end" ? "tall-end" : "eave"} bearing wedge — ${plumb.seatIn}in of level bottom, ${riseIn.toFixed(3)}in tall at the plumb face, ` +
             `tapering to nothing. ADDED, not notched: the same seat cut INTO the panel would take ` +
             `${(plumb.seatIn * plumb.sin).toFixed(2)}in of its ${o.depthIn}in depth and all but 0.6in of the bottom chord.`
           : undefined,
@@ -451,7 +503,8 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
    * 300in. */
   const lidThicknessIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const joistLengthIn = o.lengthIn - 2 * lidThicknessIn;
-  const plumb = plumbEndCut(o);
+  const plumb = plumbEndCut(o, "end");
+  const eave = plumbEndCut(o, "start");
   const edges: [string, number][] = [
     ["left", 0],
     ["right", o.widthIn - JOIST_2X6_THICKNESS_IN],
@@ -486,6 +539,13 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
       const farYIn = yIn + JOIST_2X6_WIDTH_IN;
       const nearEndIn = plumb.setBackAtYIn(nearYIn, lidThicknessIn);
       const farEndIn = plumb.setBackAtYIn(farYIn, lidThicknessIn);
+      /* ⚠ The EAVE end is beveled too, and the other way. Its long point is
+         the underside, so the joist nearer the panel's top is the SHORT one
+         here and the longer one at the tall end — the two bevels partly
+         cancel, which is why a joist's length is not simply the span less
+         two lids any more. */
+      const nearStartIn = eave!.setBackAtYIn(nearYIn, lidThicknessIn);
+      const farStartIn = eave!.setBackAtYIn(farYIn, lidThicknessIn);
       out.push({
         memberId: `joist-${side}-${face}`,
         material: "dimensional_lumber",
@@ -497,27 +557,30 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
         actualDimsIn: {
           thicknessIn: JOIST_2X6_THICKNESS_IN,
           widthIn: JOIST_2X6_WIDTH_IN,
-          lengthIn: nearEndIn - lidThicknessIn,
+          /* The piece AS CUT is its longest edge, whichever depth that falls
+             at once both bevels are taken. */
+          lengthIn: Math.max(nearEndIn - nearStartIn, farEndIn - farStartIn),
         },
         orientation: "vertical",
         position: {
           xIn,
           yIn,
-          zIn: lidThicknessIn,
+          zIn: Math.min(nearStartIn, farStartIn),
           rotationDeg: 0,
           sectionCornersIn: [
-            { yIn: nearYIn, zIn: lidThicknessIn },
+            { yIn: nearYIn, zIn: nearStartIn },
             { yIn: nearYIn, zIn: nearEndIn },
             { yIn: farYIn, zIn: farEndIn },
-            { yIn: farYIn, zIn: lidThicknessIn },
+            { yIn: farYIn, zIn: farStartIn },
           ],
         },
         role: "stud",
         qty: 1,
         notes:
-          `${side} joist, ${face} member of the pair — tall end cut ` +
-          `${plumb.tiltDeg.toFixed(2)}deg off square so it stands plumb, long point ` +
-          `${(nearEndIn - lidThicknessIn).toFixed(3)}in, short point ${(farEndIn - lidThicknessIn).toFixed(3)}in`,
+          `${side} joist, ${face} member of the pair — BOTH ends cut ` +
+          `${plumb.tiltDeg.toFixed(2)}deg off square so each stands plumb, long point ` +
+          `${Math.max(nearEndIn - nearStartIn, farEndIn - farStartIn).toFixed(3)}in, short point ` +
+          `${Math.min(nearEndIn - nearStartIn, farEndIn - farStartIn).toFixed(3)}in`,
       });
     }
   }
@@ -667,7 +730,7 @@ function buildStructuralLid(o: FloorRoofPanelOptions, atEnd: "start" | "end"): P
      other end gets, just stood vertical instead of square to the panel. It
      is what the membrane runs onto and what the exterior wall laps over. The
      eave end (`start`) is untouched. */
-  const plumb = atEnd === "end" ? plumbEndCut(o) : null;
+  const plumb = plumbEndCut(o, atEnd);
   if (plumb) return buildPlumbEndPlate(o, plumb);
 
   const zBase = atEnd === "start" ? 0 : o.lengthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
@@ -732,7 +795,7 @@ function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: PlumbEndCut): Panel
 
   const out: PanelMember[] = [
     {
-      memberId: "lid-end-skin",
+      memberId: `lid-${plumb.atEnd}-skin`,
       material: "plywood",
       speciesGrade: null,
       plySpec: SKIN_PLY_SPEC,
@@ -742,7 +805,7 @@ function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: PlumbEndCut): Panel
       position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0, sectionCornersIn: slab(0, SKIN_THICKNESS_IN) },
       role: "skin",
       qty: 1,
-      notes: `tall-end skin, standing PLUMB — cut ${plumb.plumbEdgeHeightIn(0).toFixed(3)}in, not the panel's ${o.depthIn}in depth`,
+      notes: `${plumb.atEnd === "end" ? "tall-end" : "eave"} skin, standing PLUMB — cut ${plumb.plumbEdgeHeightIn(0).toFixed(3)}in, not the panel's ${o.depthIn}in depth`,
     },
   ];
 
@@ -752,7 +815,7 @@ function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: PlumbEndCut): Panel
     const widthIn = Math.min(PLATE_2X4_WIDTH_IN, o.widthIn - xIn);
     const ripped = widthIn < PLATE_2X4_WIDTH_IN - 1e-9;
     out.push({
-      memberId: `lid-end-face-${index}`,
+      memberId: `lid-${plumb.atEnd}-face-${index}`,
       material: "dimensional_lumber",
       speciesGrade: LUMBER_SPECIES_GRADE,
       plySpec: null,
@@ -771,8 +834,8 @@ function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: PlumbEndCut): Panel
       role: "stud",
       qty: 1,
       notes: ripped
-        ? `ripped to ${widthIn}in wide — the last one on the plumb tall-end plate`
-        : "stands plumb against the tall end",
+        ? `ripped to ${widthIn}in wide — the last one on the plumb ${plumb.atEnd === "end" ? "tall-end" : "eave"} plate`
+        : `stands plumb against the ${plumb.atEnd === "end" ? "tall end" : "eave"}`,
     });
     xIn += PLATE_2X4_WIDTH_IN;
     index += 1;
@@ -793,9 +856,13 @@ function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: PlumbEndCut): Panel
  */
 export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): PanelMember[] {
   const o = options;
-  const plumb = plumbEndCut(o);
+  const plumb = plumbEndCut(o, "end");
+  const eave = plumbEndCut(o, "start");
   const members: PanelMember[] = [...buildJoists(o), ...buildStructuralLid(o, "start"), ...buildStructuralLid(o, "end")];
   if (plumb) members.push(...buildTallEndWedge(o, plumb));
+  /* `eave` carries seatIn 0 by construction, so there is no wedge to build
+     there — only the plumb cut, which `buildStructuralLid` already made. */
+  void eave;
 
   const girtEnds = o.kind === "roof" ? [] : (o.structuralGirtEnds ?? []);
   for (const end of girtEnds) {

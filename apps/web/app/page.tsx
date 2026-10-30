@@ -6279,7 +6279,14 @@ export default function LayoutEditor() {
         gableEaveHeightIn,
         points,
         standardWidthIn,
-        trussPlateInsetIn,
+        /* ⚠ NO INSET when the gable ends run full height. Tommy, 2026-10-30:
+           *"Gable end panels should be able to span the entire width of the
+           wall, it looks like they stop short."* The truss-plate inset exists
+           to clear a truss landing on the wall's two corners; with the gable
+           closing the building to the roof's top surface there is no truss
+           there, and the row is the wall — corner to corner, the full width
+           of the floor plan. */
+        gableEndsFullHeight ? 0 : trussPlateInsetIn,
         true,
         heelHeightIn,
         roofBearingAnchorMode,
@@ -6316,7 +6323,14 @@ export default function LayoutEditor() {
            itself as 2.5:12. Every consumer keeps reading the underside; only
            the renderers add `roofTopLiftIn`. */
         const liftIn = gableTileRoofTopOffsetIn(t.leftHeightIn, t.rightHeightIn, t.widthIn);
-        const capped = capGableTileHeights(t.leftHeightIn, t.rightHeightIn, capHeightIn);
+        /* ⚠ THE CAP HAS TO MAKE ROOM FOR THE LIFT, because
+           `buildGablePanelMembers` THROWS above 8ft rather than clamping —
+           and a throw inside the 3D view's memo takes the whole viewport
+           with it, not just one panel. The tile is capped low enough that
+           adding the lift downstream still lands under the fabrication
+           maximum; the vertical safety-gap filler above it already measures
+           from the capped top, so it absorbs the difference untouched. */
+        const capped = capGableTileHeights(t.leftHeightIn, t.rightHeightIn, Math.max(gableEaveHeightIn + 1, capHeightIn - liftIn));
         return {
           widthIn: t.widthIn,
           xStartIn: t.xStartIn,

@@ -687,149 +687,26 @@ describe("⚠ the extra girts a column needs from the floor under it", () => {
   });
 });
 
-describe("⚠ the tall end is PLUMB CUT, not square", () => {
+
+describe("⚠ BOTH ends of a roof panel are PLUMB CUT", () => {
   /* > "The tall end of a roof panel should be plumb cut with a vertical
      > structural top plate, and the bottom of it should meet flush with the
-     > entire wall depth and the rest should go plumb cut vertically. This
-     > makes for easy membrane application when it looks like a monopoly
-     > house — meets the interior wall and exterior wall continues up and
-     > cover." — Tommy, 2026-10-29 */
-  const DEPTH = 15.5;
-  const PITCH = 4;
-  const TAN = PITCH / 12;
-  const COS = 12 / Math.hypot(12, PITCH);
-  const pitched = (over: Partial<FloorRoofPanelOptions> = {}) =>
-    buildFloorRoofPanelMembers({ ...floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: PITCH }), depthIn: DEPTH, ...over });
-
-  it("⚠ the two joists of a pair are DIFFERENT lengths, which is the whole point", () => {
-    /* A square cut gives both the same length. A plumb one cannot: they sit
-       at different depths, and the cut leans through the depth. */
-    const members = pitched();
-    const atTop = members.find((m) => m.memberId === "joist-left-bottom")!;
-    const atUnderside = members.find((m) => m.memberId === "joist-left-top")!;
-    expect(atTop.actualDimsIn.lengthIn).toBeGreaterThan(atUnderside.actualDimsIn.lengthIn);
-    /* Exactly the depth between them times the pitch — member y=0 is the
-       installed TOP face, so the far joist sits (depth - 5.5) lower. */
-    expect(atTop.actualDimsIn.lengthIn - atUnderside.actualDimsIn.lengthIn).toBeCloseTo((DEPTH - JOIST_2X6_WIDTH_IN) * TAN, 9);
-  });
-
-  it("⚠ each joist's OWN end is beveled, so its long and short points differ", () => {
-    const joist = pitched().find((m) => m.memberId === "joist-left-bottom")!;
-    const corners = joist.position.sectionCornersIn!;
-    expect(corners).toBeDefined();
-    const zs = corners.map((c) => c.zIn);
-    expect(Math.max(...zs) - Math.min(...zs)).toBeCloseTo(joist.actualDimsIn.lengthIn, 9);
-    // The bevel across its own 5 1/2in is the pitch, not some rounded angle.
-    const far = corners.filter((c) => c.zIn > 2.25 + 1e-9);
-    expect(Math.abs(far[0]!.zIn - far[1]!.zIn)).toBeCloseTo(JOIST_2X6_WIDTH_IN * TAN, 9);
-    expect(joist.notes).toContain("stands plumb");
-  });
-
-  it("⚠ the underside pulls back by the full depth times the pitch", () => {
-    /* His "meets the interior wall and exterior wall continues up and cover":
-       the cut is one vertical plane, so the underside's end and the top's
-       end are the same place in the world — they are just a bevel apart
-       along the panel. */
-    const skin = pitched().find((m) => m.memberId === "lid-end-skin")!;
-    const outer = skin.position.sectionCornersIn!.filter((c) => c.yIn === 0 || c.yIn === DEPTH);
-    const atTop = Math.max(...outer.filter((c) => c.yIn === 0).map((c) => c.zIn));
-    const atUnderside = Math.max(...outer.filter((c) => c.yIn === DEPTH).map((c) => c.zIn));
-    expect(atTop - atUnderside).toBeCloseTo(DEPTH * TAN, 9);
-  });
-
-  it("⚠ the vertical top plate is cut TALLER than the panel is deep", () => {
-    /* A plate standing plumb against a leaning panel has to span
-       depth / cos(pitch). Cutting it to the depth leaves the underside
-       corner open — the exact corner the membrane turns. */
-    const members = pitched();
-    const skin = members.find((m) => m.memberId === "lid-end-skin")!;
-    expect(skin.actualDimsIn.widthIn).toBeCloseTo(DEPTH / COS, 9);
-    expect(skin.actualDimsIn.widthIn).toBeGreaterThan(DEPTH);
-    const faces = members.filter((m) => m.memberId.startsWith("lid-end-face-"));
-    expect(faces.length).toBeGreaterThan(0);
-    for (const f of faces) expect(f.actualDimsIn.lengthIn).toBeCloseTo(DEPTH / COS, 9);
-    // And they still cover the panel's whole width, last one ripped.
-    expect(faces.reduce((a, f) => a + f.actualDimsIn.widthIn, 0)).toBeCloseTo(FLOOR_ROOF_PANEL_WIDTH_IN, 9);
-  });
-
-  it("the joists land exactly on the plate's inner face, at every depth", () => {
-    /* Dimensional tightness through a bevel: the two parts are cut on
-       different angles and still have to meet with nothing between them. */
-    const members = pitched();
-    const plateInnerAt = (yIn: number) => 144 - yIn * TAN - (0.75 + 1.5) / COS;
-    for (const id of ["joist-left-bottom", "joist-left-top"]) {
-      const corners = members.find((m) => m.memberId === id)!.position.sectionCornersIn!;
-      for (const c of corners.filter((c) => c.zIn > 2.25 + 1e-9)) {
-        expect({ id, y: c.yIn, z: Number(c.zIn.toFixed(9)) }).toEqual({ id, y: c.yIn, z: Number(plateInnerAt(c.yIn).toFixed(9)) });
-      }
-    }
-  });
-
-  it("⚠ and nothing in the panel overlaps anything else", () => {
-    // The standing rule, through a shape the overlap test had never seen.
-    for (const lengthIn of [96, 144, 180, 216]) {
-      expect({ lengthIn, pairs: overlappingMemberPairs(pitched({ lengthIn })) }).toEqual({ lengthIn, pairs: [] });
-    }
-  });
-
-  it("a floor, and a roof with no pitch, are cut square exactly as before", () => {
-    for (const options of [floor(), floor({ kind: "roof", structuralGirtEnds: [] }), floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: 0 })]) {
-      const members = buildFloorRoofPanelMembers(options);
-      expect({ kind: options.kind, pitch: options.pitchIn12, beveled: members.some((m) => m.position.sectionCornersIn) }).toEqual({
-        kind: options.kind,
-        pitch: options.pitchIn12,
-        beveled: false,
-      });
-    }
-    // Byte for byte the panel it was.
-    expect(buildFloorRoofPanelMembers(floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: 0 }))).toEqual(
-      buildFloorRoofPanelMembers(floor({ kind: "roof", structuralGirtEnds: [] })),
-    );
-  });
-
-  it("⚠ the bevel REACHES THE RENDERER, not just the data", () => {
-    /* A commit once shipped a flat roof deck because the tilt was written
-       into the data and nothing drew it. `memberLocalCornersIn` is the one
-       function both the 3D view and the .obj export read corners from, so
-       asking it directly is asking the screen.
-
-       A BOX would answer with its 8 corners at exactly 2 distinct heights.
-       This joist answers with 3: its two eave-end corners share one, and
-       its beveled tall end splits into the long point and the short. */
-    const joist = pitched().find((m) => m.memberId === "joist-left-bottom")!;
-    const corners = memberLocalCornersIn(joist);
-    expect(corners).toHaveLength(8);
-    const heights = [...new Set(corners.map(([, y]) => Number(y.toFixed(6))))].sort((a, b) => a - b);
-    expect(heights).toHaveLength(3);
-    expect(heights[2]! - heights[1]!).toBeCloseTo(JOIST_2X6_WIDTH_IN * TAN, 5);
-    // And it is still 1 1/2in thick across the panel, swept from its own x.
-    const xs = corners.map(([x]) => Number(x.toFixed(6)));
-    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(JOIST_2X6_THICKNESS_IN, 9);
-  });
-
-  it("⚠ a steeper roof cuts back further, a shallower one less", () => {
-    const shallow = buildFloorRoofPanelMembers(floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: 2 }));
-    const steep = buildFloorRoofPanelMembers(floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: 12 }));
-    const underside = (ms: PanelMember[]) => ms.find((m) => m.memberId === "joist-left-top")!.actualDimsIn.lengthIn;
-    expect(underside(steep)).toBeLessThan(underside(shallow));
-  });
-});
-
-describe("⚠ the tall end's BEARING WEDGE", () => {
-  /* > "I want the 3.5in edge in the pic be equal to the wall depth, 15.5in"
-     ... "Let's go with wedge. Make the roof taller." — Tommy, 2026-10-29.
-     The panel's underside runs at the pitch and a top plate is level; the
-     wedge is what lets them meet across the whole wall without cutting the
-     panel. */
+     > entire wall depth and the rest should go plumb cut vertically."
+     > — Tommy, 2026-10-29
+     > "The roof panel bottom edges still are just squared off and not
+     > correct." — Tommy, 2026-10-30, of the eave end, which the first pass
+     > left square. */
   const DEPTH = 15.5;
   const SEAT = 15.5;
   const PITCH = 4;
+  const LENGTH = 216;
   const hyp = Math.hypot(12, PITCH);
   const COS = 12 / hyp;
   const SIN = PITCH / hyp;
   const TAN = PITCH / 12;
-  const LENGTH = 216;
-  const wedged = (over: Partial<FloorRoofPanelOptions> = {}) =>
+  const LID = 0.75 + 1.5;
+
+  const roof = (over: Partial<FloorRoofPanelOptions> = {}) =>
     buildFloorRoofPanelMembers({
       ...floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: PITCH, lengthIn: LENGTH }),
       depthIn: DEPTH,
@@ -837,113 +714,153 @@ describe("⚠ the tall end's BEARING WEDGE", () => {
       ...over,
     });
 
-  /* The panel's own frame: member Z is the span and member Y runs DOWNWARD
-     through the depth once installed, so world height and world horizontal
-     come out of the section corners like this. */
+  /* The panel's own frame: Z is the span, Y runs DOWNWARD through the depth
+     once installed. These are what "level" and "plumb" mean in it. */
   const heightOf = (c: { yIn: number; zIn: number }) => c.zIn * SIN - c.yIn * COS;
   const horizOf = (c: { yIn: number; zIn: number }) => c.zIn * COS + c.yIn * SIN;
 
-  it("⚠ its bottom is LEVEL — the only face in the panel that is", () => {
-    const cheek = wedged().find((m) => m.memberId === "wedge-cheek-left")!;
+  it("⚠ every joist is beveled at BOTH ends, each standing vertical", () => {
+    for (const id of ["joist-left-bottom", "joist-left-top", "joist-right-bottom", "joist-right-top"]) {
+      const corners = roof().find((m) => m.memberId === id)!.position.sectionCornersIn!;
+      expect({ id, n: corners.length }).toEqual({ id, n: 4 });
+      /* Corners 0 and 3 are the eave end, 1 and 2 the tall end. Plumb means
+         each pair shares one world horizontal — one vertical plane. */
+      expect(horizOf(corners[0]!)).toBeCloseTo(horizOf(corners[3]!), 9);
+      expect(horizOf(corners[1]!)).toBeCloseTo(horizOf(corners[2]!), 9);
+    }
+  });
+
+  it("⚠ the two ends lean OPPOSITE ways — top long at the ridge, underside long at the eave", () => {
+    /* The whole reason one formula could not serve both. Travelling up the
+       panel gains height, so at the tall end the top edge reaches a vertical
+       plane last and is the long point; at the eave the same fact makes the
+       UNDERSIDE the long point, which is the fascia cut on a rafter tail. */
+    const corners = roof().find((m) => m.memberId === "joist-left-bottom")!.position.sectionCornersIn!;
+    const [eaveShallow, tallShallow, tallDeep, eaveDeep] = corners;
+    // Tall end: the shallower corner (nearer the panel's top) runs further.
+    expect(tallShallow!.zIn).toBeGreaterThan(tallDeep!.zIn);
+    // Eave end: the deeper corner (nearer the underside) runs further out.
+    expect(eaveDeep!.zIn).toBeLessThan(eaveShallow!.zIn);
+  });
+
+  it("⚠ which makes every joist the SAME length, and that is not a coincidence", () => {
+    /* One bevel adds what the other takes. The cut length is the span less
+       the depth's own run and one lid at each end, measured along the plumb
+       faces — and it no longer depends on which joist of the pair it is. */
+    const joists = roof().filter((m) => m.memberId.startsWith("joist-"));
+    expect(joists).toHaveLength(4);
+    const expectedIn = LENGTH - DEPTH * TAN - (2 * LID) / COS;
+    for (const j of joists) expect(j.actualDimsIn.lengthIn).toBeCloseTo(expectedIn, 9);
+    expect(expectedIn).toBeCloseTo(206.09, 2);
+  });
+
+  it("⚠ both plates stand plumb, and only the TALL one reaches past the panel", () => {
+    const members = roof();
+    /* The tall end's plate covers the panel AND its bearing wedge, because
+       that whole face is what the exterior wall laps over. The eave's stops
+       at the underside: there is no wedge there to cover. */
+    expect(members.find((m) => m.memberId === "lid-end-skin")!.actualDimsIn.widthIn).toBeCloseTo(DEPTH / COS + SEAT * TAN, 9);
+    expect(members.find((m) => m.memberId === "lid-start-skin")!.actualDimsIn.widthIn).toBeCloseTo(DEPTH / COS, 9);
+
+    for (const id of ["lid-end-skin", "lid-start-skin"]) {
+      const plate = members.find((m) => m.memberId === id)!;
+      const corners = plate.position.sectionCornersIn!;
+      expect(corners).toHaveLength(4);
+      /* Plumb: each of the slab's two faces is one vertical plane, so its
+         top and bottom corners share a world horizontal. */
+      expect(horizOf(corners[0]!)).toBeCloseTo(horizOf(corners[3]!), 9);
+      expect(horizOf(corners[1]!)).toBeCloseTo(horizOf(corners[2]!), 9);
+    }
+
+    /* ⚠ And the TALL plate's bottom is cut LEVEL — it lands on a top plate,
+       so its two bottom corners sit at one height and different depths. Held
+       at the panel's own depth instead, it rode the pitch and bore on a
+       line. */
+    const tallBottom = members.find((m) => m.memberId === "lid-end-skin")!.position.sectionCornersIn!.filter((c) => c.yIn > 1e-9);
+    expect(tallBottom).toHaveLength(2);
+    expect(heightOf(tallBottom[0]!)).toBeCloseTo(heightOf(tallBottom[1]!), 9);
+    expect(tallBottom[0]!.yIn).not.toBeCloseTo(tallBottom[1]!.yIn, 6);
+  });
+
+  it("⚠ the bearing wedge is the TALL end's alone, and its bottom is level", () => {
+    /* ⚠ The two voids are NOT mirror images, which is why mirroring it was
+       wrong. At the tall end the underside rises AWAY from the wall going
+       outward, so the void over the plate is thickest at the exterior face
+       and the plate reaches down over it. At the eave the underside rises
+       INWARD, so the void grows away from the plate and its thick end is
+       15 1/2in inside the building — a different shape with its vertical
+       face on the other side. His seat spec was the tall end's, and the eave
+       already has the earlier L-plate cap whose seat is cut off square by
+       the pitch. */
+    const members = roof();
+    expect(members.some((m) => m.memberId.startsWith("wedge-start-"))).toBe(false);
+
+    const cheek = members.find((m) => m.memberId === "wedge-end-cheek-left")!;
     const corners = cheek.position.sectionCornersIn!;
     expect(corners).toHaveLength(3);
-    /* The two ends of the bottom edge: the tip on the panel's underside and
-       the foot of the plumb face. Level means they are at the same height. */
-    const tip = corners.find((c) => c.zIn === Math.min(...corners.map((k) => k.zIn)))!;
     const foot = corners.find((c) => c.yIn > DEPTH)!;
-    expect(heightOf(foot)).toBeCloseTo(heightOf(tip), 9);
+    const onUnderside = corners.filter((c) => Math.abs(c.yIn - DEPTH) < 1e-9);
+    expect(onUnderside).toHaveLength(2);
+    const tip = onUnderside.reduce((a, b) =>
+      Math.abs(heightOf(b) - heightOf(foot)) < Math.abs(heightOf(a) - heightOf(foot)) ? b : a,
+    );
+    expect(heightOf(tip)).toBeCloseTo(heightOf(foot), 9);
+    // And the level run plus the plate's own 2 1/4in is the whole wall.
+    expect(Math.abs(horizOf(foot) - horizOf(tip)) + LID).toBeCloseTo(SEAT, 9);
   });
 
-  it("⚠ the PLATE plus the cheeks give the full wall depth of flat bearing", () => {
-    /* 15 1/2in measured ALONG the panel would be 14.70in of wall once the
-       pitch is taken out — it is the horizontal run that has to be the wall.
-       The plumb plate owns the outer 2 1/4in of it (full width, skin plus
-       2x4 face) and the cheeks the remaining 13 1/4in. */
-    const corners = wedged().find((m) => m.memberId === "wedge-cheek-left")!.position.sectionCornersIn!;
-    const tip = corners.find((c) => c.zIn === Math.min(...corners.map((k) => k.zIn)))!;
-    const foot = corners.find((c) => c.yIn > DEPTH)!;
-    const PLATE_IN = 0.75 + 1.5;
-    expect(horizOf(foot) - horizOf(tip)).toBeCloseTo(SEAT - PLATE_IN, 9);
-    // The plate is plumb, so its perpendicular thickness IS its horizontal run.
-    expect(horizOf(foot) - horizOf(tip) + PLATE_IN).toBeCloseTo(SEAT, 9);
+  it("⚠ the bevel REACHES THE RENDERER, not just the data", () => {
+    /* A commit once shipped a flat roof deck because the tilt was written
+       into the data and nothing drew it. `memberLocalCornersIn` is the one
+       function the 3D view and the .obj export both read corners from, so
+       asking it is asking the screen. A BOX answers with 8 corners at two
+       distinct heights; a joist cut plumb at both ends answers with four. */
+    const joist = roof().find((m) => m.memberId === "joist-left-bottom")!;
+    const corners = memberLocalCornersIn(joist);
+    expect(corners).toHaveLength(8);
+    expect(new Set(corners.map(([, y]) => Number(y.toFixed(6)))).size).toBe(4);
+    const xs = corners.map(([x]) => x);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(JOIST_2X6_THICKNESS_IN, 9);
   });
 
-  it("⚠ the plate's outer face is PLUMB and the cheek stops behind it", () => {
-    const members = wedged();
-    const cheek = members.find((m) => m.memberId === "wedge-cheek-left")!;
-    const plate = members.find((m) => m.memberId === "lid-end-skin")!;
-    const outerFaceX = horizOf({ yIn: 0, zIn: LENGTH });
-    // Every corner of the plate's OUTER edge is on one vertical plane...
-    const outer = plate.position.sectionCornersIn!.filter((c) => horizOf(c) > outerFaceX - 1e-6);
-    expect(outer.length).toBeGreaterThanOrEqual(2);
-    for (const c of outer) expect(horizOf(c)).toBeCloseTo(outerFaceX, 9);
-    // ...and the cheek is set back behind it by the plate's own thickness.
-    const foot = cheek.position.sectionCornersIn!.find((c) => c.yIn > DEPTH)!;
-    expect(outerFaceX - horizOf(foot)).toBeCloseTo(0.75 + 1.5, 9);
-    // The plate is cut to cover panel AND wedge together.
-    expect(plate.actualDimsIn.widthIn).toBeCloseTo(DEPTH / COS + SEAT * TAN, 9);
-    expect(plate.actualDimsIn.widthIn).toBeCloseTo(21.505, 3);
+  it("⚠ and nothing in the panel overlaps anything else, at any span", () => {
+    for (const lengthIn of [96, 144, 180, 216, 240]) {
+      expect({ lengthIn, pairs: overlappingMemberPairs(roof({ lengthIn })) }).toEqual({ lengthIn, pairs: [] });
+    }
   });
 
-  it("⚠ the plate's bottom is cut LEVEL, not parallel to the panel", () => {
-    /* It lands on a top plate. Cutting it at one depth — which is what
-       every other end in this panel does — would leave it riding the pitch
-       and bearing on a line instead of a face. */
-    const plate = wedged().find((m) => m.memberId === "lid-end-skin")!;
-    const bottom = plate.position.sectionCornersIn!.filter((c) => c.yIn > 1e-9);
-    expect(bottom).toHaveLength(2);
-    expect(heightOf(bottom[0]!)).toBeCloseTo(heightOf(bottom[1]!), 9);
-    // The two bottom corners are at DIFFERENT depths, which is the point.
-    expect(bottom[0]!.yIn).not.toBeCloseTo(bottom[1]!.yIn, 6);
+  it("a floor, and a roof with no pitch, are cut square exactly as before", () => {
+    for (const options of [floor(), floor({ kind: "roof", structuralGirtEnds: [] }), floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: 0 })]) {
+      const members = buildFloorRoofPanelMembers(options);
+      expect({ kind: options.kind, beveled: members.some((m) => m.position.sectionCornersIn) }).toEqual({
+        kind: options.kind,
+        beveled: false,
+      });
+    }
+    expect(buildFloorRoofPanelMembers(floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: 0 }))).toEqual(
+      buildFloorRoofPanelMembers(floor({ kind: "roof", structuralGirtEnds: [] })),
+    );
   });
 
   it("⚠ it is ADDED, never notched — the panel keeps its whole depth", () => {
     /* The rejected option, and why: a 15 1/2in seat cut INTO the panel takes
-       15.5 x sin(18.43deg) = 4.90in of a 15 1/2in depth, which is 31.6% —
-       past NDS d/4 — and leaves 0.60in of the bottom 2x6. */
-    const members = wedged();
-    const joist = members.find((m) => m.memberId === "joist-left-top")!;
+       15.5 x sin(18.43deg) = 4.90in of a 15 1/2in depth, 31.6%, past NDS
+       d/4, leaving 0.60in of the bottom 2x6. */
+    expect(SEAT * SIN).toBeCloseTo(4.9, 2);
+    expect(JOIST_2X6_WIDTH_IN - SEAT * SIN).toBeCloseTo(0.6, 2);
     const noWedge = buildFloorRoofPanelMembers({
       ...floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: PITCH, lengthIn: LENGTH }),
       depthIn: DEPTH,
     });
-    // Same joists either way: the wedge took nothing off them.
-    expect(joist).toEqual(noWedge.find((m) => m.memberId === "joist-left-top"));
-    expect(SEAT * SIN).toBeCloseTo(4.9, 2);
-    expect(JOIST_2X6_WIDTH_IN - SEAT * SIN).toBeCloseTo(0.6, 2);
-  });
-
-  it("a cheek sits under each joist, so the load goes down the lines that carried it", () => {
-    const members = wedged();
-    for (const side of ["left", "right"]) {
-      const cheek = members.find((m) => m.memberId === `wedge-cheek-${side}`)!;
-      const joist = members.find((m) => m.memberId === `joist-${side}-top`)!;
-      expect({ side, x: cheek.position.xIn }).toEqual({ side, x: joist.position.xIn });
-    }
-    /* No separate bearing skin: the plumb plate's own 2 1/4in of full-width
-       solid is the outermost bearing, and the cheeks carry the rest. */
-    expect(members.some((m) => m.memberId === "wedge-bearing-skin")).toBe(false);
-  });
-
-  it("⚠ and nothing in the panel overlaps, wedge included", () => {
-    for (const lengthIn of [96, 144, 216]) {
-      expect({ lengthIn, pairs: overlappingMemberPairs(wedged({ lengthIn })) }).toEqual({ lengthIn, pairs: [] });
+    for (const j of roof().filter((m) => m.memberId.startsWith("joist-"))) {
+      expect(j).toEqual(noWedge.find((m) => m.memberId === j.memberId));
     }
   });
 
-  it("no seat asked for means no wedge, and the panel is what it was", () => {
-    const bare = wedged({ bearingSeatDepthIn: 0 });
+  it("no seat asked for means no wedge, but the ends are still plumb", () => {
+    const bare = roof({ bearingSeatDepthIn: 0 });
     expect(bare.some((m) => m.memberId.startsWith("wedge-"))).toBe(false);
     expect(bare.find((m) => m.memberId === "lid-end-skin")!.actualDimsIn.widthIn).toBeCloseTo(DEPTH / COS, 9);
-  });
-
-  it("⚠ a deeper seat buys more bearing and costs exactly its own rise", () => {
-    for (const seatIn of [3.5, 15.5]) {
-      const plate = wedged({ bearingSeatDepthIn: seatIn }).find((m) => m.memberId === "lid-end-skin")!;
-      expect({ seatIn, h: Number((plate.actualDimsIn.widthIn - DEPTH / COS).toFixed(6)) }).toEqual({
-        seatIn,
-        h: Number((seatIn * TAN).toFixed(6)),
-      });
-    }
+    expect(bare.find((m) => m.memberId === "joist-left-bottom")!.position.sectionCornersIn).toHaveLength(4);
   });
 });

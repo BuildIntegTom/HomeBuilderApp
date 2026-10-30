@@ -1864,7 +1864,19 @@ export default function Building3DView({
               kind: "roof",
               anchorX: originX + ux * alongFt,
               anchorZ: originY + uy * alongFt,
-              anchorYFt: plane.lowHeightFt + thicknessIn / IN_PER_FT,
+              /* ⚠ PLUMB thickness, not the panel's depth — and this was the
+                 bug behind *"Gable end panels... want to go up halfway into
+                 the roof panel"*.
+
+                 The anchor is the panel's TOP at its low edge, because
+                 member Y runs downward once the panel is tipped. For the
+                 UNDERSIDE to land on the plane the anchor has to clear it by
+                 the panel's vertical thickness, `depth / cos(pitch)` —
+                 16 3/8in at 4:12, not 15 1/2in. With the depth the roof hung
+                 0.84in BELOW its own plane and its top reached only 15 1/2in
+                 above it, while the gable lifted the full 16 3/8in and
+                 overshot by exactly that. Measured, not guessed. */
+              anchorYFt: plane.lowHeightFt + thicknessIn / Math.cos(tiltRad) / IN_PER_FT,
               rotationRad,
               tiltRad,
               boxIn: { widthIn, depthIn: thicknessIn, lengthIn: plane.slopeFt * IN_PER_FT },
