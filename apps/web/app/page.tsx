@@ -356,6 +356,7 @@ import {
 } from "./undoHistory";
 import { PLYWOOD_HALF_ROW_LABEL, PLYWOOD_THREE_QUARTER_ROW_LABEL } from "./plywoodRowLabels";
 import { resolveBracedStyle } from "./bracedStyle";
+import { placeColumnUnderPeak } from "./gableColumnPlacement";
 import { shouldAutoUpgradeToBigHeader } from "./bigHeaderAutoUpgrade";
 import { capGableTileHeights, computeRiseFtForPitch, resolveGableProfilePoints, resolveHeelSeat, ROOF_PITCH_OPTIONS_IN12 } from "./gableProfilePoints";
 import {
@@ -3361,6 +3362,7 @@ export default function LayoutEditor() {
        moment they spawned automatically, every new building got a roof at
        about 24:12. */
     const gableWall = fp.walls.find((w) => autoGableWallIds.includes(w.id));
+    let drawnRoofIsPeaked = false;
     if (gableWall) {
       const a = fp.corners.find((c) => c.id === gableWall.startCorner)!.point;
       const b = fp.corners.find((c) => c.id === gableWall.endCorner)!.point;
@@ -3369,6 +3371,7 @@ export default function LayoutEditor() {
          clear across, a peak halves that, and 18ft of panel at 4:12 reaches
          about 17.1ft of ground. */
       const form = decideRoofForm({ buildingWidthIn: acrossFt * 12, pitchIn12: DEFAULT_ROOF_PITCH_IN12 });
+      drawnRoofIsPeaked = form.kind !== "shed";
       setRoofProfileType("peaked");
       /* ⚠ THE RISE IS SEAT-AWARE, and it has to be, or the pitch comes out
          wrong by a third.
@@ -3458,7 +3461,54 @@ export default function LayoutEditor() {
     setBoxBeamCoverageByWallId({});
     setMidWallBeamsByStoryAndWallId({ ground: {}, second: {} });
     setSpanningHeadersByStoryAndWallId({ ground: {}, second: {} });
-    setBaseWallSlots(retile(fp, nextLeastAccessible, nextPrimary, {}));
+    /* ⚠ A PEAKED ROOF SPAWNS ITS GABLE COLUMN PANELS WITH THE BUILDING.
+       Tommy, 2026-10-29: *"the ridge beam should land on top of a Gable
+       column panel... there must be a column panel directly below it in the
+       main level wall and all the way down."* A ridge beam with nothing
+       under its ends is the one thing this roof cannot be built without, so
+       it is not left to a toggle nobody knows to find.
+
+       ⚠ Done on the FRESH slots, not through state. `handleDraw` has not
+       committed `baseWallSlots` yet, so `wallGeometryFor` and
+       `wallSlotsForStory` would both read the OLD building — and on the
+       very first draw there is no old building to read. The pure geometry
+       is computed from `fp` here instead. A shed has no ridge and gets
+       none. */
+    let drawnSlots = retile(fp, nextLeastAccessible, nextPrimary, {});
+    if (drawnRoofIsPeaked) {
+      for (const wallId of autoGableWallIds) {
+        const wall = fp.walls.find((w) => w.id === wallId);
+        const geometry = wallGeometryForPure(fp, wallId, nextPrimary, nextLeastAccessible, thicknessIn, {});
+        if (!wall || !geometry) continue;
+        const wallLengthIn = wall.lengthFt * 12;
+        const placed = placeColumnUnderPeak({
+          slots: drawnSlots[wallId] ?? [],
+          /* A freshly drawn peak is centred — the same default
+             `resolveGableProfilePoints` resolves to with no saved
+             positions, which is the state this draw is setting up. */
+          peakXIn: wallLengthIn / 2,
+          startOffsetIn: geometry.runStartOffsetIn,
+          lengthIn: geometry.lengthIn,
+          standardWidthIn,
+          cornerWidthIn: cornerWidthInForTiling,
+          gapEnd: geometry.gapEnd,
+          hasCornerStart: geometry.hasCornerStart,
+          hasCornerEnd: geometry.hasCornerEnd,
+          allowBorrow: geometry.allowBorrow,
+          cornerMayWiden: cornerMayWidenForTiling,
+          columnWidthIn: COLUMN_TOTAL_WIDTH_IN,
+        });
+        if (placed) {
+          drawnSlots = { ...drawnSlots, [wallId]: isMiteredShape(fp) ? markSafetyCorner(placed, geometry.gapEnd) : placed };
+        }
+      }
+      /* The gable row's own column reservation, so the panel above lands on
+         the one just placed below. */
+      setGableStructuralPanelWallIds(new Set(autoGableWallIds));
+    } else {
+      setGableStructuralPanelWallIds(new Set());
+    }
+    setBaseWallSlots(drawnSlots);
     recordTilingBasis(nextLeastAccessible);
     setShapeTool("edit");
     // A brand-new footprint has no meaningful relationship to whatever
@@ -3649,12 +3699,12 @@ export default function LayoutEditor() {
     // Stride 1's own default-window seeding, never at a corner-adjacent
     // brace position; skipped entirely if there's no safe non-corner
     // candidate (a wall with fewer than 3 standard-family slots).
-    const topStory: "ground" | "second" = stories.length > 1 ? "second" : "ground";
-    const currentSlots = wallSlotsForStory(topStory)[wallId] ?? [];
-    const standardFamilyIndices = currentSlots
-      .map((_, i) => i)
-      .filter((i) => currentSlots[i]!.type === "standard" || currentSlots[i]!.type === "braced");
-    if (standardFamilyIndices.length < 3) return;
+    /* ⚠ EVERY story, not just the one under the roofline. Tommy,
+       2026-10-29: *"there must be a column panel directly below it in the
+       main level wall and all the way down"*. A column that stops at the
+       top story is a load path that stops in mid-air; the storey below has
+       to carry it to the floor, and that floor to the foundation. */
+    const storyIds: ("ground" | "second")[] = stories.length > 1 ? ["ground", "second"] : ["ground"];
     const geometry = wallGeometryFor(wallId);
     if (!geometry) return;
     // Picks whichever candidate ordinal's ACTUAL post-retile center lands
@@ -3678,44 +3728,28 @@ export default function LayoutEditor() {
     const wallLengthIn = wall.lengthFt * 12;
     const { resolvedPointXsIn } = resolveGableProfilePoints(roofProfilePointHeightsFt, gableProfilePositionsInByWallId[wallId] ?? [], wallLengthIn);
     const peakXIn = resolvedPointXsIn[0] ?? wallLengthIn / 2;
-    const startOffsetIn = geometry.runStartOffsetIn;
-    const existingAnchors = getOpeningAnchors(currentSlots);
-    const candidateOrdinals: number[] = [];
-    for (let ordinal = 1; ordinal < standardFamilyIndices.length - 1; ordinal++) candidateOrdinals.push(ordinal);
-    if (candidateOrdinals.length === 0) return;
 
-    let bestSlots: PanelSlot[] | null = null;
-    let bestDistanceIn = Infinity;
-    for (const ordinal of candidateOrdinals) {
-      const anchors = [...existingAnchors, { beforeStandardCount: ordinal, type: "column" as const, widthIn: COLUMN_TOTAL_WIDTH_IN }];
-      const trialSlots = retileWithOpenings(
-        geometry.lengthIn,
+    for (const story of storyIds) {
+      const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
+      const bestSlots = placeColumnUnderPeak({
+        slots: currentSlots,
+        peakXIn,
+        startOffsetIn: geometry.runStartOffsetIn,
+        lengthIn: geometry.lengthIn,
         standardWidthIn,
-        cornerWidthInForTiling,
-        geometry.gapEnd,
-        geometry.hasCornerStart,
-        geometry.hasCornerEnd,
-        anchors,
-        geometry.allowBorrow,
-        cornerMayWidenForTiling,
-      ).slots;
-      let cursorIn = startOffsetIn;
-      let distanceIn = Infinity;
-      for (const s of trialSlots) {
-        if (s.type === "column" && Math.abs(s.widthIn - COLUMN_TOTAL_WIDTH_IN) < 0.01) {
-          distanceIn = Math.min(distanceIn, Math.abs(cursorIn + s.widthIn / 2 - peakXIn));
-        }
-        cursorIn += s.widthIn;
-      }
-      if (distanceIn < bestDistanceIn) {
-        bestDistanceIn = distanceIn;
-        bestSlots = trialSlots;
-      }
+        cornerWidthIn: cornerWidthInForTiling,
+        gapEnd: geometry.gapEnd,
+        hasCornerStart: geometry.hasCornerStart,
+        hasCornerEnd: geometry.hasCornerEnd,
+        allowBorrow: geometry.allowBorrow,
+        cornerMayWiden: cornerMayWidenForTiling,
+        columnWidthIn: COLUMN_TOTAL_WIDTH_IN,
+      });
+      if (!bestSlots) continue;
+      const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(bestSlots, geometry.gapEnd) : bestSlots;
+      const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored, slotIndexPinnedWallIds.has(wallId));
+      setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: finalSlots }));
     }
-    if (!bestSlots) return;
-    const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(bestSlots, geometry.gapEnd) : bestSlots;
-    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored, slotIndexPinnedWallIds.has(wallId));
-    setWallSlotsForStory(topStory, (prev) => ({ ...prev, [wallId]: finalSlots }));
   };
 
   // Panel drag-resize commit (Tommy: "when you click and drag a panel, it

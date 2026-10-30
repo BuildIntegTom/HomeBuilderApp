@@ -1748,7 +1748,16 @@ export default function Building3DView({
            the ridge IS its distance along the run. That is only true because
            both follow `footprintSpanAndRun`; if either ever stopped, these
            girts would land in the wrong panels. */
-        for (const column of layout.columns) {
+        /* ⚠ ENDS INCLUDED, not just the interior posts. Tommy, 2026-10-29:
+           *"If there is a Gable column panel that spawns, there must be a
+           column panel directly below it in the main level wall and all the
+           way down spawning two extra structural girts in the floor panels,
+           one underneath each side of the panel."* The gable walls bear the
+           beam through a real 15 1/2in column panel, so the floor under
+           them needs the same pair of girts an interior post gets — and
+           those are the two the floor would otherwise never see, because
+           `columns` deliberately excludes the ends. */
+        for (const column of [...layout.columns, ...layout.endBearings]) {
           const { girtAtIn } = columnBearingGirtPositionsIn(column.alongIn, column.widthIn, []);
           columnGirtAlongIn.push(...girtAtIn);
         }

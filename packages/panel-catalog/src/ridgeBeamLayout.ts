@@ -41,10 +41,35 @@ export interface RidgeColumn {
 
 export interface RidgeBeamLayout {
   segments: RidgeBeamSegment[];
-  /** ⚠ INTERIOR columns only. The beam's two ends bear on the gable walls,
-   * which are already carrying roof load — a column there would be a post
-   * standing inside a wall that does the same job. */
+  /** ⚠ INTERIOR columns only — free-standing posts inside the building.
+   * The beam's two ENDS are `endBearings` below, which are panels in the
+   * gable walls rather than posts. */
   columns: RidgeColumn[];
+  /**
+   * ⚠ **THE TWO ENDS OF THE RIDGE, WHICH ARE REAL COLUMN PANELS.**
+   *
+   * > *"the ridge beam should land on top of a Gable column panel. Gable
+   * > column panels are especially strong and they are 15 and 1/2 in
+   * > rectangular boxes by 15 and 1/2 in. If there is a Gable column panel
+   * > that spawns, there must be a column panel directly below it in the
+   * > main level wall and all the way down spawning two extra structural
+   * > girts in the floor panels, one underneath each side of the panel."* —
+   * > Tommy, 2026-10-29
+   *
+   * This file used to say the ends needed nothing, because *"the gable
+   * walls... are already carrying roof load"*. That was a reading, and he
+   * has now replaced it: the beam lands on a column panel, the same
+   * 15 1/2in box as an interior post, and the load path below it is the
+   * same too — a column panel on every story and two extra structural girts
+   * in the floor under each side.
+   *
+   * Kept SEPARATE from `columns` rather than folded in, because the two are
+   * not interchangeable: an interior column is a free-standing post whose
+   * spacing the beam's segmentation decides, while these two are fixed at
+   * the ridge's ends and live inside a wall. A caller spacing posts wants
+   * `columns`; a caller tracing load to the foundation wants both.
+   */
+  endBearings: RidgeColumn[];
   ridgeLengthIn: number;
   /** ⚠ Segments that came out longer than the maximum because a column was
    * dragged. Empty unless somebody moved one. */
@@ -91,10 +116,24 @@ export function ridgeBeamLayout(options: RidgeBeamOptions): RidgeBeamLayout {
   const ridgeLengthIn = ridgeLengthFt * 12;
 
   if (!(ridgeLengthIn > 0)) {
-    return { segments: [], columns: [], ridgeLengthIn: 0, overlongSegments: [], refusal: "This roof has no ridge to run a beam along." };
+    return {
+      segments: [],
+      columns: [],
+      endBearings: [],
+      ridgeLengthIn: 0,
+      overlongSegments: [],
+      refusal: "This roof has no ridge to run a beam along.",
+    };
   }
   if (!(maxSpanIn > 0)) {
-    return { segments: [], columns: [], ridgeLengthIn, overlongSegments: [], refusal: "A beam needs a maximum span before it can be split." };
+    return {
+      segments: [],
+      columns: [],
+      endBearings: [],
+      ridgeLengthIn,
+      overlongSegments: [],
+      refusal: "A beam needs a maximum span before it can be split.",
+    };
   }
 
   const ux = dxFt / ridgeLengthFt;
@@ -134,9 +173,18 @@ export function ridgeBeamLayout(options: RidgeBeamOptions): RidgeBeamLayout {
     segments.push({ index: segments.length, startFt: alongTo(startIn), endFt: alongTo(endIn), spanIn: endIn - startIn });
   }
 
+  /* ⚠ Indexed -1 and -2 so an end bearing can never be mistaken for an
+     interior column by index — `columnOverridesAlongIn` is keyed by that
+     index, and these two do not move: they are where the gable walls are. */
+  const endBearings: RidgeColumn[] = [
+    { index: -1, atFt: alongTo(0), alongIn: 0, widthIn: columnWidthIn },
+    { index: -2, atFt: alongTo(ridgeLengthIn), alongIn: ridgeLengthIn, widthIn: columnWidthIn },
+  ];
+
   return {
     segments,
     columns,
+    endBearings,
     ridgeLengthIn,
     overlongSegments: segments.filter((segment) => segment.spanIn > maxSpanIn + 1e-9),
     refusal: null,
