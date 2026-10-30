@@ -50,9 +50,25 @@ export interface StructuralColumnOptions {
   widthIn?: number;
   depthIn?: number;
   pack?: StudPackSpec;
-  /** ⚠ *"3/4" plywood skins similar to safety gap plywood nailed on with
-   * sheathing nails 2 per 6 inches"* — his 2026-10-24 spec for what carries
-   * the hips. Both faces, so the pack is sandwiched. */
+  /**
+   * ⚠ **OFF BY DEFAULT since 2026-10-30, and it used to be on.**
+   *
+   * > *"The column posts have plywood floating around them in the 3D view.
+   * > That is not necessary and looks odd."* — Tommy
+   *
+   * He is right, and it was worse than cosmetic: a skin laid on the COLUMN'S
+   * faces does not touch the PACK inside it. A 4-ply 2x8 pack is 7 1/4in
+   * deep in a 15 1/2in column, so each skin sat 3 3/8in clear of the thing
+   * it was supposed to be *"nailed on"* to. It could not have been built as
+   * drawn — either it hugs the pack or it is not there, and he says it is
+   * not needed.
+   *
+   * `true` restores his 2026-10-24 spec, *"3/4in plywood skins similar to
+   * safety gap plywood nailed on with sheathing nails 2 per 6 inches"*,
+   * which is still what `columnSkinNailCount` counts. ⚠ If it ever does come
+   * back, the skins want to sit against the pack's own faces rather than the
+   * column's, or they will float again.
+   */
   includeSkins?: boolean;
 }
 
@@ -116,7 +132,7 @@ export function buildStructuralColumnMembers(options: StructuralColumnOptions): 
     };
   }
 
-  const skinIn = options.includeSkins === false ? 0 : SKIN_THICKNESS_IN;
+  const skinIn = options.includeSkins === true ? SKIN_THICKNESS_IN : 0;
   const members: PanelMember[] = [];
 
   if (skinIn > 0) {

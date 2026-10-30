@@ -66,10 +66,23 @@ describe("the column under a roof catcher beam", () => {
     expect(front).toBeCloseTo(back, 9);
   });
 
-  it("carries a 3/4in plywood skin on each face", () => {
+  it("⚠ carries NO skin by default, and would float if it did", () => {
+    /* Tommy, 2026-10-30: "The column posts have plywood floating around them
+       in the 3D view. That is not necessary and looks odd." A skin on the
+       COLUMN's face misses the PACK by (depth - pack depth) / 2 — 3 3/8in
+       for a 4-ply 2x8 in a 15 1/2in column — so it was never nailable. */
+    expect(buildStructuralColumnMembers({ heightIn: H }).members.filter((m) => m.role === "skin")).toEqual([]);
+    const pack = buildStructuralColumnMembers({ heightIn: H }).members.filter((m) => m.role === "stud");
+    const packDepthIn = Math.max(...pack.map((m) => m.actualDimsIn.widthIn));
+    // Column face to pack is 4 1/8in; behind a 3/4in skin that is 3 3/8in of air.
+    expect((15.5 - packDepthIn) / 2).toBeCloseTo(4.125, 3);
+    expect((15.5 - packDepthIn) / 2 - 0.75).toBeCloseTo(3.375, 3);
+  });
+
+  it("carries a 3/4in plywood skin on each face when asked for one", () => {
     // "3/4in plywood skins similar to safety gap plywood"
     const built = buildStructuralColumnMembers({ heightIn: H });
-    const skins = built.members.filter((m) => m.role === "skin");
+    const skins = buildStructuralColumnMembers({ heightIn: H, includeSkins: true }).members.filter((m) => m.role === "skin");
     expect(skins).toHaveLength(2);
     for (const s of skins) expect(s.actualDimsIn.thicknessIn).toBe(0.75);
     expect(buildStructuralColumnMembers({ heightIn: H, includeSkins: false }).members.filter((m) => m.role === "skin")).toEqual([]);

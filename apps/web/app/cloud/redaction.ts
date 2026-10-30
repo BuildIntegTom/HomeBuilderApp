@@ -146,6 +146,7 @@ export const MONEY_CLASSIFICATION = {
   // none of it is derivable into one. A browsing company seeing it learns how
   // the walls were panelized, which the panel layout already tells them.
   tilingBasis: "not-money",
+  gableEndsFullHeight: "not-money",
 } as const satisfies Record<keyof ProjectState, MoneyClassification>;
 
 /** The keys classified `money`, as a literal union. Derived, never restated. */

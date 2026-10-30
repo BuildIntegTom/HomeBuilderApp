@@ -132,6 +132,17 @@ import { MONEY_STATE_KEYS, isRedactablePath, readRedactionMarker } from "./cloud
 export const PROJECT_FILE_VERSION = 25;
 
 export interface ProjectState {
+  /**
+   * ⚠ Gable ends run up to the TOP of the roof panels, and the roof pulls
+   * back to the gable walls' inner faces. Tommy's default, 2026-10-29.
+   *
+   * OPTIONAL, so a file saved before it existed still parses — and loads as
+   * `true`. Those projects were drawn with the roof running over the gables,
+   * so opening one now re-draws it the new way. That is deliberate: a silent
+   * second default, kept only inside old files and invisible in the UI,
+   * is worse than one visible change.
+   */
+  gableEndsFullHeight?: boolean;
   editorTab: "wall" | "foundation" | "floor" | "roof";
   viewMode: "plan" | "3d";
   /** ⚠ Must track `ShapeTool` in `DrawingToolPen`. Spelled out rather than

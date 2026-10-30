@@ -804,6 +804,27 @@ export default function LayoutEditor() {
   const [densityLbFt3, setDensityLbFt3] = useState(
     Math.round((targetDensityKgM3.value / LB_FT3_TO_KG_M3) * 10) / 10,
   );
+  /**
+   * ⚠ GABLE ENDS RUN UP TO THE TOP OF THE ROOF PANELS, and this is the
+   * DEFAULT.
+   *
+   * > *"I would like the default for this to be where the gable end Panels
+   * > are full height up to the top of the roof panels. No longer shall they
+   * > sit underneath the roof panels, but come all the way up. I am
+   * > comfortable with doing this because we are also going to be making the
+   * > roof panels for these. So it's all one big homogenous kit and no
+   * > relying on any other trust companies... There should be a toggle
+   * > somewhere in the settings that flips this though so that the roof
+   * > panels can extend all the way to both exterior edges of the floor plan
+   * > over top the gable ends."* — Tommy, 2026-10-29
+   *
+   * Two things move together and have to, which is why it is ONE flag:
+   * the gable row's tops rise by the roof's own plumb thickness, and the
+   * roof panels pull back to the inside faces of the two gable walls. Flip
+   * only the first and the roof sits inside a gable that already closed
+   * above it; flip only the second and the building is open at both ends.
+   */
+  const [gableEndsFullHeight, setGableEndsFullHeight] = useState(true);
   const [wallHeightFt, setWallHeightFt] = useState(standardPanelHeightIn.value / 12);
   // Max panel height (Tommy: "panels should have a default max height of
   // 10'... so when a user selects for a wall taller than the selected max
@@ -2111,6 +2132,7 @@ export default function LayoutEditor() {
       standardWidthIn,
       thicknessIn,
       densityLbFt3,
+      gableEndsFullHeight,
       wallHeightFt,
       maxPanelHeightIn,
       includeNailer,
@@ -2279,6 +2301,11 @@ export default function LayoutEditor() {
     setStandardWidthIn(s.standardWidthIn);
     setThicknessIn(s.thicknessIn);
     setDensityLbFt3(s.densityLbFt3);
+    /* ⚠ Defaults ON for a file saved before the flag existed. Those
+       projects were drawn with the roof running over the gables, so loading
+       one now re-draws it the new way — the alternative is a silent
+       second default that nobody can see in the UI. */
+    setGableEndsFullHeight(s.gableEndsFullHeight ?? true);
     setWallHeightFt(s.wallHeightFt);
     setMaxPanelHeightIn(s.maxPanelHeightIn ?? standardPanelHeightIn.value);
     setIncludeNailer(s.includeNailer);
@@ -6110,6 +6137,28 @@ export default function LayoutEditor() {
   // directly under it). Falls back to bare roofBaseHeightIn when no roof
   // system is even enabled (no roof-bearing member exists to sit atop).
   const gableEaveHeightIn = roofBaseHeightIn + (roofEnabled ? computeSharedRooflineBearingHeightIn() : 0);
+  /**
+   * ⚠ How much taller a gable tile is when it runs up to the TOP of the
+   * roof panels instead of stopping under them.
+   *
+   * It is the roof's PLUMB thickness over that tile — `depth / cos(slope)`,
+   * 16 3/8in for a 15 1/2in panel at 4:12, not 15 1/2in. A roof panel leans,
+   * so the vertical distance through it is longer than the panel is deep,
+   * and a gable is measured vertically. Using the depth would leave the
+   * gable 7/8in short of the roof it is meant to close against.
+   *
+   * ⚠ **Per TILE, from the tile's own rake, not one figure for the wall.**
+   * A flat-top roofline is genuinely 15 1/2in thick through its flat and
+   * 16 3/8in through its rakes; one global pitch would raise the flat by
+   * 7/8in of roof that is not there. `capGableTileHeights` guarantees each
+   * tile is wholly raked or wholly flat, so each has exactly one slope to
+   * read — and adding the SAME number to both of a tile's edges leaves its
+   * own rake untouched.
+   */
+  const gableTileRoofTopOffsetIn = (leftHeightIn: number, rightHeightIn: number, widthIn: number) => {
+    if (!gableEndsFullHeight || !(widthIn > 0)) return gableEndsFullHeight ? thicknessIn : 0;
+    return thicknessIn * Math.hypot(1, Math.abs(rightHeightIn - leftHeightIn) / widthIn);
+  };
   const gablePreviewLowEdgeHeightIn = gableEaveHeightIn;
   const gablePreviewHighEdgeHeightIn = Math.max(...roofProfilePointHeightsFt.map((h) => gableEaveHeightIn + h * 12), gablePreviewLowEdgeHeightIn);
   // Real per-wall gable tiles (Tommy: fix "gable end always spawns to the
@@ -6177,6 +6226,7 @@ export default function LayoutEditor() {
         windowHeightIn?: number;
         windowSillHeightIn?: number;
         isColumn?: boolean;
+        roofTopLiftIn?: number;
       }[]
     > = {};
     for (const wall of footprint.walls) {
@@ -6220,6 +6270,18 @@ export default function LayoutEditor() {
       // preview so the 2 can never disagree.
       const capHeightIn = gableEaveHeightIn + maxGablePanelHeightIn;
       result[wall.id] = tiles.map((t) => {
+        /* ⚠ **THE LIFT TRAVELS BESIDE THE ROOFLINE, NOT INSIDE IT**, and
+           folding it in was tried and broke the pitch readout.
+
+           `leftEdgeHeightIn`/`rightEdgeHeightIn` are the ROOF'S UNDERSIDE,
+           and half a dozen derivations read them that way —
+           `roofTrussLayoutContext` takes its rise as `peakHeightIn -
+           firstTile.leftEdgeHeightIn`, where the peak comes from the profile
+           points instead. Adding 16 3/8in to the tile and not to the peak
+           shrank the rise by exactly that, and a 4:12 roof started reporting
+           itself as 2.5:12. Every consumer keeps reading the underside; only
+           the renderers add `roofTopLiftIn`. */
+        const liftIn = gableTileRoofTopOffsetIn(t.leftHeightIn, t.rightHeightIn, t.widthIn);
         const capped = capGableTileHeights(t.leftHeightIn, t.rightHeightIn, capHeightIn);
         return {
           widthIn: t.widthIn,
@@ -6230,6 +6292,7 @@ export default function LayoutEditor() {
           ...(t.isSafetyGap ? { isSafetyGap: true } : {}),
           ...(t.isWindow ? { isWindow: true, windowHeightIn: t.windowHeightIn, windowSillHeightIn: t.windowSillHeightIn } : {}),
           ...(t.isColumn ? { isColumn: true } : {}),
+          ...(liftIn > 0 ? { roofTopLiftIn: liftIn } : {}),
         };
       });
     }
@@ -9597,6 +9660,31 @@ export default function LayoutEditor() {
         system and their geometry all stay exactly as they are, and re-checking brings them back untouched.
       </p>
 
+      {/* Tommy, 2026-10-29. One checkbox, because the two halves cannot be
+          set independently without drawing something unbuildable: gable tops
+          that stop under a roof that is not there, or a roof over a gable
+          that already closed above it. */}
+      {roofEnabled && (
+        <>
+          <h3>Gable ends and roof</h3>
+          <label>
+            <input
+              type="checkbox"
+              checked={gableEndsFullHeight}
+              onChange={(e) => setGableEndsFullHeight(e.target.checked)}
+            />{" "}
+            Gable ends run up to the top of the roof panels
+          </label>
+          <p className={styles.note}>
+            {gableEndsFullHeight
+              ? "Gable end panels close the building all the way to the roof's top surface, and the roof panels stop at " +
+                "their inside faces. One kit, no trusses from anyone else."
+              : "Roof panels run right out to both exterior edges of the floor plan, over the top of the gable ends, " +
+                "which stop under them."}
+          </p>
+        </>
+      )}
+
       {floorsEnabled && (
         <div role="group" aria-label="Floor type" className={styles.toolbar}>
           <button
@@ -12614,6 +12702,7 @@ export default function LayoutEditor() {
                     (footprint && ringRoofGableBlockReason(footprint) !== null ? DEFAULT_ROOF_PITCH_IN12 : undefined)
                   }
                   roofEaveHeightFt={gableEaveHeightIn / 12}
+                  roofGableEndInsetIn={gableEndsFullHeight ? thicknessIn : 0}
                   roofForm={roofFormFromProfile}
                   roofDeckSolid={showRoofDeck3DSolid}
                   crossTiltWallIds={crossTiltWallIds}

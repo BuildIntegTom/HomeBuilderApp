@@ -722,6 +722,26 @@ interface Building3DViewProps {
   footprint: Footprint | null;
   wallSlots: Record<string, PanelSlot[]>;
   wallHeightFt: number;
+  /**
+   * ⚠ How far each roof plane pulls BACK from the plan's edge at the two
+   * gable ends — the gable walls' own depth, or 0.
+   *
+   * > *"No longer shall they sit underneath the roof panels, but come all
+   * > the way up... There should be a toggle somewhere in the settings that
+   * > flips this though so that the roof panels can extend all the way to
+   * > both exterior edges of the floor plan over top the gable ends."* —
+   * > Tommy, 2026-10-29
+   *
+   * The gable ends now close the building above the eave, so the roof stops
+   * at their inside faces instead of running over them. The pull-back is at
+   * BOTH ends of the eave, so a plane loses twice this off its run and its
+   * first panel starts this far along.
+   *
+   * ⚠ This is the eave's own direction, not a plan axis: on an octagon the
+   * eave does not run along X or Y, and insetting by a world axis would
+   * shorten the wrong thing.
+   */
+  roofGableEndInsetIn?: number;
   /** A wall column taller than this auto-splits into stacked, independently-
    * typed zones (page.tsx's own `maxPanelHeightIn`) — only applied to a
    * slot with NO covering Mid-Wall Bond Beam, same restriction
@@ -821,6 +841,12 @@ interface Building3DViewProps {
       isSafetyGap?: boolean;
       verticalGapIn?: { leftIn: number; rightIn: number };
       /** This tile has been split into a window (Tommy: "add an option to
+       * ⚠ `roofTopLiftIn` — how far this tile's top rises ABOVE the
+       * roofline, so the gable closes against the roof's top surface rather
+       * than its underside. Absent or 0 is the old behaviour, the gable
+       * stopping under the roof. Kept separate from the two edge heights
+       * because those are read as the roof's underside all over page.tsx.
+       *
        * click-edit gable end panels to become window gable end panels...
        * dont forget jack studs") — rendered as jack studs + sill below,
        * and a reduced-height Gable End Panel cap above the window's own
@@ -833,6 +859,7 @@ interface Building3DViewProps {
        * real Column Panel via buildColumnPanelMembers, not the sloped
        * Gable End Panel shape every other tile uses. */
       isColumn?: boolean;
+      roofTopLiftIn?: number;
     }[]
   >;
   /** Whether the Roof system is in scope at all (page.tsx's own
@@ -1118,6 +1145,7 @@ export default function Building3DView({
   wallHeightFt,
   maxPanelHeightIn,
   thicknessIn,
+  roofGableEndInsetIn = 0,
   includeNailer,
   primaryCornerIds,
   wallRunStopsByWallId,
@@ -1443,8 +1471,14 @@ export default function Building3DView({
         // order — NOT min/max'd — so a tile whose real roofline falls
         // left-to-right (e.g. one to the right of a peak) builds correctly
         // mirrored, instead of always assuming the low edge is on the left.
-        const leftLocalIn = tile.leftEdgeHeightIn - gableEaveHeightIn;
-        const rightLocalIn = tile.rightEdgeHeightIn - gableEaveHeightIn;
+        /* ⚠ `roofTopLiftIn` is what makes a gable end run up to the TOP of
+           the roof panels rather than stopping under them (Tommy,
+           2026-10-29). It is added HERE and nowhere upstream: the tile's two
+           edge heights are the roof's underside, which is what every pitch
+           and truss derivation in page.tsx reads. */
+        const liftIn = tile.roofTopLiftIn ?? 0;
+        const leftLocalIn = tile.leftEdgeHeightIn + liftIn - gableEaveHeightIn;
+        const rightLocalIn = tile.rightEdgeHeightIn + liftIn - gableEaveHeightIn;
         const tallerLocalIn = Math.max(leftLocalIn, rightLocalIn);
         let members: PanelMember[];
         if (tile.isColumn) {
@@ -1793,7 +1827,14 @@ export default function Building3DView({
           const originY = spanPointsInward ? plane.lowStart.y : plane.lowEnd.y;
           const edgeDx = spanPointsInward ? forwardDx : -forwardDx;
           const edgeDy = spanPointsInward ? forwardDy : -forwardDy;
-          const edgeLengthIn = Math.hypot(edgeDx, edgeDy) * IN_PER_FT;
+          const fullEdgeLengthIn = Math.hypot(edgeDx, edgeDy) * IN_PER_FT;
+          /* ⚠ The roof stops at the gable walls' INSIDE faces when the gable
+             ends run full height, so it loses the inset at BOTH ends of the
+             eave and starts one inset along. Refuse rather than draw a
+             negative run: a building narrower than its own two gable walls
+             has no roof to tile. */
+          const edgeLengthIn = fullEdgeLengthIn - 2 * roofGableEndInsetIn;
+          if (!(edgeLengthIn > 0)) continue;
           /* Panels repeat ALONG the eave and span UP the slope, so the run is
              the eave's own length and the span is the real sloped length —
              longer than the ground it covers, which is the whole reason the
@@ -1801,9 +1842,12 @@ export default function Building3DView({
           const roofWidths = planFloorRoofPanelWidthsIn(edgeLengthIn, thicknessIn);
           if (roofWidths === null) continue;
           const rotationRad = Math.atan2(edgeDy, edgeDx);
-          const ux = edgeDx / (edgeLengthIn / IN_PER_FT);
-          const uy = edgeDy / (edgeLengthIn / IN_PER_FT);
-          let atIn = 0;
+          /* Unit vector along the eave — from the FULL edge, because the
+             inset is a distance along that same direction and dividing by the
+             already-shortened length would scale it wrong. */
+          const ux = edgeDx / (fullEdgeLengthIn / IN_PER_FT);
+          const uy = edgeDy / (fullEdgeLengthIn / IN_PER_FT);
+          let atIn = roofGableEndInsetIn;
           for (const [i, widthIn] of roofWidths.entries()) {
             const alongFt = atIn / IN_PER_FT;
             result.push({
@@ -1844,7 +1888,7 @@ export default function Building3DView({
     }
 
     return result;
-  }, [footprint, showFloorPanels, showRoofPanels, thicknessIn, roofPitchIn12, roofEaveHeightFt, roofForm, roofTallSideNorth, roofDeckSolid]);
+  }, [footprint, showFloorPanels, showRoofPanels, thicknessIn, roofGableEndInsetIn, roofPitchIn12, roofEaveHeightFt, roofForm, roofTallSideNorth, roofDeckSolid]);
 
   /* The ridge beam and the columns under it.
 

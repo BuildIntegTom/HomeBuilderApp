@@ -121,6 +121,9 @@ export const UNDO_CLASSIFICATION = {
   stoppedSlotsByStoryAndWallId: "document",
   wallReviewNotes: "document",
   tilingBasis: "document",
+  /* It changes what is drawn — gable tops and where the roof stops — so
+     it is part of the document and belongs under undo. */
+  gableEndsFullHeight: "document",
 } as const satisfies Record<keyof ProjectState, "document" | "transient">;
 
 export const DOCUMENT_KEYS = (Object.keys(UNDO_CLASSIFICATION) as (keyof ProjectState)[]).filter(
