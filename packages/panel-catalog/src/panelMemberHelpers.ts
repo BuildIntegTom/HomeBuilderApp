@@ -300,7 +300,9 @@ function earClipRingTriangles(ring: PlanSpacePoint2D[]): [number, number, number
  */
 export function memberFaceIndices(member: PanelMember): number[][] {
   const ring = member.position.planPolygonCornersIn;
-  if (!ring || member.position.trapezoidCornersIn) return BOX_FACES;
+  /* A section prism is 2 rings of 4 in matching order, exactly like a box and
+     a trapezoid prism, so `BOX_FACES` already describes it. */
+  if (!ring || member.position.trapezoidCornersIn || member.position.sectionCornersIn) return BOX_FACES;
   const n = ring.length;
   if (n < 3) return [];
 
@@ -348,7 +350,7 @@ export function memberFaceIndices(member: PanelMember): number[][] {
  * the downloadable .obj can never visually disagree with what's on screen.
  */
 export function memberLocalCornersIn(member: PanelMember): [number, number, number][] {
-  const { trapezoidCornersIn, planPolygonCornersIn } = member.position;
+  const { trapezoidCornersIn, planPolygonCornersIn, sectionCornersIn } = member.position;
   if (trapezoidCornersIn) {
     const halfThicknessIn = member.actualDimsIn.thicknessIn / 2;
     const centerDepthIn = member.position.yIn;
@@ -369,6 +371,26 @@ export function memberLocalCornersIn(member: PanelMember): [number, number, numb
     const bottom: [number, number, number][] = planPolygonCornersIn.map((c) => [c.xIn, bottomYIn, c.yIn]);
     const top: [number, number, number][] = planPolygonCornersIn.map((c) => [c.xIn, topYIn, c.yIn]);
     return [...bottom, ...top];
+  }
+
+  /* A beveled SECTION prism — the roof panel's plumb end cut. The 4 corners
+     are already-absolute member-space (Y,Z), so they drop straight into view
+     space as (Y -> view Z, Z -> view Y), the same one swap every branch here
+     performs; the extrusion runs along X, which is the member's own box
+     X-extent. Two rings of 4 in matching perimeter order, so `BOX_FACES`
+     describes the topology exactly as it does for a trapezoid prism.
+
+     ⚠ The rings differ in X here, where a box's and a trapezoid's differ in
+     Z, so some of `BOX_FACES`' quads come out wound the other way. Both
+     consumers already guard that: the renderer draws `DoubleSide` and the
+     .obj's own importers treat winding as advisory. Normals are recomputed
+     from the geometry on screen either way. */
+  if (sectionCornersIn) {
+    const nearXIn = member.position.xIn;
+    const farXIn = nearXIn + memberBoxSizeIn(member).xIn;
+    const near: [number, number, number][] = sectionCornersIn.map((c) => [nearXIn, c.zIn, c.yIn]);
+    const far: [number, number, number][] = sectionCornersIn.map((c) => [farXIn, c.zIn, c.yIn]);
+    return [...near, ...far];
   }
 
   const sizeIn = memberBoxSizeIn(member);

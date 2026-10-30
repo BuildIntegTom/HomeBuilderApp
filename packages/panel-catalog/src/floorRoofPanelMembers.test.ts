@@ -18,7 +18,7 @@ import {
   buildFloorRoofPanelMembers,
   type FloorRoofPanelOptions,
 } from "./floorRoofPanelMembers";
-import { PLATE_2X4_WIDTH_IN, memberBoxSizeIn } from "./panelMemberHelpers";
+import { PLATE_2X4_WIDTH_IN, memberBoxSizeIn, memberLocalCornersIn } from "./panelMemberHelpers";
 import type { PanelMember } from "./componentSchema";
 import { overlappingMemberPairs } from "./memberPrism";
 import { computePanelCutList } from "./panelCutList";
@@ -452,10 +452,17 @@ describe("the component schema a SketchUp exporter would read", () => {
     expect(schema.overallDimensions).toEqual({ heightIn: 180, widthIn: FLOOR_ROOF_PANEL_WIDTH_IN, depthIn: 15.5 });
   });
 
-  it("a roof panel WITH a pitch gets both caps", () => {
+  it("⚠ a roof panel WITH a pitch gets the eave cap and a PLUMB tall end", () => {
+    /* It used to get a separate ridge cap. It no longer does, because the
+       panel's own tall-end lid is now that plumb plate — Tommy, 2026-10-29:
+       *"The tall end of a roof panel should be plumb cut with a vertical
+       structural top plate."* Two plates in one place is an overlap. */
     const schema = buildFloorRoofPanelSchema(roofPanel, 4);
     expect(schema.members.some((m) => m.memberId === "cap-eave-web")).toBe(true);
-    expect(schema.members.some((m) => m.memberId === "cap-ridge-web")).toBe(true);
+    expect(schema.members.some((m) => m.memberId === "cap-ridge-web")).toBe(false);
+    const plate = schema.members.find((m) => m.memberId === "lid-end-skin")!;
+    expect(plate.position.sectionCornersIn).toBeDefined();
+    expect(plate.actualDimsIn.widthIn).toBeCloseTo(15.5 / (12 / Math.hypot(12, 4)), 9);
   });
 
   it("⚠ and WITHOUT one gets no caps, and says so rather than guessing a pitch", () => {
@@ -677,5 +684,133 @@ describe("⚠ the extra girts a column needs from the floor under it", () => {
     // The whole reason the overlap check exists: new members, same rule.
     const members = buildFloorRoofPanelMembers({ ...base, structuralGirtEnds: ["start", "end"], extraStructuralGirtsAtIn: [100, 140] });
     expect(overlappingMemberPairs(members)).toEqual([]);
+  });
+});
+
+describe("⚠ the tall end is PLUMB CUT, not square", () => {
+  /* > "The tall end of a roof panel should be plumb cut with a vertical
+     > structural top plate, and the bottom of it should meet flush with the
+     > entire wall depth and the rest should go plumb cut vertically. This
+     > makes for easy membrane application when it looks like a monopoly
+     > house — meets the interior wall and exterior wall continues up and
+     > cover." — Tommy, 2026-10-29 */
+  const DEPTH = 15.5;
+  const PITCH = 4;
+  const TAN = PITCH / 12;
+  const COS = 12 / Math.hypot(12, PITCH);
+  const pitched = (over: Partial<FloorRoofPanelOptions> = {}) =>
+    buildFloorRoofPanelMembers({ ...floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: PITCH }), depthIn: DEPTH, ...over });
+
+  it("⚠ the two joists of a pair are DIFFERENT lengths, which is the whole point", () => {
+    /* A square cut gives both the same length. A plumb one cannot: they sit
+       at different depths, and the cut leans through the depth. */
+    const members = pitched();
+    const atTop = members.find((m) => m.memberId === "joist-left-bottom")!;
+    const atUnderside = members.find((m) => m.memberId === "joist-left-top")!;
+    expect(atTop.actualDimsIn.lengthIn).toBeGreaterThan(atUnderside.actualDimsIn.lengthIn);
+    /* Exactly the depth between them times the pitch — member y=0 is the
+       installed TOP face, so the far joist sits (depth - 5.5) lower. */
+    expect(atTop.actualDimsIn.lengthIn - atUnderside.actualDimsIn.lengthIn).toBeCloseTo((DEPTH - JOIST_2X6_WIDTH_IN) * TAN, 9);
+  });
+
+  it("⚠ each joist's OWN end is beveled, so its long and short points differ", () => {
+    const joist = pitched().find((m) => m.memberId === "joist-left-bottom")!;
+    const corners = joist.position.sectionCornersIn!;
+    expect(corners).toBeDefined();
+    const zs = corners.map((c) => c.zIn);
+    expect(Math.max(...zs) - Math.min(...zs)).toBeCloseTo(joist.actualDimsIn.lengthIn, 9);
+    // The bevel across its own 5 1/2in is the pitch, not some rounded angle.
+    const far = corners.filter((c) => c.zIn > 2.25 + 1e-9);
+    expect(Math.abs(far[0]!.zIn - far[1]!.zIn)).toBeCloseTo(JOIST_2X6_WIDTH_IN * TAN, 9);
+    expect(joist.notes).toContain("stands plumb");
+  });
+
+  it("⚠ the underside pulls back by the full depth times the pitch", () => {
+    /* His "meets the interior wall and exterior wall continues up and cover":
+       the cut is one vertical plane, so the underside's end and the top's
+       end are the same place in the world — they are just a bevel apart
+       along the panel. */
+    const skin = pitched().find((m) => m.memberId === "lid-end-skin")!;
+    const outer = skin.position.sectionCornersIn!.filter((c) => c.yIn === 0 || c.yIn === DEPTH);
+    const atTop = Math.max(...outer.filter((c) => c.yIn === 0).map((c) => c.zIn));
+    const atUnderside = Math.max(...outer.filter((c) => c.yIn === DEPTH).map((c) => c.zIn));
+    expect(atTop - atUnderside).toBeCloseTo(DEPTH * TAN, 9);
+  });
+
+  it("⚠ the vertical top plate is cut TALLER than the panel is deep", () => {
+    /* A plate standing plumb against a leaning panel has to span
+       depth / cos(pitch). Cutting it to the depth leaves the underside
+       corner open — the exact corner the membrane turns. */
+    const members = pitched();
+    const skin = members.find((m) => m.memberId === "lid-end-skin")!;
+    expect(skin.actualDimsIn.widthIn).toBeCloseTo(DEPTH / COS, 9);
+    expect(skin.actualDimsIn.widthIn).toBeGreaterThan(DEPTH);
+    const faces = members.filter((m) => m.memberId.startsWith("lid-end-face-"));
+    expect(faces.length).toBeGreaterThan(0);
+    for (const f of faces) expect(f.actualDimsIn.lengthIn).toBeCloseTo(DEPTH / COS, 9);
+    // And they still cover the panel's whole width, last one ripped.
+    expect(faces.reduce((a, f) => a + f.actualDimsIn.widthIn, 0)).toBeCloseTo(FLOOR_ROOF_PANEL_WIDTH_IN, 9);
+  });
+
+  it("the joists land exactly on the plate's inner face, at every depth", () => {
+    /* Dimensional tightness through a bevel: the two parts are cut on
+       different angles and still have to meet with nothing between them. */
+    const members = pitched();
+    const plateInnerAt = (yIn: number) => 144 - yIn * TAN - (0.75 + 1.5) / COS;
+    for (const id of ["joist-left-bottom", "joist-left-top"]) {
+      const corners = members.find((m) => m.memberId === id)!.position.sectionCornersIn!;
+      for (const c of corners.filter((c) => c.zIn > 2.25 + 1e-9)) {
+        expect({ id, y: c.yIn, z: Number(c.zIn.toFixed(9)) }).toEqual({ id, y: c.yIn, z: Number(plateInnerAt(c.yIn).toFixed(9)) });
+      }
+    }
+  });
+
+  it("⚠ and nothing in the panel overlaps anything else", () => {
+    // The standing rule, through a shape the overlap test had never seen.
+    for (const lengthIn of [96, 144, 180, 216]) {
+      expect({ lengthIn, pairs: overlappingMemberPairs(pitched({ lengthIn })) }).toEqual({ lengthIn, pairs: [] });
+    }
+  });
+
+  it("a floor, and a roof with no pitch, are cut square exactly as before", () => {
+    for (const options of [floor(), floor({ kind: "roof", structuralGirtEnds: [] }), floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: 0 })]) {
+      const members = buildFloorRoofPanelMembers(options);
+      expect({ kind: options.kind, pitch: options.pitchIn12, beveled: members.some((m) => m.position.sectionCornersIn) }).toEqual({
+        kind: options.kind,
+        pitch: options.pitchIn12,
+        beveled: false,
+      });
+    }
+    // Byte for byte the panel it was.
+    expect(buildFloorRoofPanelMembers(floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: 0 }))).toEqual(
+      buildFloorRoofPanelMembers(floor({ kind: "roof", structuralGirtEnds: [] })),
+    );
+  });
+
+  it("⚠ the bevel REACHES THE RENDERER, not just the data", () => {
+    /* A commit once shipped a flat roof deck because the tilt was written
+       into the data and nothing drew it. `memberLocalCornersIn` is the one
+       function both the 3D view and the .obj export read corners from, so
+       asking it directly is asking the screen.
+
+       A BOX would answer with its 8 corners at exactly 2 distinct heights.
+       This joist answers with 3: its two eave-end corners share one, and
+       its beveled tall end splits into the long point and the short. */
+    const joist = pitched().find((m) => m.memberId === "joist-left-bottom")!;
+    const corners = memberLocalCornersIn(joist);
+    expect(corners).toHaveLength(8);
+    const heights = [...new Set(corners.map(([, y]) => Number(y.toFixed(6))))].sort((a, b) => a - b);
+    expect(heights).toHaveLength(3);
+    expect(heights[2]! - heights[1]!).toBeCloseTo(JOIST_2X6_WIDTH_IN * TAN, 5);
+    // And it is still 1 1/2in thick across the panel, swept from its own x.
+    const xs = corners.map(([x]) => Number(x.toFixed(6)));
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(JOIST_2X6_THICKNESS_IN, 9);
+  });
+
+  it("⚠ a steeper roof cuts back further, a shallower one less", () => {
+    const shallow = buildFloorRoofPanelMembers(floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: 2 }));
+    const steep = buildFloorRoofPanelMembers(floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: 12 }));
+    const underside = (ms: PanelMember[]) => ms.find((m) => m.memberId === "joist-left-top")!.actualDimsIn.lengthIn;
+    expect(underside(steep)).toBeLessThan(underside(shallow));
   });
 });

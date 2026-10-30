@@ -21,6 +21,8 @@ import { memberBoxSizeIn } from "./panelMemberHelpers";
  *   thickness.
  * - A plan polygon (floor membrane bands) is a polygon in plan, extruded
  *   vertically.
+ * - A SECTION polygon (a roof panel's plumb end cut) is a polygon in the
+ *   panel's depth/span plane, extruded along its width.
  *
  * So: two prisms sharing an extrusion axis overlap when their intervals
  * overlap AND their polygons overlap, which is a 2D problem with an exact
@@ -55,6 +57,17 @@ export function memberPrism(member: PanelMember): Prism {
       polygon: member.position.trapezoidCornersIn.map((c) => ({ u: c.xIn, v: c.zIn })),
       lo: yIn - halfIn,
       hi: yIn + halfIn,
+    };
+  }
+
+  if (member.position.sectionCornersIn) {
+    /* A plumb-cut roof member: its bevel is already the real cut, in the
+       panel's depth/span plane, swept along the width from its min corner. */
+    return {
+      axis: "x",
+      polygon: member.position.sectionCornersIn.map((c) => ({ u: c.yIn, v: c.zIn })),
+      lo: xIn,
+      hi: xIn + memberBoxSizeIn(member).xIn,
     };
   }
 
@@ -118,16 +131,57 @@ function polygonsOverlap(a: { u: number; v: number }[], b: { u: number; v: numbe
 }
 
 /**
+ * ⚠ A PLAIN BOX CAN BE SWEPT ALONG ANY AXIS, which is what keeps the roof
+ * panel's check exact.
+ *
+ * A plumb-cut member is a prism along X and everything beside it in the same
+ * panel — girts, blocking, lid faces — is a prism along Y, so without this
+ * every one of those pairs would fall to the bounding-box fallback and a
+ * 4:12 roof panel would report overlaps it does not have. A box has a
+ * rectangular cross-section in EVERY plane, so re-expressing it along X
+ * costs nothing and keeps the answer exact. Returns null for a member whose
+ * shape is a real polygon in some other plane — a brace or a membrane band
+ * — because those genuinely cannot be re-swept, and neither ever shares a
+ * panel with a plumb cut.
+ */
+function plainBoxPrismAlongX(member: PanelMember): Prism | null {
+  const { trapezoidCornersIn, planPolygonCornersIn, sectionCornersIn, tiltDeg } = member.position;
+  if (trapezoidCornersIn || planPolygonCornersIn || sectionCornersIn || tiltDeg !== undefined) return null;
+  const { xIn, yIn, zIn } = member.position;
+  const size = memberBoxSizeIn(member);
+  return {
+    axis: "x",
+    polygon: [
+      { u: yIn, v: zIn },
+      { u: yIn + size.yIn, v: zIn },
+      { u: yIn + size.yIn, v: zIn + size.zIn },
+      { u: yIn, v: zIn + size.zIn },
+    ],
+    lo: xIn,
+    hi: xIn + size.xIn,
+  };
+}
+
+/**
  * Do these two members occupy the same space?
  *
  * ⚠ Two prisms swept along different axes fall back to their bounding boxes,
- * which can report an overlap that is not real. Nothing in the panel
- * catalogue mixes axes today, and `mixedAxes` says so out loud rather than
- * letting a conservative answer pass for an exact one.
+ * which can report an overlap that is not real. `mixedAxes` says so out loud
+ * rather than letting a conservative answer pass for an exact one — and a
+ * plumb cut against a plain box is re-swept rather than approximated, so it
+ * never reaches that fallback.
  */
 export function membersOverlap(a: PanelMember, b: PanelMember): { overlaps: boolean; mixedAxes: boolean } {
-  const pa = memberPrism(a);
-  const pb = memberPrism(b);
+  let pa = memberPrism(a);
+  let pb = memberPrism(b);
+
+  if (pa.axis !== pb.axis && (pa.axis === "x" || pb.axis === "x")) {
+    const reswept = pa.axis === "x" ? plainBoxPrismAlongX(b) : plainBoxPrismAlongX(a);
+    if (reswept) {
+      if (pa.axis === "x") pb = reswept;
+      else pa = reswept;
+    }
+  }
 
   if (pa.axis !== pb.axis) {
     const boxA = aabbOf(a);
@@ -151,6 +205,7 @@ function aabbOf(member: PanelMember) {
   const u1 = Math.max(...us);
   const v0 = Math.min(...vs);
   const v1 = Math.max(...vs);
+  if (prism.axis === "x") return { x0: prism.lo, x1: prism.hi, y0: u0, y1: u1, z0: v0, z1: v1 };
   return prism.axis === "y"
     ? { x0: u0, x1: u1, y0: prism.lo, y1: prism.hi, z0: v0, z1: v1 }
     : { x0: u0, x1: u1, y0: v0, y1: v1, z0: prism.lo, z1: prism.hi };

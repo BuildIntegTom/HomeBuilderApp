@@ -3,7 +3,6 @@ import { buildStandardPanelMembers, buildBracedPanelMembers } from "@building-in
 import {
   GRK_3IN_WEIGHT_LB,
   GRK_4IN_WEIGHT_LB,
-  GRK_4IN_WEIGHT_LB,
   GRK_6IN_WEIGHT_LB,
   PLYWOOD_NAIL_WEIGHT_LB,
   T25_NO9_4IN_WEIGHT_LB,

@@ -55,6 +55,24 @@ export interface PlanSpacePoint2D {
 }
 
 /**
+ * A point in a member's own SECTION (Y-Z) plane — member-Y = depth through
+ * the panel, member-Z = height/span (see `MemberPosition` below).
+ *
+ * ⚠ This is the THIRD of the three planes, and the only one in which a
+ * ROOF PANEL'S PLUMB END CUT can be drawn. `PanelSpacePoint2D` is the
+ * elevation (X-Z) and `PlanSpacePoint2D` is the plan (X-Y); a roof panel is
+ * built lying in the compressor table, so its span is Z and its depth is Y,
+ * and a cut that is vertical once the panel is tipped onto the roof runs
+ * across BOTH of those at once. Neither of the other two can express it, and
+ * an overloaded `{...In}` type would make the plane guesswork at every call
+ * site — the same reasoning that split the first two.
+ */
+export interface SectionSpacePoint2D {
+  yIn: number;
+  zIn: number;
+}
+
+/**
  * A member's placement in MEMBER SPACE (the authoring convention every
  * builder in packages/panel-catalog/src writes, Z-up):
  *   xIn = WIDTH, along the panel/assembly's length, from its own min-corner
@@ -125,6 +143,33 @@ export interface MemberPosition {
    * populated for consumers that read dims, same caveat
    * `trapezoidCornersIn` already carries. */
   planPolygonCornersIn?: PlanSpacePoint2D[];
+  /**
+   * A beveled SECTION prism's cross-section (member-space Y-Z, absolute,
+   * perimeter order) — extruded along member-space X from `position.xIn` by
+   * the member's own box X-extent (`memberBoxSizeIn(member).xIn`), so a
+   * joist extrudes through its 1 1/2in thickness and a lid skin through the
+   * panel's full width without either naming a number twice.
+   *
+   * Built for the ROOF PANEL'S PLUMB END CUT. Tommy, 2026-10-29: *"The tall
+   * end of a roof panel should be plumb cut with a vertical structural top
+   * plate, and the bottom of it should meet flush with the entire wall depth
+   * and the rest should go plumb cut vertically."* A panel lying in the
+   * table has its span along Z and its depth along Y; a cut that stands
+   * vertical once the panel is tipped onto a 4:12 roof slices across both.
+   *
+   * ⚠ MUTUALLY EXCLUSIVE with `trapezoidCornersIn` and
+   * `planPolygonCornersIn` — they are three different extrusion axes (X-Z
+   * through Y, X-Y through Z, and Y-Z through X). `memberLocalCornersIn`
+   * checks the trapezoid first, then the plan ring, then this, so a member
+   * carrying two silently renders as the earlier one. No builder may set
+   * more than one.
+   *
+   * When present this OVERRIDES the plain box shape, exactly as the other
+   * two do. `actualDimsIn` stays the piece AS CUT — for a plumb-cut joist
+   * that is its LONG point, which is the number the shop cuts to — and the
+   * bevel angle belongs in `notes`.
+   */
+  sectionCornersIn?: [SectionSpacePoint2D, SectionSpacePoint2D, SectionSpacePoint2D, SectionSpacePoint2D];
 }
 
 export interface PanelMember {

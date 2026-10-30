@@ -34,9 +34,11 @@ function resolveOpacity(member: PanelMember): number | undefined {
 /**
  * Any member whose real shape isn't a box — a true beveled-end trapezoid
  * prism (Tommy: "trapezoid cuts" — a diagonal brace's real plumb+level end
- * cuts, not a plain tilted box), or an n-gon prism (the floor bottom skin's
+ * cuts, not a plain tilted box), an n-gon prism (the floor bottom skin's
  * footprint-shaped opacity bands, whose ring is the building's own outline
- * clipped into a band, so it has as many corners as the building does).
+ * clipped into a band, so it has as many corners as the building does), or a
+ * SECTION prism (a roof panel's plumb end cut, whose bevel runs across the
+ * panel's depth and span at once — see `sectionCornersIn`).
  *
  * Both corners AND topology come from the same two shared helpers the OBJ
  * exporter uses — `memberLocalCornersIn` and `memberFaceIndices` — so the
@@ -99,7 +101,7 @@ export default function PanelMembersGroup({ members, colorOverride }: PanelMembe
   return (
     <>
       {members.map((member) => {
-        if (member.position.trapezoidCornersIn || member.position.planPolygonCornersIn) {
+        if (member.position.trapezoidCornersIn || member.position.planPolygonCornersIn || member.position.sectionCornersIn) {
           return (
             <mesh key={member.memberId} geometry={buildPrismGeometry(member)}>
               <meshStandardMaterial

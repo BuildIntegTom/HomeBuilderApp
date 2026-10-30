@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, TransformControls } from "@react-three/drei";
-import type { Mesh } from "three";
+import { BufferAttribute, BufferGeometry, DoubleSide, type Mesh } from "three";
 import {
   applyZonesToSlot,
   computeFieldFramingLayout,
@@ -638,6 +638,85 @@ function renderSimplifiedSlot(
 
 /** Enough to see the framing through, not so little it vanishes. */
 const ROOF_SEE_THROUGH_OPACITY = 0.25;
+
+/**
+ * A box whose TOP is sloped — the real outside shape of a Gable End Panel,
+ * for the box, membrane and shipping views.
+ *
+ * > *"the box view Gable ends are still squared off instead of trapezoid"* —
+ * > Tommy, 2026-10-29
+ *
+ * ⚠ A gable tile's two edges are different heights, so a `boxGeometry` at the
+ * taller of them draws material that is not there — and in the membrane view
+ * that wrongly-square top is exactly the surface somebody would be pricing
+ * wrap for. `leftHeightFt === rightHeightFt` (a column tile, a safety gap, a
+ * flat-topped tile under a vertical gap filler) falls out of this as a plain
+ * box, so there is no second path to keep in step.
+ */
+function SlopedTopBox({
+  widthFt,
+  leftHeightFt,
+  rightHeightFt,
+  depthFt,
+  color,
+  opacity = 0.6,
+}: {
+  widthFt: number;
+  leftHeightFt: number;
+  rightHeightFt: number;
+  depthFt: number;
+  color: string;
+  opacity?: number;
+}) {
+  const geometry = useMemo(() => {
+    const w = widthFt;
+    const d = depthFt;
+    const hL = leftHeightFt;
+    const hR = rightHeightFt;
+    /* View space, the same frame PanelMembersGroup renders in: X = width,
+       Y = up, Z = depth from the exterior face. */
+    const corners: [number, number, number][] = [
+      [0, 0, 0],
+      [w, 0, 0],
+      [w, hR, 0],
+      [0, hL, 0],
+      [0, 0, d],
+      [w, 0, d],
+      [w, hR, d],
+      [0, hL, d],
+    ];
+    const faces: [number, number, number, number][] = [
+      [0, 1, 2, 3],
+      [4, 7, 6, 5],
+      [0, 4, 5, 1],
+      [3, 2, 6, 7],
+      [0, 3, 7, 4],
+      [1, 5, 6, 2],
+    ];
+    const positions = new Float32Array(corners.length * 3);
+    corners.forEach(([x, y, z], i) => {
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
+    });
+    const indices: number[] = [];
+    for (const [a, b, c, e] of faces) indices.push(a, b, c, a, c, e);
+    const geom = new BufferGeometry();
+    geom.setAttribute("position", new BufferAttribute(positions, 3));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }, [widthFt, leftHeightFt, rightHeightFt, depthFt]);
+
+  /* DoubleSide for the same defensive reason buildPrismGeometry uses it: the
+     winding above was reasoned out, not validated against three.js' own
+     front-face convention, and a backface-culled panel would read as missing. */
+  return (
+    <mesh geometry={geometry}>
+      <meshStandardMaterial color={color} transparent opacity={opacity} side={DoubleSide} />
+    </mesh>
+  );
+}
 
 interface Building3DViewProps {
   footprint: Footprint | null;
@@ -1344,6 +1423,12 @@ export default function Building3DView({
       members: PanelMember[];
       widthFt: number;
       heightFt: number;
+      /** ⚠ The tile's two REAL edge heights, in the order the roofline
+       * gives them — the box views draw the trapezoid from these rather
+       * than squaring the tile off at `heightFt`, which is the taller of the
+       * two and so overstates one side. Equal on a flat-topped tile. */
+      leftHeightFt: number;
+      rightHeightFt: number;
       depthFt: number;
       isSafetyGap: boolean;
       verticalGapHeightFt: number;
@@ -1443,6 +1528,11 @@ export default function Building3DView({
           members,
           widthFt: tile.widthIn / IN_PER_FT,
           heightFt: tallerLocalIn / IN_PER_FT,
+          /* A column tile and a safety gap are flat-topped by construction,
+             so both edges read the taller height; everything else keeps its
+             own roofline, unmirrored, the same way `members` above does. */
+          leftHeightFt: (tile.isColumn || tile.isSafetyGap ? tallerLocalIn : leftLocalIn) / IN_PER_FT,
+          rightHeightFt: (tile.isColumn || tile.isSafetyGap ? tallerLocalIn : rightLocalIn) / IN_PER_FT,
           depthFt: thicknessIn / IN_PER_FT,
           isSafetyGap: !!tile.isSafetyGap,
           verticalGapHeightFt: Math.max(tile.verticalGapIn?.leftIn ?? 0, tile.verticalGapIn?.rightIn ?? 0) / IN_PER_FT,
@@ -1595,6 +1685,12 @@ export default function Building3DView({
       /** How far the panel is tipped off flat: 0 for a floor, the roof's own
        * pitch for a roof plane. */
       tiltRad: number;
+      /** ⚠ The panel's own outside dimensions, for the box views. Tommy:
+       * *"Roof panels and floor panels should appear as plain boxes for box
+       * view and the membranes and for shipping."* Carried rather than
+       * re-derived from the members, whose bounding box would include a cap
+       * hanging off the end. */
+      boxIn: { widthIn: number; depthIn: number; lengthIn: number };
       members: PanelMember[];
     }[] = [];
 
@@ -1637,6 +1733,7 @@ export default function Building3DView({
           anchorYFt: 0,
           rotationRad: p.rotationRad,
           tiltRad: 0,
+          boxIn: { widthIn: p.widthIn, depthIn: thicknessIn, lengthIn: p.spanIn },
           members: buildFloorRoofPanelMembers({
             kind: "floor",
             widthIn: p.widthIn,
@@ -1674,8 +1771,28 @@ export default function Building3DView({
            through it instead of becoming a flat ghost. */
         const seeThroughFacing = roofDeckSolid ? null : defaultTransparentRoofFacing(roof.planes);
         for (const [planeIndex, plane] of roof.planes.entries()) {
-          const edgeDx = plane.lowEnd.x - plane.lowStart.x;
-          const edgeDy = plane.lowEnd.y - plane.lowStart.y;
+          /* ⚠ A PANEL HAS TO RUN TOWARD ITS OWN HIGH EDGE, and on a peak one
+             of the two planes runs the opposite way round the building.
+
+             The view yaws by -rotationRad, which sends the panel's span to
+             the low edge's direction turned 90 degrees anticlockwise. For the
+             near plane that points inward, toward the ridge. For the far one
+             it points straight OUT of the building — which is why half the
+             roof was landing way out of place. Walking that plane's low edge
+             backwards flips the span to match. */
+          const lowMidX = (plane.lowStart.x + plane.lowEnd.x) / 2;
+          const lowMidY = (plane.lowStart.y + plane.lowEnd.y) / 2;
+          const towardHighX = (plane.highStart.x + plane.highEnd.x) / 2 - lowMidX;
+          const towardHighY = (plane.highStart.y + plane.highEnd.y) / 2 - lowMidY;
+          const forwardDx = plane.lowEnd.x - plane.lowStart.x;
+          const forwardDy = plane.lowEnd.y - plane.lowStart.y;
+          /* Rotating the edge direction +90 degrees gives where the span will
+             point; if that is away from the high edge, walk the other way. */
+          const spanPointsInward = -forwardDy * towardHighX + forwardDx * towardHighY > 0;
+          const originX = spanPointsInward ? plane.lowStart.x : plane.lowEnd.x;
+          const originY = spanPointsInward ? plane.lowStart.y : plane.lowEnd.y;
+          const edgeDx = spanPointsInward ? forwardDx : -forwardDx;
+          const edgeDy = spanPointsInward ? forwardDy : -forwardDy;
           const edgeLengthIn = Math.hypot(edgeDx, edgeDy) * IN_PER_FT;
           /* Panels repeat ALONG the eave and span UP the slope, so the run is
              the eave's own length and the span is the real sloped length —
@@ -1692,17 +1809,24 @@ export default function Building3DView({
             result.push({
               id: `roof-${planeIndex}-${i}`,
               kind: "roof",
-              anchorX: plane.lowStart.x + ux * alongFt,
-              anchorZ: plane.lowStart.y + uy * alongFt,
+              anchorX: originX + ux * alongFt,
+              anchorZ: originY + uy * alongFt,
               anchorYFt: plane.lowHeightFt + thicknessIn / IN_PER_FT,
               rotationRad,
               tiltRad,
+              boxIn: { widthIn, depthIn: thicknessIn, lengthIn: plane.slopeFt * IN_PER_FT },
               members: buildFloorRoofPanelMembers({
                 kind: "roof",
                 widthIn,
                 depthIn: thicknessIn,
                 lengthIn: plane.slopeFt * IN_PER_FT,
                 structuralGirtEnds: [],
+                /* ⚠ The pitch is what PLUMB-CUTS the tall end — Tommy,
+                   2026-10-29. Without it the builder cuts both ends square
+                   to the panel, which is what put a leaning end face against
+                   a vertical wall and had him reporting the roof *"spawning
+                   without tapered ends"*. */
+                pitchIn12: roofPitchIn12,
               }).map((m) =>
                 plane.facing === seeThroughFacing ? { ...m, opacityOverride: ROOF_SEE_THROUGH_OPACITY } : m,
               ),
@@ -2339,7 +2463,7 @@ export default function Building3DView({
   const cameraPosition = birdsEyeCameraPosition(bounds);
   const defaultTarget: [number, number, number] = [footprintBoundsRaw.centerX, totalHeightFt / 2, footprintBoundsRaw.centerZ];
   const target: [number, number, number] = orbitTargetOverride ?? defaultTarget;
-  const groundSize = bounds.maxDim * 3;
+
 
   // Sill & Header drag tool (Tommy: "manipulate sill and header height with
   // the drag tool") — only rendered for the currently-selected window slot,
@@ -2449,10 +2573,15 @@ export default function Building3DView({
           )}
           <ambientLight intensity={0.6} />
           <directionalLight position={[bounds.maxDim, bounds.maxDim * 2, bounds.maxDim]} intensity={0.8} />
-          <mesh position={[bounds.centerX, -0.05, bounds.centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[groundSize, groundSize]} />
-            <meshStandardMaterial color="#e8e6df" />
-          </mesh>
+          {/* ⚠ THE GROUND PLANE IS OFF. Tommy, 2026-10-29: *"it blocks the
+              floor panels from being visible and doesn't really illustrate
+              anything for the user"*. It is the Y=0 datum every panel is
+              placed against, but a datum does not have to be drawn — and
+              drawn as an opaque sheet 0.05ft below zero it hid the one thing
+              a floor panel view exists to show. For the record, bringing
+              it back is a `<mesh position={[bounds.centerX, -0.05,
+              bounds.centerZ]} rotation={[-Math.PI/2,0,0]}>` with a
+              `planeGeometry` of `bounds.maxDim * 3`. */}
           {slotRenderData.map(({ box, members }) => (
             <group
               key={`${box.wallId}-${box.slotIndex}-${box.midWallBandIndex ?? "full"}`}
@@ -2580,18 +2709,32 @@ export default function Building3DView({
             </group>
           ))}
           {gableRenderData.map(
-            ({ wallId, tileIndex, anchorX, anchorZ, anchorYFt, rotationRad, members, widthFt, heightFt, depthFt, isSafetyGap, verticalGapHeightFt }) => (
+            ({
+              wallId,
+              tileIndex,
+              anchorX,
+              anchorZ,
+              anchorYFt,
+              rotationRad,
+              members,
+              widthFt,
+              heightFt,
+              leftHeightFt,
+              rightHeightFt,
+              depthFt,
+              isSafetyGap,
+              verticalGapHeightFt,
+            }) => (
               <group key={`gable-${wallId}-${tileIndex}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
                 {simplified ? (
                   <>
-                    <mesh position={[widthFt / 2, heightFt / 2, depthFt / 2]}>
-                      <boxGeometry args={[widthFt, heightFt, depthFt]} />
-                      <meshStandardMaterial
-                        color={isSafetyGap ? NAMED_PANEL_TYPE_COLORS["safety-gap"] : NAMED_PANEL_TYPE_COLORS.gable}
-                        transparent
-                        opacity={0.6}
-                      />
-                    </mesh>
+                    <SlopedTopBox
+                      widthFt={widthFt}
+                      leftHeightFt={leftHeightFt}
+                      rightHeightFt={rightHeightFt}
+                      depthFt={depthFt}
+                      color={isSafetyGap ? NAMED_PANEL_TYPE_COLORS["safety-gap"] : NAMED_PANEL_TYPE_COLORS.gable}
+                    />
                     {verticalGapHeightFt > 0 && (
                       <mesh position={[widthFt / 2, heightFt + verticalGapHeightFt / 2, depthFt / 2]}>
                         <boxGeometry args={[widthFt, verticalGapHeightFt, depthFt]} />
@@ -2650,7 +2793,7 @@ export default function Building3DView({
               <PanelMembersGroup members={members} />
             </group>
           ))}
-          {deckRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, tiltRad, members }) => (
+          {deckRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, tiltRad, boxIn, members }) => (
             <group key={`deck-${id}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
               {/* ⚠ Tips the panel off its end and onto the plane it belongs
                   on. Its members are built lying in the compressor table, so
@@ -2665,7 +2808,26 @@ export default function Building3DView({
                   the deck went on drawing FLAT while the data carried a tilt
                   nothing used. */}
               <group rotation={[Math.PI / 2 - tiltRad, 0, 0]}>
-                <PanelMembersGroup members={members} />
+                {simplified ? (
+                  /* ⚠ A plain box, for the box, membrane and shipping views.
+                     In the panel's own frame its span runs along Z and its
+                     depth along Y, which PanelMembersGroup maps the same way
+                     — so the box is (width, span, depth) in three.js terms. */
+                  <mesh
+                    position={[
+                      boxIn.widthIn / 2 / IN_PER_FT,
+                      boxIn.lengthIn / 2 / IN_PER_FT,
+                      boxIn.depthIn / 2 / IN_PER_FT,
+                    ]}
+                  >
+                    <boxGeometry
+                      args={[boxIn.widthIn / IN_PER_FT, boxIn.lengthIn / IN_PER_FT, boxIn.depthIn / IN_PER_FT]}
+                    />
+                    <meshStandardMaterial color={PANEL_TYPE_COLORS.standard} />
+                  </mesh>
+                ) : (
+                  <PanelMembersGroup members={members} />
+                )}
               </group>
             </group>
           ))}

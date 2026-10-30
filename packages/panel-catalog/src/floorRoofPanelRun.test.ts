@@ -179,7 +179,9 @@ describe("the members each sheet will print", () => {
     const caps = (plan: typeof capped) => plan.groups[0]!.members.filter((m) => m.memberId.startsWith("cap-"));
     expect(caps(capped).length).toBeGreaterThan(0);
     expect(caps(capped).some((m) => m.memberId.includes("eave"))).toBe(true);
-    expect(caps(capped).some((m) => m.memberId.includes("ridge"))).toBe(true);
+    /* The ridge cap is gone: the panel's own tall end is now the plumb
+       plate, so a separate one would be a second plate in the same place. */
+    expect(caps(capped).some((m) => m.memberId.includes("ridge"))).toBe(false);
     expect(caps(bare)).toEqual([]);
   });
 

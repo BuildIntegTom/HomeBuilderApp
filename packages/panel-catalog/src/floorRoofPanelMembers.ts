@@ -1,4 +1,4 @@
-import type { PanelComponentSchema, PanelMember } from "./componentSchema";
+import type { PanelComponentSchema, PanelMember, SectionSpacePoint2D } from "./componentSchema";
 import { LUMBER_SPECIES_GRADE, PLATE_2X4_THICKNESS_IN, PLATE_2X4_WIDTH_IN, SKIN_PLY_SPEC, SKIN_THICKNESS_IN } from "./panelMemberHelpers";
 
 /**
@@ -151,6 +151,75 @@ export interface FloorRoofPanelOptions {
    * columns are.
    */
   extraStructuralGirtsAtIn?: number[];
+  /**
+   * ⚠ The roof's pitch, which PLUMB-CUTS THE PANEL'S TALL END.
+   *
+   * > *"The tall end of a roof panel should be plumb cut with a vertical
+   * > structural top plate, and the bottom of it should meet flush with the
+   * > entire wall depth and the rest should go plumb cut vertically. This
+   * > makes for easy membrane application when it looks like a monopoly
+   * > house — meets the interior wall and exterior wall continues up and
+   * > cover."* — Tommy, 2026-10-29
+   *
+   * Omitted (or 0) the panel is cut square at both ends, which is what a
+   * FLOOR wants and what a roof panel got before this existed. A floor
+   * ignores it outright.
+   */
+  pitchIn12?: number;
+}
+
+/**
+ * The tall end's plumb cut, or null when there is nothing to cut.
+ *
+ * ⚠ **The TOP face is the long point, and the underside is the short one.**
+ * That is the same cut a rafter gets at a ridge, and it follows from the
+ * panel leaning uphill: travelling up the panel gains height, so the top
+ * edge reaches a given vertical plane only after running further along the
+ * panel than the bottom edge did.
+ *
+ * ⚠ **`lengthIn` stays the TOP face's span**, so the roof's outer surface
+ * still runs exactly eave-to-ridge and two planes of a gable still meet on
+ * the ridge with neither a gap nor an overlap. It is the underside that
+ * pulls back, which is where the wall or the ridge beam is — and because the
+ * cut is plumb, that underside still bears across the whole wall depth and
+ * terminates on the wall's exterior face, which is his *"meet flush with the
+ * entire wall depth"*.
+ *
+ * ⚠ **Member Y runs DOWNWARD once the panel is installed** — y=0 is the
+ * panel's TOP face and y=depthIn its underside. That is not a choice made
+ * here: `Building3DView` tips the panel with `rotation={[PI/2 - tilt, 0, 0]}`,
+ * which sends member-Y to world (0, -cos tilt, sin tilt). Getting this
+ * backwards would cut the bevel the wrong way and still look plausible.
+ */
+function plumbEndCut(o: FloorRoofPanelOptions): {
+  tan: number;
+  /** How much further the top face runs than the underside. */
+  bevelIn: number;
+  /** The end plate's real cut height, standing vertical. */
+  plumbHeightIn: number;
+  tiltDeg: number;
+  /** Where the panel's outer end face sits, at a given depth. */
+  outerAtYIn: (yIn: number) => number;
+  /** A plane parallel to it, set back by a perpendicular thickness. */
+  setBackAtYIn: (yIn: number, perpendicularIn: number) => number;
+} | null {
+  const pitchIn12 = o.pitchIn12;
+  if (o.kind !== "roof" || pitchIn12 === undefined || !(pitchIn12 > 0)) return null;
+  const tan = pitchIn12 / 12;
+  const cos = 12 / Math.hypot(12, pitchIn12);
+  const outerAtYIn = (yIn: number) => o.lengthIn - yIn * tan;
+  return {
+    tan,
+    bevelIn: o.depthIn * tan,
+    plumbHeightIn: o.depthIn / cos,
+    tiltDeg: (Math.atan2(pitchIn12, 12) * 180) / Math.PI,
+    outerAtYIn,
+    /* ⚠ A thickness measured PERPENDICULAR to a plumb face is longer than
+       that along the span, by 1/cos — the same reason the plate itself is
+       taller than the panel is deep. Subtracting the raw thickness would
+       leave the parts not quite meeting. */
+    setBackAtYIn: (yIn: number, perpendicularIn: number) => outerAtYIn(yIn) - perpendicularIn / cos,
+  };
 }
 
 /**
@@ -238,6 +307,7 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
    * 300in. */
   const lidThicknessIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const joistLengthIn = o.lengthIn - 2 * lidThicknessIn;
+  const plumb = plumbEndCut(o);
   const edges: [string, number][] = [
     ["left", 0],
     ["right", o.widthIn - JOIST_2X6_THICKNESS_IN],
@@ -247,18 +317,64 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
       ["bottom", 0],
       ["top", o.depthIn - JOIST_2X6_WIDTH_IN],
     ] as [string, number][]) {
-      out.push(
-        lumber(
-          `joist-${side}-${face}`,
-          "stud",
-          "2x6",
-          { thicknessIn: JOIST_2X6_THICKNESS_IN, widthIn: JOIST_2X6_WIDTH_IN, lengthIn: joistLengthIn },
-          "vertical",
-          0,
-          { xIn, yIn, zIn: lidThicknessIn },
-          `${side} joist, ${face} member of the pair`,
-        ),
-      );
+      if (!plumb) {
+        out.push(
+          lumber(
+            `joist-${side}-${face}`,
+            "stud",
+            "2x6",
+            { thicknessIn: JOIST_2X6_THICKNESS_IN, widthIn: JOIST_2X6_WIDTH_IN, lengthIn: joistLengthIn },
+            "vertical",
+            0,
+            { xIn, yIn, zIn: lidThicknessIn },
+            `${side} joist, ${face} member of the pair`,
+          ),
+        );
+        continue;
+      }
+      /* ⚠ A PLUMB-CUT JOIST IS NOT A BOARD CUT SQUARE. Its far end is
+         beveled through its own 5 1/2in, so the two joists of a pair are
+         DIFFERENT LENGTHS — the one nearer the panel's top face is the
+         longer, by (its depth offset) x the pitch. A single length for both
+         would be right for neither, and at 4:12 across a 15 1/2in panel the
+         two ends are 5 3/16in apart. */
+      const nearYIn = yIn;
+      const farYIn = yIn + JOIST_2X6_WIDTH_IN;
+      const nearEndIn = plumb.setBackAtYIn(nearYIn, lidThicknessIn);
+      const farEndIn = plumb.setBackAtYIn(farYIn, lidThicknessIn);
+      out.push({
+        memberId: `joist-${side}-${face}`,
+        material: "dimensional_lumber",
+        speciesGrade: LUMBER_SPECIES_GRADE,
+        plySpec: null,
+        nominalSize: "2x6",
+        /* The piece AS CUT: its LONG point, which is the number the shop
+           measures to before swinging the saw over. */
+        actualDimsIn: {
+          thicknessIn: JOIST_2X6_THICKNESS_IN,
+          widthIn: JOIST_2X6_WIDTH_IN,
+          lengthIn: nearEndIn - lidThicknessIn,
+        },
+        orientation: "vertical",
+        position: {
+          xIn,
+          yIn,
+          zIn: lidThicknessIn,
+          rotationDeg: 0,
+          sectionCornersIn: [
+            { yIn: nearYIn, zIn: lidThicknessIn },
+            { yIn: nearYIn, zIn: nearEndIn },
+            { yIn: farYIn, zIn: farEndIn },
+            { yIn: farYIn, zIn: lidThicknessIn },
+          ],
+        },
+        role: "stud",
+        qty: 1,
+        notes:
+          `${side} joist, ${face} member of the pair — tall end cut ` +
+          `${plumb.tiltDeg.toFixed(2)}deg off square so it stands plumb, long point ` +
+          `${(nearEndIn - lidThicknessIn).toFixed(3)}in, short point ${(farEndIn - lidThicknessIn).toFixed(3)}in`,
+      });
     }
   }
   return out;
@@ -402,6 +518,14 @@ function buildBlocking(o: FloorRoofPanelOptions, zIn: number, index: number): Pa
  * width rather than rounding the count.
  */
 function buildStructuralLid(o: FloorRoofPanelOptions, atEnd: "start" | "end"): PanelMember[] {
+  /* ⚠ The TALL end's lid stands PLUMB, and is the *"vertical structural top
+     plate"* of his 2026-10-29 note — the same skin-plus-2x4-faces lid every
+     other end gets, just stood vertical instead of square to the panel. It
+     is what the membrane runs onto and what the exterior wall laps over. The
+     eave end (`start`) is untouched. */
+  const plumb = atEnd === "end" ? plumbEndCut(o) : null;
+  if (plumb) return buildPlumbEndPlate(o, plumb);
+
   const zBase = atEnd === "start" ? 0 : o.lengthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
   const out: PanelMember[] = [
     sheet(
@@ -438,6 +562,72 @@ function buildStructuralLid(o: FloorRoofPanelOptions, atEnd: "start" | "end"): P
 }
 
 /**
+ * The tall end's vertical structural top plate: the same lid, stood plumb.
+ *
+ * ⚠ **Every piece here is cut LONGER than the panel is deep.** A plate
+ * standing vertical against a panel leaning at the roof's pitch has to span
+ * `depth / cos(pitch)` to cover it — 15 1/2in of panel needs 16 3/8in of
+ * plate at 4:12. Cutting these to the panel's depth would leave the underside
+ * corner open, which is the exact corner the membrane has to turn.
+ */
+function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: NonNullable<ReturnType<typeof plumbEndCut>>): PanelMember[] {
+  const slab = (perpendicularStartIn: number, perpendicularEndIn: number) =>
+    [
+      { yIn: 0, zIn: plumb.setBackAtYIn(0, perpendicularEndIn) },
+      { yIn: 0, zIn: plumb.setBackAtYIn(0, perpendicularStartIn) },
+      { yIn: o.depthIn, zIn: plumb.setBackAtYIn(o.depthIn, perpendicularStartIn) },
+      { yIn: o.depthIn, zIn: plumb.setBackAtYIn(o.depthIn, perpendicularEndIn) },
+    ] as [SectionSpacePoint2D, SectionSpacePoint2D, SectionSpacePoint2D, SectionSpacePoint2D];
+
+  const out: PanelMember[] = [
+    {
+      memberId: "lid-end-skin",
+      material: "plywood",
+      speciesGrade: null,
+      plySpec: SKIN_PLY_SPEC,
+      nominalSize: null,
+      actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: plumb.plumbHeightIn, lengthIn: o.widthIn },
+      orientation: "flat",
+      position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0, sectionCornersIn: slab(0, SKIN_THICKNESS_IN) },
+      role: "skin",
+      qty: 1,
+      notes: `tall-end skin, standing PLUMB — cut ${plumb.plumbHeightIn.toFixed(3)}in, not the panel's ${o.depthIn}in depth`,
+    },
+  ];
+
+  let xIn = 0;
+  let index = 0;
+  while (xIn < o.widthIn - 1e-9) {
+    const widthIn = Math.min(PLATE_2X4_WIDTH_IN, o.widthIn - xIn);
+    const ripped = widthIn < PLATE_2X4_WIDTH_IN - 1e-9;
+    out.push({
+      memberId: `lid-end-face-${index}`,
+      material: "dimensional_lumber",
+      speciesGrade: LUMBER_SPECIES_GRADE,
+      plySpec: null,
+      nominalSize: "2x4",
+      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn, lengthIn: plumb.plumbHeightIn },
+      orientation: "horizontal",
+      position: {
+        xIn,
+        yIn: 0,
+        zIn: 0,
+        rotationDeg: 180,
+        sectionCornersIn: slab(SKIN_THICKNESS_IN, SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN),
+      },
+      role: "stud",
+      qty: 1,
+      notes: ripped
+        ? `ripped to ${widthIn}in wide — the last one on the plumb tall-end plate`
+        : "stands plumb against the tall end",
+    });
+    xIn += PLATE_2X4_WIDTH_IN;
+    index += 1;
+  }
+  return out;
+}
+
+/**
  * Every physical member of a floor or roof panel.
  *
  * ⚠ What this does NOT yet include, stated so nobody reads its absence as a
@@ -450,6 +640,7 @@ function buildStructuralLid(o: FloorRoofPanelOptions, atEnd: "start" | "end"): P
  */
 export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): PanelMember[] {
   const o = options;
+  const plumb = plumbEndCut(o);
   const members: PanelMember[] = [...buildJoists(o), ...buildStructuralLid(o, "start"), ...buildStructuralLid(o, "end")];
 
   const girtEnds = o.kind === "roof" ? [] : (o.structuralGirtEnds ?? []);
@@ -476,15 +667,25 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
      one end and the loop is the same. */
   const datumIn = girtEnds.includes("start") ? SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN + STRUCTURAL_GIRT_TOTAL_THICKNESS_IN : SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
 
+  /* ⚠ A PLUMB TALL END MOVES THE LAST USABLE STATION BACK, and not by the
+     plate's thickness. A girt runs the panel's full depth, so the first
+     thing it would hit is the plate's SHORT corner — at the underside,
+     where the plumb cut has already pulled back by the full bevel. Bounding
+     the loop at the panel's nominal length instead would drive the last
+     girt straight through the new plate on every 4:12 roof. */
+  const lastStationIn = plumb
+    ? plumb.setBackAtYIn(o.depthIn, SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN)
+    : o.lengthIn - PLATE_2X4_THICKNESS_IN;
+
   let index = 0;
-  for (let zIn = datumIn + ANTI_TWIST_SPACING_IN; zIn < o.lengthIn - PLATE_2X4_THICKNESS_IN; zIn += ANTI_TWIST_SPACING_IN) {
+  for (let zIn = datumIn + ANTI_TWIST_SPACING_IN; zIn < lastStationIn; zIn += ANTI_TWIST_SPACING_IN) {
     members.push(...buildAntiTwistGirt(o, zIn, index));
     index += 1;
   }
 
   if (o.kind === "floor") {
     let blockIndex = 0;
-    for (let zIn = datumIn + BLOCKING_SPACING_IN; zIn < o.lengthIn - PLATE_2X4_THICKNESS_IN; zIn += BLOCKING_SPACING_IN) {
+    for (let zIn = datumIn + BLOCKING_SPACING_IN; zIn < lastStationIn; zIn += BLOCKING_SPACING_IN) {
       members.push(...buildBlocking(o, zIn, blockIndex));
       blockIndex += 1;
     }
@@ -807,12 +1008,19 @@ export function buildRoofPanelCapMembers(
  */
 export function buildFloorRoofPanelSchema(options: FloorRoofPanelOptions, pitchIn12?: number): PanelComponentSchema {
   const isRoof = options.kind === "roof";
-  const members = [...buildFloorRoofPanelMembers(options)];
+  /* ⚠ The pitch now reaches the MEMBERS, not just the caps: it is what
+     plumb-cuts the tall end. Passing it only to the caps, as this did
+     before, left the panel itself square and the cap standing against a
+     corner that was not there. */
+  const members = [...buildFloorRoofPanelMembers(isRoof && pitchIn12 !== undefined ? { ...options, pitchIn12 } : options)];
   if (isRoof && pitchIn12 !== undefined) {
-    members.push(
-      ...buildRoofPanelCapMembers(options, "eave", pitchIn12),
-      ...buildRoofPanelCapMembers(options, "ridge", pitchIn12),
-    );
+    /* ⚠ ONLY THE EAVE CAP. *"The ridge cap is the same thing except to end
+       plumbing cut"* — and the panel's own tall-end lid now IS that plumb
+       cut, built as the *"vertical structural top plate"* of his 2026-10-29
+       note. Adding a separate ridge cap on top of it would put two plates in
+       one place, which is the overlap rule broken by duplication rather than
+       by arithmetic. */
+    members.push(...buildRoofPanelCapMembers(options, "eave", pitchIn12));
   }
 
   const notes: PanelComponentSchema["notes"] = [
