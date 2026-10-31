@@ -3400,10 +3400,41 @@ export default function LayoutEditor() {
       setRoofProfilePointHeightsFt([
         computeRiseFtForPitch(DEFAULT_ROOF_PITCH_IN12, runForPitchIn, seat.heelOffsetIn),
       ]);
-      /* A shed is the same one-point profile with its point at the wall's
-         start edge rather than centred; null means centred. */
+      /* ⚠ **A SHED'S TWO GABLE WALLS NEED THE POINT AT OPPOSITE ENDS OF
+         THEMSELVES, and putting it at x=0 on both is what flipped one of
+         them.**
+
+         > *"One gable end panel wall run is facing the wrong way, the west
+         > wall needs to be flipped."* — Tommy, 2026-10-31
+
+         A profile point's x is measured from each wall's OWN start corner,
+         and the two gable walls are wound in opposite directions round the
+         footprint — so one wall's x=0 is at the shed's high side and the
+         other's is at its low side. Both got 0, so one sloped uphill and
+         the other downhill, and the roof sat on one of them backwards.
+
+         The high side is found from the roof's own plane rather than from a
+         compass guess, so this cannot disagree with where the roof is
+         actually put. */
+      const shedOptions = { form: "shed" as const, pitchIn12: DEFAULT_ROOF_PITCH_IN12, eaveHeightFt: wallHeightFt };
+      const shedPlane = form.kind === "shed" ? simpleRoofPlanes(fp, shedOptions).planes[0] : undefined;
+      const cornerPointOf = (cornerId: string) => fp.corners.find((c) => c.id === cornerId)?.point;
       setGableProfilePositionsInByWallId(
-        form.kind === "shed" ? Object.fromEntries(autoGableWallIds.map((id) => [id, [0]])) : {},
+        form.kind === "shed" && shedPlane
+          ? Object.fromEntries(
+              autoGableWallIds.map((id) => {
+                const wall = fp.walls.find((w) => w.id === id);
+                const a = wall && cornerPointOf(wall.startCorner);
+                const b = wall && cornerPointOf(wall.endCorner);
+                if (!wall || !a || !b) return [id, [0]];
+                const highMidX = (shedPlane.highStart.x + shedPlane.highEnd.x) / 2;
+                const highMidY = (shedPlane.highStart.y + shedPlane.highEnd.y) / 2;
+                const startIsHigh =
+                  Math.hypot(a.x - highMidX, a.y - highMidY) < Math.hypot(b.x - highMidX, b.y - highMidY);
+                return [id, [startIsHigh ? 0 : wall.lengthFt * 12]];
+              }),
+            )
+          : {},
       );
       /* A shed's tall wall takes cross-tilted panels; a peak has no tall
          side, so the set empties. */

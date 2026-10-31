@@ -1494,8 +1494,18 @@ export default function Building3DView({
            leaves room for the lift when it caps; this is the belt to that
            braces, because the two use different pitches on a flat-top
            roofline. */
-        const liftIn =
-          gableEndsFullHeight && roofPitchIn12 !== undefined ? roofTopAboveRooflineIn(thicknessIn, roofPitchIn12) : 0;
+        /* ⚠ FALLS BACK TO THE TILE'S OWN RAKE when no pitch prop arrives,
+           because a missing pitch used to make the lift silently ZERO — the
+           gable then stopped at the roof's underside and read as *"still not
+           tall enough"*. `roofPitchIn12` comes from `roofTrussLayoutContext`,
+           which withholds itself on several shapes; the rake a gable tile is
+           already cut to IS the roof's pitch, so it is the right answer and
+           not a guess. */
+        const tileRakeIn12 =
+          tile.widthIn > 0 ? (Math.abs(tile.rightEdgeHeightIn - tile.leftEdgeHeightIn) / tile.widthIn) * 12 : 0;
+        const liftIn = gableEndsFullHeight
+          ? roofTopAboveRooflineIn(thicknessIn, roofPitchIn12 ?? tileRakeIn12)
+          : 0;
         const headroomIn = GABLE_PANEL_MAX_HEIGHT_IN - Math.max(tile.leftEdgeHeightIn, tile.rightEdgeHeightIn) + gableEaveHeightIn;
         const appliedLiftIn = Math.max(0, Math.min(liftIn, headroomIn));
         const leftLocalIn = tile.leftEdgeHeightIn + appliedLiftIn - gableEaveHeightIn;

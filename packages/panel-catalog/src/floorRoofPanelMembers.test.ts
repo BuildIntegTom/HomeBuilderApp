@@ -719,14 +719,18 @@ describe("⚠ BOTH ends of a roof panel are PLUMB CUT", () => {
   const heightOf = (c: { yIn: number; zIn: number }) => c.zIn * SIN - c.yIn * COS;
   const horizOf = (c: { yIn: number; zIn: number }) => c.zIn * COS + c.yIn * SIN;
 
-  it("⚠ every joist is beveled at BOTH ends, each standing vertical", () => {
+  it("⚠ every joist's TALL end is plumb; the bottom chord's eave end tapers", () => {
     for (const id of ["joist-left-bottom", "joist-left-top", "joist-right-bottom", "joist-right-top"]) {
       const corners = roof().find((m) => m.memberId === id)!.position.sectionCornersIn!;
-      expect({ id, n: corners.length }).toEqual({ id, n: 4 });
-      /* Corners 0 and 3 are the eave end, 1 and 2 the tall end. Plumb means
-         each pair shares one world horizontal — one vertical plane. */
-      expect(horizOf(corners[0]!)).toBeCloseTo(horizOf(corners[3]!), 9);
+      /* Corners 1 and 2 are always the tall end, and plumb means they share
+         one world horizontal — one vertical plane. */
       expect(horizOf(corners[1]!)).toBeCloseTo(horizOf(corners[2]!), 9);
+      /* The TOP chord's eave end is plumb too (corners 0 and 3). The BOTTOM
+         chord's is not: it is cut along the seat so it tapers out to
+         nothing, which takes a fifth corner. */
+      const isTopChord = id.endsWith("-bottom");
+      expect({ id, n: corners.length }).toEqual({ id, n: isTopChord ? 4 : 5 });
+      if (isTopChord) expect(horizOf(corners[0]!)).toBeCloseTo(horizOf(corners[3]!), 9);
     }
   });
 
@@ -743,20 +747,20 @@ describe("⚠ BOTH ends of a roof panel are PLUMB CUT", () => {
     expect(eaveDeep!.zIn).toBeLessThan(eaveShallow!.zIn);
   });
 
-  it("⚠ the TOP chord is longer than the BOTTOM one by the seat it clears", () => {
-    /* > "starting from the inside of the wall with the bottom cord, and then
-       > the top edge goes towards the exterior" — Tommy, 2026-10-31.
-
-       The two chords end on DIFFERENT planes at the eave, so their lengths
-       differ by exactly the horizontal distance between those planes,
-       measured along the panel. Within a chord the two members still match,
-       because both of that chord's own ends are plumb. */
+  it("the two members of a chord always match each other", () => {
+    /* The left and right of a chord are the same stick; what differs is the
+       TOP chord against the BOTTOM one, because they meet the eave on
+       different planes. */
     const members = roof();
-    const topChord = ["joist-left-bottom", "joist-right-bottom"].map((id) => members.find((m) => m.memberId === id)!);
-    const bottomChord = ["joist-left-top", "joist-right-top"].map((id) => members.find((m) => m.memberId === id)!);
-    expect(new Set(topChord.map((m) => m.actualDimsIn.lengthIn)).size).toBe(1);
-    expect(new Set(bottomChord.map((m) => m.actualDimsIn.lengthIn)).size).toBe(1);
-    expect(topChord[0]!.actualDimsIn.lengthIn - bottomChord[0]!.actualDimsIn.lengthIn).toBeCloseTo((SEAT - LID) / COS, 9);
+    for (const [a, b] of [
+      ["joist-left-bottom", "joist-right-bottom"],
+      ["joist-left-top", "joist-right-top"],
+    ]) {
+      expect(members.find((m) => m.memberId === a)!.actualDimsIn.lengthIn).toBeCloseTo(
+        members.find((m) => m.memberId === b)!.actualDimsIn.lengthIn,
+        9,
+      );
+    }
   });
 
   it("⚠ both plates stand plumb, and they are cut to DIFFERENT heights", () => {
@@ -863,17 +867,18 @@ describe("⚠ BOTH ends of a roof panel are PLUMB CUT", () => {
     expect(SEAT * SIN).toBeCloseTo(4.9, 2);
     const members = roof();
     const noSeat = roof({ bearingSeatDepthIn: 0 });
-    /* The TALL end's wedge took nothing off the joists... */
-    for (const id of ["joist-left-bottom", "joist-right-bottom"]) {
+    /* The TALL end's wedge took nothing off either chord: every joist's
+       tall-end corners are untouched by asking for a seat. */
+    for (const id of ["joist-left-bottom", "joist-left-top"]) {
       const withSeat = members.find((m) => m.memberId === id)!.position.sectionCornersIn!;
       const without = noSeat.find((m) => m.memberId === id)!.position.sectionCornersIn!;
       expect(withSeat[1]).toEqual(without[1]);
       expect(withSeat[2]).toEqual(without[2]);
     }
-    /* ...while the EAVE moved the bottom chord in, and only the bottom one. */
-    expect(members.find((m) => m.memberId === "joist-left-top")!.actualDimsIn.lengthIn).toBeLessThan(
-      noSeat.find((m) => m.memberId === "joist-left-top")!.actualDimsIn.lengthIn,
-    );
+    /* ...while the EAVE cut the BOTTOM chord and left the top one alone. */
+    expect(members.find((m) => m.memberId === "joist-left-top")!.position.sectionCornersIn).toHaveLength(5);
+    expect(noSeat.find((m) => m.memberId === "joist-left-top")!.position.sectionCornersIn).toHaveLength(4);
+    expect(members.find((m) => m.memberId === "joist-left-bottom")!.position.sectionCornersIn).toHaveLength(4);
   });
 
   it("no seat asked for means no wedge and no eave cut, but the ends are still plumb", () => {
@@ -916,13 +921,32 @@ describe("⚠ the EAVE is a bird's mouth, not the tall end mirrored", () => {
     return [c[0]!, c[3]!]; // corners 0 and 3 are the eave end
   };
 
-  it("⚠ the BOTTOM chord starts at the wall's INSIDE face", () => {
-    /* The number that makes this his detail rather than a bevel: 15 1/2in
-       in from the outside, which is the wall. */
-    for (const [a, b] of [eaveCornersOf(roof(), "joist-left-top"), eaveCornersOf(roof(), "joist-right-top")]) {
-      expect(horizOf(a)).toBeCloseTo(SEAT, 9);
-      expect(horizOf(b)).toBeCloseTo(SEAT, 9);
+  it("⚠ the BOTTOM chord reaches FULL DEPTH at the wall's inside face", () => {
+    /* His two sentences about this end are the same shape read from two
+       sides: *"starting from the inside of the wall with the bottom cord"*
+       and *"the 2x4 bottom cord to triangle [out] until it's 0"*. The chord
+       is at its full 5 1/2in exactly at the inside face, and tapers from
+       there out to nothing. */
+    for (const id of ["joist-left-top", "joist-right-top"]) {
+      const corners = roof().find((m) => m.memberId === id)!.position.sectionCornersIn!;
+      const deepest = corners.find((c) => Math.abs(c.yIn - DEPTH) < 1e-9 && c.zIn < LENGTH / 2)!;
+      expect(horizOf(deepest)).toBeCloseTo(SEAT, 9);
     }
+  });
+
+  it("⚠ and it TAPERS from there, out to nothing on the seat", () => {
+    const corners = roof().find((m) => m.memberId === "joist-left-top")!.position.sectionCornersIn!;
+    expect(corners).toHaveLength(5);
+    /* Its eave edge is three corners, not two: full depth at the inside
+       face, a kink where the seat runs out at the fascia plate, and a last
+       point on the plate itself. They march steadily outward. */
+    const eaveEdge = [corners[3]!, corners[4]!, corners[0]!];
+    /* Full depth at the inside face, then out to the fascia plate — and the
+       last two share a world horizontal, because the kink IS the point where
+       the seat runs out at that plate. */
+    expect(horizOf(eaveEdge[1]!)).toBeLessThan(horizOf(eaveEdge[0]!));
+    expect(horizOf(eaveEdge[2]!)).toBeCloseTo(horizOf(eaveEdge[1]!), 9);
+    expect(horizOf(eaveEdge[2]!)).toBeCloseTo(LID, 9);
   });
 
   it("⚠ the TOP chord runs out to the fascia instead", () => {
@@ -934,10 +958,32 @@ describe("⚠ the EAVE is a bird's mouth, not the tall end mirrored", () => {
     }
   });
 
-  it("⚠ so the two chords are 13 1/4in apart at the eave, and that is the point", () => {
+  it("⚠ so at full depth the two chords are 13 1/4in apart", () => {
     const [top] = eaveCornersOf(roof(), "joist-left-bottom");
-    const [bottom] = eaveCornersOf(roof(), "joist-left-top");
-    expect(horizOf(bottom) - horizOf(top)).toBeCloseTo(SEAT - LID, 9);
+    const corners = roof().find((m) => m.memberId === "joist-left-top")!.position.sectionCornersIn!;
+    const deepest = corners.find((c) => Math.abs(c.yIn - DEPTH) < 1e-9 && c.zIn < LENGTH / 2)!;
+    expect(horizOf(deepest) - horizOf(top)).toBeCloseTo(SEAT - LID, 9);
+  });
+
+  it("⚠ two 2x4 webs at EACH end, in line with the joists", () => {
+    /* > "I would like 2 small 2x4 pieces acting as webbing/extra strength
+       > for the ends of the roof panels." — Tommy, 2026-10-31. Two per end,
+       > because a panel delivers its load on two joist lines and a web on
+       > one of them strengthens half the bearing. */
+    const members = roof();
+    const webs = members.filter((m) => m.memberId.startsWith("web-"));
+    expect(webs).toHaveLength(4);
+    for (const end of ["end", "start"]) {
+      expect(webs.filter((w) => w.memberId.startsWith(`web-${end}-`))).toHaveLength(2);
+    }
+    /* In line with the joists, and in the clear depth BETWEEN the chords —
+       which is also what keeps them clear of the girts. */
+    const joistXs = members.filter((m) => m.memberId.startsWith("joist-")).map((m) => m.position.xIn);
+    for (const w of webs) {
+      expect(joistXs).toContain(w.position.xIn);
+      expect(w.position.yIn).toBeGreaterThanOrEqual(JOIST_2X6_WIDTH_IN);
+      expect(w.position.yIn + w.actualDimsIn.widthIn).toBeLessThanOrEqual(DEPTH - JOIST_2X6_WIDTH_IN + 1e-9);
+    }
   });
 
   it("⚠ the fascia stands PLUMB and stops at the seat", () => {
@@ -951,13 +997,18 @@ describe("⚠ the EAVE is a bird's mouth, not the tall end mirrored", () => {
     expect(fascia.actualDimsIn.widthIn).toBeLessThan(DEPTH);
   });
 
-  it("⚠ the seat is LEVEL and, with the fascia, covers the whole wall", () => {
-    const seat = roof().find((m) => m.memberId === "eave-seat-skin")!;
-    const corners = seat.position.sectionCornersIn!;
-    // Its bearing face: two corners at one height.
-    expect(heightOf(corners[0]!)).toBeCloseTo(heightOf(corners[1]!), 9);
-    // Measured horizontally, seat + fascia = the wall depth.
-    expect(Math.abs(horizOf(corners[1]!) - horizOf(corners[0]!)) + LID).toBeCloseTo(SEAT, 9);
+  it("⚠ the seat is LEVEL, and with the fascia it covers the whole wall", () => {
+    /* ⚠ There is no separate seat member: the BOTTOM CHORD'S OWN TAPERED
+       EDGE is the seat, which is why it is cut along a level plane. A skin
+       laid on top of it lifted the chord 3/4in, and a level plane lifted
+       3/4in moves 2 1/4in HORIZONTALLY at 4:12 — pushing the chord's full
+       depth past the wall's inside face, against his own description. */
+    const corners = roof().find((m) => m.memberId === "joist-left-top")!.position.sectionCornersIn!;
+    const deepest = corners[3]!;
+    const kink = corners[4]!;
+    expect(heightOf(deepest)).toBeCloseTo(heightOf(kink), 9);
+    // Chord bearing plus the fascia plate's own 2 1/4in is the wall depth.
+    expect(Math.abs(horizOf(deepest) - horizOf(kink)) + LID).toBeCloseTo(SEAT, 9);
   });
 
   it("⚠ and nothing in the panel overlaps anything else, at any span", () => {

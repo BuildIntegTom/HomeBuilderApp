@@ -336,6 +336,75 @@ function plumbEndCut(o: FloorRoofPanelOptions, atEnd: "start" | "end" = "end"): 
   };
 }
 
+/** How far a roof panel's end webs run back along the span. */
+export const ROOF_PANEL_END_WEB_LENGTH_IN = 12;
+
+/**
+ * ⚠ **THE TWO END WEBS**, one on each joist line, at each end of a roof
+ * panel.
+ *
+ * > *"I would like 2 small 2x4 pieces acting as webbing/extra strength for
+ * > the ends of the roof panels."* — Tommy, 2026-10-31
+ *
+ * They stand between the two chords, in line with the joists, where the
+ * panel's reaction is delivered — two per end, because the panel has two
+ * joist lines and a web on only one of them would strengthen half the
+ * bearing. ⚠ Read as two PER END, not two per panel; a panel delivers its
+ * load at both.
+ *
+ * ⚠ They sit in the clear depth BETWEEN the chords and in the panel's two
+ * EDGE strips, so they miss the girts (which are cut to the clear width
+ * between joists) without either having to know about the other.
+ */
+function buildEndWebs(
+  o: FloorRoofPanelOptions,
+  plumb: PlumbEndCut | null,
+  eave: EaveCut | null,
+  lidThicknessIn: number,
+): PanelMember[] {
+  if (!plumb && !eave) return [];
+  const gapStartIn = JOIST_2X6_WIDTH_IN;
+  const gapEndIn = o.depthIn - JOIST_2X6_WIDTH_IN;
+  const clearIn = gapEndIn - gapStartIn;
+  if (clearIn < PLATE_2X4_WIDTH_IN) return [];
+  const y0In = gapStartIn + (clearIn - PLATE_2X4_WIDTH_IN) / 2;
+  const y1In = y0In + PLATE_2X4_WIDTH_IN;
+
+  const out: PanelMember[] = [];
+  for (const [atEnd, zStartIn] of [
+    /* ⚠ Taken at the depth where each end reaches FURTHEST INTO the panel,
+       so the web butts the plate rather than passing through it — the deep
+       edge at the tall end, the shallow one at the eave, because the two
+       lean opposite ways. */
+    ["end", plumb ? plumb.setBackAtYIn(y1In, lidThicknessIn) - ROOF_PANEL_END_WEB_LENGTH_IN : null],
+    ["start", eave ? eave.fasciaAtYIn(y0In) + lidThicknessIn / eave.cos : lidThicknessIn],
+  ] as [string, number | null][]) {
+    if (zStartIn === null) continue;
+    const lengthIn = Math.min(ROOF_PANEL_END_WEB_LENGTH_IN, o.lengthIn / 4);
+    if (!(lengthIn > 0)) continue;
+    for (const [side, xIn] of [
+      ["left", 0],
+      ["right", o.widthIn - JOIST_2X6_THICKNESS_IN],
+    ] as [string, number][]) {
+      out.push(
+        lumber(
+          `web-${atEnd}-${side}`,
+          "blocking",
+          "2x4",
+          { thicknessIn: JOIST_2X6_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn },
+          "vertical",
+          0,
+          { xIn, yIn: y0In, zIn: zStartIn },
+          side === "left" && atEnd === "end"
+            ? `end web — ties the two chords where the panel bears, in line with the ${side} joist`
+            : undefined,
+        ),
+      );
+    }
+  }
+  return out;
+}
+
 /**
  * ⚠ **THE EAVE END IS A BIRD'S MOUTH WITH A PLUMB FASCIA, and it is NOT
  * the tall end mirrored.**
@@ -386,6 +455,22 @@ interface EaveCut {
   /** How far through the depth a plane set back from the fascia meets the
    * level seat — the mirror of the tall end's own `levelBottomYIn`. */
   seatBottomYIn: (perpendicularIn: number) => number;
+  /**
+   * ⚠ The SEAT itself, as a span position at a given depth — what the
+   * bottom chord is cut along so it tapers out to nothing.
+   *
+   * > *"...and for the 2x4 bottom cord to triangle [out] until it's 0."* —
+   * > Tommy, 2026-10-31
+   *
+   * Cut square at the wall's inside face the chord ends blunt, bearing on
+   * its last inch. Cut along the seat it lies ON the seat for the whole wall
+   * depth and feathers to nothing where the seat meets the fascia — the
+   * same shape read from the other side, and the reason both of his
+   * sentences about this end are true at once.
+   */
+  seatAtYIn: (yIn: number) => number;
+  /** Where the seat runs out at the fascia plate — the taper's own point. */
+  taperKinkYIn: number;
 }
 
 function eaveCut(o: FloorRoofPanelOptions): EaveCut | null {
@@ -409,6 +494,9 @@ function eaveCut(o: FloorRoofPanelOptions): EaveCut | null {
     innerAtYIn: (yIn: number) => (seatIn - yIn * sin) / cos,
     fasciaHeightIn: seatYIn / cos,
     seatBottomYIn: (perpendicularIn: number) => seatYIn + perpendicularIn * sin,
+    /* The level plane through the seat, solved for the span at a depth. */
+    seatAtYIn: (yIn: number) => (yIn * cos - seatYIn / cos) / sin,
+    taperKinkYIn: seatYIn + (SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN) * sin,
   };
 }
 
@@ -480,49 +568,14 @@ function buildEaveEnd(o: FloorRoofPanelOptions, eave: EaveCut): PanelMember[] {
     index += 1;
   }
 
-  /* ⚠ The SEAT: the one face in the panel that is level, because it is the
-     one that lands on a top plate. It runs the full wall depth, from the
-     fascia's foot back to where the bottom chord starts. Its thickness goes
-     straight UP into the panel — direction (-cos, +sin) through (depth,
-     span) — not along either axis. */
-  const upYIn = SKIN_THICKNESS_IN * eave.cos;
-  const upZIn = SKIN_THICKNESS_IN * eave.sin;
-  /* ⚠ The seat starts at the FASCIA'S INNER FACE, not at the panel's outer
-     edge — the same arrangement the tall end's cheeks have. Running it to
-     the outer edge put it in the same space as the fascia itself, which the
-     overlap check caught: 8 pairs. The fascia's own 2 1/4in of full-width
-     solid is the outermost bearing and the seat carries the remaining
-     13 1/4in, which is the wall. */
-  const lidThicknessIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
-  const footYIn = eave.seatBottomYIn(lidThicknessIn);
-  const footZIn = eave.fasciaAtYIn(footYIn) + lidThicknessIn / eave.cos;
-  const heelZIn = eave.innerAtYIn(o.depthIn);
-  out.push({
-    memberId: "eave-seat-skin",
-    material: "plywood",
-    speciesGrade: null,
-    plySpec: STRUCTURAL_GIRT_PLY_SPEC,
-    nominalSize: null,
-    actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: eave.seatIn - lidThicknessIn, lengthIn: o.widthIn },
-    orientation: "flat",
-    position: {
-      xIn: 0,
-      yIn: footYIn,
-      zIn: footZIn,
-      rotationDeg: 0,
-      sectionCornersIn: [
-        { yIn: footYIn, zIn: footZIn },
-        { yIn: o.depthIn, zIn: heelZIn },
-        { yIn: o.depthIn - upYIn, zIn: heelZIn + upZIn },
-        { yIn: footYIn - upYIn, zIn: footZIn + upZIn },
-      ],
-    },
-    role: "skin",
-    qty: 1,
-    notes:
-      `the level bearing seat — ${(eave.seatIn - lidThicknessIn).toFixed(3)}in here plus the fascia's own ` +
-      `${lidThicknessIn}in makes the ${eave.seatIn}in wall depth under it`,
-  });
+  /* ⚠ **NO SEPARATE SEAT SKIN**, and there was one until the bottom chord
+     started tapering. A skin laid on the seat lifts the chord 3/4in, and a
+     level plane lifted 3/4in moves 2 1/4in HORIZONTALLY on a 4:12 — which
+     put the chord's full depth 2 1/4in past the wall's inside face instead
+     of on it, against his own description of this end. The chord bears on
+     the seat directly now, the same arrangement the tall end has: the plate
+     carries the outer 2 1/4in across the full width and each chord carries
+     its own joist line. */
 
   return out;
 }
@@ -742,14 +795,30 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
          the seat cut. Without a seat there is nothing to decide and both
          ends sit at the plate, as a floor's do. */
       const eaveBelowSeat = eave !== null && (nearYIn + farYIn) / 2 >= eave.seatYIn;
+      /* ⚠ The BOTTOM chord is cut along the SEAT, so it tapers out to
+         nothing instead of stopping blunt — but never past the fascia
+         plate, which is what the max() clips it to. The kink between those
+         two boundaries is at `seatBottomYIn(lid)`, the seat's own foot on
+         the plate's inner face, so the two meet exactly there. */
       const eavePlaneAtYIn = (atYIn: number) =>
         eave === null
           ? lidThicknessIn
           : eaveBelowSeat
-            ? eave.innerAtYIn(atYIn)
+            ? Math.max(eave.seatAtYIn(atYIn), eave.fasciaAtYIn(atYIn) + lidThicknessIn / eave.cos)
             : eave.fasciaAtYIn(atYIn) + lidThicknessIn / eave.cos;
       const nearStartIn = eavePlaneAtYIn(nearYIn);
       const farStartIn = eavePlaneAtYIn(farYIn);
+      /* Where the seat runs out at the plate: the taper's own point, and the
+         only corner that is on neither of the two boundaries alone. */
+      const taperKinkYIn = eave !== null && eaveBelowSeat ? eave.taperKinkYIn : null;
+      /* ⚠ Appended LAST so corners 0..3 stay the four they have always been
+         — eave@near, tall@near, tall@far, eave@far. Several tests and every
+         reader index them that way; the taper adds a fifth corner rather
+         than renumbering the other four. */
+      const taperCorners: SectionSpacePoint2D[] =
+        taperKinkYIn !== null && taperKinkYIn > nearYIn && taperKinkYIn < farYIn
+          ? [{ yIn: taperKinkYIn, zIn: eavePlaneAtYIn(taperKinkYIn) }]
+          : [];
       out.push({
         memberId: `joist-${side}-${face}`,
         material: "dimensional_lumber",
@@ -776,6 +845,7 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
             { yIn: nearYIn, zIn: nearEndIn },
             { yIn: farYIn, zIn: farEndIn },
             { yIn: farYIn, zIn: farStartIn },
+            ...taperCorners,
           ],
         },
         role: "stud",
@@ -1068,6 +1138,7 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
   const plumb = plumbEndCut(o, "end");
   const members: PanelMember[] = [...buildJoists(o), ...buildStructuralLid(o, "start"), ...buildStructuralLid(o, "end")];
   if (plumb) members.push(...buildTallEndWedge(o, plumb));
+  members.push(...buildEndWebs(o, plumb, eaveCut(o), SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN));
 
   const girtEnds = o.kind === "roof" ? [] : (o.structuralGirtEnds ?? []);
   for (const end of girtEnds) {
