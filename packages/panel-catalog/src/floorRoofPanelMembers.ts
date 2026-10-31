@@ -1108,6 +1108,34 @@ export function lastTrueSheetSeamIn(panelWidthsIn: readonly number[], sheetLengt
 /** The flat leg's bearing width. Defaults to the wall depth, since it *"sits
  * flat on the top plate"* and a top plate is the full depth of its wall.
  * ⚠ A reading of his sentence, not a number he gave. */
+/**
+ * ⚠ **HOW FAR THE ROOF'S TOP SURFACE SITS ABOVE THE PLANE ITS HEIGHTS ARE
+ * QUOTED ON — and the ONE place that number may come from.**
+ *
+ * It is the panel's PLUMB thickness, `depth / cos(pitch)`: 16 3/8in for a
+ * 15 1/2in panel at 4:12, not 15 1/2in. A roof panel leans, so the vertical
+ * distance through it is longer than it is deep.
+ *
+ * Two callers need it and they have to agree exactly, which is why this
+ * exists rather than each doing its own trigonometry:
+ *
+ *  - the 3D view's roof ANCHOR, which must clear the plane by this much for
+ *    the panel's underside to land on it (the anchor is the panel's TOP,
+ *    because member Y runs downward once the panel is tipped);
+ *  - the GABLE END's lift, which must rise by this much for its top plate to
+ *    finish flush with the roof's top surface.
+ *
+ * They were computed separately once — one from the depth, one from the
+ * plumb thickness — and the roof hung 0.84in below its own plane while the
+ * gable rose the full amount. *"Gable end panels should be installed as the
+ * top of the roof panels, it looks like they want to go up halfway into the
+ * roof panel."* — Tommy, 2026-10-30. Flush is true by construction now:
+ * both read this.
+ */
+export function roofTopAboveRooflineIn(panelDepthIn: number, pitchIn12: number): number {
+  return (panelDepthIn * Math.hypot(12, pitchIn12)) / 12;
+}
+
 export const ROOF_CAP_SEAT_WIDTH_IN = 15.5;
 
 export interface RoofCapGeometry {

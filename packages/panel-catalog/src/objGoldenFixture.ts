@@ -38,6 +38,39 @@ function goldenStandardPanelMembers(): PanelMember[] {
  */
 const CAPTURED_GIRT_WEB_HEIGHT_IN = 8.75;
 
+/**
+ * ⚠ The gable panel's top assembly AS IT WAS when the fixture was captured,
+ * for the third time and the same reason.
+ *
+ * On 2026-10-31 the top skin and the two top plates stopped dropping their
+ * centrelines by a PERPENDICULAR half-thickness measured as if it were
+ * VERTICAL. Read at a fixed x that left the skin's face plane 0.020in low
+ * and the plate 0.081in inside it — which is what stopped a gable's top
+ * plate finishing flush with the roof above it (Tommy: *"Let's get gable end
+ * panels top plate edge to be flush with the top of the roof panels"*).
+ *
+ * Only `position.zIn` moved. The rip angle, the cut length and every other
+ * member are untouched, and a tilted box is a shape this fixture covers many
+ * times over — so holding these three at their captured heights loses no
+ * coverage and keeps the fixture pinning the EXPORTER, which is what it is
+ * for.
+ */
+function goldenGablePanelMembers(): PanelMember[] {
+  const widthIn = 48;
+  const leftIn = 12;
+  const rightIn = 60;
+  const cosRake = Math.cos(Math.atan2(rightIn - leftIn, widthIn));
+  /* How far the old vertical-as-perpendicular reading sat BELOW the true
+     one, for a given perpendicular offset. */
+  const asCapturedDropIn = (perpendicularIn: number) => perpendicularIn / cosRake - perpendicularIn;
+  return buildGablePanelMembers(widthIn, 14, leftIn, rightIn, false).map((m) => {
+    const perpendicularIn =
+      m.memberId === "top_plate_skin" ? 0.75 / 2 : m.memberId.startsWith("top_plate_2x4_") ? 0.75 + 1.5 / 2 : 0;
+    if (perpendicularIn === 0) return m;
+    return { ...m, position: { ...m.position, zIn: m.position.zIn + asCapturedDropIn(perpendicularIn) } };
+  });
+}
+
 function asCaptured(members: PanelMember[]): PanelMember[] {
   return members.map((m) => {
     if (!/^girt_\d+_web$/.test(m.memberId)) return m;
@@ -159,7 +192,7 @@ export function goldenMembers(): PanelMember[] {
     ...asCaptured(goldenStandardPanelMembers()),
     ...asCaptured(buildBracedPanelMembers(48, 14, 96, true, "chevron", false, true)),
     ...asCaptured(buildBracedPanelMembers(48, 14, 96, false, "hatch", true, true)),
-    ...asCaptured(buildGablePanelMembers(48, 14, 12, 60, false)),
+    ...asCaptured(goldenGablePanelMembers()),
     ...buildTrussPlateMembers(96, 14),
     ...buildBoxBeamMembers(96, 14),
     ...handBuilt,

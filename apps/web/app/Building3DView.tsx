@@ -47,6 +47,8 @@ import {
   buildFloorRoofPanelMembers,
   buildRoofCatcherBeamMembers,
   buildStructuralColumnMembers,
+  roofTopAboveRooflineIn,
+  GABLE_PANEL_MAX_HEIGHT_IN,
   buildCrossTiltPanelMembers,
   PLATE_2X4_WIDTH_IN,
   ridgeBeamLayout,
@@ -722,6 +724,11 @@ interface Building3DViewProps {
   footprint: Footprint | null;
   wallSlots: Record<string, PanelSlot[]>;
   wallHeightFt: number;
+  /** ⚠ Gable ends run up to the TOP of the roof panels rather than
+   * stopping under them — Tommy's default, 2026-10-29. The lift itself is
+   * derived here from the roof's own pitch and depth rather than passed in,
+   * so it cannot disagree with where this same view puts the roof. */
+  gableEndsFullHeight?: boolean;
   /**
    * ⚠ How far each roof plane pulls BACK from the plan's edge at the two
    * gable ends — the gable walls' own depth, or 0.
@@ -841,11 +848,11 @@ interface Building3DViewProps {
       isSafetyGap?: boolean;
       verticalGapIn?: { leftIn: number; rightIn: number };
       /** This tile has been split into a window (Tommy: "add an option to
-       * ⚠ `roofTopLiftIn` — how far this tile's top rises ABOVE the
-       * roofline, so the gable closes against the roof's top surface rather
-       * than its underside. Absent or 0 is the old behaviour, the gable
-       * stopping under the roof. Kept separate from the two edge heights
-       * because those are read as the roof's underside all over page.tsx.
+       * ⚠ The two edge heights are the roof's UNDERSIDE. The lift that
+       * carries a gable up to the roof's TOP is NOT carried here — this
+       * view derives it from the roof's own pitch and depth, so it cannot
+       * disagree with where this same view puts the roof. Folding it into
+       * these heights broke the pitch readout once.
        *
        * click-edit gable end panels to become window gable end panels...
        * dont forget jack studs") — rendered as jack studs + sill below,
@@ -859,7 +866,6 @@ interface Building3DViewProps {
        * real Column Panel via buildColumnPanelMembers, not the sloped
        * Gable End Panel shape every other tile uses. */
       isColumn?: boolean;
-      roofTopLiftIn?: number;
     }[]
   >;
   /** Whether the Roof system is in scope at all (page.tsx's own
@@ -1145,6 +1151,7 @@ export default function Building3DView({
   wallHeightFt,
   maxPanelHeightIn,
   thicknessIn,
+  gableEndsFullHeight = false,
   roofGableEndInsetIn = 0,
   includeNailer,
   primaryCornerIds,
@@ -1471,14 +1478,28 @@ export default function Building3DView({
         // order — NOT min/max'd — so a tile whose real roofline falls
         // left-to-right (e.g. one to the right of a peak) builds correctly
         // mirrored, instead of always assuming the low edge is on the left.
-        /* ⚠ `roofTopLiftIn` is what makes a gable end run up to the TOP of
-           the roof panels rather than stopping under them (Tommy,
-           2026-10-29). It is added HERE and nowhere upstream: the tile's two
-           edge heights are the roof's underside, which is what every pitch
-           and truss derivation in page.tsx reads. */
-        const liftIn = tile.roofTopLiftIn ?? 0;
-        const leftLocalIn = tile.leftEdgeHeightIn + liftIn - gableEaveHeightIn;
-        const rightLocalIn = tile.rightEdgeHeightIn + liftIn - gableEaveHeightIn;
+        /* ⚠ THE LIFT IS READ FROM THE SAME FUNCTION THE ROOF'S ANCHOR USES,
+           with the same depth and the same pitch, so a gable's top plate
+           finishes flush with the roof's top surface by construction rather
+           than by two pieces of trigonometry agreeing.
+
+           It is applied HERE and nowhere upstream: the tile's two edge
+           heights are the roof's UNDERSIDE, which is what every pitch and
+           truss derivation in page.tsx reads off them. Folding it in broke
+           the pitch readout once already.
+
+           ⚠ Clamped to the Gable End Panel's own fabrication maximum, which
+           `buildGablePanelMembers` enforces by THROWING — and a throw in
+           here takes the whole viewport, not one panel. page.tsx already
+           leaves room for the lift when it caps; this is the belt to that
+           braces, because the two use different pitches on a flat-top
+           roofline. */
+        const liftIn =
+          gableEndsFullHeight && roofPitchIn12 !== undefined ? roofTopAboveRooflineIn(thicknessIn, roofPitchIn12) : 0;
+        const headroomIn = GABLE_PANEL_MAX_HEIGHT_IN - Math.max(tile.leftEdgeHeightIn, tile.rightEdgeHeightIn) + gableEaveHeightIn;
+        const appliedLiftIn = Math.max(0, Math.min(liftIn, headroomIn));
+        const leftLocalIn = tile.leftEdgeHeightIn + appliedLiftIn - gableEaveHeightIn;
+        const rightLocalIn = tile.rightEdgeHeightIn + appliedLiftIn - gableEaveHeightIn;
         const tallerLocalIn = Math.max(leftLocalIn, rightLocalIn);
         let members: PanelMember[];
         if (tile.isColumn) {
@@ -1574,7 +1595,7 @@ export default function Building3DView({
       });
     }
     return result.map((r) => ({ ...r, anchorYFt: gableBaseYFt }));
-  }, [footprint, gableTilesByWallId, roofBaseHeightIn, roofEnabled, sharedRoofBearingHeightIn, thicknessIn, includeNailer, jackStudConfig, standardWidthIn]);
+  }, [footprint, gableEndsFullHeight, gableTilesByWallId, roofBaseHeightIn, roofEnabled, roofPitchIn12, sharedRoofBearingHeightIn, thicknessIn, includeNailer, jackStudConfig, standardWidthIn]);
 
   // 1-3 real roof-bearing (truss plate/box beam) segments per wall (see
   // computeRoofBearingSegments) — a wall with partial Box Beam coverage
@@ -1864,19 +1885,13 @@ export default function Building3DView({
               kind: "roof",
               anchorX: originX + ux * alongFt,
               anchorZ: originY + uy * alongFt,
-              /* ⚠ PLUMB thickness, not the panel's depth — and this was the
-                 bug behind *"Gable end panels... want to go up halfway into
-                 the roof panel"*.
-
-                 The anchor is the panel's TOP at its low edge, because
-                 member Y runs downward once the panel is tipped. For the
-                 UNDERSIDE to land on the plane the anchor has to clear it by
-                 the panel's vertical thickness, `depth / cos(pitch)` —
-                 16 3/8in at 4:12, not 15 1/2in. With the depth the roof hung
-                 0.84in BELOW its own plane and its top reached only 15 1/2in
-                 above it, while the gable lifted the full 16 3/8in and
-                 overshot by exactly that. Measured, not guessed. */
-              anchorYFt: plane.lowHeightFt + thicknessIn / Math.cos(tiltRad) / IN_PER_FT,
+              /* ⚠ The anchor is the panel's TOP at its low edge, because
+                 member Y runs downward once the panel is tipped, so it has
+                 to clear the plane by the panel's PLUMB thickness for the
+                 underside to land on it. `roofTopAboveRooflineIn` is that
+                 number and the gable's lift reads the SAME function — see
+                 its doc comment for why they may not be computed apart. */
+              anchorYFt: plane.lowHeightFt + roofTopAboveRooflineIn(thicknessIn, roofPitchIn12) / IN_PER_FT,
               rotationRad,
               tiltRad,
               boxIn: { widthIn, depthIn: thicknessIn, lengthIn: plane.slopeFt * IN_PER_FT },

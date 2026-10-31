@@ -146,7 +146,13 @@ describe("buildGablePanelMembers", () => {
     const lowX = topSkin.position.xIn + -Math.sin(tiltRad) * halfLen;
     const lowZ = topSkin.position.zIn + Math.cos(tiltRad) * halfLen;
     expect(lowX).toBeCloseTo(0, 4);
-    expect(lowZ).toBeCloseTo(LOW_EDGE_IN - 0.375, 4); // center of the 0.75in-thick skin at the low edge
+    /* ⚠ The centreline sits half a thickness below the edge height measured
+       PERPENDICULAR to the board, which is `0.375 / cos(rake)` read
+       vertically — not 0.375. Correcting that is what finally put the top
+       skin's face plane ON the edge heights it is handed, and so flush with
+       the roof above it (Tommy, 2026-10-31). See gableMeetsRoof.test.ts. */
+    const rakeRad = Math.atan2(HIGH_EDGE_IN - LOW_EDGE_IN, WIDTH_IN);
+    expect(lowZ).toBeCloseTo(LOW_EDGE_IN - 0.375 / Math.cos(rakeRad), 4);
   });
 
   it("has no diagonal bracing — a standard panel with just an inclined top, for the default construction", () => {

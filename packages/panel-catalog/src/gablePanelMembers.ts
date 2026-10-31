@@ -149,6 +149,23 @@ export function buildGablePanelMembers(
   // face's own extra length beyond a square cut, measured across the
   // board's thickness, is thicknessIn / cos(angle).
   const plumbCutEdgeLengthIn = (thicknessIn: number) => thicknessIn / Math.cos((ripAngleDeg * Math.PI) / 180);
+  /**
+   * ⚠ **A PERPENDICULAR THICKNESS IS NOT A VERTICAL ONE**, and the top
+   * assembly used to subtract them as if they were.
+   *
+   * `tiltedMember` takes a CENTRELINE and lays the board's thickness
+   * perpendicular to it, so dropping a centreline by half the board's
+   * thickness leaves its top face `half x (1/cos - 1)` ABOVE where it was
+   * meant to be. Measured at 4:12: the top skin stood 0.020in proud of the
+   * edge height it was handed, and the 2x4 plate beneath it ran 0.081in INTO
+   * the skin it is supposed to sit under.
+   *
+   * Small numbers, and exactly the ones that stop a gable's top plate
+   * finishing flush with the roof above it — which is what he asked for.
+   * Dividing by cos turns a perpendicular offset into the vertical drop that
+   * puts the face where it was asked for.
+   */
+  const verticalForPerpendicularIn = (perpendicularIn: number) => perpendicularIn / Math.cos((ripAngleDeg * Math.PI) / 180);
 
   const members: PanelMember[] = [
     {
@@ -198,9 +215,9 @@ export function buildGablePanelMembers(
       PLATE_2X4_THICKNESS_IN,
       PLATE_2X4_WIDTH_IN,
       PLATE_END_CLEARANCE_IN,
-      platePeakLeftIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
+      platePeakLeftIn - verticalForPerpendicularIn(SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN / 2),
       widthIn - PLATE_END_CLEARANCE_IN,
-      platePeakRightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
+      platePeakRightIn - verticalForPerpendicularIn(SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN / 2),
       PLATE_2X4_WIDTH_IN / 2,
       "plate",
       `exterior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${plateRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.`,
@@ -213,9 +230,9 @@ export function buildGablePanelMembers(
       PLATE_2X4_THICKNESS_IN,
       PLATE_2X4_WIDTH_IN,
       PLATE_END_CLEARANCE_IN,
-      platePeakLeftIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
+      platePeakLeftIn - verticalForPerpendicularIn(SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN / 2),
       widthIn - PLATE_END_CLEARANCE_IN,
-      platePeakRightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN / 2,
+      platePeakRightIn - verticalForPerpendicularIn(SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN / 2),
       depthIn - PLATE_2X4_WIDTH_IN / 2,
       "plate",
       `interior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${plateRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.`,
@@ -228,9 +245,9 @@ export function buildGablePanelMembers(
       SKIN_THICKNESS_IN,
       depthIn,
       0,
-      leftHeightIn - SKIN_THICKNESS_IN / 2,
+      leftHeightIn - verticalForPerpendicularIn(SKIN_THICKNESS_IN / 2),
       widthIn,
-      rightHeightIn - SKIN_THICKNESS_IN / 2,
+      rightHeightIn - verticalForPerpendicularIn(SKIN_THICKNESS_IN / 2),
       depthIn / 2,
       "skin",
       `Rip at ${ripAngleDeg.toFixed(2)}deg, cut to ${ripLengthIn.toFixed(2)}in long (point to butt). Panel-width edges are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the sheet's 0.75in thickness to a ${plumbCutEdgeLengthIn(SKIN_THICKNESS_IN).toFixed(2)}in cut edge.`,

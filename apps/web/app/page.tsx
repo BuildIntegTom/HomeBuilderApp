@@ -6260,7 +6260,6 @@ export default function LayoutEditor() {
         windowHeightIn?: number;
         windowSillHeightIn?: number;
         isColumn?: boolean;
-        roofTopLiftIn?: number;
       }[]
     > = {};
     for (const wall of footprint.walls) {
@@ -6320,8 +6319,12 @@ export default function LayoutEditor() {
            firstTile.leftEdgeHeightIn`, where the peak comes from the profile
            points instead. Adding 16 3/8in to the tile and not to the peak
            shrank the rise by exactly that, and a 4:12 roof started reporting
-           itself as 2.5:12. Every consumer keeps reading the underside; only
-           the renderers add `roofTopLiftIn`. */
+           itself as 2.5:12. Every consumer keeps reading the underside, and
+           the 3D view derives the lift itself from the same
+           `roofTopAboveRooflineIn` its roof anchor uses — one function, so
+           the two cannot disagree about where the roof's top is. `liftIn`
+           survives HERE only to keep the cap below clear of the Gable End
+           Panel's 8ft maximum once that lift is applied downstream. */
         const liftIn = gableTileRoofTopOffsetIn(t.leftHeightIn, t.rightHeightIn, t.widthIn);
         /* ⚠ THE CAP HAS TO MAKE ROOM FOR THE LIFT, because
            `buildGablePanelMembers` THROWS above 8ft rather than clamping —
@@ -6340,7 +6343,6 @@ export default function LayoutEditor() {
           ...(t.isSafetyGap ? { isSafetyGap: true } : {}),
           ...(t.isWindow ? { isWindow: true, windowHeightIn: t.windowHeightIn, windowSillHeightIn: t.windowSillHeightIn } : {}),
           ...(t.isColumn ? { isColumn: true } : {}),
-          ...(liftIn > 0 ? { roofTopLiftIn: liftIn } : {}),
         };
       });
     }
@@ -12750,6 +12752,7 @@ export default function LayoutEditor() {
                     (footprint && ringRoofGableBlockReason(footprint) !== null ? DEFAULT_ROOF_PITCH_IN12 : undefined)
                   }
                   roofEaveHeightFt={gableEaveHeightIn / 12}
+                  gableEndsFullHeight={gableEndsFullHeight}
                   roofGableEndInsetIn={gableEndsFullHeight ? thicknessIn : 0}
                   roofForm={roofFormFromProfile}
                   roofDeckSolid={showRoofDeck3DSolid}
