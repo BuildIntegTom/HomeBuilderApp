@@ -6357,6 +6357,10 @@ export default function LayoutEditor() {
     roofProfilePointHeightsFt,
     maxGablePanelHeightIn,
     standardWidthIn,
+    /* ⚠ Read at the `computeGableTiledRow` call to drop the inset and to
+       leave the cap room for the lift. Missing, a gable row kept its old
+       width and its old cap after the toggle flipped. */
+    gableEndsFullHeight,
     trussPlateInsetIn,
     heelHeightIn,
     roofBearingAnchorMode,
@@ -12765,7 +12769,7 @@ export default function LayoutEditor() {
                   onSetWindowHeight={handleSetWindowHeight}
                   gableTilesByWallId={gableTilesByWallId}
                   roofEnabled={roofEnabled}
-                  trussPlateInsetIn={trussPlateInsetIn}
+                  trussPlateInsetIn={gableEndsFullHeight ? 0 : trussPlateInsetIn}
                   boxBeamCoverageByWallId={boxBeamCoverageByWallId}
                   boxBeamSizeId={boxBeamSizeId}
                   midWallBeamsByWallId={midWallBeamsByStoryAndWallId.ground}
@@ -12838,7 +12842,7 @@ export default function LayoutEditor() {
               standardWidthIn={standardWidthIn}
               gableTilesByWallId={gableTilesByWallId}
               roofEnabled={roofEnabled}
-              trussPlateInsetIn={trussPlateInsetIn}
+              trussPlateInsetIn={gableEndsFullHeight ? 0 : trussPlateInsetIn}
               boxBeamCoverageByWallId={boxBeamCoverageByWallId}
               boxBeamSizeId={boxBeamSizeId}
               midWallBeamsByWallId={midWallBeamsByStoryAndWallId.ground}

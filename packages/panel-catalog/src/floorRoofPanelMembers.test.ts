@@ -743,24 +743,31 @@ describe("⚠ BOTH ends of a roof panel are PLUMB CUT", () => {
     expect(eaveDeep!.zIn).toBeLessThan(eaveShallow!.zIn);
   });
 
-  it("⚠ which makes every joist the SAME length, and that is not a coincidence", () => {
-    /* One bevel adds what the other takes. The cut length is the span less
-       the depth's own run and one lid at each end, measured along the plumb
-       faces — and it no longer depends on which joist of the pair it is. */
-    const joists = roof().filter((m) => m.memberId.startsWith("joist-"));
-    expect(joists).toHaveLength(4);
-    const expectedIn = LENGTH - DEPTH * TAN - (2 * LID) / COS;
-    for (const j of joists) expect(j.actualDimsIn.lengthIn).toBeCloseTo(expectedIn, 9);
-    expect(expectedIn).toBeCloseTo(206.09, 2);
+  it("⚠ the TOP chord is longer than the BOTTOM one by the seat it clears", () => {
+    /* > "starting from the inside of the wall with the bottom cord, and then
+       > the top edge goes towards the exterior" — Tommy, 2026-10-31.
+
+       The two chords end on DIFFERENT planes at the eave, so their lengths
+       differ by exactly the horizontal distance between those planes,
+       measured along the panel. Within a chord the two members still match,
+       because both of that chord's own ends are plumb. */
+    const members = roof();
+    const topChord = ["joist-left-bottom", "joist-right-bottom"].map((id) => members.find((m) => m.memberId === id)!);
+    const bottomChord = ["joist-left-top", "joist-right-top"].map((id) => members.find((m) => m.memberId === id)!);
+    expect(new Set(topChord.map((m) => m.actualDimsIn.lengthIn)).size).toBe(1);
+    expect(new Set(bottomChord.map((m) => m.actualDimsIn.lengthIn)).size).toBe(1);
+    expect(topChord[0]!.actualDimsIn.lengthIn - bottomChord[0]!.actualDimsIn.lengthIn).toBeCloseTo((SEAT - LID) / COS, 9);
   });
 
-  it("⚠ both plates stand plumb, and only the TALL one reaches past the panel", () => {
+  it("⚠ both plates stand plumb, and they are cut to DIFFERENT heights", () => {
     const members = roof();
     /* The tall end's plate covers the panel AND its bearing wedge, because
-       that whole face is what the exterior wall laps over. The eave's stops
-       at the underside: there is no wedge there to cover. */
+       that whole face is what the exterior wall laps over. The eave's fascia
+       is SHORTER than the panel is thick: the seat is cut out from under it,
+       so it only has to reach from the top face down to that seat. */
     expect(members.find((m) => m.memberId === "lid-end-skin")!.actualDimsIn.widthIn).toBeCloseTo(DEPTH / COS + SEAT * TAN, 9);
-    expect(members.find((m) => m.memberId === "lid-start-skin")!.actualDimsIn.widthIn).toBeCloseTo(DEPTH / COS, 9);
+    expect(members.find((m) => m.memberId === "lid-start-skin")!.actualDimsIn.widthIn).toBeCloseTo((DEPTH - SEAT * SIN) / COS, 9);
+    expect(members.find((m) => m.memberId === "lid-start-skin")!.actualDimsIn.widthIn).toBeCloseTo(11.172, 3);
 
     for (const id of ["lid-end-skin", "lid-start-skin"]) {
       const plate = members.find((m) => m.memberId === id)!;
@@ -842,25 +849,120 @@ describe("⚠ BOTH ends of a roof panel are PLUMB CUT", () => {
     );
   });
 
-  it("⚠ it is ADDED, never notched — the panel keeps its whole depth", () => {
-    /* The rejected option, and why: a 15 1/2in seat cut INTO the panel takes
-       15.5 x sin(18.43deg) = 4.90in of a 15 1/2in depth, 31.6%, past NDS
-       d/4, leaving 0.60in of the bottom 2x6. */
+  it("⚠ the TALL end is ADDED and the EAVE is CUT, which is the asymmetry", () => {
+    /* At the tall end the underside rises AWAY from the wall going outward,
+       so the void over the plate gets FILLED by a wedge and the panel keeps
+       its whole depth. At the eave the underside rises INWARD, so the
+       panel's own section would dip below the plate — nothing can be added
+       to fix that and the seat has to be cut. The bottom chord stopping at
+       the inside of the wall IS that cut.
+
+       It is an ordinary rafter seat and it is taken at the END of the span,
+       where the bending moment is nil — not anywhere it would govern. 15.5
+       x sin(18.43deg) = 4.90in of the 15 1/2in depth. */
     expect(SEAT * SIN).toBeCloseTo(4.9, 2);
-    expect(JOIST_2X6_WIDTH_IN - SEAT * SIN).toBeCloseTo(0.6, 2);
-    const noWedge = buildFloorRoofPanelMembers({
+    const members = roof();
+    const noSeat = roof({ bearingSeatDepthIn: 0 });
+    /* The TALL end's wedge took nothing off the joists... */
+    for (const id of ["joist-left-bottom", "joist-right-bottom"]) {
+      const withSeat = members.find((m) => m.memberId === id)!.position.sectionCornersIn!;
+      const without = noSeat.find((m) => m.memberId === id)!.position.sectionCornersIn!;
+      expect(withSeat[1]).toEqual(without[1]);
+      expect(withSeat[2]).toEqual(without[2]);
+    }
+    /* ...while the EAVE moved the bottom chord in, and only the bottom one. */
+    expect(members.find((m) => m.memberId === "joist-left-top")!.actualDimsIn.lengthIn).toBeLessThan(
+      noSeat.find((m) => m.memberId === "joist-left-top")!.actualDimsIn.lengthIn,
+    );
+  });
+
+  it("no seat asked for means no wedge and no eave cut, but the ends are still plumb", () => {
+    const bare = roof({ bearingSeatDepthIn: 0 });
+    expect(bare.some((m) => m.memberId.startsWith("wedge-"))).toBe(false);
+    expect(bare.some((m) => m.memberId === "eave-seat-skin")).toBe(false);
+    expect(bare.find((m) => m.memberId === "lid-end-skin")!.actualDimsIn.widthIn).toBeCloseTo(DEPTH / COS, 9);
+    expect(bare.find((m) => m.memberId === "joist-left-bottom")!.position.sectionCornersIn).toHaveLength(4);
+  });
+});
+
+describe("⚠ the EAVE is a bird's mouth, not the tall end mirrored", () => {
+  /* > "The bottom of roof panels, where they meet the wall, should be
+     > starting from the inside of the wall with the bottom cord, and then
+     > the top edge goes towards the exterior and then plumb cuts down."
+     > — Tommy, 2026-10-31 */
+  const DEPTH = 15.5;
+  const SEAT = 15.5;
+  const PITCH = 4;
+  const LENGTH = 216;
+  const hyp = Math.hypot(12, PITCH);
+  const COS = 12 / hyp;
+  const SIN = PITCH / hyp;
+  const LID = 0.75 + 1.5;
+
+  const roof = (over: Partial<FloorRoofPanelOptions> = {}) =>
+    buildFloorRoofPanelMembers({
       ...floor({ kind: "roof", structuralGirtEnds: [], pitchIn12: PITCH, lengthIn: LENGTH }),
       depthIn: DEPTH,
+      bearingSeatDepthIn: SEAT,
+      ...over,
     });
-    for (const j of roof().filter((m) => m.memberId.startsWith("joist-"))) {
-      expect(j).toEqual(noWedge.find((m) => m.memberId === j.memberId));
+
+  /* Up-slope horizontal and height, in the panel's own frame. The eave's
+     outermost point is worldX 0. */
+  const horizOf = (c: { yIn: number; zIn: number }) => c.zIn * COS + c.yIn * SIN;
+  const heightOf = (c: { yIn: number; zIn: number }) => c.zIn * SIN - c.yIn * COS;
+  const eaveCornersOf = (members: ReturnType<typeof roof>, id: string) => {
+    const c = members.find((m) => m.memberId === id)!.position.sectionCornersIn!;
+    return [c[0]!, c[3]!]; // corners 0 and 3 are the eave end
+  };
+
+  it("⚠ the BOTTOM chord starts at the wall's INSIDE face", () => {
+    /* The number that makes this his detail rather than a bevel: 15 1/2in
+       in from the outside, which is the wall. */
+    for (const [a, b] of [eaveCornersOf(roof(), "joist-left-top"), eaveCornersOf(roof(), "joist-right-top")]) {
+      expect(horizOf(a)).toBeCloseTo(SEAT, 9);
+      expect(horizOf(b)).toBeCloseTo(SEAT, 9);
     }
   });
 
-  it("no seat asked for means no wedge, but the ends are still plumb", () => {
-    const bare = roof({ bearingSeatDepthIn: 0 });
-    expect(bare.some((m) => m.memberId.startsWith("wedge-"))).toBe(false);
-    expect(bare.find((m) => m.memberId === "lid-end-skin")!.actualDimsIn.widthIn).toBeCloseTo(DEPTH / COS, 9);
-    expect(bare.find((m) => m.memberId === "joist-left-bottom")!.position.sectionCornersIn).toHaveLength(4);
+  it("⚠ the TOP chord runs out to the fascia instead", () => {
+    /* Just inside it, by the fascia plate's own thickness — the chord butts
+       the plate rather than passing through it. */
+    for (const [a, b] of [eaveCornersOf(roof(), "joist-left-bottom"), eaveCornersOf(roof(), "joist-right-bottom")]) {
+      expect(horizOf(a)).toBeCloseTo(LID, 9);
+      expect(horizOf(b)).toBeCloseTo(LID, 9);
+    }
+  });
+
+  it("⚠ so the two chords are 13 1/4in apart at the eave, and that is the point", () => {
+    const [top] = eaveCornersOf(roof(), "joist-left-bottom");
+    const [bottom] = eaveCornersOf(roof(), "joist-left-top");
+    expect(horizOf(bottom) - horizOf(top)).toBeCloseTo(SEAT - LID, 9);
+  });
+
+  it("⚠ the fascia stands PLUMB and stops at the seat", () => {
+    const fascia = roof().find((m) => m.memberId === "lid-start-skin")!;
+    const corners = fascia.position.sectionCornersIn!;
+    // Its outer face is one vertical plane at the wall's exterior.
+    expect(horizOf(corners[1]!)).toBeCloseTo(0, 9);
+    expect(horizOf(corners[2]!)).toBeCloseTo(0, 9);
+    // Cut to the panel's depth LESS the seat's own bite, not the depth.
+    expect(fascia.actualDimsIn.widthIn).toBeCloseTo((DEPTH - SEAT * SIN) / COS, 9);
+    expect(fascia.actualDimsIn.widthIn).toBeLessThan(DEPTH);
+  });
+
+  it("⚠ the seat is LEVEL and, with the fascia, covers the whole wall", () => {
+    const seat = roof().find((m) => m.memberId === "eave-seat-skin")!;
+    const corners = seat.position.sectionCornersIn!;
+    // Its bearing face: two corners at one height.
+    expect(heightOf(corners[0]!)).toBeCloseTo(heightOf(corners[1]!), 9);
+    // Measured horizontally, seat + fascia = the wall depth.
+    expect(Math.abs(horizOf(corners[1]!) - horizOf(corners[0]!)) + LID).toBeCloseTo(SEAT, 9);
+  });
+
+  it("⚠ and nothing in the panel overlaps anything else, at any span", () => {
+    for (const lengthIn of [96, 144, 180, 216, 240]) {
+      expect({ lengthIn, pairs: overlappingMemberPairs(roof({ lengthIn })) }).toEqual({ lengthIn, pairs: [] });
+    }
   });
 });

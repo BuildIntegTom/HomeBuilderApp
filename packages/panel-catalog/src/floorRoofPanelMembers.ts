@@ -337,6 +337,197 @@ function plumbEndCut(o: FloorRoofPanelOptions, atEnd: "start" | "end" = "end"): 
 }
 
 /**
+ * ⚠ **THE EAVE END IS A BIRD'S MOUTH WITH A PLUMB FASCIA, and it is NOT
+ * the tall end mirrored.**
+ *
+ * > *"The bottom of roof panels, where they meet the wall, should be
+ * > starting from the inside of the wall with the bottom cord, and then the
+ * > top edge goes towards the exterior and then plumb cuts down."* — Tommy,
+ * > 2026-10-31
+ *
+ * Three surfaces, and each member meets whichever one its own depth puts it
+ * against:
+ *
+ *  - the **fascia**, a plumb plane at the wall's EXTERIOR face, which the
+ *    panel's top chord runs out to;
+ *  - the **seat**, level, bearing on the top plate across the whole wall
+ *    depth;
+ *  - the **inner face**, a plumb plane at the wall's INTERIOR face, where
+ *    the bottom chord stops.
+ *
+ * ⚠ **Why not the tall end mirrored:** at the tall end the underside rises
+ * AWAY from the wall going outward, so the void over the plate is thickest
+ * at the exterior and gets filled by an added wedge. Here the underside
+ * rises INWARD, so the panel's own section would dip below the plate going
+ * outward — nothing can be added to fix that, material has to come OUT.
+ * The bottom chord ending at the inside of the wall IS that cut, and it is
+ * an ordinary rafter seat, taken at the end of the span where the bending
+ * moment is nil rather than anywhere it would matter.
+ *
+ * ⚠ `seatYIn = depthIn - seat x sin` is the depth at which the level seat
+ * meets the fascia, and it is what decides which plane a member ends on. A
+ * 15 1/2in panel on a 15 1/2in wall at 4:12 splits at 10.60in: the top
+ * chord (0 to 5 1/2in) runs to the fascia, the bottom chord (10 to
+ * 15 1/2in) stops at the inside face.
+ */
+interface EaveCut {
+  tan: number;
+  sin: number;
+  cos: number;
+  seatIn: number;
+  /** The depth at which the level seat meets the fascia. */
+  seatYIn: number;
+  /** The plumb plane at the wall's EXTERIOR face. */
+  fasciaAtYIn: (yIn: number) => number;
+  /** The plumb plane at the wall's INTERIOR face. */
+  innerAtYIn: (yIn: number) => number;
+  /** The fascia's real cut height, standing vertical. */
+  fasciaHeightIn: number;
+  /** How far through the depth a plane set back from the fascia meets the
+   * level seat — the mirror of the tall end's own `levelBottomYIn`. */
+  seatBottomYIn: (perpendicularIn: number) => number;
+}
+
+function eaveCut(o: FloorRoofPanelOptions): EaveCut | null {
+  const pitchIn12 = o.pitchIn12;
+  if (o.kind !== "roof" || pitchIn12 === undefined || !(pitchIn12 > 0)) return null;
+  const seatIn = Math.max(0, o.bearingSeatDepthIn ?? 0);
+  if (!(seatIn > 0)) return null;
+  const tan = pitchIn12 / 12;
+  const hyp = Math.hypot(12, pitchIn12);
+  const cos = 12 / hyp;
+  const sin = pitchIn12 / hyp;
+  const seatYIn = o.depthIn - seatIn * sin;
+  if (!(seatYIn > 0)) return null;
+  return {
+    tan,
+    sin,
+    cos,
+    seatIn,
+    seatYIn,
+    fasciaAtYIn: (yIn: number) => -yIn * tan,
+    innerAtYIn: (yIn: number) => (seatIn - yIn * sin) / cos,
+    fasciaHeightIn: seatYIn / cos,
+    seatBottomYIn: (perpendicularIn: number) => seatYIn + perpendicularIn * sin,
+  };
+}
+
+/**
+ * The eave's fascia plate and the level seat it stands on.
+ *
+ * ⚠ The fascia stops at the SEAT, not at the panel's underside. Running it
+ * the full depth would put it below the wall's top plate — the panel's own
+ * section does not reach that far out, which is the whole point of the seat.
+ */
+function buildEaveEnd(o: FloorRoofPanelOptions, eave: EaveCut): PanelMember[] {
+  const out: PanelMember[] = [];
+
+  /* The plumb fascia: skin plus its 2x4 faces, the same lid the other end
+     gets, cut to the fascia's own height instead of the panel's depth. */
+  const slab = (perpendicularStartIn: number, perpendicularEndIn: number): SectionSpacePoint2D[] => {
+    const outerBottomYIn = eave.seatBottomYIn(perpendicularStartIn);
+    const innerBottomYIn = eave.seatBottomYIn(perpendicularEndIn);
+    return [
+      { yIn: 0, zIn: eave.fasciaAtYIn(0) + perpendicularEndIn / eave.cos },
+      { yIn: 0, zIn: eave.fasciaAtYIn(0) + perpendicularStartIn / eave.cos },
+      { yIn: outerBottomYIn, zIn: eave.fasciaAtYIn(outerBottomYIn) + perpendicularStartIn / eave.cos },
+      { yIn: innerBottomYIn, zIn: eave.fasciaAtYIn(innerBottomYIn) + perpendicularEndIn / eave.cos },
+    ];
+  };
+  const edgeHeightIn = (perpendicularIn: number) => eave.seatBottomYIn(perpendicularIn) / eave.cos;
+
+  out.push({
+    memberId: "lid-start-skin",
+    material: "plywood",
+    speciesGrade: null,
+    plySpec: SKIN_PLY_SPEC,
+    nominalSize: null,
+    actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: edgeHeightIn(0), lengthIn: o.widthIn },
+    orientation: "flat",
+    position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0, sectionCornersIn: slab(0, SKIN_THICKNESS_IN) },
+    role: "skin",
+    qty: 1,
+    notes:
+      `eave fascia, standing PLUMB — cut ${edgeHeightIn(0).toFixed(3)}in, which is the panel's depth less the seat's ` +
+      `own bite, not the ${o.depthIn}in depth`,
+  });
+
+  let xIn = 0;
+  let index = 0;
+  while (xIn < o.widthIn - 1e-9) {
+    const widthIn = Math.min(PLATE_2X4_WIDTH_IN, o.widthIn - xIn);
+    const ripped = widthIn < PLATE_2X4_WIDTH_IN - 1e-9;
+    out.push({
+      memberId: `lid-start-face-${index}`,
+      material: "dimensional_lumber",
+      speciesGrade: LUMBER_SPECIES_GRADE,
+      plySpec: null,
+      nominalSize: "2x4",
+      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn, lengthIn: edgeHeightIn(SKIN_THICKNESS_IN) },
+      orientation: "horizontal",
+      position: {
+        xIn,
+        yIn: 0,
+        zIn: 0,
+        rotationDeg: 180,
+        sectionCornersIn: slab(SKIN_THICKNESS_IN, SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN),
+      },
+      role: "stud",
+      qty: 1,
+      notes: ripped ? `ripped to ${widthIn}in wide — the last one on the eave fascia` : "stands plumb against the eave",
+    });
+    xIn += PLATE_2X4_WIDTH_IN;
+    index += 1;
+  }
+
+  /* ⚠ The SEAT: the one face in the panel that is level, because it is the
+     one that lands on a top plate. It runs the full wall depth, from the
+     fascia's foot back to where the bottom chord starts. Its thickness goes
+     straight UP into the panel — direction (-cos, +sin) through (depth,
+     span) — not along either axis. */
+  const upYIn = SKIN_THICKNESS_IN * eave.cos;
+  const upZIn = SKIN_THICKNESS_IN * eave.sin;
+  /* ⚠ The seat starts at the FASCIA'S INNER FACE, not at the panel's outer
+     edge — the same arrangement the tall end's cheeks have. Running it to
+     the outer edge put it in the same space as the fascia itself, which the
+     overlap check caught: 8 pairs. The fascia's own 2 1/4in of full-width
+     solid is the outermost bearing and the seat carries the remaining
+     13 1/4in, which is the wall. */
+  const lidThicknessIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  const footYIn = eave.seatBottomYIn(lidThicknessIn);
+  const footZIn = eave.fasciaAtYIn(footYIn) + lidThicknessIn / eave.cos;
+  const heelZIn = eave.innerAtYIn(o.depthIn);
+  out.push({
+    memberId: "eave-seat-skin",
+    material: "plywood",
+    speciesGrade: null,
+    plySpec: STRUCTURAL_GIRT_PLY_SPEC,
+    nominalSize: null,
+    actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: eave.seatIn - lidThicknessIn, lengthIn: o.widthIn },
+    orientation: "flat",
+    position: {
+      xIn: 0,
+      yIn: footYIn,
+      zIn: footZIn,
+      rotationDeg: 0,
+      sectionCornersIn: [
+        { yIn: footYIn, zIn: footZIn },
+        { yIn: o.depthIn, zIn: heelZIn },
+        { yIn: o.depthIn - upYIn, zIn: heelZIn + upZIn },
+        { yIn: footYIn - upYIn, zIn: footZIn + upZIn },
+      ],
+    },
+    role: "skin",
+    qty: 1,
+    notes:
+      `the level bearing seat — ${(eave.seatIn - lidThicknessIn).toFixed(3)}in here plus the fascia's own ` +
+      `${lidThicknessIn}in makes the ${eave.seatIn}in wall depth under it`,
+  });
+
+  return out;
+}
+
+/**
  * The bearing wedge under the tall end: level on the bottom, plumb on the
  * outside, closed above by the panel's own sloped underside.
  *
@@ -504,7 +695,7 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
   const lidThicknessIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const joistLengthIn = o.lengthIn - 2 * lidThicknessIn;
   const plumb = plumbEndCut(o, "end");
-  const eave = plumbEndCut(o, "start");
+  const eave = eaveCut(o);
   const edges: [string, number][] = [
     ["left", 0],
     ["right", o.widthIn - JOIST_2X6_THICKNESS_IN],
@@ -539,13 +730,26 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
       const farYIn = yIn + JOIST_2X6_WIDTH_IN;
       const nearEndIn = plumb.setBackAtYIn(nearYIn, lidThicknessIn);
       const farEndIn = plumb.setBackAtYIn(farYIn, lidThicknessIn);
-      /* ⚠ The EAVE end is beveled too, and the other way. Its long point is
-         the underside, so the joist nearer the panel's top is the SHORT one
-         here and the longer one at the tall end — the two bevels partly
-         cancel, which is why a joist's length is not simply the span less
-         two lids any more. */
-      const nearStartIn = eave!.setBackAtYIn(nearYIn, lidThicknessIn);
-      const farStartIn = eave!.setBackAtYIn(farYIn, lidThicknessIn);
+      /* ⚠ **THE TWO CHORDS DO NOT END IN THE SAME PLACE AT THE EAVE**, and
+         that is his whole point: *"starting from the inside of the wall with
+         the bottom cord, and then the top edge goes towards the exterior and
+         then plumb cuts down."*
+
+         Which plane a chord meets is decided by its own depth against the
+         seat, taken at its midpoint so a chord is never cut on two planes at
+         once. The top chord runs out to the fascia at the wall's EXTERIOR
+         face; the bottom chord stops plumb at the INTERIOR face, which is
+         the seat cut. Without a seat there is nothing to decide and both
+         ends sit at the plate, as a floor's do. */
+      const eaveBelowSeat = eave !== null && (nearYIn + farYIn) / 2 >= eave.seatYIn;
+      const eavePlaneAtYIn = (atYIn: number) =>
+        eave === null
+          ? lidThicknessIn
+          : eaveBelowSeat
+            ? eave.innerAtYIn(atYIn)
+            : eave.fasciaAtYIn(atYIn) + lidThicknessIn / eave.cos;
+      const nearStartIn = eavePlaneAtYIn(nearYIn);
+      const farStartIn = eavePlaneAtYIn(farYIn);
       out.push({
         memberId: `joist-${side}-${face}`,
         material: "dimensional_lumber",
@@ -577,9 +781,10 @@ function buildJoists(o: FloorRoofPanelOptions): PanelMember[] {
         role: "stud",
         qty: 1,
         notes:
-          `${side} joist, ${face} member of the pair — BOTH ends cut ` +
-          `${plumb.tiltDeg.toFixed(2)}deg off square so each stands plumb, long point ` +
-          `${Math.max(nearEndIn - nearStartIn, farEndIn - farStartIn).toFixed(3)}in, short point ` +
+          `${side} joist, ${face} member of the pair — both ends cut ` +
+          `${plumb.tiltDeg.toFixed(2)}deg off square so each stands plumb. At the eave this one ` +
+          `${eaveBelowSeat ? "STOPS AT THE WALL'S INSIDE FACE (it is the bottom chord, and the seat is cut from under it)" : "runs out to the fascia at the wall's outside face"}. ` +
+          `Long point ${Math.max(nearEndIn - nearStartIn, farEndIn - farStartIn).toFixed(3)}in, short point ` +
           `${Math.min(nearEndIn - nearStartIn, farEndIn - farStartIn).toFixed(3)}in`,
       });
     }
@@ -730,7 +935,11 @@ function buildStructuralLid(o: FloorRoofPanelOptions, atEnd: "start" | "end"): P
      other end gets, just stood vertical instead of square to the panel. It
      is what the membrane runs onto and what the exterior wall laps over. The
      eave end (`start`) is untouched. */
-  const plumb = plumbEndCut(o, atEnd);
+  if (atEnd === "start") {
+    const eave = eaveCut(o);
+    if (eave) return buildEaveEnd(o, eave);
+  }
+  const plumb = atEnd === "end" ? plumbEndCut(o, atEnd) : null;
   if (plumb) return buildPlumbEndPlate(o, plumb);
 
   const zBase = atEnd === "start" ? 0 : o.lengthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
@@ -857,12 +1066,8 @@ function buildPlumbEndPlate(o: FloorRoofPanelOptions, plumb: PlumbEndCut): Panel
 export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): PanelMember[] {
   const o = options;
   const plumb = plumbEndCut(o, "end");
-  const eave = plumbEndCut(o, "start");
   const members: PanelMember[] = [...buildJoists(o), ...buildStructuralLid(o, "start"), ...buildStructuralLid(o, "end")];
   if (plumb) members.push(...buildTallEndWedge(o, plumb));
-  /* `eave` carries seatIn 0 by construction, so there is no wedge to build
-     there — only the plumb cut, which `buildStructuralLid` already made. */
-  void eave;
 
   const girtEnds = o.kind === "roof" ? [] : (o.structuralGirtEnds ?? []);
   for (const end of girtEnds) {
