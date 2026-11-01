@@ -1,15 +1,12 @@
-import type { PanelMember } from "./componentSchema";
 import { PLATE_2X4_WIDTH_IN } from "./panelMemberHelpers";
 import {
   FLOOR_ROOF_EDGE_PANEL_WIDTH_IN,
   JOIST_2X6_THICKNESS_IN,
   FLOOR_ROOF_PANEL_WIDTH_IN,
   FLOOR_ROOF_RUN_CLOSER_WIDTH_IN,
-  buildFloorRoofPanelSchema,
   firstPlywoodSheetWidthIn,
   lastTrueSheetSeamIn,
   planFloorRoofPanelWidthsIn,
-  type FloorRoofPanelOptions,
 } from "./floorRoofPanelMembers";
 
 /** What a panel is doing in the run, which is what makes two panels of the
@@ -30,21 +27,23 @@ export interface FloorRoofPanelInstance {
   role: FloorRoofPanelRole;
 }
 
-export interface FloorRoofPanelGroup {
-  /** Stable per unique panel, for React keys and note ids. */
-  key: string;
-  widthIn: number;
-  role: FloorRoofPanelRole;
-  /** The schema's own member list, caps included on a pitched roof. */
-  members: PanelMember[];
-  spanIn: number;
-  depthIn: number;
-  instances: FloorRoofPanelInstance[];
-}
-
+/**
+ * ⚠ **This plans the RUN, and nothing else builds a panel from it.**
+ *
+ * It used to return `groups`, each with its own `members` built straight from
+ * `buildFloorRoofPanelSchema` — and that was one of the two disagreeing floor
+ * and roof plans `computeDeckPanelTakeoff` exists to replace. A group here
+ * knew nothing about the column girts under a ridge post or a roof panel's
+ * bearing seat, so the sheet printed from it described a different panel from
+ * the one the 3D view drew.
+ *
+ * Grouping identical panels and building their members is now the takeoff's
+ * single job. What stays here is what only the RUN knows: how wide each panel
+ * is, what each one is doing in the row, what it is called, how the sheathing
+ * above lands on the seams, and which panels came out too narrow to build.
+ */
 export interface FloorRoofPanelRunPlan {
   instances: FloorRoofPanelInstance[];
-  groups: FloorRoofPanelGroup[];
   /** How wide to trim the first sheet so every sheet after it lands on a
    * seam. Null when no seam falls within one sheet. */
   firstSheetWidthIn: number | null;
@@ -97,14 +96,23 @@ function roleOf(widthIn: number, index: number, count: number): FloorRoofPanelRo
   return "remainder";
 }
 
-const ROLE_ORDER: Record<FloorRoofPanelRole, number> = { edge: 0, field: 1, closer: 2, remainder: 3 };
-
 export interface FloorRoofPanelRunOptions {
   kind: "floor" | "roof";
   /** Along the building — how far the row of panels repeats. */
   runLengthIn: number;
   /** What one panel has to reach, which is the panel's own length. */
   spanIn: number;
+  /**
+   * The wall's thickness, which is ALSO how wide the two edge panels are:
+   * *"The edge panels for floors and roofs still have to be 15.5" because
+   * thata the wall thickness."* — Tommy, 2026-10-23.
+   *
+   * ⚠ So a building with a deeper wall gets wider edge panels, here as well
+   * as in the 3D view. This used to pass the catalog's 15.5in DEFAULT to
+   * `planFloorRoofPanelWidthsIn` while the view passed the real depth, which
+   * is how a shop sheet could describe a different set of widths from the
+   * panels on screen on any building not 15.5in thick.
+   */
   depthIn?: number;
   /** Roof only. Without it the panels carry no caps, because a cap's
    * geometry is the pitch. */
@@ -129,10 +137,9 @@ export interface FloorRoofPanelRunOptions {
  * be given its 2.25in of run, or they are not narrowed at all.
  */
 export function planFloorRoofPanelRun(options: FloorRoofPanelRunOptions): FloorRoofPanelRunPlan {
-  const depthIn = options.depthIn ?? 15.5;
+  const edgeWidthIn = options.depthIn ?? FLOOR_ROOF_EDGE_PANEL_WIDTH_IN;
   const empty = {
     instances: [],
-    groups: [],
     firstSheetWidthIn: null,
     sheetCount: 0,
     lastTrueSheetSeamIn: null,
@@ -145,14 +152,14 @@ export function planFloorRoofPanelRun(options: FloorRoofPanelRunOptions): FloorR
     return { ...empty, refusal: "This building has no run or span to lay panels across yet." };
   }
 
-  const widths = planFloorRoofPanelWidthsIn(options.runLengthIn, FLOOR_ROOF_EDGE_PANEL_WIDTH_IN);
+  const widths = planFloorRoofPanelWidthsIn(options.runLengthIn, edgeWidthIn);
   if (widths === null) {
     return {
       ...empty,
       refusal:
         `A ${(options.runLengthIn / 12).toFixed(1)}ft run is shorter than the two ` +
-        `${FLOOR_ROOF_EDGE_PANEL_WIDTH_IN}in edge panels it has to start and end with ` +
-        `(${(2 * FLOOR_ROOF_EDGE_PANEL_WIDTH_IN).toFixed(2)}in), so it cannot be panelised at all.`,
+        `${edgeWidthIn}in edge panels it has to start and end with ` +
+        `(${(2 * edgeWidthIn).toFixed(2)}in), so it cannot be panelised at all.`,
     };
   }
 
@@ -169,37 +176,6 @@ export function planFloorRoofPanelRun(options: FloorRoofPanelRunOptions): FloorR
     atIn += widthIn;
   });
 
-  const byKey = new Map<string, FloorRoofPanelInstance[]>();
-  for (const instance of instances) {
-    const key = `${instance.role}-${instance.widthIn}`;
-    const existing = byKey.get(key);
-    if (existing) existing.push(instance);
-    else byKey.set(key, [instance]);
-  }
-
-  const groups: FloorRoofPanelGroup[] = [...byKey.entries()]
-    .map(([key, groupInstances]) => {
-      const first = groupInstances[0]!;
-      const panelOptions: FloorRoofPanelOptions = {
-        kind: options.kind,
-        widthIn: first.widthIn,
-        depthIn,
-        lengthIn: options.spanIn,
-        structuralGirtEnds: options.kind === "roof" ? [] : (options.structuralGirtEnds ?? ["start", "end"]),
-      };
-      return {
-        key: `${options.kind}-${key}`,
-        widthIn: first.widthIn,
-        role: first.role,
-        members: buildFloorRoofPanelSchema(panelOptions, options.kind === "roof" ? options.pitchIn12 : undefined)
-          .members,
-        spanIn: options.spanIn,
-        depthIn,
-        instances: groupInstances,
-      };
-    })
-    .sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || b.widthIn - a.widthIn);
-
   const firstSheetWidthIn = firstPlywoodSheetWidthIn(widths);
   const narrowestWidthIn = Math.min(...widths);
   const hasGirt = options.kind === "floor" && (options.structuralGirtEnds ?? ["start", "end"]).length > 0;
@@ -208,7 +184,6 @@ export function planFloorRoofPanelRun(options: FloorRoofPanelRunOptions): FloorR
 
   return {
     instances,
-    groups,
     firstSheetWidthIn,
     lastTrueSheetSeamIn: lastTrueSheetSeamIn(widths),
     sheetCount:

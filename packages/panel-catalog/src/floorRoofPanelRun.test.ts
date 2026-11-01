@@ -4,7 +4,7 @@ import {
   planFloorRoofPanelRun,
   type FloorRoofPanelRunOptions,
 } from "./floorRoofPanelRun";
-import { FLOOR_ROOF_EDGE_PANEL_WIDTH_IN } from "./floorRoofPanelMembers";
+import { FLOOR_ROOF_EDGE_PANEL_WIDTH_IN, buildFloorRoofPanelSchema } from "./floorRoofPanelMembers";
 
 const floor = (over: Partial<FloorRoofPanelRunOptions> = {}): FloorRoofPanelRunOptions => ({
   kind: "floor",
@@ -44,28 +44,27 @@ describe("one building's worth of floor panels", () => {
     }
   });
 
-  it("groups account for every placed panel exactly once", () => {
-    const plan = planFloorRoofPanelRun(floor());
-    const grouped = plan.groups.flatMap((g) => g.instances.map((i) => i.name));
-    expect(grouped.slice().sort()).toEqual(plan.instances.map((i) => i.name).sort());
-    expect(new Set(grouped).size).toBe(plan.instances.length);
-  });
-
-  it("every panel in a group really is the same width", () => {
-    const plan = planFloorRoofPanelRun(floor());
-    for (const g of plan.groups) {
-      for (const i of g.instances) expect({ g: g.key, w: i.widthIn }).toEqual({ g: g.key, w: g.widthIn });
-    }
-  });
-
-  it("a 40ft run needs only a few sheets to describe its whole floor", () => {
-    /* The point of grouping: 21 placed panels, a handful of unique ones.
-       At the old 19 1/4 module it took 26, and three of the groups existed
-       only to manage drift. */
+  it("a 40ft run is 21 panels, and only the two ends are edge panels", () => {
+    /* Grouping those 21 into a handful of unique sheets is the takeoff job
+       now - see `deckPanelTakeoff.test.ts`. What the RUN owes is the row
+       itself: how many panels, and which of them is doing what. */
     const plan = planFloorRoofPanelRun(floor());
     expect(plan.instances).toHaveLength(21);
-    expect(plan.groups.length).toBeLessThan(6);
-    expect(plan.groups[0]!.role).toBe("edge");
+    expect(plan.instances.filter((i) => i.role === "edge").map((i) => i.name)).toEqual(["F1", "F21"]);
+    expect(plan.instances.every((i) => i.role !== "closer")).toBe(true);
+  });
+
+  it("⚠ the edge panels are as wide as the WALL, not as wide as the default", () => {
+    /* *"The edge panels for floors and roofs still have to be 15.5\" because
+       thata the wall thickness."* - so a deeper wall gets deeper edge panels.
+       This is the disagreement that let a shop sheet print one set of widths
+       while the 3D view drew another: the plan passed the 15.5in default and
+       the view passed the real depth. */
+    const deep = planFloorRoofPanelRun(floor({ depthIn: 18 }));
+    expect(deep.instances[0]!.widthIn).toBe(18);
+    expect(deep.instances[deep.instances.length - 1]!.widthIn).toBe(18);
+    // And it still fills the run exactly, which is the rule the change could break.
+    expect(deep.instances.reduce((a, i) => a + i.widthIn, 0)).toBe(480);
   });
 
   it("names run in order and never repeat", () => {
@@ -105,7 +104,6 @@ describe("⚠ what this plan will not pretend about", () => {
     const plan = planFloorRoofPanelRun(floor({ runLengthIn: 20 }));
     expect(plan.refusal).toContain("edge panels");
     expect(plan.instances).toHaveLength(0);
-    expect(plan.groups).toHaveLength(0);
     // 26.5in is exactly the two edge panels, and that much IS buildable.
     const exact = planFloorRoofPanelRun(floor({ runLengthIn: 2 * FLOOR_ROOF_EDGE_PANEL_WIDTH_IN }));
     expect(exact.refusal).toBeNull();
@@ -157,10 +155,22 @@ describe("⚠ what this plan will not pretend about", () => {
   });
 });
 
+/* These used to read `plan.groups[0].members`, which is how the run plan came
+   to own a member list at all. They assert the SCHEMA, so they ask the schema
+   directly now - same panel, same assertions, addressed to the function that
+   actually builds it. */
 describe("the members each sheet will print", () => {
+  const panel = (over: Partial<Parameters<typeof buildFloorRoofPanelSchema>[0]> = {}) => ({
+    kind: "floor" as const,
+    widthIn: FLOOR_ROOF_EDGE_PANEL_WIDTH_IN,
+    depthIn: 15.5,
+    lengthIn: 240,
+    structuralGirtEnds: ["start", "end"] as ("start" | "end")[],
+    ...over,
+  });
+
   it("a floor panel carries a girt at both span ends by default", () => {
-    const plan = planFloorRoofPanelRun(floor());
-    const ids = plan.groups[0]!.members.map((m) => m.memberId);
+    const ids = buildFloorRoofPanelSchema(panel()).members.map((m) => m.memberId);
     expect(ids.some((id) => id.startsWith("structural-girt-start"))).toBe(true);
     expect(ids.some((id) => id.startsWith("structural-girt-end"))).toBe(true);
   });
@@ -168,26 +178,27 @@ describe("the members each sheet will print", () => {
   it("⚠ a roof panel never carries a structural girt, whatever is asked for", () => {
     // "the roof panels do not need a structural girt" — so the option that
     // makes sense for a floor is overridden, not passed through.
-    const plan = planFloorRoofPanelRun(floor({ kind: "roof", structuralGirtEnds: ["start", "end"] }));
-    const ids = plan.groups[0]!.members.map((m) => m.memberId);
+    const ids = buildFloorRoofPanelSchema(panel({ kind: "roof" })).members.map((m) => m.memberId);
     expect(ids.filter((id) => id.startsWith("structural-girt-"))).toEqual([]);
   });
 
   it("a pitch buys the caps; without one there are none", () => {
-    const capped = planFloorRoofPanelRun(floor({ kind: "roof", pitchIn12: 4 }));
-    const bare = planFloorRoofPanelRun(floor({ kind: "roof" }));
-    const caps = (plan: typeof capped) => plan.groups[0]!.members.filter((m) => m.memberId.startsWith("cap-"));
-    expect(caps(capped).length).toBeGreaterThan(0);
-    expect(caps(capped).some((m) => m.memberId.includes("eave"))).toBe(true);
-    /* The ridge cap is gone: the panel's own tall end is now the plumb
+    const caps = (pitchIn12?: number) =>
+      buildFloorRoofPanelSchema(panel({ kind: "roof" }), pitchIn12).members.filter((m) =>
+        m.memberId.startsWith("cap-"),
+      );
+    expect(caps(4).length).toBeGreaterThan(0);
+    expect(caps(4).some((m) => m.memberId.includes("eave"))).toBe(true);
+    /* The ridge cap is gone: the panel own tall end is now the plumb
        plate, so a separate one would be a second plate in the same place. */
-    expect(caps(capped).some((m) => m.memberId.includes("ridge"))).toBe(false);
-    expect(caps(bare)).toEqual([]);
+    expect(caps(4).some((m) => m.memberId.includes("ridge"))).toBe(false);
+    expect(caps(undefined)).toEqual([]);
   });
 
   it("the span the caller asks for is the length every member is cut to", () => {
-    const plan = planFloorRoofPanelRun(floor({ spanIn: 180 }));
-    const joists = plan.groups[0]!.members.filter((m) => m.memberId.startsWith("joist-"));
+    const joists = buildFloorRoofPanelSchema(panel({ lengthIn: 180 })).members.filter((m) =>
+      m.memberId.startsWith("joist-"),
+    );
     expect(joists.length).toBeGreaterThan(0);
     // Less 2.25in of lid at each end, which the joists run between.
     for (const j of joists) expect(j.actualDimsIn.lengthIn).toBe(180 - 4.5);

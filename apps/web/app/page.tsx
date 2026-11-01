@@ -29,7 +29,6 @@ import {
   computeGableTiledRow,
   computeInsetPerimeterRing,
   computeJoistLayout,
-  footprintSpanAndRun,
   gableEndWallIdsFor,
   shedTallWallId,
   simpleRoofPlanes,
@@ -311,7 +310,6 @@ import {
   type OctagonRingDiameterFt,
   type PanelMember,
   type PanelStructuralStatus,
-  planFloorRoofPanelRun,
   ridgeBeamLayout,
   ROOF_CATCHER_BEAM_MAX_SPAN_IN,
   decideRoofForm,
@@ -367,6 +365,7 @@ import {
   resolveHeelSeat,
   ROOF_PITCH_OPTIONS_IN12,
 } from "./gableProfilePoints";
+import { computeDeckPanelTakeoff, type DeckPanelTakeoffInput } from "./deckPanelTakeoff";
 import {
   BIG_HEADER_BEAM_MIN_HEIGHT_IN,
   MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN,
@@ -8097,55 +8096,91 @@ export default function LayoutEditor() {
 
      ⚠ The run is the footprint's OUTER dimension, because the walls bear on
      the floor rather than sitting beside it. */
+  /**
+   * ⚠ **The inputs to the ONE floor and roof panel takeoff, in one place
+   * because the 3D view is handed these very same values below.**
+   *
+   * `Building3DView` computes the takeoff from its own props — it has to, so
+   * that the Project Summary's off-screen render works the same way — and the
+   * only way two calls to one pure function can disagree is by being given
+   * different inputs. So the JSX passes `roofPitchIn12`, `roofEaveHeightFt`,
+   * `roofGableEndInsetIn` and `roofForm` straight out of this object rather
+   * than recomputing the expressions.
+   */
+  const deckPanelTakeoffInput = useMemo<DeckPanelTakeoffInput>(
+    () => ({
+      footprint,
+      depthIn: thicknessIn,
+      roofForm: roofFormFromProfile,
+      /* ⚠ A ring has no gable ends — they are blocked on it, so
+         roofTrussLayoutContext is null and there is no pitch to read. It
+         falls back to the default until a ring roof has a pitch control of
+         its own, which it still does not. */
+      roofPitchIn12:
+        roofTrussLayoutContext?.pitchIn12 ??
+        (footprint && ringRoofGableBlockReason(footprint) !== null ? DEFAULT_ROOF_PITCH_IN12 : undefined),
+      roofEaveHeightFt: gableEaveHeightIn / 12,
+      roofGableEndInsetIn: gableEndsFullHeight ? thicknessIn : 0,
+    }),
+    [footprint, thicknessIn, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, gableEndsFullHeight],
+  );
+
+  const deckPanelTakeoff = useMemo(() => computeDeckPanelTakeoff(deckPanelTakeoffInput), [deckPanelTakeoffInput]);
+
+  /**
+   * The Shop Fabrication sheet for every unique floor and roof panel.
+   *
+   * ⚠ **This used to be the SECOND floor and roof plan, and it disagreed with
+   * the building.** It planned one flat run off `footprintSpanAndRun` — no
+   * roof planes, no gable-wall inset, no slope, and no girts of any kind —
+   * so the sheet for a roof panel gave a width and a length belonging to no
+   * panel on screen, and the sheet for a floor panel left out the structural
+   * girts at its ends and the extra pair under a ridge column. A builder
+   * cutting from it built a different building.
+   *
+   * It now adds only what a SHEET needs on top of the takeoff: the weight
+   * breakdown, and the eave cap, which the 3D view deliberately leaves out
+   * (see `DeckPanelTakeoffGroup.capMembers`).
+   */
   const floorRoofPanelFabricationGroups = useMemo(() => {
-    if (!footprint) return [];
-    const { spanFt, runFt } = footprintSpanAndRun(footprint);
-    const spanIn = spanFt * 12;
-    const runIn = runFt * 12;
     const densityKgM3 = densityLbFt3 * LB_FT3_TO_KG_M3;
 
-    return (["floor", "roof"] as const).flatMap((kind) => {
-      const plan = planFloorRoofPanelRun({
-        kind,
-        runLengthIn: runIn,
-        spanIn,
-        depthIn: thicknessIn,
-        /* No pitch means no caps, and the schema says so in its own notes
-           rather than inventing an angle. */
-        pitchIn12: kind === "roof" ? roofTrussLayoutContext?.pitchIn12 : undefined,
+    return deckPanelTakeoff.groups.map((group) => {
+      /* The cap IS part of the panel the shop builds, so it is on the sheet
+         and in the sheet's own weight. */
+      const members = group.capMembers.length === 0 ? group.members : [...group.members, ...group.capMembers];
+      const runs = deckPanelTakeoff.runs.filter((r) => group.instances.some((i) => i.runIndex === r.index));
+      const run = runs[0] ?? deckPanelTakeoff.runs[group.runIndex]!;
+      const straw = computeStandardPanelStrawVolume(members, {
+        heightIn: group.spanIn,
+        widthIn: group.widthIn,
+        depthIn: group.options.depthIn,
       });
-      return plan.groups.map((group) => {
-        const straw = computeStandardPanelStrawVolume(group.members, {
-          heightIn: spanIn,
-          widthIn: group.widthIn,
-          depthIn: thicknessIn,
-        });
-        const woodWeightKg = computeMemberSetWoodWeight(group.members).weightKg;
-        const weightBreakdown = computePanelWeightBreakdown({
-          /* The flat width x thickness x height estimate is moot here — a
-             floor panel's cavity is carved up by four 2x6 joists, girts and
-             blocking, so the real member-aware volume goes in as the
-             override and this is just its fallback. */
-          widthIn: 0,
-          strawWeightKgOverride: straw.strawVolumeFt3 * FT3_TO_M3 * densityKgM3,
-          thicknessIn,
-          heightIn: spanIn,
-          densityKgM3,
-          woodWeightKg,
-          /* ⚠ Honestly null, not 0: the schema carries `fasteners: []` and
-             nobody has given a nailing schedule for a floor or roof panel.
-             Reporting 0 would read as "no fasteners" for a panel that is
-             nailed together throughout. */
-          fastenerWeightKg: null,
-          /* Neither straw face is exposed — both lids are plywood-skinned
-             and structural, so no plaster coat lands on this panel. */
-          hasClayPlaster: false,
-          hasLimePlaster: false,
-        });
-        return { ...group, kind, plan, spanIn, runIn, weightBreakdown };
+      const woodWeightKg = computeMemberSetWoodWeight(members).weightKg;
+      const weightBreakdown = computePanelWeightBreakdown({
+        /* The flat width x thickness x height estimate is moot here — a
+           floor panel's cavity is carved up by four 2x6 joists, girts and
+           blocking, so the real member-aware volume goes in as the
+           override and this is just its fallback. */
+        widthIn: 0,
+        strawWeightKgOverride: straw.strawVolumeFt3 * FT3_TO_M3 * densityKgM3,
+        thicknessIn: group.options.depthIn,
+        heightIn: group.spanIn,
+        densityKgM3,
+        woodWeightKg,
+        /* ⚠ Honestly null, not 0: the schema carries `fasteners: []` and
+           nobody has given a nailing schedule for a floor or roof panel.
+           Reporting 0 would read as "no fasteners" for a panel that is
+           nailed together throughout. */
+        fastenerWeightKg: null,
+        /* Neither straw face is exposed — both lids are plywood-skinned
+           and structural, so no plaster coat lands on this panel. */
+        hasClayPlaster: false,
+        hasLimePlaster: false,
       });
+      return { ...group, members, run, runs, plan: run.plan, runIn: run.runIn, weightBreakdown };
     });
-  }, [footprint, thicknessIn, densityLbFt3, roofTrussLayoutContext]);
+  }, [deckPanelTakeoff, densityLbFt3]);
 
   // Mid-Wall Bond Beam's own Shop Fabrication pages — same "walk
   // walls/stories directly, bypass allInstances" shape as
@@ -12881,18 +12916,17 @@ export default function LayoutEditor() {
                   showWraps={showWraps}
                   showFloorPanels={floorsEnabled && showFloorDeck3D}
                   showRoofPanels={roofEnabled && showRoofDeck3D}
-                  /* ⚠ A ring has no gable ends — they are blocked on it, so
-                     roofTrussLayoutContext is null and there is no pitch to
-                     read. It falls back to the default until a ring roof has
-                     a pitch control of its own, which it still does not. */
-                  roofPitchIn12={
-                    roofTrussLayoutContext?.pitchIn12 ??
-                    (footprint && ringRoofGableBlockReason(footprint) !== null ? DEFAULT_ROOF_PITCH_IN12 : undefined)
-                  }
-                  roofEaveHeightFt={gableEaveHeightIn / 12}
+                  /* ⚠ Straight out of `deckPanelTakeoffInput`, not
+                     recomputed: this view builds its own copy of the floor
+                     and roof panel takeoff from these props, and two calls to
+                     one pure function can only disagree if they are given
+                     different inputs. The ring-roof pitch fallback lives
+                     there with its own note. */
+                  roofPitchIn12={deckPanelTakeoffInput.roofPitchIn12}
+                  roofEaveHeightFt={deckPanelTakeoffInput.roofEaveHeightFt}
                   gableEndsFullHeight={gableEndsFullHeight}
-                  roofGableEndInsetIn={gableEndsFullHeight ? thicknessIn : 0}
-                  roofForm={roofFormFromProfile}
+                  roofGableEndInsetIn={deckPanelTakeoffInput.roofGableEndInsetIn}
+                  roofForm={deckPanelTakeoffInput.roofForm}
                   roofDeckSolid={showRoofDeck3DSolid}
                   crossTiltWallIds={crossTiltWallIds}
                   checkedInteriorIds={checkedInteriorIds}
@@ -14662,9 +14696,10 @@ export default function LayoutEditor() {
                   <p className={`${styles.note} print-hidden-chrome`}>
                     Fabricator/detailer document — one sheet per unique {group.kind}{" "}panel, with the same to-scale
                     lettered view and cut list every other panel gets. Draft: these panels are built from the
-                    fabrication spec Tommy gave verbally and are not placed in the layout system yet, so the run
-                    below is derived from this building&apos;s own outer dimensions rather than laid out panel by
-                    panel on the canvas.
+                    fabrication spec Tommy gave verbally and are not placed in the wall layout system, so they carry
+                    a run position rather than a wall slot. The panels themselves are the ones the 3D view builds —
+                    same widths, same span, same members, from one takeoff — so this sheet and the model cannot
+                    describe different panels.
                   </p>
                   <PanelFabricationPage
                     title={`Panel Fabrication — ${kindLabel} Panel (${roleLabel})`}
@@ -14678,7 +14713,24 @@ export default function LayoutEditor() {
                           ? `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries a structural girt at each end, where a wall lands on it.`
                           : `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries no structural girt — a roof panel bears on both wythes of the inclined wall panel below it.`}{" "}
                         It is panel {group.instances.map((i) => i.name).join(", ")} of{" "}
-                        {group.plan.instances.length} across a {formatLengthIn(group.runIn, unitSystem)} run.{" "}
+                        {group.plan.instances.length} across a {formatLengthIn(group.runIn, unitSystem)}{" "}
+                        {group.kind === "roof" ? "eave" : "run"}
+                        {group.runs.length > 1
+                          ? `, on each of this roof's ${group.runs.length} planes (${group.runs
+                              .map((r) => r.facing)
+                              .join(", ")})`
+                          : group.kind === "roof" && group.run.facing !== undefined
+                            ? `, on the ${group.run.facing}-facing plane`
+                            : ""}
+                        .{" "}
+                        {group.capMembers.length > 0 && (
+                          <>
+                            The eave cap is included in the cut list below. ⚠ Its web, seat and stiffeners are still
+                            listed at the panel&apos;s end rather than placed as a true L, which is why the 3D view
+                            leaves them out — drawing three members in one place is the one thing the model is not
+                            allowed to do. The cap&apos;s real geometry is waiting on the bearing width below.{" "}
+                          </>
+                        )}
                         {group.plan.lastTrueSheetSeamIn !== null && (
                           <>
                             Sheathing above: cut the first sheet to{" "}
@@ -14697,7 +14749,13 @@ export default function LayoutEditor() {
                     members={group.members}
                     instances={group.instances.map((i) => ({
                       name: i.name,
-                      note: `${formatLengthIn(i.atIn, unitSystem)} from the start of the run`,
+                      /* A floor panel has no compass direction, so it gets the
+                         simplest line that still finds it. A roof panel is on
+                         a named plane, and that IS its location. */
+                      note:
+                        i.facing === undefined
+                          ? `${formatLengthIn(i.atIn, unitSystem)} from the start of the run`
+                          : `${formatLengthIn(i.atIn, unitSystem)} along the ${i.facing}-facing eave`,
                     }))}
                     weightBreakdown={group.weightBreakdown}
                     loadBearingCapacity={{

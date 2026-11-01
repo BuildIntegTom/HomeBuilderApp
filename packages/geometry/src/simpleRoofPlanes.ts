@@ -229,7 +229,9 @@ export function simpleRoofPlanes(footprint: Footprint, options: SimpleRoofOption
  * planes faces east or south", preferring east where it exists — which
  * honours both halves in the only way the geometry allows.
  */
-export function defaultTransparentRoofFacing(planes: readonly SimpleRoofPlane[]): CompassDirection | null {
+/* Takes anything that knows which way it faces, so a caller holding a
+   per-panel takeoff rather than the planes themselves can still ask. */
+export function defaultTransparentRoofFacing(planes: readonly { facing: CompassDirection }[]): CompassDirection | null {
   for (const preferred of ["E", "S"] as CompassDirection[]) {
     if (planes.some((plane) => plane.facing === preferred)) return preferred;
   }

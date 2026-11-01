@@ -14,8 +14,6 @@ import {
   effectiveZonesForSlot,
   isSlotBoxBeamCovered,
   builtWallSpan,
-  deckPanelPlacements,
-  footprintSpanAndRun,
   simpleRoofPlanes,
   ringRoofPlanes,
   defaultTransparentRoofFacing,
@@ -34,6 +32,7 @@ import { resolveSpanningHeaderHeightIn, spanningHeadersToGeometry, wallBandGeome
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
 import { gableTileRoofTopLiftIn } from "./gableProfilePoints";
+import { computeDeckPanelTakeoff } from "./deckPanelTakeoff";
 import PanelLabel from "./PanelLabel";
 import {
   BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
@@ -45,17 +44,13 @@ import {
   buildDoubledStackPair,
   buildFloorBottomSkinMembers,
   buildFramingStackMembers,
-  buildFloorRoofPanelMembers,
   buildRoofCatcherBeamMembers,
   buildStructuralColumnMembers,
-  roofTopAboveRooflineIn,
-  floorRoofPanelOutlineSection,
   GABLE_PANEL_MAX_HEIGHT_IN,
   buildCrossTiltPanelMembers,
   PLATE_2X4_WIDTH_IN,
   ridgeBeamLayout,
   columnStorySegments,
-  columnBearingGirtPositionsIn,
   divideRingFacet,
   buildTaperedPanelMembers,
   ROOF_CATCHER_BEAM_DEPTH_IN,
@@ -1801,225 +1796,82 @@ export default function Building3DView({
      for its height. Installing a floor means tipping it flat, which is the
      inner group's job below. Nothing bakes that into the members, because the
      shop drawing has to keep showing the panel the way it is built. */
+  /* ⚠ ONE takeoff, read by the view AND by every document — see
+     `computeDeckPanelTakeoff`. This view used to plan its own panels here:
+     per plane, inset at the gables, span up the real slope, with the column
+     girts in the floor. The Shop Fabrication pages planned a different set,
+     flat and girtless, off the footprint's own span. Both were live, so the
+     sheet a builder cut from described a panel the view never drew.
+
+     Kept in its own memo, separate from the render mapping below, so that
+     toggling a view switch does not re-plan the building. */
+  const deckTakeoff = useMemo(
+    () =>
+      computeDeckPanelTakeoff({
+        footprint,
+        depthIn: thicknessIn,
+        roofForm,
+        roofPitchIn12,
+        roofEaveHeightFt,
+        roofTallSideNorth,
+        roofGableEndInsetIn,
+      }),
+    [footprint, thicknessIn, roofForm, roofPitchIn12, roofEaveHeightFt, roofTallSideNorth, roofGableEndInsetIn],
+  );
+
   const deckRenderData = useMemo(() => {
-    if (!footprint || (!showFloorPanels && !showRoofPanels)) return [];
-    const result: {
-      id: string;
-      kind: "floor" | "roof";
-      anchorX: number;
-      anchorZ: number;
-      anchorYFt: number;
-      rotationRad: number;
-      /** How far the panel is tipped off flat: 0 for a floor, the roof's own
-       * pitch for a roof plane. */
-      tiltRad: number;
-      /**
-       * ⚠ The panel's own SILHOUETTE for the box and membrane views — its
-       * real outline in (depth, span), not three extents.
-       *
-       * It was three extents, and a box drawn from them stopped matching the
-       * panel the moment its ends became plumb cuts: *"the roof panel is not
-       * the same shape as the 3d frames, it doesn't land right and is
-       * squared off wrong"* / *"a weird inclined toe up"* (Tommy,
-       * 2026-10-31). The box kept the corners the cuts removed.
-       *
-       * Both views now extrude the SAME outline the framed view is built
-       * against, so they cannot disagree about the shape again.
-       */
-      outlineIn: { widthIn: number; section: { yIn: number; zIn: number }[] };
-      members: PanelMember[];
-    }[] = [];
+    if (!showFloorPanels && !showRoofPanels) return [];
+    const groupByKey = new Map(deckTakeoff.groups.map((g) => [g.key, g]));
+    /* ⚠ Half the roof is see-through so a new project shows the inside of the
+       building rather than a lid. Applied as each member's own
+       `opacityOverride`, which the renderer already honours, rather than as a
+       whole-group material — so the framing still reads as framing through it
+       instead of becoming a flat ghost.
 
-    const widths = planFloorRoofPanelWidthsIn(footprintSpanAndRun(footprint).runFt * IN_PER_FT, thicknessIn);
-    if (widths === null) return [];
-    const placed = deckPanelPlacements(footprint, widths);
-    if (placed.refusal !== null) return [];
+       One entry per roof plane, in plane order, which is what this used to be
+       handed as `roof.planes`. */
+    const roofFacings = deckTakeoff.runs.flatMap((r) => (r.kind === "roof" && r.facing ? [{ facing: r.facing }] : []));
+    const seeThroughFacing = roofDeckSolid ? null : defaultTransparentRoofFacing(roofFacings);
 
-    /* ⚠ Where the ridge columns come down, so the floor panels under them can
-       carry the extra girts he asked for: *"one under each side of the panel
-       resting above it"*. Measured in the run's own frame, which is what the
-       placements are indexed by. */
-    const columnGirtAlongIn: number[] = [];
-    if (showRoofPanels && roofForm === "peaked" && roofPitchIn12 !== undefined && roofEaveHeightFt !== undefined) {
-      const roof = simpleRoofPlanes(footprint, { form: "peaked", pitchIn12: roofPitchIn12, eaveHeightFt: roofEaveHeightFt });
-      const plane = roof.planes[0];
-      if (roof.refusal === null && plane) {
-        const layout = ridgeBeamLayout({ ridgeStartFt: plane.highStart, ridgeEndFt: plane.highEnd });
-        /* ⚠ The ridge runs along the building's LONG axis, which is the same
-           axis the floor panels repeat along — so a column's distance down
-           the ridge IS its distance along the run. That is only true because
-           both follow `footprintSpanAndRun`; if either ever stopped, these
-           girts would land in the wrong panels. */
-        /* ⚠ ENDS INCLUDED, not just the interior posts. Tommy, 2026-10-29:
-           *"If there is a Gable column panel that spawns, there must be a
-           column panel directly below it in the main level wall and all the
-           way down spawning two extra structural girts in the floor panels,
-           one underneath each side of the panel."* The gable walls bear the
-           beam through a real 15 1/2in column panel, so the floor under
-           them needs the same pair of girts an interior post gets — and
-           those are the two the floor would otherwise never see, because
-           `columns` deliberately excludes the ends. */
-        for (const column of [...layout.columns, ...layout.endBearings]) {
-          const { girtAtIn } = columnBearingGirtPositionsIn(column.alongIn, column.widthIn, []);
-          columnGirtAlongIn.push(...girtAtIn);
-        }
-      }
-    }
-
-    if (showFloorPanels) {
-      /* The floor deck hangs below Z=0, the finished floor the walls stand on
-         — the same datum the bale foundation hangs its framing from. */
-      for (const p of placed.placements) {
-        result.push({
-          id: `floor-${p.index}`,
-          kind: "floor",
-          anchorX: p.anchorX,
-          anchorZ: p.anchorZ,
-          anchorYFt: 0,
-          rotationRad: p.rotationRad,
-          tiltRad: 0,
-          outlineIn: {
-            widthIn: p.widthIn,
-            section: floorRoofPanelOutlineSection({ kind: "floor", widthIn: p.widthIn, depthIn: thicknessIn, lengthIn: p.spanIn }),
-          },
-          members: buildFloorRoofPanelMembers({
-            kind: "floor",
-            widthIn: p.widthIn,
-            depthIn: thicknessIn,
-            lengthIn: p.spanIn,
-            structuralGirtEnds: ["start", "end"],
-            /* ⚠ A column sits over the middle of the SPAN, so its girts go at
-               mid-span of whichever panels it crosses. The girts' positions
-               along the run pick which panels those are. */
-            extraStructuralGirtsAtIn: columnGirtAlongIn
-              .filter((alongIn) => alongIn >= p.atIn && alongIn < p.atIn + p.widthIn)
-              .map(() => p.spanIn / 2),
-          }),
-        });
-      }
-    }
-
-    /* ⚠ The roof deck is laid on its real PLANES now, not flat. Tommy saw
-       the flat one cut straight through his gable panels, which is the
-       overlap the app is not allowed to have. Without a pitch there is no
-       plane to lay anything on, so it stays withheld rather than guessed. */
-    if (showRoofPanels && roofPitchIn12 !== undefined && roofEaveHeightFt !== undefined) {
-      const roof = simpleRoofPlanes(footprint, {
-        form: roofForm,
-        pitchIn12: roofPitchIn12,
-        eaveHeightFt: roofEaveHeightFt,
-        tallSideNorth: roofTallSideNorth,
-      });
-      if (roof.refusal === null) {
-        const tiltRad = Math.atan2(roofPitchIn12, 12);
-        /* ⚠ Half the roof is see-through so a new project shows the inside of
-           the building rather than a lid. Applied as each member's own
-           `opacityOverride`, which the renderer already honours, rather than
-           as a whole-group material — so the framing still reads as framing
-           through it instead of becoming a flat ghost. */
-        const seeThroughFacing = roofDeckSolid ? null : defaultTransparentRoofFacing(roof.planes);
-        for (const [planeIndex, plane] of roof.planes.entries()) {
-          /* ⚠ A PANEL HAS TO RUN TOWARD ITS OWN HIGH EDGE, and on a peak one
-             of the two planes runs the opposite way round the building.
-
-             The view yaws by -rotationRad, which sends the panel's span to
-             the low edge's direction turned 90 degrees anticlockwise. For the
-             near plane that points inward, toward the ridge. For the far one
-             it points straight OUT of the building — which is why half the
-             roof was landing way out of place. Walking that plane's low edge
-             backwards flips the span to match. */
-          const lowMidX = (plane.lowStart.x + plane.lowEnd.x) / 2;
-          const lowMidY = (plane.lowStart.y + plane.lowEnd.y) / 2;
-          const towardHighX = (plane.highStart.x + plane.highEnd.x) / 2 - lowMidX;
-          const towardHighY = (plane.highStart.y + plane.highEnd.y) / 2 - lowMidY;
-          const forwardDx = plane.lowEnd.x - plane.lowStart.x;
-          const forwardDy = plane.lowEnd.y - plane.lowStart.y;
-          /* Rotating the edge direction +90 degrees gives where the span will
-             point; if that is away from the high edge, walk the other way. */
-          const spanPointsInward = -forwardDy * towardHighX + forwardDx * towardHighY > 0;
-          const originX = spanPointsInward ? plane.lowStart.x : plane.lowEnd.x;
-          const originY = spanPointsInward ? plane.lowStart.y : plane.lowEnd.y;
-          const edgeDx = spanPointsInward ? forwardDx : -forwardDx;
-          const edgeDy = spanPointsInward ? forwardDy : -forwardDy;
-          const fullEdgeLengthIn = Math.hypot(edgeDx, edgeDy) * IN_PER_FT;
-          /* ⚠ The roof stops at the gable walls' INSIDE faces when the gable
-             ends run full height, so it loses the inset at BOTH ends of the
-             eave and starts one inset along. Refuse rather than draw a
-             negative run: a building narrower than its own two gable walls
-             has no roof to tile. */
-          const edgeLengthIn = fullEdgeLengthIn - 2 * roofGableEndInsetIn;
-          if (!(edgeLengthIn > 0)) continue;
-          /* Panels repeat ALONG the eave and span UP the slope, so the run is
-             the eave's own length and the span is the real sloped length —
-             longer than the ground it covers, which is the whole reason the
-             shed-or-peak limit is computed from the pitch. */
-          const roofWidths = planFloorRoofPanelWidthsIn(edgeLengthIn, thicknessIn);
-          if (roofWidths === null) continue;
-          const rotationRad = Math.atan2(edgeDy, edgeDx);
-          /* Unit vector along the eave — from the FULL edge, because the
-             inset is a distance along that same direction and dividing by the
-             already-shortened length would scale it wrong. */
-          const ux = edgeDx / (fullEdgeLengthIn / IN_PER_FT);
-          const uy = edgeDy / (fullEdgeLengthIn / IN_PER_FT);
-          let atIn = roofGableEndInsetIn;
-          for (const [i, widthIn] of roofWidths.entries()) {
-            const alongFt = atIn / IN_PER_FT;
-            result.push({
-              id: `roof-${planeIndex}-${i}`,
-              kind: "roof",
-              anchorX: originX + ux * alongFt,
-              anchorZ: originY + uy * alongFt,
-              /* ⚠ The anchor is the panel's TOP at its low edge, because
-                 member Y runs downward once the panel is tipped, so it has
-                 to clear the plane by the panel's PLUMB thickness for the
-                 underside to land on it. `roofTopAboveRooflineIn` is that
-                 number and the gable's lift reads the SAME function — see
-                 its doc comment for why they may not be computed apart. */
-              anchorYFt: plane.lowHeightFt + roofTopAboveRooflineIn(thicknessIn, roofPitchIn12) / IN_PER_FT,
-              rotationRad,
-              tiltRad,
-              outlineIn: {
-                widthIn,
-                section: floorRoofPanelOutlineSection({
-                  kind: "roof",
-                  widthIn,
-                  depthIn: thicknessIn,
-                  lengthIn: plane.slopeFt * IN_PER_FT,
-                  structuralGirtEnds: [],
-                  pitchIn12: roofPitchIn12,
-                  bearingSeatDepthIn: thicknessIn,
-                }),
-              },
-              members: buildFloorRoofPanelMembers({
-                kind: "roof",
-                widthIn,
-                depthIn: thicknessIn,
-                lengthIn: plane.slopeFt * IN_PER_FT,
-                structuralGirtEnds: [],
-                /* ⚠ The pitch is what PLUMB-CUTS the tall end — Tommy,
-                   2026-10-29. Without it the builder cuts both ends square
-                   to the panel, which is what put a leaning end face against
-                   a vertical wall and had him reporting the roof *"spawning
-                   without tapered ends"*. */
-                pitchIn12: roofPitchIn12,
-                /* ⚠ And the wall depth is what gives the tall end its LEVEL
-                   bearing, via the wedge, which hangs BELOW the panel into
-                   the void already there over the tall wall. The plane is
-                   deliberately not lifted to make room — see the note on
-                   `SimpleRoofOptions`; lifting it floated the eave. */
-                bearingSeatDepthIn: thicknessIn,
-              }).map((m) =>
-                plane.facing === seeThroughFacing ? { ...m, opacityOverride: ROOF_SEE_THROUGH_OPACITY } : m,
-              ),
-            });
-            atIn += widthIn;
-          }
-        }
-      }
-    }
-
-    return result;
-  }, [footprint, showFloorPanels, showRoofPanels, thicknessIn, roofGableEndInsetIn, roofPitchIn12, roofEaveHeightFt, roofForm, roofTallSideNorth, roofDeckSolid]);
+    return deckTakeoff.instances.flatMap((instance) => {
+      if (instance.kind === "floor" ? !showFloorPanels : !showRoofPanels) return [];
+      const group = groupByKey.get(instance.groupKey);
+      if (!group) return [];
+      return [
+        {
+          id: instance.id,
+          kind: instance.kind,
+          anchorX: instance.world.anchorX,
+          anchorZ: instance.world.anchorZ,
+          anchorYFt: instance.world.anchorYFt,
+          rotationRad: instance.world.rotationRad,
+          tiltRad: instance.world.tiltRad,
+          /**
+           * ⚠ The panel's own SILHOUETTE for the box and membrane views — its
+           * real outline in (depth, span), not three extents.
+           *
+           * It was three extents, and a box drawn from them stopped matching
+           * the panel the moment its ends became plumb cuts: *"the roof panel
+           * is not the same shape as the 3d frames, it doesn't land right and
+           * is squared off wrong"* / *"a weird inclined toe up"* (Tommy,
+           * 2026-10-31). The box kept the corners the cuts removed.
+           *
+           * Both views now extrude the SAME outline the framed view is built
+           * against, so they cannot disagree about the shape again.
+           */
+          outlineIn: { widthIn: instance.widthIn, section: group.sectionIn },
+          /* ⚠ `group.members` and NOT the eave cap: its pieces are all still
+             stacked at the panel's end rather than placed as a true L, so
+             drawing them would put three members in one place. See
+             `DeckPanelTakeoffGroup.capMembers`. */
+          members:
+            instance.facing !== undefined && instance.facing === seeThroughFacing
+              ? group.members.map((m) => ({ ...m, opacityOverride: ROOF_SEE_THROUGH_OPACITY }))
+              : group.members,
+        },
+      ];
+    });
+  }, [deckTakeoff, showFloorPanels, showRoofPanels, roofDeckSolid]);
 
   /* The ridge beam and the columns under it.
 
