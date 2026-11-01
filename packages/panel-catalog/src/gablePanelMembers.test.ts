@@ -73,32 +73,48 @@ describe("buildGablePanelMembers", () => {
     expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, GABLE_PANEL_MAX_HEIGHT_IN + 0.01, lowIn, false)).toThrow();
   });
 
-  it("⚠ REFUSES a panel shorter than its own two skins rather than cutting NEGATIVE studs", () => {
-    /* ⚠ **IT USED TO BUILD ONE.** A gable panel's studs span its height less
-       its two 3/4in skins, so under 1 1/2in they come out negative — and
-       went into the cut list that way as a real part to cut. Measured at a
-       1in tile before this guard: `stud_corner_1 = -0.50in`.
+  it("⚠ BUILDS a panel that tapers to NOTHING on one edge, with no negative parts", () => {
+    /* ⚠ **IT REFUSED THIS, AND THE REFUSAL TOOK THE WHOLE APP DOWN.**
+       *"This page couldn't load whenever I lift my fingers off of the shape
+       draw on mobile"* — Tommy, 2026-10-31. A gable row running to a shed's
+       low corner, and the triangular cap above a gable window that reaches
+       its own roofline, both hand this builder a legitimate 0in edge; the
+       guard threw inside the 3D view's render and the page was gone.
 
-       It became reachable the moment the truss heel seat stopped holding the
-       gable row off the corners: a shed's roofline runs to NOTHING at its low
-       corner. The row's own answer is that every tile carries the lift up to
-       the roof's top surface and so is never this short (page.tsx's
-       `gableTilesAsFabricatedByWallId`), with any residual sliver becoming a
-       safety-gap filler; this is the guard that makes the whole class
-       impossible rather than merely unlikely. */
-    for (const heightIn of [0, 0.5, GABLE_PANEL_MIN_HEIGHT_IN - 0.01]) {
-      expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, heightIn, 60, false)).toThrow(/two skins/);
-      expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, 60, heightIn, false)).toThrow(/two skins/);
+       A triangle IS a gable part — *"we can take little gable end panels all
+       the way to the end."* What must never appear is a NEGATIVE one: before
+       any of this, a 1in tile put `stud_corner_1 = -0.50in` in the cut list. */
+    for (const shortIn of [0, 0.5, GABLE_PANEL_MIN_HEIGHT_IN - 0.01]) {
+      for (const [leftIn, rightIn] of [
+        [shortIn, 60],
+        [60, shortIn],
+      ]) {
+        const members = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, leftIn!, rightIn!, false);
+        expect(members.length).toBeGreaterThan(0);
+        for (const m of members) {
+          expect({ id: m.memberId, negative: Object.values(m.actualDimsIn).some((v) => v < 0) }).toEqual({
+            id: m.memberId,
+            negative: false,
+          });
+        }
+        /* The tapered edge carries no stud rather than a zero-length one, and
+           the standing edge still carries its pair. */
+        const studs = members.filter((m) => m.role === "stud");
+        expect(studs).toHaveLength(2);
+        for (const stud of studs) expect(stud.actualDimsIn.lengthIn).toBeCloseTo(60 - 1.5, 6);
+        /* And no girts, because there is no clear span to space them across. */
+        expect(members.filter((m) => m.memberId.startsWith("girt_"))).toHaveLength(0);
+      }
     }
-    /* And exactly AT the floor it builds — with studs of zero length, which
-       is the degenerate-but-real panel, not a negative part. */
-    const atFloor = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, GABLE_PANEL_MIN_HEIGHT_IN, GABLE_PANEL_MIN_HEIGHT_IN, false);
-    for (const m of atFloor) {
-      expect({ id: m.memberId, negative: Object.values(m.actualDimsIn).some((v) => v < 0) }).toEqual({
-        id: m.memberId,
-        negative: false,
-      });
-    }
+  });
+
+  it("⚠ REFUSES only when NEITHER edge can carry the panel's own two skins", () => {
+    /* Nothing to build at all — the row's own answer for a sliver this short
+       is a safety-gap filler, which is what page.tsx turns it into. */
+    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, 0, 1, false)).toThrow(/no panel here to build/);
+    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, 1.49, 0, false)).toThrow(/no panel here to build/);
+    /* ...and exactly AT the floor it builds. */
+    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, 0, GABLE_PANEL_MIN_HEIGHT_IN, false)).not.toThrow();
   });
 
   it("keeps the bottom skin/plates flat and unaffected by the slope", () => {

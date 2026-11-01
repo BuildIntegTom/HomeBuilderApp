@@ -247,9 +247,14 @@ describe("⚠ gableTileRoofTopLiftIn — the gable's own top, as fabricated", ()
     const leftLocalIn = corner.leftEdgeHeightIn + liftIn - EAVE_IN;
     const rightLocalIn = corner.rightEdgeHeightIn + liftIn - EAVE_IN;
     expect(leftLocalIn).toBeGreaterThanOrEqual(GABLE_PANEL_MIN_HEIGHT_IN);
-    expect(() => buildGablePanelMembers(corner.widthIn, DEPTH_IN, leftLocalIn, rightLocalIn, false)).not.toThrow();
-    /* ...and unlifted, the same tile is exactly what the builder refuses. */
-    expect(() => buildGablePanelMembers(corner.widthIn, DEPTH_IN, 0, 4, false)).toThrow(/two skins/);
+    const lifted = buildGablePanelMembers(corner.widthIn, DEPTH_IN, leftLocalIn, rightLocalIn, false);
+    expect(lifted.filter((m) => m.role === "stud")).toHaveLength(4);
+    /* ...and UNLIFTED the same tile is a sliver: it still builds, because a
+       gable tapering to nothing is a real triangle rather than an error, but
+       its tapered edge carries no stud at all. That is the panel the cut list
+       was describing before the lift reached it. */
+    const unlifted = buildGablePanelMembers(corner.widthIn, DEPTH_IN, 0, 4, false);
+    expect(unlifted.filter((m) => m.role === "stud")).toHaveLength(2);
   });
 
   it("leaves the tile's own RAKE untouched — both edges rise by the same amount", () => {

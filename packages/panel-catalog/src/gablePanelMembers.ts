@@ -52,6 +52,10 @@ function buildGableCornerStuds(widthIn: number, depthIn: number, leftStudSpanIn:
   for (const yIn of cornerYs) {
     for (let side = 0; side < 2; side++) {
       idx++;
+      /* ⚠ No stud where the panel has no height for one. The ids stay with
+         their own corner (idx still advances), so `stud_corner_3` means the
+         same corner whether or not its neighbour exists. */
+      if (!(heights[side]! > 0)) continue;
       members.push({
         memberId: `stud_corner_${idx}`,
         material: "dimensional_lumber",
@@ -122,28 +126,30 @@ export function buildGablePanelMembers(
 ): PanelMember[] {
   const tallerHeightIn = Math.max(leftHeightIn, rightHeightIn);
   /**
-   * ⚠ **A PANEL SHORTER THAN ITS OWN TWO SKINS IS NOT A PANEL**, and until
-   * 2026-10-31 this built one anyway — with NEGATIVE stud lengths.
+   * ⚠ **A PANEL WITH NO HEIGHT AT ALL IS NOT A PANEL** — but a panel with
+   * ONE edge at nothing is a TRIANGLE, and that is an ordinary gable part.
    *
-   * `leftStudSpanIn = leftHeightIn - 2 x SKIN_THICKNESS_IN`, so anything
-   * under 1 1/2in gives a stud of negative length, and that went straight
-   * into the cut list as a real part to cut. Measured at a 1in tile:
-   * `stud_corner_1 = -0.50in`.
+   * > *"We can take little gable end panels all the way to the end."*
    *
-   * It became reachable when the truss heel seat stopped holding the gable
-   * row away from the corners — at a shed's LOW end the roofline runs to
-   * nothing, so the row now asks for tiles of nearly zero height. The real
-   * answer is that those tiles carry the roof-top lift too and so are never
-   * that short (see `fabricatedLeftHeightIn`); this is the guard that makes
-   * the class impossible rather than merely unlikely, and it refuses in the
-   * same voice the too-tall case already uses.
+   * The first version of this guard refused on the SHORTER edge, and it was
+   * wrong in a way that took the whole app down: a gable row ending at a
+   * shed's low corner, and the triangular cap above a gable window that
+   * reaches its own roofline, both hand this builder a legitimate 0in edge.
+   * Refusing them threw inside the 3D view's render — *"This page couldn't
+   * load whenever I lift my fingers off of the shape draw on mobile"* (Tommy,
+   * 2026-10-31). One `Math.max(0, ...)` upstream, and the page was gone.
+   *
+   * So the refusal is about the PANEL: if even its taller edge cannot carry
+   * its own two skins, there is nothing to build. The short edge is handled
+   * where it actually bites — the corner studs there are omitted rather than
+   * cut to a negative length (which IS what this used to put in the cut list:
+   * `stud_corner_1 = -0.50in` at a 1in tile).
    */
-  const shortestHeightIn = Math.min(leftHeightIn, rightHeightIn);
-  if (shortestHeightIn < GABLE_PANEL_MIN_HEIGHT_IN) {
+  if (tallerHeightIn < GABLE_PANEL_MIN_HEIGHT_IN) {
     throw new Error(
-      `The shorter edge height (${shortestHeightIn}) is under the ${GABLE_PANEL_MIN_HEIGHT_IN}in a Gable End Panel ` +
-        `needs for its own two skins — below that its studs come out negative. A tile this short should not be ` +
-        `built at all; it is the caller's row that wants fixing, not this panel's.`,
+      `Neither edge of this Gable End Panel (${leftHeightIn} and ${rightHeightIn} across ${widthIn}in) reaches the ` +
+        `${GABLE_PANEL_MIN_HEIGHT_IN}in it needs for its own two skins, so there is no panel here to build. A sliver ` +
+        `this short belongs in the row as a safety-gap filler, not as a fabricated panel.`,
     );
   }
   if (tallerHeightIn > GABLE_PANEL_MAX_HEIGHT_IN) {
@@ -153,8 +159,12 @@ export function buildGablePanelMembers(
   }
 
   const plateLengthIn = widthIn - 2 * PLATE_END_CLEARANCE_IN;
-  const leftStudSpanIn = leftHeightIn - 2 * SKIN_THICKNESS_IN;
-  const rightStudSpanIn = rightHeightIn - 2 * SKIN_THICKNESS_IN;
+  /* ⚠ Clamped at zero, and `buildGableCornerStuds` then OMITS the pair that
+     lands there. At a triangle's tip the two skins and the plates meet with
+     no room between them — there is no stud, which is a different statement
+     from a stud of length -1.5in. */
+  const leftStudSpanIn = Math.max(0, leftHeightIn - 2 * SKIN_THICKNESS_IN);
+  const rightStudSpanIn = Math.max(0, rightHeightIn - 2 * SKIN_THICKNESS_IN);
   const shorterStudSpanIn = Math.min(leftStudSpanIn, rightStudSpanIn);
   const { angleDeg: ripAngleDeg, lengthIn: ripLengthIn } = computeGableRipCallout(widthIn, leftHeightIn, rightHeightIn);
   // The top plate 2x4s must run PARALLEL to the top skin (same roof pitch,
@@ -283,7 +293,12 @@ export function buildGablePanelMembers(
       "skin",
       `Rip at ${ripAngleDeg.toFixed(2)}deg, cut to ${ripLengthIn.toFixed(2)}in long (point to butt). Panel-width edges are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the sheet's 0.75in thickness to a ${plumbCutEdgeLengthIn(SKIN_THICKNESS_IN).toFixed(2)}in cut edge.`,
     ),
-    ...buildGirtRows(GABLE_GIRT_ROW_COUNT, widthIn, depthIn, shorterStudSpanIn),
+    /* ⚠ Girts are spaced across the SHORTER edge's clear span, so a panel
+       tapering to nothing has none: they would otherwise stack on the bottom
+       skin, or (before the clamp above) sit at a negative height outside the
+       panel altogether. A triangle this shallow is skins, plates and its one
+       standing stud. */
+    ...buildGirtRows(shorterStudSpanIn > 0 ? GABLE_GIRT_ROW_COUNT : 0, widthIn, depthIn, shorterStudSpanIn),
   ];
   if (includeNailer) members.push(buildNailer(widthIn, Math.min(leftHeightIn, rightHeightIn)));
   return members;
