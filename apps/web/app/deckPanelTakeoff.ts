@@ -93,15 +93,19 @@ export interface DeckPanelTakeoffGroup {
   options: FloorRoofPanelOptions;
   members: PanelMember[];
   /**
-   * ⚠ The eave cap, kept APART from `members` rather than folded in.
+   * The eave cap, kept as its own field rather than folded into `members`.
    *
-   * It is a real part of a pitched roof panel and belongs on the shop sheet.
-   * But every one of its pieces is still positioned at `{x:0, y:0, z:0}` —
-   * web, seat and stiffeners stacked at the panel's end rather than placed as
-   * a true L, which is an open item waiting on the cap seat's bearing width.
-   * Drawing them in the 3D view would put three members in one place, and
-   * "no overlapping members" is his standing rule. So the sheet prints these
-   * and the view does not, until the L is real.
+   * ⚠ **It is DRAWN now.** It was held out of the 3D view while every one of
+   * its pieces sat at `{x:0, y:0, z:0}` — web, seat and stiffeners stacked at
+   * the panel's end rather than placed as a true L — because drawing them
+   * would have put several members in one place. That is also what Tommy was
+   * seeing: *"there is a several inch gap under where the roof panels bear."*
+   * The part that fills it existed only on paper.
+   *
+   * It is placed in its real void now (see `buildRoofPanelCapMembers`), so
+   * both the sheet and the view carry it. The field stays separate because a
+   * consumer still has reason to tell the panel from the cap it lands on —
+   * they are two fabricated parts, not one.
    */
   capMembers: PanelMember[];
   /** The panel's silhouette in (depth, span), for the box/membrane views. */

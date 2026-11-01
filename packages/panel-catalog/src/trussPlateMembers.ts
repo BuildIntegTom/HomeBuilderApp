@@ -2,22 +2,51 @@ import type { PanelComponentSchema, PanelMember } from "./componentSchema";
 import { LUMBER_SPECIES_GRADE, PLATE_2X4_THICKNESS_IN, PLATE_2X4_WIDTH_IN, SKIN_PLY_SPEC } from "./panelMemberHelpers";
 
 /**
- * Single-story roof-bearing truss plate (Tommy: "if the building is one
- * story, it gets a truss plate on top made out of a 2x4 run on inside wyth
- * and 2x6 on outside wyth topped with 3/4in plywood") — a 2x4 along the
- * interior wythe edge and a 2x6 along the exterior wythe edge (its own
- * 5.5in width doubling as the Roof tab's "truss plate inset" — see
- * trussPlateInsetDefaultIn in data.ts), both capped by one continuous 3/4in
- * plywood top skin spanning the full depth. The two edge members leave an
- * open cavity between them (depthIn - 3.5in - insetIn wide, 1.5in tall,
- * running the wall length) — this is the "internal volume... between the
- * 2x4 and 2x6" Tommy described, filled with Timber HP board insulation
- * (see computeTimberHpVolume below).
+ * Single-story roof-bearing truss plate: **two 2x4s on edge-to-edge wythes
+ * with Timber HP between them, capped by 3/4in plywood** — the whole thing
+ * the full depth of the wall.
+ *
+ * > *"On top of the first layer of wall system, there should be auto spawned
+ * > a truss plate detail - two 2x4's and a default 8.5" piece of timber HP
+ * > insulation. The gable end panels and the roof panels should both sit
+ * > directly on this 2x4 top wall ring."* — Tommy, 2026-11-01
+ *
+ * > *"The plate width is now basically the entire truss plate width = 15.5"
+ * > usually."* — Tommy, 2026-11-01
+ *
+ * ⚠ **This SUPERSEDES his own earlier spec**, which was *"a 2x4 run on
+ * inside wyth and 2x6 on outside wyth topped with 3/4in plywood"* and left a
+ * 6 1/2in Timber HP cavity. Both versions come to the same 15 1/2in and the
+ * same 2 1/4in assembly height, so no roofline moves — what changes is the
+ * exterior member (2x6 → 2x4) and the insulation (6 1/2in → 8 1/2in).
+ * His 8.5in is not an independent number: two 2x4s in a 15 1/2in wall leave
+ * exactly 8 1/2in between them, which is how the two halves of his sentence
+ * check each other. On a wall of another depth the cavity follows the wall.
+ *
+ * ⚠ **The assembly is no longer deformed by `trussPlateInsetIn`.** That
+ * setting used to double as the exterior member's width (*"its own 5.5in
+ * width doubling as the Roof tab's truss plate inset"*), which tied two
+ * unrelated things together: what the plate is MADE OF, and how far in from
+ * the exterior face a truss bears. His *"the plate width is now basically the
+ * entire truss plate width"* unties them — the roof bears on the whole
+ * plate now (see `ROOF_CAP_SEAT_WIDTH_IN`), so the inset means only what it
+ * says elsewhere: the gable row's own inset and the heel seat.
  */
-export const PLATE_2X6_THICKNESS_IN = 1.5;
+/** Both wythe members are 2x4s now. Kept under the old names because
+ * `roofBearingAssembly` quotes the thickness as the assembly's own height,
+ * and that height is deliberately unchanged. */
+export const PLATE_2X6_THICKNESS_IN = PLATE_2X4_THICKNESS_IN;
+/** @deprecated The exterior member is a 2x4; this is kept only so a saved
+ * project's 5.5in inset still resolves to a valid Roof-tab option. */
 export const PLATE_2X6_WIDTH_IN = 5.5;
 
-export function buildTrussPlateMembers(lengthIn: number, depthIn: number, insetIn: number = PLATE_2X6_WIDTH_IN): PanelMember[] {
+/** What the Timber HP cavity comes to: whatever the two 2x4s leave. 8 1/2in
+ * in a 15 1/2in wall, which is the figure he gave. */
+export function trussPlateTimberHpWidthIn(depthIn: number): number {
+  return Math.max(0, depthIn - 2 * PLATE_2X4_WIDTH_IN);
+}
+
+export function buildTrussPlateMembers(lengthIn: number, depthIn: number): PanelMember[] {
   return [
     {
       memberId: "truss_plate_2x4_interior",
@@ -33,17 +62,17 @@ export function buildTrussPlateMembers(lengthIn: number, depthIn: number, insetI
       notes: "Interior-wythe edge.",
     },
     {
-      memberId: "truss_plate_2x6_exterior",
+      memberId: "truss_plate_2x4_exterior",
       material: "dimensional_lumber",
       speciesGrade: LUMBER_SPECIES_GRADE,
       plySpec: null,
-      nominalSize: "2x6",
-      actualDimsIn: { thicknessIn: PLATE_2X6_THICKNESS_IN, widthIn: insetIn, lengthIn },
+      nominalSize: "2x4",
+      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn },
       orientation: "flat",
       position: { xIn: 0, yIn: 0, zIn: 0, rotationDeg: 0 },
       role: "plate",
       qty: 1,
-      notes: "Exterior-wythe edge — its own width is the roof truss's bearing inset from the exterior face.",
+      notes: "Exterior-wythe edge — flush with the wall's exterior face, which is where the roof panel's plumb leg lands.",
     },
     {
       memberId: "truss_plate_skin",
@@ -56,7 +85,7 @@ export function buildTrussPlateMembers(lengthIn: number, depthIn: number, insetI
       position: { xIn: 0, yIn: 0, zIn: PLATE_2X4_THICKNESS_IN, rotationDeg: 0 },
       role: "skin",
       qty: 1,
-      notes: "Caps both edge members — the open cavity below (between the 2x4 and 2x6) is filled with Timber HP.",
+      notes: "Caps both 2x4s — the cavity below them is filled with Timber HP, and this is the face the roof and the gable row bear on.",
     },
   ];
 }
@@ -68,17 +97,17 @@ export interface TimberHpVolumeResult {
 
 /**
  * Volume of the Timber HP-filled cavity under the truss plate's plywood
- * cap — the gap left between the interior 2x4 and exterior 2x6 (whatever
- * doesn't overlap either edge member), 1.5in tall (both edge members'
- * shared thickness), running the plate's full length.
+ * cap — the gap between the two 2x4s, 1.5in tall (their shared thickness),
+ * running the plate's full length. 8 1/2in wide in a 15 1/2in wall, his own
+ * figure; see `trussPlateTimberHpWidthIn`.
  */
-export function computeTimberHpVolume(lengthIn: number, depthIn: number, insetIn: number = PLATE_2X6_WIDTH_IN): TimberHpVolumeResult {
-  const gapWidthIn = Math.max(0, depthIn - PLATE_2X4_WIDTH_IN - insetIn);
+export function computeTimberHpVolume(lengthIn: number, depthIn: number): TimberHpVolumeResult {
+  const gapWidthIn = trussPlateTimberHpWidthIn(depthIn);
   const volumeFt3 = (gapWidthIn * PLATE_2X4_THICKNESS_IN * lengthIn) / 1728;
   return { gapWidthIn, volumeFt3 };
 }
 
-export function buildTrussPlateSchema(lengthIn: number, depthIn: number, insetIn: number = PLATE_2X6_WIDTH_IN): PanelComponentSchema {
+export function buildTrussPlateSchema(lengthIn: number, depthIn: number): PanelComponentSchema {
   return {
     schemaVersion: "0.1",
     componentType: "connection_detail",
@@ -86,8 +115,8 @@ export function buildTrussPlateSchema(lengthIn: number, depthIn: number, insetIn
     displayName: "Truss Plate (Single-Story Roof Bearing)",
     status: "draft",
     derivedFrom: null,
-    overallDimensions: { heightIn: PLATE_2X6_THICKNESS_IN + 0.75, widthIn: lengthIn, depthIn },
-    members: buildTrussPlateMembers(lengthIn, depthIn, insetIn),
+    overallDimensions: { heightIn: PLATE_2X4_THICKNESS_IN + 0.75, widthIn: lengthIn, depthIn },
+    members: buildTrussPlateMembers(lengthIn, depthIn),
     fasteners: [],
     notes: [
       {

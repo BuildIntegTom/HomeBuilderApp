@@ -274,9 +274,44 @@ export function goldenMembers(): PanelMember[] {
     ...asCaptured(buildBracedPanelMembers(48, 14, 96, true, "chevron", false, true)),
     ...asCaptured(buildBracedPanelMembers(48, 14, 96, false, "hatch", true, true)),
     ...asCaptured(goldenGablePanelMembers()),
-    ...buildTrussPlateMembers(96, 14),
+    ...goldenTrussPlateMembers(),
     ...buildBoxBeamMembers(96, 14),
     ...handBuilt,
+  ];
+}
+
+/**
+ * ⚠ **The truss plate AS IT WAS when the fixture was captured** — a 2x4 on
+ * the interior wythe and a **2x6** on the exterior, which was his earlier
+ * spec: *"a 2x4 run on inside wyth and 2x6 on outside wyth topped with 3/4in
+ * plywood"*.
+ *
+ * On 2026-11-01 he superseded it: *"two 2x4's and a default 8.5" piece of
+ * timber HP insulation"*, so the live builder's exterior member is a 2x4 and
+ * the Timber HP cavity grew from 6 1/2in to 8 1/2in. That is a change to the
+ * PART; this fixture exists to pin the EXPORTER, and three flat boxes are
+ * three flat boxes whichever width they are. Stating them here keeps the
+ * golden file still.
+ *
+ * ⚠ **Never regenerate this from the live builder.** That is the bargain:
+ * a frozen record of what the exporter emitted, replayed.
+ */
+function goldenTrussPlateMembers(): PanelMember[] {
+  const lengthIn = 96;
+  const depthIn = 14;
+  const live = buildTrussPlateMembers(lengthIn, depthIn);
+  const interior = live.find((m) => m.memberId === "truss_plate_2x4_interior")!;
+  const skin = live.find((m) => m.memberId === "truss_plate_skin")!;
+  return [
+    interior,
+    {
+      ...live.find((m) => m.memberId === "truss_plate_2x4_exterior")!,
+      memberId: "truss_plate_2x6_exterior",
+      nominalSize: "2x6",
+      actualDimsIn: { thicknessIn: 1.5, widthIn: 5.5, lengthIn },
+      notes: "Exterior-wythe edge — its own width is the roof truss's bearing inset from the exterior face.",
+    },
+    skin,
   ];
 }
 
@@ -313,7 +348,7 @@ export function goldenPanels(): WorldPlacedPanel[] {
       worldXIn: 300,
       worldZIn: 60,
       rotationRad: -Math.PI / 3,
-      members: buildTrussPlateMembers(96, 14),
+      members: goldenTrussPlateMembers(),
     },
   ];
 }

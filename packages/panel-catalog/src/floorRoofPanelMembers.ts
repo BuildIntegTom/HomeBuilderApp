@@ -1446,9 +1446,18 @@ export function lastTrueSheetSeamIn(panelWidthsIn: readonly number[], sheetLengt
    the roof's own pitch.
    ────────────────────────────────────────────────────────────────────────── */
 
-/** The flat leg's bearing width. Defaults to the wall depth, since it *"sits
- * flat on the top plate"* and a top plate is the full depth of its wall.
- * ⚠ A reading of his sentence, not a number he gave. */
+/**
+ * The flat leg's bearing width — **the whole truss plate, confirmed.**
+ *
+ * > *"The plate width is now basically the entire truss plate width = 15.5"
+ * > usually. This is for the truss plate (2 2x4s and timber hp) and where the
+ * > bottom of the roof panels land."* — Tommy, 2026-11-01
+ *
+ * It stood as *"a reading of his sentence, not a number he gave"* from the
+ * 2026-10-22 interview until that line. It is his now, and it is what let the
+ * cap finally be PLACED rather than stacked — see
+ * `buildRoofPanelCapMembers`.
+ */
 /**
  * ⚠ **HOW FAR THE ROOF'S TOP SURFACE SITS ABOVE THE PLANE ITS HEIGHTS ARE
  * QUOTED ON — and the ONE place that number may come from.**
@@ -1520,59 +1529,150 @@ export function roofCapGeometry(pitchIn12: number, panelDepthIn: number, panelWi
 }
 
 /**
- * The cap's members: the plywood web, its flat seat, and the small 2x4s.
+ * The cap's members: the plywood web, its flat seat, and the small 2x4s —
+ * **placed as a real L now, in the void they actually fill.**
  *
- * Built in the same fabrication frame as the rest of the panel, at the Z end
- * the caller names. The plumb leg runs through Y and the seat extends beyond
- * the panel's end, which is why its members sit outside the panel box — that
- * is the point of a cap.
+ * > *"The plate width is now basically the entire truss plate width = 15.5"
+ * > usually. This is for the truss plate (2 2x4s and timber hp) and where the
+ * > bottom of the roof panels land. The excess height of the roof panels goes
+ * > up the vertical plumb flush with the face of the wall."* — Tommy,
+ * > 2026-11-01
+ *
+ * ⚠ **Every piece of this used to sit at `{x:0, y:0, z:0}`** — web, seat
+ * and all the stiffeners stacked in one plane at the panel's end, running back
+ * into the lid. It was a stack, not an L, which is why the 3D view left the
+ * cap out entirely and why a drawn building showed a **15 1/2in x
+ * `depth x pitch/12` void** under every roof panel, along the whole wall:
+ * *"there is a several inch gap under where the roof panels bear."* On a
+ * 15 1/2in wall at 4:12 that gap is 5 1/6in tall.
+ *
+ * It was left stacked because the seat's bearing width was *"one of the
+ * readings of his sentence awaiting a word from him"*. The word above is
+ * that: the seat bears the **whole** truss plate, and the plumb leg stands
+ * flush with the wall's exterior face.
+ *
+ * ⚠ **THE VOID IS A RECTANGLE, NOT A WEDGE**, and that is the thing to hold
+ * on to. The panel already carries its own plumb fascia on its own LEVEL seat
+ * (see `eaveCut`), so what is left under it is bounded by the level seat
+ * above, the truss plate below, the wall's exterior face outside and the
+ * wall's interior face inside. Its height is `bearingSeat x pitch/12` — the
+ * same rise the seat was cut back through.
+ *
+ * ⚠ **Built in the PANEL's frame, from world measurements.** The cap is the
+ * one part of this panel whose shape is defined by level and plumb rather
+ * than by the panel's own axes, so it is laid out in (outward-from-the-wall,
+ * up) and rotated in — see `capPointIn`. Writing it directly in panel
+ * coordinates is how it came to be stacked in the first place.
  */
 export function buildRoofPanelCapMembers(
   options: FloorRoofPanelOptions,
-  atEnd: "eave" | "ridge",
+  atEnd: "eave",
   pitchIn12: number,
 ): PanelMember[] {
-  const geom = roofCapGeometry(pitchIn12, options.depthIn, options.widthIn);
-  const zIn = atEnd === "eave" ? 0 : options.lengthIn;
-  const cutNote = atEnd === "ridge" ? "plumb end cut at the ridge" : `seat cut ${geom.panelAngleDeg.toFixed(2)}deg off square`;
+  const o = options;
+  const geom = roofCapGeometry(pitchIn12, o.depthIn, o.widthIn);
+  const eave = eaveCut({ ...o, pitchIn12 });
+  /* ⚠ No level seat, no cap. Without `bearingSeatDepthIn` the panel's
+     underside runs straight to its own corner and there is no rectangular
+     void for an L to fill — the shape would be a triangle, which is a
+     different part. Returning nothing is honest; guessing a shape is not.
+     Every panel the building actually places carries a seat. */
+  if (!eave) return [];
 
-  const members: PanelMember[] = [
-    sheet(
-      `cap-${atEnd}-web`,
-      "girt_web",
-      STRUCTURAL_GIRT_PLY_SPEC,
-      { thicknessIn: STRUCTURAL_GIRT_PLY_THICKNESS_IN, widthIn: geom.plumbHeightIn, lengthIn: options.widthIn },
-      { xIn: 0, yIn: 0, zIn },
-      `${atEnd} cap plumb leg — ${cutNote}`,
-    ),
-    /* ⚠ The seat is a SHEET, not a 2x4. He called the whole thing an "L
-       plate" — a 2x4 is 3.5in wide and could not bear the 15.5in top plate
-       he described it sitting flat on. */
-    sheet(
-      `cap-${atEnd}-seat`,
-      "plate",
-      STRUCTURAL_GIRT_PLY_SPEC,
-      { thicknessIn: STRUCTURAL_GIRT_PLY_THICKNESS_IN, widthIn: geom.seatWidthIn, lengthIn: options.widthIn },
-      { xIn: 0, yIn: 0, zIn },
-      "flat leg — bears on the wall's top plate",
-    ),
+  const hyp = Math.hypot(12, pitchIn12);
+  const cos = 12 / hyp;
+  const sin = pitchIn12 / hyp;
+  const tan = pitchIn12 / 12;
+  /** The void's own height: the rise the panel's seat was cut back through. */
+  const voidHeightIn = eave.seatIn * tan;
+  /** How far the panel's top corner at the wall face stands above the truss
+   * plate — the same number the 3D anchor clears the roof plane by. */
+  const anchorAbovePlateIn = roofTopAboveRooflineIn(o.depthIn, pitchIn12);
+
+  /**
+   * (outward-from-the-wall-face, up-from-the-plate) → the panel's own
+   * (depth, span). A plain rotation by the pitch about the panel's top corner
+   * at the wall face, which is where the anchor puts it.
+   */
+  const capPointIn = (uIn: number, vIn: number): SectionSpacePoint2D => {
+    const wIn = anchorAbovePlateIn - vIn;
+    return { yIn: uIn * sin + wIn * cos, zIn: uIn * cos - wIn * sin };
+  };
+  const box = (u0: number, u1: number, v0: number, v1: number): SectionSpacePoint2D[] => [
+    capPointIn(u0, v0),
+    capPointIn(u1, v0),
+    capPointIn(u1, v1),
+    capPointIn(u0, v1),
   ];
 
+  const plyIn = STRUCTURAL_GIRT_PLY_THICKNESS_IN;
+  const seatWidthIn = Math.min(geom.seatWidthIn, o.depthIn);
+  const webHeightIn = Math.max(0, voidHeightIn - plyIn);
+
+  const members: PanelMember[] = [
+    /* ⚠ The SEAT first and FULL WIDTH — his *"the entire truss plate
+       width"*. It lies flat on the plate and the plumb leg stands on it, so
+       the whole 15 1/2in bears rather than 15in with the web stealing the
+       rest. */
+    sheet(
+      "cap-eave-seat",
+      "plate",
+      STRUCTURAL_GIRT_PLY_SPEC,
+      { thicknessIn: plyIn, widthIn: seatWidthIn, lengthIn: o.widthIn },
+      { xIn: 0, yIn: 0, zIn: 0 },
+      `flat leg — bears on the whole ${seatWidthIn}in of the truss plate, flush with both wall faces`,
+    ),
+  ];
+  members[0]!.position.sectionCornersIn = box(0, seatWidthIn, 0, plyIn);
+  /* A void shorter than the seat's own plywood is no void at all — a flat
+     roof, or a pitch so shallow the seat was barely cut back. The seat alone
+     is then the whole cap. */
+  if (!(webHeightIn > 0)) return members;
+
+  const web = sheet(
+    "cap-eave-web",
+    "girt_web",
+    STRUCTURAL_GIRT_PLY_SPEC,
+    { thicknessIn: plyIn, widthIn: webHeightIn, lengthIn: o.widthIn },
+    { xIn: 0, yIn: 0, zIn: 0 },
+    `plumb leg — stands on the seat, flush with the wall's exterior face; the panel's own fascia meets it ${geom.panelAngleDeg.toFixed(2)}deg off square`,
+  );
+  web.position.sectionCornersIn = box(0, plyIn, plyIn, voidHeightIn);
+  members.push(web);
+
+  /* The small vertical 2x4s behind the plumb leg, edge to edge across the
+     panel's width — the same structural-lid construction every other lid in
+     this panel uses. ⚠ On a shallow pitch the void is short and these come
+     out as blocks rather than studs: at 2:12 a 15 1/2in panel leaves 2 1/16in
+     of web. Short is correct here; it is the void's own height. */
   let xIn = 0;
   for (let i = 0; i < geom.stiffenerCount; i++) {
-    const widthIn = Math.min(PLATE_2X4_WIDTH_IN, options.widthIn - xIn);
-    members.push(
-      lumber(
-        `cap-${atEnd}-stiffener-${i}`,
-        "stud",
-        "2x4",
-        { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn, lengthIn: geom.plumbHeightIn },
-        "horizontal",
-        180,
-        { xIn, yIn: 0, zIn },
-        widthIn < PLATE_2X4_WIDTH_IN - 1e-9 ? `ripped to ${widthIn}in wide` : undefined,
-      ),
-    );
+    const widthIn = Math.min(PLATE_2X4_WIDTH_IN, o.widthIn - xIn);
+    if (!(widthIn > 0)) break;
+    members.push({
+      memberId: `cap-eave-stiffener-${i}`,
+      material: "dimensional_lumber",
+      speciesGrade: LUMBER_SPECIES_GRADE,
+      plySpec: null,
+      nominalSize: "2x4",
+      actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn, lengthIn: webHeightIn },
+      /* ⚠ `horizontal` + 180 is the orientation whose X extent is the
+         member's WIDTH — see `memberBoxSizeIn`. These run edge to edge
+         across the panel, so each must occupy its own 3 1/2in of it; read as
+         `vertical` they came out 1 1/2in wide with a 2in gap between every
+         pair. */
+      orientation: "horizontal",
+      position: {
+        xIn,
+        yIn: 0,
+        zIn: 0,
+        rotationDeg: 180,
+        sectionCornersIn: box(plyIn, plyIn + PLATE_2X4_THICKNESS_IN, plyIn, voidHeightIn),
+      },
+      role: "stud",
+      qty: 1,
+      notes: widthIn < PLATE_2X4_WIDTH_IN - 1e-9 ? `ripped to ${widthIn}in wide` : undefined,
+    });
     xIn += PLATE_2X4_WIDTH_IN;
   }
   return members;
@@ -1610,15 +1710,31 @@ export function buildFloorRoofPanelSchema(options: FloorRoofPanelOptions, pitchI
        note. Adding a separate ridge cap on top of it would put two plates in
        one place, which is the overlap rule broken by duplication rather than
        by arithmetic. */
-    members.push(...buildRoofPanelCapMembers(options, "eave", pitchIn12));
+    /* ⚠ The seat defaults to the wall's depth here, which is what the
+       building itself always passes (`deckPanelTakeoff`) and what his *"the
+       entire truss plate width"* describes. Without it the panel has no level
+       seat, and the cap — which stands UNDER that seat — would have nothing
+       to fill, so a schema asked for without one would quietly come back
+       capless. */
+    members.push(
+      ...buildRoofPanelCapMembers(
+        { ...options, pitchIn12, bearingSeatDepthIn: options.bearingSeatDepthIn ?? options.depthIn },
+        "eave",
+        pitchIn12,
+      ),
+    );
   }
 
   const notes: PanelComponentSchema["notes"] = [
     {
-      type: "warning",
+      type: "deviation",
       text:
-        "The cap's flat leg is modelled bearing the full wall depth (15.5in), read from \"the L plate sits flat on the top plate\". " +
-        "A reading of his sentence, not a dimension he gave.",
+        "The cap's flat leg bears the full wall depth (15.5in) — Tommy, 2026-11-01: \"The plate width is now basically " +
+        "the entire truss plate width = 15.5\" usually... and where the bottom of the roof panels land. The excess height " +
+        "of the roof panels goes up the vertical plumb flush with the face of the wall.\" That settled the one reading " +
+        "this part had been waiting on, and the cap is now placed in the void it fills rather than stacked at the " +
+        "panel's end. What is still unconfirmed is its MAKE-UP: 1/2in structural ply for the seat and web with 2x4 " +
+        "stiffeners edge to edge, which is this app's reading of \"structural small vertical 2x4s\".",
     },
     {
       type: "deviation",

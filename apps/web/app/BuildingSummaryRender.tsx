@@ -38,7 +38,6 @@ export interface BuildingSummaryRenderProps {
     }[]
   >;
   roofEnabled?: boolean;
-  trussPlateInsetIn?: number;
   boxBeamCoverageByWallId?: Record<string, BoxBeamCoverage>;
   boxBeamSizeId?: BoxBeamSizeId;
   midWallBeamsByWallId?: Record<string, MidWallBeam[]>;

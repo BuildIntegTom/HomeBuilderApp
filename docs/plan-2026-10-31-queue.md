@@ -450,3 +450,33 @@ from that derivation — and of making sure the number that moves is the
 PANEL's height, not the roofline, so the pitch readout does not shift (the
 mistake `gable_ends_full_height` records). Also an overlap the audit should
 see once fixed.
+
+### B10 — the gable/tilted rows as a second layer on the 2D PLAN, set out from the wall
+
+> *"On 2D plan view.... Additional layers of panels appear 2' directly
+> outward of the first floor walls. That would perhaps help everything line
+> up, and to be able to visually edit it. The 2' is arbitrary, but for the
+> north wall's shed gable panels, they would appear on 2d view a few ft north
+> of the north wall. And that way all the panel editor tools for Gable ends
+> can also be on the same 2d plan view editor where most of the editing
+> happens anyways."* — Tommy, 2026-11-01
+
+An exploded plan: each wall's upper rows drawn as their own strip offset
+outward from that wall, so the gable row, the tilted row and the wall row all
+appear in one plan, one above the other, and the plan editor's tools reach
+them. That answers B3's *"let's figure out how to match these two layers of
+panel slots up"* by making the mismatch visible while you edit, instead of
+only in elevation.
+
+⚠ **It does NOT address the cross-tilt low-edge problem (B8).** That one is a
+dimension in the panel's SECTION — the 3.5in exterior face is too shallow to
+hold two plates and two skins — and no plan view can show it, because a plan
+has no height. What B10 would give is the place to SET that height once it is
+decided, which is the useful part.
+
+Scope notes before building: the offset is a drawing convention, so it must
+never reach a cut list or a coordinate the 3D view reads; the strips want to
+be selectable and hit-tested independently of the wall under them; and a
+courtyard ring or a mitered footprint has walls whose outward normals are not
+axis-aligned, so "2ft outward" is along each wall's own normal rather than
+north.

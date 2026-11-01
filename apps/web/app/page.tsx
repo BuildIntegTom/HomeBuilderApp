@@ -676,6 +676,21 @@ const phase2Assumptions = () => [
  */
 const CATALOG_SUPERSESSIONS = [
   {
+    label: "Truss plate: the exterior wythe member is a 2x4, not a 2x6 (Tommy, 2026-11-01)",
+    status: "confirmed" as const,
+    note:
+      "His earlier spec was \"a 2x4 run on inside wyth and 2x6 on outside wyth topped with 3/4in plywood\", which " +
+      "left a 6 1/2in Timber HP cavity. On 2026-11-01 he superseded it: \"two 2x4's and a default 8.5\" piece of " +
+      "timber HP insulation\", and separately \"the plate width is now basically the entire truss plate width = " +
+      "15.5\" usually\". The two halves check each other — two 2x4s in a 15 1/2in wall leave exactly the 8 1/2in he " +
+      "named — so the cavity follows the wall depth rather than being a fixed figure. ⚠ The assembly HEIGHT is " +
+      "unchanged at 2 1/4in (1 1/2in of plate plus the 3/4in cap), so no roofline, eave or gable height moves. " +
+      "⚠ One behaviour change beyond the lumber: the Roof tab's truss-plate inset used to double as the exterior " +
+      "member's WIDTH, so changing where a truss bore also changed what the plate was made of. Those are untied now " +
+      "— the roof bears on the whole plate (see the eave cap), and the inset means only what it says for the gable " +
+      "row and the heel seat.",
+  },
+  {
     label: "Sill panel minimum width moved to 24in (Building Integrity, superseding the manufacturer)",
     status: "confirmed" as const,
     note:
@@ -7196,12 +7211,12 @@ export default function LayoutEditor() {
     return totalIn;
   }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, totalBuiltWallPerimeterIn]);
   const trussPlatePreviewMembers = useMemo(
-    () => buildTrussPlateMembers(ASSEMBLY_PREVIEW_LENGTH_IN, thicknessIn, trussPlateInsetIn),
-    [thicknessIn, trussPlateInsetIn],
+    () => buildTrussPlateMembers(ASSEMBLY_PREVIEW_LENGTH_IN, thicknessIn),
+    [thicknessIn],
   );
   const timberHpTotal = useMemo(
-    () => computeTimberHpVolume(trussPlateWallLengthTotalIn, thicknessIn, trussPlateInsetIn),
-    [trussPlateWallLengthTotalIn, thicknessIn, trussPlateInsetIn],
+    () => computeTimberHpVolume(trussPlateWallLengthTotalIn, thicknessIn),
+    [trussPlateWallLengthTotalIn, thicknessIn],
   );
   const timberHpWeight = useMemo(
     () => computeInsulationWeight(timberHpTotal.volumeFt3, timberHpDensityLbFt3.value),
@@ -8408,12 +8423,12 @@ export default function LayoutEditor() {
       const kindLabel = kind === "truss-plate" ? "Truss Plate" : "Box Beam";
       const heightIn = kind === "truss-plate" ? computeRoofBearingAssemblyHeightIn(false) : computeBoxBeamAssemblyHeightIn(boxBeamSizeId);
       const members =
-        kind === "truss-plate" ? buildTrussPlateMembers(lengthIn, thicknessIn, trussPlateInsetIn) : buildBoxBeamMembers(lengthIn, thicknessIn, boxBeamSizeId);
+        kind === "truss-plate" ? buildTrussPlateMembers(lengthIn, thicknessIn) : buildBoxBeamMembers(lengthIn, thicknessIn, boxBeamSizeId);
       const woodWeightKg = computeMemberSetWoodWeight(members).weightKg;
       const fill =
         kind === "truss-plate"
           ? (() => {
-              const vol = computeTimberHpVolume(lengthIn, thicknessIn, trussPlateInsetIn);
+              const vol = computeTimberHpVolume(lengthIn, thicknessIn);
               const weight = computeInsulationWeight(vol.volumeFt3, timberHpDensityLbFt3.value);
               return { label: "Timber HP insulation fill", weightKg: weight.weightKg, weightLb: weight.weightLb };
             })()
@@ -8446,7 +8461,7 @@ export default function LayoutEditor() {
         instances: walls.map((w) => ({ name: `Wall ${w.id} (${w.direction})` })),
       };
     });
-  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, boxBeamSizeId, thicknessIn, trussPlateInsetIn, builtWallLengthInByWallId]);
+  }, [footprint, stories.length, secondStory, boxBeamCoverageByWallId, boxBeamSizeId, thicknessIn, builtWallLengthInByWallId]);
 
   /* Floor and roof PANELS' own Shop Fabrication pages.
 
@@ -13579,7 +13594,6 @@ export default function LayoutEditor() {
                   onSetWindowHeight={handleSetWindowHeight}
                   gableTilesByWallId={gableTilesByWallId}
                   roofEnabled={roofEnabled}
-                  trussPlateInsetIn={gableEndsFullHeight ? 0 : trussPlateInsetIn}
                   boxBeamCoverageByWallId={boxBeamCoverageByWallId}
                   boxBeamSizeId={boxBeamSizeId}
                   midWallBeamsByWallId={midWallBeamsByStoryAndWallId.ground}
@@ -13652,7 +13666,6 @@ export default function LayoutEditor() {
               standardWidthIn={standardWidthIn}
               gableTilesByWallId={gableTilesByWallId}
               roofEnabled={roofEnabled}
-              trussPlateInsetIn={gableEndsFullHeight ? 0 : trussPlateInsetIn}
               boxBeamCoverageByWallId={boxBeamCoverageByWallId}
               boxBeamSizeId={boxBeamSizeId}
               midWallBeamsByWallId={midWallBeamsByStoryAndWallId.ground}
@@ -15467,10 +15480,17 @@ export default function LayoutEditor() {
                         .{" "}
                         {group.capMembers.length > 0 && (
                           <>
-                            The eave cap is included in the cut list below. ⚠ Its web, seat and stiffeners are still
-                            listed at the panel&apos;s end rather than placed as a true L, which is why the 3D view
-                            leaves them out — drawing three members in one place is the one thing the model is not
-                            allowed to do. The cap&apos;s real geometry is waiting on the bearing width below.{" "}
+                            The eave cap is included in the cut list below, and it is a <strong>real L</strong> now:
+                            a plywood seat bearing the whole {thicknessIn}in of the truss plate, a plumb leg standing
+                            on it flush with the wall&apos;s exterior face, and 2x4 stiffeners edge to edge behind
+                            that leg. It fills the{" "}
+                            {formatLengthIn(
+                              group.options.depthIn * ((group.options.pitchIn12 ?? 0) / 12),
+                              unitSystem,
+                            )}{" "}
+                            of space between the truss plate and this panel&apos;s own level seat — the gap that used
+                            to run the whole length of the wall, because the part that fills it was built and never
+                            placed.{" "}
                           </>
                         )}
                         {group.plan.lastTrueSheetSeamIn !== null && (
@@ -15519,11 +15539,12 @@ export default function LayoutEditor() {
                     Draft — floor and roof panels are modeled from Tommy&apos;s verbal fabrication spec and have
                     not been confirmed back to him or to Building Integrity. Open items on this sheet: no fastener
                     schedule exists for these panels, so the weight checker shows fasteners as not modeled rather
-                    than zero; the eave/ridge cap&apos;s flat leg is modeled bearing the full {thicknessIn}in wall
-                    depth, which is a reading of &quot;the L plate sits flat on the top plate&quot; and not a
-                    dimension he gave; and on that same cap the web, seat and stiffeners are still stacked at the
-                    panel&apos;s end rather than placed as a true L, which is the next thing to fix once that
-                    bearing width is settled. Panel widths themselves are settled: a {FLOOR_ROOF_MIN_PANEL_WIDTH_IN}in
+                    than zero; and the eave cap&apos;s MAKE-UP is still this app&apos;s reading — 1/2in structural
+                    ply for the seat and web with 2x4 stiffeners edge to edge, from &quot;structural small vertical
+                    2x4s&quot;. Its bearing width is no longer a reading: &quot;The plate width is now basically the
+                    entire truss plate width = 15.5&quot; usually... The excess height of the roof panels goes up
+                    the vertical plumb flush with the face of the wall&quot; (2026-11-01), which is what let the cap
+                    be placed instead of stacked. Panel widths are settled too: a {FLOOR_ROOF_MIN_PANEL_WIDTH_IN}in
                     minimum, redistributed into the neighbouring panels when a run would otherwise close with a
                     sliver.
                   </p>

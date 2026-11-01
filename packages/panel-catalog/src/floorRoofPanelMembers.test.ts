@@ -403,21 +403,66 @@ describe("⚠ the caps — the L is square, the PANEL meets it at the odd angle"
     expect((g.stiffenerCount - 1) * PLATE_2X4_WIDTH_IN + g.lastStiffenerWidthIn).toBeCloseTo(FLOOR_ROOF_PANEL_WIDTH_IN, 9);
   });
 
-  it("⚠ eave and ridge are the SAME part — only the end cut differs", () => {
-    // "The ridge cap is the same thing except to end plumbing cut."
-    const eave = buildRoofPanelCapMembers(roofPanel, "eave", 4);
-    const ridge = buildRoofPanelCapMembers(roofPanel, "ridge", 4);
-    expect(eave.length).toBe(ridge.length);
-    const dims = (ms: typeof eave) => ms.map((m) => `${m.actualDimsIn.thicknessIn}x${m.actualDimsIn.widthIn}x${m.actualDimsIn.lengthIn}`);
-    expect(dims(eave)).toEqual(dims(ridge));
-    // What differs is what the shop is told to do at the end.
-    expect(eave.find((m) => m.memberId === "cap-eave-web")!.notes).toContain("off square");
-    expect(ridge.find((m) => m.memberId === "cap-ridge-web")!.notes).toContain("plumb");
+  it("⚠ the cap is a real L in the void it fills, not a stack at the panel's end", () => {
+    /* Every piece of it used to sit at {x:0,y:0,z:0}. That is why the 3D view
+       left the cap out, and why a drawn building showed a several-inch gap
+       under where the roof panels bear — the part that fills it was built and
+       never placed. Tommy, 2026-11-01, settling the reading it had been
+       waiting on: the seat bears the whole truss plate and the plumb leg
+       stands flush with the wall's exterior face. */
+    const seated = { ...roofPanel, bearingSeatDepthIn: 15.5 };
+    const eave = buildRoofPanelCapMembers(seated, "eave", 4);
+    expect(eave.length).toBeGreaterThan(2);
+    for (const m of eave) {
+      expect({ id: m.memberId, placed: m.position.sectionCornersIn !== undefined }).toEqual({ id: m.memberId, placed: true });
+    }
+    // Distinct positions in the section, not one stack.
+    const keyOf = (m: (typeof eave)[number]) => JSON.stringify(m.position.sectionCornersIn);
+    expect(new Set(eave.map(keyOf)).size).toBeGreaterThanOrEqual(3);
   });
 
-  it("the seat bears the full depth of the wall's top plate", () => {
-    const eave = buildRoofPanelCapMembers(roofPanel, "eave", 4);
-    expect(eave.find((m) => m.memberId === "cap-eave-seat")!.actualDimsIn.widthIn).toBe(ROOF_CAP_SEAT_WIDTH_IN);
+  it("⚠ the cap stands between the truss plate and the panel's own level seat", () => {
+    /* Measured back in world terms (outward from the wall face, up from the
+       plate), which is the only frame this part is really defined in. The
+       void is a RECTANGLE, `bearingSeat x pitch/12` tall — 5 1/6in on a
+       15 1/2in wall at 4:12 — bounded by the plate below and the panel's own
+       level seat above. */
+    const depthIn = 15.5;
+    const pitchIn12 = 4;
+    const seated = { ...roofPanel, depthIn, bearingSeatDepthIn: depthIn, pitchIn12 };
+    const hyp = Math.hypot(12, pitchIn12);
+    const cos = 12 / hyp;
+    const sin = pitchIn12 / hyp;
+    const anchor = (depthIn * hyp) / 12;
+    const toWorld = (c: { yIn: number; zIn: number }) => ({
+      uIn: c.yIn * sin + c.zIn * cos,
+      vIn: anchor - (c.yIn * cos - c.zIn * sin),
+    });
+    const voidHeightIn = depthIn * (pitchIn12 / 12);
+    expect(voidHeightIn).toBeCloseTo(5.1667, 3);
+
+    for (const m of buildRoofPanelCapMembers(seated, "eave", pitchIn12)) {
+      for (const corner of m.position.sectionCornersIn!) {
+        const w = toWorld(corner);
+        expect({ id: m.memberId, u: w.uIn >= -1e-6 && w.uIn <= depthIn + 1e-6 }).toEqual({ id: m.memberId, u: true });
+        expect({ id: m.memberId, v: w.vIn >= -1e-6 && w.vIn <= voidHeightIn + 1e-6 }).toEqual({ id: m.memberId, v: true });
+      }
+    }
+  });
+
+  it("the seat bears the full depth of the wall's top plate, and sits ON the plate", () => {
+    const seated = { ...roofPanel, bearingSeatDepthIn: 15.5 };
+    const eave = buildRoofPanelCapMembers(seated, "eave", 4);
+    const seat = eave.find((m) => m.memberId === "cap-eave-seat")!;
+    expect(seat.actualDimsIn.widthIn).toBe(ROOF_CAP_SEAT_WIDTH_IN);
+    expect(seat.position.sectionCornersIn).toBeDefined();
+  });
+
+  it("⚠ a panel with no bearing seat gets NO cap, rather than a guessed one", () => {
+    /* Without a seat the panel's underside runs to its own corner and what is
+       left is a triangle — a different part. Every panel the building places
+       carries a seat. */
+    expect(buildRoofPanelCapMembers(roofPanel, "eave", 4)).toEqual([]);
   });
 });
 
@@ -433,10 +478,18 @@ describe("the component schema a SketchUp exporter would read", () => {
     expect(schema.derivedFrom).toBe("standard_panel");
   });
 
-  it("⚠ carries my two interpretations as NOTES, not as comments nobody exports", () => {
+  it("⚠ carries what is STILL an interpretation as a NOTE, not a comment nobody exports", () => {
     const schema = buildFloorRoofPanelSchema({ ...roofPanel, kind: "floor", structuralGirtEnds: ["start"] });
     const text = schema.notes.map((n) => n.text).join(" ");
-    expect(text).toContain("sits flat on the top plate");
+    /* ⚠ The cap's BEARING WIDTH used to be one of these, read from *"the L
+       plate sits flat on the top plate"*. It is his own number now — *"the
+       plate width is now basically the entire truss plate width = 15.5\""*,
+       2026-11-01 — so the note attributes it to him and names what is
+       actually left open: what the cap is MADE OF. A note that kept calling a
+       confirmed figure a reading would understate the panel as badly as one
+       that called a reading confirmed overstates it. */
+    expect(text).toContain("the entire truss plate width");
+    expect(text).toContain("this app's reading of");
     /* The closer panel's note went with the closer panel — four 24in field
        panels are exactly 8ft, so nothing has to be trimmed to get back onto
        the sheet, and the "a little bigger" discrepancy it recorded is moot. */
@@ -527,14 +580,17 @@ describe("⚠ the cut list the shop actually gets", () => {
     );
   });
 
-  it("⚠ a roof cap's stiffeners are cut to the PLUMB height, not the depth", () => {
-    /* 15.5in of depth at 4:12 stands 16 5/16in tall. A cap cut to 15 1/2 would
-       not reach, and the error grows with the pitch. */
-    const roof = { ...opts, kind: "roof" as const, structuralGirtEnds: [] };
+  it("⚠ a roof cap's stiffeners are cut to the VOID's height, not the panel's", () => {
+    /* They used to be cut to the panel's own plumb thickness (16 5/16in at
+       4:12), which is what a cap standing against the whole end face would
+       need. The panel carries its own plumb fascia now, so this cap fills only
+       what is left under that fascia's level seat: `seat x pitch/12`, less the
+       seat ply it stands on. */
+    const roof = { ...opts, kind: "roof" as const, structuralGirtEnds: [], bearingSeatDepthIn: 15.5 };
     const rows = computePanelCutList(buildRoofPanelCapMembers(roof, "eave", 4));
     const stiffener = rows.find((r) => r.partLabel.includes("2x4"))!;
-    expect(stiffener.lengthLabel).not.toBe('15½"');
-    expect(stiffener.lengthLabel).toContain("16");
+    expect(stiffener.lengthLabel).not.toContain("16");
+    expect(15.5 * (4 / 12) - 0.5).toBeCloseTo(4.6667, 3);
   });
 
   it("the whole list is non-empty and every row names its material", () => {
@@ -556,29 +612,19 @@ describe("⚠ no two members occupy the same space", () => {
      For comparison: a standard panel has 8, all girt-web-over-corner-stud,
      which is an accepted modelling convention across the app. Floor and roof
      panels are held to zero because nothing in them needs that licence. */
-  const overlappingPairs = (members: PanelMember[]) => {
-    const boxes = members.map((m) => {
-      const size = memberBoxSizeIn(m);
-      return {
-        id: m.memberId,
-        x0: m.position.xIn, x1: m.position.xIn + size.xIn,
-        y0: m.position.yIn, y1: m.position.yIn + size.yIn,
-        z0: m.position.zIn, z1: m.position.zIn + size.zIn,
-      };
-    });
-    const found: string[] = [];
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) {
-        const a = boxes[i]!;
-        const b = boxes[j]!;
-        const ox = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
-        const oy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
-        const oz = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0);
-        if (ox > 1e-6 && oy > 1e-6 && oz > 1e-6) found.push(`${a.id} x ${b.id}`);
-      }
-    }
-    return found;
-  };
+  /**
+   * ⚠ **The REAL prism audit, not a box of the member's three dimensions.**
+   *
+   * This was a naive AABB off `position.{x,y,z}In` plus `memberBoxSizeIn`,
+   * which is blind to every shaped member in this file: a plumb-cut end, a
+   * bevelled joist, a bearing wedge and the eave cap all carry their true
+   * shape in `sectionCornersIn` and leave `position` at the frame origin. So
+   * it read the whole cap as one stack at {0,0,0} and reported 28 overlaps
+   * that are not there, while silently missing any real overlap between two
+   * shaped members. `overlappingMemberPairs` is the function
+   * `memberOverlap.test.ts` audits every panel in the catalogue with.
+   */
+  const overlappingPairs = (members: PanelMember[]) => overlappingMemberPairs(members);
 
   it("on a floor panel, at every width a run can produce", () => {
     for (const widthIn of [FLOOR_ROOF_EDGE_PANEL_WIDTH_IN, 12, 13.5, 15.5, 19, FLOOR_ROOF_PANEL_WIDTH_IN, 21.5, 23.875]) {
@@ -594,22 +640,26 @@ describe("⚠ no two members occupy the same space", () => {
   });
 
   it("on a roof panel, caps and all", () => {
-    const options = { kind: "roof" as const, widthIn: FLOOR_ROOF_PANEL_WIDTH_IN, depthIn: 15.5, lengthIn: 300, structuralGirtEnds: [] };
+    const options = {
+      kind: "roof" as const,
+      widthIn: FLOOR_ROOF_PANEL_WIDTH_IN,
+      depthIn: 15.5,
+      lengthIn: 300,
+      structuralGirtEnds: [],
+      pitchIn12: 4,
+      bearingSeatDepthIn: 15.5,
+    };
     const members = [
       ...buildFloorRoofPanelMembers(options),
       ...buildRoofPanelCapMembers(options, "eave", 4),
     ];
-    /* ⚠ Caps are excluded, and that is a real gap rather than a licence.
-       Measured: every cap member sits at the same z as every other, so the
-       web, the seat and all six stiffeners occupy one plane at the panel's
-       end and run back into the lid. It is a stack, not an L.
-
-       Not fixed here because placing the L properly needs the seat's bearing
-       width settled first, and that is still one of the readings of his
-       sentence awaiting a word from him. The rest of the panel is held to
-       zero. */
-    const offending = overlappingPairs(members).filter((pair) => !pair.includes("cap-"));
-    expect(offending).toEqual([]);
+    /* ⚠ **CAPS INCLUDED NOW.** They were excluded while every cap member sat
+       at the same {0,0,0} — web, seat and all the stiffeners in one plane at
+       the panel's end, running back into the lid. A stack, not an L, and the
+       reason the 3D view left the cap out and a drawn building showed a gap
+       under where its roof bears. Placed properly, the whole panel holds to
+       zero like every other. */
+    expect(overlappingPairs(members)).toEqual([]);
   });
 
   it("⚠ the girts are cut to the space between the joists, which is what fixed it", () => {

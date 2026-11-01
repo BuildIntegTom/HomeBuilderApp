@@ -713,6 +713,13 @@ function DeckOutlinePrism({
 }
 
 /** Enough to see the framing through, not so little it vanishes. */
+/** A deck panel's members as INSTALLED — the panel plus its eave cap, which
+ * the takeoff keeps as its own field so a consumer can tell the two apart.
+ * Shared by the 3D view and the export so neither can drop it. */
+function deckMembersWithCap(group: { members: PanelMember[]; capMembers: PanelMember[] }): PanelMember[] {
+  return group.capMembers.length === 0 ? group.members : [...group.members, ...group.capMembers];
+}
+
 const ROOF_SEE_THROUGH_OPACITY = 0.25;
 
 /**
@@ -946,9 +953,6 @@ interface Building3DViewProps {
    * `roofEnabled` checkbox) — gates whether a roof-bearing (truss plate/box
    * beam) member renders atop every wall. */
   roofEnabled?: boolean;
-  /** Truss plate's own inset from each wall's true corners (page.tsx's
-   * `trussPlateInsetIn`) — unused for box beam, which has no inset. */
-  trussPlateInsetIn?: number;
   /** Which walls (and exactly which of their own 2nd-story slots) have a
    * Box Beam rather than a Truss Plate (page.tsx's
    * `boxBeamCoverageByWallId`) — only meaningful when `secondStory` is
@@ -1255,7 +1259,6 @@ export default function Building3DView({
   leastAccessibleCorner,
   gableTilesByWallId = EMPTY_GABLE_TILES_BY_WALL_ID,
   roofEnabled = false,
-  trussPlateInsetIn = 0,
   boxBeamCoverageByWallId = EMPTY_BOX_BEAM_COVERAGE_BY_WALL_ID,
   boxBeamSizeId = BOX_BEAM_SIZE_DEFAULT,
   midWallBeamsByWallId = EMPTY_MID_WALL_BEAMS_BY_WALL_ID,
@@ -1744,7 +1747,7 @@ export default function Building3DView({
         const hasBoxBeam = seg.kind === "box-beam";
         const members = hasBoxBeam
           ? buildBoxBeamMembers(seg.lengthIn, thicknessIn, boxBeamSizeId)
-          : buildTrussPlateMembers(seg.lengthIn, thicknessIn, trussPlateInsetIn);
+          : buildTrussPlateMembers(seg.lengthIn, thicknessIn);
         const assemblyHeightIn = hasBoxBeam ? computeBoxBeamAssemblyHeightIn(boxBeamSizeId) : sharedRoofBearingHeightIn;
         // A box-beam segment's own row is built shorter (see
         // secondStorySlotBoxes above) so the beam itself must anchor lower
@@ -1790,7 +1793,6 @@ export default function Building3DView({
     boxBeamCoverageByWallId,
     boxBeamSizeId,
     thicknessIn,
-    trussPlateInsetIn,
     sharedRoofBearingHeightIn,
     roofBaseHeightIn,
     // Read at the top of this memo (Stage 3). Missing, a single-story
@@ -1882,14 +1884,18 @@ export default function Building3DView({
            * against, so they cannot disagree about the shape again.
            */
           outlineIn: { widthIn: instance.widthIn, section: group.sectionIn },
-          /* ⚠ `group.members` and NOT the eave cap: its pieces are all still
-             stacked at the panel's end rather than placed as a true L, so
-             drawing them would put three members in one place. See
-             `DeckPanelTakeoffGroup.capMembers`. */
+          /* ⚠ **THE EAVE CAP IS DRAWN NOW.** It was held out while its pieces
+             were all stacked at the panel's end rather than placed as a true
+             L — drawing them would have put the web, the seat and every
+             stiffener in one place. That is also why a drawn building showed
+             *"a several inch gap under where the roof panels bear"*: the part
+             that fills it existed only on paper. It is placed in the void it
+             fills now, so it is part of the panel here as it is on the
+             sheet. */
           members:
             instance.facing !== undefined && instance.facing === seeThroughFacing
-              ? group.members.map((m) => ({ ...m, opacityOverride: ROOF_SEE_THROUGH_OPACITY }))
-              : group.members,
+              ? deckMembersWithCap(group).map((m) => ({ ...m, opacityOverride: ROOF_SEE_THROUGH_OPACITY }))
+              : deckMembersWithCap(group),
         },
       ];
     });

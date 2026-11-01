@@ -14,7 +14,7 @@ import { buildTrussPlateMembers } from "./trussPlateMembers";
 import { buildBoxBeamMembers } from "./boxBeamMembers";
 import { buildBigHeaderMembers } from "./bigHeaderMembers";
 import { buildVerticalGapFillerMembers } from "./verticalGapFillerMembers";
-import { buildFloorRoofPanelMembers } from "./floorRoofPanelMembers";
+import { buildFloorRoofPanelMembers, buildRoofPanelCapMembers } from "./floorRoofPanelMembers";
 
 /**
  * ⚠ NOTHING THE APP DRAWS MAY OCCUPY THE SAME SPACE TWICE.
@@ -63,6 +63,18 @@ const CASES: { name: string; members: PanelMember[] }[] = [
   { name: "window header", members: buildWindowHeaderMembers(40, D, 24) },
   { name: "floor panel", members: buildFloorRoofPanelMembers({ kind: "floor", widthIn: 19.25, depthIn: D, lengthIn: 300, structuralGirtEnds: ["start", "end"] }) },
   { name: "roof panel", members: buildFloorRoofPanelMembers({ kind: "roof", widthIn: 19.25, depthIn: D, lengthIn: 300, structuralGirtEnds: [] }) },
+  /* ⚠ The roof panel AS INSTALLED: pitched, plumb-cut at both ends, on its
+     bearing seat, with the eave cap it lands on. Unaudited until 2026-11-01,
+     because the cap's pieces were all stacked at {0,0,0} and the panel was
+     only ever checked unpitched. Both are real now, and both are held to
+     zero. */
+  {
+    name: "roof panel as installed",
+    members: (() => {
+      const o = { kind: "roof" as const, widthIn: 19.25, depthIn: D, lengthIn: 300, structuralGirtEnds: [], pitchIn12: 4, bearingSeatDepthIn: D };
+      return [...buildFloorRoofPanelMembers(o), ...buildRoofPanelCapMembers(o, "eave", 4)];
+    })(),
+  },
   /* Previously unchecked, for want of a test that could see a diagonal. */
   { name: "braced chevron", members: buildBracedPanelMembers(48, D, H, false, "chevron", false) },
   { name: "braced hatch", members: buildBracedPanelMembers(48, D, H, false, "hatch", true) },
@@ -189,6 +201,7 @@ describe("⚠ no member occupies the same space as another", () => {
       "vertical gap filler",
       "floor panel",
       "roof panel",
+      "roof panel as installed",
       "braced hatch",
       /* ⚠ 1 → 0 on 2026-11-01. The gable's single overlap was its sloped top
          plate clipping its own skin, and it went when the skin, the plates

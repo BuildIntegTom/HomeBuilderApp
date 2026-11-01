@@ -52,6 +52,54 @@ describe("one takeoff, so a sheet and a drawing describe the same panel", () => 
     }
   });
 
+  it("⚠ the eave cap lands ON the truss plate — the several-inch gap, closed", () => {
+    /* > *"I also see that the gable ends sit directly on the wall panel top
+       > plates, while there is a several inch gap under where the roof panels
+       > bear."* — Tommy
+       The gap was real and it was 15 1/2in wide by `depth x pitch/12` tall
+       (5 1/6in at 4:12), running the whole length of every eave. A roof panel
+       is cut back to a LEVEL seat so it can bear on a level plate, and the L
+       that fills the space under that seat was built at {0,0,0} and never
+       placed — so the view drew the panel floating and left the cap out.
+
+       This walks the cap's corners all the way out into the world, through
+       the very anchor and tilt `Building3DView` uses, and checks the bottom
+       of it sits on the plate: the eave height the takeoff was handed. */
+    const eaveHeightFt = 10 + 2.25 / IN_PER_FT; // wall top + the truss plate's own 2 1/4in
+    const takeoff = computeDeckPanelTakeoff(input({ roofEaveHeightFt: eaveHeightFt }));
+    const roof = takeoff.instances.filter((i) => i.kind === "roof");
+    expect(roof.length).toBeGreaterThan(0);
+
+    const byKey = new Map(takeoff.groups.map((g) => [g.key, g]));
+    let checked = 0;
+    for (const instance of roof) {
+      const group = byKey.get(instance.groupKey)!;
+      expect(group.capMembers.length).toBeGreaterThan(0);
+      const tilt = instance.world.tiltRad;
+      /* The view tips the panel by (90deg - pitch) about X, so a member's
+         (depth, span) lands in the world as (out from the eave, up). */
+      const anchorYIn = instance.world.anchorYFt * IN_PER_FT;
+      const plateTopIn = eaveHeightFt * IN_PER_FT;
+      for (const m of group.capMembers) {
+        for (const c of m.position.sectionCornersIn!) {
+          const vIn = anchorYIn - (c.yIn * Math.cos(tilt) - c.zIn * Math.sin(tilt));
+          /* Never below the plate, and never more than the void is tall. */
+          expect({ id: m.memberId, onPlate: vIn >= plateTopIn - 1e-6 }).toEqual({ id: m.memberId, onPlate: true });
+        }
+        checked++;
+      }
+      /* And the cap really does reach DOWN to the plate rather than hovering:
+         its lowest corner is the plate's own top. */
+      const lowest = Math.min(
+        ...group.capMembers.flatMap((m) =>
+          m.position.sectionCornersIn!.map((c) => anchorYIn - (c.yIn * Math.cos(tilt) - c.zIn * Math.sin(tilt))),
+        ),
+      );
+      expect(lowest).toBeCloseTo(plateTopIn, 6);
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
   it("⚠ every group's members were built from the options the group reports", () => {
     /* The defect this replaces was a group whose options said one thing and
        whose members were built from another. A group that carries both can be
