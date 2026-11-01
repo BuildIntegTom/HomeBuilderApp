@@ -48,6 +48,7 @@ import {
   buildRoofCatcherBeamMembers,
   buildStructuralColumnMembers,
   roofTopAboveRooflineIn,
+  floorRoofPanelOutlineSection,
   GABLE_PANEL_MAX_HEIGHT_IN,
   buildCrossTiltPanelMembers,
   PLATE_2X4_WIDTH_IN,
@@ -635,6 +636,66 @@ function renderSimplifiedSlot(
       <WallPanelLabel text={showWraps ? undefined : instances[0]?.name} widthFt={box.widthFt} heightFt={box.heightFt} depthFt={box.depthFt} />
       {showWraps && renderWallSkins(box.widthFt, box.heightFt, box.depthFt, wrapSkins)}
     </>
+  );
+}
+
+/**
+ * A floor or roof panel drawn as its own SILHOUETTE for the box, membrane
+ * and shipping views — the section swept across the panel's width.
+ *
+ * ⚠ It replaced a `boxGeometry`, and had to. A roof panel stopped being a
+ * box once its ends became plumb cuts, its tall end grew a bearing wedge and
+ * its eave gained a seat; a box of the same extents keeps exactly the corners
+ * those cuts removed. Tommy, 2026-10-31: *"3d box and membrane views spawn a
+ * weird inclined toe up on shed roof buildings"* and *"the roof panel is not
+ * the same shape as the 3d frames"*.
+ *
+ * The section arrives in the panel's own frame — `yFt` through the depth,
+ * `zFt` along the span — and maps to view space the way `PanelMembersGroup`
+ * maps every member: X = width, Y = span, Z = depth.
+ */
+function DeckOutlinePrism({
+  widthFt,
+  sectionFt,
+  color,
+}: {
+  widthFt: number;
+  sectionFt: { yFt: number; zFt: number }[];
+  color: string;
+}) {
+  const geometry = useMemo(() => {
+    const n = sectionFt.length;
+    const positions = new Float32Array(n * 2 * 3);
+    sectionFt.forEach(({ yFt, zFt }, i) => {
+      positions[i * 3] = 0;
+      positions[i * 3 + 1] = zFt;
+      positions[i * 3 + 2] = yFt;
+      positions[(i + n) * 3] = widthFt;
+      positions[(i + n) * 3 + 1] = zFt;
+      positions[(i + n) * 3 + 2] = yFt;
+    });
+    const indices: number[] = [];
+    /* Side quads joining the two rings, then a fan across each cap. The
+       outline is convex enough for a fan; it is a silhouette, not framing. */
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      indices.push(i, j, j + n, i, j + n, i + n);
+    }
+    for (let i = 1; i < n - 1; i++) {
+      indices.push(0, i, i + 1);
+      indices.push(n, n + i + 1, n + i);
+    }
+    const geom = new BufferGeometry();
+    geom.setAttribute("position", new BufferAttribute(positions, 3));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  }, [widthFt, sectionFt]);
+
+  return (
+    <mesh geometry={geometry}>
+      <meshStandardMaterial color={color} side={DoubleSide} />
+    </mesh>
   );
 }
 
@@ -1750,12 +1811,20 @@ export default function Building3DView({
       /** How far the panel is tipped off flat: 0 for a floor, the roof's own
        * pitch for a roof plane. */
       tiltRad: number;
-      /** ⚠ The panel's own outside dimensions, for the box views. Tommy:
-       * *"Roof panels and floor panels should appear as plain boxes for box
-       * view and the membranes and for shipping."* Carried rather than
-       * re-derived from the members, whose bounding box would include a cap
-       * hanging off the end. */
-      boxIn: { widthIn: number; depthIn: number; lengthIn: number };
+      /**
+       * ⚠ The panel's own SILHOUETTE for the box and membrane views — its
+       * real outline in (depth, span), not three extents.
+       *
+       * It was three extents, and a box drawn from them stopped matching the
+       * panel the moment its ends became plumb cuts: *"the roof panel is not
+       * the same shape as the 3d frames, it doesn't land right and is
+       * squared off wrong"* / *"a weird inclined toe up"* (Tommy,
+       * 2026-10-31). The box kept the corners the cuts removed.
+       *
+       * Both views now extrude the SAME outline the framed view is built
+       * against, so they cannot disagree about the shape again.
+       */
+      outlineIn: { widthIn: number; section: { yIn: number; zIn: number }[] };
       members: PanelMember[];
     }[] = [];
 
@@ -1807,7 +1876,10 @@ export default function Building3DView({
           anchorYFt: 0,
           rotationRad: p.rotationRad,
           tiltRad: 0,
-          boxIn: { widthIn: p.widthIn, depthIn: thicknessIn, lengthIn: p.spanIn },
+          outlineIn: {
+            widthIn: p.widthIn,
+            section: floorRoofPanelOutlineSection({ kind: "floor", widthIn: p.widthIn, depthIn: thicknessIn, lengthIn: p.spanIn }),
+          },
           members: buildFloorRoofPanelMembers({
             kind: "floor",
             widthIn: p.widthIn,
@@ -1904,7 +1976,18 @@ export default function Building3DView({
               anchorYFt: plane.lowHeightFt + roofTopAboveRooflineIn(thicknessIn, roofPitchIn12) / IN_PER_FT,
               rotationRad,
               tiltRad,
-              boxIn: { widthIn, depthIn: thicknessIn, lengthIn: plane.slopeFt * IN_PER_FT },
+              outlineIn: {
+                widthIn,
+                section: floorRoofPanelOutlineSection({
+                  kind: "roof",
+                  widthIn,
+                  depthIn: thicknessIn,
+                  lengthIn: plane.slopeFt * IN_PER_FT,
+                  structuralGirtEnds: [],
+                  pitchIn12: roofPitchIn12,
+                  bearingSeatDepthIn: thicknessIn,
+                }),
+              },
               members: buildFloorRoofPanelMembers({
                 kind: "roof",
                 widthIn,
@@ -2889,7 +2972,7 @@ export default function Building3DView({
               <PanelMembersGroup members={members} />
             </group>
           ))}
-          {deckRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, tiltRad, boxIn, members }) => (
+          {deckRenderData.map(({ id, anchorX, anchorZ, anchorYFt, rotationRad, tiltRad, outlineIn, members }) => (
             <group key={`deck-${id}`} position={[anchorX, anchorYFt, anchorZ]} rotation={[0, -rotationRad, 0]}>
               {/* ⚠ Tips the panel off its end and onto the plane it belongs
                   on. Its members are built lying in the compressor table, so
@@ -2905,22 +2988,17 @@ export default function Building3DView({
                   nothing used. */}
               <group rotation={[Math.PI / 2 - tiltRad, 0, 0]}>
                 {simplified ? (
-                  /* ⚠ A plain box, for the box, membrane and shipping views.
-                     In the panel's own frame its span runs along Z and its
-                     depth along Y, which PanelMembersGroup maps the same way
-                     — so the box is (width, span, depth) in three.js terms. */
-                  <mesh
-                    position={[
-                      boxIn.widthIn / 2 / IN_PER_FT,
-                      boxIn.lengthIn / 2 / IN_PER_FT,
-                      boxIn.depthIn / 2 / IN_PER_FT,
-                    ]}
-                  >
-                    <boxGeometry
-                      args={[boxIn.widthIn / IN_PER_FT, boxIn.lengthIn / IN_PER_FT, boxIn.depthIn / IN_PER_FT]}
-                    />
-                    <meshStandardMaterial color={PANEL_TYPE_COLORS.standard} />
-                  </mesh>
+                  /* ⚠ THE PANEL'S REAL SILHOUETTE, not a box of its extents.
+                     A box kept the corners the plumb cuts removed, which is
+                     the *"weird inclined toe up"* on a shed. Extruded across
+                     the width from the SAME outline the framed view is built
+                     against, in the panel's own frame — span along three.js
+                     Y, depth along Z, the mapping PanelMembersGroup uses. */
+                  <DeckOutlinePrism
+                    widthFt={outlineIn.widthIn / IN_PER_FT}
+                    sectionFt={outlineIn.section.map((c) => ({ yFt: c.yIn / IN_PER_FT, zFt: c.zIn / IN_PER_FT }))}
+                    color={PANEL_TYPE_COLORS.standard}
+                  />
                 ) : (
                   <PanelMembersGroup members={members} />
                 )}

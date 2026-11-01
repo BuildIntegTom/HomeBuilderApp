@@ -336,6 +336,71 @@ function plumbEndCut(o: FloorRoofPanelOptions, atEnd: "start" | "end" = "end"): 
   };
 }
 
+/**
+ * ⚠ **THE PANEL'S SILHOUETTE, so the box views draw the SAME SHAPE the
+ * framed view does.**
+ *
+ * > *"on these box and membrane views, the roof panel is not the same shape
+ * > as the 3d frames, it doesn't land right and is squared off wrong"* —
+ * > Tommy, 2026-10-31
+ *
+ * The simplified views drew a plain box from the panel's three outside
+ * dimensions. That was true while a roof panel WAS a box; it stopped being
+ * one when the ends became plumb cuts, the tall end grew a bearing wedge and
+ * the eave gained a seat. A box of the same extents sticks up past the
+ * plumb faces at the corners the cuts removed — the *"weird inclined toe
+ * up"* — and buries itself in the wall at the other.
+ *
+ * Six corners, walked as one closed loop in the panel's own (depth, span):
+ *
+ *   (0, 0)            the top face at the eave
+ *   (0, length)       the top face at the tall end
+ *   (yA, ...)         down the tall plumb face, past the wedge
+ *   (depth, zB)       the wedge's tip, back on the underside
+ *   (depth, ...)      along the underside to the eave's heel
+ *   (seatY, ...)      along the level seat, out to the fascia's foot
+ *
+ * A FLOOR, or a roof with no pitch, has none of those features and this
+ * returns its plain rectangle — so one code path serves both and the box
+ * view cannot drift from the framed one again.
+ */
+export function floorRoofPanelOutlineSection(options: FloorRoofPanelOptions): SectionSpacePoint2D[] {
+  const o = options;
+  const plumb = plumbEndCut(o, "end");
+  const eave = eaveCut(o);
+  if (!plumb) {
+    return [
+      { yIn: 0, zIn: 0 },
+      { yIn: 0, zIn: o.lengthIn },
+      { yIn: o.depthIn, zIn: o.lengthIn },
+      { yIn: o.depthIn, zIn: 0 },
+    ];
+  }
+
+  const yA = plumb.wedgeBottomYIn;
+  const zA = plumb.outerAtYIn(yA);
+  const zB = zA - plumb.seatIn * plumb.cos;
+  /* With no wedge the tall end is one plumb face and these two collapse onto
+     the panel's own bottom-outer corner, which is correct and leaves a
+     four- or five-sided outline rather than a degenerate six. */
+  const tallEnd: SectionSpacePoint2D[] =
+    plumb.seatIn > 0
+      ? [
+          { yIn: yA, zIn: zA },
+          { yIn: o.depthIn, zIn: zB },
+        ]
+      : [{ yIn: o.depthIn, zIn: plumb.outerAtYIn(o.depthIn) }];
+
+  const eaveEnd: SectionSpacePoint2D[] = eave
+    ? [
+        { yIn: o.depthIn, zIn: eave.innerAtYIn(o.depthIn) },
+        { yIn: eave.seatYIn, zIn: eave.fasciaAtYIn(eave.seatYIn) },
+      ]
+    : [{ yIn: o.depthIn, zIn: 0 }];
+
+  return [{ yIn: 0, zIn: eave ? eave.fasciaAtYIn(0) : 0 }, { yIn: 0, zIn: o.lengthIn }, ...tallEnd, ...eaveEnd];
+}
+
 /** How far a roof panel's end webs run back along the span. */
 export const ROOF_PANEL_END_WEB_LENGTH_IN = 12;
 

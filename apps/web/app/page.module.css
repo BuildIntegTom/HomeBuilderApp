@@ -337,3 +337,27 @@
     inset: auto;
   }
 }
+
+/* ⚠ SUMMARY AND PRINT NOW HIDE THE LEFT BAR TOO, not just the canvas.
+   Tommy, 2026-10-31: "Id like it to be a full transition feel when switching
+   over to print or summary, no left bar if possible/that doesn't cover
+   anything up or make features unavailable."
+
+   The bar used to stay for one stated reason — U0 put the Review Log, Read Me
+   and Bug icons there so safety-relevant output keeps a permanent front door.
+   That door is kept by moving the cluster onto the surface that replaces the
+   editor, so hiding the bar takes nothing away. `display: none` for the same
+   reason .editorCanvasLayerHidden uses it: a hidden-but-present column still
+   holds its 240px and would leave the page inset from the left for no
+   visible cause. */
+.editorSidebarHidden {
+  display: none;
+}
+
+/* The cluster's home on a formal-document surface. Right-aligned so it reads
+   as page furniture rather than as the start of the document. */
+.editorPageIcons {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px 0;
+}

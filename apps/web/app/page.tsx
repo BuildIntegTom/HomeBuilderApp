@@ -1023,6 +1023,32 @@ export default function LayoutEditor() {
   // width AND THEN go vertical for 6in (adjustable)") — see
   // computeGableTiledRow's own heelHeightIn doc comment for the mechanics.
   const [heelHeightIn, setHeelHeightIn] = useState(gableHeelHeightDefaultIn.value);
+  /**
+   * ⚠ **THE TRUSS HEEL SEAT DOES NOT APPLY WHEN THE GABLE ENDS RUN FULL
+   * HEIGHT**, and leaving it on was the cause of two of his reports at once.
+   *
+   * `resolveHeelSeat` reserves a whole STANDARD PANEL of run at each corner
+   * — 48in — and lifts the roofline by the heel, because that is where a
+   * truss lands and sits. Measured on a 13ft 2in gable wall: the row tiled
+   * only x=48 to x=111 of 158, and its roofline ran up to 31in away from the
+   * roof panels above it.
+   *
+   * > *"there could be 1 more whole panel there"* / *"the gable end panels
+   * > just are still not as tall as flush with the top part of the top cord
+   * > of each roof joist"* — Tommy, 2026-10-31
+   *
+   * Both follow from that seat. With the gable ends closing the building to
+   * the roof's own top surface there is no truss to seat — *"we are also
+   * going to be making the roof panels for these... no relying on any other
+   * trust companies"* — so the roofline starts at the corner, at the eave,
+   * exactly where `simpleRoofPlanes` starts the roof. Same 158in wall with
+   * it off: 5 tiles corner to corner, and the gable tracks the roof to
+   * within 1/3in.
+   *
+   * ⚠ The SETTING is untouched — turning the gable toggle off restores the
+   * heel for the truss path it belongs to.
+   */
+  const effectiveHeelHeightIn = gableEndsFullHeight ? 0 : heelHeightIn;
   // Where the gable roofline's slope actually starts lifting off (Tommy:
   // "the slope needs to be based on exactly where we expect the truss to
   // lift off at - either at the panel depth OR... the truss heel height...
@@ -1822,7 +1848,7 @@ export default function LayoutEditor() {
   const handleSetShedPitch = (wall: Wall, pointIndex: number, pitchIn12: number) => {
     handleChangeGableProfilePositionIn(wall.id, pointIndex, 0);
     const wallWidthIn = wall.lengthFt * 12;
-    const seat = resolveHeelSeat(wallWidthIn, standardWidthIn, heelHeightIn, 1, roofBearingAnchorMode, trussPlateInsetIn);
+    const seat = resolveHeelSeat(wallWidthIn, standardWidthIn, effectiveHeelHeightIn, 1, roofBearingAnchorMode, trussPlateInsetIn);
     handleChangeRoofProfilePointHeightFt(
       pointIndex,
       computeRiseFtForPitch(pitchIn12, wallWidthIn - seat.runOffsetIn, seat.heelOffsetIn),
@@ -1831,7 +1857,7 @@ export default function LayoutEditor() {
   const handleSetCenteredPeakPitch = (wall: Wall, pitchIn12: number) => {
     handleChangeGableProfilePositionIn(wall.id, 0, undefined);
     const wallWidthIn = wall.lengthFt * 12;
-    const seat = resolveHeelSeat(wallWidthIn, standardWidthIn, heelHeightIn, 2, roofBearingAnchorMode, trussPlateInsetIn);
+    const seat = resolveHeelSeat(wallWidthIn, standardWidthIn, effectiveHeelHeightIn, 2, roofBearingAnchorMode, trussPlateInsetIn);
     handleChangeRoofProfilePointHeightFt(
       0,
       computeRiseFtForPitch(pitchIn12, wallWidthIn / 2 - seat.runOffsetIn, seat.heelOffsetIn),
@@ -3391,7 +3417,7 @@ export default function LayoutEditor() {
       const seat = resolveHeelSeat(
         wallWidthIn,
         standardWidthIn,
-        heelHeightIn,
+        effectiveHeelHeightIn,
         form.kind === "shed" ? 1 : 2,
         roofBearingAnchorMode,
         trussPlateInsetIn,
@@ -6265,9 +6291,9 @@ export default function LayoutEditor() {
       gableEaveHeightIn,
       gableProfilePointsFor(wall),
       standardWidthIn,
-      trussPlateInsetIn,
+      gableEndsFullHeight ? 0 : trussPlateInsetIn,
       true,
-      heelHeightIn,
+      effectiveHeelHeightIn,
       roofBearingAnchorMode,
       gableWindowAnchorsByWallId[wallId] ?? [],
       gableStructuralPanelWallIds.has(wallId) ? COLUMN_TOTAL_WIDTH_IN : undefined,
@@ -6318,7 +6344,7 @@ export default function LayoutEditor() {
            of the floor plan. */
         gableEndsFullHeight ? 0 : trussPlateInsetIn,
         true,
-        heelHeightIn,
+        effectiveHeelHeightIn,
         roofBearingAnchorMode,
         gableWindowAnchorsByWallId[wall.id] ?? [],
         gableStructuralPanelWallIds.has(wall.id) ? COLUMN_TOTAL_WIDTH_IN : undefined,
@@ -6393,6 +6419,7 @@ export default function LayoutEditor() {
        width and its old cap after the toggle flipped. */
     gableEndsFullHeight,
     trussPlateInsetIn,
+    effectiveHeelHeightIn,
     heelHeightIn,
     roofBearingAnchorMode,
     // ⚠ Read at line ~3650 to clamp the row to the built run. Missing, the
@@ -9689,6 +9716,45 @@ export default function LayoutEditor() {
   // (moving them here means they're now editable regardless of which
   // editor tab is active, which is a genuine improvement — the underlying
   // state never depended on the Wall tab specifically).
+  /**
+   * ⚠ **THE REVIEW LOG / READ ME / BUG ICONS, HOISTED SO THEY CAN FOLLOW
+   * THE SURFACE.**
+   *
+   * > *"Id like it to be a full transition feel when switching over to print
+   * > or summary, no left bar if possible/that doesn't cover anything up or
+   * > make features unavailable."* — Tommy, 2026-10-31
+   *
+   * The left bar used to stay put on Summary and Print for one stated
+   * reason: U0 put these icons there so *"safety-relevant output has a
+   * permanent front door"*, and hiding the bar would have taken that door
+   * with it. His own caveat is the resolution — the bar goes, and the
+   * cluster comes along to the surface that replaced it, so nothing becomes
+   * unreachable.
+   */
+  const safetyIconCluster = (
+    <SidebarIconCluster>
+      <PageFeaturesButton features={pageFeatures[editorTab]} />
+      <SidebarIconButton
+        label="Review Log — Items for Engineer/Contractor Review"
+        active={openNoteIds.has("review-log")}
+        wide
+        onClick={() => handleToggleNote("review-log")}
+      >
+        <ReviewLogIcon />
+      </SidebarIconButton>
+      <SidebarIconButton
+        label="Report Bug / Request Feature"
+        active={openNoteIds.has("report-bug")}
+        onClick={() => handleToggleNote("report-bug")}
+      >
+        <BugIcon />
+      </SidebarIconButton>
+      <SidebarIconButton label="Read Me" active={openNoteIds.has("read-me")} onClick={() => handleToggleNote("read-me")}>
+        <ReadMeIcon />
+      </SidebarIconButton>
+    </SidebarIconCluster>
+  );
+
   const panelizerContent = (
     <>
       <h2>Panelizer</h2>
@@ -12053,7 +12119,12 @@ export default function LayoutEditor() {
              all is well, so it costs nothing and reads as nothing. */
           data-sections-unreachable={sectionsNoPageCanReach.join(",")}
         >
-          <div className={styles.editorSidebar}>
+          <div
+            className={
+              editorSurface === "drawing" ? styles.editorSidebar : `${styles.editorSidebar} ${styles.editorSidebarHidden}`
+            }
+            aria-hidden={editorSurface === "drawing" ? undefined : "true"}
+          >
             {loadError && <p className={styles.disclaimer}>Couldn&apos;t load that file — {loadError}</p>}
             {/* Region 1 (always first, fixed): Tommy's "having the viewer
                 selection on top, then the floor/wall/roof layer, then all the
@@ -12579,31 +12650,7 @@ export default function LayoutEditor() {
                   app, so leaving the editor loses an unsaved design, and this
                   cluster makes those links far easier to hit than the tray
                   footer did. The routes are untouched. */}
-              <SidebarIconCluster>
-                <PageFeaturesButton features={pageFeatures[editorTab]} />
-                <SidebarIconButton
-                  label="Review Log — Items for Engineer/Contractor Review"
-                  active={openNoteIds.has("review-log")}
-                  wide
-                  onClick={() => handleToggleNote("review-log")}
-                >
-                  <ReviewLogIcon />
-                </SidebarIconButton>
-                <SidebarIconButton
-                  label="Report Bug / Request Feature"
-                  active={openNoteIds.has("report-bug")}
-                  onClick={() => handleToggleNote("report-bug")}
-                >
-                  <BugIcon />
-                </SidebarIconButton>
-                <SidebarIconButton
-                  label="Read Me"
-                  active={openNoteIds.has("read-me")}
-                  onClick={() => handleToggleNote("read-me")}
-                >
-                  <ReadMeIcon />
-                </SidebarIconButton>
-              </SidebarIconCluster>
+              {safetyIconCluster}
             </div>
           </div>
 
@@ -12683,7 +12730,7 @@ export default function LayoutEditor() {
                     handleChangeGableProfilePositionIn(elevationWall.id, pointIndex, positionIn)
                   }
                   insetIn={trussPlateInsetIn}
-                  heelHeightIn={heelHeightIn}
+                  heelHeightIn={effectiveHeelHeightIn}
                   roofBearingAnchorMode={roofBearingAnchorMode}
                   gableWindowReservations={gableWindowAnchorsByWallId[elevationWall.id] ?? []}
                   onToggleGableWindow={(tileOrdinal, naturalWidthIn) => handleToggleGableWindow(elevationWall.id, tileOrdinal, naturalWidthIn)}
@@ -12902,6 +12949,7 @@ export default function LayoutEditor() {
               it, so no intermediate stage can make anything unreachable. */}
           {editorSurface === "summary" && (
             <div className={styles.editorPageLayer} data-editor-surface="summary">
+              <div className={styles.editorPageIcons}>{safetyIconCluster}</div>
               <div ref={setSummaryHostEl} data-summary-page-host="" />
             </div>
           )}
@@ -12916,7 +12964,10 @@ export default function LayoutEditor() {
               that do not paginate. */}
           {editorSurface === "print" && (
             <div className={styles.editorPageLayer} data-editor-surface="print">
-              <div className={styles.editorPageControls}>{printPageControls}</div>
+              <div className={styles.editorPageControls}>
+                {printPageControls}
+                {safetyIconCluster}
+              </div>
               <div ref={setPrintHostEl} data-print-page-host="" />
             </div>
           )}
