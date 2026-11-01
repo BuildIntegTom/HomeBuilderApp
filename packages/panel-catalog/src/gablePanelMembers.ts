@@ -488,7 +488,21 @@ export function buildGablePanelMembers(
       leftHeightIn,
       depthIn / 2,
       "skin",
-      `Rip at ${ripAngleDeg.toFixed(2)}deg, cut to ${ripLengthIn.toFixed(2)}in long (point to butt). Panel-width edges are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the sheet's 0.75in thickness to a ${plumbCutEdgeLengthIn(SKIN_THICKNESS_IN).toFixed(2)}in cut edge.`,
+      /* ⚠ **THE SHEET MAY BE CUT SQUARE, and the note says what that costs.**
+         > *"Plywood should just be cut perpendicular on these with a note in
+         > the shop drawing saying to be ~1/4\" bottom plate piece is proud of
+         > the plywood."* — Tommy, 2026-11-01
+         A 3/4in sheet lying at the rake, cut square to its own faces rather
+         than plumb, puts its lower corner `thickness x sin(rake)` along the
+         slope from where a plumb cut would — 0.237in at 4:12, his "~1/4in" —
+         and the plate below finishes that much proud of it.
+         ⚠ The MODEL keeps the plumb cut. A square-cut sheet aligned to the
+         panel's own ends overhangs the high end by that same 1/4in and runs
+         into the next panel, which is worse on a drawing than a plate
+         standing proud. So this is carried as a shop allowance on the cut
+         list rather than as a different shape, and it is one of the readings
+         in the Review Log. */
+      `Rip at ${ripAngleDeg.toFixed(2)}deg, cut to ${ripLengthIn.toFixed(2)}in long (point to butt). Panel-width edges are drawn plumb-cut (vertical), flush to each corner stud's face — extending the sheet's 0.75in thickness to a ${plumbCutEdgeLengthIn(SKIN_THICKNESS_IN).toFixed(2)}in cut edge. CUTTING THEM SQUARE (perpendicular to the sheet) is accepted: the top plate below then finishes about ${(SKIN_THICKNESS_IN * Math.sin((ripAngleDeg * Math.PI) / 180)).toFixed(3)}in proud of the plywood, which is expected and needs no shim.`,
     ),
     /* ⚠ Girts are spaced across the SHORTER edge's clear span, so a panel
        tapering to nothing has none: they would otherwise stack on the bottom

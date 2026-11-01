@@ -3,7 +3,7 @@ import type { PanelMember } from "./componentSchema";
 import { overlappingMemberPairs } from "./memberPrism";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
 import { buildBracedPanelMembers } from "./bracedPanelMembers";
-import { buildCrossTiltPanelMembers } from "./crossTiltPanelMembers";
+import { buildCrossTiltPanelMembers, crossTiltMinimumLowHeightIn } from "./crossTiltPanelMembers";
 import { buildColumnPanelMembers, buildColumnStyleMembers } from "./columnPanelMembers";
 import { buildCornerPanelMembers } from "./cornerPanelMembers";
 import { buildSafetyGapMembers } from "./safetyGapMembers";
@@ -84,6 +84,18 @@ const CASES: { name: string; members: PanelMember[] }[] = [
      through the panel's DEPTH, which is the one plane none of the other
      sloped panels here exercise. */
   { name: "cross tilt", members: buildCrossTiltPanelMembers({ widthIn: 24, depthIn: D, lowHeightIn: 3.5, pitchIn12: 4 }).members },
+  /* ⚠ And at the FLATTEST pitch the row builds, where the rip leaves the most
+     board standing and the panel has to be tallest. That is the case the 3 1/2in
+     stand-in failed, so it is the one worth holding. */
+  {
+    name: "cross tilt shallow",
+    members: buildCrossTiltPanelMembers({
+      widthIn: 24,
+      depthIn: D,
+      lowHeightIn: crossTiltMinimumLowHeightIn(2),
+      pitchIn12: 2,
+    }).members,
+  },
   { name: "big header", members: buildBigHeaderMembers(40, D, 24, false, "plywood") },
 ];
 
@@ -152,25 +164,6 @@ const BASELINE: Record<string, number> = {
      same answer. */
   "braced chevron": 2,
   "big header": 26,
-  /**
-   * ⚠ **The cross-tilted row's low edge, and it is ARITHMETIC rather than a
-   * geometry slip.** Audited for the first time on 2026-11-01, when the row
-   * stopped living inside the 3D view and started reaching the documents.
-   *
-   * All five are on the exterior (low) face. At that face the panel's own
-   * layers need `SKIN + PLATE` of bottom stack and `(SKIN + PLATE) / cos`
-   * of top assembly — 4.62in at 4:12 — and the row is built at a 3.5in low
-   * height. So there is no room for the exterior stud, and the two plates
-   * run into each other.
-   *
-   * The 3.5in is `PLATE_2X4_WIDTH_IN`, this app's own stand-in: Tommy never
-   * gave this panel a height. Raising it makes the row taller than the roof
-   * that is laid from `gableEaveHeightIn` and has no term for this row, so
-   * which of those two gives way is his call, not this file's — the same
-   * reason every other entry above is pinned. See `docs/plan-2026-10-31-queue.md`
-   * B8 for the three ways out.
-   */
-  "cross tilt": 5,
 };
 
 describe("⚠ no member occupies the same space as another", () => {
@@ -212,6 +205,17 @@ describe("⚠ no member occupies the same space as another", () => {
          to 0, so the panel is now held to the same zero every clean panel
          is. */
       "gable",
+      /* ⚠ 5 → 0 on 2026-11-01, and DELETED from BASELINE rather than set to
+         zero. The cross-tilted panel's low edge could not hold its own layers
+         while the slope was carried by whole 2x4s tilted bodily into it.
+         Tommy, with SketchUp screenshots: *"Both 2x4s on top plate have an
+         edge ripped off of them."* The plate lies FLAT and takes the slope in
+         its own rip, so the exterior face needs 3.374in at 4:12 rather than
+         4.62in — and the panel refuses outright below whatever its own
+         layers come to, instead of building something that interferes with
+         itself. */
+      "cross tilt",
+      "cross tilt shallow",
     ]);
   });
 });

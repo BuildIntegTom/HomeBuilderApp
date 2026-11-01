@@ -7,6 +7,7 @@ import {
 import {
   PLATE_2X4_WIDTH_IN,
   buildCrossTiltPanelMembers,
+  crossTiltMinimumLowHeightIn,
   planFloorRoofPanelWidthsIn,
   type CrossTiltPanelOptions,
   type PanelMember,
@@ -58,6 +59,11 @@ export interface CrossTiltTakeoffGroup {
   highHeightIn: number;
   /** The angle the one inclined top is cut to, off level. */
   tiltDeg: number;
+  /** The rip taken off one edge of each top plate, for the cut list. */
+  topPlateRip: { thinEdgeIn: number; thickEdgeIn: number; removedIn: number; angleDeg: number };
+  /** How far the plate finishes proud of a square-cut top skin — his
+   * *"~1/4in"*, computed from the real pitch rather than written as 1/4. */
+  skinProudIn: number;
   /** Exactly what built `members`, so a consumer can re-read it without
    * reconstructing the options and risking a different panel. */
   options: CrossTiltPanelOptions;
@@ -108,6 +114,21 @@ const EMPTY: CrossTiltTakeoff = { runs: [], instances: [], groups: [], faceAreaS
  * exterior face below the rip is what the row has always been built with.
  */
 const CROSS_TILT_LOW_HEIGHT_IN = PLATE_2X4_WIDTH_IN;
+
+/**
+ * ⚠ **…but never shorter than the panel's own layers.**
+ *
+ * The 3 1/2in above is this app's stand-in and nothing more, and on a flat
+ * enough roof it does not hold the panel's own bottom skin, bottom plate,
+ * ripped plate edge and top skin — which is exactly what B8's five pinned
+ * interferences were. `crossTiltMinimumLowHeightIn` is that sum, derived from
+ * the panel rather than chosen, so the floor can be applied without waiting
+ * on anyone. At the default 4:12 it is 3.374in and does not bite; it only
+ * lifts the row on a flatter roof, where the rip leaves more board standing.
+ */
+function crossTiltLowHeightIn(pitchIn12: number): number {
+  return Math.max(CROSS_TILT_LOW_HEIGHT_IN, crossTiltMinimumLowHeightIn(pitchIn12));
+}
 
 /** The signature a shop cuts by, so two panels share a sheet only if they
  * really are the same part. */
@@ -185,7 +206,7 @@ export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTilt
       const options: CrossTiltPanelOptions = {
         widthIn,
         depthIn,
-        lowHeightIn: CROSS_TILT_LOW_HEIGHT_IN,
+        lowHeightIn: crossTiltLowHeightIn(roofPitchIn12),
         pitchIn12: roofPitchIn12,
       };
       const built = buildCrossTiltPanelMembers(options);
@@ -230,6 +251,8 @@ export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTilt
       lowHeightIn: options.lowHeightIn,
       highHeightIn: built.highHeightIn,
       tiltDeg: built.tiltDeg,
+      topPlateRip: built.topPlateRip,
+      skinProudIn: 0.75 * Math.sin((built.tiltDeg * Math.PI) / 180),
       options,
       members: built.members,
       instances: groupInstances,

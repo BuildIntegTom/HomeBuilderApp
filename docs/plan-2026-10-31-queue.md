@@ -404,8 +404,8 @@ away and the row stayed behind on a wall that had become a gable end; and it
 was never in the project file, so a saved shed re-opened with no row. Derived
 from the live roof now, so all three answer themselves.
 
-⚠ **PINNED, NOT FIXED — the panel's low edge self-intersects, and the fix is
-a dimension of his.** Adding the panel to `memberOverlap.test.ts` (it had
+⚠ ~~**PINNED, NOT FIXED**~~ — **FIXED 2026-11-01**, see B11 below. What
+follows is the diagnosis as it stood. Adding the panel to `memberOverlap.test.ts` (it had
 never been audited, for the same reason it had no documents) found five real
 interferences, every one of them on the low/exterior face:
 
@@ -480,3 +480,43 @@ be selectable and hit-tested independently of the wall under them; and a
 courtyard ring or a mitered footprint has walls whose outward normals are not
 axis-aligned, so "2ft outward" is along each wall's own normal rather than
 north.
+
+
+### B11 — the tilted panel's top plate is RIPPED, which closes B8
+
+> *"Plywood should just be cut perpendicular on these with a note in the shop
+> drawing saying to be ~1/4" bottom plate piece is proud of the plywood. Both
+> 2x4s on top plate have an edge ripped off of them (that cut should be
+> specced out in the shop fab pages)."* — Tommy, 2026-11-01, with SketchUp
+> screenshots
+
+Two sentences, and the first one settles B8 outright.
+
+**The top plates lie FLAT on the studs and the slope is cut into their top
+faces.** They were whole 2x4s tilted bodily into the incline, which is a
+different part: a tilted board occupies `2.25 / cos` of vertical space at the
+panel's outer face, where a ripped one occupies only the `1.5 - 3.5 x tan`
+its rip leaves. At 4:12 that is 4.62in against 3.37in — and the row is built
+at 3.5in, which is why the exterior stud had no room and the two plates ran
+into each other. **Five interferences, now zero**, and the entry is deleted
+from `memberOverlap.test.ts` rather than set to zero.
+
+With the plate carrying the slope, every stud is a plain square-cut length,
+one per wythe row. Two things fell out of it:
+
+- **At the app's 3.5in low height the exterior wythe has no room for a stud at
+  all** (about 1/8in of clear space), so the panel is framed in the interior
+  wythe only. The builder emits none rather than a sliver. Still open: how
+  much straight exterior face this row should really have — 3.5in is this
+  app's stand-in, now floored at whatever the panel's own layers come to.
+- **Above about 5.1:12 the rip takes more than a 2x4 has** (`3.5 x tan > 1.5`)
+  and the plate wants a deeper board. The panel refuses rather than emitting
+  one of negative thickness. Which board is a decision nobody has made.
+
+**The plywood** is noted as cut square (perpendicular) on both the gable and
+the cross-tilt skins, with the real `thickness x sin(rake)` printed — 0.237in
+at 4:12, his "~1/4in". ⚠ On the gable the MODEL keeps the plumb cut: a
+square-cut sheet aligned to the panel's own ends overhangs the high end by
+that same 1/4in and runs into the next panel, which is worse on a drawing than
+a plate standing proud. So it is carried as a shop allowance on the cut list
+rather than as a different shape.

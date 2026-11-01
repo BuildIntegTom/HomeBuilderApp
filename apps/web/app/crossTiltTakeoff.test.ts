@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildRectangleFootprint, shedTallWallId } from "@building-integrity/geometry";
 import { buildCrossTiltPanelMembers } from "@building-integrity/panel-catalog";
+import { crossTiltMinimumLowHeightIn } from "@building-integrity/panel-catalog";
 import { computeCrossTiltTakeoff, crossTiltWallIdsFor, type CrossTiltTakeoffInput } from "./crossTiltTakeoff";
 
 /**
@@ -138,12 +139,31 @@ describe("the tilted gable row reaches the documents", () => {
   });
 
   it("the tilt follows the ROOF's pitch, because it is the surface the roof lands on", () => {
+    /* ⚠ 3:12 against 5:12, not 8:12. Past about 5.1:12 the rip across the
+       top plate's own 3 1/2in takes more than a 2x4 has, and the panel
+       refuses rather than emitting a board of negative thickness. */
     const flatter = computeCrossTiltTakeoff(input({ roofPitchIn12: 3 }));
-    const steeper = computeCrossTiltTakeoff(input({ roofPitchIn12: 8 }));
+    const steeper = computeCrossTiltTakeoff(input({ roofPitchIn12: 5 }));
     expect(steeper.groups[0]!.tiltDeg).toBeGreaterThan(flatter.groups[0]!.tiltDeg);
     expect(steeper.groups[0]!.highHeightIn).toBeGreaterThan(flatter.groups[0]!.highHeightIn);
     // Every group on one building reads one plane.
     for (const g of steeper.groups) expect(g.tiltDeg).toBeCloseTo(steeper.groups[0]!.tiltDeg, 9);
+  });
+
+  it("⚠ the row's low edge is floored at the panel's own layers, and the panel never refuses", () => {
+    /* THE B8 FIX, seen from the takeoff. The row used to be built at a flat
+       3 1/2in whatever the pitch; on a flatter roof the top plate's rip leaves
+       more board standing and the panel needs to be taller. */
+    for (const roofPitchIn12 of [1, 2, 3, 4, 5]) {
+      const takeoff = computeCrossTiltTakeoff(input({ roofPitchIn12 }));
+      expect({ roofPitchIn12, refusal: takeoff.refusal }).toEqual({ roofPitchIn12, refusal: null });
+      expect(takeoff.instances.length).toBeGreaterThan(0);
+      const group = takeoff.groups[0]!;
+      expect(group.lowHeightIn).toBeGreaterThanOrEqual(crossTiltMinimumLowHeightIn(roofPitchIn12) - 1e-9);
+      // At the default it is still the plain 3 1/2in: the floor only bites
+      // on a flatter roof.
+      if (roofPitchIn12 === 4) expect(group.lowHeightIn).toBe(3.5);
+    }
   });
 
   it("no row at all — rather than a guessed one — where there is nothing to read", () => {
@@ -193,7 +213,14 @@ describe("the tilted gable row reaches the documents", () => {
       // schedule is counted off.
       expect(group.members.filter((m) => m.role === "skin").length).toBe(2);
       expect(group.members.filter((m) => m.role === "plate").length).toBe(4);
-      expect(group.members.filter((m) => m.role === "stud").length).toBeGreaterThanOrEqual(4);
+      /* ⚠ Studs in the INTERIOR wythe only, at the app's 3 1/2in low height.
+         The exterior row's clear space between the bottom plate and the
+         ripped top plate comes to about 1/8in there, which is not a stud, so
+         the builder emits none rather than a sliver. That is the row saying
+         it is as short as it can be — flagged on the sheet, not hidden. */
+      const studs = group.members.filter((m) => m.role === "stud");
+      expect(studs.length).toBeGreaterThanOrEqual(2);
+      for (const stud of studs) expect(stud.memberId).toContain("interior");
     }
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCrossTiltPanelMembers } from "./crossTiltPanelMembers";
+import { buildCrossTiltPanelMembers, crossTiltMinimumLowHeightIn } from "./crossTiltPanelMembers";
 import { buildGablePanelMembers } from "./gablePanelMembers";
 
 const W = 48;
@@ -64,15 +64,82 @@ describe("⚠ a panel tilted FRONT TO BACK, not left to right", () => {
     expect(skinCorners.find((c) => c.yIn === 0)!.zIn).toBeCloseTo(topAt(0), 9);
     expect(skinCorners.find((c) => c.yIn === D)!.zIn).toBeCloseTo(topAt(D), 9);
 
-    /* Both top plates sit UNDER that skin, each ripped across its own 3 1/2in
-       of depth rather than left square. */
+    /* ⚠ Both top plates sit UNDER that skin, lying FLAT on the studs with
+       one edge RIPPED AWAY — his 2026-11-01 note with the SketchUp
+       screenshots: *"Both 2x4s on top plate have an edge ripped off of
+       them."* So the underside is level and the slope is in the top face.
+       They used to be whole 2x4s tilted bodily into the incline, which is a
+       different part and the reason this panel could not hold its own
+       layers. */
     for (const face of ["exterior", "interior"]) {
       const plate = built.members.find((m) => m.memberId === `cross_tilt_top_plate_${face}`)!;
-      const corners = plate.position.sectionCornersIn!;
-      const zs = corners.map((c) => c.zIn);
-      expect(Math.max(...zs) - Math.min(...zs)).toBeGreaterThan(0);
-      expect(plate.notes).toContain("off level");
+      const [a, b, c, d] = plate.position.sectionCornersIn!;
+      // The two bottom corners share one height: the underside is LEVEL.
+      expect(a!.zIn).toBeCloseTo(b!.zIn, 9);
+      // The two top corners do not: the rip carries the slope.
+      expect(c!.zIn).toBeGreaterThan(d!.zIn);
+      // And both top corners land on the skin's underside, one plane.
+      const skinUnderAt = (yIn: number) => topAt(yIn) - 0.75 / cos;
+      expect(d!.zIn).toBeCloseTo(skinUnderAt(d!.yIn), 9);
+      expect(c!.zIn).toBeCloseTo(skinUnderAt(c!.yIn), 9);
+      expect(plate.notes).toContain("lies FLAT on the studs");
     }
+
+    /* And every stud is one plain square-cut length, because the plate took
+       the slope. */
+    const studs = built.members.filter((m) => m.role === "stud");
+    expect(studs.length).toBeGreaterThan(0);
+    for (const stud of studs) {
+      expect({ id: stud.memberId, shaped: stud.position.sectionCornersIn !== undefined }).toEqual({
+        id: stud.memberId,
+        shaped: false,
+      });
+    }
+  });
+
+  it("⚠ the rip is SPECCED, because a shop has to set a saw to it", () => {
+    /* > *"(that cut should be specced out in the shop fab pages)"* — Tommy,
+       2026-11-01. Over the plate's own 3 1/2in the roof climbs `3.5 x tan`,
+       and that is what comes off a 1 1/2in board. */
+    const built = buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 4 });
+    expect(built.topPlateRip.removedIn).toBeCloseTo(3.5 * (4 / 12), 9);
+    expect(built.topPlateRip.thinEdgeIn).toBeCloseTo(1.5 - 3.5 * (4 / 12), 9);
+    expect(built.topPlateRip.thickEdgeIn).toBe(1.5);
+    expect(built.topPlateRip.angleDeg).toBeCloseTo(built.tiltDeg, 9);
+    // The thin edge plus what came off is the stock it was cut from.
+    expect(built.topPlateRip.thinEdgeIn + built.topPlateRip.removedIn).toBeCloseTo(1.5, 9);
+    // And the cut list says so in words.
+    const plate = built.members.find((m) => m.memberId === "cross_tilt_top_plate_exterior")!;
+    expect(plate.notes).toContain("rip");
+    expect(plate.notes).toContain("Square cut both ends");
+  });
+
+  it("⚠ the panel refuses a low edge too short to hold its own layers", () => {
+    /* THE B8 FIX, as a rule rather than a pinned overlap. The row was built
+       at a flat 3 1/2in — this app's own stand-in — and at 4:12 the panel
+       needs 3.374in of bottom skin, bottom plate, ripped edge and top skin.
+       It used to build anyway, with the exterior stud squeezed out and the
+       two plates driven into each other: five real interferences. */
+    for (const pitchIn12 of [1, 2, 3, 4, 5]) {
+      const minIn = crossTiltMinimumLowHeightIn(pitchIn12);
+      expect(buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: minIn - 0.01, pitchIn12 }).refusal)
+        .toContain("cannot hold this panel's own layers");
+      expect(buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: minIn, pitchIn12 }).refusal).toBeNull();
+    }
+    /* ⚠ It goes UP as the roof gets FLATTER — less comes off the rip, so
+       more of the 2x4 is left standing at the thin edge. The opposite of
+       what you would guess. */
+    expect(crossTiltMinimumLowHeightIn(2)).toBeGreaterThan(crossTiltMinimumLowHeightIn(4));
+    expect(crossTiltMinimumLowHeightIn(4)).toBeCloseTo(3.374, 3);
+    expect(crossTiltMinimumLowHeightIn(0)).toBeCloseTo(4.5, 9);
+  });
+
+  it("⚠ refuses a pitch that rips the whole board away", () => {
+    /* Past about 5.1:12 the rip takes more than a 2x4 has, and the plate
+       wants a deeper board — which is a decision, not an inference. */
+    expect(buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 6 }).refusal)
+      .toContain("needs a deeper board than a 2x4");
+    expect(buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 5 }).refusal).toBeNull();
   });
 
   it("⚠ it is a REAL panel now, not the six pieces it was", () => {
@@ -120,8 +187,11 @@ describe("⚠ a panel tilted FRONT TO BACK, not left to right", () => {
   });
 
   it("a steeper roof tilts it more", () => {
+    /* ⚠ 2:12 against 5:12, not 12:12. Past about 5.1:12 the top plate's rip
+       takes more than a 2x4 has and the panel refuses outright — see the
+       deeper-board test above. */
     const shallow = buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 2 });
-    const steep = buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 12 });
+    const steep = buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 5 });
     expect(steep.tiltDeg).toBeGreaterThan(shallow.tiltDeg);
     expect(steep.highHeightIn).toBeGreaterThan(shallow.highHeightIn);
   });

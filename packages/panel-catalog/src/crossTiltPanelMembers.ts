@@ -43,6 +43,34 @@ import {
 /** Intermediate studs are added so no bay exceeds this. */
 const CROSS_TILT_STUD_SPACING_IN = 24;
 
+/**
+ * ⚠ **THE SHORTEST THIS PANEL CAN BE AND STILL HOLD ITS OWN LAYERS**, at its
+ * exterior face, which is the low side.
+ *
+ * Read down that face: the bottom skin, the bottom plate, the thin edge the
+ * top plate's rip leaves, and the top skin standing `1 / cos` tall because it
+ * lies at the roof's angle. Nothing may be stacked in less than their sum.
+ *
+ * ⚠ **It does not depend on the wall's depth** — only on the pitch. The rip
+ * is taken across the plate's own 3 1/2in, so a deeper wall changes how high
+ * the panel finishes but not how thin its outer edge gets. And it goes UP as
+ * the roof gets FLATTER: less comes off the rip, so more of the 2x4 is left
+ * standing at the thin edge. At 4:12 it is 3.374in, at 2:12 3.927in, and dead
+ * flat it is the full 4.5in.
+ *
+ * This is the number B8 was about. The row was being built at a flat 3 1/2in
+ * — `PLATE_2X4_WIDTH_IN`, this app's own stand-in — and at 4:12 that was
+ * 1.25in short of what the panel needed, so the exterior stud had nowhere to
+ * go and the two plates ran into each other. It is DERIVED from the panel
+ * rather than chosen, which is why it can be used without waiting on anyone.
+ */
+export function crossTiltMinimumLowHeightIn(pitchIn12: number): number {
+  const tan = pitchIn12 / 12;
+  const cos = 12 / Math.hypot(12, pitchIn12);
+  const thinEdgeIn = PLATE_2X4_THICKNESS_IN - PLATE_2X4_WIDTH_IN * tan;
+  return SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN + Math.max(0, thinEdgeIn) + SKIN_THICKNESS_IN / cos;
+}
+
 export interface CrossTiltPanelOptions {
   widthIn: number;
   depthIn: number;
@@ -60,12 +88,34 @@ export interface CrossTiltPanelResult {
   highHeightIn: number;
   /** The angle the top is cut to, off level. */
   tiltDeg: number;
+  /**
+   * ⚠ **The rip taken off one edge of each top plate**, so the shop sheet can
+   * state the cut rather than leaving a fabricator to work it out.
+   *
+   * > *"Both 2x4s on top plate have an edge ripped off of them (that cut
+   * > should be specced out in the shop fab pages)."* — Tommy, 2026-11-01
+   */
+  topPlateRip: {
+    /** What is left at the THIN edge, after the rip. */
+    thinEdgeIn: number;
+    /** The full 1 1/2in, at the thick edge. */
+    thickEdgeIn: number;
+    /** How much comes off, measured at the thin edge. */
+    removedIn: number;
+    /** The angle of the rip, off the board's own face. */
+    angleDeg: number;
+  };
   refusal: string | null;
 }
 
 export function buildCrossTiltPanelMembers(options: CrossTiltPanelOptions): CrossTiltPanelResult {
   const { widthIn, depthIn, lowHeightIn, pitchIn12 } = options;
-  const empty = { members: [], highHeightIn: 0, tiltDeg: 0 };
+  const empty = {
+    members: [],
+    highHeightIn: 0,
+    tiltDeg: 0,
+    topPlateRip: { thinEdgeIn: 0, thickEdgeIn: 0, removedIn: 0, angleDeg: 0 },
+  };
 
   if (!(widthIn > 0) || !(depthIn > 0)) {
     return { ...empty, refusal: "A panel needs a width and a depth." };
@@ -79,9 +129,47 @@ export function buildCrossTiltPanelMembers(options: CrossTiltPanelOptions): Cros
 
   const tan = pitchIn12 / 12;
   const cos = 12 / Math.hypot(12, pitchIn12);
+  const sin = pitchIn12 / Math.hypot(12, pitchIn12);
   const riseIn = depthIn * tan;
   const highHeightIn = lowHeightIn + riseIn;
   const tiltDeg = (Math.atan2(riseIn, depthIn) * 180) / Math.PI;
+
+  /**
+   * ⚠ **THE RIP, and the pitch at which a 2x4 runs out.**
+   *
+   * A top plate sits FLAT on the studs and carries the incline on its own top
+   * face, which means one edge is ripped away: over the board's 3 1/2in the
+   * roof climbs `3.5 x tan`, and that much comes off a 1 1/2in board. At 4:12
+   * it leaves 1/3in at the thin edge. Past about 5.1:12 it leaves nothing at
+   * all, and the plate wants to be a 2x6 — which is a decision, so this
+   * refuses rather than emitting a board of negative thickness.
+   */
+  const ripRemovedIn = PLATE_2X4_WIDTH_IN * tan;
+  const thinEdgeIn = PLATE_2X4_THICKNESS_IN - ripRemovedIn;
+  if (!(thinEdgeIn > 0)) {
+    return {
+      ...empty,
+      refusal: `At ${pitchIn12}:12 the rip across a top plate's own ${PLATE_2X4_WIDTH_IN}in takes ${ripRemovedIn.toFixed(2)}in off a ${PLATE_2X4_THICKNESS_IN}in 2x4, which leaves nothing. This panel's top plate needs a deeper board than a 2x4 above about 5.1:12, and which board is a decision nobody has made.`,
+    };
+  }
+  const topPlateRip = {
+    thinEdgeIn,
+    thickEdgeIn: PLATE_2X4_THICKNESS_IN,
+    removedIn: ripRemovedIn,
+    angleDeg: tiltDeg,
+  };
+
+  /* ⚠ Refuse a panel too short to hold its own layers, rather than building
+     one whose plates run into each other. See
+     `crossTiltMinimumLowHeightIn` — and note this is what the five pinned
+     interferences of B8 were. */
+  const minimumLowHeightIn = crossTiltMinimumLowHeightIn(pitchIn12);
+  if (lowHeightIn < minimumLowHeightIn - 1e-9) {
+    return {
+      ...empty,
+      refusal: `A ${lowHeightIn.toFixed(2)}in exterior face cannot hold this panel's own layers at ${pitchIn12}:12: the bottom skin, the bottom plate, the ${thinEdgeIn.toFixed(2)}in the top plate's rip leaves and the top skin come to ${minimumLowHeightIn.toFixed(2)}in. Build it at least that tall.`,
+    };
+  }
 
   /** The panel's one inclined top surface, as a height at a given depth. */
   const topAtYIn = (yIn: number) => lowHeightIn + yIn * tan;
@@ -137,10 +225,25 @@ export function buildCrossTiltPanelMembers(options: CrossTiltPanelOptions): Cros
     });
   }
 
-  /* ⚠ STUDS IN TWO ROWS, each RIPPED TO THE INCLINE. A stud in the exterior
-     row is shorter than one in the interior row by the rise, and within a
-     single stud the 3 1/2in it occupies through the depth is itself a slope
-     — which is why each carries its own section rather than a height. */
+  /**
+   * ⚠ **STUDS IN TWO ROWS, EACH ROW LEVEL-TOPPED — the plate carries the
+   * incline, not the stud.**
+   *
+   * They used to be ripped to the incline themselves, each one a sloping
+   * section across its own 3 1/2in. That is not how the panel is built:
+   * *"Both 2x4s on top plate have an edge ripped off of them"* (Tommy,
+   * 2026-11-01, with SketchUp screenshots). The plate sits FLAT on the studs
+   * and takes the whole slope in its own rip, so every stud in a row is one
+   * plain square-cut length — which is also what the shop would rather cut.
+   *
+   * ⚠ **It is what makes this panel buildable at all.** With the slope in the
+   * studs, the exterior face had to hold `0.75 + 1.5` of bottom stack and a
+   * full `2.25 / cos` of top assembly — 4.62in at 4:12 — against a 3 1/2in
+   * low height, so the exterior stud had no room and the two plates ran into
+   * each other: five real interferences, pinned in `memberOverlap.test.ts`.
+   * With the rip in the plate the exterior face needs only
+   * `0.75 + 1.5 + thinEdge + skin/cos`, which is 3.37in at 4:12 and fits.
+   */
   const bottomZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const studXs: number[] = [0, widthIn - PLATE_2X4_THICKNESS_IN];
   const bays = Math.max(1, Math.ceil((widthIn - PLATE_2X4_THICKNESS_IN) / CROSS_TILT_STUD_SPACING_IN));
@@ -149,12 +252,23 @@ export function buildCrossTiltPanelMembers(options: CrossTiltPanelOptions): Cros
   }
   studXs.sort((a, b) => a - b);
 
+  /** The underside of a row's top plate: level, set by the plate's THICK
+   * edge, which is the deeper (higher) of its two. */
+  const plateBottomZIn = (y1In: number) =>
+    belowTopAtYIn(y1In, SKIN_THICKNESS_IN) - PLATE_2X4_THICKNESS_IN;
+
   for (const [face, y0In] of [
     ["exterior", 0],
     ["interior", depthIn - PLATE_2X4_WIDTH_IN],
   ] as [string, number][]) {
     const y1In = y0In + PLATE_2X4_WIDTH_IN;
-    const topPerpIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+    const studLengthIn = plateBottomZIn(y1In) - bottomZIn;
+    /* ⚠ No stud where the panel leaves no room for one — the same guard a
+       gable's corner studs carry. At the app's own 3 1/2in low height the
+       exterior row comes out about 1/8in, which is not a stud; it is the row
+       telling you the panel is as short as it can be. Drawing a sliver, or a
+       stud of negative length, would be worse than drawing none. */
+    if (!(studLengthIn > PLATE_2X4_THICKNESS_IN)) continue;
     for (const [index, xIn] of studXs.entries()) {
       members.push({
         memberId: `cross_tilt_stud_${face}_${index}`,
@@ -162,62 +276,61 @@ export function buildCrossTiltPanelMembers(options: CrossTiltPanelOptions): Cros
         speciesGrade: LUMBER_SPECIES_GRADE,
         plySpec: null,
         nominalSize: "2x4",
-        /* The piece AS CUT is its LONG point, at the deeper of its two
-           edges, because the rip runs uphill toward the inside face. */
         actualDimsIn: {
           thicknessIn: PLATE_2X4_THICKNESS_IN,
           widthIn: PLATE_2X4_WIDTH_IN,
-          lengthIn: belowTopAtYIn(y1In, topPerpIn) - bottomZIn,
+          lengthIn: studLengthIn,
         },
         orientation: "vertical",
-        position: {
-          xIn,
-          yIn: y0In,
-          zIn: bottomZIn,
-          rotationDeg: 0,
-          sectionCornersIn: [
-            { yIn: y0In, zIn: bottomZIn },
-            { yIn: y0In, zIn: belowTopAtYIn(y0In, topPerpIn) },
-            { yIn: y1In, zIn: belowTopAtYIn(y1In, topPerpIn) },
-            { yIn: y1In, zIn: bottomZIn },
-          ],
-        },
+        position: { xIn, yIn: y0In, zIn: bottomZIn, rotationDeg: 0 },
         role: "stud",
         qty: 1,
         notes:
-          index === 0 && face === "exterior"
-            ? `ripped ${tiltDeg.toFixed(2)}deg across its own depth — the exterior row is the SHORT one, the top rises toward the inside face`
+          index === 0
+            ? `${face} row — square cut both ends, all ${studXs.length} the same length; the incline is taken by the plate above, not by this stud`
             : undefined,
       });
     }
   }
 
-  /* ⚠ THE INCLINED TOP PLATE, and the surface the roof actually lands on.
-     Two ripped 2x4s at the wythe edges with the skin over them, all three
-     lying IN the one inclined plane. */
+  /* ⚠ **THE TOP PLATES: FLAT ON THE STUDS, WITH ONE EDGE RIPPED OFF.**
+
+     They used to be slabs lying IN the incline — a whole 2x4 tilted, bottom
+     face and all. His 2026-11-01 note and screenshots say otherwise: *"Both
+     2x4s on top plate have an edge ripped off of them."* So the board sits
+     flat, its underside level on the studs, and the roof's slope is cut into
+     its top face. The thin edge faces OUT, because the roof climbs inward. */
   for (const [face, y0In] of [
     ["exterior", 0],
     ["interior", depthIn - PLATE_2X4_WIDTH_IN],
   ] as [string, number][]) {
     const y1In = y0In + PLATE_2X4_WIDTH_IN;
+    const bottomOfPlateZIn = plateBottomZIn(y1In);
     members.push({
       memberId: `cross_tilt_top_plate_${face}`,
       material: "dimensional_lumber",
       speciesGrade: LUMBER_SPECIES_GRADE,
       plySpec: null,
       nominalSize: "2x4",
+      /* Dimensioned at the THICK edge, which is the stock it is cut from and
+         the number a shop sets a saw to. */
       actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: widthIn },
       orientation: "flat",
       position: {
         xIn: 0,
         yIn: y0In,
-        zIn: belowTopAtYIn(y1In, SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN),
+        zIn: bottomOfPlateZIn,
         rotationDeg: 0,
-        sectionCornersIn: slab(y0In, y1In, SKIN_THICKNESS_IN, SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN),
+        sectionCornersIn: [
+          { yIn: y0In, zIn: bottomOfPlateZIn },
+          { yIn: y1In, zIn: bottomOfPlateZIn },
+          { yIn: y1In, zIn: belowTopAtYIn(y1In, SKIN_THICKNESS_IN) },
+          { yIn: y0In, zIn: belowTopAtYIn(y0In, SKIN_THICKNESS_IN) },
+        ],
       },
       role: "plate",
       qty: 1,
-      notes: `${face}-wythe edge, ripped ${tiltDeg.toFixed(2)}deg off level so the roof panel lands flush`,
+      notes: `${face}-wythe edge — lies FLAT on the studs; rip ${ripRemovedIn.toFixed(3)}in off one edge at ${tiltDeg.toFixed(2)}deg so the top face carries the roof's slope, leaving ${thinEdgeIn.toFixed(3)}in at the outer (thin) edge and the full ${PLATE_2X4_THICKNESS_IN}in at the inner one. Square cut both ends.`,
     });
   }
 
@@ -240,8 +353,17 @@ export function buildCrossTiltPanelMembers(options: CrossTiltPanelOptions): Cros
     },
     role: "skin",
     qty: 1,
-    notes: `the one inclined surface — cut ${(depthIn / cos).toFixed(3)}in across, not the panel's ${depthIn}in depth`,
+    /* ⚠ **CUT SQUARE, NOT BEVELLED**, and the drawing says what that costs.
+       > *"Plywood should just be cut perpendicular on these with a note in
+       > the shop drawing saying to be ~1/4\" bottom plate piece is proud of
+       > the plywood."* — Tommy, 2026-11-01
+       A 3/4in sheet lying at the roof's angle, cut square to its own faces
+       rather than plumb, leaves its lower corner set back by
+       `thickness x sin` along the slope. That is 0.237in at 4:12 — his
+       "~1/4in" — and it is the plate below standing proud of the sheet. The
+       number is printed from the real pitch rather than as a flat 1/4in. */
+    notes: `the one inclined surface — cut ${(depthIn / cos).toFixed(3)}in across, not the panel's ${depthIn}in depth. Cut the edges SQUARE (perpendicular to the sheet), not bevelled: the plate below finishes about ${(SKIN_THICKNESS_IN * sin).toFixed(3)}in proud of the plywood, which is expected.`,
   });
 
-  return { members, highHeightIn, tiltDeg, refusal: null };
+  return { members, highHeightIn, tiltDeg, topPlateRip, refusal: null };
 }
