@@ -68,7 +68,11 @@
   2026-11-01 @ `0a713cb`: **166 problems, 120 errors / 46 warnings**, per
   rule `exhaustive-deps` 12, `immutability` 1,
   `preserve-manual-memoization` 62, `purity` 1, `refs` 29,
-  `set-state-in-effect` 12.
+  `set-state-in-effect` 12. Re-measured again later the same day @ `fb9bc2e`:
+  **168 problems, 120 errors / 48 warnings** — every rule above unmoved, the
+  two extra warnings both `no-unused-vars` in `projectFile.test.ts`, which
+  grew by 49 lines over the commits in between. Worth keeping as the shape of
+  this gate: a total that drifts while every rule that matters sits still.
 - **⚠ Do NOT read a value from `@building-integrity/panel-catalog` at MODULE
   SCOPE in `page.tsx`.** Turbopack splits `data.ts` into parts, and a value
   declared late in that very long file is not evaluated before this module's

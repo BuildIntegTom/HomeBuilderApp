@@ -381,3 +381,72 @@ also gets a rodent/air-sealed bottom skin is a real building question.
 5. **B3** — slot alignment, with the 2ft/4ft module decision in hand.
 6. **B6** — header rebuild.
 7. Exports: CSV, then DXF.
+
+## D. Added to the queue 2026-11-01, after the B-list
+
+### B8 — the row's own documents (DONE this pass, with one thing pinned)
+
+> *"Let's finish B1 with the tilted gable panels populating upon draw,
+> material counts, screw counts, etc, along with shop fabrication pages."*
+
+The cross-tilted row existed only inside `Building3DView`, as a loop that
+built members and threw everything else away — so a shed's tall wall grew a
+row of real framed panels that **no document knew about**: no panel count, no
+plywood or board-feet, no project weight, no screws, no price, no shop sheet,
+and not in the OBJ or COLLADA export either. `apps/web/app/crossTiltTakeoff.ts`
+is now the one takeoff both the view and the paperwork read, the same answer
+the floor and roof decks got.
+
+"Populating upon draw" was also literally true: the wall ids were **state**,
+set once in the fresh-draw effect off the drawn form and the DEFAULT pitch.
+Edit the roofline profile to a shed afterwards and no row appeared; edit it
+away and the row stayed behind on a wall that had become a gable end; and it
+was never in the project file, so a saved shed re-opened with no row. Derived
+from the live roof now, so all three answer themselves.
+
+⚠ **PINNED, NOT FIXED — the panel's low edge self-intersects, and the fix is
+a dimension of his.** Adding the panel to `memberOverlap.test.ts` (it had
+never been audited, for the same reason it had no documents) found five real
+interferences, every one of them on the low/exterior face:
+
+```
+cross_tilt_bottom_plate_exterior x cross_tilt_stud_exterior_0
+cross_tilt_bottom_plate_exterior x cross_tilt_stud_exterior_1
+cross_tilt_bottom_plate_exterior x cross_tilt_top_plate_exterior
+cross_tilt_stud_exterior_0       x cross_tilt_top_plate_exterior
+cross_tilt_stud_exterior_1       x cross_tilt_top_plate_exterior
+```
+
+It is arithmetic, not a geometry slip. At the exterior face the panel's own
+layers need `0.75 + 1.5` of bottom stack and `2.25 / cos(rake)` of top
+assembly — **4.62in at 4:12** — and the row is built with a 3.5in low height.
+There is no room for the stud, and the two plates run into each other.
+
+The 3.5in is `PLATE_2X4_WIDTH_IN`, this app's own stand-in; he never gave this
+panel a height. Three ways out, and which one is right is his call:
+
+1. **Raise the low edge** to the layer stack plus a real exterior stud
+   (~8.1in at 4:12 if the stud is one 2x4's width). ⚠ This makes the row
+   taller, and the roof does not move with it — the roof is laid from
+   `gableEaveHeightIn`, which this row is not part of. So it may push the row
+   up through the roof until B2 settles the bearing ring.
+2. **Taper to a solid edge** — one plate instead of two where the panel is too
+   shallow for both, which is how a tapered sleeper is really built and needs
+   no new dimension.
+3. **Refuse** below the minimum and draw no row, which is the strict reading
+   of his dimensional-tightness rule but loses the row on a 4:12 shed.
+
+### B9 — a gable ridge beam should land ON its column panel, not through it
+
+> *"gable end column panels' tops should be flush/meet the bottom of the
+> gable ridge beams. This means the column panel should be shorter, rather
+> than having the beam run through the panel as it currently does. The beam
+> should air on top the panel."* — Tommy, 2026-11-01
+
+Same class as the gable/roof flush junction and as B2: a bearing member drawn
+passing through the thing it bears on. The column panel's height is derived
+from the roofline, so this is a question of subtracting the beam's own depth
+from that derivation — and of making sure the number that moves is the
+PANEL's height, not the roofline, so the pitch readout does not shift (the
+mistake `gable_ends_full_height` records). Also an overlap the audit should
+see once fixed.

@@ -3,6 +3,7 @@ import type { PanelMember } from "./componentSchema";
 import { overlappingMemberPairs } from "./memberPrism";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
 import { buildBracedPanelMembers } from "./bracedPanelMembers";
+import { buildCrossTiltPanelMembers } from "./crossTiltPanelMembers";
 import { buildColumnPanelMembers, buildColumnStyleMembers } from "./columnPanelMembers";
 import { buildCornerPanelMembers } from "./cornerPanelMembers";
 import { buildSafetyGapMembers } from "./safetyGapMembers";
@@ -66,6 +67,11 @@ const CASES: { name: string; members: PanelMember[] }[] = [
   { name: "braced chevron", members: buildBracedPanelMembers(48, D, H, false, "chevron", false) },
   { name: "braced hatch", members: buildBracedPanelMembers(48, D, H, false, "hatch", true) },
   { name: "gable", members: buildGablePanelMembers(48, D, 48, 72, false) },
+  /* ⚠ The cross-tilted row, unchecked until 2026-11-01 — it lived inside the
+     3D view, so it reached no document and no audit either. Its tilt runs
+     through the panel's DEPTH, which is the one plane none of the other
+     sloped panels here exercise. */
+  { name: "cross tilt", members: buildCrossTiltPanelMembers({ widthIn: 24, depthIn: D, lowHeightIn: 3.5, pitchIn12: 4 }).members },
   { name: "big header", members: buildBigHeaderMembers(40, D, 24, false, "plywood") },
 ];
 
@@ -134,6 +140,25 @@ const BASELINE: Record<string, number> = {
      same answer. */
   "braced chevron": 2,
   "big header": 26,
+  /**
+   * ⚠ **The cross-tilted row's low edge, and it is ARITHMETIC rather than a
+   * geometry slip.** Audited for the first time on 2026-11-01, when the row
+   * stopped living inside the 3D view and started reaching the documents.
+   *
+   * All five are on the exterior (low) face. At that face the panel's own
+   * layers need `SKIN + PLATE` of bottom stack and `(SKIN + PLATE) / cos`
+   * of top assembly — 4.62in at 4:12 — and the row is built at a 3.5in low
+   * height. So there is no room for the exterior stud, and the two plates
+   * run into each other.
+   *
+   * The 3.5in is `PLATE_2X4_WIDTH_IN`, this app's own stand-in: Tommy never
+   * gave this panel a height. Raising it makes the row taller than the roof
+   * that is laid from `gableEaveHeightIn` and has no term for this row, so
+   * which of those two gives way is his call, not this file's — the same
+   * reason every other entry above is pinned. See `docs/plan-2026-10-31-queue.md`
+   * B8 for the three ways out.
+   */
+  "cross tilt": 5,
 };
 
 describe("⚠ no member occupies the same space as another", () => {

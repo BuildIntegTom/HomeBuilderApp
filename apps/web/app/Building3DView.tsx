@@ -32,6 +32,7 @@ import { resolveSpanningHeaderHeightIn, spanningHeadersToGeometry, wallBandGeome
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
 import { gableTileRoofTopLiftIn } from "./gableProfilePoints";
+import { computeCrossTiltTakeoff } from "./crossTiltTakeoff";
 import { computeDeckPanelTakeoff } from "./deckPanelTakeoff";
 import PanelLabel from "./PanelLabel";
 import {
@@ -47,14 +48,11 @@ import {
   buildRoofCatcherBeamMembers,
   buildStructuralColumnMembers,
   GABLE_PANEL_MAX_HEIGHT_IN,
-  buildCrossTiltPanelMembers,
-  PLATE_2X4_WIDTH_IN,
   ridgeBeamLayout,
   columnStorySegments,
   divideRingFacet,
   buildTaperedPanelMembers,
   ROOF_CATCHER_BEAM_DEPTH_IN,
-  planFloorRoofPanelWidthsIn,
   STEEL_MESH_THICKNESS_IN,
   SUBFLOOR_DEPTH_DEFAULT_IN,
   BOX_BEAM_SIZE_DEFAULT,
@@ -1904,60 +1902,34 @@ export default function Building3DView({
      > way to the foundation."*
 
      Peaked roofs only: a shed has no ridge to run a beam along. */
-  /* The cross-tilted panels along a shed's tall wall. Their tops rise from
-     the outside face to the inside one, so the inclined roof lands flush
-     instead of on a corner. */
+  /**
+   * The cross-tilted panels along a shed's tall wall. Their tops rise from
+   * the outside face to the inside one, so the inclined roof lands flush
+   * instead of on a corner.
+   *
+   * ⚠ **Off the shared takeoff, not planned here.** This used to be a loop
+   * that divided the wall, built the members and threw everything else away,
+   * which is why the row reached the picture and no document: no count, no
+   * materials, no weight, no screws, no price, no shop sheet. One takeoff now
+   * answers for the view and the paperwork alike — see `crossTiltTakeoff.ts`.
+   */
   const crossTiltRenderData = useMemo(() => {
-    if (!footprint || !crossTiltWallIds || crossTiltWallIds.size === 0) return [];
-    if (roofPitchIn12 === undefined) return [];
-    const byId = new Map(footprint.corners.map((c) => [c.id, c.point]));
-    const out: {
-      id: string;
-      anchorX: number;
-      anchorZ: number;
-      anchorYFt: number;
-      rotationRad: number;
-      members: PanelMember[];
-    }[] = [];
-
-    for (const wallId of crossTiltWallIds) {
-      const wall = footprint.walls.find((w) => w.id === wallId);
-      const a = wall && byId.get(wall.startCorner);
-      const b = wall && byId.get(wall.endCorner);
-      if (!wall || !a || !b) continue;
-      const lengthFt = Math.hypot(b.x - a.x, b.y - a.y);
-      const lengthIn = lengthFt * IN_PER_FT;
-      const widths = planFloorRoofPanelWidthsIn(lengthIn, thicknessIn);
-      if (widths === null) continue;
-      const rotationRad = Math.atan2(b.y - a.y, b.x - a.x);
-      const ux = (b.x - a.x) / lengthFt;
-      const uy = (b.y - a.y) / lengthFt;
-      let atIn = 0;
-      for (const [i, widthIn] of widths.entries()) {
-        /* ⚠ A SHORT panel sitting ON the wall, not a replacement for it —
-           his *"smaller set of gable line panels on top of the main wall"*.
-           Its own low height is just the tilt's rise, so the pair comes to
-           the wall height plus what the roof needs. */
-        const built = buildCrossTiltPanelMembers({
-          widthIn,
-          depthIn: thicknessIn,
-          lowHeightIn: PLATE_2X4_WIDTH_IN,
-          pitchIn12: roofPitchIn12,
-        });
-        if (built.refusal !== null) continue;
-        const alongFt = atIn / IN_PER_FT;
-        out.push({
-          id: `crosstilt-${wallId}-${i}`,
-          anchorX: a.x + ux * alongFt,
-          anchorZ: a.y + uy * alongFt,
-          anchorYFt: wallHeightFt,
-          rotationRad,
-          members: built.members,
-        });
-        atIn += widthIn;
-      }
-    }
-    return out;
+    const takeoff = computeCrossTiltTakeoff({
+      footprint,
+      crossTiltWallIds,
+      depthIn: thicknessIn,
+      roofPitchIn12,
+      wallHeightFt,
+    });
+    const membersByGroup = new Map(takeoff.groups.map((g) => [g.key, g.members]));
+    return takeoff.instances.map((instance) => ({
+      id: instance.id,
+      anchorX: instance.world.anchorX,
+      anchorZ: instance.world.anchorZ,
+      anchorYFt: instance.world.anchorYFt,
+      rotationRad: instance.world.rotationRad,
+      members: membersByGroup.get(instance.groupKey) ?? [],
+    }));
   }, [footprint, crossTiltWallIds, roofPitchIn12, thicknessIn, wallHeightFt]);
 
   /* A COURTYARD RING's roof: tapered panels fanning across each facet.
@@ -2482,6 +2454,20 @@ export default function Building3DView({
          view applies above, so a deck panel would land in the file standing on
          end. Left out deliberately rather than exported wrong — the decks are
          a view layer until the exporter can place them. */
+      /* The cross-tilted row DOES export, because nothing about it needs the
+         tip: the view places it with a Y rotation alone, exactly like a gable
+         or a ridge panel, and its ripped members carry their shape in
+         `sectionCornersIn`, which `memberPrism` already extrudes. */
+      ...crossTiltRenderData.map(
+        ({ id, anchorX, anchorZ, anchorYFt, rotationRad, members }): WorldPlacedPanel => ({
+          label: id,
+          worldXIn: anchorX * IN_PER_FT,
+          worldZIn: anchorZ * IN_PER_FT,
+          worldYIn: anchorYFt * IN_PER_FT,
+          rotationRad,
+          members,
+        }),
+      ),
       ...baleFoundationRenderData.map(
         ({ id, anchorX, anchorZ, anchorYFt, rotationRad, members }): WorldPlacedPanel => ({
           label: `balefoundation_${id}`,

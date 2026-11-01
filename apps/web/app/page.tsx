@@ -30,7 +30,6 @@ import {
   computeInsetPerimeterRing,
   computeJoistLayout,
   gableEndWallIdsFor,
-  shedTallWallId,
   simpleRoofPlanes,
   GABLE_COLUMN_FLAT_TOP_DROP_IN,
   GABLE_SHED_SNAP_THRESHOLD_IN,
@@ -367,6 +366,7 @@ import {
   resolveHeelSeat,
   ROOF_PITCH_OPTIONS_IN12,
 } from "./gableProfilePoints";
+import { computeCrossTiltTakeoff, crossTiltWallIdsFor, type CrossTiltTakeoffInput } from "./crossTiltTakeoff";
 import { computeDeckPanelTakeoff, type DeckPanelTakeoffInput } from "./deckPanelTakeoff";
 import {
   BIG_HEADER_BEAM_MIN_HEIGHT_IN,
@@ -582,6 +582,25 @@ const phase2Assumptions = () => [
     label: "Gable End Panel pricing",
     status: "pending-BI-confirmation" as const,
     note: "Gable End Panels are priced at the roof rate ($42/sqft placeholder) using the trapezoid's own average height above the eave; a tile's vertical safety-gap filler is priced at the standard rate instead, since it's the exact same member a wall-level safety-gap panel uses.",
+  },
+  {
+    label: "Cross-tilted (tilted gable) panel — pricing basis, cavity fill and fastener schedule",
+    status: "pending-BI-confirmation" as const,
+    note:
+      "The row on a shed's tall wall is now counted, weighed, priced, fastened and given its own Shop Fabrication " +
+      "sheet. Three readings in that, none of them his: (1) it is priced at the GABLE row's rate, because it is the " +
+      "gable row — \"smaller set of gable line panels on top of the main wall\" — charged on each panel's width x " +
+      "its AVERAGE height, since this panel's two faces are different heights; (2) its cavity is read as " +
+      "straw-filled, measured by the members the way a floor panel's is, because it is a straw-bale wall panel on a " +
+      "straw-bale wall — no fill was specified for it; (3) its fasteners come from the WALL panel schedule " +
+      "(2in nails at 4in o.c. along plates, 8 x 4in GRK per plywood lid), which applies because this panel is " +
+      "plates, studs and lids like a standard panel. ⚠ And its LOW HEIGHT does not hold its own layers: one " +
+      "2x4's width (3.5in) of exterior face is what the row has always been built with, but that face needs " +
+      "0.75 + 1.5in of bottom stack and another 2.25in/cos(rake) — 4.62in at 4:12 — of top assembly, so the " +
+      "exterior stud has no room and the two plates run into each other. Five real interferences, pinned in " +
+      "memberOverlap.test.ts rather than fixed, because raising the low edge makes the row taller than the roof " +
+      "that is laid from the eave height and has no term for this row. Which of those two gives way is a building " +
+      "decision.",
   },
   {
     label: "Box Beam/Truss Plate/Mid-Wall Bond Beam pricing — the BEAM rate itself is unset",
@@ -1230,7 +1249,18 @@ export default function LayoutEditor() {
      catcher beam genuinely needs, and these are not gable panels anyway —
      a gable's top slopes along its WIDTH, these slope through their DEPTH
      and look level head-on. */
-  const [crossTiltWallIds, setCrossTiltWallIds] = useState<Set<string>>(new Set());
+  /* ⚠ **DERIVED, not state, and it was state that kept the row from
+     populating.** `setCrossTiltWallIds` was called in exactly one place — the
+     fresh-draw effect — off the DRAWN form and the DEFAULT pitch. So the row
+     appeared only if the building was a shed at the instant it was drawn, and
+     then never changed its mind: edit the roofline profile from peaked to
+     shed and no row appeared, edit it the other way and the row stayed
+     behind on a wall that had become a gable end. It is also not in the
+     project file, so a saved shed re-opened with no row at all.
+
+     Nothing could ever toggle it, so there was no user intent in that state
+     to preserve — see `crossTiltWallIds` below, read off the LIVE roof form
+     and the live pitch. */
   /* Columns the user has dragged along the ridge, by index, in inches from
      the ridge's start. Empty means evenly spaced, which is the default. */
   const [ridgeColumnOverridesAlongIn, setRidgeColumnOverridesAlongIn] = useState<Record<number, number>>({});
@@ -3585,17 +3615,10 @@ export default function LayoutEditor() {
             )
           : {},
       );
-      /* A shed's tall wall takes cross-tilted panels; a peak has no tall
-         side, so the set empties. */
-      const tallWallId =
-        form.kind === "shed"
-          ? shedTallWallId(fp, {
-              form: "shed",
-              pitchIn12: DEFAULT_ROOF_PITCH_IN12,
-              eaveHeightFt: wallHeightFt,
-            })
-          : null;
-      setCrossTiltWallIds(tallWallId ? new Set([tallWallId]) : new Set());
+      /* ⚠ The cross-tilted row used to be SET here, from `form.kind` and the
+         default pitch. It is derived from the live roof now
+         (`crossTiltWallIds`), so a fresh draw needs nothing: a shed gets its
+         row the moment the roof form says shed, and a peak has none. */
       /* ⚠ A new footprint has a new ridge, so a column dragged on the old one
          points at nothing. Cleared with everything else a fresh draw resets. */
       setRidgeColumnOverridesAlongIn({});
@@ -6765,6 +6788,106 @@ export default function LayoutEditor() {
 
   const deckPanelTakeoff = useMemo(() => computeDeckPanelTakeoff(deckPanelTakeoffInput), [deckPanelTakeoffInput]);
 
+  /**
+   * Which walls carry the cross-tilted row, read off the LIVE roof rather
+   * than off the form the building happened to be drawn as.
+   *
+   * > *"Shed roof on small building should spawn with inclined Gable end
+   * > panels all along the wall of the taller side too."*
+   *
+   * ⚠ The pitch and eave come from `deckPanelTakeoffInput`, the same two
+   * values the roof itself is laid out from, so the row cannot end up on a
+   * different wall from the one the roof actually falls away from.
+   */
+  const crossTiltWallIds = useMemo(
+    () =>
+      footprint && deckPanelTakeoffInput.roofPitchIn12 !== undefined
+        ? crossTiltWallIdsFor(
+            footprint,
+            deckPanelTakeoffInput.roofForm,
+            deckPanelTakeoffInput.roofPitchIn12,
+            deckPanelTakeoffInput.roofEaveHeightFt ?? wallHeightFt,
+          )
+        : new Set<string>(),
+    [footprint, deckPanelTakeoffInput, wallHeightFt],
+  );
+
+  /**
+   * ⚠ **The inputs to the ONE cross-tilted panel takeoff**, in one place for
+   * the same reason `deckPanelTakeoffInput` is: `Building3DView` builds its
+   * own copy of the takeoff from its props, and two calls to one pure
+   * function can only disagree by being given different inputs. The JSX
+   * passes these values straight through rather than recomputing them.
+   */
+  const crossTiltTakeoffInput = useMemo<CrossTiltTakeoffInput>(
+    () => ({
+      footprint,
+      crossTiltWallIds,
+      depthIn: thicknessIn,
+      roofPitchIn12: deckPanelTakeoffInput.roofPitchIn12,
+      wallHeightFt,
+    }),
+    [footprint, crossTiltWallIds, thicknessIn, deckPanelTakeoffInput, wallHeightFt],
+  );
+
+  const crossTiltTakeoff = useMemo(() => computeCrossTiltTakeoff(crossTiltTakeoffInput), [crossTiltTakeoffInput]);
+
+  /**
+   * The Shop Fabrication sheet for every unique cross-tilted panel.
+   *
+   * > *"Let's finish B1 with the tilted gable panels populating upon draw,
+   * > material counts, screw counts, etc, along with shop fabrication
+   * > pages."* — Tommy, 2026-11-01
+   *
+   * ⚠ **The row had no sheet at all**, because it existed only inside the 3D
+   * view. The panels here are the ones on screen — one takeoff builds both —
+   * so this sheet and the model cannot describe different panels.
+   *
+   * ⚠ **This one DOES get a fastener count, unlike the floor and roof
+   * panels**, and the difference is the construction rather than a change of
+   * policy. `computeFastenerWeight` is written over member ROLES — plate and
+   * girt length for the nailing, one count of screws per plywood lid, one per
+   * girt bar — and a cross-tilted panel is plates, studs and plywood lids,
+   * the same roles a standard wall panel has. A floor panel is joists with no
+   * girt at all, which is why its sheet still reports fasteners as unmodeled
+   * rather than zero. So this is the existing schedule read onto a panel it
+   * already covers, not a new schedule invented for it.
+   */
+  const crossTiltFabricationGroups = useMemo(() => {
+    const densityKgM3 = densityLbFt3 * LB_FT3_TO_KG_M3;
+
+    return crossTiltTakeoff.groups.map((group) => {
+      /* ⚠ The cavity's own volume, carved out by the members, exactly as the
+         floor and roof sheets measure theirs — not width x depth x height,
+         which on a panel this short and this full of framing would be most of
+         the way wrong. What fills that cavity has NOT been specified for this
+         panel type; it is read as straw because this is a straw-bale wall
+         panel sitting on a straw-bale wall, and the sheet says so. */
+      const straw = computeStandardPanelStrawVolume(group.members, {
+        heightIn: group.highHeightIn,
+        widthIn: group.widthIn,
+        depthIn: group.options.depthIn,
+      });
+      const woodWeightKg = computeMemberSetWoodWeight(group.members).weightKg;
+      const fasteners = computeFastenerWeight(group.members);
+      const weightBreakdown = computePanelWeightBreakdown({
+        widthIn: 0,
+        strawWeightKgOverride: straw.strawVolumeFt3 * FT3_TO_M3 * densityKgM3,
+        thicknessIn: group.options.depthIn,
+        heightIn: group.highHeightIn,
+        densityKgM3,
+        woodWeightKg,
+        fastenerWeightKg: fasteners.totalWeightKg,
+        /* Both faces are plywood-skinned and the straw never sees daylight,
+           so no plaster coat lands on this panel — same as the deck panels. */
+        hasClayPlaster: false,
+        hasLimePlaster: false,
+      });
+      const run = crossTiltTakeoff.runs[group.instances[0]!.runIndex]!;
+      return { ...group, run, fasteners, weightBreakdown };
+    });
+  }, [crossTiltTakeoff, densityLbFt3]);
+
   const allInstances = useMemo(
     () =>
       footprint
@@ -7972,10 +8095,21 @@ export default function LayoutEditor() {
     for (const ref of shippingJackStudRefs) {
       accumulate(computeJackStudFastenerWeight(ref.heightIn).items);
     }
+    /* ⚠ The cross-tilted row's screws and nails, one copy per installed
+       panel — his *"screw counts"*. Its own sheet computes the same items
+       (see `crossTiltFabricationGroups`), so the project total and the sheet
+       are reading one schedule. The other fabricated extras — floor and roof
+       panels, beams, spanning headers — are still absent here, and that is
+       the deliberate state of play rather than an oversight: none of them has
+       a nailing schedule, which is why their sheets report fasteners as
+       unmodeled rather than zero. */
+    for (const group of crossTiltFabricationGroups) {
+      for (let copy = 0; copy < group.instances.length; copy++) accumulate(group.fasteners.items);
+    }
     const items = [...byLabel.entries()].map(([label, v]) => ({ label, count: v.count, totalWeightLb: v.totalWeightLb }));
     const totalWeightLb = items.reduce((sum, i) => sum + i.totalWeightLb, 0);
     return { items, totalWeightLb, unmodeledLabels: [...unmodeledLabels] };
-  }, [shopDrawings, shippingJackStudRefs]);
+  }, [shopDrawings, shippingJackStudRefs, crossTiltFabricationGroups]);
 
   // Estimated bearing/shear numbers (Tommy: "let's take a stab at making
   // some estimated engineering numbers") — bearing applies to any panel
@@ -8354,12 +8488,22 @@ export default function LayoutEditor() {
     gable: Object.values(gableTilesAsFabricatedByWallId).reduce((sum, tiles) => sum + tiles.length, 0),
     floor: deckPanelTakeoff.instances.filter((i) => i.kind === "floor").length,
     roof: deckPanelTakeoff.instances.filter((i) => i.kind === "roof").length,
+    /* The cross-tilted row on a shed's tall wall — real fabricated panels,
+       and the last row in the building that this count did not know about. */
+    crossTilt: crossTiltTakeoff.instances.length,
   };
   const panelsTotal =
-    panelCounts.wall + panelCounts.gable + panelCounts.floor + panelCounts.roof + panelCounts.windowPairs * 2 + panelCounts.doors;
+    panelCounts.wall +
+    panelCounts.gable +
+    panelCounts.crossTilt +
+    panelCounts.floor +
+    panelCounts.roof +
+    panelCounts.windowPairs * 2 +
+    panelCounts.doors;
   const panelsNote = [
     `${panelCounts.wall} wall`,
     panelCounts.gable > 0 ? `${panelCounts.gable} gable` : null,
+    panelCounts.crossTilt > 0 ? `${panelCounts.crossTilt} tilted gable` : null,
     panelCounts.floor > 0 ? `${panelCounts.floor} floor` : null,
     panelCounts.roof > 0 ? `${panelCounts.roof} roof` : null,
     panelCounts.windowPairs > 0
@@ -8424,6 +8568,7 @@ export default function LayoutEditor() {
       return { ...group, members, run, runs, plan: run.plan, runIn: run.runIn, weightBreakdown };
     });
   }, [deckPanelTakeoff, densityLbFt3]);
+
 
   // Mid-Wall Bond Beam's own Shop Fabrication pages — same "walk
   // walls/stories directly, bypass allInstances" shape as
@@ -8602,12 +8747,14 @@ export default function LayoutEditor() {
     addCopies(midWallBondBeamFabricationGroups);
     addCopies(spanningHeaderFabricationGroups);
     addCopies(floorRoofPanelFabricationGroups);
+    addCopies(crossTiltFabricationGroups);
     return out;
   }, [
     roofBearingFabricationGroups,
     midWallBondBeamFabricationGroups,
     spanningHeaderFabricationGroups,
     floorRoofPanelFabricationGroups,
+    crossTiltFabricationGroups,
   ]);
 
   const everyFabricatedMember = useMemo(
@@ -8670,12 +8817,14 @@ export default function LayoutEditor() {
     addCopies(midWallBondBeamFabricationGroups);
     addCopies(spanningHeaderFabricationGroups);
     addCopies(floorRoofPanelFabricationGroups);
+    addCopies(crossTiltFabricationGroups);
     return kg;
   }, [
     roofBearingFabricationGroups,
     midWallBondBeamFabricationGroups,
     spanningHeaderFabricationGroups,
     floorRoofPanelFabricationGroups,
+    crossTiltFabricationGroups,
   ]);
 
   /**
@@ -8717,8 +8866,21 @@ export default function LayoutEditor() {
       ),
     [floorRoofPanelFabricationGroups],
   );
+  /* The cross-tilted row's straw, on the same footing: it is in the building,
+     so it is in the carbon figure. */
+  const crossTiltStrawWeightKg = useMemo(
+    () =>
+      crossTiltFabricationGroups.reduce(
+        (sum, group) => sum + group.weightBreakdown.strawOnlyWeightKg * group.instances.length,
+        0,
+      ),
+    [crossTiltFabricationGroups],
+  );
   const projectStrawWeightKg =
-    strawWeight.weightKg + allRealPanelBuild.gablePanelStrawWeightKg + deckPanelStrawWeightKg;
+    strawWeight.weightKg +
+    allRealPanelBuild.gablePanelStrawWeightKg +
+    deckPanelStrawWeightKg +
+    crossTiltStrawWeightKg;
 
   const totalWeightKg =
     strawWeight.weightKg +
@@ -8807,6 +8969,17 @@ export default function LayoutEditor() {
           label: `Panel Fabrication: ${group.kind === "floor" ? "Floor" : "Roof"} Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
         });
       }
+      /* ⚠ And the cross-tilted row, for exactly the reason stated just
+         above: the sheets render, and without this line nobody can reach
+         them. Measured on a 46'8" x 14'2" shed before this was added — the
+         Project Summary counted 25 tilted gable panels and the section
+         picker offered no sheet for any of them. */
+      for (const group of crossTiltFabricationGroups) {
+        pages.push({
+          id: `shop-fab-${group.key}`,
+          label: `Panel Fabrication: Tilted Gable Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
+        });
+      }
     }
     // Box Beam's own Detail Guide page — the same assembly whether it's a
     // roofline roof-bearing member (2-story only, roof concern) or a
@@ -8884,6 +9057,7 @@ export default function LayoutEditor() {
     midWallBondBeamFabricationGroups,
     spanningHeaderFabricationGroups,
     floorRoofPanelFabricationGroups,
+    crossTiltFabricationGroups,
     shopDrawings,
     panelFabricationGroups,
     roofBearingFabricationGroups,
@@ -9301,7 +9475,15 @@ export default function LayoutEditor() {
         /* ⚠ The `roof` rate is now the GABLE row's rate and nothing else.
            It used to carry the beams as well, which is why they could not be
            repriced without repricing the gable too. */
-        { type: "roof", areaSqFt: gableRoofAreaSqFt },
+        /* ⚠ The cross-tilted row joins the GABLE row's rate, because it is
+           the gable row: his *"smaller set of gable line panels on top of the
+           main wall"*, differing only in which way the one incline runs. It
+           had no bucket at all, so a shed's tall wall grew a row of real
+           panels and the price did not move. The area is each panel's own
+           width x its average height — the two faces of this panel are
+           different heights, so the trapezoid average is the same reading the
+           gable row's own area takes across its width. */
+        { type: "roof", areaSqFt: gableRoofAreaSqFt + crossTiltTakeoff.faceAreaSqFt },
         /* ⚠ The beams, in their own bucket at last — his *"Beams and roof
            and floor panels should all have their own prices."* The bucket is
            seeded at the roof rate, which is what they were being charged
@@ -9328,6 +9510,7 @@ export default function LayoutEditor() {
     midWallBondBeamFabricationGroups,
     spanningHeaderFabricationGroups,
     deckPanelTakeoff,
+    crossTiltTakeoff,
   ]);
 
   /* ⚠ Over ALL the straw, not just the walls' — see `projectStrawWeightKg`.
@@ -11948,12 +12131,17 @@ export default function LayoutEditor() {
             its own yet.
           </p>
         )}
-        {roofEnabled && crossTiltWallIds.size > 0 && (
+        {roofEnabled && crossTiltTakeoff.instances.length > 0 && (
           <p className={styles.note}>
-            This shed&apos;s tall wall carries panels tilted front to back, so the roof lands flush on them rather
-            than on a corner. They look level head-on — the slope runs through the wall&apos;s depth, not along
-            its length.
+            This shed&apos;s tall wall carries {crossTiltTakeoff.instances.length} panels tilted front to back, so
+            the roof lands flush on them rather than on a corner. They look level head-on — the slope runs
+            through the wall&apos;s depth, not along its length, every top member ripped to the one{" "}
+            {crossTiltTakeoff.groups[0]?.tiltDeg.toFixed(2)}&deg; plane. They are counted, weighed, priced and
+            given their own Shop Fabrication sheets like any other panel.
           </p>
+        )}
+        {roofEnabled && crossTiltTakeoff.refusal !== null && (
+          <p className={styles.disclaimer}>⚠ {crossTiltTakeoff.refusal}</p>
         )}
       </div>
     ) : null;
@@ -13608,13 +13796,18 @@ export default function LayoutEditor() {
               <tr>
                 <td>Panels</td>
                 <td>
-                  {allWallPanelSlots.length + openingCounts.windows * 2 + openingCounts.doors}
+                  {/* ⚠ The SAME count the printed Project Summary carries, and it
+                      was not. This note read wall slots plus openings only, so a
+                      shed with a gable row, a tilted gable row, a floor and a roof
+                      showed 39 here and 122 on the page — two numbers in one app
+                      disagreeing about how big the job is, which is the exact
+                      defect his *"Project summary only lists 32 panels"* was
+                      about, one note over. */}
+                  {panelsTotal}
                   <br />
                   <span className={styles.note}>
-                    {allWallPanelSlots.length} wall panels + {openingCounts.windows} window header/sill pair
-                    {openingCounts.windows === 1 ? "" : "s"} + {openingCounts.doors} door header
-                    {openingCounts.doors === 1 ? "" : "s"} — a window is a header + sill panel, a door is a header
-                    panel only (no sill), each counted individually.
+                    {panelsNote} A window is a header + sill panel, a door is a header panel only (no sill), each
+                    counted individually.
                   </span>
                 </td>
               </tr>
@@ -15133,6 +15326,85 @@ export default function LayoutEditor() {
                     shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
                     role={role}
                   />
+                </StickyNote>
+              );
+            })}
+
+            {crossTiltFabricationGroups.map((group) => {
+              const noteId = `shop-fab-${group.key}`;
+              return (
+                <StickyNote
+                  key={group.key}
+                  id={noteId}
+                  label={`Panel Fabrication: Tilted Gable Panel ${formatLengthIn(group.widthIn, unitSystem)} (${group.instances.length})`}
+                  isOpen={openNoteIds.has(noteId)}
+                  isFullscreen={fullscreenNoteId === noteId}
+                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
+                  onClose={() => handleToggleNote(noteId)}
+                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
+                  onPrint={() => handlePrintNote(noteId)}
+                >
+                  <p className={`${styles.note} print-hidden-chrome`}>
+                    Fabricator/detailer document — one sheet per unique tilted gable panel, with the same to-scale
+                    lettered view and cut list every other panel gets. These are the panels the 3D view builds, from
+                    one takeoff, so this sheet and the model cannot describe different panels.
+                  </p>
+                  <PanelFabricationPage
+                    title={`Panel Fabrication — Tilted Gable Panel (${formatLengthIn(group.widthIn, unitSystem)})`}
+                    panelDescription={
+                      <>
+                        A short panel that sits <strong>on</strong> the wall&apos;s own top plate and carries one
+                        inclined top plate for the roof to land flush on — his{" "}
+                        <em>&quot;smaller set of gable line panels on top of the main wall&quot;</em>. ⚠ Its top
+                        slopes through the panel&apos;s <strong>depth</strong>, not along its width, so head-on it
+                        looks level: {formatLengthIn(group.lowHeightIn, unitSystem)} tall at the exterior face,
+                        rising to {formatLengthIn(group.highHeightIn, unitSystem)} at the interior one, every top
+                        member ripped to the one {group.tiltDeg.toFixed(2)}&deg; plane. Both ends of every ripped
+                        piece are cut plumb, flush to the faces either side of them. It is panel{" "}
+                        {group.instances.map((i) => i.name).join(", ")} of {crossTiltTakeoff.instances.length} along
+                        the {group.run.direction} wall, which the row sums to exactly across{" "}
+                        {formatLengthIn(group.run.runIn, unitSystem)}.
+                      </>
+                    }
+                    widthIn={group.widthIn}
+                    heightIn={group.highHeightIn}
+                    members={group.members}
+                    instances={group.instances.map((i) => ({
+                      name: i.name,
+                      note: `${formatLengthIn(i.atIn, unitSystem)} along the ${i.direction} wall`,
+                    }))}
+                    weightBreakdown={group.weightBreakdown}
+                    loadBearingCapacity={{
+                      status: "pending-BI-confirmation",
+                      note: "No load-bearing figure exists for a cross-tilted panel. It carries the roof onto the wall below it, which is exactly the number that cannot be guessed at — its studs are the same 2x4s a standard panel's are, but they are ripped to a slope and bear on a rake rather than square.",
+                    }}
+                    shearValue={{
+                      status: "pending-BI-confirmation",
+                      note: "No shear figure either. This panel has no diagonal brace; whatever diaphragm value it has would come from its two plywood lids and their nailing.",
+                    }}
+                    role={role}
+                  />
+                  <p className={styles.note}>
+                    Draft — this panel is modeled from Tommy&apos;s verbal spec (&quot;These panels should begin at
+                    the top plate and have an inclined top plate sloped to receive the roof panels&quot;). Open
+                    items on this sheet: the{" "}
+                    {formatLengthIn(group.lowHeightIn, unitSystem)} of straight exterior face below the rip is this
+                    app&apos;s own reading, not a dimension he gave, and{" "}
+                    <strong>
+                      it is not deep enough to hold this panel&apos;s own layers — the exterior face needs{" "}
+                      {formatLengthIn(0.75 + 1.5 + 2.25 / Math.cos((group.tiltDeg * Math.PI) / 180), unitSystem)} for
+                      its two plates and two skins, so the exterior stud has no room and the two plates run into each
+                      other
+                    </strong>
+                    . That is five real interferences, pinned rather than fixed: raising the low edge makes this row
+                    taller than the roof above it, which is laid from the eave height and has no term for this row.
+                    The cavity is also counted as straw-filled because this is a straw-bale wall panel, which has not
+                    been confirmed for a panel this short; and the fastener counts above are the standard wall
+                    panel&apos;s schedule read onto this panel&apos;s plates and lids, which is the schedule it has
+                    roles for but not one written for it. The row is
+                    divided on the same {FLOOR_ROOF_MIN_PANEL_WIDTH_IN}in-minimum module the floor and roof runs
+                    use, with the two end panels at the {thicknessIn}in wall depth.
+                  </p>
                 </StickyNote>
               );
             })}
