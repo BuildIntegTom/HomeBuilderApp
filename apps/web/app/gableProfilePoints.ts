@@ -1,4 +1,5 @@
 import { GABLE_SHED_SNAP_THRESHOLD_IN, type RoofBearingAnchorMode } from "@building-integrity/geometry";
+import { roofTopAboveRooflineIn } from "@building-integrity/panel-catalog";
 
 export { GABLE_SHED_SNAP_THRESHOLD_IN };
 
@@ -155,4 +156,47 @@ export function capGableTileHeights(leftHeightIn: number, rightHeightIn: number,
     rightEdgeHeightIn: flatHeightIn,
     verticalGapIn: { leftIn: leftHeightIn - flatHeightIn, rightIn: rightHeightIn - flatHeightIn },
   };
+}
+
+/**
+ * How much taller a Gable End Panel tile is built when the gable closes to
+ * the **TOP** of the roof panels instead of stopping under them.
+ *
+ * ⚠ **THE PANEL AS FABRICATED IS NOT THE ROOFLINE.** A tile's two edge
+ * heights are the roof's UNDERSIDE, and they have to stay that way — half a
+ * dozen derivations read them so, and folding the lift into them once made a
+ * 4:12 roof report itself as 2.5:12. The lift travels beside them, and this
+ * is the one function that says how far it goes, so the 3D view and the cut
+ * list cannot disagree about it. They did: the view lifted the gable and the
+ * shop drawings did not, which is both a part cut short and — at a shed's low
+ * corner, where the roofline runs to nothing — a panel asked to be shorter
+ * than its own two skins.
+ *
+ * It is the roof's PLUMB thickness, `depth / cos(slope)` — 16 3/8in through a
+ * 15 1/2in panel at 4:12, not 15 1/2in. A roof panel leans and a gable is
+ * measured vertically.
+ *
+ * ⚠ Clamped to the fabrication maximum `buildGablePanelMembers` enforces by
+ * THROWING, because a throw inside the 3D view's memo takes the whole
+ * viewport rather than one panel.
+ *
+ * ⚠ Falls back to the tile's OWN RAKE when no resolved pitch arrives. A
+ * missing pitch used to make the lift silently zero, which read on screen as
+ * *"still not tall enough"*; the rake a gable tile is already cut to IS the
+ * roof's pitch there, so it is the right answer rather than a guess.
+ */
+export function gableTileRoofTopLiftIn(
+  tile: { widthIn: number; leftEdgeHeightIn: number; rightEdgeHeightIn: number },
+  gableEndsFullHeight: boolean,
+  roofPanelDepthIn: number,
+  roofPitchIn12: number | undefined,
+  gableEaveHeightIn: number,
+  maxPanelHeightIn: number,
+): number {
+  if (!gableEndsFullHeight) return 0;
+  const tileRakeIn12 =
+    tile.widthIn > 0 ? (Math.abs(tile.rightEdgeHeightIn - tile.leftEdgeHeightIn) / tile.widthIn) * 12 : 0;
+  const liftIn = roofTopAboveRooflineIn(roofPanelDepthIn, roofPitchIn12 ?? tileRakeIn12);
+  const headroomIn = maxPanelHeightIn - Math.max(tile.leftEdgeHeightIn, tile.rightEdgeHeightIn) + gableEaveHeightIn;
+  return Math.max(0, Math.min(liftIn, headroomIn));
 }

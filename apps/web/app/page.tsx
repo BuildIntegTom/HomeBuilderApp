@@ -224,6 +224,7 @@ import {
   computeTimberHpVolume,
   DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN,
   GABLE_PANEL_MAX_HEIGHT_IN,
+  GABLE_PANEL_MIN_HEIGHT_IN,
   OCTAGON_RING_DIAMETER_OPTIONS_FT,
   PLYWOOD_SHEET_AREA_SQFT,
   concreteEmbodiedCarbonKgPerFt3,
@@ -358,7 +359,14 @@ import { PLYWOOD_HALF_ROW_LABEL, PLYWOOD_THREE_QUARTER_ROW_LABEL } from "./plywo
 import { resolveBracedStyle } from "./bracedStyle";
 import { placeColumnUnderPeak } from "./gableColumnPlacement";
 import { shouldAutoUpgradeToBigHeader } from "./bigHeaderAutoUpgrade";
-import { capGableTileHeights, computeRiseFtForPitch, resolveGableProfilePoints, resolveHeelSeat, ROOF_PITCH_OPTIONS_IN12 } from "./gableProfilePoints";
+import {
+  capGableTileHeights,
+  computeRiseFtForPitch,
+  gableTileRoofTopLiftIn,
+  resolveGableProfilePoints,
+  resolveHeelSeat,
+  ROOF_PITCH_OPTIONS_IN12,
+} from "./gableProfilePoints";
 import {
   BIG_HEADER_BEAM_MIN_HEIGHT_IN,
   MID_WALL_BEAM_HEADER_SNAP_THRESHOLD_IN,
@@ -6391,13 +6399,30 @@ export default function LayoutEditor() {
            maximum; the vertical safety-gap filler above it already measures
            from the capped top, so it absorbs the difference untouched. */
         const capped = capGableTileHeights(t.leftHeightIn, t.rightHeightIn, Math.max(gableEaveHeightIn + 1, capHeightIn - liftIn));
+        /* ⚠ **A TILE SHORTER THAN ITS OWN TWO SKINS IS A FILLER, NOT A
+           PANEL** — `buildGablePanelMembers` refuses it (its studs would come
+           out NEGATIVE, and until 2026-10-31 it built them that way and put
+           them in the cut list), so the row must not ask for one.
+
+           It became reachable when the truss heel seat stopped holding the
+           gable row away from the corners: a shed's roofline runs to nothing
+           at its low corner, so the last tile there has essentially no height
+           at all. With the gable closing to the roof's top surface the lift
+           alone is 16 3/8in and no tile is ever that short — this catches the
+           case where that lift is off, and it resolves it the way the row
+           already resolves every other sub-panel sliver: a real safety-gap
+           filler, the same plywood piece a 3/4in gap between two panels gets.
+           A window or column tile is left alone; neither can be this short
+           without its own opening being degenerate first. */
+        const fabricatedTallerIn = Math.max(capped.leftEdgeHeightIn, capped.rightEdgeHeightIn) + liftIn - gableEaveHeightIn;
+        const tooShortToBuild = !t.isWindow && !t.isColumn && fabricatedTallerIn < GABLE_PANEL_MIN_HEIGHT_IN;
         return {
           widthIn: t.widthIn,
           xStartIn: t.xStartIn,
           leftEdgeHeightIn: capped.leftEdgeHeightIn,
           rightEdgeHeightIn: capped.rightEdgeHeightIn,
           ...(capped.verticalGapIn ? { verticalGapIn: capped.verticalGapIn } : {}),
-          ...(t.isSafetyGap ? { isSafetyGap: true } : {}),
+          ...(t.isSafetyGap || tooShortToBuild ? { isSafetyGap: true } : {}),
           ...(t.isWindow ? { isWindow: true, windowHeightIn: t.windowHeightIn, windowSillHeightIn: t.windowSillHeightIn } : {}),
           ...(t.isColumn ? { isColumn: true } : {}),
         };
@@ -6560,6 +6585,37 @@ export default function LayoutEditor() {
     return ids;
   }, [gableTilesByWallId]);
 
+  /**
+   * The gable row **AS FABRICATED** — every tile's edge heights carrying the
+   * lift that takes a gable up to the TOP of the roof panels.
+   *
+   * ⚠ **THIS IS THE ROW THE SHOP BUILDS, AND IT IS NOT THE ROOFLINE.**
+   * `gableTilesByWallId` holds the roof's UNDERSIDE, because that is what the
+   * pitch and truss derivations read off it (folding the lift in there made a
+   * 4:12 roof report itself as 2.5:12, which is why it travels separately).
+   * The 3D view has lifted its gables since 2026-10-30; the panel instances,
+   * the cut list, the shop drawings and the pricing all still described the
+   * unlifted tile — 16 3/8in short on every gable panel in the building, and
+   * at a shed's low corner short enough that the panel could not be built at
+   * all. One `gableTileRoofTopLiftIn` now answers for both, with the same
+   * pitch and the same clamp, so the drawing and the view cannot disagree.
+   */
+  const gableTilesAsFabricatedByWallId = useMemo(() => {
+    const pitchIn12 = roofTrussLayoutContext?.pitchIn12;
+    const result: typeof gableTilesByWallId = {};
+    for (const [wallId, tiles] of Object.entries(gableTilesByWallId)) {
+      result[wallId] = tiles.map((t) => {
+        const liftIn = gableTileRoofTopLiftIn(t, gableEndsFullHeight, thicknessIn, pitchIn12, gableEaveHeightIn, GABLE_PANEL_MAX_HEIGHT_IN);
+        /* Both edges by the SAME amount, so the tile's own rake — and with it
+           every slope label and cut angle derived from it — is untouched. */
+        return liftIn === 0
+          ? t
+          : { ...t, leftEdgeHeightIn: t.leftEdgeHeightIn + liftIn, rightEdgeHeightIn: t.rightEdgeHeightIn + liftIn };
+      });
+    }
+    return result;
+  }, [gableTilesByWallId, roofTrussLayoutContext, gableEndsFullHeight, thicknessIn, gableEaveHeightIn]);
+
   // Computed once, across every nameable panel type together, so a panel's
   // number always reflects its true position in the along-wall sequence —
   // Shop Drawing pages then just filter this same list, rather than each
@@ -6572,7 +6628,7 @@ export default function LayoutEditor() {
             overlayWallSlots,
             standardWidthIn,
             jackStudConfig,
-            gableTilesByWallId,
+            gableTilesAsFabricatedByWallId,
             undefined,
             wallHeightFt * 12,
             // Beams AND spanning headers — a header shortens the panels
@@ -6588,7 +6644,7 @@ export default function LayoutEditor() {
       overlayWallSlots,
       standardWidthIn,
       jackStudConfig,
-      gableTilesByWallId,
+      gableTilesAsFabricatedByWallId,
       wallHeightFt,
       groundBandGeometryByWallId,
       maxPanelHeightIn,
@@ -8780,7 +8836,7 @@ export default function LayoutEditor() {
     // manually-typed rise, not the normal case.
     let gableRoofAreaSqFt = 0;
     let gableStandardAreaSqFt = 0;
-    for (const tiles of Object.values(gableTilesByWallId)) {
+    for (const tiles of Object.values(gableTilesAsFabricatedByWallId)) {
       for (const t of tiles) {
         const localLeftIn = Math.max(0, t.leftEdgeHeightIn - gableEaveHeightIn);
         const localRightIn = Math.max(0, t.rightEdgeHeightIn - gableEaveHeightIn);
@@ -8855,7 +8911,7 @@ export default function LayoutEditor() {
     stories,
     effectivePriceModifier,
     thicknessIn,
-    gableTilesByWallId,
+    gableTilesAsFabricatedByWallId,
     gableEaveHeightIn,
     roofBearingFabricationGroups,
     midWallBondBeamFabricationGroups,

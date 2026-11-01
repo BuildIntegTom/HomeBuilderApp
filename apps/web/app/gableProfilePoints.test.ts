@@ -5,8 +5,15 @@ import {
   GABLE_SHED_SNAP_THRESHOLD_IN,
   matchStandardPitchIn12,
   resolveGableProfilePoints,
+  gableTileRoofTopLiftIn,
   resolveHeelSeat,
 } from "./gableProfilePoints";
+import {
+  buildGablePanelMembers,
+  GABLE_PANEL_MAX_HEIGHT_IN,
+  GABLE_PANEL_MIN_HEIGHT_IN,
+  roofTopAboveRooflineIn,
+} from "@building-integrity/panel-catalog";
 
 describe("resolveGableProfilePoints", () => {
   it("defaults a 1-point (peaked) profile to the wall's midpoint, not explicit, not snapped", () => {
@@ -194,5 +201,79 @@ describe("matchStandardPitchIn12", () => {
   it("returns null for a non-positive run", () => {
     expect(matchStandardPitchIn12(80, 0)).toBeNull();
     expect(matchStandardPitchIn12(80, -10)).toBeNull();
+  });
+});
+
+describe("⚠ gableTileRoofTopLiftIn — the gable's own top, as fabricated", () => {
+  /* ⚠ **ASSERT THE JUNCTION, NOT EITHER SIDE OF IT.** Four rounds of "the
+     gable isn't flush" all came from one distance measured in the wrong
+     frame, and none of them broke a test. So these tests don't check the
+     arithmetic against a copy of itself — they check that the panel the SHOP
+     is told to build is one `buildGablePanelMembers` will accept, and that it
+     reaches the same roof top `roofTopAboveRooflineIn` puts the roof at. */
+  const EAVE_IN = 120;
+  const DEPTH_IN = 15.5;
+  const tile = (widthIn: number, riseLeftIn: number, riseRightIn: number) => ({
+    widthIn,
+    leftEdgeHeightIn: EAVE_IN + riseLeftIn,
+    rightEdgeHeightIn: EAVE_IN + riseRightIn,
+  });
+
+  it("⚠ lifts a gable by the roof's PLUMB thickness — the same figure the roof's own anchor uses", () => {
+    /* 16 3/8in through a 15 1/2in panel at 4:12, not 15 1/2in. Read from the
+       one function, so flush is true by construction. */
+    for (const pitchIn12 of [0, 2, 4, 6, 9, 12]) {
+      const liftIn = gableTileRoofTopLiftIn(tile(48, 0, 16), true, DEPTH_IN, pitchIn12, EAVE_IN, GABLE_PANEL_MAX_HEIGHT_IN);
+      expect({ pitchIn12, liftIn }).toEqual({ pitchIn12, liftIn: roofTopAboveRooflineIn(DEPTH_IN, pitchIn12) });
+    }
+  });
+
+  it("falls back to the TILE'S OWN RAKE when no pitch is resolved, rather than silently lifting nothing", () => {
+    /* A missing pitch used to make the lift zero, which read on screen as
+       "still not tall enough". roofTrussLayoutContext withholds itself on
+       several shapes; the rake the tile is already cut to IS the pitch. */
+    const liftIn = gableTileRoofTopLiftIn(tile(48, 0, 16), true, DEPTH_IN, undefined, EAVE_IN, GABLE_PANEL_MAX_HEIGHT_IN);
+    expect(liftIn).toBeCloseTo(roofTopAboveRooflineIn(DEPTH_IN, 4), 9);
+    expect(liftIn).toBeGreaterThan(DEPTH_IN);
+  });
+
+  it("⚠ makes a SHED'S LOW CORNER a panel the builder will actually build", () => {
+    /* The whole point. With the truss heel seat off, a shed's gable row runs
+       to the corner where its roofline height is ZERO — and an unlifted tile
+       there asked for a panel shorter than its own two skins, which
+       buildGablePanelMembers answers with negative studs' worth of refusal. */
+    const corner = tile(48, 0, 4);
+    const liftIn = gableTileRoofTopLiftIn(corner, true, DEPTH_IN, 4, EAVE_IN, GABLE_PANEL_MAX_HEIGHT_IN);
+    const leftLocalIn = corner.leftEdgeHeightIn + liftIn - EAVE_IN;
+    const rightLocalIn = corner.rightEdgeHeightIn + liftIn - EAVE_IN;
+    expect(leftLocalIn).toBeGreaterThanOrEqual(GABLE_PANEL_MIN_HEIGHT_IN);
+    expect(() => buildGablePanelMembers(corner.widthIn, DEPTH_IN, leftLocalIn, rightLocalIn, false)).not.toThrow();
+    /* ...and unlifted, the same tile is exactly what the builder refuses. */
+    expect(() => buildGablePanelMembers(corner.widthIn, DEPTH_IN, 0, 4, false)).toThrow(/two skins/);
+  });
+
+  it("leaves the tile's own RAKE untouched — both edges rise by the same amount", () => {
+    const sloped = tile(48, 10, 26);
+    const liftIn = gableTileRoofTopLiftIn(sloped, true, DEPTH_IN, 4, EAVE_IN, GABLE_PANEL_MAX_HEIGHT_IN);
+    const rakeBefore = sloped.rightEdgeHeightIn - sloped.leftEdgeHeightIn;
+    const rakeAfter = sloped.rightEdgeHeightIn + liftIn - (sloped.leftEdgeHeightIn + liftIn);
+    expect(rakeAfter).toBe(rakeBefore);
+  });
+
+  it("lifts NOTHING when the gable stops under the roof panels instead of closing to their top", () => {
+    expect(gableTileRoofTopLiftIn(tile(48, 0, 16), false, DEPTH_IN, 4, EAVE_IN, GABLE_PANEL_MAX_HEIGHT_IN)).toBe(0);
+  });
+
+  it("⚠ is CLAMPED to the fabrication ceiling, because the builder enforces it by THROWING", () => {
+    /* And a throw inside the 3D view's memo takes the whole viewport, not one
+       panel. A tile already at the ceiling gets no lift at all; one just
+       under it gets only the room that is left. */
+    const atCeiling = tile(48, GABLE_PANEL_MAX_HEIGHT_IN, GABLE_PANEL_MAX_HEIGHT_IN);
+    expect(gableTileRoofTopLiftIn(atCeiling, true, DEPTH_IN, 4, EAVE_IN, GABLE_PANEL_MAX_HEIGHT_IN)).toBe(0);
+    const nearCeiling = tile(48, GABLE_PANEL_MAX_HEIGHT_IN - 2, GABLE_PANEL_MAX_HEIGHT_IN - 2);
+    expect(gableTileRoofTopLiftIn(nearCeiling, true, DEPTH_IN, 4, EAVE_IN, GABLE_PANEL_MAX_HEIGHT_IN)).toBe(2);
+    /* Which is exactly the point: the clamped height still builds. */
+    const localIn = nearCeiling.leftEdgeHeightIn + 2 - EAVE_IN;
+    expect(() => buildGablePanelMembers(48, DEPTH_IN, localIn, localIn, false)).not.toThrow();
   });
 });

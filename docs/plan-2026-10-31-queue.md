@@ -48,12 +48,27 @@ construction.
 
 ### Tier 1: things that are wrong on screen now
 
-**1.1 — The 1″ sliver tile at the start of every gable row.**
-Measured today: a gable row tiles `0→1, 1→49, 49→97, …`. That first 1″
-tile is a real, priced, fabricated panel instance one inch wide. It is
-also why the gable tracks the roof to 0.33″ rather than 0.00″ — that
-residual is the sliver's own run at 4:12. Small, concrete, and the last
-thing between us and an exact junction.
+**1.1 — ~~The 1″ sliver tile at the start of every gable row.~~**
+⚠ **I was wrong about this, and the correction matters more than the
+original claim.** I wrote that the first tile of a gable row (`0→1,
+1→49, 49→97, …`) was *"a real, priced, fabricated panel instance one
+inch wide."* It is not. It is the **0.75″ safety-gap panel** —
+`safetyGapWidthForRunIn` returns 0.75, and a safety gap starts every
+gable row by design. It is a sheet of plywood between panels, which is
+what it is supposed to be. Nothing to fix.
+
+**What the hunt did turn up is a genuine defect, now fixed** (below):
+once the truss heel seat stopped holding the gable row off the corners,
+a shed's row reaches the corner where its roofline height is **zero** —
+and `buildGablePanelMembers` was handed a panel shorter than its own two
+skins. It built one, with **negative stud lengths**, straight into the
+cut list (`stud_corner_1 = -0.50″` at a 1″ tile).
+
+Underneath that sat the larger one: **the 3D view had been lifting
+gables to the roof's top surface since 2026-10-30 and the cut list, the
+shop drawings, the materials and the pricing had not** — every gable
+panel in the building described 16 3/8″ shorter than the one on screen.
+`gableTileRoofTopLiftIn` now answers for both.
 
 **1.2 — A shed's gable row should not need a profile point at `x=0`.**
 With the point at the wall's start the row comes out as a spike (`0 → 53″

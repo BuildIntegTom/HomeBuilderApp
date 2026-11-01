@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildGablePanelMembers, buildGablePanelSchema, computeGableRipCallout, GABLE_PANEL_MAX_HEIGHT_IN } from "./gablePanelMembers";
+import {
+  buildGablePanelMembers,
+  buildGablePanelSchema,
+  computeGableRipCallout,
+  GABLE_PANEL_MAX_HEIGHT_IN,
+  GABLE_PANEL_MIN_HEIGHT_IN,
+} from "./gablePanelMembers";
 import { memberBoxSizeIn } from "./panelMemberHelpers";
 
 const WIDTH_IN = 40;
@@ -59,9 +65,40 @@ describe("buildGablePanelMembers", () => {
   });
 
   it("throws if either edge's height exceeds the 8ft (96in) max a single Gable End Panel can be built at, regardless of side", () => {
-    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, 0, GABLE_PANEL_MAX_HEIGHT_IN, false)).not.toThrow();
-    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, 0, GABLE_PANEL_MAX_HEIGHT_IN + 0.01, false)).toThrow();
-    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, GABLE_PANEL_MAX_HEIGHT_IN + 0.01, 0, false)).toThrow();
+    /* ⚠ The short edge is the MINIMUM, not 0 — it used to be 0, which is
+       now its own refusal (below) and so no longer isolates the ceiling. */
+    const lowIn = GABLE_PANEL_MIN_HEIGHT_IN;
+    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, lowIn, GABLE_PANEL_MAX_HEIGHT_IN, false)).not.toThrow();
+    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, lowIn, GABLE_PANEL_MAX_HEIGHT_IN + 0.01, false)).toThrow();
+    expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, GABLE_PANEL_MAX_HEIGHT_IN + 0.01, lowIn, false)).toThrow();
+  });
+
+  it("⚠ REFUSES a panel shorter than its own two skins rather than cutting NEGATIVE studs", () => {
+    /* ⚠ **IT USED TO BUILD ONE.** A gable panel's studs span its height less
+       its two 3/4in skins, so under 1 1/2in they come out negative — and
+       went into the cut list that way as a real part to cut. Measured at a
+       1in tile before this guard: `stud_corner_1 = -0.50in`.
+
+       It became reachable the moment the truss heel seat stopped holding the
+       gable row off the corners: a shed's roofline runs to NOTHING at its low
+       corner. The row's own answer is that every tile carries the lift up to
+       the roof's top surface and so is never this short (page.tsx's
+       `gableTilesAsFabricatedByWallId`), with any residual sliver becoming a
+       safety-gap filler; this is the guard that makes the whole class
+       impossible rather than merely unlikely. */
+    for (const heightIn of [0, 0.5, GABLE_PANEL_MIN_HEIGHT_IN - 0.01]) {
+      expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, heightIn, 60, false)).toThrow(/two skins/);
+      expect(() => buildGablePanelMembers(WIDTH_IN, DEPTH_IN, 60, heightIn, false)).toThrow(/two skins/);
+    }
+    /* And exactly AT the floor it builds — with studs of zero length, which
+       is the degenerate-but-real panel, not a negative part. */
+    const atFloor = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, GABLE_PANEL_MIN_HEIGHT_IN, GABLE_PANEL_MIN_HEIGHT_IN, false);
+    for (const m of atFloor) {
+      expect({ id: m.memberId, negative: Object.values(m.actualDimsIn).some((v) => v < 0) }).toEqual({
+        id: m.memberId,
+        negative: false,
+      });
+    }
   });
 
   it("keeps the bottom skin/plates flat and unaffected by the slope", () => {

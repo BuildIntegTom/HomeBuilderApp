@@ -107,6 +107,12 @@ function buildGableCornerStuds(widthIn: number, depthIn: number, leftStudSpanIn:
  * requirement. */
 export const GABLE_PANEL_MAX_HEIGHT_IN = 96;
 
+/** ⚠ The floor, and it is a GEOMETRIC one rather than a fabrication
+ * judgement: a Gable End Panel's studs span its height less its two 3/4in
+ * skins, so under 1 1/2in they are negative. Not a minimum anyone chose —
+ * the smallest height at which the panel this builder makes still exists. */
+export const GABLE_PANEL_MIN_HEIGHT_IN = 2 * SKIN_THICKNESS_IN;
+
 export function buildGablePanelMembers(
   widthIn: number,
   depthIn: number,
@@ -115,6 +121,31 @@ export function buildGablePanelMembers(
   includeNailer: boolean,
 ): PanelMember[] {
   const tallerHeightIn = Math.max(leftHeightIn, rightHeightIn);
+  /**
+   * ⚠ **A PANEL SHORTER THAN ITS OWN TWO SKINS IS NOT A PANEL**, and until
+   * 2026-10-31 this built one anyway — with NEGATIVE stud lengths.
+   *
+   * `leftStudSpanIn = leftHeightIn - 2 x SKIN_THICKNESS_IN`, so anything
+   * under 1 1/2in gives a stud of negative length, and that went straight
+   * into the cut list as a real part to cut. Measured at a 1in tile:
+   * `stud_corner_1 = -0.50in`.
+   *
+   * It became reachable when the truss heel seat stopped holding the gable
+   * row away from the corners — at a shed's LOW end the roofline runs to
+   * nothing, so the row now asks for tiles of nearly zero height. The real
+   * answer is that those tiles carry the roof-top lift too and so are never
+   * that short (see `fabricatedLeftHeightIn`); this is the guard that makes
+   * the class impossible rather than merely unlikely, and it refuses in the
+   * same voice the too-tall case already uses.
+   */
+  const shortestHeightIn = Math.min(leftHeightIn, rightHeightIn);
+  if (shortestHeightIn < GABLE_PANEL_MIN_HEIGHT_IN) {
+    throw new Error(
+      `The shorter edge height (${shortestHeightIn}) is under the ${GABLE_PANEL_MIN_HEIGHT_IN}in a Gable End Panel ` +
+        `needs for its own two skins — below that its studs come out negative. A tile this short should not be ` +
+        `built at all; it is the caller's row that wants fixing, not this panel's.`,
+    );
+  }
   if (tallerHeightIn > GABLE_PANEL_MAX_HEIGHT_IN) {
     throw new Error(
       `The taller edge height (${tallerHeightIn}) exceeds the ${GABLE_PANEL_MAX_HEIGHT_IN}in (8ft) max a single Gable End Panel can be built at — this should be the panel's own height above the eave line, not an absolute floor height.`,

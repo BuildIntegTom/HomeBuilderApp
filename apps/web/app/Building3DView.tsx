@@ -33,6 +33,7 @@ import { midWallBeamsToGeometry, resolveMidWallBeamAssemblyHeightIn, type MidWal
 import { resolveSpanningHeaderHeightIn, spanningHeadersToGeometry, wallBandGeometry, type SpanningHeader } from "./spanningHeader";
 import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
+import { gableTileRoofTopLiftIn } from "./gableProfilePoints";
 import PanelLabel from "./PanelLabel";
 import {
   BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
@@ -1562,13 +1563,14 @@ export default function Building3DView({
            which withholds itself on several shapes; the rake a gable tile is
            already cut to IS the roof's pitch, so it is the right answer and
            not a guess. */
-        const tileRakeIn12 =
-          tile.widthIn > 0 ? (Math.abs(tile.rightEdgeHeightIn - tile.leftEdgeHeightIn) / tile.widthIn) * 12 : 0;
-        const liftIn = gableEndsFullHeight
-          ? roofTopAboveRooflineIn(thicknessIn, roofPitchIn12 ?? tileRakeIn12)
-          : 0;
-        const headroomIn = GABLE_PANEL_MAX_HEIGHT_IN - Math.max(tile.leftEdgeHeightIn, tile.rightEdgeHeightIn) + gableEaveHeightIn;
-        const appliedLiftIn = Math.max(0, Math.min(liftIn, headroomIn));
+        const appliedLiftIn = gableTileRoofTopLiftIn(
+          tile,
+          gableEndsFullHeight,
+          thicknessIn,
+          roofPitchIn12,
+          gableEaveHeightIn,
+          GABLE_PANEL_MAX_HEIGHT_IN,
+        );
         const leftLocalIn = tile.leftEdgeHeightIn + appliedLiftIn - gableEaveHeightIn;
         const rightLocalIn = tile.rightEdgeHeightIn + appliedLiftIn - gableEaveHeightIn;
         const tallerLocalIn = Math.max(leftLocalIn, rightLocalIn);
