@@ -66,7 +66,7 @@ import {
   buildBracedPanelMembers,
   buildBuildingCollada,
   buildBuildingObj,
-  buildColumnPanelMembers,
+  buildColumnStyleMembers,
   buildCornerPanelMembers,
   buildGablePanelMembers,
   buildOpeningAssemblyMembers,
@@ -233,7 +233,25 @@ function membersForSlot(
       return buildBracedPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored);
     }
     case "column":
-      return buildColumnPanelMembers(thicknessIn, heightIn, includeNailer);
+      /* ⚠ `slot.widthIn`, for the same reason the corner case below spells
+         out at length — and this is the half of that fix that was missed.
+         `buildColumnPanelMembers` is hard-wired to COLUMN_TOTAL_WIDTH_IN on
+         the stated grounds that *"nothing in the app ever asks for another
+         one"*, which is true of the tiler (cycling a panel to Column
+         re-tiles around exactly that reservation) and NOT true of a stored
+         file or a hand-dragged width under the tile-once model. When it is
+         not true, 25.5in of framing renders inside a wider box and the
+         remainder is simply open — Tommy, 2026-11-01: *"extra spaces left
+         open from column panels being a fixed width trying to fill a bigger
+         slot."* A slot is what the wall reserved; the panel has to fill it
+         or the wall has a hole in it.
+
+         ⚠ Bearing is NOT widened with it. `buildColumnStyleMembers`' own doc
+         comment records that a wider column's built-up capacity has never
+         been confirmed, and the conservative nominal figure stands. This
+         changes what is DRAWN to match what was reserved; it claims nothing
+         about what the wider panel carries. */
+      return buildColumnStyleMembers(slot.widthIn, thicknessIn, heightIn, includeNailer);
     case "big-header":
       return buildBigHeaderMembers(
         slot.widthIn,
@@ -1578,7 +1596,12 @@ export default function Building3DView({
           // leftLocalIn === rightLocalIn by construction — see
           // computeGableTiledRow's own columnReservationWidthIn doc
           // comment) instead of a full story height.
-          members = buildColumnPanelMembers(thicknessIn, tallerLocalIn, includeNailer);
+          /* ⚠ `tile.widthIn`, not the nominal 25.5in — the same correction
+             the wall-slot column case above carries. A gable column's
+             reservation comes from `columnReservationWidthIn`, which the
+             caller supplies; building a fixed width inside it would leave
+             the same open strip. */
+          members = buildColumnStyleMembers(tile.widthIn, thicknessIn, tallerLocalIn, includeNailer);
         } else if (tile.isWindow) {
           // Gable window (Tommy: "add an option to click-edit gable end
           // panels to become window gable end panels... this is just a

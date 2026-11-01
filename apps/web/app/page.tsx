@@ -185,6 +185,7 @@ import {
   buildBigHeaderMembers,
   buildBracedPanelMembers,
   buildColumnPanelMembers,
+  buildColumnStyleMembers,
   buildCornerPanelMembers,
   buildDoorHeaderMembers,
   buildGablePanelMembers,
@@ -1042,14 +1043,34 @@ export default function LayoutEditor() {
   // Fabricator/admin-only markup (Tommy) — public viewers see the base
   // material cost with no markup applied, regardless of this value.
   const [priceModifier, setPriceModifier] = useState(priceRates.totalModifier);
-  // Covers the suspended-joist options, the Thermally Broken Slab option,
-  // and the Bale Foundation rim/field framing system — mutually exclusive,
-  // so one state covers the whole button group. Bale Foundation is the
-  // real default (Tommy: "the default option is the double 2x6 + 1.5in
-  // gap 'bale foundation'"), unlike the other options which stay null
-  // until explicitly picked ("autogenerate when the button is clicked").
+  /**
+   * Covers the suspended-joist options, the Thermally Broken Slab option,
+   * and the Bale Foundation rim/field framing system — mutually exclusive,
+   * so one state covers the whole button group.
+   *
+   * ⚠ **`null` is PANELIZED FLOOR, and it is the default as of 2026-11-01.**
+   *
+   * > *"Bale foundation is default selected and it makes the floor look
+   * > really messy. I found that if I unclick Bale foundation, the really
+   * > nicely forming floor panels are much more clear to understand. Let's
+   * > default Bale floor off and turn it on to repopulate a different floor
+   * > plan when it is selected. Right next to Bale floor button to the left
+   * > of it. There should be a default selected button that says panelized
+   * > floor."* — Tommy
+   *
+   * Bale Foundation was the default on his earlier instruction (*"the
+   * default option is the double 2x6 + 1.5in gap 'bale foundation'"*), and
+   * that is now a thing you turn ON.
+   *
+   * ⚠ **`null` is given a NAME rather than a new id**, deliberately. It
+   * already meant exactly "the floor panels and nothing laid over them",
+   * which is the thing he is describing; adding a `"panelized"` literal
+   * would mean every project ever saved — all of which store `null` or
+   * `"bale-foundation"` — came back with no button pressed at all, for a
+   * state the app already had. A label is not worth a migration.
+   */
   const [floorSystemId, setFloorSystemId] = useState<(typeof floorJoistTypes)[number]["id"] | "thermal-slab" | "bale-foundation" | null>(
-    "bale-foundation",
+    null,
   );
   const [perpendicular2x4Enabled, setPerpendicular2x4Enabled] = useState(false);
   // Bale Foundation framing (Tommy: "the top framing member, bottom
@@ -7121,7 +7142,16 @@ export default function LayoutEditor() {
                 resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored),
               )
             : inst.panelType === "column"
-              ? columnPanelMembers
+              ? /* ⚠ This instance's REAL width, the same correction the corner
+                   case immediately below already carries and for the same
+                   reason. The memoized `columnPanelMembers` is the nominal
+                   25.5in build; a column slot wider than that (a stored file,
+                   or a hand-dragged width under tile-once) was buying 25.5in
+                   of plywood and lumber for a wider panel, and leaving the
+                   rest of its slot open in the 3D view. Tommy, 2026-11-01:
+                   *"extra spaces left open from column panels being a fixed
+                   width trying to fill a bigger slot."* */
+                buildColumnStyleMembers(inst.widthIn, thicknessIn, heightIn, includeNailer)
               : inst.panelType === "corner" || inst.panelType === "safety-oct-corner"
                 ? // This instance's real width, like every other type here: the
                   // plywood-area and board-feet tallies below are material
@@ -7622,7 +7652,11 @@ export default function LayoutEditor() {
             bracedMirroredOverride ?? defaultBracedMirrored,
           )
         : panelTypeId === "column"
-          ? columnPanelMembers
+          ? /* ⚠ Real width, not the memoized nominal — see the corner note
+               below, which this now matches. A Shop Fabrication page is
+               GROUPED by width, so a wider column used to get its own page
+               that then drew and listed a 25.5in panel. */
+            buildColumnStyleMembers(widthIn, thicknessIn, heightIn, includeNailer)
           : panelTypeId === "corner"
             ? // ⚠ Built at this instance's REAL width (and real height), not at
               // the memoized nominal 25.5in panel. This is what the
@@ -10278,6 +10312,21 @@ export default function LayoutEditor() {
 
       {floorsEnabled && (
         <div role="group" aria-label="Floor type" className={styles.toolbar}>
+          {/* ⚠ FIRST in the group and selected by default — his
+              *"Right next to Bale floor button to the left of it. There
+              should be a default selected button that says panelized
+              floor."* It is the floor panels on their own, with nothing
+              framed over them; every other button in this group lays a
+              system on top and turns this one off. */}
+          <button
+            type="button"
+            aria-pressed={floorSystemId === null}
+            className={floorSystemId === null ? styles.toolActive : styles.tool}
+            onClick={() => setFloorSystemId(null)}
+            disabled={!footprint}
+          >
+            Panelized Floor
+          </button>
           <button
             type="button"
             aria-pressed={isBaleFoundationFloor}

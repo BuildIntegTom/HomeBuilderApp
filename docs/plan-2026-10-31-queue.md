@@ -290,6 +290,70 @@ moves where the W-brace diagonal lands. He has already said he expects the
 diagonal to shift; that is permission for the geometry to follow, not a
 separate decision to go and ask about.
 
+### B4 — ANSWERED, and nothing was missing
+
+His hint: *"It's either for an old safety gap braced combo panel that
+doesn't make sense anymore and/or extra spaces left open from column panels
+being a fixed width trying to fill a bigger slot. I don't see any 3D
+rendering on for example s4 of a 16x20' building. Wall row."*
+
+**Measured, by instrumenting the framed view's own `slotRenderData` on a
+drawn building.** Every slot builds members and every member set fills its
+box exactly:
+
+| panel | type | box | members span |
+|---|---|---|---|
+| S3 | door | 34.13in | 34.13in |
+| **S4** | **safety-gap** | **0.75in** | **0.75in** |
+| S5 | braced | 48in | 48in |
+| S6+7 | window (header + sill) | 34.13in | 34.13in |
+
+**S4 is a 3/4in safety gap, drawn at 3/4in.** On a 20ft wall in a 560px
+viewport that is about half a pixel — it is rendering, and it cannot be
+seen. Nothing is absent: safety gaps even carry their own colour override
+(the orange slivers visible in the framing), and a window slot builds 26
+members including its header.
+
+⚠ **The 2D plan gives a safety gap a CALL-OUT ARROW for exactly this
+reason** and the 3D view gives it a colour and no leader. That is the real
+gap, and it is a design question rather than a defect: should a 3/4in panel
+get a call-out in 3D, or be drawn at a visible minimum (which would lie
+about its size)? Tommy's call.
+
+**His second hypothesis WAS a real latent bug, and it is fixed.**
+`buildColumnPanelMembers` is hard-wired to the nominal 25.5in on the stated
+grounds that *"nothing in the app ever asks for another one"* — true of the
+tiler, not true of a stored file or a hand-dragged width under tile-once.
+The corner builder had been fixed for precisely this; the column had not.
+Three places now pass the real width: the 3D wall slot, the 3D gable column
+tile, and page.tsx's materials/weights and Shop Fabrication builders.
+Bearing is deliberately NOT widened with it — a wider column's built-up
+capacity is an open spec item.
+
+### B7. Panelized Floor is the default; Bale Foundation is opt-in — DONE
+
+> *"Bale foundation is default selected and it makes the floor look really
+> messy. I found that if I unclick Bale foundation, the really nicely
+> forming floor panels are much more clear to understand. Let's default Bale
+> floor off and turn it on to repopulate a different floor plan when it is
+> selected. Right next to Bale floor button to the left of it. There should
+> be a default selected button that says panelized floor."*
+
+`floorSystemId: null` already meant exactly "the floor panels and nothing
+laid over them". It has a name and a button now — first in the group,
+selected by default — and Bale Foundation is something you turn on. ⚠ Given
+a name rather than a new `"panelized"` id on purpose: every project ever
+saved stores `null` or `"bale-foundation"`, so a new literal would make all
+of them load with no button pressed, for a state the app already had.
+
+⚠ **One consequence worth knowing:** Plaster Master's floor-bottom clay +
+steel mesh skin is gated on the Bale Foundation (`hasSteelClaySkin =
+isBaleFoundationFloor && floorBottomSkinEnabled`). With Bale off by default
+that section no longer appears by default — which may or may not be what he
+wants, since his Tier 2 note said *"default is floor bottom is clay
+plaster/metal mesh"*. Flagged rather than changed: whether a PANELIZED floor
+also gets a rodent/air-sealed bottom skin is a real building question.
+
 ## C. Suggested order
 
 1. **B4** — smallest, and it is a view lying about what the building has.
