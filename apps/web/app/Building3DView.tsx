@@ -64,6 +64,7 @@ import {
   buildBigHeaderMembers,
   bigHeaderDefaultHeightIn,
   buildBracedPanelMembers,
+  buildBuildingCollada,
   buildBuildingObj,
   buildColumnPanelMembers,
   buildCornerPanelMembers,
@@ -2388,11 +2389,22 @@ export default function Building3DView({
     [showWraps, checkedInteriorIds, checkedExteriorIds],
   );
 
-  const handleDownloadObj = () => {
+  /* ⚠ ONE walk of the building, feeding BOTH downloads. Two exports built
+     from two walks is how a drawing and a cut list come to describe
+     different buildings — the defect the floor-and-roof takeoff exists to
+     prevent — and an export is a drawing like any other. */
+  const buildExportPanels = (): WorldPlacedPanel[] => {
+    /* ⚠ A panel is named the way its own SHEET names it — `N3`, not
+       `AB_7`. The export's group names are what a person reads in
+       SketchUp's Outliner, and a model whose groups are called something
+       other than the panel schedule is a model nobody can check against the
+       schedule. The wall/slot string stays as the fallback for anything the
+       instance pipeline does not name (and as the band suffix), so nothing
+       ever exports as an empty group. */
     const toWorldPlacedPanel =
-      (labelPrefix: string, worldYIn: number) =>
+      (labelPrefix: string, worldYIn: number, instancesBySlot: Map<string, PanelInstance[]>) =>
       ({ box, members }: { box: (typeof slotRenderData)[number]["box"]; members: PanelMember[] | null }): WorldPlacedPanel => ({
-        label: `${labelPrefix}${box.wallId}_${box.slotIndex}${box.midWallBandIndex !== undefined ? `_band${box.midWallBandIndex}` : ""}`,
+        label: `${labelPrefix}${combinedPanelLabel(instancesForBox(instancesBySlot, box)) || `${box.wallId}_${box.slotIndex}`}${box.midWallBandIndex !== undefined ? `_band${box.midWallBandIndex}` : ""}`,
         worldXIn: box.anchorX * IN_PER_FT,
         worldZIn: box.anchorZ * IN_PER_FT,
         worldYIn: worldYIn + box.yOffsetFt * IN_PER_FT,
@@ -2403,8 +2415,8 @@ export default function Building3DView({
           : { widthIn: box.widthFt * IN_PER_FT, heightIn: box.heightFt * IN_PER_FT, depthIn: box.depthFt * IN_PER_FT },
       });
     const panels: WorldPlacedPanel[] = [
-      ...slotRenderData.map(toWorldPlacedPanel("", 0)),
-      ...secondStorySlotRenderData.map(toWorldPlacedPanel("story2_", heightIn)),
+      ...slotRenderData.map(toWorldPlacedPanel("", 0, groundInstancesBySlot)),
+      ...secondStorySlotRenderData.map(toWorldPlacedPanel("story2_", heightIn, secondStoryInstancesBySlot)),
       ...gableRenderData.map(
         ({ wallId, tileIndex, anchorX, anchorZ, anchorYFt, rotationRad, members }): WorldPlacedPanel => ({
           label: `gable_${wallId}_${tileIndex}`,
@@ -2458,15 +2470,37 @@ export default function Building3DView({
         }),
       ),
     ];
-    const objText = buildBuildingObj(panels, "Building");
-    const blob = new Blob([objText], { type: "text/plain" });
+    return panels;
+  };
+
+  const download = (text: string, filename: string, mimeType: string) => {
+    const blob = new Blob([text], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "building.obj";
+    link.download = filename;
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  const handleDownloadObj = () => download(buildBuildingObj(buildExportPanels(), "Building"), "building.obj", "text/plain");
+
+  /* ⚠ The SAME panel list the OBJ download uses — see `buildExportPanels`.
+     Two exports built from two walks of the building is how a drawing and a
+     cut list come to describe different buildings, which is the defect the
+     floor-and-roof takeoff exists to prevent. The only difference between
+     these two downloads is the shape of the file.
+
+     COLLADA because SketchUp reads its scene GRAPH: each panel lands as its
+     own named group in the Outliner, where an OBJ arrives as one lump. ⚠ It
+     is NOT parametric, and SketchUp's free WEB tier will not open a .dae —
+     see `buildBuildingCollada`'s own doc comment for both. */
+  const handleDownloadCollada = () =>
+    download(
+      buildBuildingCollada(buildExportPanels(), "Building", new Date().toISOString()),
+      "building.dae",
+      "model/vnd.collada+xml",
+    );
 
   if (!footprint) {
     return (
@@ -2568,6 +2602,9 @@ export default function Building3DView({
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
           <button type="button" onClick={handleDownloadObj} style={{ fontSize: 12 }}>
             Export as OBJ
+          </button>
+          <button type="button" onClick={handleDownloadCollada} style={{ fontSize: 12, marginLeft: 6 }}>
+            Export as COLLADA (.dae)
           </button>
         </div>
       )}

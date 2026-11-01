@@ -161,3 +161,144 @@ Nothing in Tier 1 or 2 is blocked. But I would not start Tier 3 until 2.1
 is done. The editor work is more fun and more visible, and it will make the
 document gap *worse* — every new way to make a panel is another panel the
 summary does not count.
+
+---
+
+# Queue added 2026-11-01
+
+Tier 2 shipped in full on 2026-11-01 — `8d98b9a` (one floor/roof takeoff),
+`0a713cb` (counts, materials, weights), `a9ccf0e` (floor/roof/beam pricing),
+`b1de294` (the roof's own assembly + real sloped area), plus `4eec77c`, the
+mobile-draw crash hotfix. What follows is what Tommy raised afterwards, in
+his own words, in the order he raised it.
+
+## A. Exporters — `.dae` (DONE), and what it does not do
+
+> *"can we add .dae to the types of exports this app can do? I think that
+> might work well uploading into free SketchUp. The goal with exporter
+> options is to be able to export the object (ideally as parametric groups
+> of objects) into SketchUp."*
+
+**Built.** `buildBuildingCollada` + an `Export as COLLADA (.dae)` button
+beside the OBJ one, off the same single walk of the building. Panel groups
+are named the way the schedule names them (`N1`, `N4+5`, `E3`).
+
+⚠ **Two corrections to the premise, both measured rather than assumed:**
+
+1. **SketchUp's FREE web tier will not open a `.dae`.** Its import list is
+   `.skp`, `.jpg`, `.png`; `.dae`, `.stl` and `.dwg` are subscriber-only.
+   Desktop SketchUp imports COLLADA normally, and free *desktop* SketchUp
+   has not existed since SketchUp Make was retired — so "free SketchUp"
+   today means the web app, which will refuse this file.
+2. **COLLADA is not parametric.** It has no notion of a Dynamic Component's
+   attributes. This gives named, individually selectable groups in the
+   Outliner. A panel whose width can be typed *inside* SketchUp is the DC
+   path — a Ruby script run in SketchUp against Cameron's library — which is
+   still blocked on that conversation. The `.dae` is a reasonable input for
+   that script later; it is not a step toward it on its own.
+
+**Still open on exports:** CSV and DXF, neither of which exists yet.
+
+## B. The 2026-11-01 bug list — a 16' x 20' building, gable roof
+
+Seven items, verbatim, with what each one actually means for the code.
+
+### B1. Gable/inclined panel corners are not plumb cut
+> *"The corners of the gable end panels are not plumb cut, see attached
+> screen shot. This applies to any gable or inclined panel, may be some
+> tricky geometry involved to keep it all dynamically proportional/
+> parametrically accurate."*
+
+His sketch (`docs/2026-11-01-gable-corner-not-plumb.jpg`) marks the sloped
+top edge (red/yellow) against the panel's end
+(green): the end should run PLUMB, and today it is cut square to the slope.
+Same family as the roof panel's plumb tall end, settled 2026-10-29 — but
+that fix went into `buildFloorRoofPanelMembers`, and the gable builder
+(`buildGablePanelMembers`) never got it. Affects gable, cross-tilt and any
+future inclined panel, so the plumb-cut geometry wants to be shared rather
+than written a third time.
+
+### B2. A truss plate ring under BOTH the gable ends and the roof
+> *"the gable ends sit directly on the wall panel top plates, while there is
+> a several inch gap under where the roof panels bear. On top of the first
+> layer of wall system, there should be auto spawned a truss plate detail -
+> two 2x4's and a default 8.5" piece of timber HP insulation. The gable end
+> panels and the roof panels should both sit directly on this 2x4 top wall
+> ring."*
+
+⚠ Real building values: **two 2x4s** and **8.5in Timber HP** are his, so
+they are `confirmed` with this quotation as provenance. Nothing else about
+the detail is — no fastener schedule, no bearing figure. A truss plate
+assembly already exists (`buildTrussPlateMembers`, `trussPlateInsetDefaultIn`
+— the inset is `pending-BI-confirmation`); this is about making it spawn
+automatically on the wall ring and making BOTH the gable row and the roof
+bear on it, which is what closes the several-inch gap he is seeing.
+
+### B3. Gable panel slots do not line up with the wall panels below
+> *"The gable end panels do not directly line up with the studs of the wall
+> panels underneath - let's figure out how to match these two layers of
+> panel slots up, and adjust the bottom row if needed."*
+
+The gable row is tiled by `gableTiledRow` against the roofline; the wall
+below is tiled by the wall tiler. Nothing couples them, so a gable stud
+lands mid-bay. "Adjust the bottom row if needed" is the important half —
+he is willing to move the WALL to suit the gable. Relates directly to the
+2ft/4ft module decision (walls 48in with a centre nailer).
+
+### B4. Safety gaps and headers missing from 3D Framed
+> *"the safety gap panels and pink headers don't populate into the 3D frames
+> view."*
+
+Both have real members (`buildSafetyGapMembers`, `buildWindowHeaderMembers` /
+`buildDoorHeaderMembers`) and both reach the cut list — so this is the
+framed view's own member selection dropping them, not missing geometry.
+
+### B5. Gable girt rules by the SHORT stud
+> *"If the shorter height of a stud on a Gable end panel is less than 2',
+> then no girts are needed. I am seeing a lot of girts/noggings very close
+> to each other on gable end panels. If the shorter stud length (or really
+> from bottom of panel to top tip of shorter stud member) is between 2-3',
+> then one girt should be placed, it's top height flush with the lower butt
+> corner of that shorter stud. Gable end panels 3'+ should follow the
+> typical girt rules (one for every 3' or less so that there are no spaces
+> that are 3' that aren't braced laterally. Whatever the top height of the
+> pointy tall end of a Gable end panel is is less relevant for this
+> equation."*
+
+A complete, unambiguous rule, all his — so it is `confirmed`:
+
+| short stud (panel bottom → top of the shorter member) | girts |
+|---|---|
+| under 24in | none |
+| 24in–36in | exactly one, its TOP flush with the shorter stud's lower butt corner |
+| 36in+ | the standard rule: one per 36in or less, no unbraced gap of 36in |
+
+⚠ The driver is the SHORT edge, explicitly not the tall point. Today
+`GABLE_GIRT_ROW_COUNT` is a fixed count spread over the shorter stud span,
+which is exactly why he is seeing girts bunched together.
+
+### B6. Header panels overlap, and lose their plywood sides
+> *"I am seeing some minor overlapping in header panels. The 3/4" plywood
+> skins on the side I don't think are necessary, and should be replaced with
+> regular 2x4 studs vertically like a standard panel. This may bring that
+> tip and angle of the diagonal towards the center of the header panel a
+> little bit."*
+
+Two things: an overlap to find (the standing no-overlapping-members rule),
+and a real build change — the side plywood becomes vertical 2x4 studs, which
+moves where the W-brace diagonal lands. He has already said he expects the
+diagonal to shift; that is permission for the geometry to follow, not a
+separate decision to go and ask about.
+
+## C. Suggested order
+
+1. **B4** — smallest, and it is a view lying about what the building has.
+2. **B5** — a complete rule of his, self-contained in the gable member
+   builder, and it is visibly wrong on every gable panel right now.
+3. **B1** — the plumb cut, shared between gable/cross-tilt/roof rather than
+   written a third time.
+4. **B2** — the truss plate ring. Biggest of the seven, and both B1 and B3
+   touch what sits on it, so it wants to come after B1.
+5. **B3** — slot alignment, with the 2ft/4ft module decision in hand.
+6. **B6** — header rebuild.
+7. Exports: CSV, then DXF.

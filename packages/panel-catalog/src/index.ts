@@ -39,5 +39,6 @@ export * from "./roofCatcherBeamMembers";
 export * from "./octagonRingMembers";
 export * from "./trussMembers";
 export * from "./panelObjExport";
+export * from "./panelColladaExport";
 export * from "./panelSizeShares";
 export * from "./panelCutList";
