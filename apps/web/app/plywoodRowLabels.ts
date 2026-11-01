@@ -24,7 +24,7 @@ import { formatPlySpecLabel, GIRT_WEB_PLY_SPEC, SKIN_PLY_SPEC } from "@building-
  */
 export const PLYWOOD_THREE_QUARTER_ROW_LABEL = `${formatPlySpecLabel(
   SKIN_PLY_SPEC,
-)} plywood (skins, side plies, header caps, roof-bearing caps, long-run safety gaps)`;
+)} plywood (skins and lids, side plies, header caps, beam and roof-bearing caps, eave caps, long-run safety gaps)`;
 
 export const PLYWOOD_HALF_ROW_LABEL = `${formatPlySpecLabel(
   GIRT_WEB_PLY_SPEC,

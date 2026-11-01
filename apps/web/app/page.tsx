@@ -6130,7 +6130,6 @@ export default function LayoutEditor() {
   const allSlots = useMemo(() => stories.flatMap((s) => Object.values(s.wallSlots).flat()), [stories]);
   const allWallPanelSlots = allSlots.filter((s) => WALL_PANEL_SLOT_TYPES.has(s.type));
   const strawSlots = allWallPanelSlots.filter((s) => s.type !== "safety-gap");
-  const woodEligibleCount = allSlots.filter((s) => s.type === "standard" || s.type === "braced").length;
   const openingCounts = useMemo(
     () => ({
       windows: allSlots.filter((s) => s.type === "window").length,
@@ -6952,18 +6951,39 @@ export default function LayoutEditor() {
   );
 
   // Material Totals (Tommy: "take note of this for 3/4in plywood material
-  // totals... build out material totals detail page") — 3/4in plywood
-  // across every real panel instance (skins/side-plies/safety-gap sheets)
-  // plus the roof-bearing assembly's own plywood cap(s), using the real
-  // total wall perimeter (not an illustrative preview length). 1/2in
-  // plywood (girt webs) is tallied too, for a complete picture.
+  // totals... build out material totals detail page") — 3/4in and 1/2in
+  // plywood, and board feet of dimensional lumber, over every member this
+  // building fabricates. `allRealMembers` below is the panel-instance half
+  // of that (wall and gable panels); `fabricatedExtraMembers`, further down,
+  // is everything the app walks the building for directly — floor and roof
+  // panels, truss plates and box beams, Mid-Wall Bond Beams, spanning
+  // headers — and the two tallies read both.
   const heightIn = wallHeightFt * 12;
   // Every real panel instance's own member geometry, flattened once —
   // shared by both the plywood-area tally and the board-feet tally below
   // so the (fairly involved) per-instance member-selection logic isn't
   // duplicated.
-  const allRealMembers = useMemo(() => {
+  const allRealPanelBuild = useMemo(() => {
     const members: PanelMember[] = [];
+    /**
+     * ⚠ **The weight of every panel `totalWoodWeightKg` cannot see.**
+     *
+     * That sum walks standard/braced SLOTS, which leaves the corner, column,
+     * safety-gap, header, sill and — since the gable row became real
+     * instances — every GABLE panel weighing nothing at all in the project
+     * total. Tommy asked for floor, roof and gable panels in the weight
+     * calculations; the gable half of that is here, and it comes with the
+     * other four types for free, because the one thing they all have in
+     * common is that they are panel instances with real members.
+     *
+     * Standard and braced are deliberately EXCLUDED: `totalWoodWeightKg`
+     * already carries them, and at each story's own wall height, which this
+     * loop does not know (see `heightIn` above — it is the ground floor's).
+     * Counting them here too would double the wall.
+     */
+    let otherPanelWoodWeightKg = 0;
+    let gablePanelStrawWeightKg = 0;
+    const strawDensityKgM3 = densityLbFt3 * LB_FT3_TO_KG_M3;
     for (const inst of allInstances) {
       const instMembers =
         inst.panelType === "standard"
@@ -7017,7 +7037,28 @@ export default function LayoutEditor() {
                               includeNailer,
                             )
                         : null;
-      if (instMembers) members.push(...instMembers);
+      if (instMembers) {
+        members.push(...instMembers);
+        if (inst.panelType !== "standard" && inst.panelType !== "braced") {
+          otherPanelWoodWeightKg += computeMemberSetWoodWeight(instMembers).weightKg;
+        }
+        /* ⚠ And the straw inside a gable panel. `strawWeight` walks wall
+           SLOTS, and a gable tile is not one — so a building's whole gable
+           row was weighing in as framing with nothing in it. A safety-gap
+           tile really is empty, and is skipped the same way the wall's own
+           safety gaps are. */
+        if (inst.panelType === "gable" && !inst.isSafetyGap) {
+          const tileHeightIn = Math.max(inst.leftEdgeHeightIn ?? 0, inst.rightEdgeHeightIn ?? 0) - gableEaveHeightIn;
+          if (tileHeightIn > 0) {
+            const volume = computeStandardPanelStrawVolume(instMembers, {
+              heightIn: tileHeightIn,
+              widthIn: inst.widthIn,
+              depthIn: thicknessIn,
+            });
+            gablePanelStrawWeightKg += volume.strawVolumeFt3 * FT3_TO_M3 * strawDensityKgM3;
+          }
+        }
+      }
       // A vertical safety-gap filler (Tommy: "an ability to put a safety
       // gap inbetween the truss bottom and the gable end top") stacks on
       // top of whichever gable geometry this tile got — additive, not a
@@ -7041,9 +7082,11 @@ export default function LayoutEditor() {
         );
       }
     }
-    return members;
+    return { members, otherPanelWoodWeightKg, gablePanelStrawWeightKg };
   }, [
     allInstances,
+    gableEaveHeightIn,
+    densityLbFt3,
     thicknessIn,
     heightIn,
     includeNailer,
@@ -7058,34 +7101,20 @@ export default function LayoutEditor() {
     sillHeightIn,
   ]);
 
-  const plywoodAreaSqFt = useMemo(() => {
-    let threeQuarterSqFt = computePlywoodAreaSqFt(allRealMembers, 0.75);
-    const halfSqFt = computePlywoodAreaSqFt(allRealMembers, 0.5);
-    // Roof-bearing assembly's own plywood cap(s) — box beam has both a top
-    // and bottom cap, truss plate just one — over the real BUILT wall
-    // perimeter. The panel-member half of this tally already comes from
-    // `allRealMembers` (i.e. from panel instances), so it is correct for
-    // free; only this wall-length-derived half needed the stops.
-    threeQuarterSqFt += stories.length > 1
-      ? (2 * totalBuiltWallPerimeterIn * thicknessIn) / 144
-      : (totalBuiltWallPerimeterIn * thicknessIn) / 144;
-    return { threeQuarterSqFt, halfSqFt };
-  }, [allRealMembers, stories, totalBuiltWallPerimeterIn, thicknessIn]);
+  /* ⚠ The two material tallies MOVED DOWN, past the fabrication groups.
 
-  const plywoodThreeQuarterSheetCount = Math.ceil(plywoodAreaSqFt.threeQuarterSqFt / PLYWOOD_SHEET_AREA_SQFT);
-  const plywoodHalfSheetCount = Math.ceil(plywoodAreaSqFt.halfSqFt / PLYWOOD_SHEET_AREA_SQFT);
+     They were computed here, off the panel instances alone — every wall and
+     gable panel instance, and nothing else. So the floor panels, the roof
+     panels, the truss plates and box beams, the Mid-Wall Bond Beams and the
+     spanning headers all contributed no plywood and no board feet, although
+     every one of them has a Shop Fabrication sheet with a cut list on it.
+     Tommy, on the Project Summary: *"Project summary only lists 32 panels for
+     the walls on a shed house I just drew. Let's start include floor and roof
+     and gable end panels on shop drawings, materials calculations, weight
+     calculations, plaster master, ect ect."*
 
-  // Board feet (Tommy: "wood weight totals should be able to be
-  // calculated... how many boardfeet of 2x4's (and any other dimensional
-  // lumber) are in a panel, and that total should be put onto the
-  // materials total and divided by the panel height to count 2x4's") —
-  // grouped by nominal size, converted to a "how many standard 10ft-stock
-  // sticks to buy" purchase count using the standard panel height as the
-  // stock length.
-  const boardFeetByNominalSize = useMemo(
-    () => computeBoardFeetByNominalSize(allRealMembers, standardPanelHeightIn.value / 12),
-    [allRealMembers],
-  );
+     They need every one of those member sets to exist first, so they now sit
+     just below the last of them — see `fabricatedExtraMembers`. */
 
   // Shipping (Tommy: "how many trucks will be needed to transport this
   // project, how should they be stacked, and how should those stacks be
@@ -8128,6 +8157,50 @@ export default function LayoutEditor() {
   const deckPanelTakeoff = useMemo(() => computeDeckPanelTakeoff(deckPanelTakeoffInput), [deckPanelTakeoffInput]);
 
   /**
+   * ⚠ **Every panel this building has, by kind.**
+   *
+   * > *"Project summary only lists 32 panels for the walls on a shed house I
+   * > just drew. Let's start include floor and roof and gable end panels on
+   * > shop drawings, materials calculations, weight calculations, plaster
+   * > master, ect ect."* — Tommy
+   *
+   * The count was wall slots plus the pieces an opening adds, and nothing
+   * else. A shed with 32 wall panels also had a gable row, a floor and a
+   * roof — all of them drawn, all of them on shop sheets, none of them
+   * counted, so the one number on the Project Summary that says how big the
+   * job is was the only one that did not know about two thirds of it.
+   *
+   * A safety gap counts as a panel here, on both the wall and the gable row,
+   * because it is fabricated and shipped like one — the same call
+   * `WALL_PANEL_SLOT_TYPES` already makes.
+   *
+   * Plain arithmetic rather than a memo: these are six array lengths, and the
+   * arrays they come from are already memoised.
+   */
+  const panelCounts = {
+    wall: allWallPanelSlots.length,
+    windowPairs: openingCounts.windows,
+    doors: openingCounts.doors,
+    gable: Object.values(gableTilesAsFabricatedByWallId).reduce((sum, tiles) => sum + tiles.length, 0),
+    floor: deckPanelTakeoff.instances.filter((i) => i.kind === "floor").length,
+    roof: deckPanelTakeoff.instances.filter((i) => i.kind === "roof").length,
+  };
+  const panelsTotal =
+    panelCounts.wall + panelCounts.gable + panelCounts.floor + panelCounts.roof + panelCounts.windowPairs * 2 + panelCounts.doors;
+  const panelsNote = [
+    `${panelCounts.wall} wall`,
+    panelCounts.gable > 0 ? `${panelCounts.gable} gable` : null,
+    panelCounts.floor > 0 ? `${panelCounts.floor} floor` : null,
+    panelCounts.roof > 0 ? `${panelCounts.roof} roof` : null,
+    panelCounts.windowPairs > 0
+      ? `${panelCounts.windowPairs} window header/sill pair${panelCounts.windowPairs === 1 ? "" : "s"}`
+      : null,
+    panelCounts.doors > 0 ? `${panelCounts.doors} door header${panelCounts.doors === 1 ? "" : "s"}` : null,
+  ]
+    .filter((part) => part !== null)
+    .join(" + ") + ".";
+
+  /**
    * The Shop Fabrication sheet for every unique floor and roof panel.
    *
    * ⚠ **This used to be the SECOND floor and roof plan, and it disagreed with
@@ -8327,45 +8400,162 @@ export default function LayoutEditor() {
     });
   }, [resolvedSpanningHeaders, spanningHeaderCrossReference, thicknessIn, jackStudConfig]);
 
+  /* ⚠ The spanning headers' own wood weight USED to be its own term here,
+     and it was the only one of the four non-panel fabrication groups that
+     had been added to the project total. It is now part of
+     `fabricatedExtraWeightKg` below, with the beams and the deck panels, so
+     that nothing is added twice and nothing is left out by being forgotten
+     rather than by being decided. */
   /**
-   * Spanning headers' own wood weight, added to the project total.
+   * ⚠ **Every fabricated member in this building that is NOT a panel
+   * instance** — one copy per real installed piece, not one per sheet.
    *
-   * A spanning header is a real fabricated panel with real members, so it
-   * has to weigh something in the project's own total — a panel on a cut
-   * list weighing zero is worse than one weighing approximately. Additive:
-   * with no headers this is 0 and every existing project's total stays
-   * byte-identical.
+   * `allRealPanelBuild.members` covers what comes through the tiler: wall panels and,
+   * since the gable row became real instances, gable panels. It has never
+   * covered anything the app walks the building for directly — the floor and
+   * roof panels, the truss plate or box beam on top of each wall, the
+   * Mid-Wall Bond Beams, the spanning headers. Each of those has its own
+   * Shop Fabrication sheet listing real plywood and real lumber, and none of
+   * it reached Material Totals.
    *
-   * **⚠ Two gaps it does NOT close, both in `totalWoodWeightKg` and both
-   * pre-existing.** Named here because this line is the one a reader will take
-   * as evidence that project wood weight is now right, and it is not:
-   *
-   * 1. **Mid-Wall Bond Beams are absent from it entirely** — it walks
-   *    standard/braced SLOTS, and a beam is a wall-level record with no slot.
-   * 2. **Every standard/braced slot is charged at FULL STORY HEIGHT**, so a
-   *    panel shortened under a header (or under a beam, or by a max-panel
-   *    height split) still contributes full-height wood, and this header's own
-   *    weight is then added on top of it. A small OVER-count in the project
-   *    total, in the opposite direction to (1).
-   *
-   * DOCUMENTED RATHER THAN FIXED, deliberately. The fabrication sheets are
-   * already right — they build members at `heightOverrideIn`, the real band
-   * height — so nothing that reaches a shop is wrong. Correcting the total
-   * means running the band pipeline inside this sum, which changes the
-   * displayed weight of every existing project that has a beam in it; that is
-   * its own change with its own Review Log line, not a side effect of adding a
-   * header. Same call this branch made about the Mid-Wall Bond Beam's 3D
-   * anchor drift.
+   * ⚠ **Copies matter here and nowhere else.** A fabrication group is one
+   * SHEET covering N identical parts; a materials tally has to buy all N.
    */
-  const spanningHeaderWoodWeightKg = useMemo(
+  const fabricatedExtraMembers = useMemo(() => {
+    const out: PanelMember[] = [];
+    const addCopies = (groups: readonly { members: PanelMember[]; instances: readonly unknown[] }[]) => {
+      for (const group of groups) {
+        for (let copy = 0; copy < group.instances.length; copy++) out.push(...group.members);
+      }
+    };
+    addCopies(roofBearingFabricationGroups);
+    addCopies(midWallBondBeamFabricationGroups);
+    addCopies(spanningHeaderFabricationGroups);
+    addCopies(floorRoofPanelFabricationGroups);
+    return out;
+  }, [
+    roofBearingFabricationGroups,
+    midWallBondBeamFabricationGroups,
+    spanningHeaderFabricationGroups,
+    floorRoofPanelFabricationGroups,
+  ]);
+
+  const everyFabricatedMember = useMemo(
+    () => [...allRealPanelBuild.members, ...fabricatedExtraMembers],
+    [allRealPanelBuild, fabricatedExtraMembers],
+  );
+
+  const plywoodAreaSqFt = useMemo(
+    () => ({
+      /* ⚠ The roof-bearing plywood caps used to be ESTIMATED here, as the
+         built wall perimeter times the wall depth, doubled on a 2-story
+         building for the box beam's second cap. The real truss-plate and
+         box-beam members are in `fabricatedExtraMembers` now, cut to the real
+         per-wall segment lengths the fabrication sheets use — including the
+         walls where a run stops and there is no plate at all — so the
+         estimate would be a second, worse copy of a number we now have. */
+      threeQuarterSqFt: computePlywoodAreaSqFt(everyFabricatedMember, 0.75),
+      halfSqFt: computePlywoodAreaSqFt(everyFabricatedMember, 0.5),
+    }),
+    [everyFabricatedMember],
+  );
+
+  const plywoodThreeQuarterSheetCount = Math.ceil(plywoodAreaSqFt.threeQuarterSqFt / PLYWOOD_SHEET_AREA_SQFT);
+  const plywoodHalfSheetCount = Math.ceil(plywoodAreaSqFt.halfSqFt / PLYWOOD_SHEET_AREA_SQFT);
+
+  // Board feet (Tommy: "wood weight totals should be able to be
+  // calculated... how many boardfeet of 2x4's (and any other dimensional
+  // lumber) are in a panel, and that total should be put onto the
+  // materials total and divided by the panel height to count 2x4's") —
+  // grouped by nominal size, converted to a "how many standard 10ft-stock
+  // sticks to buy" purchase count using the standard panel height as the
+  // stock length.
+  const boardFeetByNominalSize = useMemo(
+    () => computeBoardFeetByNominalSize(everyFabricatedMember, standardPanelHeightIn.value / 12),
+    [everyFabricatedMember],
+  );
+
+  /**
+   * ⚠ **What every part fabricated outside the panel-instance pipeline
+   * weighs** — each fabrication group's OWN modelled weight, times the number
+   * of copies installed.
+   *
+   * Read off the sheets rather than recomputed, so the project total is the
+   * sum of what the shop is told it is building. That brings in the floor and
+   * roof panels Tommy asked for (straw and wood both), and with them the
+   * truss plates, box beams, Mid-Wall Bond Beams and spanning headers — each
+   * with its own insulation fill where it has one, which nothing counted
+   * before either.
+   *
+   * ⚠ This REPLACES the separate spanning-header term. It was the only one of
+   * these four that had been added, and adding it twice is exactly the kind
+   * of arithmetic nobody would catch by looking at a total.
+   */
+  const fabricatedExtraWeightKg = useMemo(() => {
+    let kg = 0;
+    const addCopies = (groups: readonly { weightBreakdown: PanelWeightBreakdown; instances: readonly unknown[] }[]) => {
+      for (const group of groups) kg += group.weightBreakdown.totalModeledWeightKg * group.instances.length;
+    };
+    addCopies(roofBearingFabricationGroups);
+    addCopies(midWallBondBeamFabricationGroups);
+    addCopies(spanningHeaderFabricationGroups);
+    addCopies(floorRoofPanelFabricationGroups);
+    return kg;
+  }, [
+    roofBearingFabricationGroups,
+    midWallBondBeamFabricationGroups,
+    spanningHeaderFabricationGroups,
+    floorRoofPanelFabricationGroups,
+  ]);
+
+  /**
+   * ⚠ **Four terms, each counted once.**
+   *
+   * 1. `strawWeight` — the straw in every wall slot that holds any.
+   * 2. `totalWoodWeightKg` — standard and braced wall panels, at each
+   *    story's own height.
+   * 3. `allRealPanelBuild` — every OTHER panel instance's wood (corner,
+   *    column, safety gap, header, sill, gable) plus the straw inside the
+   *    gable row, none of which (2) can see.
+   * 4. `fabricatedExtraWeightKg` — the floor and roof panels, the beams and
+   *    the spanning headers, read off their own fabrication sheets.
+   *
+   * ⚠ **Still not closed, and named rather than quietly carried:** (2)
+   * charges every standard/braced slot at FULL STORY HEIGHT, so a panel
+   * shortened under a header or a beam still weighs full height. And (3)
+   * builds its members at the GROUND floor's wall height, so a second-story
+   * corner or column is weighed as though it were downstairs. Both are
+   * over-counts in the wall, both pre-date this change, and both want the
+   * band pipeline run inside the sum — which moves the number on every
+   * existing project and so is its own change with its own Review Log line.
+   */
+  /**
+   * ⚠ **All the straw in the building**, which is not the same number as the
+   * straw in its walls.
+   *
+   * `strawWeight` walks wall SLOTS. The gable row is not a slot, and a floor
+   * or roof panel is not either — but all three are straw panels, and the
+   * carbon the project sequesters is carbon in straw wherever that straw is.
+   * The gable half comes out of the panel build; the deck half comes off the
+   * floor and roof fabrication sheets, which already weigh their own straw.
+   */
+  const deckPanelStrawWeightKg = useMemo(
     () =>
-      spanningHeaderFabricationGroups.reduce(
-        (sum, group) => sum + group.instances.length * computeMemberSetWoodWeight(group.members).weightKg,
+      floorRoofPanelFabricationGroups.reduce(
+        (sum, group) => sum + group.weightBreakdown.strawOnlyWeightKg * group.instances.length,
         0,
       ),
-    [spanningHeaderFabricationGroups],
+    [floorRoofPanelFabricationGroups],
   );
-  const totalWeightKg = strawWeight.weightKg + totalWoodWeightKg + spanningHeaderWoodWeightKg;
+  const projectStrawWeightKg =
+    strawWeight.weightKg + allRealPanelBuild.gablePanelStrawWeightKg + deckPanelStrawWeightKg;
+
+  const totalWeightKg =
+    strawWeight.weightKg +
+    totalWoodWeightKg +
+    allRealPanelBuild.otherPanelWoodWeightKg +
+    allRealPanelBuild.gablePanelStrawWeightKg +
+    fabricatedExtraWeightKg;
   const totalWeightLb = totalWeightKg * KG_TO_LB;
 
   // Only surface pages that actually apply to what's currently selected/
@@ -8953,10 +9143,13 @@ export default function LayoutEditor() {
     spanningHeaderFabricationGroups,
   ]);
 
+  /* ⚠ Over ALL the straw, not just the walls' — see `projectStrawWeightKg`.
+     The summary used to report a straw weight that had grown (gable, floor
+     and roof panels) beside a carbon figure that had not, which is two
+     numbers on one page disagreeing about how much straw is in the building. */
   const carbonRange = useMemo(
-    () =>
-      computeCarbonRange(strawWeight.weightKg, strawMoistureContent, carbonFractionOfDryMass.value),
-    [strawWeight.weightKg],
+    () => computeCarbonRange(projectStrawWeightKg, strawMoistureContent, carbonFractionOfDryMass.value),
+    [projectStrawWeightKg],
   );
 
   // Net CO2e running total: straw's sequestered carbon is a credit
@@ -9492,22 +9685,25 @@ export default function LayoutEditor() {
       ...(standardWidthIn !== standardPanelBomReferenceWidthIn
         ? [{ label: "Wood-weight BOM vs. selected panel width", ...bomWidthMismatchWarning }]
         : []),
-      // ⚠ The project wood-weight figure is wrong in two known, pre-existing
-      // ways, and until this entry existed the only place that was written
-      // down was a code comment (see `spanningHeaderWoodWeightKg`). The
-      // summary's own note reads "Wood (N standard/braced panels)", which
-      // hints at gap 1 to a careful reader and says nothing at all about gap
-      // 2. Both are DOCUMENTED rather than fixed on purpose — the fabrication
-      // sheets build at `heightOverrideIn`, the real band height, so nothing
-      // reaching a shop is wrong, and correcting the sum means running the
-      // band pipeline inside it, which changes the displayed weight of every
-      // existing project that has a beam in it. That is its own change with
-      // its own line. What is NOT acceptable is the wrong number being on
-      // screen with nothing beside it, so it is flagged here now.
+      // ⚠ One of the two gaps this entry used to name is CLOSED: everything
+      // the building fabricates outside the panel-instance pipeline — the
+      // floor and roof panels, the truss plates and box beams, the Mid-Wall
+      // Bond Beams, the spanning headers — now weighs what its own
+      // fabrication sheet says it weighs (see `fabricatedExtraWeightKg`), and
+      // so do the corner, column, safety-gap, header, sill and gable panels
+      // (see `allRealPanelBuild`). What is left is the HEIGHT the wall is
+      // weighed at, which is still approximate in two ways, and that is
+      // DOCUMENTED rather than fixed on purpose: the fabrication sheets build
+      // at `heightOverrideIn`, the real band height, so nothing reaching a
+      // shop is wrong, and correcting the sum means running the band pipeline
+      // inside it, which changes the displayed weight of every existing
+      // project that has a beam in it. That is its own change with its own
+      // line. What is NOT acceptable is the wrong number being on screen with
+      // nothing beside it, so it stays flagged here.
       {
-        label: "Project wood weight is approximate in two known ways",
+        label: "Project wood weight is weighed at the wrong wall height in two known ways",
         status: "pending-BI-confirmation" as const,
-        note: `The wood figure in the summary walks standard/braced PANEL SLOTS, which leaves two gaps, both of them older than the spanning header. (1) **Mid-Wall Bond Beams are not counted at all** — a beam is a wall-level record with no panel slot for the walk to find, so its wood is missing from the total. (2) **Every slot is charged at the full story height**, so a panel shortened to make room for a Mid-Wall Bond Beam, a spanning header, or a max-panel-height split still contributes full-height wood — and the header's or beam's own weight is then added on top of it, so that part is counted twice. The two errors point in opposite directions and do not cancel. **Nothing that reaches the shop is affected:** every fabrication sheet builds its members at the real band height, so the cut lists, member lengths and per-panel weights are right; it is the project-level total that is approximate. Correcting it means recomputing the band heights inside that sum, which would change the displayed weight of every saved project containing a beam — its own change, not a side effect of another one.`,
+        note: `Every part of this building now weighs something in the total — the floor and roof panels, the gable row, the beams, the spanning headers and the corner/column/safety-gap/header/sill panels were all added, and nothing is counted twice. What is still approximate is the HEIGHT the wall panels are weighed at. (1) **Standard and braced panels are charged at the full story height**, so a panel shortened to make room for a Mid-Wall Bond Beam, a spanning header, or a max-panel-height split still contributes full-height wood — and the header's or beam's own weight is then added on top of it, so that overlap is counted twice. (2) **Every other panel type is built at the GROUND floor's wall height**, so a second-story corner or column panel is weighed as though it were downstairs. Both are over-counts in the wall and neither cancels the other. **Nothing that reaches the shop is affected:** every fabrication sheet builds its members at the real band height, so the cut lists, member lengths and per-panel weights are right; it is the project-level total that is approximate. Correcting it means recomputing the band heights inside that sum, which would change the displayed weight of every saved project containing a beam — its own change, not a side effect of another one.`,
       },
       // Every panel below Building Integrity's own fabrication minimum,
       // however it got there — typed, dragged, stored in an older file, or
@@ -13081,12 +13277,17 @@ export default function LayoutEditor() {
         <ProjectSummaryPage
           role={role}
           renderImageDataUrl={renderImageDataUrl}
-          panelsTotal={allWallPanelSlots.length + openingCounts.windows * 2 + openingCounts.doors}
-          panelsNote={`${allWallPanelSlots.length} wall panels + ${openingCounts.windows} window header/sill pair${openingCounts.windows === 1 ? "" : "s"} + ${openingCounts.doors} door header${openingCounts.doors === 1 ? "" : "s"}.`}
+          panelsTotal={panelsTotal}
+          panelsNote={panelsNote}
           openingsNote={`${openingCounts.windows} window${openingCounts.windows === 1 ? "" : "s"}, ${openingCounts.doors} door${openingCounts.doors === 1 ? "" : "s"}`}
           totalWeightLb={totalWeightLb}
           totalWeightKg={totalWeightKg}
-          weightNote={`Straw: ${strawWeight.weightLb.toFixed(1)} lb. Wood (${woodEligibleCount} standard/braced panels): ${(totalWoodWeightKg * KG_TO_LB).toFixed(1)} lb.`}
+          /* ⚠ Four terms, because the total is now four terms — see
+             `totalWeightKg`. The old note said "Wood (N standard/braced
+             panels)", which was true of the number beside it and said
+             nothing about the gable row, the floor, the roof or the beams,
+             because none of them were in it. */
+          weightNote={`Straw: ${((strawWeight.weightKg + allRealPanelBuild.gablePanelStrawWeightKg) * KG_TO_LB).toFixed(1)} lb. Wood in the ${panelCounts.wall + panelCounts.gable} wall and gable panels: ${((totalWoodWeightKg + allRealPanelBuild.otherPanelWoodWeightKg) * KG_TO_LB).toFixed(1)} lb. Floor and roof panels, beams and headers: ${(fabricatedExtraWeightKg * KG_TO_LB).toFixed(1)} lb, each from its own fabrication sheet.`}
           price={price}
           priceNote="Priced per panel type (standard/corner/braced/opening/roof rates), see Review Log."
           costsRedacted={costsRedacted}
@@ -13096,7 +13297,7 @@ export default function LayoutEditor() {
           carbonSequesteredKg={carbonRange.atStandardMoisture.carbonKg}
           netCO2eKg={embodiedCarbon.netCO2eKg}
           netCO2eNote={`Straw sequestered: +${embodiedCarbon.strawCO2eKg.toFixed(1)} kg CO2e. Concrete embodied: −${embodiedCarbon.concreteCO2eKg.toFixed(1)} kg CO2e.`}
-          strawMoistWeightLb={strawWeight.weightLb}
+          strawMoistWeightLb={projectStrawWeightKg * KG_TO_LB}
           strawMoistureContentPct={strawMoistureContent.standard * 100}
           strawDryWeightLb={carbonRange.atStandardMoisture.dryWeightKg * KG_TO_LB}
           strawCarbonFractionPct={carbonFractionOfDryMass.value * 100}
@@ -13172,9 +13373,19 @@ export default function LayoutEditor() {
                   {totalWeightLb.toFixed(1)} lb ({totalWeightKg.toFixed(1)} kg)
                   <br />
                   <span className={styles.note}>
-                    Straw: {strawWeight.weightLb.toFixed(1)} lb. Wood ({woodEligibleCount} standard/braced
-                    panels{includeNailer ? ", with nailer" : ""}): {(totalWoodWeightKg * KG_TO_LB).toFixed(1)} lb.
-                    Corner and safety-gap panels&apos; wood not modeled (no BOM yet). Fasteners not modeled.
+                    {/* ⚠ This said "Corner and safety-gap panels' wood not
+                        modeled (no BOM yet)" — true when the total walked
+                        standard/braced slots alone. Every panel type is in it
+                        now, along with the gable row, the floor and roof
+                        panels, the beams and the spanning headers. What is
+                        still approximate is the HEIGHT the wall is weighed at;
+                        see the Review Log. */}
+                    Straw: {((strawWeight.weightKg + allRealPanelBuild.gablePanelStrawWeightKg) * KG_TO_LB).toFixed(1)} lb.
+                    Wood in the {panelCounts.wall + panelCounts.gable} wall and gable panels
+                    {includeNailer ? ", with nailer" : ""}:{" "}
+                    {((totalWoodWeightKg + allRealPanelBuild.otherPanelWoodWeightKg) * KG_TO_LB).toFixed(1)} lb. Floor
+                    and roof panels, beams and headers: {(fabricatedExtraWeightKg * KG_TO_LB).toFixed(1)} lb, each from
+                    its own fabrication sheet. Fasteners not modeled.
                   </span>
                 </td>
               </tr>
@@ -13989,7 +14200,7 @@ export default function LayoutEditor() {
             }
             fastenerSchedule={[]}
             notes={[
-              `${PLYWOOD_THREE_QUARTER_ROW_LABEL}: every Standard/Braced/Sill panel's 2 skins, every Column/Corner panel's 2 side plies, every Door/Window Header's top+bottom plate caps, plus the roof-bearing assembly's own plywood cap(s) — a box beam's top+bottom caps if Second Story is enabled, a truss plate's single cap otherwise — across the drawn footprint's real BUILT wall perimeter (a wall run stopped short of its corner carries no panels and no plate, so it is excluded), not an illustrative preview length. It also carries the Safety/Gap sheet of every wall run OVER 12ft (see the Safety/Gap redesign note on its own Shop Drawing page).`,
+              `${PLYWOOD_THREE_QUARTER_ROW_LABEL}: every Standard/Braced/Sill panel's 2 skins, every Column/Corner panel's 2 side plies, every Gable panel's skins, every Door/Window Header's top+bottom plate caps, every Floor and Roof panel's two structural lids and a pitched roof panel's eave cap, and the plywood caps of every fabricated beam — each truss plate, box beam and Mid-Wall Bond Beam, at the real segment length its own Shop Fabrication sheet gives it, plus every spanning header. It also carries the Safety/Gap sheet of every wall run OVER 12ft (see the Safety/Gap redesign note on its own Shop Drawing page). ⚠ Every one of those is counted from the REAL MEMBERS on the fabrication sheets, one copy per installed part — the roof-bearing caps used to be estimated as the built wall perimeter times the wall depth instead, which could not know about a wall whose run stopped short of its corner.`,
               `${PLYWOOD_HALF_ROW_LABEL}: the girt webs (girt bars themselves are dimensional lumber, tallied separately), plus the Safety/Gap sheet of every wall run of 12ft or LESS. Tommy, 2026-09-30: "Can we make it so that once below the threshold (of 12') the safety gap is 1/2in." Every run gets a safety gap; the 12ft line decides which of these two sheets it is, measured against the panel RUN rather than the wall (a wall that butts into a longer neighbour at both ends has a run two wall-thicknesses shorter than itself).`,
               "⚠ The two sheets are not just two thicknesses: 3/4in CDX is 5-ply and 1/2in CDX is 3-ply. Order against the row, not against the thickness alone.",
               ...(panelizationType === "square-bale-panels"
@@ -13998,7 +14209,7 @@ export default function LayoutEditor() {
                   ]
                 : ["Straw bale counts only apply when Square Bale Panels is the selected panelization type (Wall tab)."]),
               "Sheet counts round up from the summed real area (not per-instance), a reasonable purchasing estimate assuming offcuts get reused across panels.",
-              `Board feet: every real panel instance's dimensional-lumber members (studs, plates, girts, braces, jack studs, headers), grouped by nominal size (2x4/2x6/etc — using NOMINAL, not actual, dimensions, per standard lumber-industry convention). Stick count assumes ${standardPanelHeightIn.value / 12}ft stock length (the standard panel height) and rounds up — doesn't account for cut-length waste/offcuts across pieces shorter than a full stick.`,
+              `Board feet: every fabricated dimensional-lumber member in the building (studs, plates, girts, braces, jack studs, headers, and the 2x6 joists and 2x4 lid facing of every floor and roof panel), grouped by nominal size (2x4/2x6/etc — using NOMINAL, not actual, dimensions, per standard lumber-industry convention). Stick count assumes ${standardPanelHeightIn.value / 12}ft stock length (the standard panel height) and rounds up — doesn't account for cut-length waste/offcuts across pieces shorter than a full stick.`,
               "Roof-bearing assembly (Truss Plate/Box Beam) and the roof-catcher-beam Column preview aren't included in the board-feet total yet — only real, placed panel instances are (Gable End Panels now count too, via their own real per-tile instances).",
             ]}
             role={role}
