@@ -520,3 +520,46 @@ square-cut sheet aligned to the panel's own ends overhangs the high end by
 that same 1/4in and runs into the next panel, which is worse on a drawing than
 a plate standing proud. So it is carried as a shop allowance on the cut list
 rather than as a different shape.
+
+### B3 — the gable row lands on the wall's joints (DONE, with its other half named)
+
+> *"The gable end panels do not directly line up with the studs of the wall
+> panels underneath - let's figure out how to match these two layers of panel
+> slots up, and adjust the bottom row if needed."*
+
+Measured on a 20ft gable wall before anything changed:
+
+```
+wall joints   0, 25.5, 73.5, 119.625, 165.75, 166.5, 214.5, 240
+gable joints  0, 1, 40.75, 80.375, 120, 160, 200, 240
+```
+
+**Not one** interior gable joint landed on a wall joint, and the worst sat
+**23¼in** from the nearest — half a panel. The wall opens with a 25½in corner
+and absorbs its leftovers into a couple of narrowed standards; the gable
+divided each segment evenly on a 48in module from the ends in. Two rules,
+nothing coupling them.
+
+`computeGableTiledRow` now takes the wall's own slots and puts a tile boundary
+wherever the wall has one, then merges a tile too narrow to be a panel (under
+3in — its own two edge studs) and subdivides a bay wider than the target. The
+wall's safety gap becomes the gable's, directly over it. Measured after:
+**every** interior joint on every wall length tested lands on a wall joint,
+0/N → N/N.
+
+⚠ **Still open, and it is the "adjust the bottom row" half:** the **PEAK** is a
+roofline anchor and the wall below has no joint there, so the one gable joint
+that still bears mid-bay is the ridge — which is the worst place for it, since
+that is where the ridge beam comes down. Closing it means giving the wall
+tiler a forced joint at the peak, which changes the panel layout, the cut list
+and the price of every gable wall. That is a change to the WALL and deserves
+its own pass.
+
+⚠ **Not composed with gable WINDOWS.** A gable window is placed by ordinal
+within its segment, and re-dividing the segment would renumber every window
+after it. A windowed gable row keeps its own tiling; the two want reconciling.
+
+⚠ **A pre-existing oddity this surfaced:** `resolveAnchors` puts a roofline
+anchor 1in in from each eave corner, so a gable row opens and closes with a
+**1in tile** — a whole segment, which no merge inside a segment can touch. It
+is there with or without alignment. Worth a look on its own.

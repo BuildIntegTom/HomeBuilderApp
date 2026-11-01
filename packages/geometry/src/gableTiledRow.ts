@@ -300,6 +300,127 @@ function panel(xStartIn: number, xEndIn: number, anchors: RoofAnchor[], isSafety
   };
 }
 
+/**
+ * ⚠ **A wall slot directly below this gable row**, so the row can land its
+ * joints on the wall's.
+ *
+ * > *"The gable end panels do not directly line up with the studs of the wall
+ * > panels underneath - let's figure out how to match these two layers of
+ * > panel slots up, and adjust the bottom row if needed."* — Tommy
+ */
+export interface GableWallJointSpan {
+  /** Where the wall slot starts, in inches from the wall's own start corner. */
+  xStartIn: number;
+  xEndIn: number;
+  /** The wall's own safety gap, so the gable's sits directly over it. */
+  isSafetyGap?: boolean;
+}
+
+/**
+ * ⚠ **The narrowest joint-aligned tile worth cutting: its own two edge
+ * studs.** A gable panel is framed with a 1 1/2in stud at each edge, so a
+ * tile under 3in is two studs with nothing between them. Derived from the
+ * panel rather than chosen, which is why this file may hold it without
+ * waiting on anyone.
+ *
+ * ⚠ A SAFETY GAP is exempt. The wall's own gap is 3/4in and the gable's
+ * has to sit directly over it, which is the whole point.
+ */
+const GABLE_MIN_JOINT_ALIGNED_TILE_IN = 3;
+
+/**
+ * ⚠ **TILES ONE SEGMENT ON THE WALL'S OWN JOINTS, so a gable stud lands on a
+ * wall stud and the load goes straight down.**
+ *
+ * The two rows were tiled by different rules and nothing coupled them: the
+ * wall opens with a 25 1/2in corner panel and absorbs its leftovers into a
+ * couple of narrowed standards, while the gable row divided each segment
+ * evenly on a 48in module from the ends in. Measured on a 20ft gable wall
+ * before this existed, the worst gable joint sat **23 1/4in** from the
+ * nearest wall joint — half a panel, every joint landing mid-bay.
+ *
+ * The rule: a tile boundary goes wherever the wall has one. Then two passes
+ * clean up what that leaves:
+ *
+ *  - **merge** a tile too narrow to be a panel into its neighbour (the peak
+ *    is an anchor and rarely coincides with a wall joint, so the last tile
+ *    before it is often a sliver);
+ *  - **subdivide** a span wider than the target evenly, because a wall with a
+ *    merged corner can leave one very wide bay and there are no wall joints
+ *    inside it to use.
+ *
+ * So every boundary this returns is either a wall joint, a roofline anchor,
+ * or a subdivision of a bay that had no wall joint in it — and the first
+ * two are the ones that carry load.
+ */
+function tileAtJoints(
+  startIn: number,
+  endIn: number,
+  anchors: RoofAnchor[],
+  targetPanelWidthIn: number,
+  spans: GableWallJointSpan[],
+  markSafetyGaps: boolean,
+): GableTiledPanel[] {
+  const startEighths = toEighths(startIn);
+  const endEighths = toEighths(endIn);
+  if (endEighths - startEighths <= 0) return [];
+
+  /* Every wall joint strictly inside this segment, on the grid, in order and
+     without duplicates. Both ends of every span, because a span's end is the
+     next one's start only when the wall has no gaps in it. */
+  const inside = [...new Set(spans.flatMap((sp) => [toEighths(sp.xStartIn), toEighths(sp.xEndIn)]))]
+    .filter((e) => e > startEighths && e < endEighths)
+    .sort((a, b) => a - b);
+  const edges = [startEighths, ...inside, endEighths];
+
+  const gapEighths = new Set(
+    markSafetyGaps
+      ? spans.filter((sp) => sp.isSafetyGap).map((sp) => `${toEighths(sp.xStartIn)}:${toEighths(sp.xEndIn)}`)
+      : [],
+  );
+  const isGapSpan = (a: number, b: number) => gapEighths.has(`${a}:${b}`);
+  const minEighths = toEighths(GABLE_MIN_JOINT_ALIGNED_TILE_IN);
+
+  /* MERGE: drop an interior edge that would leave a tile too narrow to be a
+     panel. Walked forwards, so a run of slivers collapses into one tile
+     rather than alternating. The final tile is checked from the other side:
+     if it comes out short, the edge BEFORE it goes instead, because the
+     segment's own end is an anchor and may not move. */
+  const kept: number[] = [edges[0]!];
+  for (let i = 1; i < edges.length - 1; i++) {
+    const e = edges[i]!;
+    const prev = kept[kept.length - 1]!;
+    if (e - prev < minEighths && !isGapSpan(prev, e)) continue;
+    kept.push(e);
+  }
+  kept.push(endEighths);
+  while (kept.length > 2) {
+    const last = kept[kept.length - 1]!;
+    const prev = kept[kept.length - 2]!;
+    if (last - prev >= minEighths || isGapSpan(prev, last)) break;
+    kept.splice(kept.length - 2, 1);
+  }
+
+  /* SUBDIVIDE: a bay wider than the target gets divided evenly, the same
+     rule `tileEvenly` uses, because there is no wall joint in it to use. */
+  const panels: GableTiledPanel[] = [];
+  for (let i = 0; i < kept.length - 1; i++) {
+    const aEighths = kept[i]!;
+    const bEighths = kept[i + 1]!;
+    const spanEighths = bEighths - aEighths;
+    if (spanEighths <= 0) continue;
+    const gap = isGapSpan(aEighths, bEighths);
+    const count = gap ? 1 : Math.max(1, Math.ceil(fromEighths(spanEighths) / targetPanelWidthIn));
+    let cursor = aEighths;
+    for (const widthEighths of distributeEighths(spanEighths, count)) {
+      if (widthEighths <= 0) continue;
+      panels.push(panel(fromEighths(cursor), fromEighths(cursor + widthEighths), anchors, gap));
+      cursor += widthEighths;
+    }
+  }
+  return panels;
+}
+
 /** Tiles one absolute-coordinate run [startIn, endIn] into evenly-sized
  * panels, reading each panel's own edge heights off the wall's true
  * roofline — same "ceil'd, evenly-divided" rule as computeJoistLayout, so a
@@ -648,6 +769,18 @@ export function computeGableTiledRow(
    */
   builtStartIn = 0,
   builtEndIn = wallWidthIn,
+  /**
+   * ✦ **The wall's own slots directly below this row** — B3. Given them, the
+   * row puts a tile boundary wherever the wall has one, so a gable stud lands
+   * on a wall stud. Omitted (or empty) and the row tiles as it always did.
+   *
+   * ⚠ **Ignored when this wall's gable carries windows.** A gable window is
+   * placed by ordinal within its segment, and re-dividing the segment would
+   * renumber every window after it. Joint alignment is a framing improvement;
+   * silently moving someone's window is not a trade worth making, so the two
+   * do not compose yet and the windowed row keeps its own tiling.
+   */
+  wallSlotsIn: GableWallJointSpan[] = [],
 ): GableTiledPanel[] {
   const { anchors, leftSnapped, rightSnapped } = resolveAnchors(wallWidthIn, eaveHeightIn, points, targetPanelWidthIn, heelHeightIn, anchorMode, insetIn);
 
@@ -724,8 +857,12 @@ export function computeGableTiledRow(
   // everywhere — including the `naturalCounts` pass, whose per-segment
   // counts set the window ordinals, so skipping a segment in one place and
   // not the other would silently renumber every window after it.
+  const alignToJoints = wallSlotsIn.length > 0 && windowReservations.length === 0;
   const tilesForSegment = (seg: { segStartIn: number; segEndIn: number; gapEnd: "start" | "end" }): GableTiledPanel[] => {
     if (seg.segEndIn - seg.segStartIn <= 0) return [];
+    if (alignToJoints) {
+      return tileAtJoints(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, wallSlotsIn, includeSafetyGap);
+    }
     return includeSafetyGap
       ? tileRun(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn, seg.gapEnd)
       : tileEvenly(seg.segStartIn, seg.segEndIn, anchors, targetPanelWidthIn);

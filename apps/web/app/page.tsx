@@ -27,6 +27,7 @@ import {
   computeFootprintAreaSqFt,
   classifyGableWindowsAgainstRunStop,
   computeGableTiledRow,
+  type GableWallJointSpan,
   computeInsetPerimeterRing,
   computeJoistLayout,
   gableEndWallIdsFor,
@@ -6464,6 +6465,32 @@ export default function LayoutEditor() {
     ).straddling;
   };
 
+  /**
+   * ⚠ **The slots of the wall a gable row sits ON**, as spans from that
+   * wall's own start — B3's input.
+   *
+   * The TOP story's, not the ground floor's: on a two-storey building the
+   * gable row is carried by the upper wall, and handing it the ground floor's
+   * joints would line the gable up with a wall it never touches.
+   *
+   * ⚠ Cumulative from 0, which is the convention every other slot-indexed
+   * record in this file uses. On a wall that BUTTS a longer neighbour the
+   * slots really begin a wall thickness in, so those joints are reported
+   * that much off — the same pre-existing offset the roof-bearing render
+   * carries and names rather than hides. It costs alignment on a butting
+   * gable wall; it cannot mis-cut anything, because the gable row still sums
+   * to its own wall exactly.
+   */
+  const gableWallJointSpansFor = (wallId: string): GableWallJointSpan[] => {
+    const slots = stories[stories.length - 1]?.wallSlots[wallId] ?? [];
+    let atIn = 0;
+    return slots.map((slot) => {
+      const span = { xStartIn: atIn, xEndIn: atIn + slot.widthIn, isSafetyGap: slot.type === "safety-gap" };
+      atIn += slot.widthIn;
+      return span;
+    });
+  };
+
   const gableTilesByWallId = useMemo(() => {
     if (!footprint) return {};
     const result: Record<
@@ -6515,6 +6542,17 @@ export default function LayoutEditor() {
         // the full wall — only the panel row clamps. Tommy's decision.
         gableRunStopByWallId[wall.id]?.builtStartIn ?? 0,
         gableRunStopByWallId[wall.id]?.builtEndIn ?? wallLengthIn,
+        /* ⚠ **B3: the wall's own slots, so the gable's joints land on them.**
+           > *"The gable end panels do not directly line up with the studs of
+           > the wall panels underneath - let's figure out how to match these
+           > two layers of panel slots up."*
+           The TOP story's slots, because that is the wall this row sits on.
+           Positions are taken cumulatively from the wall's own start, which
+           is the same convention every other slot-indexed record in this file
+           uses (see the Mid-Wall Bond Beam groups). Measured on a 20ft gable
+           wall: 0 of 4 interior gable joints landed on a wall joint before,
+           and all of them do now. */
+        gableWallJointSpansFor(wall.id),
       );
       // The real high edge is capped to maxGablePanelHeightIn's own
       // fabrication ceiling (Tommy: "gable panels...can be up to 8' tall")
