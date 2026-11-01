@@ -505,6 +505,16 @@ const ROOF_BEARING_STRUCTURAL_STATUS: PanelStructuralStatus = {
 const interiorLayers = wallAssemblyLayers.filter((l) => l.side === "interior" || l.side === "both");
 const exteriorLayers = wallAssemblyLayers.filter((l) => l.side === "exterior" || l.side === "both");
 
+/* ⚠ His four envelope defaults, named rather than indexed. These were
+   `interiorLayers[1]` and `exteriorLayers[1]` — positions in a filtered
+   catalog list, so inserting a layer into `wallAssemblyLayers` silently
+   changed what a new project is built out of. See the `useState` calls that
+   read them for his sentence and for the one reading in it. */
+const DEFAULT_WALL_INTERIOR_LAYER_ID = "clay-plaster";
+const DEFAULT_WALL_EXTERIOR_LAYER_ID = "lime-plaster";
+const DEFAULT_ROOF_INTERIOR_LAYER_ID = "intello-plus";
+const DEFAULT_ROOF_EXTERIOR_LAYER_ID = "mento";
+
 // Fed to computeAssemblyPerm/validateVaporOpenness (unchanged) when nothing
 // rated is checked on a side — its null perms make them report "not
 // computable," identical to today's behavior for a lone unrated layer.
@@ -583,6 +593,25 @@ const phase2Assumptions = () => [
       "number askable instead of indistinguishable from a rate he confirmed. The area it is charged against is still " +
       "a stand-in: these are linear members with no real width x wall-height face, so each piece is priced on its own " +
       "covered length x its own assembly's cross-sectional height.",
+  },
+  {
+    label: "Wall interior default read as clay plaster",
+    status: "pending-BI-confirmation" as const,
+    note:
+      "Tommy, 2026-11-01: \"walls are clay inside like outside.\" The catalog has no exterior clay layer, so this " +
+      "is read as PLASTER ON BOTH FACES — clay direct-on-straw inside, lime direct-on-straw outside, which is the " +
+      "exterior plaster that answers to \"like outside\". It replaces a default of Intello inside and Mento " +
+      "outside, which was the roof's assembly applied to the walls. ⚠ One sentence, one reading; if he meant " +
+      "a clay exterior, that is a new catalog layer rather than a different default.",
+  },
+  {
+    label: "The roof assembly's vapour profile is not checked",
+    status: "pending-BI-confirmation" as const,
+    note:
+      "The roof now carries its own interior/exterior assembly (his \"roof exterior is Mento 3000 and interior is " +
+      "intello\"), but the perm-rating and vapour-openness check still reads the WALL assembly only. A roof built " +
+      "more vapour-closed on the outside than the inside would not be flagged. The check's arithmetic would carry " +
+      "over unchanged; what is missing is the decision about whether a roof is held to the same rule as a wall.",
   },
   {
     label: "Floor and Roof Panel pricing",
@@ -888,8 +917,34 @@ export default function LayoutEditor() {
   // from a default of 3/4in plywood to vertical 2x4's" — default matches
   // the original single-sheet jack stud behavior.
   const [jackStudConfig, setJackStudConfig] = useState<JackStudConfig>("plywood");
-  const [checkedInteriorIds, setCheckedInteriorIds] = useState<Set<string>>(new Set([interiorLayers[1]!.id]));
-  const [checkedExteriorIds, setCheckedExteriorIds] = useState<Set<string>>(new Set([exteriorLayers[1]!.id]));
+  /**
+   * ⚠ **The envelope's defaults, surface by surface — his, 2026-11-01.**
+   *
+   * > *"Id say default is floor bottom is clay plaster/metal mesh, walls are
+   * > clay inside like outside, roof exterior is Mento 3000 and interior is
+   * > intello."*
+   *
+   * The walls were defaulting to Intello inside and Mento outside — a
+   * membrane-and-siding assembly — which is the ROOF's build, not the
+   * wall's. The walls are plastered.
+   *
+   * ⚠ **"clay inside like outside" is read as plaster on both faces**, which
+   * is clay inside and LIME outside: the catalog has no exterior clay layer,
+   * and lime direct-on-straw is the exterior plaster that answers to "like
+   * outside". It is an interpretation of one sentence and it carries a
+   * Review Log line saying so rather than sitting here silently.
+   */
+  const [checkedInteriorIds, setCheckedInteriorIds] = useState<Set<string>>(new Set([DEFAULT_WALL_INTERIOR_LAYER_ID]));
+  const [checkedExteriorIds, setCheckedExteriorIds] = useState<Set<string>>(new Set([DEFAULT_WALL_EXTERIOR_LAYER_ID]));
+  /* The roof's own assembly — *"roof exterior is Mento 3000 and interior is
+     intello."* Until this existed one envelope assembly covered the whole
+     building, so the roof could not be built differently from the walls. */
+  const [checkedRoofInteriorIds, setCheckedRoofInteriorIds] = useState<Set<string>>(
+    new Set([DEFAULT_ROOF_INTERIOR_LAYER_ID]),
+  );
+  const [checkedRoofExteriorIds, setCheckedRoofExteriorIds] = useState<Set<string>>(
+    new Set([DEFAULT_ROOF_EXTERIOR_LAYER_ID]),
+  );
   const [season, setSeason] = useState<Season>("winter");
 
   const [seismicZone, setSeismicZone] = useState<SeismicZone>("moderate");
@@ -2204,6 +2259,8 @@ export default function LayoutEditor() {
       includeNailer,
       checkedInteriorIds,
       checkedExteriorIds,
+      checkedRoofInteriorIds,
+      checkedRoofExteriorIds,
       season,
       seismicZone,
       foundationTypeId,
@@ -2377,6 +2434,12 @@ export default function LayoutEditor() {
     setIncludeNailer(s.includeNailer);
     setCheckedInteriorIds(s.checkedInteriorIds);
     setCheckedExteriorIds(s.checkedExteriorIds);
+    /* ⚠ Absent on every file saved before the roof had an assembly, and his
+       defaults are what such a file meant — not an empty roof. `undefined`
+       and "he unchecked everything" are deliberately different states; see
+       `checkedRoofInteriorIds` in projectFile.ts. */
+    setCheckedRoofInteriorIds(s.checkedRoofInteriorIds ?? new Set([DEFAULT_ROOF_INTERIOR_LAYER_ID]));
+    setCheckedRoofExteriorIds(s.checkedRoofExteriorIds ?? new Set([DEFAULT_ROOF_EXTERIOR_LAYER_ID]));
     setSeason(s.season);
     setSeismicZone(s.seismicZone);
     setFoundationTypeId(s.foundationTypeId as typeof foundationTypeId);
@@ -6650,6 +6713,37 @@ export default function LayoutEditor() {
   // number always reflects its true position in the along-wall sequence —
   // Shop Drawing pages then just filter this same list, rather than each
   // recomputing its own independent (and previously mismatched) counter.
+  /**
+   * ⚠ **The inputs to the ONE floor and roof panel takeoff, in one place
+   * because the 3D view is handed these very same values below.**
+   *
+   * `Building3DView` computes the takeoff from its own props — it has to, so
+   * that the Project Summary's off-screen render works the same way — and the
+   * only way two calls to one pure function can disagree is by being given
+   * different inputs. So the JSX passes `roofPitchIn12`, `roofEaveHeightFt`,
+   * `roofGableEndInsetIn` and `roofForm` straight out of this object rather
+   * than recomputing the expressions.
+   */
+  const deckPanelTakeoffInput = useMemo<DeckPanelTakeoffInput>(
+    () => ({
+      footprint,
+      depthIn: thicknessIn,
+      roofForm: roofFormFromProfile,
+      /* ⚠ A ring has no gable ends — they are blocked on it, so
+         roofTrussLayoutContext is null and there is no pitch to read. It
+         falls back to the default until a ring roof has a pitch control of
+         its own, which it still does not. */
+      roofPitchIn12:
+        roofTrussLayoutContext?.pitchIn12 ??
+        (footprint && ringRoofGableBlockReason(footprint) !== null ? DEFAULT_ROOF_PITCH_IN12 : undefined),
+      roofEaveHeightFt: gableEaveHeightIn / 12,
+      roofGableEndInsetIn: gableEndsFullHeight ? thicknessIn : 0,
+    }),
+    [footprint, thicknessIn, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, gableEndsFullHeight],
+  );
+
+  const deckPanelTakeoff = useMemo(() => computeDeckPanelTakeoff(deckPanelTakeoffInput), [deckPanelTakeoffInput]);
+
   const allInstances = useMemo(
     () =>
       footprint
@@ -7371,15 +7465,55 @@ export default function LayoutEditor() {
         .filter((run) => run.lengthFt > 0),
     );
   }, [footprint, stories, builtWallLengthInByWallId]);
-  // Flat plan-view placeholder — see computeFootprintAreaSqFt's own doc
-  // comment on why real sloped roof area isn't computable yet.
-  const intelloRoofAreaSqFt = useMemo(() => (footprint ? computeFootprintAreaSqFt(footprint) : 0), [footprint]);
+  /**
+   * ⚠ **The roof's REAL area, measured up its slope.**
+   *
+   * This was the footprint's flat plan-view area, labelled a placeholder in
+   * the code and on screen because *"real sloped roof area isn't computable
+   * yet"*. It is now: `computeDeckPanelTakeoff` lays real panels on the real
+   * roof planes and sums what they cover, which at 4:12 is about 5% more
+   * membrane than the ground beneath it — and membrane is bought by the roll.
+   *
+   * The flat area is kept as the fallback for a building with no resolved
+   * pitch, where there are no roof planes to measure and it is the only
+   * estimate there is. The note on screen says which one is being shown.
+   */
+  const roofMembraneAreaSqFt = deckPanelTakeoff.coverageSqFt.roof;
+  const roofMembraneAreaIsSloped = roofMembraneAreaSqFt > 0;
+  const intelloRoofAreaSqFt = roofMembraneAreaIsSloped
+    ? roofMembraneAreaSqFt
+    : footprint
+      ? computeFootprintAreaSqFt(footprint)
+      : 0;
   const intelloLayer = wallAssemblyLayers.find((l) => l.id === "intello-plus")!;
   const intelloRollWidthFt = (intelloLayer.rollWidthIn ?? 0) / 12;
-  const intelloCoverage = useMemo(
-    () => computeMembraneCoverage(intelloWallRuns, intelloRollWidthFt, intelloRoofAreaSqFt),
-    [intelloWallRuns, intelloRollWidthFt, intelloRoofAreaSqFt],
+  /**
+   * ⚠ **Wall Intello and roof Intello are counted apart, because they are
+   * now chosen apart.**
+   *
+   * One figure used to cover both, which was correct only while the building
+   * had a single envelope assembly. With the roof carrying its own — his
+   * *"roof exterior is Mento 3000 and interior is intello"* — a wall with no
+   * Intello on it and a roof with Intello on it are different buildings, and
+   * one number cannot say which you have.
+   */
+  const intelloWallCoverage = useMemo(
+    () => computeMembraneCoverage(checkedInteriorIds.has("intello-plus") ? intelloWallRuns : [], intelloRollWidthFt, 0),
+    [checkedInteriorIds, intelloWallRuns, intelloRollWidthFt],
   );
+  const intelloRoofCoverage = useMemo(
+    () =>
+      computeMembraneCoverage(
+        [],
+        intelloRollWidthFt,
+        checkedRoofInteriorIds.has("intello-plus") ? intelloRoofAreaSqFt : 0,
+      ),
+    [checkedRoofInteriorIds, intelloRollWidthFt, intelloRoofAreaSqFt],
+  );
+  /* What Tescon Vana has to tape: every seam on whichever of the two is
+     actually checked. A roof laid in one piece has no seam of its own, which
+     is why the roof half contributes area without contributing tape. */
+  const intelloSeamLengthFt = intelloWallCoverage.seamLengthFt + intelloRoofCoverage.seamLengthFt;
 
   const plasterPrices = {
     sandPricePerCuYd: plasterSandPricePerCuYd,
@@ -8157,36 +8291,6 @@ export default function LayoutEditor() {
 
      ⚠ The run is the footprint's OUTER dimension, because the walls bear on
      the floor rather than sitting beside it. */
-  /**
-   * ⚠ **The inputs to the ONE floor and roof panel takeoff, in one place
-   * because the 3D view is handed these very same values below.**
-   *
-   * `Building3DView` computes the takeoff from its own props — it has to, so
-   * that the Project Summary's off-screen render works the same way — and the
-   * only way two calls to one pure function can disagree is by being given
-   * different inputs. So the JSX passes `roofPitchIn12`, `roofEaveHeightFt`,
-   * `roofGableEndInsetIn` and `roofForm` straight out of this object rather
-   * than recomputing the expressions.
-   */
-  const deckPanelTakeoffInput = useMemo<DeckPanelTakeoffInput>(
-    () => ({
-      footprint,
-      depthIn: thicknessIn,
-      roofForm: roofFormFromProfile,
-      /* ⚠ A ring has no gable ends — they are blocked on it, so
-         roofTrussLayoutContext is null and there is no pitch to read. It
-         falls back to the default until a ring roof has a pitch control of
-         its own, which it still does not. */
-      roofPitchIn12:
-        roofTrussLayoutContext?.pitchIn12 ??
-        (footprint && ringRoofGableBlockReason(footprint) !== null ? DEFAULT_ROOF_PITCH_IN12 : undefined),
-      roofEaveHeightFt: gableEaveHeightIn / 12,
-      roofGableEndInsetIn: gableEndsFullHeight ? thicknessIn : 0,
-    }),
-    [footprint, thicknessIn, roofFormFromProfile, roofTrussLayoutContext, gableEaveHeightIn, gableEndsFullHeight],
-  );
-
-  const deckPanelTakeoff = useMemo(() => computeDeckPanelTakeoff(deckPanelTakeoffInput), [deckPanelTakeoffInput]);
 
   /**
    * ⚠ **Every panel this building has, by kind.**
@@ -11835,19 +11939,15 @@ export default function LayoutEditor() {
               <span className={styles.note}> — {extoSealLengthFt.toFixed(1)}ft needed (sill perimeter + 1ft/opening)</span>
             )}
             {l.id === "intello-plus" && checkedInteriorIds.has("intello-plus") && (
-              <span className={styles.note}>
-                {" "}
-                — {intelloCoverage.areaSqFt.toFixed(0)} sqft ({(intelloCoverage.areaSqFt - intelloRoofAreaSqFt).toFixed(0)} wall +{" "}
-                {intelloRoofAreaSqFt.toFixed(0)} roof, flat plan-view placeholder — not modeled roof slope)
-              </span>
+              <span className={styles.note}> — {intelloWallCoverage.areaSqFt.toFixed(0)} sqft of wall</span>
             )}
             {l.id === "tescon-vana" && checkedInteriorIds.has("tescon-vana") && (
               <span className={styles.note}>
                 {" "}
                 —{" "}
-                {checkedInteriorIds.has("intello-plus")
-                  ? `${intelloCoverage.seamLengthFt.toFixed(1)}ft of seams (fewest-seams layout)`
-                  : "Intello isn't checked, so no seams to tape yet"}
+                {intelloSeamLengthFt > 0
+                  ? `${intelloSeamLengthFt.toFixed(1)}ft of seams (fewest-seams layout)`
+                  : "Intello isn't checked on the walls or the roof, so no seams to tape yet"}
               </span>
             )}
           </label>
@@ -11883,6 +11983,66 @@ export default function LayoutEditor() {
           <option value="summer">Summer</option>
         </select>
       </label>
+      {/* ⚠ THE ROOF IS NOT THE WALL, and until now the app said it was.
+          One envelope assembly covered the whole building, so a plastered
+          wall and a Mento-over-Intello roof — the assembly he actually
+          builds — could not both be described. Tommy, 2026-11-01: *"walls
+          are clay inside like outside, roof exterior is Mento 3000 and
+          interior is intello."* */}
+      <fieldset>
+        <legend>Roof — exterior (above the deck)</legend>
+        {exteriorLayers.map((l) => (
+          <label key={l.id} style={{ display: "block" }}>
+            <input
+              type="checkbox"
+              checked={checkedRoofExteriorIds.has(l.id)}
+              onChange={(e) =>
+                setCheckedRoofExteriorIds((was) => {
+                  const next = new Set(was);
+                  if (e.target.checked) next.add(l.id);
+                  else next.delete(l.id);
+                  return next;
+                })
+              }
+            />{" "}
+            {l.label}
+          </label>
+        ))}
+      </fieldset>
+      <fieldset>
+        <legend>Roof — interior (the ceiling&apos;s underside)</legend>
+        {interiorLayers.map((l) => (
+          <label key={l.id} style={{ display: "block" }}>
+            <input
+              type="checkbox"
+              checked={checkedRoofInteriorIds.has(l.id)}
+              onChange={(e) =>
+                setCheckedRoofInteriorIds((was) => {
+                  const next = new Set(was);
+                  if (e.target.checked) next.add(l.id);
+                  else next.delete(l.id);
+                  return next;
+                })
+              }
+            />{" "}
+            {l.label}
+            {l.id === "intello-plus" && checkedRoofInteriorIds.has("intello-plus") && (
+              <span className={styles.note}>
+                {" "}
+                — {intelloRoofCoverage.areaSqFt.toFixed(0)} sqft of roof,{" "}
+                {roofMembraneAreaIsSloped
+                  ? "measured up the real slope"
+                  : "the flat footprint — this building has no resolved roof pitch to measure a slope against"}
+              </span>
+            )}
+          </label>
+        ))}
+      </fieldset>
+      <p className={styles.note}>
+        The roof carries its own assembly because it is built differently from the wall below it — Mento over the
+        deck, Intello beneath the ceiling, where the walls are plastered on both faces. ⚠ The perm-rating check
+        above reads the WALL assembly only; a roof assembly&apos;s own vapour profile is not checked yet.
+      </p>
     </div>
   );
 

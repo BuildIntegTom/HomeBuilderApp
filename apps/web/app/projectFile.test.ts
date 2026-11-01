@@ -129,6 +129,55 @@ describe("serializeProject / parseProjectFile round-trip", () => {
   });
 
   /**
+   * The roof's own envelope assembly, 2026-11-01, also deliberately NOT a
+   * version bump.
+   *
+   * > *"roof exterior is Mento 3000 and interior is intello."* — Tommy
+   *
+   * ⚠ The property that makes it safe is that an old file comes back
+   * **undefined** rather than as an empty Set. `undefined` means "this file
+   * predates the roof having an assembly", which the caller answers with his
+   * defaults; an empty Set would mean "he unchecked everything on the roof",
+   * which is a statement no saved file has ever made. If these two ever
+   * collapse into each other, every project saved before this date silently
+   * loses its roof build.
+   */
+  describe("the roof's own assembly (2026-11-01)", () => {
+    it("⚠ comes back UNDEFINED, not empty, when the file predates it", () => {
+      const state = makeState();
+      expect(state.checkedRoofInteriorIds).toBeUndefined();
+      const file = serializeProject(state);
+      expect(file.state.checkedRoofInteriorIds).toBeUndefined();
+      const result = parseProjectFile(JSON.stringify(file));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.checkedRoofInteriorIds).toBeUndefined();
+      expect(result.state.checkedRoofExteriorIds).toBeUndefined();
+    });
+
+    it("keeps both sides, as Sets, when the file has them", () => {
+      const state = makeState({
+        checkedRoofInteriorIds: new Set(["intello-plus"]),
+        checkedRoofExteriorIds: new Set(["mento", "timber-board"]),
+      });
+      const result = parseProjectFile(JSON.stringify(serializeProject(state)));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.checkedRoofInteriorIds).toBeInstanceOf(Set);
+      expect([...result.state.checkedRoofInteriorIds!]).toEqual(["intello-plus"]);
+      expect([...result.state.checkedRoofExteriorIds!]).toEqual(["mento", "timber-board"]);
+      // And the WALL assembly is untouched by any of it.
+      expect([...result.state.checkedInteriorIds]).toEqual([...state.checkedInteriorIds]);
+    });
+
+    it("does not move the file version", () => {
+      expect(serializeProject(makeState({ checkedRoofExteriorIds: new Set(["mento"]) })).schemaVersion).toBe(
+        PROJECT_FILE_VERSION,
+      );
+    });
+  });
+
+  /**
    * Smearforn Stage 2b's key, which is deliberately NOT a version bump.
    *
    * The whole argument for that rests on two properties: a file WITHOUT the

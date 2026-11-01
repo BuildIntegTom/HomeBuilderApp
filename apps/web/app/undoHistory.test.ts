@@ -29,9 +29,13 @@ describe("what counts as the document", () => {
     // 75 → 76 on 2026-10-30: `gableEndsFullHeight`, the flag that runs gable
     // ends up to the top of the roof panels and pulls the roof back off
     // them. Classified `document` — it changes what is drawn.
-    expect(all.length).toBe(76);
-    // ...and 70 -> 71 document keys, since the new one is document state.
-    expect(DOCUMENT_KEYS.length).toBe(71);
+    // 76 -> 78 on 2026-11-01: `checkedRoofInteriorIds`/`checkedRoofExteriorIds`,
+    // the roof's own envelope assembly (Tommy: "roof exterior is Mento 3000
+    // and interior is intello"), which until then shared the wall's. Both
+    // `document` - they change what the building is made of.
+    expect(all.length).toBe(78);
+    // ...and 71 -> 73 document keys, since both new ones are document state.
+    expect(DOCUMENT_KEYS.length).toBe(73);
   });
 
   it("where the user is standing is NOT the document", () => {

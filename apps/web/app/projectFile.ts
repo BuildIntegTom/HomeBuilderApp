@@ -176,6 +176,23 @@ export interface ProjectState {
    * — replaces the old single-select interiorId/exteriorId. */
   checkedInteriorIds: Set<string>;
   checkedExteriorIds: Set<string>;
+  /**
+   * The ROOF's own assembly, which is not the wall's.
+   *
+   * > *"roof exterior is Mento 3000 and interior is intello."* — Tommy,
+   * > 2026-11-01, giving the Plaster Master defaults surface by surface
+   *
+   * Until this existed the app had ONE envelope assembly for the whole
+   * building, so a roof could not be Mento over Intello while the walls were
+   * plastered both sides — which is the assembly he actually builds.
+   *
+   * ⚠ **Optional on purpose, so no `PROJECT_FILE_VERSION` bump.** A file
+   * saved before this simply has no roof assembly and falls back to his
+   * defaults on load; nothing stored is reinterpreted. Same treatment
+   * `gableStructuralPanelWallIds` got.
+   */
+  checkedRoofInteriorIds?: Set<string>;
+  checkedRoofExteriorIds?: Set<string>;
   season: Season;
   seismicZone: SeismicZone;
   foundationTypeId: string;
@@ -543,12 +560,23 @@ const KEYS_ADDED_IN_V25: readonly string[] = ["foundationEnabled"];
 export interface ProjectFile {
   schemaVersion: number;
   savedAt: string;
-  state: Omit<ProjectState, "primaryCornerIds" | "gableEndWallIds" | "gableStructuralPanelWallIds" | "checkedInteriorIds" | "checkedExteriorIds"> & {
+  state: Omit<
+    ProjectState,
+    | "primaryCornerIds"
+    | "gableEndWallIds"
+    | "gableStructuralPanelWallIds"
+    | "checkedInteriorIds"
+    | "checkedExteriorIds"
+    | "checkedRoofInteriorIds"
+    | "checkedRoofExteriorIds"
+  > & {
     primaryCornerIds: string[];
     gableEndWallIds: string[];
     gableStructuralPanelWallIds?: string[];
     checkedInteriorIds: string[];
     checkedExteriorIds: string[];
+    checkedRoofInteriorIds?: string[];
+    checkedRoofExteriorIds?: string[];
   };
 }
 
@@ -563,6 +591,8 @@ export function serializeProject(state: ProjectState): ProjectFile {
       gableStructuralPanelWallIds: state.gableStructuralPanelWallIds ? [...state.gableStructuralPanelWallIds] : undefined,
       checkedInteriorIds: [...state.checkedInteriorIds],
       checkedExteriorIds: [...state.checkedExteriorIds],
+      checkedRoofInteriorIds: state.checkedRoofInteriorIds ? [...state.checkedRoofInteriorIds] : undefined,
+      checkedRoofExteriorIds: state.checkedRoofExteriorIds ? [...state.checkedRoofExteriorIds] : undefined,
       // Every save is written post-migration, regardless of whether the
       // in-memory state getting saved originated from an old (unseeded)
       // load — see bracedStateSeeded's own doc comment.
@@ -974,6 +1004,16 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
       ),
       checkedInteriorIds: new Set(state.checkedInteriorIds as string[]),
       checkedExteriorIds: new Set(state.checkedExteriorIds as string[]),
+      /* Undefined, NOT an empty set, on a file saved before the roof had an
+         assembly of its own — the caller then applies his defaults. An empty
+         set would read as "he unchecked everything on the roof", which is a
+         different statement and not one any saved file ever made. */
+      checkedRoofInteriorIds: Array.isArray(state.checkedRoofInteriorIds)
+        ? new Set(state.checkedRoofInteriorIds as string[])
+        : undefined,
+      checkedRoofExteriorIds: Array.isArray(state.checkedRoofExteriorIds)
+        ? new Set(state.checkedRoofExteriorIds as string[])
+        : undefined,
       // LAST, so it wins over every spread and default above: an excused key is
       // held as NaN, never as a substituted number. Empty unless the caller is
       // `parseRedactedProjectFile`. See `blankedExcusedKeys` for why NaN.

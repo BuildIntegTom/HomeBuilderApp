@@ -71,6 +71,8 @@ export const MONEY_CLASSIFICATION = {
   maxPanelHeightIn: "not-money",
   includeNailer: "not-money",
   checkedInteriorIds: "not-money",
+  checkedRoofInteriorIds: "not-money",
+  checkedRoofExteriorIds: "not-money",
   checkedExteriorIds: "not-money",
   season: "not-money",
   seismicZone: "not-money",

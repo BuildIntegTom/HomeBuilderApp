@@ -60,6 +60,8 @@ export const UNDO_CLASSIFICATION = {
   maxPanelHeightIn: "document",
   includeNailer: "document",
   checkedInteriorIds: "document",
+  checkedRoofInteriorIds: "document",
+  checkedRoofExteriorIds: "document",
   checkedExteriorIds: "document",
   season: "document",
   seismicZone: "document",
