@@ -1,4 +1,4 @@
-import type { PanelComponentSchema, PanelMember } from "./componentSchema";
+import type { PanelComponentSchema, PanelMember, PanelSpacePoint2D } from "./componentSchema";
 import {
   LUMBER_SPECIES_GRADE,
   PLATE_2X4_THICKNESS_IN,
@@ -7,9 +7,10 @@ import {
   SKIN_PLY_SPEC,
   SKIN_THICKNESS_IN,
   GIRT_WEB_THICKNESS_IN,
+  braceLongestEdgeIn,
   buildGirtRows,
   buildNailer,
-  tiltedMember,
+  plumbEndedSlopedBoardCornersIn,
 } from "./panelMemberHelpers";
 
 /**
@@ -110,11 +111,30 @@ export function computeGableRipCallout(
   };
 }
 
-/** The 4 corner studs, left edge pair + right edge pair, each its own real
- * height (either can be the taller one) — angle-cut top simplified to a
- * plain box (not a true bevel), same "illustrative, not to scale"
- * simplification as the Braced Panel's brace ends. */
-function buildGableCornerStuds(widthIn: number, depthIn: number, leftStudSpanIn: number, rightStudSpanIn: number): PanelMember[] {
+/**
+ * The 4 corner studs, left edge pair + right edge pair.
+ *
+ * ⚠ **The top is a REAL rake cut now, not a plain box.** It used to be
+ * *"angle-cut top simplified to a plain box (not a true bevel)"*, which on a
+ * 4:12 roof leaves the stud's flat top crossing the sloped skin above it by
+ * half an inch over its own 1 1/2in — one corner buried in the skin and the
+ * other hanging under a gap. Tommy, 2026-11-01, with a sketch: *"The corners
+ * of the gable end panels are not plumb cut... This applies to any gable or
+ * inclined panel."*
+ *
+ * The two SIDES stay plumb (a stud is vertical) and the TOP follows the
+ * underside of the top skin across the stud's own thickness, so the stud and
+ * the skin meet on a line instead of crossing. `topUndersideAtXIn` is handed
+ * in rather than derived here, so the stud, the plates and the skin are all
+ * reading one roofline.
+ */
+function buildGableCornerStuds(
+  widthIn: number,
+  depthIn: number,
+  leftStudSpanIn: number,
+  rightStudSpanIn: number,
+  topUndersideAtXIn: (xIn: number) => number,
+): PanelMember[] {
   const cornerXs: [number, number] = [0, widthIn - PLATE_2X4_THICKNESS_IN]; // [left edge, right edge]
   const cornerYs = [0, depthIn - PLATE_2X4_WIDTH_IN];
   const heights = [leftStudSpanIn, rightStudSpanIn];
@@ -128,18 +148,45 @@ function buildGableCornerStuds(widthIn: number, depthIn: number, leftStudSpanIn:
          their own corner (idx still advances), so `stud_corner_3` means the
          same corner whether or not its neighbour exists. */
       if (!(heights[side]! > 0)) continue;
+      const nearXIn = cornerXs[side]!;
+      const farXIn = nearXIn + PLATE_2X4_THICKNESS_IN;
+      /* Both top corners, each read off the roofline at its own x — then
+         clamped to the bottom plate, because a stud at a triangle's tip can
+         have one corner above the bottom skin and the other below it. */
+      const nearTopZIn = Math.max(SKIN_THICKNESS_IN, topUndersideAtXIn(nearXIn));
+      const farTopZIn = Math.max(SKIN_THICKNESS_IN, topUndersideAtXIn(farXIn));
+      const cornersIn: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] = [
+        { xIn: nearXIn, zIn: SKIN_THICKNESS_IN },
+        { xIn: farXIn, zIn: SKIN_THICKNESS_IN },
+        { xIn: farXIn, zIn: farTopZIn },
+        { xIn: nearXIn, zIn: nearTopZIn },
+      ];
+      const longPointIn = Math.max(nearTopZIn, farTopZIn) - SKIN_THICKNESS_IN;
+      if (!(longPointIn > 0)) continue;
       members.push({
         memberId: `stud_corner_${idx}`,
         material: "dimensional_lumber",
         speciesGrade: LUMBER_SPECIES_GRADE,
         plySpec: null,
         nominalSize: "2x4",
-        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: heights[side]! },
+        /* ⚠ The LONG POINT, the way every other angle-cut member in this app
+           is dimensioned — a shop cuts to the long point and reads the angle
+           off the note. */
+        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn: longPointIn },
         orientation: "vertical",
-        position: { xIn: cornerXs[side]!, yIn, zIn: SKIN_THICKNESS_IN, rotationDeg: 0 },
+        position: {
+          xIn: nearXIn,
+          yIn: yIn + PLATE_2X4_WIDTH_IN / 2,
+          zIn: SKIN_THICKNESS_IN,
+          rotationDeg: 0,
+          trapezoidCornersIn: cornersIn,
+          /* A stud stands on its 1 1/2in thickness and runs 3 1/2in through
+             the panel — see `trapezoidDepthIn`. */
+          trapezoidDepthIn: PLATE_2X4_WIDTH_IN,
+        },
         role: "stud",
         qty: 1,
-        notes: `${edgeLabels[side]} edge — bottom is a square cut flush to the bottom plate; top is angle-cut flush to the underside of the sloped top plate (simplified to a plain box top here, not the true bevel).`,
+        notes: `${edgeLabels[side]} edge — bottom is a square cut flush to the bottom plate; top is cut to the roof rake so it lands flush on the underside of the top skin.`,
       });
     }
   }
@@ -280,6 +327,82 @@ export function buildGablePanelMembers(
    */
   const verticalForPerpendicularIn = (perpendicularIn: number) => perpendicularIn / Math.cos((ripAngleDeg * Math.PI) / 180);
 
+  /**
+   * ⚠ **ONE roofline, read by the skin, the plates and the corner studs
+   * alike.**
+   *
+   * `topAtXIn` is the panel's own top surface — the top face of the top
+   * skin, which is the surface the roof above sits on and the one
+   * `leftHeightIn`/`rightHeightIn` name. Everything below it is measured
+   * down from there in VERTICAL inches, never perpendicular ones: a board
+   * sloped at θ and cut plumb stands `thickness / cos θ` tall, and the two
+   * were subtracted as if equal twice before (see
+   * `verticalForPerpendicularIn` above, and the gable-roof flush junction
+   * that took four passes).
+   */
+  const topAtXIn = (xIn: number) => leftHeightIn + ((rightHeightIn - leftHeightIn) * xIn) / widthIn;
+  const skinVerticalThicknessIn = verticalForPerpendicularIn(SKIN_THICKNESS_IN);
+  const plateVerticalThicknessIn = verticalForPerpendicularIn(PLATE_2X4_THICKNESS_IN);
+  /** The top skin's underside: what the corner studs reach and what the top
+   * plates hang beneath. */
+  const topUndersideAtXIn = (xIn: number) => topAtXIn(xIn) - skinVerticalThicknessIn;
+
+  /**
+   * A sloped top board with PLUMB (vertical) ends, the shape these members'
+   * own cut-list notes have been describing all along — see
+   * `plumbEndedSlopedBoardCornersIn`. `tiltedMember` drew them as rectangles
+   * rotated about their centres, so the ends came out square to the rip and
+   * the panel's corners were visibly wrong: *"The corners of the gable end
+   * panels are not plumb cut"* (Tommy, 2026-11-01).
+   */
+  const slopedTopBoard = (
+    memberId: string,
+    material: PanelMember["material"],
+    plySpec: PanelMember["plySpec"],
+    nominalSize: PanelMember["nominalSize"],
+    perpendicularThicknessIn: number,
+    crossWidthIn: number,
+    fromXIn: number,
+    toXIn: number,
+    topAtFromXIn: number,
+    centerDepthIn: number,
+    role: PanelMember["role"],
+    notes: string,
+  ): PanelMember => {
+    const verticalThicknessIn = verticalForPerpendicularIn(perpendicularThicknessIn);
+    const topAtToXIn = topAtFromXIn + ((toXIn - fromXIn) * (rightHeightIn - leftHeightIn)) / widthIn;
+    const cornersIn = plumbEndedSlopedBoardCornersIn(fromXIn, topAtFromXIn, toXIn, topAtToXIn, verticalThicknessIn);
+    return {
+      memberId,
+      material,
+      speciesGrade: material === "dimensional_lumber" ? LUMBER_SPECIES_GRADE : null,
+      plySpec,
+      nominalSize,
+      actualDimsIn: {
+        thicknessIn: perpendicularThicknessIn,
+        widthIn: crossWidthIn,
+        /* The LONG POINT — the rake-length of the board's own top edge,
+           which is what a shop cuts to. */
+        lengthIn: braceLongestEdgeIn(cornersIn),
+      },
+      orientation: "diagonal",
+      position: {
+        xIn: (fromXIn + toXIn) / 2,
+        yIn: centerDepthIn,
+        zIn: (topAtFromXIn + topAtToXIn) / 2 - verticalThicknessIn / 2,
+        rotationDeg: 0,
+        tiltDeg: ripAngleDeg,
+        trapezoidCornersIn: cornersIn,
+        /* It stands on its thickness and runs `crossWidthIn` through the
+           panel's depth — see `trapezoidDepthIn`. */
+        trapezoidDepthIn: crossWidthIn,
+      },
+      role,
+      qty: 1,
+      notes,
+    };
+  };
+
   const members: PanelMember[] = [
     {
       memberId: "bottom_plate_skin",
@@ -319,8 +442,8 @@ export function buildGablePanelMembers(
       qty: 1,
       notes: "interior-wythe edge",
     },
-    ...buildGableCornerStuds(widthIn, depthIn, leftStudSpanIn, rightStudSpanIn),
-    tiltedMember(
+    ...buildGableCornerStuds(widthIn, depthIn, leftStudSpanIn, rightStudSpanIn, topUndersideAtXIn),
+    slopedTopBoard(
       "top_plate_2x4_ext",
       "dimensional_lumber",
       null,
@@ -328,14 +451,13 @@ export function buildGablePanelMembers(
       PLATE_2X4_THICKNESS_IN,
       PLATE_2X4_WIDTH_IN,
       PLATE_END_CLEARANCE_IN,
-      platePeakLeftIn - verticalForPerpendicularIn(SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN / 2),
       widthIn - PLATE_END_CLEARANCE_IN,
-      platePeakRightIn - verticalForPerpendicularIn(SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN / 2),
+      topUndersideAtXIn(PLATE_END_CLEARANCE_IN),
       PLATE_2X4_WIDTH_IN / 2,
       "plate",
       `exterior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${plateRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.`,
     ),
-    tiltedMember(
+    slopedTopBoard(
       "top_plate_2x4_int",
       "dimensional_lumber",
       null,
@@ -343,14 +465,13 @@ export function buildGablePanelMembers(
       PLATE_2X4_THICKNESS_IN,
       PLATE_2X4_WIDTH_IN,
       PLATE_END_CLEARANCE_IN,
-      platePeakLeftIn - verticalForPerpendicularIn(SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN / 2),
       widthIn - PLATE_END_CLEARANCE_IN,
-      platePeakRightIn - verticalForPerpendicularIn(SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN / 2),
+      topUndersideAtXIn(PLATE_END_CLEARANCE_IN),
       depthIn - PLATE_2X4_WIDTH_IN / 2,
       "plate",
       `interior-wythe edge — rip parallel to the top skin, at ${platePlumbCutAngleDeg.toFixed(2)}deg, cut to ${plateRipLengthIn.toFixed(2)}in long (point to butt). Ends are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the board's 1.5in thickness to a ${plumbCutEdgeLengthIn(PLATE_2X4_THICKNESS_IN).toFixed(2)}in cut edge.`,
     ),
-    tiltedMember(
+    slopedTopBoard(
       "top_plate_skin",
       "plywood",
       SKIN_PLY_SPEC,
@@ -358,9 +479,13 @@ export function buildGablePanelMembers(
       SKIN_THICKNESS_IN,
       depthIn,
       0,
-      leftHeightIn - verticalForPerpendicularIn(SKIN_THICKNESS_IN / 2),
       widthIn,
-      rightHeightIn - verticalForPerpendicularIn(SKIN_THICKNESS_IN / 2),
+      /* ⚠ The skin's top face IS the panel's stated edge height, exactly —
+         no half-thickness correction, because the corners name the face
+         rather than a centreline. That is what makes a gable's top plate
+         finish flush with the roof above it, which is what he asked for and
+         what the centreline reading kept missing by hundredths. */
+      leftHeightIn,
       depthIn / 2,
       "skin",
       `Rip at ${ripAngleDeg.toFixed(2)}deg, cut to ${ripLengthIn.toFixed(2)}in long (point to butt). Panel-width edges are plumb-cut (vertical), flush to each corner stud's face — not square to the rip — extending the sheet's 0.75in thickness to a ${plumbCutEdgeLengthIn(SKIN_THICKNESS_IN).toFixed(2)}in cut edge.`,

@@ -133,9 +133,6 @@ const BASELINE: Record<string, number> = {
      problem as a diagonal crossing a centre nailer stud, and it wants the
      same answer. */
   "braced chevron": 2,
-  /* The sloped top plate clipping its own skin — unrelated to bracing, and
-     the only thing the exact test found on a gable. */
-  gable: 1,
   "big header": 26,
 };
 
@@ -168,6 +165,15 @@ describe("⚠ no member occupies the same space as another", () => {
       "floor panel",
       "roof panel",
       "braced hatch",
+      /* ⚠ 1 → 0 on 2026-11-01. The gable's single overlap was its sloped top
+         plate clipping its own skin, and it went when the skin, the plates
+         and the corner studs stopped each deriving the roofline separately:
+         one `topAtXIn`, read by all three, with plumb ends instead of ends
+         square to the rip. Tommy's *"The corners of the gable end panels are
+         not plumb cut."* The entry is DELETED from BASELINE rather than set
+         to 0, so the panel is now held to the same zero every clean panel
+         is. */
+      "gable",
     ]);
   });
 });

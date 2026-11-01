@@ -2,7 +2,7 @@ import { buildBoxBeamMembers } from "./boxBeamMembers";
 import { buildBracedPanelMembers } from "./bracedPanelMembers";
 import type { PanelMember } from "./componentSchema";
 import { buildGablePanelMembers } from "./gablePanelMembers";
-import { buildGirtRows } from "./panelMemberHelpers";
+import { LUMBER_SPECIES_GRADE, buildGirtRows, tiltedMember } from "./panelMemberHelpers";
 import type { WorldPlacedPanel } from "./panelObjExport";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
 
@@ -40,52 +40,116 @@ function goldenStandardPanelMembers(): PanelMember[] {
 const CAPTURED_GIRT_WEB_HEIGHT_IN = 8.75;
 
 /**
- * ⚠ The gable panel's top assembly AS IT WAS when the fixture was captured,
- * for the third time and the same reason.
+ * ⚠ **The gable panel AS IT WAS when the fixture was captured — and it is
+ * now rebuilt here rather than patched out of the live builder.**
  *
- * On 2026-10-31 the top skin and the two top plates stopped dropping their
- * centrelines by a PERPENDICULAR half-thickness measured as if it were
- * VERTICAL. Read at a fixed x that left the skin's face plane 0.020in low
- * and the plate 0.081in inside it — which is what stopped a gable's top
- * plate finishing flush with the roof above it (Tommy: *"Let's get gable end
- * panels top plate edge to be flush with the top of the roof panels"*).
+ * This had grown into three successive corrections applied on top of
+ * `buildGablePanelMembers`: a centreline drop (2026-10-31), the girt rows
+ * (2026-11-01), and it would now need a fourth. On 2026-11-01 the gable's
+ * top skin, top plates and corner studs stopped being BOXES and became real
+ * four-cornered prisms with plumb ends and raked tops (Tommy: *"The corners
+ * of the gable end panels are not plumb cut"*), which is a change of SHAPE,
+ * not of position — there is nothing left to patch.
  *
- * Only `position.zIn` moved. The rip angle, the cut length and every other
- * member are untouched, and a tilted box is a shape this fixture covers many
- * times over — so holding these three at their captured heights loses no
- * coverage and keeps the fixture pinning the EXPORTER, which is what it is
- * for.
+ * So the captured members are stated outright. The fixture exists to pin the
+ * EXPORTER against every member shape that existed before n-gon prisms, and
+ * a tilted box and a plain vertical box are exactly two of those shapes; the
+ * live gable's new trapezoids are a shape the braced panel already covers
+ * here several times over. Nothing is lost, and the fixture stops moving
+ * every time the panel does.
+ *
+ * ⚠ **This must never be regenerated from the live builder.** That is the
+ * whole bargain: a frozen record of what the exporter emitted, replayed.
  */
 function goldenGablePanelMembers(): PanelMember[] {
   const widthIn = 48;
+  const depthIn = 14;
   const leftIn = 12;
   const rightIn = 60;
-  const cosRake = Math.cos(Math.atan2(rightIn - leftIn, widthIn));
-  /* How far the old vertical-as-perpendicular reading sat BELOW the true
-     one, for a given perpendicular offset. */
-  const asCapturedDropIn = (perpendicularIn: number) => perpendicularIn / cosRake - perpendicularIn;
-  const built = buildGablePanelMembers(widthIn, 14, leftIn, rightIn, false).map((m) => {
-    const perpendicularIn =
-      m.memberId === "top_plate_skin" ? 0.75 / 2 : m.memberId.startsWith("top_plate_2x4_") ? 0.75 + 1.5 / 2 : 0;
-    if (perpendicularIn === 0) return m;
-    return { ...m, position: { ...m.position, zIn: m.position.zIn + asCapturedDropIn(perpendicularIn) } };
-  });
-  /**
-   * ⚠ The two girt rows this panel had WHEN THE FIXTURE WAS CAPTURED — the
-   * fourth time the input has had to be held still, and the same reason as
-   * the three above.
-   *
-   * On 2026-11-01 a gable panel's girt count started coming off its SHORT
-   * edge (Tommy: *"If the shorter height of a stud on a Gable end panel is
-   * less than 2', then no girts are needed"*), and this fixture's gable has
-   * a 12in short edge — so the live builder now emits none where it used to
-   * emit two. That is a change to the PANEL; the fixture exists to pin the
-   * EXPORTER. Girts are the LAST thing `buildGablePanelMembers` appends
-   * (the nailer is off here), so re-appending them reproduces the captured
-   * order exactly, and a girt bar and web are plain boxes this fixture
-   * already covers many times over.
-   */
-  return [...built, ...buildGirtRows(2, widthIn, 14, Math.min(leftIn, rightIn) - 2 * 0.75)];
+  /* The live builder still emits these three unchanged, and reading them
+     from it keeps the fixture's input honest about the parts that have NOT
+     moved. */
+  const live = buildGablePanelMembers(widthIn, depthIn, leftIn, rightIn, false);
+  const unchanged = ["bottom_plate_skin", "bottom_plate_2x4_ext", "bottom_plate_2x4_int"].map(
+    (id) => live.find((m) => m.memberId === id)!,
+  );
+
+  /* Flat-topped boxes, one per corner, in the builder's own id order:
+     (near depth, left), (near, right), (far, left), (far, right). */
+  const studs: PanelMember[] = [];
+  let idx = 0;
+  for (const yIn of [0, depthIn - 3.5]) {
+    for (const [side, xIn] of [[leftIn, 0] as const, [rightIn, widthIn - 1.5] as const]) {
+      idx++;
+      studs.push({
+        memberId: `stud_corner_${idx}`,
+        material: "dimensional_lumber",
+        speciesGrade: LUMBER_SPECIES_GRADE,
+        plySpec: null,
+        nominalSize: "2x4",
+        actualDimsIn: { thicknessIn: 1.5, widthIn: 3.5, lengthIn: side - 1.5 },
+        orientation: "vertical",
+        position: { xIn, yIn, zIn: 0.75, rotationDeg: 0 },
+        role: "stud",
+        qty: 1,
+      });
+    }
+  }
+
+  /* Tilted boxes, centreline-anchored, with the pre-2026-10-31 drop: a
+     PERPENDICULAR half-thickness subtracted as if it were vertical. */
+  const heightAtXIn = (xIn: number) => leftIn + ((rightIn - leftIn) * xIn) / widthIn;
+  const tops = [
+    tiltedMember(
+      "top_plate_2x4_ext",
+      "dimensional_lumber",
+      null,
+      "2x4",
+      1.5,
+      3.5,
+      1.5,
+      heightAtXIn(1.5) - 1.5,
+      widthIn - 1.5,
+      heightAtXIn(widthIn - 1.5) - 1.5,
+      3.5 / 2,
+      "plate",
+      "as captured",
+    ),
+    tiltedMember(
+      "top_plate_2x4_int",
+      "dimensional_lumber",
+      null,
+      "2x4",
+      1.5,
+      3.5,
+      1.5,
+      heightAtXIn(1.5) - 1.5,
+      widthIn - 1.5,
+      heightAtXIn(widthIn - 1.5) - 1.5,
+      depthIn - 3.5 / 2,
+      "plate",
+      "as captured",
+    ),
+    tiltedMember(
+      "top_plate_skin",
+      "plywood",
+      "3/4in_5ply_CDX",
+      null,
+      0.75,
+      depthIn,
+      0,
+      leftIn - 0.375,
+      widthIn,
+      rightIn - 0.375,
+      depthIn / 2,
+      "skin",
+      "as captured",
+    ),
+  ];
+
+  /* And the two girt rows it carried before the count came off the short
+     edge — last in the builder's order, the nailer being off here. */
+  return [...unchanged, ...studs, ...tops, ...buildGirtRows(2, widthIn, depthIn, leftIn - 2 * 0.75)];
 }
 
 function asCaptured(members: PanelMember[]): PanelMember[] {

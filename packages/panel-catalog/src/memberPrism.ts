@@ -51,7 +51,10 @@ export function memberPrism(member: PanelMember): Prism {
     /* A brace: its corners are already the real cut, in the panel's
        width/height plane, and its position records the CENTRE through the
        thickness rather than a min corner. */
-    const halfIn = member.actualDimsIn.thicknessIn / 2;
+    /* ⚠ `trapezoidDepthIn` when the prism does not lie flat — see its own
+       doc comment. Reading `thicknessIn` for a standing plate would make the
+       overlap audit measure a solid 2in shallower than the one it draws. */
+    const halfIn = (member.position.trapezoidDepthIn ?? member.actualDimsIn.thicknessIn) / 2;
     return {
       axis: "y",
       polygon: member.position.trapezoidCornersIn.map((c) => ({ u: c.xIn, v: c.zIn })),

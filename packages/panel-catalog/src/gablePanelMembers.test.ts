@@ -9,6 +9,33 @@ import {
 } from "./gablePanelMembers";
 import { memberBoxSizeIn, SKIN_THICKNESS_IN } from "./panelMemberHelpers";
 
+/**
+ * ⚠ **What a gable corner stud's LONG POINT really is**, now that its top
+ * is cut to the roof rake instead of left flat.
+ *
+ * Every assertion below used to read `edgeHeightIn - 1.5` — the panel's
+ * height less its two 3/4in skins — which is the stud a flat-topped box
+ * would be. A real stud's top follows the underside of the top skin across
+ * its own 1 1/2in thickness, so:
+ *
+ * - the skin's underside sits `0.75 / cos(rake)` below the top face, NOT
+ *   0.75 (a perpendicular thickness is not a vertical one);
+ * - the stud's long point is whichever of its two top corners is higher,
+ *   which is its INNER face on the low edge and the PANEL edge on the high
+ *   one.
+ *
+ * On the 40 x 20/50 fixture that is 19 7/16in and 48 5/16in, against the old
+ * 18 1/2in and 48 1/2in. The low stud got LONGER and the high one SHORTER,
+ * which is the shape of the correction: the roofline rises across the stud.
+ */
+function expectedStudLongPointIn(widthIn: number, leftIn: number, rightIn: number, side: "left" | "right"): number {
+  const rakeRad = Math.atan2(rightIn - leftIn, widthIn);
+  const skinVerticalIn = 0.75 / Math.cos(rakeRad);
+  const topAt = (xIn: number) => leftIn + ((rightIn - leftIn) * xIn) / widthIn - skinVerticalIn;
+  const [nearXIn, farXIn] = side === "left" ? [0, 1.5] : [widthIn - 1.5, widthIn];
+  return Math.max(topAt(nearXIn), topAt(farXIn)) - 0.75;
+}
+
 const WIDTH_IN = 40;
 const DEPTH_IN = 15.5;
 // A gable panel's own edge heights are relative to the eave line (its own
@@ -50,8 +77,14 @@ describe("buildGablePanelMembers", () => {
     const risingStuds = rising.filter((m) => m.role === "stud");
     const risingLeftStud = risingStuds.find((m) => m.position.xIn === 0)!;
     const risingRightStud = risingStuds.find((m) => m.position.xIn === WIDTH_IN - 1.5)!;
-    expect(risingLeftStud.actualDimsIn.lengthIn).toBeCloseTo(LOW_EDGE_IN - 1.5, 6);
-    expect(risingRightStud.actualDimsIn.lengthIn).toBeCloseTo(HIGH_EDGE_IN - 1.5, 6);
+    expect(risingLeftStud.actualDimsIn.lengthIn).toBeCloseTo(
+      expectedStudLongPointIn(WIDTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, "left"),
+      6,
+    );
+    expect(risingRightStud.actualDimsIn.lengthIn).toBeCloseTo(
+      expectedStudLongPointIn(WIDTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, "right"),
+      6,
+    );
 
     // The mirrored tile — real roofline falls left-to-right (e.g. right of
     // the same peak) — must have the TALL stud on its own left now, not
@@ -61,8 +94,16 @@ describe("buildGablePanelMembers", () => {
     const fallingStuds = falling.filter((m) => m.role === "stud");
     const fallingLeftStud = fallingStuds.find((m) => m.position.xIn === 0)!;
     const fallingRightStud = fallingStuds.find((m) => m.position.xIn === WIDTH_IN - 1.5)!;
-    expect(fallingLeftStud.actualDimsIn.lengthIn).toBeCloseTo(HIGH_EDGE_IN - 1.5, 6);
-    expect(fallingRightStud.actualDimsIn.lengthIn).toBeCloseTo(LOW_EDGE_IN - 1.5, 6);
+    expect(fallingLeftStud.actualDimsIn.lengthIn).toBeCloseTo(
+      expectedStudLongPointIn(WIDTH_IN, HIGH_EDGE_IN, LOW_EDGE_IN, "left"),
+      6,
+    );
+    expect(fallingRightStud.actualDimsIn.lengthIn).toBeCloseTo(
+      expectedStudLongPointIn(WIDTH_IN, HIGH_EDGE_IN, LOW_EDGE_IN, "right"),
+      6,
+    );
+    // ...and the tall one really is on the left when the roofline falls.
+    expect(fallingLeftStud.actualDimsIn.lengthIn).toBeGreaterThan(fallingRightStud.actualDimsIn.lengthIn);
   });
 
   it("throws if either edge's height exceeds the 8ft (96in) max a single Gable End Panel can be built at, regardless of side", () => {
@@ -102,7 +143,17 @@ describe("buildGablePanelMembers", () => {
            the standing edge still carries its pair. */
         const studs = members.filter((m) => m.role === "stud");
         expect(studs).toHaveLength(2);
-        for (const stud of studs) expect(stud.actualDimsIn.lengthIn).toBeCloseTo(60 - 1.5, 6);
+        /* ⚠ The LONG POINT of a raked stud, not the flat-box height. On a
+           tile this steep the rake across the stud's own 1 1/2in is worth
+           most of an inch, which is exactly the geometry he was pointing at.
+           The standing edge is the one at 60in, whichever side it is on. */
+        const standingSide = leftIn! > rightIn! ? "left" : "right";
+        for (const stud of studs) {
+          expect(stud.actualDimsIn.lengthIn).toBeCloseTo(
+            expectedStudLongPointIn(WIDTH_IN, leftIn!, rightIn!, standingSide),
+            6,
+          );
+        }
         /* And no girts, because there is no clear span to space them across. */
         expect(members.filter((m) => m.memberId.startsWith("girt_"))).toHaveLength(0);
       }
@@ -138,8 +189,10 @@ describe("buildGablePanelMembers", () => {
     const highStuds = studs.filter((m) => m.position.xIn === WIDTH_IN - 1.5);
     expect(lowStuds).toHaveLength(2);
     expect(highStuds).toHaveLength(2);
-    for (const s of lowStuds) expect(s.actualDimsIn.lengthIn).toBeCloseTo(LOW_EDGE_IN - 1.5, 6);
-    for (const s of highStuds) expect(s.actualDimsIn.lengthIn).toBeCloseTo(HIGH_EDGE_IN - 1.5, 6);
+    for (const s of lowStuds)
+      expect(s.actualDimsIn.lengthIn).toBeCloseTo(expectedStudLongPointIn(WIDTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, "left"), 6);
+    for (const s of highStuds)
+      expect(s.actualDimsIn.lengthIn).toBeCloseTo(expectedStudLongPointIn(WIDTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, "right"), 6);
   });
 
   it("runs the top plate 2x4s and top skin the full sloped rip length as tilted (diagonal) members", () => {
@@ -191,22 +244,68 @@ describe("buildGablePanelMembers", () => {
     expect(topSkin.notes).toContain("point to butt");
   });
 
-  it("round-trips the top skin's tilt back to its known low/high edge endpoints", () => {
+  it("⚠ the top skin's own face lands EXACTLY on the two edge heights", () => {
+    /* This used to reconstruct the endpoints from the centreline, the tilt
+       and the box length, and then subtract `0.375 / cos(rake)` to undo the
+       half-thickness the centreline carried. The skin is a real
+       parallelogram now, so its top face is simply stated — no
+       reconstruction, no correction to get wrong. Whether that face lands on
+       the edge heights is the whole of *"Let's get gable end panels top
+       plate edge to be flush with the top of the roof panels"*, and it is
+       now readable in one line. */
     const members = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false);
-    const topSkin = members.find((m) => m.memberId === "top_plate_skin")!;
-    const size = memberBoxSizeIn(topSkin);
-    const tiltRad = (topSkin.position.tiltDeg! * Math.PI) / 180;
-    const halfLen = size.zIn / 2;
-    const lowX = topSkin.position.xIn + -Math.sin(tiltRad) * halfLen;
-    const lowZ = topSkin.position.zIn + Math.cos(tiltRad) * halfLen;
-    expect(lowX).toBeCloseTo(0, 4);
-    /* ⚠ The centreline sits half a thickness below the edge height measured
-       PERPENDICULAR to the board, which is `0.375 / cos(rake)` read
-       vertically — not 0.375. Correcting that is what finally put the top
-       skin's face plane ON the edge heights it is handed, and so flush with
-       the roof above it (Tommy, 2026-10-31). See gableMeetsRoof.test.ts. */
+    const corners = members.find((m) => m.memberId === "top_plate_skin")!.position.trapezoidCornersIn!;
+    expect(corners[0]).toEqual({ xIn: 0, zIn: LOW_EDGE_IN });
+    expect(corners[1]).toEqual({ xIn: WIDTH_IN, zIn: HIGH_EDGE_IN });
+    // Both ends PLUMB: each end's two corners share one x.
+    expect(corners[3]!.xIn).toBe(corners[0]!.xIn);
+    expect(corners[2]!.xIn).toBe(corners[1]!.xIn);
+    /* ⚠ And the sheet's vertical height is its 3/4in thickness divided by
+       cos(rake), not 3/4in. A perpendicular thickness is not a vertical one
+       — the error that cost four passes on the gable/roof junction. */
     const rakeRad = Math.atan2(HIGH_EDGE_IN - LOW_EDGE_IN, WIDTH_IN);
-    expect(lowZ).toBeCloseTo(LOW_EDGE_IN - 0.375 / Math.cos(rakeRad), 4);
+    expect(corners[0]!.zIn - corners[3]!.zIn).toBeCloseTo(0.75 / Math.cos(rakeRad), 9);
+  });
+
+  it("⚠ the skin's underside IS the plates' top and the studs' tops — one roofline", () => {
+    /* The gable's single recorded member overlap was *the sloped top plate
+       clipping its own skin*, and it was there because each of these three
+       derived the roofline for itself. They read one function now, so they
+       meet on shared faces rather than crossing. If this ever fails,
+       `memberOverlap.test.ts` will be failing too. */
+    const members = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false);
+    const skin = members.find((m) => m.memberId === "top_plate_skin")!.position.trapezoidCornersIn!;
+    const undersideAt = (xIn: number) =>
+      skin[3]!.zIn + ((skin[2]!.zIn - skin[3]!.zIn) * (xIn - skin[3]!.xIn)) / (skin[2]!.xIn - skin[3]!.xIn);
+
+    for (const id of ["top_plate_2x4_ext", "top_plate_2x4_int"]) {
+      const plate = members.find((m) => m.memberId === id)!.position.trapezoidCornersIn!;
+      expect({ id, z: plate[0]!.zIn }).toEqual({ id, z: undersideAt(plate[0]!.xIn) });
+      expect({ id, z: plate[1]!.zIn }).toEqual({ id, z: undersideAt(plate[1]!.xIn) });
+    }
+    for (const stud of members.filter((m) => m.role === "stud")) {
+      const c = stud.position.trapezoidCornersIn!;
+      // Corners 2 and 3 are the raked top; 0 and 1 the level bottom.
+      expect({ id: stud.memberId, z: c[2]!.zIn }).toEqual({ id: stud.memberId, z: undersideAt(c[2]!.xIn) });
+      expect({ id: stud.memberId, z: c[3]!.zIn }).toEqual({ id: stud.memberId, z: undersideAt(c[3]!.xIn) });
+      // Both sides plumb, bottom level on the bottom skin.
+      expect(c[0]!.xIn).toBe(c[3]!.xIn);
+      expect(c[1]!.xIn).toBe(c[2]!.xIn);
+      expect(c[0]!.zIn).toBe(0.75);
+      expect(c[1]!.zIn).toBe(0.75);
+    }
+  });
+
+  it("⚠ the plates' plumb ends butt the corner studs' inner faces", () => {
+    /* Their cut-list note has claimed this since long before the geometry
+       did: *"Ends are plumb-cut (vertical), flush to each corner stud's face
+       — not square to the rip."* */
+    const members = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false);
+    const plate = members.find((m) => m.memberId === "top_plate_2x4_ext")!.position.trapezoidCornersIn!;
+    const leftStud = members.find((m) => m.memberId === "stud_corner_1")!.position.trapezoidCornersIn!;
+    const rightStud = members.find((m) => m.memberId === "stud_corner_2")!.position.trapezoidCornersIn!;
+    expect(plate[0]!.xIn).toBe(leftStud[1]!.xIn);
+    expect(plate[1]!.xIn).toBe(rightStud[0]!.xIn);
   });
 
   it("has no diagonal bracing — a standard panel with just an inclined top, for the default construction", () => {

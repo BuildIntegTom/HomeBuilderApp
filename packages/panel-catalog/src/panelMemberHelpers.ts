@@ -359,7 +359,10 @@ export function memberFaceIndices(member: PanelMember): number[][] {
 export function memberLocalCornersIn(member: PanelMember): [number, number, number][] {
   const { trapezoidCornersIn, planPolygonCornersIn, sectionCornersIn } = member.position;
   if (trapezoidCornersIn) {
-    const halfThicknessIn = member.actualDimsIn.thicknessIn / 2;
+    /* ⚠ `trapezoidDepthIn` when the prism does not lie flat — see its own
+       doc comment. A brace's depth IS its thickness; a sloped plate's is its
+       3 1/2in width. */
+    const halfThicknessIn = (member.position.trapezoidDepthIn ?? member.actualDimsIn.thicknessIn) / 2;
     const centerDepthIn = member.position.yIn;
     const near: [number, number, number][] = trapezoidCornersIn.map((c) => [c.xIn, c.zIn, centerDepthIn - halfThicknessIn]);
     const far: [number, number, number][] = trapezoidCornersIn.map((c) => [c.xIn, c.zIn, centerDepthIn + halfThicknessIn]);
@@ -1624,4 +1627,48 @@ export function computeBraceBoardCornersIn(
     signedArea2x += c.xIn * next.zIn - next.xIn * c.zIn;
   }
   return signedArea2x < 0 ? [corners[0]!, corners[3]!, corners[2]!, corners[1]!] : corners;
+}
+
+/**
+ * ⚠ **A sloped board with PLUMB ends** — the four corners of a board that
+ * runs up a rake and is cut vertically at each end, rather than square to
+ * its own length.
+ *
+ * > *"The corners of the gable end panels are not plumb cut... This applies
+ * > to any gable or inclined panel, may be some tricky geometry involved to
+ * > keep it all dynamically proportional/parametrically accurate."* — Tommy,
+ * > 2026-11-01
+ *
+ * `tiltedMember` draws a rectangle rotated about its centre, so its ends are
+ * perpendicular to the rip. The gable's top plates and top skin have carried
+ * a cut-list NOTE saying their ends are *"plumb-cut (vertical), flush to each
+ * corner stud's face — not square to the rip"* since long before the
+ * geometry did any such thing: the note described the cut and the drawing
+ * showed a square end. This is the shape the note was always describing.
+ *
+ * A board sloped at angle θ and cut plumb is a PARALLELOGRAM: both long
+ * edges follow the rake, both ends are vertical, and its vertical height is
+ * the board's perpendicular thickness divided by cos θ — which is why
+ * `verticalThicknessIn` is a separate argument rather than the thickness
+ * itself. Getting that one division wrong is what left a gable's top plate
+ * running into the skin above it, twice.
+ *
+ * Corners come back in perimeter order starting at the top of the low end,
+ * which is the order `describeBraceEndCuts` reads to report both end cuts —
+ * so a board built this way describes itself as *plumb* on the cut list
+ * without anybody writing the word.
+ */
+export function plumbEndedSlopedBoardCornersIn(
+  lowXIn: number,
+  lowTopZIn: number,
+  highXIn: number,
+  highTopZIn: number,
+  verticalThicknessIn: number,
+): [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D] {
+  return [
+    { xIn: lowXIn, zIn: lowTopZIn },
+    { xIn: highXIn, zIn: highTopZIn },
+    { xIn: highXIn, zIn: highTopZIn - verticalThicknessIn },
+    { xIn: lowXIn, zIn: lowTopZIn - verticalThicknessIn },
+  ];
 }

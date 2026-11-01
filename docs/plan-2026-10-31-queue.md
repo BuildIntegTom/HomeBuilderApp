@@ -218,6 +218,21 @@ that fix went into `buildFloorRoofPanelMembers`, and the gable builder
 future inclined panel, so the plumb-cut geometry wants to be shared rather
 than written a third time.
 
+**DONE, 2026-11-01.** The cut-list note on the gable's top plates and top
+skin had claimed *"Ends are plumb-cut (vertical), flush to each corner stud's
+face — not square to the rip"* since long before the geometry did any such
+thing: `tiltedMember` draws a rectangle rotated about its centre, so the ends
+came out square to the rip and the note described a cut nobody was drawing.
+They are real parallelograms now, and the corner studs' tops are cut to the
+rake instead of left as flat boxes. One `topAtXIn` is read by the skin, both
+plates and all four studs, so they meet on shared faces — which took the
+gable's one recorded member overlap (*the sloped top plate clipping its own
+skin*) to zero, and it is now held to zero like every other clean panel.
+
+⚠ Still open from this item: the CROSS-TILT panel. Its tilt runs through the
+panel's depth rather than along its width, so "plumb cut" means something
+different there and it was not touched.
+
 ### B2. A truss plate ring under BOTH the gable ends and the roof
 > *"the gable ends sit directly on the wall panel top plates, while there is
 > a several inch gap under where the roof panels bear. On top of the first

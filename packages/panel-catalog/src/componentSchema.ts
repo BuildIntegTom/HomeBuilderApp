@@ -118,6 +118,24 @@ export interface MemberPosition {
    * `computeBraceEndCutAngleDeg`, shear-capacity estimates, and any note
    * text that doesn't know about trapezoids). */
   trapezoidCornersIn?: [PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D, PanelSpacePoint2D];
+  /**
+   * ⚠ How deep a `trapezoidCornersIn` prism runs through the panel, when
+   * that is NOT the member's own `thicknessIn`.
+   *
+   * The trapezoid was built for a diagonal BRACE, which lies FLAT: its
+   * 1 1/2in thickness is exactly the depth it occupies, so the extrusion
+   * could read `actualDimsIn.thicknessIn` and be right. A sloped top PLATE
+   * does not lie flat — it stands on its 1 1/2in thickness and runs 3 1/2in
+   * through the panel's depth — and a corner STUD is the same. Reading
+   * `thicknessIn` for those would extrude them 2in too shallow while the cut
+   * list went on correctly calling them 2x4s.
+   *
+   * So the two numbers are separated rather than one being bent to serve
+   * both: `actualDimsIn` stays what the shop cuts, and this is what the
+   * solid occupies. Absent = the brace's case, depth equals thickness,
+   * which is every trapezoid written before 2026-11-01.
+   */
+  trapezoidDepthIn?: number;
   /** An arbitrary n-gon PRISM's plan ring (member-space X-Y, absolute,
    * perimeter order, no repeated first point) — extruded UPWARD from
    * `position.zIn` by `actualDimsIn.thicknessIn`, so `zIn` is the prism's
