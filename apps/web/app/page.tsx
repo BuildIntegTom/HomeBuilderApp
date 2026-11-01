@@ -162,6 +162,8 @@ import {
 } from "@building-integrity/calc-engine";
 import {
   bomWidthMismatchWarning,
+  buildProjectCutListCsv,
+  CSV_MIME_TYPE,
   bracedPanelDisplayLabel,
   bracingStyleToPatternMirror,
   patternMirrorToBracingStyle,
@@ -368,6 +370,7 @@ import {
   ROOF_PITCH_OPTIONS_IN12,
 } from "./gableProfilePoints";
 import { computeCrossTiltTakeoff, crossTiltWallIdsFor, type CrossTiltTakeoffInput } from "./crossTiltTakeoff";
+import { toExportableAssemblies } from "./projectExportAssemblies";
 import { computeDeckPanelTakeoff, type DeckPanelTakeoffInput } from "./deckPanelTakeoff";
 import {
   BIG_HEADER_BEAM_MIN_HEIGHT_IN,
@@ -8950,6 +8953,99 @@ export default function LayoutEditor() {
   // panel type's Shop Drawing only if the current design actually has any
   // panels of that type (Tommy: "easily view the detail pages that are
   // relevant to the options currently selected").
+  /**
+   * ⚠ **EVERY FABRICATED ASSEMBLY THE BUILDING HAS, as one flat list** —
+   * the seam every file export reads.
+   *
+   * Six pipelines plan this building's parts and each one's groups have a
+   * different shape. Reducing them here, once, is what stops the next export
+   * walking all six again — which is how two exports come to disagree about
+   * what the building contains, the defect `deckPanelTakeoff` and
+   * `crossTiltTakeoff` both exist to prevent.
+   *
+   * ⚠ A floor or roof panel's EAVE CAP is included, because the shop builds
+   * it with the panel and the sheet lists it. The takeoff keeps it in its own
+   * field only so a consumer can tell the two parts apart.
+   */
+  const exportableAssemblies = useMemo(
+    () => [
+      ...toExportableAssemblies({
+        panelType: "Wall panel",
+        groups: panelFabricationGroups,
+        label: (g) => `${g.panelType.label} ${formatLengthIn(g.widthIn, unitSystem)}`,
+        widthIn: (g) => g.widthIn,
+        heightIn: (g) => g.heightIn,
+      }),
+      ...toExportableAssemblies({
+        panelType: "Roof bearing",
+        groups: roofBearingFabricationGroups,
+        label: (g) => `${g.kind === "box-beam" ? "Box Beam" : "Truss Plate"} ${formatLengthIn(g.lengthIn, unitSystem)}`,
+        widthIn: (g) => g.lengthIn,
+        heightIn: (g) => g.heightIn,
+      }),
+      ...toExportableAssemblies({
+        panelType: "Mid-wall beam",
+        groups: midWallBondBeamFabricationGroups,
+        label: (g) => `Mid-Wall Beam ${formatLengthIn(g.lengthIn, unitSystem)}`,
+        widthIn: (g) => g.lengthIn,
+        heightIn: (g) => g.heightIn,
+      }),
+      ...toExportableAssemblies({
+        panelType: "Spanning header",
+        groups: spanningHeaderFabricationGroups,
+        label: (g) => `Spanning Header ${formatLengthIn(g.widthIn, unitSystem)}`,
+        widthIn: (g) => g.widthIn,
+        heightIn: (g) => g.heightIn,
+      }),
+      ...toExportableAssemblies({
+        panelType: "Deck panel",
+        groups: floorRoofPanelFabricationGroups,
+        label: (g) => `${g.kind === "floor" ? "Floor" : "Roof"} Panel ${formatLengthIn(g.widthIn, unitSystem)}`,
+        widthIn: (g) => g.widthIn,
+        heightIn: (g) => g.spanIn,
+      }),
+      ...toExportableAssemblies({
+        panelType: "Tilted gable",
+        groups: crossTiltFabricationGroups,
+        label: (g) => `Tilted Gable Panel ${formatLengthIn(g.widthIn, unitSystem)}`,
+        widthIn: (g) => g.widthIn,
+        heightIn: (g) => g.highHeightIn,
+      }),
+    ],
+    [
+      panelFabricationGroups,
+      roofBearingFabricationGroups,
+      midWallBondBeamFabricationGroups,
+      spanningHeaderFabricationGroups,
+      floorRoofPanelFabricationGroups,
+      crossTiltFabricationGroups,
+      unitSystem,
+    ],
+  );
+
+  /**
+   * The project's whole cut list as one CSV, built from the same
+   * `computePanelCutList` every Shop Fabrication sheet prints from — so the
+   * file and the sheets cannot describe different parts.
+   */
+  const handleExportCutListCsv = () => {
+    const text = buildProjectCutListCsv({
+      projectName: projectName || "Untitled Project",
+      /* The same label every document header prints, so the file and the
+         sheets name the same site. */
+      siteName: zipCode.trim() ? `Zip ${zipCode.trim()}` : "Site not set",
+      dateIso: new Date().toISOString().slice(0, 10),
+      assemblies: exportableAssemblies,
+    });
+    const blob = new Blob([text], { type: CSV_MIME_TYPE });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${(projectName || "building").replace(/[^A-Za-z0-9._-]+/g, "-")}-cut-list.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const relevantDetailPages = useMemo(() => {
     const pages: { id: string; label: string }[] = [];
     if (foundationEnabled && foundationType.loadPath.length > 0) {
@@ -12781,6 +12877,18 @@ export default function LayoutEditor() {
                   onClick={handleExportSelectedPdf}
                 >
                   Export PDF{effectiveExportIds.size > 0 ? ` (${effectiveExportIds.size})` : ""}
+                </button>
+                {/* ''' + W + ''' The cut list, as a spreadsheet. Same rows the Shop
+                    Fabrication sheets print, for every assembly at once ''' + EM + ''' so a
+                    shop can sort by material to pull stock, by length to
+                    gang-cut, or by panel to build. */}
+                <button
+                  type="button"
+                  title="Download every fabricated part in this building as one CSV cut list — the same rows the Shop Fabrication sheets print, with a per-panel and a whole-project quantity"
+                  disabled={exportableAssemblies.length === 0}
+                  onClick={handleExportCutListCsv}
+                >
+                  Export CSV{exportableAssemblies.length > 0 ? ` (${exportableAssemblies.length})` : ""}
                 </button>
                 <button
                   type="button"

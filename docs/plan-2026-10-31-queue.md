@@ -649,3 +649,47 @@ The Big Header's own end studs sit **inboard of its jacks**, which is the one
 difference from a Door or Window header: the order across the end is jack,
 edge stud, web. The Big Header Beam was also **added to the overlap audit** —
 it had never been in it, and it shared its siblings' defects.
+
+
+### CSV export (DONE) — and the seam the next exports come through
+
+A project-wide cut list, from the Print page's toolbar beside Export PDF.
+Every fabricated part in the building as one flat table, built from the same
+`computePanelCutList` every Shop Fabrication sheet prints from, so the file
+and the sheets cannot describe different parts.
+
+Three pieces, and the middle one is the point:
+
+1. `packages/panel-catalog/src/csv.ts` — one RFC 4180 writer. A cut list
+   contains every character that breaks a naive join: commas in the cut
+   notes, a double quote in **every** inch mark (`47½"`), newlines in a long
+   note. It also leads with a **UTF-8 BOM**, because Excel on Windows opens a
+   BOM-less UTF-8 file as the system codepage and a whole column of
+   dimensions arrives as `47Â½"`.
+2. `apps/web/app/projectExportAssemblies.ts` — **the seam.** Six pipelines
+   plan this building's parts and each one's groups have a different shape;
+   this reduces them to the five things any export wants (name, size, copies,
+   where, members). The next export is then a renderer, not another walk of
+   six pipelines — which is also how two exports come to disagree about what
+   the building contains, the defect `deckPanelTakeoff` and `crossTiltTakeoff`
+   both exist to prevent.
+3. `packages/panel-catalog/src/projectCutListCsv.ts` — the table itself.
+
+Two columns are deliberately doubled:
+
+- **Qty per panel** and **Qty total.** A sheet is an instruction for building
+  ONE; a purchase is for all of them. Conflating them is how a job comes up
+  short.
+- **Length** and **Length (in).** The first is what a saw is set to (`47½"`,
+  or a long point on a bevel); the second is the same figure as a decimal,
+  because a spreadsheet cannot sum `47½"`. Both come off the same member.
+
+Verified on a drawn building: 238 part rows across 25 distinct panels — wall,
+gable, header, sill, safety gap, corner, column, braced, truss plate, floor
+and roof — every length parsing as a number, every `Qty total` equal to
+`Qty per panel x Copies`, and 53 bevelled rows carrying their real angle and
+jig note.
+
+**Next export:** DXF. It reads the same `ExportableAssembly` list; what it
+needs on top is a 2D projection per member, which `memberLocalCornersIn`
+already gives for every shaped member in the catalogue.
