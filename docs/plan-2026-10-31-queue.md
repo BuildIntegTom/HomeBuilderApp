@@ -563,3 +563,56 @@ after it. A windowed gable row keeps its own tiling; the two want reconciling.
 anchor 1in in from each eave corner, so a gable row opens and closes with a
 **1in tile** — a whole segment, which no merge inside a segment can touch. It
 is there with or without alignment. Worth a look on its own.
+
+### B13 — what a GABLE WINDOW panel actually is (spec captured, not built)
+
+> *"Gable windows will be a thing for sure. Those are made by a Gable inclined
+> panel just turned into a header panel without a sill - bottom edge is just
+> the truss plate."* — Tommy, 2026-11-01
+
+So a gable window is not a new panel type: it is the **Gable End Panel** with
+its body replaced by a **header (lintel) assembly**, and
+
+- **no sill** — unlike a wall window, which is a header *and* a sill panel;
+- **its bottom edge is the truss plate**, i.e. the opening runs right down to
+  the ring the gable row sits on, so the "header" spans from the truss plate
+  up to the raked top rather than floating in the middle of the panel.
+
+⚠ This is the panel that B3's joint alignment does **not** compose with yet:
+a gable window is placed by ordinal within its roofline segment, and
+re-dividing that segment to land on the wall's joints would renumber every
+window after it. With the panel's own shape now settled, the two can be
+reconciled — the window's own edges become joints the row must honour, the
+same way a wall joint is.
+
+### B6 — the header's ends are 2x4 studs now (DONE)
+
+> *"I am seeing some minor overlapping in header panels. The 3/4" plywood
+> skins on the side I don't think are necessary, and should be replaced with
+> regular 2x4 studs vertically like a standard panel. This may bring that tip
+> and angle of the diagonal towards the center of the header panel a little
+> bit."*
+
+**The two were the same problem.** A header's ends were a full-depth x
+full-height plywood sheet at each X extreme, and both chord caps are
+full-span sheets meeting them at 90°, so every end cap crossed all four of
+them at the corners — carried in the code as *"an illustrative
+simplification"*. That was the whole of this panel's interference count:
+**12 on each header type, now 0**, and both entries deleted from
+`memberOverlap.test.ts` rather than set to zero.
+
+Framed like a standard panel instead: a 2x4 in each wythe at each end,
+standing **between** the chords rather than past them, so nothing crosses
+anything. And the diagonal's foot moved inboard with it, from the 3/4in
+sheet's face to the 1 1/2in stud's — **0.75in → 1.5in**, which is the shift
+he predicted.
+
+⚠ **It changes material totals.** Four plywood end caps per opening are gone
+from every project that has one, so the 3/4in sheet count drops. That is a
+correction, not a loss: those sheets were being counted and are not in the
+panel any more.
+
+⚠ **Scoped to Door/Window headers.** The Big Header and the Big Header Beam
+still have their plywood ends and their own baselines — the brace builder
+takes the end inset as a parameter now, defaulting to the 3/4in sheet, so
+neither moved. Whether they want the same treatment is his call.

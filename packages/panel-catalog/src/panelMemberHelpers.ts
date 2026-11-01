@@ -1308,6 +1308,20 @@ export function buildHeaderTrussWebBraces(
   topZIn: number,
   yIn: number,
   idPrefix: string,
+  /**
+   * ⚠ **How far in from each end the two outermost feet stop**, which is
+   * whatever member closes the panel's end.
+   *
+   * It was always the 3/4in end-cap plywood, so that is still the default and
+   * the Big Header and Big Header Beam are untouched. A Door/Window Header's
+   * ends are **2x4 studs** now (Tommy, 2026-11-01: *"The 3/4\" plywood skins
+   * on the side I don't think are necessary, and should be replaced with
+   * regular 2x4 studs vertically like a standard panel"*), so it passes
+   * 1 1/2in — which is what moves the diagonal's foot inboard, exactly as he
+   * predicted: *"This may bring that tip and angle of the diagonal towards
+   * the center of the header panel a little bit."*
+   */
+  endInsetIn: number = SKIN_THICKNESS_IN,
 ): PanelMember[] {
   const members: PanelMember[] = [];
   const segWidthIn = widthIn / peakCount;
@@ -1356,8 +1370,9 @@ export function buildHeaderTrussWebBraces(
     const peakXIn = peakXAt(i);
     const peakZIn = topZIn;
 
-    // The header's own 2 genuinely outermost feet must clear the end-cap
-    // plywood (see buildHeaderEndCaps — a full-height sheet SKIN_THICKNESS_IN
+    // The header's own 2 genuinely outermost feet must clear whatever closes
+    // the panel's end (`endInsetIn` — a Door/Window Header's 2x4 end stud, or
+    // the end-cap plywood every other caller still has — a full-height sheet SKIN_THICKNESS_IN
     // wide at each of the header's true X=0/X=widthIn extremes), not land
     // flush with the bare panel edge itself, or the brace's own outer edge
     // cuts straight through that sheet (Tommy: "the points of the trapezoid
@@ -1376,13 +1391,13 @@ export function buildHeaderTrussWebBraces(
     // brace-to-brace MITER (the previous approach) was wrong here.
     const riseFootEnd: HeaderBraceEndTarget =
       i === 0
-        ? { kind: "level", levelZIn: bottomZIn, boundaryXIn: SKIN_THICKNESS_IN }
+        ? { kind: "level", levelZIn: bottomZIn, boundaryXIn: endInsetIn }
         : { kind: "level", levelZIn: bottomZIn, boundaryXIn: footLeftXIn };
     const risePeakEnd: HeaderBraceEndTarget = { kind: "level", levelZIn: topZIn, boundaryXIn: peakXIn };
     const fallPeakEnd: HeaderBraceEndTarget = { kind: "level", levelZIn: topZIn, boundaryXIn: peakXIn };
     const fallFootEnd: HeaderBraceEndTarget =
       i === peakCount - 1
-        ? { kind: "level", levelZIn: bottomZIn, boundaryXIn: widthIn - SKIN_THICKNESS_IN }
+        ? { kind: "level", levelZIn: bottomZIn, boundaryXIn: widthIn - endInsetIn }
         : { kind: "level", levelZIn: bottomZIn, boundaryXIn: footRightXIn };
 
     members.push(

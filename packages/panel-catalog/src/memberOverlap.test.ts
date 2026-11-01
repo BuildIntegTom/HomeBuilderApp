@@ -145,8 +145,6 @@ const BASELINE: Record<string, number> = {
   column: 4,
   "column style": 4,
   corner: 4,
-  "door header": 12,
-  "window header": 12,
   /* ⚠ Newly VISIBLE, not newly broken. These panels have always been like
      this; nothing could see them until the prism test. Most of what is here
      is a brace lapping a corner post, which is his own 2026-10-13 geometry —
@@ -192,6 +190,17 @@ describe("⚠ no member occupies the same space as another", () => {
       "truss plate",
       "box beam",
       "vertical gap filler",
+      /* ⚠ 12 → 0 each on 2026-11-01, and DELETED from BASELINE rather than
+         set to zero. A header's two ends were full-depth x full-height
+         plywood sheets at its X extremes, and both chord caps are full-span
+         sheets meeting them at 90deg, so every end cap crossed all four of
+         them — carried as *"an illustrative simplification"*. Tommy:
+         *"The 3/4\" plywood skins on the side I don't think are necessary,
+         and should be replaced with regular 2x4 studs vertically like a
+         standard panel."* Framed like a standard panel, the ends stand
+         BETWEEN the chords and nothing crosses anything. */
+      "door header",
+      "window header",
       "floor panel",
       "roof panel",
       "roof panel as installed",

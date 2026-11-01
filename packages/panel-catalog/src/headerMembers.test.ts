@@ -3,6 +3,7 @@ import {
   buildDoorHeaderMembers,
   buildDoorHeaderSchema,
   buildWindowHeaderMembers,
+  headerWebRiseIn,
   buildWindowHeaderSchema,
 } from "./headerMembers";
 import { memberBoxSizeIn, SKIN_THICKNESS_IN } from "./panelMemberHelpers";
@@ -110,39 +111,66 @@ describe("header chord plywood caps", () => {
   });
 });
 
-describe("header end caps (Tommy: 'plywood on the panel thickness side, not the interior and exterior faces' — confirmed against the SketchUp reference render: solid end, open/braced front)", () => {
+describe("⚠ the header's ends are 2x4 STUDS, not plywood sheets", () => {
   const WIDTH_IN = 60;
   const DEPTH_IN_LOCAL = DEPTH_IN;
   const HEIGHT_IN = 20;
 
-  it("has a left_end_ply and right_end_ply spanning the full depth x full height, thin in width", () => {
+  /* > *"The 3/4\" plywood skins on the side I don't think are necessary, and
+     > should be replaced with regular 2x4 studs vertically like a standard
+     > panel. This may bring that tip and angle of the diagonal towards the
+     > center of the header panel a little bit."* — Tommy, 2026-11-01
+
+     The sheets were a full-depth x full-height plywood cap at each X extreme,
+     carried with a note calling their corner collisions *"an illustrative
+     simplification"*. They were this panel's whole interference count: 12
+     overlaps on each header type, now **zero**. */
+
+  it("⚠ frames each end like a standard panel: a stud per wythe, between the chords", () => {
     for (const members of [
       buildWindowHeaderMembers(WIDTH_IN, DEPTH_IN_LOCAL, HEIGHT_IN),
       buildDoorHeaderMembers(WIDTH_IN, DEPTH_IN_LOCAL, HEIGHT_IN),
     ]) {
-      const leftCap = members.find((m) => m.memberId === "left_end_ply")!;
-      const rightCap = members.find((m) => m.memberId === "right_end_ply")!;
-      expect(leftCap).toBeDefined();
-      expect(rightCap).toBeDefined();
-      expect(leftCap.role).toBe("skin");
-      expect(leftCap.material).toBe("plywood");
-
-      const leftSize = memberBoxSizeIn(leftCap);
-      expect(leftSize.yIn).toBeCloseTo(DEPTH_IN_LOCAL, 6);
-      expect(leftSize.zIn).toBeCloseTo(HEIGHT_IN, 6);
-      expect(leftSize.xIn).toBeCloseTo(SKIN_THICKNESS_IN, 6);
-
-      expect(leftCap.position.xIn).toBeCloseTo(0, 6);
-      expect(rightCap.position.xIn).toBeCloseTo(WIDTH_IN - SKIN_THICKNESS_IN, 6);
+      expect(members.some((m) => m.memberId.endsWith("_end_ply"))).toBe(false);
+      const studs = members.filter((m) => m.role === "stud");
+      expect(studs.map((m) => m.memberId).sort()).toEqual([
+        "left_end_stud_ext",
+        "left_end_stud_int",
+        "right_end_stud_ext",
+        "right_end_stud_int",
+      ]);
+      for (const stud of studs) {
+        expect(stud.material).toBe("dimensional_lumber");
+        expect(stud.nominalSize).toBe("2x4");
+        // Standing BETWEEN the chords, which is what keeps it clear of them.
+        expect(stud.position.zIn).toBeCloseTo(SKIN_THICKNESS_IN + 1.5, 9);
+        expect(stud.actualDimsIn.lengthIn).toBeCloseTo(headerWebRiseIn(HEIGHT_IN), 9);
+      }
+      const left = studs.filter((m) => m.memberId.startsWith("left_"));
+      const right = studs.filter((m) => m.memberId.startsWith("right_"));
+      for (const m of left) expect(m.position.xIn).toBeCloseTo(0, 9);
+      for (const m of right) expect(m.position.xIn).toBeCloseTo(WIDTH_IN - 1.5, 9);
+      // One in each wythe, like a standard panel's edge.
+      expect(new Set(studs.map((m) => m.position.yIn)).size).toBe(2);
     }
   });
 
-  it("does not add a skin on the ext/int (Y=0/Y=depthIn) faces — those stay open, showing the truss web directly", () => {
+  it("⚠ the diagonal's foot moves inboard with them, exactly as he predicted", () => {
+    /* It used to stop at the 3/4in sheet's inner face; it stops at the
+       1 1/2in stud's now. *"This may bring that tip and angle of the diagonal
+       towards the center of the header panel a little bit."* */
+    const braces = buildWindowHeaderMembers(WIDTH_IN, DEPTH_IN_LOCAL, HEIGHT_IN).filter((m) => m.role === "brace");
+    expect(braces.length).toBeGreaterThan(0);
+    const xs = braces.flatMap((b) => b.position.trapezoidCornersIn!.map((c) => c.xIn));
+    expect(Math.min(...xs)).toBeCloseTo(1.5, 9);
+    expect(Math.max(...xs)).toBeCloseTo(WIDTH_IN - 1.5, 9);
+  });
+
+  it("the ext/int faces stay open, showing the truss web directly", () => {
     const members = buildWindowHeaderMembers(WIDTH_IN, DEPTH_IN_LOCAL, HEIGHT_IN);
     const skins = members.filter((m) => m.role === "skin");
-    // Exactly 4: bottom_chord_ply, top_chord_ply, left_end_ply, right_end_ply — no ext/int face skin.
-    expect(skins).toHaveLength(4);
-    expect(skins.some((m) => m.memberId.includes("side_ply"))).toBe(false);
+    // The two chord caps and nothing else: no end sheet, no ext/int face skin.
+    expect(skins.map((m) => m.memberId).sort()).toEqual(["bottom_chord_ply", "top_chord_ply"]);
   });
 });
 
