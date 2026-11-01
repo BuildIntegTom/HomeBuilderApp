@@ -164,6 +164,7 @@ import {
   bomWidthMismatchWarning,
   buildProjectCutListCsv,
   CSV_MIME_TYPE,
+  DXF_MIME_TYPE,
   bracedPanelDisplayLabel,
   bracingStyleToPatternMirror,
   patternMirrorToBracingStyle,
@@ -371,6 +372,7 @@ import {
 } from "./gableProfilePoints";
 import { computeCrossTiltTakeoff, crossTiltWallIdsFor, type CrossTiltTakeoffInput } from "./crossTiltTakeoff";
 import { toExportableAssemblies } from "./projectExportAssemblies";
+import { buildProjectPanelDxf } from "./projectPanelDxf";
 import { computeDeckPanelTakeoff, type DeckPanelTakeoffInput } from "./deckPanelTakeoff";
 import {
   BIG_HEADER_BEAM_MIN_HEIGHT_IN,
@@ -9028,6 +9030,16 @@ export default function LayoutEditor() {
    * `computePanelCutList` every Shop Fabrication sheet prints from — so the
    * file and the sheets cannot describe different parts.
    */
+  const downloadExport = (text: string, extension: string, mimeType: string) => {
+    const blob = new Blob([text], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${(projectName || "building").replace(/[^A-Za-z0-9._-]+/g, "-")}-${extension}`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleExportCutListCsv = () => {
     const text = buildProjectCutListCsv({
       projectName: projectName || "Untitled Project",
@@ -9037,13 +9049,24 @@ export default function LayoutEditor() {
       dateIso: new Date().toISOString().slice(0, 10),
       assemblies: exportableAssemblies,
     });
-    const blob = new Blob([text], { type: CSV_MIME_TYPE });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${(projectName || "building").replace(/[^A-Za-z0-9._-]+/g, "-")}-cut-list.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadExport(text, "cut-list.csv", CSV_MIME_TYPE);
+  };
+
+  /**
+   * ⚠ The same assemblies as a to-scale 2D drawing — one elevation per
+   * unique panel, every member a closed polyline at full size in inches, on
+   * layers by material. It reads `projectMemberShapes`, which is the very
+   * projection the Shop Fabrication sheets draw, so the drawing and the
+   * sheets cannot disagree about what a panel looks like.
+   */
+  const handleExportPanelDxf = () => {
+    const text = buildProjectPanelDxf({
+      projectName: projectName || "Untitled Project",
+      siteName: zipCode.trim() ? `Zip ${zipCode.trim()}` : "Site not set",
+      dateIso: new Date().toISOString().slice(0, 10),
+      assemblies: exportableAssemblies,
+    });
+    downloadExport(text, "panels.dxf", DXF_MIME_TYPE);
   };
 
   const relevantDetailPages = useMemo(() => {
@@ -12889,6 +12912,14 @@ export default function LayoutEditor() {
                   onClick={handleExportCutListCsv}
                 >
                   Export CSV{exportableAssemblies.length > 0 ? ` (${exportableAssemblies.length})` : ""}
+                </button>
+                <button
+                  type="button"
+                  title="Download every unique panel as a to-scale 2D CAD drawing (DXF, R12, inches) — one elevation per panel, members on layers by material, from the same projection the Shop Fabrication sheets draw"
+                  disabled={exportableAssemblies.length === 0}
+                  onClick={handleExportPanelDxf}
+                >
+                  Export DXF{exportableAssemblies.length > 0 ? ` (${exportableAssemblies.length})` : ""}
                 </button>
                 <button
                   type="button"

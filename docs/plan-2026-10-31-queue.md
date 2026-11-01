@@ -693,3 +693,48 @@ jig note.
 **Next export:** DXF. It reads the same `ExportableAssembly` list; what it
 needs on top is a 2D projection per member, which `memberLocalCornersIn`
 already gives for every shaped member in the catalogue.
+
+
+### DXF export (DONE) — and what it cost to get right
+
+Every unique panel as a to-scale 2D elevation, one drawing, from the Print
+toolbar. **R12 ASCII** (`AC1009`), which is the most widely readable DXF
+there is, with members on layers by material (`LUMBER`, `PLYWOOD`), the
+panel's nominal outline on its own layer, and labels under each cell.
+
+It reads `projectMemberShapes` — **the same projection the Shop Fabrication
+sheets draw** — so the drawing and the sheets cannot hold different opinions
+about what a panel looks like. It reads the same `ExportableAssembly` list
+the CSV does, which was the whole point of building that seam.
+
+⚠ **A WRONG DXF IS A VALID DXF**, and this export proved it three times.
+Each time the file opened, drew, and reported nothing:
+
+1. `projectMemberShapes` is **Y-DOWN** and DXF is **Y-UP**, so a panel's
+   parts landed on the opposite side of its baseline from its outline.
+   Measured on a drawn building: **725 of 746 member polylines outside their
+   own panel.**
+2. Rows stood **UP** from a baseline, with the next row dropped by the height
+   of the row just finished — which clears the PREVIOUS row while the new one
+   grows upward by its OWN. Measured: **five overlapping cells**, a 21ft
+   floor panel lying across a truss plate. Rows hang DOWN from a top line
+   now, which clears unconditionally.
+3. DXF `TEXT` has no width, so a 3/4in safety gap with a 40-character name
+   ran its label straight through its neighbour's. Cells reserve label width.
+
+Because none of that is visible in a well-formed file, **the layout is its
+own tested function** (`layOutProjectPanels`) returning cells as data, rather
+than a side effect of writing entities. The tests check the layout; a
+separate set checks the DXF structure a reader actually walks (pair
+alternation, section order, the `66` "vertices follow" flag, no exponent
+notation, no newline inside a label).
+
+⚠ One thing worth keeping: **a member may legitimately leave its panel's
+nominal rectangle.** A roof panel's plumb-cut fascia hangs below its span and
+an eave cap's seat reaches past the panel's end — the catalogue says so. So
+the OUTLINE is the panel's nominal size and the CELL is whatever has to fit,
+and they are different numbers on purpose.
+
+**Next exports:** the same seam serves them. A per-panel DXF (one file per
+panel, for a CNC) is a different pagination of this. A materials/purchase CSV
+is a different aggregation of the cut list.

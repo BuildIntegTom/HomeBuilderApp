@@ -43,4 +43,5 @@ export * from "./panelColladaExport";
 export * from "./panelSizeShares";
 export * from "./panelCutList";
 export * from "./csv";
+export * from "./dxf";
 export * from "./projectCutListCsv";
