@@ -6,12 +6,84 @@ import {
   PLATE_END_CLEARANCE_IN,
   SKIN_PLY_SPEC,
   SKIN_THICKNESS_IN,
+  GIRT_WEB_THICKNESS_IN,
   buildGirtRows,
   buildNailer,
   tiltedMember,
 } from "./panelMemberHelpers";
 
-const GABLE_GIRT_ROW_COUNT = 2; // same baseline as the Standard Panel core
+/**
+ * ⚠ **How many girts a gable panel gets, and where — measured off its
+ * SHORT edge, not its tall point.**
+ *
+ * > *"If the shorter height of a stud on a Gable end panel is less than 2',
+ * > then no girts are needed. I am seeing a lot of girts/noggings very close
+ * > to each other on gable end panels. If the shorter stud length (or really
+ * > from bottom of panel to top tip of shorter stud member) is between 2-3',
+ * > then one girt should be placed, it's top height flush with the lower
+ * > butt corner of that shorter stud. Gable end panels 3'+ should follow the
+ * > typical girt rules (one for every 3' or less so that there are no spaces
+ * > that are 3' that aren't braced laterally. Whatever the top height of the
+ * > pointy tall end of a Gable end panel is is less relevant for this
+ * > equation."* — Tommy, 2026-11-01
+ *
+ * This replaces a flat `GABLE_GIRT_ROW_COUNT = 2` — two rows spread evenly
+ * over the short stud whatever its length, which is exactly why he was
+ * seeing *"a lot of girts/noggings very close to each other"*: on a tile
+ * whose short edge is 10in, two rows land 3in apart.
+ *
+ * ⚠ **The driver is the SHORT edge and he said so twice** — "the shorter
+ * height of a stud", and then "whatever the top height of the pointy tall
+ * end ... is less relevant". A gable tile's two edges can differ by feet,
+ * and bracing the short side is what the girt is for.
+ *
+ * ⚠ **The middle band's girt is placed against a real feature, not a
+ * fraction**: its TOP (the web's top face, since the web rests on the bars)
+ * is flush with the short stud's lower butt corner. Everything above 3ft
+ * falls back to the even spread every other panel uses, sized so no unbraced
+ * span exceeds 3ft.
+ */
+export const GABLE_GIRT_NONE_BELOW_IN = 24;
+export const GABLE_GIRT_SINGLE_MAX_IN = 36;
+/** The standard rule's own ceiling: *"one for every 3' or less so that there
+ * are no spaces that are 3' that aren't braced laterally."* */
+export const GABLE_GIRT_MAX_UNBRACED_SPAN_IN = 36;
+
+export interface GableGirtPlan {
+  rowCount: number;
+  /** Non-null only in the 2ft-3ft band, where the one row is placed against
+   * the short stud's own top rather than at a fraction of the span. */
+  centerZsIn: number[] | null;
+}
+
+/**
+ * `shortStudSpanIn` is the SHORTER edge's stud span — bottom skin to the top
+ * of that stud, which is his *"from bottom of panel to top tip of shorter
+ * stud member"* less the bottom skin he measures from.
+ */
+export function gableGirtPlan(shortStudSpanIn: number): GableGirtPlan {
+  /* His measurement starts at the BOTTOM OF THE PANEL, which is the outside
+     of the bottom skin, while the stud starts on top of it. */
+  const fromPanelBottomIn = SKIN_THICKNESS_IN + shortStudSpanIn;
+  if (!(shortStudSpanIn > 0)) return { rowCount: 0, centerZsIn: null };
+  if (fromPanelBottomIn < GABLE_GIRT_NONE_BELOW_IN) return { rowCount: 0, centerZsIn: null };
+  if (fromPanelBottomIn <= GABLE_GIRT_SINGLE_MAX_IN) {
+    /* ⚠ Solved backwards from the TOP, because that is what he specified.
+       A row's top face is its web's, and the web rests on the bars — so
+       centre = (that top) less half a bar less the web's own thickness. */
+    const rowTopZIn = SKIN_THICKNESS_IN + shortStudSpanIn;
+    const centerZIn = rowTopZIn - PLATE_2X4_THICKNESS_IN / 2 - GIRT_WEB_THICKNESS_IN;
+    /* A row cannot hang below the bottom skin. Below ~2.75in of stud there
+       is no room for one at all, and that is already inside the "no girts"
+       band — this is a floor, not a second rule. */
+    if (centerZIn - PLATE_2X4_THICKNESS_IN / 2 <= SKIN_THICKNESS_IN) return { rowCount: 0, centerZsIn: null };
+    return { rowCount: 1, centerZsIn: [centerZIn] };
+  }
+  /* 3ft and up: the ordinary rule. n rows spread evenly leave n+1 gaps of
+     span/(n+1), so the smallest n with every gap at or under 3ft is
+     ceil(span / 36) - 1. */
+  return { rowCount: Math.max(0, Math.ceil(shortStudSpanIn / GABLE_GIRT_MAX_UNBRACED_SPAN_IN) - 1), centerZsIn: null };
+}
 
 /**
  * Rip angle/length for a Gable End Panel's sloped top plate + top skin
@@ -298,7 +370,12 @@ export function buildGablePanelMembers(
        skin, or (before the clamp above) sit at a negative height outside the
        panel altogether. A triangle this shallow is skins, plates and its one
        standing stud. */
-    ...buildGirtRows(shorterStudSpanIn > 0 ? GABLE_GIRT_ROW_COUNT : 0, widthIn, depthIn, shorterStudSpanIn),
+    ...(() => {
+      /* ⚠ By the SHORT edge, per `gableGirtPlan` — it replaced a flat two
+         rows, which bunched girts inches apart on a short tile. */
+      const plan = gableGirtPlan(shorterStudSpanIn);
+      return buildGirtRows(plan.rowCount, widthIn, depthIn, shorterStudSpanIn, plan.centerZsIn ?? undefined);
+    })(),
   ];
   if (includeNailer) members.push(buildNailer(widthIn, Math.min(leftHeightIn, rightHeightIn)));
   return members;

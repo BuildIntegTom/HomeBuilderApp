@@ -1430,7 +1430,26 @@ export function buildHeaderTrussWebBraces(
  * the confirmed girt qty/cross-section sizes (exact position wasn't
  * independently specified elsewhere).
  */
-export function buildGirtRows(rowCount: number, widthIn: number, depthIn: number, studSpanIn: number): PanelMember[] {
+export function buildGirtRows(
+  rowCount: number,
+  widthIn: number,
+  depthIn: number,
+  studSpanIn: number,
+  /**
+   * ⚠ Explicit row CENTRES, overriding the even spread above.
+   *
+   * The even fractions are right for a rectangular panel, where every stud
+   * is the same length and the only question is how many rows. A GABLE panel
+   * has two different stud lengths and Tommy placed its single row against a
+   * real feature rather than a fraction: *"one girt should be placed, it's
+   * top height flush with the lower butt corner of that shorter stud."* A
+   * fraction cannot express that, so the caller works out the centre and
+   * hands it over — see `gableGirtPlan`.
+   *
+   * When given, `rowCount` is ignored and this array's length is the count.
+   */
+  centerZsIn?: readonly number[],
+): PanelMember[] {
   const members: PanelMember[] = [];
   const leftStudInnerFaceXIn = PLATE_2X4_THICKNESS_IN;
   const rightStudInnerFaceXIn = widthIn - PLATE_2X4_THICKNESS_IN;
@@ -1446,8 +1465,10 @@ export function buildGirtRows(rowCount: number, widthIn: number, depthIn: number
      possible to build."* A 1/4in rip at the shop is what that costs. */
   const webHeightIn = Math.min(GIRT_WEB_HEIGHT_IN, depthIn - 2 * PLATE_2X4_WIDTH_IN);
 
-  for (let row = 1; row <= rowCount; row++) {
-    const centerZIn = SKIN_THICKNESS_IN + (studSpanIn * row) / (rowCount + 1);
+  const rows = centerZsIn ?? Array.from({ length: rowCount }, (_, i) => SKIN_THICKNESS_IN + (studSpanIn * (i + 1)) / (rowCount + 1));
+  for (const [rowIndex, centerZIn] of rows.entries()) {
+    const row = rowIndex + 1;
+    const rowCountForNotes = rows.length;
     const barTopZIn = centerZIn + PLATE_2X4_THICKNESS_IN / 2;
 
     for (const [side, barXIn] of [
@@ -1465,7 +1486,7 @@ export function buildGirtRows(rowCount: number, widthIn: number, depthIn: number
         position: { xIn: barXIn, yIn: 0, zIn: centerZIn - PLATE_2X4_THICKNESS_IN / 2, rotationDeg: 180 },
         role: "girt",
         qty: 1,
-        notes: `girt ${row} of ${rowCount}, ${side} bar — flush to the inside face of the ${side} stud double, rolled onto its 3.5in face so the web has a real bearing ledge to rest on; centered at a fixed fraction of the total panel height.`,
+        notes: `girt ${row} of ${rowCountForNotes}, ${side} bar — flush to the inside face of the ${side} stud double, rolled onto its 3.5in face so the web has a real bearing ledge to rest on; centered at a fixed fraction of the total panel height.`,
       });
     }
 

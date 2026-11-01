@@ -2,6 +2,7 @@ import { buildBoxBeamMembers } from "./boxBeamMembers";
 import { buildBracedPanelMembers } from "./bracedPanelMembers";
 import type { PanelMember } from "./componentSchema";
 import { buildGablePanelMembers } from "./gablePanelMembers";
+import { buildGirtRows } from "./panelMemberHelpers";
 import type { WorldPlacedPanel } from "./panelObjExport";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
 
@@ -63,12 +64,28 @@ function goldenGablePanelMembers(): PanelMember[] {
   /* How far the old vertical-as-perpendicular reading sat BELOW the true
      one, for a given perpendicular offset. */
   const asCapturedDropIn = (perpendicularIn: number) => perpendicularIn / cosRake - perpendicularIn;
-  return buildGablePanelMembers(widthIn, 14, leftIn, rightIn, false).map((m) => {
+  const built = buildGablePanelMembers(widthIn, 14, leftIn, rightIn, false).map((m) => {
     const perpendicularIn =
       m.memberId === "top_plate_skin" ? 0.75 / 2 : m.memberId.startsWith("top_plate_2x4_") ? 0.75 + 1.5 / 2 : 0;
     if (perpendicularIn === 0) return m;
     return { ...m, position: { ...m.position, zIn: m.position.zIn + asCapturedDropIn(perpendicularIn) } };
   });
+  /**
+   * ⚠ The two girt rows this panel had WHEN THE FIXTURE WAS CAPTURED — the
+   * fourth time the input has had to be held still, and the same reason as
+   * the three above.
+   *
+   * On 2026-11-01 a gable panel's girt count started coming off its SHORT
+   * edge (Tommy: *"If the shorter height of a stud on a Gable end panel is
+   * less than 2', then no girts are needed"*), and this fixture's gable has
+   * a 12in short edge — so the live builder now emits none where it used to
+   * emit two. That is a change to the PANEL; the fixture exists to pin the
+   * EXPORTER. Girts are the LAST thing `buildGablePanelMembers` appends
+   * (the nailer is off here), so re-appending them reproduces the captured
+   * order exactly, and a girt bar and web are plain boxes this fixture
+   * already covers many times over.
+   */
+  return [...built, ...buildGirtRows(2, widthIn, 14, Math.min(leftIn, rightIn) - 2 * 0.75)];
 }
 
 function asCaptured(members: PanelMember[]): PanelMember[] {

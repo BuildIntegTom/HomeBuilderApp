@@ -5,8 +5,9 @@ import {
   computeGableRipCallout,
   GABLE_PANEL_MAX_HEIGHT_IN,
   GABLE_PANEL_MIN_HEIGHT_IN,
+  gableGirtPlan,
 } from "./gablePanelMembers";
-import { memberBoxSizeIn } from "./panelMemberHelpers";
+import { memberBoxSizeIn, SKIN_THICKNESS_IN } from "./panelMemberHelpers";
 
 const WIDTH_IN = 40;
 const DEPTH_IN = 15.5;
@@ -216,15 +217,109 @@ describe("buildGablePanelMembers", () => {
     expect(wideMembers.filter((m) => m.role === "brace")).toHaveLength(0);
   });
 
-  it("bases girt rows and the optional nailer on the low edge's stud span", () => {
+  it("\u26a0 bases girts on the SHORT edge, which at 20in means none at all", () => {
+    /* This test used to assert two rows here, which was the old flat
+       `GABLE_GIRT_ROW_COUNT = 2` \u2014 and two rows over a 20in edge is
+       exactly the *"lot of girts/noggings very close to each other"* Tommy
+       reported. Under his rule a short edge below 2ft needs no girt at all.
+       The NAILER half of this test is unchanged and still passes. */
     const withoutNailer = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, false);
     expect(withoutNailer.some((m) => m.role === "nailer")).toBe(false);
-    expect(withoutNailer.filter((m) => m.role === "girt")).toHaveLength(4); // 2 rows x 2 bars
+    expect(withoutNailer.filter((m) => m.role === "girt")).toHaveLength(0);
 
     const withNailer = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, LOW_EDGE_IN, HIGH_EDGE_IN, true);
     const nailer = withNailer.find((m) => m.role === "nailer")!;
     expect(nailer).toBeDefined();
     expect(nailer.actualDimsIn.lengthIn).toBeLessThan(LOW_EDGE_IN);
+  });
+});
+
+/**
+ * \u26a0 **His rule, 2026-11-01, measured off the SHORT edge.**
+ *
+ * > *"If the shorter height of a stud on a Gable end panel is less than 2',
+ * > then no girts are needed... If the shorter stud length (or really from
+ * > bottom of panel to top tip of shorter stud member) is between 2-3', then
+ * > one girt should be placed, it's top height flush with the lower butt
+ * > corner of that shorter stud. Gable end panels 3'+ should follow the
+ * > typical girt rules (one for every 3' or less so that there are no spaces
+ * > that are 3' that aren't braced laterally. Whatever the top height of the
+ * > pointy tall end of a Gable end panel is is less relevant for this
+ * > equation."*
+ */
+describe("\u26a0 how many girts a gable panel gets", () => {
+  const girtRows = (shortEdgeIn: number, tallEdgeIn: number) =>
+    buildGablePanelMembers(WIDTH_IN, DEPTH_IN, shortEdgeIn, tallEdgeIn, false).filter((m) => m.role === "girt").length /
+    2;
+
+  /**
+   * ⚠ His measurement is *"from bottom of panel to top tip of shorter
+   * stud member"*, which is NOT the panel's edge height: the stud starts on
+   * top of the bottom skin and stops under the top one, so the measurement
+   * is the edge less ONE skin. Every band below is stated in HIS units and
+   * converted here, because a test written in edge heights puts the 2ft
+   * boundary 3/4in off and then asserts the wrong thing confidently.
+   */
+  const edgeForMeasure = (measureIn: number) => measureIn + SKIN_THICKNESS_IN;
+
+  it("under 2ft: none", () => {
+    for (const measureIn of [2, 6, 12, 18, 23, 23.875]) {
+      expect({ measureIn, rows: girtRows(edgeForMeasure(measureIn), 96) }).toEqual({ measureIn, rows: 0 });
+    }
+  });
+
+  it("2ft to 3ft: exactly one", () => {
+    for (const measureIn of [24, 28, 30, 35, 36]) {
+      expect({ measureIn, rows: girtRows(edgeForMeasure(measureIn), 96) }).toEqual({ measureIn, rows: 1 });
+    }
+  });
+
+  it("\u26a0 that one girt's TOP is flush with the short stud's lower butt corner", () => {
+    /* The one placement in the whole rule that is NOT a fraction of the
+       span. A row's top face is its WEB's, since the web rests on the bars
+       \u2014 so asserting the bar's top would pass while the real top stood
+       1/2in proud of the stud it is meant to be flush with. */
+    const shortEdgeIn = edgeForMeasure(30);
+    const members = buildGablePanelMembers(WIDTH_IN, DEPTH_IN, shortEdgeIn, 96, false);
+    const web = members.find((m) => m.role === "girt_web")!;
+    const studTopZIn = shortEdgeIn - SKIN_THICKNESS_IN; // bottom skin, then the stud
+    expect(web.position.zIn + web.actualDimsIn.thicknessIn).toBeCloseTo(studTopZIn, 9);
+    // And the bars sit under it, not through it.
+    for (const bar of members.filter((m) => m.role === "girt")) {
+      expect(bar.position.zIn + bar.actualDimsIn.thicknessIn).toBeCloseTo(web.position.zIn, 9);
+    }
+  });
+
+  it("\u26a0 over 3ft: enough rows that no unbraced span exceeds 3ft, swept", () => {
+    for (let measureIn = 36.125; measureIn <= GABLE_PANEL_MAX_HEIGHT_IN - SKIN_THICKNESS_IN; measureIn += 0.125) {
+      const rows = girtRows(edgeForMeasure(measureIn), GABLE_PANEL_MAX_HEIGHT_IN);
+      const studSpanIn = measureIn - SKIN_THICKNESS_IN;
+      const gapIn = studSpanIn / (rows + 1);
+      expect({ measureIn, over: gapIn > 36 + 1e-9 }).toEqual({ measureIn, over: false });
+      /* ...and not one row more than that needs — a rule that over-braces
+         is as wrong as one that under-braces, just more expensively. */
+      const gapWithOneFewer = studSpanIn / Math.max(1, rows);
+      expect({ measureIn, wasteful: rows > 0 && gapWithOneFewer <= 36 }).toEqual({ measureIn, wasteful: false });
+    }
+  });
+
+  it("\u26a0 the TALL edge does not enter into it", () => {
+    /* *"Whatever the top height of the pointy tall end of a Gable end panel
+       is is less relevant for this equation."* A 30in short edge gets one
+       girt whether the peak is 3ft or 8ft above it. */
+    for (const tallEdgeIn of [36, 60, 96]) {
+      expect({ tallEdgeIn, rows: girtRows(edgeForMeasure(30), tallEdgeIn) }).toEqual({ tallEdgeIn, rows: 1 });
+    }
+  });
+
+  it("the plan function says the same thing as the panel it builds", () => {
+    for (const shortEdgeIn of [12, 24, 30, 36, 48, 72, 96]) {
+      const studSpanIn = shortEdgeIn - 2 * SKIN_THICKNESS_IN;
+      expect({ shortEdgeIn, rows: gableGirtPlan(studSpanIn).rowCount }).toEqual({
+        shortEdgeIn,
+        rows: girtRows(shortEdgeIn, GABLE_PANEL_MAX_HEIGHT_IN),
+      });
+    }
   });
 });
 
