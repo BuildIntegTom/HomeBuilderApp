@@ -271,6 +271,7 @@ import {
   plasterLaborRatesRef,
   plasterMixPartsDefaults,
   plasterPriceDefaults,
+  beamPriceRatePerSqFt,
   priceRates,
   referenceDensities,
   roofCatcherBeamShapeDefault,
@@ -541,7 +542,21 @@ function formatTrailerLengthIn(valueIn: number, unitSystem: "imperial" | "metric
   return unitSystem === "metric" ? formatLengthIn(valueIn, unitSystem) : formatFeetInches(valueIn / 12);
 }
 
-const PHASE2_ASSUMPTIONS = [
+/**
+ * ⚠ **A function, not a `const` array, and the reason is a bundler one.**
+ *
+ * These entries quote catalog values, and reading one at MODULE SCOPE in this
+ * file throws `ReferenceError: beamPriceRatePerSqFt is not defined` at module
+ * evaluation under Turbopack — the dev bundler splits `data.ts` into parts and
+ * the part holding a value declared late in that file is not evaluated before
+ * this module's top-level code runs. `priceRates`, declared earlier in the
+ * same file, resolves fine at module scope, which is what makes it a load
+ * order problem rather than a missing export. Reading them inside a call,
+ * where every other catalog read in this file already happens, sidesteps it
+ * entirely and costs nothing: the array is built once per render of a list
+ * that is itself rebuilt per render.
+ */
+const phase2Assumptions = () => [
   {
     label: "Safety/gap panel pricing",
     status: "pending-BI-confirmation" as const,
@@ -558,9 +573,26 @@ const PHASE2_ASSUMPTIONS = [
     note: "Gable End Panels are priced at the roof rate ($42/sqft placeholder) using the trapezoid's own average height above the eave; a tile's vertical safety-gap filler is priced at the standard rate instead, since it's the exact same member a wall-level safety-gap panel uses.",
   },
   {
-    label: "Box Beam/Truss Plate/Mid-Wall Bond Beam pricing",
+    label: "Box Beam/Truss Plate/Mid-Wall Bond Beam pricing — the BEAM rate itself is unset",
     status: "pending-BI-confirmation" as const,
-    note: "These are linear members, not flat wall panels, so there's no real width x wall-height face to price — priced at the roof rate ($42/sqft placeholder) using each piece's own covered length x its own assembly's cross-sectional height as a stand-in face area.",
+    note:
+      "Tommy, giving the floor and roof panel rates: \"Beams and roof and floor panels should all have their own " +
+      "prices... floor and roof should be $24/sq ft coverage.\" The floor and roof figures are his. For the beams he " +
+      `gave none, so they now have their own bucket seeded at the roof rate ($${beamPriceRatePerSqFt.value}/sqft), ` +
+      "which is exactly where they were already being charged — the split moves no project's cost, it only makes the " +
+      "number askable instead of indistinguishable from a rate he confirmed. The area it is charged against is still " +
+      "a stand-in: these are linear members with no real width x wall-height face, so each piece is priced on its own " +
+      "covered length x its own assembly's cross-sectional height.",
+  },
+  {
+    label: "Floor and Roof Panel pricing",
+    status: "confirmed" as const,
+    note:
+      "$24 per square foot of COVERAGE, his own figure: \"floor and roof should be $24/sq ft coverage.\" Every other " +
+      "rate prices a panel by the face it stands up as; a deck panel lies down, so what is charged is the floor it " +
+      "carries or the roof it closes. ⚠ A roof's coverage is measured up its REAL SLOPE, not across the ground it " +
+      "shades — a 20ft span at 4:12 is 16in of extra material per panel, and that is material really bought. The " +
+      "rate is confirmed; what it is multiplied by is this reading of the word \"coverage\".",
   },
   {
     label: "Mid-Wall Bond Beam \"Web Braced Lintel\" renamed to \"Big Header (Mid-Wall Beam)\"",
@@ -9103,7 +9135,7 @@ export default function LayoutEditor() {
     // `packages/panel-catalog` moves because of this line.
     //
     // ⚠ And it is deliberately NOT consistent with its nearest neighbour: the
-    // mid-wall Big Header BEAM is priced at the `roof` rate two lines down.
+    // mid-wall Big Header BEAM is priced in the `beam` bucket two lines down.
     // Two spanning things, two different rates, by decision rather than by
     // oversight — which is why the Review Log entry says so in words, since
     // that is what reaches the engineer.
@@ -9128,7 +9160,23 @@ export default function LayoutEditor() {
         { type: "braced", areaSqFt: areaSqFtFor("braced") },
         { type: "opening", areaSqFt: areaSqFtFor("window") + areaSqFtFor("door") + spanningHeaderAreaSqFt },
         { type: "column", areaSqFt: areaSqFtFor("column") },
-        { type: "roof", areaSqFt: gableRoofAreaSqFt + roofBearingAreaSqFt + midWallBeamAreaSqFt },
+        /* ⚠ The `roof` rate is now the GABLE row's rate and nothing else.
+           It used to carry the beams as well, which is why they could not be
+           repriced without repricing the gable too. */
+        { type: "roof", areaSqFt: gableRoofAreaSqFt },
+        /* ⚠ The beams, in their own bucket at last — his *"Beams and roof
+           and floor panels should all have their own prices."* The bucket is
+           seeded at the roof rate, which is what they were being charged
+           anyway, so no project's cost moves today. What he has not given is
+           the beam rate itself; see `beamPriceRatePerSqFt` and the Review
+           Log line it carries. */
+        { type: "beam", areaSqFt: roofBearingAreaSqFt + midWallBeamAreaSqFt },
+        /* ⚠ COVERAGE, not elevation face: *"floor and roof should be $24/sq
+           ft coverage."* And a roof's coverage is measured up its real
+           SLOPE, because that is the material bought and hung — the takeoff
+           sums it per panel rather than off the footprint. */
+        { type: "floor-panel", areaSqFt: deckPanelTakeoff.coverageSqFt.floor },
+        { type: "roof-panel", areaSqFt: deckPanelTakeoff.coverageSqFt.roof },
       ],
       effectivePriceModifier,
     );
@@ -9141,6 +9189,7 @@ export default function LayoutEditor() {
     roofBearingFabricationGroups,
     midWallBondBeamFabricationGroups,
     spanningHeaderFabricationGroups,
+    deckPanelTakeoff,
   ]);
 
   /* ⚠ Over ALL the straw, not just the walls' — see `projectStrawWeightKg`.
@@ -9827,7 +9876,7 @@ export default function LayoutEditor() {
           ]
         : []),
       ...(foundationTypeId === "slab" ? [{ label: "Slab foundation dimensions", ...slabFoundationDimensions }] : []),
-      ...PHASE2_ASSUMPTIONS,
+      ...phase2Assumptions(),
     ]);
     // ⚠ **This keys on `note` ALONE, and deliberately so** — it exists to
     // collapse the many catalog values that share one note (every panel's
@@ -13289,7 +13338,7 @@ export default function LayoutEditor() {
              because none of them were in it. */
           weightNote={`Straw: ${((strawWeight.weightKg + allRealPanelBuild.gablePanelStrawWeightKg) * KG_TO_LB).toFixed(1)} lb. Wood in the ${panelCounts.wall + panelCounts.gable} wall and gable panels: ${((totalWoodWeightKg + allRealPanelBuild.otherPanelWoodWeightKg) * KG_TO_LB).toFixed(1)} lb. Floor and roof panels, beams and headers: ${(fabricatedExtraWeightKg * KG_TO_LB).toFixed(1)} lb, each from its own fabrication sheet.`}
           price={price}
-          priceNote="Priced per panel type (standard/corner/braced/opening/roof rates), see Review Log."
+          priceNote="Priced per panel type — wall panels and the gable row by their standing face, beams on their own rate, floor and roof panels at $24/sqft of coverage. See Review Log."
           costsRedacted={costsRedacted}
           priceRedactedGap={PRICE_GAP}
           priceRedactedNote={PRICE_REDACTED_NOTE}
@@ -13406,7 +13455,8 @@ export default function LayoutEditor() {
                       ${price.toFixed(2)}
                       <span className={styles.note}>
                         {" "}
-                        — priced per panel type (standard/corner/braced/opening/roof rates), see Review Log
+                        — priced per panel type: wall panels and the gable row by their standing face, beams on
+                        their own rate, floor and roof panels at $24/sqft of coverage. See Review Log
                       </span>
                     </>
                   )}

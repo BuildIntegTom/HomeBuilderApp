@@ -1,6 +1,15 @@
-import { priceRates } from "@building-integrity/panel-catalog";
+import { beamPriceRatePerSqFt, priceRates } from "@building-integrity/panel-catalog";
 
-export type PriceablePanelType = "standard" | "corner" | "braced" | "opening" | "column" | "roof";
+export type PriceablePanelType =
+  | "standard"
+  | "corner"
+  | "braced"
+  | "opening"
+  | "column"
+  | "roof"
+  | "floor-panel"
+  | "roof-panel"
+  | "beam";
 
 export interface PriceablePanel {
   type: PriceablePanelType;
@@ -13,7 +22,17 @@ const RATE_BY_TYPE: Record<PriceablePanelType, number> = {
   braced: priceRates.bracedPerSqFt,
   opening: priceRates.headerSillPerSqFt,
   column: priceRates.columnPerSqFt,
+  /** The GABLE row, which is a wall standing under a roof, not a roof. */
   roof: priceRates.roofPerSqFt,
+  /* ⚠ These two are per square foot of COVERAGE — what the panel lies
+     under or over — while every rate above is per square foot of the face
+     a panel stands up as. Same unit, different area, and the caller is
+     what knows which one it is handing over. */
+  "floor-panel": priceRates.floorPanelPerSqFt,
+  "roof-panel": priceRates.roofPanelPerSqFt,
+  /* ⚠ Its own bucket because he asked for one, at the rate beams were
+     already charged, because he gave no figure. See its own doc comment. */
+  beam: beamPriceRatePerSqFt.value,
 };
 
 /**

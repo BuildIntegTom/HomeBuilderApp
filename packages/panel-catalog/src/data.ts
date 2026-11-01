@@ -859,9 +859,54 @@ export const priceRates = {
   headerSillPerSqFt: 34,
   columnPerSqFt: 36,
   roofPerSqFt: 42,
+  /**
+   * Floor and roof PANELS, by covered area.
+   *
+   * > *"Beams and roof and floor panels should all have their own prices.
+   * > Beam and column pieces should be counted in materials and floor and
+   * > roof should be $24/sq ft coverage."* — Tommy
+   *
+   * ⚠ **Coverage, not elevation face.** Every rate above prices a panel by
+   * the face it stands up as. A deck panel lies down, so the area that
+   * matters is the floor or roof it covers — and for a roof that is its
+   * SLOPED area, the material actually bought and hung, not the ground it
+   * shades. `DeckPanelTakeoff.coverageSqFt` is measured that way.
+   */
+  floorPanelPerSqFt: 24,
+  roofPanelPerSqFt: 24,
   totalModifier: 1.3,
   status: "confirmed" as const,
-  note: "Based on biggest face; total = sum(area x rate-by-type) x totalModifier. Corner/braced/header-sill rates (Tommy) price each panel by its own type instead of one user-selected rate for the whole project. Header/sill rate also covers door heads (a header panel starting at 82.5in off the ground, Tommy). totalModifier (default 1.3) is a fabricator/admin-only markup, editable in the UI — public viewers see the base material cost with no markup applied (Tommy).",
+  note: "Based on biggest face; total = sum(area x rate-by-type) x totalModifier. Corner/braced/header-sill rates (Tommy) price each panel by its own type instead of one user-selected rate for the whole project. Header/sill rate also covers door heads (a header panel starting at 82.5in off the ground, Tommy). Floor and roof panels are priced per square foot of COVERAGE at $24 (Tommy), a roof's measured up its real slope. totalModifier (default 1.3) is a fabricator/admin-only markup, editable in the UI — public viewers see the base material cost with no markup applied (Tommy).",
+};
+
+/**
+ * ⚠ **What a BEAM costs per square foot of its own elevation face — and
+ * nobody has said.**
+ *
+ * > *"Beams and roof and floor panels should all have their own prices."*
+ * > — Tommy, giving $24/sqft for the floor and roof panels in the same
+ * > breath and no figure at all for the beams.
+ *
+ * So the beams get their own bucket, because he asked for one, and that
+ * bucket is seeded at the `roof` rate — which is exactly where every truss
+ * plate, box beam and Mid-Wall Bond Beam was already being priced. Nothing
+ * about any project's cost moves on the day this lands; what changes is that
+ * the number is now ASKABLE, sitting in one place with its own status,
+ * instead of being indistinguishable from a rate he did confirm.
+ *
+ * A plausible-looking invented figure would have been worse than this in
+ * every way: it would have moved real money and claimed a confidence nobody
+ * has. This one is honest about being a placeholder and about which
+ * placeholder it is.
+ */
+export const beamPriceRatePerSqFt: CatalogValue<number> = {
+  value: 42,
+  status: "pending-BI-confirmation",
+  note:
+    "Seeded at the roof rate ($42/sqft), which is where truss plates, box beams and Mid-Wall Bond Beams have " +
+    "been priced all along — so this changes no project's cost. Tommy asked for beams to have their own price " +
+    'and gave none: "Beams and roof and floor panels should all have their own prices... floor and roof should ' +
+    'be $24/sq ft coverage." The floor and roof figures are his; this one is waiting on him.',
 };
 
 // --- Panel type roster --------------------------------------------------------

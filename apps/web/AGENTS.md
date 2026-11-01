@@ -64,7 +64,23 @@
   any number you measure there.
 - **The baseline, measured on `main` @ `ac55a39` (2026-09-29): 167 problems,
   119 errors / 48 warnings.** Compare against a fresh run of the base
-  commit rather than trusting this figure as it ages.
+  commit rather than trusting this figure as it ages. Re-measured on
+  2026-11-01 @ `0a713cb`: **166 problems, 120 errors / 46 warnings**, per
+  rule `exhaustive-deps` 12, `immutability` 1,
+  `preserve-manual-memoization` 62, `purity` 1, `refs` 29,
+  `set-state-in-effect` 12.
+- **⚠ Do NOT read a value from `@building-integrity/panel-catalog` at MODULE
+  SCOPE in `page.tsx`.** Turbopack splits `data.ts` into parts, and a value
+  declared late in that very long file is not evaluated before this module's
+  top-level code runs: it throws `ReferenceError: <name> is not defined` **at
+  module evaluation**, which takes the whole page down. Measured 2026-11-01
+  on `beamPriceRatePerSqFt` (declared ~line 900 of `data.ts`). It is a LOAD
+  ORDER problem, not a missing export — `priceRates`, declared ~line 855 of
+  the same file, resolves at module scope perfectly well, and `npx tsc
+  --noEmit`, `vitest` and the lint gate all pass while the dev server 500s.
+  Deleting `.next` does not help. **Read catalog values inside a function or
+  a component**, where every other catalog read in the file already happens
+  — see `phase2Assumptions()`, which was a `const` array until it quoted one.
 
 # This is NOT the Next.js you know
 
