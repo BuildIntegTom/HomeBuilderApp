@@ -7,6 +7,7 @@ import {
   PLATE_2X4_WIDTH_IN,
   SKIN_PLY_SPEC,
   SKIN_THICKNESS_IN,
+  buildHeaderEndStuds,
   buildHeaderTrussWebBraces,
   computeTrussWebPeakCount,
 } from "./panelMemberHelpers";
@@ -38,8 +39,28 @@ const ROTATED_CHORD_DEPTH_IN = PLATE_2X4_THICKNESS_IN; // 1.5in — now the into
  * tying the 2 wythes together, same construction regardless of chord
  * orientation.
  */
-function buildBigHeaderChords(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
+function buildBigHeaderChords(widthIn: number, depthIn: number, heightIn: number, jackInsetIn: number): PanelMember[] {
   const members: PanelMember[] = [];
+  /**
+   * ⚠ **THE CHORDS SPAN BETWEEN THE JACK STUDS, not through them.**
+   *
+   * They ran the assembly's full width while the two jacks stood at x = 0 and
+   * x = width - t over that same full height, so all four chords and both
+   * chord caps passed straight through both jacks: 12 interferences, every
+   * one of them a board drawn through a post.
+   *
+   * Which gives way is settled by his own convention rather than by a choice
+   * here: *"RO's take into account these jack studs"*, and a window/door
+   * slot's width *"represents the WHOLE assembly's footprint (header + jack
+   * studs + RO + sill)"*. The jacks are INSIDE the width, so the header is
+   * what stops short of them.
+   *
+   * ⚠ This shortens every Big Header chord on the cut list by two jack
+   * thicknesses. That is a correction to a part that could not have been
+   * built as drawn, not a change of spec.
+   */
+  const chordStartXIn = jackInsetIn;
+  const chordLengthIn = Math.max(0, widthIn - 2 * jackInsetIn);
   const bottomPlyZIn = 0;
   const bottom2x4ZIn = SKIN_THICKNESS_IN;
   const topPlyZIn = heightIn - SKIN_THICKNESS_IN;
@@ -59,9 +80,9 @@ function buildBigHeaderChords(widthIn: number, depthIn: number, heightIn: number
         speciesGrade: LUMBER_SPECIES_GRADE,
         plySpec: null,
         nominalSize: "2x4",
-        actualDimsIn: { thicknessIn: ROTATED_CHORD_VISIBLE_IN, widthIn: ROTATED_CHORD_DEPTH_IN, lengthIn: widthIn },
+        actualDimsIn: { thicknessIn: ROTATED_CHORD_VISIBLE_IN, widthIn: ROTATED_CHORD_DEPTH_IN, lengthIn: chordLengthIn },
         orientation: "flat",
-        position: { xIn: 0, yIn, zIn, rotationDeg: 0 },
+        position: { xIn: chordStartXIn, yIn, zIn, rotationDeg: 0 },
         role: "plate",
         qty: 1,
         notes: `${chord} chord, ${wythe} wythe — rotated 90deg from a standard panel's own stud orientation so its 3.5in face shows in elevation instead of 1.5in; the truss web braces span between this and the ${otherChord} chord.`,
@@ -79,36 +100,33 @@ function buildBigHeaderChords(widthIn: number, depthIn: number, heightIn: number
       speciesGrade: null,
       plySpec: SKIN_PLY_SPEC,
       nominalSize: null,
-      actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: depthIn, lengthIn: widthIn },
+      actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: depthIn, lengthIn: chordLengthIn },
       orientation: "flat",
-      position: { xIn: 0, yIn: 0, zIn, rotationDeg: 0 },
+      position: { xIn: chordStartXIn, yIn: 0, zIn, rotationDeg: 0 },
       role: "skin",
       qty: 1,
-      notes: `${chord} plate plywood cap — this Big Header's own outer face, ties both wythes' ${chord} chord 2x4s into one rigid plate from the inside.`,
+      notes: `${chord} plate plywood cap — this Big Header's own outer face, ties both wythes' ${chord} chord 2x4s into one rigid plate from the inside. Cut to the clear span BETWEEN the two jack studs, not the assembly's full width.`,
     });
   }
   return members;
 }
 
-/** The Big Header's own 2 end caps — a full-depth x full-height sheet on
- * each end, thin in width, mirroring `buildHeaderEndCaps`'s own
- * construction. Not part of "the studs," so unaffected by the chord
- * rotation. */
-function buildBigHeaderEndCaps(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
-  return (["left", "right"] as const).map((side) => ({
-    memberId: `${side}_end_ply`,
-    material: "plywood",
-    speciesGrade: null,
-    plySpec: SKIN_PLY_SPEC,
-    nominalSize: null,
-    actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: depthIn, lengthIn: heightIn },
-    orientation: "vertical",
-    position: { xIn: side === "left" ? 0 : widthIn - SKIN_THICKNESS_IN, yIn: 0, zIn: 0, rotationDeg: 0 },
-    role: "skin",
-    qty: 1,
-    notes: `${side} end — this Big Header's own "panel thickness" face (full depth x full height, thin in width).`,
-  }));
-}
+/**
+ * ⚠ **This Big Header's ends are 2x4 studs now, INBOARD of its two jack
+ * studs.** *"Doors and headers and big headers should all follow suit."*
+ * (Tommy, 2026-11-01.)
+ *
+ * They were a full-depth x full-height plywood sheet at each end, which
+ * crossed all four chords and both chord caps at the corners, and crossed the
+ * jack stud sitting at the very same x as well: 14 of this panel's 26
+ * interferences.
+ *
+ * ⚠ **Set in by a jack stud's thickness**, which is the one difference from
+ * a Door or Window header: a Big Header *"come[s]... with two jack studs"*
+ * and they occupy x = 0 and x = width - t already. So the order across the
+ * end is jack, then edge stud, then the web — which is how the assembly
+ * actually goes together.
+ */
 
 /** The rise (in) available to the truss web between the chords' plywood-
  * capped facing edges — same formula as `headerWebRiseIn`, but subtracting
@@ -159,16 +177,27 @@ export function buildBigHeaderMembers(
   const riseIn = bigHeaderWebRiseIn(heightIn);
   const peakCount = computeTrussWebPeakCount(widthIn, riseIn);
 
+  const jackInsetIn = jackStudThicknessIn(jackStudConfig);
   const members: PanelMember[] = [
-    ...buildBigHeaderChords(widthIn, depthIn, heightIn),
-    ...buildBigHeaderEndCaps(widthIn, depthIn, heightIn),
+    ...buildBigHeaderChords(widthIn, depthIn, heightIn, jackInsetIn),
+    ...buildHeaderEndStuds(widthIn, depthIn, bottomChordTopZIn, riseIn, jackInsetIn),
   ];
   for (const [wythe, yIn] of [
     ["ext", PLATE_2X4_THICKNESS_IN / 2],
     ["int", depthIn - PLATE_2X4_THICKNESS_IN / 2],
   ] as const) {
     members.push(
-      ...buildHeaderTrussWebBraces(peakCount, widthIn, bottomChordTopZIn, topChordBottomZIn, yIn, `truss_brace_${wythe}`),
+      /* ⚠ The outermost feet clear the jack AND the edge stud inboard of it,
+         not a 3/4in sheet. */
+      ...buildHeaderTrussWebBraces(
+        peakCount,
+        widthIn,
+        bottomChordTopZIn,
+        topChordBottomZIn,
+        yIn,
+        `truss_brace_${wythe}`,
+        jackInsetIn + PLATE_2X4_THICKNESS_IN,
+      ),
     );
   }
 
@@ -176,7 +205,7 @@ export function buildBigHeaderMembers(
   // spanning this Big Header's own full height — same construction real
   // window/door jack studs use (buildJackStudMembers), just flanking this
   // self-contained assembly directly instead of a separate opening below it.
-  const jackThicknessIn = jackStudThicknessIn(jackStudConfig);
+  const jackThicknessIn = jackInsetIn;
   members.push(
     ...buildJackStudMembers(depthIn, heightIn, jackStudConfig).map((m) => ({ ...m, memberId: `jack_left_${m.memberId}` })),
   );

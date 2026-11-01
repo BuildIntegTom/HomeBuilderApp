@@ -616,3 +616,36 @@ panel any more.
 still have their plywood ends and their own baselines — the brace builder
 takes the end inset as a parameter now, defaulting to the 3/4in sheet, so
 neither moved. Whether they want the same treatment is his call.
+
+
+### B6b — the whole header family follows suit (DONE)
+
+> *"Doors and headers and big headers should all follow suit."* — Tommy,
+> 2026-11-01
+
+`buildHeaderEndStuds` is shared by all three now. Results:
+
+| assembly | before | after |
+|---|---|---|
+| Door Header | 12 | **0** |
+| Window Header | 12 | **0** |
+| Big Header Beam | 12 | **0** |
+| Big Header | 26 | **0** |
+
+The Big Header had **two** causes and the end sheets were only the first.
+14 were the plywood ends crossing the chords and the jacks; the other **12
+were the CHORDS THEMSELVES drawn straight through both jack studs**, which is
+a board through a post and could not have been built as drawn.
+
+Which gives way is settled by his own convention rather than by a choice
+here: *"RO's take into account these jack studs"*, and a slot's width
+*"represents the WHOLE assembly's footprint (header + jack studs + RO +
+sill)"*. The jacks are inside the width, so the header stops short of them.
+⚠ **Every Big Header chord is two jack thicknesses shorter on the cut list
+now** — a correction to a part that could not have been built, not a change
+of spec.
+
+The Big Header's own end studs sit **inboard of its jacks**, which is the one
+difference from a Door or Window header: the order across the end is jack,
+edge stud, web. The Big Header Beam was also **added to the overlap audit** —
+it had never been in it, and it shared its siblings' defects.

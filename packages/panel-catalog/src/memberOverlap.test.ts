@@ -13,6 +13,7 @@ import { buildJackStudMembers } from "./jackStudMembers";
 import { buildTrussPlateMembers } from "./trussPlateMembers";
 import { buildBoxBeamMembers } from "./boxBeamMembers";
 import { buildBigHeaderMembers } from "./bigHeaderMembers";
+import { buildBigHeaderBeamMembers } from "./bigHeaderBeamMembers";
 import { buildVerticalGapFillerMembers } from "./verticalGapFillerMembers";
 import { buildFloorRoofPanelMembers, buildRoofPanelCapMembers } from "./floorRoofPanelMembers";
 
@@ -97,6 +98,10 @@ const CASES: { name: string; members: PanelMember[] }[] = [
     }).members,
   },
   { name: "big header", members: buildBigHeaderMembers(40, D, 24, false, "plywood") },
+  /* ⚠ The Mid-Wall Beam flavour, unaudited until 2026-11-01 — it shares the
+     chords, the end treatment and the truss web with its two siblings, so it
+     shared their interferences too. */
+  { name: "big header beam", members: buildBigHeaderBeamMembers(120, D, 24) },
 ];
 
 /* Panels whose members are not all axis-aligned, or that are known to
@@ -161,7 +166,6 @@ const BASELINE: Record<string, number> = {
      problem as a diagonal crossing a centre nailer stud, and it wants the
      same answer. */
   "braced chevron": 2,
-  "big header": 26,
 };
 
 describe("⚠ no member occupies the same space as another", () => {
@@ -225,6 +229,18 @@ describe("⚠ no member occupies the same space as another", () => {
          itself. */
       "cross tilt",
       "cross tilt shallow",
+      /* ⚠ 26 → 0 on 2026-11-01, and DELETED from BASELINE. *"Doors and
+         headers and big headers should all follow suit."* Two causes, and the
+         end sheets were only the first: 14 of them were the plywood ends
+         crossing the chords and the jacks, and the other 12 were the CHORDS
+         THEMSELVES drawn straight through both jack studs. Which gives way is
+         settled by his own convention rather than by a choice here — *"RO's
+         take into account these jack studs"*, a slot's width *"represents the
+         WHOLE assembly's footprint"* — so the jacks are inside the width and
+         the header stops short of them. Every Big Header chord is two jack
+         thicknesses shorter on the cut list now. */
+      "big header",
+      "big header beam",
     ]);
   });
 });

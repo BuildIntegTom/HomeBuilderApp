@@ -1301,6 +1301,64 @@ export function buildTrussWebBraces(
  * needed there; only which target TYPE gets constructed for each end,
  * below, changed.
  */
+/**
+ * ⚠ **THE 2x4 STUDS THAT CLOSE A HEADER'S TWO ENDS**, shared by every
+ * header-like assembly in this app.
+ *
+ * > *"The 3/4" plywood skins on the side I don't think are necessary, and
+ * > should be replaced with regular 2x4 studs vertically like a standard
+ * > panel."* ... *"Doors and headers and big headers should all follow
+ * > suit."* — Tommy, 2026-11-01
+ *
+ * Each end was a full-depth x full-height plywood sheet, and because both
+ * chord caps are full-span sheets meeting it at 90deg, every end cap crossed
+ * all four of them at the corners. That was 12 interferences on a Door or
+ * Window Header, 12 on a Big Header Beam, and 14 of a Big Header's 26.
+ *
+ * A stud in each wythe instead, standing BETWEEN the chords exactly as a
+ * standard panel's edge stud stands between its plates — so nothing crosses
+ * anything, and the truss web's outermost feet stop against a 1 1/2in face
+ * rather than a 3/4in one.
+ *
+ * `insetIn` is how far in from the assembly's own ends they sit: zero for a
+ * Door, Window or Beam header, and a jack stud's thickness for a Big Header,
+ * which carries its two jacks at those very x positions.
+ */
+export function buildHeaderEndStuds(
+  widthIn: number,
+  depthIn: number,
+  bottomZIn: number,
+  lengthIn: number,
+  insetIn = 0,
+): PanelMember[] {
+  if (!(lengthIn > 0)) return [];
+  const members: PanelMember[] = [];
+  for (const [side, xIn] of [
+    ["left", insetIn],
+    ["right", widthIn - insetIn - PLATE_2X4_THICKNESS_IN],
+  ] as const) {
+    for (const [wythe, yIn] of [
+      ["ext", 0],
+      ["int", depthIn - PLATE_2X4_WIDTH_IN],
+    ] as const) {
+      members.push({
+        memberId: `${side}_end_stud_${wythe}`,
+        material: "dimensional_lumber",
+        speciesGrade: LUMBER_SPECIES_GRADE,
+        plySpec: null,
+        nominalSize: "2x4",
+        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn },
+        orientation: "vertical",
+        position: { xIn, yIn, zIn: bottomZIn, rotationDeg: 0 },
+        role: "stud",
+        qty: 1,
+        notes: `${side} end, ${wythe} wythe — square cut both ends, standing between the two chords exactly as a standard panel's edge stud stands between its plates.`,
+      });
+    }
+  }
+  return members;
+}
+
 export function buildHeaderTrussWebBraces(
   peakCount: number,
   widthIn: number,

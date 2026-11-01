@@ -5,6 +5,7 @@ import {
   PLATE_2X4_WIDTH_IN,
   SKIN_PLY_SPEC,
   SKIN_THICKNESS_IN,
+  buildHeaderEndStuds,
   buildHeaderTrussWebBraces,
   computeTrussWebPeakCount,
 } from "./panelMemberHelpers";
@@ -70,25 +71,13 @@ function buildBigHeaderBeamChords(widthIn: number, depthIn: number, heightIn: nu
   return members;
 }
 
-/** The Big Header's own 2 end caps — a full-depth x full-height sheet on each
- * end, thin in width, mirroring `buildHeaderEndCaps`'s own construction
- * (same "plywood on the panel thickness side, open front/back showing the
- * truss web" convention). */
-function buildBigHeaderBeamEndCaps(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
-  return (["left", "right"] as const).map((side) => ({
-    memberId: `${side}_end_ply`,
-    material: "plywood",
-    speciesGrade: null,
-    plySpec: SKIN_PLY_SPEC,
-    nominalSize: null,
-    actualDimsIn: { thicknessIn: SKIN_THICKNESS_IN, widthIn: depthIn, lengthIn: heightIn },
-    orientation: "vertical",
-    position: { xIn: side === "left" ? 0 : widthIn - SKIN_THICKNESS_IN, yIn: 0, zIn: 0, rotationDeg: 0 },
-    role: "skin",
-    qty: 1,
-    notes: `${side} end — this Big Header's own "panel thickness" face (full depth x full height, thin in width).`,
-  }));
-}
+/**
+ * ⚠ **This beam's ends are 2x4 studs now.** *"Doors and headers and big
+ * headers should all follow suit."* (Tommy, 2026-11-01.) They were a
+ * full-depth x full-height plywood sheet at each end, crossing all four
+ * chords and both chord caps at the corners — all 12 of this assembly's
+ * interferences. See `buildHeaderEndStuds`.
+ */
 
 /** The rise (in) available to the truss web between the chords' plywood-
  * capped facing edges — same formula as headerMembers.ts's own
@@ -122,14 +111,23 @@ export function buildBigHeaderBeamMembers(widthIn: number, depthIn: number, heig
 
   const members: PanelMember[] = [
     ...buildBigHeaderBeamChords(widthIn, depthIn, heightIn),
-    ...buildBigHeaderBeamEndCaps(widthIn, depthIn, heightIn),
+    ...buildHeaderEndStuds(widthIn, depthIn, bottomChordTopZIn, riseIn),
   ];
   for (const [wythe, yIn] of [
     ["ext", PLATE_2X4_THICKNESS_IN / 2],
     ["int", depthIn - PLATE_2X4_THICKNESS_IN / 2],
   ] as const) {
     members.push(
-      ...buildHeaderTrussWebBraces(peakCount, widthIn, bottomChordTopZIn, topChordBottomZIn, yIn, `truss_brace_${wythe}`),
+      /* The outermost feet stop against the 2x4 end stud, not a 3/4in sheet. */
+      ...buildHeaderTrussWebBraces(
+        peakCount,
+        widthIn,
+        bottomChordTopZIn,
+        topChordBottomZIn,
+        yIn,
+        `truss_brace_${wythe}`,
+        PLATE_2X4_THICKNESS_IN,
+      ),
     );
   }
   return members;

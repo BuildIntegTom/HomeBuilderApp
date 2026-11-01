@@ -6,6 +6,7 @@ import {
   SKIN_PLY_SPEC,
   SKIN_THICKNESS_IN,
   TRUSS_WEB_MIN_ANGLE_DEG,
+  buildHeaderEndStuds,
   buildHeaderTrussWebBraces,
   computeBraceEndCutAngleDeg,
   computeTrussWebAngleDeg,
@@ -94,56 +95,6 @@ function buildHeaderChords(widthIn: number, depthIn: number, heightIn: number): 
   return members;
 }
 
-/**
- * ⚠ **THE HEADER'S TWO ENDS ARE 2x4 STUDS NOW, not plywood sheets.**
- *
- * > *"The 3/4\" plywood skins on the side I don't think are necessary, and
- * > should be replaced with regular 2x4 studs vertically like a standard
- * > panel. This may bring that tip and angle of the diagonal towards the
- * > center of the header panel a little bit."* — Tommy, 2026-11-01
- *
- * They were a full-depth x full-height sheet at each of the header's X
- * extremes, and they were the single biggest source of this panel's
- * interference count: both chord plywood caps are full-span sheets meeting
- * them at 90deg, so each end cap crossed all four of them at the corners —
- * carried as *"an illustrative simplification"*.
- *
- * Framed like a standard panel instead: a stud in each wythe at each end,
- * running BETWEEN the chords rather than past them, so nothing crosses
- * anything. And the diagonal's foot moves inboard with it, from the 3/4in
- * sheet's face to the 1 1/2in stud's — which is the shift he predicted.
- */
-function buildHeaderEndStuds(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
-  const bottomZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
-  const lengthIn = headerWebRiseIn(heightIn);
-  if (!(lengthIn > 0)) return [];
-  const members: PanelMember[] = [];
-  for (const [side, xIn] of [
-    ["left", 0],
-    ["right", widthIn - PLATE_2X4_THICKNESS_IN],
-  ] as const) {
-    for (const [wythe, yIn] of [
-      ["ext", 0],
-      ["int", depthIn - PLATE_2X4_WIDTH_IN],
-    ] as const) {
-      members.push({
-        memberId: `${side}_end_stud_${wythe}`,
-        material: "dimensional_lumber",
-        speciesGrade: LUMBER_SPECIES_GRADE,
-        plySpec: null,
-        nominalSize: "2x4",
-        actualDimsIn: { thicknessIn: PLATE_2X4_THICKNESS_IN, widthIn: PLATE_2X4_WIDTH_IN, lengthIn },
-        orientation: "vertical",
-        position: { xIn, yIn, zIn: bottomZIn, rotationDeg: 0 },
-        role: "stud",
-        qty: 1,
-        notes: `${side} end, ${wythe} wythe — square cut both ends, standing between the two chords exactly as a standard panel's edge stud stands between its plates.`,
-      });
-    }
-  }
-  return members;
-}
-
 /** The rise (in) available to the truss web between the chords' plywood-capped facing edges. */
 export function headerWebRiseIn(heightIn: number): number {
   return heightIn - 2 * PLATE_2X4_THICKNESS_IN - 2 * SKIN_THICKNESS_IN;
@@ -174,7 +125,9 @@ function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number):
 
   const members: PanelMember[] = [
     ...buildHeaderChords(widthIn, depthIn, heightIn),
-    ...buildHeaderEndStuds(widthIn, depthIn, heightIn),
+    /* ⚠ Its two ends, framed like a standard panel's — see
+       `buildHeaderEndStuds`, which every header-like assembly shares. */
+    ...buildHeaderEndStuds(widthIn, depthIn, SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN, headerWebRiseIn(heightIn)),
   ];
   for (const [wythe, yIn] of [
     ["ext", PLATE_2X4_THICKNESS_IN / 2],

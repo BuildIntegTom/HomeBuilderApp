@@ -50,16 +50,29 @@ describe("buildBigHeaderBeamMembers", () => {
     expect(members.some((m) => m.notes?.toLowerCase().includes("cellulose") || m.notes?.toLowerCase().includes("insulation"))).toBe(false);
   });
 
-  it("has 4 chords (top/bottom x ext/int) plus 2 plywood plate caps and 2 end caps, chords/caps spanning the full width/height", () => {
+  it("has 4 chords (top/bottom x ext/int) plus 2 plywood plate caps, all spanning the full width", () => {
     const members = buildBigHeaderBeamMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN);
     const chords = members.filter((m) => m.role === "plate");
     expect(chords).toHaveLength(4);
     for (const c of chords) expect(c.actualDimsIn.lengthIn).toBeCloseTo(WIDTH_IN, 6);
+  });
 
-    const leftCap = members.find((m) => m.memberId === "left_end_ply")!;
-    const rightCap = members.find((m) => m.memberId === "right_end_ply")!;
-    expect(leftCap).toBeDefined();
-    expect(rightCap).toBeDefined();
-    expect(leftCap.actualDimsIn.lengthIn).toBeCloseTo(HEIGHT_IN, 6);
+  it("⚠ closes its two ends with 2x4 studs, not plywood sheets", () => {
+    /* *"Doors and headers and big headers should all follow suit."* (Tommy,
+       2026-11-01.) The sheets crossed all four chords and both chord caps at
+       the corners — all 12 of this assembly's interferences, now zero. */
+    const members = buildBigHeaderBeamMembers(WIDTH_IN, DEPTH_IN, HEIGHT_IN);
+    expect(members.some((m) => m.memberId.endsWith("_end_ply"))).toBe(false);
+    expect(members.filter((m) => m.role === "stud").map((m) => m.memberId).sort()).toEqual([
+      "left_end_stud_ext",
+      "left_end_stud_int",
+      "right_end_stud_ext",
+      "right_end_stud_int",
+    ]);
+    // The only plywood left is the two chord caps.
+    expect(members.filter((m) => m.material === "plywood").map((m) => m.memberId).sort()).toEqual([
+      "bottom_chord_ply",
+      "top_chord_ply",
+    ]);
   });
 });
