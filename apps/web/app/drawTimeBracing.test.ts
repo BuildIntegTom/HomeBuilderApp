@@ -156,12 +156,14 @@ describe("⚠ a standard panel's members come from ONE place", () => {
     expect(right.length).toBe(left.length);
   });
 
-  it("⚠ a diagonal removes the centre nailer studs, which is worth knowing", () => {
+  it("⚠ a diagonal replaces the centre nailer studs, which he decided", () => {
     /* `buildPanelFromRecipe`'s own rule, not one invented at the seam: a
-       diagonal and a centre stud want the same place. Named because
-       `panel_module_2ft_4ft` wants a 48in panel's CENTRE over the deck joint
-       between its two 24in deck panels — with a superbrace what lands there
-       is the crossing of the two diagonals rather than a stud. */
+       diagonal and a centre stud want the same place. This was flagged as an
+       open conflict with `panel_module_2ft_4ft`, which wants a 48in panel's
+       CENTRE over the deck joint between its two 24in deck panels. His
+       answer, 2026-11-02: *"Nailers can be replaced by diagonals. That's not
+       a problem."* Kept as a test rather than a note, because it is now the
+       intended behaviour and would be a regression if it changed. */
     const withNailer = buildStandardPanelMembers(STANDARD_IN, DEPTH_IN, HEIGHT_IN, true);
     expect(withNailer.some((m) => m.memberId.startsWith("stud_centre_"))).toBe(true);
 

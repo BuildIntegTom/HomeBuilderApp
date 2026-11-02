@@ -110,11 +110,11 @@ export interface PanelInstance {
    * picture and the paperwork describing different panels, which is the one
    * thing the takeoffs in this app exist to prevent.
    *
-   * ⚠ **NOT POPULATED YET.** `pushInstance` does not carry them, so every
-   * instance reads undefined and `standardPanelMembersFor` returns exactly the
-   * members it always did. Declaring them here is what lets the member seam be
-   * put in place and proven before the pattern is switched on; populating them
-   * (and calling `applyDrawTimeBracing` in `handleDraw`) is the switch.
+   * ⚠ **Only a `standard` instance ever carries them**, which is his
+   * eligibility answer; `isBraceEligible` is the authority and the overlay
+   * only writes the fields onto slots that pass it. A `braced` band that
+   * degrades to `standard` (too short to anchor a brace) carries nothing
+   * either, because its source slot never had a pattern to carry.
    */
   bracePairPattern?: "superbrace" | "braced" | "nailer";
   bracePairHalf?: "left" | "right";
@@ -312,6 +312,8 @@ export function allPanelInstances(
     isBoxBeamCovered?: boolean,
     heightOverrideIn?: number,
     midWallBandIndex?: number,
+    bracePairPattern?: "superbrace" | "braced" | "nailer",
+    bracePairHalf?: "left" | "right",
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     const panelNumber = counters[direction]!;
@@ -338,6 +340,8 @@ export function allPanelInstances(
       ...(isBoxBeamCovered !== undefined && { isBoxBeamCovered }),
       ...(heightOverrideIn !== undefined && { heightOverrideIn }),
       ...(midWallBandIndex !== undefined && { midWallBandIndex }),
+      ...(bracePairPattern !== undefined && { bracePairPattern }),
+      ...(bracePairHalf !== undefined && { bracePairHalf }),
     });
   };
 
@@ -482,6 +486,14 @@ export function allPanelInstances(
             isBoxBeamCovered,
             heightOverrideIn,
             midWallBandIndex,
+            /* ⚠ B15 — the pair pattern rides to the Shop Fabrication
+               sheets, which build their members off these instances. Read it
+               off the SLOT, not the zone: pairing is a horizontal walk along
+               the wall, so a pattern belongs to the whole column, while a
+               zone is one vertical band of it. A band whose own type is not
+               a standard panel has no pattern on its slot to read. */
+            slot.bracePairPattern,
+            slot.bracePairHalf,
           );
         }
       }

@@ -196,7 +196,6 @@ import {
   buildSquareBaleCornerPanelMembers,
   buildSquareBalePanelMembers,
   buildSillPanelMembers,
-  buildStandardPanelMembers,
   buildTrussPlateMembers,
   buildVerticalGapFillerMembers,
   buildWindowHeaderMembers,
@@ -302,6 +301,7 @@ import {
   truckBedTypes,
   trussPlateInsetDefaultIn,
   wallAssemblyLayers,
+  windowHeaderDefaultWidthIn,
   windowHeaderWidthInRange,
   type BoxBeamSizeId,
   type BracePattern,
@@ -371,6 +371,7 @@ import {
   ROOF_PITCH_OPTIONS_IN12,
 } from "./gableProfilePoints";
 import { computeCrossTiltTakeoff, crossTiltWallIdsFor, type CrossTiltTakeoffInput } from "./crossTiltTakeoff";
+import { applyDrawTimeBracing } from "./drawTimeBracing";
 import { standardPanelMembersFor } from "./standardPanelMembers";
 import { toExportableAssemblies } from "./projectExportAssemblies";
 import { buildProjectPanelDxf } from "./projectPanelDxf";
@@ -2132,15 +2133,50 @@ export default function LayoutEditor() {
      They now sit immediately after the last state they read
      (`timberFrameCurtainWidthIn`), which is as early as they can legally go. */
   const overlayWallSlots = useMemo(() => {
-    if (panelizationType === "loose-packed-braced") return baseWallSlots;
-    const next: Record<string, PanelSlot[]> = {};
-    for (const [wallId, slots] of Object.entries(baseWallSlots)) {
-      const uniformType = panelizationType === "square-bale-panels" ? "standard" : timberFrameCurtainPanelType;
-      const uniformWidthIn = panelizationType === "square-bale-panels" ? squareBalePanel.widthIn : timberFrameCurtainWidthIn;
-      next[wallId] = applyUniformPanelization(slots, uniformType, uniformWidthIn);
+    if (panelizationType !== "loose-packed-braced") {
+      /* ⚠ **The other two panelizations get no brace pattern**, which is
+         the call the near-corner braced logic above already made for them:
+         *"no bracing-near-corners/safety-gap logic, since the actual timber
+         frame (not modeled) carries the structural load in this system."*
+         A pattern of diagonals inside a curtain panel hanging off a timber
+         frame would be shear the frame is already carrying, drawn twice. */
+      const next: Record<string, PanelSlot[]> = {};
+      for (const [wallId, slots] of Object.entries(baseWallSlots)) {
+        const uniformType = panelizationType === "square-bale-panels" ? "standard" : timberFrameCurtainPanelType;
+        const uniformWidthIn = panelizationType === "square-bale-panels" ? squareBalePanel.widthIn : timberFrameCurtainWidthIn;
+        next[wallId] = applyUniformPanelization(slots, uniformType, uniformWidthIn);
+      }
+      return next;
     }
-    return next;
-  }, [baseWallSlots, panelizationType, timberFrameCurtainPanelType, timberFrameCurtainWidthIn]);
+    /* ⚠ **B15 — the brace pattern, as an OVERLAY on this same layer.**
+
+       > *"Applying this patterned bracing should be part of the original
+       > tiling when drawing a shape."* / *"Proceed with pattern overlay."*
+
+       It is laid here rather than inside `handleDraw` because a wall is
+       re-tiled by far more than drawing: toggling an opening, dragging a
+       panel, repanelizing a run, loading a project, splitting a region.
+       Each of those rebuilds a wall's slots from the tiler, and a pattern
+       written once at draw time would silently vanish from the wall you
+       just put a window in. Every one of those paths already flows through
+       `baseWallSlots` into this memo, which is the one place that sees
+       them all — the same reason `applyUniformPanelization` sits here.
+
+       Pure and derived, so it costs nothing in the project file and
+       nothing in the undo stack. ⚠ When a per-panel brace editor
+       arrives, THAT is the point at which a stored `bracePairPattern` has
+       to win over this, and this has to stop overwriting it. */
+    if (!footprint) return baseWallSlots;
+    return applyDrawTimeBracing(footprint, baseWallSlots, leastAccessibleCorner, undefined, wallHeightFt * 12);
+  }, [
+    baseWallSlots,
+    panelizationType,
+    timberFrameCurtainPanelType,
+    timberFrameCurtainWidthIn,
+    footprint,
+    leastAccessibleCorner,
+    wallHeightFt,
+  ]);
 
   // Real Story[] (Tommy: "how to do second story editing... maybe it sees
   // the ground level, and then can shift upward to the next ring of
@@ -4256,7 +4292,15 @@ export default function LayoutEditor() {
               ? COLUMN_TOTAL_WIDTH_IN
               : type === "big-header" && i === slotIndex
                 ? bigHeaderDefaultWidthIn.value
-                : slot.widthIn,
+                : /* ⚠ A freshly placed WINDOW takes the module width rather
+                     than whatever the panel it replaced happened to be — his
+                     *"Default window header can be right on 4-ft"*, so the
+                     jack studs land over deck joints instead of mid-span.
+                     A door keeps the slot's width: its own widths come
+                     from a door schedule, not from this module. */
+                  type === "window" && i === slotIndex
+                  ? windowHeaderDefaultWidthIn.value
+                  : slot.widthIn,
           heightIn: type === "big-header" && i === slotIndex ? bigHeaderDefaultHeightIn.value : undefined,
           // The toggled slot itself (i === slotIndex) is transitioning INTO
           // this type fresh — no prior window/column data of its own to
@@ -7899,13 +7943,18 @@ export default function LayoutEditor() {
     isSafetyGapOverride?: boolean,
     verticalGapOverride?: { leftIn: number; rightIn: number },
     heightInOverride?: number,
+    /* ⚠ B15 — the panel's own half of its pair's pattern, read
+       straight off the instance. One object rather than two more
+       positionals: this signature is already twelve deep, and the two
+       fields are never meaningful apart. */
+    bracePair?: Pick<PanelInstance, "bracePairPattern" | "bracePairHalf">,
   ) => {
     const heightIn = heightInOverride ?? wallHeightFt * 12;
     const resolvedSillHeightIn = sillHeightInOverride ?? sillDefaultHeightIn.value;
     const gableLeftLocalIn = (leftEdgeHeightInOverride ?? gablePreviewLowEdgeHeightIn) - gableEaveHeightIn;
     const gableRightLocalIn = (rightEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn) - gableEaveHeightIn;
     const base = panelTypeId === "standard"
-      ? buildStandardPanelMembers(widthIn, thicknessIn, heightIn, includeNailer)
+      ? standardPanelMembersFor(bracePair ?? {}, widthIn, thicknessIn, heightIn, includeNailer)
       : panelTypeId === "braced"
         ? buildBracedPanelMembers(
             widthIn,
@@ -7991,6 +8040,7 @@ export default function LayoutEditor() {
     isSafetyGapOverride?: boolean,
     verticalGapOverride?: { leftIn: number; rightIn: number },
     heightInOverride?: number,
+    bracePair?: Pick<PanelInstance, "bracePairPattern" | "bracePairHalf">,
   ): number | null => {
     const members = membersForPanelTypeId(
       panelTypeId,
@@ -8005,6 +8055,7 @@ export default function LayoutEditor() {
       isSafetyGapOverride,
       verticalGapOverride,
       heightInOverride,
+      bracePair,
     );
     return members ? computeFastenerWeight(members).totalWeightKg : null;
   };
@@ -8029,6 +8080,7 @@ export default function LayoutEditor() {
     isSafetyGapOverride?: boolean,
     verticalGapOverride?: { leftIn: number; rightIn: number },
     heightInOverride?: number,
+    bracePair?: Pick<PanelInstance, "bracePairPattern" | "bracePairHalf">,
   ): number | null => {
     const members = membersForPanelTypeId(
       panelTypeId,
@@ -8043,6 +8095,7 @@ export default function LayoutEditor() {
       isSafetyGapOverride,
       verticalGapOverride,
       heightInOverride,
+      bracePair,
     );
     return members ? computeMemberSetWoodWeight(members).weightKg : null;
   };
@@ -8150,6 +8203,7 @@ export default function LayoutEditor() {
                 inst.isSafetyGap,
                 inst.gableVerticalGapIn,
                 inst.heightOverrideIn,
+                inst,
               ),
               fastenerWeightKg: fastenerWeightKgFor(
                 panelTypeId,
@@ -8164,6 +8218,7 @@ export default function LayoutEditor() {
                 inst.isSafetyGap,
                 inst.gableVerticalGapIn,
                 inst.heightOverrideIn,
+                inst,
               ),
               hasClayPlaster,
               hasLimePlaster,
@@ -8228,6 +8283,7 @@ export default function LayoutEditor() {
           inst.isSafetyGap,
           inst.gableVerticalGapIn,
           inst.heightOverrideIn,
+          inst,
         );
         if (members) accumulate(computeFastenerWeight(members).items);
         else unmodeledLabels.add(panelType.label);
@@ -8410,6 +8466,16 @@ export default function LayoutEditor() {
         const style = resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored);
         parts.push(style.pattern, String(style.mirrored));
       }
+      /* ⚠ B15 — two standard panels of the same width carrying
+         different halves of a brace pair are different fabricated parts,
+         the same way two braced panels of different pattern already are.
+         His own answer when this was put to him: *"this kind of integrated
+         pattern layout changing each panel individually will make more
+         groups of fewer panels for grouping shop fabrication pages and
+         that's fine."* */
+      if (panelTypeId === "standard") {
+        parts.push(inst.bracePairPattern ?? "", inst.bracePairHalf ?? "");
+      }
       // Same idea for gable tiles — two tiles of the same width but
       // different edge heights (different position along the roofline)
       // are physically different fabricated parts.
@@ -8452,6 +8518,7 @@ export default function LayoutEditor() {
               first.isSafetyGap,
               first.gableVerticalGapIn,
               first.heightOverrideIn,
+              first,
             ) ?? [];
           return {
             uniqueKey: `${panelType.id}-${key}`,

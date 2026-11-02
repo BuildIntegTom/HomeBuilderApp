@@ -21,17 +21,30 @@ import { DEFAULT_BRACE_PAIR_PATTERN, applyWallBracingPattern, type BraceablePane
  * gap's plywood spacer has nothing to route a diagonal through. Pairing
  * restarts after each of those, so an X never reaches across one.
  *
- * ⚠ **`braced` slots are NOT eligible, and that is a half-finished story.**
- * He also chose "the pattern replaces them", meaning the dedicated
- * near-corner braced panels should stop being seeded at all. They are seeded
- * by `reconcileBracedPlacement` off `seismicBracedPanelSpacingFt[zone]` — a
- * SEISMIC spacing rule — and the seeding also drives the corner-brace combine,
- * which changes panel widths. Retiring it touches the seismic path, the
- * click-cycle, the Review Log's zero-bracing entry and that combine, so it is
- * its own stride. Until then a wall carries both: `braced` slots keep their
- * chevron/hatch, every `standard` panel gets a superbrace half. The seismic
- * spacing rule is satisfied by construction once every panel is braced, which
- * is what makes retiring the seeding safe when it happens.
+ * ⚠ **`braced` slots are NOT eligible, and the wall therefore carries
+ * BOTH systems today.** He also chose "the pattern replaces them", meaning
+ * the dedicated near-corner braced panels should stop being seeded at all,
+ * and on 2026-11-02 he accepted the cost: *"Yeah the seismic click through
+ * would be lost. I guess."* That retirement is still its own stride, not
+ * folded in here, because those panels are seeded by
+ * `reconcileBracedPlacement` off `seismicBracedPanelSpacingFt[zone]` — a
+ * SEISMIC spacing rule — and the seeding drives the corner-brace combine,
+ * which changes panel WIDTHS. Widths are the whole point of the stacking
+ * work, so that is not a change to make in the same breath as this one.
+ *
+ * Until it happens, a wall shows chevrons on its near-corner braced panels
+ * and superbrace halves on everything else, and a `braced` slot BREAKS the
+ * pair run it sits in (pairing restarts after anything ineligible), so the
+ * pattern is discontinuous there. Visible, and stated rather than hidden.
+ * The seismic spacing rule is satisfied by construction once every panel is
+ * braced, which is what makes the retirement safe when it comes.
+ *
+ * ⚠ **His standing reservation, recorded because it is about the
+ * BUILDING and not the code:** *"My general feeling with this is that we are
+ * over bracing with these kind of patterns."* He said to proceed anyway. If
+ * it proves too much, the lever is one constant — `DEFAULT_BRACE_PAIR_PATTERN`
+ * from `superbrace` (two legs plus two returns per panel) to `braced` (one
+ * leg plus a tie) or `nailer` (no diagonal at all).
  *
  * ⚠ **Ground floor only**, his scope answer. The second story and the gable
  * rows keep what they have until this is proven on the walls below them.
@@ -63,9 +76,17 @@ export function bracingStartFrom(
 /**
  * Every wall's slots with the pattern written onto the eligible ones.
  *
- * Pure, and returns a new map — the draw handler has fresh slots in hand and
- * nothing here reads state, which is the same shape
- * `applyRoofDefaultsForFootprint` settled on for the roof.
+ * Pure, and returns a new map — nothing here reads state, which is the same
+ * shape `applyRoofDefaultsForFootprint` settled on for the roof.
+ *
+ * ⚠ **Despite the name, this does NOT run only at draw time**, and the
+ * name is kept because draw time is when it first fires and what he asked
+ * for. It is called from `page.tsx`'s `overlayWallSlots` memo, which is the
+ * one layer every re-tile path flows through — toggling an opening, dragging
+ * a panel, repanelizing a run, loading a project. A pattern written once
+ * inside `handleDraw` would silently vanish from the wall you just put a
+ * window in, because that wall's slots are rebuilt from the tiler. See that
+ * memo's own note.
  */
 export function applyDrawTimeBracing(
   footprint: Footprint,

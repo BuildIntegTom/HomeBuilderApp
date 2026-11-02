@@ -176,6 +176,32 @@ export const bigHeaderDefaultHeightIn: CatalogValue<number> = {
   note: "Tommy: \"default 2' tall and 8' wide.\"",
 };
 
+/**
+ * The width a window reservation takes when a panel is freshly toggled into
+ * one, rather than whatever width the panel it replaced happened to be.
+ *
+ * > *"Default window header can be right on 4-ft. That would make headers and
+ * > cells line up on floor studs and with roof studs easier. I see the
+ * > majority of a building having 15.5 in wide, 2 ft, and 4 ft wide panels.
+ * > Everything should pretty much land on each other with those."*
+ * > — Tommy, 2026-11-02
+ *
+ * ⚠ **It is a MODULE figure, not a window size.** 48in is two 24in floor/
+ * roof panels, so a header that starts and ends on 4ft boundaries puts its
+ * jack studs over deck joints instead of mid-span. The same reasoning that
+ * took the corner panel to 15.5in (see `cornerPanelWidthIn`): the runs
+ * already shared a pitch, what was missing was the phase.
+ *
+ * Freshly toggled only. A window the user has since dragged to a width keeps
+ * it, the same way `bigHeaderDefaultWidthIn` applies once and then stands
+ * aside. Well inside `windowHeaderWidthInRange` (24in-120in), so this can
+ * never be the value that gets clamped. */
+export const windowHeaderDefaultWidthIn: CatalogValue<number> = {
+  value: 48,
+  status: "pending-BI-confirmation",
+  note: "Tommy: \"Default window header can be right on 4-ft\" — chosen for the 2ft/4ft module, not from a window schedule.",
+};
+
 export const sillHeaderHeightInRange: CatalogRange = {
   minIn: 16.75,
   maxIn: 33.5,

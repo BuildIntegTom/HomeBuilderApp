@@ -21,13 +21,15 @@ import {
  * the plain call rather than an empty recipe, so nothing depends on the two
  * being equivalent.
  *
- * ⚠ **A pattern removes the centre nailer studs**, and that is
- * `buildPanelFromRecipe`'s own rule, not one invented here: a diagonal and a
- * centre stud occupy the same place. Worth naming because
- * `panel_module_2ft_4ft` wants a 48in wall panel's CENTRE to land on the deck
- * joint between its two 24in deck panels — with a superbrace, what lands
- * there is the crossing of the two diagonals rather than a stud. Flagged for
- * Tommy rather than decided here.
+ * ⚠ **A pattern removes the centre nailer studs, and that is now a
+ * DECISION rather than a side effect.** It has always been
+ * `buildPanelFromRecipe`'s own rule — a diagonal and a centre stud occupy
+ * the same place — and it was flagged here as an open conflict with
+ * `panel_module_2ft_4ft`, which wants a 48in panel's CENTRE over the deck
+ * joint between its two 24in deck panels: with a pattern, what lands there
+ * is a diagonal rather than a stud. Put to him on 2026-11-02: *"Nailers can
+ * be replaced by diagonals. That's not a problem."* So the centre still
+ * carries wood down to the joint, just on the slant.
  */
 export function standardPanelMembersFor(
   source: { bracePairPattern?: "superbrace" | "braced" | "nailer"; bracePairHalf?: "left" | "right" },

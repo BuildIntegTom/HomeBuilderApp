@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { tileWall } from "@building-integrity/geometry";
-import { cornerPanelWidthIn, planFloorRoofPanelWidthsIn } from "@building-integrity/panel-catalog";
+import {
+  FLOOR_ROOF_PANEL_WIDTH_IN,
+  cornerPanelWidthIn,
+  planFloorRoofPanelWidthsIn,
+  windowHeaderDefaultWidthIn,
+  windowHeaderWidthInRange,
+} from "@building-integrity/panel-catalog";
 import { jointsFromWidths, reportWallStacking } from "./panelStacking";
 
 /**
@@ -116,5 +122,36 @@ describe("⚠ B15: do the wall's joints land on the deck's?", () => {
     expect(r.joints[0]!.offsetIn).toBe(Number.POSITIVE_INFINITY);
     /* Infinity must not poison the worst-offset readout. */
     expect(r.worstOffsetIn).toBe(0);
+  });
+
+  it("⚠ a fresh window header is exactly two deck panels wide", () => {
+    /* > *"Default window header can be right on 4-ft. That would make
+       > headers and cells line up on floor studs and with roof studs
+       > easier."* — Tommy, 2026-11-02
+
+       Asserted as a RELATIONSHIP, not as the number 48: if the deck
+       panel width ever moves, this says so instead of quietly agreeing
+       with a stale constant. Same reason the corner baseline above reads
+       `cornerPanelWidthIn` rather than writing 15.5. */
+    expect(windowHeaderDefaultWidthIn.value).toBe(FLOOR_ROOF_PANEL_WIDTH_IN * 2);
+    /* And it can never be the value the width clamp has to correct. */
+    expect(windowHeaderDefaultWidthIn.value).toBeGreaterThanOrEqual(windowHeaderWidthInRange.minIn);
+    expect(windowHeaderDefaultWidthIn.value).toBeLessThanOrEqual(windowHeaderWidthInRange.maxIn);
+  });
+
+  it("⚠ a wall of corner + 4ft headers and panels lands on every deck joint", () => {
+    /* His *"majority of a building having 15.5 in wide, 2 ft, and 4 ft
+       wide panels. Everything should pretty much land on each other with
+       those"* — stated as a measurement rather than taken on faith. A run
+       built only from those three widths stacks on a 24in deck joint for
+       joint, which is what makes the 4ft header default worth having. */
+    const widthsIn = [cornerPanelWidthIn.value, 48, 48, windowHeaderDefaultWidthIn.value, 24, 48, cornerPanelWidthIn.value];
+    const wallLengthIn = widthsIn.reduce((a, b) => a + b, 0);
+    /* The REAL deck planner, not a hand-written list of 24s — a fixture
+       here would only prove the fixture. */
+    const r = reportWallStacking({ wallId: "AB", wallJointsIn: jointsFromWidths(widthsIn), deckJointsIn: deckJoints(wallLengthIn) });
+    expect(FLOOR_ROOF_PANEL_WIDTH_IN).toBe(24);
+    expect(r.unstackedAtIn).toEqual([]);
+    expect(r.stackedCount).toBe(r.jointCount);
   });
 });
