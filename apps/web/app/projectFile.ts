@@ -143,6 +143,19 @@ export interface ProjectState {
    * is worse than one visible change.
    */
   gableEndsFullHeight?: boolean;
+  /**
+   * ⚠ Which pattern the wall brace overlay lays on every standard panel
+   * (B15). The union is spelled out rather than imported for the same
+   * reason `shapeTool` below is: this is a FILE SCHEMA, and importing a
+   * package's type into it would make a rename there a silent change to
+   * what old projects mean. `BracePairPattern` in panel-catalog is the
+   * authority on what these DO.
+   *
+   * OPTIONAL, and a file saved before it existed loads as "superbrace" —
+   * which is what those projects were drawn with, since that was the only
+   * pattern the overlay had.
+   */
+  wallBracePattern?: "superbrace" | "braced" | "nailer";
   editorTab: "wall" | "foundation" | "floor" | "roof";
   viewMode: "plan" | "3d";
   /** ⚠ Must track `ShapeTool` in `DrawingToolPen`. Spelled out rather than

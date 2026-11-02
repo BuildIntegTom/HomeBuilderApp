@@ -149,6 +149,7 @@ export const MONEY_CLASSIFICATION = {
   // the walls were panelized, which the panel layout already tells them.
   tilingBasis: "not-money",
   gableEndsFullHeight: "not-money",
+  wallBracePattern: "not-money",
 } as const satisfies Record<keyof ProjectState, MoneyClassification>;
 
 /** The keys classified `money`, as a literal union. Derived, never restated. */

@@ -301,6 +301,8 @@ import {
   truckBedTypes,
   trussPlateInsetDefaultIn,
   wallAssemblyLayers,
+  BRACE_PAIR_PATTERNS,
+  type BracePairPattern,
   windowHeaderDefaultWidthIn,
   windowHeaderWidthInRange,
   type BoxBeamSizeId,
@@ -941,6 +943,18 @@ export default function LayoutEditor() {
    * above it; flip only the second and the building is open at both ends.
    */
   const [gableEndsFullHeight, setGableEndsFullHeight] = useState(true);
+  /* ⚠ **B15 — which pattern the wall brace overlay lays.** It really is
+     one setting for the whole building: the overlay pairs panels along a
+     wall, and two walls on different patterns would meet at a corner with
+     half an X on one side of it. `superbrace` is the default because it is
+     the one he named (*"Default could be super braced for now"*) and the
+     only one the overlay had before this control existed.
+
+     Declared here rather than read from the catalog at module scope — see
+     AGENTS.md on Turbopack's load order, which throws at module evaluation
+     for a value declared late in data.ts. A useState initialiser runs in
+     the component body, which is safe. */
+  const [wallBracePattern, setWallBracePattern] = useState<BracePairPattern>("superbrace");
   const [wallHeightFt, setWallHeightFt] = useState(standardPanelHeightIn.value / 12);
   // Max panel height (Tommy: "panels should have a default max height of
   // 10'... so when a user selects for a wall taller than the selected max
@@ -2167,7 +2181,7 @@ export default function LayoutEditor() {
        arrives, THAT is the point at which a stored `bracePairPattern` has
        to win over this, and this has to stop overwriting it. */
     if (!footprint) return baseWallSlots;
-    return applyDrawTimeBracing(footprint, baseWallSlots, leastAccessibleCorner, undefined, wallHeightFt * 12);
+    return applyDrawTimeBracing(footprint, baseWallSlots, leastAccessibleCorner, wallBracePattern, wallHeightFt * 12);
   }, [
     baseWallSlots,
     panelizationType,
@@ -2176,6 +2190,7 @@ export default function LayoutEditor() {
     footprint,
     leastAccessibleCorner,
     wallHeightFt,
+    wallBracePattern,
   ]);
 
   // Real Story[] (Tommy: "how to do second story editing... maybe it sees
@@ -2367,6 +2382,7 @@ export default function LayoutEditor() {
       thicknessIn,
       densityLbFt3,
       gableEndsFullHeight,
+      wallBracePattern,
       wallHeightFt,
       maxPanelHeightIn,
       includeNailer,
@@ -2542,6 +2558,9 @@ export default function LayoutEditor() {
        one now re-draws it the new way — the alternative is a silent
        second default that nobody can see in the UI. */
     setGableEndsFullHeight(s.gableEndsFullHeight ?? true);
+    /* ⚠ A file saved before the overlay had a control was drawn with the
+       only pattern it had. */
+    setWallBracePattern(s.wallBracePattern ?? "superbrace");
     setWallHeightFt(s.wallHeightFt);
     setMaxPanelHeightIn(s.maxPanelHeightIn ?? standardPanelHeightIn.value);
     setIncludeNailer(s.includeNailer);
@@ -8389,25 +8408,34 @@ export default function LayoutEditor() {
        produces". Handing it a patterned panel's real members is that
        function doing exactly its job, at exactly the same first-pass
        rigour, under the same Pending BI Confirmation label. */
-    const shearInstances = instances.filter((inst) => inst.panelType === "braced" || inst.bracePairPattern !== undefined);
-    const shearLb = shearInstances.reduce((sum, inst) => {
-      if (inst.panelType === "braced") {
-        const style = resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored);
-        return (
-          sum +
-          computeBracedPanelShearCapacityLb(
-            buildBracedPanelMembers(inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, style.pattern, style.mirrored),
-          )
-        );
-      }
-      return (
-        sum +
-        computeBracedPanelShearCapacityLb(
-          standardPanelMembersFor(inst, inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer),
-        )
-      );
-    }, 0);
-    return { bearingLb, eligiblePanelCount, shearLb, shearPanelCount: shearInstances.length };
+    /* ⚠ **Counted from the MEMBERS, not from a list of panel types, and that
+       is what keeps a Nailer pair out of it.** The obvious filter here is
+       `bracePairPattern !== undefined`, and it is wrong: a Nailer pair sets
+       that field and adds no diagonal at all (*"It is indeed the same as a
+       standard panel with nailer added"*). Filtering on the field would have
+       printed "Across 13 diagonally braced panels " + EM + " 0 lb" for a building set
+       to Nailer. Asking each panel's own members whether they yield any
+       capacity answers the real question, and keeps answering it if a fourth
+       pattern is ever added. */
+    let shearLb = 0;
+    let shearPanelCount = 0;
+    for (const inst of instances) {
+      const members =
+        inst.panelType === "braced"
+          ? (() => {
+              const style = resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored);
+              return buildBracedPanelMembers(inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, style.pattern, style.mirrored);
+            })()
+          : inst.bracePairPattern !== undefined
+            ? standardPanelMembersFor(inst, inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer)
+            : null;
+      if (!members) continue;
+      const panelLb = computeBracedPanelShearCapacityLb(members);
+      if (panelLb <= 0) continue;
+      shearLb += panelLb;
+      shearPanelCount++;
+    }
+    return { bearingLb, eligiblePanelCount, shearLb, shearPanelCount };
   };
 
   // Whole-project estimated totals (Tommy: replace the Review Log's flat
@@ -8416,10 +8444,14 @@ export default function LayoutEditor() {
     () => summarizeBearingAndShear(allInstances).bearingLb,
     [allInstances, estimatedStudPackBearingLb, estimatedColumnBuiltUpBearingLb, estimatedCornerBuiltUpBearingLb],
   );
-  const estimatedTotalShearLb = useMemo(
-    () => summarizeBearingAndShear(allInstances).shearLb,
+  const estimatedTotalShear = useMemo(
+    () => {
+      const { shearLb, shearPanelCount } = summarizeBearingAndShear(allInstances);
+      return { shearLb, shearPanelCount };
+    },
     [allInstances, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored],
   );
+  const estimatedTotalShearLb = estimatedTotalShear.shearLb;
 
   // Engineer role's own per-wall structural summary (see elevationControls'
   // own "engineer" section below) — same summarizeBearingAndShear reduction,
@@ -10243,38 +10275,30 @@ export default function LayoutEditor() {
    * not shout.
    */
   const zeroBracingReviewEntries = useMemo(() => {
-    // ⚠ `panelType === "braced"` ONLY, and a COMBINED safety-gap+brace slot
-    // (`secondaryType === "braced"`, which bracedPlacement.ts itself calls "a
-    // real brace, not just a safety panel") is therefore not counted here.
-    // Deliberate, and the reason is not "it is consistent with the line below" —
-    // it is that `PanelInstance` does not carry `secondaryType` at all
-    // (panelInstances.ts pushes `zone.type`, so a combined slot arrives as a
-    // plain "safety-gap" with no bracedPattern either). So
-    // `summarizeBearingAndShear` already gives a combined slot ZERO shear, and
-    // `estimatedTotalShearLb` really is 0 for a building whose only braces are
-    // combined ones. This entry is then a TRUE statement about what the app
-    // models, not a false alarm — the model is what is wrong, not the count.
-    //
-    // ⚠ Counting `secondaryType` here without fixing the model would be worse:
-    // the entry would go quiet while the displayed shear stayed 0 lb. Fixing it
-    // properly means carrying the flag onto the instance and RAISING a displayed
-    // structural total, which is not something to do by inference — it is in the
-    // spec's `## Open Items` as **"Does a COMBINED safety-gap+brace slot count as
-    // bracing, and should `PanelInstance` carry `secondaryType`?"**, Tommy's/his
-    // engineer's call. (Added there 2026-09-27: this comment previously cited
-    // `## Open Items` for an item that was in neither Open Items list, only in
-    // the band narrative — the same defect class the pass before it was sent to
-    // fix. Fixed by adding the item and naming it, not by softening the pointer.)
+    // ⚠ A COMBINED safety-gap+brace slot (`secondaryType === "braced"`,
+    // which bracedPlacement.ts itself calls "a real brace, not just a safety
+    // panel") contributes nothing here, because `PanelInstance` does not carry
+    // `secondaryType` at all (panelInstances.ts pushes `zone.type`, so a
+    // combined slot arrives as a plain "safety-gap"). So
+    // `summarizeBearingAndShear` gives a combined slot ZERO shear and this
+    // entry is a TRUE statement about what the app models — the model is what
+    // is wrong, not the count. Silencing it by counting `secondaryType` would
+    // be worse: the entry would go quiet while the displayed shear stayed 0 lb.
+    // Fixing it properly means carrying the flag onto the instance and RAISING
+    // a displayed structural total, which is in the spec's `## Open Items` as
+    // **"Does a COMBINED safety-gap+brace slot count as bracing, and should
+    // `PanelInstance` carry `secondaryType`?"**, Tommy's/his engineer's call.
     // `FootprintCanvas`'s per-panel tooltip does count `secondaryType`, so the
     // two genuinely disagree today; that divergence is recorded there too.
-    /* ⚠ **B15: a patterned standard panel silences this too.** The entry
-       says "no modelled shear resistance", and once the brace overlay is on,
-       a wall of patterned standards HAS modelled shear (see
-       `summarizeBearingAndShear`, which now sums it). Counting only the
-       dedicated type here would raise a NO BRACED PANELS alarm over a
-       building whose every panel has four braces on its cut list. */
-    const bracedCount = allInstances.filter((i) => i.panelType === "braced" || i.bracePairPattern !== undefined).length;
-    if (allInstances.length === 0 || bracedCount > 0) return [];
+    /* ⚠ **B15: this now asks the SHEAR TOTAL, not a count of panel types.**
+       The entry's whole claim is "no modelled shear resistance", so the
+       honest gate is whether any is modelled. Counting `panelType ===
+       "braced"` would raise a NO BRACED PANELS alarm over a building whose
+       every panel carries four braces on its cut list; counting
+       `bracePairPattern !== undefined` instead would SILENCE it for a
+       building set to Nailer Pair, which really does have none. The number
+       both of those were trying to approximate is right here. */
+    if (allInstances.length === 0 || estimatedTotalShear.shearPanelCount > 0) return [];
     const cornerCount = allInstances.filter((i) => i.panelType === "corner" || i.panelType === "safety-oct-corner").length;
     // Derived, not typed: the shortest two-corner wall that can still hold a
     // legal middle is two nominal corners plus the fabrication minimum (75in at
@@ -10290,20 +10314,29 @@ export default function LayoutEditor() {
         ? `Square Bale Panels never places a braced slot, so this is expected for this panelization — and it still means no lateral resistance is modelled anywhere in this building. `
         : panelizationType === "timber-frame-curtain"
           ? `Timber Frame Curtain is carried by its actual timber frame, which this app does not model at all, so a zero here is expected — and it is not evidence that the frame is adequate. Set the curtain's panel type to Braced if the panels are meant to do this work. `
-          : `Under Loose Packed Braced this is NOT expected, and the usual cause is corner panels taking up every wall run: a wall under ${formatLengthIn(firstLegalTwoCornerWallIn, unitSystem)} owning a corner at both ends has its short middle absorbed by the pair, which removes the braced slot that middle used to be. A 12ft octagon ends up entirely corners${cornerCount > 0 ? ` — ${cornerCount} of them here` : ""}. `;
+          : wallBracePattern === "nailer"
+            ? /* ⚠ Since B15 this is the LIKELY way a Loose Packed building
+                 reaches zero, and it is one click away: a Nailer pair adds
+                 no diagonal, so choosing it empties the building of braces
+                 everywhere at once. Named first, because the old corner-
+                 absorb explanation below would send a reader hunting
+                 through wall runs for a cause that is sitting in the
+                 Panelizer. */
+              `Wall bracing is set to Nailer Pair, which adds no diagonal to any panel, so this zero is exactly what that setting means — and it is not evidence that something else is carrying the racking. Choose SuperBrace Pair or Braced Pair in Settings > Panelizer if the panels are meant to do this work. `
+            : `Under Loose Packed Braced with a diagonal pattern selected this is NOT expected, and the usual cause is corner panels taking up every wall run: a wall under ${formatLengthIn(firstLegalTwoCornerWallIn, unitSystem)} owning a corner at both ends has its short middle absorbed by the pair, which removes the braced slot that middle used to be. A 12ft octagon ends up entirely corners${cornerCount > 0 ? ` — ${cornerCount} of them here` : ""}. `;
     return [
       {
-        label: "⚠ NO BRACED PANELS IN THIS BUILDING — no modelled shear resistance",
+        label: "⚠ NO DIAGONAL BRACING IN THIS BUILDING — no modelled shear resistance",
         status: "pending-BI-confirmation" as const,
         note:
-          `Not one of this building's ${allInstances.length} panels is a braced panel, so its estimated total shear capacity is 0 lb — not a small number, none. ` +
-          `The app models racking resistance only from a braced panel's own diagonal braces, and there are no braces to model. ` +
+          `Not one of this building's ${allInstances.length} panels carries a diagonal brace, so its estimated total shear capacity is 0 lb — not a small number, none. ` +
+          `The app models racking resistance only from a panel's own diagonal braces — a dedicated Braced Panel's, or a Standard Panel's half of the wall brace pattern — and there are none to model. ` +
           panelizationClause +
           `Whether a corner panel should COUNT as bracing is an open question that needs a real number from Building Integrity or its engineer — nothing here assumes one, in either direction. ` +
           `No panel was changed to produce this entry, and none should be changed to silence it.`,
       },
     ];
-  }, [allInstances, panelizationType, unitSystem]);
+  }, [allInstances, panelizationType, unitSystem, estimatedTotalShear, wallBracePattern]);
 
   const reviewLog = useMemo(() => {
     // Walls still carrying the panel run the OLD corner-ownership rule gave
@@ -10388,7 +10421,7 @@ export default function LayoutEditor() {
       {
         label: "Estimated total shear capacity",
         status: "pending-BI-confirmation" as const,
-        note: `~${Math.round(estimatedTotalShearLb).toLocaleString()} lb across ${allInstances.filter((i) => i.panelType === "braced").length} braced panels — Building Integrity's own first-pass NDS estimate (diagonal brace), not a licensed engineer's calculation.`,
+        note: `~${Math.round(estimatedTotalShearLb).toLocaleString()} lb across ${estimatedTotalShear.shearPanelCount} diagonally braced panels — Building Integrity's own first-pass NDS estimate (diagonal brace), not a licensed engineer's calculation.`,
       },
       { label: "Carbon fraction of dry mass", ...carbonFractionOfDryMass },
       { label: "Framing lumber density", ...referenceDensities.framingLumberLbFt3 },
@@ -10928,6 +10961,34 @@ export default function LayoutEditor() {
 
       {wallsEnabled && (
         <>
+      {/* ⚠ B15, 2026-11-02. He was *"Glad there is a super brace to brace
+          to nailer toggle"* on being told the pattern could be changed —
+          and at that point it could not: it was a constant in the source. It
+          is a control now, because a building decision he expects to make
+          himself does not belong in a commit. */}
+      <h3>Wall bracing</h3>
+      <div role="group" aria-label="Wall brace pattern" className={styles.toolbar}>
+        {BRACE_PAIR_PATTERNS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            aria-pressed={wallBracePattern === p.id}
+            className={wallBracePattern === p.id ? styles.toolActive : styles.tool}
+            title={p.description}
+            onClick={() => setWallBracePattern(p.id)}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <p className={styles.note}>
+        {BRACE_PAIR_PATTERNS.find((p) => p.id === wallBracePattern)?.description} Laid on every Standard Panel of
+        every ground-floor wall, paired from the end nearest the least accessible corner
+        {wallBracePattern === "nailer"
+          ? ", though a Nailer pair has nothing to close across the joint it shares — this setting models NO lateral resistance anywhere in the building, and the Review Log says so"
+          : ", so each figure closes across the joint the two halves share"}
+        . Corners, columns, headers and gap panels take none.
+      </p>
       <label>
         Standard width (in){" "}
         {pendingControls.has("standard-width") && (

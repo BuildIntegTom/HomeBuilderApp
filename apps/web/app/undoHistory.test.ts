@@ -33,9 +33,12 @@ describe("what counts as the document", () => {
     // the roof's own envelope assembly (Tommy: "roof exterior is Mento 3000
     // and interior is intello"), which until then shared the wall's. Both
     // `document` - they change what the building is made of.
-    expect(all.length).toBe(78);
-    // ...and 71 -> 73 document keys, since both new ones are document state.
-    expect(DOCUMENT_KEYS.length).toBe(73);
+    // 78 -> 79 on 2026-11-02: `wallBracePattern`, which pattern the B15 wall
+    // brace overlay lays on every standard panel. Classified `document` — it
+    // changes the members on every panel's fabrication sheet.
+    expect(all.length).toBe(79);
+    // ...and 73 -> 74 document keys.
+    expect(DOCUMENT_KEYS.length).toBe(74);
   });
 
   it("where the user is standing is NOT the document", () => {

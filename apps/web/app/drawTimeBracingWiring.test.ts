@@ -138,4 +138,30 @@ describe("⚠ the pair pattern rides from the slot to the instance", () => {
     expect(plainLb).toBe(0);
     expect(patternedLb).toBeGreaterThan(0);
   });
+
+  it("⚠ the Panelizer's pattern choice reaches the members", () => {
+    /* > *"Glad there is a super brace to brace to nailer toggle"*
+       — Tommy, 2026-11-02. At that moment there was not; it was a constant
+       in the source. This is the test that the control he now has actually
+       changes the parts, rather than only the label.
+
+       ⚠ `nailer` is the one that matters most here: it adds NO diagonal
+       (*"It is indeed the same as a standard panel with nailer added"*), so a
+       building set to it has no modelled shear anywhere — which is a real
+       structural state, not a broken one, and the zero-bracing Review Log
+       entry is what says so. */
+    const plain = Object.fromEntries(
+      footprint.walls.map((w) => [w.id, tileWall(w.lengthFt * 12, STANDARD_IN, CORNER_IN, "end").slots]),
+    );
+    for (const pattern of ["superbrace", "braced", "nailer"] as const) {
+      const slots = applyDrawTimeBracing(footprint, plain, LEAST_ACCESSIBLE, pattern, HEIGHT_IN);
+      const inst = allPanelInstances(footprint, slots, STANDARD_IN).find((i) => i.panelType === "standard");
+      expect({ pattern, carried: inst?.bracePairPattern }).toEqual({ pattern, carried: pattern });
+      const shearLb = computeBracedPanelShearCapacityLb(
+        standardPanelMembersFor(inst!, inst!.widthIn, DEPTH_IN, HEIGHT_IN, false),
+      );
+      if (pattern === "nailer") expect({ pattern, shearLb }).toEqual({ pattern, shearLb: 0 });
+      else expect(shearLb).toBeGreaterThan(0);
+    }
+  });
 });
