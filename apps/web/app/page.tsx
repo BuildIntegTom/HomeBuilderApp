@@ -8374,17 +8374,40 @@ export default function LayoutEditor() {
     };
     const bearingLb = instances.reduce((sum, inst) => sum + (perTypeBearingLb[inst.panelType] ?? 0), 0);
     const eligiblePanelCount = instances.filter((inst) => BEARING_ELIGIBLE_TYPES.has(inst.panelType)).length;
-    const bracedInstances = instances.filter((inst) => inst.panelType === "braced");
-    const shearLb = bracedInstances.reduce((sum, inst) => {
-      const style = resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored);
+    /* ⚠ **B15 — a patterned STANDARD panel contributes shear too, and
+       leaving it out would have been a new kind of wrong.** Before the brace
+       overlay, `panelType === "braced"` really was every panel in the
+       building with a diagonal in it. It no longer is: every standard panel
+       now carries its half of a pair's pattern, four real 2x4 braces on the
+       fabrication sheet. A wall of them reading "no braced panels / 0 lb"
+       would be a structural readout that contradicts its own cut list.
+
+       Nothing is invented to say this. `computeBracedPanelShearCapacityLb`
+       is purely member-driven — it filters `role: "brace"` and resolves each
+       strut's NDS capacity through its own `tiltDeg`, and its own comment
+       says it "automatically tracks whatever buildDiagonalBraces currently
+       produces". Handing it a patterned panel's real members is that
+       function doing exactly its job, at exactly the same first-pass
+       rigour, under the same Pending BI Confirmation label. */
+    const shearInstances = instances.filter((inst) => inst.panelType === "braced" || inst.bracePairPattern !== undefined);
+    const shearLb = shearInstances.reduce((sum, inst) => {
+      if (inst.panelType === "braced") {
+        const style = resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored);
+        return (
+          sum +
+          computeBracedPanelShearCapacityLb(
+            buildBracedPanelMembers(inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, style.pattern, style.mirrored),
+          )
+        );
+      }
       return (
         sum +
         computeBracedPanelShearCapacityLb(
-          buildBracedPanelMembers(inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, style.pattern, style.mirrored),
+          standardPanelMembersFor(inst, inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer),
         )
       );
     }, 0);
-    return { bearingLb, eligiblePanelCount, shearLb, bracedPanelCount: bracedInstances.length };
+    return { bearingLb, eligiblePanelCount, shearLb, shearPanelCount: shearInstances.length };
   };
 
   // Whole-project estimated totals (Tommy: replace the Review Log's flat
@@ -10244,7 +10267,13 @@ export default function LayoutEditor() {
     // fix. Fixed by adding the item and naming it, not by softening the pointer.)
     // `FootprintCanvas`'s per-panel tooltip does count `secondaryType`, so the
     // two genuinely disagree today; that divergence is recorded there too.
-    const bracedCount = allInstances.filter((i) => i.panelType === "braced").length;
+    /* ⚠ **B15: a patterned standard panel silences this too.** The entry
+       says "no modelled shear resistance", and once the brace overlay is on,
+       a wall of patterned standards HAS modelled shear (see
+       `summarizeBearingAndShear`, which now sums it). Counting only the
+       dedicated type here would raise a NO BRACED PANELS alarm over a
+       building whose every panel has four braces on its cut list. */
+    const bracedCount = allInstances.filter((i) => i.panelType === "braced" || i.bracePairPattern !== undefined).length;
     if (allInstances.length === 0 || bracedCount > 0) return [];
     const cornerCount = allInstances.filter((i) => i.panelType === "corner" || i.panelType === "safety-oct-corner").length;
     // Derived, not typed: the shortest two-corner wall that can still hold a
@@ -11572,16 +11601,17 @@ export default function LayoutEditor() {
             <div className={elevationStyles.structuralRowHead}>
               <span>Shear (racking)</span>
               <span className={elevationStyles.structuralValue}>
-                {elevationWallBearingAndShear.bracedPanelCount === 0
-                  ? "No braced panels on this wall"
+                {elevationWallBearingAndShear.shearPanelCount === 0
+                  ? "No diagonal bracing on this wall"
                   : `${Math.round(elevationWallBearingAndShear.shearLb).toLocaleString()} lb`}
               </span>
             </div>
-            {elevationWallBearingAndShear.bracedPanelCount > 0 && (
+            {elevationWallBearingAndShear.shearPanelCount > 0 && (
               <>
                 <p className={elevationStyles.helpText}>
-                  Across {elevationWallBearingAndShear.bracedPanelCount} braced panel
-                  {elevationWallBearingAndShear.bracedPanelCount === 1 ? "" : "s"} on this wall — Building
+                  Across {elevationWallBearingAndShear.shearPanelCount} diagonally braced panel
+                  {elevationWallBearingAndShear.shearPanelCount === 1 ? "" : "s"} on this wall — a dedicated Braced
+                  Panel or a Standard Panel carrying its half of the wall pattern — Building
                   Integrity&apos;s own first-pass NDS estimate (diagonal brace), not a licensed engineer&apos;s
                   calculation.
                 </p>

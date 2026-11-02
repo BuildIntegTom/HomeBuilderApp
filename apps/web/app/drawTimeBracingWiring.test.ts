@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildRectangleFootprint, tileWall, type PanelSlot } from "@building-integrity/geometry";
 import { applyDrawTimeBracing, isBraceEligible } from "./drawTimeBracing";
 import { allPanelInstances } from "./panelInstances";
+import { computeBracedPanelShearCapacityLb } from "@building-integrity/calc-engine";
 import { standardPanelMembersFor } from "./standardPanelMembers";
 
 /**
@@ -110,5 +111,31 @@ describe("⚠ the pair pattern rides from the slot to the instance", () => {
     const braced = standardPanelMembersFor(inst!, inst!.widthIn, DEPTH_IN, HEIGHT_IN, true);
     expect(braced.some((m) => m.memberId.startsWith("stud_centre_"))).toBe(false);
     expect(braced.some((m) => m.memberId.includes("superbrace"))).toBe(true);
+  });
+
+  it("⚠ a patterned panel contributes REAL modelled shear, a plain one none", () => {
+    /* The shear readout used to filter `panelType === "braced"`, which
+       really was every panel with a diagonal in it until the overlay went
+       on. A wall of patterned standards reading "no braced panels / 0 lb"
+       would be a structural number contradicting its own cut list, so
+       `summarizeBearingAndShear` now sums these too.
+
+       ⚠ Nothing new is assumed to do it: `computeBracedPanelShearCapacityLb`
+       filters `role: "brace"` and resolves each strut through its own
+       `tiltDeg`. This is the test that a patterned panel's members really
+       do satisfy that filter — if the recipe ever stopped tagging them
+       `brace`, the number would silently fall back to zero. */
+    const inst = allPanelInstances(footprint, bracedSlots(), STANDARD_IN).find(
+      (i) => i.panelType === "standard" && i.bracePairPattern !== undefined,
+    );
+    expect(inst).toBeDefined();
+    const plainLb = computeBracedPanelShearCapacityLb(
+      standardPanelMembersFor({}, inst!.widthIn, DEPTH_IN, HEIGHT_IN, false),
+    );
+    const patternedLb = computeBracedPanelShearCapacityLb(
+      standardPanelMembersFor(inst!, inst!.widthIn, DEPTH_IN, HEIGHT_IN, false),
+    );
+    expect(plainLb).toBe(0);
+    expect(patternedLb).toBeGreaterThan(0);
   });
 });
