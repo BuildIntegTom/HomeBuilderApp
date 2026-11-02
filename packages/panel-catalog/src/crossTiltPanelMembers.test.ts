@@ -25,8 +25,15 @@ describe("⚠ a panel tilted FRONT TO BACK, not left to right", () => {
     // Both exterior studs match each other, as do both interior ones...
     expect(new Set(ext.map((m) => m.actualDimsIn.lengthIn)).size).toBe(1);
     expect(new Set(int.map((m) => m.actualDimsIn.lengthIn)).size).toBe(1);
-    // ...and the interior pair is taller, because the top rises inward.
-    expect(int[0]!.actualDimsIn.lengthIn).toBeGreaterThan(ext[0]!.actualDimsIn.lengthIn);
+    /* ⚠ ...and the EXTERIOR pair is taller, because the top FALLS inward.
+       This row stands on the tall wall of a shed — the wall under the roof's
+       HIGH edge — and the roof descends from there to the low wall. This
+       assertion read the other way until 2026-11-01, and so did the
+       geometry: a top plate pitched against its own roof. */
+    expect(ext[0]!.actualDimsIn.lengthIn).toBeGreaterThan(int[0]!.actualDimsIn.lengthIn);
+    /* The gap between them is the slope over the distance between the two
+       wythes' own HIGH edges, which are y = 0 and y = D - 3.5 apart. */
+    expect(ext[0]!.actualDimsIn.lengthIn - int[0]!.actualDimsIn.lengthIn).toBeCloseTo(((D - 3.5) * 4) / 12, 9);
   });
 
   it("⚠ a gable panel does the opposite, which is why this is a new type", () => {
@@ -56,7 +63,9 @@ describe("⚠ a panel tilted FRONT TO BACK, not left to right", () => {
        plates and every stud top lie in the same plane. */
     const built = buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 4 });
     const cos = 12 / Math.hypot(12, 4);
-    const topAt = (yIn: number) => 96 + (yIn * 4) / 12;
+    /* ⚠ 96in is the INTERIOR face, the low one, so the plane climbs as it
+       comes back OUT toward y = 0. */
+    const topAt = (yIn: number) => 96 + ((D - yIn) * 4) / 12;
 
     const skin = built.members.find((m) => m.memberId === "cross_tilt_top_skin")!;
     /* The skin is cut to the SLOPED depth, longer than the panel is deep —
@@ -80,8 +89,10 @@ describe("⚠ a panel tilted FRONT TO BACK, not left to right", () => {
       const [a, b, c, d] = plate.position.sectionCornersIn!;
       // The two bottom corners share one height: the underside is LEVEL.
       expect(a!.zIn).toBeCloseTo(b!.zIn, 9);
-      // The two top corners do not: the rip carries the slope.
-      expect(c!.zIn).toBeGreaterThan(d!.zIn);
+      /* The two top corners do not: the rip carries the slope. ⚠ `d` is
+         the corner at y0, the OUTER edge of the pair, and it is the HIGH one
+         because the top falls inward. Reversed with the tilt on 2026-11-01. */
+      expect(d!.zIn).toBeGreaterThan(c!.zIn);
       // And both top corners land on the skin's underside, one plane.
       const skinUnderAt = (yIn: number) => topAt(yIn) - 0.75 / cos;
       expect(d!.zIn).toBeCloseTo(skinUnderAt(d!.yIn), 9);

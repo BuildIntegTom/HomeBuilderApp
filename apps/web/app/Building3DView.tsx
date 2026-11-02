@@ -1925,6 +1925,7 @@ export default function Building3DView({
       crossTiltWallIds,
       depthIn: thicknessIn,
       roofPitchIn12,
+      roofEaveHeightFt,
       wallHeightFt,
     });
     const membersByGroup = new Map(takeoff.groups.map((g) => [g.key, g.members]));
@@ -1936,7 +1937,7 @@ export default function Building3DView({
       rotationRad: instance.world.rotationRad,
       members: membersByGroup.get(instance.groupKey) ?? [],
     }));
-  }, [footprint, crossTiltWallIds, roofPitchIn12, thicknessIn, wallHeightFt]);
+  }, [footprint, crossTiltWallIds, roofPitchIn12, roofEaveHeightFt, thicknessIn, wallHeightFt]);
 
   /* A COURTYARD RING's roof: tapered panels fanning across each facet.
      Scheme B — no hips, every panel reaching from the inner wall to the

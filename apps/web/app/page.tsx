@@ -6953,6 +6953,7 @@ export default function LayoutEditor() {
       crossTiltWallIds,
       depthIn: thicknessIn,
       roofPitchIn12: deckPanelTakeoffInput.roofPitchIn12,
+      roofEaveHeightFt: deckPanelTakeoffInput.roofEaveHeightFt,
       wallHeightFt,
     }),
     [footprint, crossTiltWallIds, thicknessIn, deckPanelTakeoffInput, wallHeightFt],

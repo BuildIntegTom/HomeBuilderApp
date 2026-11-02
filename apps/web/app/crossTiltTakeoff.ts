@@ -1,13 +1,12 @@
 import {
   shedTallWallId,
+  simpleRoofPlanes,
   wallCompassDirection,
   type CompassDirection,
   type Footprint,
 } from "@building-integrity/geometry";
 import {
-  PLATE_2X4_WIDTH_IN,
   buildCrossTiltPanelMembers,
-  crossTiltMinimumLowHeightIn,
   planFloorRoofPanelWidthsIn,
   type CrossTiltPanelOptions,
   type PanelMember,
@@ -53,9 +52,9 @@ export interface CrossTiltTakeoffGroup {
   /** Stable per unique panel, for React keys and sheet ids. */
   key: string;
   widthIn: number;
-  /** Height at the EXTERIOR face — the low side, the roof rising inward. */
+  /** Height at the INTERIOR face — the low side, the roof falling inward. */
   lowHeightIn: number;
-  /** Height at the interior face. */
+  /** Height at the EXTERIOR face, under the roof's own high edge. */
   highHeightIn: number;
   /** The angle the one inclined top is cut to, off level. */
   tiltDeg: number;
@@ -98,44 +97,82 @@ export interface CrossTiltTakeoffInput {
   /** Withheld where no pitch resolves — then there is no roof to receive and
    * no row, rather than a guessed one. */
   roofPitchIn12: number | undefined;
-  /** The row sits ON the wall, so this is where its underside lands. */
+  /**
+   * ⚠ **The ROOFLINE — the one the roof itself is laid from, which is the
+   * top of the roof-bearing plate and NOT the wall's top plate.**
+   *
+   * This is both where the row's underside lands and what its height is
+   * measured against, so the row cannot be referenced to one height while
+   * the roof is laid off another. `page.tsx` passes
+   * `deckPanelTakeoffInput.roofEaveHeightFt`, the very value the roof deck
+   * is placed with.
+   */
+  roofEaveHeightFt: number | undefined;
+  /** Fallback for the roofline when no roof resolves, and nothing else. */
   wallHeightFt: number;
 }
 
 const EMPTY: CrossTiltTakeoff = { runs: [], instances: [], groups: [], faceAreaSqFt: 0, refusal: null };
 
 /**
- * ⚠ **A cross-tilted panel's own low height — the tilt's rise and nothing
- * more.**
+ * ⚠ **HOW TALL THE ROW IS: whatever reaches the roof. It is NOT a property
+ * of the pitch.**
  *
- * His *"smaller set of gable line panels on top of the main wall"*: a short
- * panel sitting ON the wall, not a replacement for it, so the pair comes to
- * the wall height plus what the roof needs. One 2x4's width of straight
- * exterior face below the rip is what the row has always been built with.
- */
-const CROSS_TILT_LOW_HEIGHT_IN = PLATE_2X4_WIDTH_IN;
-
-/**
- * ⚠ **…but never shorter than the panel's own layers.**
+ * This row stands on the TALL wall of a shed, and a shed's tall wall is the
+ * one under the roof's HIGH edge. The height it has to make up is therefore
+ * the whole rise of the roof — span x pitch — which is a property of the
+ * BUILDING, not of the panel.
  *
- * The 3 1/2in above is this app's stand-in and nothing more, and on a flat
- * enough roof it does not hold the panel's own bottom skin, bottom plate,
- * ripped plate edge and top skin — which is exactly what B8's five pinned
- * interferences were. `crossTiltMinimumLowHeightIn` is that sum, derived from
- * the panel rather than chosen, so the floor can be applied without waiting
- * on anyone. At the default 4:12 it is 3.374in and does not bite; it only
- * lifts the row on a flatter roof, where the rip leaves more board standing.
+ * > *"These panels should begin at the top plate and have an inclined top
+ * > plate sloped to receive the roof panels."* — Tommy
+ *
+ * ⚠ **Until 2026-11-01 it was a constant** — `max(3.5, the panel's own
+ * minimum)`, 6.87in at 4:12 — with no term for the roof at all. Measured on
+ * a drawn shed at the default 4:12 and a 10ft wall, the roof's high edge
+ * stood this far ABOVE the top of the row:
+ *
+ * | shed | roof rise | gap above the row |
+ * | --- | --- | --- |
+ * | 24 x 12ft | 48.00in | **38.21in** |
+ * | 30 x 14ft | 56.00in | **46.21in** |
+ * | 40 x 16ft | 64.00in | **54.21in** |
+ *
+ * So the tall wall never reached its roof, and the gap grew with the
+ * building. The row was a 12in cap where a full storey-height gable panel
+ * belongs — the same height the gable END walls already run to at their own
+ * tall ends, since all three meet at the two corners.
+ *
+ * ⚠ **It stops at the ROOFLINE, not at the top of the roof panels.** A
+ * gable END wall may run up past the roofline to close against the roof's top
+ * face, because nothing sits on that line. This wall has roof bearing
+ * directly on it, so its top IS the roof's underside.
+ *
+ * ⚠ **No clamp.** Where the derived height will not hold the panel's own
+ * layers (a very shallow shed), `buildCrossTiltPanelMembers` refuses in
+ * words and the row is left undrawn. Clamping it up would lift the panel
+ * through the roof it is meant to carry.
  */
-function crossTiltLowHeightIn(pitchIn12: number): number {
-  return Math.max(CROSS_TILT_LOW_HEIGHT_IN, crossTiltMinimumLowHeightIn(pitchIn12));
+function crossTiltRowHeightsIn(
+  footprint: Footprint,
+  pitchIn12: number,
+  eaveHeightFt: number,
+  depthIn: number,
+): { exteriorIn: number; interiorIn: number; refusal: string | null } {
+  const plane = simpleRoofPlanes(footprint, { form: "shed", pitchIn12, eaveHeightFt }).planes[0];
+  if (!plane) {
+    return {
+      exteriorIn: 0,
+      interiorIn: 0,
+      refusal: "No shed roof plane resolves for this footprint, so there is no roof height for the tilted row to reach.",
+    };
+  }
+  /* The plane's high edge lies ON the footprint polygon, which is the wall's
+     EXTERIOR face (`footprintLoops`: "the exterior face of a wall is always
+     to its left"). So this is the height at the panel's own y = 0, and the
+     top falls inward from there over the panel's depth. */
+  const exteriorIn = (plane.highHeightFt - eaveHeightFt) * IN_PER_FT;
+  return { exteriorIn, interiorIn: exteriorIn - depthIn * (pitchIn12 / 12), refusal: null };
 }
-
-/* ⚠ On 2026-11-01 the minimum grew to include a real exterior stud (*"tall
-   enough for a real stud in both wythes"*), so at the default 4:12 it is
-   6.87in and the 3.5in stand-in above no longer decides anything. The
-   stand-in stays as a floor for a hypothetical pitch steep enough to make
-   the derived minimum smaller than it — which cannot happen today, and is
-   cheaper to leave than to reason about again later. */
 
 /** The signature a shop cuts by, so two panels share a sheet only if they
  * really are the same part. */
@@ -179,6 +216,14 @@ export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTilt
   if (!footprint || !crossTiltWallIds || crossTiltWallIds.size === 0) return EMPTY;
   if (roofPitchIn12 === undefined) return EMPTY;
 
+  /* ⚠ The row is referenced to the ROOFLINE — the top of the roof-bearing
+     plate, which is what the roof itself is laid from. It anchored at the
+     bare wall top until 2026-11-01, which put it 2 1/4in low and ran it
+     straight through the truss plate that rings every wall. */
+  const eaveHeightFt = input.roofEaveHeightFt ?? wallHeightFt;
+  const rowHeights = crossTiltRowHeightsIn(footprint, roofPitchIn12, eaveHeightFt, depthIn);
+  if (rowHeights.refusal !== null) return { ...EMPTY, refusal: rowHeights.refusal };
+
   const byId = new Map(footprint.corners.map((c) => [c.id, c.point]));
   const runs: CrossTiltTakeoffRun[] = [];
   const instances: CrossTiltTakeoffInstance[] = [];
@@ -213,7 +258,7 @@ export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTilt
       const options: CrossTiltPanelOptions = {
         widthIn,
         depthIn,
-        lowHeightIn: crossTiltLowHeightIn(roofPitchIn12),
+        lowHeightIn: rowHeights.interiorIn,
         pitchIn12: roofPitchIn12,
       };
       const built = buildCrossTiltPanelMembers(options);
@@ -236,7 +281,7 @@ export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTilt
         world: {
           anchorX: a.x + ux * alongFt,
           anchorZ: a.y + uy * alongFt,
-          anchorYFt: wallHeightFt,
+          anchorYFt: eaveHeightFt,
           rotationRad,
         },
       };

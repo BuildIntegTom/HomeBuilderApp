@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRectangleFootprint, shedTallWallId } from "@building-integrity/geometry";
+import { buildRectangleFootprint, shedTallWallId, simpleRoofPlanes } from "@building-integrity/geometry";
 import { buildCrossTiltPanelMembers } from "@building-integrity/panel-catalog";
 import { crossTiltMinimumLowHeightIn } from "@building-integrity/panel-catalog";
 import { computeCrossTiltTakeoff, crossTiltWallIdsFor, type CrossTiltTakeoffInput } from "./crossTiltTakeoff";
@@ -26,14 +26,24 @@ const DEEP_FT = 20;
 const footprint = buildRectangleFootprint(WIDE_FT, DEEP_FT);
 const tallWallId = shedTallWallId(footprint, { form: "shed", pitchIn12: 4, eaveHeightFt: 10 })!;
 
+/** The roofline: the wall's top plate PLUS the roof-bearing plate that rings
+ * it, which is the height the roof itself is laid from. */
+const EAVE_FT = 10 + 2.25 / IN_PER_FT;
+
 const input = (over: Partial<CrossTiltTakeoffInput> = {}): CrossTiltTakeoffInput => ({
   footprint,
   crossTiltWallIds: new Set([tallWallId]),
   depthIn: DEPTH_IN,
   roofPitchIn12: 4,
+  roofEaveHeightFt: EAVE_FT,
   wallHeightFt: 10,
   ...over,
 });
+
+/** The roof's own high edge, off the same planes the deck is laid on. */
+function roofHighEdgeIn(fp = footprint, pitchIn12 = 4, eaveHeightFt = EAVE_FT): number {
+  return simpleRoofPlanes(fp, { form: "shed", pitchIn12, eaveHeightFt }).planes[0]!.highHeightFt * IN_PER_FT;
+}
 
 describe("the tilted gable row reaches the documents", () => {
   it("spawns a row the moment the roof form says shed — no toggle, no draw-time snapshot", () => {
@@ -106,9 +116,16 @@ describe("the tilted gable row reaches the documents", () => {
     expect(row[row.length - 1]!.widthIn).toBe(18);
   });
 
-  it("the row sits ON the wall, at the wall's own height", () => {
-    const takeoff = computeCrossTiltTakeoff(input({ wallHeightFt: 9 }));
-    for (const i of takeoff.instances) expect(i.world.anchorYFt).toBe(9);
+  it("the row sits on the ROOFLINE, and falls back to the wall top only when there is no roof", () => {
+    /* ⚠ This asserted `anchorYFt === wallHeightFt` until 2026-11-01, which
+       is 2 1/4in below the top of the roof-bearing plate that rings every
+       wall — so the row's own bottom skin and plate ran through it. The row
+       is referenced to the same roofline the roof is laid from. */
+    const onTheRoofline = computeCrossTiltTakeoff(input({ wallHeightFt: 9 }));
+    for (const i of onTheRoofline.instances) expect(i.world.anchorYFt).toBeCloseTo(EAVE_FT, 9);
+
+    const noRoofline = computeCrossTiltTakeoff(input({ wallHeightFt: 9, roofEaveHeightFt: undefined }));
+    for (const i of noRoofline.instances) expect(i.world.anchorYFt).toBe(9);
   });
 
   it("⚠ a panel is named by its place in the row, and no two share a name or an id", () => {
@@ -160,10 +177,17 @@ describe("the tilted gable row reaches the documents", () => {
       expect(takeoff.instances.length).toBeGreaterThan(0);
       const group = takeoff.groups[0]!;
       expect(group.lowHeightIn).toBeGreaterThanOrEqual(crossTiltMinimumLowHeightIn(roofPitchIn12) - 1e-9);
-      /* ⚠ At the default 4:12 it is 6 7/8in, not the old 3 1/2in stand-in.
-         Tommy, 2026-11-01, asked how much straight exterior face this row
-         should have: *"tall enough for a real stud in both wythes."* */
-      if (roofPitchIn12 === 4) expect(group.lowHeightIn).toBeCloseTo(6.874, 3);
+      /* ⚠ **The minimum is now a REFUSAL THRESHOLD, not a floor the row is
+         clamped to** — and on any real shed it is met with room to spare,
+         because the row is a full storey tall rather than a 12in cap. At
+         4:12 on this 20ft-deep shed the interior face is 74.83in against a
+         6.874in minimum. This line read `toBeCloseTo(6.874)` while the row's
+         height was a function of the pitch alone; that constant is exactly
+         what left the tall wall 38in short of its roof. */
+      if (roofPitchIn12 === 4) {
+        expect(group.lowHeightIn).toBeCloseTo(roofHighEdgeIn() - EAVE_FT * IN_PER_FT - DEPTH_IN / 3, 6);
+        expect(group.lowHeightIn).toBeCloseTo(74.833, 3);
+      }
     }
   });
 
@@ -223,5 +247,95 @@ describe("the tilted gable row reaches the documents", () => {
       expect(studs.some((m) => m.memberId.includes("interior"))).toBe(true);
       for (const stud of studs) expect(stud.actualDimsIn.lengthIn).toBeGreaterThanOrEqual(3.5 - 1e-9);
     }
+  });
+});
+
+/**
+ * ⚠ **THE ROW HAS TO REACH ITS ROOF, and for 1 1/2 months it did not.**
+ *
+ * The row's height was `max(3.5in, the panel's own minimum)` — a function of
+ * the PITCH, with no term for the building. A shed's tall wall is the wall
+ * under the roof's HIGH edge, so what it has to make up is the roof's whole
+ * rise. Measured on drawn sheds at 4:12 on a 10ft wall, the roof's high edge
+ * stood **38.21in** above the row on a 24x12, **46.21in** on a 30x14 and
+ * **54.21in** on a 40x16 — a gap that grows with the building.
+ *
+ * ⚠ **And the tilt ran the wrong way.** A panel's depth is measured from its
+ * EXTERIOR face, and this roof falls away inward, so the top must DESCEND
+ * over the depth. It climbed. Nothing caught it because the row stopped so
+ * far short that the two surfaces never came near enough to disagree —
+ * which is the real lesson here: fixing the height alone would have bedded
+ * the roof on one corner of every panel in the row.
+ */
+describe("⚠ the tilted row meets the roof it carries", () => {
+  it("⚠ its top lands exactly on the roof's high edge, on a shed of any depth", () => {
+    for (const deepFt of [12, 14, 16, 20]) {
+      const fp = buildRectangleFootprint(WIDE_FT, deepFt);
+      const wallId = shedTallWallId(fp, { form: "shed", pitchIn12: 4, eaveHeightFt: EAVE_FT })!;
+      const takeoff = computeCrossTiltTakeoff(input({ footprint: fp, crossTiltWallIds: new Set([wallId]) }));
+      expect(takeoff.refusal).toBeNull();
+      expect(takeoff.groups.length).toBeGreaterThan(0);
+
+      for (const group of takeoff.groups) {
+        /* Base + the panel's EXTERIOR height, against the roof's own plane.
+           Both read off `roofEaveHeightFt`, so they cannot be referenced to
+           different heights. */
+        const topIn = EAVE_FT * IN_PER_FT + group.highHeightIn;
+        expect(topIn).toBeCloseTo(roofHighEdgeIn(fp), 6);
+      }
+    }
+  });
+
+  it("⚠ the row grows with the building, because the rise does", () => {
+    /* The regression in one assertion: a constant height cannot do this. At
+       4:12 a shed rises a third of its depth, so 12ft of building is 48in of
+       row and 16ft is 64in. */
+    const heightOf = (deepFt: number): number => {
+      const fp = buildRectangleFootprint(WIDE_FT, deepFt);
+      const wallId = shedTallWallId(fp, { form: "shed", pitchIn12: 4, eaveHeightFt: EAVE_FT })!;
+      return computeCrossTiltTakeoff(input({ footprint: fp, crossTiltWallIds: new Set([wallId]) })).groups[0]!.highHeightIn;
+    };
+    expect(heightOf(12)).toBeCloseTo(48, 6);
+    expect(heightOf(16)).toBeCloseTo(64, 6);
+    expect(heightOf(16) - heightOf(12)).toBeCloseTo(16, 6);
+  });
+
+  it("⚠ the top FALLS inward: the exterior face is the tall one", () => {
+    const group = computeCrossTiltTakeoff(input()).groups[0]!;
+    expect(group.highHeightIn).toBeGreaterThan(group.lowHeightIn);
+    expect(group.highHeightIn - group.lowHeightIn).toBeCloseTo(DEPTH_IN / 3, 6);
+
+    /* ⚠ Read off the real member, not the reported pair, because the pair
+       is symmetric about a reversal and would pass either way. The top
+       skin's section corners carry the actual inclined surface. */
+    const skin = group.members.find((m) => m.memberId === "cross_tilt_top_skin")!;
+    const corners = skin.position.sectionCornersIn!;
+    const atY = (yIn: number) => Math.max(...corners.filter((c) => Math.abs(c.yIn - yIn) < 1e-6).map((c) => c.zIn));
+    expect(atY(0)).toBeGreaterThan(atY(DEPTH_IN));
+    expect(atY(0) - atY(DEPTH_IN)).toBeCloseTo(DEPTH_IN / 3, 6);
+  });
+
+  it("⚠ it sits ON the roof-bearing plate, not inside it", () => {
+    /* It anchored at the bare wall top, 2 1/4in below the top of the truss
+       plate that rings EVERY wall — so the row's bottom skin and plate ran
+       straight through the plate carrying the roof. */
+    const takeoff = computeCrossTiltTakeoff(input());
+    for (const instance of takeoff.instances) {
+      expect(instance.world.anchorYFt).toBeCloseTo(EAVE_FT, 9);
+      expect(instance.world.anchorYFt).toBeGreaterThan(10);
+    }
+  });
+
+  it("refuses in words where the derived height will not hold the panel's layers", () => {
+    /* ⚠ No clamp. A clamp would lift the panel through the roof it is
+       meant to carry, which is a worse answer than an honest refusal: a very
+       shallow shed rises less than this panel is thick. */
+    const fp = buildRectangleFootprint(WIDE_FT, 8);
+    const wallId = shedTallWallId(fp, { form: "shed", pitchIn12: 1, eaveHeightFt: EAVE_FT })!;
+    const takeoff = computeCrossTiltTakeoff(
+      input({ footprint: fp, crossTiltWallIds: new Set([wallId]), roofPitchIn12: 1 }),
+    );
+    expect(takeoff.refusal).toContain("cannot hold this panel's own layers");
+    expect(takeoff.groups).toHaveLength(0);
   });
 });

@@ -122,8 +122,13 @@ export function crossTiltMinimumLowHeightIn(pitchIn12: number): number {
 export interface CrossTiltPanelOptions {
   widthIn: number;
   depthIn: number;
-  /** Height at the panel's EXTERIOR face, which is the low side on a shed's
-   * tall wall: the roof rises away from the weather side. */
+  /**
+   * Height at the panel's INTERIOR face, which is the LOW side.
+   *
+   * ⚠ A shed's roof is highest at this wall and falls away inward, so the
+   * weather side is the TALL one and the short face is the one indoors. This
+   * doc said the opposite until 2026-11-01, and so did the geometry.
+   */
   lowHeightIn: number;
   /** Rise per 12 of depth — the roof's own pitch, since this top plate is
    * the surface that roof lands on. */
@@ -132,7 +137,7 @@ export interface CrossTiltPanelOptions {
 
 export interface CrossTiltPanelResult {
   members: PanelMember[];
-  /** Height at the interior face. */
+  /** Height at the EXTERIOR face — the high side, under the roof's high edge. */
   highHeightIn: number;
   /** The angle the top is cut to, off level. */
   tiltDeg: number;
@@ -220,12 +225,29 @@ export function buildCrossTiltPanelMembers(options: CrossTiltPanelOptions): Cros
   if (lowHeightIn < minimumLowHeightIn - 1e-9) {
     return {
       ...empty,
-      refusal: `A ${lowHeightIn.toFixed(2)}in exterior face cannot hold this panel's own layers at ${pitchIn12}:12: the bottom skin, the bottom plate, the ${thinEdgeIn.toFixed(2)}in the top plate's rip leaves and the top skin come to ${minimumLowHeightIn.toFixed(2)}in. Build it at least that tall.`,
+      refusal: `A ${lowHeightIn.toFixed(2)}in interior face cannot hold this panel's own layers at ${pitchIn12}:12: the bottom skin, the bottom plate, the ${thinEdgeIn.toFixed(2)}in the top plate's rip leaves and the top skin come to ${minimumLowHeightIn.toFixed(2)}in. Build it at least that tall.`,
     };
   }
 
-  /** The panel's one inclined top surface, as a height at a given depth. */
-  const topAtYIn = (yIn: number) => lowHeightIn + yIn * tan;
+  /**
+   * The panel's one inclined top surface, as a height at a given depth.
+   *
+   * ⚠ **IT FALLS AS IT GOES INWARD, and that is the whole point of the
+   * panel.** This row stands on the TALL wall of a shed — the wall under the
+   * roof's HIGH edge — and a shed roof descends from there toward the low
+   * wall. A panel's own depth is measured FROM THE EXTERIOR FACE (the
+   * footprint polygon is the exterior face: *"the exterior face of a wall is
+   * always to its left"*, `footprintLoops`), so y = 0 is outside and y =
+   * depth is inside, and the top has to come DOWN over that span.
+   *
+   * ⚠ It read `lowHeightIn + yIn * tan` until 2026-11-01, which climbs
+   * inward — a top plate pitched against its own roof. Nothing caught it
+   * because the row also stopped 38in short of the roof (see
+   * `crossTiltTakeoff`), so the two surfaces never came near enough to
+   * disagree. Fixing the height alone would have bedded the roof on one
+   * corner of every panel in the row.
+   */
+  const topAtYIn = (yIn: number) => lowHeightIn + (depthIn - yIn) * tan;
   /**
    * ⚠ A thickness measured PERPENDICULAR to the incline drops the surface by
    * `thickness / cos` when read at a fixed depth — not by the thickness. The
@@ -305,16 +327,28 @@ export function buildCrossTiltPanelMembers(options: CrossTiltPanelOptions): Cros
   }
   studXs.sort((a, b) => a - b);
 
-  /** The underside of a row's top plate: level, set by the plate's THICK
-   * edge, which is the deeper (higher) of its two. */
-  const plateBottomZIn = (y1In: number) => belowTopAtYIn(y1In, SKIN_THICKNESS_IN) - plateThicknessIn;
+  /**
+   * The underside of a row's top plate: LEVEL, hanging a full plate
+   * thickness below the incline at the plate's own THICK edge.
+   *
+   * ⚠ **It takes the HIGHER of the plate's two edges, found rather than
+   * assumed.** This read `y1In` — the far edge — which was the higher one
+   * only while the top climbed inward. When the tilt was corrected on
+   * 2026-11-01 to fall inward (see `topAtYIn`), the higher edge of each
+   * wythe became `y0In`, and reading `y1In` hung the plate `3.5 x tan` too
+   * low: at 4:12 that took the short face's stud from 3.50in to 2.92in,
+   * below the 3 1/2in that makes it a stud at all, which is the very thing
+   * B8 was about. Taking the max cannot be wrong in either direction.
+   */
+  const plateBottomZIn = (y0In: number, y1In: number) =>
+    Math.max(belowTopAtYIn(y0In, SKIN_THICKNESS_IN), belowTopAtYIn(y1In, SKIN_THICKNESS_IN)) - plateThicknessIn;
 
   for (const [face, y0In] of [
     ["exterior", 0],
     ["interior", depthIn - PLATE_2X4_WIDTH_IN],
   ] as [string, number][]) {
     const y1In = y0In + PLATE_2X4_WIDTH_IN;
-    const studLengthIn = plateBottomZIn(y1In) - bottomZIn;
+    const studLengthIn = plateBottomZIn(y0In, y1In) - bottomZIn;
     /* ⚠ No stud where the panel leaves no room for one — the same guard a
        gable's corner studs carry. At the app's own 3 1/2in low height the
        exterior row comes out about 1/8in, which is not a stud; it is the row
@@ -351,13 +385,18 @@ export function buildCrossTiltPanelMembers(options: CrossTiltPanelOptions): Cros
      face and all. His 2026-11-01 note and screenshots say otherwise: *"Both
      2x4s on top plate have an edge ripped off of them."* So the board sits
      flat, its underside level on the studs, and the roof's slope is cut into
-     its top face. The thin edge faces OUT, because the roof climbs inward. */
+     its top face.
+
+     ⚠ The thin edge faces IN, because the roof FALLS inward from this wall
+     — it is the wall under a shed's high edge. This comment said "faces
+     OUT, because the roof climbs inward" until 2026-11-01, when the tilt was
+     corrected; the geometry agreed with the comment and both were wrong. */
   for (const [face, y0In] of [
     ["exterior", 0],
     ["interior", depthIn - PLATE_2X4_WIDTH_IN],
   ] as [string, number][]) {
     const y1In = y0In + PLATE_2X4_WIDTH_IN;
-    const bottomOfPlateZIn = plateBottomZIn(y1In);
+    const bottomOfPlateZIn = plateBottomZIn(y0In, y1In);
     members.push({
       memberId: `cross_tilt_top_plate_${face}`,
       material: "dimensional_lumber",
