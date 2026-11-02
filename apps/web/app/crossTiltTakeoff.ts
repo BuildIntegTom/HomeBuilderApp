@@ -60,7 +60,7 @@ export interface CrossTiltTakeoffGroup {
   /** The angle the one inclined top is cut to, off level. */
   tiltDeg: number;
   /** The rip taken off one edge of each top plate, for the cut list. */
-  topPlateRip: { thinEdgeIn: number; thickEdgeIn: number; removedIn: number; angleDeg: number };
+  topPlateRip: { nominalSize: "2x4" | "4x4"; thinEdgeIn: number; thickEdgeIn: number; removedIn: number; angleDeg: number };
   /** How far the plate finishes proud of a square-cut top skin — his
    * *"~1/4in"*, computed from the real pitch rather than written as 1/4. */
   skinProudIn: number;
@@ -129,6 +129,13 @@ const CROSS_TILT_LOW_HEIGHT_IN = PLATE_2X4_WIDTH_IN;
 function crossTiltLowHeightIn(pitchIn12: number): number {
   return Math.max(CROSS_TILT_LOW_HEIGHT_IN, crossTiltMinimumLowHeightIn(pitchIn12));
 }
+
+/* ⚠ On 2026-11-01 the minimum grew to include a real exterior stud (*"tall
+   enough for a real stud in both wythes"*), so at the default 4:12 it is
+   6.87in and the 3.5in stand-in above no longer decides anything. The
+   stand-in stays as a floor for a hypothetical pitch steep enough to make
+   the derived minimum smaller than it — which cannot happen today, and is
+   cheaper to leave than to reason about again later. */
 
 /** The signature a shop cuts by, so two panels share a sheet only if they
  * really are the same part. */

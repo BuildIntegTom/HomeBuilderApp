@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildCrossTiltPanelMembers, crossTiltMinimumLowHeightIn } from "./crossTiltPanelMembers";
+import {
+  buildCrossTiltPanelMembers,
+  crossTiltMinimumLowHeightIn,
+  crossTiltTopPlateStock,
+} from "./crossTiltPanelMembers";
 import { buildGablePanelMembers } from "./gablePanelMembers";
 
 const W = 48;
@@ -82,7 +86,7 @@ describe("⚠ a panel tilted FRONT TO BACK, not left to right", () => {
       const skinUnderAt = (yIn: number) => topAt(yIn) - 0.75 / cos;
       expect(d!.zIn).toBeCloseTo(skinUnderAt(d!.yIn), 9);
       expect(c!.zIn).toBeCloseTo(skinUnderAt(c!.yIn), 9);
-      expect(plate.notes).toContain("lies FLAT on the studs");
+      expect(plate.notes).toContain("lying FLAT on the studs");
     }
 
     /* And every stud is one plain square-cut length, because the plate took
@@ -126,20 +130,63 @@ describe("⚠ a panel tilted FRONT TO BACK, not left to right", () => {
         .toContain("cannot hold this panel's own layers");
       expect(buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: minIn, pitchIn12 }).refusal).toBeNull();
     }
-    /* ⚠ It goes UP as the roof gets FLATTER — less comes off the rip, so
-       more of the 2x4 is left standing at the thin edge. The opposite of
-       what you would guess. */
+    /* ⚠ Within one stock it goes UP as the roof gets FLATTER — less comes
+       off the rip, so more board is left standing at the thin edge. The
+       opposite of what you would guess. */
     expect(crossTiltMinimumLowHeightIn(2)).toBeGreaterThan(crossTiltMinimumLowHeightIn(4));
-    expect(crossTiltMinimumLowHeightIn(4)).toBeCloseTo(3.374, 3);
-    expect(crossTiltMinimumLowHeightIn(0)).toBeCloseTo(4.5, 9);
+    /* ⚠ 6 7/8in at the default pitch, not 3 3/8in: Tommy, 2026-11-01, asked
+       how much straight exterior face this row should have — *"tall enough
+       for a real stud in both wythes."* The stack is the bottom skin, the
+       bottom plate, a stud at least as long as it is wide, the rip's thin
+       edge and the top skin. */
+    expect(crossTiltMinimumLowHeightIn(4)).toBeCloseTo(6.874, 3);
+    expect(crossTiltMinimumLowHeightIn(0)).toBeCloseTo(8.0, 9);
+    /* ⚠ And it JUMPS where the stock changes, because a 4x4's thin edge is
+       2in more board than a 2x4's at the same pitch. */
+    expect(crossTiltMinimumLowHeightIn(6)).toBeGreaterThan(crossTiltMinimumLowHeightIn(5));
   });
 
-  it("⚠ refuses a pitch that rips the whole board away", () => {
-    /* Past about 5.1:12 the rip takes more than a 2x4 has, and the plate
-       wants a deeper board — which is a decision, not an inference. */
-    expect(buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 6 }).refusal)
-      .toContain("needs a deeper board than a 2x4");
-    expect(buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 5 }).refusal).toBeNull();
+  it("⚠ the top plate steps up to a 4x4 when the rip outgrows a 2x4", () => {
+    /* > *"A 4x4 top plate."* — Tommy, 2026-11-01, asked what a shed steeper
+       than about 5.1:12 should do. The rip takes `3 1/2in x pitch/12` out of
+       the board's thickness; a 2x4 has 1 1/2in to give, a 4x4 has 3 1/2in. */
+    expect(crossTiltTopPlateStock(4).nominalSize).toBe("2x4");
+    expect(crossTiltTopPlateStock(5).nominalSize).toBe("2x4");
+    expect(crossTiltTopPlateStock(6).nominalSize).toBe("4x4");
+    expect(crossTiltTopPlateStock(12).nominalSize).toBe("4x4");
+
+    const steep = buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 8 });
+    expect(steep.refusal).toBeNull();
+    expect(steep.topPlateRip.nominalSize).toBe("4x4");
+    expect(steep.topPlateRip.thickEdgeIn).toBe(3.5);
+    const plate = steep.members.find((m) => m.memberId === "cross_tilt_top_plate_exterior")!;
+    expect(plate.nominalSize).toBe("4x4");
+    expect(plate.actualDimsIn.thicknessIn).toBe(3.5);
+
+    /* ⚠ And even a 4x4 runs out: at 12:12 the rip takes its whole 3 1/2in.
+       Past that this detail needs a different plate, which nobody has
+       chosen, so it refuses rather than emitting a board of no thickness. */
+    expect(buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: 96, pitchIn12: 12 }).refusal)
+      .toContain("needs a different plate");
+  });
+
+  it("⚠ BOTH wythes are framed now, not just the interior one", () => {
+    /* The row used to be built at a 3 1/2in low edge, which left the
+       exterior wythe about 1/8in of clear space — not a stud, so the roof's
+       load reached the wall's outer wythe through plates and skins rather
+       than through framing. */
+    for (const pitchIn12 of [2, 3, 4, 5, 6, 8]) {
+      const low = crossTiltMinimumLowHeightIn(pitchIn12);
+      const built = buildCrossTiltPanelMembers({ widthIn: W, depthIn: D, lowHeightIn: low, pitchIn12 });
+      expect({ pitchIn12, refusal: built.refusal }).toEqual({ pitchIn12, refusal: null });
+      const studs = built.members.filter((m) => m.role === "stud");
+      const ext = studs.filter((m) => m.memberId.includes("exterior"));
+      const int = studs.filter((m) => m.memberId.includes("interior"));
+      expect({ pitchIn12, ext: ext.length > 0, int: int.length > 0 }).toEqual({ pitchIn12, ext: true, int: true });
+      /* Every stud is at least as long as it is wide, which is the rule that
+         makes it a stud rather than blocking. */
+      for (const stud of studs) expect(stud.actualDimsIn.lengthIn).toBeGreaterThanOrEqual(3.5 - 1e-9);
+    }
   });
 
   it("⚠ it is a REAL panel now, not the six pieces it was", () => {

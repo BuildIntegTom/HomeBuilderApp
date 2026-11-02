@@ -84,7 +84,19 @@ const CASES: { name: string; members: PanelMember[] }[] = [
      3D view, so it reached no document and no audit either. Its tilt runs
      through the panel's DEPTH, which is the one plane none of the other
      sloped panels here exercise. */
-  { name: "cross tilt", members: buildCrossTiltPanelMembers({ widthIn: 24, depthIn: D, lowHeightIn: 3.5, pitchIn12: 4 }).members },
+  {
+    name: "cross tilt",
+    members: buildCrossTiltPanelMembers({
+      widthIn: 24,
+      depthIn: D,
+      /* ⚠ Its own minimum, not the old 3 1/2in stand-in: since 2026-11-01 the
+         low edge has to hold a real stud in each wythe, and the panel
+         refuses below that rather than building something that interferes
+         with itself. */
+      lowHeightIn: crossTiltMinimumLowHeightIn(4),
+      pitchIn12: 4,
+    }).members,
+  },
   /* ⚠ And at the FLATTEST pitch the row builds, where the rip leaves the most
      board standing and the panel has to be tallest. That is the case the 3 1/2in
      stand-in failed, so it is the one worth holding. */
@@ -95,6 +107,16 @@ const CASES: { name: string; members: PanelMember[] }[] = [
       depthIn: D,
       lowHeightIn: crossTiltMinimumLowHeightIn(2),
       pitchIn12: 2,
+    }).members,
+  },
+  /* ⚠ The steep case, where the top plate is a 4x4 instead of a 2x4. */
+  {
+    name: "cross tilt steep",
+    members: buildCrossTiltPanelMembers({
+      widthIn: 24,
+      depthIn: D,
+      lowHeightIn: crossTiltMinimumLowHeightIn(8),
+      pitchIn12: 8,
     }).members,
   },
   { name: "big header", members: buildBigHeaderMembers(40, D, 24, false, "plywood") },
@@ -229,6 +251,7 @@ describe("⚠ no member occupies the same space as another", () => {
          itself. */
       "cross tilt",
       "cross tilt shallow",
+      "cross tilt steep",
       /* ⚠ 26 → 0 on 2026-11-01, and DELETED from BASELINE. *"Doors and
          headers and big headers should all follow suit."* Two causes, and the
          end sheets were only the first: 14 of them were the plywood ends

@@ -314,6 +314,20 @@ export interface GableWallJointSpan {
   xEndIn: number;
   /** The wall's own safety gap, so the gable's sits directly over it. */
   isSafetyGap?: boolean;
+  /**
+   * ⚠ **The COLUMN panel under the ridge**, which is the one joint that
+   * cannot be solved by taking wall joints as they come.
+   *
+   * The wall places its ridge column where it best fits its own slot run
+   * (`placeColumnUnderPeak` tries every viable ordinal); the gable row used
+   * to centre its own column tile exactly on the peak. Measured on a 16ft
+   * gable wall: the wall's column sat at 58⅞..84⅜ and the gable's at
+   * 83¼..108¾ — **24⅜ in apart**, a ridge beam bearing on a column panel
+   * that is most of a panel away from the one below it.
+   *
+   * > *"Gable follows the wall."* — Tommy, 2026-11-01, asked who moves.
+   */
+  isColumn?: boolean;
 }
 
 /**
@@ -880,12 +894,23 @@ export function computeGableTiledRow(
   // nothing downstream is keyed to it.
   if (columnReservationWidthIn !== undefined && anchors.length === 3) {
     const peakAnchor = anchors[1]!;
+    /* ⚠ **THE WALL'S OWN RIDGE COLUMN WINS.** If the wall below has placed
+       one, the gable's column tile takes its two edges rather than centring
+       on the peak — so the two columns stack and the ridge bears straight
+       down. Nothing about the wall moves. */
+    const wallColumn = wallSlotsIn.find(
+      (sp) => sp.isColumn === true && toEighths(sp.xStartIn) < toEighths(sp.xEndIn),
+    );
     // Centered to within one eighth rather than exactly: the column's own
     // width stays exactly what was asked for, and its two edges stay on the
     // grid, which is what the two segments either side of it need. An odd
     // number of eighths therefore sits 1/16in off the true peak.
-    const columnWidthEighths = Math.max(0, toEighths(columnReservationWidthIn));
-    const columnStartEighths = toEighths(peakAnchor.xIn) - Math.floor(columnWidthEighths / 2);
+    const columnWidthEighths = wallColumn
+      ? toEighths(wallColumn.xEndIn) - toEighths(wallColumn.xStartIn)
+      : Math.max(0, toEighths(columnReservationWidthIn));
+    const columnStartEighths = wallColumn
+      ? toEighths(wallColumn.xStartIn)
+      : toEighths(peakAnchor.xIn) - Math.floor(columnWidthEighths / 2);
     const columnStartIn = fromEighths(columnStartEighths);
     const columnEndIn = fromEighths(columnStartEighths + columnWidthEighths);
     if (columnStartIn >= segments[0]!.segStartIn && columnEndIn <= segments[1]!.segEndIn) {

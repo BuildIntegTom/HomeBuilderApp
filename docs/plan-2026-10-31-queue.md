@@ -738,3 +738,62 @@ and they are different numbers on purpose.
 **Next exports:** the same seam serves them. A per-panel DXF (one file per
 panel, for a CNC) is a different pagination of this. A materials/purchase CSV
 is a different aggregation of the cut list.
+
+
+## E. Answered 2026-11-01 (interviewed)
+
+### B3 — the ridge, and a correction to my own report
+
+**His answers:** *gable follows the wall* at the ridge; the 1in corner sliver
+*shouldn't be there*; and for gable windows, *wall joints win*.
+
+⚠ **Two of my three findings were wrong, and the error was mine.** The
+earlier B3 measurements fed `computeGableTiledRow` a profile containing both
+wall ENDS as well as the peak. The app passes the INTERNAL points only (for a
+peak, exactly one). With three points, `resolveAnchors` pushes the coincident
+end point clear by `MIN_ANCHOR_GAP_IN` — which produced the phantom 1in
+corner tile, and took the anchor count past the `anchors.length === 3` guard
+so no gable column tile was built at all. **Neither happens in the app.** So:
+
+- the **1in sliver does not exist** — nothing to remove;
+- the gable column tile **is** built.
+
+⚠ **And the ridge was worse than reported, not better.** The wall places its
+ridge column where it best fits its own slot run (`placeColumnUnderPeak`
+tries every viable ordinal); the gable centred its own column tile exactly on
+the peak. On a 16ft wall the wall's column sat at 58⅞..84⅜ and the gable's
+at 83¼..108¾ — **24⅜ in apart**. A ridge beam bearing on a column panel
+most of a panel away from the one carrying it.
+
+**Fixed, his way:** a wall slot marked `isColumn` hands the gable row its two
+edges. Nothing about the wall moves. Measured after, on 16/20/24/32/40ft
+gable walls: **every** interior joint lands on a wall joint — 6/6, 7/7, 8/8,
+10/10, 13/13 — with the two columns exactly stacked and the row still summing
+to the wall to the thousandth.
+
+**Still open:** gable windows. His rule is now recorded (*wall joints win* —
+a window snaps to the nearest wall joint rather than holding its position),
+but the gable-window panel itself does not exist yet (B13), so there is
+nothing to snap. The windowed row still keeps its own tiling.
+
+### B8 — the tilted panel's low edge, plate stock and fill
+
+**His answers:** *tall enough for a real stud in both wythes*; *a 4x4 top
+plate* above the pitch where a 2x4's rip runs out; and *straw, like any wall
+panel* in the cavity.
+
+- **Low edge** is now the bottom skin + bottom plate + a stud at least as long
+  as it is wide + the rip's thin edge + the top skin. **6⅞ in at 4:12**,
+  against the old 3½ in stand-in. Both wythes are framed; before this the
+  exterior one had about ⅛ in of clear space and the roof's load reached the
+  wall's outer wythe through plates and skins rather than framing.
+- **Plate stock** steps 2x4 → 4x4 where the rip (`3½ in × pitch/12`) outgrows
+  1½ in, i.e. above about 5.1:12. Past 12:12 even a 4x4 is eaten and the
+  panel refuses, because nobody has chosen what comes next. The thin edge
+  feathering out is expected on a bevel rip and no minimum is invented for it.
+- **Cavity**: straw, unchanged.
+
+⚠ **Consequence worth watching:** the row is now ~3⅓ in taller at 4:12 and
+the roof above it does not move — the roof is laid from `gableEaveHeightIn`,
+which has no term for this row. That relationship was already unresolved
+(B2's shed half); it is now off by more.

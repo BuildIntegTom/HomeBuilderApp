@@ -600,15 +600,16 @@ const phase2Assumptions = () => [
       "straw-filled, measured by the members the way a floor panel's is, because it is a straw-bale wall panel on a " +
       "straw-bale wall — no fill was specified for it; (3) its fasteners come from the WALL panel schedule " +
       "(2in nails at 4in o.c. along plates, 8 x 4in GRK per plywood lid), which applies because this panel is " +
-      "plates, studs and lids like a standard panel. ⚠ Its LOW EDGE is settled, and by his own sentence: " +
-      "\"Both 2x4s on top plate have an edge ripped off of them\" (2026-11-01, with SketchUp screenshots). The " +
-      "plate lies FLAT on the studs and the roof's slope is cut into its top face, so the exterior face needs " +
-      "only the bottom skin, the bottom plate, the 0.33in the rip leaves and the top skin — 3.37in at 4:12 — " +
-      "instead of 4.62in. The panel refuses below whatever its own layers come to now, and the five " +
-      "interferences this carried are gone. Two consequences worth knowing: above about 5.1:12 the rip takes " +
-      "more than a 2x4 has and the plate wants a deeper board, which is a decision nobody has made; and at the " +
-      "app's 3.5in low height the exterior stud row comes out to nothing, so the panel is framed in the " +
-      "interior wythe only.",
+      "plates, studs and lids like a standard panel. ⚠ Its LOW EDGE and its PLATE STOCK are both settled now, " +
+      "and both by his own words. The plate lies FLAT and the slope is ripped into its top face (\"Both 2x4s on " +
+      "top plate have an edge ripped off of them\", 2026-11-01, with SketchUp screenshots). The straight " +
+      "exterior face is whatever holds the bottom skin, the bottom plate, a real stud, the rip's thin edge and " +
+      "the top skin — 6.87in at 4:12, asked and answered: \"tall enough for a real stud in both wythes.\" " +
+      "And the plate steps up from a 2x4 to a 4x4 where the rip outgrows one, above about 5.1:12 (\"A 4x4 top " +
+      "plate\"); past 12:12 even that is eaten and the panel refuses. What is still unconfirmed on this panel: " +
+      "the cavity is counted as straw-filled, which IS his answer (\"straw, like any wall panel\"), but the " +
+      "fastener schedule is still the standard wall panel's read onto these roles rather than one written for " +
+      "this part.",
   },
   {
     label: "Box Beam/Truss Plate/Mid-Wall Bond Beam pricing — the BEAM rate itself is unset",
@@ -6490,7 +6491,14 @@ export default function LayoutEditor() {
     const slots = stories[stories.length - 1]?.wallSlots[wallId] ?? [];
     let atIn = 0;
     return slots.map((slot) => {
-      const span = { xStartIn: atIn, xEndIn: atIn + slot.widthIn, isSafetyGap: slot.type === "safety-gap" };
+      const span = {
+        xStartIn: atIn,
+        xEndIn: atIn + slot.widthIn,
+        isSafetyGap: slot.type === "safety-gap",
+        /* ⚠ The ridge column, so the gable's own column tile takes ITS edges
+           rather than centring on the peak — *"gable follows the wall."* */
+        isColumn: slot.type === "column",
+      };
       atIn += slot.widthIn;
       return span;
     });
@@ -15552,14 +15560,14 @@ export default function LayoutEditor() {
                         looks level: {formatLengthIn(group.lowHeightIn, unitSystem)} tall at the exterior face,
                         rising to {formatLengthIn(group.highHeightIn, unitSystem)} at the interior one.{" "}
                         <strong>
-                          Both top plates lie FLAT on the studs with one edge ripped off:{" "}
-                          {formatLengthIn(group.topPlateRip.removedIn, unitSystem)} comes off at{" "}
+                          Both top plates are {group.topPlateRip.nominalSize}s lying FLAT on the studs with one edge
+                          ripped off: {formatLengthIn(group.topPlateRip.removedIn, unitSystem)} comes off at{" "}
                           {group.topPlateRip.angleDeg.toFixed(2)}&deg;, leaving{" "}
                           {formatLengthIn(group.topPlateRip.thinEdgeIn, unitSystem)} at the outer edge and the full{" "}
                           {formatLengthIn(group.topPlateRip.thickEdgeIn, unitSystem)} at the inner one.
                         </strong>{" "}
                         The studs are square-cut and all one length per wythe — the slope is in the plate, not in
-                        them. The plywood is cut square (perpendicular), which leaves the plate about{" "}
+                        them — and both wythes are framed. The plywood is cut square (perpendicular), which leaves the plate about{" "}
                         {formatLengthIn(group.skinProudIn, unitSystem)} proud of the sheet; that is expected. It is
                         panel{" "}
                         {group.instances.map((i) => i.name).join(", ")} of {crossTiltTakeoff.instances.length} along
@@ -15588,20 +15596,13 @@ export default function LayoutEditor() {
                   <p className={styles.note}>
                     Draft — this panel is modeled from Tommy&apos;s verbal spec (&quot;These panels should begin at
                     the top plate and have an inclined top plate sloped to receive the roof panels&quot;) and his
-                    2026-11-01 SketchUp screenshots, which settled the top plate&apos;s rip. Open items on this
-                    sheet: the {formatLengthIn(group.lowHeightIn, unitSystem)} exterior face is this app&apos;s own
-                    reading rather than a dimension he gave — it is held at or above whatever the panel&apos;s own
-                    layers come to, which is what the panel refuses below, but nobody has said how much straight
-                    face this row should have;{" "}
-                    <strong>
-                      at that height the exterior wythe has no room for a stud at all, so this panel is framed in
-                      the interior wythe only
-                    </strong>
-                    ; above about 5.1:12 the rip takes more than a 2x4 has and the plate wants a deeper board; the
-                    cavity is counted as straw-filled because this is a straw-bale wall panel, which has not been
-                    confirmed for a panel this short; and the fastener counts above are the standard wall
-                    panel&apos;s schedule read onto this panel&apos;s plates and lids, which is the schedule it has
-                    roles for but not one written for it. The row is
+                    2026-11-01 SketchUp screenshots and answers, which settled the top plate&apos;s rip, this
+                    row&apos;s straight exterior face (<em>&quot;tall enough for a real stud in both wythes&quot;</em>{" "}
+                    — {formatLengthIn(group.lowHeightIn, unitSystem)} here), the plate stock above 5.1:12
+                    (<em>&quot;a 4x4 top plate&quot;</em>) and the cavity fill (<em>&quot;straw, like any wall
+                    panel&quot;</em>). One open item left on this sheet: the fastener counts above are the standard
+                    wall panel&apos;s schedule read onto this panel&apos;s plates and lids — the schedule it has
+                    the roles for, but not one written for this part. The row is
                     divided on the same {FLOOR_ROOF_MIN_PANEL_WIDTH_IN}in-minimum module the floor and roof runs
                     use, with the two end panels at the {thicknessIn}in wall depth.
                   </p>

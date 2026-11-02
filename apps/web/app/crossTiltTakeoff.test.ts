@@ -160,9 +160,10 @@ describe("the tilted gable row reaches the documents", () => {
       expect(takeoff.instances.length).toBeGreaterThan(0);
       const group = takeoff.groups[0]!;
       expect(group.lowHeightIn).toBeGreaterThanOrEqual(crossTiltMinimumLowHeightIn(roofPitchIn12) - 1e-9);
-      // At the default it is still the plain 3 1/2in: the floor only bites
-      // on a flatter roof.
-      if (roofPitchIn12 === 4) expect(group.lowHeightIn).toBe(3.5);
+      /* ⚠ At the default 4:12 it is 6 7/8in, not the old 3 1/2in stand-in.
+         Tommy, 2026-11-01, asked how much straight exterior face this row
+         should have: *"tall enough for a real stud in both wythes."* */
+      if (roofPitchIn12 === 4) expect(group.lowHeightIn).toBeCloseTo(6.874, 3);
     }
   });
 
@@ -213,14 +214,14 @@ describe("the tilted gable row reaches the documents", () => {
       // schedule is counted off.
       expect(group.members.filter((m) => m.role === "skin").length).toBe(2);
       expect(group.members.filter((m) => m.role === "plate").length).toBe(4);
-      /* ⚠ Studs in the INTERIOR wythe only, at the app's 3 1/2in low height.
-         The exterior row's clear space between the bottom plate and the
-         ripped top plate comes to about 1/8in there, which is not a stud, so
-         the builder emits none rather than a sliver. That is the row saying
-         it is as short as it can be — flagged on the sheet, not hidden. */
+      /* ⚠ BOTH wythes are framed. Until 2026-11-01 the row was built at a
+         3 1/2in low edge, which left the exterior wythe about 1/8in of clear
+         space — not a stud, so the roof's load reached the wall's outer
+         wythe through plates and skins rather than through framing. */
       const studs = group.members.filter((m) => m.role === "stud");
-      expect(studs.length).toBeGreaterThanOrEqual(2);
-      for (const stud of studs) expect(stud.memberId).toContain("interior");
+      expect(studs.some((m) => m.memberId.includes("exterior"))).toBe(true);
+      expect(studs.some((m) => m.memberId.includes("interior"))).toBe(true);
+      for (const stud of studs) expect(stud.actualDimsIn.lengthIn).toBeGreaterThanOrEqual(3.5 - 1e-9);
     }
   });
 });
