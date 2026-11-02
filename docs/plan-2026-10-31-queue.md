@@ -855,3 +855,87 @@ and what fills the space underneath is the **eave cap**, a separate part. The
 framed view has drawn it since the cap was placed properly; a silhouette of
 the panel alone had nothing to draw there. `roofPanelCapOutlineSection` gives
 those two views the cap's own rectangle.
+
+## G. 2026-11-01 — B14: the ridge column is not under the ridge
+
+> *"This image outlines in the 3D view some weird inclined changes in the
+> slope to an off centered column panel that's not the right height. 25'3" x
+> 22'9" building."* — Tommy
+
+**Reproduced exactly, on his dimensions.** The gable end is the 22'9" pair
+(273in), so the peak is at x = 136.50. Tiling that wall and placing the ridge
+column gives:
+
+| tile | span | top | the roofline there |
+| --- | --- | --- | --- |
+| standard | 73.50..121.50 | 24.50 → 40.50 | 24.50 / 40.50 |
+| **column** | **121.50..147.00** | **33.50 flat** | **40.50 / 42.00** |
+| standard | 147.00..172.88 | 42.00 → 33.38 | 42.00 / 33.38 |
+
+Every other tile lands on the roofline to the inch. The column does not, and
+there are two separate reasons:
+
+1. **It is 2.25in off the peak.** Its centre is 134.25 against a peak at
+   136.50, so the ridge beam — which is centred on the peak — does not sit
+   centred on the panel that carries it. The two slopes therefore meet it at
+   DIFFERENT heights, 40.50 on the left and 42.00 on the right, which is the
+   *"weird inclined change in the slope"*: the step down is 7.00in on one
+   side and 8.50in on the other.
+
+2. **The 12in drop is not the fault.** `GABLE_COLUMN_FLAT_TOP_DROP_IN` is his
+   own number — *"it has a flat top that is 12in down from the peak"* — and
+   a column centred on the peak would read as deliberate. It only looks wrong
+   because of (1).
+
+⚠ **It is a TILER limit, not a chooser bug.** `placeColumnUnderPeak` tiles
+every viable ordinal and takes the nearest; all three were measured:
+
+| ordinal | column centre | off peak |
+| --- | --- | --- |
+| 1 | 86.25 | —50.25in |
+| **2** | **134.25** | **—2.25in** (chosen) |
+| 3 | 160.13 | +23.63in |
+
+2.25in is the best the current tiler can reach. The left run is a corner plus
+two FULL-width 48in standards (25.5 + 48 + 48 = 121.50) and the redistribution
+happens only on the RIGHT of the column (25.9, 25.9). To put the centre on the
+peak the left run would have to be 123.75in, which needs the standards either
+side trimmed rather than only those on one side.
+
+**The open question is what gives**, and it is a building decision:
+
+ (a) The panels beside the column are trimmed so the column sits exactly under
+     the ridge — non-standard widths next to it, exact bearing.
+ (b) The column stays on its tile boundary and the ridge beam moves to it —
+     standard widths, unequal roof slopes.
+
+(a) is the recommendation: a beam 2.25in off the column carrying it is a
+structural miss, not a cosmetic one, and `dimensional_tightness` says the
+parts sum to the whole. But which panels give up width is his call.
+
+## H. 2026-11-01 — B15: patterned bracing, stacked through floor/wall/roof
+
+> *"I want the floors, walls, and roof intersections of panels to be stacked
+> and supported. Attached I have what an ideal layout for an auto spawn for
+> that 22x25' or so building. Might as well say that this kind of integrated
+> pattern layout changing each panel individually will make more groups of
+> fewer panels for grouping shop fabrication pages and that's fine."* — Tommy
+
+His overlay sketch shows the brace pattern laid out across the WHOLE WALL as
+one figure — diagonals meeting at panel joints and at the top and bottom
+plates, forming a continuous load path — with red ticks marking the roof
+members above and the floor members below landing on those same joints.
+
+Three things in it, and they are separable:
+
+1. **The brace pattern is a property of the WALL, not of a panel.** Today each
+   panel is braced in isolation, so the diagonals do not meet across a joint.
+2. **Floor and roof members land on wall panel joints**, so load stacks
+   straight down. This is `panel_module_2ft_4ft` (24in decks, 48in walls)
+   carried through to the actual member positions rather than just the widths.
+3. **Panel grouping will fragment, and he has accepted that in advance**:
+   more groups of fewer panels on the Shop Fabrication pages is fine.
+
+⚠ Depends on B14 above: a ridge column that is not on the peak puts the
+wall joints out of step with the roof members that are meant to stack on them,
+so the pattern would be laid against a reference that is itself off.
