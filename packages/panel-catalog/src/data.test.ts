@@ -1,3 +1,4 @@
+import { COLUMN_TOTAL_WIDTH_IN } from "./columnPanelMembers";
 import { describe, expect, it } from "vitest";
 import {
   bigHeaderBeamWidthInRange,
@@ -41,9 +42,36 @@ describe("panel size-limit ranges", () => {
     expect(panelHeightInRange.maxIn).toBe(144);
   });
 
-  it("columnMinWidthIn matches the mfr spec sheet (424mm) and Column's real built width already satisfies it", () => {
+  it("columnMinWidthIn matches the mfr spec sheet (424mm) and a COLUMN's real built width satisfies it", () => {
+    /* ⚠ This asserted `cornerPanelWidthIn` until 2026-11-01, and only
+       because a corner was built to a column's width — both were 25.5in.
+       They have diverged, so it now asserts the thing its own name and doc
+       comment are about: the COLUMN's real built width. */
     expect(columnMinWidthIn).toBeCloseTo(16.75, 3);
-    expect(cornerPanelWidthIn.value).toBeGreaterThanOrEqual(columnMinWidthIn);
+    expect(COLUMN_TOTAL_WIDTH_IN).toBeGreaterThanOrEqual(columnMinWidthIn);
+  });
+
+  it("⚠ FLAG: a 15.5in corner panel is BELOW the manufacturer's 424mm figure", () => {
+    /* ⚠ **Recorded, not enforced, and it needs Tommy.**
+       > *"25.5\" width not a problem nor baked in hard number to be fixed to
+       > for now. Let's change the default to 15.5\" so everything lands."*
+       — Tommy, 2026-11-01, choosing 15.5in so wall joints stack on deck
+       joints (see `panelStacking.ts`).
+
+       A corner panel is a column-style box, so the floor that applies to it
+       is the manufacturer's 424mm (16.75in), NOT the 24in straw-panel
+       fabrication rule — that one is about *"panels that are left to right
+       elevation view"*, his own 2026-09-24 words, and a column box is
+       different construction. At 15.5in the corner is **1.25in under** the
+       manufacturer's figure.
+
+       This test states the gap rather than failing on it: he made the call
+       knowingly and `columnMinWidthIn` is a recorded figure that nothing
+       enforces. If he confirms corners are exempt, delete this. If he does
+       not, 16.75in is the nearest width that both stacks poorly and complies,
+       and that is a real trade for him to make. */
+    expect(cornerPanelWidthIn.value).toBeCloseTo(15.5, 6);
+    expect(columnMinWidthIn - cornerPanelWidthIn.value).toBeCloseTo(1.25, 6);
   });
 
   it("bigHeaderBeamWidthInRange matches the mfr spec sheet (400-3000mm)", () => {

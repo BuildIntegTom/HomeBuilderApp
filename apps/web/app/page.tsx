@@ -6431,7 +6431,11 @@ export default function LayoutEditor() {
     () =>
       isSquareBalePanelization
         ? buildSquareBaleCornerPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer, nailerOffsetIn)
-        : buildCornerPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer),
+        : // ⚠ The CATALOG's corner width, not buildCornerPanelMembers' own
+          // default — that default is COLUMN_TOTAL_WIDTH_IN (25.5in), which was
+          // the same number until 2026-11-01 and is not any more. Left
+          // unpassed, this drew a 25.5in corner while the tiler reserved 15.5in.
+          buildCornerPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer, cornerPanelWidthIn.value),
     [isSquareBalePanelization, thicknessIn, wallHeightFt, includeNailer, nailerOffsetIn],
   );
 

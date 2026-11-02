@@ -38,9 +38,20 @@ export const looseDensePackDefaultThicknessIn: CatalogValue<number> = {
 };
 
 export const cornerPanelWidthIn: CatalogValue<number> = {
-  value: 25.5,
+  value: 15.5,
   status: "confirmed",
-  note: "24in core + two 3/4in plywood side faces = 25.5in (Tommy: corner panels are built exactly like Column Panels — see columnPanelMembers.ts's COLUMN_TOTAL_WIDTH_IN).",
+  note:
+    `15.5in — the wall's own thickness, so a corner panel is square in plan. Tommy, 2026-11-01: ` +
+    `"25.5" width not a problem nor baked in hard number to be fixed to for now. Let's change the ` +
+    `default to 15.5" so everything lands." ` +
+    `⚠ IT IS THE WIDTH THAT MAKES PANELS STACK. A floor/roof deck opens with a 15.5in edge panel ` +
+    `(the wall thickness, his rule) and runs 24in field panels; a wall opens with this corner and runs ` +
+    `48in standards. 48 is exactly two 24s, so the two runs share a PITCH and interleave perfectly — ` +
+    `but only if they START together. At 25.5in they began 10in apart and never met: measured on a ` +
+    `25ft 3in x 22ft 9in building, ZERO of 13 deck joints landed on a wall joint. At 15.5in they lock. ` +
+    `See panelStacking.ts. ⚠ It was 25.5in (24in core + two 3/4in plywood side faces), which is still ` +
+    `what a COLUMN panel is — COLUMN_TOTAL_WIDTH_IN is unchanged. A corner panel is no longer built ` +
+    `to a column's width.`,
 };
 
 export const sillDefaultHeightIn: CatalogValue<number> = {

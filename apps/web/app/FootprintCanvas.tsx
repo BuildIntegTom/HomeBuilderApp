@@ -26,6 +26,7 @@ import {
   buildCornerPanelMembers,
   type BracingStyle,
   type JackStudConfig,
+  cornerPanelWidthIn,
 } from "@building-integrity/panel-catalog";
 import { resolveBracedStyle } from "./bracedStyle";
 import {
@@ -305,7 +306,11 @@ export default function FootprintCanvas({
     // So the two sites agree for Loose Packed Braced and Timber Frame Curtain
     // and disagree under Square Bale. Not introduced by the corner work.
     const cornerBearingLb = computeBuiltUpColumnBearingCapacityLb(
-      buildCornerPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer),
+      // ⚠ The CATALOG's corner width, not buildCornerPanelMembers' own
+      // default — that default is COLUMN_TOTAL_WIDTH_IN (25.5in), which was
+      // the same number until 2026-11-01 and is not any more. Left unpassed,
+      // this would measure a 25.5in corner while the tiler reserves 15.5in.
+      buildCornerPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer, cornerPanelWidthIn.value),
       wallHeightFt * 12,
     );
     for (const wall of footprint.walls) {
