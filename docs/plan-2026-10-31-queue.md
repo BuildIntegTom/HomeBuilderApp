@@ -797,3 +797,61 @@ panel* in the cavity.
 the roof above it does not move — the roof is laid from `gableEaveHeightIn`,
 which has no term for this row. That relationship was already unresolved
 (B2's shed half); it is now off by more.
+
+
+## F. 2026-11-01 — four reports, one root cause and one separate one
+
+### The root cause: a RESIZE never re-derived the roof
+
+> *"When I changed a small shed roof building to 24 x 24, it extended the shed
+> roof along with one gable end, but the other gable end went to peaked Gable
+> end style."* / *"a weird short backwards north gable wall spawning for a
+> wide small building"* / *"still no 3rd gable wall on shed roof are
+> appearing"*
+
+All three are the same defect. `handleDraw` derived the whole roof — which
+walls are gable ends, the form, the profile positions, the ridge columns —
+and **a resize changed the footprint and nothing else.** Two things then go
+stale:
+
+1. **Which walls are gable ends.** They are the short pair. Resize past square
+   and the short pair is the other two, leaving a gable row on a wall that is
+   not a gable end any more, wound the way its old wall was. That is the
+   *"weird short backwards north gable wall"*.
+2. **The stored shed profile positions, which are ABSOLUTE INCHES.** A shed
+   puts its point at `x = 0` on one gable wall and at `x = that wall's own
+   LENGTH` on the other, because the two are wound in opposite directions
+   round the footprint. Grow the building and the stored length is no longer
+   that wall's end — it is mid-span, which reads as a PEAK, while the wall
+   that stored 0 still snaps to a shed. **One wall stays a shed and its
+   opposite becomes a gable.**
+
+And the third wall follows from it: `crossTiltWallIds` reads the live roof
+form, so a roof that cannot decide what it is grows no tilted row. (A freshly
+drawn shed was verified to grow its row correctly — 20 tilted gable panels on
+a 12ft-deep building — so the row itself was never broken.)
+
+**Fixed:** the derivation is one function (`applyRoofDefaultsForFootprint`)
+called by the draw AND by every shape change through `applyShapeChange`.
+`roofShapeChangeVerdict` decides when: the gable-end pair changing, or the
+span crossing the shed/peak limit. Short of that the roof is left alone and
+only its end-anchored positions are carried onto the new lengths — a
+two-inch nudge must not throw away a roofline somebody shaped by hand.
+
+⚠ **Two footprint paths still bypass it**, named rather than left quiet:
+`commitFootprintShapeChange` (adding/removing a COURTYARD, which flips
+whether gable ends are allowed at all) and `handleKeepSplitRegion`. Both
+re-tile through a different route, so threading the ridge-column placement
+through them is its own piece of work.
+
+### The separate one: box and membrane views
+
+> *"the box and membrane views still have the roof panels' bottoms raised
+> up"*
+
+Those views draw ONE prism, from the panel's own silhouette. The panel really
+is raised — it is cut back to a level seat so it can bear on a level plate —
+and what fills the space underneath is the **eave cap**, a separate part. The
+framed view has drawn it since the cap was placed properly; a silhouette of
+the panel alone had nothing to draw there. `roofPanelCapOutlineSection` gives
+those two views the cap's own rectangle.

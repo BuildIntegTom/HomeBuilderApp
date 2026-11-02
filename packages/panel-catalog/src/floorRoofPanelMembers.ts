@@ -1564,6 +1564,43 @@ export function roofCapGeometry(pitchIn12: number, panelDepthIn: number, panelWi
  * up) and rotated in — see `capPointIn`. Writing it directly in panel
  * coordinates is how it came to be stacked in the first place.
  */
+/**
+ * ⚠ **THE EAVE CAP'S OWN SILHOUETTE**, for the box and membrane views.
+ *
+ * > *"the box and membrane views still have the roof panels' bottoms raised
+ * > up"* — Tommy, 2026-11-01
+ *
+ * Those views draw one prism from `floorRoofPanelOutlineSection`, which is
+ * the PANEL. The panel really is raised: it is cut back to a level seat so it
+ * can bear on a level plate, and what fills the space underneath is the cap —
+ * a separate part, and so missing from a silhouette of the panel alone. The
+ * framed view has drawn it since the cap was placed properly; these two had
+ * nothing to draw.
+ *
+ * Returned as the void's full rectangle rather than the L's true outline: a
+ * box view says "solid part here", and the rectangle IS the space the cap
+ * occupies between the plate and the panel.
+ */
+export function roofPanelCapOutlineSection(
+  options: FloorRoofPanelOptions,
+  pitchIn12: number,
+): SectionSpacePoint2D[] {
+  const eave = eaveCut({ ...options, pitchIn12 });
+  if (!eave) return [];
+  const hyp = Math.hypot(12, pitchIn12);
+  const cos = 12 / hyp;
+  const sin = pitchIn12 / hyp;
+  const anchorAbovePlateIn = roofTopAboveRooflineIn(options.depthIn, pitchIn12);
+  const voidHeightIn = eave.seatIn * (pitchIn12 / 12);
+  const seatWidthIn = Math.min(ROOF_CAP_SEAT_WIDTH_IN, options.depthIn);
+  if (!(voidHeightIn > 0) || !(seatWidthIn > 0)) return [];
+  const point = (uIn: number, vIn: number): SectionSpacePoint2D => {
+    const wIn = anchorAbovePlateIn - vIn;
+    return { yIn: uIn * sin + wIn * cos, zIn: uIn * cos - wIn * sin };
+  };
+  return [point(0, 0), point(seatWidthIn, 0), point(seatWidthIn, voidHeightIn), point(0, voidHeightIn)];
+}
+
 export function buildRoofPanelCapMembers(
   options: FloorRoofPanelOptions,
   atEnd: "eave",

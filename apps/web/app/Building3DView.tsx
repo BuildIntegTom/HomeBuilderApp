@@ -1883,7 +1883,7 @@ export default function Building3DView({
            * Both views now extrude the SAME outline the framed view is built
            * against, so they cannot disagree about the shape again.
            */
-          outlineIn: { widthIn: instance.widthIn, section: group.sectionIn },
+          outlineIn: { widthIn: instance.widthIn, section: group.sectionIn, capSection: group.capSectionIn },
           /* ⚠ **THE EAVE CAP IS DRAWN NOW.** It was held out while its pieces
              were all stacked at the panel's end rather than placed as a true
              L — drawing them would have put the web, the seat and every
@@ -2900,11 +2900,27 @@ export default function Building3DView({
                      the width from the SAME outline the framed view is built
                      against, in the panel's own frame — span along three.js
                      Y, depth along Z, the mapping PanelMembersGroup uses. */
-                  <DeckOutlinePrism
-                    widthFt={outlineIn.widthIn / IN_PER_FT}
-                    sectionFt={outlineIn.section.map((c) => ({ yFt: c.yIn / IN_PER_FT, zFt: c.zIn / IN_PER_FT }))}
-                    color={PANEL_TYPE_COLORS.standard}
-                  />
+                  <>
+                    <DeckOutlinePrism
+                      widthFt={outlineIn.widthIn / IN_PER_FT}
+                      sectionFt={outlineIn.section.map((c) => ({ yFt: c.yIn / IN_PER_FT, zFt: c.zIn / IN_PER_FT }))}
+                      color={PANEL_TYPE_COLORS.standard}
+                    />
+                    {/* ⚠ **And the EAVE CAP**, which is why these two views
+                        showed the roof *"raised up"* while the framed one did
+                        not. The panel IS raised — it is cut back to a level
+                        seat so it can bear on a level plate — and the cap is
+                        the separate part that fills what is underneath. A
+                        silhouette of the panel alone had nothing to draw
+                        there. */}
+                    {outlineIn.capSection.length > 0 && (
+                      <DeckOutlinePrism
+                        widthFt={outlineIn.widthIn / IN_PER_FT}
+                        sectionFt={outlineIn.capSection.map((c) => ({ yFt: c.yIn / IN_PER_FT, zFt: c.zIn / IN_PER_FT }))}
+                        color={PANEL_TYPE_COLORS.standard}
+                      />
+                    )}
+                  </>
                 ) : (
                   <PanelMembersGroup members={members} />
                 )}

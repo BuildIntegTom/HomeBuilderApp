@@ -13,6 +13,7 @@ import {
   floorRoofPanelOutlineSection,
   planFloorRoofPanelRun,
   ridgeBeamLayout,
+  roofPanelCapOutlineSection,
   roofTopAboveRooflineIn,
   type FloorRoofPanelOptions,
   type FloorRoofPanelRole,
@@ -110,6 +111,17 @@ export interface DeckPanelTakeoffGroup {
   capMembers: PanelMember[];
   /** The panel's silhouette in (depth, span), for the box/membrane views. */
   sectionIn: { yIn: number; zIn: number }[];
+  /**
+   * ⚠ The EAVE CAP's own silhouette, which those views also need.
+   *
+   * > *"the box and membrane views still have the roof panels' bottoms
+   * > raised up"* — Tommy, 2026-11-01. The panel really is raised: it is
+   * cut back to a level seat so it can bear on a level plate, and the cap
+   * fills what is underneath. The framed view has drawn it since the cap
+   * was placed properly; a silhouette of the panel alone had nothing to
+   * draw. Empty on a floor, and on a roof with no bearing seat.
+   */
+  capSectionIn: { yIn: number; zIn: number }[];
   instances: DeckPanelTakeoffInstance[];
 }
 
@@ -454,6 +466,10 @@ export function computeDeckPanelTakeoff(input: DeckPanelTakeoffInput): DeckPanel
       capMembers:
         options.kind === "roof" && options.pitchIn12 !== undefined
           ? buildRoofPanelCapMembers(options, "eave", options.pitchIn12)
+          : [],
+      capSectionIn:
+        options.kind === "roof" && options.pitchIn12 !== undefined
+          ? roofPanelCapOutlineSection(options, options.pitchIn12)
           : [],
       sectionIn: floorRoofPanelOutlineSection(options),
       instances: groupInstances,

@@ -373,6 +373,7 @@ import {
 import { computeCrossTiltTakeoff, crossTiltWallIdsFor, type CrossTiltTakeoffInput } from "./crossTiltTakeoff";
 import { toExportableAssemblies } from "./projectExportAssemblies";
 import { buildProjectPanelDxf } from "./projectPanelDxf";
+import { remapEndAnchoredPositions, roofShapeChangeVerdict } from "./roofShapeChange";
 import { computeDeckPanelTakeoff, type DeckPanelTakeoffInput } from "./deckPanelTakeoff";
 import {
   BIG_HEADER_BEAM_MIN_HEIGHT_IN,
@@ -3474,6 +3475,48 @@ export default function LayoutEditor() {
     setStoppedSlotsByStoryAndWallId((prev) => ({ ...prev, [story]: out.heldByWallId }));
   };
 
+  /**
+   * ⚠ **WHAT A SHAPE CHANGE DOES TO THE ROOF.**
+   *
+   * > *"When I changed a small shed roof building to 24 x 24, it extended the
+   * > shed roof along with one gable end, but the other gable end went to
+   * > peaked Gable end style. All the gable ends and roof panels should have
+   * > converted to centered ridge beam and two rows of ridge beam resting
+   * > roof panels."* — Tommy, 2026-11-01
+   *
+   * A resize used to change the footprint and nothing else, so the building
+   * kept the roof its FIRST shape implied. Two things go stale:
+   *
+   *  1. **Which walls are gable ends.** They are the short pair. Resize past
+   *     square and the short pair is the other two — which is the *"weird
+   *     short backwards north gable wall"*: a row left on a wall that is not
+   *     a gable end any more, wound the way its old wall was.
+   *  2. **The stored shed profile positions**, which are ABSOLUTE INCHES. A
+   *     shed puts its point at x = 0 on one gable wall and x = that wall's own
+   *     LENGTH on the other. Grow the building and the stored length is no
+   *     longer that wall's end, it is somewhere in the middle — which reads
+   *     as a PEAK, while the wall that stored 0 still snaps to a shed. One
+   *     wall stays a shed and its opposite becomes a gable.
+   *
+   * ⚠ **It re-derives only when the roof is genuinely invalidated**, not on
+   * every drag: when the gable-end pair changes, or when the span crosses the
+   * shed/peak limit. A two-inch nudge to a wall must not throw away a
+   * roofline somebody shaped by hand. Short of that it just carries the
+   * stored positions onto the new lengths, so an end-anchored shed point
+   * stays at the end.
+   */
+  const refreshRoofForShapeChange = (
+    oldFp: Footprint,
+    newFp: Footprint,
+    slotsByWallId: Record<string, PanelSlot[]>,
+  ): Record<string, PanelSlot[]> => {
+    const verdict = roofShapeChangeVerdict(oldFp, newFp, { roofEnabled, pitchIn12: DEFAULT_ROOF_PITCH_IN12 });
+    if (verdict.rederive) return applyRoofDefaultsForFootprint(newFp, slotsByWallId);
+    /* Same roof, new lengths — see `remapEndAnchoredPositions`. */
+    setGableProfilePositionsInByWallId((was) => remapEndAnchoredPositions(oldFp, newFp, was));
+    return slotsByWallId;
+  };
+
   const applyShapeChange = (oldFp: Footprint, newFp: Footprint, primary: Set<string>): boolean => {
     const ground = resizeSlotsForShapeChange(oldFp, newFp, baseWallSlots, primary, wallRunStopsByWallId);
     if (!ground) return false;
@@ -3481,7 +3524,10 @@ export default function LayoutEditor() {
       ? resizeSlotsForShapeChange(oldFp, newFp, secondStory.wallSlots, primary, wallRunStopsByWallId)
       : null;
     if (secondStory && !second) return false;
-    setBaseWallSlots(ground.slotsByWallId);
+    /* ⚠ The roof follows the shape. See `refreshRoofForShapeChange` — this
+       is the line that was missing, and the reason a resized shed came out
+       half shed and half gable. */
+    setBaseWallSlots(refreshRoofForShapeChange(oldFp, newFp, ground.slotsByWallId));
     if (second) setWallSlotsForStory("second", () => second.slotsByWallId);
     /* ⚠ No `recordTilingBasis` here, and that is deliberate. The basis means
        "this building was BUILT from these settings", and a length change does
@@ -3533,6 +3579,148 @@ export default function LayoutEditor() {
     return true;
   };
 
+  /**
+   * ⚠ **THE ROOF A FOOTPRINT IMPLIES — derived in ONE place, for every path
+   * that changes the shape.**
+   *
+   * This used to live inside `handleDraw` alone, so a building that was
+   * RESIZED kept the roof its first shape implied. Tommy, 2026-11-01:
+   *
+   * > *"When I changed a small shed roof building to 24 x 24, it extended the
+   * > shed roof along with one gable end, but the other gable end went to
+   * > peaked Gable end style."*
+   *
+   * That is this bug exactly, and the mechanism is worth stating because it
+   * looks like two unrelated faults. A shed stores its profile point at
+   * **x = 0** on the gable wall whose start corner is at the high side and at
+   * **x = the wall's own length** on the other one (they are wound in
+   * opposite directions round the footprint). Those are absolute inches. Grow
+   * the building and the stored `length` is no longer that wall's end — it is
+   * somewhere in the middle, which `resolveAnchors` reads as a PEAK, while
+   * the wall that stored 0 still snaps to a shed. One wall stays a shed, its
+   * opposite becomes a gable, and the roof form derived from them disagrees
+   * with both.
+   *
+   * It also explains the third wall: `crossTiltWallIds` reads the live roof
+   * form, so a roof that cannot decide what it is grows no tilted row.
+   *
+   * ⚠ Returns the slots with the ridge column placed, rather than setting
+   * them — the draw path has fresh slots in hand and the resize path has
+   * them in state, and neither should have to know what the other does.
+   */
+  const applyRoofDefaultsForFootprint = (
+    fp: Footprint,
+    slotsByWallId: Record<string, PanelSlot[]>,
+  ): Record<string, PanelSlot[]> => {
+    const autoGableWallIds = roofEnabled && ringRoofGableBlockReason(fp) === null ? gableEndWallIdsFor(fp) : [];
+    setGableEndWallIds(new Set(autoGableWallIds));
+
+    const gableWall = fp.walls.find((w) => autoGableWallIds.includes(w.id));
+    if (!gableWall) {
+      setGableStructuralPanelWallIds(new Set());
+      setGableProfilePositionsInByWallId({});
+      return slotsByWallId;
+    }
+
+    const a = fp.corners.find((c) => c.id === gableWall.startCorner)!.point;
+    const b = fp.corners.find((c) => c.id === gableWall.endCorner)!.point;
+    const acrossFt = Math.hypot(b.x - a.x, b.y - a.y);
+    /* `decideRoofForm` is his rule exactly: a shed runs one set of panels
+       clear across, a peak halves that, and 18ft of panel at 4:12 reaches
+       about 17.1ft of ground. */
+    const form = decideRoofForm({ buildingWidthIn: acrossFt * 12, pitchIn12: DEFAULT_ROOF_PITCH_IN12 });
+    const isPeaked = form.kind !== "shed";
+    setRoofProfileType("peaked");
+
+    /* ⚠ THE RISE IS SEAT-AWARE — the pitch the app reports is read off the
+       first real TILE, and a heel seat moves both its rise and its run.
+       `resolveHeelSeat` + `computeRiseFtForPitch` is what the elevation
+       sidebar's own pitch dropdowns use, so this lands on the number picking
+       "4/12" by hand would. A shed runs the wall's full width, a centred peak
+       half of it. */
+    const wallWidthIn = acrossFt * 12;
+    const seat = resolveHeelSeat(
+      wallWidthIn,
+      standardWidthIn,
+      effectiveHeelHeightIn,
+      form.kind === "shed" ? 1 : 2,
+      roofBearingAnchorMode,
+      trussPlateInsetIn,
+    );
+    const runForPitchIn = (form.kind === "shed" ? wallWidthIn : wallWidthIn / 2) - seat.runOffsetIn;
+    setRoofProfilePointHeightsFt([computeRiseFtForPitch(DEFAULT_ROOF_PITCH_IN12, runForPitchIn, seat.heelOffsetIn)]);
+
+    /* ⚠ **A SHED'S TWO GABLE WALLS NEED THE POINT AT OPPOSITE ENDS OF
+       THEMSELVES**, because a profile point's x is measured from each wall's
+       OWN start corner and the two are wound in opposite directions round the
+       footprint. Both at 0 and one slopes uphill while the other slopes down
+       — *"One gable end panel wall run is facing the wrong way, the west wall
+       needs to be flipped."* The high side is found from the roof's own plane
+       rather than from a compass guess, so it cannot disagree with where the
+       roof is actually put.
+
+       ⚠ **And a PEAK clears them**, which is what a resize needs: a stored
+       shed position is an absolute inch count that means nothing on a wall of
+       a different length. Leaving it behind is what made one gable wall read
+       as a peak and the other as a shed. */
+    const shedOptions = { form: "shed" as const, pitchIn12: DEFAULT_ROOF_PITCH_IN12, eaveHeightFt: wallHeightFt };
+    const shedPlane = form.kind === "shed" ? simpleRoofPlanes(fp, shedOptions).planes[0] : undefined;
+    const cornerPointOf = (cornerId: string) => fp.corners.find((c) => c.id === cornerId)?.point;
+    setGableProfilePositionsInByWallId(
+      form.kind === "shed" && shedPlane
+        ? Object.fromEntries(
+            autoGableWallIds.map((id) => {
+              const wall = fp.walls.find((w) => w.id === id);
+              const start = wall && cornerPointOf(wall.startCorner);
+              const endPoint = wall && cornerPointOf(wall.endCorner);
+              if (!wall || !start || !endPoint) return [id, [0]];
+              const highMidX = (shedPlane.highStart.x + shedPlane.highEnd.x) / 2;
+              const highMidY = (shedPlane.highStart.y + shedPlane.highEnd.y) / 2;
+              const startIsHigh =
+                Math.hypot(start.x - highMidX, start.y - highMidY) < Math.hypot(endPoint.x - highMidX, endPoint.y - highMidY);
+              return [id, [startIsHigh ? 0 : wall.lengthFt * 12]];
+            }),
+          )
+        : {},
+    );
+
+    /* ⚠ A PEAKED ROOF SPAWNS ITS GABLE COLUMN PANELS WITH THE BUILDING.
+       *"the ridge beam should land on top of a Gable column panel... there
+       must be a column panel directly below it in the main level wall and all
+       the way down."* A ridge beam with nothing under its ends is the one
+       thing this roof cannot be built without, so it is not left to a toggle
+       nobody knows to find. */
+    let nextSlots = slotsByWallId;
+    if (isPeaked) {
+      for (const wallId of autoGableWallIds) {
+        const wall = fp.walls.find((w) => w.id === wallId);
+        const geometry = wallGeometryForPure(fp, wallId, new Set(fp.corners.map((c) => c.id)), fp.corners[0]!.id, thicknessIn, {});
+        if (!wall || !geometry) continue;
+        const placed = placeColumnUnderPeak({
+          slots: nextSlots[wallId] ?? [],
+          peakXIn: (wall.lengthFt * 12) / 2,
+          startOffsetIn: geometry.runStartOffsetIn,
+          lengthIn: geometry.lengthIn,
+          standardWidthIn,
+          cornerWidthIn: cornerWidthInForTiling,
+          gapEnd: geometry.gapEnd,
+          hasCornerStart: geometry.hasCornerStart,
+          hasCornerEnd: geometry.hasCornerEnd,
+          allowBorrow: geometry.allowBorrow,
+          cornerMayWiden: cornerMayWidenForTiling,
+          columnWidthIn: COLUMN_TOTAL_WIDTH_IN,
+        });
+        if (placed) {
+          nextSlots = { ...nextSlots, [wallId]: isMiteredShape(fp) ? markSafetyCorner(placed, geometry.gapEnd) : placed };
+        }
+      }
+    }
+    setGableStructuralPanelWallIds(isPeaked ? new Set(autoGableWallIds) : new Set());
+    /* A new ridge means a column dragged on the old one points at nothing. */
+    setRidgeColumnOverridesAlongIn({});
+    return nextSlots;
+  };
+
   const handleDraw = (widthFt: number, depthFt: number, origin: { x: number; y: number }) => {
     const fp =
       shapeTool === "octagon" ? buildOctagonFootprint(widthFt, depthFt) : buildRectangleFootprint(widthFt, depthFt);
@@ -3552,101 +3740,6 @@ export default function LayoutEditor() {
        footprint: this repo's lint gate holds `set-state-in-effect` at its
        current count and it may never rise. A ring has no opposite pair to
        span a beam between, so it gets none. */
-    const autoGableWallIds = roofEnabled && ringRoofGableBlockReason(fp) === null ? gableEndWallIdsFor(fp) : [];
-    setGableEndWallIds(new Set(autoGableWallIds));
-
-    /* ⚠ THE DEFAULT ROOF IS 4:12, and its form is decided, not fixed.
-       Tommy, 2026-10-26: *"Make it default 4/12 shed roof if smaller than 18'
-       roof panels, otherwise gable peaks 4/12 with a center beam and posts."*
-
-       This replaces a 16ft default RISE, which was never a pitch at all — it
-       was chosen so the ridge *"always sits above the eave regardless of
-       story count"*. Harmless while gable ends were off by default; the
-       moment they spawned automatically, every new building got a roof at
-       about 24:12. */
-    const gableWall = fp.walls.find((w) => autoGableWallIds.includes(w.id));
-    let drawnRoofIsPeaked = false;
-    if (gableWall) {
-      const a = fp.corners.find((c) => c.id === gableWall.startCorner)!.point;
-      const b = fp.corners.find((c) => c.id === gableWall.endCorner)!.point;
-      const acrossFt = Math.hypot(b.x - a.x, b.y - a.y);
-      /* `decideRoofForm` is his rule exactly: a shed runs one set of panels
-         clear across, a peak halves that, and 18ft of panel at 4:12 reaches
-         about 17.1ft of ground. */
-      const form = decideRoofForm({ buildingWidthIn: acrossFt * 12, pitchIn12: DEFAULT_ROOF_PITCH_IN12 });
-      drawnRoofIsPeaked = form.kind !== "shed";
-      setRoofProfileType("peaked");
-      /* ⚠ THE RISE IS SEAT-AWARE, and it has to be, or the pitch comes out
-         wrong by a third.
-
-         The pitch the app reports is read off the first real TILE — rise from
-         that tile's own edge height, run from its own start — not from the
-         wall's corner and the eave. A heel seat moves both. My first version
-         computed the rise as (wall length / 2) x 4/12 and the roof came out
-         at about 5.4:12 instead of 4:12.
-
-         `resolveHeelSeat` + `computeRiseFtForPitch` is exactly what the
-         elevation sidebar's own pitch dropdowns use, so the default now
-         lands on the same number picking "4/12" by hand would. The 1-vs-2
-         point count matches those handlers: a shed runs the wall's full
-         width, a centred peak runs half of it. */
-      const wallWidthIn = acrossFt * 12;
-      const seat = resolveHeelSeat(
-        wallWidthIn,
-        standardWidthIn,
-        effectiveHeelHeightIn,
-        form.kind === "shed" ? 1 : 2,
-        roofBearingAnchorMode,
-        trussPlateInsetIn,
-      );
-      const runForPitchIn = (form.kind === "shed" ? wallWidthIn : wallWidthIn / 2) - seat.runOffsetIn;
-      setRoofProfilePointHeightsFt([
-        computeRiseFtForPitch(DEFAULT_ROOF_PITCH_IN12, runForPitchIn, seat.heelOffsetIn),
-      ]);
-      /* ⚠ **A SHED'S TWO GABLE WALLS NEED THE POINT AT OPPOSITE ENDS OF
-         THEMSELVES, and putting it at x=0 on both is what flipped one of
-         them.**
-
-         > *"One gable end panel wall run is facing the wrong way, the west
-         > wall needs to be flipped."* — Tommy, 2026-10-31
-
-         A profile point's x is measured from each wall's OWN start corner,
-         and the two gable walls are wound in opposite directions round the
-         footprint — so one wall's x=0 is at the shed's high side and the
-         other's is at its low side. Both got 0, so one sloped uphill and
-         the other downhill, and the roof sat on one of them backwards.
-
-         The high side is found from the roof's own plane rather than from a
-         compass guess, so this cannot disagree with where the roof is
-         actually put. */
-      const shedOptions = { form: "shed" as const, pitchIn12: DEFAULT_ROOF_PITCH_IN12, eaveHeightFt: wallHeightFt };
-      const shedPlane = form.kind === "shed" ? simpleRoofPlanes(fp, shedOptions).planes[0] : undefined;
-      const cornerPointOf = (cornerId: string) => fp.corners.find((c) => c.id === cornerId)?.point;
-      setGableProfilePositionsInByWallId(
-        form.kind === "shed" && shedPlane
-          ? Object.fromEntries(
-              autoGableWallIds.map((id) => {
-                const wall = fp.walls.find((w) => w.id === id);
-                const a = wall && cornerPointOf(wall.startCorner);
-                const b = wall && cornerPointOf(wall.endCorner);
-                if (!wall || !a || !b) return [id, [0]];
-                const highMidX = (shedPlane.highStart.x + shedPlane.highEnd.x) / 2;
-                const highMidY = (shedPlane.highStart.y + shedPlane.highEnd.y) / 2;
-                const startIsHigh =
-                  Math.hypot(a.x - highMidX, a.y - highMidY) < Math.hypot(b.x - highMidX, b.y - highMidY);
-                return [id, [startIsHigh ? 0 : wall.lengthFt * 12]];
-              }),
-            )
-          : {},
-      );
-      /* ⚠ The cross-tilted row used to be SET here, from `form.kind` and the
-         default pitch. It is derived from the live roof now
-         (`crossTiltWallIds`), so a fresh draw needs nothing: a shed gets its
-         row the moment the roof form says shed, and a peak has none. */
-      /* ⚠ A new footprint has a new ridge, so a column dragged on the old one
-         points at nothing. Cleared with everything else a fresh draw resets. */
-      setRidgeColumnOverridesAlongIn({});
-    }
     setIsBumpedOut(false);
     setPrimaryCornerIds(nextPrimary);
     setOffsetPx(origin);
@@ -3701,40 +3794,7 @@ export default function LayoutEditor() {
        very first draw there is no old building to read. The pure geometry
        is computed from `fp` here instead. A shed has no ridge and gets
        none. */
-    let drawnSlots = retile(fp, nextLeastAccessible, nextPrimary, {});
-    if (drawnRoofIsPeaked) {
-      for (const wallId of autoGableWallIds) {
-        const wall = fp.walls.find((w) => w.id === wallId);
-        const geometry = wallGeometryForPure(fp, wallId, nextPrimary, nextLeastAccessible, thicknessIn, {});
-        if (!wall || !geometry) continue;
-        const wallLengthIn = wall.lengthFt * 12;
-        const placed = placeColumnUnderPeak({
-          slots: drawnSlots[wallId] ?? [],
-          /* A freshly drawn peak is centred — the same default
-             `resolveGableProfilePoints` resolves to with no saved
-             positions, which is the state this draw is setting up. */
-          peakXIn: wallLengthIn / 2,
-          startOffsetIn: geometry.runStartOffsetIn,
-          lengthIn: geometry.lengthIn,
-          standardWidthIn,
-          cornerWidthIn: cornerWidthInForTiling,
-          gapEnd: geometry.gapEnd,
-          hasCornerStart: geometry.hasCornerStart,
-          hasCornerEnd: geometry.hasCornerEnd,
-          allowBorrow: geometry.allowBorrow,
-          cornerMayWiden: cornerMayWidenForTiling,
-          columnWidthIn: COLUMN_TOTAL_WIDTH_IN,
-        });
-        if (placed) {
-          drawnSlots = { ...drawnSlots, [wallId]: isMiteredShape(fp) ? markSafetyCorner(placed, geometry.gapEnd) : placed };
-        }
-      }
-      /* The gable row's own column reservation, so the panel above lands on
-         the one just placed below. */
-      setGableStructuralPanelWallIds(new Set(autoGableWallIds));
-    } else {
-      setGableStructuralPanelWallIds(new Set());
-    }
+    const drawnSlots = applyRoofDefaultsForFootprint(fp, retile(fp, nextLeastAccessible, nextPrimary, {}));
     setBaseWallSlots(drawnSlots);
     recordTilingBasis(nextLeastAccessible);
     setShapeTool("edit");
