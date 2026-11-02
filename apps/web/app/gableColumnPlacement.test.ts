@@ -97,6 +97,45 @@ describe("⚠ the Column Panel under a gable column", () => {
     expect(placeColumnUnderPeak(inputs({ slots: bareSlots(60), lengthIn: 60 }))).toBeNull();
   });
 
+  it("⚠ lands DEAD on the peak, not merely near it", () => {
+    /* ⚠ **B14.** It used to take the nearest ordinal, which on his 22ft 9in
+       gable wall was 2.25in off — and the two roof slopes then met the column
+       at 40.50 and 42.00 instead of one height, the step he reported. The two
+       sides of the column are now tiled as separate runs, so it goes exactly
+       under the ridge and the beam bears on the middle of the panel carrying
+       it. */
+    for (const lengthIn of [192, 240, 273, 303, 345, 432]) {
+      const slots = placeColumnUnderPeak(inputs({ slots: bareSlots(lengthIn), lengthIn, peakXIn: lengthIn / 2 }));
+      expect({ lengthIn, placed: slots !== null }).toEqual({ lengthIn, placed: true });
+      expect({ lengthIn, centre: +columnCentresIn(slots!, 0)[0]!.toFixed(4) }).toEqual({
+        lengthIn,
+        centre: +(lengthIn / 2).toFixed(4),
+      });
+      /* And the wall still sums to itself — trimming the neighbours must not
+         lose or invent an inch. */
+      expect({ lengthIn, sum: +slots!.reduce((t, s) => t + s.widthIn, 0).toFixed(4) }).toEqual({
+        lengthIn,
+        sum: +lengthIn.toFixed(4),
+      });
+    }
+  });
+
+  it("⚠ a wall that already has openings KEEPS them", () => {
+    /* ⚠ The exact-position tiler knows about one reservation, so a wall
+       carrying windows or doors stays on the ordinal search, which preserves
+       every anchor. Pinned because the alternative is silently deleting
+       somebody's windows to centre a column. */
+    const bare = bareSlots(273);
+    const windowIdx = bare.findIndex((slot) => slot.type === "standard");
+    const withWindow = bare.map((slot, i) =>
+      i === windowIdx ? { ...slot, type: "window" as const, widthIn: 36, heightIn: 48 } : slot,
+    );
+    const placed = placeColumnUnderPeak(inputs({ slots: withWindow, lengthIn: 273, peakXIn: 273 / 2 }))!;
+    expect(placed.filter((slot) => slot.type === "window")).toHaveLength(1);
+    expect(placed.filter((slot) => slot.type === "column")).toHaveLength(1);
+    expect(+placed.reduce((t, slot) => t + slot.widthIn, 0).toFixed(4)).toBe(273);
+  });
+
   it("⚠ is idempotent — a wall that already has one is left alone", () => {
     /* It is called on every draw and on every toggle. Re-tiling a wall that
        is already right would move every panel on it for nothing. */

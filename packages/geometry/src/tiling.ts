@@ -1106,6 +1106,101 @@ export function retileWithOpenings(
 }
 
 /**
+ * ⚠ **TILE A WALL AROUND A COLUMN AT AN EXACT POSITION, by tiling the two
+ * sides of it as separate runs.**
+ *
+ * > *"some weird inclined changes in the slope to an off centered column
+ * > panel that's not the right height. 25'3" x 22'9" building."* — Tommy,
+ * > 2026-11-01
+ *
+ * `retileWithOpenings` places a reservation by ORDINAL — "after this many
+ * standards" — and tiles the whole middle as ONE run, so a column can only
+ * land where that run's own panel boundaries happen to fall. On his 22ft 9in
+ * gable wall the nearest boundary left the ridge column **2.25in off the
+ * peak**, and the two roof slopes then met it at different heights (40.50 and
+ * 42.00), which is the step he saw. All three viable ordinals were measured:
+ * —50.25in, —2.25in and +23.63in. No ordinal reaches the peak, because the
+ * left run was a corner plus two FULL-width standards and every bit of the
+ * redistribution happened on the right.
+ *
+ * ⚠ **Width-adjustment alone cannot fix it either**, which is why this
+ * tiles rather than nudges: centring that column needs 98.25in of standards
+ * to its left, and two standards cap out at 96in. The left run has to grow a
+ * panel and every panel on the wall gets narrower — 25.5 / 32.75 x3 /
+ * [column] / 32.5 x3 / gap / 25.5. Asked which gives way, Tommy chose to
+ * **trim the neighbours** rather than move the ridge off centre.
+ *
+ * ⚠ **The safety gap is NOT duplicated.** It belongs to whichever side
+ * holds `gapEnd`; the other side is tiled with no gap at all. One run, one
+ * gap, exactly as a wall without a column gets.
+ *
+ * Returns null where the column cannot be placed at that position at all —
+ * a merged corner pair, a corner band that drops reservations, or a centre
+ * that would push the column through a corner. The caller then keeps
+ * whatever it had rather than being handed a wall that does not sum.
+ */
+export function retileWithColumnAtIn(
+  wallLengthIn: number,
+  standardWidthIn: number,
+  cornerWidthIn: number,
+  gapEnd: WallEnd,
+  hasCornerStart: boolean,
+  hasCornerEnd: boolean,
+  columnCentreIn: number,
+  columnWidthIn: number,
+  allowBorrow = true,
+  cornerMayWiden = true,
+): TileWallResult | null {
+  const gridLengthIn = roundToEighthIn(wallLengthIn);
+  const colWidthIn = roundToEighthIn(columnWidthIn);
+  if (!(colWidthIn > 0)) return null;
+
+  const gapWidthIn = safetyGapWidthForRunIn(gridLengthIn);
+  const corners = resolveCorners(
+    gridLengthIn,
+    cornerWidthIn,
+    hasCornerStart,
+    hasCornerEnd,
+    gapWidthIn,
+    colWidthIn,
+    cornerMayWiden,
+  );
+  /* No room for a column at a chosen position on either of these paths, and
+     forcing one would break the sum invariant. */
+  if (corners.merged || corners.dropsReservations) return null;
+
+  const middleLengthIn = gridLengthIn - corners.fixedEndsIn;
+  if (middleLengthIn < colWidthIn) return null;
+
+  /* The column's span in the MIDDLE's own frame, snapped to the same eighth
+     grid everything else here sits on. */
+  const startCornerIn = corners.cornerStart?.widthIn ?? 0;
+  const colStartIn = roundToEighthIn(columnCentreIn - colWidthIn / 2 - startCornerIn);
+  const colEndIn = colStartIn + colWidthIn;
+  if (colStartIn < 0 || colEndIn > middleLengthIn) return null;
+
+  const leftBudgetIn = colStartIn;
+  const rightBudgetIn = middleLengthIn - colEndIn;
+  const left = buildMiddle(leftBudgetIn, standardWidthIn, gapEnd, allowBorrow, gapEnd === "start" ? gapWidthIn : 0);
+  const right = buildMiddle(rightBudgetIn, standardWidthIn, gapEnd, allowBorrow, gapEnd === "end" ? gapWidthIn : 0);
+
+  const column: PanelSlot = { type: "column", widthIn: colWidthIn };
+  return {
+    slots: withSafetyGapSpacing(
+      [
+        ...(corners.cornerStart ? [corners.cornerStart] : []),
+        ...left,
+        column,
+        ...right,
+        ...(corners.cornerEnd ? [corners.cornerEnd] : []),
+      ],
+      gapEnd,
+      gapWidthIn,
+    ),
+  };
+}
+
+/**
  * Marks the corner slot at `end` as the "safety" corner variant (Tommy:
  * for shapes where every wall owns its own mitered corner panels, the
  * "left" corner of each run — see `computeSafetyEnd` — is a distinct

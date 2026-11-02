@@ -1,5 +1,6 @@
 import {
   getOpeningAnchors,
+  retileWithColumnAtIn,
   retileWithOpenings,
   type OpeningAnchor,
   type PanelSlot,
@@ -69,6 +70,42 @@ export function placeColumnUnderPeak(inputs: ColumnUnderPeakInputs): PanelSlot[]
   }
 
   const existingAnchors = getOpeningAnchors([...inputs.slots]);
+
+  /**
+   * ⚠ **EXACTLY UNDER THE PEAK FIRST, by tiling the two sides of the
+   * column as separate runs.**
+   *
+   * > *"some weird inclined changes in the slope to an off centered column
+   * > panel that's not the right height."* — Tommy, 2026-11-01
+   *
+   * The ordinal search below can only put the column where the middle run's
+   * own panel boundaries fall. On his 22ft 9in gable wall the nearest was
+   * **2.25in off the peak**, and all three viable ordinals were measured at
+   * —50.25in, —2.25in and +23.63in — none of them reach it. Asked which
+   * gives way, he chose to trim the neighbours rather than move the ridge.
+   *
+   * ⚠ **Only when the wall carries no OTHER openings.** `retileWithColumnAtIn`
+   * knows about one reservation, so a wall with windows or doors would lose
+   * them; those walls keep the ordinal search, which preserves every anchor.
+   * That is a narrower fix than it looks — it is the freshly-drawn wall that
+   * spawns a ridge column, and it has no openings yet.
+   */
+  if (existingAnchors.length === 0) {
+    const exact = retileWithColumnAtIn(
+      inputs.lengthIn,
+      inputs.standardWidthIn,
+      inputs.cornerWidthIn,
+      inputs.gapEnd,
+      inputs.hasCornerStart,
+      inputs.hasCornerEnd,
+      inputs.peakXIn - inputs.startOffsetIn,
+      inputs.columnWidthIn,
+      inputs.allowBorrow,
+      inputs.cornerMayWiden,
+    );
+    if (exact) return exact.slots;
+  }
+
   let bestSlots: PanelSlot[] | null = null;
   let bestDistanceIn = Infinity;
 

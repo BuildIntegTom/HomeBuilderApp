@@ -112,9 +112,14 @@ describe("⚠ a gable joint lands on a wall joint, so the load goes straight dow
       expect(aligned.length).toBeGreaterThan(0);
       expect({ wallFt, off: aligned.filter((x) => !wallEdges.has(x)) }).toEqual({ wallFt, off: [] });
 
-      // And it really was broken before: the unaligned row hit none of them.
+      /* And a row tiled WITHOUT the wall's spans still strays: it puts down
+         joints the wall has no panel edge for. ⚠ This read "hit none of
+         them" until 2026-11-01, when B14 put the ridge column exactly on the
+         peak; the wall's own joints moved with it and now a couple of them
+         happen to coincide with the naive row's. Coincidence is not the
+         claim worth pinning — straying is. */
       const before = edgesOf(row(wallLengthIn, [])).filter(interior);
-      expect({ wallFt, on: before.filter((x) => wallEdges.has(x)).length }).toEqual({ wallFt, on: 0 });
+      expect({ wallFt, strays: before.some((x) => !wallEdges.has(x)) }).toEqual({ wallFt, strays: true });
     }
   });
 
@@ -139,10 +144,19 @@ describe("⚠ a gable joint lands on a wall joint, so the load goes straight dow
         x1: wallColumn!.xEndIn,
       });
 
-      /* And without the wall's spans it lands somewhere else entirely, which
-         is what this is fixing rather than confirming. */
-      const unaligned = row(wallLengthIn, []).find((t) => t.isColumn);
-      expect(unaligned?.xStartIn).not.toBe(wallColumn!.xStartIn);
+      /* ⚠ **And it is on the PEAK too, which is the stronger claim and is
+         new on 2026-11-01.** This used to assert the opposite — that a row
+         tiled without the wall's spans lands somewhere else — because the
+         wall's column could only sit where its own panel boundaries fell,
+         2.25in off the peak on his 22ft 9in wall. B14 tiles the two sides of
+         the column as separate runs, so "gable follows the wall" and
+         "centred under the ridge" are now the same answer by construction
+         rather than by luck, and the beam bears on the middle of the panel
+         carrying it. */
+      expect({ wallFt, centre: +(((gableColumn!.xStartIn + gableColumn!.xEndIn) / 2).toFixed(4)) }).toEqual({
+        wallFt,
+        centre: +((wallLengthIn / 2).toFixed(4)),
+      });
     }
   });
 
