@@ -32,7 +32,6 @@ import {
   computeJoistLayout,
   gableEndWallIdsFor,
   simpleRoofPlanes,
-  GABLE_COLUMN_FLAT_TOP_DROP_IN,
   GABLE_SHED_SNAP_THRESHOLD_IN,
   computePanelLoadOrder,
   computePanelsPerStack,
@@ -316,6 +315,7 @@ import {
   type PanelMember,
   type PanelStructuralStatus,
   ridgeBeamLayout,
+  ROOF_CATCHER_BEAM_DEPTH_IN,
   ROOF_CATCHER_BEAM_MAX_SPAN_IN,
   decideRoofForm,
   FLOOR_ROOF_MIN_PANEL_WIDTH_IN,
@@ -6626,6 +6626,13 @@ export default function LayoutEditor() {
            wall: 0 of 4 interior gable joints landed on a wall joint before,
            and all of them do now. */
         gableWallJointSpansFor(wall.id),
+        /* ⚠ **B9: the column's top IS the beam's underside.** *"gable end
+           column panels' tops should be flush/meet the bottom of the gable
+           ridge beams... The beam should air on top the panel."* The beam's
+           own depth, read from the beam, so the two cannot drift — they
+           already had, by 0.75in, nominal 12 against a 2x12's actual
+           11.25. */
+        ROOF_CATCHER_BEAM_DEPTH_IN,
       );
       // The real high edge is capped to maxGablePanelHeightIn's own
       // fabrication ceiling (Tommy: "gable panels...can be up to 8' tall")
@@ -11894,7 +11901,10 @@ export default function LayoutEditor() {
           );
           const singlePeakHeightIn = gableEaveHeightIn + (roofProfilePointHeightsFt[0] ?? 0) * 12;
           const showColumnPanel = roofProfileType === "peaked" && !isShedRoof && gableStructuralPanelWallIds.has(elevationWall.id);
-          const columnHeightIn = singlePeakHeightIn - GABLE_COLUMN_FLAT_TOP_DROP_IN;
+          /* ⚠ B9: the beam's own depth, so this readout and the row it
+             describes cannot disagree. It read the nominal 12 while the
+             beam is 11.25 deep. */
+          const columnHeightIn = singlePeakHeightIn - ROOF_CATCHER_BEAM_DEPTH_IN;
           const tileCount = (gableTilesByWallId[elevationWall.id] ?? []).length;
           const ridgeHeightIn = gableEaveHeightIn + (roofProfilePointHeightsFt[0] ?? 0) * 12;
           return (
@@ -12000,7 +12010,7 @@ export default function LayoutEditor() {
                   `${GABLE_SHED_SNAP_THRESHOLD_IN}in of its own nearest end (shaded above) snaps that side to a shed roof. Use the Roof tab to change ` +
                   "profile heights/type, or the panel-width setting above to change the tiling." +
                   (showColumnPanel
-                    ? ` A ${columnHeightIn.toFixed(1)}in Column Panel is centered under the peak, ${GABLE_COLUMN_FLAT_TOP_DROP_IN}in ` +
+                    ? ` A ${columnHeightIn.toFixed(1)}in Column Panel is centered under the peak, ${ROOF_CATCHER_BEAM_DEPTH_IN}in ` +
                       "shorter than the ridge so its top can catch the roof-catcher beam — a matching Column Panel is also on the main wall " +
                       "level below, flush with its own bottom edge."
                     : roofProfileType === "flat-top"
@@ -12843,7 +12853,7 @@ export default function LayoutEditor() {
             {roofProfileType === "peaked" ? (
               <p className={styles.note}>
                 A gable wall with its own "Panels/beam" toggle on (Elevation view sidebar) gets a real Column Panel centered under the
-                peak, {GABLE_COLUMN_FLAT_TOP_DROP_IN}in shorter than the ridge so its top can catch the roof-catcher beam — see the Column
+                peak, {ROOF_CATCHER_BEAM_DEPTH_IN}in shorter than the ridge — the depth of the beam itself — so its top catches the roof-catcher beam — see the Column
                 Panel Shop Drawing page below.
               </p>
             ) : (

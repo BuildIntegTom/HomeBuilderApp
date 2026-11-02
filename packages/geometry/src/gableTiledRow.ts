@@ -94,9 +94,27 @@ export const GABLE_SAFETY_GAP_WIDTH_IN = 0.75;
  * number it holds happens to stay 144. */
 export const GABLE_SAFETY_GAP_MIN_RUN_LENGTH_IN = 144;
 
-/** How far below the true peak height the structural Column Panel's own
- * flat top sits (Tommy: "it has a flat top that is 12in down from the
- * peak") — see `computeGableTiledRow`'s own `columnReservationWidthIn`. */
+/**
+ * ⚠ **FALLBACK ONLY. The real drop is the BEAM'S OWN DEPTH, which the
+ * caller passes as `columnTopDropIn`.**
+ *
+ * The column panel exists to carry the roof-catcher beam, so its top is the
+ * beam's underside: *"gable end column panels' tops should be flush/meet the
+ * bottom of the gable ridge beams... The beam should air on top the panel."*
+ * (Tommy, B9).
+ *
+ * This held 12in on its own until 2026-11-01, from his *"it has a flat top
+ * that is 12in down from the peak"*, while the beam is three 2x12s on edge
+ * and a 2x12 is **11.25in** actually — his other word for the same joint was
+ * *"column panel...11.25in down from the peak (so it can catch a beam)"*.
+ * Nominal against actual, the same trap as reading a board's name for its
+ * size. Measured on a 25ft 3in x 22ft 9in building at 4:12: peak 167.75in,
+ * beam underside 156.50in, column top 155.75in — the beam **floated
+ * 0.75in above the panel carrying it**.
+ *
+ * Kept as a default for a caller with no beam rather than deleted, so the
+ * parameter can stay optional; every caller that has a beam passes its depth.
+ */
 export const GABLE_COLUMN_FLAT_TOP_DROP_IN = 12;
 
 /** A real, user-placed profile point — the roofline's own "top" (a single
@@ -795,6 +813,15 @@ export function computeGableTiledRow(
    * do not compose yet and the windowed row keeps its own tiling.
    */
   wallSlotsIn: GableWallJointSpan[] = [],
+  /**
+   * ⚠ **How far below the peak the column panel's flat top sits, which is
+   * the DEPTH OF THE BEAM that bears on it.**
+   *
+   * A parameter rather than `GABLE_COLUMN_FLAT_TOP_DROP_IN` because the two
+   * numbers disagreed by 0.75in and the beam floated above the panel it is
+   * carried by. See that constant for the measurement.
+   */
+  columnTopDropIn: number = GABLE_COLUMN_FLAT_TOP_DROP_IN,
 ): GableTiledPanel[] {
   const { anchors, leftSnapped, rightSnapped } = resolveAnchors(wallWidthIn, eaveHeightIn, points, targetPanelWidthIn, heelHeightIn, anchorMode, insetIn);
 
@@ -916,7 +943,9 @@ export function computeGableTiledRow(
     if (columnStartIn >= segments[0]!.segStartIn && columnEndIn <= segments[1]!.segEndIn) {
       segments[0]!.segEndIn = columnStartIn;
       segments[1]!.segStartIn = columnEndIn;
-      const flatTopHeightIn = peakAnchor.heightIn - GABLE_COLUMN_FLAT_TOP_DROP_IN;
+      /* The beam's UNDERSIDE, so the beam bears on this panel rather than
+         floating above it or running through it. */
+      const flatTopHeightIn = peakAnchor.heightIn - columnTopDropIn;
       columnTile = {
         xStartIn: columnStartIn,
         xEndIn: columnEndIn,

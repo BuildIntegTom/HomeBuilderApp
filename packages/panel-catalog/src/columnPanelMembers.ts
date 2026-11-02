@@ -1,4 +1,5 @@
 import type { PanelComponentSchema, PanelMember } from "./componentSchema";
+import { ROOF_CATCHER_BEAM_DEPTH_IN } from "./roofCatcherBeamMembers";
 import {
   LUMBER_SPECIES_GRADE,
   PLATE_2X4_THICKNESS_IN,
@@ -31,12 +32,17 @@ const COLUMN_BLOCKING_SPACING_IN = 16; // Tommy: 2x4 blocking every 16in, both s
 /** Default beam-depth allowance (Tommy) for a Column Panel used as roof-
  * catcher-beam bearing at a Gable End (when the roof is structural panels
  * rather than trusses — see the gable-multistory-roof-strategy memory).
- * Matches a real 2x12's actual depth (11.25in, not the 12in nominal) —
- * Tommy: "spawn in 3 2x12 dimensional lumber pieces" for the roof-catcher
- * beam itself (see buildRoofCatcherBeamMembers), which bears directly on
- * top of the column, its own top face flush with the gable peak. User-
- * toggleable, not a fixed constant baked into the geometry. */
-export const DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN = 11.25;
+ * ⚠ **READ FROM THE BEAM, not written out again.** It is a real 2x12's
+ * actual depth (11.25in, not the 12in nominal) — Tommy: "spawn in 3 2x12
+ * dimensional lumber pieces" for the roof-catcher beam itself (see
+ * buildRoofCatcherBeamMembers), which bears directly on top of the column,
+ * its own top face flush with the gable peak.
+ *
+ * It was its own literal 11.25 until 2026-11-01. That made FOUR numbers for
+ * one joint, and the one the gable row actually used was the nominal 12, so
+ * the beam floated 0.75in above the panel carrying it (B9). Deriving it means
+ * a change to the beam cannot leave this behind. */
+export const DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN = ROOF_CATCHER_BEAM_DEPTH_IN;
 
 /**
  * Column Panel height when bearing a roof-catcher beam between two Gable

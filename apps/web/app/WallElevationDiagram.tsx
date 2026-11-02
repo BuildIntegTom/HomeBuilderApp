@@ -26,6 +26,7 @@ import {
 import {
   buildOpeningAssemblyMembers,
   COLUMN_TOTAL_WIDTH_IN,
+  ROOF_CATCHER_BEAM_DEPTH_IN,
   computeBoxBeamHeightDeltaIn,
   computeGableRipCallout,
   fabricationMinPanelWidthIn,
@@ -335,7 +336,7 @@ export interface WallElevationDiagramProps {
   /** This specific wall's own membership in gableStructuralPanelWallIds
    * (Tommy: "panels/beam" mode) — reserves a real, centered structural
    * Column Panel tile in the gable row (see computeGableTiledRow's own
-   * columnReservationWidthIn param) with a flat top GABLE_COLUMN_FLAT_TOP_DROP_IN
+   * columnReservationWidthIn param) with a flat top ROOF_CATCHER_BEAM_DEPTH_IN
    * below the peak, instead of open truss framing. Only ever reserved for a
    * genuine single-peak, non-shed roofline — computeGableTiledRow itself
    * silently skips it otherwise (a flat-topped roofline has no single peak
@@ -1032,6 +1033,18 @@ export default function WallElevationDiagram({
         // with the model by a full wall thickness.
         gableBuiltStartIn ?? 0,
         gableBuiltEndIn ?? wallWidthIn,
+        /* ⚠ This preview does NOT receive the wall's own slots, so its row
+           tiles unaligned where the model's is joint-aligned (B3). Named
+           rather than quietly left: it is a separate piece of work from B9
+           and wiring it needs the slots threaded in as a prop. */
+        [],
+        /* ⚠ **B9: the column's top IS the beam's underside.** *"gable end
+           column panels' tops should be flush/meet the bottom of the gable
+           ridge beams... The beam should air on top the panel."* The beam's
+           own depth, read from the beam, so the two cannot drift — they
+           already had, by 0.75in, nominal 12 against a 2x12's actual
+           11.25. */
+        ROOF_CATCHER_BEAM_DEPTH_IN,
       )
     : [];
   const gablePanels: (GableTiledPanel & { verticalGapIn?: { leftIn: number; rightIn: number } })[] = rawGablePanels.map((p) => {
