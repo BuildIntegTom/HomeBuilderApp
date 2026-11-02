@@ -952,3 +952,51 @@ Three things in it, and they are separable:
 would have put the wall joints out of step with the roof members meant to
 stack on them, so the pattern would have been laid against a reference that
 was itself off.
+
+## I. 2026-11-01 — B9 done: the ridge beam bears on the column
+
+> *"gable end column panels' tops should be flush/meet the bottom of the
+> gable ridge beams. This means the column panel should be shorter, rather
+> than having the beam run through the panel as it currently does. The beam
+> should air on top the panel."* — Tommy
+
+**Four numbers described one joint**, and the one the gable row used was the
+nominal:
+
+| constant | was |
+| --- | --- |
+| `ROOF_CATCHER_BEAM_DEPTH_IN` (three 2x12s on edge) | **11.25** |
+| `GABLE_COLUMN_FLAT_TOP_DROP_IN` (what the row used) | 12 |
+| `DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN` | 11.25, its own literal |
+| the UI's beam-depth offset control | 11.25, and inert |
+
+A 2x12 is 11.25in deep, not the 12in its name says. Measured on the same
+25'3" x 22'9" building as B14, at 4:12:
+
+| | before | after |
+| --- | --- | --- |
+| peak | 167.75in | 167.75in |
+| beam underside | 156.50in | 156.50in |
+| column top | 155.75in | **156.50in** |
+| gap | **0.75in, beam floating** | **0.00in** |
+
+⚠ **Both of his quotes are in the record because they disagree**, and the
+disagreement IS the bug: *"it has a flat top that is 12in down from the
+peak"* against *"column panel...11.25in down from the peak (so it can catch
+a beam)"*.
+
+**Fixed** (`bff90fc`): the drop is a parameter and both callers pass the
+beam's own depth, so a change to the beam cannot leave the column behind.
+The fourth copy is gone — `DEFAULT_GABLE_COLUMN_HEIGHT_OFFSET_IN` derives
+from the beam. The three readouts that told the user 12 now read the beam.
+
+### Named, not fixed
+
+- **`WallElevationDiagram` does not receive the wall's own slots**, so its
+  preview row tiles unaligned where the model's is joint-aligned (B3). It
+  now passes `[]` explicitly with a comment rather than relying on the
+  default. Wiring it needs the slots threaded in as a prop.
+- **`computeGableColumnHeightIn` is exported and never called**, and the
+  UI's "Roof-catcher-beam depth offset" control is advisory and drives
+  nothing. Making that control real is a user-facing design decision.
+
