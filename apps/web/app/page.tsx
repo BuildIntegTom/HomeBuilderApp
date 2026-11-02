@@ -371,6 +371,7 @@ import {
   ROOF_PITCH_OPTIONS_IN12,
 } from "./gableProfilePoints";
 import { computeCrossTiltTakeoff, crossTiltWallIdsFor, type CrossTiltTakeoffInput } from "./crossTiltTakeoff";
+import { standardPanelMembersFor } from "./standardPanelMembers";
 import { toExportableAssemblies } from "./projectExportAssemblies";
 import { buildProjectPanelDxf } from "./projectPanelDxf";
 import { remapEndAnchoredPositions, roofShapeChangeVerdict } from "./roofShapeChange";
@@ -6401,7 +6402,7 @@ export default function LayoutEditor() {
               const style = resolveBracedStyle(s, defaultBracePattern, defaultBracedMirrored);
               members = buildBracedPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored);
             } else {
-              members = buildStandardPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer);
+              members = standardPanelMembersFor(s, s.widthIn, thicknessIn, heightIn, includeNailer);
             }
             return acc + computeMemberSetWoodWeight(members).weightKg;
           }, 0)
@@ -7399,7 +7400,7 @@ export default function LayoutEditor() {
         inst.panelType === "standard"
           ? isSquareBalePanelization
             ? buildSquareBalePanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, squareBaleStudConfig, nailerOffsetIn)
-            : buildStandardPanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer)
+            : standardPanelMembersFor(inst, inst.widthIn, thicknessIn, heightIn, includeNailer)
           : inst.panelType === "braced"
             ? (({ pattern, mirrored }) => buildBracedPanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, pattern, mirrored))(
                 resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored),

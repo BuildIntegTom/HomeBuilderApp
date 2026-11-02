@@ -51,6 +51,32 @@ export type BracePattern = "chevron" | "hatch";
 export interface PanelSlot {
   type: PanelSlotType;
   widthIn: number;
+  /**
+   * ⚠ **B15 — which half of which PAIR pattern this panel carries.**
+   *
+   * > *"Applying this patterned bracing should be part of the original
+   * > tiling when drawing a shape."* — Tommy, 2026-11-01
+   *
+   * Set at draw time by `applyDrawTimeBracing`, which walks each wall from
+   * the end nearest the least accessible corner and pairs its STANDARD
+   * panels — his eligibility answer, since corners and columns are already
+   * stiff boxes and nothing can route a diagonal through a header or a
+   * plywood spacer.
+   *
+   * ⚠ **Nothing crosses the seam.** *"The x in the super brace is 4 smaller
+   * pieces, each one leg of the x, on two different panels."* A pattern that
+   * looks continuous across a pair is each panel carrying its own legs, which
+   * is exactly why it can live on the slot.
+   *
+   * Absent = no pattern, which is what every panel had before this and what
+   * an ineligible one still has. The unions are spelled out rather than
+   * imported because `@building-integrity/panel-catalog` is a SIBLING of this
+   * package, not a dependency — the same arrangement `BracePattern` already
+   * has. `BracePairPattern` and `PairHalf` there are the authority.
+   */
+  bracePairPattern?: "superbrace" | "braced" | "nailer";
+  /** Which half of the pair. See `bracePairPattern`. */
+  bracePairHalf?: "left" | "right";
   /** A slot can carry a second type alongside its primary one (Tommy: "have
    * multiple types of panels be represented in a particular panel") — e.g.
    * a safety-gap panel near a corner that also satisfies the braced-panel

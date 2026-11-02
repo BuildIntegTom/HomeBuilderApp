@@ -33,6 +33,7 @@ import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import { resolveBracedStyle } from "./bracedStyle";
 import { gableTileRoofTopLiftIn } from "./gableProfilePoints";
 import { computeCrossTiltTakeoff } from "./crossTiltTakeoff";
+import { standardPanelMembersFor } from "./standardPanelMembers";
 import { computeDeckPanelTakeoff } from "./deckPanelTakeoff";
 import PanelLabel from "./PanelLabel";
 import {
@@ -71,7 +72,6 @@ import {
   buildSafetyGapMembers,
   buildSquareBaleCornerPanelMembers,
   buildSquareBalePanelMembers,
-  buildStandardPanelMembers,
   buildTrussPlateMembers,
   buildVerticalGapFillerMembers,
   computeBoxBeamAssemblyHeightIn,
@@ -221,10 +221,10 @@ function membersForSlot(
     case "standard":
       return isSquareBalePanelization
         ? buildSquareBalePanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, squareBaleStudConfig, nailerOffsetIn)
-        : buildStandardPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer);
+        : standardPanelMembersFor(slot, slot.widthIn, thicknessIn, heightIn, includeNailer);
     case "braced": {
       if (isMidWallBandAffected && computeStandardGirtRowCount(heightIn) === 0) {
-        return buildStandardPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer);
+        return standardPanelMembersFor(slot, slot.widthIn, thicknessIn, heightIn, includeNailer);
       }
       const defaultStyle = bracingStyleToPatternMirror(bracingStyle);
       const style = resolveBracedStyle(slot, defaultStyle.pattern, defaultStyle.mirrored);

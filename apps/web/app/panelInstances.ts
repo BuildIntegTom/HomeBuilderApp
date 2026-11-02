@@ -100,6 +100,24 @@ export interface PanelInstance {
    * the project default (see `resolveBracedStyle` in bracedStyle.ts). */
   bracedPattern?: BracePattern;
   bracedMirrored?: boolean;
+  /**
+   * ⚠ **B15 — the PAIR pattern, carried through from
+   * `PanelSlot.bracePairPattern`/`bracePairHalf` (see those fields).**
+   *
+   * The Shop Fabrication sheets build their members through
+   * `membersForPanelTypeId`, off these instances. So the pattern has to ride
+   * here or the 3D view would draw braces the sheets do not show — the
+   * picture and the paperwork describing different panels, which is the one
+   * thing the takeoffs in this app exist to prevent.
+   *
+   * ⚠ **NOT POPULATED YET.** `pushInstance` does not carry them, so every
+   * instance reads undefined and `standardPanelMembersFor` returns exactly the
+   * members it always did. Declaring them here is what lets the member seam be
+   * put in place and proven before the pattern is switched on; populating them
+   * (and calling `applyDrawTimeBracing` in `handleDraw`) is the switch.
+   */
+  bracePairPattern?: "superbrace" | "braced" | "nailer";
+  bracePairHalf?: "left" | "right";
   /** Only set for "gable" instances — this tile's own REAL edge heights at
    * its own local x=0 (left) and x=widthIn (right), carried through
    * directly from computeGableTiledRow's own leftHeightIn/rightHeightIn —
