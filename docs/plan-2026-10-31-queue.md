@@ -909,9 +909,21 @@ side trimmed rather than only those on one side.
  (b) The column stays on its tile boundary and the ridge beam moves to it —
      standard widths, unequal roof slopes.
 
-(a) is the recommendation: a beam 2.25in off the column carrying it is a
-structural miss, not a cosmetic one, and `dimensional_tightness` says the
-parts sum to the whole. But which panels give up width is his call.
+**Answered: (a), trim the neighbours.** And correcting my own framing above
+— the beam was never MISSING the panel: the peak at 136.5 sits inside the
+column's 121.50..147.00 span, so it bore on the panel, just 2.25in off its
+centreline. The visible fault was the asymmetric step.
+
+**Fixed** (`0a1148c`). `retileWithColumnAtIn` tiles the two sides of the
+column as separate runs, so it lands exactly on the peak. On his wall the
+column now centres at 136.50 and the roofline meets it at **41.25 on both
+sides** — a symmetric 7.75in step instead of 7.00/8.50. Every other tile
+still lands on the roofline to the inch, and the wall still sums to 273.00.
+
+⚠ Used only where the wall carries no OTHER openings: the new tiler knows
+about one reservation, so a wall with windows stays on the ordinal search,
+which preserves every anchor. Pinned, because the alternative is silently
+deleting somebody's windows to centre a column.
 
 ## H. 2026-11-01 — B15: patterned bracing, stacked through floor/wall/roof
 
@@ -936,6 +948,7 @@ Three things in it, and they are separable:
 3. **Panel grouping will fragment, and he has accepted that in advance**:
    more groups of fewer panels on the Shop Fabrication pages is fine.
 
-⚠ Depends on B14 above: a ridge column that is not on the peak puts the
-wall joints out of step with the roof members that are meant to stack on them,
-so the pattern would be laid against a reference that is itself off.
+⚠ Depended on B14 above, which is now fixed: a ridge column off the peak
+would have put the wall joints out of step with the roof members meant to
+stack on them, so the pattern would have been laid against a reference that
+was itself off.
