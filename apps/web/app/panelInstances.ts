@@ -118,6 +118,8 @@ export interface PanelInstance {
    */
   bracePairPattern?: "superbrace" | "braced" | "nailer";
   bracePairHalf?: "left" | "right";
+  /** Which carrot. See `PanelSlot.braceFigure`. */
+  braceFigure?: "super-carrot" | "big-carrot" | "little-carrot";
   /** Only set for "gable" instances — this tile's own REAL edge heights at
    * its own local x=0 (left) and x=widthIn (right), carried through
    * directly from computeGableTiledRow's own leftHeightIn/rightHeightIn —
@@ -314,6 +316,7 @@ export function allPanelInstances(
     midWallBandIndex?: number,
     bracePairPattern?: "superbrace" | "braced" | "nailer",
     bracePairHalf?: "left" | "right",
+    braceFigure?: "super-carrot" | "big-carrot" | "little-carrot",
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     const panelNumber = counters[direction]!;
@@ -342,6 +345,7 @@ export function allPanelInstances(
       ...(midWallBandIndex !== undefined && { midWallBandIndex }),
       ...(bracePairPattern !== undefined && { bracePairPattern }),
       ...(bracePairHalf !== undefined && { bracePairHalf }),
+      ...(braceFigure !== undefined && { braceFigure }),
     });
   };
 
@@ -494,6 +498,7 @@ export function allPanelInstances(
                a standard panel has no pattern on its slot to read. */
             slot.bracePairPattern,
             slot.bracePairHalf,
+            slot.braceFigure,
           );
         }
       }

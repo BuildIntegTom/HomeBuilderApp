@@ -77,6 +77,19 @@ export interface PanelSlot {
   bracePairPattern?: "superbrace" | "braced" | "nailer";
   /** Which half of the pair. See `bracePairPattern`. */
   bracePairHalf?: "left" | "right";
+  /**
+   * Which CARROT this panel got (2026-11-02). Only meaningful under the
+   * `superbrace` pattern, which cycles Super, Super, Little, Little along
+   * each run {EM} *"The pattern would be super carrot, super carrot, little
+   * carrot, little carrot, super etc."* A Super Carrot is this panel's two
+   * legs of the pair's X plus two short load-path diagonals; a Little Carrot
+   * is the two short diagonals alone. `big-carrot` (the X by itself) has a
+   * name but is not produced by the pattern.
+   *
+   * ⚠ Derived by `applyDrawTimeBracing`, not stored in the project file —
+   * same as `bracePairPattern`/`bracePairHalf`, and for the same reason.
+   */
+  braceFigure?: "super-carrot" | "big-carrot" | "little-carrot";
   /** A slot can carry a second type alongside its primary one (Tommy: "have
    * multiple types of panels be represented in a particular panel") — e.g.
    * a safety-gap panel near a corner that also satisfies the braced-panel

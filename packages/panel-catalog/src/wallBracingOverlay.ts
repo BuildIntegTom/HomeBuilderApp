@@ -1,5 +1,5 @@
 import type { AddedMemberSpec, PanelWythe } from "./panelRecipe";
-import { type BracePairPattern, bracePairAddedMembers } from "./bracePairPatterns";
+import { type BraceFigure, type BracePairPattern, bracePairAddedMembers } from "./bracePairPatterns";
 
 /**
  * Laying a bracing pattern across a whole wall.
@@ -39,6 +39,29 @@ export interface BracePair {
   rightPanelId: string;
 }
 
+/**
+ * ⚠ **THE CARROT CYCLE — his pattern, 2026-11-02.**
+ *
+ * > *"The pattern would be super carrot, super carrot, little carrot, little
+ * > carrot, super etc."*
+ *
+ * Two panels of each, which is exactly one PAIR of each, so the cycle is read
+ * off the pair index rather than the panel index. Only the `superbrace`
+ * pattern cycles; the Braced Pair gives every pair the same figure.
+ *
+ * > *"The only interruptions are, however, and wherever headers and doors and
+ * > windows spawn"* — and asked what happens on the far side of one, he chose
+ * **restart at Super, Super, Little, Little**, so every uninterrupted stretch
+ * of wall begins with its two strongest panels. That restart is free: this
+ * function already splits a wall into runs of consecutive ELIGIBLE panels and
+ * flushes at each ineligible one, so the pair index resets at exactly the
+ * openings he named.
+ */
+function figureForPairIndex(pattern: BracePairPattern, pairIndexInRun: number): BraceFigure | undefined {
+  if (pattern !== "superbrace") return undefined;
+  return pairIndexInRun % 2 === 0 ? "super-carrot" : "little-carrot";
+}
+
 export interface WallBracingResult {
   /** What to add to each panel. Panels that got nothing are absent. */
   addedByPanelId: Record<string, AddedMemberSpec[]>;
@@ -50,6 +73,8 @@ export interface WallBracingResult {
   /** Eligible panels, in the order they were walked. Useful for showing the
    * user where the pattern started. */
   walkedPanelIds: string[];
+  /** Which carrot each panel got. Empty for a pattern that does not cycle. */
+  figureByPanelId: Record<string, BraceFigure>;
 }
 
 /**
@@ -74,6 +99,7 @@ export function applyWallBracingPattern(options: WallBracingOptions): WallBracin
   const pairs: BracePair[] = [];
   const unpairedPanelIds: string[] = [];
   const walkedPanelIds: string[] = [];
+  const figureByPanelId: Record<string, BraceFigure> = {};
 
   /* Split into runs of consecutive eligible panels, then pair within a run. */
   let run: BraceablePanel[] = [];
@@ -81,12 +107,17 @@ export function applyWallBracingPattern(options: WallBracingOptions): WallBracin
     for (let i = 0; i < run.length; i += 2) {
       const left = run[i]!;
       const right = run[i + 1];
+      /* The carrot cycle, read off the pair's index WITHIN THIS RUN — which
+         is what makes it restart after every opening. */
+      const figure = figureForPairIndex(options.pattern, i / 2);
       walkedPanelIds.push(left.id);
+      if (figure) figureByPanelId[left.id] = figure;
       addedByPanelId[left.id] = bracePairAddedMembers({
         pattern: options.pattern,
         widthIn: left.widthIn,
         heightIn: left.heightIn,
         half: "left",
+        figure,
         wythes: options.wythes,
       });
       if (!right) {
@@ -94,11 +125,13 @@ export function applyWallBracingPattern(options: WallBracingOptions): WallBracin
         continue;
       }
       walkedPanelIds.push(right.id);
+      if (figure) figureByPanelId[right.id] = figure;
       addedByPanelId[right.id] = bracePairAddedMembers({
         pattern: options.pattern,
         widthIn: right.widthIn,
         heightIn: right.heightIn,
         half: "right",
+        figure,
         wythes: options.wythes,
       });
       pairs.push({ leftPanelId: left.id, rightPanelId: right.id });
@@ -112,5 +145,5 @@ export function applyWallBracingPattern(options: WallBracingOptions): WallBracin
   }
   flush();
 
-  return { addedByPanelId, pairs, unpairedPanelIds, walkedPanelIds };
+  return { addedByPanelId, pairs, unpairedPanelIds, walkedPanelIds, figureByPanelId };
 }

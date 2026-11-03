@@ -1265,7 +1265,11 @@ across a retile. It just no longer invents one.
 
 ---
 
-# B20 — The superbrace's load-path diagonals (NEW, spec given 2026-11-02)
+# B20 (superseded) — see the full spec below
+
+Written from his first, shorter description, before the sketch and the geometry
+note arrived. Kept only for the quotes.
+
 
 > *"This super brace design (I think one thing may be missing from them - the
 > one additional 2x4 diagonal on each side on the top that help carry the load
@@ -1298,3 +1302,172 @@ view and the shear figure, and four details are unstated:
    stops being a load path.
 
 Worth asking all four together before any of it is cut.
+
+---
+
+# B20 — The carrots. DONE 2026-11-02.
+
+> *"Let's have super brace mean absolutely Overkill on the bracing."*
+
+## The three figures, and his names for them
+
+> *"I suppose the names are now Little Carrot and Big Carrot. Little Carrot,
+> Super Carrot (meaning both). ... no big carrot in pattern but good to have a
+> name for just the X."*
+
+| Figure | On this panel | Across a pair |
+|---|---|---|
+| **Big Carrot** | 2 long legs of the pair's X | 4 — his *"four total 2x4s ... 4 or 5 ft long"* |
+| **Little Carrot** | 2 short load-path diagonals | 4 — his *"four more 2x4s ... 2 or 3 ft"* |
+| **Super Carrot** | both, 4 members | 8 |
+
+Big Carrot is named but **not produced by the pattern** — it exists because the
+X needed a name and because a per-panel editor will want to offer it.
+
+## The pattern
+
+> *"The pattern would be super carrot, super carrot, little carrot, little
+> carrot, super etc."*
+
+Two panels of each is exactly one PAIR of each, so the cycle reads off the pair
+index. **It restarts at Super after every window, door and header** (his
+choice), which came free: the overlay already splits a wall into runs of
+consecutive eligible panels and flushes at each ineligible one.
+
+> *"The only interruptions are, however, and wherever headers and doors and
+> windows spawn, and most of them will have diagonals."*
+
+## Exterior only
+
+> *"I guess these super brace patterns could just be for the outside actually,
+> exterior only. Standard panel style for inside, perhaps ready to receive edits
+> and nailers somehow."*
+
+So the Carrot Pattern defaults to the exterior wythe and the interior face is an
+ordinary standard panel — which is what makes it "ready to receive edits": the
+recipe system already takes per-panel surgery and an untouched face is what it
+can be applied to. **The Braced Pair is untouched and still takes both wythes**,
+because he said nothing about it.
+
+His own arithmetic for this: *"Super braced pattern was 8844, is now really more
+like 4422 since I don't think the interior needs to be braced (happy to be
+checked on that)."* ⚠ **That parenthesis is his, and it is the one assumption in
+B20 he has asked to have checked** — it is recorded on the type itself, not just
+here.
+
+## ⚠ One deliberate deviation from his sketch, and why
+
+He sketched the short diagonals running **outward** from the top-plate centre
+toward the panel's outer edge. **Built that way they measurably cross the Big
+Carrot's upper leg.** Checked numerically on a 48 × 120in panel: at mid-width
+the X leg is at z 89.5 and the outward carrot at z 119; by the outer post they
+have swapped, so they intersect in between. Two 2x4s let into the same straw
+groove cannot cross — *"It doesn't make sense to allow any overlapping because
+these need to [be] possible to build."*
+
+Routed toward the **seam** instead, it fits the triangle the X's own upper leg
+leaves open, keeps the same ~3ft length, still carries the load to an edge stud
+and down to the floor, and `overlappingPairsIn` is clean on a Super Carrot. It
+also matches his FIRST description better than the sketch does — *"the one
+additional 2x4 diagonal on each side on the top"* — since the two panels of a
+pair now bring their top carrots down to the seam they share, one from each
+side.
+
+Only a Super Carrot has anything to collide with; a Little Carrot panel carries
+no X, so outward would be free there. It is routed the same way regardless,
+because one figure that reads identically on every panel beats two that differ
+for a reason nobody can see on the shop drawing.
+
+## Where it lands
+
+- `braceFigure` on the slot and on `PanelInstance`, derived not stored.
+- The Shop Fabrication group key grew the figure, so a Super Carrot and a Little
+  Carrot of the same width no longer share a page — without it half the panels
+  on every wall would be built with members they do not have.
+- Measured on a 43'8" × 33' building: shear **66,001 → 137,183 lb**.
+
+---
+
+# B21 — Vertical Nailers is its own overlay
+
+> *"Vertical nailers is actually a totally different bracing pattern overlay.
+> Let's make that a button that turns all of the panels into straight up and
+> down 2x4s just on the exterior."*
+
+Today `nailer` is one of the three patterns and adds **nothing** — it is the
+standard panel with its own centre-nailer flag on, which is why the Review Log
+has to say a Nailer Pair models no lateral resistance at all. He wants a real
+overlay: vertical 2x4s across the whole panel, exterior face only.
+
+---
+
+# B22 — The upper row's own diagonal pattern (interview first)
+
+> *"The upper row on a wall tall enough to spawn 3rd gable panels I guess can
+> have their own diagonal pattern, either synonymous or similar with its
+> downstairs counterparts. We'll work on those later with an interview, put that
+> to the queue."*
+
+This is the other half of what B17 left alone. `applyAdditionalRowBracedPattern`
+is the last reader of the seismic zone, kept because the per-slot pattern does
+not reach zone 1. Giving the upper row its own figure is what finally retires it
+and takes the seismic zone out of the app entirely.
+
+---
+
+# B23 — A girt a wall-depth in from the floor panel's long edges
+
+> *"there should be a girt wall depth (15.5") in from the exterior edges of the
+> long channels of the floor panels to help carry the entire toe up load to the
+> foundation."*
+
+⚠ Today a floor panel's structural girt goes **only where a wall lands, at a
+panel END** (`structuralGirtEnds`; roof panels get none at all, his own earlier
+decision). This asks for something different: a girt running parallel to each
+long edge, set in by the wall depth, so the whole footprint of the wall above
+bears on something continuous rather than only at the panel ends.
+
+Note the dependency: `cornerPanelWidthIn` is 15.5in and the wall depth is 15.5in
+([[corner_panel_is_15_5]]), so "wall depth in" must read the live thickness, not
+a literal 15.5.
+
+---
+
+# B19 (addition) — the panel editor behind the right click
+
+Already queued for an interview; he has now specified most of it unprompted.
+
+> *"Right click should have an option to go to a panel editor. An editor all for
+> editing that panel. It should be possible to turn it into any other panel, as
+> well as recategorize it or name it. This panel editor isolates the panel in
+> question in its own 3d framed view and the left bar is dedicated to having
+> options such as change panel type, add diagonal, add vertical, add horizontal.
+> Once spawned, it is easy to click and drag a member (maybe there's a toggle on
+> the editor where you switch back and forth from or it and edit) because it
+> snaps to center and flush with either side of other members, corners, and
+> intersections. Ooo actually it would be cool to have a toggle opaque rest of
+> the 3d framed view, and those x,y, and z be snappable too. If you right click
+> on a member in the panel editor, you get a selection to change it to anything.
+> Left bar also has an option to rotate 90 or custom degrees."*
+
+> *"All of this should be pretty easy to track materials wise I would thin[k],
+> seems like a json thing"*
+
+**He is right that the structure is already there**, and that is worth saying
+precisely rather than vaguely:
+
+- `AddedMemberSpec` + `buildPanelFromRecipe` is exactly the "json thing" — a
+  panel is already *base recipe + a list of added members*, which is how the
+  carrots, the brace pair tie and the nailer are all expressed today. An editor
+  writes that list.
+- `recipeConflicts` / `overlappingPairsIn` already refuse a panel whose members
+  intersect, so drag-and-drop gets a correctness check for free.
+- Materials already come from the member list (`standardPanelMembersFor` is the
+  single seam), so an edited panel costs, weighs and cuts correctly with no
+  extra plumbing.
+
+**What is genuinely new:** persisting a per-panel member list into the project
+file (everything today is derived, nothing is stored), the snapping model, and
+the isolated 3D view with the rest of the building ghosted.
+
+---

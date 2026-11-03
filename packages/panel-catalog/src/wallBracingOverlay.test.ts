@@ -43,8 +43,16 @@ describe("laying a pattern across a wall", () => {
     });
     expect(r.unpairedPanelIds).toEqual(["odd"]);
     expect(r.addedByPanelId["odd"]!.length).toBeGreaterThan(0);
-    // Same legs a left-hand panel gets.
-    expect(r.addedByPanelId["odd"]!.map((s) => s.id)).toEqual(r.addedByPanelId["p1"]!.map((s) => s.id));
+    /* ⚠ Same legs a LEFT-hand panel gets, but not the same CARROT: `odd`
+       opens the second pair of the run, so the cycle gives it a Little Carrot
+       where `p1` got a Super Carrot. Comparing the two id lists directly
+       started failing the day the cycle arrived, which is the cycle working. */
+    expect(r.figureByPanelId["p1"]).toBe("super-carrot");
+    expect(r.figureByPanelId["odd"]).toBe("little-carrot");
+    const stripFigure = (ids: string[]) => ids.map((id) => id.replace(/^(big|little)_carrot_/, ""));
+    expect(stripFigure(r.addedByPanelId["odd"]!.map((s) => s.id))).toEqual(
+      stripFigure(r.addedByPanelId["p1"]!.map((s) => s.id)).filter((id) => id.endsWith("_top") || id.endsWith("_bottom")),
+    );
   });
 
   it("⚠ a run of pairs BREAKS at anything ineligible", () => {
@@ -83,9 +91,14 @@ describe("laying a pattern across a wall", () => {
       startFrom: "start",
       wythes: ["exterior"],
     });
-    // Flush with each panel's seam-side POST, 1.5in in from the seam itself.
-    for (const s of r.addedByPanelId["a"]!) expect(s.kind === "diagonal" && s.fromXIn).toBe(48 - 1.5);
-    for (const s of r.addedByPanelId["b"]!) expect(s.kind === "diagonal" && s.fromXIn).toBe(1.5);
+    /* Flush with each panel's seam-side POST, 1.5in in from the seam itself.
+       ⚠ The X legs only: a Little Carrot starts at the panel's own top/bottom
+       plate CENTRE instead, because that is where the roof and floor seams
+       land. Filtering rather than asserting over everything is the point. */
+    const xLegs = (id: string) => r.addedByPanelId[id]!.filter((s) => s.id.startsWith("big_carrot_"));
+    expect(xLegs("a")).toHaveLength(2);
+    for (const s of xLegs("a")) expect(s.kind === "diagonal" && s.fromXIn).toBe(48 - 1.5);
+    for (const s of xLegs("b")) expect(s.kind === "diagonal" && s.fromXIn).toBe(1.5);
   });
 
   it("each panel's members are cut to ITS width, not the pair's", () => {
@@ -117,7 +130,7 @@ describe("laying a pattern across a wall", () => {
 
   it("an empty wall is not an error", () => {
     const r = applyWallBracingPattern({ pattern: "superbrace", panels: [], startFrom: "start" });
-    expect(r).toEqual({ addedByPanelId: {}, pairs: [], unpairedPanelIds: [], walkedPanelIds: [] });
+    expect(r).toEqual({ addedByPanelId: {}, pairs: [], unpairedPanelIds: [], walkedPanelIds: [], figureByPanelId: {} });
   });
 
   it("⚠ every eligible panel is walked exactly once, at any wall length", () => {
@@ -132,5 +145,82 @@ describe("laying a pattern across a wall", () => {
         expect({ n, startFrom, odd: r.unpairedPanelIds.length }).toEqual({ n, startFrom, odd: n % 2 });
       }
     }
+  });
+});
+
+describe("⚠ the carrot cycle (2026-11-02)", () => {
+  /* > *"The pattern would be super carrot, super carrot, little carrot, little
+     > carrot, super etc."*
+     >
+     > *"The only interruptions are, however, and wherever headers and doors and
+     > windows spawn"* — and asked what the far side of one does, he chose
+     > restart.
+
+     Two panels of each is one PAIR of each, so the cycle is read off the pair
+     index within a run. */
+
+  const figures = (ids: string[], r: { figureByPanelId: Record<string, string> }) => ids.map((id) => r.figureByPanelId[id]);
+
+  it("runs Super, Super, Little, Little and repeats", () => {
+    const ids = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"];
+    const r = applyWallBracingPattern({
+      pattern: "superbrace",
+      panels: ids.map((id) => panel(id)),
+      startFrom: "start",
+    });
+    expect(figures(ids, r)).toEqual([
+      "super-carrot",
+      "super-carrot",
+      "little-carrot",
+      "little-carrot",
+      "super-carrot",
+      "super-carrot",
+      "little-carrot",
+      "little-carrot",
+    ]);
+  });
+
+  it("⚠ RESTARTS at Super after a window, door or header", () => {
+    /* The opening is panel `w`, which is ineligible — that is how an opening
+       reaches this function at all. Without the restart, `p4` would carry on
+       the cycle and open the far side on a Little Carrot. */
+    const r = applyWallBracingPattern({
+      pattern: "superbrace",
+      panels: [panel("p1"), panel("p2"), panel("p3"), panel("w", 36, false), panel("p4"), panel("p5"), panel("p6")],
+      startFrom: "start",
+    });
+    expect(figures(["p1", "p2", "p3"], r)).toEqual(["super-carrot", "super-carrot", "little-carrot"]);
+    // The far side begins again with the wall's two strongest panels.
+    expect(figures(["p4", "p5", "p6"], r)).toEqual(["super-carrot", "super-carrot", "little-carrot"]);
+    expect(r.figureByPanelId["w"]).toBeUndefined();
+  });
+
+  it("gives a Super Carrot four exterior members and a Little Carrot two", () => {
+    /* His arithmetic: *"Super braced pattern was 8844, is now really more like
+       4422 since I don't think the interior needs to be braced."* */
+    const r = applyWallBracingPattern({
+      pattern: "superbrace",
+      panels: [panel("s1"), panel("s2"), panel("l1"), panel("l2")],
+      startFrom: "start",
+    });
+    expect(r.addedByPanelId["s1"]).toHaveLength(4);
+    expect(r.addedByPanelId["s2"]).toHaveLength(4);
+    expect(r.addedByPanelId["l1"]).toHaveLength(2);
+    expect(r.addedByPanelId["l2"]).toHaveLength(2);
+    // Exterior only, every one of them.
+    for (const id of ["s1", "s2", "l1", "l2"]) {
+      expect(new Set(r.addedByPanelId[id]!.map((x) => x.wythe)), id).toEqual(new Set(["exterior"]));
+    }
+  });
+
+  it("⚠ only the Carrot Pattern cycles — a Braced Pair gives every pair the same figure", () => {
+    const r = applyWallBracingPattern({
+      pattern: "braced",
+      panels: [panel("p1"), panel("p2"), panel("p3"), panel("p4")],
+      startFrom: "start",
+    });
+    expect(r.figureByPanelId).toEqual({});
+    // And it is still both wythes there, untouched by 2026-11-02.
+    expect(new Set(r.addedByPanelId["p1"]!.map((x) => x.wythe))).toEqual(new Set(["exterior", "interior"]));
   });
 });

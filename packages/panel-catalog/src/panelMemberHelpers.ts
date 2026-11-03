@@ -1506,6 +1506,19 @@ export function buildHeaderTrussWebBraces(
  * the confirmed girt qty/cross-section sizes (exact position wasn't
  * independently specified elsewhere).
  */
+/**
+ * Where each girt row's CENTRE sits: evenly spread across the stud span.
+ *
+ * ⚠ Extracted from `buildGirtRows` on 2026-11-02 because a second caller
+ * appeared — the Little Carrot's short diagonal lands ON a girt when one is
+ * within a couple of inches of its target height, so it has to ask where the
+ * girts are. Two copies of this arithmetic would mean a brace that thinks it
+ * is touching a girt and measurably is not.
+ */
+export function girtRowCentreZsIn(rowCount: number, studSpanIn: number): number[] {
+  return Array.from({ length: rowCount }, (_, i) => SKIN_THICKNESS_IN + (studSpanIn * (i + 1)) / (rowCount + 1));
+}
+
 export function buildGirtRows(
   rowCount: number,
   widthIn: number,
@@ -1541,7 +1554,7 @@ export function buildGirtRows(
      possible to build."* A 1/4in rip at the shop is what that costs. */
   const webHeightIn = Math.min(GIRT_WEB_HEIGHT_IN, depthIn - 2 * PLATE_2X4_WIDTH_IN);
 
-  const rows = centerZsIn ?? Array.from({ length: rowCount }, (_, i) => SKIN_THICKNESS_IN + (studSpanIn * (i + 1)) / (rowCount + 1));
+  const rows = centerZsIn ?? girtRowCentreZsIn(rowCount, studSpanIn);
   for (const [rowIndex, centerZIn] of rows.entries()) {
     const row = rowIndex + 1;
     const rowCountForNotes = rows.length;

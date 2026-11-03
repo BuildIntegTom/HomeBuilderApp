@@ -47,7 +47,12 @@ describe("⚠ added members are let INTO the straw, not stuck on the face", () =
        face. */
     const added = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left" });
     const members = buildPanelFromRecipe({ name: "x", widthIn: W, depthIn: D, heightIn: H, added });
-    for (const m of members.filter((x) => x.memberId.startsWith("superbrace_"))) {
+    /* ⚠ The prefix is `big_carrot_`/`little_carrot_` since 2026-11-02, not
+       `superbrace_`. Filtering on the old one left this loop running ZERO
+       times and the test passing on nothing, so the count is asserted first. */
+    const carrots = members.filter((x) => x.memberId.startsWith("big_carrot_") || x.memberId.startsWith("little_carrot_"));
+    expect(carrots).toHaveLength(4);
+    for (const m of carrots) {
       const size = memberBoxSizeIn(m);
       /* A diagonal records its CENTRE, so its extent is half the box either
          side. */
@@ -90,17 +95,49 @@ describe("the three patterns from his sketch", () => {
     expect(DEFAULT_BRACE_PAIR_PATTERN).toBe("superbrace");
   });
 
-  it("⚠ SuperBrace puts TWO legs per wythe on each panel — four pieces to the X", () => {
+  it("⚠ a Big Carrot is TWO legs on this panel — four pieces to the pair's X", () => {
     /* "The x in the super brace is 4 smaller pieces, each one leg of the x,
        on two different panels." Two legs here, two on the partner. */
-    const left = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", wythes: ["exterior"] });
+    const left = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", figure: "big-carrot", wythes: ["exterior"] });
     expect(left).toHaveLength(2);
     expect(left.every((s) => s.kind === "diagonal")).toBe(true);
   });
 
-  it("⚠ every leg starts at the seam-side POST, which is what lines the X up across it", () => {
-    const left = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", wythes: ["exterior"] });
-    const right = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "right", wythes: ["exterior"] });
+  it("a Little Carrot is the two short load-path diagonals, and a Super Carrot is all four", () => {
+    /* His arithmetic, 2026-11-02: *"Super braced pattern was 8844, is now
+       really more like 4422 since I don't think the interior needs to be
+       braced."* Per panel, exterior only: a Super Carrot is 4 and a Little
+       Carrot is 2. */
+    const little = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", figure: "little-carrot", wythes: ["exterior"] });
+    expect(little).toHaveLength(2);
+    expect(little.map((s) => s.id)).toEqual(["little_carrot_exterior_left_top", "little_carrot_exterior_left_bottom"]);
+
+    const sup = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", figure: "super-carrot", wythes: ["exterior"] });
+    expect(sup).toHaveLength(4);
+    // And the default figure is the full one, so every pre-existing caller
+    // keeps the densest panel rather than quietly losing half of it.
+    expect(bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", wythes: ["exterior"] })).toEqual(sup);
+  });
+
+  it("⚠ a Little Carrot starts at the panel's own top/bottom plate CENTRE, where the roof and floor seams land", () => {
+    /* 48in walls, 24in floor and roof panels, so a seam lands dead centre on
+       every wall panel's top plate and under its bottom plate. That is the
+       load this figure exists to spread. */
+    const little = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", figure: "little-carrot", wythes: ["exterior"] });
+    for (const spec of little) expect(spec.kind === "diagonal" && spec.fromXIn).toBe(W / 2);
+    // One off the top plate and one off the bottom, not two off the same end.
+    const fromZs = little.map((spec) => (spec.kind === "diagonal" ? spec.fromZIn : 0)).sort((a, b) => a - b);
+    expect(fromZs[0]).toBeLessThan(H / 2);
+    expect(fromZs[1]).toBeGreaterThan(H / 2);
+    /* ⚠ And it runs toward the SEAM, which is NOT the direction he sketched
+       — see `littleCarrotSpecs` for the whole of why. Outward it crosses the
+       Big Carrot's upper leg, and two 2x4s cannot share a groove. */
+    for (const spec of little) expect(spec.kind === "diagonal" && spec.toXIn).toBe(W - 1.5);
+  });
+
+  it("⚠ every X leg starts at the seam-side POST, which is what lines the X up across it", () => {
+    const left = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", figure: "big-carrot", wythes: ["exterior"] });
+    const right = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "right", figure: "big-carrot", wythes: ["exterior"] });
     /* ⚠ The seam-side POST's inner face, not the seam itself. Tommy,
        2026-10-25: "Braces should be flush with the post, not the edge of the
        panel." So the two panels' legs stop 3in apart across the seam — two
@@ -136,10 +173,21 @@ describe("the three patterns from his sketch", () => {
     expect(bracePairAddedMembers({ pattern: "nailer", widthIn: W, heightIn: H, half: "left" })).toEqual([]);
   });
 
-  it("both wythes by default, the way the braced panel already does it", () => {
-    const both = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left" });
-    expect(both).toHaveLength(4);
-    expect(new Set(both.map((s) => s.wythe))).toEqual(new Set(["exterior", "interior"]));
+  it("⚠ the Carrot Pattern is EXTERIOR ONLY, while the Braced Pair still takes both wythes", () => {
+    /* > *"I guess these super brace patterns could just be for the outside
+       > actually, exterior only. Standard panel style for inside, perhaps
+       > ready to receive edits and nailers somehow."* — Tommy, 2026-11-02.
+       He said nothing about the Braced Pair, so it is untouched. */
+    const carrot = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left" });
+    expect(new Set(carrot.map((s) => s.wythe))).toEqual(new Set(["exterior"]));
+    expect(carrot).toHaveLength(4);
+
+    const braced = bracePairAddedMembers({ pattern: "braced", widthIn: W, heightIn: H, half: "left" });
+    expect(new Set(braced.map((s) => s.wythe))).toEqual(new Set(["exterior", "interior"]));
+
+    // An explicit list still overrides either default.
+    const forced = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", wythes: ["exterior", "interior"] });
+    expect(new Set(forced.map((s) => s.wythe))).toEqual(new Set(["exterior", "interior"]));
   });
 });
 
@@ -148,7 +196,7 @@ describe("what the shop gets", () => {
     // "For 2x4 length counts just count the longest tips' length."
     const added = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", wythes: ["exterior"] });
     const members = buildPanelFromRecipe({ name: "x", widthIn: W, depthIn: D, heightIn: H, added });
-    const leg = members.find((m) => m.memberId.startsWith("superbrace_"))!;
+    const leg = members.find((m) => m.memberId.startsWith("big_carrot_"))!;
     const corners = leg.position.trapezoidCornersIn!;
     const longest = Math.max(
       ...corners.map((a, i) => {

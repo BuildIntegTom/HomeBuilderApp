@@ -32,22 +32,26 @@ import {
  * carries wood down to the joint, just on the slant.
  */
 export function standardPanelMembersFor(
-  source: { bracePairPattern?: "superbrace" | "braced" | "nailer"; bracePairHalf?: "left" | "right" },
+  source: {
+    bracePairPattern?: "superbrace" | "braced" | "nailer";
+    bracePairHalf?: "left" | "right";
+    braceFigure?: "super-carrot" | "big-carrot" | "little-carrot";
+  },
   widthIn: number,
   depthIn: number,
   heightIn: number,
   includeNailer: boolean,
 ): PanelMember[] {
-  const { bracePairPattern, bracePairHalf } = source;
+  const { bracePairPattern, bracePairHalf, braceFigure } = source;
   if (bracePairPattern === undefined || bracePairHalf === undefined) {
     return buildStandardPanelMembers(widthIn, depthIn, heightIn, includeNailer);
   }
   return buildPanelFromRecipe({
-    name: `Standard ${widthIn}in — ${bracePairPattern} ${bracePairHalf}`,
+    name: `Standard ${widthIn}in — ${braceFigure ?? bracePairPattern} ${bracePairHalf}`,
     widthIn,
     depthIn,
     heightIn,
     includeNailer,
-    added: bracePairAddedMembers({ pattern: bracePairPattern, widthIn, heightIn, half: bracePairHalf }),
+    added: bracePairAddedMembers({ pattern: bracePairPattern, widthIn, heightIn, half: bracePairHalf, figure: braceFigure }),
   });
 }

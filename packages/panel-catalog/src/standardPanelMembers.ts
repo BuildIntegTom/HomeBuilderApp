@@ -1,6 +1,15 @@
 import { standardPanelBomReferenceWidthIn, standardPanelHeightIn } from "./data";
 import type { PanelComponentSchema, PanelMember } from "./componentSchema";
-import { SKIN_THICKNESS_IN, buildCentreNailerStuds, buildCornerStuds, buildGirtRows, buildNailer, buildPlates, buildSkins } from "./panelMemberHelpers";
+import {
+  SKIN_THICKNESS_IN,
+  buildCentreNailerStuds,
+  buildCornerStuds,
+  buildGirtRows,
+  buildNailer,
+  buildPlates,
+  buildSkins,
+  girtRowCentreZsIn,
+} from "./panelMemberHelpers";
 
 const STANDARD_GIRT_ROW_COUNT = 2;
 
@@ -17,6 +26,14 @@ const STANDARD_GIRT_ROW_COUNT = 2;
 export function computeStandardGirtRowCount(heightIn: number): number {
   if (heightIn >= standardPanelHeightIn.value) return STANDARD_GIRT_ROW_COUNT;
   return Math.max(0, Math.ceil(heightIn / 36) - 1);
+}
+
+/** Where this standard panel's girt rows sit, from its height alone — the
+ * same rows `buildStandardPanelMembers` goes on to build. The Little Carrot
+ * asks this to decide whether a girt is near enough to land on.
+ */
+export function standardGirtRowCentreZsIn(heightIn: number): number[] {
+  return girtRowCentreZsIn(computeStandardGirtRowCount(heightIn), heightIn - 2 * SKIN_THICKNESS_IN);
 }
 
 /**

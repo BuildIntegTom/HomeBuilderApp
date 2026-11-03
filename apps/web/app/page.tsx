@@ -8518,8 +8518,15 @@ export default function LayoutEditor() {
          pattern layout changing each panel individually will make more
          groups of fewer panels for grouping shop fabrication pages and
          that's fine."* */
+      /* ⚠ **And the CARROT, since 2026-11-02.** The pattern now cycles Super,
+         Super, Little, Little along each run, so two 48in standard panels on
+         the same wall, same pattern, same half, can still be different parts —
+         a Super Carrot carries four exterior diagonals and a Little Carrot
+         two. Without this the two would share a Shop Fabrication page and half
+         the panels on every wall would be built with members they do not
+         have. */
       if (panelTypeId === "standard") {
-        parts.push(inst.bracePairPattern ?? "", inst.bracePairHalf ?? "");
+        parts.push(inst.bracePairPattern ?? "", inst.bracePairHalf ?? "", inst.braceFigure ?? "");
       }
       // Same idea for gable tiles — two tiles of the same width but
       // different edge heights (different position along the roofline)

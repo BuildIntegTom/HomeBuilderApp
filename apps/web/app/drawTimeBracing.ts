@@ -121,8 +121,10 @@ export function applyDrawTimeBracing(
     for (const id of result.unpairedPanelIds) halfById.set(id, "left");
 
     out[wallId] = slots.map((slot, index) => {
-      const half = halfById.get(`${wallId}:${index}`);
-      return half === undefined ? slot : { ...slot, bracePairPattern: pattern, bracePairHalf: half };
+      const id = `${wallId}:${index}`;
+      const half = halfById.get(id);
+      if (half === undefined) return slot;
+      return { ...slot, bracePairPattern: pattern, bracePairHalf: half, braceFigure: result.figureByPanelId[id] };
     });
   }
   return out;

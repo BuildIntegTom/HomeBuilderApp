@@ -1,6 +1,7 @@
 import type { AddedMemberSpec, PanelWythe } from "./panelRecipe";
 import { recipeClearHeightIn } from "./panelRecipe";
 import { centreNailerStudSpansIn } from "./panelMemberHelpers";
+import { standardGirtRowCentreZsIn } from "./standardPanelMembers";
 
 /** A corner post is 1.5in across the panel's width. */
 const CORNER_POST_THICKNESS_IN = 1.5;
@@ -22,12 +23,37 @@ export type BracePairPattern = "superbrace" | "braced" | "nailer";
 /** Which panel of the pair this is. A pair's two panels are mirror images. */
 export type PairHalf = "left" | "right";
 
+/**
+ * ⚠ **THE THREE CARROTS — his names, 2026-11-02.**
+ *
+ * > *"I suppose the names are now Little Carrot and Big Carrot. Little Carrot,
+ * > Super Carrot (meaning both). ... no big carrot in pattern but good to have
+ * > a name for just the X."*
+ *
+ * | Figure | Members on THIS panel | What it is |
+ * |---|---|---|
+ * | `big-carrot` | 2 long | this panel's two legs of the pair's X |
+ * | `little-carrot` | 2 short | the load-path diagonals, one off the top plate and one off the bottom |
+ * | `super-carrot` | 4 | both of the above |
+ *
+ * Counted across a PAIR those are 4, 4 and 8, which is where his original
+ * *"four total 2x4s ... as a big carrot. Then ... four more 2x4s"* comes from.
+ * Per panel and exterior-only they are 2, 2 and 4 — *"Super braced pattern
+ * was 8844, is now really more like 4422 since I don't think the interior
+ * needs to be braced (happy to be checked on that)."* That parenthesis is his,
+ * and it is the one assumption in here he has asked to have checked.
+ *
+ * `big-carrot` is NOT produced by the pattern. It is named because the X alone
+ * needed a name, and because a per-panel brace editor will want to offer it.
+ */
+export type BraceFigure = "super-carrot" | "big-carrot" | "little-carrot";
+
 export const BRACE_PAIR_PATTERNS: { id: BracePairPattern; label: string; description: string }[] = [
   {
     id: "superbrace",
-    label: "SuperBrace Pair",
+    label: "Carrot Pattern",
     description:
-      "A full X across the pair, each panel carrying two legs that meet at the seam. The densest of the three, and the default.",
+      "Super Carrot, Super Carrot, Little Carrot, Little Carrot, and repeat \u2014 restarting at the first panel after every window, door or header. A Super Carrot is this panel's two legs of the pair's X plus two short load-path diagonals; a Little Carrot is the two short diagonals alone. Exterior face only.",
   },
   {
     id: "braced",
@@ -52,8 +78,27 @@ export interface BracePairOptions {
   widthIn: number;
   heightIn: number;
   half: PairHalf;
-  /** Both wythes get the pattern, the way the braced panel already does it.
-   * One wythe only is available for a user who wants it. */
+  /**
+   * Which carrot this panel got. Only read when `pattern` is `superbrace`;
+   * defaults to the full figure so every existing caller keeps the densest
+   * one it already had plus the new short diagonals.
+   */
+  figure?: BraceFigure;
+  /**
+   * ⚠ **The Carrot Pattern defaults to the EXTERIOR face only, 2026-11-02.**
+   *
+   * > *"I guess these super brace patterns could just be for the outside
+   * > actually, exterior only. Standard panel style for inside, perhaps ready
+   * > to receive edits and nailers somehow."*
+   *
+   * So the interior face of a braced panel is now an ordinary standard panel
+   * face — which is what makes it "ready to receive edits": the recipe system
+   * already takes per-panel surgery, and an untouched interior is the thing it
+   * can be applied to. The Braced Pair pattern is unchanged and still takes
+   * both wythes, because he said nothing about it.
+   *
+   * Pass an explicit list to override either default.
+   */
   wythes?: PanelWythe[];
 }
 
@@ -69,7 +114,9 @@ export interface BracePairOptions {
  */
 export function bracePairAddedMembers(options: BracePairOptions): AddedMemberSpec[] {
   const { pattern, widthIn, heightIn, half } = options;
-  const wythes = options.wythes ?? (["exterior", "interior"] as PanelWythe[]);
+  const figure = options.figure ?? "super-carrot";
+  const wythes =
+    options.wythes ?? ((pattern === "superbrace" ? ["exterior"] : ["exterior", "interior"]) as PanelWythe[]);
   if (pattern === "nailer") return [];
 
   const { bottomZIn, topZIn } = recipeClearHeightIn(heightIn);
@@ -91,31 +138,38 @@ export function bracePairAddedMembers(options: BracePairOptions): AddedMemberSpe
   for (const wythe of wythes) {
     const tag = `${wythe}_${half}`;
     if (pattern === "superbrace") {
-      /* Half of the X, plus the return legs to this panel's own outer top
-         and bottom corners — the extra diagonals in the sketch that make
-         SuperBrace denser than a plain X. */
-      out.push(
-        {
-          kind: "diagonal",
-          id: `superbrace_${tag}_x_upper`,
-          fromXIn: seamXIn,
-          fromZIn: midZIn,
-          toXIn: outerXIn,
-          toZIn: topZIn,
-          wythe,
-          notes: "upper leg of the pair's X, meeting its partner at the seam",
-        },
-        {
-          kind: "diagonal",
-          id: `superbrace_${tag}_x_lower`,
-          fromXIn: seamXIn,
-          fromZIn: midZIn,
-          toXIn: outerXIn,
-          toZIn: bottomZIn,
-          wythe,
-          notes: "lower leg of the pair's X, meeting its partner at the seam",
-        },
-      );
+      if (figure !== "little-carrot") {
+        /* The BIG CARROT: this panel's two legs of the pair's X, meeting their
+           partners at the seam. Unchanged since 2026-10-24 — he confirmed it
+           by drawing over it: *"This pic depicts one panel is blue, one panel
+           in purple with just the exterior highlighted just as it does in the
+           app today. I'm saying let's add the yellow pieces."* */
+        out.push(
+          {
+            kind: "diagonal",
+            id: `big_carrot_${tag}_upper`,
+            fromXIn: seamXIn,
+            fromZIn: midZIn,
+            toXIn: outerXIn,
+            toZIn: topZIn,
+            wythe,
+            notes: "upper leg of the pair's X (Big Carrot), meeting its partner at the seam",
+          },
+          {
+            kind: "diagonal",
+            id: `big_carrot_${tag}_lower`,
+            fromXIn: seamXIn,
+            fromZIn: midZIn,
+            toXIn: outerXIn,
+            toZIn: bottomZIn,
+            wythe,
+            notes: "lower leg of the pair's X (Big Carrot), meeting its partner at the seam",
+          },
+        );
+      }
+      if (figure !== "big-carrot") {
+        out.push(...littleCarrotSpecs(widthIn, heightIn, seamXIn, wythe, tag));
+      }
     } else {
       /* One long diagonal across the pair — this panel carries its half —
          and the added horizontal tie at mid-height. The tie is an ADDED
@@ -137,6 +191,119 @@ export function bracePairAddedMembers(options: BracePairOptions): AddedMemberSpe
     }
   }
   return out;
+}
+
+/** How near a girt has to be before the short diagonal lands ON it instead of
+ *  stopping beside it. His *"within a couple inches"*. */
+const GIRT_SNAP_IN = 2;
+
+/** A quarter of the clear height down from the plate — his stated target for
+ *  the short diagonal's tip when no girt is near enough to claim it. */
+const LITTLE_CARROT_HEIGHT_FRACTION = 0.25;
+
+/**
+ * **THE LITTLE CARROT — the yellow pieces in his 2026-11-02 sketch.**
+ *
+ * > *"the one additional 2x4 diagonal on each side on the top that help carry
+ * > the load of the roof panel above it in the center (presumably 4' walls and
+ * > 2' roof panels) and two on the bottom that help carry it to the floor
+ * > panel (2' floor panels, one lands in the center of the wall)."*
+ *
+ * > *"The top pair lands its center[ed] on the top plate of the panel, with its
+ * > diagonal's tip touching the top [girt] or 1/4 of the way down from the top
+ * > if the other [girt] is not within a couple inches for interfering. ... Then
+ * > the third and fourth pair are just like the first two pairs except on the
+ * > bottom half of the panel."*
+ *
+ * ⚠ **This is a LOAD PATH, not shear, and the geometry is why.** Walls are
+ * 48in and floor/roof panels are 24in, so a roof panel seam lands dead centre
+ * on the top plate of every wall panel and a floor panel seam lands dead centre
+ * under the bottom plate. Each diagonal starts at that seam and runs down-and-
+ * OUTWARD, away from the pair's own seam, spreading the point load toward the
+ * panel's supported edge. The direction is his: in the sketch the left panel's
+ * pieces run left and the right panel's run right.
+ *
+ * On a 48in x 120in panel each one measures about 3ft, which is his *"maybe 2
+ * or 3 ft long"*.
+ *
+ * ⚠ **IT RUNS TOWARD THE SEAM, AND HIS SKETCH RUNS IT THE OTHER WAY.** This
+ * is a deliberate, reported deviation, not a misreading. Drawn outward — from
+ * the top-plate centre down toward the panel's outer edge — it measurably
+ * CROSSES the Big Carrot's upper leg, which on a 48 x 120in panel runs from the
+ * seam post at mid-height up to the outer post at the top plate. Checked
+ * numerically: at the panel's mid-width the X leg is at z 89.5 and the outward
+ * carrot at z 119; at the outer post they have swapped. Two 2x4s let into the
+ * same straw groove cannot cross — *"It doesn't make sense to allow any
+ * overlapping because these need to [be] possible to build."*
+ *
+ * Toward the seam it fits the triangle the X's own upper leg leaves open, does
+ * the same job (the load still reaches an edge stud and goes to the floor), and
+ * keeps the same ~3ft length. `overlappingPairsIn` is clean on a Super Carrot.
+ *
+ * It also matches his FIRST description better than the sketch does —
+ * *"the one additional 2x4 diagonal on each side on the top"* — since the two
+ * panels of a pair now bring their top carrots down to the shared seam, one
+ * from each side.
+ *
+ * ⚠ **Only a Super Carrot has anything to collide with.** A Little Carrot
+ * panel carries no X, so the outward direction is free there. It is routed the
+ * same way regardless, because one figure that reads identically on every panel
+ * beats two that differ for a reason nobody can see on the shop drawing.
+ *
+ * ⚠ The tip stops at the seam post's inner face, not the panel edge, for the
+ * same reason the X legs do — *"Braces should be flush with the post, not the
+ * edge of the panel."*
+ */
+function littleCarrotSpecs(
+  widthIn: number,
+  heightIn: number,
+  towardXIn: number,
+  wythe: PanelWythe,
+  tag: string,
+): AddedMemberSpec[] {
+  const { bottomZIn, topZIn } = recipeClearHeightIn(heightIn);
+  const clearIn = topZIn - bottomZIn;
+  const girtZs = standardGirtRowCentreZsIn(heightIn);
+
+  /* The tip height: a quarter of the clear height in from the plate, unless a
+     girt sits within a couple of inches of that, in which case it lands on the
+     girt rather than stopping just shy of one and interfering with it. */
+  const tipZFor = (plateZIn: number, towardIn: number) => {
+    const target = plateZIn + towardIn * LITTLE_CARROT_HEIGHT_FRACTION * clearIn;
+    let best: number | undefined;
+    for (const z of girtZs) {
+      if (Math.abs(z - target) > GIRT_SNAP_IN) continue;
+      if (best === undefined || Math.abs(z - target) < Math.abs(best - target)) best = z;
+    }
+    return best ?? target;
+  };
+
+  /* The seam the roof and floor panels land on: the centre of this panel's own
+     top and bottom plates. Not the pair's seam. */
+  const seamOverPlateXIn = widthIn / 2;
+
+  return [
+    {
+      kind: "diagonal",
+      id: `little_carrot_${tag}_top`,
+      fromXIn: seamOverPlateXIn,
+      fromZIn: topZIn,
+      toXIn: towardXIn,
+      toZIn: tipZFor(topZIn, -1),
+      wythe,
+      notes: "Little Carrot: carries the roof panel seam landing on this panel's top-plate centre out to the supported edge",
+    },
+    {
+      kind: "diagonal",
+      id: `little_carrot_${tag}_bottom`,
+      fromXIn: seamOverPlateXIn,
+      fromZIn: bottomZIn,
+      toXIn: towardXIn,
+      toZIn: tipZFor(bottomZIn, 1),
+      wythe,
+      notes: "Little Carrot: carries this panel's bottom-plate centre down into the floor panel seam below",
+    },
+  ];
 }
 
 /**

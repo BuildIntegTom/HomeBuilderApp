@@ -110,7 +110,7 @@ describe("⚠ the pair pattern rides from the slot to the instance", () => {
     expect(withNailer.some((m) => m.memberId.startsWith("stud_centre_"))).toBe(true);
     const braced = standardPanelMembersFor(inst!, inst!.widthIn, DEPTH_IN, HEIGHT_IN, true);
     expect(braced.some((m) => m.memberId.startsWith("stud_centre_"))).toBe(false);
-    expect(braced.some((m) => m.memberId.includes("superbrace"))).toBe(true);
+    expect(braced.some((m) => m.memberId.includes("carrot"))).toBe(true);
   });
 
   it("⚠ a patterned panel contributes REAL modelled shear, a plain one none", () => {
