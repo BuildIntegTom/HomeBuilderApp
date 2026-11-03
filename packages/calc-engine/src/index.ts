@@ -14,3 +14,4 @@ export * from "./boardFeet";
 export * from "./units";
 export * from "./plaster";
 export * from "./productCoverage";
+export * from "./shearDerivation";

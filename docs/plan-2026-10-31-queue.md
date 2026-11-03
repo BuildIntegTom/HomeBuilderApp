@@ -1471,3 +1471,29 @@ file (everything today is derived, nothing is stored), the snapping model, and
 the isolated 3D view with the rest of the building ghosted.
 
 ---
+
+---
+
+# B18 — The Derivation Sheet. DONE 2026-11-02.
+
+> *"Derivation sheet sounds freaking awesome."* /
+> *"Id rather have a pattern be described to an engineer with estimated values
+> rather than prescribe an engineer seismic zone thing."*
+
+`shearDerivation.ts` in calc-engine, rendered as a formal document note beside
+the Summary. Per brace: le/d → FcE → CP → Fc′ → axial → horizontal. Rolled up
+per panel, per wall line with **lb per running foot**, per building. Every
+shared input carries its own status — Fc and Emin stay `pending-BI-confirmation`.
+
+⚠ **It names no seismic zone, and a test asserts that** by searching the derived
+data for "seismic", "zone", "SDC", "demand", "base shear". A rating is capacity
+against demand, and this app has no demand figures.
+
+⚠ **It cannot drift from the figure it explains.** Both read `shearMembersFor`,
+and the sheet equals `computeBracedPanelShearCapacityLb` by test. Verified live:
+Summary and sheet both **138,712 lb**, four wall lines summing to it exactly.
+
+**A finding it surfaced, printed on the sheet:** a short brace out-performs a
+long one, often by 3×, because halving length halves slenderness and CP climbs
+steeply. That is the NDS curve, and it is why the carrots doubled the total.
+Worth his engineer's eye rather than being presented as a conclusion.

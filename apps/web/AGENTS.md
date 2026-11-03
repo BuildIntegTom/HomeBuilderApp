@@ -44,6 +44,26 @@
   Note what that second one means: adding a new memo to a dep array can
   flag *there* while its neighbours on the lines above do not — so expect
   one new memo to cost two errors, and say so rather than rounding down.
+  ⚠ **Recorded exception, 2026-11-02 — the Derivation Sheet (B18), +3.**
+  `preserve-manual-memoization` 58 -> 61, every other rule byte-identical, no
+  correctness rule moved. All three are the SAME new `useMemo`,
+  `shearDerivation` in `page.tsx`, which is the file this rule is already
+  saturated with:
+
+  - `8463:27` — the `useMemo` call itself.
+  - `8488:74` — `defaultBracePattern` in its own dependency array.
+  - `8488:95` — `defaultBracedMirrored`, likewise.
+
+  So the 2026-09-30 note's *"expect one new memo to cost two errors"* is a
+  FLOOR, not a ceiling: a new memo costs one for itself plus one for each
+  already-flagged value in its dep array, and this one carries two.
+
+  ⚠ The same change had `exhaustive-deps` at **13** for one run, and that was
+  fixed rather than accepted — the memo was calling a helper defined in the
+  component body. The helper moved to `shearMembers.ts` as a pure function
+  taking an explicit context object, which removed the dependency instead of
+  listing it. `useCallback` would have traded a banned rule for a rationed one.
+
 - **Lint does not work from a git worktree that has no root `node_modules`,
   and it fails in TWO different ways depending on how you invoke it.**
   `npm run lint --workspace=apps/web` from the worktree dies immediately
@@ -73,6 +93,10 @@
   two extra warnings both `no-unused-vars` in `projectFile.test.ts`, which
   grew by 49 lines over the commits in between. Worth keeping as the shape of
   this gate: a total that drifts while every rule that matters sits still.
+  Re-measured 2026-11-02 after B16/B17/B20: **164 problems, 116 errors / 48
+  warnings**, with `preserve-manual-memoization` down to 58 (B16 deleted two
+  memos). After B18 it is **167 / 119 / 48** — see the recorded exception
+  for the Derivation Sheet further up this list.
 - **⚠ Do NOT read a value from `@building-integrity/panel-catalog` at MODULE
   SCOPE in `page.tsx`.** Turbopack splits `data.ts` into parts, and a value
   declared late in that very long file is not evaluated before this module's

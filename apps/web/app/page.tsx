@@ -133,6 +133,7 @@ import {
   computeAssemblyPerm,
   computeBoardFeetByNominalSize,
   computeBracedPanelShearCapacityLb,
+  deriveBuildingShear,
   computeBuiltUpColumnBearingCapacityLb,
   computeCarbonRange,
   computeCO2eEquivalencies,
@@ -340,6 +341,7 @@ import BaleFoundationCrossSectionDiagram from "./BaleFoundationCrossSectionDiagr
 import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
+import { shearMembersFor } from "./shearMembers";
 import {
   TILING_BASIS_CONTROL_LABELS,
   pendingTilingControls,
@@ -8373,6 +8375,16 @@ export default function LayoutEditor() {
   // shear is summed per actual braced instance at ITS OWN tiled width
   // (braced panels aren't all the same size — computePanelSizeShares can
   // give them different widths), not the globally-selected standardWidthIn.
+  /* The five values `shearMembersFor` needs, gathered once. See that module
+     for why it is a pure function living outside this component. */
+  const shearCtx = {
+    thicknessIn,
+    wallHeightIn: wallHeightFt * 12,
+    includeNailer,
+    defaultBracePattern,
+    defaultBracedMirrored,
+  };
+
   const summarizeBearingAndShear = (instances: PanelInstance[]) => {
     const perTypeBearingLb: Partial<Record<string, number>> = {
       standard: estimatedStudPackBearingLb,
@@ -8410,15 +8422,7 @@ export default function LayoutEditor() {
     let shearLb = 0;
     let shearPanelCount = 0;
     for (const inst of instances) {
-      const members =
-        inst.panelType === "braced"
-          ? (() => {
-              const style = resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored);
-              return buildBracedPanelMembers(inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer, style.pattern, style.mirrored);
-            })()
-          : inst.bracePairPattern !== undefined
-            ? standardPanelMembersFor(inst, inst.widthIn, thicknessIn, wallHeightFt * 12, includeNailer)
-            : null;
+      const members = shearMembersFor(inst, shearCtx);
       if (!members) continue;
       const panelLb = computeBracedPanelShearCapacityLb(members);
       if (panelLb <= 0) continue;
@@ -8442,6 +8446,46 @@ export default function LayoutEditor() {
     [allInstances, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored],
   );
   const estimatedTotalShearLb = estimatedTotalShear.shearLb;
+
+  /**
+   * **THE DERIVATION SHEET — B18.** *"Derivation sheet sounds freaking
+   * awesome."*
+   *
+   * Every step between a 2x4's cut length and the pounds beside it, per brace,
+   * per panel, per wall line, per building, with each shared input's own
+   * provenance. Built from `shearMembersFor`, the same seam the total above
+   * reads, so the sheet and the figure it explains cannot drift apart.
+   *
+   * ⚠ **It names no seismic zone, deliberately** — see `shearDerivation.ts`
+   * for the whole of why. A rating is capacity against DEMAND, and this app has
+   * no demand numbers.
+   */
+  const shearDerivation = useMemo(() => {
+    if (!footprint) return null;
+    const lengthFtByWallId = new Map(footprint.walls.map((w) => [w.id, w.lengthFt]));
+    const byWall = new Map<string, { panelId: string; members: PanelMember[] }[]>();
+    for (const inst of allInstances) {
+      const members = shearMembersFor(inst, {
+        thicknessIn,
+        wallHeightIn: wallHeightFt * 12,
+        includeNailer,
+        defaultBracePattern,
+        defaultBracedMirrored,
+      });
+      if (!members) continue;
+      const list = byWall.get(inst.wallId) ?? [];
+      list.push({ panelId: `${inst.wallId} · ${inst.panelType} ${formatLengthIn(inst.widthIn, unitSystem)}`, members });
+      byWall.set(inst.wallId, list);
+    }
+    if (byWall.size === 0) return null;
+    return deriveBuildingShear(
+      [...byWall.entries()].map(([wallId, panels]) => ({
+        wallId,
+        ...(lengthFtByWallId.has(wallId) && { wallLengthFt: lengthFtByWallId.get(wallId) }),
+        panels,
+      })),
+    );
+  }, [footprint, allInstances, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored, unitSystem]);
 
   // Engineer role's own per-wall structural summary (see elevationControls'
   // own "engineer" section below) — same summarizeBearingAndShear reduction,
@@ -9515,12 +9559,15 @@ export default function LayoutEditor() {
       { id: "detail-summary", label: "Project Summary" },
       { id: "project-totals", label: "Project Totals" },
       { id: "review-log", label: "Review Log" },
+      /* B18. A formal document in its own right — it is written to be handed
+         to an engineer, which is the whole reason it exists. */
+      { id: "shear-derivation", label: "Shear Derivation" },
       ...relevantDetailPages,
     ],
     [relevantDetailPages],
   );
   const formalDocumentNoteIds = useMemo(
-    () => new Set(["detail-summary", ...relevantDetailPages.map((p) => p.id)]),
+    () => new Set(["detail-summary", "shear-derivation", ...relevantDetailPages.map((p) => p.id)]),
     [relevantDetailPages],
   );
   const [openNoteIds, setOpenNoteIds] = useState<Set<string>>(new Set());
@@ -14362,6 +14409,133 @@ export default function LayoutEditor() {
               </tr>
             </tbody>
           </table>
+        </StickyNote>
+
+        {/* ⚠ **THE DERIVATION SHEET — B18, 2026-11-02.** *"Derivation sheet
+            sounds freaking awesome."* / *"Id rather have a pattern be described
+            to an engineer with estimated values rather than prescribe an
+            engineer seismic zone thing."*
+
+            It shows its work: every step between a 2x4's cut length and the
+            pounds beside it. Built from `shearMembersFor`, the same seam the
+            Summary's own total reads, so the sheet and the figure it explains
+            cannot drift. It names no seismic zone — that needs a demand this
+            app has no numbers for. */}
+        <StickyNote
+          id="shear-derivation"
+          label="Shear Derivation — how the capacity figure is arrived at"
+          isOpen={openNoteIds.has("shear-derivation")}
+          isFullscreen={fullscreenNoteId === "shear-derivation"}
+          cascadeIndex={noteOpenOrder.indexOf("shear-derivation")}
+          onClose={() => handleToggleNote("shear-derivation")}
+          onToggleFullscreen={() => handleToggleNoteFullscreen("shear-derivation")}
+          onPrint={() => handlePrintNote("shear-derivation")}
+        >
+          {shearDerivation === null ? (
+            <p className={styles.note}>Nothing to derive yet — this building has no panel carrying a diagonal brace.</p>
+          ) : (
+            <>
+              <p className={styles.note}>
+                ⚠ This sheet reports CAPACITY only. It does not name a seismic zone or a design category, because a
+                rating is capacity measured against DEMAND and this app has no demand figures — site class, spectral
+                accelerations, building weight. The numbers below are Building Integrity&apos;s own first-pass NDS
+                estimate, offered so an engineer can check the arithmetic and supply the half that is missing.
+              </p>
+
+              <h3>Inputs</h3>
+              <table className={styles.table}>
+                <tbody>
+                  {shearDerivation.inputs.map((input) => (
+                    <tr key={input.label}>
+                      <td>{input.label}</td>
+                      <td>
+                        {input.value}
+                        {input.unit ? ` ${input.unit}` : ""}
+                        <br />
+                        <span className={styles.note}>
+                          [{input.status}] {input.note}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <h3>Per brace</h3>
+              <p className={styles.note}>
+                Each brace is a pin-ended strut over its own cut length, buckling about its 1.5in dimension because
+                nothing restrains it out of the wall&apos;s plane. le/d —&gt; FcE = 0.822 · Emin / (le/d)
+                <sup>2</sup> —&gt; CP (NDS 3.7.1) —&gt; Fc′ = Fc* · CP —&gt; axial = Fc′ · area
+                —&gt; horizontal = axial · sin(|tilt|).
+              </p>
+              <p className={styles.note}>
+                ⚠ A tilt past 90&deg; is the member&apos;s own stored orientation, not an error — sin(142.1&deg;)
+                and sin(37.9&deg;) are the same number, so the leg of an X that leans the other way resists the same
+                racking. Read the Tilt column as an orientation and the Horizontal column as the result.
+              </p>
+              <p className={styles.note}>
+                ⚠ Expect a SHORT brace to out-perform a long one here, sometimes by a wide margin: halving a
+                brace&apos;s length halves its slenderness, and CP climbs steeply as slenderness falls. On a 48 &times;
+                120in panel a Little Carrot leg carries about three times the horizontal load of a Big Carrot leg
+                despite being half the stick. That is the NDS column curve doing its job, and it is worth an
+                engineer&apos;s eye rather than being presented as a conclusion.
+              </p>
+
+              {shearDerivation.walls.map((wall) => (
+                <div key={wall.wallId}>
+                  <h4>
+                    Wall {wall.wallId} — {Math.round(wall.totalHorizontalLb).toLocaleString()} lb
+                    {wall.lbPerFt !== undefined ? ` (${Math.round(wall.lbPerFt).toLocaleString()} lb per running foot)` : ""}
+                  </h4>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>Panel / brace</th>
+                        <th>L (in)</th>
+                        <th>le/d</th>
+                        <th>CP</th>
+                        <th>Fc′ (psi)</th>
+                        <th>Axial (lb)</th>
+                        <th>Tilt</th>
+                        <th>Horizontal (lb)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wall.panels.map((panel) =>
+                        panel.braces.map((brace) => (
+                          <tr key={`${panel.panelId}-${brace.memberId}`}>
+                            <td>
+                              {panel.panelId}
+                              <br />
+                              <span className={styles.note}>{brace.memberId}</span>
+                            </td>
+                            <td>{brace.lengthIn.toFixed(2)}</td>
+                            <td>{brace.slendernessRatio.toFixed(1)}</td>
+                            <td>{brace.cp.toFixed(3)}</td>
+                            <td>{Math.round(brace.fcPrimePsi).toLocaleString()}</td>
+                            <td>{Math.round(brace.axialCapacityLb).toLocaleString()}</td>
+                            <td>{brace.tiltDeg.toFixed(1)}&deg;</td>
+                            <td>{Math.round(brace.horizontalLb).toLocaleString()}</td>
+                          </tr>
+                        )),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+
+              <h3>Building</h3>
+              <p>
+                {Math.round(shearDerivation.totalHorizontalLb).toLocaleString()} lb across{" "}
+                {shearDerivation.braceCount.toLocaleString()} braces.
+              </p>
+              <p className={styles.note}>
+                ⚠ Not a licensed engineer&apos;s calculation, and not a substitute for one. Every Fc and Emin above is
+                an approximate published figure for Spruce-Pine-Fir No.2 that Building Integrity has not yet confirmed
+                against the current NDS Supplement for the species and grade actually bought.
+              </p>
+            </>
+          )}
         </StickyNote>
 
         <StickyNote

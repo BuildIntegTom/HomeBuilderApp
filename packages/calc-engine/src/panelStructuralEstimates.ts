@@ -25,7 +25,7 @@ import { memberBoxSizeIn, type PanelMember } from "@building-integrity/panel-cat
  */
 export const SPF_NO2_FC_PSI = 1150; // Fc: compression parallel to grain
 export const SPF_NO2_EMIN_PSI = 510_000; // Emin: modulus of elasticity for stability calcs
-const NDS_COLUMN_C_SAWN_LUMBER = 0.8; // NDS 3.7.1 "c" for sawn lumber (vs. 0.9 glulam, 0.85 poles)
+export const NDS_COLUMN_C_SAWN_LUMBER = 0.8; // NDS 3.7.1 "c" for sawn lumber (vs. 0.9 glulam, 0.85 poles)
 
 const STUD_THICKNESS_IN = 1.5; // 2x4 weak-axis dimension
 const STUD_WIDTH_IN = 3.5; // 2x4 strong-axis dimension
