@@ -11,6 +11,7 @@ import {
   type MidWallBeamGeometry,
   type PanelSlot,
   type PanelSlotZone,
+  type StoredPanelMemberSpec,
 } from "@building-integrity/geometry";
 import {
   computeRoughOpeningWidthIn,
@@ -120,6 +121,25 @@ export interface PanelInstance {
   bracePairHalf?: "left" | "right";
   /** Which carrot. See `PanelSlot.braceFigure`. */
   braceFigure?: "super-carrot" | "big-carrot" | "little-carrot";
+  /**
+   * ⚠ **B19 — this panel's own hand-edited member list, carried for the SHOP
+   * SHEETS.**
+   *
+   * > *"When any panel is hand edited and physically made different, it
+   * > becomes unique immediately and gets its own separate shop drawing page
+   * > because only exact copies of panels should be grouped together."*
+   * > — Tommy, 2026-10-25
+   *
+   * Without it on the instance, an edited 48in standard panel merged onto the
+   * same Shop Fabrication page as every unedited 48in standard, and that page
+   * drew whichever one happened to be first. A sheet describing a panel that
+   * is not the one in the wall is a part built wrong — the same failure the
+   * carrot figure's own group key exists to prevent.
+   */
+  editedMembers?: StoredPanelMemberSpec[];
+  /** The user's own name for this panel, from the editor. Shown beside the
+   * series name on the sheet, never instead of it. */
+  panelName?: string;
   /** Only set for "gable" instances — this tile's own REAL edge heights at
    * its own local x=0 (left) and x=widthIn (right), carried through
    * directly from computeGableTiledRow's own leftHeightIn/rightHeightIn —
@@ -317,6 +337,8 @@ export function allPanelInstances(
     bracePairPattern?: "superbrace" | "braced" | "nailer",
     bracePairHalf?: "left" | "right",
     braceFigure?: "super-carrot" | "big-carrot" | "little-carrot",
+    editedMembers?: StoredPanelMemberSpec[],
+    panelName?: string,
   ) => {
     counters[direction] = (counters[direction] ?? 0) + 1;
     const panelNumber = counters[direction]!;
@@ -346,6 +368,8 @@ export function allPanelInstances(
       ...(bracePairPattern !== undefined && { bracePairPattern }),
       ...(bracePairHalf !== undefined && { bracePairHalf }),
       ...(braceFigure !== undefined && { braceFigure }),
+      ...(editedMembers !== undefined && { editedMembers }),
+      ...(panelName !== undefined && { panelName }),
     });
   };
 
@@ -508,6 +532,12 @@ export function allPanelInstances(
             slot.bracePairPattern,
             slot.bracePairHalf,
             slot.braceFigure,
+            /* ⚠ B19 — and the panel's own edited members, for the same reason
+               the pattern rides: the Shop Fabrication sheets build off these
+               instances, and a hand-edited panel that did not carry its edit
+               would be drawn and cut as the panel it used to be. */
+            slot.editedMembers,
+            slot.panelName,
           );
         }
       }

@@ -205,6 +205,78 @@ export interface PanelSlot {
    * for those, exactly as before.
    */
   anchorOffsetIn?: number;
+  /**
+   * B19 — **this panel's own member list, written by the Panel Editor.**
+   *
+   * > *"This panel editor isolates the panel in question in its own 3d framed
+   * > view and the left bar is dedicated to having options such as change
+   * > panel type, add diagonal, add vertical, add horizontal. ... All of this
+   * > should be pretty easy to track materials wise I would thin[k], seems
+   * > like a json thing"* — Tommy, 2026-11-02
+   *
+   * He was right that it is a json thing, and this is the json. Everything
+   * else about a panel's members is DERIVED — a pattern on the slot becomes a
+   * list of added members at render time, and the same list is recomputed for
+   * the cut list, the weight, the price and every export. This is the first
+   * member data the project file actually stores.
+   *
+   * ⚠ **Present = authoritative. It REPLACES the derived pattern, it does not
+   * add to it.** Otherwise you could never delete a carrot leg: the pattern
+   * would put it straight back on the next render. The editor seeds this list
+   * from whatever the pattern derived, so opening the editor and changing
+   * nothing leaves the panel identical — and a panel edited back to the
+   * pattern's own shape rejoins its group, because sameness falls out of the
+   * members rather than from a hand-edited flag (see `recipeFingerprint`).
+   *
+   * ⚠ **Only read for a `standard` slot today.** That is the one type whose
+   * members come through `buildPanelFromRecipe`, which is what composes a base
+   * panel with added members; a braced, window, column or corner panel is
+   * still built by its own builder and has nowhere to put these. The editor
+   * says so rather than accepting edits it would then drop.
+   *
+   * Absent = the panel is whatever its pattern derives, which is every panel
+   * that predates the editor and every one nobody has opened.
+   */
+  editedMembers?: StoredPanelMemberSpec[];
+  /**
+   * What the user called this panel in the editor — *"as well as recategorize
+   * it or name it"*. Shown wherever the panel is identified, alongside its
+   * generated name rather than instead of it: a shop needs the series name
+   * (`W12`) to find the panel on the drawing, and the user's name to know
+   * which one somebody meant.
+   *
+   * Absent = no name given, which is every panel nobody has named.
+   */
+  panelName?: string;
+}
+
+/**
+ * One member the Panel Editor added to a panel — the stored form of
+ * panel-catalog's own `AddedMemberSpec`.
+ *
+ * ⚠ **Spelled out here rather than imported, on purpose.**
+ * `packages/geometry` is a SIBLING of `packages/panel-catalog`, not a
+ * dependency — the same arrangement `BracePattern` and the brace-pair unions
+ * above already have, and the same reason the safety-gap widths are duplicated
+ * rather than imported. `AddedMemberSpec` there is the authority on what these
+ * fields MEAN; this is the authority on what the file holds.
+ *
+ * The fields are panel elevation coordinates: `x` across the panel's width
+ * from its left edge, `z` up its height from its bottom. `wythe` picks which
+ * face the board is let into — added members sit INSIDE the panel's depth,
+ * flush with a face, in a groove routed out of the straw.
+ */
+export interface StoredPanelMemberSpec {
+  /** `diagonal` is mitred at both ends and carries its real trapezoid cut;
+   * `straight` is cut square and lies along one axis. */
+  kind: "diagonal" | "straight";
+  id: string;
+  fromXIn: number;
+  fromZIn: number;
+  toXIn: number;
+  toZIn: number;
+  wythe: "exterior" | "interior";
+  notes?: string;
 }
 
 /** One independently-editable vertical zone of a PanelSlot column — same

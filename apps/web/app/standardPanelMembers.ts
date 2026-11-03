@@ -1,9 +1,30 @@
 import {
+  type AddedMemberSpec,
   type PanelMember,
   bracePairAddedMembers,
   buildPanelFromRecipe,
   buildStandardPanelMembers,
 } from "@building-integrity/panel-catalog";
+import type { StoredPanelMemberSpec } from "@building-integrity/geometry";
+
+/**
+ * The project file's member specs, narrowed to the catalog's own union.
+ *
+ * ⚠ **Two types for one shape, on purpose.** `StoredPanelMemberSpec` lives in
+ * `packages/geometry` because that is where `PanelSlot` lives, and geometry is
+ * a SIBLING of panel-catalog rather than a dependency — the same arrangement
+ * `BracePattern` has. The fields are identical; what differs is that the stored
+ * form carries `kind: "diagonal" | "straight"` on one object while
+ * `AddedMemberSpec` is a discriminated union of two. This is the one-line
+ * narrowing between them, and it is a function rather than a cast so that a
+ * third kind added on either side becomes a type error here instead of a
+ * member drawn as the wrong shape.
+ */
+export function toAddedMemberSpecs(stored: readonly StoredPanelMemberSpec[]): AddedMemberSpec[] {
+  return stored.map((spec) =>
+    spec.kind === "diagonal" ? { ...spec, kind: "diagonal" as const } : { ...spec, kind: "straight" as const },
+  );
+}
 
 /**
  * ⚠ **ONE PLACE A STANDARD PANEL'S MEMBERS COME FROM — B15.**
@@ -36,13 +57,35 @@ export function standardPanelMembersFor(
     bracePairPattern?: "superbrace" | "braced" | "nailer";
     bracePairHalf?: "left" | "right";
     braceFigure?: "super-carrot" | "big-carrot" | "little-carrot";
+    editedMembers?: StoredPanelMemberSpec[];
+    panelName?: string;
   },
   widthIn: number,
   depthIn: number,
   heightIn: number,
   includeNailer: boolean,
 ): PanelMember[] {
-  const { bracePairPattern, bracePairHalf, braceFigure } = source;
+  const { bracePairPattern, bracePairHalf, braceFigure, editedMembers } = source;
+  /* ⚠ **A hand-edited panel is its own panel — B19's panel editor.**
+     The stored list REPLACES the pattern rather than adding to it, which is
+     the only way deleting a carrot leg can stick: a pattern asked for the
+     derived list on every render, so anything the editor removed came
+     straight back. The editor seeds the list from the pattern, so a panel
+     opened and left alone is byte-identical to the one that was there.
+
+     Nothing else is lost by this: the cut list, the weight, the price, the
+     overlap check, the 3D view and every file export read members through
+     this one function, so the edit reaches all of them at once. */
+  if (editedMembers !== undefined) {
+    return buildPanelFromRecipe({
+      name: source.panelName ?? `Standard ${widthIn}in — edited`,
+      widthIn,
+      depthIn,
+      heightIn,
+      includeNailer,
+      added: toAddedMemberSpecs(editedMembers),
+    });
+  }
   if (bracePairPattern === undefined || bracePairHalf === undefined) {
     return buildStandardPanelMembers(widthIn, depthIn, heightIn, includeNailer);
   }

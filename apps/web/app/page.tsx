@@ -130,6 +130,7 @@ import {
   type RunStopOpeningMemory,
   type RoofBearingAnchorMode,
   type RoofProfilePoint,
+  type StoredPanelMemberSpec,
   type Story,
   type TruckDims,
   type TrussDoublingStrategy,
@@ -193,6 +194,7 @@ import {
   buildBoxBeamMembers,
   buildBigHeaderBeamMembers,
   buildBigHeaderMembers,
+  bracePairAddedMembers,
   buildBracedPanelMembers,
   buildColumnPanelMembers,
   buildColumnStyleMembers,
@@ -357,6 +359,27 @@ import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
 import { PanelContextMenu, type PanelContextMenuTarget } from "./PanelContextMenu";
+import PanelEditorBody from "./PanelEditorBody";
+
+/**
+ * What a panel's members are built FROM, beyond its type and size.
+ *
+ * ⚠ **This started as `Pick<PanelInstance, "bracePairPattern" |
+ * "bracePairHalf">` and was two fields short, with a real consequence.**
+ * `standardPanelMembersFor` reads `braceFigure` too, and never saw it through
+ * this parameter — so every Shop Fabrication sheet built its standard panel at
+ * the default figure, a Super Carrot. A Little Carrot panel's own sheet drew
+ * and listed four exterior diagonals where the panel has two, while
+ * `groupKeyFor` had correctly put the two figures on separate pages. The group
+ * key knew they were different parts; the members did not.
+ *
+ * `editedMembers` and `panelName` join it for B19's panel editor, so a
+ * hand-edited panel is drawn, cut, weighed and named as the panel it is.
+ */
+type PanelMemberSource = Pick<
+  PanelInstance,
+  "bracePairPattern" | "bracePairHalf" | "braceFigure" | "editedMembers" | "panelName"
+>;
 import { shearMembersFor } from "./shearMembers";
 import {
   TILING_BASIS_CONTROL_LABELS,
@@ -5367,6 +5390,8 @@ export default function LayoutEditor() {
       deleteRefusalReason: isPlaceablePanelType(slot.type)
         ? undefined
         : "This slot is placed by the tiler, so its width is not the free run's to give back. \"No panel\" still empties it.",
+      canOpenEditor: panelEditorRefusalFor(slot.type) === undefined,
+      editorRefusalReason: panelEditorRefusalFor(slot.type),
     });
   };
 
@@ -5383,6 +5408,105 @@ export default function LayoutEditor() {
       return next === slots ? prev : { ...prev, [wallId]: next };
     });
     setSelectedSlot(null);
+  };
+
+  /* ⚠ **B19's last stride — THE PANEL EDITOR, 2026-11-03.**
+
+     > *"Right click should have an option to go to a panel editor. An editor
+     > all for editing that panel. ... This panel editor isolates the panel in
+     > question in its own 3d framed view and the left bar is dedicated to
+     > having options such as change panel type, add diagonal, add vertical,
+     > add horizontal."*
+
+     Target rather than a copy of the panel: the editor reads the live slot
+     every render, so an edit it commits is the same edit the cut list, the
+     weight, the price and every file export see on the next frame. There is no
+     draft to keep in step. */
+  const [panelEditor, setPanelEditor] = useState<{ story: "ground" | "second"; wallId: string; slotIndex: number } | null>(null);
+
+  /**
+   * The added-member list a panel EFFECTIVELY has.
+   *
+   * ⚠ **Seeding from the pattern is what makes the first edit non-destructive.**
+   * `PanelSlot.editedMembers` replaces the pattern rather than adding to it —
+   * the only way a deleted carrot leg can stay deleted — so a panel whose list
+   * started empty would lose its whole figure the moment somebody opened the
+   * editor. It starts as whatever the pattern derives instead, which means
+   * opening the editor and changing nothing leaves the panel identical.
+   */
+  const effectivePanelSpecs = (slot: PanelSlot, widthIn: number, heightIn: number): StoredPanelMemberSpec[] => {
+    if (slot.editedMembers !== undefined) return slot.editedMembers;
+    if (slot.bracePairPattern === undefined || slot.bracePairHalf === undefined) return [];
+    return bracePairAddedMembers({
+      pattern: slot.bracePairPattern,
+      widthIn,
+      heightIn,
+      half: slot.bracePairHalf,
+      figure: slot.braceFigure,
+    });
+  };
+
+  /**
+   * ⚠ **Which panels the editor can open, and why not the rest.**
+   *
+   * A `standard` panel's members come through `standardPanelMembersFor`, the
+   * one seam this whole feature hangs off: it composes a base panel with an
+   * added-member list, which is what an editor writes. A `braced` panel is
+   * built by `buildBracedPanelMembers` from its own pattern, so it can be
+   * looked at, renamed and retyped here but has nowhere to put added members —
+   * said in the editor rather than silently dropping edits.
+   *
+   * Every other type — a window, a corner, a column, a header — is built by
+   * its own builder, and there is no one function that turns any slot into
+   * members. Writing that function is worth doing and is the honest next
+   * stride; guessing at it inside the editor is not. The menu row greys out
+   * with this reason instead.
+   */
+  const panelEditorRefusalFor = (type: PanelSlot["type"]): string | undefined =>
+    type === "standard" || type === "braced"
+      ? undefined
+      : `A ${PANEL_TYPE_LABELS[type]} panel is built by its own builder rather than from a base plus added members, so the editor has nothing to edit yet. Change it to Standard first, or use this menu's own type list.`;
+
+  const patchPanelSlot = (
+    story: "ground" | "second",
+    wallId: string,
+    slotIndex: number,
+    patch: (slot: PanelSlot) => PanelSlot,
+  ) => {
+    setWallSlotsForStory(story, (prev) => {
+      const slots = prev[wallId];
+      if (!slots || !slots[slotIndex]) return prev;
+      return { ...prev, [wallId]: slots.map((slot, i) => (i === slotIndex ? patch(slot) : slot)) };
+    });
+  };
+
+  /** ⚠ `undefined` DELETES the field rather than storing an empty list, and
+   * the two mean different things: no field is *"follow the pattern"*, an
+   * empty list is *"this panel has nothing added"*. A panel stripped bare has
+   * to stay bare. */
+  const handleSetPanelEditedMembers = (
+    story: "ground" | "second",
+    wallId: string,
+    slotIndex: number,
+    next: StoredPanelMemberSpec[] | undefined,
+  ) => {
+    patchPanelSlot(story, wallId, slotIndex, (slot) => {
+      if (next === undefined) {
+        const { editedMembers: _dropped, ...rest } = slot;
+        return rest;
+      }
+      return { ...slot, editedMembers: next };
+    });
+  };
+
+  const handleSetPanelName = (story: "ground" | "second", wallId: string, slotIndex: number, name: string | undefined) => {
+    patchPanelSlot(story, wallId, slotIndex, (slot) => {
+      if (name === undefined) {
+        const { panelName: _dropped, ...rest } = slot;
+        return rest;
+      }
+      return { ...slot, panelName: name };
+    });
   };
 
   const handleSetWindowWidth = (story: "ground" | "second", wallId: string, slotIndex: number, requestedWidthIn: number) => {
@@ -8033,7 +8157,7 @@ export default function LayoutEditor() {
        straight off the instance. One object rather than two more
        positionals: this signature is already twelve deep, and the two
        fields are never meaningful apart. */
-    bracePair?: Pick<PanelInstance, "bracePairPattern" | "bracePairHalf">,
+    bracePair?: PanelMemberSource,
   ) => {
     const heightIn = heightInOverride ?? wallHeightFt * 12;
     const resolvedSillHeightIn = sillHeightInOverride ?? sillDefaultHeightIn.value;
@@ -8126,7 +8250,7 @@ export default function LayoutEditor() {
     isSafetyGapOverride?: boolean,
     verticalGapOverride?: { leftIn: number; rightIn: number },
     heightInOverride?: number,
-    bracePair?: Pick<PanelInstance, "bracePairPattern" | "bracePairHalf">,
+    bracePair?: PanelMemberSource,
   ): number | null => {
     const members = membersForPanelTypeId(
       panelTypeId,
@@ -8166,7 +8290,7 @@ export default function LayoutEditor() {
     isSafetyGapOverride?: boolean,
     verticalGapOverride?: { leftIn: number; rightIn: number },
     heightInOverride?: number,
-    bracePair?: Pick<PanelInstance, "bracePairPattern" | "bracePairHalf">,
+    bracePair?: PanelMemberSource,
   ): number | null => {
     const members = membersForPanelTypeId(
       panelTypeId,
@@ -8644,8 +8768,25 @@ export default function LayoutEditor() {
          two. Without this the two would share a Shop Fabrication page and half
          the panels on every wall would be built with members they do not
          have. */
+      /* ⚠ **And a hand-edited panel is its own part — B19, 2026-11-03.**
+         *"When any panel is hand edited and physically made different, it
+         becomes unique immediately and gets its own separate shop drawing
+         page."* Keyed on the member list itself rather than on an edited flag,
+         which is `recipeFingerprint`'s own rule: two panels edited into the
+         same shape ARE copies and share a sheet, and a panel edited back to
+         its pattern's own figure rejoins its group on its own. The wythe and
+         both ends are in the key because any of them changes the part; the
+         member ids deliberately are not, for the same reason. */
       if (panelTypeId === "standard") {
         parts.push(inst.bracePairPattern ?? "", inst.bracePairHalf ?? "", inst.braceFigure ?? "");
+        parts.push(
+          inst.editedMembers === undefined
+            ? "derived"
+            : inst.editedMembers
+                .map((m) => `${m.kind[0]}:${m.wythe[0]}:${m.fromXIn},${m.fromZIn}>${m.toXIn},${m.toZIn}`)
+                .sort()
+                .join(";"),
+        );
       }
       // Same idea for gable tiles — two tiles of the same width but
       // different edge heights (different position along the roofline)
@@ -8707,7 +8848,10 @@ export default function LayoutEditor() {
               // see that one.
               const headerAbove = spanningHeaderCrossReference.headerAboveByPanel.get(inst.name);
               return {
-                name: inst.name,
+                /* ⚠ The user's own name goes BESIDE the series name, never in
+                   place of it — a shop finds the panel on the drawing by
+                   `N3`, and `inst.panelName` is what somebody called it. */
+                name: inst.panelName === undefined ? inst.name : `${inst.name} — ${inst.panelName}`,
                 isSafetyOctCorner: inst.panelType === "safety-oct-corner",
                 ...(headerAbove ? { note: `Header above: ${headerAbove}.` } : {}),
               };
@@ -14653,7 +14797,73 @@ export default function LayoutEditor() {
           onDeleteMerge={(wallId, slotIndex) => handleDeletePanel(panelMenu!.story, wallId, slotIndex)}
           onDeleteNoPanel={(wallId, slotIndex) => handleDeleteNoPanel(panelMenu!.story, wallId, slotIndex)}
           onChangeType={(wallId, slotIndex, type) => handleChangePanelType(panelMenu!.story, wallId, slotIndex, type)}
+          onOpenEditor={(wallId, slotIndex) => setPanelEditor({ story: panelMenu!.story, wallId, slotIndex })}
         />
+
+        {/* ⚠ **B19's last stride — the panel editor.** Its own note, opened
+            from the right-click menu on any of the three surfaces, and read
+            straight off the live slot rather than from a draft: see
+            `panelEditor` above for why there is no Save. */}
+        {panelEditor !== null &&
+          (() => {
+            const { story, wallId, slotIndex } = panelEditor;
+            const slot = (wallSlotsForStory(story)[wallId] ?? [])[slotIndex];
+            if (!slot) return null;
+            const heightIn = storyHeightInFor(story);
+            const panel = { widthIn: slot.widthIn, depthIn: thicknessIn, heightIn };
+            const specs = effectivePanelSpecs(slot, panel.widthIn, heightIn);
+            const canEditMembers = slot.type === "standard";
+            /* ⚠ Built through the SAME seam the rest of the app reads, with the
+               editor's effective list substituted in — so an unedited panel
+               draws exactly what the plan and the cut list already show, and an
+               edited one draws what they are about to show. */
+            const members =
+              slot.type === "braced"
+                ? (({ pattern, mirrored }) =>
+                    buildBracedPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, pattern, mirrored))(
+                    resolveBracedStyle(slot, defaultBracePattern, defaultBracedMirrored),
+                  )
+                : standardPanelMembersFor(
+                    { ...slot, editedMembers: specs, panelName: slot.panelName },
+                    panel.widthIn,
+                    thicknessIn,
+                    heightIn,
+                    includeNailer,
+                  );
+            const seriesLabel = `${wallId} #${slotIndex}`;
+            return (
+              <StickyNote
+                id="panel-editor"
+                label={`Panel editor — ${slot.panelName ?? seriesLabel}`}
+                isOpen
+                isFullscreen={fullscreenNoteId === "panel-editor"}
+                cascadeIndex={0}
+                onClose={() => setPanelEditor(null)}
+                onToggleFullscreen={() => handleToggleNoteFullscreen("panel-editor")}
+              >
+                <PanelEditorBody
+                  seriesLabel={seriesLabel}
+                  panelType={slot.type}
+                  panel={panel}
+                  members={members}
+                  specs={specs}
+                  isEdited={slot.editedMembers !== undefined}
+                  canEditMembers={canEditMembers}
+                  memberEditRefusal={
+                    canEditMembers
+                      ? undefined
+                      : (panelEditorRefusalFor(slot.type) ??
+                        "A Braced panel's diagonals come from its own pattern and its own builder, not from an added-member list, so there is nothing here to add to. Change it to Standard to edit its members individually — the pattern's own figure is what you would be giving up.")
+                  }
+                  panelName={slot.panelName}
+                  typeChoices={panelTypeChoices(wallSlotsForStory(story)[wallId] ?? [], slotIndex)}
+                  onSetSpecs={(next) => handleSetPanelEditedMembers(story, wallId, slotIndex, next)}
+                  onSetPanelName={(name) => handleSetPanelName(story, wallId, slotIndex, name)}
+                  onChangeType={(type) => handleChangePanelType(story, wallId, slotIndex, type)}
+                />
+              </StickyNote>
+            );
+          })()}
 
         <StickyNote
           id="review-log"

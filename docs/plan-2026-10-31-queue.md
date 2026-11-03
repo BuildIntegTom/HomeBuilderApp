@@ -1658,3 +1658,122 @@ no movement opened the menu; a right-DRAG across the same panel opened nothing.
 **B19 is complete**: the menu on all three surfaces, the `open` slot, the
 anchor fix, and the cycle retired. What remains of his 2026-11-02 note is the
 PANEL EDITOR itself, which the menu now has a place to launch from.
+
+---
+
+# B19 stride 4 — THE PANEL EDITOR. Stride 1 done 2026-11-03.
+
+> *"Right click should have an option to go to a panel editor. An editor all
+> for editing that panel. It should be possible to turn it into any other
+> panel, as well as recategorize it or name it. This panel editor isolates the
+> panel in question in its own 3d framed view and the left bar is dedicated to
+> having options such as change panel type, add diagonal, add vertical, add
+> horizontal. ... Left bar also has an option to rotate 90 or custom degrees."*
+> — Tommy, 2026-11-02
+
+> *"All of this should be pretty easy to track materials wise I would thin[k],
+> seems like a json thing"*
+
+**He was right that it is a json thing, and this stride is the json.**
+
+## The one genuinely new thing: the file now stores members
+
+Everything about a panel's members was DERIVED until today — a pattern on the
+slot became a member list at render time, and the same list was recomputed for
+the cut list, the weight, the price and every export. `PanelSlot.editedMembers`
+is the first member data the project file holds. Optional, so **no
+`PROJECT_FILE_VERSION` bump**, by this file's own convention.
+
+⚠ **Present = authoritative. It REPLACES the derived pattern, it does not add
+to it.** Otherwise a deleted carrot leg could never stay deleted: the pattern
+would put it back on the next render. The editor seeds the list from whatever
+the pattern derives, so opening it and changing nothing leaves the panel
+byte-identical — a test holds that. And `undefined` vs `[]` are different
+states on purpose: no field is *"follow the pattern"*, an empty array is *"this
+panel has nothing added"*. A panel stripped bare stays bare.
+
+Uniqueness still falls out of the members rather than from a hand-edited flag,
+which is `recipeFingerprint`'s own rule: a panel edited back to its pattern's
+own shape rejoins its group on its own.
+
+## What it reaches, and why that was free
+
+One seam: `standardPanelMembersFor`. The plan, the elevation, the 3D view, the
+cut list, the weight, the price, the shear check and every file export already
+read a standard panel's members through it. **Measured live**: deleting the
+editor's diagonal from one panel moved the project's 2x4 total from 2064.7 to
+**2070.6 bd ft** — the diagonal's ~6.9 leaving and the two centre studs it was
+suppressing (~12.8) coming back, which is `buildPanelFromRecipe`'s own
+documented rule showing up in a building-wide number.
+
+## Two defects this surfaced on the way, both fixed
+
+1. ⚠ **The Shop Fabrication sheets never saw `braceFigure`.** The parameter
+   `membersForPanelTypeId` takes was `Pick<PanelInstance, "bracePairPattern" |
+   "bracePairHalf">` and `standardPanelMembersFor` reads a third field, so
+   every sheet built its standard panel at the DEFAULT figure, a Super Carrot.
+   A Little Carrot panel's own sheet drew and listed four exterior diagonals
+   where the panel has two, while `groupKeyFor` had correctly put the two
+   figures on separate pages. **The group key knew they were different parts;
+   the members did not.** Now `PanelMemberSource`, which carries the figure,
+   the edited list and the name.
+2. ⚠ **A hand-edited panel would have merged onto its neighbours' sheet.**
+   *"When any panel is hand edited and physically made different, it becomes
+   unique immediately and gets its own separate shop drawing page"* — so the
+   member list is in `groupKeyFor` now, keyed on the members themselves rather
+   than on an edited flag, for the reason above.
+
+## The editor's own arithmetic, in `panelEditorOps.ts` and under test
+
+- ⚠ **A new board lands in the widest clear run, on BOTH axes.** The first
+  version put a new vertical at the panel's centre — his own load-path reason,
+  the seam between the two 24in deck panels below — which is exactly where a
+  48in standard panel ALREADY has its intermediate stud. The overlap check
+  caught it, which is the check his *no overlapping members* rule is enforced
+  by. A horizontal is trimmed as well as placed: real blocking is cut per bay,
+  the way `centreNailerStudSpansIn` already cuts studs between the girts.
+- ⚠ **Obstacles are judged on all three axes.** Filtering on shared depth alone
+  made the plate SKINS an obstacle — they span the whole width and the whole
+  depth — so nothing was ever clear and the search fell back to the centre,
+  which was the overlap it existed to avoid.
+- ⚠ **Rotation keeps the ANGLE and gives up LENGTH.** Clamping each end instead
+  would silently change the angle, so a 90° rotation would come back at 84°.
+  The shortening is reported rather than quiet. Measured live: a corner-to-
+  corner diagonal at 68.7° rotated to exactly 158.7°, *"shortened 75.67″ to fit
+  — the angle is kept, the length gives way."*
+- ⚠ **A straight board rotated off an axis becomes a diagonal.** The two kinds
+  are two different BUILDERS, not two labels: `buildStraightFromSpec` draws an
+  axis-aligned box from the dominant run, so an off-axis `straight` renders
+  somewhere its own numbers do not describe and cuts at the wrong length.
+- Snap targets are read off the panel's real members — both faces and the
+  centre of each, which is his *"flush with either side ... and center"*; a
+  corner and an intersection fall out of the per-axis face lists without being
+  hunted for. **Written and tested, not yet wired to a drag** — see below.
+  Diagonals are deliberately excluded: an upright box around a tilted board has
+  faces that are nowhere on the real member.
+
+## What it opens for, and what it refuses
+
+`standard` (members editable) and `braced` (viewed, renamed, retyped — its
+diagonals come from its own builder and have nowhere to put added members).
+Every other type is refused **with its reason in the menu's tooltip**, because
+there is no one function that turns any slot into members. Writing
+`panelMembersForSlot` is the honest way to lift that, and is the next stride's
+first job.
+
+## Left for stride 2, from his own sentence
+
+- *"it is easy to click and drag a member ... because it snaps to center and
+  flush with either side of other members, corners, and intersections."* The
+  snapping math is built and tested; the drag is not. Today a member is moved
+  by typing its ends, which is the same model the drag will write into.
+- *"a toggle opaque rest of the 3d framed view, and those x,y, and z be
+  snappable too."*
+- *"If you right click on a member in the panel editor, you get a selection to
+  change it to anything."*
+- *"recategorize it"* — the NAME is live (it shows beside the series name on
+  the fabrication sheet, never instead of it); a category is not, because
+  nothing in the app groups by one yet and a field that drives nothing is
+  noise. Worth an interview: what should a category DO?
+
+Gates: 3612 tests across 195 files. Typecheck clean in all four projects.

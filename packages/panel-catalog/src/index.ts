@@ -16,6 +16,7 @@ export * from "./ridgeBeamLayout";
 export * from "./crossTiltPanelMembers";
 export * from "./taperedPanelMembers";
 export * from "./panelRecipe";
+export * from "./panelEditorOps";
 export * from "./bracedPanelMembers";
 export * from "./columnPanelMembers";
 export * from "./cornerPanelMembers";

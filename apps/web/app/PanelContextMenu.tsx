@@ -45,6 +45,10 @@ export interface PanelContextMenuTarget {
    *  is still allowed, so only the MERGE row greys out. */
   canDeleteMerge: boolean;
   deleteRefusalReason?: string;
+  /** False for a panel the editor cannot build members for — see
+   * `panelEditorRefusalFor` in `page.tsx`. */
+  canOpenEditor: boolean;
+  editorRefusalReason?: string;
 }
 
 export interface PanelContextMenuProps {
@@ -53,13 +57,21 @@ export interface PanelContextMenuProps {
   onDeleteMerge: (wallId: string, slotIndex: number) => void;
   onDeleteNoPanel: (wallId: string, slotIndex: number) => void;
   onChangeType: (wallId: string, slotIndex: number, type: PanelSlotType) => void;
+  onOpenEditor: (wallId: string, slotIndex: number) => void;
 }
 
 const MENU_WIDTH_PX = 248;
 /** Enough for the two deletes, the heading and ten types without clipping. */
 const MENU_MAX_HEIGHT_PX = 460;
 
-export function PanelContextMenu({ target, onClose, onDeleteMerge, onDeleteNoPanel, onChangeType }: PanelContextMenuProps) {
+export function PanelContextMenu({
+  target,
+  onClose,
+  onDeleteMerge,
+  onDeleteNoPanel,
+  onChangeType,
+  onOpenEditor,
+}: PanelContextMenuProps) {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -172,6 +184,16 @@ export function PanelContextMenu({ target, onClose, onDeleteMerge, onDeleteNoPan
         title: target.canDeleteMerge
           ? "Empty this slot and leave a framed void of the same width. The wall's length does not change, and the void appears on drawings and takeoffs."
           : target.deleteRefusalReason,
+      })}
+
+      {/* ⚠ **The row B19 was built to reach.** *"Right click should have an
+          option to go to a panel editor."* It sits above the type list rather
+          than below it because the editor can do everything the list can and
+          more — the list is the shortcut, not the main road. */}
+      {row("editor", "Panel editor\u2026", target.canOpenEditor, () => onOpenEditor(target.wallId, target.slotIndex), {
+        title: target.canOpenEditor
+          ? "Open this one panel on its own in 3D, with its members, its name and its type."
+          : target.editorRefusalReason,
       })}
 
       <div style={{ height: 1, background: "rgba(0,0,0,0.12)", margin: "4px 0" }} />
