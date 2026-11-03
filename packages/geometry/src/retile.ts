@@ -32,7 +32,8 @@ import type { BracePattern, CornerId, Footprint, PanelSlot, Wall, WallEnd, WallR
 
 /** A fresh wall's own soft-default door/window suggestion (Tommy: "one
  * window on every row of slots... one door on the first level of the
- * east, south, and west faces") — bundled, purely to seed brand-new wall
+ * east, south, and west faces", plus the 2026-11-03 window sizes below) —
+ * bundled, purely to seed brand-new wall
  * positions; an existing wall's own
  * openings are never touched, same "already decided" precedent
  * `reconcileBracedPlacement` follows at the per-panel level. `randomFn`
@@ -41,12 +42,32 @@ import type { BracePattern, CornerId, Footprint, PanelSlot, Wall, WallEnd, WallR
  * openings at all. */
 export interface OpeningSeed {
   randomFn?: () => number;
+  /**
+   * How wide a seeded window is, by exposure.
+   *
+   * > *"Let's auto spawn windows to either be a 4' window on the south side
+   * > and 2' windows one per wall on the other walls."* — Tommy, 2026-11-03
+   *
+   * ⚠ **Required, and deliberately not defaulted here.** These are building
+   * figures and they live in `@building-integrity/panel-catalog`
+   * (`seedWindowWidthsIn`); a fallback literal in geometry would be a second,
+   * silently different answer to the same question. Asked what counts as the
+   * south side, Tommy chose walls facing **dead S only** — on a rectangle
+   * exactly one wall, and an octagon's SE/SW walls take `elsewhereIn`.
+   *
+   * These are SLOT widths, i.e. the header's own width. The clear rough
+   * opening comes out narrower by a jack stud at each side — see
+   * `computeRoughOpeningWidthIn`.
+   */
+  windowWidthsIn: { southIn: number; elsewhereIn: number };
 }
 
 /**
  * A fresh wall's own default door/window pick (Tommy's own confirmed
- * scope): every wall gets 1 default window; a wall facing exactly East,
- * South, or West (via `wallCompassDirection`) also gets 1 default door.
+ * scope): every wall gets 1 default window — **4ft on a dead-south wall, 2ft
+ * on every other** (2026-11-03, see `OpeningSeed.windowWidthsIn`) — and a wall
+ * facing exactly East, South, or West (via `wallCompassDirection`) also gets 1
+ * default door, at the panel's own width as before.
  * Only ever called on a wall with no prior slots (see `retile`/
  * `tileOneWallPreservingOpenings`'s own `oldSlots === undefined` branch) —
  * `plainSlots` is `tileWall`'s own freshly-tiled output, so every
@@ -71,7 +92,13 @@ export interface OpeningSeed {
  * A wall with fewer than 3 standard slots has no eligible non-corner candidate
  * at all — no default opening is seeded for it.
  */
-function seedDefaultOpenings(plainSlots: PanelSlot[], wall: Wall, fp: Footprint, randomFn: () => number): OpeningAnchor[] {
+function seedDefaultOpenings(
+  plainSlots: PanelSlot[],
+  wall: Wall,
+  fp: Footprint,
+  randomFn: () => number,
+  windowWidthsIn: { southIn: number; elsewhereIn: number },
+): OpeningAnchor[] {
   const standardSlotIndices: number[] = [];
   plainSlots.forEach((slot, slotIndex) => {
     if (slot.type === "standard") standardSlotIndices.push(slotIndex);
@@ -80,16 +107,29 @@ function seedDefaultOpenings(plainSlots: PanelSlot[], wall: Wall, fp: Footprint,
   for (let ordinal = 1; ordinal < standardSlotIndices.length - 1; ordinal++) candidateOrdinals.push(ordinal);
 
   const anchors: OpeningAnchor[] = [];
-  const take = (type: "door" | "window") => {
+  /* `widthIn` undefined = take the panel's own width, which is what a door
+     does: its widths come from a door schedule, not from this module, and the
+     panel the tiler already sized is the best stand-in for one. */
+  const take = (type: "door" | "window", widthIn?: number) => {
     if (candidateOrdinals.length === 0) return;
     const pickAt = Math.floor(randomFn() * candidateOrdinals.length);
     const ordinal = candidateOrdinals.splice(pickAt, 1)[0]!;
-    anchors.push({ beforeStandardCount: ordinal, type, widthIn: plainSlots[standardSlotIndices[ordinal]!]!.widthIn });
+    anchors.push({
+      beforeStandardCount: ordinal,
+      type,
+      widthIn: widthIn ?? plainSlots[standardSlotIndices[ordinal]!]!.widthIn,
+    });
   };
 
   const facing = wallCompassDirection(wall, fp);
+  /* ⚠ Doors are untouched by the 2026-11-03 window change, and that was his
+     call when asked: he specified windows, so only windows changed. */
   if (facing === "E" || facing === "S" || facing === "W") take("door");
-  take("window");
+  /* ⚠ **A 4ft window faces south, a 2ft window faces everywhere else** —
+     Tommy, 2026-11-03. "South" is a wall facing dead S and nothing else: on a
+     rectangle that is exactly one wall, and an octagon's SE and SW walls take
+     the 2ft like the rest. See `OpeningSeed.windowWidthsIn`. */
+  take("window", facing === "S" ? windowWidthsIn.southIn : windowWidthsIn.elsewhereIn);
   return anchors;
 }
 
@@ -450,7 +490,7 @@ export function retile(
       !mitered,
       cornerMayWiden,
     ).slots;
-    const seedAnchors = openingSeed ? seedDefaultOpenings(plainSlots, wall, fp, randomFn) : [];
+    const seedAnchors = openingSeed ? seedDefaultOpenings(plainSlots, wall, fp, randomFn, openingSeed.windowWidthsIn) : [];
     const slots =
       seedAnchors.length > 0
         ? retileWithOpenings(
@@ -512,7 +552,9 @@ function tileOneWallPreservingOpenings(
       allowBorrow,
       cornerMayWiden,
     ).slots;
-    const seedAnchors = openingSeed ? seedDefaultOpenings(plainSlots, wall, fp, openingSeed.randomFn ?? Math.random) : [];
+    const seedAnchors = openingSeed
+      ? seedDefaultOpenings(plainSlots, wall, fp, openingSeed.randomFn ?? Math.random, openingSeed.windowWidthsIn)
+      : [];
     // Seeded against the plain tiling of the run that is actually BUILT
     // (`wallLengthIn` already has the stop taken out of it), so a freshly
     // seeded opening is inside the built span by construction and there is

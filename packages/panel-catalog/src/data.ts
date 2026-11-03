@@ -196,6 +196,12 @@ export const bigHeaderDefaultHeightIn: CatalogValue<number> = {
  * it, the same way `bigHeaderDefaultWidthIn` applies once and then stands
  * aside. Well inside `windowHeaderWidthInRange` (24in-120in), so this can
  * never be the value that gets clamped. */
+/** ⚠ **And the pair of them is the whole window vocabulary now** — Tommy,
+ *  2026-11-03: *"let's auto spawn windows to either be a 4' window on the south
+ *  side and 2' windows one per wall on the other walls... Window headers to be
+ *  2' or 4'."* See `seedWindowWidthsIn` below, which is what a freshly drawn
+ *  building gets; this is the width a window takes when a panel is turned into
+ *  one by hand. */
 export const windowHeaderDefaultWidthIn: CatalogValue<number> = {
   value: 48,
   status: "pending-BI-confirmation",
@@ -217,28 +223,46 @@ export const windowHeaderDefaultWidthIn: CatalogValue<number> = {
  * auto-upgrade turned it straight back into a big header — the panel menu
  * looked broken (B19, measured 2026-11-03).
  *
- * ⚠ **36in, NOT the 4ft module**, and the reason is the single-peak header
- * rule rather than any door catalogue. On an 8ft wall a door's header is only
- * 15in deep (wall height less a 81in rough opening), and
- * `shouldAutoUpgradeToBigHeader` admits exactly one of the ordinary door
- * widths at that depth: 36in comes out at 30.3deg against a 30deg floor, while
- * 48in is 23.6deg and fails. A 48in default therefore turned every "change to
- * Door" on an 8ft wall straight back into a Big Header.
+ * ⚠ **36in, the common single-door width.** It was briefly chosen for a
+ * different reason — that it was the only ordinary door width clearing the
+ * single-peak header angle on an 8ft wall — and that reason is gone: headers
+ * have as many peaks as they need since 2026-11-03, and nothing retypes a door
+ * any more. 36in stays because it is the door width, not because the geometry
+ * forces it.
  *
- * ⚠ **Measured, and worth knowing: on a 10ft wall NO ordinary door width
- * passes** — 36in is 62deg, 48in 55deg, 60in 49deg, all above the 45deg
- * ceiling, and only 72in and wider come back into range. A door on a tall wall
- * genuinely becomes a Big Header, which the app now says out loud rather than
- * doing silently (see `headerUpgradeNotice` in page.tsx).
- *
- * It is a placeholder on no better authority than that it is the common single
- * door width and the one the rule allows. **A real door schedule should
- * replace it.**
+ * It is a placeholder on no better authority than that. **A real door schedule
+ * should replace it.**
  */
 export const doorDefaultWidthIn: CatalogValue<number> = {
   value: 36,
   status: "pending-BI-confirmation",
-  note: "The common single-door width, and the only ordinary one that clears the single-peak header angle on an 8ft wall. NOT from a door schedule — Tommy said door widths come from one, and this stands in until there is one. Used only when a door replaces another reservation and so has no panel width to inherit.",
+  note: "The common single-door width. NOT from a door schedule — Tommy said door widths come from one, and this stands in until there is one. Used only when a door replaces another reservation and so has no panel width to inherit.",
+};
+
+/**
+ * **What a freshly drawn building's windows are.**
+ *
+ * > *"Let's auto spawn windows to either be a 4' window on the south side and
+ * > 2' windows one per wall on the other walls."* — Tommy, 2026-11-03
+ *
+ * Asked what counts as the south side, he chose **walls facing dead S only** —
+ * on a rectangle that is exactly one wall, and an octagon's SE and SW walls get
+ * the 2ft like everyone else. Predictable, and it does not depend on the shape.
+ *
+ * ⚠ These are the SLOT widths, which is to say the header widths: the whole
+ * assembly's footprint. The clear rough opening is narrower by one jack stud at
+ * each side — *"actual RO slightly smaller because of the jack studs/plywood"*
+ * — which `computeRoughOpeningWidthIn` has always done. With the default
+ * plywood jacks that is 22.5in clear in a 2ft header and 46.5in in a 4ft one.
+ *
+ * Both are module figures (see `cornerPanelWidthIn` and
+ * `windowHeaderDefaultWidthIn` for the same reasoning): 24in is one floor/roof
+ * panel, 48in is two, so a header starts and ends on a deck joint.
+ */
+export const seedWindowWidthsIn: CatalogValue<{ southIn: number; elsewhereIn: number }> = {
+  value: { southIn: 48, elsewhereIn: 24 },
+  status: "pending-BI-confirmation",
+  note: "Tommy's own stated sizes (4ft south, 2ft elsewhere), chosen for the 2ft/4ft module and for southern exposure, not from a window schedule or a daylighting calculation.",
 };
 
 export const sillHeaderHeightInRange: CatalogRange = {

@@ -9,6 +9,7 @@ import {
   SKIN_THICKNESS_IN,
   buildHeaderEndStuds,
   buildHeaderTrussWebBraces,
+  computeTrussWebAngleDeg,
   computeTrussWebPeakCount,
 } from "./panelMemberHelpers";
 import { buildSillPanelMembers } from "./sillPanelMembers";
@@ -132,14 +133,31 @@ function buildBigHeaderChords(widthIn: number, depthIn: number, heightIn: number
  * capped facing edges — same formula as `headerWebRiseIn`, but subtracting
  * each chord's own ROTATED (3.5in, not 1.5in) visible height instead, since
  * a rotated chord eats more vertical space per chord. */
-function bigHeaderWebRiseIn(heightIn: number): number {
+export function bigHeaderWebRiseIn(heightIn: number): number {
   return heightIn - 2 * ROTATED_CHORD_VISIBLE_IN - 2 * SKIN_THICKNESS_IN;
+}
+
+/** How many peaks this Big Header's web gets, and at what angle - the same
+ *  pair `headerPeakCount`/`headerWebAngleDeg` give for a window or door
+ *  header, differing only in the rise a rotated chord leaves. */
+export function bigHeaderPeakCount(widthIn: number, heightIn: number): number {
+  return computeTrussWebPeakCount(widthIn, bigHeaderWebRiseIn(heightIn));
+}
+
+export function bigHeaderWebAngleDeg(widthIn: number, heightIn: number): number {
+  return computeTrussWebAngleDeg(widthIn, bigHeaderWebRiseIn(heightIn), bigHeaderPeakCount(widthIn, heightIn));
 }
 
 /**
  * Every physical member of a Big Header — Tommy: "big headers are spawned
  * either in the click-editing wheel or also spawn when a window header
  * exceeds its allowance for having only 1 V shape... they come... with two
+ * (⚠ the second half of that is history: a header has as many peaks as it
+ * needs since 2026-11-03 and nothing auto-spawns a Big Header any more. It is
+ * now simply A HEADER WITH NO OPENING UNDER IT, which is the half of his
+ * sentence that still describes it - double doors, large openings and
+ * conditioned garages. Tommy: *"Big headers and window headers are really the
+ * same thing."*)
  * jack studs... there are no sills with big headers, so they can be used
  * for double doors, large openings, and conditioned garages" (a sill is
  * still available as an opt-in per Tommy's own follow-up: "2 with the

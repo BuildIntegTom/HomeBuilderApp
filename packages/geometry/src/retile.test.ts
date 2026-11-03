@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildRectangleFootprint } from "./footprint";
 import { buildOctagonFootprint } from "./octagon";
+import { wallCompassDirection } from "./wallCompassDirection";
 import { insertBumpOut } from "./bumpOut";
 import {
   cornerOwnership,
@@ -289,10 +290,14 @@ describe("retilePreservingOpenings", () => {
 });
 
 describe("openingSeed (default door/window on a freshly-panelized wall)", () => {
+  /** The catalog's `seedWindowWidthsIn` - 4ft south, 2ft everywhere else. */
+  const SEED_WIDTHS = { southIn: 48, elsewhereIn: 24 };
+  const seed = (randomFn: () => number) => ({ randomFn, windowWidthsIn: SEED_WIDTHS });
+
   it("seeds exactly 1 door + 1 window on a fresh East-facing wall, never at either corner-touching position", () => {
     const fp = buildRectangleFootprint(30, 20);
     const primary = allPrimary(fp);
-    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, { randomFn: () => 0 });
+    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, seed(() => 0));
     const bc = slots["BC"]!; // BC faces East (see wallCompassDirection.test.ts)
     expect(bc.filter((s) => s.type === "door").length).toBe(1);
     expect(bc.filter((s) => s.type === "window").length).toBe(1);
@@ -314,10 +319,46 @@ describe("openingSeed (default door/window on a freshly-panelized wall)", () => 
     }
   });
 
+  it("⚠ gives the SOUTH wall a 4ft window and every other wall a 2ft one", () => {
+    /* > *"Let's auto spawn windows to either be a 4' window on the south side
+       >  and 2' windows one per wall on the other walls."* - Tommy, 2026-11-03
+
+       Asked what counts as south, he chose walls facing dead S only. On a
+       rectangle that is exactly one of the four. */
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, seed(() => 0));
+    const byFacing = new Map(fp.walls.map((w) => [w.id, wallCompassDirection(w, fp)]));
+    const southWalls = fp.walls.filter((w) => byFacing.get(w.id) === "S");
+    expect(southWalls, "a rectangle has exactly one dead-south wall").toHaveLength(1);
+
+    for (const wall of fp.walls) {
+      const windows = slots[wall.id]!.filter((x) => x.type === "window");
+      expect(windows, `${wall.id} (${byFacing.get(wall.id)})`).toHaveLength(1);
+      expect(windows[0]!.widthIn, `${wall.id} (${byFacing.get(wall.id)})`).toBe(
+        byFacing.get(wall.id) === "S" ? SEED_WIDTHS.southIn : SEED_WIDTHS.elsewhereIn,
+      );
+    }
+  });
+
+  it("⚠ a door still takes the panel's own width, not a seeded one", () => {
+    /* He specified windows and only windows changed - his answer when asked.
+       A door's widths come from a door schedule, not from this module. */
+    const fp = buildRectangleFootprint(30, 20);
+    const primary = allPrimary(fp);
+    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, seed(() => 0));
+    const doors = Object.values(slots).flat().filter((x) => x.type === "door");
+    expect(doors.length).toBeGreaterThan(0);
+    for (const d of doors) {
+      expect(d.widthIn).not.toBe(SEED_WIDTHS.southIn);
+      expect(d.widthIn).not.toBe(SEED_WIDTHS.elsewhereIn);
+    }
+  });
+
   it("seeds only a window (no door) on a fresh North-facing wall", () => {
     const fp = buildRectangleFootprint(30, 20);
     const primary = allPrimary(fp);
-    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, { randomFn: () => 0 });
+    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, seed(() => 0));
     const ab = slots["AB"]!; // AB faces North
     expect(ab.filter((s) => s.type === "door").length).toBe(0);
     expect(ab.filter((s) => s.type === "window").length).toBe(1);
@@ -343,9 +384,7 @@ describe("openingSeed (default door/window on a freshly-panelized wall)", () => 
       ],
       walls: [{ id: "XY", startCorner: "X", endCorner: "Y", lengthFt: 3 }],
     };
-    const slots = retile(tinyFp, "X", new Set(["X", "Y"]), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, {
-      randomFn: () => 0,
-    });
+    const slots = retile(tinyFp, "X", new Set(["X", "Y"]), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, seed(() => 0));
     expect(slots["XY"]).toEqual([{ type: "corner", widthIn: 36 }]);
   });
 
@@ -360,7 +399,7 @@ describe("openingSeed (default door/window on a freshly-panelized wall)", () => 
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
       {},
-      { randomFn: () => 0 });
+      seed(() => 0));
     expect(nextSlots["AB"]!.some((s) => s.type === "window")).toBe(true);
   });
 
@@ -376,7 +415,7 @@ describe("openingSeed (default door/window on a freshly-panelized wall)", () => 
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
       plainSlots,
-      { randomFn: () => 0 });
+      seed(() => 0));
     expect(nextSlots["AB"]!.some((s) => s.type === "window" || s.type === "door")).toBe(false);
   });
 });

@@ -1559,3 +1559,63 @@ clicks on one panel left it Standard and selected (it used to cycle to Column);
 "Delete — no panel" left a 48in void and took the wall to 36; a Column placed
 on the same wall **left that void exactly where it was, still 48in**; and the
 void became a reservation again on request.
+
+---
+
+# Headers tidied up. DONE 2026-11-03.
+
+> *"Headers can have more than one peak. Big headers and window headers are
+> really the same thing. Let's auto spawn windows to either be a 4' window on
+> the south side and 2' windows one per wall on the other walls. Window headers
+> to be 2' or 4' and actual RO slightly smaller because of the jack
+> studs/plywood. However this header business should be tidied up."*
+> — Tommy, 2026-11-03
+
+**Interviewed first, as he offered.** Four answers, all his:
+
+1. **One body, both slot types stay.** One assembly and one rule build every
+   header; `big-header` survives as a slot type meaning *a header with no
+   opening under it* — the double-door, conditioned-garage case. No project
+   migration.
+2. **Drop the 45° ceiling, keep the 30° floor.** Peaks are added until every
+   web clears 30°; a deep header is a steep truss, which is stiffer, not
+   weaker. 45° becomes a note on the sheet rather than a rule that retypes a
+   panel.
+3. **"South" is a wall facing dead S** — on a rectangle exactly one, and an
+   octagon's SE/SW walls take the 2ft like the rest.
+4. **Doors are untouched.** He specified windows, so only windows changed.
+
+**What that let us delete:** `applyBigHeaderAutoUpgrade`,
+`shouldAutoUpgradeToBigHeader`, the whole `bigHeaderAutoUpgrade.ts` module and
+its test, and `headerUpgradeNotice` — added hours earlier the same day to
+explain the swap, and now explaining nothing, because there is no swap.
+
+⚠ **Why that mattered, measured:** at the app's own defaults — a 120in wall, a
+32in sill, a 48in RO — the header is 40in deep and its single web runs at 56°.
+Adding peaks makes a web *steeper*, so the auto-upgrade could never be
+satisfied: **every ordinary window the user touched turned into a Big Header.**
+The seeded ones survived only because seeding never ran the check, so the app
+disagreed with itself about what was buildable.
+
+**New in the Selected Panel note:** a header's own figure, because the change
+made it VARY — *"Header 16" deep · 2 peaks · web at 43.8°"*, and for a deep one
+the warning in plain words. Under the 1-peak cap there was nothing to report.
+
+**The RO** was already right: a slot's width is the whole assembly's footprint
+and `computeRoughOpeningWidthIn` takes a jack stud off each side. At the new
+sizes that is 22.5in clear in a 2ft header and 46.5in in a 4ft one.
+
+`seedWindowWidthsIn` (48 south / 24 elsewhere) is `pending-BI-confirmation` —
+module figures and southern exposure, not a window schedule or a daylighting
+calculation. `doorDefaultWidthIn` stays 36in, but for a door reason now rather
+than an angle one.
+
+Gates: 3573 tests across 193 files. Typecheck clean in all four projects. Lint
+**167 / 119 / 48**, per rule identical to the baseline.
+
+Verified live: a freshly drawn 41'8" x 26'8" building put a **48in window on
+wall CD, the dead-south wall**; its note read *"Header 40" deep · 1 peak · web
+at 55.9° — steeper than the 45° target... Reported, not corrected"* **and it
+stayed a Window**; raising its RO from 48in to 72in — one of the exact edits
+that used to retype it — gave *"Header 16" deep · 2 peaks · web at 43.8°"* with
+no warning at all.

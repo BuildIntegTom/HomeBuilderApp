@@ -99,9 +99,11 @@ describe("transitionPanelType", () => {
   it("⚠ a big header asked to become a door comes back a DOOR, at a buildable width", () => {
     /* The measured B19 defect, in one test. On his 43'9" wall a Big Header
        asked for Door stayed a big header: the anchor inherited the header's
-       96in, a 96in door header fails the single-peak angle rule, and
-       `applyBigHeaderAutoUpgrade` put it straight back. The panel count fell
-       by one on the way through, so the slot looked lost. */
+       96in, a 96in door header failed the single-peak angle rule, and the
+       auto-upgrade put it straight back. The panel count fell by one on the
+       way through, so the slot looked lost. (That upgrade has since been
+       deleted outright — headers take as many peaks as they need — but a door
+       inheriting a big header's width was wrong on its own.) */
     const withHeader = transitionPanelType(tile(), 2, { type: "big-header" }, WALL, WIDTHS)!;
     expect(withHeader.slots[withHeader.slotIndex]!.widthIn).toBe(96);
 
@@ -109,9 +111,7 @@ describe("transitionPanelType", () => {
     const landed = asDoor.slots[asDoor.slotIndex]!;
     expect(landed.type).toBe("door");
     /* ⚠ NOT 96. A door replacing another reservation takes its own default,
-       because the 96in belonged to the big header. 36in rather than the 4ft
-       module, and that is the single-peak header rule rather than a door
-       catalogue — see `doorDefaultWidthIn`. */
+       because the 96in belonged to the big header — see `doorDefaultWidthIn`. */
     expect(landed.widthIn).toBe(36);
     expect(only(asDoor.slots, "big-header")).toHaveLength(0);
     expect(only(asDoor.slots, "door")).toHaveLength(1);

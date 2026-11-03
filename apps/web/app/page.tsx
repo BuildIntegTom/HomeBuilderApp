@@ -313,6 +313,12 @@ import {
   type BracePairPattern,
   windowHeaderDefaultWidthIn,
   doorDefaultWidthIn,
+  seedWindowWidthsIn,
+  headerPeakCount,
+  headerWebAngleDeg,
+  bigHeaderPeakCount,
+  bigHeaderWebAngleDeg,
+  HEADER_MAX_ANGLE_DEG,
   windowHeaderWidthInRange,
   type BoxBeamSizeId,
   type BracePattern,
@@ -374,7 +380,6 @@ import {
 import { PLYWOOD_HALF_ROW_LABEL, PLYWOOD_THREE_QUARTER_ROW_LABEL } from "./plywoodRowLabels";
 import { resolveBracedStyle } from "./bracedStyle";
 import { placeColumnUnderPeak } from "./gableColumnPlacement";
-import { shouldAutoUpgradeToBigHeader } from "./bigHeaderAutoUpgrade";
 import {
   capGableTileHeights,
   computeRiseFtForPitch,
@@ -1372,21 +1377,6 @@ export default function LayoutEditor() {
   // window Width field once it became a free-typed number instead of a
   // fixed-preset dropdown (Tommy: window headers "can be however wide up
   // to 10 ft wide").
-  /* ⚠ **The auto-upgrade has to be able to speak.** When a panel asked to
-     become a window or a door comes back a Big Header because its single-peak
-     header falls outside the brace-angle range, silence is indistinguishable
-     from a broken menu row — which is exactly how it read before B19. It rides
-     in the Selected Panel note rather than the placement bar's own toast,
-     because that note is on screen on the plan AND the elevation and is
-     already showing the panel that just changed. */
-  const [headerUpgradeNotice, setHeaderUpgradeNotice] = useState<string | null>(null);
-  const headerUpgradeNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showHeaderUpgradeNotice = (message: string) => {
-    if (headerUpgradeNoticeTimerRef.current) clearTimeout(headerUpgradeNoticeTimerRef.current);
-    setHeaderUpgradeNotice(message);
-    headerUpgradeNoticeTimerRef.current = setTimeout(() => setHeaderUpgradeNotice(null), 10000);
-  };
-
   const [windowWidthClampNotice, setWindowWidthClampNotice] = useState<string | null>(null);
   const windowWidthClampNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The same pattern again for a hand-set PANEL width (Smearforn Stage 1).
@@ -3088,7 +3078,7 @@ export default function LayoutEditor() {
   // default door on an East/South/West-facing wall. See retile.ts's own
   // `seedDefaultOpenings` doc comment for why this only ever affects a
   // wall with no prior slots to preserve.
-  const openingSeed: OpeningSeed = {};
+  const openingSeed: OpeningSeed = { windowWidthsIn: seedWindowWidthsIn.value };
   // Stage 3's run stops ride along on all three wrappers, defaulting to the
   // live `wallRunStopsByWallId`. The explicit override exists because React
   // state is not readable back in the same tick: the handful of paths that
@@ -4187,21 +4177,56 @@ export default function LayoutEditor() {
     return computeHeaderHeightIn(storyWallHeightIn, windowSillHeightIn + windowRoHeightIn);
   };
 
-  // Applied after every width/height-affecting window/door mutation (see
-  // callers below) — a no-op unless that specific slot's own single-peak
-  // angle now falls outside range. Same width carries over; heightIn is
-  // reset to the Big Header default (a window/door's own heightIn means
-  // its Rough Opening height, a completely different quantity from a Big
-  // Header's own total assembly height — carrying the old value over would
-  // be meaningless, possibly even outside bigHeaderHeightInRange).
-  const applyBigHeaderAutoUpgrade = (story: "ground" | "second", slots: PanelSlot[], index: number): PanelSlot[] => {
-    const slot = slots[index];
-    if (!slot || (slot.type !== "window" && slot.type !== "door")) return slots;
-    if (!shouldAutoUpgradeToBigHeader(slot.widthIn, resolveHeaderHeightIn(story, slot))) return slots;
-    return slots.map((s, i) =>
-      i === index ? { ...s, type: "big-header" as const, heightIn: bigHeaderDefaultHeightIn.value, includeSillOnBigHeader: false } : s,
-    );
+  /**
+   * **What this slot's header actually gets built as** — its depth, how many
+   * peaks its web takes, and the angle that leaves.
+   *
+   * > *"Headers can have more than one peak. Big headers and window headers
+   * > are really the same thing."* — Tommy, 2026-11-03
+   *
+   * ⚠ It exists because that change made a header's figure VARY. Under the old
+   * 1-peak cap there was nothing to report: every header was one V, and a
+   * header that could not be one V had its slot silently retyped instead. Now
+   * a wide opening gets three peaks and a deep one gets a steep single, and the
+   * only place that said so was the fabrication sheet. The three readings come
+   * from the catalog's own builders, not from arithmetic here, so the note and
+   * the members cannot describe different trusses.
+   *
+   * Returns null for a slot with no header at all.
+   */
+  const headerFigureFor = (story: "ground" | "second", slot: PanelSlot): { depthIn: number; peaks: number; angleDeg: number } | null => {
+    if (slot.type === "big-header") {
+      const depthIn = slot.heightIn ?? bigHeaderDefaultHeightIn.value;
+      return { depthIn, peaks: bigHeaderPeakCount(slot.widthIn, depthIn), angleDeg: bigHeaderWebAngleDeg(slot.widthIn, depthIn) };
+    }
+    if (slot.type !== "window" && slot.type !== "door") return null;
+    const depthIn = resolveHeaderHeightIn(story, slot);
+    if (!(depthIn > 0)) return null;
+    return { depthIn, peaks: headerPeakCount(slot.widthIn, depthIn), angleDeg: headerWebAngleDeg(slot.widthIn, depthIn) };
   };
+
+  /* ⚠ **`applyBigHeaderAutoUpgrade` WAS DELETED HERE — 2026-11-03.** It ran
+     after every width/height-affecting window or door edit, and when that
+     opening's single-peak header angle fell outside 30-45deg it changed the
+     SLOT'S TYPE to `big-header` behind the user's back.
+
+     > *"Headers can have more than one peak. Big headers and window headers
+     > are really the same thing."* — Tommy, 2026-11-03
+
+     It existed because a header was capped at 1 peak and had no other way out.
+     Headers derive their peak count again (`headerPeakCount`), so a shallow
+     web is solved rather than escaped; and the 45deg ceiling — the direction
+     the app's own defaults actually hit, and the one no peak count can fix —
+     is a note on the fabrication sheet now rather than a trigger. There is
+     nothing left for this to rescue.
+
+     Measured before deleting it, because it had been firing constantly: on a
+     120in wall with a 32in sill and a 48in RO the header is 40in deep and its
+     web runs at 56deg, so EVERY ordinary window the user touched turned into a
+     Big Header. The seeded ones survived only because seeding never ran this.
+
+     `headerUpgradeNotice`, added hours earlier the same day to explain the
+     swap, went with it: there is no swap to explain. */
 
   /* ⚠ **Read inside a function, never at module scope.** Every one of these
      is a `@building-integrity/panel-catalog` value, and Turbopack does not
@@ -4368,30 +4393,8 @@ export default function LayoutEditor() {
     );
     if (!out) return;
 
-    let finalSlots = out.slots;
+    const finalSlots = out.slots;
     setSelectedSlot(out.slotIndex === -1 || next.type === "standard" ? null : { wallId, slotIndex: out.slotIndex, story });
-    /* A freshly placed window or door can already be outside the single-peak
-       angle allowance, so it is checked here rather than only on a later
-       resize.
-
-       ⚠ **And when it fires on an explicit menu choice, SAY SO.** Silence here
-       is what made the menu look broken: ask for a Door and get a Big Header
-       back with no explanation. It is not a bug — measured on an 8ft wall a
-       door's header is 15in deep and only a 36in door clears 30deg, and on a
-       10ft wall no ordinary door width clears at all (36in is 62deg, 60in is
-       49deg, against a 45deg ceiling) — but a rule the user cannot see is
-       indistinguishable from a broken button. */
-    if (out.slotIndex !== -1 && (next.type === "window" || next.type === "door")) {
-      const upgraded = applyBigHeaderAutoUpgrade(story, finalSlots, out.slotIndex);
-      if (upgraded !== finalSlots) {
-        const asked = PANEL_TYPE_LABELS[next.type];
-        showHeaderUpgradeNotice(
-          `${asked} became a Big Header: at ${formatLengthIn(finalSlots[out.slotIndex]!.widthIn, unitSystem)} on a ${formatLengthIn(wallHeightFt * 12, unitSystem)} wall, its header's single peak falls outside the brace-angle range. Narrow it, or keep the Big Header.`,
-        );
-      }
-      finalSlots = upgraded;
-    }
-
     setWallSlotsForStory(story, (prev) => ({
       ...prev,
       [wallId]: finalSlots,
@@ -5435,7 +5438,7 @@ export default function LayoutEditor() {
     setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex, story });
     setWallSlotsForStory(story, (prev) => ({
       ...prev,
-      [wallId]: newIndex === -1 ? finalSlots : applyBigHeaderAutoUpgrade(story, finalSlots, newIndex),
+      [wallId]: finalSlots,
     }));
   };
 
@@ -5467,13 +5470,9 @@ export default function LayoutEditor() {
       if (!slots || !slots[slotIndex]) return prev;
       const nextSlots = slots.slice();
       nextSlots[slotIndex] = updateSlotZoneField(nextSlots[slotIndex]!, zoneIndex, { heightIn });
-      // Only the bottom/only zone (zoneIndex undefined or 0) carries the
-      // slot's own top-level type the auto-upgrade acts on — a non-bottom
-      // zone's own type lives in its own zones[] entry, a separate concept
-      // the click-cycle already handles independently.
-      if (zoneIndex === undefined || zoneIndex === 0) {
-        return { ...prev, [wallId]: applyBigHeaderAutoUpgrade(story, nextSlots, slotIndex) };
-      }
+      /* A height change never retypes the slot any more — see the record
+         where `applyBigHeaderAutoUpgrade` used to be. A header simply gets as
+         many peaks as its new proportions call for. */
       return { ...prev, [wallId]: nextSlots };
     });
   };
@@ -13725,11 +13724,24 @@ export default function LayoutEditor() {
                       onClose={() => setSelectedSlot(null)}
                       onToggleFullscreen={() => handleToggleNoteFullscreen("selected-panel")}
                     >
-                      {headerUpgradeNotice && (
-                        <p className={styles.note} style={{ color: "#a67c00", fontWeight: 600 }}>
-                          {headerUpgradeNotice}
-                        </p>
-                      )}
+                      {(() => {
+                        /* ⚠ Read off the slot's TOP-LEVEL type, not the zone's:
+                           a header belongs to the whole column, because the
+                           width reservation it sits in is shared by every zone
+                           stacked in it. */
+                        const header = headerFigureFor(story, slot);
+                        if (!header) return null;
+                        const steep = header.angleDeg > HEADER_MAX_ANGLE_DEG;
+                        return (
+                          <p className={styles.note} style={steep ? { color: "#a67c00" } : undefined}>
+                            Header {formatLengthIn(header.depthIn, unitSystem)} deep ·{" "}
+                            {header.peaks} {header.peaks === 1 ? "peak" : "peaks"} · web at {header.angleDeg.toFixed(1)}°
+                            {steep
+                              ? ` — steeper than the ${HEADER_MAX_ANGLE_DEG}° target. This header is deep for its width; more peaks would only steepen it. Reported, not corrected.`
+                              : ""}
+                          </p>
+                        );
+                      })()}
                       {zone.type === "window" ? (
                         <>
                           <WindowSizeDiagram

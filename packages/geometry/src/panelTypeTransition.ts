@@ -20,9 +20,11 @@ import type { BracePattern, PanelSlot, PanelSlotType, WallEnd } from "./types";
  * target type for the first time and it came apart in three measured ways:
  *
  *  1. **A big header asked to become a door stayed a big header.** The anchor
- *     inherited the big header's 96in width, and a 96in door header fails the
- *     single-peak angle rule, so `applyBigHeaderAutoUpgrade` immediately put
- *     it back. Fixed by the reservation-to-reservation width rule below.
+ *     inherited the big header's 96in width, and the single-peak angle rule
+ *     then retyped it straight back. Fixed by the reservation-to-reservation
+ *     width rule below. (The retyping itself was deleted hours later the same
+ *     day — headers have as many peaks as they need now — but a door built at
+ *     a big header's width was never right either way.)
  *  2. **`reconcileBracedPlacement` did not know `big-header` was a
  *     reservation**, so every carried marker after one read a position early.
  *     Fixed at the source — see `RESERVATION_PANEL_TYPES`.

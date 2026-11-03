@@ -10,19 +10,37 @@ import {
   buildHeaderTrussWebBraces,
   computeBraceEndCutAngleDeg,
   computeTrussWebAngleDeg,
+  computeTrussWebPeakCount,
 } from "./panelMemberHelpers";
 
 /**
- * Tommy: "i believe the math with the triangle parts of the headers cannot
- * go outside the range of 30-45 degrees" — TRUSS_WEB_MIN_ANGLE_DEG (30) is
- * shared with the gable/braced-panel bracing; this is the header-specific
- * upper bound. Every header (door AND window — see `buildHeaderMembers`'s
- * own doc comment) is now capped at exactly 1 peak regardless of the angle
- * that produces; a window/door whose single-peak angle falls outside this
- * range doesn't get more peaks added anymore — its own slot auto-upgrades
- * to a Big Header instead (see apps/web/app/bigHeaderAutoUpgrade.ts, which
- * imports this constant directly). Exported so that trigger can reuse the
- * exact same threshold rather than duplicating it.
+ * Tommy: *"i believe the math with the triangle parts of the headers cannot
+ * go outside the range of 30-45 degrees"*.
+ *
+ * ⚠ **IT IS A NOTE NOW, NOT A TRIGGER — 2026-11-03.** It used to be the
+ * threshold that retyped a panel: every header was capped at exactly 1 peak,
+ * and a window or door whose single peak fell outside 30-45deg had its whole
+ * SLOT auto-upgraded to a Big Header. Two things were wrong with that.
+ *
+ * > *"Headers can have more than one peak. Big headers and window headers are
+ * > really the same thing."* — Tommy, 2026-11-03
+ *
+ * First, **more peaks is the actual answer to a shallow web**, and the math
+ * for it never went away — `computeTrussWebPeakCount` adds peaks until every
+ * segment clears the 30deg floor, which is what a wide header has always
+ * needed and what a Big Header was already doing.
+ *
+ * Second, **the ceiling could not be satisfied by peaks at all, and that is
+ * the direction the app's own defaults hit.** Measured 2026-11-03: a 120in
+ * wall with a 32in sill and a 48in rough opening leaves a 40in-deep header,
+ * whose single web runs at **56deg**. Adding peaks makes a web STEEPER, never
+ * shallower, so no peak count rescues it — and the auto-upgrade therefore
+ * fired on every ordinary window the user touched. Asked which gave way,
+ * Tommy chose to **drop the ceiling and keep the floor**: a deep header is a
+ * steep truss, which is stiffer rather than weaker.
+ *
+ * So this is still reported on the fabrication sheet, and a web past it is
+ * still worth his engineer's eye. It no longer changes what gets built.
  */
 export const HEADER_MAX_ANGLE_DEG = 45;
 
@@ -101,19 +119,27 @@ export function headerWebRiseIn(heightIn: number): number {
 }
 
 /**
- * Shared construction behind both header variants (Tommy: "there are long
- * headers and door headers... door headers just have one upside down V as
- * a brace") — top/bottom chords plus a single-peak W-truss web (see
- * `buildTrussWebBraces`) between them, on both wythes. BOTH door and
- * window headers are now always exactly 1 peak (Tommy: "cap every header
- * at 1 V, auto-upgrade past that") — a window header used to get as many
- * peaks as `computeTrussWebPeakCount` said it needed to keep every web
- * segment at or above the 30deg minimum; a width/height combo that would
- * have needed more than 1 peak to satisfy that (or that pushes the single
- * peak's own angle past HEADER_MAX_ANGLE_DEG) no longer widens the header
- * itself — that opening's own SLOT auto-upgrades to a Big Header instead
- * (see apps/web/app/bigHeaderAutoUpgrade.ts), which reuses the same
- * multi-peak math this function used to have (see bigHeaderMembers.ts).
+ * Shared construction behind every header (Tommy: "there are long headers and
+ * door headers... door headers just have one upside down V as a brace") —
+ * top/bottom chords plus a W-truss web (see `buildTrussWebBraces`) between
+ * them, on both wythes.
+ *
+ * ⚠ **The peak count is derived again, not forced to 1** (2026-11-03 —
+ * *"Headers can have more than one peak"*). `computeTrussWebPeakCount` adds
+ * peaks until every web segment clears `TRUSS_WEB_MIN_ANGLE_DEG`, which is
+ * the same call `buildBigHeaderMembers` has been making all along: that is
+ * what *"big headers and window headers are really the same thing"* means
+ * here, and it is why the Big Header auto-upgrade could be deleted outright.
+ *
+ * A door header still comes back with exactly one peak at any ordinary size —
+ * a 36in opening under a 15in-deep header needs 1 — so *"door headers just
+ * have one upside down V"* is still what gets built; it is now a consequence
+ * of the rule rather than an exception carved out of it.
+ *
+ * ⚠ What still differs between this and `buildBigHeaderMembers`: its chords
+ * are rotated 90deg (a 3.5in face in elevation) and it carries its own jack
+ * studs. Both are deliberate and separately specified; neither was part of
+ * the "same thing".
  */
 function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
   // The web bears against each chord's own 2x4 face (see buildHeaderChords
@@ -121,7 +147,7 @@ function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number):
   // thickness inboard of the header's own outer face on each side.
   const bottomChordTopZIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
   const topChordBottomZIn = heightIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN;
-  const peakCount = 1;
+  const peakCount = headerPeakCount(widthIn, heightIn);
 
   const members: PanelMember[] = [
     ...buildHeaderChords(widthIn, depthIn, heightIn),
@@ -151,22 +177,49 @@ function buildHeaderMembers(widthIn: number, depthIn: number, heightIn: number):
   return members;
 }
 
-/** Door Header: always exactly 1 peak ("one upside down V"), on both wythes. */
+/** Door Header: one upside-down V at any ordinary door size, more peaks if a
+ *  wide one would otherwise leave its webs under 30deg. */
 export function buildDoorHeaderMembers(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
   return buildHeaderMembers(widthIn, depthIn, heightIn);
 }
 
-/** Window Header: also always exactly 1 peak now — see `buildHeaderMembers`'s own doc comment. */
+/** Window Header: the same assembly and the same rule — see
+ *  `buildHeaderMembers`'s own doc comment. */
 export function buildWindowHeaderMembers(widthIn: number, depthIn: number, heightIn: number): PanelMember[] {
   return buildHeaderMembers(widthIn, depthIn, heightIn);
 }
 
+/**
+ * How many peaks this header's web gets. **The single place that decides it**,
+ * so the members, the peak-count note and the angle note can never describe
+ * three different trusses.
+ */
+export function headerPeakCount(widthIn: number, heightIn: number): number {
+  return computeTrussWebPeakCount(widthIn, headerWebRiseIn(heightIn));
+}
+
+/** The web angle this header actually gets built at. */
+export function headerWebAngleDeg(widthIn: number, heightIn: number): number {
+  return computeTrussWebAngleDeg(widthIn, headerWebRiseIn(heightIn), headerPeakCount(widthIn, heightIn));
+}
+
+/**
+ * ⚠ **Reports, never corrects, and since 2026-11-03 only the STEEP side can
+ * reach it.** `computeTrussWebPeakCount` adds peaks until every web clears
+ * `TRUSS_WEB_MIN_ANGLE_DEG`, so a shallow web is now fixed rather than
+ * flagged; a web past `HEADER_MAX_ANGLE_DEG` is a deep header, which no peak
+ * count can shallow out, and which Tommy chose to build rather than refuse.
+ */
 function angleNote(widthIn: number, heightIn: number, peakCount: number): { type: "warning"; text: string } | null {
   const angleDeg = computeTrussWebAngleDeg(widthIn, headerWebRiseIn(heightIn), peakCount);
   if (angleDeg >= TRUSS_WEB_MIN_ANGLE_DEG && angleDeg <= HEADER_MAX_ANGLE_DEG) return null;
+  const which =
+    angleDeg > HEADER_MAX_ANGLE_DEG
+      ? `steeper than the ${HEADER_MAX_ANGLE_DEG}deg top of the target range — this header is deep for its width, and adding peaks would only steepen it further`
+      : `shallower than the ${TRUSS_WEB_MIN_ANGLE_DEG}deg floor of the target range, which should not be reachable: the peak count is solved for exactly that floor`;
   return {
     type: "warning",
-    text: `Resulting web brace angle (${angleDeg.toFixed(1)}deg) falls outside the target ${TRUSS_WEB_MIN_ANGLE_DEG}-${HEADER_MAX_ANGLE_DEG}deg range for this opening's width/height — flagged, not auto-corrected.`,
+    text: `Web brace angle ${angleDeg.toFixed(1)}deg at ${peakCount} peak${peakCount === 1 ? "" : "s"} — ${which}. Reported, not auto-corrected.`,
   };
 }
 
@@ -217,9 +270,14 @@ export function buildDoorHeaderSchema(widthIn: number, depthIn: number, heightIn
         "— see computeHeaderHeightIn.",
     },
   ];
+  const doorPeaks = headerPeakCount(widthIn, heightIn);
+  notes.push({
+    type: "deviation",
+    text: `${doorPeaks} truss web peak${doorPeaks === 1 ? "" : "s"} — solved so every web segment clears ${TRUSS_WEB_MIN_ANGLE_DEG}deg (see computeTrussWebPeakCount). A door at any ordinary width comes back with the single upside-down V.`,
+  });
   const cutAngle = braceCutAngleNote(members);
   if (cutAngle) notes.push(cutAngle);
-  const angle = angleNote(widthIn, heightIn, 1);
+  const angle = angleNote(widthIn, heightIn, doorPeaks);
   if (angle) notes.push(angle);
   return {
     schemaVersion: "0.1",
@@ -237,7 +295,7 @@ export function buildDoorHeaderSchema(widthIn: number, depthIn: number, heightIn
 }
 
 export function buildWindowHeaderSchema(widthIn: number, depthIn: number, heightIn: number): PanelComponentSchema {
-  const peakCount = 1;
+  const peakCount = headerPeakCount(widthIn, heightIn);
   const members = buildWindowHeaderMembers(widthIn, depthIn, heightIn);
   const notes: PanelComponentSchema["notes"] = [
     {
@@ -247,8 +305,8 @@ export function buildWindowHeaderSchema(widthIn: number, depthIn: number, height
         "selected window height) — see computeHeaderHeightIn.",
     },
     {
-      type: "warning",
-      text: `${peakCount} truss web peak at this opening's width/height — every header is now capped at 1 peak; a width/height combo that can't stay within ${TRUSS_WEB_MIN_ANGLE_DEG}-${HEADER_MAX_ANGLE_DEG}deg at 1 peak auto-upgrades that opening to a Big Header instead of adding more peaks.`,
+      type: "deviation",
+      text: `${peakCount} truss web peak${peakCount === 1 ? "" : "s"} at this opening's width/height — solved so every web segment clears ${TRUSS_WEB_MIN_ANGLE_DEG}deg (see computeTrussWebPeakCount). This is the same rule a Big Header uses; the two are the same assembly.`,
     },
   ];
   const cutAngle = braceCutAngleNote(members);
