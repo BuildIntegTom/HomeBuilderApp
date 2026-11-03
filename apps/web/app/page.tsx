@@ -14108,10 +14108,13 @@ export default function LayoutEditor() {
                   checkedExteriorIds={checkedExteriorIds}
                   tool3D={tool3D}
                   onSelectPanel={handleSelectPanel}
-                  /* ⚠ B19 ships the menu on the two 2D surfaces he named first.
-                     The 3D view needs a panel hit test, which the panel EDITOR needs
-                     too and will launch from — so the two arrive together rather than
-                     building the same pick twice. */
+                  /* ⚠ **The third surface, and it needed no new hit test after all.**
+                     Stride 1 deferred this saying the 3D view needed a panel pick the
+                     panel EDITOR would share. It already had one: every slot renders as
+                     its own react-three-fiber `<group>` with the wall id and slot index
+                     on it, which is how the Edit tool's own click works. `onContextMenu`
+                     attaches to exactly that group. */
+                  onPanelContextMenu={handlePanelContextMenu}
                   onSetWindowSillHeight={handleSetWindowSillHeight}
                   onSetWindowHeight={handleSetWindowHeight}
                   gableTilesByWallId={gableTilesByWallId}

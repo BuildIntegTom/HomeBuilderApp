@@ -1619,3 +1619,42 @@ at 55.9° — steeper than the 45° target... Reported, not corrected"* **and it
 stayed a Window**; raising its RO from 48in to 72in — one of the exact edits
 that used to retype it — gave *"Header 16" deep · 2 peaks · web at 43.8°"* with
 no warning at all.
+
+---
+
+# B19 stride 3 — the 3D right-click. DONE 2026-11-03.
+
+> *"it should work on the plan, the elevation and the 3D view"* — his interview
+> answer, 2026-11-03
+
+⚠ **It needed no new hit test, and stride 1 was wrong to say it did.** The
+reason given for deferring this was that the 3D view needed a panel pick the
+panel editor would share. It already had one: every slot renders as its own
+react-three-fiber `<group>` carrying `box.wallId` and `box.slotIndex` — that is
+how the Edit tool's click has always worked. `onContextMenu` attaches to the
+same group. One prop, one handler, both stories.
+
+**Not gated behind the Edit tool**, unlike the left click: the 2D plan does not
+gate its right click either, and a menu you have to arm a tool to reach is a
+menu nobody finds.
+
+**It IS gated on a right-button DRAG.** OrbitControls pans on the right button,
+and panning the camera should not leave a menu open where the pointer stopped.
+`rightDragMovedRef` watches the right button at window level in the capture
+phase, never calling preventDefault, so it observes the gesture without
+touching it. A separate ref from `orbitDragStartRef` on purpose: that one is
+cleared on pointerup, and on Windows `contextmenu` fires on the right button's
+RELEASE — after that clear — so it would always read null.
+
+Gates: 3573 tests, typecheck clean in all four projects, lint **167/119/48**,
+per rule identical.
+
+Verified live in the 3D framed view, Orbit tool active: a right-click on a wall
+panel opened *"Panel actions for Wall BC · Door 24⅛""* with the full type list;
+picking **Window** turned it into one, and the Selected Panel note followed it
+with *"Header 40" deep · 1 peak · web at 55.9°"*. A synthesised right-click with
+no movement opened the menu; a right-DRAG across the same panel opened nothing.
+
+**B19 is complete**: the menu on all three surfaces, the `open` slot, the
+anchor fix, and the cycle retired. What remains of his 2026-11-02 note is the
+PANEL EDITOR itself, which the menu now has a place to launch from.

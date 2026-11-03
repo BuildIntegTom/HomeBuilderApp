@@ -1056,6 +1056,22 @@ interface Building3DViewProps {
    * The `story` param is real now that the second story is independently-stored
    * data (see the `secondStory` prop's own doc comment). */
   onSelectPanel?: (story: "ground" | "second", wallId: string, slotIndex: number) => void;
+  /**
+   * ⚠ **Right-click a panel in 3D — B19's third surface, 2026-11-03.**
+   *
+   * > *"it should work on the plan, the elevation and the 3D view"* — Tommy
+   *
+   * Client coordinates, like the two 2D surfaces: the menu is a fixed-position
+   * portal on `document.body`, so it cannot be clipped by the canvas.
+   *
+   * ⚠ It is NOT gated behind `tool3D === "edit"`, unlike the left click. The
+   * 2D plan does not gate its right click behind the Edit tool either, and a
+   * menu that only opens once you have armed a tool is a menu nobody finds.
+   * What it IS gated on is a right-button DRAG: OrbitControls pans on the right
+   * button, and panning the camera should not leave a menu behind. See
+   * `rightDragMovedRef`.
+   */
+  onPanelContextMenu?: (story: "ground" | "second", wallId: string, slotIndex: number, clientX: number, clientY: number) => void;
   /** Commits the bottom handle's dragged position (floor to RO-bottom) —
    * only wired up when `tool3D === "sill-header"`. Same story-forwarding
    * rationale as `onSelectPanel`. */
@@ -1280,6 +1296,7 @@ export default function Building3DView({
   checkedExteriorIds = EMPTY_ID_SET,
   tool3D = "orbit",
   onSelectPanel,
+  onPanelContextMenu,
   onSetWindowSillHeight,
   onSetWindowHeight,
 }: Building3DViewProps) {
@@ -1322,6 +1339,58 @@ export default function Building3DView({
   // clicked world point; only once real drag movement is observed does it
   // get promoted into `orbitTargetOverride` state.
   const orbitDragStartRef = useRef<{ clientX: number; clientY: number; worldPoint: [number, number, number] } | null>(null);
+  /**
+   * ⚠ **Did the right button MOVE before the menu fired?**
+   *
+   * OrbitControls pans on the right button, so a right-drag across the model
+   * is a camera gesture, not a request for a panel menu. Without this, every
+   * pan ended with a menu open over wherever the pointer stopped.
+   *
+   * The same click-vs-drag question `orbitDragStartRef` above answers for the
+   * left button, and deliberately a SEPARATE ref rather than a reuse: that one
+   * is cleared on pointerup, and on Windows `contextmenu` fires on the right
+   * button's RELEASE — after that clear — so it would always read null here.
+   * This one survives until the next right-button press.
+   */
+  const rightDragMovedRef = useRef(false);
+  useEffect(() => {
+    let startX = 0;
+    let startY = 0;
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 2) return;
+      startX = e.clientX;
+      startY = e.clientY;
+      rightDragMovedRef.current = false;
+    };
+    const onMove = (e: PointerEvent) => {
+      /* `buttons & 2` — the right button is still held. A plain hover between
+         gestures must not count as a drag. */
+      if (rightDragMovedRef.current || (e.buttons & 2) === 0) return;
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) >= ORBIT_RETARGET_DRAG_THRESHOLD_PX) {
+        rightDragMovedRef.current = true;
+      }
+    };
+    /* Capture phase, window level: purely observing a gesture OrbitControls is
+       handling at the same time, and never calling stopPropagation or
+       preventDefault, so it cannot interfere with it. */
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointermove", onMove, true);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointermove", onMove, true);
+    };
+  }, []);
+
+  /** One handler shared by both stories' slot groups. */
+  const panelContextMenuHandler = (story: "ground" | "second", wallId: string, slotIndex: number) =>
+    onPanelContextMenu
+      ? (e: { stopPropagation: () => void; nativeEvent: MouseEvent }) => {
+          if (rightDragMovedRef.current) return; // a camera pan, not a menu
+          e.stopPropagation();
+          e.nativeEvent.preventDefault();
+          onPanelContextMenu(story, wallId, slotIndex, e.nativeEvent.clientX, e.nativeEvent.clientY);
+        }
+      : undefined;
   useEffect(() => {
     const handlePointerMove = (e: PointerEvent) => {
       const start = orbitDragStartRef.current;
@@ -2688,6 +2757,7 @@ export default function Building3DView({
                       }
                     : undefined
               }
+              onContextMenu={panelContextMenuHandler("ground", box.wallId, box.slotIndex)}
               onPointerDown={
                 tool3D === "orbit"
                   ? (e) => {
@@ -2751,6 +2821,7 @@ export default function Building3DView({
                       }
                     : undefined
               }
+              onContextMenu={panelContextMenuHandler("second", box.wallId, box.slotIndex)}
               onPointerDown={
                 tool3D === "orbit"
                   ? (e) => {
