@@ -1000,3 +1000,183 @@ from the beam. The three readouts that told the user 12 now read the beam.
   UI's "Roof-catcher-beam depth offset" control is advisory and drives
   nothing. Making that control real is a user-facing design decision.
 
+
+---
+
+# Queue, re-planned 2026-11-02
+
+Written at Tommy's request: *"Take all this info, flesh out/plan the queue,
+and then take the next step."* Three new decisions landed in one message —
+decouple safety gaps, right-click the panel menu, build the derivation
+sheet — and two from the message before it (retire near-corner braces, work
+backwards to a seismic rating). This is where they sit.
+
+## The three decisions, as given
+
+> *"We don't need any of this safety Gap combining stuff. I don't want to
+> see any of the panels combined with safety gaps. Safety gaps should be
+> treated as their own slot as they are already measured out with our
+> thresholds and every once in awhile dynamic. But let's decouple safety
+> gaps from any particular panels."*
+
+> *"I would like to be able to right click on a panel in the 2D plan and 2D
+> elevation ... to see several options including delete/merge, delete/ no
+> panel, change, panel type, and then a drop-down menu of all of the panel
+> types. This would remove the need for the left click cycle which is fine
+> because left clicking should be used for dragging and resizing. We can
+> interview about the right click stuff when it comes up in the queue."*
+
+> *"Derivation sheet sounds freaking awesome."*
+
+---
+
+## B16 — Safety gaps are their own slot. **DOING NOW.**
+
+The corner-brace combine is the only thing in the app that ever merged a
+safety gap into a panel: a gap slot grew to `standardWidthIn + 3/4in`,
+picked up `secondaryType: "braced"`, **swallowed the neighbouring standard
+panel whole** and settled the leftover against the panels past it, so the
+wall still summed exactly. Deleting it is a deletion, not a rewrite.
+
+What goes with it, and this is the point worth knowing — **most of the code
+being deleted is not the combine, it is the guard rail around it:**
+
+| | why it existed |
+|---|---|
+| `planCornerBraceCombine` + `CornerBraceCombinePlan` | the combine itself |
+| `SAFETY_PLYWOOD_BUFFER_IN` | the 3/4in glued onto a combined panel |
+| `applyBracedPlacement`'s `preservedBracedIndices`, `slotIndicesArePinned`, `preCombinedGapOrdinals` | three parameters that exist only to decide whether a combine may fire |
+| `reconcileBracedPlacement`'s `slotIndicesArePinned` (~10 call sites) | the same, one layer up |
+| `pinnedSlotIndexWalls.ts` + the `slotIndexPinnedWallIds` memo | computes which walls have a beam or header stored against slot POSITIONS, so the combine can be refused there |
+| `cornerBraceCombineRefusals.ts` + its Review Log entry | tells an engineer that a refused combine left one brace serving two corners |
+| `combineSwallowedOrdinals` / `holeOrdinals` / `swallowedOldMarkers` | re-derives, on every reconcile, which standard-family ordinal the combine had eaten, so the brace markers past it do not shift by one |
+
+That last row is the one I would point at. A combined wall is stored **one
+panel shorter than it tiles**, so every pass since has had to reconstruct
+the missing position from the slot list. Several bugs in this file's history
+are that reconstruction getting it wrong by one.
+
+**The one real question: files already saved with a combined wall.** A
+stored combined slot does not un-combine itself, and nothing retiles a wall
+until it is edited — so without a migration his existing projects would keep
+showing a 48-3/4in `braced + safety-gap` panel, which is precisely what he
+said he does not want to see. It migrates **exactly**, with no retile and no
+lost hand edits: split the combined slot back into a gap at the run's own
+threshold width plus a standard panel carrying the remainder. The sum is
+unchanged, so the wall's length stays exact, and the panel count goes back
+to what the run tiles to. Applied unconditionally on load, which is the
+established pattern in `projectFile.ts`, not a version bump.
+
+**It does not make the 24in module worse — it makes it slightly better.**
+The gap was always its own slot in the run; what the combine added was
+48-3/4in panels and settled residuals on their neighbours. Those go away.
+The borrowed tail is still the module problem (see the carried item below).
+
+---
+
+## B17 — Retire the auto-seeded braced panels
+
+> *"We can retire near corner braces because the super brace pattern should
+> inherently provide the same structural shear value."*
+
+Authorised 2026-11-02, and **B16 is its prerequisite**, which is why it is
+second rather than first. `applyBracedPlacement` has two seeding rules:
+
+1. **near-corner** — one braced panel walking inward from each end.
+2. **periodic** — another every `seismicBracedPanelSpacingFt[zone]`.
+
+Rule 1 is the one he named, and the combine lived *inside* it — ungated by
+the per-panel eligibility set, so suppressing the brace would have left the
+combine still mutating panel widths. After B16 there is nothing left in
+there but the brace, and retiring it is a deletion.
+
+**Rule 2 I am proposing to retire too, and that is a building decision, so
+it is called out rather than assumed.** The argument: with the pattern on,
+every standard panel on the wall already carries half an X. Rule 2 would
+convert one of them into a chevron Braced Panel — which both over-braces
+(his own reservation: *"we are over bracing with these kind of patterns"*)
+and **breaks the pair run it lands in**, because a `braced` slot is not a
+pair member. It is also the thing that makes the seismic zone an input, and
+B18 is about making it an output. Retiring both rules is what makes the
+inversion real rather than cosmetic.
+
+Also in scope: the click-cycle, and the seismic-zone control's copy — once
+nothing is seeded from a zone, a control that picks one is lying.
+
+---
+
+## B18 — The derivation sheet
+
+> *"to have some equation showing details ready for engineers would be
+> awesome"*
+
+The capacity half already works the way he wants: shear is derived from the
+braces that are actually on the panels, so his hand edits already move it.
+Measured on a 39ft x 32ft building: SuperBrace ~58,362 lb across 27 panels,
+Nailer ~13,487 lb across 6. What is missing is the **showing of the work.**
+
+Per brace: length, tilt, section, species/grade, slenderness, the NDS column
+capacity it resolves to, and `horizontal = axial x sin(tilt)`. Per wall
+line: the sum and the panels it came from. Per building: the total. Every
+input named with its own `confirmed` / `pending-BI-confirmation` status, so a
+reader can see which numbers are Building Integrity's and which are still
+placeholders.
+
+**What this sheet deliberately does NOT do is name a seismic zone.** A zone
+is a comparison of capacity against the code's design base shear, which
+needs the site's seismic design parameters, the building's seismic weight
+and a response modification factor for a straw-bale panel shear wall. The
+app has no force numbers for any zone — `seismicBracedPanelSpacingFt` and
+`bracedWallLineSpacingFt` are spacing rules, in feet. Printing a zone badge
+would mean inventing a base shear, which is the exact thing the flags rule
+exists to stop. The sheet gives an engineer the half that is real and lets
+him do the comparison against numbers he can check. If he or his engineer
+supplies the demand side, the badge becomes a subtraction.
+
+---
+
+## B19 — Right-click the panel menu (interview first, as he asked)
+
+Not started, by his instruction: *"We can interview about the right click
+stuff when it comes up in the queue."* What he named, so the interview
+starts from it rather than from scratch:
+
+- Right-click a panel in the **2D plan** and the **2D elevation**.
+- Options: **delete/merge**, **delete/no panel**, **change panel type** with
+  a dropdown of every panel type.
+- **Left click stops cycling** and belongs to dragging and resizing.
+
+Open questions for that interview, not to decide alone: what "delete/merge"
+merges into (the neighbour on which side, and what pays for the width);
+whether "delete/no panel" leaves a hole the wall length must still account
+for, or shortens the wall; whether the type dropdown offers types the slot
+cannot physically be (a Corner mid-run); and what happens to a brace pair
+when one half of it changes type.
+
+Note the dependency: retiring the click-cycle in B17 and replacing it in B19
+are two halves of one change to how a panel is edited. B17 only removes the
+*seeding*; the cycle itself should outlive B17 and be retired by B19, or
+there is a window with no way to change a panel's type at all.
+
+---
+
+## Carried, unchanged
+
+| | |
+|---|---|
+| **B10** | the gable/tilted rows as a second layer on the 2D plan, set out from the wall |
+| **B13** | the gable window panel — spec captured 2026-11-01, not built |
+| **B3 remainder** | `WallElevationDiagram` still does not receive the wall's own slots, so its preview can disagree with the model |
+| **the module remainder** | the tiler's borrowed tail plus the gap still push the last stretch off the 24in grid — on a 30ft wall, three joints miss by 3.88, 7.75 and 7.00in |
+| **roof re-derive** | `commitFootprintShapeChange` (courtyards) and `handleKeepSplitRegion` still bypass it |
+| **cross-tilt low edge** | the 3-1/2in low face cannot hold its own layers — 5 pinned overlaps, waiting on Tommy |
+| **roof eave cap** | the filler for the 15.5 x 5.17in void is built at the origin and never placed |
+| **stale prose** | ~14 mentions of the old 51-75.5in corner band, ~29 of the 25.5in corner |
+
+## Order
+
+**B16 → B17 → B18 → B19 interview.** B16 first because B17 is blocked on it
+and because it is the one he asked for in plain terms. B18 before B19
+because it is additive and cannot break the editor. B19 last because it
+needs the interview, and because its own prerequisite is that B17 has not
+taken the click-cycle away yet.

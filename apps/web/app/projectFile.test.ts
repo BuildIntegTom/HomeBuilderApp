@@ -1116,3 +1116,123 @@ describe("parseRedactedProjectFile", () => {
     expect(parseRedactedProjectFile(JSON.stringify(doc)).ok).toBe(true);
   });
 });
+
+describe("a stored wall whose safety gap was COMBINED with a panel (2026-11-02)", () => {
+  /* Tommy: *"We don't need any of this safety Gap combining stuff. I don't
+     want to see any of the panels combined with safety gaps."* The combine is
+     deleted, but a file saved before today still carries its result, and
+     nothing re-tiles a stored wall until somebody edits it " so the load has
+     to undo it. See `uncombineSafetyGapsInState` for the whole reasoning and
+     `uncombineSafetyGaps.test.ts` for the split itself; these cover the
+     WIRING, which is the half that can silently not run. */
+
+  /** 171-3/4in of wall, with the start-corner gap combined: it carries
+      `secondaryType: "braced"`, it is `standardWidthIn + 3/4in` wide, and the
+      panel it swallowed is simply absent from the run. */
+  const COMBINED: PanelSlot[] = [
+    { type: "corner", widthIn: 15.5 },
+    { type: "safety-gap", secondaryType: "braced", widthIn: 48.75 },
+    { type: "standard", widthIn: 48 },
+    { type: "standard", widthIn: 44 },
+    { type: "corner", widthIn: 15.5 },
+  ];
+
+  const load = (state: ProjectState) => {
+    const result = parseProjectFile(JSON.stringify(serializeProject(state)));
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+    return result.state;
+  };
+
+  it("splits it back into a gap and the panel it swallowed, without moving the wall", () => {
+    const loaded = load(makeState({ baseWallSlots: { AB: COMBINED }, standardWidthIn: 48 }));
+    const slots = loaded.baseWallSlots.AB!;
+
+    expect(slots.some((s) => s.secondaryType !== undefined)).toBe(false);
+    expect(slots.map((s) => [s.type, s.widthIn])).toEqual([
+      ["corner", 15.5],
+      ["safety-gap", 0.75],
+      ["standard", 48],
+      ["standard", 48],
+      ["standard", 44],
+      ["corner", 15.5],
+    ]);
+    const sum = (list: PanelSlot[]) => list.reduce((a, x) => a + x.widthIn, 0);
+    expect(sum(slots)).toBe(sum(COMBINED));
+  });
+
+  it("carries a Mid-Wall Bond Beam over the restored panel, so it covers the same panels it did", () => {
+    /* ⚠ The reason this migration is more than a `.map`. A beam is stored as
+       `[startSlotIndex, endSlotIndex)` against the run, and restoring a panel
+       moves every index at or past it " `Building3DView` reads
+       `offsetsIn[header.startSlotIndex] ?? 0`, a silent fallback to zero, so an
+       unshifted range is a fabricated part pointing at the wrong panels. The
+       whole `slotIndicesArePinned` apparatus existed to stop the combine doing
+       this in the other direction; it is deleted, and this is what replaces it. */
+    const beam = {
+      id: "beam-1",
+      heightIn: 48,
+      kind: "box-beam" as const,
+      sizeId: "9x2-lvl" as const,
+      startSlotIndex: 2,
+      endSlotIndex: 4,
+    };
+    const covered = (run: PanelSlot[], from: number, to: number) => run.slice(from, to).map((x) => [x.type, x.widthIn]);
+    const before = covered(COMBINED, beam.startSlotIndex, beam.endSlotIndex);
+
+    const loaded = load(
+      makeState({
+        baseWallSlots: { AB: COMBINED },
+        standardWidthIn: 48,
+        midWallBeamsByStoryAndWallId: { ground: { AB: [beam] }, second: {} },
+      }),
+    );
+    const moved = loaded.midWallBeamsByStoryAndWallId.ground.AB![0]!;
+    expect([moved.startSlotIndex, moved.endSlotIndex]).toEqual([3, 5]);
+    expect(covered(loaded.baseWallSlots.AB!, moved.startSlotIndex, moved.endSlotIndex)).toEqual(before);
+    // Everything else about the beam is untouched " this migration moves
+    // indices and nothing else.
+    expect({ ...moved, startSlotIndex: 0, endSlotIndex: 0 }).toEqual({ ...beam, startSlotIndex: 0, endSlotIndex: 0 });
+  });
+
+  it("leaves a wall with no combined gap completely alone", () => {
+    /* Unconditional and therefore run on every file ever loaded, so the no-op
+       case is the one that actually matters. */
+    const plain: PanelSlot[] = [
+      { type: "corner", widthIn: 15.5 },
+      { type: "safety-gap", widthIn: 0.75 },
+      { type: "standard", widthIn: 48 },
+      { type: "corner", widthIn: 15.5 },
+    ];
+    const beam = { id: "beam-1", heightIn: 48, kind: "box-beam" as const, sizeId: "9x2-lvl" as const, startSlotIndex: 2, endSlotIndex: 3 };
+    const loaded = load(
+      makeState({
+        baseWallSlots: { AB: plain },
+        standardWidthIn: 48,
+        midWallBeamsByStoryAndWallId: { ground: { AB: [beam] }, second: {} },
+      }),
+    );
+    expect(loaded.baseWallSlots.AB).toEqual(plain);
+    expect(loaded.midWallBeamsByStoryAndWallId.ground.AB).toEqual([beam]);
+  });
+
+  it("counts the ground floor's restored panel ONCE, though `stories[0]` carries the same wall", () => {
+    /* ⚠ `stories[0]` is a saved view over the ground floor that the loader
+       rebuilds from `baseWallSlots` and never reads back. It is still
+       un-combined, so a re-save is consistent, but its insertions are dropped
+       on purpose: counting them as well would shift every ground-floor beam
+       TWO panels instead of one. */
+    const beam = { id: "beam-1", heightIn: 48, kind: "box-beam" as const, sizeId: "9x2-lvl" as const, startSlotIndex: 2, endSlotIndex: 4 };
+    const loaded = load(
+      makeState({
+        baseWallSlots: { AB: COMBINED },
+        standardWidthIn: 48,
+        stories: [{ id: "ground", label: "Ground Floor", wallHeightFt: 10, wallSlots: { AB: COMBINED } }],
+        midWallBeamsByStoryAndWallId: { ground: { AB: [beam] }, second: {} },
+      }),
+    );
+    expect(loaded.midWallBeamsByStoryAndWallId.ground.AB![0]!.startSlotIndex).toBe(3);
+    // And the saved view was fixed too, rather than left carrying a combined slot.
+    expect(loaded.stories[0]!.wallSlots.AB!.some((s) => s.secondaryType !== undefined)).toBe(false);
+  });
+});

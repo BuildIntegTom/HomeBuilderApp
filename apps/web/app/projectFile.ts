@@ -1,4 +1,11 @@
-import { quantizeFootprint, repairWallToEighths, toEighths, wallGeometryFor } from "@building-integrity/geometry";
+import {
+  quantizeFootprint,
+  repairWallToEighths,
+  shiftSlotCoverage,
+  toEighths,
+  uncombineSafetyGapSlots,
+  wallGeometryFor,
+} from "@building-integrity/geometry";
 import type {
   BoxBeamCoverage,
   Footprint,
@@ -801,6 +808,118 @@ function openingMemoryStory(value: unknown): Record<string, RunStopOpeningMemory
   return story;
 }
 
+/**
+ * Un-combines every safety gap a stored file still has merged into a panel
+ * — 2026-11-02, and the corner-brace combine that made them is deleted.
+ *
+ * Tommy: *"I don't want to see any of the panels combined with safety gaps."*
+ * Nothing produces a combined slot any more, but nothing re-tiles a stored
+ * wall either until somebody edits it, so without this a project saved before
+ * today keeps drawing one at a corner. `uncombineSafetyGapSlots` does the
+ * split and explains why a split rather than a re-tile.
+ *
+ * ⚠ **The split restores a PANEL, so stored slot INDICES move, and this is
+ * the one place that can put them back.** A Mid-Wall Bond Beam's coverage
+ * range, the roofline Box Beam's and a spanning header's are all stored as
+ * `[startSlotIndex, endSlotIndex)` against the wall's run — which is the whole
+ * reason the combine used to be refused on such walls in the first place
+ * (`slotIndicesArePinned`, also deleted). Every restored panel is shifted
+ * over with `shiftSlotCoverage`, the same pure helper the insert/delete-panel
+ * path uses, so a beam comes back covering the panels it covered before
+ * rather than sliding one along on its way to a shop drawing.
+ *
+ * Deliberately UNCONDITIONAL rather than version-gated, exactly like
+ * `repairStateToEighths` below it: a file saved moments before the combine was
+ * deleted is indistinguishable from a current one, and this is a true no-op on
+ * a wall that has no combined gap (the same array reference comes back).
+ *
+ * Runs BEFORE the eighths repair, because the repair sheds residuals over the
+ * standard/braced slots and the panel this restores is one of them.
+ */
+function uncombineSafetyGapsInState(state: ProjectState): ProjectState {
+  /** wall id -> the indices a restored panel was inserted at, ascending. */
+  const groundInsertions: Record<string, number[]> = {};
+  const secondInsertions: Record<string, number[]> = {};
+
+  const uncombineAll = (
+    byWallId: Record<string, PanelSlot[]> | undefined,
+    insertions: Record<string, number[]> | null,
+  ): Record<string, PanelSlot[]> =>
+    Object.fromEntries(
+      Object.entries(byWallId ?? {}).map(([wallId, slots]) => {
+        const uncombined = uncombineSafetyGapSlots(slots ?? []);
+        if (insertions && uncombined.insertedAt.length > 0) insertions[wallId] = uncombined.insertedAt;
+        return [wallId, uncombined.slots];
+      }),
+    );
+
+  const baseWallSlots = uncombineAll(state.baseWallSlots, groundInsertions);
+  /* `stories[1]` is the second story's own independent state; `stories[0]` is
+     a saved view over the ground floor that the loader rebuilds from
+     `baseWallSlots` and never reads back (see `ProjectState.stories`). It is
+     still un-combined, so the file this load would re-save is consistent, but
+     its insertions are dropped: the ground floor's come from `baseWallSlots`,
+     and counting them twice would shift every ground beam two panels. */
+  const stories = (state.stories ?? []).map((story, index) => ({
+    ...story,
+    wallSlots: uncombineAll(story.wallSlots, index === 1 ? secondInsertions : null),
+  }));
+
+  if (Object.keys(groundInsertions).length === 0 && Object.keys(secondInsertions).length === 0) {
+    return { ...state, baseWallSlots, stories };
+  }
+
+  /** One stored range carried over every panel this wall got back. An insert
+   * never empties a range — `shiftSlotCoverage` only returns null on a delete
+   * — but the signature allows it, so a null is dropped rather than coerced. */
+  const shiftRange = <T extends { startSlotIndex: number; endSlotIndex: number }>(
+    range: T,
+    insertedAt: readonly number[],
+  ): T | null => insertedAt.reduce<T | null>((acc, at) => (acc === null ? null : shiftSlotCoverage(acc, at, 1)), range);
+
+  const shiftList = <T extends { startSlotIndex: number; endSlotIndex: number }>(
+    byWallId: Record<string, T[]> | undefined,
+    insertions: Record<string, number[]>,
+  ): Record<string, T[]> =>
+    Object.fromEntries(
+      Object.entries(byWallId ?? {}).map(([wallId, ranges]) => {
+        const insertedAt = insertions[wallId];
+        if (!insertedAt) return [wallId, ranges];
+        return [wallId, (ranges ?? []).map((r) => shiftRange(r, insertedAt)).filter((r): r is T => r !== null)];
+      }),
+    );
+
+  const beams = state.midWallBeamsByStoryAndWallId;
+  const headers = state.spanningHeadersByStoryAndWallId;
+  return {
+    ...state,
+    baseWallSlots,
+    stories,
+    midWallBeamsByStoryAndWallId: {
+      ground: shiftList(beams?.ground, groundInsertions),
+      second: shiftList(beams?.second, secondInsertions),
+    },
+    ...(headers
+      ? {
+          spanningHeadersByStoryAndWallId: {
+            ground: shiftList(headers.ground, groundInsertions),
+            second: shiftList(headers.second, secondInsertions),
+          },
+        }
+      : {}),
+    /* Second story only — the roofline Box Beam has no ground-floor record (see
+       `shiftSlotCoverageRecords` in page.tsx, which reads it the same way). */
+    boxBeamCoverageByWallId: Object.fromEntries(
+      Object.entries(state.boxBeamCoverageByWallId ?? {}).flatMap(([wallId, coverage]) => {
+        const insertedAt = secondInsertions[wallId];
+        if (!insertedAt) return [[wallId, coverage] as const];
+        const shifted = shiftRange(coverage, insertedAt);
+        return shifted ? [[wallId, shifted] as const] : [];
+      }),
+    ),
+  };
+}
+
 function repairStateToEighths(state: ProjectState): ProjectState {
   if (!state.footprint) return state;
   const footprint = quantizeFootprint(state.footprint);
@@ -900,7 +1019,8 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
   return {
     ok: true,
     savedAt: typeof file.savedAt === "string" ? file.savedAt : undefined,
-    state: repairStateToEighths({
+    state: repairStateToEighths(
+      uncombineSafetyGapsInState({
       ...(state as unknown as ProjectState),
       stories: state.stories as Story[],
       roofProfileType: state.roofProfileType as "peaked" | "flat-top",
@@ -1031,7 +1151,8 @@ function parseDocument(raw: string, excusedStateKeys: ReadonlySet<string>): Pars
       // held as NaN, never as a substituted number. Empty unless the caller is
       // `parseRedactedProjectFile`. See `blankedExcusedKeys` for why NaN.
       ...blankedExcusedKeys(excusedStateKeys),
-    }),
+      }),
+    ),
   };
 }
 

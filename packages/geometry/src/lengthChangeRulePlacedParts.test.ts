@@ -118,7 +118,6 @@ function resizeForShapeChange(
       STANDARD_WIDTH_IN,
       BRACED_SEED.defaultPattern,
       BRACED_SEED.defaultMirrored,
-      false,
     );
     next[wall.id] = tidyUnbuildableLeftovers(braced).slots;
   }

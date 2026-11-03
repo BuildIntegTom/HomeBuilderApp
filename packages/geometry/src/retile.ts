@@ -421,14 +421,6 @@ export function retile(
    * nominal width (Square Bale's 39in whole-bale corner) — see
    * `resolveCorners`' own doc comment in tiling.ts. */
   cornerMayWiden = true,
-  /** Wall ids whose slot INDICES are pinned by persisted per-slot state — a
-   * Mid-Wall Bond Beam's coverage range, the roofline Box Beam's, or a
-   * spanning header's. On these walls the corner-brace combine is refused
-   * rather than allowed to shorten the run under a stored index; see
-   * `applyBracedPlacement`'s own `slotIndicesArePinned` for the whole
-   * reasoning. Omitted = no wall is pinned, which is every caller that
-   * predates this and every project with no beams or headers. */
-  slotIndexPinnedWallIds?: ReadonlySet<string>,
 ): Record<string, PanelSlot[]> {
   const next: Record<string, PanelSlot[]> = {};
   const ownership = cornerOwnershipWithRunStops(fp, primary, thicknessIn, runStopsByWallId);
@@ -480,7 +472,6 @@ export function retile(
       standardWidthIn,
       bracedSeed.defaultPattern,
       bracedSeed.defaultMirrored,
-      slotIndexPinnedWallIds?.has(wall.id) ?? false,
     );
     next[wall.id] = mitered ? markSafetyCorner(seeded, gapEnd) : seeded;
   }
@@ -624,17 +615,14 @@ function tileOneWallPreservingOpenings(
  * record of `PanelSlot[]`, not a geometry-package concept — see
  * `handleRepanelizeRequest` in page.tsx for the one call site.
  *
- * ⚠ **Discovered empirically, not derived**: naively stripping only the
- * lock and nothing else is NOT a no-op pass-through to the "nothing was ever
- * locked" shape unless the wall's corner-brace combine (`planCornerBraceCombine`)
- * was itself blocked by the very lock being removed — a locked standard slot
- * is excluded from the combine's swallow/settle candidates, so un-locking it
- * can let a safety-gap panel combine with a standard panel that previously
- * couldn't be touched. That is not a bug this function introduces: it is
- * `applyBracedPlacement` running exactly the pass it would have run on this
- * same opening arrangement had it never been hand-edited at all (verified by
- * comparing against `reconcileBracedPlacement(undefined, ...)` on the same
- * retiled slots in `retile.test.ts`).
+ * ⚠ **It became a plain pass-through on 2026-11-02, and the reason is
+ * worth keeping.** Stripping only the lock was NOT a no-op before then: a
+ * locked standard slot was excluded from the corner-brace combine's
+ * swallow/settle candidates, so un-locking it could let a safety-gap panel
+ * combine with a panel that previously couldn't be touched — discovered
+ * empirically rather than derived. The combine is deleted (see
+ * `applyBracedPlacement`), so the interaction is gone with it and the only
+ * thing this function can now change is a width the tiler recomputes anyway.
  */
 export function discardLockedWidths(slots: PanelSlot[]): PanelSlot[] {
   return slots.map((s) => {
@@ -657,8 +645,6 @@ export function retilePreservingOpenings(
   runStopsByWallId?: Record<string, WallRunStop>,
   /** See `retile`'s own parameter of the same name. */
   cornerMayWiden = true,
-  /** See `retile`'s own parameter of the same name. */
-  slotIndexPinnedWallIds?: ReadonlySet<string>,
 ): Record<string, PanelSlot[]> {
   return retilePreservingOpeningsWithRunStopMemory(
     fp,
@@ -672,8 +658,6 @@ export function retilePreservingOpenings(
     openingSeed,
     runStopsByWallId,
     cornerMayWiden,
-    undefined,
-    slotIndexPinnedWallIds,
   ).slotsByWallId;
 }
 
@@ -764,8 +748,6 @@ export function retilePreservingOpeningsWithRunStopMemory(
   /** What an earlier stop on each wall withheld. Omitted (every caller that
    * predates this, and every unstopped project) means nothing to restore. */
   unbuiltOpeningsByWallId?: Record<string, RunStopOpeningMemory>,
-  /** See `retile`'s own parameter of the same name. */
-  slotIndexPinnedWallIds?: ReadonlySet<string>,
 ): RetileWithRunStopMemoryResult {
   const next: Record<string, PanelSlot[]> = {};
   const unbuiltOut: Record<string, RunStopOpeningMemory> = {};
@@ -828,7 +810,6 @@ export function retilePreservingOpeningsWithRunStopMemory(
       standardWidthIn,
       bracedSeed.defaultPattern,
       bracedSeed.defaultMirrored,
-      slotIndexPinnedWallIds?.has(wall.id) ?? false,
     );
     next[wall.id] = mitered ? markSafetyCorner(reconciled, gapEnd) : reconciled;
   }

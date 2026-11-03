@@ -910,7 +910,6 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     const wall = fp.walls.find((w) => w.id === WALL_ID)!;
     const lost: string[] = [];
     const sumOff: number[] = [];
-    const combinedGap: number[] = [];
     const zeroWidth: number[] = [];
     for (let e = 0; e <= Math.round(wall.lengthFt * 12 * 8); e++) {
       const endStopIn = e / 8;
@@ -921,14 +920,14 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
         built.filter((s) => s.type === "window").length + (result.unbuiltOpeningsByWallId[WALL_ID]?.unbuilt.length ?? 0);
       if (accounted !== 2) lost.push(`${endStopIn}in: ${accounted} windows accounted for, expected 2`);
       if (sumEighths(built) !== runEighths(fp, primary, stops)) sumOff.push(endStopIn);
-      if (built.some((s) => s.type === "safety-gap" && s.secondaryType === "braced")) combinedGap.push(endStopIn);
       if (built.some((s) => Math.round(s.widthIn * 8) === 0)) zeroWidth.push(endStopIn);
     }
     // The property this change owns: a window is either built or remembered,
     // at every single eighth of stop, and never simply gone.
     expect(lost.slice(0, 10)).toEqual([]);
     // ⚠ **THIS ASSERTION USED TO CARRY AN EXCEPTION, AND NO LONGER DOES.**
-    // It used to read `sumOff.filter((s) => !combinedGap.includes(s))` —
+    // It used to read `sumOff.filter((s) => !combinedGap.includes(s))`, over a
+    // list of stops this loop collected and no longer does —
     // every stop whose total was off had to be one where
     // `reconcileBracedPlacement`'s corner-brace combine had fired, because
     // that combine fixed a safety-gap slot at `standardWidthIn + buffer` and
@@ -946,13 +945,14 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     // the property Tommy's "panels don't add back up to that wall" refusal was
     // reporting in the first place.
     expect(sumOff).toEqual([]);
-    // And the other half of that fix, which this sweep is well placed to hold:
-    // the combine no longer pays for itself with a 0in panel.
+    // And the other half of that fix: no panel on this wall is ever paid for
+    // with a 0in one.
     expect(zeroWidth).toEqual([]);
-    // Non-vacuous: the combine really does fire somewhere in this sweep, so
-    // the two assertions above are covering the path they were written for
-    // rather than passing because it never ran.
-    expect(combinedGap.length).toBeGreaterThan(0);
+    // ⚠ **A third assertion stood here until 2026-11-02** — that the combine
+    // really did fire somewhere in this sweep, so the two above were covering
+    // the path they were written for. The combine is deleted, so the guard is
+    // removed rather than softened. The two invariants are unconditional and
+    // this sweep is the same size it was.
   });
 
   /**
@@ -1117,18 +1117,20 @@ describe("discardLockedWidths (REPANELIZE)", () => {
     // ⚠ Not simply the plain tiler's own output (`retiled`, above) — the
     // corner-brace combine `reconcileBracedPlacement` runs afterwards
     // (`planCornerBraceCombine`) was blocked from touching the hand-dragged
-    // pair ONLY because they were locked. Once unlocked, the same combine
-    // that fires on every other wall of this shape fires here too: the
-    // safety-gap at the start swallows the first standard panel and settles
-    // the residual onto the second, same as if this wall had never been
+    // pair ONLY because they were locked. Once unlocked they land exactly
+    // where this wall's own tiling puts them, same as if it had never been
     // hand-edited at all. That is confirmed, not assumed, by comparing
     // against a wall that truly has no prior state (`oldSlots: undefined`).
+    //
+    // ⚠ Until 2026-11-02 this was a sharper claim than it now is: the
+    // un-locking let the corner-brace COMBINE fire, swallowing the first
+    // standard panel, and the test asserted that it had. With the combine
+    // deleted there is no longer any way for `discardLockedWidths` to change
+    // the run's composition, so what is left is the weaker — and now
+    // sufficient — statement that the widths match a never-edited wall.
     const neverEdited = reconcileBracedPlacement(undefined, retiled, 100_000, STANDARD_WIDTH_IN, "chevron", false);
     expect(reconciled.map((s) => [s.type === "braced" ? "standard" : s.type, s.widthIn, s.secondaryType])).toEqual(
       neverEdited.map((s) => [s.type === "braced" ? "standard" : s.type, s.widthIn, s.secondaryType]),
     );
-    // Non-vacuous: the combine really fired (otherwise this assertion would
-    // hold trivially because nothing moved).
-    expect(reconciled.some((s) => s.type === "safety-gap" && s.secondaryType === "braced")).toBe(true);
   });
 });

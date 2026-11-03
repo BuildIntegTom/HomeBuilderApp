@@ -549,7 +549,14 @@ describe("the sweep: a pinned width never moves the wall's own total", () => {
     // honoured/refused split moved because the free-run widths moved. The
     // refusals are bounded rather than pinned exactly, for exactly that reason;
     // the invariant above is what is pinned, and it still holds on every case.
-    expect(cases).toBe(684_360);
+    //
+    // ⚠ **RE-MEASURED 2026-11-02**, when the corner-brace combine was deleted
+    // (Tommy: *"We don't need any of this safety Gap combining stuff"*). A wall
+    // the combine used to fire on keeps the panel it used to swallow, so the
+    // grid has one more pinnable position on those walls and the free run it
+    // pays out of is the tiler's own rather than the combine's settled one.
+    // **684,432 cases (was 684,360) — 0 violations either way.**
+    expect(cases).toBe(684_432);
     // The weaker form of the invariant — against the tiler's own total on a wall
     // the tiler itself does not sum — is reachable code that this grid never
     // reaches, because 100in is long enough to hold every opening set here. It
@@ -670,7 +677,14 @@ describe("the sweep: a pinned width never moves the wall's own total", () => {
     // Measured 2026-09-30: 60,777 cases, 0 violations. **RE-MEASURED 2026-10-01
     // after the ownership flip and the two-tier gap: 60,390 cases, still 0
     // violations.**
-    expect(cases).toBe(60_390);
+    //
+    // ⚠ **RE-MEASURED 2026-11-02**, when the corner-brace combine was deleted
+    // (Tommy: *"We don't need any of this safety Gap combining stuff"*). A wall
+    // the combine used to fire on keeps the panel it used to swallow, so the
+    // grid has one more pinnable position on those walls and the free run it
+    // pays out of is the tiler's own rather than the combine's settled one.
+    // **62,947 cases (was 60,390), still 0 violations.**
+    expect(cases).toBe(62_947);
     // Non-vacuity, and the proof this row earns its runtime: how many of these
     // pairs have NO free panel to lean on, i.e. are payable ONLY because the two
     // residuals cancel. **Measured 7,296 — and run against the per-pin planner
@@ -723,6 +737,23 @@ describe("the sweep: a pinned width never moves the wall's own total", () => {
     // LENGTHS, which did not move), 678 refused.** 49 fewer: a wall that now runs
     // through its corners has a longer free run to pay the pin out of.
     expect(cases).toBe(3_228);
-    expect(refused).toBe(678);
+    //
+    // ⚠ **RE-MEASURED 2026-11-02**, when the corner-brace combine was deleted
+    // (Tommy: *"We don't need any of this safety Gap combining stuff"*). A wall
+    // the combine used to fire on keeps the panel it used to swallow, so the
+    // grid has one more pinnable position on those walls and the free run it
+    // pays out of is the tiler's own rather than the combine's settled one.
+    // **The same 3,228 cases — this grid is over wall LENGTHS, which did not
+    // move — and 750 refused, 72 MORE than before.** Worth stating plainly,
+    // because "more refusals" reads like a regression and is not one: the
+    // combine used to redistribute width while paying for itself, and on 72 of
+    // these walls that redistribution happened to leave a free run long enough
+    // to honour a pin taken from a LONGER version of the wall. Without it the
+    // wall is its own plain tiling and cannot pay. A refused pin is the
+    // designed answer (Tommy, 2026-09-30) — the panel is fabricated at the
+    // tiler's width and `findUnhonouredLockedWidths` says so in the Review
+    // Log — and the invariant this sweep exists for, that the wall's own total
+    // never moves, holds on all 3,228.
+    expect(refused).toBe(750);
   });
 });
