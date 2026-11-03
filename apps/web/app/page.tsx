@@ -60,8 +60,11 @@ import {
   isMiteredShape,
   isPointNearPier,
   markSafetyCorner,
-  nextPanelCycleState,
-  type PanelCycleState,
+  panelTypeChangeNeedsRetile,
+  transitionPanelType,
+  type PanelTypeTransitionTarget,
+  type PanelTypeTransitionWidths,
+  isReservationType,
   type PanelSlotType,
   panelTypeChoices,
   isPlaceablePanelType,
@@ -309,6 +312,7 @@ import {
   BRACE_PAIR_PATTERNS,
   type BracePairPattern,
   windowHeaderDefaultWidthIn,
+  doorDefaultWidthIn,
   windowHeaderWidthInRange,
   type BoxBeamSizeId,
   type BracePattern,
@@ -1368,6 +1372,21 @@ export default function LayoutEditor() {
   // window Width field once it became a free-typed number instead of a
   // fixed-preset dropdown (Tommy: window headers "can be however wide up
   // to 10 ft wide").
+  /* ⚠ **The auto-upgrade has to be able to speak.** When a panel asked to
+     become a window or a door comes back a Big Header because its single-peak
+     header falls outside the brace-angle range, silence is indistinguishable
+     from a broken menu row — which is exactly how it read before B19. It rides
+     in the Selected Panel note rather than the placement bar's own toast,
+     because that note is on screen on the plan AND the elevation and is
+     already showing the panel that just changed. */
+  const [headerUpgradeNotice, setHeaderUpgradeNotice] = useState<string | null>(null);
+  const headerUpgradeNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showHeaderUpgradeNotice = (message: string) => {
+    if (headerUpgradeNoticeTimerRef.current) clearTimeout(headerUpgradeNoticeTimerRef.current);
+    setHeaderUpgradeNotice(message);
+    headerUpgradeNoticeTimerRef.current = setTimeout(() => setHeaderUpgradeNotice(null), 10000);
+  };
+
   const [windowWidthClampNotice, setWindowWidthClampNotice] = useState<string | null>(null);
   const windowWidthClampNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The same pattern again for a hand-set PANEL width (Smearforn Stage 1).
@@ -1391,8 +1410,8 @@ export default function LayoutEditor() {
   //
   // Armed from the wall-elevation left bar: pick a type (or Delete), then
   // click a panel to replace it or a boundary to insert between. Null = the
-  // tool is off and a click on a panel does what it has always done (the
-  // type cycle). Corner and safety-gap are not on the roster — see
+  // tool is off and a click on a panel selects it (the type cycle it used to
+  // run retired with B19). Corner and safety-gap are not on the roster — see
   // PLACEABLE_PANEL_TYPES' own doc comment.
   const [panelPlacementTool, setPanelPlacementTool] = useState<
     { mode: "place"; type: PlaceablePanelType; bracedPattern?: BracePattern; bracedMirrored?: boolean } | { mode: "delete" } | null
@@ -3864,23 +3883,30 @@ export default function LayoutEditor() {
     reconcileWallZonesForHeightChange("ground", Number.POSITIVE_INFINITY, maxPanelHeightIn, wallHeightFt, wallHeightFt);
   };
 
-  // Re-tiles the whole wall from scratch around its openings (Tommy: resizing
-  // an opening was leaving the rest of the wall protruding past the drawn
-  // box instead of auto-adjusting the standard count and gap/borrowed
-  // panel sizing) — see `retileWithOpenings`.
-  const isOpeningType = (type: PanelSlot["type"]) => type === "window" || type === "door" || type === "column" || type === "big-header";
+  /* ⚠ **`isOpeningType` WAS HERE and it was the wrong predicate** — B19,
+     2026-11-03. It named window/door/column/big-header, which is not what an
+     anchor ordinal counts: `getOpeningAnchors` indexes every width
+     RESERVATION, and `open` has joined that list (a framed void owns real wall
+     length). Two ordinals were already being read against it and both could
+     name the wrong anchor:
 
-  // Openings keep their left-to-right order through retileWithOpenings even
-  // though slot *indices* can shift (filler standard/safety-gap panels
-  // around them get re-derived) — so "the Nth opening slot" is a stable way
-  // to relocate the panel a click just changed, in the freshly-retiled
-  // array. Used by handleToggleOpening below to keep `selectedSlot` pointed
-  // at the panel that was actually clicked, not whatever now sits at its
-  // old index.
+     - `handleSetWindowWidth` counted only window and door, so a window sitting
+       after a column or a big header resized THAT instead of itself.
+     - `handleSetBigHeaderWidth` counted four types where the anchor list now
+       has five.
+
+     `isReservationType` from geometry is the one list, and the three places
+     that need it below all read it. See RESERVATION_PANEL_TYPES. */
+
+  // Reservations keep their left-to-right order through retileWithOpenings
+  // even though slot *indices* can shift (filler standard/safety-gap panels
+  // around them get re-derived) — so "the Nth reservation slot" is a stable
+  // way to relocate the panel an edit just changed, in the freshly-retiled
+  // array.
   const findNthOpeningIndex = (slots: PanelSlot[], ordinal: number): number => {
     let seen = 0;
     for (let i = 0; i < slots.length; i++) {
-      if (isOpeningType(slots[i]!.type)) {
+      if (isReservationType(slots[i]!.type)) {
         if (seen === ordinal) return i;
         seen++;
       }
@@ -4177,36 +4203,69 @@ export default function LayoutEditor() {
     );
   };
 
-  /* An explicit type, or the next one in the click cycle when none is given.
-     A braced target takes the project's current Bracing style rather than the
-     cycle's own hardcoded chevron, because the menu offers one "Braced" row
-     and the style is a project setting. */
-  const panelCycleTarget = (current: PanelCycleState, targetType?: PanelSlotType): PanelCycleState | null =>
-    targetType === undefined
-      ? nextPanelCycleState(current)
-      : targetType === "braced"
-        ? { type: targetType, bracedPattern: defaultBracePattern, bracedMirrored: defaultBracedMirrored }
-        : { type: targetType };
+  /* ⚠ **Read inside a function, never at module scope.** Every one of these
+     is a `@building-integrity/panel-catalog` value, and Turbopack does not
+     evaluate the late parts of `data.ts` before this module's top-level code
+     runs — a module-scope read throws `ReferenceError` at module evaluation
+     and takes the whole page down (see apps/web/AGENTS.md). */
+  const panelTransitionWidths = (): PanelTypeTransitionWidths => ({
+    columnWidthIn: COLUMN_TOTAL_WIDTH_IN,
+    windowWidthIn: windowHeaderDefaultWidthIn.value,
+    doorWidthIn: doorDefaultWidthIn.value,
+    bigHeaderWidthIn: bigHeaderDefaultWidthIn.value,
+    bigHeaderHeightIn: bigHeaderDefaultHeightIn.value,
+  });
+
+  /* A braced target takes the project's current Bracing style, because the
+     menu offers one "Braced" row and the style is a project setting. */
+  const panelTypeTarget = (targetType: PanelSlotType): PanelTypeTransitionTarget =>
+    targetType === "braced"
+      ? { type: targetType, bracedPattern: defaultBracePattern, bracedMirrored: defaultBracedMirrored }
+      : { type: targetType };
 
   /**
-   * ⚠ **`targetType` is B19's doing (2026-11-03).** This function was the
-   * click-through cycle and nothing else: it read the next type out of
-   * `nextPanelCycleState` and then did a great deal of careful work to make
-   * that type stick — the opening-anchor dance, the fixed column width, the
-   * zone-0 mirroring. The right-click menu needs all of that and a type of its
-   * own choosing, so the TYPE became a parameter and the cycle became one
-   * caller of it rather than the only one.
+   * **WHAT A LEFT CLICK ON A PANEL DOES NOW — B19, 2026-11-03.**
    *
-   * Passing `targetType` skips the cycle entirely. Everything downstream is
-   * unchanged, which is the point: duplicating this path for the menu is how
-   * the two would quietly disagree about what a window costs in wall length.
+   * > *"left clicking should be used for dragging and resizing"* — Tommy
+   *
+   * It selects. Nothing else. The Selected Panel note reads the panel, a drag
+   * on it resizes, and the TYPE is the right-click menu's business. Before
+   * this, a plain click stepped the panel through the type wheel, which is why
+   * a drag that started a pixel short of a handle could silently turn a
+   * standard panel into a window.
    */
-  const handleToggleOpening = (
+  const handleSelectPanel = (story: "ground" | "second", wallId: Wall["id"], slotIndex: number, zoneIndex?: number) => {
+    setSelectedSlot({ wallId, slotIndex, story, zoneIndex });
+  };
+
+  /**
+   * **CHANGE ONE PANEL'S TYPE — the right-click menu's one door, B19.**
+   *
+   * ⚠ **THE LEFT-CLICK CYCLE IS RETIRED, 2026-11-03.** This was
+   * `handleToggleOpening`, and the type it applied came from
+   * `nextPanelCycleState`: click a panel and it stepped standard → window →
+   * door → column → big header → four braced styles → standard. His
+   * instruction, when the menu was specified:
+   *
+   * > *"This would remove the need for the left click cycle which is fine
+   * > because left clicking should be used for dragging and resizing."*
+   *
+   * So the target is now a REQUIRED parameter and there is no cycle behind it.
+   * A left click selects a panel (`handleSelectPanel`) and nothing more; the
+   * type comes from the menu, where every type is visible at once with its own
+   * refusal reason, and `open` — a type the wheel could never reach — is in
+   * the same list as the rest.
+   *
+   * What it does: a transition that moves width goes to `transitionPanelType`
+   * in geometry; everything else is a field change here, zone-aware, because
+   * only this function knows about a split column's bands.
+   */
+  const handleChangePanelType = (
     story: "ground" | "second",
     wallId: Wall["id"],
     slotIndex: number,
+    targetType: PanelSlotType,
     zoneIndex?: number,
-    targetType?: PanelSlotType,
   ) => {
     const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
     const currentSlot = currentSlots[slotIndex];
@@ -4221,11 +4280,7 @@ export default function LayoutEditor() {
     // mutation, never the width-affecting retileWithOpenings dance below.
     if (zoneIndex !== undefined && zoneIndex > 0) {
       const zones = effectiveZonesForSlot(currentSlot, zoneIndex + 1);
-      const next = panelCycleTarget(zones[zoneIndex]!, targetType);
-      if (!next) {
-        setSelectedSlot({ wallId, slotIndex, story, zoneIndex });
-        return;
-      }
+      const next = panelTypeTarget(targetType);
       const nextZones = zones.map((z, i) =>
         i === zoneIndex ? { ...z, type: next.type, bracedPattern: next.bracedPattern, bracedMirrored: next.bracedMirrored } : z,
       );
@@ -4240,22 +4295,25 @@ export default function LayoutEditor() {
       return;
     }
 
-    const next = panelCycleTarget(currentSlot, targetType);
-    if (!next) {
-      // corner/safety-gap: not cyclable, but still selectable for read-only
-      // details in the Selected Panel note.
+    /* corner / safety-gap / safety-oct-corner are the tiler's, and
+       `panelTypeChoices` refuses them in the menu with its own reason, so this
+       is only ever reached by a caller that bypassed the menu. Select the
+       panel so its read-only details still show, and change nothing. */
+    if (!isPlaceablePanelType(targetType) || !isPlaceablePanelType(currentSlot.type)) {
       setSelectedSlot({ wallId, slotIndex, story });
       return;
     }
+    const next = panelTypeTarget(targetType);
 
-    // Transitions into/out of window/door/column change that slot's own
-    // reserved width, so they still need the full retileWithOpenings
-    // anchor dance. Every other transition — cycling among the 4 braced
-    // styles, entering the braced block from "column", or leaving it back
-    // to "standard" — never changes widthIn at all (a braced panel's width
-    // always tracks the normal standard-panel tiling math, not a
-    // reservation), so it's a pure in-place field mutation instead.
-    if (!isOpeningType(currentSlot.type) && !isOpeningType(next.type)) {
+    /* A transition that moves WIDTH has to re-tile the wall around it, and
+       that is the whole of `transitionPanelType` in geometry (B19) — it was
+       inline here until 2026-11-03, reachable only along the click cycle's own
+       edges, and it came apart the moment the right-click menu pointed it at
+       an arbitrary target. Everything else — cycling braced styles, standard
+       to braced and back, emptying a slot into a void — moves no width at all
+       and stays the pure in-place field mutation below, which is also the only
+       branch that knows about zones. */
+    if (!panelTypeChangeNeedsRetile(currentSlot.type, next.type)) {
       setWallSlotsForStory(story, (prev) => {
         const slots = prev[wallId];
         if (!slots || !slots[slotIndex]) return prev;
@@ -4280,149 +4338,58 @@ export default function LayoutEditor() {
       return;
     }
 
-    // A Column Panel is always fabricated exactly `COLUMN_TOTAL_WIDTH_IN`
-    // wide (Tommy: "column panels are a fixed width that's almost never
-    // going to be the standard panel width") — reserving anything else here
-    // leaves the fixed-width member floating in an oversized/undersized
-    // tiled slot, showing up as unrendered blank wall space in the 3D view
-    // (Building3DView always builds the column at its true fixed width,
-    // ignoring the slot's own widthIn). Applying this to every column
-    // anchor on the wall (not just the one just toggled) also self-heals
-    // any other column on this wall that was created before this fix
-    // existed, the next time anything on the wall is touched.
-    //
-    // The toggled slot itself counts toward `standardsSeen` here whenever
-    // its NEXT type is "braced" too (not just "standard") — a braced
-    // panel's width comes from the same normal tiling math as a plain
-    // standard one, so it needs to be excluded from `anchors` exactly like
-    // "standard" already is.
-    const anchors: {
-      beforeStandardCount: number;
-      offsetIn?: number;
-      type: "window" | "door" | "column" | "big-header";
-      widthIn: number;
-      heightIn?: number;
-      sillHeightIn?: number;
-      zones?: PanelSlotZone[];
-      includeSillOnBigHeader?: boolean;
-    }[] = [];
-    let standardsSeen = 0;
-    /* REPANELIZE R2 — how far along the wall each slot starts, so an opening
-       the user creates RIGHT NOW records where they put it. See
-       `PanelSlot.anchorOffsetIn`: the surviving anchor has always been a
-       COUNT of preceding standards, and a count is not a position, so an
-       opening drifts whenever those standards change width. ⚠ This is the
-       only place that measures an offset — everywhere downstream copies it.
-       An existing opening keeps the intent it already had and is never
-       re-measured here, which is precisely what broke the first attempt at
-       this on 2026-10-07. */
-    let offsetSoFarIn = 0;
-    currentSlots.forEach((slot, i) => {
-      const type = i === slotIndex ? next.type : slot.type;
-      if (type === "window" || type === "door" || type === "column" || type === "big-header") {
-        anchors.push({
-          beforeStandardCount: standardsSeen,
-          // The slot being toggled INTO an opening is the user placing it, so
-          // its current position is the intent. Every other opening carries
-          // the intent it already has — including `undefined`, which means
-          // "never recorded" and leaves placement on the count.
-          offsetIn: i === slotIndex ? offsetSoFarIn : slot.anchorOffsetIn,
-          type,
-          // Column and Big Header are both fixed/default-width reservations
-          // when freshly toggled in (Big Header's own width isn't fixed
-          // like Column's, but a plain standard/braced slot's own current
-          // widthIn is almost always below bigHeaderWidthInRange's own
-          // 48in floor, so it needs its own sane default too, not whatever
-          // narrow width the slot it's replacing happened to have).
-          widthIn:
-            type === "column"
-              ? COLUMN_TOTAL_WIDTH_IN
-              : type === "big-header" && i === slotIndex
-                ? bigHeaderDefaultWidthIn.value
-                : /* ⚠ A freshly placed WINDOW takes the module width rather
-                     than whatever the panel it replaced happened to be — his
-                     *"Default window header can be right on 4-ft"*, so the
-                     jack studs land over deck joints instead of mid-span.
-                     A door keeps the slot's width: its own widths come
-                     from a door schedule, not from this module. */
-                  type === "window" && i === slotIndex
-                  ? windowHeaderDefaultWidthIn.value
-                  : slot.widthIn,
-          heightIn: type === "big-header" && i === slotIndex ? bigHeaderDefaultHeightIn.value : undefined,
-          // The toggled slot itself (i === slotIndex) is transitioning INTO
-          // this type fresh — no prior window/column data of its own to
-          // carry. Every OTHER opening on this wall keeps its own
-          // heightIn/sillHeightIn/zones through this whole-wall retile
-          // (see getOpeningAnchors' own doc comment on this same gap).
-          ...(i !== slotIndex && {
-            heightIn: slot.heightIn,
-            sillHeightIn: slot.sillHeightIn,
-            zones: slot.zones,
-            includeSillOnBigHeader: slot.includeSillOnBigHeader,
-          }),
-        });
-      } else if (type === "standard" || type === "braced") {
-        standardsSeen++;
-      }
-      offsetSoFarIn += slot.widthIn;
-    });
-    // Where the toggled slot itself will land among standard-family slots
-    // post-retile — only meaningful when it's headed into the braced block
-    // (computed against the *pre*-retile array, same convention
-    // `reconcileBracedPlacement` uses).
-    const precedingStandardFamilyCount = currentSlots.slice(0, slotIndex).filter((s) => s.type === "standard" || s.type === "braced").length;
+    /* ⚠ **The retile is `transitionPanelType`'s, in geometry.** The anchor
+       dance that stood here — rebuild every reservation on the wall as an
+       anchor, re-tile, mark a mitered safety corner, reconcile the carried
+       decisions, then find the panel again — is the one edit that moves width,
+       and it is a building rule, not a UI concern. It is also the thing B19
+       broke open, so it now has 19 tests of its own instead of being reachable
+       only by clicking.
 
-    // Openings keep their relative order, so "how many opening-type slots
-    // sit before this one" (computed against the *pre*-retile array, same
-    // ordinal handleSetWindowWidth's precedingOpenings uses) still uniquely
-    // identifies this exact panel after retiling reshuffles indices.
-    const openingOrdinal = isOpeningType(next.type) ? currentSlots.slice(0, slotIndex).filter((s) => isOpeningType(s.type)).length : null;
+       What stays here is what needs the app: the catalog widths, the
+       footprint's own mitered-corner question, the selection, and the
+       big-header auto-upgrade, which needs the project's header heights. */
+    const out = transitionPanelType(
+      currentSlots,
+      slotIndex,
+      { type: next.type, bracedPattern: next.bracedPattern, bracedMirrored: next.bracedMirrored },
+      {
+        lengthIn: geometry.lengthIn,
+        standardWidthIn,
+        cornerWidthIn: cornerWidthInForTiling,
+        gapEnd: geometry.gapEnd,
+        hasCornerStart: geometry.hasCornerStart,
+        hasCornerEnd: geometry.hasCornerEnd,
+        allowBorrow: geometry.allowBorrow,
+        cornerMayWiden: cornerMayWidenForTiling,
+        markSafetyCornerAtGapEnd: Boolean(footprint && isMiteredShape(footprint)),
+      },
+      panelTransitionWidths(),
+    );
+    if (!out) return;
 
-    const slots = retileWithOpenings(
-      geometry.lengthIn,
-      standardWidthIn,
-      cornerWidthInForTiling,
-      geometry.gapEnd,
-      geometry.hasCornerStart,
-      geometry.hasCornerEnd,
-      anchors,
-      geometry.allowBorrow,
-      cornerMayWidenForTiling,
-    ).slots;
-    const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
-    // Preserves every OTHER braced panel already decided on this wall
-    // (this single-slot retile would otherwise silently wipe them, since
-    // retileWithOpenings itself only knows about window/door/column
-    // anchors) and seeds any genuinely new standard-slot position via the
-    // seismic rule — see reconcileBracedPlacement's own doc comment.
-    let finalSlots = reconcileBracedPlacement(currentSlots, markedSlots);
+    let finalSlots = out.slots;
+    setSelectedSlot(out.slotIndex === -1 || next.type === "standard" ? null : { wallId, slotIndex: out.slotIndex, story });
+    /* A freshly placed window or door can already be outside the single-peak
+       angle allowance, so it is checked here rather than only on a later
+       resize.
 
-    if (next.type === "braced") {
-      // The user's own explicit click always wins over whatever the
-      // generic seed pass just decided for this specific position.
-      const targetIdx = findNthStandardFamilyIndex(finalSlots, precedingStandardFamilyCount);
-      if (targetIdx !== -1) {
-        finalSlots = finalSlots.map((s, i) =>
-          i === targetIdx ? { ...s, type: "braced" as const, bracedPattern: next.bracedPattern, bracedMirrored: next.bracedMirrored } : s,
+       ⚠ **And when it fires on an explicit menu choice, SAY SO.** Silence here
+       is what made the menu look broken: ask for a Door and get a Big Header
+       back with no explanation. It is not a bug — measured on an 8ft wall a
+       door's header is 15in deep and only a 36in door clears 30deg, and on a
+       10ft wall no ordinary door width clears at all (36in is 62deg, 60in is
+       49deg, against a 45deg ceiling) — but a rule the user cannot see is
+       indistinguishable from a broken button. */
+    if (out.slotIndex !== -1 && (next.type === "window" || next.type === "door")) {
+      const upgraded = applyBigHeaderAutoUpgrade(story, finalSlots, out.slotIndex);
+      if (upgraded !== finalSlots) {
+        const asked = PANEL_TYPE_LABELS[next.type];
+        showHeaderUpgradeNotice(
+          `${asked} became a Big Header: at ${formatLengthIn(finalSlots[out.slotIndex]!.widthIn, unitSystem)} on a ${formatLengthIn(wallHeightFt * 12, unitSystem)} wall, its header's single peak falls outside the brace-angle range. Narrow it, or keep the Big Header.`,
         );
       }
-    }
-
-    if (openingOrdinal !== null) {
-      const newIndex = findNthOpeningIndex(finalSlots, openingOrdinal);
-      setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex, story });
-      // Freshly toggling into "window"/"door" can itself already exceed the
-      // single-peak angle allowance (e.g. clicking a standard panel wide
-      // enough that even a fresh default-height window header can't stay
-      // in range) — check right away, not just on a later resize.
-      if (newIndex !== -1 && (next.type === "window" || next.type === "door")) {
-        finalSlots = applyBigHeaderAutoUpgrade(story, finalSlots, newIndex);
-      }
-    } else if (next.type === "braced") {
-      const newIndex = findNthStandardFamilyIndex(finalSlots, precedingStandardFamilyCount);
-      setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex, story });
-    } else {
-      setSelectedSlot(null);
+      finalSlots = upgraded;
     }
 
     setWallSlotsForStory(story, (prev) => ({
@@ -5353,8 +5320,6 @@ export default function LayoutEditor() {
      and a menu opened on one must not act on the other. */
   const [panelMenu, setPanelMenu] = useState<(PanelContextMenuTarget & { story: "ground" | "second" }) | null>(null);
 
-  const OPENING_MENU_TYPES = new Set<PanelSlotType>(["window", "door", "column", "big-header"]);
-
   const handlePanelContextMenu = (
     story: "ground" | "second",
     wallId: string,
@@ -5376,31 +5341,25 @@ export default function LayoutEditor() {
       clientX,
       clientY,
       label: `Wall ${wallId} · ${PANEL_TYPE_LABELS[slot.type]} ${formatLengthIn(slot.widthIn, unitSystem)}`,
-      /* ⚠ **OPENING TARGETS ARE GATED OFF FOR NOW, and this is a measured
-         refusal rather than caution.** Changing a panel INTO a window, door,
-         column or big header routes through `handleToggleOpening`'s
-         opening-anchor retile, which the click-cycle has only ever driven
-         along its own edges. Driven to an arbitrary target it loses the
-         panel: measured 2026-11-03 on a 43'9"x33' building, a Big Header
-         asked to become a Door left 42 wall panels where there had been 43
-         and the door count unchanged at 3 — the slot vanished instead of
-         converting. The same wall, same click, asked for Standard or Braced
-         is correct.
+      /* ⚠ **THE GATE IS GONE — every type the building allows is now live
+         from this menu** (B19 stride 2, 2026-11-03). Stride 1 greyed out any
+         transition with an opening at either end, because the anchor retile
+         behind it lost the panel: on a 43'9"x33' building a Big Header asked
+         to become a Door left 42 wall panels where there had been 43 with the
+         door count still 3, and asked for Standard it did nothing at all.
 
-         So the menu offers what is proven and says why about the rest. The
-         left-click cycle still reaches every opening type and is untouched,
-         which is why retiring it is NOT part of this stride. Fixing the
-         anchor path is the next piece of B19. */
-      choices: panelTypeChoices(slots, slotIndex).map((c) => {
-        if (!c.allowed || c.current) return c;
-        /* Either END of the transition being an opening sends it through the
-           anchor retile, so both are gated, not just the target. A Big Header
-           asked for Standard silently did nothing in the same measurement. */
-        const viaAnchorRetile = OPENING_MENU_TYPES.has(c.type) || OPENING_MENU_TYPES.has(slot.type);
-        return viaAnchorRetile
-          ? { ...c, allowed: false, reason: "Not yet from this menu — use the left-click cycle, which still reaches every type. The retile behind this transition loses the panel; that is the next piece of B19." }
-          : c;
-      }),
+         Three things were wrong, all of them now fixed in geometry and under
+         test: the door inherited the big header's 96in and the single-peak
+         auto-upgrade bounced it straight back; `reconcileBracedPlacement` did
+         not know a big header was a reservation and shifted every carried
+         decision after one by a panel; and nothing treated a void as a
+         reservation, so it handed its width back to the tiler on the next
+         retile of its wall. See `transitionPanelType`.
+
+         What `panelTypeChoices` refuses, it refuses because the BUILDING says
+         so — a corner is the tiler's, a run gets one safety gap — and it says
+         which in the tooltip. Nothing is refused here any more. */
+      choices: panelTypeChoices(slots, slotIndex),
       canDeleteMerge: isPlaceablePanelType(slot.type),
       deleteRefusalReason: isPlaceablePanelType(slot.type)
         ? undefined
@@ -5435,9 +5394,10 @@ export default function LayoutEditor() {
       );
       windowWidthClampNoticeTimerRef.current = setTimeout(() => setWindowWidthClampNotice(null), 4000);
     }
-    const precedingOpenings = currentSlots
-      .slice(0, slotIndex)
-      .filter((s) => s.type === "window" || s.type === "door").length;
+    /* ⚠ Every reservation, not just window/door — this is an index into
+       `getOpeningAnchors`' own list. See the note where `isOpeningType` used
+       to be. */
+    const precedingOpenings = currentSlots.slice(0, slotIndex).filter((s) => isReservationType(s.type)).length;
     // Same fixed-width self-heal as handleToggleOpening — a Column anchor
     // read straight off an existing slot could still carry a stale width
     // from before that fix existed.
@@ -5520,15 +5480,15 @@ export default function LayoutEditor() {
 
   // Same shape as handleSetWindowWidth — a Big Header's own width IS a
   // reserved-width change, so it needs the full retileWithOpenings dance
-  // too, just clamped to bigHeaderWidthInRange instead. Uses isOpeningType
-  // (window|door|column|big-header) for the ordinal, matching
-  // getOpeningAnchors' own anchor order exactly.
+  // too, just clamped to bigHeaderWidthInRange instead. Uses
+  // `isReservationType` for the ordinal, matching getOpeningAnchors' own
+  // anchor order exactly.
   const handleSetBigHeaderWidth = (story: "ground" | "second", wallId: string, slotIndex: number, requestedWidthIn: number) => {
     const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
     const geometry = wallGeometryFor(wallId);
     if (!geometry) return;
     const widthIn = Math.min(Math.max(requestedWidthIn, bigHeaderWidthInRange.minIn), bigHeaderWidthInRange.maxIn);
-    const precedingOpenings = currentSlots.slice(0, slotIndex).filter((s) => isOpeningType(s.type)).length;
+    const precedingOpenings = currentSlots.slice(0, slotIndex).filter((s) => isReservationType(s.type)).length;
     const anchors = getOpeningAnchors(currentSlots).map((a) => (a.type === "column" ? { ...a, widthIn: COLUMN_TOTAL_WIDTH_IN } : a));
     if (!anchors[precedingOpenings]) return;
     anchors[precedingOpenings] = { ...anchors[precedingOpenings]!, widthIn };
@@ -13765,6 +13725,11 @@ export default function LayoutEditor() {
                       onClose={() => setSelectedSlot(null)}
                       onToggleFullscreen={() => handleToggleNoteFullscreen("selected-panel")}
                     >
+                      {headerUpgradeNotice && (
+                        <p className={styles.note} style={{ color: "#a67c00", fontWeight: 600 }}>
+                          {headerUpgradeNotice}
+                        </p>
+                      )}
                       {zone.type === "window" ? (
                         <>
                           <WindowSizeDiagram
@@ -13984,15 +13949,13 @@ export default function LayoutEditor() {
                   gableBuiltEndIn={gableRunStopByWallId[elevationWall.id]?.builtEndIn}
                   secondStorySlots={secondStory?.wallSlots[elevationWall.id]}
                   secondStoryWallHeightFt={secondStory?.wallHeightFt}
-                  onToggleOpening={handleToggleOpening}
                   onPanelContextMenu={(wallId, slotIndex, x, y) =>
                     handlePanelContextMenu(effectiveViewedStoryId, wallId, slotIndex, x, y)
                   }
-                  // Clicking a panel's width label selects it without cycling
-                  // its type — the only way a STANDARD panel can become the
-                  // selected panel, and therefore the only way to reach its
-                  // width field (see WallElevationDiagram's onSelectSlot).
-                  onSelectSlot={(story, wallId, slotIndex, zoneIndex) => setSelectedSlot({ wallId, slotIndex, story, zoneIndex })}
+                  // Every plain left click on this diagram — a panel's body or
+                  // its width label — lands here now that B19 retired the type
+                  // cycle (see WallElevationDiagram's onSelectSlot).
+                  onSelectSlot={handleSelectPanel}
                   // Smearforn Stage 2 — while a type (or Delete) is picked in
                   // the left bar, a click on a panel replaces/deletes it and
                   // the boundaries between panels become insert targets.
@@ -14067,7 +14030,7 @@ export default function LayoutEditor() {
                   primaryCornerIds={primaryCornerIds}
                   isWallLengthEditable={(wallId) => effectiveViewedStoryId === "ground" && isWallLengthEditable(wallId)}
                   onDraw={handleDraw}
-                  onToggleOpening={(wallId, slotIndex) => handleToggleOpening(effectiveViewedStoryId, wallId, slotIndex)}
+                  onSelectPanel={(wallId, slotIndex) => handleSelectPanel(effectiveViewedStoryId, wallId, slotIndex)}
                   onPanelContextMenu={(wallId, slotIndex, x, y) =>
                     handlePanelContextMenu(effectiveViewedStoryId, wallId, slotIndex, x, y)
                   }
@@ -14132,7 +14095,7 @@ export default function LayoutEditor() {
                   checkedInteriorIds={checkedInteriorIds}
                   checkedExteriorIds={checkedExteriorIds}
                   tool3D={tool3D}
-                  onToggleOpening={handleToggleOpening}
+                  onSelectPanel={handleSelectPanel}
                   /* ⚠ B19 ships the menu on the two 2D surfaces he named first.
                      The 3D view needs a panel hit test, which the panel EDITOR needs
                      too and will launch from — so the two arrive together rather than
@@ -14674,7 +14637,7 @@ export default function LayoutEditor() {
           onClose={() => setPanelMenu(null)}
           onDeleteMerge={(wallId, slotIndex) => handleDeletePanel(panelMenu!.story, wallId, slotIndex)}
           onDeleteNoPanel={(wallId, slotIndex) => handleDeleteNoPanel(panelMenu!.story, wallId, slotIndex)}
-          onChangeType={(wallId, slotIndex, type) => handleToggleOpening(panelMenu!.story, wallId, slotIndex, undefined, type)}
+          onChangeType={(wallId, slotIndex, type) => handleChangePanelType(panelMenu!.story, wallId, slotIndex, type)}
         />
 
         <StickyNote

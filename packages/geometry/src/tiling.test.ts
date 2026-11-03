@@ -6,7 +6,6 @@ import {
   getOpeningAnchors,
   markSafetyCorner,
   NARROW_SAFETY_GAP_WIDTH_IN,
-  nextPanelCycleState,
   retileWithOpenings,
   tileWall,
   TILER_MAX_PANEL_WIDTH_IN,
@@ -366,37 +365,11 @@ describe("tileWall", () => {
   });
 });
 
-describe("nextPanelCycleState", () => {
-  it("cycles standard -> window -> door -> column -> big-header -> chevron -> mirrored chevron -> hatch -> mirrored hatch -> standard", () => {
-    let state = nextPanelCycleState({ type: "standard" });
-    expect(state).toEqual({ type: "window" });
-    state = nextPanelCycleState(state!);
-    expect(state).toEqual({ type: "door" });
-    state = nextPanelCycleState(state!);
-    expect(state).toEqual({ type: "column" });
-    state = nextPanelCycleState(state!);
-    expect(state).toEqual({ type: "big-header" });
-    state = nextPanelCycleState(state!);
-    expect(state).toEqual({ type: "braced", bracedPattern: "chevron", bracedMirrored: false });
-    state = nextPanelCycleState(state!);
-    expect(state).toEqual({ type: "braced", bracedPattern: "chevron", bracedMirrored: true });
-    state = nextPanelCycleState(state!);
-    expect(state).toEqual({ type: "braced", bracedPattern: "hatch", bracedMirrored: false });
-    state = nextPanelCycleState(state!);
-    expect(state).toEqual({ type: "braced", bracedPattern: "hatch", bracedMirrored: true });
-    state = nextPanelCycleState(state!);
-    expect(state).toEqual({ type: "standard" });
-  });
-
-  it("returns null for corner and safety-gap slots — not cyclable", () => {
-    expect(nextPanelCycleState({ type: "corner" })).toBeNull();
-    expect(nextPanelCycleState({ type: "safety-gap" })).toBeNull();
-  });
-
-  it("treats an unrecognized/legacy braced pattern-mirror combo as the last stop, wrapping to standard", () => {
-    expect(nextPanelCycleState({ type: "braced" })).toEqual({ type: "standard" });
-  });
-});
+/* The `nextPanelCycleState` suite stood here — nine stops of the click-through
+   type cycle, its two nulls, and its legacy-pattern wrap. B19 retired the cycle
+   and deleted the function (see the record in tiling.ts). The behaviour that
+   replaced it is tested in panelTypeChoices.test.ts (which type a slot may
+   become) and panelTypeTransition.test.ts (what the change does to the wall). */
 
 describe("getOpeningAnchors", () => {
   it("records each window/door's position as how many standard slots precede it, skipping corner/gap", () => {

@@ -1497,3 +1497,65 @@ Summary and sheet both **138,712 lb**, four wall lines summing to it exactly.
 long one, often by 3×, because halving length halves slenderness and CP climbs
 steeply. That is the NDS curve, and it is why the carrots doubled the total.
 Worth his engineer's eye rather than being presented as a conclusion.
+
+---
+
+# B19 stride 2 — The anchor fix, and the cycle retires. DONE 2026-11-03.
+
+> *"Anchor fix and then cycle retires let's go!"* — Tommy, 2026-11-03
+
+Stride 1 shipped the menu with the opening types greyed out, because the
+anchor retile behind them lost the panel. **Three separate faults**, all now in
+geometry with 19 tests of their own:
+
+1. **A door inherited the width of whatever it replaced.** A 96in big header
+   asked to become a door handed over its 96in; a 96in door header fails the
+   single-peak angle rule; `applyBigHeaderAutoUpgrade` put it straight back.
+   Fixed by a rule: a fresh reservation inherits a width only from a panel of
+   the tiler's own run. His *"a door keeps the slot's width"* is untouched —
+   that rule was about replacing a standard panel, and it still does.
+2. **`reconcileBracedPlacement` did not know `big-header` was a reservation.**
+   It named window/door/column while `getOpeningAnchors` named four, so a big
+   header consumed no old marker and counted as none dropped: every carried
+   braced panel, `zones` split and `lockedWidthIn` pin after one read a
+   position early, **on every retile of any wall with a big header on it**.
+   This one was never about B19.
+3. **Nothing treated a void as a reservation.** `open` shipped in stride 1 as a
+   slot type only, so the first retile of its wall handed the void's width back
+   to the tiler and the void vanished.
+
+One predicate now, `RESERVATION_PANEL_TYPES` — window, door, column,
+big-header, open — read by every place that had been keeping its own copy. Two
+more ordinals were reading the wrong list and are fixed with it:
+`handleSetWindowWidth` counted only window/door, so **a window sitting after a
+column or a big header resized that instead of itself**.
+
+**`transitionPanelType`** in geometry is the whole width-moving edit now —
+anchors, retile, mitered corner, reconcile, and finding the panel again. It was
+inline in `page.tsx` and reachable only by clicking.
+
+**THE CYCLE IS RETIRED.** `nextPanelCycleState` and `PanelCycleState` are
+deleted; a left click selects a panel and nothing more. The roster test that
+walked the cycle now reads `PANEL_TYPE_MENU_ORDER`.
+
+**A finding, and it is his to decide.** At the app's own defaults — a 120in
+wall, a 32in sill, a 48in rough opening — the header is 40in deep and the
+single web runs at **56°** against a 45° ceiling. **No window narrower than
+72in can carry a single peak**, and on a 120in wall no ordinary door width can
+either (36in is 62°, 60in is 49°). So any window the user edits becomes a Big
+Header. The seeded windows survive only because seeding does not run the check.
+Nothing here changed that rule; what changed is that the app now **says so**
+instead of silently swapping the type — `headerUpgradeNotice` in the Selected
+Panel note. `doorDefaultWidthIn` is 36in for the same reason: on an 8ft wall it
+is the only ordinary door width that clears 30°.
+
+Gates: 3574 tests across 194 files. Typecheck clean in all four projects. Lint
+**167 / 119 errors / 48 warnings**, per rule identical to the B18 baseline.
+
+Verified live on a 41'8" x 20'8" building: the menu offers every type with only
+the tiler's three refused; Big Header → Standard took the wall from 36 to 37
+panels with nothing else moving (it used to do nothing at all); three left
+clicks on one panel left it Standard and selected (it used to cycle to Column);
+"Delete — no panel" left a 48in void and took the wall to 36; a Column placed
+on the same wall **left that void exactly where it was, still 48in**; and the
+void became a reservation again on request.

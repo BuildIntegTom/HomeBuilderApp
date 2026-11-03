@@ -1045,18 +1045,20 @@ interface Building3DViewProps {
    * "orbit" (default) leaves every slot non-interactive so OrbitControls
    * has the pointer to itself. */
   tool3D?: "orbit" | "edit" | "sill-header";
-  /** Cycles one panel slot's type the same way the 2D Edit tool's
-   * `onToggleOpening` does — only wired up when `tool3D === "edit"`. The
-   * `story` param is real now that the second story is independently-stored
-   * data (see the `secondStory` prop's own doc comment): the caller
-   * currently no-ops `story === "second"` clicks (no editing UI exists yet
-   * for the second story's own wallSlots), rather than silently mutating
-   * the ground floor's same-position panel the way a shared-reference
-   * second story used to. */
-  onToggleOpening?: (story: "ground" | "second", wallId: string, slotIndex: number) => void;
+  /** Selects one panel slot — only wired up when `tool3D === "edit"`.
+   *
+   * ⚠ **It cycled the slot's TYPE until B19 retired the cycle** (2026-11-03),
+   * matching the 2D Edit tool click for click. Both surfaces now select, and
+   * the type comes from the right-click menu — which the 3D view does not have
+   * yet, because it needs a panel hit test the panel editor needs too and will
+   * launch from.
+   *
+   * The `story` param is real now that the second story is independently-stored
+   * data (see the `secondStory` prop's own doc comment). */
+  onSelectPanel?: (story: "ground" | "second", wallId: string, slotIndex: number) => void;
   /** Commits the bottom handle's dragged position (floor to RO-bottom) —
    * only wired up when `tool3D === "sill-header"`. Same story-forwarding
-   * rationale as `onToggleOpening`. */
+   * rationale as `onSelectPanel`. */
   onSetWindowSillHeight?: (story: "ground" | "second", wallId: string, slotIndex: number, sillHeightIn: number) => void;
   /** Commits the top handle's dragged position, expressed as the window's
    * own RO height (top edge relative to the bottom handle) — same field
@@ -1277,7 +1279,7 @@ export default function Building3DView({
   checkedInteriorIds = EMPTY_ID_SET,
   checkedExteriorIds = EMPTY_ID_SET,
   tool3D = "orbit",
-  onToggleOpening,
+  onSelectPanel,
   onSetWindowSillHeight,
   onSetWindowHeight,
 }: Building3DViewProps) {
@@ -2677,7 +2679,7 @@ export default function Building3DView({
                 tool3D === "edit"
                   ? (e) => {
                       e.stopPropagation();
-                      onToggleOpening?.("ground", box.wallId, box.slotIndex);
+                      onSelectPanel?.("ground", box.wallId, box.slotIndex);
                     }
                   : tool3D === "sill-header" && box.slot.type === "window"
                     ? (e) => {
@@ -2740,7 +2742,7 @@ export default function Building3DView({
                 tool3D === "edit"
                   ? (e) => {
                       e.stopPropagation();
-                      onToggleOpening?.("second", box.wallId, box.slotIndex);
+                      onSelectPanel?.("second", box.wallId, box.slotIndex);
                     }
                   : tool3D === "sill-header" && box.slot.type === "window"
                     ? (e) => {

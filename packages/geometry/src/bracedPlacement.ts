@@ -1,5 +1,5 @@
 import { planLockedWidthReforce } from "./lockedWidthReforce";
-import { getOpeningAnchors } from "./tiling";
+import { getOpeningAnchors, isReservationType } from "./tiling";
 import type { BracePattern, PanelSlot, PanelSlotType, PanelSlotZone } from "./types";
 
 const ADDITIONAL_ROW_BRACE_NEAR_CORNER_COUNT = 2;
@@ -252,7 +252,15 @@ export function reconcileBracedPlacement(oldSlots: PanelSlot[] | undefined, newS
   let droppedOldMarkers = 0; // old standard-family entries consumed by newly-created openings, not yet reflected in `ordinal`
   for (let i = 0; i < reconciled.length; i++) {
     const slot = reconciled[i]!;
-    if (slot.type === "window" || slot.type === "door" || slot.type === "column") {
+    /* ⚠ `isReservationType`, not a list written out here. This line used to
+       name three types and `getOpeningAnchors` above named four: `big-header`
+       was missing, so a big header in `newSlots` consumed no old marker and
+       never counted as a dropped one, while the map built from `oldSlots` DID
+       carry it. Every marker after a big header therefore read one position
+       early — a braced panel, a `zones` split or a `lockedWidthIn` pin landing
+       on the wrong panel on every retile of that wall. `open` was missing from
+       both. See RESERVATION_PANEL_TYPES. */
+    if (isReservationType(slot.type)) {
       const oldOrdinal = ordinal + droppedOldMarkers;
       const remaining = oldOpeningCountAtOrdinal.get(oldOrdinal) ?? 0;
       if (remaining > 0) {

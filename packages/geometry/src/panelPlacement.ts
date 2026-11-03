@@ -70,7 +70,12 @@ import type { BracePattern, PanelSlot, PanelSlotType } from "./types";
  * and the ADU's repeated "SAFETY GAP" annotations may well reopen it. See
  * the spec's Open Items.
  */
-export const PLACEABLE_PANEL_TYPES = ["standard", "braced", "window", "door", "column", "big-header"] as const;
+/* ⚠ `"open"` joined this list in B19 (2026-11-03). A framed void is the
+   user's own slot — they made it with "delete / no panel" — so it is theirs to
+   delete, insert beside, or fill again. It is NOT a free slot: `isFreeSlot`
+   below is positive (standard-family only), so a void's width stays held
+   through every insert and delete exactly like an opening's. */
+export const PLACEABLE_PANEL_TYPES = ["standard", "braced", "window", "door", "column", "big-header", "open"] as const;
 
 export type PlaceablePanelType = (typeof PLACEABLE_PANEL_TYPES)[number];
 

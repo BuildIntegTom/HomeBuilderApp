@@ -202,6 +202,45 @@ export const windowHeaderDefaultWidthIn: CatalogValue<number> = {
   note: "Tommy: \"Default window header can be right on 4-ft\" — chosen for the 2ft/4ft module, not from a window schedule.",
 };
 
+/**
+ * The width a DOOR reservation takes when it replaces another reservation —
+ * a big header, a column, a window or a framed void — rather than a panel of
+ * the tiler's own run.
+ *
+ * > *"A door keeps the slot's width: its own widths come from a door schedule,
+ * > not from this module."* — the rule this does NOT override
+ *
+ * ⚠ **A door replacing a STANDARD panel still keeps that panel's width**, and
+ * that is the rule above. This value exists for the case where there is no
+ * such width to keep: a 96in big header asked to become a door handed its
+ * 96in over, a 96in door header cannot carry a single peak, and the
+ * auto-upgrade turned it straight back into a big header — the panel menu
+ * looked broken (B19, measured 2026-11-03).
+ *
+ * ⚠ **36in, NOT the 4ft module**, and the reason is the single-peak header
+ * rule rather than any door catalogue. On an 8ft wall a door's header is only
+ * 15in deep (wall height less a 81in rough opening), and
+ * `shouldAutoUpgradeToBigHeader` admits exactly one of the ordinary door
+ * widths at that depth: 36in comes out at 30.3deg against a 30deg floor, while
+ * 48in is 23.6deg and fails. A 48in default therefore turned every "change to
+ * Door" on an 8ft wall straight back into a Big Header.
+ *
+ * ⚠ **Measured, and worth knowing: on a 10ft wall NO ordinary door width
+ * passes** — 36in is 62deg, 48in 55deg, 60in 49deg, all above the 45deg
+ * ceiling, and only 72in and wider come back into range. A door on a tall wall
+ * genuinely becomes a Big Header, which the app now says out loud rather than
+ * doing silently (see `headerUpgradeNotice` in page.tsx).
+ *
+ * It is a placeholder on no better authority than that it is the common single
+ * door width and the one the rule allows. **A real door schedule should
+ * replace it.**
+ */
+export const doorDefaultWidthIn: CatalogValue<number> = {
+  value: 36,
+  status: "pending-BI-confirmation",
+  note: "The common single-door width, and the only ordinary one that clears the single-peak header angle on an 8ft wall. NOT from a door schedule — Tommy said door widths come from one, and this stands in until there is one. Used only when a door replaces another reservation and so has no panel width to inherit.",
+};
+
 export const sillHeaderHeightInRange: CatalogRange = {
   minIn: 16.75,
   maxIn: 33.5,

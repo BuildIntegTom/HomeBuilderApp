@@ -249,38 +249,34 @@ export interface WallElevationDiagramProps {
    * stacked above the ground row, below any gable row. */
   secondStorySlots: PanelSlot[] | undefined;
   secondStoryWallHeightFt: number | undefined;
-  /** Cycles one panel's type — same story-aware handler Building3DView's own
-   * Edit tool also uses. Unlike FootprintCanvas/Building3DView, this view
-   * has no separate "tool" state to gate clicking behind — there's nothing
-   * else a click here could mean, so every rendered panel is always
-   * clickable.
-   *
-   * `zoneIndex`: which of this slot's own independently-typed vertical
-   * zones (see PanelSlotZone) was clicked — 0 = bottom-most, matching
-   * `PanelSlot.zones`' own ordering. Undefined for a slot with no real
-   * zone-of-its-own to target (not yet split, or a beam-affected slot,
-   * which still shares one type across every band in Stride 1 — see
-   * bandsAndZonesPerSlot's own doc comment). */
-  onToggleOpening: (story: "ground" | "second", wallId: string, slotIndex: number, zoneIndex?: number) => void;
+  /* ⚠ **`onToggleOpening` WAS HERE and it cycled the panel's type** — B19
+     retired it, 2026-11-03 (Tommy: *"This would remove the need for the left
+     click cycle which is fine because left clicking should be used for
+     dragging and resizing."*). A click on a panel's body now goes to
+     `onSelectSlot` below, the same place a click on its width label already
+     went, and the type comes from `onPanelContextMenu`'s menu. */
   /** ⚠ Right-click a panel — B19. Client coordinates: the menu is a
    *  fixed-position portal on `document.body`, so it cannot be clipped by
    *  this diagram's own scroll container or SVG viewport. */
   onPanelContextMenu?: (wallId: string, slotIndex: number, clientX: number, clientY: number) => void;
   /**
-   * Select a slot WITHOUT cycling its type — the entry point Smearforn
-   * Stage 1's typed width needs, and the gesture Tommy described first:
-   * "click the numerical value of width of one panel... so you can type in
-   * a new value."
+   * Select a slot. **Every plain left click on this diagram now ends up
+   * here** — a panel's body and its width label both — which is the whole of
+   * B19's cycle retirement.
    *
-   * **Why it had to exist.** Clicking a panel's BODY runs the type cycle
-   * (`onToggleOpening`), and from a standard panel the first stop on that
-   * cycle is a window — `handleToggleOpening` then selects the opening it
-   * just made, and selects nothing at all when a slot lands back on
-   * "standard". So a standard panel could never BE the selected panel, and
-   * the width field in the Selected Panel note would have been unreachable
-   * for exactly the panels this stage is about. The width LABEL is the one
-   * part of a panel with no gesture of its own, and it is the one Tommy
-   * pointed at. It selects only; the editing still happens in the note.
+   * It began as the width label's own gesture, for Smearforn Stage 1's typed
+   * width: *"click the numerical value of width of one panel... so you can
+   * type in a new value."* It had to exist separately back then because a
+   * click on a panel's BODY ran the type cycle, which meant a standard panel
+   * could never BE the selected panel and the width field in the Selected
+   * Panel note was unreachable for exactly the panels that stage was about.
+   * With the cycle gone that asymmetry is gone with it: one gesture, one
+   * meaning, and the editing still happens in the note.
+   *
+   * `zoneIndex`: which of this slot's own independently-typed vertical zones
+   * (see PanelSlotZone) was clicked — 0 = bottom-most, matching
+   * `PanelSlot.zones`' own ordering. Undefined for a slot with no real zone of
+   * its own to target.
    */
   onSelectSlot: (story: "ground" | "second", wallId: string, slotIndex: number, zoneIndex?: number) => void;
   /**
@@ -526,7 +522,6 @@ export default function WallElevationDiagram({
   endStopIn = 0,
   secondStorySlots,
   secondStoryWallHeightFt,
-  onToggleOpening,
   onPanelContextMenu,
   onSelectSlot,
   panelToolMode,
@@ -1573,11 +1568,11 @@ export default function WallElevationDiagram({
     const maxBandCount = Math.max(0, ...bandsAndZonesForRow.map((b) => b.bands.length));
     const elements: ReactNode[] = [];
     // What a click on a panel's body means right now. With the placement
-    // tool armed it REPLACES (or deletes) instead of cycling — a direct
-    // select in place of the click-through wheel, which is the whole of
-    // Tommy's "select which type of panel you want to add, and then click
-    // where to put it". The tool acts on the whole slot/column: a width
-    // reservation is shared by every zone stacked in it.
+    // tool armed it REPLACES (or deletes) — Tommy's "select which type of
+    // panel you want to add, and then click where to put it". The tool acts on
+    // the whole slot/column: a width reservation is shared by every zone
+    // stacked in it. With no tool armed it SELECTS; the type cycle it used to
+    // run retired with B19.
     const bodyClick = (slotIndex: number, zoneIndexForClick: number) => () => {
       if (suppressNextBodyClickRef.current) {
         suppressNextBodyClickRef.current = false;
@@ -1585,7 +1580,7 @@ export default function WallElevationDiagram({
       }
       if (panelToolMode === "place") onReplacePanel(story, wall.id, slotIndex);
       else if (panelToolMode === "delete") onDeletePanel(story, wall.id, slotIndex);
-      else onToggleOpening(story, wall.id, slotIndex, zoneIndexForClick);
+      else onSelectSlot(story, wall.id, slotIndex, zoneIndexForClick);
     };
     /* ⚠ The right click is the same on every band of a split column: the
        menu acts on the SLOT, because a width reservation is shared by every

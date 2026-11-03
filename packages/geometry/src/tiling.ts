@@ -928,6 +928,32 @@ function withSafetyGapSpacing(slots: PanelSlot[], gapEnd: WallEnd, gapWidthIn: n
   return applySafetyGapSpacing(slots, gapEnd, gapWidthIn, TILER_MIN_PANEL_WIDTH_IN).slots;
 }
 
+/**
+ * **The slot types that are a WIDTH RESERVATION rather than part of the
+ * tiler's own free run.**
+ *
+ * Every one of these owns a width the tiler may not spend: an opening because
+ * its rough opening is a real size, a column because it is fabricated at one
+ * fixed width, and an `open` slot because a framed void still occupies the
+ * wall length somebody left it (B19 — *"delete / no panel"*).
+ *
+ * ⚠ **This list exists because three separate places were keeping their own
+ * copy of it and two of them were already wrong.** `getOpeningAnchors` had
+ * all four openings; `reconcileBracedPlacement`'s own walk had only three of
+ * them, silently omitting `big-header`, which shifted every carried marker
+ * after a big header by one slot on every retile of that wall; and nobody at
+ * all had `open`, so a void handed its width back to the free run the first
+ * time anything else on its wall was retiled. One predicate, read by all of
+ * them, is the only way those cannot drift again.
+ */
+export const RESERVATION_PANEL_TYPES = ["window", "door", "column", "big-header", "open"] as const;
+
+export type ReservationPanelType = (typeof RESERVATION_PANEL_TYPES)[number];
+
+export function isReservationType(type: PanelSlotType): type is ReservationPanelType {
+  return (RESERVATION_PANEL_TYPES as readonly PanelSlotType[]).includes(type);
+}
+
 export interface OpeningAnchor {
   /** How many 'standard'-family-type slots (including corner-touching ones,
    * AND already-decided "braced" slots — see the doc comment below) precede
@@ -952,7 +978,10 @@ export interface OpeningAnchor {
    * `beforeStandardCount`, which is what every caller did before.
    */
   offsetIn?: number;
-  type: "window" | "door" | "column" | "big-header";
+  /** ⚠ `"open"` is here too, and it is not an opening. A framed void owns
+   *  real wall length with no panel in it, so it has to be reserved through a
+   *  retile exactly like a window is — see `RESERVATION_PANEL_TYPES`. */
+  type: ReservationPanelType;
   widthIn: number;
   /** This opening's own vertical/style fields, carried through a re-tile so
    * they survive it instead of silently resetting to defaults — a
@@ -994,7 +1023,7 @@ export function getOpeningAnchors(slots: PanelSlot[]): OpeningAnchor[] {
   const anchors: OpeningAnchor[] = [];
   let standardsSeen = 0;
   for (const slot of slots) {
-    if (slot.type === "window" || slot.type === "door" || slot.type === "column" || slot.type === "big-header") {
+    if (isReservationType(slot.type)) {
       anchors.push({
         beforeStandardCount: standardsSeen,
         // ⚠ COPIED, never measured from this array. See OpeningAnchor.offsetIn.
@@ -1231,58 +1260,27 @@ export function markSafetyCorner(slots: PanelSlot[], end: WallEnd): PanelSlot[] 
   return slots.map((s, i) => (i === index ? { ...s, type: "safety-oct-corner" as const } : s));
 }
 
-export interface PanelCycleState {
-  type: PanelSlotType;
-  bracedPattern?: BracePattern;
-  bracedMirrored?: boolean;
-}
+/* ⚠ **`PanelCycleState` AND `nextPanelCycleState` WERE DELETED HERE — B19,
+   2026-11-03.** The click-through type cycle: standard -> window -> door ->
+   column -> big-header -> the four braced styles -> standard, with corner and
+   safety-gap returning null.
 
-/**
- * The full click-through panel-type cycle (Tommy: "I want to be able to
- * include each panel style for braced panels in the click-through cycle
- * for panel type selections"): standard -> window -> door -> column ->
- * big-header -> all 4 braced styles (chevron, mirrored chevron, hatch,
- * mirrored hatch) -> back to standard. Corner and safety-gap slots aren't
- * cyclable at all (returns null), same as before this cycle grew to
- * include braced styles.
- *
- * Pure "what's next" decision only — doesn't touch `widthIn` or retile
- * anything itself. The caller (`handleToggleOpening` in page.tsx) uses
- * this to decide whether the transition needs a full retile (any
- * transition into or out of window/door/column/big-header, since those
- * reserve their own width) or is a simple in-place field mutation (every
- * other transition, including entering/leaving the braced-style block,
- * which never changes a slot's width). Supersedes the old 3-stop
- * standard->window->door->standard cycle this function used to be (it had
- * no way to represent column or braced at all, and nothing outside its own
- * tests ever called it).
- */
-export function nextPanelCycleState(current: PanelCycleState): PanelCycleState | null {
-  switch (current.type) {
-    case "standard":
-      return { type: "window" };
-    case "window":
-      return { type: "door" };
-    case "door":
-      return { type: "column" };
-    case "column":
-      return { type: "big-header" };
-    case "big-header":
-      return { type: "braced", bracedPattern: "chevron", bracedMirrored: false };
-    case "braced":
-      if (current.bracedPattern === "chevron" && current.bracedMirrored === false) {
-        return { type: "braced", bracedPattern: "chevron", bracedMirrored: true };
-      }
-      if (current.bracedPattern === "chevron" && current.bracedMirrored === true) {
-        return { type: "braced", bracedPattern: "hatch", bracedMirrored: false };
-      }
-      if (current.bracedPattern === "hatch" && current.bracedMirrored === false) {
-        return { type: "braced", bracedPattern: "hatch", bracedMirrored: true };
-      }
-      // hatch+mirrored (the last stop), or an unrecognized/legacy
-      // pattern-mirror combo — wrap back to standard either way.
-      return { type: "standard" };
-    default:
-      return null; // corner, safety-gap — not cyclable
-  }
-}
+   > *"This would remove the need for the left click cycle which is fine
+   > because left clicking should be used for dragging and resizing."*
+   > — Tommy, 2026-11-02, specifying the right-click panel menu
+
+   The menu replaced it outright. The cycle had three problems the menu does
+   not: the only way to reach a type was to step through every type before it,
+   a drag that started a pixel short of a handle silently retyped the panel,
+   and it could not represent a type outside the wheel at all — `open` (B19's
+   "delete / no panel") had nowhere to live in it.
+
+   What took over its job, in two parts that used to be one:
+   - `PANEL_TYPE_MENU_ORDER` / `panelTypeChoices` — WHICH types a slot may
+     become, in a stable order, each refusal with its own reason.
+   - `panelTypeChangeNeedsRetile` / `transitionPanelType` — whether a given
+     transition moves WIDTH, which is the question this function's own doc
+     comment said its caller used it to answer.
+
+   `PLACEABLE_PANEL_TYPES`' roster test used to walk this cycle to prove the
+   two lists agreed; it reads `PANEL_TYPE_MENU_ORDER` now. */

@@ -13,7 +13,7 @@ import {
   type FreeRunLimitsIn,
   type PanelPlacementResult,
 } from "./panelPlacement";
-import { nextPanelCycleState } from "./tiling";
+import { PANEL_TYPE_MENU_ORDER } from "./panelTypeChoices";
 import type { PanelSlot } from "./types";
 
 /** The real catalog pair, duplicated the same way `tiling.ts` duplicates
@@ -47,17 +47,18 @@ function plainWall(): PanelSlot[] {
 }
 
 describe("the placeable roster", () => {
-  it("is the click-through cycle's own roster exactly — no new types, no missing ones", () => {
-    // Walk the cycle from "standard" and collect every type it can reach.
-    const seen = new Set<string>();
-    let state: { type: string; bracedPattern?: string; bracedMirrored?: boolean } | null = { type: "standard" };
-    for (let i = 0; i < 20 && state; i++) {
-      seen.add(state.type);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      state = nextPanelCycleState(state as any);
-      if (state && seen.has(state.type) && state.type === "standard") break;
-    }
-    expect([...seen].sort()).toEqual([...PLACEABLE_PANEL_TYPES].sort());
+  it("⚠ is exactly the right-click menu's own list, less the three the tiler places", () => {
+    /* This used to walk the click-through type cycle and compare rosters.
+       B19 retired the cycle, and `PANEL_TYPE_MENU_ORDER` is the roster now —
+       the list the right-click menu renders. The invariant is the same one and
+       it still matters: a type the menu offers but `resolvePanelReplace`
+       refuses is a dead row, and a placeable type missing from the menu is
+       unreachable. */
+    const menuPlaceable = PANEL_TYPE_MENU_ORDER.filter((t) => isPlaceablePanelType(t));
+    expect([...menuPlaceable].sort()).toEqual([...PLACEABLE_PANEL_TYPES].sort());
+    // And what the menu lists on top of that is exactly the tiler's own three.
+    const menuRulePlaced = PANEL_TYPE_MENU_ORDER.filter((t) => !isPlaceablePanelType(t));
+    expect([...menuRulePlaced].sort()).toEqual(["corner", "safety-gap", "safety-oct-corner"]);
   });
 
   it("refuses corner and safety-gap, which are rule-placed", () => {

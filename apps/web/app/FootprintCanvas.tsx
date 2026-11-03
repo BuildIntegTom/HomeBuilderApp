@@ -197,7 +197,11 @@ export interface FootprintCanvasProps {
    * the straight walls on an octagon (the mitered diagonals aren't). */
   isWallLengthEditable: (wallId: Wall["id"]) => boolean;
   onDraw: (widthFt: number, depthFt: number, offsetPx: DragPoint) => void;
-  onToggleOpening: (wallId: Wall["id"], slotIndex: number) => void;
+  /** ⚠ A left click SELECTS a panel and nothing more — B19 retired the
+   *  click-through type cycle this used to drive (Tommy: *"left clicking
+   *  should be used for dragging and resizing"*). The type comes from
+   *  `onPanelContextMenu`'s menu. */
+  onSelectPanel: (wallId: Wall["id"], slotIndex: number) => void;
   /** ⚠ Right-click a panel — B19. Client coordinates, because the menu
    *  is a fixed-position portal on `document.body` rather than a Konva
    *  node: nothing inside the stage can escape its own clipping or paint
@@ -242,7 +246,7 @@ export default function FootprintCanvas({
   primaryCornerIds,
   isWallLengthEditable,
   onDraw,
-  onToggleOpening,
+  onSelectPanel,
   onPanelContextMenu,
   onSetLeastAccessibleCorner,
   onEditWallLength,
@@ -1023,8 +1027,8 @@ export default function FootprintCanvas({
                         fill={baseColor}
                         stroke="#555"
                         strokeWidth={0.5}
-                        onClick={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
-                        onTap={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
+                        onClick={shapeTool === "edit" ? () => onSelectPanel(r.wallId, r.slotIndex) : undefined}
+                        onTap={shapeTool === "edit" ? () => onSelectPanel(r.wallId, r.slotIndex) : undefined}
                         onContextMenu={(e: KonvaEventObject<PointerEvent>) => {
                           if (!onPanelContextMenu) return;
                           e.evt.preventDefault();
@@ -1072,8 +1076,8 @@ export default function FootprintCanvas({
                       fill={baseColor}
                       stroke="#555"
                       strokeWidth={0.5}
-                      onClick={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
-                      onTap={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
+                      onClick={shapeTool === "edit" ? () => onSelectPanel(r.wallId, r.slotIndex) : undefined}
+                      onTap={shapeTool === "edit" ? () => onSelectPanel(r.wallId, r.slotIndex) : undefined}
                       onContextMenu={(e: KonvaEventObject<PointerEvent>) => {
                         if (!onPanelContextMenu) return;
                         e.evt.preventDefault();
