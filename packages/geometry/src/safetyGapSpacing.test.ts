@@ -259,12 +259,11 @@ describe("a wall that shrinks gives its stranded gaps back", () => {
 
 describe("on walls the tiler really builds", () => {
   const THICKNESS_IN = 15.5;
-  const SEED = { spacingIn: 100_000, defaultPattern: "chevron" as const, defaultMirrored: false };
   const allPrimary = (fp: Footprint) => new Set(fp.corners.map((c) => c.id));
 
   const tiledWall = (widthFt: number, depthFt: number, wallId: string) => {
     const fp = buildRectangleFootprint(widthFt, depthFt);
-    const slots = retile(fp, "A", allPrimary(fp), 40, 24, THICKNESS_IN, SEED)[wallId]!;
+    const slots = retile(fp, "A", allPrimary(fp), 40, 24, THICKNESS_IN)[wallId]!;
     const geom = wallGeometryFor(fp, wallId, allPrimary(fp), "A", THICKNESS_IN)!;
     return { slots, geom };
   };

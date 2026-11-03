@@ -1180,3 +1180,121 @@ and because it is the one he asked for in plain terms. B18 before B19
 because it is additive and cannot break the editor. B19 last because it
 needs the interview, and because its own prerequisite is that B17 has not
 taken the click-cycle away yet.
+
+---
+
+# B17 — DONE, 2026-11-02. Both rules retired, not one.
+
+`applyBracedPlacement` is deleted. Nothing in the app places a braced panel
+automatically any more.
+
+**Rule 1 (near-corner)** was authorised up front:
+
+> *"We can retire near corner braces because the super brace pattern should
+> inherently provide the same structural shear value."*
+
+**Rule 2 (periodic, off `seismicBracedPanelSpacingFt[zone]`)** was the open
+building decision, and he answered it mid-stride:
+
+> *"My answer on the periodic rule: not sure exactly what this means but we're
+> replacing it with something better."*
+
+> *"Id rather have a pattern be described to an engineer with estimated values
+> rather than prescribe an engineer seismic zone thing."*
+
+So the inversion is real rather than cosmetic: **the seismic zone is no longer
+an input to ground-floor bracing at all**, which is the half of the
+seismic-rating problem that had to go before B18 can read a rating OUT of a
+built design.
+
+## What went
+
+| Deleted | What it was |
+|---|---|
+| `applyBracedPlacement` | both seeding rules, and the `eligibleIndices` machinery that decided which positions they were allowed to touch |
+| `BracedSeed` (retile.ts) | the 3-value bundle (spacing, pattern, mirror) threaded through `retile`, `retilePreservingOpenings` and `retilePreservingOpeningsWithRunStopMemory` |
+| 4 params on `reconcileBracedPlacement` | `spacingIn`, `standardWidthIn`, `defaultPattern`, `defaultMirrored` — all 10+ call sites |
+| `bracedSeed` (page.tsx) | and the load-path's one-time seismic seed, now a no-op kept for the locked-width re-force it also performs |
+
+`reconcileBracedPlacement` keeps its name because it still reconciles braced
+placement — it carries a panel's type, pattern, mirror, zones and locked width
+across a retile. It just no longer invents one.
+
+## What deliberately stayed
+
+- **`applyAdditionalRowBracedPattern`.** A different rule, from a different
+  instruction of his, for a tall wall's freshly-spawned UPPER row. The wall
+  brace pattern is laid per slot and does not reach zone 1, so retiring it
+  would remove bracing and put nothing back. It is the only remaining reader of
+  the seismic zone, and the control's copy now says exactly that much.
+- **Three places that reasoned FROM rule 1**, each re-reasoned in place rather
+  than left pointing at a deleted walk:
+  - `buildPlainMiddle` keeps the borrowed panel off the corner-touching
+    position. ⚠ Its stated reason — *"Tommy wants the borrowed panel(s) to
+    never be the one that ends up braced"* — **can no longer be honoured by
+    position at all**, because the pattern braces every standard panel. Open
+    item, below.
+  - `pickFreeSlotsToDrop` sorts the corner-touching slots last. Kept as an
+    arbitrary-but-FIXED tie-break.
+  - `seedDefaultOpenings` refuses a default opening at either end. That is his
+    own confirmed answer and outlives the brace it was stated against.
+- **The type cycle.** He lifted the constraint — *"No problem on there being
+  not able to change a panel during this queue"* — so B17 and B19 are no longer
+  coupled, but there was no reason to break it early either.
+
+## Two bugs this surfaced, both fixed
+
+1. **The Summary's shear caption counted `panelType === "braced"`.** Measured on
+   a 43'8" × 33' rectangle it read **"~66,717 lb across 0 braced panels"**. The
+   capacity was right; the caption was counting the wrong thing, and had been
+   under-counting since the pattern shipped. Now reads
+   `estimatedTotalShear.shearPanelCount` — derived from each panel's own
+   members, the same number the Review Log prints, so the two cannot disagree.
+2. **The plan's per-panel tooltip showed shear only for a `braced` slot.** After
+   the retirement that is no panel at all, so every tooltip would have been
+   silent about shear while the building totalled 66,001 lb. Now asks the
+   members, the same way.
+
+## Open, and his
+
+- **The borrowed panel is braced now, whatever position it sits in.** His
+  preference that it never be the braced one predates the pattern. Does an
+  odd-width panel carrying half a superbrace matter? The cut note already
+  carries the real angle, so this may be nothing — but it is his call, not an
+  assumption to bury in a comment.
+
+---
+
+# B20 — The superbrace's load-path diagonals (NEW, spec given 2026-11-02)
+
+> *"This super brace design (I think one thing may be missing from them - the
+> one additional 2x4 diagonal on each side on the top that help carry the load
+> of the roof panel above it in the center (presumably 4' walls and 2' roof
+> panels) and two on the bottom that help carry it to the floor panel (2' floor
+> panels, one lands in the center of the wall)."*
+
+The geometry behind it is already settled and recorded: walls are 48in, floors
+and roofs are 24in, so **a roof panel joint lands exactly on the centre of a
+wall panel, and so does a floor panel joint**. That point load is what these
+members are for — spreading it from the centre of the top plate out to where
+the panel is supported, and gathering it again at the bottom.
+
+**Not built.** It changes the panel recipe, the cut list, the weight, the 3D
+view and the shear figure, and four details are unstated:
+
+1. **Where the top pair lands.** From the centre of the top plate out to — the
+   panel edge? The first girt? [[brace_anchors_on_two_points]] settled that a
+   brace's low point rides the girt bar's TOP face and the far point sits flush
+   to the panel edge; do these follow that rule, or is their angle set by the
+   load path instead?
+2. **"Two on the bottom" vs "one on each side on the top".** Read literally
+   that is 2 top + 2 bottom; read as symmetry it is 2 and 2. Which?
+3. **Whether they are part of the SuperBrace pattern or additions to every
+   standard panel.** The pattern is a control with three settings — does a
+   Braced Pair or a Nailer Pair get these too? A Nailer Pair that gains
+   diagonals stops being a nailer.
+4. **What happens on a panel that is not 48in.** A borrowed panel's centre is
+   not where the roof joint lands, so the member either moves off-centre or
+   stops being a load path.
+
+Worth asking all four together before any of it is cut.

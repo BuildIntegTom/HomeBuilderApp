@@ -2,143 +2,75 @@ import { planLockedWidthReforce } from "./lockedWidthReforce";
 import { getOpeningAnchors } from "./tiling";
 import type { BracePattern, PanelSlot, PanelSlotType, PanelSlotZone } from "./types";
 
-const BRACE_NEAR_CORNER_COUNT = 1;
 const ADDITIONAL_ROW_BRACE_NEAR_CORNER_COUNT = 2;
 
-/**
- * Two rules, applied in order — the corner-touching brace is a fixed
- * point; periodic spacing fills the plain run and resets at every
- * non-standard slot (corner, gap, window, door, or a slot already braced by
- * the first rule). Windows are no longer auto-flanked (Tommy).
+/*
+ * ⚠ **BOTH AUTOMATIC BRACING RULES ARE RETIRED — B17, 2026-11-02.**
  *
- * ⚠ **A safety gap is its own slot and nothing merges into it — 2026-11-02.**
- * Until today a gap next to a corner became a COMBINED slot: it grew to
- * `standardWidthIn` plus a 3/4in plywood buffer, took
- * `secondaryType: "braced"`, swallowed the neighbouring standard panel whole
- * and settled the leftover against the panels past it so the wall still
- * summed. Tommy: *"We don't need any of this safety Gap combining stuff. I
- * don't want to see any of the panels combined with safety gaps. Safety gaps
- * should be treated as their own slot as they are already measured out with
- * our thresholds and every once in awhile dynamic."* So the walk below steps
- * over a gap and braces the next standard panel inward, which is what this
- * rule did before the combine existed.
+ * `applyBracedPlacement` stood here. It had two rules, and nothing in the app
+ * places a braced panel automatically any more:
  *
- * **What that deletion took with it is most of what used to be in this
- * file.** The combine removed a panel from the run, so a combined wall was
- * STORED one panel shorter than it tiled, and everything downstream had to
- * cope with the hole: three parameters here (`preservedBracedIndices`,
- * `slotIndicesArePinned`, `preCombinedGapOrdinals`) existed only to decide
- * whether a combine was allowed to fire, `pinnedSlotIndexWalls.ts` existed
- * only to find the walls where it was not, `cornerBraceCombineRefusals.ts`
- * existed to tell an engineer when it had been refused, and
- * `combineSwallowedOrdinals` re-derived on every reconcile which
- * standard-family ordinal had gone missing so the brace markers past it would
- * not all shift by one. None of that is here any more. A gap is a slot with a
- * width, the run sums without anybody reconstructing anything, and the
- * reconcile walk below has one cursor instead of three.
+ * 1. **near-corner** — walk inward from each end of the wall, brace the first
+ *    standard panel found, one per end. Originally from *"each wall must have
+ *    two braced panels on it, touching each side of each corner panel"*.
+ * 2. **periodic** — another brace every `seismicBracedPanelSpacingFt[zone]`
+ *    along the plain run, carrying the count forward past an opening rather
+ *    than dropping it. From *"use the earthquake guide to determine amount of
+ *    braced panels needed per run"*.
  *
- * Every "standard" slot is a candidate by default; `eligibleIndices`
- * (undefined = everything eligible — a brand-new wall, or a legacy project
- * file's one-time migration seed) restricts which ones this pass is
- * actually allowed to promote — see `reconcileBracedPlacement`, which is
- * what callers should normally use instead of calling this directly, since
- * it computes `eligibleIndices` from a wall's own prior state (Tommy:
- * "softly decouple [seismic auto-population] to be an original suggestion
- * for autopopulating panels, but then allows the user to change each
- * panel" — once a position has been decided, one way or the other, this
- * function won't re-decide it again).
+ * > *"We can retire near corner braces because the super brace pattern should
+ * > inherently provide the same structural shear value."*
+ *
+ * > *"My answer on the periodic rule: ... we're replacing it with something
+ * > better."* — both Tommy, 2026-11-02
+ *
+ * **What replaces them is `applyDrawTimeBracing` (B15):** the wall brace
+ * pattern lays half a figure on **every** standard panel of every ground-floor
+ * wall. Two panels per wall plus one every 8-to-16ft was a subset of that, so
+ * the rules had stopped adding shear — and they were actively costing it,
+ * because a `braced` slot is not pattern-eligible (`isBraceEligible`) and so
+ * **broke the pair run it sat in**. Their deletion is what lets one figure run
+ * continuously from corner to corner.
+ *
+ * ⚠ **The seismic zone is no longer an input to ground-floor bracing.** That
+ * was the point: it is the half of [[seismic_rating_backwards]] that had to go
+ * before a rating could be read OUT of a built design (B18, the derivation
+ * sheet). The zone still drives `applyAdditionalRowBracedPattern` below, so
+ * the control is not dead — just much narrower, and its copy says so.
+ *
+ * **What a `braced` slot means now:** the user put it there (the type cycle),
+ * or `applyAdditionalRowBracedPattern` did on a freshly-spawned upper row, or
+ * it is in a project file an older version of this app wrote. All three are
+ * carried faithfully through a retile by `reconcileBracedPlacement`, which is
+ * what is left of this module's zero-0 work and is now purely about CARRYING
+ * decisions rather than making any.
+ *
+ * ⚠ **Three places reasoned FROM rule 1 and have been re-reasoned rather
+ * than left pointing at a deleted walk:** `buildPlainMiddle` (tiling.ts) keeps
+ * the borrowed panel off the corner-touching position, `pickFreeSlotsToDrop`
+ * (panelPlacement.ts) sorts the corner-touching slots last, and
+ * `seedDefaultOpenings` (retile.ts) refuses to put a default opening at either
+ * end. All three KEEP their behaviour; each says there why it still does.
  */
-export function applyBracedPlacement(
-  slots: PanelSlot[],
-  spacingIn: number,
-  /** Unused since the corner-brace combine was deleted (2026-11-02) — it was
-   * the combined slot's own width. Kept because all 10+ call sites pass it and
-   * a width-aware rule here is the likeliest next change. */
-  _standardWidthIn: number,
-  defaultPattern: BracePattern,
-  defaultMirrored: boolean,
-  eligibleIndices?: Set<number>,
-): PanelSlot[] {
-  const result = slots.map((s) => ({ ...s }));
-  const isEligible = (i: number) => eligibleIndices === undefined || eligibleIndices.has(i);
-
-  // Rule 1: 1 braced panel touching each corner (Tommy: "each wall must have
-  // two braced panels on it, touching each side of each corner panel" — one
-  // per end, walking inward past any gap panel).
-  //
-  // A safety-gap slot is STEPPED OVER, not absorbed — see this function's own
-  // doc comment for what used to happen here instead, and for how much of
-  // this file existed to support it.
-  //
-  // A slot that's already braced satisfies the requirement without being
-  // touched — this is what makes a *preserved* corner brace (see
-  // `reconcileBracedPlacement`) register as "already handled" instead of the
-  // walk searching further inward for a second one. A LOCKED "standard" slot
-  // (ineligible — the user explicitly chose to keep it plain) stops the walk
-  // entirely rather than reaching past it for an eligible slot further in:
-  // Tommy's own choice at that specific position wins, even if that means
-  // this corner ends up with no brace suggestion at all.
-  const markNearestBraceable = (start: number, step: number, count: number) => {
-    let marked = 0;
-    for (let i = start; i >= 0 && i < result.length && marked < count; i += step) {
-      const slot = result[i]!;
-      if (slot.type === "braced") {
-        marked++;
-      } else if (slot.type === "standard") {
-        if (!isEligible(i)) break;
-        slot.type = "braced";
-        slot.bracedPattern = defaultPattern;
-        slot.bracedMirrored = defaultMirrored;
-        marked++;
-      }
-    }
-  };
-  markNearestBraceable(0, 1, BRACE_NEAR_CORNER_COUNT);
-  markNearestBraceable(result.length - 1, -1, BRACE_NEAR_CORNER_COUNT);
-
-  // Rule 2: periodic braced panel every `spacingIn` along the wall (Tommy:
-  // "use the earthquake guide to determine amount of braced panels needed
-  // per run"). Corner and already-braced slots are genuine reset points —
-  // rule 1 already placed a brace there (a combined safety+braced slot
-  // counts too — it's a real brace, not just a safety panel). But a plain
-  // window/door/safety-gap slot — or a LOCKED "standard" slot ineligible
-  // for promotion — must NOT reset the count: the wall's shear requirement
-  // doesn't go away just because the panel that would've been braced
-  // turned out to be an opening (or the user's own explicit choice). So
-  // distance keeps accumulating through those, and once an ELIGIBLE
-  // standard slot is reached with enough accumulated distance, it (and if
-  // the shortfall was large enough, the standard slot(s) after it too)
-  // picks up the brace(s) that would otherwise have been dropped (Tommy:
-  // "another standard panel becomes a braced panel on that same wall").
-  let cumulativeIn = 0;
-  for (let i = 0; i < result.length; i++) {
-    const slot = result[i]!;
-    if (slot.type === "corner" || slot.type === "braced") {
-      cumulativeIn = 0;
-      continue;
-    }
-    cumulativeIn += slot.widthIn;
-    if (cumulativeIn >= spacingIn && slot.type === "standard" && isEligible(i)) {
-      slot.type = "braced";
-      slot.bracedPattern = defaultPattern;
-      slot.bracedMirrored = defaultMirrored;
-      cumulativeIn -= spacingIn; // carry any excess forward instead of discarding it
-    }
-  }
-
-  return result;
-}
 
 /**
- * Same 2-rule shape as `applyBracedPlacement`, but for a freshly-appearing
- * UPPER zone (Tommy: "when a wall is 16ft tall and then a shorter than
+ * The one surviving automatic bracing rule, and the only reason the seismic
+ * zone is still wired to anything: a freshly-appearing UPPER zone (Tommy: "when a wall is 16ft tall and then a shorter than
  * standard height additional row spawns: at least the ends +50%... need to
  * be braced") — doubled near-corner count (`ADDITIONAL_ROW_BRACE_NEAR_
- * CORNER_COUNT = 2` instead of 1), and Rule 2's periodic hit claims 2
- * consecutive eligible slots ("every other pair") instead of 1.
+ * CORNER_COUNT = 2`), and its periodic hit claims 2 consecutive eligible
+ * slots ("every other pair") instead of 1.
+ *
+ * ⚠ **It kept both rules when zone 0 lost both of them** (B17, 2026-11-02 —
+ * see the record above). Deliberate, and the reason is one sentence: the
+ * wall brace pattern that replaced them is laid per SLOT and does not reach
+ * zone 1 at all, so retiring these would remove bracing from a tall wall's
+ * upper row and put nothing back. It is also a different instruction of
+ * his, about a different thing. When the pattern learns about zones, this
+ * is the next thing to retire.
  *
  * Operates on one wall's own zone-1-and-above row, not the wall's flat
- * `PanelSlot[]` (see `applyBracedPlacement` for that) — `zoneSlots[i]` is
+ * `PanelSlot[]` — `zoneSlots[i]` is
  * slot `i`'s own zone at this level (`undefined` where that column has no
  * real zone this high, treated as an implicit "standard" placeholder,
  * same convention `effectiveZonesForSlot`'s own render-time padding
@@ -146,8 +78,7 @@ export function applyBracedPlacement(
  * slot data — a zone has no independent notion of its own column being a
  * corner or how wide it is (`PanelSlotZone` has no `widthIn` of its own,
  * see its own doc comment), so corner/safety-oct-corner exclusion (never
- * a brace candidate, and a periodic-spacing reset point, exactly
- * mirroring `applyBracedPlacement`'s own corner handling) and Rule 2's
+ * a brace candidate, and a periodic-spacing reset point) and the periodic
  * distance accumulation both read from the parent row instead.
  *
  * `eligibleIndices` (undefined = everything eligible) restricts which
@@ -222,16 +153,23 @@ export function applyAdditionalRowBracedPattern(
 }
 
 /**
- * Preserves each wall's own prior braced-panel decisions across a retile,
- * seeding only genuinely new standard-slot positions via the seismic rule
- * (Tommy: "softly decouple [seismic auto-population] to be an original
- * suggestion... allows the user to change each panel" — once decided, a
- * position's type stays decided). `oldSlots` is the wall's slots array
- * from BEFORE the retile that produced `newSlots` — undefined for a wall
- * with no prior state (a brand-new wall, or a legacy project file's
- * one-time migration seed — see `applyBracedPlacement`'s own doc comment),
- * which just runs the seismic rule freely over everything, same as before
- * this function existed.
+ * Carries each wall's own prior per-panel decisions across a retile (Tommy:
+ * "softly decouple [seismic auto-population] to be an original suggestion...
+ * allows the user to change each panel" — once decided, a position's type
+ * stays decided), then re-forces every locked width.
+ *
+ * ⚠ **It no longer SEEDS anything, and took four parameters with it when it
+ * stopped** (B17, 2026-11-02 — `spacingIn`, `standardWidthIn`,
+ * `defaultPattern`, `defaultMirrored`, which existed only to feed the two
+ * deleted rules; see the record at the top of this file). `oldSlots` is the
+ * wall's slots array from BEFORE the retile that produced `newSlots` —
+ * undefined for a wall with no prior state (a brand-new wall, or a project
+ * file old enough to predate per-slot braced state), which now means there is
+ * nothing to carry and the wall comes back as the tiler built it.
+ *
+ * The function is still named for braced placement because carrying a braced
+ * panel's type, pattern and mirror across a retile is exactly what it does
+ * — it just no longer invents one.
  *
  * Matches positions by ordinal among "standard"|"braced" slots only (the
  * same convention `getOpeningAnchors`'s `beforeStandardCount` uses for
@@ -269,17 +207,12 @@ export function applyAdditionalRowBracedPattern(
  * existed there in `oldSlots` too, in which case it was never part of the
  * standard family to begin with and nothing needs dropping.
  */
-export function reconcileBracedPlacement(
-  oldSlots: PanelSlot[] | undefined,
-  newSlots: PanelSlot[],
-  spacingIn: number,
-  standardWidthIn: number,
-  defaultPattern: BracePattern,
-  defaultMirrored: boolean,
-): PanelSlot[] {
-  if (!oldSlots) {
-    return applyBracedPlacement(newSlots, spacingIn, standardWidthIn, defaultPattern, defaultMirrored);
-  }
+export function reconcileBracedPlacement(oldSlots: PanelSlot[] | undefined, newSlots: PanelSlot[]): PanelSlot[] {
+  /* Nothing to carry. Still goes through the locked-width re-force below via
+     the shared tail, because a tiler-fresh wall can carry a pin too (a drag
+     that pinned a width, then a retile) and the refusal reporting reads the
+     same planner. */
+  if (!oldSlots) return planLockedWidthReforce(newSlots.map((s) => ({ ...s }))).slots;
 
   const oldMarkers: {
     type: "standard" | "braced";
@@ -315,7 +248,6 @@ export function reconcileBracedPlacement(
   }
 
   const reconciled = newSlots.map((s) => ({ ...s }));
-  const eligibleIndices = new Set<number>();
   let ordinal = 0; // new-side standard-family ordinal (count of "standard" slots seen so far in `reconciled`)
   let droppedOldMarkers = 0; // old standard-family entries consumed by newly-created openings, not yet reflected in `ordinal`
   for (let i = 0; i < reconciled.length; i++) {
@@ -347,13 +279,13 @@ export function reconcileBracedPlacement(
       }
       slot.zones = marker.zones;
       slot.lockedWidthIn = marker.lockedWidthIn;
-    } else {
-      eligibleIndices.add(i);
     }
+    /* No `else`. Until B17 a position with no old marker was added to an
+       `eligibleIndices` set and handed to `applyBracedPlacement`, which was
+       allowed to brace it; that is the seeding that was retired, so a
+       genuinely new position now simply stays as the tiler built it. */
     ordinal++;
   }
-
-  const result = applyBracedPlacement(reconciled, spacingIn, standardWidthIn, defaultPattern, defaultMirrored, eligibleIndices);
 
   // Re-force every carried-through locked width back to its own exact value
   // (Tommy: "when you click and drag a panel... it shrinks one panel and adds
@@ -375,7 +307,7 @@ export function reconcileBracedPlacement(
   // and no business composing English. The refusals are re-derived from the
   // committed wall by `findUnhonouredLockedWidths`, which asks this same
   // planner, so the report and the behaviour cannot drift apart.
-  return planLockedWidthReforce(result).slots;
+  return planLockedWidthReforce(reconciled).slots;
 }
 
 export function setWindowWidth(slots: PanelSlot[], index: number, widthIn: number): PanelSlot[] {

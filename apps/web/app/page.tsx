@@ -2528,11 +2528,20 @@ export default function LayoutEditor() {
     if (s.bracedStateSeeded) {
       setBaseWallSlots(s.baseWallSlots);
     } else {
-      const { pattern: loadDefaultPattern, mirrored: loadDefaultMirrored } = bracingStyleToPatternMirror(s.bracingStyle);
-      const loadSpacingIn = seismicBracedPanelSpacingFt[s.seismicZone] * 12;
+      /* ⚠ **This one-time migration seed is now a no-op, and it is kept as
+         one rather than deleted.** A file written before per-slot braced state
+         existed (`bracedStateSeeded` absent) used to be run through the
+         seismic rules on load so its walls arrived braced. B17 retired those
+         rules (Tommy: *"we're replacing it with something better"*), so there
+         is nothing to seed: such a file now arrives with plain standard
+         panels, and the wall brace pattern lays half a figure on every one of
+         them, which is the better thing. The reconcile call stays because it
+         is also what re-forces a locked width, and the branch stays because
+         `bracedStateSeeded` is a real file-schema distinction that still has
+         to be read. */
       const seeded: Record<string, PanelSlot[]> = {};
       for (const [wallId, slots] of Object.entries(s.baseWallSlots)) {
-        seeded[wallId] = reconcileBracedPlacement(undefined, slots, loadSpacingIn, s.standardWidthIn, loadDefaultPattern, loadDefaultMirrored);
+        seeded[wallId] = reconcileBracedPlacement(undefined, slots);
       }
       setBaseWallSlots(seeded);
     }
@@ -2855,15 +2864,30 @@ export default function LayoutEditor() {
           .totalVolumeFt3
       : 0;
 
+  /* ⚠ **The seismic zone no longer seeds any ground-floor bracing — B17,
+     2026-11-02.** It drove two rules in `applyBracedPlacement`: a brace on the
+     standard panel touching each corner, and another every `spacingIn` along
+     the run. Both are retired, the function is deleted, and `bracedSeed` — the
+     three-value bundle that carried this into every retile — went with it.
+
+     > *"We can retire near corner braces because the super brace pattern
+     > should inherently provide the same structural shear value."*
+
+     > *"Id rather have a pattern be described to an engineer with estimated
+     > values rather than prescribe an engineer seismic zone thing."*
+     > — Tommy, 2026-11-02
+
+     `spacingIn` stays for ONE reader: `applyAdditionalRowBracedPattern`, the
+     upper-row rule for a wall tall enough to spawn a second band of panels.
+     The wall brace pattern is laid per slot and does not reach a zone, so
+     retiring that one would remove bracing and put nothing back. The seismic
+     control's own copy says exactly this much and no more. */
   const spacingIn = seismicBracedPanelSpacingFt[seismicZone] * 12;
-  // The seismic-zone-driven spacing/corner rule now only SEEDS a brand-new
-  // standard slot's initial suggestion (Tommy: "softly decouple [it] to be
-  // an original suggestion for autopopulating panels, but then allows the
-  // user to change each panel") — bracingStyle (the "Bracing style"
-  // toolbar) supplies which pattern/mirror a fresh suggestion uses; it no
-  // longer forces every braced panel project-wide (see reconcileBracedPlacement).
+  // bracingStyle (the "Bracing style" toolbar) supplies which pattern/mirror a
+  // braced panel is DRAWN and CUT with — `resolveBracedStyle`,
+  // `buildBracedPanelMembers`, the Shop Fabrication pages. Never a suggestion
+  // any more, since nothing suggests.
   const { pattern: defaultBracePattern, mirrored: defaultBracedMirrored } = bracingStyleToPatternMirror(bracingStyle);
-  const bracedSeed = { spacingIn, defaultPattern: defaultBracePattern, defaultMirrored: defaultBracedMirrored };
   // Closes an existing gap: only a Mid-Wall Bond Beam change actually
   // persisted zone reconciliation into state before this (see
   // reconcileWallZonesForBeamChange above) — a maxPanelHeightIn or
@@ -3056,7 +3080,6 @@ export default function LayoutEditor() {
       standardWidthIn,
       cornerWidthInForTiling,
       thicknessIn,
-      bracedSeed,
       openingSeed,
       runStops,
       cornerMayWidenForTiling,
@@ -3092,7 +3115,6 @@ export default function LayoutEditor() {
       cornerWidthInForTiling,
       thicknessIn,
       oldSlotsByNewWallId,
-      bracedSeed,
       openingSeed,
       runStops,
       cornerMayWidenForTiling,
@@ -3111,9 +3133,16 @@ export default function LayoutEditor() {
     leastAccessibleCorner,
     cornerWidthIn: cornerWidthInForTiling,
     cornerMayWiden: cornerMayWidenForTiling,
-    bracedSpacingIn: bracedSeed.spacingIn,
-    bracedDefaultPattern: bracedSeed.defaultPattern,
-    bracedDefaultMirrored: bracedSeed.defaultMirrored,
+    /* ⚠ These three stay in the stored basis although B17 retired the
+       seeding they used to describe, and that is deliberate on both counts.
+       `bracedSpacingIn` still changes a future tiling outcome, because
+       `applyAdditionalRowBracedPattern` reads it for a tall wall's upper row;
+       the two pattern fields still change how a braced panel is cut. And the
+       basis is a SAVED field, so dropping one is a file-schema change with a
+       migration behind it, not a tidy-up. */
+    bracedSpacingIn: spacingIn,
+    bracedDefaultPattern: defaultBracePattern,
+    bracedDefaultMirrored: defaultBracedMirrored,
   };
   /* REPANELIZE R1 — which settings no longer match what this building was
      panelized with. Empty whenever the basis is unknown (every project
@@ -3379,10 +3408,6 @@ export default function LayoutEditor() {
            corner and gap moved would describe a wall that no longer exists. */
         ruled.slots,
         gapSpaced.slots,
-        bracedSeed.spacingIn,
-        standardWidthIn,
-        bracedSeed.defaultPattern,
-        bracedSeed.defaultMirrored,
       );
       const tidied = tidyUnbuildableLeftovers(braced);
       tidiedParts += tidied.changedParts;
@@ -4055,7 +4080,7 @@ export default function LayoutEditor() {
       });
       if (!bestSlots) continue;
       const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(bestSlots, geometry.gapEnd) : bestSlots;
-      const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+      const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots);
       setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: finalSlots }));
     }
   };
@@ -4332,7 +4357,7 @@ export default function LayoutEditor() {
     // retileWithOpenings itself only knows about window/door/column
     // anchors) and seeds any genuinely new standard-slot position via the
     // seismic rule — see reconcileBracedPlacement's own doc comment.
-    let finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    let finalSlots = reconcileBracedPlacement(currentSlots, markedSlots);
 
     if (next.type === "braced") {
       // The user's own explicit click always wins over whatever the
@@ -4845,7 +4870,7 @@ export default function LayoutEditor() {
       cornerMayWidenForTiling,
     ).slots;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(tiled, geometry.gapEnd) : tiled;
-    const finalSlots = reconcileBracedPlacement(nextSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    const finalSlots = reconcileBracedPlacement(nextSlots, markedSlots);
 
     // ⚠ Smearforn Stage 2 rider, and the one case this function cannot
     // answer with the tiler. The tiler derives the free run's COUNT from the
@@ -5321,7 +5346,7 @@ export default function LayoutEditor() {
     // wipe every one of them back to plain "standard" (see
     // reconcileBracedPlacement's own doc comment; same fix already applied
     // to handleToggleOpening's own retile branch).
-    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots);
     // Same relocation handleToggleOpening's own retile branch already does —
     // without it, selectedSlot keeps pointing at its old raw index, which a
     // width-driven retile can reassign to a totally different panel/type,
@@ -5402,7 +5427,7 @@ export default function LayoutEditor() {
       cornerMayWidenForTiling,
     ).slots;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
-    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots);
     const newIndex = findNthOpeningIndex(finalSlots, precedingOpenings);
     setSelectedSlot(newIndex === -1 ? null : { wallId, slotIndex: newIndex, story });
     setWallSlotsForStory(story, (prev) => ({
@@ -5475,7 +5500,7 @@ export default function LayoutEditor() {
       cornerMayWidenForTiling,
     ).slots;
     const markedSlots = footprint && isMiteredShape(footprint) ? markSafetyCorner(slots, geometry.gapEnd) : slots;
-    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots, spacingIn, standardWidthIn, defaultBracePattern, defaultBracedMirrored);
+    const finalSlots = reconcileBracedPlacement(currentSlots, markedSlots);
     setWallSlotsForStory(story, (prev) => ({ ...prev, [wallId]: finalSlots }));
   };
 
@@ -10582,11 +10607,23 @@ export default function LayoutEditor() {
           <option value="low">Low ({seismicBracedPanelSpacingFt.low}ft braced PANEL spacing)</option>
         </select>
       </label>
+      {/* ⚠ B17, 2026-11-02. This note used to say the PANEL spacing above
+          "drives how often a braced panel is placed along one wall run",
+          which was true and is not any more: both automatic bracing rules
+          were retired, so the zone no longer places anything on a ground-floor
+          wall. Tommy: *"Id rather have a pattern be described to an engineer
+          with estimated values rather than prescribe an engineer seismic zone
+          thing."* Saying so plainly matters more than tidiness — a designer who
+          believes this dropdown is bracing the building would under-brace it. */}
       <p className={styles.note}>
-        Braced wall PANEL spacing (above, drives how often a braced panel is placed along one wall run) is a
-        different limit than braced wall LINE spacing (how far apart two parallel bracing-required wall lines can
-        be) — this design&apos;s longest unbraced run between parallel wall lines should stay under{" "}
-        {bracedWallLineSpacingFt[seismicZone]}ft. {bracedWallLineSpacingStatus.note}
+        ⚠ Since the wall brace pattern lays a figure on every Standard Panel, the zone above no longer places
+        braced panels on a ground-floor wall — nothing on this screen does. It still sets the panel spacing used
+        on the upper row of a wall tall enough to need one, and it still reports the wall LINE limit below.
+      </p>
+      <p className={styles.note}>
+        Braced wall PANEL spacing (above) is a different limit than braced wall LINE spacing (how far apart two
+        parallel bracing-required wall lines can be) — this design&apos;s longest unbraced run between parallel
+        wall lines should stay under {bracedWallLineSpacingFt[seismicZone]}ft. {bracedWallLineSpacingStatus.note}
       </p>
       <label>
         Foundation type{" "}
@@ -14277,10 +14314,24 @@ export default function LayoutEditor() {
                 <td>
                   ~{Math.round(estimatedTotalShearLb).toLocaleString()} lb
                   <br />
+                  {/* ⚠ **`estimatedTotalShear.shearPanelCount`, NOT a count of
+                      `panelType === "braced"`.** This line counted the type
+                      until 2026-11-02, and B17 turned a long-standing
+                      under-count into a flat contradiction: with the
+                      near-corner and periodic seeding retired, an ordinary
+                      building has NO panels of that type at all, so this read
+                      "~66,717 lb across 0 braced panels" — measured on a
+                      43'8" x 33' rectangle. The capacity was right; the
+                      caption was counting the wrong thing. `shearPanelCount`
+                      is derived from each panel's own MEMBERS, which is also
+                      what keeps a Nailer pair out of it, and it is the same
+                      number the Review Log's shear entry prints — so the two
+                      can no longer disagree. */}
                   <span className={styles.note}>
-                    Across {allInstances.filter((i) => i.panelType === "braced").length}{" "}
-                    braced panels (diagonal brace). Building Integrity&apos;s own first-pass NDS estimate — not a
-                    licensed engineer&apos;s calculation, real shear value isn&apos;t modeled yet.
+                    Across {estimatedTotalShear.shearPanelCount}{" "}diagonally braced panels — a dedicated Braced
+                    Panel, or a Standard Panel carrying its half of the wall brace pattern. Building
+                    Integrity&apos;s own first-pass NDS estimate — not a licensed engineer&apos;s calculation,
+                    real shear value isn&apos;t modeled yet.
                   </span>
                 </td>
               </tr>

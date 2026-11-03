@@ -20,23 +20,20 @@ import {
 } from "./runStopOpenings";
 import type { BracePattern, CornerId, Footprint, PanelSlot, Wall, WallEnd, WallRunStop } from "./types";
 
-/** The project's seismic-zone-driven suggestion for brand-new braced-panel
- * positions (Tommy: "softly decouple [seismic auto-population] to be an
- * original suggestion for autopopulating panels, but then allows the user
- * to change each panel") — bundled since `retile`/`retilePreservingOpenings`
- * both need all 3 together, purely to seed NEW standard-slot positions;
- * existing per-wall braced decisions are preserved via
- * `reconcileBracedPlacement`, not re-derived from this every time. */
-export interface BracedSeed {
-  spacingIn: number;
-  defaultPattern: BracePattern;
-  defaultMirrored: boolean;
-}
+/* ⚠ **`BracedSeed` was deleted on 2026-11-02 (B17).** It bundled the three
+   project-wide inputs the two automatic bracing rules needed — seismic
+   spacing, default pattern, default mirror — and threaded them through
+   `retile`, `retilePreservingOpenings` and
+   `retilePreservingOpeningsWithRunStopMemory` into `reconcileBracedPlacement`.
+   Both rules are retired (Tommy: *"we're replacing it with something better"*),
+   so there is nothing left to seed; see the record at the top of
+   `bracedPlacement.ts`. A wall's EXISTING braced decisions are still carried
+   across a retile, which never needed these. */
 
 /** A fresh wall's own soft-default door/window suggestion (Tommy: "one
  * window on every row of slots... one door on the first level of the
- * east, south, and west faces") — bundled the same way `BracedSeed` is,
- * purely to seed brand-new wall positions; an existing wall's own
+ * east, south, and west faces") — bundled, purely to seed brand-new wall
+ * positions; an existing wall's own
  * openings are never touched, same "already decided" precedent
  * `reconcileBracedPlacement` follows at the per-panel level. `randomFn`
  * defaults to `Math.random` — injectable for deterministic tests.
@@ -57,12 +54,22 @@ export interface OpeningSeed {
  * hasn't been decided yet (that's `reconcileBracedPlacement`'s job,
  * called afterward), so it simply routes around whatever this reserves.
  *
- * Candidate positions exclude the first/last standard-family ordinal —
- * Rule 1 in `applyBracedPlacement` always claims those for the mandatory
- * corner-touching brace, and Tommy's own confirmed answer is that a
- * default opening may only take a periodic MID-RUN brace's spot, never a
- * corner one. A wall with fewer than 3 standard slots has no eligible
- * non-corner candidate at all — no default opening is seeded for it.
+ * Candidate positions exclude the first/last standard-family ordinal, and
+ * **that exclusion outlived its own reason.** Tommy's confirmed answer was
+ * that a default opening may only take a periodic MID-RUN brace's spot, never
+ * a corner one — which was a statement about the two braces rule 1 of
+ * `applyBracedPlacement` put at the ends of every wall. Both of that
+ * function's rules were retired on 2026-11-02 (B17) and there is no corner
+ * brace left to protect.
+ *
+ * ⚠ The exclusion is KEPT, and not because of inertia: his answer was about
+ * where an app-chosen opening is allowed to appear on a wall he has not
+ * touched yet, and the corner-touching panel is still the one position whose
+ * width the tiler guarantees (`buildPlainMiddle` keeps the borrowed panel away
+ * from it for the same reason). Re-deciding it is a change to the OPENING
+ * default, which is his to make, not a side effect of retiring a brace rule.
+ * A wall with fewer than 3 standard slots has no eligible non-corner candidate
+ * at all — no default opening is seeded for it.
  */
 function seedDefaultOpenings(plainSlots: PanelSlot[], wall: Wall, fp: Footprint, randomFn: () => number): OpeningAnchor[] {
   const standardSlotIndices: number[] = [];
@@ -414,7 +421,6 @@ export function retile(
   standardWidthIn: number,
   cornerPanelWidthIn: number,
   thicknessIn: number,
-  bracedSeed: BracedSeed,
   openingSeed?: OpeningSeed,
   runStopsByWallId?: Record<string, WallRunStop>,
   /** False when this panelization's corner panel cannot be fabricated off its
@@ -465,14 +471,7 @@ export function retile(
        24 ft... plus or minus 4 ft whatever is closer." The tiler still
        places the FIRST gap from `gapEnd`; this adds the rest at joints the
        run already has, and conserves the run's total width. */
-    const seeded = reconcileBracedPlacement(
-      undefined,
-      slots,
-      bracedSeed.spacingIn,
-      standardWidthIn,
-      bracedSeed.defaultPattern,
-      bracedSeed.defaultMirrored,
-    );
+    const seeded = reconcileBracedPlacement(undefined, slots);
     next[wall.id] = mitered ? markSafetyCorner(seeded, gapEnd) : seeded;
   }
   return next;
@@ -640,7 +639,6 @@ export function retilePreservingOpenings(
   cornerPanelWidthIn: number,
   thicknessIn: number,
   oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined>,
-  bracedSeed: BracedSeed,
   openingSeed?: OpeningSeed,
   runStopsByWallId?: Record<string, WallRunStop>,
   /** See `retile`'s own parameter of the same name. */
@@ -654,7 +652,6 @@ export function retilePreservingOpenings(
     cornerPanelWidthIn,
     thicknessIn,
     oldSlotsByNewWallId,
-    bracedSeed,
     openingSeed,
     runStopsByWallId,
     cornerMayWiden,
@@ -740,7 +737,6 @@ export function retilePreservingOpeningsWithRunStopMemory(
   cornerPanelWidthIn: number,
   thicknessIn: number,
   oldSlotsByNewWallId: Record<string, PanelSlot[] | undefined>,
-  bracedSeed: BracedSeed,
   openingSeed?: OpeningSeed,
   runStopsByWallId?: Record<string, WallRunStop>,
   /** See `retile`'s own parameter of the same name. */
@@ -793,24 +789,16 @@ export function retilePreservingOpeningsWithRunStopMemory(
         : undefined,
     );
     if (memory.unbuilt.length > 0) unbuiltOut[wall.id] = memory;
-    // Preserves this wall's own prior braced-panel decisions (type, style,
-    // mirror) by position, seeding only genuinely new standard-slot
-    // positions via `bracedSeed` — see `reconcileBracedPlacement`'s own
-    // doc comment. `oldSlots` undefined (no old counterpart for this wall
-    // id) means every standard slot here is new — full fresh seed, same
-    // as `retile`.
+    // Carries this wall's own prior per-panel decisions (type, style, mirror,
+    // zones, locked width) by position — see `reconcileBracedPlacement`'s own
+    // doc comment. `oldSlots` undefined (no old counterpart for this wall id)
+    // means there is nothing to carry, and since B17 that no longer means a
+    // fresh seismic seed either: the wall comes back as the tiler built it.
     /* ⚠ Same 24ft gap rule as `retile`'s own loop, and applied in the same
        place for the same reason — the bracing must see the final joints.
        `run.lengthIn` is the BUILT run (a stop already taken out of it),
        which is the length the gap width rule is stated against. */
-    const reconciled = reconcileBracedPlacement(
-      oldSlots,
-      slots,
-      bracedSeed.spacingIn,
-      standardWidthIn,
-      bracedSeed.defaultPattern,
-      bracedSeed.defaultMirrored,
-    );
+    const reconciled = reconcileBracedPlacement(oldSlots, slots);
     next[wall.id] = mitered ? markSafetyCorner(reconciled, gapEnd) : reconciled;
   }
   return { slotsByWallId: next, unbuiltOpeningsByWallId: unbuiltOut };

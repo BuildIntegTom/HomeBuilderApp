@@ -394,16 +394,31 @@ function computePlainSizing(
  * and plain standards filling the rest.
  *
  * The resized (borrowed) panel(s) — when `resizedWidthsIn` differs from
- * `[standardWidthIn]` — are tucked in next to the gap panel instead, never
- * at the corner-touching position: rule 1 in `applyBracedPlacement` always
- * braces whichever standard panel touches each corner, and Tommy wants the
- * borrowed panel(s) to never be the one that ends up braced.
+ * `[standardWidthIn]` — are tucked in next to the gap panel instead, never at
+ * the corner-touching position.
+ *
+ * ⚠ **The reason for that was "Tommy wants the borrowed panel(s) to never be
+ * the one that ends up braced", and it no longer holds.** It was true when
+ * rule 1 of `applyBracedPlacement` braced whichever standard panel touched
+ * each corner: keeping the odd-width panel away from that position kept it
+ * plain. Two things have happened since. The wall brace pattern (B15) lays
+ * half a figure on EVERY standard panel, so a borrowed panel is braced
+ * wherever it sits; and rule 1 was retired outright on 2026-11-02 (B17), so
+ * there is no corner brace to avoid. **His preference can no longer be
+ * honoured by POSITION at all, and that is worth his attention rather than a
+ * silent reinterpretation — it is recorded as an open item.**
+ *
+ * The ORDER here is kept, because it is also what satisfies his separate and
+ * still-live rule that the gap panel is second-to-last on the run, and because
+ * the corner-touching position is the one whose width the tiler guarantees.
+ * Changing it would move panel widths on every wall in every project for no
+ * stated reason.
  */
 function buildPlainMiddle(sizing: PlainSizing, standardWidthIn: number, gapEnd: WallEnd): PanelSlot[] {
   const { standardCount, gapWidthIn, resizedWidthsIn } = sizing;
   const gap: PanelSlot = { type: "safety-gap", widthIn: gapWidthIn };
   const plainStandard = (): PanelSlot => ({ type: "standard", widthIn: standardWidthIn });
-  const cornerTouching: PanelSlot = plainStandard(); // always full width — rule 1 always braces this one
+  const cornerTouching: PanelSlot = plainStandard(); // always full width — see this function's own doc comment
   const resizedSlots: PanelSlot[] = resizedWidthsIn.map((widthIn) => ({ type: "standard", widthIn }));
 
   if (standardCount === 0) {
@@ -412,16 +427,16 @@ function buildPlainMiddle(sizing: PlainSizing, standardWidthIn: number, gapEnd: 
   if (standardCount === resizedSlots.length) {
     // No room for a separate corner-touching/others split — every standard
     // panel in the run is one of the resized slot(s), which sit directly
-    // corner-adjacent (see applyBracedPlacement's corner-brace-combining
-    // rule for what happens when a gap panel ends up there too).
+    // corner-adjacent. (A note here used to describe what the corner-brace
+    // combine did to a gap panel that landed in this position; the combine was
+    // deleted on 2026-11-02 and the gap is simply a slot with a width.)
     return gapEnd === "start" ? [...resizedSlots, gap] : [gap, ...resizedSlots];
   }
 
   const others = Array.from({ length: standardCount - 1 - resizedSlots.length }, plainStandard);
-  // Placing the resized slot(s) adjacent to the gap (farthest from both
-  // corners, since each corner-touching walk in applyBracedPlacement stops
-  // at the very first standard slot it finds) keeps them out of either
-  // corner's brace.
+  // Placing the resized slot(s) adjacent to the gap keeps them farthest from
+  // both corners. The brace walk that made that matter is retired — see this
+  // function's own doc comment for what survives of the reasoning.
   const plainStandards = gapEnd === "start" ? [...resizedSlots, ...others] : [...others, ...resizedSlots];
   return gapEnd === "start" ? [cornerTouching, gap, ...plainStandards] : [...plainStandards, gap, cornerTouching];
 }
@@ -789,11 +804,13 @@ function resolveCorners(
 /**
  * corner - standard panels - gap panel - standard panel - corner, with the
  * gap panel positioned at `gapEnd` (i.e. toward whichever corner) but always
- * one slot in from that corner — the slot between it and the corner is
- * reserved for the mandatory corner-touching braced panel (Tommy: "safety
- * panel is the second-to-last panel on each run"). Braced-panel typing
- * itself is a separate derived overlay (see `applyBracedPlacement`); this
- * function only fixes the *order* of standard/gap slots.
+ * one slot in from that corner (Tommy: "safety panel is the second-to-last
+ * panel on each run"). That slot between the gap and the corner used to be
+ * described as "reserved for the mandatory corner-touching braced panel";
+ * since 2026-11-02 there is no such brace (B17), and his second-to-last rule
+ * stands on its own. This function only fixes the *order* of standard/gap
+ * slots; what a panel is braced WITH is a separate derived overlay
+ * (`applyDrawTimeBracing`).
  *
  * The safety/gap panel's width is always exactly the tier
  * `safetyGapWidthForRunIn` picks for this run — 3/4in over 144in of run,
@@ -809,9 +826,7 @@ function resolveCorners(
  *   the nominal `standardWidthIn`.
  * - Fewer than 1 full standard panel fits after reserving the gap: the
  *   whole remaining budget becomes a single resized standard panel next to
- *   the gap (which then sits directly corner-adjacent — see
- *   `applyBracedPlacement`'s corner-brace-combining rule for what happens
- *   to a gap panel that ends up there).
+ *   the gap, which then sits directly corner-adjacent.
  *
  * `hasCornerStart`/`hasCornerEnd` (default true) control whether this wall
  * gets its own corner panel at each end independently — a wall can win the

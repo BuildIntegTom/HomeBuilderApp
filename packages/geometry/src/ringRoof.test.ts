@@ -101,11 +101,7 @@ describe("⚠ what the existing roof can and cannot do here", () => {
        on both loops gets its truss plate without this module touching it. What
        was missing was never the bearing; it was the surface between them. */
     const fp = ring(buildRectangleFootprint(60, 40), 10);
-    const slots = retile(fp, fp.corners[0]!.id, allCorners(fp), 40, 24, 15.5, {
-      spacingIn: 100_000,
-      defaultPattern: "chevron",
-      defaultMirrored: false,
-    });
+    const slots = retile(fp, fp.corners[0]!.id, allCorners(fp), 40, 24, 15.5);
     for (const wall of fp.walls) {
       const segments = computeRoofBearingSegments(slots[wall.id] ?? [], undefined);
       expect(segments.length).toBeGreaterThan(0);

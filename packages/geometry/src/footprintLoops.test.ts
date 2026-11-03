@@ -209,7 +209,6 @@ describe("⚠ which side of a wall is the weather side", () => {
 
 describe("⚠ a courtyard building actually TILES, which is the test that matters", () => {
   const THICKNESS_IN = 15.5;
-  const SEED = { spacingIn: 100_000, defaultPattern: "chevron" as const, defaultMirrored: false };
 
   it("every wall on BOTH loops has panels summing exactly to its own run", () => {
     /* Dimensional tightness is the rule this app will not break — a wall whose
@@ -219,7 +218,7 @@ describe("⚠ a courtyard building actually TILES, which is the test that matter
        strongest evidence that deriving loops from the existing linkage was the
        right shape for this change. */
     const fp = ring(buildRectangleFootprint(60, 40), 10);
-    const slots = retile(fp, fp.corners[0]!.id, allCorners(fp), 40, 24, THICKNESS_IN, SEED);
+    const slots = retile(fp, fp.corners[0]!.id, allCorners(fp), 40, 24, THICKNESS_IN);
     for (const wall of fp.walls) {
       const geom = wallGeometryFor(fp, wall.id, allCorners(fp), fp.corners[0]!.id, THICKNESS_IN)!;
       const sum = (slots[wall.id] ?? []).reduce((n, s) => n + s.widthIn, 0);

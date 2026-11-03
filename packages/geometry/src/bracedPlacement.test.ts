@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  applyAdditionalRowBracedPattern,
-  applyBracedPlacement,
-  reconcileBracedPlacement,
-  setWindowWidth,
-} from "./bracedPlacement";
+import { applyAdditionalRowBracedPattern, reconcileBracedPlacement, setWindowWidth } from "./bracedPlacement";
+import { seedRetiredBracedPlacement } from "./retiredBracedSeeder";
 import {
   getOpeningAnchors,
   retileWithOpenings,
@@ -15,194 +11,55 @@ import {
 } from "./tiling";
 import type { BracePattern, PanelSlot, PanelSlotType, PanelSlotZone } from "./types";
 
-describe("applyBracedPlacement", () => {
-  it("places exactly 1 braced panel touching each corner, then periodic braced panels every `spacing` along the plain run, stamped with the default pattern/mirror", () => {
-    // 480 wall, 48in standard, 24in corners: middle=432, minus the fixed
-    // 3/4in gap leaves 431.25 for standards -> 8 fit (384) with a 47.25
-    // remainder, split into 2 panels of 47.625 each next to the gap
-    // (capped-width tiling, see tiling.test.ts); gapEnd 'end' puts the gap
-    // second-to-last, corner-touching standard last.
-    //
-    // ⚠ A SECOND safety gap appears from 2026-10-18: a 480in run is 40ft, and
-    // the 24ft spacing rule puts a gap at the joint nearest 24ft from the
-    // first one (Tommy: a 3/4in safety cap approximately every 24ft, plus or
-    // minus 4ft, whichever is closer). This fixture is about the BRACE walk,
-    // and what it shows is that the walk still brackets each corner and still
-    // steps periodically — over one more slot than it used to.
-    const { slots } = tileWall(480, 48, 24, "end");
-    const result = applyBracedPlacement(slots, 96 /* 8ft high-seismic spacing */, 48, "chevron", false);
-    expect(result.map((s) => s.type)).toEqual([
-      "corner",
-      "braced", // touches the start corner
-      "standard",
-      "safety-gap", // the 24ft spacing rule, 2026-10-18
-      "braced", // periodic
-      "standard",
-      "braced", // periodic
-      "standard",
-      "standard", // 1st of the 2 split panels — cumulative lands at 95.625, just under 96
-      "braced", // 2nd of the 2 split panels — periodic (cumulative crosses 96 here)
-      "safety-gap", // second-to-last, fixed 3/4in
-      "braced", // touches the end corner (the corner-touching standard)
-      "corner",
-    ]);
-    for (const s of result) {
-      if (s.type !== "braced") continue;
-      expect(s.bracedPattern).toBe("chevron");
-      expect(s.bracedMirrored).toBe(false);
+describe("the retired automatic bracing rules (B17, 2026-11-02)", () => {
+  /* ⚠ **`applyBracedPlacement` and its nine tests stood here.** It had two
+     rules: one brace on the standard panel touching each corner, and another
+     every `seismicBracedPanelSpacingFt[zone]` along the plain run. Both were
+     retired on 2026-11-02 — the record of why is at the top of
+     `bracedPlacement.ts`, and the rules themselves are kept verbatim as a
+     test fixture builder in `retiredBracedSeeder.ts`.
+
+     What replaces those nine tests is two, written against what the app
+     actually calls now. The deleted ones were about a walk's behaviour; these
+     are about the one claim that matters after it: **nothing places a braced
+     panel on its own any more, and a braced panel a person placed is still
+     carried faithfully.** */
+
+  it("gives a freshly tiled wall NOT ONE braced panel, however long the wall is", () => {
+    for (const lengthIn of [200, 480, 1200]) {
+      const { slots } = tileWall(lengthIn, 48, 24, "end");
+      const result = reconcileBracedPlacement(undefined, slots);
+      expect(result.filter((x) => x.type === "braced"), `${lengthIn}in wall`).toEqual([]);
+      /* ⚠ Non-vacuous, and this is the whole point of keeping the retired
+         seeder: the two rules really did fire on this exact wall — four times
+         on the 480in one — so the zero above is the retirement and not a
+         fixture too short to trigger anything. */
+      const asItWas = seedRetiredBracedPlacement(slots, 96, "chevron", false);
+      expect(asItWas.filter((x) => x.type === "braced").length, `${lengthIn}in wall, old rules`).toBeGreaterThan(1);
+      // And the wall is otherwise returned exactly as the tiler built it.
+      expect(result.map((x) => [x.type, x.widthIn])).toEqual(slots.map((x) => [x.type, x.widthIn]));
     }
   });
 
-  it("stamps every newly-promoted slot with whatever default pattern/mirror is passed in", () => {
-    const slots: PanelSlot[] = [
-      { type: "corner", widthIn: 24 },
-      { type: "standard", widthIn: 48 },
-      { type: "corner", widthIn: 24 },
-    ];
-    const result = applyBracedPlacement(slots, 100_000, 48, "hatch", true);
-    expect(result[1]!.type).toBe("braced");
-    expect(result[1]!.bracedPattern).toBe("hatch");
-    expect(result[1]!.bracedMirrored).toBe(true);
-  });
+  it("carries a braced panel a person placed, without bracing anything near it", () => {
+    /* The type cycle is still how a braced panel gets onto a wall (Tommy,
+       2026-11-02, on losing it when the right-click menu replaces it: *"No
+       problem on there being not able to change a panel during this queue"*).
+       So a wall with exactly one hand-placed brace, retiled, must come back
+       with exactly one — the retired rules would have made it three. */
+    const { slots: fresh } = tileWall(480, 48, 24, "end");
+    const handPlaced = fresh.map((x, i) => (i === 5 && x.type === "standard" ? { ...x, type: "braced" as const, bracedPattern: "hatch" as const, bracedMirrored: true } : x));
+    expect(handPlaced.filter((x) => x.type === "braced").length).toBe(1);
 
-  it("no longer auto-flanks windows (Tommy: dropped that rule) — only corner-touching and periodic bracing apply", () => {
-    const slots: PanelSlot[] = [
-      { type: "corner", widthIn: 24 },
-      { type: "standard", widthIn: 48 },
-      { type: "standard", widthIn: 48 },
-      { type: "standard", widthIn: 48 },
-      { type: "window", widthIn: 36 },
-      { type: "standard", widthIn: 48 },
-      { type: "standard", widthIn: 48 },
-      { type: "standard", widthIn: 48 },
-      { type: "corner", widthIn: 24 },
-    ];
-    // huge spacing so periodic bracing never fires, isolating window behavior
-    const result = applyBracedPlacement(slots, 100_000, 48, "chevron", false);
-    expect(result.map((s) => s.type)).toEqual([
-      "corner",
-      "braced", // touches start corner (rule 1)
-      "standard",
-      "standard",
-      "window", // untouched — no more flanking
-      "standard",
-      "standard",
-      "braced", // touches end corner (rule 1)
-      "corner",
-    ]);
-  });
-
-  it("doesn't flank doors either (never did, still doesn't)", () => {
-    const slots: PanelSlot[] = [
-      { type: "corner", widthIn: 24 },
-      { type: "standard", widthIn: 48 },
-      { type: "standard", widthIn: 48 },
-      { type: "door", widthIn: 36 },
-      { type: "standard", widthIn: 48 },
-      { type: "standard", widthIn: 48 },
-      { type: "corner", widthIn: 24 },
-    ];
-    const result = applyBracedPlacement(slots, 100_000, 48, "chevron", false);
-    // only 1 braced per corner now = 2 total, everything else including the
-    // standards adjacent to the door stays untouched
-    expect(result.map((s) => s.type)).toEqual([
-      "corner",
-      "braced",
-      "standard",
-      "door",
-      "standard",
-      "braced",
-      "corner",
-    ]);
-  });
-
-  it("shifts a periodic brace to the next standard panel when it would've landed on a window (Tommy: don't drop the shear count)", () => {
-    const slots: PanelSlot[] = [
-      { type: "corner", widthIn: 24 },
-      { type: "standard", widthIn: 48 },
-      { type: "standard", widthIn: 48 },
-      { type: "window", widthIn: 48 },
-      { type: "standard", widthIn: 48 },
-      { type: "standard", widthIn: 48 },
-      { type: "corner", widthIn: 24 },
-    ];
-    // spacing=96: rule 1 braces index1 (start) and index5 (end) first.
-    // Periodic distance then accumulates 48 (index2) + 48 (the window,
-    // which still occupies wall length) = 96 exactly AT the window — but a
-    // window can't be braced, so the requirement carries forward instead of
-    // resetting, and gets picked up by the very next standard (index4).
-    const result = applyBracedPlacement(slots, 96, 48, "chevron", false);
-    expect(result.map((s) => s.type)).toEqual([
-      "corner",
-      "braced", // rule 1, start corner
-      "standard",
-      "window", // untouched — can't be braced
-      "braced", // periodic brace shifted here instead of being dropped
-      "braced", // rule 1, end corner
-      "corner",
-    ]);
-  });
-
-  it("gracefully handles a wall too short for a corner brace on each side — the end corner finds the gap, steps over it, and settles for the brace the other walk placed", () => {
-    const slots: PanelSlot[] = [
-      { type: "corner", widthIn: 24 },
-      { type: "standard", widthIn: 48 },
-      { type: "safety-gap", widthIn: 47.25 },
-      { type: "corner", widthIn: 24 },
-    ];
-    const result = applyBracedPlacement(slots, 96, 48, "chevron", false);
-    // Start-corner walk claims the one standard slot. The end-corner walk
-    // then reaches the safety-gap slot, steps straight over it, and finds the
-    // brace the other walk just placed — which satisfies it. So the end corner
-    // has no brace of its own, and the wall is untouched.
-    //
-    // ⚠ **This fixture has outlived two different behaviours, and the
-    // assertions never changed.** It once asserted that the gap COMBINED with
-    // the corner brace here, which it did — and which left the wall 1½in
-    // LONGER than itself, silently, one of the cases Tommy's 2026-09-29
-    // "perfectly tight with dimensions and wall lengths" instruction was
-    // about. Then the combine learned to refuse what the run could not pay
-    // for, and this wall was a refusal. On 2026-11-02 the combine was deleted
-    // outright (Tommy: *"We don't need any of this safety Gap combining
-    // stuff"*) and the gap is simply stepped over. A 47¼in gap panel is
-    // legacy-file shape in the first place; today's tiler emits exactly 3/4in.
-    expect(result.map((s) => s.type)).toEqual(["corner", "braced", "safety-gap", "corner"]);
-    expect(result[2]!.secondaryType).toBeUndefined();
-    expect(result.reduce((a, s) => a + s.widthIn, 0)).toBe(slots.reduce((a, s) => a + s.widthIn, 0));
-  });
-
-  it("a slot that's already braced satisfies the corner requirement without the walk searching further inward for a second one", () => {
-    // eligibleIndices is an empty set (nothing is eligible for promotion),
-    // isolating this to: does an already-braced slot register as
-    // "satisfied" via its own type, independent of eligibility at all?
-    const slots: PanelSlot[] = [
-      { type: "corner", widthIn: 24 },
-      { type: "braced", widthIn: 48, bracedPattern: "hatch", bracedMirrored: true },
-      { type: "standard", widthIn: 48 },
-      { type: "corner", widthIn: 24 },
-    ];
-    const result = applyBracedPlacement(slots, 100_000, 48, "chevron", false, new Set());
-    // The already-braced slot is left completely untouched (own pattern
-    // preserved) — satisfies the start corner without needing eligibility.
-    expect(result[1]).toEqual({ type: "braced", widthIn: 48, bracedPattern: "hatch", bracedMirrored: true });
-    // The end corner's own independent walk finds the plain standard slot
-    // but can't promote it (not eligible) — stays untouched.
-    expect(result[2]!.type).toBe("standard");
-  });
-
-  it("a LOCKED standard slot (excluded from eligibleIndices) stops the corner walk instead of reaching past it for an eligible one further in", () => {
-    // Only 1 corner is actually being tested here (the start) — the far
-    // end is pre-satisfied with an already-braced slot so its own
-    // independent walk can't confound the result by reaching index1 from
-    // the other direction.
-    const slots: PanelSlot[] = [
-      { type: "standard", widthIn: 48 }, // locked — user explicitly reverted this one
-      { type: "standard", widthIn: 48 }, // otherwise eligible, but never reached
-      { type: "braced", widthIn: 48, bracedPattern: "chevron", bracedMirrored: false }, // pre-satisfies the end
-    ];
-    const eligibleIndices = new Set([1]); // only index 1 is eligible
-    const result = applyBracedPlacement(slots, 100_000, 48, "chevron", false, eligibleIndices);
-    expect(result.map((s) => s.type)).toEqual(["standard", "standard", "braced"]);
+    const { slots: retiled } = tileWall(480, 48, 24, "end");
+    const result = reconcileBracedPlacement(handPlaced, retiled);
+    const braced = result.filter((x) => x.type === "braced");
+    expect(braced.length).toBe(1);
+    expect(braced[0]!.bracedPattern).toBe("hatch");
+    expect(braced[0]!.bracedMirrored).toBe(true);
+    expect(result[5]!.type).toBe("braced");
+    // The run still sums to its own length, to the eighth.
+    expect(result.reduce((a, x) => a + Math.round(x.widthIn * 8), 0)).toBe(retiled.reduce((a, x) => a + Math.round(x.widthIn * 8), 0));
   });
 });
 
@@ -290,17 +147,23 @@ describe("applyAdditionalRowBracedPattern", () => {
 });
 
 describe("reconcileBracedPlacement", () => {
-  it("with no prior state (undefined oldSlots), behaves exactly like a fresh applyBracedPlacement call", () => {
+  it("with no prior state (undefined oldSlots), hands back the tiler's own wall untouched", () => {
+    /* ⚠ This test used to say "behaves exactly like a fresh
+       `applyBracedPlacement` call", and that was its whole point: a wall with
+       no history got the full seismic seed. Since B17 there is no seed, so the
+       no-history case is an identity — which is worth asserting outright,
+       because it is the path every brand-new wall in the app takes. */
     const { slots } = tileWall(480, 48, 24, "end");
-    const viaReconcile = reconcileBracedPlacement(undefined, slots, 96, 48, "chevron", false);
-    const viaDirect = applyBracedPlacement(slots, 96, 48, "chevron", false);
-    expect(viaReconcile).toEqual(viaDirect);
+    expect(reconcileBracedPlacement(undefined, slots)).toEqual(slots);
   });
 
-  it("preserves an explicit 'standard' choice through a later retile, instead of the seismic rule re-bracing it", () => {
-    // First pass: corner-touching slot gets auto-seeded braced.
+  it("preserves an explicit 'standard' choice through a later retile", () => {
+    /* ⚠ The seeding this guarded against is retired (B17), so the brace now
+       has to be put on the wall the way a person puts it there — which is
+       what the retired seeder is doing in this one line. The claim under test
+       has not changed: a position decided once stays decided. */
     const { slots: fresh } = tileWall(200, 48, 24, "end");
-    const seeded = reconcileBracedPlacement(undefined, fresh, 100_000, 48, "chevron", false);
+    const seeded = seedRetiredBracedPlacement(fresh, 100_000, "chevron", false);
     expect(seeded[1]!.type).toBe("braced");
     // User reverts it back to plain standard (simulating the click-cycle's
     // last stop) — same slots array, that one position's type flipped back.
@@ -309,33 +172,33 @@ describe("reconcileBracedPlacement", () => {
     // standing in for e.g. an opening elsewhere on the wall changing) —
     // reconciling against the user's reverted state must NOT re-brace it.
     const { slots: retiled } = tileWall(200, 48, 24, "end");
-    const reconciled = reconcileBracedPlacement(userReverted, retiled, 100_000, 48, "chevron", false);
+    const reconciled = reconcileBracedPlacement(userReverted, retiled);
     expect(reconciled[1]!.type).toBe("standard");
   });
 
   it("preserves a user's specific braced pattern/mirror choice through a later retile", () => {
     const { slots: fresh } = tileWall(200, 48, 24, "end");
-    const seeded = reconcileBracedPlacement(undefined, fresh, 100_000, 48, "chevron", false);
+    const seeded = seedRetiredBracedPlacement(fresh, 100_000, "chevron", false);
     const userChose = seeded.map((s, i) => (i === 1 ? { ...s, bracedPattern: "hatch" as const, bracedMirrored: true } : s));
     const { slots: retiled } = tileWall(200, 48, 24, "end");
-    const reconciled = reconcileBracedPlacement(userChose, retiled, 100_000, 48, "chevron", false);
+    const reconciled = reconcileBracedPlacement(userChose, retiled);
     expect(reconciled[1]!.type).toBe("braced");
     expect(reconciled[1]!.bracedPattern).toBe("hatch");
     expect(reconciled[1]!.bracedMirrored).toBe(true);
   });
 
   it("seeds only genuinely new standard-slot positions, leaving every previously-decided position (braced or explicit standard) untouched", () => {
-    // A wall fully decided by rule 1 alone (huge spacing so rule 2 never
-    // fires) — some standard-family slots become braced (the 2
-    // corner-touching ones), the rest stay plain standard.
+    // A wall decided by the retired rule 1 alone (huge spacing so rule 2
+    // never fires) — the 2 corner-touching slots are braced, the rest stay
+    // plain standard. Stands in for a wall a person decided panel by panel.
     const { slots: shortWall } = tileWall(200, 48, 24, "end");
-    const decided = reconcileBracedPlacement(undefined, shortWall, 100_000, 48, "chevron", false);
+    const decided = seedRetiredBracedPlacement(shortWall, 100_000, "chevron", false);
     // The wall grows (e.g. a drag-wall edit), producing 1 extra standard
     // slot beyond what existed before — reconciling should seed ONLY that
     // new position (with the NEW default, "hatch"/true), leaving the 2
     // already-decided ones exactly as they were (still "chevron"/false).
     const { slots: grownWall } = tileWall(260, 48, 24, "end");
-    const reconciled = reconcileBracedPlacement(decided, grownWall, 100_000, 48, "hatch", true);
+    const reconciled = reconcileBracedPlacement(decided, grownWall);
 
     const decidedStandardFamily = decided.filter((s) => s.type === "standard" || s.type === "braced");
     const reconciledStandardFamily = reconciled.filter((s) => s.type === "standard" || s.type === "braced");
@@ -349,13 +212,15 @@ describe("reconcileBracedPlacement", () => {
       expect(reconciledStandardFamily[i]!.bracedPattern).toBe(decidedStandardFamily[i]!.bracedPattern);
       expect(reconciledStandardFamily[i]!.bracedMirrored).toBe(decidedStandardFamily[i]!.bracedMirrored);
     }
-    // The 1 genuinely new slot got seeded with the NEW default pattern —
-    // proving it really was freshly decided, not just copied forward.
+    /* ⚠ **The 1 genuinely new slot comes back PLAIN.** Until B17 it was
+       seeded, and this test asserted it carried the NEW default pattern,
+       proving it had been freshly decided rather than copied forward. With the
+       seeding retired, "freshly decided" means "left alone", and that is the
+       assertion now: a new position is a plain standard panel, which the wall
+       brace pattern will then lay half a figure on like every other one. */
     const newSlot = reconciledStandardFamily[reconciledStandardFamily.length - 1]!;
-    if (newSlot.type === "braced") {
-      expect(newSlot.bracedPattern).toBe("hatch");
-      expect(newSlot.bracedMirrored).toBe(true);
-    }
+    expect(newSlot.type).toBe("standard");
+    expect(newSlot.bracedPattern).toBeUndefined();
   });
 
   it("carries a locked width through an unrelated retile, shedding the delta to the nearest unlocked neighbor", () => {
@@ -380,7 +245,7 @@ describe("reconcileBracedPlacement", () => {
       { type: "standard", widthIn: 40 },
       { type: "corner", widthIn: 24 },
     ];
-    const reconciled = reconcileBracedPlacement(oldSlots, newSlots, 100_000, 40, "chevron", false);
+    const reconciled = reconcileBracedPlacement(oldSlots, newSlots);
     const standardFamily = reconciled.filter((s) => s.type === "standard" || s.type === "braced");
     expect(standardFamily[1]!.widthIn).toBeCloseTo(30, 6);
     expect(standardFamily[1]!.lockedWidthIn).toBe(30);
@@ -408,7 +273,7 @@ describe("reconcileBracedPlacement", () => {
       { type: "standard", widthIn: 40 },
       { type: "corner", widthIn: 24 },
     ];
-    const reconciled = reconcileBracedPlacement(oldSlots, newSlots, 100_000, 40, "chevron", false);
+    const reconciled = reconcileBracedPlacement(oldSlots, newSlots);
     const standardFamily = reconciled.filter((s) => s.type === "standard" || s.type === "braced");
     expect(standardFamily[1]!.widthIn).toBeCloseTo(36, 6);
     expect(standardFamily[2]!.widthIn).toBeCloseTo(36, 6);
@@ -446,7 +311,7 @@ describe("reconcileBracedPlacement", () => {
       { type: "standard", widthIn: 46 },
       { type: "corner", widthIn: 24 },
     ];
-    const reconciled = reconcileBracedPlacement(oldSlots, newSlots, 100_000, 40, "chevron", false);
+    const reconciled = reconcileBracedPlacement(oldSlots, newSlots);
     const standardFamily = reconciled.filter((s) => s.type === "standard" || s.type === "braced");
     // Nothing changed: every panel is the width the tiler laid out...
     expect(standardFamily.map((s) => s.widthIn)).toEqual([46, 46, 46, 46]);
@@ -486,7 +351,7 @@ describe("reconcileBracedPlacement", () => {
     const anchors = [{ beforeStandardCount: 1, type: "window" as const, widthIn: 48 }];
 
     const retiled = retileWithOpenings(wallLengthIn, 48, 24, "end", true, true, anchors).slots;
-    const reconciled = reconcileBracedPlacement(oldSlots, retiled, 100_000, 48, "chevron", false);
+    const reconciled = reconcileBracedPlacement(oldSlots, retiled);
 
     // The untouched far-end brace must still be "braced" with its ORIGINAL
     // pattern/mirror — not silently reverted to "standard" (the bug) nor
@@ -532,7 +397,7 @@ describe("reconcileBracedPlacement", () => {
     anchors[windowAnchorIdx] = { ...anchors[windowAnchorIdx]!, widthIn: 60 };
 
     const retiled = retileWithOpenings(wallLengthIn, 48, 24, "end", true, true, anchors).slots;
-    const reconciled = reconcileBracedPlacement(oldSlots, retiled, 100_000, 48, "chevron", false);
+    const reconciled = reconcileBracedPlacement(oldSlots, retiled);
 
     // The braced panel must still be BEFORE the window (its original wall
     // order), not swapped to after it.
@@ -688,9 +553,7 @@ describe("the product sweep: every wall length, every corner, every opening", ()
             for (const { name, openings } of OPENING_SETS) {
               cases++;
               const tiled = retileWithOpenings(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, gapEnd, hasStart, hasEnd, openings).slots;
-              const braced = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
-              for (const s of braced) {
-              }
+              const braced = seedRetiredBracedPlacement(tiled, SEISMIC_SPACING_IN, "chevron", false);
               const walled = fits(wallLengthIn, openings, hasStart, hasEnd);
               if (walled) wallSumAsserted++;
               const failure = check(tiled, braced, e, walled);
@@ -732,14 +595,14 @@ describe("the product sweep: every wall length, every corner, every opening", ()
             for (const { name, openings } of OPENING_SETS) {
               cases++;
               const tiled = retileWithOpenings(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, gapEnd, hasStart, hasEnd, openings).slots;
-              const first = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
-              const second = reconcileBracedPlacement(first, tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+              const first = seedRetiredBracedPlacement(tiled, SEISMIC_SPACING_IN, "chevron", false);
+              const second = reconcileBracedPlacement(first, tiled);
               const where = [wallLengthIn + "in", standardWidthIn, (hasStart ? "S" : "-") + (hasEnd ? "E" : "-"), gapEnd, name].join("/");
               if (layout(second) !== layout(first)) {
                 violations.push(where + ": 1st reconcile moved it; was " + layout(first) + "; now " + layout(second));
                 continue;
               }
-              const third = reconcileBracedPlacement(second, tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+              const third = reconcileBracedPlacement(second, tiled);
               if (layout(third) !== layout(second)) violations.push(where + ": 2nd reconcile moved it");
             }
           }
@@ -747,24 +610,32 @@ describe("the product sweep: every wall length, every corner, every opening", ()
       }
     }
     expect(violations.slice(0, 5)).toEqual([]);
-    // This is also what pins `combineSwallowedOrdinals`' RECONSTRUCTION of the
-    // swallowed ordinal against the real combine: a wrong hole misaligns the
-    // markers, which shows up here as a wall that moves.
+    /* ⚠ This used to pin `combineSwallowedOrdinals`' reconstruction of the
+       ordinal the corner-brace combine swallowed — a wrong hole misaligned
+       the markers and showed up here as a wall that moved. That function went
+       with the combine on 2026-11-02, and the seeding went on the same day, so
+       what this sweep pins now is narrower and still worth having: **ordinal
+       marker matching itself**, over 90,000+ walls that each carry braced
+       panels somewhere in the run. Misalign a marker and a wall still moves. */
     expect(cases).toBeGreaterThan(90_000);
   });
 
   it("braced pattern and mirroring move no width anywhere", () => {
-    // Cheap to state, and it is why the sweep above runs one pattern rather
-    // than four: a pattern is stamped onto a slot, never measured.
+    /* Cheap to state, and it is why the sweep above runs one pattern rather
+       than four: a pattern is stamped onto a slot, never measured. Still true
+       of the live code — `reconcileBracedPlacement` copies a pattern across
+       and `applyDrawTimeBracing` writes one onto a slot — and asserted here
+       over the retired seeder because that is what still varies the pattern
+       across a whole wall in one call. */
     const violations: string[] = [];
     for (let e = Math.round(12 * 8); e <= Math.round(600 * 8); e += 8) {
       const wallLengthIn = e / 8;
       for (const [hasStart, hasEnd] of CORNER_CONFIGS) {
         for (const { openings } of OPENING_SETS) {
           const tiled = retileWithOpenings(wallLengthIn, 40, CORNER_WIDTH_IN, "end", hasStart, hasEnd, openings).slots;
-          const a = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, 40, "chevron", false).map((s) => s.widthIn);
+          const a = seedRetiredBracedPlacement(tiled, SEISMIC_SPACING_IN, "chevron", false).map((s) => s.widthIn);
           for (const [pattern, mirrored] of [["hatch", false], ["chevron", true], ["hatch", true]] as [BracePattern, boolean][]) {
-            const b = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, 40, pattern, mirrored).map((s) => s.widthIn);
+            const b = seedRetiredBracedPlacement(tiled, SEISMIC_SPACING_IN, pattern, mirrored).map((s) => s.widthIn);
             if (a.join() !== b.join()) violations.push(`${wallLengthIn}in ${pattern}/${mirrored}: ${a.join()} vs ${b.join()}`);
           }
         }
@@ -774,10 +645,13 @@ describe("the product sweep: every wall length, every corner, every opening", ()
   });
 
   it("holds the same four properties through a RETILE that carries prior braced decisions", () => {
-    // The sweep above seeds every wall from scratch. This one goes through
-    // `reconcileBracedPlacement` with real prior state, which is the path the
-    // app takes on every wall-length edit: the combine runs against slots
-    // whose types came from the wall's own history.
+    /* The sweep above builds each wall in one pass. This one goes through
+       `reconcileBracedPlacement` with real prior state, which is the path the
+       app takes on every wall-length edit: the marker walk runs against slots
+       whose types came from the wall's own history. ⚠ `before` is built by
+       the retired seeder rather than by a reconcile, because since B17 a
+       reconcile with no prior state brands nothing, and a `before` with no
+       braced panel in it would leave this sweep with no decisions to carry. */
     const violations: string[] = [];
     let cases = 0;
     for (let e = Math.round(12 * 8); e <= Math.round(600 * 8); e += 4) {
@@ -786,17 +660,10 @@ describe("the product sweep: every wall length, every corner, every opening", ()
         for (const { name, openings } of OPENING_SETS) {
           cases++;
           // The wall as it stood at a different length, seeded from scratch…
-          const before = reconcileBracedPlacement(
-            undefined,
-            retileWithOpenings(wallLengthIn + 17.375, standardWidthIn, CORNER_WIDTH_IN, "end", true, true, openings).slots,
-            SEISMIC_SPACING_IN,
-            standardWidthIn,
-            "chevron",
-            false,
-          );
+          const before = seedRetiredBracedPlacement(retileWithOpenings(wallLengthIn + 17.375, standardWidthIn, CORNER_WIDTH_IN, "end", true, true, openings).slots, SEISMIC_SPACING_IN, "chevron", false);
           // …and the same wall re-tiled to this length, reconciled against it.
           const tiled = retileWithOpenings(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, "end", true, true, openings).slots;
-          const after = reconcileBracedPlacement(before, tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+          const after = reconcileBracedPlacement(before, tiled);
           const failure = check(tiled, after, e, fits(wallLengthIn, openings, true, true));
           if (failure) violations.push(`${wallLengthIn}in/${standardWidthIn}/${name}: ${failure}`);
         }

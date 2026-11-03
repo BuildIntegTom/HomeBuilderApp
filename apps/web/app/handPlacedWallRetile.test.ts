@@ -23,7 +23,6 @@ import { standardFamilyCount, tilerWouldChangeThePanelCount } from "./handPlaced
 const LIMITS = { minIn: fabricationMinPanelWidthIn.value, maxIn: panelWidthInRange.maxIn };
 const STANDARD_WIDTH_IN = 40;
 const CORNER_WIDTH_IN = 25.5;
-const SPACING_IN = 300;
 const WALL_LENGTH_IN = 24 * 12;
 
 function total(slots: PanelSlot[]): number {
@@ -32,13 +31,13 @@ function total(slots: PanelSlot[]): number {
 
 function tileFresh(): PanelSlot[] {
   const { slots } = tileWall(WALL_LENGTH_IN, STANDARD_WIDTH_IN, CORNER_WIDTH_IN, "end", true, true);
-  return reconcileBracedPlacement(undefined, slots, SPACING_IN, STANDARD_WIDTH_IN, "chevron", false);
+  return reconcileBracedPlacement(undefined, slots);
 }
 
 /** What page.tsx's `retileWallAroundPins` does on its tiler path. */
 function tilerPath(currentSlots: PanelSlot[]): PanelSlot[] {
   const tiled = retileWithOpenings(WALL_LENGTH_IN, STANDARD_WIDTH_IN, CORNER_WIDTH_IN, "end", true, true, []).slots;
-  return reconcileBracedPlacement(currentSlots, tiled, SPACING_IN, STANDARD_WIDTH_IN, "chevron", false);
+  return reconcileBracedPlacement(currentSlots, tiled);
 }
 
 describe("a hand-placed panel and a later width edit", () => {

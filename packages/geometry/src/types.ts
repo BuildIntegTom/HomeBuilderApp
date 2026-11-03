@@ -106,8 +106,8 @@ export interface PanelSlot {
    * editor to be quite flexible... include each panel style for braced
    * panels in the click-through cycle... allows the user to change each
    * panel"). Undefined on a "braced" slot means "not yet decided" — falls
-   * back to the project's global default (see `applyBracedPlacement`'s
-   * `defaultPattern`/`defaultMirrored`), same "absent = default" convention
+   * back to the project's global default (`bracingStyle` in page.tsx, read by
+   * `resolveBracedStyle`), same "absent = default" convention
    * as `heightIn`/`sillHeightIn` above; this should only actually happen
    * for legacy data predating this field. */
   bracedPattern?: BracePattern;

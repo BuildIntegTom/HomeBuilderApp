@@ -22,7 +22,6 @@ const STANDARD_WIDTH_IN = 40;
 const CORNER_PANEL_WIDTH_IN = 24;
 // Huge spacing so only rule 1 (corner-touching) fires, keeping fixture
 // outputs predictable for tests that aren't specifically about bracing.
-const BRACED_SEED = { spacingIn: 100_000, defaultPattern: "chevron" as const, defaultMirrored: false };
 const allPrimary = (fp: Footprint) => new Set(fp.corners.map((c) => c.id));
 
 describe("isMiteredShape", () => {
@@ -153,7 +152,7 @@ describe("cornerOwnership", () => {
 describe("retile", () => {
   it("produces corner-owning slots at both ends of every wall on a plain rectangle", () => {
     const fp = buildRectangleFootprint(30, 20);
-    const slots = retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const slots = retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
     for (const wall of fp.walls) {
       expect(slots[wall.id]).toBeDefined();
       expect(slots[wall.id]!.length).toBeGreaterThan(0);
@@ -162,29 +161,27 @@ describe("retile", () => {
 
   it("marks a safety-oct-corner slot on every wall of an octagon", () => {
     const fp = buildOctagonFootprint(30, 20);
-    const slots = retile(fp, "0", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const slots = retile(fp, "0", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
     for (const wall of fp.walls) {
       expect(slots[wall.id]!.some((s) => s.type === "safety-oct-corner")).toBe(true);
     }
   });
 
-  it("seeds every wall with the bracedSeed's default pattern/mirror on every newly-placed braced panel (no prior state to preserve)", () => {
+  it("places NO braced panel on any wall of a freshly drawn building", () => {
+    /* ⚠ **This test is the inverse of the one that stood here**, which
+       asserted that every wall came back WITH braced panels, each stamped with
+       the `bracedSeed`'s default pattern and mirror. Both of the rules that
+       put them there were retired on 2026-11-02 (B17) and `BracedSeed` was
+       deleted with them — see the record at the top of `bracedPlacement.ts`.
+       A freshly drawn building now has plain standard panels, and the wall
+       brace pattern lays half a figure on every one of them instead. */
     const fp = buildRectangleFootprint(30, 20);
-    const slots = retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, {
-      spacingIn: 100_000,
-      defaultPattern: "hatch",
-      defaultMirrored: true,
-    });
-    let sawBraced = false;
+    const slots = retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
     for (const wall of fp.walls) {
-      for (const s of slots[wall.id]!) {
-        if (s.type !== "braced") continue;
-        sawBraced = true;
-        expect(s.bracedPattern).toBe("hatch");
-        expect(s.bracedMirrored).toBe(true);
-      }
+      expect(slots[wall.id]!.filter((x) => x.type === "braced"), wall.id).toEqual([]);
+      // Non-vacuous: the walls exist and carry real panels.
+      expect(slots[wall.id]!.some((x) => x.type === "standard"), wall.id).toBe(true);
     }
-    expect(sawBraced).toBe(true);
   });
 });
 
@@ -192,7 +189,7 @@ describe("retilePreservingOpenings", () => {
   it("preserves an existing window on an id-stable wall (dragWall/editWallLength style: same-id old slots passed straight through)", () => {
     const fp = buildRectangleFootprint(30, 20);
     const primary = allPrimary(fp);
-    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
     const cdSlots = plainSlots["CD"]!.slice();
     const standardIdx = cdSlots.findIndex((s) => s.type === "standard");
     cdSlots[standardIdx] = { type: "window", widthIn: 36 };
@@ -205,9 +202,7 @@ describe("retilePreservingOpenings", () => {
       STANDARD_WIDTH_IN,
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
-      oldSlots,
-      BRACED_SEED,
-    );
+      oldSlots);
     expect(nextSlots["CD"]!.some((s) => s.type === "window")).toBe(true);
     // A wall whose old slots were untouched re-tiles identically to plain retile.
     expect(nextSlots["AB"]).toEqual(plainSlots["AB"]);
@@ -216,7 +211,7 @@ describe("retilePreservingOpenings", () => {
   it("falls back to a plain (opening-free) tile when a wall has no entry in oldSlotsByNewWallId", () => {
     const fp = buildRectangleFootprint(30, 20);
     const primary = allPrimary(fp);
-    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
     const nextSlots = retilePreservingOpenings(
       fp,
       "A",
@@ -224,9 +219,7 @@ describe("retilePreservingOpenings", () => {
       STANDARD_WIDTH_IN,
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
-      {},
-      BRACED_SEED,
-    );
+      {});
     expect(nextSlots["AB"]!.some((s) => s.type === "window" || s.type === "door")).toBe(false);
     expect(nextSlots["AB"]).toEqual(plainSlots["AB"]);
   });
@@ -234,7 +227,7 @@ describe("retilePreservingOpenings", () => {
   it("preserves an opening across insertBumpOut's id renumbering (a caller-built correlation map), but a brand-new jog wall gets no openings", () => {
     const fp = buildRectangleFootprint(30, 20);
     const primary = allPrimary(fp);
-    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
     const cdSlots = plainSlots["CD"]!.slice();
     const standardIdx = cdSlots.findIndex((s) => s.type === "standard");
     cdSlots[standardIdx] = { type: "door", widthIn: 36 };
@@ -253,9 +246,7 @@ describe("retilePreservingOpenings", () => {
       STANDARD_WIDTH_IN,
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
-      { "67": cdSlots },
-      BRACED_SEED,
-    );
+      { "67": cdSlots });
     expect(nextSlots["67"]!.some((s) => s.type === "door")).toBe(true);
     // The bump-out's own new jog wall has no old counterpart at all.
     const jogWall = bumped.walls.find((w) => w.startCorner === "1" && w.endCorner === "2")!;
@@ -265,20 +256,23 @@ describe("retilePreservingOpenings", () => {
   it("preserves a wall's own prior braced-panel decisions (type, pattern, mirror) across a retile, instead of re-seeding them", () => {
     const fp = buildRectangleFootprint(30, 20);
     const primary = allPrimary(fp);
-    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
-    // Simulate the user picking a specific style for the corner-touching
-    // braced panel on wall AB, and reverting a periodic one back to plain
-    // standard (there isn't one here since spacing is huge, so just flip
-    // the one braced slot's own style to something the default wouldn't
-    // produce, to prove it survives the next retile untouched).
+    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
+    /* The user turns one standard panel on wall AB into a braced one and
+       picks a style for it. ⚠ Hand-placed, because since B17 nothing seeds a
+       braced panel for the test to find — which makes this a BETTER fixture
+       than the one it replaces: that one flipped the style of a slot the
+       seismic rule had already braced, so "preserved" and "re-seeded as
+       braced" looked alike in the type and differed only in the style. Here
+       the type itself is the user's, so a re-seed would have nothing to
+       re-seed and a dropped decision shows up as a plain standard panel. */
     const abSlots = plainSlots["AB"]!.slice();
-    const bracedIdx = abSlots.findIndex((s) => s.type === "braced");
-    abSlots[bracedIdx] = { ...abSlots[bracedIdx]!, bracedPattern: "hatch", bracedMirrored: true };
+    const standardIdx = abSlots.findIndex((x) => x.type === "standard");
+    expect(standardIdx).toBeGreaterThan(-1);
+    abSlots[standardIdx] = { ...abSlots[standardIdx]!, type: "braced", bracedPattern: "hatch", bracedMirrored: true };
     const oldSlots = { ...plainSlots, AB: abSlots };
 
-    // Retile again with a DIFFERENT default (chevron/false) — if the
-    // preserved slot were re-seeded instead of preserved, it would come
-    // back as chevron/false, not the user's own hatch/true choice.
+    // Retile again — if the user's choice were dropped rather than carried,
+    // this wall would come back with no braced panel on it at all.
     const nextSlots = retilePreservingOpenings(
       fp,
       "A",
@@ -286,13 +280,11 @@ describe("retilePreservingOpenings", () => {
       STANDARD_WIDTH_IN,
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
-      oldSlots,
-      { spacingIn: 100_000, defaultPattern: "chevron", defaultMirrored: false },
-    );
-    const preserved = nextSlots["AB"]!.find((s) => s.type === "braced");
-    expect(preserved).toBeDefined();
-    expect(preserved!.bracedPattern).toBe("hatch");
-    expect(preserved!.bracedMirrored).toBe(true);
+      oldSlots);
+    const braced = nextSlots["AB"]!.filter((x) => x.type === "braced");
+    expect(braced.length).toBe(1);
+    expect(braced[0]!.bracedPattern).toBe("hatch");
+    expect(braced[0]!.bracedMirrored).toBe(true);
   });
 });
 
@@ -300,19 +292,32 @@ describe("openingSeed (default door/window on a freshly-panelized wall)", () => 
   it("seeds exactly 1 door + 1 window on a fresh East-facing wall, never at either corner-touching position", () => {
     const fp = buildRectangleFootprint(30, 20);
     const primary = allPrimary(fp);
-    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED, { randomFn: () => 0 });
+    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, { randomFn: () => 0 });
     const bc = slots["BC"]!; // BC faces East (see wallCompassDirection.test.ts)
     expect(bc.filter((s) => s.type === "door").length).toBe(1);
     expect(bc.filter((s) => s.type === "window").length).toBe(1);
-    // Rule 1 still braces a panel touching each corner — proves the door/
-    // window didn't steal a corner-touching position.
-    expect(bc.filter((s) => s.type === "braced" || s.secondaryType === "braced").length).toBeGreaterThanOrEqual(2);
+    /* ⚠ **The claim is checked directly now.** It used to be inferred: rule
+       1 of `applyBracedPlacement` braced the standard panel touching each
+       corner, so finding two braces on the wall proved that neither
+       corner-touching position had been taken by an opening. Rule 1 was
+       retired on 2026-11-02 (B17) and that proxy went with it. His decision
+       — a default opening may never take a corner-touching position —
+       did not, so the ordinals are read off the wall and asserted as
+       themselves, which is a stronger test than the one it replaces. */
+    const familyIndices = bc.map((x, i) => (x.type === "standard" || x.type === "braced" ? i : -1)).filter((i) => i !== -1);
+    expect(familyIndices.length).toBeGreaterThan(2);
+    const openingIndices = bc.map((x, i) => (x.type === "door" || x.type === "window" ? i : -1)).filter((i) => i !== -1);
+    expect(openingIndices).toHaveLength(2);
+    for (const i of openingIndices) {
+      expect(i, `opening at slot ${i} of ${bc.length}`).not.toBe(familyIndices[0]);
+      expect(i, `opening at slot ${i} of ${bc.length}`).not.toBe(familyIndices[familyIndices.length - 1]);
+    }
   });
 
   it("seeds only a window (no door) on a fresh North-facing wall", () => {
     const fp = buildRectangleFootprint(30, 20);
     const primary = allPrimary(fp);
-    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED, { randomFn: () => 0 });
+    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, { randomFn: () => 0 });
     const ab = slots["AB"]!; // AB faces North
     expect(ab.filter((s) => s.type === "door").length).toBe(0);
     expect(ab.filter((s) => s.type === "window").length).toBe(1);
@@ -321,7 +326,7 @@ describe("openingSeed (default door/window on a freshly-panelized wall)", () => 
   it("seeds no default openings at all when openingSeed is omitted (today's exact behavior)", () => {
     const fp = buildRectangleFootprint(30, 20);
     const primary = allPrimary(fp);
-    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const slots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
     for (const wall of fp.walls) {
       expect(slots[wall.id]!.some((s) => s.type === "window" || s.type === "door")).toBe(false);
     }
@@ -338,7 +343,7 @@ describe("openingSeed (default door/window on a freshly-panelized wall)", () => 
       ],
       walls: [{ id: "XY", startCorner: "X", endCorner: "Y", lengthFt: 3 }],
     };
-    const slots = retile(tinyFp, "X", new Set(["X", "Y"]), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED, {
+    const slots = retile(tinyFp, "X", new Set(["X", "Y"]), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, {
       randomFn: () => 0,
     });
     expect(slots["XY"]).toEqual([{ type: "corner", widthIn: 36 }]);
@@ -355,16 +360,14 @@ describe("openingSeed (default door/window on a freshly-panelized wall)", () => 
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
       {},
-      BRACED_SEED,
-      { randomFn: () => 0 },
-    );
+      { randomFn: () => 0 });
     expect(nextSlots["AB"]!.some((s) => s.type === "window")).toBe(true);
   });
 
   it("never re-seeds a wall whose old slots are being preserved", () => {
     const fp = buildRectangleFootprint(30, 20);
     const primary = allPrimary(fp);
-    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const plainSlots = retile(fp, "A", primary, STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
     const nextSlots = retilePreservingOpenings(
       fp,
       "A",
@@ -373,9 +376,7 @@ describe("openingSeed (default door/window on a freshly-panelized wall)", () => 
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
       plainSlots,
-      BRACED_SEED,
-      { randomFn: () => 0 },
-    );
+      { randomFn: () => 0 });
     expect(nextSlots["AB"]!.some((s) => s.type === "window" || s.type === "door")).toBe(false);
   });
 });
@@ -463,7 +464,7 @@ describe("corner absorb on real footprints", () => {
     let bandWalls = 0;
     for (let acrossFt = 10.5; acrossFt <= 15; acrossFt += 0.5) {
       const fp = buildOctagonFootprint(acrossFt, acrossFt);
-      const slots = retile(fp, "0", allPrimary(fp), STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+      const slots = retile(fp, "0", allPrimary(fp), STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN);
       for (const wall of fp.walls) {
         const runIn = wallGeometryFor(fp, wall.id, allPrimary(fp), "0", THICKNESS_IN)!.lengthIn;
         if (runIn > 51 && runIn < 75) bandWalls++;
@@ -478,7 +479,7 @@ describe("corner absorb on real footprints", () => {
 
   it("an octagon just above the band is untouched, so the fix is not swallowing the normal case", () => {
     const fp = buildOctagonFootprint(20, 20);
-    const slots = retile(fp, "0", allPrimary(fp), STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const slots = retile(fp, "0", allPrimary(fp), STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN);
     for (const wall of fp.walls) {
       const runIn = wallGeometryFor(fp, wall.id, allPrimary(fp), "0", THICKNESS_IN)!.lengthIn;
       expect(runIn).toBeGreaterThan(75);
@@ -525,10 +526,8 @@ describe("corner absorb on real footprints", () => {
             STANDARD_WIDTH_IN,
             REAL_CORNER_WIDTH_IN,
             THICKNESS_IN,
-            BRACED_SEED,
             undefined,
-            stops,
-          );
+            stops);
           for (const wall of fp.walls) {
             const geometry = wallGeometryFor(fp, wall.id, primary, "0", THICKNESS_IN, stops)!;
             const unstopped = wallGeometryFor(fp, wall.id, primary, "0", THICKNESS_IN)!;
@@ -591,10 +590,8 @@ describe("corner absorb on real footprints", () => {
       STANDARD_WIDTH_IN,
       REAL_CORNER_WIDTH_IN,
       THICKNESS_IN,
-      BRACED_SEED,
       undefined,
-      stops,
-    );
+      stops);
     const sub = slots[wall.id]!.filter((s) => s.type !== "safety-gap" && s.widthIn < 24);
     expect(sub.length).toBeGreaterThan(0);
     // ...and the total is still exact. A broken wall, not a broken total.
@@ -635,7 +632,7 @@ describe("corner absorb on real footprints", () => {
       [599 + 7 / 8 / 12, 399 + 5 / 8 / 12], // and off the foot grid, so eighths have to settle
     ] as [number, number][]) {
       const fp = buildRectangleFootprint(widthFt, depthFt);
-      const slots = retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+      const slots = retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN);
       for (const wall of fp.walls) {
         widestWallIn = Math.max(widestWallIn, wallGeometryFor(fp, wall.id, allPrimary(fp), "A", THICKNESS_IN)!.lengthIn);
         totalPanels += (slots[wall.id] ?? []).length;
@@ -712,7 +709,7 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
       openings,
       geometry.allowBorrow,
     ).slots;
-    const base = retile(fp, "A", primary, STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const base = retile(fp, "A", primary, STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN);
     const slots = run(fp, primary, { ...base, [WALL_ID]: seeded }, {}).slotsByWallId;
     expect(slots[WALL_ID]!.filter((s) => s.type === "window").length).toBe(2);
     expect(sumEighths(slots[WALL_ID]!)).toBe(360 * 8);
@@ -735,12 +732,10 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
       REAL_CORNER_WIDTH_IN,
       THICKNESS_IN,
       oldSlots,
-      BRACED_SEED,
       undefined,
       stops,
       true,
-      remembered,
-    );
+      remembered);
 
   const sumEighths = (slots: PanelSlot[]) => slots.reduce((s, slot) => s + Math.round(slot.widthIn * 8), 0);
   const runEighths = (fp: Footprint, primary: Set<string>, stops: Record<string, WallRunStop>) =>
@@ -793,7 +788,7 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     ]);
     // And every wall that carries no openings is exactly what a plain
     // `retile` of this footprint produces — a second, independent function.
-    const plain = retile(fp, "A", primary, STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const plain = retile(fp, "A", primary, STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN);
     for (const wall of fp.walls) {
       if (wall.id === WALL_ID) continue;
       expect(result.slotsByWallId[wall.id]).toEqual(plain[wall.id]);
@@ -819,7 +814,7 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     // A brand-new building, plain-tiled: no openings on this wall at all.
     const fp = buildRectangleFootprint(22, 18);
     const primary = allPrimary(fp);
-    const fresh = retile(fp, "A", primary, STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const fresh = retile(fp, "A", primary, STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN);
     expect(fresh[WALL_ID]!.filter((s) => s.type === "window").length).toBe(0);
     // The previous building's memory, keyed by the id this one reuses.
     const stale: Record<string, RunStopOpeningMemory> = {
@@ -935,7 +930,7 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
     // leaving the wall longer than itself whenever that neighbour was
     // narrower than the swing. With no stop anywhere,
     // `reconcileBracedPlacement(undefined, retileWithOpenings(240, 40, 25.5,
-    // "end", true, true, [{0, 61.5}, {1, 61.5}]).slots, ...)` turned
+    // "end", true, true, [{0, 61.5}, {1, 61.5}]).slots)` turned
     // `safety-gap 0.75 | standard 32.625` into `safety-gap 40.75 | standard 0`
     // and summed 247.375in on a 240in wall.
     //
@@ -1000,7 +995,7 @@ describe("retilePreservingOpeningsWithRunStopMemory", () => {
       openings,
       geometry.allowBorrow,
     ).slots;
-    const base = retile(fp, "A", primary, STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const base = retile(fp, "A", primary, STANDARD_WIDTH_IN, REAL_CORNER_WIDTH_IN, THICKNESS_IN);
     const slots = run(fp, primary, { ...base, [WALL_ID]: seeded }, {}).slotsByWallId;
     const baseline = getOpeningAnchors(slots[WALL_ID]!);
     expect(baseline.map((a) => a.type)).toEqual(["window", "door"]);
@@ -1094,7 +1089,7 @@ describe("discardLockedWidths (REPANELIZE)", () => {
     const { oldSlots } = buildHandDraggedPair();
     const wallLengthIn = oldSlots.reduce((sum, s) => sum + s.widthIn, 0);
     const retiled = retileWithOpenings(wallLengthIn, STANDARD_WIDTH_IN, 48, "end", false, false, getOpeningAnchors(oldSlots), true, true).slots;
-    const reconciled = reconcileBracedPlacement(oldSlots, retiled, 100_000, STANDARD_WIDTH_IN, "chevron", false);
+    const reconciled = reconcileBracedPlacement(oldSlots, retiled);
     // Both hand-dragged widths survived — the bug: Repanelize's confirmation
     // said these would be replaced, and they were not.
     expect(reconciled.filter((s) => s.lockedWidthIn !== undefined).map((s) => s.widthIn)).toEqual([56, 23.25]);
@@ -1111,7 +1106,7 @@ describe("discardLockedWidths (REPANELIZE)", () => {
 
     const anchors = getOpeningAnchors(strippedOldSlots);
     const retiled = retileWithOpenings(wallLengthIn, STANDARD_WIDTH_IN, 48, "end", false, false, anchors, true, true).slots;
-    const reconciled = reconcileBracedPlacement(strippedOldSlots, retiled, 100_000, STANDARD_WIDTH_IN, "chevron", false);
+    const reconciled = reconcileBracedPlacement(strippedOldSlots, retiled);
     expect(reconciled.some((s) => s.lockedWidthIn !== undefined)).toBe(false);
 
     // ⚠ Not simply the plain tiler's own output (`retiled`, above) — the
@@ -1128,7 +1123,7 @@ describe("discardLockedWidths (REPANELIZE)", () => {
     // deleted there is no longer any way for `discardLockedWidths` to change
     // the run's composition, so what is left is the weaker — and now
     // sufficient — statement that the widths match a never-edited wall.
-    const neverEdited = reconcileBracedPlacement(undefined, retiled, 100_000, STANDARD_WIDTH_IN, "chevron", false);
+    const neverEdited = reconcileBracedPlacement(undefined, retiled);
     expect(reconciled.map((s) => [s.type === "braced" ? "standard" : s.type, s.widthIn, s.secondaryType])).toEqual(
       neverEdited.map((s) => [s.type === "braced" ? "standard" : s.type, s.widthIn, s.secondaryType]),
     );

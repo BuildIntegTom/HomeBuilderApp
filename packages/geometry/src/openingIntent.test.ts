@@ -23,7 +23,6 @@ import type { Footprint, PanelSlot } from "./types";
 const THICKNESS_IN = 15.5;
 const STANDARD = 40;
 const CORNER = 25.5;
-const BRACED_SEED = { spacingIn: 100_000, defaultPattern: "chevron" as const, defaultMirrored: false };
 const allPrimary = (fp: Footprint) => new Set(fp.corners.map((c) => c.id));
 const openingsOf = (slots: readonly PanelSlot[]) => slots.filter((s) => s.type === "window" || s.type === "door");
 
@@ -87,12 +86,12 @@ describe("an opening's intent is copied, never measured", () => {
       ],
       geometry.allowBorrow,
     ).slots;
-    const base = retile(fp, "A", primary, STANDARD, CORNER, THICKNESS_IN, BRACED_SEED);
+    const base = retile(fp, "A", primary, STANDARD, CORNER, THICKNESS_IN);
 
     const run = (
       slotsByWallId: Record<string, PanelSlot[]>,
       stops: Record<string, { startStopIn: number; endStopIn: number }>,
-      memory?: Parameters<typeof retilePreservingOpeningsWithRunStopMemory>[11],
+      memory?: Parameters<typeof retilePreservingOpeningsWithRunStopMemory>[10],
     ) =>
       retilePreservingOpeningsWithRunStopMemory(
         fp,
@@ -102,12 +101,10 @@ describe("an opening's intent is copied, never measured", () => {
         CORNER,
         THICKNESS_IN,
         slotsByWallId,
-        BRACED_SEED,
         undefined,
         stops,
         true,
-        memory,
-      );
+        memory);
 
     const start = run({ ...base, [WALL]: seeded }, {}).slotsByWallId;
     const intents = (slots: readonly PanelSlot[]) => openingsOf(slots).map((o) => `${o.type}:${o.anchorOffsetIn}`);

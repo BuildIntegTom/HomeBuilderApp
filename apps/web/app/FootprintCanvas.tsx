@@ -29,6 +29,7 @@ import {
   cornerPanelWidthIn,
 } from "@building-integrity/panel-catalog";
 import { resolveBracedStyle } from "./bracedStyle";
+import { standardPanelMembersFor } from "./standardPanelMembers";
 import {
   OCTAGON_SQUARE_SNAP_PX,
   SCALE_PX_PER_FT,
@@ -316,31 +317,36 @@ export default function FootprintCanvas({
     for (const wall of footprint.walls) {
       const slots = wallSlots[wall.id] ?? [];
       slots.forEach((slot, slotIndex) => {
-        // ⚠ THIS site counts a COMBINED safety-gap+brace slot as braced;
-        // page.tsx's zero-bracing Review Log entry counts `panelType === "braced"`
-        // only, because `PanelInstance` does not carry `secondaryType` at all and
-        // `summarizeBearingAndShear` therefore gives a combined slot zero shear.
-        // So the per-panel tooltip and the building's shear total genuinely
-        // disagree today. Recorded here as well as there, because page.tsx claims
-        // the divergence is noted at both sites and until 2026-09-27 it was not.
-        // The spec's `## Open Items` carries it as "Does a COMBINED
-        // safety-gap+brace slot count as bracing, and should `PanelInstance` carry
-        // `secondaryType`?" — not fixed either way here, since the honest fix
-        // RAISES a displayed structural total.
-        const isBraced = slot.type === "braced" || slot.secondaryType === "braced";
-        const shearLb = isBraced
-          ? (() => {
-              // A combined safety-gap+brace slot (secondaryType==="braced")
-              // has no per-slot style of its own — resolveBracedStyle's
-              // "absent = default" fallback handles that case naturally,
-              // same as a plain "braced" slot missing bracedPattern.
-              const defaultStyle = bracingStyleToPatternMirror(bracingStyle);
-              const style = resolveBracedStyle(slot, defaultStyle.pattern, defaultStyle.mirrored);
-              return computeBracedPanelShearCapacityLb(
-                buildBracedPanelMembers(slot.widthIn, wallThicknessIn, wallHeightFt * 12, includeNailer, style.pattern, style.mirrored),
-              );
-            })()
-          : undefined;
+        /* ⚠ **A STANDARD PANEL CARRYING ITS HALF OF THE WALL BRACE PATTERN
+           REPORTS SHEAR HERE TOO — fixed 2026-11-02 with B17.** This used to
+           ask `slot.type === "braced"` and nothing else, which under-reported
+           from the day the pattern shipped and became plainly wrong the moment
+           the automatic bracing seeding was retired: an ordinary building has
+           no panels of that type at all, so every tooltip would have said
+           nothing about shear while the building total read ~66,717 lb on a
+           43'8" x 33' rectangle. Measured, then fixed.
+
+           The question is asked of the panel's own MEMBERS, the same way
+           `summarizeBearingAndShear` asks it in page.tsx — which is also what
+           keeps a Nailer pair (sets `bracePairPattern`, adds no diagonal) out
+           of the number. The two cannot drift apart while both ask the members.
+
+           The `secondaryType` arm is kept and is now purely defensive: the
+           corner-brace combine that produced such a slot was deleted on
+           2026-11-02, and a stored one is un-combined on load
+           (`uncombineSafetyGapSlots`), so this should never see one. */
+        const defaultStyle = bracingStyleToPatternMirror(bracingStyle);
+        const bracedMembers =
+          slot.type === "braced" || slot.secondaryType === "braced"
+            ? (() => {
+                const style = resolveBracedStyle(slot, defaultStyle.pattern, defaultStyle.mirrored);
+                return buildBracedPanelMembers(slot.widthIn, wallThicknessIn, wallHeightFt * 12, includeNailer, style.pattern, style.mirrored);
+              })()
+            : slot.type === "standard" && slot.bracePairPattern !== undefined
+              ? standardPanelMembersFor(slot, slot.widthIn, wallThicknessIn, wallHeightFt * 12, includeNailer)
+              : null;
+        const panelShearLb = bracedMembers ? computeBracedPanelShearCapacityLb(bracedMembers) : 0;
+        const shearLb = panelShearLb > 0 ? panelShearLb : undefined;
         const bearingLb =
           slot.type === "column"
             ? columnBearingLb

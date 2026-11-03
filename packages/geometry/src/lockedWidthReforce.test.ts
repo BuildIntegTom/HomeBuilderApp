@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { applyBracedPlacement, reconcileBracedPlacement } from "./bracedPlacement";
+import { reconcileBracedPlacement } from "./bracedPlacement";
 import {
   findUnhonouredLockedWidths,
   honourableLockedWidthRangeIn,
   planLockedWidthReforce,
 } from "./lockedWidthReforce";
+import { seedRetiredBracedPlacement } from "./retiredBracedSeeder";
 import { retileWithOpenings, TILER_MAX_PANEL_WIDTH_IN, TILER_MIN_PANEL_WIDTH_IN, type OpeningAnchor } from "./tiling";
 import type { PanelSlot } from "./types";
 
@@ -325,11 +326,11 @@ describe("reconcileBracedPlacement vs. a pin the wall cannot honour", () => {
 
   const namedWall = (lockIn: number) => {
     const tiled = retileWithOpenings(150, 40, CORNER_WIDTH_IN, "end", true, true, WINDOW).slots;
-    const old = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, 40, "chevron", false).map((s) => ({ ...s }));
+    const old = seedRetiredBracedPlacement(tiled, SEISMIC_SPACING_IN, "chevron", false).map((s) => ({ ...s }));
     const pinned = old.findIndex((s) => s.type === "standard" || s.type === "braced");
     old[pinned] = { ...old[pinned]!, widthIn: lockIn, lockedWidthIn: lockIn };
     const fresh = retileWithOpenings(150, 40, CORNER_WIDTH_IN, "end", true, true, WINDOW).slots;
-    return reconcileBracedPlacement(old, fresh, SEISMIC_SPACING_IN, 40, "chevron", false);
+    return reconcileBracedPlacement(old, fresh);
   };
 
   it("leaves a 150in wall 150in long for both of the report's lock values", () => {
@@ -357,11 +358,11 @@ describe("reconcileBracedPlacement vs. a pin the wall cannot honour", () => {
 
   it("still honours a pin the wall CAN pay for, which is the whole point of the feature", () => {
     const tiled = retileWithOpenings(400, 40, CORNER_WIDTH_IN, "end", true, true, []).slots;
-    const old = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, 40, "chevron", false).map((s) => ({ ...s }));
+    const old = seedRetiredBracedPlacement(tiled, SEISMIC_SPACING_IN, "chevron", false).map((s) => ({ ...s }));
     const pinned = old.findIndex((s) => s.type === "standard" || s.type === "braced");
     old[pinned] = { ...old[pinned]!, widthIn: 30, lockedWidthIn: 30 };
     const fresh = retileWithOpenings(400, 40, CORNER_WIDTH_IN, "end", true, true, []).slots;
-    const out = reconcileBracedPlacement(old, fresh, SEISMIC_SPACING_IN, 40, "chevron", false);
+    const out = reconcileBracedPlacement(old, fresh);
     expect(e8(out)).toBe(8 * 400);
     expect(out.find((s) => s.lockedWidthIn !== undefined)!.widthIn).toBe(30);
     expect(findUnhonouredLockedWidths({ w: out })).toEqual([]);
@@ -443,7 +444,7 @@ describe("the sweep: a pinned width never moves the wall's own total", () => {
             for (const { name, openings } of OPENING_SETS) {
               const tiled = retileWithOpenings(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, gapEnd, hasStart, hasEnd, openings).slots;
               const tiledEighths = e8(tiled);
-              const braced = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+              const braced = seedRetiredBracedPlacement(tiled, SEISMIC_SPACING_IN, "chevron", false);
               const bracedOut = outOfBounds(braced);
               const family: number[] = [];
               braced.forEach((s, i) => {
@@ -469,7 +470,7 @@ describe("the sweep: a pinned width never moves the wall's own total", () => {
                     pinAt.includes(i) ? { ...s, widthIn: lockIn, lockedWidthIn: lockIn } : { ...s },
                   );
                   const fresh = retileWithOpenings(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, gapEnd, hasStart, hasEnd, openings).slots;
-                  const out = reconcileBracedPlacement(old, fresh, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+                  const out = reconcileBracedPlacement(old, fresh);
                   const label = `${wallLengthIn}in/${standardWidthIn}/${hasStart ? "S" : "-"}${hasEnd ? "E" : "-"}/${gapEnd}/${name}/lock${lockIn}/${placement}`;
 
                   // 1. THE INVARIANT. Against the tiler's own total always, and
@@ -596,7 +597,7 @@ describe("the sweep: a pinned width never moves the wall's own total", () => {
             for (const { name, openings } of OPENING_SETS) {
               const tiled = retileWithOpenings(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, gapEnd, hasStart, hasEnd, openings).slots;
               const tiledEighths = e8(tiled);
-              const braced = applyBracedPlacement(tiled, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+              const braced = seedRetiredBracedPlacement(tiled, SEISMIC_SPACING_IN, "chevron", false);
               const bracedOut = outOfBounds(braced);
               const family: number[] = [];
               braced.forEach((s, i) => {
@@ -626,7 +627,7 @@ describe("the sweep: a pinned width never moves the wall's own total", () => {
                       : { ...s },
                 );
                 const fresh = retileWithOpenings(wallLengthIn, standardWidthIn, CORNER_WIDTH_IN, gapEnd, hasStart, hasEnd, openings).slots;
-                const out = reconcileBracedPlacement(old, fresh, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+                const out = reconcileBracedPlacement(old, fresh);
                 const label = `${wallLengthIn}in/${standardWidthIn}/${hasStart ? "S" : "-"}${hasEnd ? "E" : "-"}/${gapEnd}/${name}/pair±${offsetIn}`;
 
                 // The four properties the row above holds, unchanged: the total,
@@ -713,14 +714,14 @@ describe("the sweep: a pinned width never moves the wall's own total", () => {
           for (const openings of [[], [win(0, 61.5)]]) {
             cases++;
             const before = retileWithOpenings(was, standardWidthIn, CORNER_WIDTH_IN, "end", true, true, openings).slots;
-            const old = applyBracedPlacement(before, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false).map((s) => ({ ...s }));
+            const old = seedRetiredBracedPlacement(before, SEISMIC_SPACING_IN, "chevron", false).map((s) => ({ ...s }));
             const pinned = old.findIndex((s) => s.type === "standard" || s.type === "braced");
             if (pinned < 0) continue;
             // A width the LONGER wall could honour, pinned there.
             old[pinned] = { ...old[pinned]!, widthIn: 42, lockedWidthIn: 42 };
             const fresh = retileWithOpenings(now, standardWidthIn, CORNER_WIDTH_IN, "end", true, true, openings).slots;
             const freshEighths = e8(fresh);
-            const out = reconcileBracedPlacement(old, fresh, SEISMIC_SPACING_IN, standardWidthIn, "chevron", false);
+            const out = reconcileBracedPlacement(old, fresh);
             if (e8(out) !== freshEighths) {
               violations.push(`${was}in -> ${now}in/${standardWidthIn}/${openings.length} openings: ${freshEighths} -> ${e8(out)} eighths`);
               continue;

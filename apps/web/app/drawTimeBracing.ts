@@ -21,23 +21,19 @@ import { DEFAULT_BRACE_PAIR_PATTERN, applyWallBracingPattern, type BraceablePane
  * gap's plywood spacer has nothing to route a diagonal through. Pairing
  * restarts after each of those, so an X never reaches across one.
  *
- * ⚠ **`braced` slots are NOT eligible, and the wall therefore carries
- * BOTH systems today.** He also chose "the pattern replaces them", meaning
- * the dedicated near-corner braced panels should stop being seeded at all,
- * and on 2026-11-02 he accepted the cost: *"Yeah the seismic click through
- * would be lost. I guess."* That retirement is still its own stride, not
- * folded in here, because those panels are seeded by
- * `reconcileBracedPlacement` off `seismicBracedPanelSpacingFt[zone]` — a
- * SEISMIC spacing rule — and the seeding drives the corner-brace combine,
- * which changes panel WIDTHS. Widths are the whole point of the stacking
- * work, so that is not a change to make in the same breath as this one.
+ * ⚠ **`braced` slots are NOT eligible, and until B17 that meant a wall
+ * carried BOTH systems at once.** He chose "the pattern replaces them", and on
+ * 2026-11-02 the replacement happened: both automatic bracing rules were
+ * retired, so **the pattern now runs continuously from corner to corner on
+ * every ordinary wall** instead of restarting after each seeded chevron. See
+ * the record at the top of `bracedPlacement.ts` (geometry) for what went and
+ * why.
  *
- * Until it happens, a wall shows chevrons on its near-corner braced panels
- * and superbrace halves on everything else, and a `braced` slot BREAKS the
- * pair run it sits in (pairing restarts after anything ineligible), so the
- * pattern is discontinuous there. Visible, and stated rather than hidden.
- * The seismic spacing rule is satisfied by construction once every panel is
- * braced, which is what makes the retirement safe when it comes.
+ * A `braced` slot still breaks the pair run it sits in, because pairing
+ * restarts after anything ineligible — but now it only sits there because
+ * somebody put it there, which makes the discontinuity a choice rather than a
+ * default. Whether a Braced Panel should instead take its own pattern half is
+ * open and his to decide.
  *
  * ⚠ **His standing reservation, recorded because it is about the
  * BUILDING and not the code:** *"My general feeling with this is that we are

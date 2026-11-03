@@ -66,8 +66,9 @@ describe("tileWall", () => {
     // middle = 330-40 = 290; minus the fixed 0.75in gap leaves 289.25 for
     // standards -> 7 fit (280) with a 9.25 remainder, split evenly into 2
     // panels of 24.625 each next to the gap — never the corner-touching
-    // standard, which stays full width since rule 1 in applyBracedPlacement
-    // always braces it.
+    // standard, which stays full width. (That position was once reserved for
+    // the mandatory corner brace; the rule was retired on 2026-11-02 and the
+    // ORDER is kept for the reasons in `buildPlainMiddle`'s own doc comment.)
     const result = tileWall(330, 40, 20, "end");
     const widths = result.slots.map((s) => s.widthIn);
     expect(widths).toEqual([20, 40, 40, 40, 40, 40, 24.625, 24.625, 0.75, 40, 20]);

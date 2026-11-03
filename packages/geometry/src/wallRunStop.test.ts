@@ -19,7 +19,6 @@ import type { Footprint, PanelSlot, WallRunStop } from "./types";
 const THICKNESS_IN = 15.5;
 const STANDARD_WIDTH_IN = 40;
 const CORNER_PANEL_WIDTH_IN = 25.5;
-const BRACED_SEED = { spacingIn: 100_000, defaultPattern: "chevron" as const, defaultMirrored: false };
 const allPrimary = (fp: Footprint) => new Set(fp.corners.map((c) => c.id));
 const sumWidths = (slots: PanelSlot[]) => slots.reduce((sum, s) => sum + s.widthIn, 0);
 
@@ -205,10 +204,8 @@ describe("the sum invariant survives a run stop", () => {
       STANDARD_WIDTH_IN,
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
-      BRACED_SEED,
       undefined,
-      { AB: stop },
-    )["AB"]!;
+      { AB: stop })["AB"]!;
     expect(toEighths(sumWidths(slots)) + toEighths(stop.startStopIn) + toEighths(stop.endStopIn)).toBe(
       toEighths(wallFabricationLengthIn(wall)),
     );
@@ -310,7 +307,7 @@ describe("retile / retilePreservingOpenings with run stops", () => {
   const fp = buildRectangleFootprint(30, 20);
 
   it("a wall with no stop entry is byte-identical to today", () => {
-    const withoutArg = retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const withoutArg = retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
     const withEmptyMap = retile(
       fp,
       "A",
@@ -318,10 +315,8 @@ describe("retile / retilePreservingOpenings with run stops", () => {
       STANDARD_WIDTH_IN,
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
-      BRACED_SEED,
       undefined,
-      {},
-    );
+      {});
     const withOneStoppedWall = retile(
       fp,
       "A",
@@ -329,10 +324,8 @@ describe("retile / retilePreservingOpenings with run stops", () => {
       STANDARD_WIDTH_IN,
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
-      BRACED_SEED,
       undefined,
-      { BC: { startStopIn: 60, endStopIn: 0 } },
-    );
+      { BC: { startStopIn: 60, endStopIn: 0 } });
     expect(JSON.stringify(withEmptyMap)).toBe(JSON.stringify(withoutArg));
     // Every OTHER wall is untouched too — a stop is local to its own wall.
     //
@@ -355,10 +348,8 @@ describe("retile / retilePreservingOpenings with run stops", () => {
       STANDARD_WIDTH_IN,
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
-      BRACED_SEED,
       undefined,
-      { BC: { startStopIn: 20 * 12, endStopIn: 0 } },
-    )["BC"]!;
+      { BC: { startStopIn: 20 * 12, endStopIn: 0 } })["BC"]!;
     expect(slots).toEqual([]);
   });
 
@@ -372,17 +363,15 @@ describe("retile / retilePreservingOpenings with run stops", () => {
       STANDARD_WIDTH_IN,
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
-      BRACED_SEED,
       undefined,
-      { AB: { startStopIn: 36, endStopIn: 0 } },
-    )["AB"]!;
+      { AB: { startStopIn: 36, endStopIn: 0 } })["AB"]!;
     expect(slots[0]!.type).not.toBe("corner");
     expect(slots[slots.length - 1]!.type).toBe("corner");
   });
 
   it("retilePreservingOpenings honours stops the same way", () => {
     const stop: WallRunStop = { startStopIn: 48, endStopIn: 0 };
-    const base = retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+    const base = retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
     const next = retilePreservingOpenings(
       fp,
       "A",
@@ -391,10 +380,8 @@ describe("retile / retilePreservingOpenings with run stops", () => {
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
       base,
-      BRACED_SEED,
       undefined,
-      { AB: stop },
-    );
+      { AB: stop });
     const wall = fp.walls.find((w) => w.id === "AB")!;
     expect(toEighths(sumWidths(next["AB"]!)) + toEighths(stop.startStopIn)).toBe(toEighths(wallFabricationLengthIn(wall)));
     // DA is NOT untouched, and that is the orphan-corner rule working: AB
@@ -426,7 +413,7 @@ describe("retile / retilePreservingOpenings with run stops", () => {
     // tested has not changed.)
     const stopAtCornerB = { AB: { startStopIn: 0, endStopIn: 36 } };
     const tile = (stops?: Record<string, WallRunStop>) =>
-      retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED, undefined, stops);
+      retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, undefined, stops);
 
     it("clears the butting neighbour's inset, and only at the corner that lost its panel", () => {
       const base = cornerOwnership(fp, allPrimary(fp), THICKNESS_IN);
@@ -525,10 +512,8 @@ describe("retile / retilePreservingOpenings with run stops", () => {
         STANDARD_WIDTH_IN,
         CORNER_PANEL_WIDTH_IN,
         THICKNESS_IN,
-        BRACED_SEED,
         undefined,
-        stops,
-      );
+        stops);
       for (const w of bumped.walls) {
         const geometry = wallGeometryFor(bumped, w.id, primaryCornerIds, [...primaryCornerIds][0] ?? bumped.corners[0]!.id, THICKNESS_IN, stops)!;
         expect(toEighths(sumWidths(tiled[w.id]!))).toBe(toEighths(geometry.lengthIn));
@@ -586,10 +571,8 @@ describe("retile / retilePreservingOpenings with run stops", () => {
       STANDARD_WIDTH_IN,
       CORNER_PANEL_WIDTH_IN,
       THICKNESS_IN,
-      BRACED_SEED,
       undefined,
-      { [wall.id]: stop },
-    )[wall.id]!;
+      { [wall.id]: stop })[wall.id]!;
     const unstopped = wallGeometryFor(oct, wall.id, allPrimary(oct), "0", THICKNESS_IN)!;
     expect(toEighths(sumWidths(slots)) + toEighths(stop.startStopIn)).toBe(toEighths(unstopped.lengthIn));
   });

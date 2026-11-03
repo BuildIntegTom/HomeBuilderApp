@@ -259,11 +259,20 @@ export function insertableBoundaryRange(slots: PanelSlot[]): { minIndex: number;
  *
  * Two rules, in order:
  *
- * 1. **Never the corner-touching panel if there is any other choice.**
- *    `applyBracedPlacement`'s rule 1 puts a mandatory brace on whichever
- *    standard-family slot touches each corner; dropping that slot would
- *    quietly take a wall's corner brace with it. The first and last
- *    standard-family slots on the wall therefore sort last.
+ * 1. **Never the corner-touching panel if there is any other choice.** The
+ *    first and last standard-family slots on the wall sort last.
+ *
+ *    ⚠ **The reason given here was that `applyBracedPlacement`'s rule 1 put
+ *    a mandatory brace on those slots, so dropping one would quietly take a
+ *    wall's corner brace with it. That rule was retired on 2026-11-02 (B17)
+ *    and there is no corner brace left to lose.** The ordering is KEPT, for a
+ *    reason that was always the other half of it: the corner-touching panel is
+ *    the one position the tiler guarantees at full standard width
+ *    (`buildPlainMiddle` places the borrowed panel away from it), so it is the
+ *    slot whose disappearance changes the run most visibly, and the one a
+ *    person is least likely to have meant by a click in the middle of a wall.
+ *    Rule 2 below is what the gesture is actually about; this is its tie-break,
+ *    and an arbitrary-but-FIXED tie-break is the point.
  * 2. **Otherwise nearest the edit.** A panel inserted between two others
  *    takes the place of the one it was put next to, which is what the
  *    gesture looks like it should do.

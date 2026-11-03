@@ -306,8 +306,7 @@ export const referenceDensities = {
 // one number — researched directly for this rewrite (see PR discussion):
 //
 // - BRACED WALL PANEL spacing: how far apart the individual braced panels
-//   are ALONG one wall line (this is what `applyBracedPlacement` actually
-//   places) — IRC R602.10.2.2: for intermittent bracing methods in Seismic
+//   are ALONG one wall line — IRC R602.10.2.2: for intermittent bracing methods in Seismic
 //   Design Category A/B/C, adjacent braced wall panels may be no more than
 //   20ft apart, and a panel must start within 10ft of each end of the wall
 //   line. Higher categories (D0-D2) don't tighten this spacing number
@@ -333,11 +332,21 @@ export const referenceDensities = {
 
 export type SeismicZone = "high" | "moderate" | "low";
 
-/** Braced WALL PANEL spacing (within one wall line) — drives
- * `applyBracedPlacement`'s actual periodic brace placement. Capped at the
- * real IRC R602.10.2.2 max (20ft, SDC A/B/C, intermittent bracing) for the
- * "low" tier; moderate/high tighten further as BI's own simplified proxy
- * for rising seismic demand (see the block comment above). */
+/** Braced WALL PANEL spacing (within one wall line). Capped at the real IRC
+ * R602.10.2.2 max (20ft, SDC A/B/C, intermittent bracing) for the "low" tier;
+ * moderate/high tighten further as BI's own simplified proxy for rising
+ * seismic demand (see the block comment above).
+ *
+ * ⚠ **Since 2026-11-02 this drives ONE rule, and it is not the ground
+ * floor's** (B17). It used to seed a braced panel every `spacingIn` along
+ * every wall run, plus one at each corner; both rules were retired because the
+ * wall brace pattern braces every standard panel anyway, and because Tommy
+ * wants the design described TO an engineer rather than prescribed FROM a zone:
+ * *"Id rather have a pattern be described to an engineer with estimated values
+ * rather than prescribe an engineer seismic zone thing."* What still reads this
+ * is `applyAdditionalRowBracedPattern`, the upper-row rule for a wall tall
+ * enough to spawn a second band of panels, which the per-slot pattern does not
+ * reach. */
 export const seismicBracedPanelSpacingFt: Record<SeismicZone, number> = {
   high: 12,
   moderate: 16,
@@ -1066,17 +1075,12 @@ export const panelTypes: PanelTypeDef[] = [
       "of 12ft or less (Tommy, 2026-09-30 — see safetyGapTwoTierRule). The reserved wall-run width IS that " +
       "thickness: the gap is the plywood, so the slot the tiling reserves and the sheet built into it are one " +
       "dimension, not two. It is placed farthest from " +
-      "the site's least-accessible side. When it also satisfies the corner-touching braced-panel requirement " +
-      "(Tommy: \"maintain the rules of the safety panel, but have it combine with the braced panel near " +
-      "corners\") its reserved width becomes fixed at standard width + 3/4\" instead, denoted as \"standard + " +
-      "3/4in safety gap\" — the wall's remaining length shifts onto the nearest standard panel in that case, and " +
-      "the panel renders hashed (its own orange over the braced panel's purple) to show both roles. Applies to " +
-      "roof panels too. A combined panel doesn't yet get the Braced Panel's own real bracing modeled in 3D — " +
-      "it's still tracked as a Safety/Gap panel structurally, just flagged as also brace-placed. ⚠ That " +
-      "combined slot's glued-on buffer is still 3/4\" even on a short run whose own gap is 1/2\" — open, and " +
-      "recorded in the spec's top-level Open Items under the title \"Does the corner-brace combine's glued-on " +
-      "plywood buffer follow the gap tier?\". The Material Totals page carries its plywood contribution on " +
-      "whichever of the two rows matches its thickness.",
+      "the site's least-accessible side. Applies to roof panels too. ⚠ A gap is its OWN slot and nothing " +
+      "merges into it (Tommy, 2026-11-02: \"I don't want to see any of the panels combined with safety gaps. " +
+      "Safety gaps should be treated as their own slot as they are already measured out with our thresholds\") " +
+      "\u2014 until then a gap next to a corner grew to standard width + 3/4\" and took the corner brace's role " +
+      "as well, which is why a stored project may still show one until it is loaded once. The Material Totals " +
+      "page carries its plywood contribution on whichever of the two rows matches its thickness.",
     loadBearingCapacity: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
     shearValue: { status: "pending-BI-confirmation", note: STRUCTURAL_PENDING_NOTE },
   },

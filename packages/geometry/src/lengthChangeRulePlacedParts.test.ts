@@ -42,7 +42,6 @@ const STANDARD_WIDTH_IN = 40;
 const CORNER_PANEL_WIDTH_IN = 24;
 /** Huge spacing, so only the corner-touching bracing rule fires and the
  * fixtures stay readable — the same choice `retile.test.ts` makes. */
-const BRACED_SEED = { spacingIn: 100_000, defaultPattern: "chevron" as const, defaultMirrored: false };
 const allPrimary = (fp: Footprint) => new Set(fp.corners.map((c) => c.id));
 
 const cornerXY = (fp: Footprint) => new Map(fp.corners.map((c) => [c.id, { x: c.point.x, y: c.point.y }]));
@@ -111,14 +110,7 @@ function resizeForShapeChange(
     const out = resizeWallRun(ruled.slots, ruled.remainingDeltaIn, end, STANDARD_WIDTH_IN);
     if (out.shortfallEighths > 0) return null;
     const gapSpaced = applySafetyGapSpacing(out.slots, newGeom.gapEnd, safetyGapWidthForRunIn(newGeom.lengthIn), TILER_MIN_PANEL_WIDTH_IN);
-    const braced = reconcileBracedPlacement(
-      ruled.slots,
-      gapSpaced.slots,
-      BRACED_SEED.spacingIn,
-      STANDARD_WIDTH_IN,
-      BRACED_SEED.defaultPattern,
-      BRACED_SEED.defaultMirrored,
-    );
+    const braced = reconcileBracedPlacement(ruled.slots, gapSpaced.slots);
     next[wall.id] = tidyUnbuildableLeftovers(braced).slots;
   }
   return { slotsByWallId: next, cornersMoved };
@@ -137,7 +129,7 @@ function expectWallsAgreeWithGeometry(fp: Footprint, slotsByWallId: Record<strin
 }
 
 function tiled(fp: Footprint): Record<string, PanelSlot[]> {
-  return retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN, BRACED_SEED);
+  return retile(fp, "A", allPrimary(fp), STANDARD_WIDTH_IN, CORNER_PANEL_WIDTH_IN, THICKNESS_IN);
 }
 
 describe("⚠ the measured case from the audit: a square widened flips corner ownership", () => {

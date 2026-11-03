@@ -20,7 +20,9 @@ export interface UncombinedSafetyGaps {
  *
  * Tommy: *"We don't need any of this safety Gap combining stuff. I don't want
  * to see any of the panels combined with safety gaps."* The combine is deleted
- * (see `applyBracedPlacement`), so nothing produces a combined slot any more —
+ * (it lived in `applyBracedPlacement`, itself deleted a few hours later when
+ * both automatic bracing rules were retired), so nothing produces a combined
+ * slot any more —
  * but a project SAVED before today still carries them, and nothing re-tiles a
  * wall until somebody edits it. Without this, his existing drawings would keep
  * showing a `braced + safety-gap` panel at a corner, which is exactly the thing

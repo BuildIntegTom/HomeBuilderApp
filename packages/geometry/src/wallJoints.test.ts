@@ -13,12 +13,11 @@ import { isSplitRefusal, splitFootprintByChord } from "./splitFootprint";
 import type { Footprint, PanelSlot } from "./types";
 
 const THICKNESS_IN = 15.5;
-const SEED = { spacingIn: 100_000, defaultPattern: "chevron" as const, defaultMirrored: false };
 const allPrimary = (fp: Footprint) => new Set(fp.corners.map((c) => c.id));
 
 /** A real building, tiled the way the app tiles it. */
 function tiled(fp: Footprint) {
-  const slots = retile(fp, "A", allPrimary(fp), 40, 24, THICKNESS_IN, SEED);
+  const slots = retile(fp, "A", allPrimary(fp), 40, 24, THICKNESS_IN);
   const runStart: Record<string, number> = {};
   for (const w of fp.walls) {
     runStart[w.id] = wallGeometryFor(fp, w.id, allPrimary(fp), "A", THICKNESS_IN)!.runStartOffsetIn;
