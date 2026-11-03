@@ -39,7 +39,22 @@ export type PanelSlotType =
   | "door"
   | "braced"
   | "column"
-  | "big-header";
+  | "big-header"
+  /**
+   * A framed void: a slot that occupies real wall length and holds no panel.
+   *
+   * ⚠ **Created by the right-click menu's "delete / no panel", 2026-11-03.**
+   * Asked what deleting a panel outright should leave behind, Tommy chose an
+   * explicit open slot over shortening the wall or quietly merging the width
+   * into the neighbours — *a real slot of that width, typed open* — so the
+   * wall length still sums and the void appears on drawings and takeoffs as
+   * something somebody MEANT, rather than as an absence a reader has to infer.
+   *
+   * It builds no members, costs nothing and weighs nothing. It is deliberately
+   * NOT in `PLACEABLE_PANEL_TYPES`: you make one by emptying a slot, not by
+   * inserting one.
+   */
+  | "open";
 
 /** Declared locally rather than imported from panel-catalog's own
  * `BracePattern` — `packages/geometry` doesn't depend on

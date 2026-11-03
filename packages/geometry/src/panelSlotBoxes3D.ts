@@ -110,6 +110,14 @@ export function panelSlotBoxes3D(
     let offsetFt = 0;
     for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
       const slot = slots[slotIndex]!;
+      /* ⚠ An OPEN slot is a framed void — it still advances the running
+         offset below, because it owns real wall length, but it draws nothing.
+         Advancing without emitting is the whole behaviour: skip it before the
+         offset is added and every panel past it on the wall shifts. */
+      if (slot.type === "open") {
+        offsetFt += (slot.widthIn * scale) / 12;
+        continue;
+      }
       const widthFt = (slot.widthIn * scale) / 12;
       result.push({
         wallId: wall.id,

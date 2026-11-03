@@ -61,6 +61,11 @@ import {
   isPointNearPier,
   markSafetyCorner,
   nextPanelCycleState,
+  type PanelCycleState,
+  type PanelSlotType,
+  panelTypeChoices,
+  isPlaceablePanelType,
+  setPanelSlotType,
   pointAlongRidgeLine,
   reconcileBracedPlacement,
   redistributeFreeRun,
@@ -341,6 +346,7 @@ import BaleFoundationCrossSectionDiagram from "./BaleFoundationCrossSectionDiagr
 import FloorJoistDiagram from "./FloorJoistDiagram";
 import FoundationCanvas from "./FoundationCanvas";
 import { allPanelInstances, type NamedPanelType, type PanelInstance } from "./panelInstances";
+import { PanelContextMenu, type PanelContextMenuTarget } from "./PanelContextMenu";
 import { shearMembersFor } from "./shearMembers";
 import {
   TILING_BASIS_CONTROL_LABELS,
@@ -4171,7 +4177,37 @@ export default function LayoutEditor() {
     );
   };
 
-  const handleToggleOpening = (story: "ground" | "second", wallId: Wall["id"], slotIndex: number, zoneIndex?: number) => {
+  /* An explicit type, or the next one in the click cycle when none is given.
+     A braced target takes the project's current Bracing style rather than the
+     cycle's own hardcoded chevron, because the menu offers one "Braced" row
+     and the style is a project setting. */
+  const panelCycleTarget = (current: PanelCycleState, targetType?: PanelSlotType): PanelCycleState | null =>
+    targetType === undefined
+      ? nextPanelCycleState(current)
+      : targetType === "braced"
+        ? { type: targetType, bracedPattern: defaultBracePattern, bracedMirrored: defaultBracedMirrored }
+        : { type: targetType };
+
+  /**
+   * ⚠ **`targetType` is B19's doing (2026-11-03).** This function was the
+   * click-through cycle and nothing else: it read the next type out of
+   * `nextPanelCycleState` and then did a great deal of careful work to make
+   * that type stick — the opening-anchor dance, the fixed column width, the
+   * zone-0 mirroring. The right-click menu needs all of that and a type of its
+   * own choosing, so the TYPE became a parameter and the cycle became one
+   * caller of it rather than the only one.
+   *
+   * Passing `targetType` skips the cycle entirely. Everything downstream is
+   * unchanged, which is the point: duplicating this path for the menu is how
+   * the two would quietly disagree about what a window costs in wall length.
+   */
+  const handleToggleOpening = (
+    story: "ground" | "second",
+    wallId: Wall["id"],
+    slotIndex: number,
+    zoneIndex?: number,
+    targetType?: PanelSlotType,
+  ) => {
     const currentSlots = wallSlotsForStory(story)[wallId] ?? [];
     const currentSlot = currentSlots[slotIndex];
     const geometry = wallGeometryFor(wallId);
@@ -4185,7 +4221,7 @@ export default function LayoutEditor() {
     // mutation, never the width-affecting retileWithOpenings dance below.
     if (zoneIndex !== undefined && zoneIndex > 0) {
       const zones = effectiveZonesForSlot(currentSlot, zoneIndex + 1);
-      const next = nextPanelCycleState(zones[zoneIndex]!);
+      const next = panelCycleTarget(zones[zoneIndex]!, targetType);
       if (!next) {
         setSelectedSlot({ wallId, slotIndex, story, zoneIndex });
         return;
@@ -4204,7 +4240,7 @@ export default function LayoutEditor() {
       return;
     }
 
-    const next = nextPanelCycleState(currentSlot);
+    const next = panelCycleTarget(currentSlot, targetType);
     if (!next) {
       // corner/safety-gap: not cyclable, but still selectable for read-only
       // details in the Selected Panel note.
@@ -5305,6 +5341,86 @@ export default function LayoutEditor() {
       at: slotIndex,
       delta: -1,
     });
+  };
+
+  /* ⚠ **B19 — the right-click panel menu.**
+     > *"Right click on a panel in the 2D plan and 2D elevation ... delete/merge,
+     > delete/ no panel, change panel type, and then a drop-down menu of all of
+     > the panel types."*
+
+     The target carries the STORY as well as the wall and slot, because the
+     same wall id means different slots on the ground floor and the second,
+     and a menu opened on one must not act on the other. */
+  const [panelMenu, setPanelMenu] = useState<(PanelContextMenuTarget & { story: "ground" | "second" }) | null>(null);
+
+  const OPENING_MENU_TYPES = new Set<PanelSlotType>(["window", "door", "column", "big-header"]);
+
+  const handlePanelContextMenu = (
+    story: "ground" | "second",
+    wallId: string,
+    slotIndex: number,
+    clientX: number,
+    clientY: number,
+  ) => {
+    const slots = wallSlotsForStory(story)[wallId] ?? [];
+    const slot = slots[slotIndex];
+    if (!slot) return;
+    /* The menu is also a selection: right-clicking a panel should leave the
+       Selected Panel note showing the one you are acting on, the same as a
+       left click used to. */
+    setSelectedSlot({ wallId, slotIndex, story });
+    setPanelMenu({
+      story,
+      wallId,
+      slotIndex,
+      clientX,
+      clientY,
+      label: `Wall ${wallId} · ${PANEL_TYPE_LABELS[slot.type]} ${formatLengthIn(slot.widthIn, unitSystem)}`,
+      /* ⚠ **OPENING TARGETS ARE GATED OFF FOR NOW, and this is a measured
+         refusal rather than caution.** Changing a panel INTO a window, door,
+         column or big header routes through `handleToggleOpening`'s
+         opening-anchor retile, which the click-cycle has only ever driven
+         along its own edges. Driven to an arbitrary target it loses the
+         panel: measured 2026-11-03 on a 43'9"x33' building, a Big Header
+         asked to become a Door left 42 wall panels where there had been 43
+         and the door count unchanged at 3 — the slot vanished instead of
+         converting. The same wall, same click, asked for Standard or Braced
+         is correct.
+
+         So the menu offers what is proven and says why about the rest. The
+         left-click cycle still reaches every opening type and is untouched,
+         which is why retiring it is NOT part of this stride. Fixing the
+         anchor path is the next piece of B19. */
+      choices: panelTypeChoices(slots, slotIndex).map((c) => {
+        if (!c.allowed || c.current) return c;
+        /* Either END of the transition being an opening sends it through the
+           anchor retile, so both are gated, not just the target. A Big Header
+           asked for Standard silently did nothing in the same measurement. */
+        const viaAnchorRetile = OPENING_MENU_TYPES.has(c.type) || OPENING_MENU_TYPES.has(slot.type);
+        return viaAnchorRetile
+          ? { ...c, allowed: false, reason: "Not yet from this menu — use the left-click cycle, which still reaches every type. The retile behind this transition loses the panel; that is the next piece of B19." }
+          : c;
+      }),
+      canDeleteMerge: isPlaceablePanelType(slot.type),
+      deleteRefusalReason: isPlaceablePanelType(slot.type)
+        ? undefined
+        : "This slot is placed by the tiler, so its width is not the free run's to give back. \"No panel\" still empties it.",
+    });
+  };
+
+  /* ⚠ "Delete — no panel" is NOT a delete. It keeps the slot and its width
+     and empties it, which is the `open` type — his answer when asked what the
+     void should become, over shortening the wall or merging the width away.
+     So the run still sums to the wall by identity, and the void is on the
+     drawing as something somebody meant. */
+  const handleDeleteNoPanel = (story: "ground" | "second", wallId: string, slotIndex: number) => {
+    setWallSlotsForStory(story, (prev) => {
+      const slots = prev[wallId];
+      if (!slots) return prev;
+      const next = setPanelSlotType(slots, slotIndex, "open");
+      return next === slots ? prev : { ...prev, [wallId]: next };
+    });
+    setSelectedSlot(null);
   };
 
   const handleSetWindowWidth = (story: "ground" | "second", wallId: string, slotIndex: number, requestedWidthIn: number) => {
@@ -13869,6 +13985,9 @@ export default function LayoutEditor() {
                   secondStorySlots={secondStory?.wallSlots[elevationWall.id]}
                   secondStoryWallHeightFt={secondStory?.wallHeightFt}
                   onToggleOpening={handleToggleOpening}
+                  onPanelContextMenu={(wallId, slotIndex, x, y) =>
+                    handlePanelContextMenu(effectiveViewedStoryId, wallId, slotIndex, x, y)
+                  }
                   // Clicking a panel's width label selects it without cycling
                   // its type — the only way a STANDARD panel can become the
                   // selected panel, and therefore the only way to reach its
@@ -13949,6 +14068,9 @@ export default function LayoutEditor() {
                   isWallLengthEditable={(wallId) => effectiveViewedStoryId === "ground" && isWallLengthEditable(wallId)}
                   onDraw={handleDraw}
                   onToggleOpening={(wallId, slotIndex) => handleToggleOpening(effectiveViewedStoryId, wallId, slotIndex)}
+                  onPanelContextMenu={(wallId, slotIndex, x, y) =>
+                    handlePanelContextMenu(effectiveViewedStoryId, wallId, slotIndex, x, y)
+                  }
                   onSetLeastAccessibleCorner={(cornerId) => {
                     if (effectiveViewedStoryId === "ground") handleSetLeastAccessibleCorner(cornerId);
                   }}
@@ -14011,6 +14133,10 @@ export default function LayoutEditor() {
                   checkedExteriorIds={checkedExteriorIds}
                   tool3D={tool3D}
                   onToggleOpening={handleToggleOpening}
+                  /* ⚠ B19 ships the menu on the two 2D surfaces he named first.
+                     The 3D view needs a panel hit test, which the panel EDITOR needs
+                     too and will launch from — so the two arrive together rather than
+                     building the same pick twice. */
                   onSetWindowSillHeight={handleSetWindowSillHeight}
                   onSetWindowHeight={handleSetWindowHeight}
                   gableTilesByWallId={gableTilesByWallId}
@@ -14537,6 +14663,19 @@ export default function LayoutEditor() {
             </>
           )}
         </StickyNote>
+
+        {/* ⚠ **B19 — the right-click panel menu.** One instance for the whole
+            page: the plan, the elevation and the 3D view all open the same
+            menu, so its behaviour cannot differ by surface. It portals to
+            `document.body`, so nothing inside a canvas, a note or a scroll
+            container can clip it. */}
+        <PanelContextMenu
+          target={panelMenu}
+          onClose={() => setPanelMenu(null)}
+          onDeleteMerge={(wallId, slotIndex) => handleDeletePanel(panelMenu!.story, wallId, slotIndex)}
+          onDeleteNoPanel={(wallId, slotIndex) => handleDeleteNoPanel(panelMenu!.story, wallId, slotIndex)}
+          onChangeType={(wallId, slotIndex, type) => handleToggleOpening(panelMenu!.story, wallId, slotIndex, undefined, type)}
+        />
 
         <StickyNote
           id="review-log"

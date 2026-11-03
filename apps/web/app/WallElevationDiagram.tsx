@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   computeGableTiledRow,
@@ -99,6 +99,8 @@ const SLOT_COLORS: Record<PanelSlot["type"], string> = {
   door: "#7a4a2b",
   column: "#4a90a4",
   "big-header": "#e85d9c",
+  /* A framed void. Palest on the drawing by design — see panelColors.ts. */
+  open: "#eceae6",
 };
 
 // Small line-icon SVGs for the pan/zoom/ID toolbar — matches the Stitch
@@ -260,6 +262,10 @@ export interface WallElevationDiagramProps {
    * which still shares one type across every band in Stride 1 — see
    * bandsAndZonesPerSlot's own doc comment). */
   onToggleOpening: (story: "ground" | "second", wallId: string, slotIndex: number, zoneIndex?: number) => void;
+  /** ⚠ Right-click a panel — B19. Client coordinates: the menu is a
+   *  fixed-position portal on `document.body`, so it cannot be clipped by
+   *  this diagram's own scroll container or SVG viewport. */
+  onPanelContextMenu?: (wallId: string, slotIndex: number, clientX: number, clientY: number) => void;
   /**
    * Select a slot WITHOUT cycling its type — the entry point Smearforn
    * Stage 1's typed width needs, and the gesture Tommy described first:
@@ -521,6 +527,7 @@ export default function WallElevationDiagram({
   secondStorySlots,
   secondStoryWallHeightFt,
   onToggleOpening,
+  onPanelContextMenu,
   onSelectSlot,
   panelToolMode,
   onReplacePanel,
@@ -1580,6 +1587,16 @@ export default function WallElevationDiagram({
       else if (panelToolMode === "delete") onDeletePanel(story, wall.id, slotIndex);
       else onToggleOpening(story, wall.id, slotIndex, zoneIndexForClick);
     };
+    /* ⚠ The right click is the same on every band of a split column: the
+       menu acts on the SLOT, because a width reservation is shared by every
+       zone stacked in it — the same reasoning `bodyClick`'s own comment
+       gives for the placement tool. */
+    const bodyContextMenu = (slotIndex: number) => (e: ReactMouseEvent) => {
+      if (!onPanelContextMenu) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onPanelContextMenu(wall.id, slotIndex, e.clientX, e.clientY);
+    };
     for (let bandIndex = 0; bandIndex < maxBandCount; bandIndex++) {
       for (const { slot, i, x0, x1 } of rects) {
         const entry = bandsAndZonesForRow[i];
@@ -1668,6 +1685,7 @@ export default function WallElevationDiagram({
               data-panel-body={i}
               data-panel-story={story}
               onClick={bodyClick(i, zoneIndexForClick)}
+              onContextMenu={bodyContextMenu(i)}
               onMouseEnter={() => setHoveredBody({ story, slotIndex: i })}
               onMouseLeave={() => setHoveredBody((h) => (h?.story === story && h.slotIndex === i ? null : h))}
               onMouseDown={(e) => {
@@ -1724,6 +1742,7 @@ export default function WallElevationDiagram({
               data-panel-body={i}
               data-panel-story={story}
               onClick={bodyClick(i, zoneIndexForClick)}
+              onContextMenu={bodyContextMenu(i)}
               onMouseEnter={() => setHoveredBody({ story, slotIndex: i })}
               onMouseLeave={() => setHoveredBody((h) => (h?.story === story && h.slotIndex === i ? null : h))}
               onMouseDown={(e) => {

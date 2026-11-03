@@ -56,3 +56,4 @@ export * from "./truckLoads";
 export * from "./floorMembraneOpacityBands";
 export * from "./floorMembranePolygons";
 export * from "./uncombineSafetyGaps";
+export * from "./panelTypeChoices";

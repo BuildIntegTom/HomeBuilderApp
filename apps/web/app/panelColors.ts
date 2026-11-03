@@ -16,6 +16,11 @@ export const PANEL_TYPE_COLORS: Record<PanelSlot["type"], string> = {
   // Tommy: "a unique color maybe pink for 2d box views" — distinct from
   // every other panel-type color already in use.
   "big-header": "#e85d9c",
+  /* ⚠ A framed VOID, not a panel. Deliberately the palest thing on the
+     drawing — it must read as "nothing is here" at a glance, and must not be
+     mistaken for a Standard panel's own warm tan. See `PanelSlotType`'s own
+     doc comment for why the slot exists at all. */
+  open: "#eceae6",
 };
 
 export const PANEL_TYPE_LABELS: Record<PanelSlot["type"], string> = {
@@ -28,6 +33,7 @@ export const PANEL_TYPE_LABELS: Record<PanelSlot["type"], string> = {
   window: "Window",
   door: "Door",
   "big-header": "Big Header",
+  open: "Open (no panel)",
 };
 
 // Tommy: "lets make safety gaps the second to last label slot - right

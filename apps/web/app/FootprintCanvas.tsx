@@ -198,6 +198,11 @@ export interface FootprintCanvasProps {
   isWallLengthEditable: (wallId: Wall["id"]) => boolean;
   onDraw: (widthFt: number, depthFt: number, offsetPx: DragPoint) => void;
   onToggleOpening: (wallId: Wall["id"], slotIndex: number) => void;
+  /** ⚠ Right-click a panel — B19. Client coordinates, because the menu
+   *  is a fixed-position portal on `document.body` rather than a Konva
+   *  node: nothing inside the stage can escape its own clipping or paint
+   *  over the chrome. */
+  onPanelContextMenu?: (wallId: Wall["id"], slotIndex: number, clientX: number, clientY: number) => void;
   onSetLeastAccessibleCorner: (cornerId: CornerId) => void;
   onEditWallLength: (wallId: Wall["id"], newLengthFt: number) => void;
   onAddBumpOut: (wallId: Wall["id"], spanStartFt: number, spanEndFt: number, depthFt: number) => void;
@@ -238,6 +243,7 @@ export default function FootprintCanvas({
   isWallLengthEditable,
   onDraw,
   onToggleOpening,
+  onPanelContextMenu,
   onSetLeastAccessibleCorner,
   onEditWallLength,
   onAddBumpOut,
@@ -1019,6 +1025,11 @@ export default function FootprintCanvas({
                         strokeWidth={0.5}
                         onClick={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
                         onTap={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
+                        onContextMenu={(e: KonvaEventObject<PointerEvent>) => {
+                          if (!onPanelContextMenu) return;
+                          e.evt.preventDefault();
+                          onPanelContextMenu(r.wallId, r.slotIndex, e.evt.clientX, e.evt.clientY);
+                        }}
                         onMouseEnter={() =>
                           setHoveredSlot({ key: slotKey, type: typeLabel, x: labelX, y: labelY, rotationDeg: 0, width: 0 })
                         }
@@ -1063,6 +1074,11 @@ export default function FootprintCanvas({
                       strokeWidth={0.5}
                       onClick={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
                       onTap={shapeTool === "edit" ? () => onToggleOpening(r.wallId, r.slotIndex) : undefined}
+                      onContextMenu={(e: KonvaEventObject<PointerEvent>) => {
+                        if (!onPanelContextMenu) return;
+                        e.evt.preventDefault();
+                        onPanelContextMenu(r.wallId, r.slotIndex, e.evt.clientX, e.evt.clientY);
+                      }}
                       onMouseEnter={() =>
                         setHoveredSlot({ key: slotKey, type: typeLabel, x: r.x, y: r.y, rotationDeg: r.rotationDeg, width: r.width })
                       }

@@ -356,6 +356,15 @@ export function allPanelInstances(
     const midWallBeams = midWallBeamsByWallId?.[wall.id];
     for (let slotIndexInWall = 0; slotIndexInWall < slots.length; slotIndexInWall++) {
       const slot = slots[slotIndexInWall]!;
+      /* ⚠ **An OPEN slot is a framed void and produces no panel instance.**
+         It owns real wall length so the run still sums, but there is nothing
+         to fabricate, count, weigh, price or draw in 3D. Skipped here rather
+         than filtered downstream, because this function is where "a slot"
+         becomes "a panel" and every total in the app is built from what it
+         returns — a single `open` instance leaking out would be a phantom
+         panel on the cut list. `NamedPanelType` has no member for it, which is
+         the type system saying the same thing. */
+      if (slot.type === "open") continue;
       const isBoxBeamCovered = isSlotBoxBeamCovered(slotIndexInWall, boxBeamCoverage) || undefined;
       // Different slots of the SAME wall can see different band counts
       // (each Mid-Wall Bond Beam has its own horizontal range, and a
