@@ -134,6 +134,9 @@ export interface FloorRoofPanelOptions {
    * a wall actually lands on it, and a roof panel never gets one at all
    * (*"the roof panels do not need a structural girt, their weight should be
    * on both the inner and outer wyth of the wall panel"*).
+   *
+   * ⚠ Each listed end carries a **PAIR** of girts since B23 — one under each
+   * toe-up board — not one. See `wallBearingGirtStationsIn`.
    */
   structuralGirtEnds?: ("start" | "end")[];
   /**
@@ -952,7 +955,12 @@ function girtSpanIn(o: FloorRoofPanelOptions): { lengthIn: number; xIn: number }
  * > *"The structural girts are vertical"*, which is that same direction once
  * > the panel is installed.
  */
-function buildStructuralGirt(o: FloorRoofPanelOptions, zIn: number, label: string): PanelMember[] {
+function buildStructuralGirt(
+  o: FloorRoofPanelOptions,
+  zIn: number,
+  label: string,
+  webNote = "structural girt web — carries the wall above, cut to the space between the joists",
+): PanelMember[] {
   const span = girtSpanIn(o);
   return [
     sheet(
@@ -961,7 +969,7 @@ function buildStructuralGirt(o: FloorRoofPanelOptions, zIn: number, label: strin
       STRUCTURAL_GIRT_PLY_SPEC,
       { thicknessIn: STRUCTURAL_GIRT_PLY_THICKNESS_IN, widthIn: o.depthIn, lengthIn: span.lengthIn },
       { xIn: span.xIn, yIn: 0, zIn },
-      "structural girt web — carries the wall above, cut to the space between the joists",
+      webNote,
     ),
     ...([
       ["left", span.xIn],
@@ -979,6 +987,110 @@ function buildStructuralGirt(o: FloorRoofPanelOptions, zIn: number, label: strin
       ),
     ),
   ];
+}
+
+/** A structural girt station: where one goes, and which face of the wall
+ * above it stands under. */
+export interface WallBearingGirtStation {
+  /** Goes into the member ids, so a shop sheet can tell the pair apart. */
+  label: string;
+  zIn: number;
+  face: "exterior" | "interior";
+}
+
+/**
+ * ⚠ **A WALL-BEARING END CARRIES A PAIR OF GIRTS — ONE UNDER EACH TOE-UP
+ * BOARD. B23, his spec of 2026-11-02.**
+ *
+ * > *"there should be a girt wall depth (15.5") in from the exterior edges of
+ * > the long channels of the floor panels to help carry the entire toe up
+ * > load to the foundation."*
+ *
+ * **What was wrong, measured.** A floor panel's end carries a wall, and the
+ * toe-up under that wall is a PAIR of 2x4s laid flat — one flush with the
+ * wall's exterior face, one flush with its interior face, with fiberboard
+ * between them for the thermal break. Before this the panel had one girt, at
+ * the lid: on a 15.5in wall the exterior toe-up board (z 0–3.5in) bore on the
+ * lid and that girt (0–4.5in), and the **interior** board (z 12–15.5in) bore
+ * on nothing but the two joist tops at the panel's own edges — 1.5in of
+ * bearing each, with a 21in unsupported span of subfloor between them on a
+ * 24in field panel. Half the wall's weight was being carried by the sheathing.
+ * That is his *"entire toe up load"*, and the second girt is what gives the
+ * inner board framing to stand on all the way down to the foundation.
+ *
+ * ⚠ **The interior girt is flush with the wall's INTERIOR FACE, not set in by
+ * a wall depth from the first girt.** His *"wall depth in from the exterior
+ * edge"* puts the girt's far face at the wall depth, so near face at
+ * `depth − 2.25`: 13.25–15.5in on a 15.5in wall, directly under the inner
+ * toe-up board. Measuring the inset to the NEAR face instead would put the
+ * girt at 15.5–17.75in — past the wall entirely, under nothing.
+ *
+ * ⚠ **The wall depth is read live, never written as 15.5.** `o.depthIn` IS
+ * the wall's thickness: `DeckPanelTakeoffInput.depthIn` is documented as *"the
+ * wall/panel depth"* and the app passes the live `thicknessIn` into it, which
+ * is also what makes the two edge panels of every run exactly as wide as the
+ * wall. `cornerPanelWidthIn` is 15.5in as well and is a different number that
+ * happens to agree — see `corner_panel_is_15_5`.
+ *
+ * ⚠ **A wall PARALLEL to the panels still gets nothing, and that is his own
+ * earlier decision, not an omission here** — *"The walls that sit overtop one
+ * span of a panel do not need more than the one structural girt at the end."*
+ * It needs nothing: such a wall lands square on a 15.5in edge panel whose two
+ * joists run its whole length directly under both toe-up boards, so the
+ * entire load is already on framing. The gap this fixes exists only where the
+ * wall crosses the joists instead of following them.
+ *
+ * Returned sorted along the panel, which is both the order a shop reads and —
+ * on a panel with no interior girt — exactly the order the two end girts came
+ * out in before this existed.
+ */
+export function wallBearingGirtStationsIn(o: FloorRoofPanelOptions): WallBearingGirtStation[] {
+  /* *"the roof panels do not need a structural girt"* — refused here as well
+     as at the member builder, so neither path can produce one. */
+  const ends = o.kind === "roof" ? [] : (o.structuralGirtEnds ?? []);
+  const lidFaceIn = SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
+  const wallDepthIn = o.depthIn;
+
+  /* An inset is measured from an end's own exterior plane to the girt's NEAR
+     face. At `start` that inset is the z; at `end` the panel runs the other
+     way, so it is the girt's far face that lies nearer the lid. */
+  const zAtInset = (end: "start" | "end", insetIn: number) =>
+    end === "start" ? insetIn : o.lengthIn - insetIn - STRUCTURAL_GIRT_TOTAL_THICKNESS_IN;
+
+  /* Every exterior girt first, at exactly the station it has always had, so
+     nothing added below can displace a girt that already carries a wall. */
+  const out: WallBearingGirtStation[] = ends.map((end) => ({
+    label: end,
+    zIn: zAtInset(end, lidFaceIn),
+    face: "exterior" as const,
+  }));
+
+  const interiorInsetIn = wallDepthIn - STRUCTURAL_GIRT_TOTAL_THICKNESS_IN;
+  for (const end of ends) {
+    const zIn = zAtInset(end, interiorInsetIn);
+    /* ⚠ Four ways a thin wall or a short panel would place this badly, and
+       every one of them drops the girt rather than build it — `no_overlapping
+       _members` is a standing rule, and a wall shallower than 6.75in is
+       already carried end to end by the exterior girt alone. */
+    const insideThePanel = zIn >= lidFaceIn - 1e-9 && zIn + STRUCTURAL_GIRT_TOTAL_THICKNESS_IN <= o.lengthIn - lidFaceIn + 1e-9;
+    const clearOfItsOwnEnd = interiorInsetIn >= lidFaceIn + STRUCTURAL_GIRT_TOTAL_THICKNESS_IN - 1e-9;
+    /* ⚠ And it has to stay on its OWN end's side of the panel. A span shorter
+       than its two walls put together passes the overlap check and still
+       crosses them over — measured on a 20in panel, where `end_inner` landed
+       4.5in from the START. No overlap, and no relation to the wall it is
+       meant to be under. */
+    const withinItsOwnEnd = wallDepthIn <= o.lengthIn - (ends.length > 1 ? wallDepthIn : lidFaceIn) + 1e-9;
+    const clearOfTheRest = out.every(
+      (s) =>
+        zIn + STRUCTURAL_GIRT_TOTAL_THICKNESS_IN <= s.zIn + 1e-9 ||
+        zIn >= s.zIn + STRUCTURAL_GIRT_TOTAL_THICKNESS_IN - 1e-9,
+    );
+    if (insideThePanel && clearOfItsOwnEnd && withinItsOwnEnd && clearOfTheRest) {
+      out.push({ label: `${end}_inner`, zIn, face: "interior" });
+    }
+  }
+
+  return out.sort((a, b) => a.zIn - b.zIn);
 }
 
 /**
@@ -1206,9 +1318,20 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
   members.push(...buildEndWebs(o, plumb, eaveCut(o), SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN));
 
   const girtEnds = o.kind === "roof" ? [] : (o.structuralGirtEnds ?? []);
-  for (const end of girtEnds) {
-    const zIn = end === "start" ? SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN : o.lengthIn - SKIN_THICKNESS_IN - PLATE_2X4_THICKNESS_IN - STRUCTURAL_GIRT_TOTAL_THICKNESS_IN;
-    members.push(...buildStructuralGirt(o, zIn, end));
+  /* ⚠ A PAIR per wall-bearing end since B23 — one girt under each toe-up
+     board. `wallBearingGirtStationsIn` owns where they go and why. */
+  for (const station of wallBearingGirtStationsIn(o)) {
+    members.push(
+      ...buildStructuralGirt(
+        o,
+        station.zIn,
+        station.label,
+        station.face === "exterior"
+          ? "structural girt web — carries the wall above, cut to the space between the joists"
+          : `structural girt web — set in flush with the wall's INTERIOR face (${o.depthIn}in from this end), ` +
+            "so the inner toe-up board bears on framing rather than spanning the subfloor between the joists",
+      ),
+    );
   }
 
   /* ⚠ The extra girts under a column, built from exactly the same part as
@@ -1226,7 +1349,16 @@ export function buildFloorRoofPanelMembers(options: FloorRoofPanelOptions): Pane
   /* Both spacings are measured from the structural girt on a floor and from
      the ridge on a roof — "Girts start from the ridge every 5'". The ridge is
      the panel's own start in this frame, so both cases measure from a datum at
-     one end and the loop is the same. */
+     one end and the loop is the same.
+
+     ⚠ The datum stays the EXTERIOR girt now that B23 puts a second one
+     further in, and that is deliberate rather than overlooked: *"starting
+     every 3' from the structural girt"* was said when there was one, and
+     re-datuming to the interior girt would shift every piece of blocking and
+     every anti-twist girt in every floor panel in the app by 11in — a change
+     to parts he has already approved, to answer a question he has not been
+     asked. First blocking station is unmoved at 40.5in, which clears the
+     interior girt's far face by 25in. */
   const datumIn = girtEnds.includes("start") ? SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN + STRUCTURAL_GIRT_TOTAL_THICKNESS_IN : SKIN_THICKNESS_IN + PLATE_2X4_THICKNESS_IN;
 
   /* ⚠ A PLUMB TALL END MOVES THE LAST USABLE STATION BACK, and not by the

@@ -16458,7 +16458,7 @@ export default function LayoutEditor() {
                         carries four of them. Straw goes in loose and is compressed in the table, one joist laid in
                         each side. Both lids are structural: a plywood skin faced with 2x4s laid edge to edge across
                         the whole lid, the last ripped to fit. {group.kind === "floor"
-                          ? `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries a structural girt at each end, where a wall lands on it.`
+                          ? `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries a PAIR of structural girts at each end, where a wall lands on it — one under the wall's exterior toe-up board and one set in flush with its interior face, so the whole toe-up bears on framing.`
                           : `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries no structural girt — a roof panel bears on both wythes of the inclined wall panel below it.`}{" "}
                         It is panel {group.instances.map((i) => i.name).join(", ")} of{" "}
                         {group.plan.instances.length} across a {formatLengthIn(group.runIn, unitSystem)}{" "}

@@ -127,14 +127,26 @@ export interface FloorRoofPanelRunOptions {
  * sheet covers every exact copy — the same bargain the wall panels own
  * fabrication groups make.
  *
- * ⚠ **The panels fill the run exactly and leave no room for a girt along its
- * edges.** `FLOOR_ROOF_EDGE_PANEL_WIDTH_IN` is 13.25 precisely so that the
- * panel plus its 2.25in structural girt comes to the 15.5in wall depth, but
- * the girt the builder places runs across a panel's span END, inside the
- * panel's own length. A wall running PARALLEL to the panels would need a girt
- * along the run's edge, and nothing allocates width for one. Flagged rather
- * than guessed at: either the edge panels are narrowed for a girt that has to
- * be given its 2.25in of run, or they are not narrowed at all.
+ * ⚠ **The panels fill the run exactly and no girt runs along its edges —
+ * SETTLED, where this used to be an open flag.** The flag read: the edge
+ * panel is 13.25in *"precisely so that the panel plus its 2.25in structural
+ * girt comes to the 15.5in wall depth"*, and nothing allocated run for a girt
+ * under a wall PARALLEL to the panels. Both halves are now answered and the
+ * answer is no girt:
+ *
+ * - The edge panel is `FLOOR_ROOF_EDGE_PANEL_WIDTH_IN` = **15.5in, the full
+ *   wall depth**, not 13.25 — *"The edge panels for floors and roofs still
+ *   have to be 15.5" because thata the wall thickness."* The subtraction that
+ *   made room for an edge girt was removed with the girt.
+ * - *"The walls that sit overtop one span of a panel do not need more than
+ *   the one structural girt at the end."* A parallel wall lands square on
+ *   that 15.5in edge panel, whose two joists run its whole length directly
+ *   under both toe-up boards, so its load is already on framing end to end.
+ *
+ * ⚠ What a wall CROSSING the panels needs is a different part and it exists:
+ * a pair of girts at the bearing end, one under each toe-up board — see
+ * `wallBearingGirtStationsIn` (B23). That pair lives inside the panel's own
+ * length and still costs the run nothing.
  */
 export function planFloorRoofPanelRun(options: FloorRoofPanelRunOptions): FloorRoofPanelRunPlan {
   const edgeWidthIn = options.depthIn ?? FLOOR_ROOF_EDGE_PANEL_WIDTH_IN;

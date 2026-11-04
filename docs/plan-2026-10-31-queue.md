@@ -2333,3 +2333,111 @@ now, and this is the first thing in it.
   because nothing in the app spawns three today.
 - **Gable rows** are not part of this. They are not members of a wall's `slots`
   array at all and carry no zones.
+
+---
+
+# B23 — BUILT, 2026-11-04. A pair of girts at every wall-bearing end
+
+> *"there should be a girt wall depth (15.5") in from the exterior edges of
+> the long channels of the floor panels to help carry the entire toe up load
+> to the foundation."* — Tommy, 2026-11-02
+
+## What was wrong, measured
+
+A floor panel's end carries a wall, and the toe-up under that wall is a **pair**
+of 2x4s laid flat — one flush with the wall's exterior face, one flush with its
+interior face, fiberboard between them for the thermal break (the load path in
+`building_integrity_app_spec.md`, detail 4).
+
+The panel had **one** girt, at the lid. On a 15.5in wall:
+
+| toe-up board | occupies | bore on |
+| --- | --- | --- |
+| exterior 2x4 | z 0–3½in | the end lid (0–2¼) **and the girt** (2¼–4½) |
+| **interior 2x4** | **z 12–15½in** | **the two joist tops, 1½in each** |
+
+So half the wall's weight was landing on the panel's two edge joists with a
+**21in unsupported span of subfloor between them** on a 24in field panel. That
+is the gap behind his *"entire toe up load"*, and it is why the request is
+about floor panels and not roof ones.
+
+## The fix
+
+`wallBearingGirtStationsIn` owns where every structural girt goes. Each end
+listed in `structuralGirtEnds` now gets **two**: the exterior one exactly where
+it has always been, and an interior one whose **far face is flush with the
+wall's interior face** — 13¼–15½in on a 15.5in wall, directly under the inner
+toe-up board.
+
+⚠ **The inset is to the FAR face, and the other reading builds something that
+looks right and carries nothing.** Measuring his *"wall depth in"* to the NEAR
+face would put the girt at 15½–17¾in — past the wall entirely, under no part
+of the toe-up. A test pins 13.25 and the 15.5 far face.
+
+⚠ **15.5 is never written down.** It reads `o.depthIn`, which IS the wall's
+thickness — `DeckPanelTakeoffInput.depthIn` is documented as *"the wall/panel
+depth"* and the app passes the live `thicknessIn` into it. `cornerPanelWidthIn`
+is 15.5in too and is a different number that happens to agree, which is exactly
+how a literal gets planted. Pinned at 15.5 / 19.5 / 24 / 12in walls.
+
+## Four ways it refuses to build one
+
+A dropped girt beats a girt in the wrong place — `no_overlapping_members` is a
+standing rule, and three of these were found by writing the test, not by
+reading the code:
+
+- **A wall shallower than 6¾in** (lid 2¼ + girt 2¼ + girt 2¼) has no room for a
+  second girt — and no need for one, because the exterior girt already reaches
+  past the wall's inside face.
+- **A span shorter than its two walls put together** passes a plain overlap
+  check and still crosses them over. Measured on a 20in panel: `end_inner`
+  landed 4½in from the START. No overlap, and no relation to the wall it is
+  meant to be under.
+- Anything **outside the panel's own lids**.
+- Anything **overlapping a girt already placed**.
+
+## What did NOT change, on purpose
+
+- **A wall PARALLEL to the panels still gets nothing**, which is his own
+  earlier decision — *"The walls that sit overtop one span of a panel do not
+  need more than the one structural girt at the end."* It needs nothing: such a
+  wall lands square on a 15.5in edge panel whose two joists run its whole
+  length directly under **both** toe-up boards. The gap B23 closes exists only
+  where the wall crosses the joists instead of following them. The stale flag
+  in `planFloorRoofPanelRun` that still described the edge panel as 13.25in —
+  *"precisely so that the panel plus its 2.25in structural girt comes to the
+  15.5in wall depth"* — described a decision that had already been reversed,
+  and is rewritten rather than left to mislead.
+- **Blocking and anti-twist girts still datum off the EXTERIOR girt.**
+  *"starting every 3' from the structural girt"* was said when there was one.
+  Re-datuming would shift every piece of blocking in every floor panel in the
+  app by 11in, to answer a question he has not been asked. First blocking
+  station unmoved at 40½in, which clears the interior girt by 25in.
+- **Roof panels, still none at all**, refused at the station planner as well as
+  at the member builder so neither path can produce one.
+
+## What it costs, from the running app
+
+A 27'3" x 22'3" building, 15 floor panels, on the Shop Fabrication sheets:
+
+| sheet | 3/4in girt webs before | after |
+| --- | --- | --- |
+| Floor Panel 24" (8 of them) | 2 | **4** |
+| Floor Panel 24" (under a ridge column) | 3 | **5** |
+| Floor Panel 24" (two column girts) | 4 | **6** |
+| Floor Panel 15½" edge | 3 | **5** |
+
+⚠ **It adds no ROW to any cut list.** The interior girt is the identical cut,
+so the web row's qty goes 2 → 4 and its four 2x4s fold into the row the panel
+already had for its lid faces (they are the same 2x4 cut to the same wall
+depth): row B on the field sheet reads 20 where it read 16. Fasteners follow
+for free — `fastenerWeight` counts every `girt_web` lid at 8 GRK screws, so the
+pair is counted the way the first girt always was.
+
+## Found, not fixed, and not reachable
+
+`extraStructuralGirtsAtIn` clamps a column girt to `firstFaceIn` = 2¼in, which
+is **exactly where the exterior girt stands** — an out-of-range column position
+on a girted end would stack two girts in one place. It predates B23 and nothing
+reaches it: the app only ever passes `spanIn / 2`. Left alone rather than
+changed blind, and written down rather than left latent.

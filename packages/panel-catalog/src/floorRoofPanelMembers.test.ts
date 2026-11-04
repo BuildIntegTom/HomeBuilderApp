@@ -16,6 +16,7 @@ import {
   JOIST_2X6_WIDTH_IN,
   STRUCTURAL_GIRT_TOTAL_THICKNESS_IN,
   buildFloorRoofPanelMembers,
+  wallBearingGirtStationsIn,
   type FloorRoofPanelOptions,
 } from "./floorRoofPanelMembers";
 import { PLATE_2X4_WIDTH_IN, memberBoxSizeIn, memberLocalCornersIn } from "./panelMemberHelpers";
@@ -126,7 +127,10 @@ describe("⚠ the structural girt goes only where a wall lands", () => {
   });
 
   it("at both ends when both carry a wall, and at neither when none does", () => {
-    expect(idsLike(buildFloorRoofPanelMembers(floor({ structuralGirtEnds: ["start", "end"] })), "structural-girt-")).toHaveLength(6);
+    /* ⚠ 12, not 6 — B23 put a PAIR at each wall-bearing end, one girt under
+       each toe-up board, and each girt is three members (web plus its two
+       2x4s). This test read 6 when there was one girt an end. */
+    expect(idsLike(buildFloorRoofPanelMembers(floor({ structuralGirtEnds: ["start", "end"] })), "structural-girt-")).toHaveLength(12);
     expect(idsLike(buildFloorRoofPanelMembers(floor({ structuralGirtEnds: [] })), "structural-girt-")).toHaveLength(0);
   });
 
@@ -146,6 +150,142 @@ describe("⚠ the structural girt goes only where a wall lands", () => {
     expect(idsLike(members, "structural-girt-start-left")).toHaveLength(1);
     expect(idsLike(members, "structural-girt-start-right")).toHaveLength(1);
     expect(STRUCTURAL_GIRT_TOTAL_THICKNESS_IN).toBe(2.25);
+  });
+});
+
+describe("⚠ B23 — a wall-bearing end carries a PAIR of girts, one under each toe-up board", () => {
+  /* > *"there should be a girt wall depth (15.5") in from the exterior edges
+     > of the long channels of the floor panels to help carry the entire toe
+     > up load to the foundation."* — Tommy, 2026-11-02 */
+
+  const stationsOf = (over: Partial<FloorRoofPanelOptions> = {}) =>
+    wallBearingGirtStationsIn(floor({ lengthIn: 240, ...over }));
+
+  it("⚠ the interior girt's FAR face is flush with the wall's interior face", () => {
+    /* His inset is measured to the far face: a 15.5in wall puts the girt at
+       13.25–15.5in, directly under the inner toe-up board (12–15.5in).
+       Measuring the inset to the NEAR face instead would put it at
+       15.5–17.75in, past the wall and under nothing — which is the one way
+       this could be built so it looks right and carries nothing. */
+    const inner = stationsOf({ depthIn: 15.5, structuralGirtEnds: ["start"] }).find((s) => s.face === "interior")!;
+    expect(inner.zIn).toBe(13.25);
+    expect(inner.zIn + STRUCTURAL_GIRT_TOTAL_THICKNESS_IN).toBe(15.5);
+    /* The interior toe-up board is a 2x4 laid flat, flush with the wall's
+       inside face. The girt's whole footprint has to fall under it. */
+    const toeUpFromIn = 15.5 - PLATE_2X4_WIDTH_IN;
+    expect(inner.zIn).toBeGreaterThanOrEqual(toeUpFromIn);
+  });
+
+  it("⚠ reads the LIVE wall depth — 15.5 is never written down", () => {
+    /* `cornerPanelWidthIn` is 15.5in too and is a different number that
+       happens to agree, which is exactly how a literal gets planted. */
+    for (const [depthIn, expectedIn] of [
+      [15.5, 13.25],
+      [19.5, 17.25],
+      [24, 21.75],
+      [12, 9.75],
+    ] as [number, number][]) {
+      const inner = stationsOf({ depthIn, structuralGirtEnds: ["start"] }).find((s) => s.face === "interior");
+      expect({ depthIn, zIn: inner?.zIn }).toEqual({ depthIn, zIn: expectedIn });
+    }
+  });
+
+  it("the far end mirrors it, measured from ITS own exterior plane", () => {
+    const stations = stationsOf({ depthIn: 15.5, structuralGirtEnds: ["end"] });
+    const inner = stations.find((s) => s.face === "interior")!;
+    // 240 − 15.5 to 240 − 15.5 + 2.25, so its far face is 15.5in in from z=240.
+    expect(inner.zIn).toBe(240 - 15.5);
+    expect(240 - (inner.zIn + STRUCTURAL_GIRT_TOTAL_THICKNESS_IN)).toBe(15.5 - STRUCTURAL_GIRT_TOTAL_THICKNESS_IN);
+  });
+
+  it("⚠ the EXTERIOR girt has not moved, and the stations read along the panel", () => {
+    /* The girt that already carries a wall keeps its station exactly — the
+       pair is additive. 2.25in is the lid (3/4in skin + a 2x4 face). */
+    const stations = stationsOf({ depthIn: 15.5, structuralGirtEnds: ["start", "end"] });
+    expect(stations.map((s) => ({ label: s.label, zIn: s.zIn }))).toEqual([
+      { label: "start", zIn: 2.25 },
+      { label: "start_inner", zIn: 13.25 },
+      { label: "end_inner", zIn: 224.5 },
+      { label: "end", zIn: 235.5 },
+    ]);
+  });
+
+  it("⚠ a panel with no interior girt comes out in exactly the old order", () => {
+    /* The sort was added with the pair, so it has to be a no-op on the case
+       that existed before — otherwise every pre-B23 member list reshuffles
+       and every group key with it. */
+    const shallow = wallBearingGirtStationsIn(floor({ lengthIn: 240, depthIn: 4.5, structuralGirtEnds: ["start", "end"] }));
+    expect(shallow.map((s) => s.label)).toEqual(["start", "end"]);
+  });
+
+  it("builds from the SAME part, so the shop cuts more of what it already cuts", () => {
+    /* ⚠ The interior girt adds no ROW to the cut list, at either material —
+       it is the identical cut, so it raises quantities. Measured as a delta
+       against the same panel with no girt at all. */
+    const rowsOf = (girtEnds: ("start" | "end")[]) =>
+      computePanelCutList(buildFloorRoofPanelMembers(floor({ lengthIn: 240, depthIn: 15.5, structuralGirtEnds: girtEnds })));
+    const none = rowsOf([]);
+    const paired = rowsOf(["start"]);
+
+    /* Exactly one new row — the 3/4in CDX web, which a girtless panel has no
+       equivalent of — and its qty is 2, the pair. */
+    expect(paired.length - none.length).toBe(1);
+    const webRow = paired.find((r) => r.members.every((m) => m.memberId.startsWith("structural-girt-")))!;
+    expect({ material: webRow.material, qty: webRow.qty }).toEqual({ material: "plywood", qty: 2 });
+
+    /* The four 2x4s fold into a row the panel already had — the lid faces,
+       which are the same 2x4 cut to the same wall depth. No new row, qty up
+       by exactly four. */
+    const lumberQty = (rows: typeof none) =>
+      rows
+        .filter((r) => r.material === "dimensional_lumber" && r.members[0]!.actualDimsIn.lengthIn === 15.5)
+        .reduce((a, r) => a + r.qty, 0);
+    expect(lumberQty(paired) - lumberQty(none)).toBe(4);
+  });
+
+  it("⚠ NEVER on a roof panel, girts asked for or not", () => {
+    expect(wallBearingGirtStationsIn(floor({ kind: "roof", structuralGirtEnds: ["start", "end"] }))).toEqual([]);
+  });
+
+  it("⚠ a wall too shallow for a second girt gets none, rather than an overlap", () => {
+    /* Below 6.75in (lid 2.25 + girt 2.25 + girt 2.25) there is no room for a
+       second girt inside the wall's own depth — and no need, because the
+       exterior girt already reaches past the wall's inside face. */
+    for (const depthIn of [4.5, 6, 6.75, 7]) {
+      const interior = stationsOf({ depthIn, structuralGirtEnds: ["start", "end"] }).filter((s) => s.face === "interior");
+      expect({ depthIn, count: interior.length }).toEqual({ depthIn, count: depthIn >= 6.75 ? 2 : 0 });
+    }
+  });
+
+  it("⚠ a panel too short for both pairs drops the interior girts, not the load-bearing ones", () => {
+    /* 2 × 15.5in of wall plus the lids needs 35.5in of span before the two
+       interior girts stop colliding. Nothing in the app builds a 20in floor
+       panel, but a dropped girt beats two girts in the same place. */
+    const short = wallBearingGirtStationsIn(floor({ lengthIn: 20, depthIn: 15.5, structuralGirtEnds: ["start", "end"] }));
+    expect(short.map((s) => s.label)).toEqual(["start", "end"]);
+    const ample = wallBearingGirtStationsIn(floor({ lengthIn: 36, depthIn: 15.5, structuralGirtEnds: ["start", "end"] }));
+    expect(ample.map((s) => s.label)).toEqual(["start", "start_inner", "end_inner", "end"]);
+  });
+
+  it("⚠ and the panel is still solid, at every width and depth a run can produce", () => {
+    for (const widthIn of [FLOOR_ROOF_EDGE_PANEL_WIDTH_IN, 12, 15.5, FLOOR_ROOF_PANEL_WIDTH_IN, 23.875]) {
+      for (const depthIn of [12, 15.5, 19.5, 24]) {
+        const members = buildFloorRoofPanelMembers({
+          kind: "floor", widthIn, depthIn, lengthIn: 300, structuralGirtEnds: ["start", "end"],
+        });
+        expect({ widthIn, depthIn, overlaps: overlappingMemberPairs(members) }).toEqual({ widthIn, depthIn, overlaps: [] });
+      }
+    }
+  });
+
+  it("the members built match the stations exactly, so nothing is placed off-plan", () => {
+    const options = floor({ lengthIn: 240, depthIn: 19.5, structuralGirtEnds: ["start", "end"] });
+    const built = idsLike(buildFloorRoofPanelMembers(options), "structural-girt-")
+      .filter((m) => m.memberId.endsWith("-web"))
+      .map((m) => ({ id: m.memberId, zIn: m.position.zIn }));
+    expect(built).toEqual(
+      wallBearingGirtStationsIn(options).map((s) => ({ id: `structural-girt-${s.label}-web`, zIn: s.zIn })),
+    );
   });
 });
 
@@ -697,8 +837,9 @@ describe("⚠ the extra girts a column needs from the floor under it", () => {
        above it"* — his words say more of the same part, not a new member. */
     const members = buildFloorRoofPanelMembers({ ...base, structuralGirtEnds: ["start", "end"], extraStructuralGirtsAtIn: [100, 120] });
     const webs = members.filter((m) => m.memberId.includes("girt") && m.memberId.includes("web") && !m.memberId.includes("anti"));
-    // Two ends plus two extras.
-    expect(webs).toHaveLength(4);
+    /* Two PAIRS at the ends plus the two extras — 6, where this read 4 while
+       a wall-bearing end carried one girt rather than B23's pair. */
+    expect(webs).toHaveLength(6);
     /* The web spans the space between the joists, same as an end girt's. Its
        own two 2x4s run through the depth, so they are filtered out here. */
     const extraWebs = members.filter((m) => m.memberId.startsWith("structural-girt-column_") && m.memberId.endsWith("-web"));
