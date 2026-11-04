@@ -32,8 +32,22 @@ describe("tilingBasisDifferences", () => {
     expect(tilingBasisDifferences(BASIS, { ...BASIS, standardWidthIn: 48 })).toEqual(["standardWidthIn"]);
     expect(tilingBasisDifferences(BASIS, { ...BASIS, leastAccessibleCorner: "C" })).toEqual(["leastAccessibleCorner"]);
     expect(
-      tilingBasisDifferences(BASIS, { ...BASIS, thicknessIn: 14, bracedSpacingIn: 144 }).sort(),
-    ).toEqual(["bracedSpacingIn", "thicknessIn"]);
+      tilingBasisDifferences(BASIS, { ...BASIS, thicknessIn: 14, cornerWidthIn: 39 }).sort(),
+    ).toEqual(["cornerWidthIn", "thicknessIn"]);
+  });
+
+  it("⚠ `bracedSpacingIn` moves and NOTHING is reported — B22, 2026-11-04", () => {
+    /* This assertion is the inverse of what the line above used to say, and
+       the inversion is the point. The field is still saved and still written,
+       because the basis is a file schema and dropping a field is a migration.
+       But its last reader — `applyAdditionalRowBracedPattern` — retired with
+       the rule, so a Repanelize would no longer move one panel on account of
+       it. A caution marker over a change that does nothing teaches a user to
+       ignore the markers that mean something. */
+    expect(tilingBasisDifferences(BASIS, { ...BASIS, bracedSpacingIn: 144 })).toEqual([]);
+    /* ...and it is still WATCHED in the sense that matters: changing it
+       alongside a real field does not hide the real one. */
+    expect(tilingBasisDifferences(BASIS, { ...BASIS, bracedSpacingIn: 144, thicknessIn: 14 })).toEqual(["thicknessIn"]);
   });
 
   it("catches a change in EVERY field, so none is silently unwatched", () => {
@@ -52,8 +66,17 @@ describe("tilingBasisDifferences", () => {
     };
     const fields = Object.keys(TILING_BASIS_FIELD_LABELS) as TilingBasisField[];
     expect(Object.keys(changed).sort()).toEqual([...fields].sort());
+    /* ⚠ The walk still covers the WHOLE shape — that is what keeps a newly
+       added field from being silently unwatched. What changed in B22 is that
+       one field is expected to report nothing rather than itself, and it has
+       to be named here to be excused. A second dead field could not slip in
+       behind it: it would fail this test until somebody wrote it down. */
+    const REPORTS_NOTHING = new Set<TilingBasisField>(["bracedSpacingIn"]);
     for (const field of fields) {
-      expect(tilingBasisDifferences(BASIS, changed[field])).toEqual([field]);
+      expect({ field, out: tilingBasisDifferences(BASIS, changed[field]) }).toEqual({
+        field,
+        out: REPORTS_NOTHING.has(field) ? [] : [field],
+      });
     }
   });
 

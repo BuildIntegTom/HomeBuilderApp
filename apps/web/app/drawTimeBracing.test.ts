@@ -194,3 +194,151 @@ describe("⚠ a standard panel's members come from ONE place", () => {
     expect(nailer.some((m) => m.memberId.startsWith("stud_centre_"))).toBe(true);
   });
 });
+
+/**
+ * **B22 — the upper row walks its own pattern, 2026-11-04.**
+ *
+ * > *"The upper row on a wall tall enough to spawn 3rd gable panels I guess
+ * > can have their own diagonal pattern, either synonymous or similar with its
+ * > downstairs counterparts."* — Tommy
+ *
+ * Before this the brace pattern was laid per SLOT and an upper band read its
+ * column's answer, so it was braced wherever the ground row happened to be
+ * and bare above every window and door — the one place a wall is already
+ * weakest, unbraced from the slab to the plate. The seismic-zone rule that
+ * used to put `braced` panels up there
+ * (`applyAdditionalRowBracedPattern`) is retired with this; see the record at
+ * the top of `bracedPlacement.ts`.
+ */
+describe("⚠ B22 — every row gets the pattern, not just the ground one", () => {
+  /** A wall whose columns each carry two bands. */
+  function twoBandWall(
+    wallLengthIn: number,
+    /** Returns a type to OVERRIDE this column's ground zone with, or undefined
+     *  to leave the tiler's own — corners and the safety gap included, which
+     *  an override-everything helper would quietly flatten. */
+    groundTypeAt?: (i: number) => PanelSlot["type"] | undefined,
+  ): PanelSlot[] {
+    return wallSlots(wallLengthIn).map((slot, i) => {
+      const groundType = groundTypeAt?.(i) ?? slot.type;
+      return { ...slot, type: groundType, zones: [{ type: groundType }, { type: "standard" as const }] };
+    });
+  }
+
+  const wallId = "W";
+  const lay = (slots: PanelSlot[]) =>
+    applyDrawTimeBracing(footprint, { [wallId]: slots }, LEAST_ACCESSIBLE, DEFAULT_BRACE_PAIR_PATTERN, HEIGHT_IN)[
+      wallId
+    ]!;
+
+  it("writes a pattern onto the upper band, where nothing did before", () => {
+    const out = lay(twoBandWall(25.25 * 12));
+    const upper = out.map((s) => s.zones![1]!);
+    expect(upper.some((z) => z.bracePairPattern !== undefined)).toBe(true);
+    /* Every band that took one took a real half and a real figure, not a
+       half-written record. */
+    for (const zone of upper) {
+      if (zone.bracePairPattern === undefined) continue;
+      expect(zone.bracePairPattern).toBe(DEFAULT_BRACE_PAIR_PATTERN);
+      expect(["left", "right"]).toContain(zone.bracePairHalf);
+      expect(["super-carrot", "little-carrot"]).toContain(zone.braceFigure);
+    }
+  });
+
+  it("⚠ THE CASE THAT MOTIVATED IT — a band ABOVE A WINDOW is braced", () => {
+    /* The ground column is a window, so it takes no leg and never could.
+       Reading the column's answer left the band above it bare too, which is a
+       whole unbraced line from the slab to the plate exactly where the wall is
+       already weakest. The upper band is a plain standard panel and there is
+       no reason it cannot carry a figure. */
+    const out = lay(twoBandWall(25.25 * 12, (i) => (i === 3 ? "window" : undefined)));
+    expect(out[3]!.type).toBe("window");
+    expect(out[3]!.bracePairPattern).toBeUndefined();
+    expect(out[3]!.zones![1]!.bracePairPattern).toBe(DEFAULT_BRACE_PAIR_PATTERN);
+  });
+
+  it("⚠ a CORNER column takes none at any height", () => {
+    /* A corner is a stiff plywood box for its whole height, so its upper band
+       is no more a brace candidate than its lower one.
+       `applyAdditionalRowBracedPattern` read the parent slot for exactly this
+       reason, and the reason outlived the rule. */
+    const out = lay(twoBandWall(25.25 * 12));
+    for (const slot of out) {
+      if (slot.type !== "corner" && slot.type !== "safety-oct-corner") continue;
+      expect({ ground: slot.bracePairPattern, upper: slot.zones![1]!.bracePairPattern }).toEqual({
+        ground: undefined,
+        upper: undefined,
+      });
+    }
+  });
+
+  it("⚠ where the two rows agree on eligibility, they agree on the figure — the \"synonymous\" half", () => {
+    /* Nothing copies anything. Both rows are walked from the same end with
+       the same cycle, so on a wall whose columns are standard top and bottom
+       the two come out identical, column for column — which is the load path
+       lining up vertically, for free. */
+    const allStandard = twoBandWall(25.25 * 12).map((slot) =>
+      slot.type === "corner" || slot.type === "safety-oct-corner"
+        ? slot
+        : { ...slot, type: "standard" as const, zones: [{ type: "standard" as const }, { type: "standard" as const }] },
+    );
+    const out = lay(allStandard);
+    for (const slot of out) {
+      expect({
+        half: slot.zones![1]!.bracePairHalf,
+        figure: slot.zones![1]!.braceFigure,
+      }).toEqual({ half: slot.bracePairHalf, figure: slot.braceFigure });
+    }
+    expect(out.some((s) => s.bracePairPattern !== undefined)).toBe(true);
+  });
+
+  it("⚠ and where they DISAGREE, the upper row carries on and the cycle shifts — the \"similar\" half", () => {
+    /* MEASURED, and the one consequence worth knowing before a shop sees it.
+       A ground-row opening is not a candidate; the band above it is. So the
+       upper row has one more panel in its run, the Super/Super/Little/Little
+       cycle lands one position further along from there on, and past that
+       point the two rows no longer line up column for column.
+
+       This is the fork in his own sentence — *"either synonymous or similar
+       with its downstairs counterparts"*. Walking the row buys bracing above
+       every opening and costs exact vertical alignment after the first one.
+       Inheriting the column would buy the alignment and leave a line of the
+       wall unbraced from the slab to the plate. Pinned so the trade is
+       visible rather than discovered. */
+    const out = lay(twoBandWall(25.25 * 12, (i) => (i === 3 ? "window" : undefined)));
+    const agree = out.map((s) => s.bracePairHalf === s.zones![1]!.bracePairHalf && s.braceFigure === s.zones![1]!.braceFigure);
+    /* Identical up to the opening... */
+    expect(agree.slice(0, 3).every(Boolean)).toBe(true);
+    /* ...the opening itself is the whole point: bare below, braced above... */
+    expect({ ground: out[3]!.bracePairPattern, upper: out[3]!.zones![1]!.bracePairPattern }).toEqual({
+      ground: undefined,
+      upper: DEFAULT_BRACE_PAIR_PATTERN,
+    });
+    /* ...and from there on the cycle no longer lines up column for column. */
+    expect(agree.slice(4).some((ok) => !ok)).toBe(true);
+  });
+
+  it("clears a stale pattern rather than leaving it on a band that no longer takes one", () => {
+    /* The three fields are DERIVED. A band that was standard and is now a
+       window must not keep the figure it had — a stale derived value outlives
+       the shape that justified it, and the shop sheet would cut legs for a
+       panel that has no room for them. */
+    const first = lay(twoBandWall(25.25 * 12));
+    const braced = first.find((s) => s.zones![1]!.bracePairPattern !== undefined)!;
+    const index = first.indexOf(braced);
+    const retyped = first.map((s, i) =>
+      i === index ? { ...s, zones: [s.zones![0]!, { ...s.zones![1]!, type: "window" as const }] } : s,
+    );
+    expect(lay(retyped)[index]!.zones![1]!).toEqual({ type: "window" });
+  });
+
+  it("a wall with no zone data is untouched, and its bands still inherit the column", () => {
+    /* `effectiveZonesForSlot` pads a not-yet-reconciled wall with plain
+       standard zones at render time. There is nothing here to write onto, so
+       nothing is written, and `panelInstances` falls back to the column's own
+       pattern — exactly the behaviour every band had before B22. */
+    const out = lay(wallSlots(25.25 * 12));
+    expect(out.every((s) => s.zones === undefined)).toBe(true);
+    expect(out.some((s) => s.bracePairPattern !== undefined)).toBe(true);
+  });
+});

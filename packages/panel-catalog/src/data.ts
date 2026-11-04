@@ -353,31 +353,35 @@ export const standardPanelBom = {
  * > overlay. Let's make that a button that turns all of the panels into
  * > straight up and down 2x4s just on the exterior."* — Tommy, 2026-11-02
  *
- * ⚠ **He named the overlay and not the spacing, so this number is his to
- * confirm.** What is NOT a guess is the shape of the constraint:
+ * > *"The way I want to build these is 24\" spacing, which works well enough
+ * > for lumber and sheet goods. We can drop 16\" being meaningful."*
+ * > — Tommy, 2026-11-04
  *
- * - A standard panel already guarantees a vertical every `MAX_STUD_SPACING_IN`
- *   (24in), because a floor or roof seam has to land on one. So a nailer
- *   spacing of 24in or more is a **no-op** — the overlay would add nothing to
- *   a 48in panel and the button would do visibly nothing.
- * - The overlay exists to receive a sheet good (*"for fixing shear coverings
- *   such as Timber HP or Power Wool"*), and a sheet needs bearing at its edges
- *   and between them.
+ * ⚠ **HIS NUMBER ADDS NO BOARDS, AND HE CHOSE IT KNOWING THAT.** It was put
+ * to him that 24in or more is a no-op, and this is the answer. The reason is
+ * `MAX_STUD_SPACING_IN`: a standard panel already carries a vertical every
+ * 24in so a floor or roof seam lands on a stud, so every panel this app builds
+ * ALREADY satisfies 24in and the overlay has nothing to add. A 48in panel's
+ * own verticals sit at 23.25in on centre.
  *
- * 16in is the North American framing module those sheets are manufactured
- * against, which is why it is the default rather than a number picked to look
- * reasonable — but Building Integrity has not stated one, and the real answer
- * depends on which covering goes on. Change this one value and every panel's
- * cut list, weight, price and shop sheet follows.
+ * So what the overlay is, at his number, is a **guarantee rather than a
+ * generator**. The Vertical Nailers pattern means "no diagonals, and the
+ * centre nailer studs stay" — which is a real difference from the Carrot
+ * Pattern, since that one DELETES the centre studs to make room for the legs.
+ * If a panel is ever drawn with a bay wider than this — a width change, a new
+ * panel type, a different stud rule — nailers appear on their own instead of
+ * the wall quietly going unnailable. Nothing here pretends to add wood that
+ * his shop does not cut.
  */
 export const nailerOverlaySpacingIn: CatalogValue<number> = {
-  value: 16,
-  status: "pending-BI-confirmation" as const,
+  value: 24,
+  status: "confirmed" as const,
   note:
-    "Tommy asked for \"straight up and down 2x4s just on the exterior\" (2026-11-02) without giving a spacing. " +
-    "16in is the framing module sheet goods are made to, and anything 24in or over is a no-op because a standard " +
-    "panel already carries a vertical every 24in for the floor/roof seam. Needs a Building Integrity number tied " +
-    "to the actual shear covering (Timber HP, Power Wool, CDX).",
+    "Tommy, 2026-11-04: \"The way I want to build these is 24\" spacing, which works well enough for lumber and " +
+    "sheet goods. We can drop 16\" being meaningful.\" Said after being told that 24in or more adds no boards, " +
+    "because MAX_STUD_SPACING_IN already puts a vertical every 24in for the floor/roof seam. The overlay is " +
+    "therefore a guarantee, not a generator: it adds a nailer only to a bay this app would otherwise leave wider " +
+    "than his spacing.",
 };
 
 /** The panel width the BOM above is actually dimensioned for — compare against the selected standard width to know if the wood-weight calc is exact or approximate. */

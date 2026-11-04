@@ -300,6 +300,31 @@ export interface PanelSlotZone {
   sillHeightIn?: number;
   bracedPattern?: BracePattern;
   bracedMirrored?: boolean;
+  /**
+   * ⚠ **This row's own half of the wall brace pattern — B22, 2026-11-04.**
+   *
+   * > *"The upper row on a wall tall enough to spawn 3rd gable panels I guess
+   * > can have their own diagonal pattern, either synonymous or similar with
+   * > its downstairs counterparts."* — Tommy
+   *
+   * Before this the upper band inherited whatever pattern sat on its COLUMN,
+   * so it was braced wherever the ground row happened to be and unbraced
+   * above every window and door — the one place a wall is already weakest,
+   * unbraced from the slab to the plate. The pattern is now walked along each
+   * row in its own right, which is what "their own diagonal pattern" asks
+   * for; it starts from the same end as the row below so the two tend to line
+   * up, which is the "synonymous" half.
+   *
+   * Derived by `applyDrawTimeBracing`, never stored in the project file —
+   * exactly like `PanelSlot`'s own three fields, and for the same reason.
+   * Absent on a zone nothing has reconciled yet, where the reader falls back
+   * to the column's pattern (today's behaviour) rather than drawing nothing.
+   */
+  bracePairPattern?: "superbrace" | "braced" | "nailer";
+  /** Which half of the pair. See `bracePairPattern`. */
+  bracePairHalf?: "left" | "right";
+  /** Which carrot. See `bracePairPattern`, and `PanelSlot.braceFigure`. */
+  braceFigure?: "super-carrot" | "big-carrot" | "little-carrot";
 }
 
 /**

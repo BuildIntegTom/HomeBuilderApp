@@ -2192,3 +2192,144 @@ rewritten in place rather than deleted — `panelRecipe.test.ts`'s *"Nailer adds
 no surgery member at all"* and `wallBracingOverlay.test.ts`'s *"adds no surgery
 members"*, each now carrying the record of what changed where the old claim
 was.
+
+---
+
+# B21 (addendum) — his 24in, and what it does to the overlay
+
+> *"The way I want to build these is 24" spacing, which works well enough for
+> lumber and sheet goods. We can drop 16" being meaningful."* — Tommy,
+> 2026-11-04
+
+`nailerOverlaySpacingIn` is **24in, `confirmed`**. It was put to him that 24in
+or more adds no boards, and this is the answer, so the note records that he
+chose it knowing.
+
+**At his number the overlay generates nothing**, because `MAX_STUD_SPACING_IN`
+already puts a vertical every 24in so a floor or roof seam lands on a stud. A
+48in panel's own verticals sit at 23.25in on centre. A sweep from 16in to 144in
+on the 1/8in grid asserts that no width gets a nailer.
+
+**What stays is a guarantee rather than a generator**, and that is the whole
+argument for not deleting it: the nailer rule and the stud rule are two
+different rules that happen to agree today. Writing both down means the day
+they diverge — a width change, a new panel type, somebody raising
+`MAX_STUD_SPACING_IN` — a wall gets nailers instead of silently going
+unnailable. One test asserts the two constants are equal, so that day is
+announced rather than discovered.
+
+**So "Vertical Nailers" now means "no diagonals, and the centre nailer studs
+stay"** — which is still a real difference from the Carrot Pattern, because
+that one DELETES the centre studs to make room for its legs. A test pins the
+2-vs-0 centre studs.
+
+`verticalNailerSpecs` took an explicit `spacingIn` parameter so the
+subdivision rule stays exercised at a spacing that bites. That is not testing a
+fiction — it is the same code the 24in path runs.
+
+---
+
+# B22 — BUILT, 2026-11-04. Every row walks the pattern, and nothing automatic is left
+
+> *"The upper row on a wall tall enough to spawn 3rd gable panels I guess can
+> have their own diagonal pattern, either synonymous or similar with its
+> downstairs counterparts."* — Tommy
+
+## What was actually wrong, which is not what the queue said
+
+The queue entry said the upper row was unbraced by the pattern. Reading the
+code, it was not: `panelInstances` passed `slot.bracePairPattern` to **every**
+band of a column, so an upper band inherited whatever figure its column had.
+
+The real defect was narrower and worse. A column's pattern is decided by its
+GROUND type, so:
+
+- A band above a **window or a door** got nothing — because the column is not
+  brace-eligible, and the band read the column. That is a whole unbraced line
+  from the slab to the plate, at the one place a wall is already weakest.
+- Meanwhile `applyAdditionalRowBracedPattern` put **chevron Braced Panels**
+  into the same row on a seismic-zone spacing — a second bracing system inside
+  a row the Carrot Pattern was already figuring, which is exactly the thing
+  B17 retired one storey down.
+
+## The fix: walk the ROW, not the column
+
+`applyDrawTimeBracing` now walks the brace pattern along **each row** of a
+wall. `PanelSlotZone` gained the same three derived fields `PanelSlot` has
+(`bracePairPattern`, `bracePairHalf`, `braceFigure`), and `panelInstances`
+reads the zone's answer with the column's as fallback — so a band nothing has
+reconciled yet behaves exactly as it did before, rather than going blank.
+
+Every row starts from the **same end** (`bracingStartFrom`, the least
+accessible corner). Nothing copies anything, and yet on a wall whose columns
+are standard top and bottom the two rows come out identical column for column
+— the load path lines up vertically for free. That is the *"synonymous"* half
+of his sentence, and a test holds it.
+
+⚠ **THE TRADE, MEASURED.** Where the rows disagree on eligibility they
+diverge. A ground-row opening is not a candidate; the band above it is. So the
+upper row has one more panel in its run, the Super/Super/Little/Little cycle
+lands one position further along from there on, and past that point the two
+rows no longer line up. Traced on a 25'3" wall with a window at index 3:
+
+| Column | Ground | Upper |
+|---|---|---|
+| 1 | left / super | left / super |
+| 2 | right / super | right / super |
+| **3 (window)** | **—** | **left / little** |
+| 4 | left / super | right / little |
+| 5 | right / super | left / super |
+
+This is the fork in his own words — *"either synonymous or similar"*. Walking
+the row buys bracing above every opening and costs exact vertical alignment
+after the first one. Inheriting the column buys the alignment and leaves that
+line unbraced. **Walking is what shipped**; the switch back is one function.
+
+## `applyAdditionalRowBracedPattern` is retired
+
+99 lines, 7 tests. It was spared through B17 for one stated reason — *"the wall
+brace pattern that replaced them is laid per SLOT and does not reach zone 1 at
+all, so retiring these would remove bracing and put nothing back."* The pattern
+reaches the row now, so the condition is gone and something is put back.
+
+It also ran only on the one height change that happened to spawn the band.
+`applyDrawTimeBracing` runs in `overlayWallSlots`, on **every** retile path —
+so the row stays braced through whatever later changes its shape, which the
+seeding could never promise.
+
+⚠ **It did NOT take the seismic zone out of the app**, which the queue expected.
+`bracedWallLineSpacingFt[zone]` still backs the wall LINE spacing note on Site
+Properties, and that is a real reader about a real limit. What the zone no
+longer does is **place anything, anywhere, at any height** — and the control's
+copy now says exactly that instead of claiming the upper row.
+
+`bracedSpacingIn` stays on `TilingBasis` because the basis is a SAVED field and
+dropping one is a file-schema change with a migration behind it. It is excluded
+from `tilingBasisDifferences` instead: nothing tiles differently because of it,
+and a Repanelize caution marker over a change that does nothing teaches a user
+to ignore the markers that mean something.
+
+## ⚠ A SEPARATE DEFECT, FOUND READING THIS AND FIXED
+
+`shearMembersFor` built **every** panel at `ctx.wallHeightIn` — the whole
+storey — including a panel that is one short band of a tall wall. Every other
+reader of the same instance already passed `heightOverrideIn`: the weight, the
+wood weight, the fastener count, the 3D view and the Shop Fabrication sheet all
+built the short panel.
+
+So a tall wall's upper row was **cut at 40in and counted at 120in**. It ran in
+the unsafe direction, and by more than the length — a brace's capacity is
+resolved through its own tilt, so a panel measured at the wrong height is
+measured at the wrong angle too. `shearMembers.ts` had no test file; it has one
+now, and this is the first thing in it.
+
+## Deliberately not done
+
+- **The upper row's own FIGURE is the same figure.** He said *"either
+  synonymous or similar"*, so a different cycle up there was never asked for —
+  only a pattern of its own, walked on its own row.
+- **Third and higher bands** go down the same path with no special case: the
+  walk loops to the tallest column's band count. Untested beyond two bands
+  because nothing in the app spawns three today.
+- **Gable rows** are not part of this. They are not members of a wall's `slots`
+  array at all and carry no zones.

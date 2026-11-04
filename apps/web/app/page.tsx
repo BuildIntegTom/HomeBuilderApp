@@ -3,7 +3,6 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  applyAdditionalRowBracedPattern,
   applyUniformPanelization,
   applyZonesToSlot,
   areWallsOppositePair,
@@ -2941,12 +2940,18 @@ export default function LayoutEditor() {
      > values rather than prescribe an engineer seismic zone thing."*
      > — Tommy, 2026-11-02
 
-     `spacingIn` stays for ONE reader: `applyAdditionalRowBracedPattern`, the
-     upper-row rule for a wall tall enough to spawn a second band of panels.
-     The wall brace pattern is laid per slot and does not reach a zone, so
-     retiring that one would remove bracing and put nothing back. The seismic
-     control's own copy says exactly this much and no more. */
-  const spacingIn = seismicBracedPanelSpacingFt[seismicZone] * 12;
+     ⚠ **B22, 2026-11-04: `spacingIn` went too, and with it the last thing
+     the seismic zone placed.** It had ONE reader left,
+     `applyAdditionalRowBracedPattern`, kept because the wall brace pattern
+     was laid per slot and did not reach an upper band. It does now —
+     `applyDrawTimeBracing` walks every row — so the condition that rule was
+     spared under no longer holds, and what it placed (a chevron Braced Panel
+     inside a row the Carrot Pattern was also figuring) was the same two
+     systems at once B17 retired downstairs.
+
+     The zone itself stays, because `bracedWallLineSpacingFt` is a real
+     reader about a real limit. It just no longer PLACES anything, at any
+     height, and the control says so. */
   // bracingStyle (the "Bracing style" toolbar) supplies which pattern/mirror a
   // braced panel is DRAWN and CUT with — `resolveBracedStyle`,
   // `buildBracedPanelMembers`, the Shop Fabrication pages. Never a suggestion
@@ -2990,8 +2995,11 @@ export default function LayoutEditor() {
     });
 
     if (newlyEligibleZone1Indices.size > 0) {
+      /* ⚠ `parentWidthsIn` stood beside this and went with B22: it existed
+         only to accumulate the seismic spacing along the row for
+         `applyAdditionalRowBracedPattern`. `parentSlotTypes` stays, because
+         the window seeding below still has to refuse a corner column. */
       const parentSlotTypes = perSlotZones.map(({ slot }) => slot.type);
-      const parentWidthsIn = perSlotZones.map(({ slot }) => slot.widthIn);
       let zone1: (PanelSlotZone | undefined)[] = perSlotZones.map(({ newZones }) => newZones[1]);
 
       // A wall that already has a ground-zone (Stride 1) window gets a 2nd
@@ -3020,18 +3028,17 @@ export default function LayoutEditor() {
         }
       }
 
-      const bracedZone1 = applyAdditionalRowBracedPattern(
-        zone1,
-        parentSlotTypes,
-        parentWidthsIn,
-        spacingIn,
-        defaultBracePattern,
-        defaultBracedMirrored,
-        newlyEligibleZone1Indices,
-      );
-      perSlotZones.forEach((entry, i) => {
-        entry.newZones = entry.newZones.map((z, zi) => (zi === 1 ? bracedZone1[i]! : z));
-      });
+      /* ⚠ **B22 — nothing braces this row here any more.** A call to
+         `applyAdditionalRowBracedPattern` stood here, promoting zone-1
+         positions to `braced` on a seismic-zone spacing. The brace pattern
+         now reaches this row through `applyDrawTimeBracing`, which runs in
+         `overlayWallSlots` on EVERY retile path rather than only on the one
+         height change that happened to spawn the band — so the row is braced
+         whatever later changes its shape, which this seeding could never
+         promise. The window seeding above stays: an opening is a decision
+         about what the band IS, and it has to be made before anything walks
+         past it. */
+      void zone1;
     }
 
     return perSlotZones.map(({ slot, newZones }) => applyZonesToSlot(slot, newZones));
@@ -3197,14 +3204,15 @@ export default function LayoutEditor() {
     leastAccessibleCorner,
     cornerWidthIn: cornerWidthInForTiling,
     cornerMayWiden: cornerMayWidenForTiling,
-    /* ⚠ These three stay in the stored basis although B17 retired the
-       seeding they used to describe, and that is deliberate on both counts.
-       `bracedSpacingIn` still changes a future tiling outcome, because
-       `applyAdditionalRowBracedPattern` reads it for a tall wall's upper row;
-       the two pattern fields still change how a braced panel is cut. And the
-       basis is a SAVED field, so dropping one is a file-schema change with a
-       migration behind it, not a tidy-up. */
-    bracedSpacingIn: spacingIn,
+    /* ⚠ These three stay in the stored basis although B17 retired the seeding
+       they used to describe, and B22 retired the last reader of the first one.
+       The two pattern fields still change how a braced panel is cut, so they
+       are still compared. `bracedSpacingIn` no longer changes any tiling
+       outcome and is excluded from the comparison — see its own note in
+       tilingBasis.ts — but it is still WRITTEN, because the basis is a saved
+       field and dropping one is a file-schema change with a migration behind
+       it, not a tidy-up. It still records what the zone was. */
+    bracedSpacingIn: seismicBracedPanelSpacingFt[seismicZone] * 12,
     bracedDefaultPattern: defaultBracePattern,
     bracedDefaultMirrored: defaultBracedMirrored,
   };
@@ -10924,18 +10932,18 @@ export default function LayoutEditor() {
           <option value="low">Low ({seismicBracedPanelSpacingFt.low}ft braced PANEL spacing)</option>
         </select>
       </label>
-      {/* ⚠ B17, 2026-11-02. This note used to say the PANEL spacing above
-          "drives how often a braced panel is placed along one wall run",
-          which was true and is not any more: both automatic bracing rules
-          were retired, so the zone no longer places anything on a ground-floor
-          wall. Tommy: *"Id rather have a pattern be described to an engineer
-          with estimated values rather than prescribe an engineer seismic zone
-          thing."* Saying so plainly matters more than tidiness — a designer who
-          believes this dropdown is bracing the building would under-brace it. */}
+      {/* ⚠ B17, 2026-11-02, then B22, 2026-11-04. This note has now said three
+          different true things in three days, and each rewrite mattered more
+          than tidiness: a designer who believes this dropdown is bracing the
+          building would under-brace it. B17 took the ground floor away from
+          the zone; B22 took the upper row, the last thing it placed. Tommy:
+          *"Id rather have a pattern be described to an engineer with estimated
+          values rather than prescribe an engineer seismic zone thing."* */}
       <p className={styles.note}>
-        ⚠ Since the wall brace pattern lays a figure on every Standard Panel, the zone above no longer places
-        braced panels on a ground-floor wall — nothing on this screen does. It still sets the panel spacing used
-        on the upper row of a wall tall enough to need one, and it still reports the wall LINE limit below.
+        ⚠ The zone above <strong>no longer places a braced panel anywhere, at any height</strong>. The wall brace
+        pattern lays a figure on every Standard Panel of every row instead, upper rows included, and nothing on
+        this screen braces a building. The PANEL spacing shown in the options is kept for reference only. What
+        the zone still does is report the wall LINE limit below.
       </p>
       <p className={styles.note}>
         Braced wall PANEL spacing (above) is a different limit than braced wall LINE spacing (how far apart two

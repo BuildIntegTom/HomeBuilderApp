@@ -524,14 +524,22 @@ export function allPanelInstances(
             heightOverrideIn,
             midWallBandIndex,
             /* ⚠ B15 — the pair pattern rides to the Shop Fabrication
-               sheets, which build their members off these instances. Read it
-               off the SLOT, not the zone: pairing is a horizontal walk along
-               the wall, so a pattern belongs to the whole column, while a
-               zone is one vertical band of it. A band whose own type is not
-               a standard panel has no pattern on its slot to read. */
-            slot.bracePairPattern,
-            slot.bracePairHalf,
-            slot.braceFigure,
+               sheets, which build their members off these instances.
+               ⚠ **B22 — the ZONE's own pattern wins where it has one.**
+               This used to read the SLOT only, on the reasoning that pairing
+               is a horizontal walk and so belongs to the whole column. The
+               walk is horizontal; the ROW it walks is not the column. Taking
+               the column's answer braced an upper band wherever the ground
+               row happened to be braced and left it bare above every window
+               and door — unbraced from the slab to the plate at the one
+               place a wall is already weakest. `applyDrawTimeBracing` now
+               walks each row in its own right and writes the answer here.
+               The slot is still the fallback, for a band nothing has
+               reconciled yet (`effectiveZonesForSlot`'s padding), where it
+               is exactly the old behaviour rather than a blank panel. */
+            zone.bracePairPattern ?? slot.bracePairPattern,
+            zone.bracePairHalf ?? slot.bracePairHalf,
+            zone.bracePairPattern !== undefined ? zone.braceFigure : slot.braceFigure,
             /* ⚠ B19 — and the panel's own edited members, for the same reason
                the pattern rides: the Shop Fabrication sheets build off these
                instances, and a hand-edited panel that did not carry its edit

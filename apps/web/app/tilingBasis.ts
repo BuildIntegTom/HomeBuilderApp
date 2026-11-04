@@ -40,7 +40,18 @@ export interface TilingBasis {
   /** Derived from the panelization type: false for Square Bale, whose
    * whole-bale corner cannot be fabricated off its nominal width. */
   cornerMayWiden: boolean;
-  /** Derived from the seismic zone. */
+  /**
+   * Derived from the seismic zone.
+   *
+   * ⚠ **B22, 2026-11-04 — kept in the SHAPE, dropped from the COMPARISON.**
+   * Nothing in the app tiles differently because of it any more: its last
+   * reader, `applyAdditionalRowBracedPattern`, retired with the rule. It stays
+   * on the interface because the basis is a SAVED field and removing one is a
+   * file-schema change with a migration behind it; it is excluded from
+   * `tilingBasisDifferences` because a Repanelize would no longer change one
+   * panel on account of it, and a caution marker over a change that does
+   * nothing teaches a user to ignore the markers that mean something.
+   */
   bracedSpacingIn: number;
   bracedDefaultPattern: BracePattern;
   bracedDefaultMirrored: boolean;
@@ -86,9 +97,14 @@ function sameValue(a: TilingBasis[TilingBasisField], b: TilingBasis[TilingBasisF
 export function tilingBasisDifferences(basis: TilingBasis | null | undefined, live: TilingBasis): TilingBasisField[] {
   if (!basis) return [];
   return (Object.keys(TILING_BASIS_FIELD_LABELS) as TilingBasisField[]).filter(
-    (field) => !sameValue(basis[field], live[field]),
+    (field) => !NON_TILING_BASIS_FIELDS.has(field) && !sameValue(basis[field], live[field]),
   );
 }
+
+/** Basis fields that are saved but no longer change a tiling outcome — see
+ *  `bracedSpacingIn`'s own note. Listed rather than deleted so the file
+ *  schema is untouched and the reason travels with the field. */
+const NON_TILING_BASIS_FIELDS = new Set<TilingBasisField>(["bracedSpacingIn"]);
 
 /**
  * REPANELIZE R1 — which control a user would reach for to change each basis

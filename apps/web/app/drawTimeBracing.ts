@@ -1,4 +1,4 @@
-import { computeGapEnd, type CornerId, type Footprint, type PanelSlot } from "@building-integrity/geometry";
+import { computeGapEnd, type CornerId, type Footprint, type PanelSlot, type PanelSlotZone } from "@building-integrity/geometry";
 import { DEFAULT_BRACE_PAIR_PATTERN, applyWallBracingPattern, type BraceablePanel } from "@building-integrity/panel-catalog";
 
 /**
@@ -52,6 +52,24 @@ export function isBraceEligible(slot: PanelSlot): boolean {
 }
 
 /**
+ * The same question for one vertical BAND of a column — B22.
+ *
+ * ⚠ It takes the parent slot as well as the zone, and both have a say. The
+ * zone decides what is in this band (a window up here is no more braceable
+ * than a window down there), and the parent decides whether this column is a
+ * brace candidate at all: a corner or an octagon corner is a stiff plywood
+ * box for its whole height, so its upper band is no more eligible than its
+ * lower one. `applyAdditionalRowBracedPattern` read the parent for exactly
+ * this reason before it was retired, and the reason outlived it.
+ */
+export function isZoneBraceEligible(slot: PanelSlot, zone: PanelSlotZone | undefined): boolean {
+  if (slot.type === "corner" || slot.type === "safety-oct-corner") return false;
+  /* Absent = the render-time "standard" placeholder `effectiveZonesForSlot`
+     pads with, which is a plain panel and takes a leg like one. */
+  return (zone?.type ?? "standard") === "standard";
+}
+
+/**
  * Which end of a wall the pairing walks FROM: the one nearest the least
  * accessible corner.
  *
@@ -93,38 +111,98 @@ export function applyDrawTimeBracing(
 ): Record<string, PanelSlot[]> {
   const out: Record<string, PanelSlot[]> = {};
   for (const [wallId, slots] of Object.entries(slotsByWallId)) {
-    /* An id lets the overlay hand its answer back per panel without the
-       caller having to re-walk the array in the same order. */
-    const panels: BraceablePanel[] = slots.map((slot, index) => ({
-      id: `${wallId}:${index}`,
-      widthIn: slot.widthIn,
-      /* The height only scales the legs; a wall's panels all share one. */
-      heightIn: wallHeightIn ?? 0,
-      eligible: isBraceEligible(slot),
-    }));
+    /**
+     * One horizontal row's worth of the walk, as `{ pattern, half, figure }`
+     * per index. Extracted for B22 so a wall's upper band is braced by the
+     * SAME walk as its ground row rather than by a second rule that drifts
+     * from it — the whole lesson of the two bracing systems B17 retired.
+     */
+    const walkRow = (eligible: (index: number) => boolean) => {
+      /* An id lets the overlay hand its answer back per panel without the
+         caller having to re-walk the array in the same order. */
+      const panels: BraceablePanel[] = slots.map((slot, index) => ({
+        id: `${wallId}:${index}`,
+        widthIn: slot.widthIn,
+        /* The height only scales the legs; a wall's panels all share one.
+           A band's own shorter height reaches the members through
+           `heightOverrideIn` on the instance, not through here. */
+        heightIn: wallHeightIn ?? 0,
+        eligible: eligible(index),
+      }));
 
-    const result = applyWallBracingPattern({
-      pattern,
-      panels,
-      startFrom: bracingStartFrom(footprint, wallId, leastAccessibleCornerId),
-    });
+      const result = applyWallBracingPattern({
+        pattern,
+        panels,
+        /* ⚠ Every row starts from the SAME end — the one nearest the least
+           accessible corner. That is the "synonymous with its downstairs
+           counterparts" half of his sentence: two rows walked from the same
+           end with the same cycle line their figures up wherever their
+           eligibility agrees, without anything having to copy anything. */
+        startFrom: bracingStartFrom(footprint, wallId, leastAccessibleCornerId),
+      });
 
-    /* `half` is not returned per panel, so it is read back off the pairs:
-       a pair's left panel is its left half, its right panel the right. An
-       unpaired panel takes the LEFT half — *"Just do it till it ends"*, the
-       same legs it would have taken with a partner. */
-    const halfById = new Map<string, "left" | "right">();
-    for (const pair of result.pairs) {
-      halfById.set(pair.leftPanelId, "left");
-      halfById.set(pair.rightPanelId, "right");
+      /* `half` is not returned per panel, so it is read back off the pairs:
+         a pair's left panel is its left half, its right panel the right. An
+         unpaired panel takes the LEFT half — *"Just do it till it ends"*, the
+         same legs it would have taken with a partner. */
+      const halfById = new Map<string, "left" | "right">();
+      for (const pair of result.pairs) {
+        halfById.set(pair.leftPanelId, "left");
+        halfById.set(pair.rightPanelId, "right");
+      }
+      for (const id of result.unpairedPanelIds) halfById.set(id, "left");
+
+      return (index: number) => {
+        const id = `${wallId}:${index}`;
+        const half = halfById.get(id);
+        if (half === undefined) return undefined;
+        return { bracePairPattern: pattern, bracePairHalf: half, braceFigure: result.figureByPanelId[id] };
+      };
+    };
+
+    const groundFigureFor = walkRow((index) => isBraceEligible(slots[index]!));
+
+    /* How many bands the tallest column on this wall has. A wall nothing has
+       reconciled yet has none, and the loop below simply does not run — the
+       reader then falls back to the column's own pattern, which is what every
+       band did before B22. */
+    const bandCount = slots.reduce((max, slot) => Math.max(max, slot.zones?.length ?? 1), 1);
+    const upperFigureFor: ((index: number) => ReturnType<ReturnType<typeof walkRow>>)[] = [];
+    for (let z = 1; z < bandCount; z++) {
+      upperFigureFor[z] = walkRow((index) => isZoneBraceEligible(slots[index]!, slots[index]!.zones?.[z]));
     }
-    for (const id of result.unpairedPanelIds) halfById.set(id, "left");
 
     out[wallId] = slots.map((slot, index) => {
-      const id = `${wallId}:${index}`;
-      const half = halfById.get(id);
-      if (half === undefined) return slot;
-      return { ...slot, bracePairPattern: pattern, bracePairHalf: half, braceFigure: result.figureByPanelId[id] };
+      const ground = groundFigureFor(index);
+      const zones = slot.zones;
+      const nextZones =
+        zones === undefined
+          ? undefined
+          : zones.map((zone, z) => {
+              if (z === 0) return zone;
+              const figure = upperFigureFor[z]?.(index);
+              /* ⚠ A band that took no leg has its pattern CLEARED rather than
+                 left alone. The fields are derived, so a stale one from a
+                 previous shape would outlive the shape that justified it —
+                 the same reason `PanelSlot`'s own three are rewritten from
+                 scratch on every pass instead of merged.
+
+                 Deleted rather than destructured away, because the three names
+                 would then be bound and never read — three unused bindings to
+                 say "I meant to drop these", which is a worse way of saying it
+                 than saying it. */
+              const cleared: PanelSlotZone = { ...zone };
+              delete cleared.bracePairPattern;
+              delete cleared.bracePairHalf;
+              delete cleared.braceFigure;
+              return figure === undefined ? cleared : { ...cleared, ...figure };
+            });
+      if (ground === undefined && nextZones === undefined) return slot;
+      return {
+        ...slot,
+        ...(ground ?? { bracePairPattern: undefined, bracePairHalf: undefined, braceFigure: undefined }),
+        ...(nextZones !== undefined && { zones: nextZones }),
+      };
     });
   }
   return out;

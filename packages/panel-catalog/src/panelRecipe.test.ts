@@ -167,22 +167,24 @@ describe("the three patterns from his sketch", () => {
     expect(narrow.filter((s) => s.kind === "straight")).toHaveLength(1);
   });
 
-  it("⚠ Nailer adds VERTICALS now, not nothing — B21", () => {
-    /* It used to be the standard panel with its own single centre nailer
-       turned on, which is a flag on the recipe rather than something routed
-       in — so the button changed a label and not one member. His 2026-11-02
-       answer: *"Vertical nailers is actually a totally different bracing
-       pattern overlay. Let's make that a button that turns all of the panels
-       into straight up and down 2x4s just on the exterior."*
+  it("⚠ Nailer adds no board AT HIS 24in SPACING, and that is a decision — B21", () => {
+    /* It used to add nothing because nobody had written the rule: it was the
+       standard panel with its single centre nailer flag on, so the button
+       changed a label and not one member. B21 wrote the rule. His 2026-11-04
+       answer then set it to the number his shop builds to:
 
-       Held here as well as in verticalNailerOverlay.test.ts because THIS is
-       the file that asserted the opposite, and the record of what changed
-       belongs where the old claim was. */
-    const specs = bracePairAddedMembers({ pattern: "nailer", widthIn: W, heightIn: H, half: "left" });
-    expect(specs.map((spec) => spec.kind)).toEqual(["straight", "straight"]);
-    expect(specs.every((spec) => spec.kind === "straight" && spec.role === "nailer" && spec.wythe === "exterior")).toBe(true);
-    // No diagonal, which is the one thing the setting has always promised.
-    expect(specs.some((spec) => spec.kind === "diagonal")).toBe(false);
+       > *"The way I want to build these is 24\" spacing, which works well
+       > enough for lumber and sheet goods. We can drop 16\" being meaningful."*
+
+       ...which `MAX_STUD_SPACING_IN` already guarantees, so the list is empty
+       again — for a written reason now rather than for the want of one. The
+       subdivision rule is held in verticalNailerOverlay.test.ts at a spacing
+       that bites. */
+    expect(bracePairAddedMembers({ pattern: "nailer", widthIn: W, heightIn: H, half: "left" })).toEqual([]);
+    /* ⚠ But NOT the same as having no pattern: a nailer panel keeps its centre
+       nailer studs, where the Carrot Pattern deletes them for its legs. */
+    const nailered = buildPanelFromRecipe({ name: "n", widthIn: W, depthIn: D, heightIn: H, added: [] });
+    expect(nailered.filter((m) => m.memberId.startsWith("stud_centre_"))).toHaveLength(2);
   });
 
   it("⚠ the Carrot Pattern is EXTERIOR ONLY, while the Braced Pair still takes both wythes", () => {

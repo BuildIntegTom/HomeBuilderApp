@@ -65,9 +65,10 @@ export const BRACE_PAIR_PATTERNS: { id: BracePairPattern; label: string; descrip
     id: "nailer",
     label: "Vertical Nailers",
     description:
-      "No diagonal — straight up-and-down 2x4s across the whole panel, exterior face only, for fixing shear " +
-      `coverings such as Timber HP or Power Wool. Spaced so no face-to-face gap exceeds ${nailerOverlaySpacingIn.value}in, ` +
-      "which needs a Building Integrity number. Adds no racking resistance: the covering does that work and this app does not model it.",
+      "No diagonal, and the centre nailer studs stay — straight up-and-down 2x4s on the exterior face for fixing " +
+      "shear coverings such as Timber HP or Power Wool. The panel's own studs already sit inside the " +
+      `${nailerOverlaySpacingIn.value}in spacing Tommy builds to, so this adds no extra board today; it adds one only ` +
+      "to a bay that would otherwise be wider. Adds no racking resistance either way: the covering does that work and this app does not model it.",
   },
 ];
 
@@ -212,6 +213,23 @@ export function bracePairAddedMembers(options: BracePairOptions): AddedMemberSpe
  * standard panel with its single centre-nailer flag on, so the button changed
  * a label and a Review Log sentence and not one member. This is the overlay.
  *
+ * ⚠ **AT HIS CONFIRMED 24in THIS ADDS NO BOARDS, AND THAT IS THE POINT.**
+ *
+ * > *"The way I want to build these is 24\" spacing, which works well enough
+ * > for lumber and sheet goods. We can drop 16\" being meaningful."*
+ * > — Tommy, 2026-11-04, after being told 24in or more is a no-op
+ *
+ * `MAX_STUD_SPACING_IN` already puts a vertical every 24in so a floor or roof
+ * seam lands on a stud, so every panel this app draws already meets his
+ * number. What stays here is a GUARANTEE rather than a generator: the nailer
+ * rule and the stud rule are two different rules that happen to agree today,
+ * and encoding both means the day they diverge a wall gets nailers instead of
+ * silently going unnailable. Nothing here invents wood his shop does not cut.
+ *
+ * So what Vertical Nailers MEANS, at his number, is "no diagonals, and the
+ * centre nailer studs stay" — a real difference from the Carrot Pattern,
+ * which deletes those studs to make room for its legs.
+ *
  * ⚠ **THE NAILERS GO IN THE BAYS THE PANEL ALREADY HAS, NOT ON A FRESH GRID.**
  * A standard panel's exterior face already carries verticals: a corner post at
  * each edge, and a centre nailer stud wherever `MAX_STUD_SPACING_IN` demands
@@ -241,10 +259,17 @@ export function bracePairAddedMembers(options: BracePairOptions): AddedMemberSpe
  * building still reports 0 lb of shear capacity and the Review Log still says
  * so.
  */
-export function verticalNailerSpecs(widthIn: number, heightIn: number, wythe: PanelWythe = "exterior"): AddedMemberSpec[] {
+export function verticalNailerSpecs(
+  widthIn: number,
+  heightIn: number,
+  wythe: PanelWythe = "exterior",
+  /** The gap to stay under. Defaults to his confirmed 24in. Exposed so the
+   *  subdivision rule stays exercised at a spacing that actually bites — see
+   *  the note above about a guarantee the panel happens to meet today. */
+  spacingIn: number = nailerOverlaySpacingIn.value,
+): AddedMemberSpec[] {
   const { bottomZIn, topZIn } = recipeClearHeightIn(heightIn);
   if (topZIn - bottomZIn <= 0) return [];
-  const spacingIn = nailerOverlaySpacingIn.value;
   if (!(spacingIn > 0)) return [];
 
   /* Everything already standing up this face, as [start, end] in x. */

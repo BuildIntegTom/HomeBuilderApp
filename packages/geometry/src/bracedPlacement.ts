@@ -2,8 +2,6 @@ import { planLockedWidthReforce } from "./lockedWidthReforce";
 import { getOpeningAnchors, isReservationType } from "./tiling";
 import type { BracePattern, PanelSlot, PanelSlotType, PanelSlotZone } from "./types";
 
-const ADDITIONAL_ROW_BRACE_NEAR_CORNER_COUNT = 2;
-
 /*
  * ⚠ **BOTH AUTOMATIC BRACING RULES ARE RETIRED — B17, 2026-11-02.**
  *
@@ -53,104 +51,37 @@ const ADDITIONAL_ROW_BRACE_NEAR_CORNER_COUNT = 2;
  * end. All three KEEP their behaviour; each says there why it still does.
  */
 
-/**
- * The one surviving automatic bracing rule, and the only reason the seismic
- * zone is still wired to anything: a freshly-appearing UPPER zone (Tommy: "when a wall is 16ft tall and then a shorter than
- * standard height additional row spawns: at least the ends +50%... need to
- * be braced") — doubled near-corner count (`ADDITIONAL_ROW_BRACE_NEAR_
- * CORNER_COUNT = 2`), and its periodic hit claims 2 consecutive eligible
- * slots ("every other pair") instead of 1.
+/*
+ * ⚠ **AND NOW THE THIRD ONE — B22, 2026-11-04. Nothing automatic is left.**
  *
- * ⚠ **It kept both rules when zone 0 lost both of them** (B17, 2026-11-02 —
- * see the record above). Deliberate, and the reason is one sentence: the
- * wall brace pattern that replaced them is laid per SLOT and does not reach
- * zone 1 at all, so retiring these would remove bracing from a tall wall's
- * upper row and put nothing back. It is also a different instruction of
- * his, about a different thing. When the pattern learns about zones, this
- * is the next thing to retire.
+ * `applyAdditionalRowBracedPattern` stood here: the upper-row rule for a wall
+ * tall enough to spawn a second band of panels, from *"when a wall is 16ft
+ * tall and then a shorter than standard height additional row spawns: at
+ * least the ends +50%... need to be braced"*. It was kept through B17 for one
+ * stated reason — *"the wall brace pattern that replaced them is laid per
+ * SLOT and does not reach zone 1 at all, so retiring these would remove
+ * bracing from a tall wall's upper row and put nothing back."*
  *
- * Operates on one wall's own zone-1-and-above row, not the wall's flat
- * `PanelSlot[]` — `zoneSlots[i]` is
- * slot `i`'s own zone at this level (`undefined` where that column has no
- * real zone this high, treated as an implicit "standard" placeholder,
- * same convention `effectiveZonesForSlot`'s own render-time padding
- * uses). `parentSlotTypes`/`parentWidthsIn` are the row's own top-level
- * slot data — a zone has no independent notion of its own column being a
- * corner or how wide it is (`PanelSlotZone` has no `widthIn` of its own,
- * see its own doc comment), so corner/safety-oct-corner exclusion (never
- * a brace candidate, and a periodic-spacing reset point) and the periodic
- * distance accumulation both read from the parent row instead.
+ * > *"The upper row on a wall tall enough to spawn 3rd gable panels I guess
+ * > can have their own diagonal pattern, either synonymous or similar with
+ * > its downstairs counterparts."* — Tommy
  *
- * `eligibleIndices` (undefined = everything eligible) restricts which
- * "standard"-zone positions this pass may promote — the caller
- * (`reconcileWallZonesForHeightChange` in page.tsx) computes this from
- * which columns just gained a genuinely NEW zone at this level, the same
- * "don't re-decide an already-settled position" precedent
- * `reconcileBracedPlacement` follows for zone 0.
+ * `applyDrawTimeBracing` now walks the pattern along EACH ROW, upper bands
+ * included, starting every row from the same end so their figures line up.
+ * So the condition this rule was kept under is gone: the pattern reaches the
+ * upper row, and something is put back.
+ *
+ * It had to go rather than merely be outvoted, because what it placed was a
+ * `braced` ZONE — a chevron-patterned Braced Panel — sitting inside a row the
+ * Carrot Pattern was also figuring. That is the same two-systems-at-once the
+ * B17 record above is about, one storey up.
+ *
+ * ⚠ **It did NOT take the seismic zone out of the app**, which the queue
+ * expected it to. `bracedWallLineSpacingFt[zone]` still backs the wall LINE
+ * spacing note on the Site Properties screen, and that is a real reader about
+ * a real limit. What the zone no longer does is PLACE anything, anywhere, at
+ * any height — and the control now says exactly that.
  */
-export function applyAdditionalRowBracedPattern(
-  zoneSlots: (PanelSlotZone | undefined)[],
-  parentSlotTypes: PanelSlotType[],
-  parentWidthsIn: number[],
-  spacingIn: number,
-  defaultPattern: BracePattern,
-  defaultMirrored: boolean,
-  eligibleIndices?: Set<number>,
-): PanelSlotZone[] {
-  const result: PanelSlotZone[] = zoneSlots.map((z) => ({ ...(z ?? { type: "standard" as const }) }));
-  const isEligible = (i: number) => eligibleIndices === undefined || eligibleIndices.has(i);
-  const isCornerParent = (i: number) => parentSlotTypes[i] === "corner" || parentSlotTypes[i] === "safety-oct-corner";
-
-  const markNearestBraceable = (start: number, step: number, count: number) => {
-    let marked = 0;
-    for (let i = start; i >= 0 && i < result.length && marked < count; i += step) {
-      if (isCornerParent(i)) continue; // no real brace candidate here at all — walk straight past
-      const zone = result[i]!;
-      if (zone.type === "braced") {
-        marked++;
-      } else if (zone.type === "standard") {
-        if (!isEligible(i)) break;
-        zone.type = "braced";
-        zone.bracedPattern = defaultPattern;
-        zone.bracedMirrored = defaultMirrored;
-        marked++;
-      }
-    }
-  };
-  markNearestBraceable(0, 1, ADDITIONAL_ROW_BRACE_NEAR_CORNER_COUNT);
-  markNearestBraceable(result.length - 1, -1, ADDITIONAL_ROW_BRACE_NEAR_CORNER_COUNT);
-
-  let cumulativeIn = 0;
-  for (let i = 0; i < result.length; i++) {
-    if (isCornerParent(i) || result[i]!.type === "braced") {
-      cumulativeIn = 0;
-      continue;
-    }
-    cumulativeIn += parentWidthsIn[i] ?? 0;
-    if (cumulativeIn < spacingIn || result[i]!.type !== "standard" || !isEligible(i)) continue;
-    result[i]!.type = "braced";
-    result[i]!.bracedPattern = defaultPattern;
-    result[i]!.bracedMirrored = defaultMirrored;
-    cumulativeIn -= spacingIn;
-    // Claim one more consecutive eligible slot as this same brace event's
-    // own pair-mate ("every other pair") — walks past an opening/locked-
-    // standard slot without giving up (same "doesn't reset the shear
-    // requirement" precedent Rule 2's own reset condition above follows),
-    // stopping at the next corner or at an already-braced slot (which
-    // already counts as a real brace, satisfying the pair on its own).
-    for (let j = i + 1; j < result.length && !isCornerParent(j); j++) {
-      if (result[j]!.type === "braced") break;
-      if (result[j]!.type === "standard" && isEligible(j)) {
-        result[j]!.type = "braced";
-        result[j]!.bracedPattern = defaultPattern;
-        result[j]!.bracedMirrored = defaultMirrored;
-        break;
-      }
-    }
-  }
-
-  return result;
-}
 
 /**
  * Carries each wall's own prior per-panel decisions across a retile (Tommy:

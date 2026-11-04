@@ -42,12 +42,23 @@ export interface ShearMemberContext {
  * for it to come from.
  */
 export function shearMembersFor(inst: PanelInstance, ctx: ShearMemberContext): PanelMember[] | null {
+  /* ⚠ **B22: the panel's OWN height, not the wall's.** A wall tall enough to
+     split carries an upper band that is much shorter than the storey, and
+     `heightOverrideIn` is that band's real height. Every other reader of this
+     instance already passes it — the weight, the wood weight, the fastener
+     count, the 3D view and the Shop Fabrication sheet all build the short
+     panel. Only shear read `ctx.wallHeightIn`, so an upper-row panel CUT with
+     40in diagonals was COUNTED as one with 120in diagonals. A brace's capacity
+     is resolved through its own tilt, so a panel measured at the wrong height
+     is measured at the wrong angle as well as the wrong length: the error ran
+     in the unsafe direction, inflating the building's reported shear. */
+  const heightIn = inst.heightOverrideIn ?? ctx.wallHeightIn;
   if (inst.panelType === "braced") {
     const style = resolveBracedStyle(inst, ctx.defaultBracePattern, ctx.defaultBracedMirrored);
     return buildBracedPanelMembers(
       inst.widthIn,
       ctx.thicknessIn,
-      ctx.wallHeightIn,
+      heightIn,
       ctx.includeNailer,
       style.pattern,
       style.mirrored,
@@ -56,7 +67,7 @@ export function shearMembersFor(inst: PanelInstance, ctx: ShearMemberContext): P
     );
   }
   if (inst.bracePairPattern !== undefined) {
-    return standardPanelMembersFor(inst, inst.widthIn, ctx.thicknessIn, ctx.wallHeightIn, ctx.includeNailer, ctx.girtStyle);
+    return standardPanelMembersFor(inst, inst.widthIn, ctx.thicknessIn, heightIn, ctx.includeNailer, ctx.girtStyle);
   }
   return null;
 }

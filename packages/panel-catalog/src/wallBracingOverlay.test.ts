@@ -117,7 +117,7 @@ describe("laying a pattern across a wall", () => {
     expect(outer("narrow", 0)).toBe(24 - 1.5);
   });
 
-  it("a nailer wall pairs the same way, and B21 gives every panel the SAME overlay", () => {
+  it("a nailer wall pairs the same way, and every panel gets the SAME overlay", () => {
     const r = applyWallBracingPattern({
       pattern: "nailer",
       panels: [panel("p1"), panel("p2"), panel("p3")],
@@ -125,14 +125,13 @@ describe("laying a pattern across a wall", () => {
     });
     expect(r.pairs).toHaveLength(1);
     expect(r.unpairedPanelIds).toEqual(["p3"]);
-    /* ⚠ This used to assert an empty list for all three. The overlay has no
-       handedness — a vertical is a vertical — so the paired panels, the
-       unpaired one and both halves all come out identical. That is a property
-       worth pinning: a nailer wall's panels are exact copies, so they group
-       onto ONE fabrication sheet instead of three. */
+    /* ⚠ The overlay has no handedness — a vertical is a vertical — so the
+       paired panels, the unpaired one and both halves all come out identical.
+       Worth pinning even while the list is empty at his confirmed 24in
+       spacing: it is the property that makes a nailer wall's panels exact
+       copies, so they group onto ONE fabrication sheet instead of three. */
     expect(r.addedByPanelId["p1"]).toEqual(r.addedByPanelId["p2"]);
     expect(r.addedByPanelId["p1"]).toEqual(r.addedByPanelId["p3"]);
-    expect(r.addedByPanelId["p1"]!.length).toBeGreaterThan(0);
     for (const id of ["p1", "p2", "p3"]) {
       expect(r.addedByPanelId[id]!.every((s) => s.kind === "straight")).toBe(true);
     }
