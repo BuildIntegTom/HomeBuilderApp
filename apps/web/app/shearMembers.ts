@@ -32,9 +32,14 @@ export interface ShearMemberContext {
  * stale. Wrapping it in `useCallback` would have traded one flagged rule for
  * another.
  *
- * Returns null for a panel with no diagonal at all — a plain standard, or a
- * Nailer Pair, which sets `bracePairPattern` and adds no brace. That null is
- * what keeps a Nailer out of both the total and the sheet.
+ * Returns null for a panel with no pattern at all — a plain standard panel.
+ *
+ * ⚠ A Vertical Nailer panel does NOT come back null: since B21 it sets
+ * `bracePairPattern` and carries real members, so it is built here like any
+ * other. It still contributes nothing, because `derivePanelShear` filters on
+ * `role === "brace"` and a nailer is not one — the zero now comes from the
+ * member list rather than from an early return, which is the more honest place
+ * for it to come from.
  */
 export function shearMembersFor(inst: PanelInstance, ctx: ShearMemberContext): PanelMember[] | null {
   if (inst.panelType === "braced") {

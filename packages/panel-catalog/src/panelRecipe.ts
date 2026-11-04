@@ -1,4 +1,4 @@
-import type { PanelMember } from "./componentSchema";
+import type { MemberRole, PanelMember } from "./componentSchema";
 import {
   LUMBER_SPECIES_GRADE,
   PLATE_2X4_THICKNESS_IN,
@@ -71,6 +71,23 @@ export type AddedMemberSpec =
       toXIn: number;
       toZIn: number;
       wythe: PanelWythe;
+      /**
+       * What PART this board is, when "a vertical is a stud" is not true.
+       *
+       * ⚠ Added for B21's vertical nailer overlay, and it earns its keep in
+       * exactly one place that matters: shear capacity reads
+       * `role === "brace"` and nothing else, so a part's role is the only
+       * thing standing between a member and a structural number. A nailer is
+       * not a stud — it carries no floor seam and resists no racking — so
+       * calling it one would be a lie the cut list and the Review Log would
+       * both repeat.
+       *
+       * Omitted keeps the old derivation: a vertical is a `stud`, a
+       * horizontal is `blocking`. It is part of `recipeFingerprint`, because
+       * two panels whose boards differ only in what they ARE are two
+       * different panels with two different shop sheets.
+       */
+      role?: MemberRole;
       notes?: string;
     };
 
@@ -177,10 +194,15 @@ function buildStraightFromSpec(spec: Extract<AddedMemberSpec, { kind: "straight"
       zIn: Math.min(spec.fromZIn, spec.toZIn),
       rotationDeg: 0,
     },
-    role: isVertical ? "stud" : "blocking",
+    role: spec.role ?? (isVertical ? "stud" : "blocking"),
     qty: 1,
     notes: spec.notes,
   };
+}
+
+/** Whether this recipe's own added members include a nailer — B21's overlay. */
+export function hasAddedNailer(recipe: PanelRecipe): boolean {
+  return recipe.added.some((spec) => spec.kind === "straight" && spec.role === "nailer");
 }
 
 /**
@@ -213,7 +235,13 @@ function buildStraightFromSpec(spec: Extract<AddedMemberSpec, { kind: "straight"
 export function recipeConflicts(recipe: PanelRecipe): string[] {
   const out: string[] = [];
   const hasDiagonals = recipe.added.some((spec) => spec.kind === "diagonal");
-  if (hasDiagonals && recipe.includeNailer) {
+  /* ⚠ B21: the conflict is about NAILERS, not about one flag. It used to read
+     `includeNailer` alone, which was complete while the only nailer a panel
+     could have was the single centre one. The Vertical Nailer overlay adds
+     nailers as surgery members instead, and his sentence — *"it doesn't make
+     sense structurally to have vertical nailers and diagonals"* — is about
+     the part, so both ways of getting one have to answer for it. */
+  if (hasDiagonals && (recipe.includeNailer || hasAddedNailer(recipe))) {
     out.push(
       "A vertical nailer and diagonal bracing do the same job by different means, and whichever one is notched " +
         "where they cross loses the connection that made it worth having. Diagonals brace the panel so the " +
@@ -245,11 +273,18 @@ export function recipeConflicts(recipe: PanelRecipe): string[] {
  */
 export function buildPanelFromRecipe(recipe: PanelRecipe): PanelMember[] {
   const hasDiagonals = recipe.added.some((spec) => spec.kind === "diagonal");
+  /* ⚠ **B21: an overlay of nailers REPLACES the single centre nailer.**
+     Not a tidy-up — the centre nailer member sits at mid-width, which on any
+     48in panel is exactly where the centre nailer STUD stands, and
+     `overlappingPairsIn` has been reporting that pair (`nailer` x
+     `stud_centre_N_exterior`) on every panel with the flag on. Keeping both
+     would have put a third 2x4 in the same groove. The overlay is the
+     nailering of the panel, so the flag's one board stands down. */
   const base = buildStandardPanelMembers(
     recipe.widthIn,
     recipe.depthIn,
     recipe.heightIn,
-    recipe.includeNailer === true && !hasDiagonals,
+    recipe.includeNailer === true && !hasDiagonals && !hasAddedNailer(recipe),
     recipe.girtStyle,
   ).filter((m) => !(hasDiagonals && m.memberId.startsWith("stud_centre_")));
   return [
@@ -287,7 +322,7 @@ export function recipeFingerprint(recipe: PanelRecipe): string {
       .map((spec) =>
         spec.kind === "diagonal"
           ? `D:${spec.wythe}:${spec.fromXIn},${spec.fromZIn}>${spec.toXIn},${spec.toZIn}`
-          : `S:${spec.wythe}:${spec.fromXIn},${spec.fromZIn}>${spec.toXIn},${spec.toZIn}`,
+          : `S:${spec.wythe}:${spec.role ?? "-"}:${spec.fromXIn},${spec.fromZIn}>${spec.toXIn},${spec.toZIn}`,
       )
       /* Sorted, because two panels with the same members added in a different
          order are the same panel. Member IDs are deliberately left out for the

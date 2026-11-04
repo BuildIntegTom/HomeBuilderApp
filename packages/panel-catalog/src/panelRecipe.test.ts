@@ -167,10 +167,22 @@ describe("the three patterns from his sketch", () => {
     expect(narrow.filter((s) => s.kind === "straight")).toHaveLength(1);
   });
 
-  it("⚠ Nailer adds no surgery member at all", () => {
-    // It is the standard panel with its own nailer turned on, which is a
-    // flag on the recipe rather than something routed in.
-    expect(bracePairAddedMembers({ pattern: "nailer", widthIn: W, heightIn: H, half: "left" })).toEqual([]);
+  it("⚠ Nailer adds VERTICALS now, not nothing — B21", () => {
+    /* It used to be the standard panel with its own single centre nailer
+       turned on, which is a flag on the recipe rather than something routed
+       in — so the button changed a label and not one member. His 2026-11-02
+       answer: *"Vertical nailers is actually a totally different bracing
+       pattern overlay. Let's make that a button that turns all of the panels
+       into straight up and down 2x4s just on the exterior."*
+
+       Held here as well as in verticalNailerOverlay.test.ts because THIS is
+       the file that asserted the opposite, and the record of what changed
+       belongs where the old claim was. */
+    const specs = bracePairAddedMembers({ pattern: "nailer", widthIn: W, heightIn: H, half: "left" });
+    expect(specs.map((spec) => spec.kind)).toEqual(["straight", "straight"]);
+    expect(specs.every((spec) => spec.kind === "straight" && spec.role === "nailer" && spec.wythe === "exterior")).toBe(true);
+    // No diagonal, which is the one thing the setting has always promised.
+    expect(specs.some((spec) => spec.kind === "diagonal")).toBe(false);
   });
 
   it("⚠ the Carrot Pattern is EXTERIOR ONLY, while the Braced Pair still takes both wythes", () => {

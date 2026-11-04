@@ -1,7 +1,8 @@
 import type { AddedMemberSpec, PanelWythe } from "./panelRecipe";
 import { recipeClearHeightIn } from "./panelRecipe";
-import { centreNailerStudSpansIn } from "./panelMemberHelpers";
+import { PLATE_2X4_THICKNESS_IN, centreNailerStudSpansIn } from "./panelMemberHelpers";
 import { standardGirtRowCentreZsIn } from "./standardPanelMembers";
+import { nailerOverlaySpacingIn } from "./data";
 
 /** A corner post is 1.5in across the panel's width. */
 const CORNER_POST_THICKNESS_IN = 1.5;
@@ -62,9 +63,11 @@ export const BRACE_PAIR_PATTERNS: { id: BracePairPattern; label: string; descrip
   },
   {
     id: "nailer",
-    label: "Nailer Pair",
+    label: "Vertical Nailers",
     description:
-      "No diagonal — a standard panel with a nailer added, for fixing shear coverings such as Timber HP or Power Wool.",
+      "No diagonal — straight up-and-down 2x4s across the whole panel, exterior face only, for fixing shear " +
+      `coverings such as Timber HP or Power Wool. Spaced so no face-to-face gap exceeds ${nailerOverlaySpacingIn.value}in, ` +
+      "which needs a Building Integrity number. Adds no racking resistance: the covering does that work and this app does not model it.",
   },
 ];
 
@@ -108,16 +111,21 @@ export interface BracePairOptions {
  * Returns specs rather than members so the caller can put them in a recipe,
  * which is what makes these editable afterwards instead of baked in.
  *
- * ⚠ `nailer` adds nothing here. A Nailer panel is the standard panel with its
- * own nailer turned on (*"It is indeed the same as a standard panel with
- * nailer added"*), which is a flag on the recipe, not a surgery member.
+ * ⚠ **`nailer` used to add nothing — B21 gave it its own figure.** It was the
+ * standard panel with the single centre nailer flag turned on, which is why
+ * the Review Log had to say a Nailer panel modelled no lateral resistance
+ * *and* carried nothing to show for the setting. See `verticalNailerSpecs`.
  */
 export function bracePairAddedMembers(options: BracePairOptions): AddedMemberSpec[] {
   const { pattern, widthIn, heightIn, half } = options;
   const figure = options.figure ?? "super-carrot";
+  /* ⚠ Both the Carrot Pattern and the Vertical Nailer overlay are EXTERIOR
+     ONLY — *"these super brace patterns could just be for the outside
+     actually"* and *"just on the exterior"*. Only the Braced Pair takes both
+     wythes, because he has said nothing about it. */
   const wythes =
-    options.wythes ?? ((pattern === "superbrace" ? ["exterior"] : ["exterior", "interior"]) as PanelWythe[]);
-  if (pattern === "nailer") return [];
+    options.wythes ?? ((pattern === "braced" ? ["exterior", "interior"] : ["exterior"]) as PanelWythe[]);
+  if (pattern === "nailer") return wythes.flatMap((wythe) => verticalNailerSpecs(widthIn, heightIn, wythe));
 
   const { bottomZIn, topZIn } = recipeClearHeightIn(heightIn);
   const midZIn = (bottomZIn + topZIn) / 2;
@@ -188,6 +196,90 @@ export function bracePairAddedMembers(options: BracePairOptions): AddedMemberSpe
         },
         ...tieSegments(widthIn, midZIn, wythe, tag),
       );
+    }
+  }
+  return out;
+}
+
+/**
+ * **THE VERTICAL NAILER OVERLAY — B21.**
+ *
+ * > *"Vertical nailers is actually a totally different bracing pattern
+ * > overlay. Let's make that a button that turns all of the panels into
+ * > straight up and down 2x4s just on the exterior."* — Tommy, 2026-11-02
+ *
+ * Before this, `nailer` was the one "pattern" that added nothing: it was the
+ * standard panel with its single centre-nailer flag on, so the button changed
+ * a label and a Review Log sentence and not one member. This is the overlay.
+ *
+ * ⚠ **THE NAILERS GO IN THE BAYS THE PANEL ALREADY HAS, NOT ON A FRESH GRID.**
+ * A standard panel's exterior face already carries verticals: a corner post at
+ * each edge, and a centre nailer stud wherever `MAX_STUD_SPACING_IN` demands
+ * one. A grid laid from x = 0 would land a nailer an inch off a stud that is
+ * already standing there — two members fighting for one groove, which is what
+ * [[no_overlapping_members]] exists to stop, and a detail no shop could build.
+ * So each existing clear bay is divided into the FEWEST equal sub-bays that
+ * bring every face-to-face gap under the spacing, and a nailer goes on each
+ * interior division. The result is symmetric, collides with nothing, and
+ * reduces to "add nothing" on a panel whose bays are already close enough.
+ *
+ * ⚠ **They stop at the plate faces, exactly as a centre nailer stud does.**
+ * *"A centre nailer is a real stud: it sits ON the bottom plate and the top
+ * plate sits on IT."* A full-height nailer would run straight through both
+ * plates. The sheet still gets fixing top and bottom, because the plates are
+ * themselves 2x4s standing at the face. One consequence worth knowing: the
+ * overlay's nailers are the IDENTICAL cut to the centre nailer studs, so the
+ * cut list groups them under one letter and raises its quantity rather than
+ * printing a second row — which is `cutKey`'s deliberate rule, *"a shop
+ * cutting a batch of those doesn't care which role a given stick ends up
+ * filling."*
+ *
+ * ⚠ **`role: "nailer"`, not `"stud"`, and that is load-bearing in one place:**
+ * shear reads `role === "brace"`, so these contribute nothing to racking.
+ * That is the truth — a vertical does not resist racking; the covering nailed
+ * to it does, and this app does not model coverings. A Vertical Nailer
+ * building still reports 0 lb of shear capacity and the Review Log still says
+ * so.
+ */
+export function verticalNailerSpecs(widthIn: number, heightIn: number, wythe: PanelWythe = "exterior"): AddedMemberSpec[] {
+  const { bottomZIn, topZIn } = recipeClearHeightIn(heightIn);
+  if (topZIn - bottomZIn <= 0) return [];
+  const spacingIn = nailerOverlaySpacingIn.value;
+  if (!(spacingIn > 0)) return [];
+
+  /* Everything already standing up this face, as [start, end] in x. */
+  const occupied: [number, number][] = [
+    [0, PLATE_2X4_THICKNESS_IN],
+    ...centreNailerStudSpansIn(widthIn),
+    [widthIn - PLATE_2X4_THICKNESS_IN, widthIn],
+  ].sort((a, b) => a[0] - b[0]) as [number, number][];
+
+  const out: AddedMemberSpec[] = [];
+  let n = 0;
+  for (let i = 0; i < occupied.length - 1; i++) {
+    const bayFromIn = occupied[i]![1];
+    const bayToIn = occupied[i + 1]![0];
+    const bayIn = bayToIn - bayFromIn;
+    if (bayIn <= 0) continue;
+    /* The fewest equal sub-bays that get every gap under the spacing. Each
+       sub-bay is at most bayIn / subBays wide before the nailers' own 1.5in
+       is taken out of it, so this is conservative in the safe direction. */
+    const subBays = Math.max(1, Math.ceil(bayIn / spacingIn - 1e-9));
+    for (let k = 1; k < subBays; k++) {
+      const centreXIn = bayFromIn + (bayIn * k) / subBays;
+      const leftXIn = centreXIn - PLATE_2X4_THICKNESS_IN / 2;
+      n++;
+      out.push({
+        kind: "straight",
+        id: `nailer_v_${wythe}_${n}`,
+        fromXIn: leftXIn,
+        fromZIn: bottomZIn,
+        toXIn: leftXIn,
+        toZIn: topZIn,
+        wythe,
+        role: "nailer",
+        notes: `vertical nailer — keeps every face-to-face gap on this wythe at or under ${spacingIn}in for fixing a shear covering`,
+      });
     }
   }
   return out;

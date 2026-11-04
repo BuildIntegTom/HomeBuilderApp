@@ -2042,3 +2042,153 @@ and both are pinned as a DELTA in `girtStyles.test.ts` rather than skipped:
   braced panel.
 
 Both are candidates for the no-overlap audit's open causes.
+
+---
+
+# B21 — BUILT, 2026-11-04. Vertical Nailers is a real overlay
+
+> *"Vertical nailers is actually a totally different bracing pattern overlay.
+> Let's make that a button that turns all of the panels into straight up and
+> down 2x4s just on the exterior."* — Tommy, 2026-11-02
+
+The button existed. It is the third entry in Settings > Panelizer > Default
+bracing style, and until today it was the one that **added nothing**:
+`bracePairAddedMembers` returned `[]` for `nailer`, so choosing it set a field
+on every slot, renamed a label, triggered a Review Log entry, and left every
+panel's member list, cut list, weight, price and shop sheet byte-identical to a
+plain standard panel. That is why the Review Log had to say a Nailer panel
+modelled no lateral resistance *and* had nothing to show for the setting.
+
+## Where the nailers go, and why not on a grid
+
+**They go in the bays the panel already has.** A standard panel's exterior face
+is not blank: a corner post stands at each edge, and `centreNailerStudSpansIn`
+puts a centre nailer stud wherever `MAX_STUD_SPACING_IN` (24in) demands one, so
+a floor or roof seam always lands on a stud. A nailer grid laid from x = 0 would
+have dropped a 2x4 an inch off a stud already standing there — two members
+fighting for one routed groove, which is exactly what the no-overlap rule
+exists to stop, and a detail no shop could build.
+
+So: each **existing clear bay** is divided into the **fewest equal sub-bays**
+that bring every face-to-face gap under the spacing, and a nailer goes on each
+interior division. Three properties fall out of that rather than being asserted:
+
+- It is **symmetric** on every panel, at every width.
+- It **collides with nothing** — a test sweeps 24/36/48/60/72/96/120in and
+  asserts a zero DELTA against the plain panel's own pre-existing pairs.
+- It **adds nothing** to a panel whose bays are already close enough, instead
+  of forcing a board in.
+
+Measured, at the 16in default:
+
+| Panel width | Nailers added | Why |
+|---|---|---|
+| 24in | 1 | one 21in bay, no centre stud |
+| **36in** | **0** | its centre stud already leaves two 15.75in bays |
+| 48in | 2 | two 21.75in bays, one each |
+| 60in | 3 | three bays |
+| 72in | 3 | three 21in bays |
+| 96in | 4 | four bays |
+
+⚠ **The 36in row is worth seeing before a shop does.** Two panels on one wall
+can come out built differently, because the rule is "no gap over the spacing"
+and a 36in panel already passes it. That is correct and it is also the first
+thing he may want changed. At a 12in spacing the row fills in.
+
+## They stop at the plate faces
+
+Exactly as a centre nailer stud does — *"A centre nailer is a real stud: it
+sits ON the bottom plate and the top plate sits on IT."* A full-height nailer
+would run straight through both plates. The sheet still gets fixing top and
+bottom, because the plates are 2x4s standing at the face themselves.
+
+One consequence: an overlay nailer is the **identical cut** to a centre nailer
+stud, so `computePanelCutList` groups them under one letter and raises its
+quantity rather than printing a near-duplicate row. That is `cutKey`'s
+deliberate rule — *"a shop cutting a batch of those doesn't care which role a
+given stick ends up filling"* — and it is pinned: a 48in panel's stud letter
+goes to **qty 4** (2 centre studs + 2 nailers).
+
+## `role: "nailer"` is load-bearing in exactly one place
+
+`derivePanelShear` reads `role === "brace"` and nothing else. A nailer is not a
+brace, so a Vertical Nailer building still reports **0 lb** of shear capacity —
+and that is the honest answer, not a gap: a vertical does not resist racking,
+the covering nailed to it does, and this app does not model coverings. The
+Review Log entry stays, re-worded to say the setting now puts real 2x4s on
+every panel and that they are worth nothing here *on purpose*.
+
+Had these inherited `buildStraightFromSpec`'s old derivation (`vertical` ⇒
+`stud`) nothing would have broken today — shear still reads `brace` — but the
+cut list, the tooltips and the overlap audit would all have called them studs,
+which is a lie each of them would then repeat. So `AddedMemberSpec`'s straight
+variant grew an optional `role`, `StoredPanelMemberSpec` grew its mirror (with
+a test holding the two unions in step), and `recipeFingerprint` carries it —
+two panels whose boards differ only in what they ARE are two panels with two
+shop sheets.
+
+## The overlay REPLACES the single centre nailer
+
+Not a tidy-up. `buildNailer` puts its member at mid-width, which on any 48in
+panel is exactly where `stud_centre_1_exterior` stands, and
+`overlappingMemberPairs` has been reporting that pair on every panel with the
+flag on — it is one of the two pre-existing pairs surfaced during B24. Keeping
+both plus the overlay would have put a third 2x4 in one groove. So
+`buildPanelFromRecipe` stands the flag's one board down when the added list
+holds a nailer. The flag alone, with no overlay, still builds it: this fixes
+the overlap for nailer-pattern panels and changes nothing else. The plain
+`includeNailer` panel's own pair is still open, and still belongs to the
+no-overlap audit rather than here.
+
+`recipeConflicts` moved with it: the diagonals-vs-nailer refusal used to read
+`includeNailer` alone, which was complete while that was the only way to get a
+nailer. His sentence — *"it doesn't make sense structurally to have vertical
+nailers and diagonals"* — is about the **part**, so both ways of getting one
+now answer for it.
+
+## ⚠ THE SPACING IS HIS TO CONFIRM
+
+`nailerOverlaySpacingIn` = **16in**, `status: "pending-BI-confirmation"`.
+
+He named the overlay and not the spacing. What is *not* a guess is the shape of
+the constraint, and it is tight at one end:
+
+- **24in or more is a no-op.** A standard panel already guarantees a vertical
+  every 24in, for the floor/roof seam. The button would do visibly nothing. A
+  test holds this so it cannot quietly stop being true.
+- The overlay exists to receive a sheet good (*"for fixing shear coverings such
+  as Timber HP or Power Wool"*), and a sheet needs bearing at its edges and
+  between them.
+
+16in is the North American framing module those sheets are manufactured
+against, which is the reason it is the default rather than a number picked to
+look reasonable. **Building Integrity has not stated one**, and the real answer
+depends on which covering goes on. One value, and every panel's cut list,
+weight, price and shop sheet follows.
+
+## Deliberately NOT done
+
+- **Fasteners.** Nothing counts a screw or nail into a nailer or a stud today —
+  `computeFastenerWeight` counts plywood seams, girt bars, lids and braces, and
+  says in its own doc that blocking has no rule *"left out rather than
+  guessed"*. The overlay inherits that gap honestly rather than inventing a
+  schedule. **Open: how is a vertical nailer fastened to the plates?**
+- **Scope is standard panels**, the same as every other pattern
+  (`isBraceEligible`). Corners and columns are already plywood boxes; a header,
+  a window, a door and a safety gap have nothing to route a nailer through. His
+  *"all of the panels"* reads as "all the panels the pattern reaches", which is
+  what the Carrot Pattern means by it too.
+- **The interior face is untouched** — *"just on the exterior"*, asserted
+  against the plain panel's interior verticals.
+- **A nailer in the panel editor.** `newVerticalSpec` still makes a stud. The
+  field it would set now exists, so this is a small piece of panel-editor
+  stride 2 rather than new plumbing.
+
+## Gates
+
+17 new tests in `verticalNailerOverlay.test.ts`, 3 new in
+`standardPanelMembers.test.ts`, and the two tests that pinned the OLD behaviour
+rewritten in place rather than deleted — `panelRecipe.test.ts`'s *"Nailer adds
+no surgery member at all"* and `wallBracingOverlay.test.ts`'s *"adds no surgery
+members"*, each now carrying the record of what changed where the old claim
+was.

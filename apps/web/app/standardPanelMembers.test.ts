@@ -5,6 +5,7 @@ import {
   overlappingMemberPairs,
   newVerticalSpec,
 } from "@building-integrity/panel-catalog";
+import type { MemberRole } from "@building-integrity/panel-catalog";
 import type { StoredPanelMemberSpec } from "@building-integrity/geometry";
 import { standardPanelMembersFor, toAddedMemberSpecs } from "./standardPanelMembers";
 
@@ -112,5 +113,51 @@ describe("toAddedMemberSpecs", () => {
       { kind: "straight", id: "b", fromXIn: 23.25, fromZIn: 2.25, toXIn: 23.25, toZIn: 117.75, wythe: "interior" },
     ];
     expect(toAddedMemberSpecs(stored)).toEqual(stored);
+  });
+
+  it("carries a straight board's ROLE across the package boundary — B21", () => {
+    /* ⚠ The whole point of the field: a nailer the editor stored must come
+       back as a nailer, not as a stud. It reaches shear capacity, which reads
+       role and nothing else. */
+    const stored: StoredPanelMemberSpec[] = [
+      { kind: "straight", id: "n1", fromXIn: 11.625, fromZIn: 2.25, toXIn: 11.625, toZIn: 117.75, wythe: "exterior", role: "nailer" },
+    ];
+    expect(standardPanelMembersFor({ editedMembers: stored }, W, D, H, false, "web").find((m) => m.memberId === "n1")?.role).toBe(
+      "nailer",
+    );
+  });
+
+  it("drops a ROLE off a diagonal rather than carrying a field the catalog has no use for", () => {
+    const stored = [
+      { kind: "diagonal", id: "a", fromXIn: 1.5, fromZIn: 2.25, toXIn: 46.5, toZIn: 117.75, wythe: "exterior", role: "nailer" },
+    ] as StoredPanelMemberSpec[];
+    expect(toAddedMemberSpecs(stored)).toEqual([
+      { kind: "diagonal", id: "a", fromXIn: 1.5, fromZIn: 2.25, toXIn: 46.5, toZIn: 117.75, wythe: "exterior" },
+    ]);
+    /* ...and it is still built as a brace, which is what a diagonal always is. */
+    expect(standardPanelMembersFor({ editedMembers: stored }, W, D, H, false, "web").find((m) => m.memberId === "a")?.role).toBe(
+      "brace",
+    );
+  });
+
+  it("the two packages' role lists have not drifted apart", () => {
+    /* `StoredPanelMemberSpec.role` spells the union out because geometry is a
+       sibling of panel-catalog rather than a dependency. This is the test that
+       note promises: a role added to `MemberRole` and not to the stored form
+       would be a member the editor could build and never save. */
+    const storedRoles: NonNullable<StoredPanelMemberSpec["role"]>[] = [
+      "stud",
+      "plate",
+      "girt",
+      "girt_web",
+      "nailer",
+      "brace",
+      "skin",
+      "blocking",
+      "jack_stud",
+    ];
+    const catalogRoles: MemberRole[] = storedRoles;
+    const backAgain: NonNullable<StoredPanelMemberSpec["role"]>[] = catalogRoles;
+    expect(new Set(backAgain).size).toBe(9);
   });
 });

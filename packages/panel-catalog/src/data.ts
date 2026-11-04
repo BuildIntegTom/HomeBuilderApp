@@ -346,6 +346,40 @@ export const standardPanelBom = {
   },
 };
 
+/**
+ * How far apart the VERTICAL NAILER OVERLAY's 2x4s may sit, face to face.
+ *
+ * > *"Vertical nailers is actually a totally different bracing pattern
+ * > overlay. Let's make that a button that turns all of the panels into
+ * > straight up and down 2x4s just on the exterior."* — Tommy, 2026-11-02
+ *
+ * ⚠ **He named the overlay and not the spacing, so this number is his to
+ * confirm.** What is NOT a guess is the shape of the constraint:
+ *
+ * - A standard panel already guarantees a vertical every `MAX_STUD_SPACING_IN`
+ *   (24in), because a floor or roof seam has to land on one. So a nailer
+ *   spacing of 24in or more is a **no-op** — the overlay would add nothing to
+ *   a 48in panel and the button would do visibly nothing.
+ * - The overlay exists to receive a sheet good (*"for fixing shear coverings
+ *   such as Timber HP or Power Wool"*), and a sheet needs bearing at its edges
+ *   and between them.
+ *
+ * 16in is the North American framing module those sheets are manufactured
+ * against, which is why it is the default rather than a number picked to look
+ * reasonable — but Building Integrity has not stated one, and the real answer
+ * depends on which covering goes on. Change this one value and every panel's
+ * cut list, weight, price and shop sheet follows.
+ */
+export const nailerOverlaySpacingIn: CatalogValue<number> = {
+  value: 16,
+  status: "pending-BI-confirmation" as const,
+  note:
+    "Tommy asked for \"straight up and down 2x4s just on the exterior\" (2026-11-02) without giving a spacing. " +
+    "16in is the framing module sheet goods are made to, and anything 24in or over is a no-op because a standard " +
+    "panel already carries a vertical every 24in for the floor/roof seam. Needs a Building Integrity number tied " +
+    "to the actual shear covering (Timber HP, Power Wool, CDX).",
+};
+
 /** The panel width the BOM above is actually dimensioned for — compare against the selected standard width to know if the wood-weight calc is exact or approximate. */
 export const standardPanelBomReferenceWidthIn = 48;
 

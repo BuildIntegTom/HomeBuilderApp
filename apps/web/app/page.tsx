@@ -10613,7 +10613,7 @@ export default function LayoutEditor() {
                  absorb explanation below would send a reader hunting
                  through wall runs for a cause that is sitting in the
                  Panelizer. */
-              `Wall bracing is set to Nailer Pair, which adds no diagonal to any panel, so this zero is exactly what that setting means — and it is not evidence that something else is carrying the racking. Choose SuperBrace Pair or Braced Pair in Settings > Panelizer if the panels are meant to do this work. `
+              `Wall bracing is set to Vertical Nailers, which adds no diagonal to any panel, so this zero is exactly what that setting means — and it is not evidence that something else is carrying the racking. Since B21 that setting DOES put real 2x4s on every panel's exterior face, and they are worth nothing here on purpose: a vertical does not resist racking, the shear covering nailed to it does, and this app does not model coverings. Choose Carrot Pattern or Braced Pair in Settings > Panelizer if the panels themselves are meant to do this work. `
             : `Under Loose Packed Braced with a diagonal pattern selected this is NOT expected, and the usual cause is corner panels taking up every wall run: a wall under ${formatLengthIn(firstLegalTwoCornerWallIn, unitSystem)} owning a corner at both ends has its short middle absorbed by the pair, which removes the braced slot that middle used to be. A 12ft octagon ends up entirely corners${cornerCount > 0 ? ` — ${cornerCount} of them here` : ""}. `;
     return [
       {
@@ -11248,7 +11248,7 @@ export default function LayoutEditor() {
         {BRACE_PAIR_PATTERNS.find((p) => p.id === wallBracePattern)?.description} Laid on every Standard Panel of
         every ground-floor wall, paired from the end nearest the least accessible corner
         {wallBracePattern === "nailer"
-          ? ", though a Nailer pair has nothing to close across the joint it shares — this setting models NO lateral resistance anywhere in the building, and the Review Log says so"
+          ? " — though the Vertical Nailer overlay reads the same on both halves of a pair, because a vertical has no handedness and nothing closes across the joint. It models NO lateral resistance anywhere in the building, and the Review Log says so"
           : ", so each figure closes across the joint the two halves share"}
         . Corners, columns, headers and gap panels take none.
       </p>

@@ -22,9 +22,27 @@ import type { StoredPanelMemberSpec } from "@building-integrity/geometry";
  * member drawn as the wrong shape.
  */
 export function toAddedMemberSpecs(stored: readonly StoredPanelMemberSpec[]): AddedMemberSpec[] {
-  return stored.map((spec) =>
-    spec.kind === "diagonal" ? { ...spec, kind: "diagonal" as const } : { ...spec, kind: "straight" as const },
-  );
+  return stored.map((spec) => {
+    if (spec.kind === "diagonal") {
+      /* ⚠ Written out field by field rather than spread, because this branch
+         has to DROP one: `role` only means anything on a square-cut board, and
+         a diagonal is always a brace. A spread would carry it along into the
+         catalog's union, which has no field for it, and
+         `const { role: _role, ...rest }` would leave an unused binding behind
+         to say so. */
+      return {
+        kind: "diagonal" as const,
+        id: spec.id,
+        fromXIn: spec.fromXIn,
+        fromZIn: spec.fromZIn,
+        toXIn: spec.toXIn,
+        toZIn: spec.toZIn,
+        wythe: spec.wythe,
+        ...(spec.notes !== undefined && { notes: spec.notes }),
+      };
+    }
+    return { ...spec, kind: "straight" as const };
+  });
 }
 
 /**

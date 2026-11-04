@@ -276,6 +276,17 @@ export interface StoredPanelMemberSpec {
   toXIn: number;
   toZIn: number;
   wythe: "exterior" | "interior";
+  /**
+   * What part a `straight` board is, when "a vertical is a stud" is not true
+   * — B21's vertical nailer overlay. Absent keeps the derivation (vertical =
+   * `stud`, horizontal = `blocking`), which is every member the editor stored
+   * before today.
+   *
+   * ⚠ Spelled out rather than imported, for the reason above this interface.
+   * It must stay in step with panel-catalog's `MemberRole`; a test holds the
+   * two lists together.
+   */
+  role?: "stud" | "plate" | "girt" | "girt_web" | "nailer" | "brace" | "skin" | "blocking" | "jack_stud";
   notes?: string;
 }
 
