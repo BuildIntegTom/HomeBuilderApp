@@ -92,6 +92,8 @@ import {
   type PanelMember,
   type StudConfig,
   type WorldPlacedPanel,
+  LEGACY_GIRT_STYLE,
+  type GirtStyle,
 } from "@building-integrity/panel-catalog";
 import PanelMembersGroup from "./PanelMembersGroup";
 import { PANEL_TYPE_COLORS } from "./panelColors";
@@ -201,6 +203,7 @@ function membersForSlot(
   thicknessIn: number,
   heightIn: number,
   includeNailer: boolean,
+  girtStyle: GirtStyle,
   isSquareBalePanelization: boolean,
   squareBaleStudConfig: StudConfig,
   bracingStyle: BracingStyle,
@@ -221,14 +224,14 @@ function membersForSlot(
     case "standard":
       return isSquareBalePanelization
         ? buildSquareBalePanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, squareBaleStudConfig, nailerOffsetIn)
-        : standardPanelMembersFor(slot, slot.widthIn, thicknessIn, heightIn, includeNailer);
+        : standardPanelMembersFor(slot, slot.widthIn, thicknessIn, heightIn, includeNailer, girtStyle);
     case "braced": {
       if (isMidWallBandAffected && computeStandardGirtRowCount(heightIn) === 0) {
-        return standardPanelMembersFor(slot, slot.widthIn, thicknessIn, heightIn, includeNailer);
+        return standardPanelMembersFor(slot, slot.widthIn, thicknessIn, heightIn, includeNailer, girtStyle);
       }
       const defaultStyle = bracingStyleToPatternMirror(bracingStyle);
       const style = resolveBracedStyle(slot, defaultStyle.pattern, defaultStyle.mirrored);
-      return buildBracedPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored);
+      return buildBracedPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored, false, girtStyle);
     }
     case "column":
       /* ⚠ `slot.widthIn`, for the same reason the corner case below spells
@@ -249,7 +252,7 @@ function membersForSlot(
          been confirmed, and the conservative nominal figure stands. This
          changes what is DRAWN to match what was reserved; it claims nothing
          about what the wider panel carries. */
-      return buildColumnStyleMembers(slot.widthIn, thicknessIn, heightIn, includeNailer);
+      return buildColumnStyleMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, girtStyle);
     case "big-header":
       return buildBigHeaderMembers(
         slot.widthIn,
@@ -830,6 +833,8 @@ interface Building3DViewProps {
    * shorten the wrong thing.
    */
   roofGableEndInsetIn?: number;
+  /** The project's girt style — what every girt row in the model is made of. */
+  girtStyle?: GirtStyle;
   /** A wall column taller than this auto-splits into stacked, independently-
    * typed zones (page.tsx's own `maxPanelHeightIn`) — only applied to a
    * slot with NO covering Mid-Wall Bond Beam, same restriction
@@ -1249,6 +1254,7 @@ export default function Building3DView({
   thicknessIn,
   gableEndsFullHeight = false,
   roofGableEndInsetIn = 0,
+  girtStyle = LEGACY_GIRT_STYLE,
   includeNailer,
   primaryCornerIds,
   wallRunStopsByWallId,
@@ -1442,6 +1448,7 @@ export default function Building3DView({
           thicknessIn,
           box.heightFt * IN_PER_FT,
           includeNailer,
+          girtStyle,
           isSquareBalePanelization,
           squareBaleStudConfig,
           bracingStyle,
@@ -1455,6 +1462,7 @@ export default function Building3DView({
       slotBoxes,
       thicknessIn,
       includeNailer,
+      girtStyle,
       isSquareBalePanelization,
       squareBaleStudConfig,
       bracingStyle,
@@ -1543,6 +1551,7 @@ export default function Building3DView({
           thicknessIn,
           box.heightFt * IN_PER_FT,
           includeNailer,
+          girtStyle,
           isSquareBalePanelization,
           squareBaleStudConfig,
           bracingStyle,
@@ -1556,6 +1565,7 @@ export default function Building3DView({
       secondStorySlotBoxes,
       thicknessIn,
       includeNailer,
+      girtStyle,
       isSquareBalePanelization,
       squareBaleStudConfig,
       bracingStyle,
@@ -1713,7 +1723,14 @@ export default function Building3DView({
           // instead of an inverted/negative-height panel.
           const capLeftLocalIn = Math.max(0, leftLocalIn - g.roTopZIn);
           const capRightLocalIn = Math.max(0, rightLocalIn - g.roTopZIn);
-          const capMembers = buildGablePanelMembers(tile.widthIn, thicknessIn, capLeftLocalIn, capRightLocalIn, includeNailer).map((m) => ({
+          const capMembers = buildGablePanelMembers(
+            tile.widthIn,
+            thicknessIn,
+            capLeftLocalIn,
+            capRightLocalIn,
+            includeNailer,
+            girtStyle,
+          ).map((m) => ({
             ...m,
             position: { ...m.position, zIn: m.position.zIn + g.roTopZIn },
           }));
@@ -1721,7 +1738,7 @@ export default function Building3DView({
         } else {
           members = tile.isSafetyGap
             ? buildSafetyGapMembers(thicknessIn, tallerLocalIn)
-            : buildGablePanelMembers(tile.widthIn, thicknessIn, leftLocalIn, rightLocalIn, includeNailer);
+            : buildGablePanelMembers(tile.widthIn, thicknessIn, leftLocalIn, rightLocalIn, includeNailer, girtStyle);
         }
         // A vertical safety-gap filler (Tommy: "an ability to put a safety
         // gap inbetween the truss bottom and the gable end top") stacks
@@ -1759,7 +1776,7 @@ export default function Building3DView({
       });
     }
     return result.map((r) => ({ ...r, anchorYFt: gableBaseYFt }));
-  }, [footprint, gableEndsFullHeight, gableTilesByWallId, roofBaseHeightIn, roofEnabled, roofPitchIn12, sharedRoofBearingHeightIn, thicknessIn, includeNailer, jackStudConfig, standardWidthIn]);
+  }, [footprint, gableEndsFullHeight, gableTilesByWallId, roofBaseHeightIn, roofEnabled, roofPitchIn12, sharedRoofBearingHeightIn, thicknessIn, includeNailer, girtStyle, jackStudConfig, standardWidthIn]);
 
   // 1-3 real roof-bearing (truss plate/box beam) segments per wall (see
   // computeRoofBearingSegments) — a wall with partial Box Beam coverage
@@ -1997,6 +2014,7 @@ export default function Building3DView({
       depthIn: thicknessIn,
       roofPitchIn12,
       roofEaveHeightFt,
+      roofGableEndInsetIn,
       wallHeightFt,
     });
     const membersByGroup = new Map(takeoff.groups.map((g) => [g.key, g.members]));
@@ -2008,7 +2026,7 @@ export default function Building3DView({
       rotationRad: instance.world.rotationRad,
       members: membersByGroup.get(instance.groupKey) ?? [],
     }));
-  }, [footprint, crossTiltWallIds, roofPitchIn12, roofEaveHeightFt, thicknessIn, wallHeightFt]);
+  }, [footprint, crossTiltWallIds, roofPitchIn12, roofEaveHeightFt, roofGableEndInsetIn, thicknessIn, wallHeightFt]);
 
   /* A COURTYARD RING's roof: tapered panels fanning across each facet.
      Scheme B — no hips, every panel reaching from the inner wall to the

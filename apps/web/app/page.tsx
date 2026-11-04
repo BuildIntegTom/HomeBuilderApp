@@ -196,7 +196,12 @@ import {
   buildBigHeaderMembers,
   bracePairAddedMembers,
   buildBracedPanelMembers,
+  DEFAULT_GIRT_STYLE,
+  GIRT_WEB_PLY_SPEC,
+  LEGACY_GIRT_STYLE,
+  formatPlySpecLabel,
   buildColumnPanelMembers,
+  type GirtStyle,
   buildColumnStyleMembers,
   buildCornerPanelMembers,
   buildDoorHeaderMembers,
@@ -1002,6 +1007,19 @@ export default function LayoutEditor() {
   // subdivideBandForMaxHeight), independent of any Mid-Wall Bond Beam.
   const [maxPanelHeightIn, setMaxPanelHeightIn] = useState(standardPanelHeightIn.value);
   const [includeNailer, setIncludeNailer] = useState(false);
+  /**
+   * ⚠ **How every girt row in the project is made up.**
+   *
+   * > *"Girts should have a couple options in the panel settings just like the
+   * > bracing/nailer styles … Blocking (instead of plywood, it's a 2x6 — I
+   * > would like this to be the default setting actually, it's what I'm
+   * > currently doing in the shop."* — Tommy, 2026-11-03
+   *
+   * A NEW project starts at his shop's own answer. A project SAVED before this
+   * existed loads as `web`, because that is the panel it was drawn, costed and
+   * sheeted with — see where it is read back in.
+   */
+  const [girtStyle, setGirtStyle] = useState<GirtStyle>(DEFAULT_GIRT_STYLE);
   // Square Bale Panel-only controls (Tommy: nailer "slide" along the wythe
   // + "double 2x4 studs, or double 2x6 studs" — see buildNailer/
   // buildSquareBalePanelMembers doc comments for how each is modeled).
@@ -2424,6 +2442,7 @@ export default function LayoutEditor() {
       wallHeightFt,
       maxPanelHeightIn,
       includeNailer,
+      girtStyle,
       checkedInteriorIds,
       checkedExteriorIds,
       checkedRoofInteriorIds,
@@ -2600,6 +2619,11 @@ export default function LayoutEditor() {
     setWallHeightFt(s.wallHeightFt);
     setMaxPanelHeightIn(s.maxPanelHeightIn ?? standardPanelHeightIn.value);
     setIncludeNailer(s.includeNailer);
+    /* ⚠ **A file with no girt style was drawn with WEB girts**, so that is
+       what it reopens as — not the new default. Loading it as Blocking would
+       silently re-cut every girt in somebody's saved building, and the sheets
+       with it. `LEGACY_GIRT_STYLE` is that promise in one word. */
+    setGirtStyle(s.girtStyle ?? LEGACY_GIRT_STYLE);
     setCheckedInteriorIds(s.checkedInteriorIds);
     setCheckedExteriorIds(s.checkedExteriorIds);
     /* ⚠ Absent on every file saved before the roof had an assembly, and his
@@ -6654,15 +6678,15 @@ export default function LayoutEditor() {
             let members: PanelMember[];
             if (s.type === "braced") {
               const style = resolveBracedStyle(s, defaultBracePattern, defaultBracedMirrored);
-              members = buildBracedPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored);
+              members = buildBracedPanelMembers(s.widthIn, thicknessIn, heightIn, includeNailer, style.pattern, style.mirrored, false, girtStyle);
             } else {
-              members = standardPanelMembersFor(s, s.widthIn, thicknessIn, heightIn, includeNailer);
+              members = standardPanelMembersFor(s, s.widthIn, thicknessIn, heightIn, includeNailer, girtStyle);
             }
             return acc + computeMemberSetWoodWeight(members).weightKg;
           }, 0)
       );
     }, 0);
-  }, [stories, thicknessIn, includeNailer, defaultBracePattern, defaultBracedMirrored]);
+  }, [stories, thicknessIn, includeNailer, girtStyle, defaultBracePattern, defaultBracedMirrored]);
   // The project's own total weight is assembled further down, right after
   // the spanning-header fabrication groups it now also has to include — see
   // `totalWeightKg` there.
@@ -6674,8 +6698,8 @@ export default function LayoutEditor() {
   // a fixed unit, independent of standardWidthIn — so there's no size
   // grouping to do, just one 3D model each.
   const columnPanelMembers = useMemo(
-    () => buildColumnPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer),
-    [thicknessIn, wallHeightFt, includeNailer],
+    () => buildColumnPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer, girtStyle),
+    [thicknessIn, wallHeightFt, includeNailer, girtStyle],
   );
   // Square Bale corner panels are their own construction (Tommy: "corner
   // panels for square bale panel style are a standard square bale panel
@@ -6690,8 +6714,8 @@ export default function LayoutEditor() {
           // default — that default is COLUMN_TOTAL_WIDTH_IN (25.5in), which was
           // the same number until 2026-11-01 and is not any more. Left
           // unpassed, this drew a 25.5in corner while the tiler reserved 15.5in.
-          buildCornerPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer, cornerPanelWidthIn.value),
-    [isSquareBalePanelization, thicknessIn, wallHeightFt, includeNailer, nailerOffsetIn],
+          buildCornerPanelMembers(thicknessIn, wallHeightFt * 12, includeNailer, cornerPanelWidthIn.value, girtStyle),
+    [isSquareBalePanelization, thicknessIn, wallHeightFt, includeNailer, girtStyle, nailerOffsetIn],
   );
 
   // Gable End Panel: the low edge is the roofline's own base — the top of
@@ -7220,6 +7244,10 @@ export default function LayoutEditor() {
       depthIn: thicknessIn,
       roofPitchIn12: deckPanelTakeoffInput.roofPitchIn12,
       roofEaveHeightFt: deckPanelTakeoffInput.roofEaveHeightFt,
+      /* The ROOF's own gable-end holdback, read straight off the deck's input
+         rather than recomputed, so this row cannot end anywhere but where the
+         roof does. */
+      roofGableEndInsetIn: deckPanelTakeoffInput.roofGableEndInsetIn,
       wallHeightFt,
     }),
     [footprint, crossTiltWallIds, thicknessIn, deckPanelTakeoffInput, wallHeightFt],
@@ -7419,8 +7447,8 @@ export default function LayoutEditor() {
   const sillHeightIn = sillDefaultHeightIn.value;
   const sillWidthIn = allInstances.find((inst) => inst.panelType === "sill")?.widthIn ?? SILL_DEFAULT_WIDTH_IN;
   const sillMembers = useMemo(
-    () => buildSillPanelMembers(sillWidthIn, thicknessIn, sillHeightIn, includeNailer),
-    [sillWidthIn, thicknessIn, sillHeightIn, includeNailer],
+    () => buildSillPanelMembers(sillWidthIn, thicknessIn, sillHeightIn, includeNailer, girtStyle),
+    [sillWidthIn, thicknessIn, sillHeightIn, includeNailer, girtStyle],
   );
 
   // Door/Window Header (Tommy: "headers should be sized from the RO to
@@ -7654,9 +7682,10 @@ export default function LayoutEditor() {
         inst.panelType === "standard"
           ? isSquareBalePanelization
             ? buildSquareBalePanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, squareBaleStudConfig, nailerOffsetIn)
-            : standardPanelMembersFor(inst, inst.widthIn, thicknessIn, heightIn, includeNailer)
+            : standardPanelMembersFor(inst, inst.widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
           : inst.panelType === "braced"
-            ? (({ pattern, mirrored }) => buildBracedPanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, pattern, mirrored))(
+            ? (({ pattern, mirrored }) =>
+                buildBracedPanelMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, pattern, mirrored, false, girtStyle))(
                 resolveBracedStyle(inst, defaultBracePattern, defaultBracedMirrored),
               )
             : inst.panelType === "column"
@@ -7669,7 +7698,7 @@ export default function LayoutEditor() {
                    rest of its slot open in the 3D view. Tommy, 2026-11-01:
                    *"extra spaces left open from column panels being a fixed
                    width trying to fill a bigger slot."* */
-                buildColumnStyleMembers(inst.widthIn, thicknessIn, heightIn, includeNailer)
+                buildColumnStyleMembers(inst.widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
               : inst.panelType === "corner" || inst.panelType === "safety-oct-corner"
                 ? // This instance's real width, like every other type here: the
                   // plywood-area and board-feet tallies below are material
@@ -7678,14 +7707,14 @@ export default function LayoutEditor() {
                   // Bale's corner is a fixed 39in unit and keeps its own build.
                   isSquareBalePanelization
                   ? cornerPanelMembers3D
-                  : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer, inst.widthIn)
+                  : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer, inst.widthIn, girtStyle)
                 : inst.panelType === "safety-gap"
                   ? // This instance's own sheet, picked off the width the tiler
                     // reserved — a 1/2in gap must contribute 1/2in plywood to
                     // Material Totals, not 3/4in.
                     buildSafetyGapMembers(thicknessIn, heightIn, safetyGapSheetThicknessIn(inst.widthIn))
                   : inst.panelType === "sill"
-                    ? buildSillPanelMembers(inst.widthIn, thicknessIn, inst.sillHeightIn ?? sillDefaultHeightIn.value, includeNailer)
+                    ? buildSillPanelMembers(inst.widthIn, thicknessIn, inst.sillHeightIn ?? sillDefaultHeightIn.value, includeNailer, girtStyle)
                     : inst.panelType === "header"
                       ? inst.sourceSlotType === "door"
                         ? buildDoorHeaderMembers(inst.widthIn, thicknessIn, doorHeaderHeightIn)
@@ -7709,6 +7738,7 @@ export default function LayoutEditor() {
                               inst.leftEdgeHeightIn! - gableEaveHeightIn,
                               inst.rightEdgeHeightIn! - gableEaveHeightIn,
                               includeNailer,
+                              girtStyle,
                             )
                         : null;
       if (instMembers) {
@@ -7764,6 +7794,7 @@ export default function LayoutEditor() {
     thicknessIn,
     heightIn,
     includeNailer,
+    girtStyle,
     columnPanelMembers,
     cornerPanelMembers3D,
     isSquareBalePanelization,
@@ -8164,7 +8195,7 @@ export default function LayoutEditor() {
     const gableLeftLocalIn = (leftEdgeHeightInOverride ?? gablePreviewLowEdgeHeightIn) - gableEaveHeightIn;
     const gableRightLocalIn = (rightEdgeHeightInOverride ?? gablePreviewHighEdgeHeightIn) - gableEaveHeightIn;
     const base = panelTypeId === "standard"
-      ? standardPanelMembersFor(bracePair ?? {}, widthIn, thicknessIn, heightIn, includeNailer)
+      ? standardPanelMembersFor(bracePair ?? {}, widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
       : panelTypeId === "braced"
         ? buildBracedPanelMembers(
             widthIn,
@@ -8173,13 +8204,15 @@ export default function LayoutEditor() {
             includeNailer,
             bracedPatternOverride ?? defaultBracePattern,
             bracedMirroredOverride ?? defaultBracedMirrored,
+            false,
+            girtStyle,
           )
         : panelTypeId === "column"
           ? /* ⚠ Real width, not the memoized nominal — see the corner note
                below, which this now matches. A Shop Fabrication page is
                GROUPED by width, so a wider column used to get its own page
                that then drew and listed a 25.5in panel. */
-            buildColumnStyleMembers(widthIn, thicknessIn, heightIn, includeNailer)
+            buildColumnStyleMembers(widthIn, thicknessIn, heightIn, includeNailer, girtStyle)
           : panelTypeId === "corner"
             ? // ⚠ Built at this instance's REAL width (and real height), not at
               // the memoized nominal 25.5in panel. This is what the
@@ -8195,11 +8228,11 @@ export default function LayoutEditor() {
               // one really is a single unit, and the tiler never widens it.
               isSquareBalePanelization
               ? cornerPanelMembers3D
-              : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer, widthIn)
+              : buildCornerPanelMembers(thicknessIn, heightIn, includeNailer, widthIn, girtStyle)
             : panelTypeId === "gable"
               ? isSafetyGapOverride
                 ? buildSafetyGapMembers(thicknessIn, Math.max(gableLeftLocalIn, gableRightLocalIn))
-                : buildGablePanelMembers(widthIn, thicknessIn, gableLeftLocalIn, gableRightLocalIn, includeNailer)
+                : buildGablePanelMembers(widthIn, thicknessIn, gableLeftLocalIn, gableRightLocalIn, includeNailer, girtStyle)
               : panelTypeId === "header"
                 ? sourceSlotType === "door"
                   ? buildDoorHeaderMembers(widthIn, thicknessIn, doorHeaderHeightIn)
@@ -8528,9 +8561,18 @@ export default function LayoutEditor() {
   const estimatedBracedShearLb = useMemo(
     () =>
       computeBracedPanelShearCapacityLb(
-        buildBracedPanelMembers(standardWidthIn, thicknessIn, wallHeightFt * 12, includeNailer, defaultBracePattern, defaultBracedMirrored),
+        buildBracedPanelMembers(
+          standardWidthIn,
+          thicknessIn,
+          wallHeightFt * 12,
+          includeNailer,
+          defaultBracePattern,
+          defaultBracedMirrored,
+          false,
+          girtStyle,
+        ),
       ),
-    [standardWidthIn, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored],
+    [standardWidthIn, thicknessIn, wallHeightFt, includeNailer, girtStyle, defaultBracePattern, defaultBracedMirrored],
   );
   // Column/Corner panels get a MUCH higher estimate than the plain stud
   // pack (Tommy: "they have those two sheets of plywood running up the
@@ -8580,6 +8622,7 @@ export default function LayoutEditor() {
     thicknessIn,
     wallHeightIn: wallHeightFt * 12,
     includeNailer,
+    girtStyle,
     defaultBracePattern,
     defaultBracedMirrored,
   };
@@ -8668,6 +8711,7 @@ export default function LayoutEditor() {
         thicknessIn,
         wallHeightIn: wallHeightFt * 12,
         includeNailer,
+        girtStyle,
         defaultBracePattern,
         defaultBracedMirrored,
       });
@@ -8684,7 +8728,7 @@ export default function LayoutEditor() {
         panels,
       })),
     );
-  }, [footprint, allInstances, thicknessIn, wallHeightFt, includeNailer, defaultBracePattern, defaultBracedMirrored, unitSystem]);
+  }, [footprint, allInstances, thicknessIn, wallHeightFt, includeNailer, girtStyle, defaultBracePattern, defaultBracedMirrored, unitSystem]);
 
   // Engineer role's own per-wall structural summary (see elevationControls'
   // own "engineer" section below) — same summarizeBearingAndShear reduction,
@@ -11300,6 +11344,53 @@ export default function LayoutEditor() {
         />{" "}
         Include exterior nailer (optional, per standard panel BOM)
       </label>
+
+      <div role="group" aria-label="Girt style" className={styles.toolbar}>
+        <button
+          type="button"
+          title="Two 2x4 bars and a 2x6 laid flat, centred in the panel depth — what the shop is building today."
+          aria-pressed={girtStyle === "blocking"}
+          className={girtStyle === "blocking" ? styles.toolActive : styles.tool}
+          onClick={() => setGirtStyle("blocking")}
+        >
+          Blocking Girts
+        </button>
+        <button
+          type="button"
+          title={`Two 2x4 bars and a plywood web, the only girt this app could build before 2026-11-03. The BOM's confirmed web is ${formatPlySpecLabel(GIRT_WEB_PLY_SPEC)}.`}
+          aria-pressed={girtStyle === "web"}
+          className={girtStyle === "web" ? styles.toolActive : styles.tool}
+          onClick={() => setGirtStyle("web")}
+        >
+          Web Girts
+        </button>
+        {/* ⚠ **Offered, and plainly refused, rather than quietly falling back.**
+            A button that selected Ring and then built a web would be a setting
+            that lies — the same reason the panel editor greys out a type it
+            cannot edit and says why in the tooltip. */}
+        <button
+          type="button"
+          disabled
+          title={
+            "Not built yet. A square bale panel's rectangular girt is a different assembly, not a different label: its four " +
+            "members stand on edge (which moves the girt's top face, and a brace's low point rides that face), its two long " +
+            "sides run straight through a standard panel's centre nailer stud, and its short sides are placed off a " +
+            "stud-assembly spec a standard panel does not carry."
+          }
+          className={styles.tool}
+        >
+          Ring Girts (not built)
+        </button>
+      </div>
+      <p className={styles.note}>
+        {girtStyle === "blocking"
+          ? "Every girt row is two 2x4 bars with a 2x6 laid flat across them, centred in the panel depth. No plywood web is " +
+            "ordered or cut."
+          : "Every girt row is two 2x4 bars with a plywood web resting on them."}{" "}
+        ⚠ You described Web Girts as <strong>3/4in</strong> plywood; the confirmed Panel Set 1 BOM says{" "}
+        <strong>{formatPlySpecLabel(GIRT_WEB_PLY_SPEC)}</strong>, so the app still builds, counts and prices the BOM&apos;s
+        1/2in sheet. Tell me which is right and I&apos;ll change the one number.
+      </p>
 
       <div role="group" aria-label="Jack stud construction" className={styles.toolbar}>
         <button
@@ -14179,6 +14270,7 @@ export default function LayoutEditor() {
                   wallThicknessIn={thicknessIn}
                   wallHeightFt={effectiveViewedStoryId === "ground" ? wallHeightFt : (secondStory?.wallHeightFt ?? wallHeightFt)}
                   includeNailer={includeNailer}
+                  girtStyle={girtStyle}
                   bracingStyle={bracingStyle}
                   standardWidthIn={standardWidthIn}
                   jackStudConfig={jackStudConfig}
@@ -14213,6 +14305,7 @@ export default function LayoutEditor() {
                   maxPanelHeightIn={maxPanelHeightIn}
                   thicknessIn={thicknessIn}
                   includeNailer={includeNailer}
+                  girtStyle={girtStyle}
                   primaryCornerIds={primaryCornerIds}
                   wallRunStopsByWallId={wallRunStopsByWallId}
                   wallTilingLengthInByWallId={wallTilingLengthInByWallId}
@@ -14323,6 +14416,7 @@ export default function LayoutEditor() {
               maxPanelHeightIn={maxPanelHeightIn}
               thicknessIn={thicknessIn}
               includeNailer={includeNailer}
+              girtStyle={girtStyle}
               primaryCornerIds={primaryCornerIds}
               wallRunStopsByWallId={wallRunStopsByWallId}
               wallTilingLengthInByWallId={wallTilingLengthInByWallId}
@@ -14820,7 +14914,7 @@ export default function LayoutEditor() {
             const members =
               slot.type === "braced"
                 ? (({ pattern, mirrored }) =>
-                    buildBracedPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, pattern, mirrored))(
+                    buildBracedPanelMembers(slot.widthIn, thicknessIn, heightIn, includeNailer, pattern, mirrored, false, girtStyle))(
                     resolveBracedStyle(slot, defaultBracePattern, defaultBracedMirrored),
                   )
                 : standardPanelMembersFor(
@@ -14829,6 +14923,7 @@ export default function LayoutEditor() {
                     thicknessIn,
                     heightIn,
                     includeNailer,
+                    girtStyle,
                   );
             const seriesLabel = `${wallId} #${slotIndex}`;
             return (

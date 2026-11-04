@@ -1,5 +1,6 @@
 import {
   type AddedMemberSpec,
+  type GirtStyle,
   type PanelMember,
   bracePairAddedMembers,
   buildPanelFromRecipe,
@@ -64,6 +65,10 @@ export function standardPanelMembersFor(
   depthIn: number,
   heightIn: number,
   includeNailer: boolean,
+  /** ⚠ **The project's girt style, and every caller of this seam passes it.**
+   * The one that did not pass `braceFigure` built every Shop Fabrication sheet
+   * at the default brace figure — same shape of defect, one field over. */
+  girtStyle: GirtStyle,
 ): PanelMember[] {
   const { bracePairPattern, bracePairHalf, braceFigure, editedMembers } = source;
   /* ⚠ **A hand-edited panel is its own panel — B19's panel editor.**
@@ -83,11 +88,12 @@ export function standardPanelMembersFor(
       depthIn,
       heightIn,
       includeNailer,
+      girtStyle,
       added: toAddedMemberSpecs(editedMembers),
     });
   }
   if (bracePairPattern === undefined || bracePairHalf === undefined) {
-    return buildStandardPanelMembers(widthIn, depthIn, heightIn, includeNailer);
+    return buildStandardPanelMembers(widthIn, depthIn, heightIn, includeNailer, girtStyle);
   }
   return buildPanelFromRecipe({
     name: `Standard ${widthIn}in — ${braceFigure ?? bracePairPattern} ${bracePairHalf}`,
@@ -95,6 +101,7 @@ export function standardPanelMembersFor(
     depthIn,
     heightIn,
     includeNailer,
+    girtStyle,
     added: bracePairAddedMembers({ pattern: bracePairPattern, widthIn, heightIn, half: bracePairHalf, figure: braceFigure }),
   });
 }

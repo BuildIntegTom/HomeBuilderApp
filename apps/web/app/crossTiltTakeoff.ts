@@ -1,4 +1,5 @@
 import {
+  gableEndWallIdsFor,
   shedTallWallId,
   simpleRoofPlanes,
   wallCompassDirection,
@@ -27,7 +28,15 @@ export interface CrossTiltTakeoffRun {
   index: number;
   wallId: string;
   direction: CompassDirection;
-  /** The wall's own length, which the row sums to exactly. */
+  /**
+   * The ROOFED span of this wall — its corner-to-corner length less the gable
+   * end inset at each end that meets a gable end wall. The row sums to this
+   * exactly, and the gable end panels own the rest.
+   *
+   * ⚠ **This was the wall's WHOLE length until 2026-11-03**, which ran the
+   * row straight through the gable end panels at both corners. See
+   * `computeCrossTiltTakeoff`.
+   */
   runIn: number;
   widthsIn: number[];
 }
@@ -94,6 +103,18 @@ export interface CrossTiltTakeoffInput {
   /** The wall/panel depth, which is this panel's depth and the distance the
    * tilt runs over. */
   depthIn: number;
+  /**
+   * How far the ROOF is held back from the floor plan at each gable end —
+   * `deckPanelTakeoffInput.roofGableEndInsetIn`, the very field the roof deck
+   * is laid out from, passed through rather than recomputed.
+   *
+   * ⚠ **This is what makes the row end with the roof.** With gable ends run
+   * full height the gable row is the wall, *"corner to corner, the full width
+   * of the floor plan"* (his 2026-10-30 ruling, see `gableTilesByWallId`), so
+   * the band a gable end owns at each end of this wall is its own depth. The
+   * row has to start after it.
+   */
+  roofGableEndInsetIn: number;
   /** Withheld where no pitch resolves — then there is no roof to receive and
    * no row, rather than a guessed one. */
   roofPitchIn12: number | undefined;
@@ -212,7 +233,7 @@ function optionsKey(o: CrossTiltPanelOptions): string {
  * be wrong for the other.
  */
 export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTiltTakeoff {
-  const { footprint, crossTiltWallIds, depthIn, roofPitchIn12, wallHeightFt } = input;
+  const { footprint, crossTiltWallIds, depthIn, roofPitchIn12, wallHeightFt, roofGableEndInsetIn } = input;
   if (!footprint || !crossTiltWallIds || crossTiltWallIds.size === 0) return EMPTY;
   if (roofPitchIn12 === undefined) return EMPTY;
 
@@ -225,6 +246,16 @@ export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTilt
   if (rowHeights.refusal !== null) return { ...EMPTY, refusal: rowHeights.refusal };
 
   const byId = new Map(footprint.corners.map((c) => [c.id, c.point]));
+  /* ⚠ **WHICH ENDS OF THIS WALL A GABLE END OWNS.** Read off the footprint
+     with the same function the roof planes and the auto-spawned gable walls
+     are built from — a second rule for "which walls are the gable ends" would
+     eventually disagree with the roof, and the symptom would be this row
+     missing the roof it is cut to receive. */
+  const gableEndWallIds = new Set(gableEndWallIdsFor(footprint));
+  const gableEndOwnsCorner = (wallId: string, cornerId: string): boolean =>
+    footprint.walls.some(
+      (w) => w.id !== wallId && gableEndWallIds.has(w.id) && (w.startCorner === cornerId || w.endCorner === cornerId),
+    );
   const runs: CrossTiltTakeoffRun[] = [];
   const instances: CrossTiltTakeoffInstance[] = [];
   const byKey = new Map<string, { options: CrossTiltPanelOptions; instances: CrossTiltTakeoffInstance[] }>();
@@ -240,15 +271,35 @@ export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTilt
     if (!a || !b) continue;
     const lengthFt = Math.hypot(b.x - a.x, b.y - a.y);
     const lengthIn = lengthFt * IN_PER_FT;
-    const widthsIn = planFloorRoofPanelWidthsIn(lengthIn, depthIn);
+    /* ⚠ **THE ROW ENDS WHERE THE ROOF ENDS, 2026-11-03.**
+       > *"on a small shed building … the roof supporting panels overlap the
+       > gable end panels, where as the roof support ones should end with the
+       > roof."* — Tommy
+
+       Two rows were both given the whole corner. The gable row runs *"corner
+       to corner, the full width of the floor plan"* whenever gable ends run
+       full height — his own 2026-10-30 ruling, after they looked like they
+       stopped short — and this row ran its wall's full centreline length on
+       the perpendicular wall. Both then claimed the same corner square, in the
+       same band above the eave, which is two solids in one volume.
+
+       The gable row is the one that was deliberately given the whole wall, so
+       this one gives way, and it gives way by exactly the number the ROOF is
+       held back by: the inset is `roofGableEndInsetIn` itself, passed through
+       from the deck's own takeoff input. "Ends with the roof" is then true by
+       construction rather than by two constants that happen to match. */
+    const startInsetIn = gableEndOwnsCorner(wall.id, wall.startCorner) ? roofGableEndInsetIn : 0;
+    const endInsetIn = gableEndOwnsCorner(wall.id, wall.endCorner) ? roofGableEndInsetIn : 0;
+    const runIn = lengthIn - startInsetIn - endInsetIn;
+    const widthsIn = runIn > 0 ? planFloorRoofPanelWidthsIn(runIn, depthIn) : null;
     if (widthsIn === null) {
-      refusal ??= `Wall ${wall.id} is ${(lengthIn / IN_PER_FT).toFixed(1)}ft long — too short to divide into cross-tilted panels, so the row is not drawn there rather than drawn wrong.`;
+      refusal ??= `Wall ${wall.id} is ${(lengthIn / IN_PER_FT).toFixed(1)}ft long and leaves ${(runIn / IN_PER_FT).toFixed(1)}ft of roofed span once the gable ends take their own depth at each corner — too short to divide into cross-tilted panels, so the row is not drawn there rather than drawn wrong.`;
       continue;
     }
 
     const direction = wallCompassDirection(wall, footprint);
     const runIndex = runs.length;
-    runs.push({ index: runIndex, wallId: wall.id, direction, runIn: lengthIn, widthsIn });
+    runs.push({ index: runIndex, wallId: wall.id, direction, runIn, widthsIn });
 
     const rotationRad = Math.atan2(b.y - a.y, b.x - a.x);
     const ux = (b.x - a.x) / lengthFt;
@@ -267,7 +318,10 @@ export function computeCrossTiltTakeoff(input: CrossTiltTakeoffInput): CrossTilt
         atIn += widthIn;
         continue;
       }
-      const alongFt = atIn / IN_PER_FT;
+      /* `atIn` stays RUN-relative — a panel's position in its own row — and
+         the start inset is added once, here, where the row meets the world.
+         The same split `roofBearingRenderData` makes for the same reason. */
+      const alongFt = (startInsetIn + atIn) / IN_PER_FT;
       const groupKey = optionsKey(options);
       const instance: CrossTiltTakeoffInstance = {
         id: `crosstilt-${wall.id}-${i}`,

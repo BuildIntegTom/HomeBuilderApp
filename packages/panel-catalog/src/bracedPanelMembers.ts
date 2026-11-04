@@ -6,7 +6,9 @@ import {
   SKIN_THICKNESS_IN,
   braceLongestEdgeIn,
   buildCornerStuds,
+  LEGACY_GIRT_STYLE,
   buildGirtRows,
+  type GirtStyle,
   buildNailer,
   buildPlates,
   buildSkins,
@@ -417,6 +419,10 @@ export function buildBracedPanelMembers(
   pattern: BracePattern,
   mirrored: boolean,
   legacyPanelEdgeAnchor = false,
+  /** The project's girt style. Defaults to `LEGACY_GIRT_STYLE`, which is what
+   * this app built before girts had styles — never to the project default,
+   * so an un-taught call site draws a stale panel rather than a wrong one. */
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
 ): PanelMember[] {
   const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
   const rowCount = computeBracedGirtRowCount(studSpanIn);
@@ -424,7 +430,7 @@ export function buildBracedPanelMembers(
     ...buildSkins(widthIn, depthIn, heightIn),
     ...buildPlates(widthIn, depthIn, heightIn),
     ...buildCornerStuds(widthIn, depthIn, heightIn),
-    ...buildGirtRows(rowCount, widthIn, depthIn, studSpanIn),
+    ...buildGirtRows(rowCount, widthIn, depthIn, studSpanIn, undefined, girtStyle),
     ...buildDiagonalBraces(widthIn, depthIn, heightIn, rowCount, studSpanIn, pattern, mirrored, legacyPanelEdgeAnchor),
   ];
   if (pattern === "chevron") {

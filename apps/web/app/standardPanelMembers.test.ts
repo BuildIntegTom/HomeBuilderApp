@@ -27,7 +27,7 @@ describe("standardPanelMembersFor", () => {
   it("a panel with no pattern is exactly the plain builder", () => {
     /* ⚠ Not "equivalent to the recipe path with an empty list" — the plain
        call, so nothing downstream depends on the two being the same. */
-    expect(standardPanelMembersFor({}, W, D, H, false)).toEqual(buildStandardPanelMembers(W, D, H, false));
+    expect(standardPanelMembersFor({}, W, D, H, false, "web")).toEqual(buildStandardPanelMembers(W, D, H, false));
   });
 
   it("a panel with a pattern gets the pattern's members", () => {
@@ -37,6 +37,7 @@ describe("standardPanelMembersFor", () => {
       D,
       H,
       false,
+      "web",
     );
     const expected = bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "left", figure: "super-carrot" });
     expect(expected.length).toBeGreaterThan(0);
@@ -55,6 +56,7 @@ describe("standardPanelMembersFor", () => {
       D,
       H,
       false,
+      "web",
     );
     expect(members.some((m) => m.memberId === pattern[0]!.id)).toBe(false);
     for (const spec of kept) expect(members.some((m) => m.memberId === spec.id)).toBe(true);
@@ -70,8 +72,9 @@ describe("standardPanelMembersFor", () => {
       D,
       H,
       false,
+      "web",
     );
-    const following = standardPanelMembersFor({ bracePairPattern: "superbrace", bracePairHalf: "left" }, W, D, H, false);
+    const following = standardPanelMembersFor({ bracePairPattern: "superbrace", bracePairHalf: "left" }, W, D, H, false, "web");
     expect(bare.length).toBeLessThan(following.length);
     expect(bare.filter((m) => m.role === "brace")).toEqual([]);
   });
@@ -81,13 +84,14 @@ describe("standardPanelMembersFor", () => {
        `recipeFingerprint`'s own rule. So opening the editor and changing
        nothing must not fork the panel off its group. */
     const source = { bracePairPattern: "superbrace", bracePairHalf: "right", braceFigure: "little-carrot" } as const;
-    const derived = standardPanelMembersFor(source, W, D, H, true);
+    const derived = standardPanelMembersFor(source, W, D, H, true, "web");
     const edited = standardPanelMembersFor(
       { ...source, editedMembers: bracePairAddedMembers({ pattern: "superbrace", widthIn: W, heightIn: H, half: "right", figure: "little-carrot" }) },
       W,
       D,
       H,
       true,
+      "web",
     );
     expect(edited).toEqual(derived);
   });
@@ -95,7 +99,7 @@ describe("standardPanelMembersFor", () => {
   it("an edited panel is still overlap-clean when the editor placed the member", () => {
     const base = buildStandardPanelMembers(W, D, H, false);
     const spec = newVerticalSpec({ widthIn: W, depthIn: D, heightIn: H }, { wythe: "exterior", existing: base, id: "e1" });
-    const members = standardPanelMembersFor({ editedMembers: [spec] }, W, D, H, false);
+    const members = standardPanelMembersFor({ editedMembers: [spec] }, W, D, H, false, "web");
     expect(members.some((m) => m.memberId === "e1")).toBe(true);
     expect(overlappingMemberPairs(members)).toEqual([]);
   });

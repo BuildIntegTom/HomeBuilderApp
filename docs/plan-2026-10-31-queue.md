@@ -1777,3 +1777,268 @@ first job.
   noise. Worth an interview: what should a category DO?
 
 Gates: 3612 tests across 195 files. Typecheck clean in all four projects.
+
+---
+
+# 2026-11-03, after stride 4 — his read on identity, and three new items
+
+## The category question, CLOSED: there is no category, and there should not be
+
+His own verdict, after being asked what a category would DO:
+
+> *"Final verdict on the category ... now as you're asking me it does seem like
+> I would rather use dynamic and distinct panel names (8' Super Carrot) to sort
+> fabrication sheets and anything a category would be."*
+
+**Work already on it: none, deliberately.** `panelName` shipped (a free-text
+name that rides BESIDE the series name on the fabrication sheet); a category
+field was never added, for exactly the reason he just arrived at. Nothing to
+remove. `PanelSlot` has no `panelCategory`, and nothing in the app reads one.
+
+**And the thing that would have gone in it is already derivable**, which is the
+other half of what he said:
+
+> *"I really like the idea of everything being generated from all this json
+> we've written and not from a memory file ... I'm guessing that the memory for
+> panels is really a memory of paths of how to get that panel, it preserves the
+> root of how it came to be. Well I guess with the added memory of like, here's
+> where all the hand edits were."*
+
+⚠ **THAT IS EXACTLY WHAT THE FILE STORES, AND HE DESCRIBED IT WITHOUT HAVING
+SEEN IT.** A slot holds the PATH (type, width, `bracePairPattern`,
+`bracePairHalf`, `braceFigure`) and, when hand-edited, `editedMembers` — the
+hand edits. Members themselves are never stored for a panel following its
+pattern. Nothing comes from a remembered member list; everything is composed by
+`buildPanelFromRecipe` at read time. The one honest caveat: `editedMembers`
+REPLACES the path rather than annotating it, so for an edited panel the root is
+no longer recoverable from the file. Stride 2 could keep the derived list beside
+it and store a diff; that is the only part of his paragraph the app does not
+already do.
+
+## NEW — B24: the panel editor, girts
+
+> *"We'll need to do some hefty labor on right clicking on girts. There's a
+> number of different ways to do the skirts that involve different materials and
+> different arrangements and different parametric arrangements. Add panel editor
+> girt to the queue."*
+
+INTERVIEW FIRST, and it is a wide one — he has named materials, arrangements and
+parametric arrangements as all varying, and the app has exactly one girt today
+(the bar/web pair, bars spanning `y 0..15.5` with webs at `y 3.5..12`). Do not
+guess at a second arrangement. What the interview has to settle before any code:
+which arrangements exist, which material each is, what is parametric in each
+(count? spacing? web pitch? depth?), and whether a girt arrangement belongs to
+the PANEL (editable per panel, like `editedMembers`) or to the PROJECT (a
+Panelizer setting, like the nailer toggle). That last one decides where the data
+lives.
+
+## NEW — B25: the fabrication sheet's own identity (height + distinct name, and colour)
+
+> *"I would rather see on a shop fabrication sheet. 10 ft super carrot ... That
+> would almost tell me (specifically at least lol) how to build the entire thing
+> without even looking at the rest of the paper. ... can we do a little bit of
+> color coding for the different panel types incorporated into the fabrication
+> sheets as well as the primary label being the height and distinct name of the
+> panel as it appears in the panel library through the right click options"*
+
+**How the sheets are organised TODAY** (read off the code, 2026-11-03):
+
+1. **Primary order is by panel TYPE**, from the hardcoded
+   `SHOP_DRAWING_PANEL_TYPES` array in `page.tsx`: standard, corner, braced,
+   safety-gap, header, sill, column, gable (jack-stud last, preview-only).
+2. **Within a type, order is first-encountered** — `groups` is a `Map` and the
+   sheets come out in insertion order, so it follows wall order and slot order.
+   Not sorted by width, height, count or name.
+3. **The label is `Panel Fabrication: {type label} {width}in ({count})`** —
+   e.g. *"Panel Fabrication: Standard Panel 48in (12)"*. **The height is not in
+   the label at all**; it is a dimension inside the sheet. The figure is not
+   either: a Super Carrot and a Little Carrot both read *"Standard Panel 48in"*
+   and are told apart only by opening them, even though `groupKeyFor` correctly
+   gives them separate sheets.
+
+So his complaint is exact: the label names the type and the width, which is the
+least identifying pair available, and omits the height and the figure — the two
+things that would let him build the panel from the title.
+
+**What B25 does:**
+
+- A `distinctPanelName(group)` derived from the same JSON the panel is built
+  from — height, then figure/pattern, then type: `10' Super Carrot`,
+  `8' Little Carrot`, `9'4" Braced "<"`, `8' Standard 48"`. Derived, never
+  stored, so it cannot go stale — which is his *"not from a memory file"* rule
+  applied to the name itself. His own `panelName`, when set, goes beside it, the
+  same way it already goes beside the series name.
+- **Colour from `panelColors.ts`, not a new palette.** `PANEL_TYPE_COLORS` /
+  `NAMED_PANEL_TYPE_COLORS` already drive the plan canvas, the legend and the
+  3D accents; a fabrication sheet in those same colours means a Braced sheet is
+  the purple he already reads as braced on the plan. A second palette would be
+  two languages for one fact. Needs a print check — a tinted header band must
+  still be legible in greyscale, since these sheets get printed.
+- Open: whether the ORDER should change too (it is first-encountered today). By
+  distinct name would sort `8'` before `10'` as text; by height then figure
+  reads like a shop's own stack. Worth asking when it is built.
+
+## Stride 2's drag — and the answer to the morph question
+
+> *"Would it be possible to move a diagonal 2x4 around until it basically became
+> a vertical nailer in the panel editor and all of the materials lists and etc.
+> would Keep up with that?"*
+
+**The materials: yes, already.** Length, board feet, weight and price all read
+the member's real geometry through the one seam, so a board dragged anywhere is
+cut and costed at where it ended up. The 2064.7 → 2070.6 bd ft measurement in
+stride 4 is that working.
+
+⚠ **But a diagonal dragged plumb is NOT a vertical nailer, and two things would
+be wrong if the drag shipped without fixing it:**
+
+1. **It seats differently through the depth.** `buildStraightFromSpec` gives a
+   vertical a `throughDepthIn` of 3.5in — a stud on edge, 1.5in across the
+   panel's width. `buildDiagonalFromSpec` seats on the brace's own flat inset,
+   1.5in deep and 3.5in across the width. Same lumber, same cut length, a board
+   turned 90° about its own long axis. A different part.
+2. **Its `role` stays `brace`**, so the shear check keeps crediting it while a
+   plumb board resists no racking. That is the live hazard.
+
+`retypeByAngle` enforces this in one direction only — a `straight` dragged
+off-axis becomes a `diagonal` — and its doc comment says the reverse is allowed
+on purpose, *"because it is what the user drew"*, which was true when the only
+way to move a member was to TYPE its ends. **A drag changes that: you can land
+on plumb by accident.** So stride 2 must make the retype symmetric, and say so
+on screen when it happens.
+
+The rest of stride 2 is unchanged from the list above: the drag itself with the
+already-tested snapping, the ghost-the-rest toggle with snappable x/y/z, and
+right-clicking a member.
+
+## Also from this conversation, not yet sized
+
+> *"Maybe the user really dives deep into changing the bracing and such on the
+> header and wants to save that as a new distinct header type, they should be
+> able to do so."*
+
+Saving an edited panel back to the library as a named type. Needs the library to
+be writable at all — today `PANEL_PLACEMENT_TOOL_OPTIONS` and the right-click
+menu are hardcoded arrays. It also runs straight at his *"not from a memory
+file"* rule: a saved type IS stored JSON, so it has to be stored as a PATH (a
+recipe) rather than as a member list, or it will go stale the first time a
+builder changes. Worth its own interview before it is sized.
+
+His framing of what the library is for, which the above has to preserve:
+
+> *"The right click into change panel into the selection of library the panels
+> in the panel library simply gives you a very good starting point. For example,
+> you click on it, insert header and a header responds at its default heights
+> and then you can change them."*
+
+---
+
+# 2026-11-03, later — B24 girts, built; and the row that ran past its roof
+
+## B24 — Girt styles, SHIPPED (two of three)
+
+His spec, in full:
+
+> *"Girts should have a couple options in the panel settings just like the
+> bracing/nailer styles - Ring Girts (as seen in the square bale panelizer),
+> Web Girts (a piece of 3/4" plywood and two 2x4s), and Blocking (instead of
+> plywood, it's a 2x6 - I would like this to be the default setting actually,
+> it's what I'm currently doing in the shop. The 2x6 is centered in the panel
+> depth with two 2x4s."*
+
+**Blocking and Web are live, Blocking is the default, Ring is refused in the
+UI with its reason.** `GirtStyle` lives in `panelMemberHelpers.ts` beside
+`buildGirtRows`, which is the one place a girt row has ever been built.
+
+**Two defaults, deliberately different, and this is the important part:**
+
+- `DEFAULT_GIRT_STYLE = "blocking"` — what a NEW project starts at, because it
+  is what the shop is doing.
+- `LEGACY_GIRT_STYLE = "web"` — what a builder falls back to when nobody passes
+  a style, and what a project file saved before today reopens as.
+
+A call site that has not been taught about styles then draws the panel it has
+always drawn (a stale picture) rather than a panel nobody chose (a wrong one),
+and a saved building is never silently re-cut. This is the `braceFigure` lesson
+applied in advance: there, a two-field `Pick` quietly built every Shop
+Fabrication sheet at the default brace figure.
+
+**Threaded, not defaulted.** The style is a required argument on the app's own
+seam (`standardPanelMembersFor`) and is passed explicitly at all 30-odd member
+call sites, through `buildStandardPanelMembers`, `buildBracedPanelMembers`,
+`buildColumnStyleMembers`, `buildCornerPanelMembers`, `buildSillPanelMembers`,
+`buildGablePanelMembers` and `buildPanelFromRecipe`. Typescript found three
+places by itself that a hand pass would have missed: the cloud redaction
+classification, the undo-history document/transient classification, and the
+summary-capture render's own forwarded props.
+
+**Measured live on one building, switching the setting:**
+
+| | 1/2in plywood | 2x6 lumber |
+|---|---|---|
+| Web Girts | 128.2 sqft -> 5 sheets | 3000.5 bd ft (301 sticks) |
+| Blocking Girts | 0.0 sqft -> 0 sheets | 3181.5 bd ft (319 sticks) |
+
+The plywood leaves the order entirely and 181 bd ft of 2x6 takes its place.
+
+### ⚠ ONE CONFLICT, NOT RESOLVED BY ME: 3/4in vs 1/2in
+
+He calls Web Girts *"a piece of 3/4" plywood"*. `standardPanelBom.girts.web` is
+`status: "confirmed"` at **0.5in**, 1/2in 3-ply CDX. A confirmed Building
+Integrity BOM value is not something to overwrite on a passing mention, and a
+plausible-looking 3/4 is not something to invent either, so the app still
+builds, counts and prices the BOM's 1/2in sheet — and the Panelizer setting
+says so on screen, in the note under the buttons. One number to change if he
+says the shop uses 3/4.
+
+### Why RING is refused rather than approximated
+
+`buildBlockingGirtRows` already builds exactly this rectangle, and reusing it
+would have been one line. It is wrong for a standard panel in three ways, each
+of which changes a real number:
+
+1. **Its four members stand ON EDGE** (3.5in tall in Z) where a girt bar is
+   rolled hotdog (1.5in). That moves the girt's own top face — and *"the brace
+   low point rides the girt bar TOP face"*, his 2026-10-13 rule — so every
+   diagonal in the building would quietly shift by 1in.
+2. **A square bale panel has no centre nailer stud.** A standard 48in panel
+   does, and the ring's two long sides run through it in Y as well as X. They
+   need cutting per bay, the way `centreNailerStudSpansIn` already cuts studs
+   between the girts.
+3. **Its short sides are placed off a stud-assembly spec** (single 2x4 vs
+   doubled 2x6 packs) that a standard panel does not carry.
+
+So the button is present and disabled, with all three reasons in its tooltip —
+the same "refused, with its reason" pattern the panel editor uses for a type it
+cannot edit. A button that selected Ring and silently built a web would be a
+setting that lies.
+
+### Still open on girts
+
+- Ring, per above.
+- *"It would be nice to be able to slide and maybe even change a specific girt
+  in the single panel editor with a right click."* Per-panel girt editing. This
+  wants `editedMembers` to be able to hold a girt row, which today it cannot:
+  the stored list REPLACES the added members, and girts come from the base
+  builder rather than from the added list. Belongs with panel-editor stride 2.
+- ~~The cut list labels a Blocking 2x6 "Girt Web".~~ **Fixed in the same pass.**
+  The role stays `girt_web` deliberately — it plays the web's part, and the
+  fastener schedule counts webs and skins as lids, so re-roling it would
+  silently change screw counts — but the printed LABEL now says
+  `2x6 Girt Blocking`, the same way a vertical skin already prints as
+  "Side Ply". A row reading "2x6 Girt Web" asks a shop to cut a plywood part
+  out of lumber. The sheet now reads, verbatim:
+  `C 4 2x4 Girt Bar 2x4 15½" Square` and `D 2 2x6 Girt Blocking 2x6 45½" Square`
+  — which is his sentence, on paper.
+
+## Found in passing, NOT fixed here
+
+Two overlapping-member pairs that exist at every girt style, so neither is new,
+and both are pinned as a DELTA in `girtStyles.test.ts` rather than skipped:
+
+- `nailer x bottom_plate_2x4_ext` and `nailer x stud_centre_N_exterior` —
+  any panel with the exterior nailer on.
+- `diagonal_brace_upper_ext x brace_center_connector` (and lower) — any chevron
+  braced panel.
+
+Both are candidates for the no-overlap audit's open causes.

@@ -36,9 +36,13 @@ describe("what counts as the document", () => {
     // 78 -> 79 on 2026-11-02: `wallBracePattern`, which pattern the B15 wall
     // brace overlay lays on every standard panel. Classified `document` — it
     // changes the members on every panel's fabrication sheet.
-    expect(all.length).toBe(79);
-    // ...and 73 -> 74 document keys.
-    expect(DOCUMENT_KEYS.length).toBe(74);
+    // 79 -> 80 on 2026-11-03: `girtStyle` (B24), how every girt row in the
+    // project is made up — two 2x4 bars with a plywood web, or the same bars
+    // with a 2x6 laid flat. Classified `document`: it changes the members, the
+    // cut list, the plywood order and the fabrication sheets.
+    expect(all.length).toBe(80);
+    // ...and 74 -> 75 document keys.
+    expect(DOCUMENT_KEYS.length).toBe(75);
   });
 
   it("where the user is standing is NOT the document", () => {

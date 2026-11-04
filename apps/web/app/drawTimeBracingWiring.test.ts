@@ -85,9 +85,9 @@ describe("⚠ the pair pattern rides from the slot to the instance", () => {
     expect(left).toBeDefined();
     expect(right).toBeDefined();
 
-    const plain = standardPanelMembersFor({}, left!.widthIn, DEPTH_IN, HEIGHT_IN, false);
-    const leftMembers = standardPanelMembersFor(left!, left!.widthIn, DEPTH_IN, HEIGHT_IN, false);
-    const rightMembers = standardPanelMembersFor(right!, right!.widthIn, DEPTH_IN, HEIGHT_IN, false);
+    const plain = standardPanelMembersFor({}, left!.widthIn, DEPTH_IN, HEIGHT_IN, false, "web");
+    const leftMembers = standardPanelMembersFor(left!, left!.widthIn, DEPTH_IN, HEIGHT_IN, false, "web");
+    const rightMembers = standardPanelMembersFor(right!, right!.widthIn, DEPTH_IN, HEIGHT_IN, false, "web");
 
     expect(leftMembers.length).toBeGreaterThan(plain.length);
     /* Same width, same height, different parts — which is exactly why the
@@ -106,9 +106,9 @@ describe("⚠ the pair pattern rides from the slot to the instance", () => {
       (i) => i.panelType === "standard" && i.widthIn >= STANDARD_IN - 1e-6,
     );
     expect(inst).toBeDefined();
-    const withNailer = standardPanelMembersFor({}, inst!.widthIn, DEPTH_IN, HEIGHT_IN, true);
+    const withNailer = standardPanelMembersFor({}, inst!.widthIn, DEPTH_IN, HEIGHT_IN, true, "web");
     expect(withNailer.some((m) => m.memberId.startsWith("stud_centre_"))).toBe(true);
-    const braced = standardPanelMembersFor(inst!, inst!.widthIn, DEPTH_IN, HEIGHT_IN, true);
+    const braced = standardPanelMembersFor(inst!, inst!.widthIn, DEPTH_IN, HEIGHT_IN, true, "web");
     expect(braced.some((m) => m.memberId.startsWith("stud_centre_"))).toBe(false);
     expect(braced.some((m) => m.memberId.includes("carrot"))).toBe(true);
   });
@@ -130,10 +130,10 @@ describe("⚠ the pair pattern rides from the slot to the instance", () => {
     );
     expect(inst).toBeDefined();
     const plainLb = computeBracedPanelShearCapacityLb(
-      standardPanelMembersFor({}, inst!.widthIn, DEPTH_IN, HEIGHT_IN, false),
+      standardPanelMembersFor({}, inst!.widthIn, DEPTH_IN, HEIGHT_IN, false, "web"),
     );
     const patternedLb = computeBracedPanelShearCapacityLb(
-      standardPanelMembersFor(inst!, inst!.widthIn, DEPTH_IN, HEIGHT_IN, false),
+      standardPanelMembersFor(inst!, inst!.widthIn, DEPTH_IN, HEIGHT_IN, false, "web"),
     );
     expect(plainLb).toBe(0);
     expect(patternedLb).toBeGreaterThan(0);
@@ -158,7 +158,7 @@ describe("⚠ the pair pattern rides from the slot to the instance", () => {
       const inst = allPanelInstances(footprint, slots, STANDARD_IN).find((i) => i.panelType === "standard");
       expect({ pattern, carried: inst?.bracePairPattern }).toEqual({ pattern, carried: pattern });
       const shearLb = computeBracedPanelShearCapacityLb(
-        standardPanelMembersFor(inst!, inst!.widthIn, DEPTH_IN, HEIGHT_IN, false),
+        standardPanelMembersFor(inst!, inst!.widthIn, DEPTH_IN, HEIGHT_IN, false, "web"),
       );
       if (pattern === "nailer") expect({ pattern, shearLb }).toEqual({ pattern, shearLb: 0 });
       else expect(shearLb).toBeGreaterThan(0);

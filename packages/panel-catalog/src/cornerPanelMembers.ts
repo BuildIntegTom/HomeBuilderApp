@@ -1,5 +1,6 @@
 import type { PanelComponentSchema } from "./componentSchema";
 import { COLUMN_TOTAL_WIDTH_IN, buildColumnStyleMembers } from "./columnPanelMembers";
+import { LEGACY_GIRT_STYLE, type GirtStyle } from "./panelMemberHelpers";
 
 /**
  * A Corner Panel is built exactly like a Column Panel (Tommy: "corner
@@ -41,8 +42,12 @@ export function buildCornerPanelMembers(
   heightIn: number,
   includeNailer: boolean,
   totalWidthIn: number = COLUMN_TOTAL_WIDTH_IN,
+  /** The project's girt style. Defaults to `LEGACY_GIRT_STYLE`, which is what
+   * this app built before girts had styles — never to the project default,
+   * so an un-taught call site draws a stale panel rather than a wrong one. */
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
 ) {
-  return buildColumnStyleMembers(totalWidthIn, depthIn, heightIn, includeNailer);
+  return buildColumnStyleMembers(totalWidthIn, depthIn, heightIn, includeNailer, girtStyle);
 }
 
 export function buildCornerPanelSchema(
@@ -50,6 +55,10 @@ export function buildCornerPanelSchema(
   heightIn: number,
   includeNailer: boolean,
   totalWidthIn: number = COLUMN_TOTAL_WIDTH_IN,
+  /** The project's girt style. Defaults to `LEGACY_GIRT_STYLE`, which is what
+   * this app built before girts had styles — never to the project default,
+   * so an un-taught call site draws a stale panel rather than a wrong one. */
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
 ): PanelComponentSchema {
   return {
     schemaVersion: "0.1",
@@ -61,7 +70,7 @@ export function buildCornerPanelSchema(
     // The panel's REAL width, not the nominal. A schema that reports 25.5in for
     // a 36in part is the same defect as a shop sheet that does.
     overallDimensions: { heightIn, widthIn: totalWidthIn, depthIn },
-    members: buildCornerPanelMembers(depthIn, heightIn, includeNailer, totalWidthIn),
+    members: buildCornerPanelMembers(depthIn, heightIn, includeNailer, totalWidthIn, girtStyle),
     fasteners: [],
     notes: [
       {

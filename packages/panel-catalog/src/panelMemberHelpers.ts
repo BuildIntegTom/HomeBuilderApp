@@ -43,6 +43,49 @@ export const GIRT_WEB_HEIGHT_IN = standardPanelBom.girts.web.widthIn; // 8.75
 export const GIRT_WEB_PLY_SPEC = "1/2in_3ply_CDX";
 export const NAILER_THICKNESS_IN = standardPanelBom.nailer.thicknessIn; // 1.5
 export const NAILER_WIDTH_IN = standardPanelBom.nailer.widthIn; // 3.5
+/** A nominal 2x6's actual width. One constant, so the floor deck's joists and
+ * a Blocking girt's 2x6 cannot disagree about how wide a 2x6 is. */
+export const LUMBER_2X6_WIDTH_IN = 5.5;
+
+/**
+ * How a girt row is made up — a project-wide choice, like the nailer.
+ *
+ * > *"Girts should have a couple options in the panel settings just like the
+ * > bracing/nailer styles — Ring Girts (as seen in the square bale
+ * > panelizer), Web Girts (a piece of 3/4" plywood and two 2x4s), and
+ * > Blocking (instead of plywood, it's a 2x6 — I would like this to be the
+ * > default setting actually, it's what I'm currently doing in the shop. The
+ * > 2x6 is centered in the panel depth with two 2x4s."* — Tommy, 2026-11-03
+ *
+ * `web` and `blocking` share the bar pair and differ only in what bridges
+ * them. `ring` is a different assembly altogether (a closed 2x4 rectangle,
+ * every member standing on edge) and is NOT built yet — see
+ * `buildGirtRows`'s own note for the three things it needs first.
+ */
+export type GirtStyle = "ring" | "web" | "blocking";
+
+/**
+ * ⚠ **Blocking, by his own instruction**, because it is what the shop is
+ * doing today: *"I would like this to be the default setting actually, it's
+ * what I'm currently doing in the shop."* Web girts were the only thing this
+ * app could build until 2026-11-03, so every panel it has ever drawn, cut or
+ * priced was drawn with a plywood web.
+ */
+export const DEFAULT_GIRT_STYLE: GirtStyle = "blocking";
+
+/**
+ * ⚠ **The girt style a builder falls back to when nobody passes one: `web`,
+ * NOT the default above.**
+ *
+ * These two being different is deliberate. A call site that has not been
+ * taught about girt styles yet keeps producing exactly the panel it produced
+ * before, which is a stale picture; falling back to the project default
+ * instead would produce a panel nobody chose for that call site, which is a
+ * WRONG picture. The app's own seams all pass the project's style explicitly
+ * — the shop sheets learned that lesson from `braceFigure`, where a
+ * two-field `Pick` silently built every standard panel at the default figure.
+ */
+export const LEGACY_GIRT_STYLE: GirtStyle = "web";
 
 /**
  * A `plySpec` as a human reads it: `"3/4in_5ply_CDX"` -> `"3/4in 5-ply CDX"`.
@@ -1538,7 +1581,35 @@ export function buildGirtRows(
    * When given, `rowCount` is ignored and this array's length is the count.
    */
   centerZsIn?: readonly number[],
+  /**
+   * ⚠ **Defaults to `LEGACY_GIRT_STYLE` (`web`), not to the project
+   * default.** An un-taught call site keeps drawing the panel it has always
+   * drawn rather than one nobody chose — see that constant's own note.
+   */
+  style: GirtStyle = LEGACY_GIRT_STYLE,
 ): PanelMember[] {
+  if (style === "ring") {
+    /* ⚠ **NOT BUILT YET, and deliberately not faked with the square bale
+       panel's own rectangle.** `buildBlockingGirtRows` builds exactly this
+       ring, but it was written for a panel that differs from a standard one
+       in three ways that each change the answer:
+
+       1. Its four members stand ON EDGE (3.5in tall in Z), where these bars
+          are rolled hotdog (1.5in tall). That moves the girt's own top face,
+          and a brace's low point RIDES that face — his 2026-10-13 rule — so
+          a ring would silently shift every diagonal in the panel by 1in.
+       2. A square bale panel has no CENTRE NAILER STUD. A standard 48in panel
+          does, and the ring's two long sides run the full width straight
+          through it, in Y as well as X. They have to be cut per bay the way
+          `centreNailerStudSpansIn` already cuts studs between the girts.
+       3. Its short sides are placed off a stud ASSEMBLY spec (single 2x4 vs
+          doubled 2x6 packs), which a standard panel does not carry.
+
+       So a ring is a different assembly, not a different label, and guessing
+       at it would put a brace 1in off its bearing face everywhere. Falls back
+       to the bar-and-web pair until it is built properly. */
+    style = "web";
+  }
   const members: PanelMember[] = [];
   const leftStudInnerFaceXIn = PLATE_2X4_THICKNESS_IN;
   const rightStudInnerFaceXIn = widthIn - PLATE_2X4_THICKNESS_IN;
@@ -1579,27 +1650,46 @@ export function buildGirtRows(
       });
     }
 
+    /* ⚠ **The two styles differ in exactly one member: what bridges the
+       bars.** Everything else about the row — both bars, their X positions,
+       the row centre, the bearing ledge — is shared, which is why they can
+       swap without moving anything a brace or a sheet is measured from.
+
+       The 2x6 is *"centered in the panel depth"*, his words, so its 5.5in runs
+       THROUGH the depth and its 1.5in stands up, the same way the plywood web
+       lies. On a 15.5in panel that puts it at y 5.0-10.5, clear of both centre
+       nailer studs (y 0-3.5 and 12-15.5) and both corner stud pairs, so it
+       needs no rip where the web does.
+
+       It inherits the web's bearing overhang rather than being given one of
+       its own — the overhang models the piece sliding down the stud channels
+       into place, which is the same fabrication move either way. Flagged as
+       inherited, not independently specified. */
+    const isBlocking = style === "blocking";
+    const infillDepthIn = isBlocking ? LUMBER_2X6_WIDTH_IN : webHeightIn;
     members.push({
-      memberId: `girt_${row}_web`,
-      material: "plywood",
-      speciesGrade: null,
-      plySpec: GIRT_WEB_PLY_SPEC,
-      nominalSize: null,
+      memberId: isBlocking ? `girt_${row}_blocking` : `girt_${row}_web`,
+      material: isBlocking ? "dimensional_lumber" : "plywood",
+      speciesGrade: isBlocking ? LUMBER_SPECIES_GRADE : null,
+      plySpec: isBlocking ? null : GIRT_WEB_PLY_SPEC,
+      nominalSize: isBlocking ? "2x6" : null,
       actualDimsIn: {
-        thicknessIn: GIRT_WEB_THICKNESS_IN,
-        widthIn: webHeightIn,
+        thicknessIn: isBlocking ? PLATE_2X4_THICKNESS_IN : GIRT_WEB_THICKNESS_IN,
+        widthIn: infillDepthIn,
         lengthIn: studFaceSpanIn + WEB_OVERHANG_TOTAL_IN,
       },
       orientation: "flat",
       position: {
         xIn: barLeftXIn - WEB_OVERHANG_TOTAL_IN / 2,
-        yIn: depthIn / 2 - webHeightIn / 2,
+        yIn: depthIn / 2 - infillDepthIn / 2,
         zIn: barTopZIn,
         rotationDeg: 0,
       },
       role: "girt_web",
       qty: 1,
-      notes: `girt ${row} web, rests on top of both girt_${row}_bar_left/right`,
+      notes: isBlocking
+        ? `girt ${row} blocking — a 2x6 laid flat, centred in the panel depth, resting on top of both girt_${row}_bar_left/right`
+        : `girt ${row} web, rests on top of both girt_${row}_bar_left/right`,
     });
   }
 

@@ -127,10 +127,10 @@ describe("⚠ a standard panel's members come from ONE place", () => {
   it("⚠ no pattern: byte-for-byte the members it always had", () => {
     /* The seam has to be invisible until the pattern is switched on. */
     const plain = buildStandardPanelMembers(STANDARD_IN, DEPTH_IN, HEIGHT_IN, false);
-    expect(standardPanelMembersFor({}, STANDARD_IN, DEPTH_IN, HEIGHT_IN, false)).toEqual(plain);
+    expect(standardPanelMembersFor({}, STANDARD_IN, DEPTH_IN, HEIGHT_IN, false, "web")).toEqual(plain);
     /* A half with no pattern, or a pattern with no half, is not a pattern. */
-    expect(standardPanelMembersFor({ bracePairHalf: "left" }, STANDARD_IN, DEPTH_IN, HEIGHT_IN, false)).toEqual(plain);
-    expect(standardPanelMembersFor({ bracePairPattern: "superbrace" }, STANDARD_IN, DEPTH_IN, HEIGHT_IN, false)).toEqual(plain);
+    expect(standardPanelMembersFor({ bracePairHalf: "left" }, STANDARD_IN, DEPTH_IN, HEIGHT_IN, false, "web")).toEqual(plain);
+    expect(standardPanelMembersFor({ bracePairPattern: "superbrace" }, STANDARD_IN, DEPTH_IN, HEIGHT_IN, false, "web")).toEqual(plain);
   });
 
   it("⚠ with a pattern: real diagonals appear, and the two halves differ", () => {
@@ -141,6 +141,7 @@ describe("⚠ a standard panel's members come from ONE place", () => {
       DEPTH_IN,
       HEIGHT_IN,
       false,
+      "web",
     );
     const right = standardPanelMembersFor(
       { bracePairPattern: "superbrace", bracePairHalf: "right" },
@@ -148,6 +149,7 @@ describe("⚠ a standard panel's members come from ONE place", () => {
       DEPTH_IN,
       HEIGHT_IN,
       false,
+      "web",
     );
     expect(left.length).toBeGreaterThan(plain.length);
     /* ⚠ A pair's two panels are mirror images, so the halves must NOT be
@@ -173,6 +175,7 @@ describe("⚠ a standard panel's members come from ONE place", () => {
       DEPTH_IN,
       HEIGHT_IN,
       true,
+      "web",
     );
     expect(braced.some((m) => m.memberId.startsWith("stud_centre_"))).toBe(false);
   });
@@ -186,6 +189,7 @@ describe("⚠ a standard panel's members come from ONE place", () => {
       DEPTH_IN,
       HEIGHT_IN,
       true,
+      "web",
     );
     expect(nailer.some((m) => m.memberId.startsWith("stud_centre_"))).toBe(true);
   });

@@ -23,6 +23,7 @@ import {
   bracingStyleToPatternMirror,
   buildBracedPanelMembers,
   buildColumnPanelMembers,
+  type GirtStyle,
   buildCornerPanelMembers,
   type BracingStyle,
   type JackStudConfig,
@@ -177,6 +178,9 @@ export interface FootprintCanvasProps {
    * see structuralByKey below. */
   wallHeightFt: number;
   includeNailer: boolean;
+  /** The project's girt style — a hover tooltip quoting a panel's numbers has
+   * to quote the panel the project actually builds. */
+  girtStyle: GirtStyle;
   /** Which diagonal-brace pattern the hover tooltip's estimated shear
    * number uses for a "braced" slot (Tommy: "add another bracing
    * option... Hatch Forward, and Hatch Back"). */
@@ -239,6 +243,7 @@ export default function FootprintCanvas({
   wallThicknessIn,
   wallHeightFt,
   includeNailer,
+  girtStyle,
   bracingStyle,
   standardWidthIn,
   jackStudConfig,
@@ -300,7 +305,7 @@ export default function FootprintCanvas({
     if (!footprint) return map;
     const standardBearingLb = computeStudPackBearingCapacityLb();
     const columnBearingLb = computeBuiltUpColumnBearingCapacityLb(
-      buildColumnPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer),
+      buildColumnPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer, girtStyle),
       wallHeightFt * 12,
     );
     // The NOMINAL-width corner section on purpose — corner members are built at
@@ -321,7 +326,7 @@ export default function FootprintCanvas({
       // default — that default is COLUMN_TOTAL_WIDTH_IN (25.5in), which was
       // the same number until 2026-11-01 and is not any more. Left unpassed,
       // this would measure a 25.5in corner while the tiler reserves 15.5in.
-      buildCornerPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer, cornerPanelWidthIn.value),
+      buildCornerPanelMembers(wallThicknessIn, wallHeightFt * 12, includeNailer, cornerPanelWidthIn.value, girtStyle),
       wallHeightFt * 12,
     );
     for (const wall of footprint.walls) {
@@ -350,10 +355,19 @@ export default function FootprintCanvas({
           slot.type === "braced" || slot.secondaryType === "braced"
             ? (() => {
                 const style = resolveBracedStyle(slot, defaultStyle.pattern, defaultStyle.mirrored);
-                return buildBracedPanelMembers(slot.widthIn, wallThicknessIn, wallHeightFt * 12, includeNailer, style.pattern, style.mirrored);
+                return buildBracedPanelMembers(
+                  slot.widthIn,
+                  wallThicknessIn,
+                  wallHeightFt * 12,
+                  includeNailer,
+                  style.pattern,
+                  style.mirrored,
+                  false,
+                  girtStyle,
+                );
               })()
             : slot.type === "standard" && slot.bracePairPattern !== undefined
-              ? standardPanelMembersFor(slot, slot.widthIn, wallThicknessIn, wallHeightFt * 12, includeNailer)
+              ? standardPanelMembersFor(slot, slot.widthIn, wallThicknessIn, wallHeightFt * 12, includeNailer, girtStyle)
               : null;
         const panelShearLb = bracedMembers ? computeBracedPanelShearCapacityLb(bracedMembers) : 0;
         const shearLb = panelShearLb > 0 ? panelShearLb : undefined;
@@ -367,7 +381,7 @@ export default function FootprintCanvas({
       });
     }
     return map;
-  }, [footprint, wallSlots, wallThicknessIn, wallHeightFt, includeNailer, bracingStyle]);
+  }, [footprint, wallSlots, wallThicknessIn, wallHeightFt, includeNailer, girtStyle, bracingStyle]);
 
   const [hoveredSlot, setHoveredSlot] = useState<{
     key: string;

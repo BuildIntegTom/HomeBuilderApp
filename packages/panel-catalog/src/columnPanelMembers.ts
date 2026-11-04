@@ -7,7 +7,9 @@ import {
   PLATE_END_CLEARANCE_IN,
   SKIN_THICKNESS_IN,
   buildCornerStuds,
+  LEGACY_GIRT_STYLE,
   buildGirtRows,
+  type GirtStyle,
   buildNailer,
   buildPlates,
   buildSkins,
@@ -175,8 +177,16 @@ function buildColumnSidePly(
  * width = `COLUMN_TOTAL_WIDTH_IN` (25.5in), independent of the app's
  * user-selected `standardWidthIn` — a Column Panel is always this size.
  */
-export function buildColumnPanelMembers(depthIn: number, heightIn: number, includeNailer: boolean): PanelMember[] {
-  return buildColumnStyleMembers(COLUMN_TOTAL_WIDTH_IN, depthIn, heightIn, includeNailer);
+export function buildColumnPanelMembers(
+  depthIn: number,
+  heightIn: number,
+  includeNailer: boolean,
+  /** The project's girt style. Defaults to `LEGACY_GIRT_STYLE`, which is what
+   * this app built before girts had styles — never to the project default,
+   * so an un-taught call site draws a stale panel rather than a wrong one. */
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
+): PanelMember[] {
+  return buildColumnStyleMembers(COLUMN_TOTAL_WIDTH_IN, depthIn, heightIn, includeNailer, girtStyle);
 }
 
 /**
@@ -223,6 +233,10 @@ export function buildColumnStyleMembers(
   depthIn: number,
   heightIn: number,
   includeNailer: boolean,
+  /** The project's girt style. Defaults to `LEGACY_GIRT_STYLE`, which is what
+   * this app built before girts had styles — never to the project default,
+   * so an un-taught call site draws a stale panel rather than a wrong one. */
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
 ): PanelMember[] {
   const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
   const coreWidthIn = totalWidthIn - 2 * COLUMN_SIDE_PLY_THICKNESS_IN;
@@ -236,7 +250,7 @@ export function buildColumnStyleMembers(
     ...buildSkins(coreWidthIn, depthIn, heightIn),
     ...buildPlates(coreWidthIn, depthIn, heightIn),
     ...buildCornerStuds(coreWidthIn, depthIn, heightIn),
-    ...buildGirtRows(COLUMN_GIRT_ROW_COUNT, coreWidthIn, depthIn, studSpanIn),
+    ...buildGirtRows(COLUMN_GIRT_ROW_COUNT, coreWidthIn, depthIn, studSpanIn, undefined, girtStyle),
   ];
   if (includeNailer) core.push(buildNailer(coreWidthIn, heightIn));
 
@@ -251,7 +265,15 @@ export function buildColumnStyleMembers(
  * Wraps `buildColumnPanelMembers` in the full shared component schema —
  * see `buildStandardPanelSchema`'s doc comment for the same rationale.
  */
-export function buildColumnPanelSchema(depthIn: number, heightIn: number, includeNailer: boolean): PanelComponentSchema {
+export function buildColumnPanelSchema(
+  depthIn: number,
+  heightIn: number,
+  includeNailer: boolean,
+  /** The project's girt style. Defaults to `LEGACY_GIRT_STYLE`, which is what
+   * this app built before girts had styles — never to the project default,
+   * so an un-taught call site draws a stale panel rather than a wrong one. */
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
+): PanelComponentSchema {
   return {
     schemaVersion: "0.1",
     componentType: "panel",
@@ -260,7 +282,7 @@ export function buildColumnPanelSchema(depthIn: number, heightIn: number, includ
     status: "draft",
     derivedFrom: "standard_panel",
     overallDimensions: { heightIn, widthIn: COLUMN_TOTAL_WIDTH_IN, depthIn },
-    members: buildColumnPanelMembers(depthIn, heightIn, includeNailer),
+    members: buildColumnPanelMembers(depthIn, heightIn, includeNailer, girtStyle),
     fasteners: [],
     notes: [
       {

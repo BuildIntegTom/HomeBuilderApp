@@ -36,6 +36,9 @@ const input = (over: Partial<CrossTiltTakeoffInput> = {}): CrossTiltTakeoffInput
   depthIn: DEPTH_IN,
   roofPitchIn12: 4,
   roofEaveHeightFt: EAVE_FT,
+  /* The app's own default: gable ends run full height, so the roof is held
+     back from the floor plan by one wall depth at each gable end. */
+  roofGableEndInsetIn: DEPTH_IN,
   wallHeightFt: 10,
   ...over,
 });
@@ -93,9 +96,11 @@ describe("the tilted gable row reaches the documents", () => {
     }
   });
 
-  it("⚠ the row sums to the wall EXACTLY, and starts at its corner", () => {
+  it("⚠ the row sums to its ROOFED span EXACTLY, and the gable ends own the rest", () => {
     /* His standing rule, the one three overflow bugs came out of: wall
-       lengths are exact, and the parts sum to the whole. */
+       lengths are exact, and the parts sum to the whole. The whole is the
+       roofed span now — see the test below for why — and the two gable ends
+       account for every inch of the difference. */
     const takeoff = computeCrossTiltTakeoff(input());
     const run = takeoff.runs[0]!;
     const row = takeoff.instances.filter((i) => i.runIndex === 0);
@@ -103,10 +108,58 @@ describe("the tilted gable row reaches the documents", () => {
     expect(row.reduce((sum, i) => sum + i.widthIn, 0)).toBeCloseTo(run.runIn, 9);
     const last = row[row.length - 1]!;
     expect(last.atIn + last.widthIn).toBeCloseTo(run.runIn, 9);
+    // Nothing is lost: the row plus the two gable ends IS the wall.
+    expect(run.runIn + 2 * DEPTH_IN).toBeCloseTo(WIDE_FT * IN_PER_FT, 9);
     // And no panel starts where the one before it has not finished.
     for (let i = 1; i < row.length; i++) {
       expect(row[i]!.atIn).toBeCloseTo(row[i - 1]!.atIn + row[i - 1]!.widthIn, 9);
     }
+  });
+
+  it("⚠ the row ENDS WITH THE ROOF — it does not run through the gable end panels", () => {
+    /* > *"on a small shed building (or other shapes maybe too), the roof
+       >  supporting panels overlap the gable end panels, where as the roof
+       >  support ones should end with the roof."* — Tommy, 2026-11-03
+
+       The row ran its wall's full centreline length, corner to corner, while
+       the gable row on each perpendicular wall runs *"corner to corner, the
+       full width of the floor plan"* whenever gable ends are full height. Both
+       claimed the same corner square in the same band above the eave. This row
+       gives way, by exactly the number the ROOF is held back by. */
+    const wall = footprint.walls.find((w) => w.id === tallWallId)!;
+    const corner = (id: string) => footprint.corners.find((c) => c.id === id)!.point;
+    const a = corner(wall.startCorner);
+    const b = corner(wall.endCorner);
+    const lengthFt = Math.hypot(b.x - a.x, b.y - a.y);
+    const ux = (b.x - a.x) / lengthFt;
+    const uy = (b.y - a.y) / lengthFt;
+    const insetFt = DEPTH_IN / IN_PER_FT;
+
+    const row = computeCrossTiltTakeoff(input()).instances.filter((i) => i.runIndex === 0);
+    const first = row[0]!;
+    // The first panel starts one gable-end depth in from the corner, not at it.
+    expect(first.world.anchorX).toBeCloseTo(a.x + ux * insetFt, 9);
+    expect(first.world.anchorZ).toBeCloseTo(a.y + uy * insetFt, 9);
+    // And the last panel finishes one gable-end depth short of the far corner.
+    const last = row[row.length - 1]!;
+    const endAlongFt = (last.atIn + last.widthIn) / IN_PER_FT + insetFt;
+    expect(endAlongFt).toBeCloseTo(lengthFt - insetFt, 9);
+  });
+
+  it("with the gable ends NOT full height, the row is the whole wall again", () => {
+    /* The toggle's other side: *"Roof panels run right out to both exterior
+       edges of the floor plan, over the top of the gable ends, which stop
+       under them."* The roof is not held back, so neither is this row — the
+       inset is the roof's own number, and when it is 0 the old behaviour is
+       exactly what comes back. */
+    const takeoff = computeCrossTiltTakeoff(input({ roofGableEndInsetIn: 0 }));
+    const run = takeoff.runs[0]!;
+    expect(run.runIn).toBeCloseTo(WIDE_FT * IN_PER_FT, 9);
+    const row = takeoff.instances.filter((i) => i.runIndex === 0);
+    const wall = footprint.walls.find((w) => w.id === tallWallId)!;
+    const a = footprint.corners.find((c) => c.id === wall.startCorner)!.point;
+    expect(row[0]!.world.anchorX).toBeCloseTo(a.x, 9);
+    expect(row[0]!.world.anchorZ).toBeCloseTo(a.y, 9);
   });
 
   it("the two end panels are the WALL's depth, not a catalog default", () => {

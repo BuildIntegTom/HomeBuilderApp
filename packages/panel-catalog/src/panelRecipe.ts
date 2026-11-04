@@ -6,6 +6,7 @@ import {
   SKIN_THICKNESS_IN,
   braceLongestEdgeIn,
   computeBraceBoardCornersIn,
+  type GirtStyle,
 } from "./panelMemberHelpers";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
 
@@ -84,6 +85,9 @@ export interface PanelRecipe {
    * fixing shear coverings, which is what makes a Nailer panel a Nailer
    * panel. */
   includeNailer?: boolean;
+  /** The project's girt style, for the base panel the recipe is composed on
+   * top of. Omitted falls back to `LEGACY_GIRT_STYLE` — see that constant. */
+  girtStyle?: GirtStyle;
   added: AddedMemberSpec[];
 }
 
@@ -246,6 +250,7 @@ export function buildPanelFromRecipe(recipe: PanelRecipe): PanelMember[] {
     recipe.depthIn,
     recipe.heightIn,
     recipe.includeNailer === true && !hasDiagonals,
+    recipe.girtStyle,
   ).filter((m) => !(hasDiagonals && m.memberId.startsWith("stud_centre_")));
   return [
     ...base,

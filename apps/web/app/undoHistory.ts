@@ -59,6 +59,7 @@ export const UNDO_CLASSIFICATION = {
   wallHeightFt: "document",
   maxPanelHeightIn: "document",
   includeNailer: "document",
+  girtStyle: "document",
   checkedInteriorIds: "document",
   checkedRoofInteriorIds: "document",
   checkedRoofExteriorIds: "document",

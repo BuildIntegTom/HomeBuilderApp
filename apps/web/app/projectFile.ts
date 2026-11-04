@@ -20,6 +20,7 @@ import type {
   WallRunStop,
 } from "@building-integrity/geometry";
 import type { Season } from "@building-integrity/calc-engine";
+import type { GirtStyle } from "@building-integrity/panel-catalog";
 import {
   BALE_FOUNDATION_FIELD_SPACING_DEFAULT_IN,
   BALE_FOUNDATION_TOP_DEPTH_DEFAULT_IN,
@@ -191,6 +192,19 @@ export interface ProjectState {
    * feature, still load — see parseProjectFile's own defaulting. */
   maxPanelHeightIn?: number;
   includeNailer: boolean;
+  /**
+   * How every girt row in the project is made up — `web` (two 2x4 bars and a
+   * plywood web) or `blocking` (the same bars and a 2x6 laid flat, centred in
+   * the depth), with `ring` reserved and not built yet.
+   *
+   * ⚠ **Optional, and absent means `web` — not the current default.** Every
+   * file saved before 2026-11-03 was drawn, costed and sheeted with a plywood
+   * web, so that is the panel it reopens as. Defaulting it to the new shop
+   * default would silently re-cut somebody's saved building. See
+   * `LEGACY_GIRT_STYLE`, which is that promise in one word, and
+   * `DEFAULT_GIRT_STYLE`, which only a NEW project starts at.
+   */
+  girtStyle?: GirtStyle;
   /** Every interior/exterior finish AND product checked (Tommy: "change
    * those interior and exterior finishes to check boxes... a repertoire")
    * — replaces the old single-select interiorId/exteriorId. */

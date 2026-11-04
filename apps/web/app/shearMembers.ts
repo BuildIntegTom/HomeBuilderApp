@@ -1,4 +1,4 @@
-import { buildBracedPanelMembers, type BracePattern, type PanelMember } from "@building-integrity/panel-catalog";
+import { buildBracedPanelMembers, type BracePattern, type GirtStyle, type PanelMember } from "@building-integrity/panel-catalog";
 import { resolveBracedStyle } from "./bracedStyle";
 import { standardPanelMembersFor } from "./standardPanelMembers";
 import type { PanelInstance } from "./panelInstances";
@@ -7,6 +7,10 @@ export interface ShearMemberContext {
   thicknessIn: number;
   wallHeightIn: number;
   includeNailer: boolean;
+  /** ⚠ The project's girt style. A girt is not a shear member, but the shear
+   * check reads the WHOLE panel and then picks the diagonals out of it — so a
+   * context missing this would measure a panel the building does not have. */
+  girtStyle: GirtStyle;
   defaultBracePattern: BracePattern;
   defaultBracedMirrored: boolean;
 }
@@ -35,10 +39,19 @@ export interface ShearMemberContext {
 export function shearMembersFor(inst: PanelInstance, ctx: ShearMemberContext): PanelMember[] | null {
   if (inst.panelType === "braced") {
     const style = resolveBracedStyle(inst, ctx.defaultBracePattern, ctx.defaultBracedMirrored);
-    return buildBracedPanelMembers(inst.widthIn, ctx.thicknessIn, ctx.wallHeightIn, ctx.includeNailer, style.pattern, style.mirrored);
+    return buildBracedPanelMembers(
+      inst.widthIn,
+      ctx.thicknessIn,
+      ctx.wallHeightIn,
+      ctx.includeNailer,
+      style.pattern,
+      style.mirrored,
+      false,
+      ctx.girtStyle,
+    );
   }
   if (inst.bracePairPattern !== undefined) {
-    return standardPanelMembersFor(inst, inst.widthIn, ctx.thicknessIn, ctx.wallHeightIn, ctx.includeNailer);
+    return standardPanelMembersFor(inst, inst.widthIn, ctx.thicknessIn, ctx.wallHeightIn, ctx.includeNailer, ctx.girtStyle);
   }
   return null;
 }

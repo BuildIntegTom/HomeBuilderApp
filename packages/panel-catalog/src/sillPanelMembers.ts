@@ -1,4 +1,5 @@
 import type { PanelComponentSchema, PanelMember } from "./componentSchema";
+import { LEGACY_GIRT_STYLE, type GirtStyle } from "./panelMemberHelpers";
 import { buildStandardPanelMembers } from "./standardPanelMembers";
 
 /**
@@ -7,8 +8,17 @@ import { buildStandardPanelMembers } from "./standardPanelMembers";
  * 2 girt rows, optional nailer), just at the sill's own (default 32in,
  * see `sillDefaultHeightIn`) height instead of the full wall height.
  */
-export function buildSillPanelMembers(widthIn: number, depthIn: number, heightIn: number, includeNailer: boolean): PanelMember[] {
-  return buildStandardPanelMembers(widthIn, depthIn, heightIn, includeNailer);
+export function buildSillPanelMembers(
+  widthIn: number,
+  depthIn: number,
+  heightIn: number,
+  includeNailer: boolean,
+  /** The project's girt style. Defaults to `LEGACY_GIRT_STYLE`, which is what
+   * this app built before girts had styles — never to the project default,
+   * so an un-taught call site draws a stale panel rather than a wrong one. */
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
+): PanelMember[] {
+  return buildStandardPanelMembers(widthIn, depthIn, heightIn, includeNailer, girtStyle);
 }
 
 /**

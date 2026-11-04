@@ -8,7 +8,9 @@ import {
   SKIN_THICKNESS_IN,
   GIRT_WEB_THICKNESS_IN,
   braceLongestEdgeIn,
+  LEGACY_GIRT_STYLE,
   buildGirtRows,
+  type GirtStyle,
   buildNailer,
   plumbEndedSlopedBoardCornersIn,
 } from "./panelMemberHelpers";
@@ -242,6 +244,10 @@ export function buildGablePanelMembers(
   leftHeightIn: number,
   rightHeightIn: number,
   includeNailer: boolean,
+  /** The project's girt style. Defaults to `LEGACY_GIRT_STYLE`, which is what
+   * this app built before girts had styles — never to the project default,
+   * so an un-taught call site draws a stale panel rather than a wrong one. */
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
 ): PanelMember[] {
   const tallerHeightIn = Math.max(leftHeightIn, rightHeightIn);
   /**
@@ -513,7 +519,7 @@ export function buildGablePanelMembers(
       /* ⚠ By the SHORT edge, per `gableGirtPlan` — it replaced a flat two
          rows, which bunched girts inches apart on a short tile. */
       const plan = gableGirtPlan(shorterStudSpanIn);
-      return buildGirtRows(plan.rowCount, widthIn, depthIn, shorterStudSpanIn, plan.centerZsIn ?? undefined);
+      return buildGirtRows(plan.rowCount, widthIn, depthIn, shorterStudSpanIn, plan.centerZsIn ?? undefined, girtStyle);
     })(),
   ];
   if (includeNailer) members.push(buildNailer(widthIn, Math.min(leftHeightIn, rightHeightIn)));
@@ -532,6 +538,10 @@ export function buildGablePanelSchema(
   leftHeightIn: number,
   rightHeightIn: number,
   includeNailer: boolean,
+  /** The project's girt style. Defaults to `LEGACY_GIRT_STYLE`, which is what
+   * this app built before girts had styles — never to the project default,
+   * so an un-taught call site draws a stale panel rather than a wrong one. */
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
 ): PanelComponentSchema {
   const { angleDeg: ripAngleDeg, lengthIn: ripLengthIn } = computeGableRipCallout(widthIn, leftHeightIn, rightHeightIn);
   return {
@@ -542,7 +552,7 @@ export function buildGablePanelSchema(
     status: "draft",
     derivedFrom: "standard_panel",
     overallDimensions: { heightIn: Math.max(leftHeightIn, rightHeightIn), widthIn, depthIn },
-    members: buildGablePanelMembers(widthIn, depthIn, leftHeightIn, rightHeightIn, includeNailer),
+    members: buildGablePanelMembers(widthIn, depthIn, leftHeightIn, rightHeightIn, includeNailer, girtStyle),
     fasteners: [],
     notes: [
       {

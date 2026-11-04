@@ -1,6 +1,7 @@
 import { standardPanelBomReferenceWidthIn, standardPanelHeightIn } from "./data";
 import type { PanelComponentSchema, PanelMember } from "./componentSchema";
 import {
+  LEGACY_GIRT_STYLE,
   SKIN_THICKNESS_IN,
   buildCentreNailerStuds,
   buildCornerStuds,
@@ -9,6 +10,7 @@ import {
   buildPlates,
   buildSkins,
   girtRowCentreZsIn,
+  type GirtStyle,
 } from "./panelMemberHelpers";
 
 const STANDARD_GIRT_ROW_COUNT = 2;
@@ -59,6 +61,10 @@ export function buildStandardPanelMembers(
   depthIn: number,
   heightIn: number,
   includeNailer: boolean,
+  /** The project's girt style. Defaults to `LEGACY_GIRT_STYLE`, which is what
+   * this app built before girts had styles — never to the project default,
+   * so an un-taught call site draws a stale panel rather than a wrong one. */
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
 ): PanelMember[] {
   const studSpanIn = heightIn - 2 * SKIN_THICKNESS_IN;
   const members: PanelMember[] = [
@@ -66,7 +72,7 @@ export function buildStandardPanelMembers(
     ...buildPlates(widthIn, depthIn, heightIn),
     ...buildCornerStuds(widthIn, depthIn, heightIn),
     ...buildCentreNailerStuds(widthIn, depthIn, heightIn),
-    ...buildGirtRows(computeStandardGirtRowCount(heightIn), widthIn, depthIn, studSpanIn),
+    ...buildGirtRows(computeStandardGirtRowCount(heightIn), widthIn, depthIn, studSpanIn, undefined, girtStyle),
   ];
   if (includeNailer) members.push(buildNailer(widthIn, heightIn));
   return members;
@@ -84,6 +90,10 @@ export function buildStandardPanelSchema(
   depthIn: number,
   heightIn: number,
   includeNailer: boolean,
+  /** The project's girt style. Defaults to `LEGACY_GIRT_STYLE`, which is what
+   * this app built before girts had styles — never to the project default,
+   * so an un-taught call site draws a stale panel rather than a wrong one. */
+  girtStyle: GirtStyle = LEGACY_GIRT_STYLE,
 ): PanelComponentSchema {
   return {
     schemaVersion: "0.1",
@@ -93,7 +103,7 @@ export function buildStandardPanelSchema(
     status: "draft",
     derivedFrom: null,
     overallDimensions: { heightIn, widthIn, depthIn },
-    members: buildStandardPanelMembers(widthIn, depthIn, heightIn, includeNailer),
+    members: buildStandardPanelMembers(widthIn, depthIn, heightIn, includeNailer, girtStyle),
     fasteners: [],
     notes:
       widthIn !== standardPanelBomReferenceWidthIn

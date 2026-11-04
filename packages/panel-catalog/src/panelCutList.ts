@@ -147,6 +147,13 @@ function sheetThicknessLabel(member: PanelMember): string {
  * rows in the same table don't all just say the ambiguous bare "Skin". */
 function roleLabelFor(member: PanelMember): string {
   if (member.role === "skin" && member.orientation === "vertical") return "Side Ply";
+  /* ⚠ **Same idea for a Blocking girt (B24), and it matters on the floor.**
+     The 2x6 that bridges the bars keeps `role: "girt_web"` on purpose — it
+     plays the web's part, and the fastener schedule counts webs and skins as
+     lids, so re-roling it would silently change screw counts. But a row
+     reading "2x6 Girt Web" asks a shop to cut a plywood part out of lumber.
+     The label says what it is; the role says what it does. */
+  if (member.role === "girt_web" && member.material === "dimensional_lumber") return "Girt Blocking";
   return ROLE_LABEL[member.role];
 }
 

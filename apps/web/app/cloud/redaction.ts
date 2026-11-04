@@ -70,6 +70,7 @@ export const MONEY_CLASSIFICATION = {
   wallHeightFt: "not-money",
   maxPanelHeightIn: "not-money",
   includeNailer: "not-money",
+  girtStyle: "not-money",
   checkedInteriorIds: "not-money",
   checkedRoofInteriorIds: "not-money",
   checkedRoofExteriorIds: "not-money",

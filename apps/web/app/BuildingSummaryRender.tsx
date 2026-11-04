@@ -1,7 +1,7 @@
 "use client";
 
 import type { BoxBeamCoverage, Footprint, PanelSlot, WallRunStop } from "@building-integrity/geometry";
-import type { BoxBeamSizeId, BracingStyle, JackStudConfig, StudConfig } from "@building-integrity/panel-catalog";
+import type { BoxBeamSizeId, BracingStyle, GirtStyle, JackStudConfig, StudConfig } from "@building-integrity/panel-catalog";
 import Building3DView from "./Building3DView";
 import type { MidWallBeam } from "./midWallBeam";
 import type { SpanningHeader } from "./spanningHeader";
@@ -13,6 +13,9 @@ export interface BuildingSummaryRenderProps {
   maxPanelHeightIn: number;
   thicknessIn: number;
   includeNailer: boolean;
+  /** See Building3DView's own prop doc — forwarded so the captured summary
+   * image shows the same girts the live model does. */
+  girtStyle?: GirtStyle;
   primaryCornerIds: Set<string>;
   /** Stage 3 run stops — the summary render must show the same building the
    * live 3D preview does, unbuilt spans and all (i.e. nothing drawn there). */
