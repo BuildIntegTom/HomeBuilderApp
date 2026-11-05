@@ -917,6 +917,12 @@ export default function LayoutEditor() {
      floors and roof are check marked, the 3D viewer framed/boxes/membrane
      should show them". The scope checkbox is the outer gate; these are the
      per-layer toggles beside the viewer. */
+  /* ⚠ **His straw, 2026-11-04:** *"let's add 3D straw volume infill with
+     texture toggle option."* Off by default — the 3D view is a fabricator's
+     view of a frame first, and the straw stands in front of every member it
+     fills. */
+  const [showStraw3D, setShowStraw3D] = useState(false);
+  const [strawTextured3D, setStrawTextured3D] = useState(true);
   const [showFloorDeck3D, setShowFloorDeck3D] = useState(true);
   const [showRoofDeck3D, setShowRoofDeck3D] = useState(true);
   /* ⚠ Half the roof is see-through by default, so a new project shows the
@@ -9687,29 +9693,35 @@ export default function LayoutEditor() {
     }
     // Shop Drawings are a fabricator/detailer document, not a public-facing one (Tommy).
     if (role !== "public") {
-      /* ⚠ **THIS LIST IS IN INSTALL ORDER — B26, 2026-11-04, and it is
-         the same order the sheets PRINT in.**
+      /* ⚠ **EVERY PANEL IN INSTALL ORDER, THEN THE ASSEMBLIES — B26,
+         2026-11-04, and it is the same order the sheets PRINT in.**
 
          > *"Shop plans should have Floor panels before walls in install
          > order and [roof] panels after walls."*
+         > *"Truss plate should be after all panel fab sheets and panel
+         > install pieces."*
 
-         Floor deck, then the walls that bear on it, then what sits on top
-         of the walls, then the roof. The printed packet is the DOM order
-         further down this file; this list is what the tray and Choose
-         sections show. They are written to match deliberately — a picker
-         in one order and a packet in another is a trap, and this list used
-         to be in neither (floor and roof panels sat in the MIDDLE, ahead of
-         every wall panel).
+         Floor deck, the walls that bear on it, the pieces that go in with
+         them, the roof deck — then the things that are not panels: the
+         mid-wall beam, and the truss plate last of all. The printed packet
+         is the DOM order further down this file; this list is what the tray
+         and Choose sections show. They are written to match deliberately —
+         a picker in one order and a packet in another is a trap, and this
+         list used to be in neither (floor and roof panels sat in the MIDDLE,
+         ahead of every wall panel).
 
          ⚠ **It supersedes an older instruction of his** — *"the other
          fabricator pages, lets make these non-panel fabricator pages appear
-         at the top of the fabricator list"*. Truss plate, box beam and the
-         mid-wall beam are no longer at the top: under install order they
-         belong between the walls and the roof, which is where they go on.
-         Worth a word from him if he wants the old clustering back. */
+         at the top of the fabricator list"*. They are at the BOTTOM now,
+         which is what he asked for on 2026-11-04; the clustering he wanted
+         is kept, just at the other end. */
 
-      // 1. The floor deck — first thing built, first sheets in the packet.
+      /* ⚠ 1-7 all keep the `wallsEnabled` gate they were nested under before
+         this block was lifted out of it — changing when a family appears is
+         how a sheet ends up rendered with no line here, which is the defect
+         already recorded for the cross-tilted row. */
       if (wallsEnabled) {
+        // 1. The floor deck — first thing built, first sheets in the packet.
         for (const group of floorRoofPanelFabricationGroups) {
           if (group.kind !== "floor") continue;
           pages.push({
@@ -9717,10 +9729,6 @@ export default function LayoutEditor() {
             label: `Panel Fabrication: Floor Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
           });
         }
-      }
-      /* 2 and 3 keep the walls gate they were nested under before this
-         block was lifted out of it — see the note above. */
-      if (wallsEnabled) {
         // 2. Jack-Stud: no real placed instances yet (a real rough-opening
         // height isn't tracked) — keep the single preview-only page. Gable
         // now has real per-tile instances (see allPanelInstances'
@@ -9743,38 +9751,16 @@ export default function LayoutEditor() {
             label: `Panel Fabrication: ${group.distinctName} (${group.instances.length} copies)`,
           });
         }
-      }
-      /* 4. Spanning headers (Stage 2b) — wall-level, beside the panels they
-         span. Counted in headers, not walls: one sheet can cover copies on
-         several walls, which is why each carries its own location line. */
-      if (wallsEnabled) {
+        /* 4. Spanning headers (Stage 2b) — wall-level, beside the panels they
+           span. Counted in headers, not walls: one sheet can cover copies on
+           several walls, which is why each carries its own location line. */
         for (const group of spanningHeaderFabricationGroups) {
           pages.push({
             id: `shop-fab-${group.uniqueKey}`,
             label: `Panel Fabrication: Spanning Header ${group.widthIn.toFixed(1)}in (${group.instances.length})`,
           });
         }
-      }
-      // 5. What lands on TOP of the walls: truss plate / box beam.
-      if (roofEnabled) {
-        for (const group of roofBearingFabricationGroups) {
-          pages.push({
-            id: `shop-fab-${group.uniqueKey}`,
-            label: `Panel Fabrication: ${group.kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
-          });
-        }
-      }
-      /* 6. Mid-Wall Bond Beam — independent of roofEnabled (a beam can exist
-         on either story regardless of the roof system). */
-      if (wallsEnabled) {
-        for (const group of midWallBondBeamFabricationGroups) {
-          const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Big Header (Mid-Wall Beam)";
-          pages.push({
-            id: `shop-fab-${group.uniqueKey}`,
-            label: `Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
-          });
-        }
-        /* 7. The cross-tilted row, which stands above the wall on the roof
+        /* 5. The cross-tilted row, which stands above the wall on the roof
            plane. ⚠ Registered here for the reason every family below is:
            the sheets render, and without a line in this list nobody can
            reach them — measured on a 46'8" x 14'2" shed, where the Project
@@ -9786,14 +9772,36 @@ export default function LayoutEditor() {
             label: `Panel Fabrication: Tilted Gable Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
           });
         }
-        /* 8. Roof panels LAST, which is when they go on. Registered under the
-           walls gate rather than the roof one because they are panels: a
-           building has them whether or not a truss roof system is selected. */
+        /* 6. Roof panels — the last PANELS. Registered under the walls gate
+           rather than the roof one because they are panels: a building has
+           them whether or not a truss roof system is selected. */
         for (const group of floorRoofPanelFabricationGroups) {
           if (group.kind !== "roof") continue;
           pages.push({
             id: `shop-fab-${group.key}`,
             label: `Panel Fabrication: Roof Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
+          });
+        }
+        /* 7. The Mid-Wall Bond Beam — a fabricated BEAM, not a panel, so it
+           goes after every panel with the truss plate rather than stranded in
+           the middle of them. Independent of roofEnabled (a beam can exist on
+           either story regardless of the roof system). */
+        for (const group of midWallBondBeamFabricationGroups) {
+          const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Big Header (Mid-Wall Beam)";
+          pages.push({
+            id: `shop-fab-${group.uniqueKey}`,
+            label: `Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
+          });
+        }
+      }
+      /* 8. ⚠ **Truss plate / box beam LAST — his call, 2026-11-04:** *"Truss
+         plate should be after all panel fab sheets and panel install pieces."*
+         Keeps its own `roofEnabled` gate, which is not the walls gate above. */
+      if (roofEnabled) {
+        for (const group of roofBearingFabricationGroups) {
+          pages.push({
+            id: `shop-fab-${group.uniqueKey}`,
+            label: `Panel Fabrication: ${group.kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
           });
         }
       }
@@ -12875,14 +12883,36 @@ export default function LayoutEditor() {
   /* 3D layer visibility. Only offered for decks that are in the scope of
      work — an unchecked Floors box means there is no floor to show, so a
      toggle for one would be a dead control. */
-  const deckLayerControls =
-    floorsEnabled || roofEnabled ? (
-      <div className={elevationStyles.panel}>
+  /* ⚠ No longer gated on a deck being in scope: the straw toggles below are
+     about the WALLS, which every building has. It used to render only when
+     `floorsEnabled || roofEnabled`, on the reasoning that a toggle for a deck
+     that does not exist is a dead control — still true, and still why each
+     deck row keeps its own gate. */
+  const deckLayerControls = (
+    <div className={elevationStyles.panel}>
         <strong>3D Layers</strong>
         <p className={styles.note}>
           What the viewer draws besides the walls. Turn a deck off to see inside the building — a floor or roof
           deck is solid and will hide everything under it.
         </p>
+        <label style={{ display: "block" }}>
+          <input type="checkbox" checked={showStraw3D} onChange={(e) => setShowStraw3D(e.target.checked)} />{" "}
+          Straw infill
+        </label>
+        {showStraw3D && (
+          <label style={{ display: "block" }}>
+            <input type="checkbox" checked={strawTextured3D} onChange={(e) => setStrawTextured3D(e.target.checked)} />{" "}
+            Straw texture (off = flat colour)
+          </label>
+        )}
+        {showStraw3D && (
+          <p className={styles.note}>
+            One volume per panel, filling the cavity its own frame encloses — the same box the single-panel
+            preview draws, from one derivation. Illustrative: it is not cut around the studs, girts and braces
+            standing inside it, so it overlaps them rather than flowing between them, and on a gable panel it
+            stops at the low end of the rake rather than following the slope.
+          </p>
+        )}
         {floorsEnabled && (
           <label style={{ display: "block" }}>
             <input type="checkbox" checked={showFloorDeck3D} onChange={(e) => setShowFloorDeck3D(e.target.checked)} />{" "}
@@ -12944,7 +12974,7 @@ export default function LayoutEditor() {
           <p className={styles.disclaimer}>⚠ {crossTiltTakeoff.refusal}</p>
         )}
       </div>
-    ) : null;
+  );
 
   const wallAssemblyControls = (
     <div className={elevationStyles.panel}>
@@ -13653,6 +13683,11 @@ export default function LayoutEditor() {
           describe different panels.
         </p>
         <PanelFabricationPage
+          /* ⚠ His two deck colours, 2026-11-04: *"Floors should be dark grey and
+             roofs light brown."* These sheets carried no band at all until he
+             said so — see `panelSheetAccentColor`, which refused to pick. */
+          typeLabel={`${kindLabel} Panel`}
+          accentColor={panelSheetAccentColor(group.kind)}
           title={`Panel Fabrication — ${kindLabel} Panel (${roleLabel})`}
           panelDescription={
             <>
@@ -14544,6 +14579,8 @@ export default function LayoutEditor() {
                   compassRef={compassNeedleRef}
                   simplified={simplified3D}
                   showWraps={showWraps}
+                  showStraw={showStraw3D}
+                  strawTextured={strawTextured3D}
                   showFloorPanels={floorsEnabled && showFloorDeck3D}
                   showRoofPanels={roofEnabled && showRoofDeck3D}
                   /* ⚠ Straight out of `deckPanelTakeoffInput`, not
@@ -16466,99 +16503,6 @@ export default function LayoutEditor() {
               );
             })}
 
-            {roofBearingFabricationGroups.map((group) => {
-              const noteId = `shop-fab-${group.uniqueKey}`;
-              const panelDescription =
-                group.kind === "truss-plate"
-                  ? "2x4 along the interior wythe edge, 2x6 along the exterior wythe edge, both capped by one continuous 3/4in plywood top skin — sized to this wall's own real length, not an illustrative segment."
-                  : `Two ${BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === boxBeamSizeId)!.label} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — sized to this wall's own real length, not an illustrative segment.`;
-              return (
-                <StickyNote
-                  key={group.uniqueKey}
-                  id={noteId}
-                  label={`Panel Fabrication: ${group.kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length})`}
-                  isOpen={openNoteIds.has(noteId)}
-                  isFullscreen={fullscreenNoteId === noteId}
-                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
-                  onClose={() => handleToggleNote(noteId)}
-                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
-                  onPrint={() => handlePrintNote(noteId)}
-                >
-                  {/* Screen-only orientation text: on paper it just pushes the framed
-                      sheet down the page. Opt-in `print-hidden-chrome` rather
-                      than blanket-hiding styles.note -- several of its other
-                      uses are honest caveats that SHOULD print (spec open item:
-                      "Print audit of the other sections' styles.note
-                      paragraphs"). */}
-                  <p className={`${styles.note} print-hidden-chrome`}>
-                    Fabricator/detailer document — one sheet per unique wall length (walls sharing a length grouped
-                    together), with a to-scale lettered elevation, a materials cut list, which walls this segment is
-                    used on, and a weight checker with a blank line for the shop&apos;s own measured weight.
-                  </p>
-                  <PanelFabricationPage
-                    title={`Panel Fabrication — ${group.kindLabel}`}
-                    panelDescription={panelDescription}
-                    widthIn={group.lengthIn}
-                    heightIn={group.heightIn}
-                    members={group.members}
-                    instances={group.instances}
-                    weightBreakdown={group.weightBreakdown}
-                    loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
-                    shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
-                    role={role}
-                  />
-                </StickyNote>
-              );
-            })}
-
-            {midWallBondBeamFabricationGroups.map((group) => {
-              const noteId = `shop-fab-${group.uniqueKey}`;
-              const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Big Header (Mid-Wall Beam)";
-              const sizeLabel = group.kind === "box-beam" ? BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === group.sizeId)!.label : `${group.heightIn.toFixed(1)}in tall`;
-              const panelDescription =
-                group.kind === "box-beam"
-                  ? `Two ${sizeLabel} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`
-                  : `A Big Header (${sizeLabel}) — the same flat-chord + repeating W-truss web construction a window header uses, on both wythes — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`;
-              return (
-                <StickyNote
-                  key={group.uniqueKey}
-                  id={noteId}
-                  label={`Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length})`}
-                  isOpen={openNoteIds.has(noteId)}
-                  isFullscreen={fullscreenNoteId === noteId}
-                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
-                  onClose={() => handleToggleNote(noteId)}
-                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
-                  onPrint={() => handlePrintNote(noteId)}
-                >
-                  {/* Screen-only orientation text: on paper it just pushes the framed
-                      sheet down the page. Opt-in `print-hidden-chrome` rather
-                      than blanket-hiding styles.note -- several of its other
-                      uses are honest caveats that SHOULD print (spec open item:
-                      "Print audit of the other sections' styles.note
-                      paragraphs"). */}
-                  <p className={`${styles.note} print-hidden-chrome`}>
-                    Fabricator/detailer document — one sheet per unique size + wall length (walls/stories sharing
-                    both grouped together), with a to-scale lettered elevation, a materials cut list, which
-                    walls this segment is used on, and a weight checker with a blank line for the shop&apos;s own
-                    measured weight.
-                  </p>
-                  <PanelFabricationPage
-                    title={`Panel Fabrication — ${kindLabel} (${sizeLabel})`}
-                    panelDescription={panelDescription}
-                    widthIn={group.lengthIn}
-                    heightIn={group.heightIn}
-                    members={group.members}
-                    instances={group.instances}
-                    weightBreakdown={group.weightBreakdown}
-                    loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
-                    shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
-                    role={role}
-                  />
-                </StickyNote>
-              );
-            })}
-
             {crossTiltFabricationGroups.map((group) => {
               const noteId = `shop-fab-${group.key}`;
               return (
@@ -16650,6 +16594,112 @@ export default function LayoutEditor() {
                 `renderDeckPanelSheet`. The floor half of this same array is
                 rendered at the top of this section, ahead of the walls. */}
             {floorRoofPanelFabricationGroups.filter((g) => g.kind === "roof").map(renderDeckPanelSheet)}
+
+            {midWallBondBeamFabricationGroups.map((group) => {
+              const noteId = `shop-fab-${group.uniqueKey}`;
+              const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Big Header (Mid-Wall Beam)";
+              const sizeLabel = group.kind === "box-beam" ? BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === group.sizeId)!.label : `${group.heightIn.toFixed(1)}in tall`;
+              const panelDescription =
+                group.kind === "box-beam"
+                  ? `Two ${sizeLabel} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`
+                  : `A Big Header (${sizeLabel}) — the same flat-chord + repeating W-truss web construction a window header uses, on both wythes — a Mid-Wall Bond Beam, sized to this wall's own real length, not an illustrative segment.`;
+              return (
+                <StickyNote
+                  key={group.uniqueKey}
+                  id={noteId}
+                  label={`Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length})`}
+                  isOpen={openNoteIds.has(noteId)}
+                  isFullscreen={fullscreenNoteId === noteId}
+                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
+                  onClose={() => handleToggleNote(noteId)}
+                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
+                  onPrint={() => handlePrintNote(noteId)}
+                >
+                  {/* Screen-only orientation text: on paper it just pushes the framed
+                      sheet down the page. Opt-in `print-hidden-chrome` rather
+                      than blanket-hiding styles.note -- several of its other
+                      uses are honest caveats that SHOULD print (spec open item:
+                      "Print audit of the other sections' styles.note
+                      paragraphs"). */}
+                  <p className={`${styles.note} print-hidden-chrome`}>
+                    Fabricator/detailer document — one sheet per unique size + wall length (walls/stories sharing
+                    both grouped together), with a to-scale lettered elevation, a materials cut list, which
+                    walls this segment is used on, and a weight checker with a blank line for the shop&apos;s own
+                    measured weight.
+                  </p>
+                  <PanelFabricationPage
+                    title={`Panel Fabrication — ${kindLabel} (${sizeLabel})`}
+                    panelDescription={panelDescription}
+                    widthIn={group.lengthIn}
+                    heightIn={group.heightIn}
+                    members={group.members}
+                    instances={group.instances}
+                    weightBreakdown={group.weightBreakdown}
+                    loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
+                    shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
+                    role={role}
+                  />
+                </StickyNote>
+              );
+            })}
+
+            {/* ⚠ **TRUSS PLATE AND BOX BEAM LAST — his call, 2026-11-04.**
+
+                > *"Truss plate should be after all panel fab sheets and panel
+                > install pieces. Let's move it with your best judgement."*
+
+                So the packet is every PANEL first — floor deck, walls, the
+                pieces that go in with them, roof deck — and the assemblies
+                that are not panels after all of them. Judgement used on the
+                two things he left open: the Mid-Wall Bond Beam moves with the
+                truss plate, since it is the same kind of thing (a fabricated
+                beam, not a panel) and splitting the two would leave one
+                non-panel sheet stranded in the middle of the panels; and the
+                truss plate goes LAST of the two, which is what he named. */}
+            {roofBearingFabricationGroups.map((group) => {
+              const noteId = `shop-fab-${group.uniqueKey}`;
+              const panelDescription =
+                group.kind === "truss-plate"
+                  ? "2x4 along the interior wythe edge, 2x6 along the exterior wythe edge, both capped by one continuous 3/4in plywood top skin — sized to this wall's own real length, not an illustrative segment."
+                  : `Two ${BOX_BEAM_SIZE_OPTIONS.find((s) => s.id === boxBeamSizeId)!.label} webs (exterior + interior wythe edges) capped top and bottom by 3/4in plywood — sized to this wall's own real length, not an illustrative segment.`;
+              return (
+                <StickyNote
+                  key={group.uniqueKey}
+                  id={noteId}
+                  label={`Panel Fabrication: ${group.kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length})`}
+                  isOpen={openNoteIds.has(noteId)}
+                  isFullscreen={fullscreenNoteId === noteId}
+                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
+                  onClose={() => handleToggleNote(noteId)}
+                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
+                  onPrint={() => handlePrintNote(noteId)}
+                >
+                  {/* Screen-only orientation text: on paper it just pushes the framed
+                      sheet down the page. Opt-in `print-hidden-chrome` rather
+                      than blanket-hiding styles.note -- several of its other
+                      uses are honest caveats that SHOULD print (spec open item:
+                      "Print audit of the other sections' styles.note
+                      paragraphs"). */}
+                  <p className={`${styles.note} print-hidden-chrome`}>
+                    Fabricator/detailer document — one sheet per unique wall length (walls sharing a length grouped
+                    together), with a to-scale lettered elevation, a materials cut list, which walls this segment is
+                    used on, and a weight checker with a blank line for the shop&apos;s own measured weight.
+                  </p>
+                  <PanelFabricationPage
+                    title={`Panel Fabrication — ${group.kindLabel}`}
+                    panelDescription={panelDescription}
+                    widthIn={group.lengthIn}
+                    heightIn={group.heightIn}
+                    members={group.members}
+                    instances={group.instances}
+                    weightBreakdown={group.weightBreakdown}
+                    loadBearingCapacity={ROOF_BEARING_STRUCTURAL_STATUS}
+                    shearValue={ROOF_BEARING_STRUCTURAL_STATUS}
+                    role={role}
+                  />
+                </StickyNote>
+              );
+            })}
           </>
         )}
 

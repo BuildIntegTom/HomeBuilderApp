@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { buildPanelObj, memberBoxSizeIn, SKIN_THICKNESS_IN, type PanelMember } from "@building-integrity/panel-catalog";
+import { buildPanelObj, type PanelMember } from "@building-integrity/panel-catalog";
 import { computeStandardPanelStrawVolume } from "@building-integrity/calc-engine";
-import PanelMembersGroup from "./PanelMembersGroup";
+import PanelMembersGroup, { StrawFillProvider } from "./PanelMembersGroup";
 import { useBrowsing } from "./BrowseModeContext";
 
 const CANVAS_WIDTH = 360;
@@ -39,7 +39,6 @@ const IN_PER_FT = 12;
 const ELEVATION_DEG = 28;
 const AZIMUTH_DEG = -62;
 
-const STRAW_COLOR = "#e0c458";
 
 export interface StandardPanel3DViewProps {
   members: PanelMember[];
@@ -73,6 +72,10 @@ export default function StandardPanel3DView({ members, overallDimensions, displa
   // BrowseModeContext.tsx.
   const browsing = useBrowsing();
   const [showStraw, setShowStraw] = useState(false);
+  /** His *"texture toggle option"*, 2026-11-04 — the same switch the whole
+   * building's 3D Layers panel offers, so one panel and the building draw the
+   * straw the same way. */
+  const [strawTextured, setStrawTextured] = useState(false);
   const canvasWidth = compact ? CANVAS_WIDTH_COMPACT : CANVAS_WIDTH;
   const canvasHeight = compact ? CANVAS_HEIGHT_COMPACT : CANVAS_HEIGHT;
 
@@ -113,21 +116,12 @@ export default function StandardPanel3DView({ members, overallDimensions, displa
     [members, overallDimensions],
   );
 
-  // Interior cavity Z-bounds derived from the actual Z-capping skin members
-  // (not a hardcoded thickness or member-name list) — matched generically by
-  // role + a thin Z box size, so this works for a wall panel's own
-  // "bottom/top_plate_skin" AND a header's "bottom/top_chord_ply" alike,
-  // while correctly excluding a header's own full-height left/right end
-  // caps (role "skin" too, but their Z size spans the whole panel, not a
-  // thin cap). Falls back to the full envelope if a panel variant has no
-  // Z-capping skins at all.
-  const zCapSkins = members.filter((m) => m.role === "skin" && memberBoxSizeIn(m).zIn <= SKIN_THICKNESS_IN + 0.01);
-  const bottomSkin = zCapSkins.reduce<PanelMember | null>((min, m) => (!min || m.position.zIn < min.position.zIn ? m : min), null);
-  const topSkin = zCapSkins.reduce<PanelMember | null>((max, m) => (!max || m.position.zIn > max.position.zIn ? m : max), null);
-  const interiorZStartIn = bottomSkin ? bottomSkin.position.zIn + memberBoxSizeIn(bottomSkin).zIn : 0;
-  const interiorZEndIn = topSkin ? topSkin.position.zIn : overallDimensions.heightIn;
-  const strawSizeFt: [number, number, number] = [widthFt, (interiorZEndIn - interiorZStartIn) / IN_PER_FT, depthFt];
-  const strawCenterFt: [number, number, number] = [centerX, (interiorZStartIn + interiorZEndIn) / 2 / IN_PER_FT, centerZ];
+  /* ⚠ The interior-cavity derivation that used to live here — the Z-capping
+     skins, matched by role and a thin Z box size — moved to
+     `strawFillBoxIn` in panel-catalog when the whole-building view needed the
+     same box (2026-11-04). It is the same rule, measured off
+     `memberLocalCornersIn` so a raked gable cap works too, and it is now
+     tested in `strawFillBox.test.ts` rather than only looked at here. */
 
   const handleDownloadObj = () => {
     const objText = buildPanelObj(members, displayName);
@@ -156,6 +150,12 @@ export default function StandardPanel3DView({ members, overallDimensions, displa
           <input type="checkbox" checked={showStraw} onChange={(e) => setShowStraw(e.target.checked)} />
           {compact ? "Straw" : "Show straw fill"}
         </label>
+        {showStraw && (
+          <label style={{ display: "flex", alignItems: "center", gap: compact ? 3 : 6, fontSize: compact ? 10 : 13 }}>
+            <input type="checkbox" checked={strawTextured} onChange={(e) => setStrawTextured(e.target.checked)} />
+            {compact ? "Texture" : "Straw texture"}
+          </label>
+        )}
         {/* Stage 4B: no Download OBJ while a browsed design is on screen
             (decision 23). The straw-fill toggle and the model itself stay:
             they are the design, which browsing is for. */}
@@ -169,13 +169,15 @@ export default function StandardPanel3DView({ members, overallDimensions, displa
         <Canvas camera={{ position: cameraPosition, fov: 45, near: 0.01, far: 1000 }}>
           <ambientLight intensity={0.7} />
           <directionalLight position={[maxDim, maxDim * 2, maxDim]} intensity={0.8} />
-          {showStraw && (
-            <mesh position={strawCenterFt}>
-              <boxGeometry args={strawSizeFt} />
-              <meshStandardMaterial color={STRAW_COLOR} transparent opacity={0.55} />
-            </mesh>
-          )}
-          <PanelMembersGroup members={members} />
+          {/* ⚠ The straw box is `strawFillBoxIn`'s now, not this view's own
+              — 2026-11-04. This file used to derive the cavity inline and
+              draw its own mesh; the whole-building view needed the same box,
+              and two derivations of one volume is how the preview and the
+              model come to disagree. The toggle and the readout below are
+              unchanged. */}
+          <StrawFillProvider value={{ show: showStraw, textured: strawTextured }}>
+            <PanelMembersGroup members={members} />
+          </StrawFillProvider>
           <OrbitControls target={[centerX, centerY, centerZ]} makeDefault />
         </Canvas>
       </div>

@@ -1,9 +1,114 @@
 "use client";
 
+import { createContext, useContext, useMemo } from "react";
 import * as THREE from "three";
-import { memberBoxSizeIn, memberFaceIndices, memberLocalCornersIn, type PanelMember } from "@building-integrity/panel-catalog";
+import { memberBoxSizeIn, memberFaceIndices, memberLocalCornersIn, strawFillBoxIn, type PanelMember } from "@building-integrity/panel-catalog";
 
 const IN_PER_FT = 12;
+
+/** The straw-fill overlay's own colour, as the single-panel preview has drawn
+ * it since early on. */
+export const STRAW_COLOR = "#e0c458";
+export const STRAW_OPACITY = 0.55;
+
+/**
+ * **THE STRAW, EVERYWHERE THERE IS A PANEL — his ask, 2026-11-04.**
+ *
+ * > *"I mean ideally we could also model out the straw too - let's add 3D straw
+ * > volume infill with texture toggle option."*
+ *
+ * A context rather than a prop because `PanelMembersGroup` is rendered from
+ * eleven places in `Building3DView` alone (every wall slot, every gable tile,
+ * every deck panel, the opening assemblies), and a prop would have to be
+ * threaded through all of them to say one thing. A provider around the scene
+ * says it once; a caller that never provides one renders exactly as before.
+ *
+ * `textured` swaps the flat fill for a procedural straw texture — generated
+ * on a canvas rather than loaded from a file, so it costs the app no asset and
+ * cannot 404.
+ */
+export interface StrawFillSettings {
+  show: boolean;
+  textured: boolean;
+}
+
+const StrawFillContext = createContext<StrawFillSettings>({ show: false, textured: false });
+
+export const StrawFillProvider = StrawFillContext.Provider;
+
+/** One canvas texture for the whole app, built on first use. Straw drawn as
+ * many short strands at shallow random angles over a warm base — at the
+ * distance a whole building is viewed from, strand DIRECTION is what reads as
+ * straw, not strand detail. Seeded by hand (a tiny LCG) so the pattern is the
+ * same every run and a screenshot of the same model is the same image. */
+let strawTextureBase: THREE.CanvasTexture | null = null;
+/** One texture per repeat count, not per panel: a 4ft panel and a 12ft floor
+ * panel need different repeats to show strands the same SIZE, but there are
+ * only a handful of distinct counts in any building. */
+const strawTextureByRepeat = new Map<string, THREE.CanvasTexture>();
+
+function buildStrawTextureBase(): THREE.CanvasTexture | null {
+  if (strawTextureBase) return strawTextureBase;
+  if (typeof document === "undefined") return null;
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.fillStyle = STRAW_COLOR;
+  ctx.fillRect(0, 0, size, size);
+  let seed = 20261104;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) % 4294967296;
+    return seed / 4294967296;
+  };
+  for (let i = 0; i < 900; i++) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const lengthPx = 10 + rand() * 26;
+    const angle = (rand() - 0.5) * 0.9;
+    /* Half the strands lighter than the base and half darker, so the texture
+       reads at 55% opacity over a dark frame as well as against the sky. */
+    const lighter = rand() < 0.5;
+    const shade = lighter ? Math.floor(225 + rand() * 30) : Math.floor(120 + rand() * 60);
+    ctx.strokeStyle = `rgba(${shade}, ${Math.floor(shade * 0.86)}, ${Math.floor(shade * 0.45)}, 0.9)`;
+    ctx.lineWidth = 1 + rand();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(angle) * lengthPx, y + Math.sin(angle) * lengthPx);
+    ctx.stroke();
+  }
+  strawTextureBase = new THREE.CanvasTexture(canvas);
+  strawTextureBase.wrapS = THREE.RepeatWrapping;
+  strawTextureBase.wrapT = THREE.RepeatWrapping;
+  return strawTextureBase;
+}
+
+/** One tile of the texture covers about this much wall, so strands come out
+ * the same size on a 4ft wall panel and a 12ft floor panel. */
+const STRAW_TEXTURE_TILE_FT = 2;
+
+function getStrawTexture(widthFt: number, heightFt: number): THREE.CanvasTexture | null {
+  const base = buildStrawTextureBase();
+  if (!base) return null;
+  const clamp = (n: number) => Math.min(16, Math.max(1, Math.round(n / STRAW_TEXTURE_TILE_FT)));
+  const rx = clamp(widthFt);
+  const ry = clamp(heightFt);
+  const key = `${rx}x${ry}`;
+  const cached = strawTextureByRepeat.get(key);
+  if (cached) return cached;
+  /* `clone` shares the canvas image and gets its own repeat — which is the
+     whole reason for the cache, since repeat lives on the texture, not on the
+     material. */
+  const texture = base.clone();
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(rx, ry);
+  texture.needsUpdate = true;
+  strawTextureByRepeat.set(key, texture);
+  return texture;
+}
 
 // wood_fiber_board (e.g. the square-bale panel's timber fiber board void
 // fill — Tommy: "highlighted with the same opacity in a light brown color
@@ -98,8 +203,51 @@ export interface PanelMembersGroupProps {
  * `<group>` — since this renders purely in the panel's own local frame, it
  * composes correctly either way without knowing which context it's in). */
 export default function PanelMembersGroup({ members, colorOverride }: PanelMembersGroupProps) {
+  const straw = useContext(StrawFillContext);
+  /* ⚠ Derived from the members themselves, in `panel-catalog`, so the whole
+     building and the single-panel preview cannot draw the straw in two
+     different places. See `strawFillBoxIn` for why the box stops where it
+     does on a gable. */
+  const strawBox = useMemo(() => (straw.show ? strawFillBoxIn(members) : null), [straw.show, members]);
+  const strawMap =
+    straw.show && straw.textured && strawBox
+      ? getStrawTexture(strawBox.sizeIn[0] / IN_PER_FT, strawBox.sizeIn[1] / IN_PER_FT)
+      : null;
   return (
     <>
+      {strawBox && (
+        <mesh
+          position={[
+            strawBox.centerIn[0] / IN_PER_FT,
+            strawBox.centerIn[1] / IN_PER_FT,
+            strawBox.centerIn[2] / IN_PER_FT,
+          ]}
+        >
+          <boxGeometry args={[strawBox.sizeIn[0] / IN_PER_FT, strawBox.sizeIn[1] / IN_PER_FT, strawBox.sizeIn[2] / IN_PER_FT]} />
+          {/* Transparent either way: the frame standing inside the straw is
+              the thing a fabricator is looking at, and an opaque fill would
+              hide every member this component exists to draw. */}
+          {/* ⚠ `key` on the MATERIAL, not just the prop. Adding or removing a
+              `map` on a live three.js material needs the shader recompiled;
+              without a key the toggle flipped the prop and the scene did not
+              change at all — measured in the browser, the textured and flat
+              frames were pixel-identical. The key makes r3f build a fresh
+              material instead. */}
+          <meshStandardMaterial
+            key={strawMap ? "straw-textured" : "straw-flat"}
+            /* ⚠ WHITE under the map, not the straw colour. `color` multiplies
+               the texture, and the texture is already painted in the straw
+               colour — tinting it again squared the fill towards brown and the
+               strands all but vanished behind 55% opacity. Measured in the
+               browser: tinted, the textured and flat frames were almost
+               indistinguishable. */
+            color={strawMap ? "#ffffff" : STRAW_COLOR}
+            {...(strawMap ? { map: strawMap } : {})}
+            transparent
+            opacity={STRAW_OPACITY}
+          />
+        </mesh>
+      )}
       {members.map((member) => {
         if (member.position.trapezoidCornersIn || member.position.planPolygonCornersIn || member.position.sectionCornersIn) {
           return (

@@ -95,7 +95,7 @@ import {
   LEGACY_GIRT_STYLE,
   type GirtStyle,
 } from "@building-integrity/panel-catalog";
-import PanelMembersGroup from "./PanelMembersGroup";
+import PanelMembersGroup, { StrawFillProvider } from "./PanelMembersGroup";
 import { PANEL_TYPE_COLORS } from "./panelColors";
 import { computeOpeningGeometry } from "./openingGeometry";
 import { useBrowsing } from "./BrowseModeContext";
@@ -1029,6 +1029,17 @@ interface Building3DViewProps {
    * scenes with many panels at once (e.g. TruckLoad3DView's stacked
    * shipping view) where full wood-member detail would be unreadable
    * clutter, but available as a general toggle here too. Off by default. */
+  /** ⚠ **The straw, drawn as a volume — his ask, 2026-11-04:** *"I mean
+   * ideally we could also model out the straw too - let's add 3D straw volume
+   * infill with texture toggle option."* Every panel in the scene gets a
+   * semi-transparent box filling the cavity its own frame encloses, derived
+   * from the members by `strawFillBoxIn` so the single-panel preview and the
+   * whole building cannot draw it in two different places. Off by default: it
+   * is a fabricator's view of a frame first. */
+  showStraw?: boolean;
+  /** His *"texture toggle"* — swaps the flat fill for a procedural straw
+   * texture (generated on a canvas, so it costs no asset). */
+  strawTextured?: boolean;
   simplified?: boolean;
   /** 3D Wraps view (Tommy: "3d model selected after box mode and is
    * everything box mode is with a few changes: panels not labeled, and
@@ -1298,6 +1309,8 @@ export default function Building3DView({
   compassRef,
   simplified = false,
   showWraps = false,
+  showStraw = false,
+  strawTextured = false,
   checkedInteriorIds = EMPTY_ID_SET,
   checkedExteriorIds = EMPTY_ID_SET,
   tool3D = "orbit",
@@ -1306,6 +1319,10 @@ export default function Building3DView({
   onSetWindowSillHeight,
   onSetWindowHeight,
 }: Building3DViewProps) {
+  /* Memoised so the provider's value keeps its identity between renders — a
+     fresh object every render re-renders every `PanelMembersGroup` in the
+     scene, which at a few hundred panels is the whole frame. */
+  const strawFill = useMemo(() => ({ show: showStraw, textured: strawTextured }), [showStraw, strawTextured]);
   // Stage 4B: another company's design is on screen, browsed read-only. Read
   // from Context rather than taken as a prop — see BrowseModeContext.tsx.
   const browsing = useBrowsing();
@@ -2748,6 +2765,13 @@ export default function Building3DView({
           )}
           <ambientLight intensity={0.6} />
           <directionalLight position={[bounds.maxDim, bounds.maxDim * 2, bounds.maxDim]} intensity={0.8} />
+          {/* ⚠ One provider for the whole scene rather than a prop on each of
+              the eleven `PanelMembersGroup`s below — wall slots, gable tiles,
+              opening assemblies, both decks, the bale foundation. A prop would
+              have to be threaded through every one of them to say one thing,
+              and the next `PanelMembersGroup` somebody adds would silently
+              draw no straw. */}
+          <StrawFillProvider value={strawFill}>
           {/* ⚠ THE GROUND PLANE IS OFF. Tommy, 2026-10-29: *"it blocks the
               floor panels from being visible and doesn't really illustrate
               anything for the user"*. It is the Y=0 datum every panel is
@@ -3024,6 +3048,7 @@ export default function Building3DView({
               <PanelMembersGroup members={members} />
             </group>
           ))}
+          </StrawFillProvider>
           {!captureMode && <OrbitControls target={target} makeDefault enabled={!isDraggingHandle} />}
           {!captureMode && compassRef && <CompassTracker compassRef={compassRef} target={target} />}
         </Canvas>

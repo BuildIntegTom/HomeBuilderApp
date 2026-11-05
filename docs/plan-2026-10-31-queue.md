@@ -2603,3 +2603,82 @@ nobody can reach — the defect already recorded for the cross-tilted row.
 **Not changed:** the mid-wall bond beam still prints after the truss plate,
 where it has always been, though a beam inside a wall arguably goes in before
 what lands on top of the wall. One block move, not done without his word.
+
+---
+
+# B27 — BUILT 2026-11-04: the deck colours, the straw, and the truss plate last
+
+Three asks in one message.
+
+## 1. The two colours he was owed
+
+> *"Floors should be dark grey and roofs light brown."*
+
+`DECK_PANEL_COLORS` in `panelColors.ts` — floor `#4f4f4f`, roof `#b98b5e`. These
+are the two types the 2D plan has never drawn, so B25 refused to invent a colour
+and their sheets carried no band; `panelSheetAccentColor` returned null and a
+test asserted that. The test now asserts his answer instead, and both colours go
+through the same measured check every other sheet colour does: tinted towards
+white they hold black text above 7:1 and stay light in greyscale.
+
+⚠ **Truss plate and box beam still have no colour and still get no band.** They
+are assemblies, not panels, and he has not named one.
+
+## 2. The straw, as a volume
+
+> *"I mean ideally we could also model out the straw too - let's add 3D straw
+> volume infill with texture toggle option."*
+
+`strawFillBoxIn` in panel-catalog: one box per panel, full width and full depth,
+and in height between the capping skins. It is the derivation `StandardPanel3DView`
+had inline since early on, lifted out — ⚠ **two derivations of one volume is how
+the preview and the model come to disagree**, so the single-panel view now reads
+the same function and its own copy is deleted.
+
+Two toggles in the 3D Layers panel: **Straw infill** (off by default — the 3D
+view is a fabricator's view of a frame first) and **Straw texture**. The texture
+is generated on a canvas, so it costs no asset and cannot 404, and it tiles at
+one 256px tile per 2ft of panel so strands are the same size on a 4ft wall panel
+and a 12ft floor panel.
+
+⚠ **Two things were measured in the browser and fixed, not assumed:**
+
+1. **Toggling `map` on a live material changes nothing.** three.js needs the
+   shader recompiled; the textured and flat frames came back pixel-identical.
+   Fixed with a `key` on the material so r3f builds a fresh one.
+2. **`color` multiplies the map.** With the straw colour under a straw-coloured
+   texture the fill squared towards brown and the strands all but vanished
+   behind 55% opacity. The base is white when a map is present.
+
+⚠ **Still illustrative, and the panel says so on screen:** the box is not cut
+around the studs, girts and braces standing inside it (neither is
+`computeStandardPanelStrawVolume`, which has always said so), and on a gable
+panel it stops at the LOW end of the rake rather than following the slope —
+under-drawn inside the panel beats a box poking out through the roofline.
+
+## 3. Truss plate last
+
+> *"Truss plate should be after all panel fab sheets and panel install pieces.
+> Let's move it with your best judgement."*
+
+Judgement used on the two things he left open: the **Mid-Wall Bond Beam moves
+with it**, because it is the same kind of thing (a fabricated beam, not a panel)
+and splitting them would strand one non-panel sheet in the middle of the panels;
+and the **truss plate goes last of the two**, which is what he named. Packet and
+section list both, read off the app: floor panels, walls, tilted gable, roof
+panels, mid-wall beam, truss plate.
+
+# Found, not fixed — the floor panel's two lids are not symmetric
+
+Measured while deriving the straw cavity, on a 144in floor panel:
+
+| lid | plywood skin | 2x4 face |
+| --- | --- | --- |
+| start | 0–0.75in (OUTER) | 0.75–2.25in |
+| end | 141.75–142.5in (INNER) | 142.5–144in (OUTER) |
+
+Both lids are 2.25in thick and the joists span 2.25–141.75 either way, so
+nothing about size or span is wrong — but **one lid presents plywood to the next
+panel and the other presents board ends**, which makes them two different parts
+on one sheet. `strawFillBox.test.ts` pins what the builder does today so it
+cannot change unnoticed. Whether it is intended is Tommy's call.

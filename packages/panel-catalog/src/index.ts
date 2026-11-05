@@ -46,3 +46,4 @@ export * from "./panelCutList";
 export * from "./csv";
 export * from "./dxf";
 export * from "./projectCutListCsv";
+export * from "./strawFillBox";

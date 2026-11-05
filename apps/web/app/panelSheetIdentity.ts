@@ -1,6 +1,6 @@
 import { formatImperialFractionIn, formatLengthIn } from "@building-integrity/calc-engine";
 import { bracedPanelDisplayLabel, type BraceFigure, type BracePairPattern, type BracePattern } from "@building-integrity/panel-catalog";
-import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
+import { DECK_PANEL_COLORS, NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import type { NamedPanelType } from "./panelInstances";
 
 /**
@@ -209,11 +209,15 @@ export function comparePanelSheets(a: PanelSheetSortable, b: PanelSheetSortable)
  * reads as braced on the plan. A fabrication-sheet palette of its own would be
  * two languages for one fact.
  *
- * Returns null for a type with no entry (floor and roof panels, truss plate,
- * box beam) rather than inventing one — those are the types the plan has never
- * drawn, and what colour they should be is his decision, not a default.
+ * ⚠ **Floor and roof were refused a colour until he gave one.** They are the
+ * two types the plan has never drawn, so B25 returned null rather than picking
+ * for him; on 2026-11-04 he said *"Floors should be dark grey and roofs light
+ * brown"* and `DECK_PANEL_COLORS` is that answer. Truss plate and box beam are
+ * still unanswered and still return null — they are assemblies rather than
+ * panels, and nothing here invents a colour.
  */
 export function panelSheetAccentColor(panelTypeId: string): string | null {
+  if (panelTypeId === "floor" || panelTypeId === "roof") return DECK_PANEL_COLORS[panelTypeId];
   return NAMED_PANEL_TYPE_COLORS[panelTypeId as NamedPanelType] ?? null;
 }
 

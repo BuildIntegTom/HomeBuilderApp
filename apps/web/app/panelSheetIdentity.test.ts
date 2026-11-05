@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NAMED_PANEL_TYPE_COLORS } from "./panelColors";
+import { DECK_PANEL_COLORS, NAMED_PANEL_TYPE_COLORS } from "./panelColors";
 import {
   comparePanelSheets,
   contrastWithBlack,
@@ -198,16 +198,25 @@ describe("⚠ B25 colour — from panelColors.ts, and legible printed in greysca
     }
   });
 
-  it("⚠ refuses a colour rather than inventing one for a type the plan never draws", () => {
-    /* Floor panels, roof panels, truss plate and box beam have no palette
-       entry. A default here would be a second palette by the back door. */
-    for (const unpainted of ["floor", "roof", "truss-plate", "box-beam", "tilted-gable"]) {
+  it("⚠ takes HIS two deck colours, which were refused until he gave them", () => {
+    /* *"Floors should be dark grey and roofs light brown."* — 2026-11-04.
+       This test asserted `null` for both until that answer arrived: B25
+       refused to pick for the two types the plan has never drawn. */
+    expect(panelSheetAccentColor("floor")).toBe(DECK_PANEL_COLORS.floor);
+    expect(panelSheetAccentColor("roof")).toBe(DECK_PANEL_COLORS.roof);
+  });
+
+  it("⚠ still refuses a colour for an assembly he has not named one for", () => {
+    /* Truss plate and box beam are assemblies, not panels, and no colour has
+       been given for them. A default here would be a second palette by the
+       back door. */
+    for (const unpainted of ["truss-plate", "box-beam", "tilted-gable"]) {
       expect({ unpainted, color: panelSheetAccentColor(unpainted) }).toEqual({ unpainted, color: null });
     }
   });
 
   it("⚠ every type's band holds black text at better than 7:1, in colour", () => {
-    for (const hex of Object.values(NAMED_PANEL_TYPE_COLORS)) {
+    for (const hex of [...Object.values(NAMED_PANEL_TYPE_COLORS), ...Object.values(DECK_PANEL_COLORS)]) {
       const tint = tintTowardsWhite(hex);
       expect({ hex, ok: contrastWithBlack(tint) >= 7 }).toEqual({ hex, ok: true });
     }
@@ -221,7 +230,7 @@ describe("⚠ B25 colour — from panelColors.ts, and legible printed in greysca
        15.7:1. Honest about what this check is — WCAG luminance IS the
        greyscale value, so this is the same arithmetic as the test above
        expressed as "the band stays light" rather than as a contrast ratio. */
-    for (const hex of Object.values(NAMED_PANEL_TYPE_COLORS)) {
+    for (const hex of [...Object.values(NAMED_PANEL_TYPE_COLORS), ...Object.values(DECK_PANEL_COLORS)]) {
       const luma = relativeLuminance(tintTowardsWhite(hex));
       expect({ hex, light: luma >= 0.7 }).toEqual({ hex, light: true });
     }

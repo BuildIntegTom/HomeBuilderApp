@@ -23,6 +23,27 @@ export const PANEL_TYPE_COLORS: Record<PanelSlot["type"], string> = {
   open: "#eceae6",
 };
 
+/**
+ * ⚠ **The deck panels' own two colours — his, 2026-11-04.**
+ *
+ * > *"Floors should be dark grey and roofs light brown."*
+ *
+ * Floor and roof panels are the two panel types the 2D plan has never drawn,
+ * so they had no colour and their fabrication sheets carried no band. B25
+ * refused to invent one; this is the answer. Kept in a separate map because
+ * they are not `PanelSlot["type"]` values and never will be — they are not
+ * placed in the wall layout system at all.
+ *
+ * Both are checked the way every other sheet colour is (see
+ * `panelSheetIdentity.test.ts`): tinted towards white they hold black text at
+ * better than 7:1 and stay light in greyscale, which is how these sheets
+ * print.
+ */
+export const DECK_PANEL_COLORS: Record<"floor" | "roof", string> = {
+  floor: "#4f4f4f",
+  roof: "#b98b5e",
+};
+
 export const PANEL_TYPE_LABELS: Record<PanelSlot["type"], string> = {
   standard: "Standard",
   corner: "Corner",
