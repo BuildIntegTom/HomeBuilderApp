@@ -2554,3 +2554,52 @@ feature that would be HIS number rather than a researched stand-in. Worth
 asking, when it is picked up, whether 3 deep is a fixed rule or a maximum, and
 whether a bundle may mix panel types (B25's new sheet order bundles similar
 widths, which is a related answer about the shop floor but not about the truck).
+
+---
+
+# B26 — BUILT 2026-11-04: the packet is in install order
+
+> *"Shop plans should have Floor panels before walls in install order and
+> [roof] panels after walls."*
+
+⚠ **The sentence said "floor" twice; he confirmed floor → walls → roof** when
+asked, against the other live reading (ground-floor deck first and the
+SECOND-STOREY deck after the walls, which is also a real build sequence).
+
+**What it was.** Floor and roof panels come off one takeoff and rendered as one
+block at the very END of the packet — so a shop read the walls before the deck
+they stand on, and the roof sheets interleaved with the floor ones. The printed
+order is the DOM order (Export PDF prints the rendered sections, it does not
+re-sort them), so this was the packet a shop actually got.
+
+**What it is now**, read off the running app on a 23'6" x 20'5" building:
+
+| # | sheets |
+| --- | --- |
+| 1 | Floor Panel 15½" / 24" / 24" / 17½" |
+| 2 | the wall packet, in B25's order (gables, sills, headers, column, corner, safety gap, carrots) |
+| 3 | Truss Plate 282" / 245" |
+| 4 | Roof Panel 15½" / 24" / 14" |
+
+**One sheet, two call sites.** `renderDeckPanelSheet` in `page.tsx` is the deck
+sheet lifted out of its single `.map`, called once for the floor half and once
+for the roof half, so the two cannot drift into two different sheets.
+
+⚠ **The section list was reordered to MATCH, and that supersedes an older
+instruction of his** — *"the other fabricator pages, lets make these non-panel
+fabricator pages appear at the top of the fabricator list"*. Truss plate, box
+beam and the mid-wall beam are no longer at the top: under install order they
+belong between the walls and the roof, which is where they go on. A picker in
+one order and a packet in another is a trap, and before this the list was in
+neither (floor and roof sat in the middle, ahead of every wall panel). **Worth
+a word from him if he wants the old clustering back.**
+
+⚠ **The gates were preserved when the block moved.** Lifting the fabricator
+entries out of `if (wallsEnabled)` would have changed when each family appears;
+each keeps the gate it had (roof-bearing on `roofEnabled`, the rest on
+`wallsEnabled`), because a sheet that renders without a line in that list is one
+nobody can reach — the defect already recorded for the cross-tilted row.
+
+**Not changed:** the mid-wall bond beam still prints after the truss plate,
+where it has always been, though a beam inside a wall arguably goes in before
+what lands on top of the wall. One block move, not done without his word.

@@ -9647,64 +9647,6 @@ export default function LayoutEditor() {
         pages.push({ id: "detail-truss-plate", label: stories.length === 1 ? "Roof: Truss Plate (Single-Story)" : "Roof: Truss Plate" });
       }
       pages.push({ id: "detail-roof-truss-layout", label: "Roof: Truss Layout" });
-      // Real per-wall roof-bearing Shop Fabrication pages — fabricator/
-      // detailer documents, not public-facing (same gate panelFabricationGroups uses).
-      if (role !== "public") {
-        for (const group of roofBearingFabricationGroups) {
-          pages.push({
-            id: `shop-fab-${group.uniqueKey}`,
-            label: `Panel Fabrication: ${group.kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
-          });
-        }
-      }
-    }
-    // Mid-Wall Bond Beam Shop Fabrication pages — independent of
-    // roofEnabled (a beam can exist on either story regardless of the roof
-    // system), placed here so every non-panel fabricator page (roof-
-    // bearing + mid-wall) clusters together, ahead of the per-panel-type
-    // entries further down (Tommy: "the other fabricator pages, lets make
-    // these non-panel fabricator pages appear at the top of the fabricator
-    // list").
-    if (wallsEnabled && role !== "public") {
-      for (const group of midWallBondBeamFabricationGroups) {
-        const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Big Header (Mid-Wall Beam)";
-        pages.push({
-          id: `shop-fab-${group.uniqueKey}`,
-          label: `Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
-        });
-      }
-      // Spanning headers (Stage 2b), beside the other wall-level fabricated
-      // records. Counted in headers, not walls — one sheet can cover copies
-      // on several walls, which is exactly why each carries its own location
-      // line on the sheet itself.
-      for (const group of spanningHeaderFabricationGroups) {
-        pages.push({
-          id: `shop-fab-${group.uniqueKey}`,
-          label: `Panel Fabrication: Spanning Header ${group.widthIn.toFixed(1)}in (${group.instances.length})`,
-        });
-      }
-      /* Floor and roof panels. Registered here rather than under the floor
-         or roof gates above because they are panels: a building has them
-         whether or not a joisted floor system or a truss roof is selected,
-         and leaving them out of this list is what keeps a sheet out of both
-         the tray and Export PDF — it renders, and nobody can reach it. */
-      for (const group of floorRoofPanelFabricationGroups) {
-        pages.push({
-          id: `shop-fab-${group.key}`,
-          label: `Panel Fabrication: ${group.kind === "floor" ? "Floor" : "Roof"} Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
-        });
-      }
-      /* ⚠ And the cross-tilted row, for exactly the reason stated just
-         above: the sheets render, and without this line nobody can reach
-         them. Measured on a 46'8" x 14'2" shed before this was added — the
-         Project Summary counted 25 tilted gable panels and the section
-         picker offered no sheet for any of them. */
-      for (const group of crossTiltFabricationGroups) {
-        pages.push({
-          id: `shop-fab-${group.key}`,
-          label: `Panel Fabrication: Tilted Gable Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
-        });
-      }
     }
     // Box Beam's own Detail Guide page — the same assembly whether it's a
     // roofline roof-bearing member (2-story only, roof concern) or a
@@ -9742,9 +9684,44 @@ export default function LayoutEditor() {
       if (allInstances.some((i) => i.sourceSlotType === "window") || canPreviewAllDetailPages) {
         pages.push({ id: "detail-window-ro", label: "Window Rough Opening" });
       }
-      // Shop Drawings are a fabricator/detailer document, not a public-facing one (Tommy).
-      if (role !== "public") {
-        // Jack-Stud: no real placed instances yet (a real rough-opening
+    }
+    // Shop Drawings are a fabricator/detailer document, not a public-facing one (Tommy).
+    if (role !== "public") {
+      /* ⚠ **THIS LIST IS IN INSTALL ORDER — B26, 2026-11-04, and it is
+         the same order the sheets PRINT in.**
+
+         > *"Shop plans should have Floor panels before walls in install
+         > order and [roof] panels after walls."*
+
+         Floor deck, then the walls that bear on it, then what sits on top
+         of the walls, then the roof. The printed packet is the DOM order
+         further down this file; this list is what the tray and Choose
+         sections show. They are written to match deliberately — a picker
+         in one order and a packet in another is a trap, and this list used
+         to be in neither (floor and roof panels sat in the MIDDLE, ahead of
+         every wall panel).
+
+         ⚠ **It supersedes an older instruction of his** — *"the other
+         fabricator pages, lets make these non-panel fabricator pages appear
+         at the top of the fabricator list"*. Truss plate, box beam and the
+         mid-wall beam are no longer at the top: under install order they
+         belong between the walls and the roof, which is where they go on.
+         Worth a word from him if he wants the old clustering back. */
+
+      // 1. The floor deck — first thing built, first sheets in the packet.
+      if (wallsEnabled) {
+        for (const group of floorRoofPanelFabricationGroups) {
+          if (group.kind !== "floor") continue;
+          pages.push({
+            id: `shop-fab-${group.key}`,
+            label: `Panel Fabrication: Floor Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
+          });
+        }
+      }
+      /* 2 and 3 keep the walls gate they were nested under before this
+         block was lifted out of it — see the note above. */
+      if (wallsEnabled) {
+        // 2. Jack-Stud: no real placed instances yet (a real rough-opening
         // height isn't tracked) — keep the single preview-only page. Gable
         // now has real per-tile instances (see allPanelInstances'
         // gableTilesByWallId) and flows through panelFabricationGroups
@@ -9764,6 +9741,59 @@ export default function LayoutEditor() {
           pages.push({
             id: `shop-fab-${group.uniqueKey}`,
             label: `Panel Fabrication: ${group.distinctName} (${group.instances.length} copies)`,
+          });
+        }
+      }
+      /* 4. Spanning headers (Stage 2b) — wall-level, beside the panels they
+         span. Counted in headers, not walls: one sheet can cover copies on
+         several walls, which is why each carries its own location line. */
+      if (wallsEnabled) {
+        for (const group of spanningHeaderFabricationGroups) {
+          pages.push({
+            id: `shop-fab-${group.uniqueKey}`,
+            label: `Panel Fabrication: Spanning Header ${group.widthIn.toFixed(1)}in (${group.instances.length})`,
+          });
+        }
+      }
+      // 5. What lands on TOP of the walls: truss plate / box beam.
+      if (roofEnabled) {
+        for (const group of roofBearingFabricationGroups) {
+          pages.push({
+            id: `shop-fab-${group.uniqueKey}`,
+            label: `Panel Fabrication: ${group.kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
+          });
+        }
+      }
+      /* 6. Mid-Wall Bond Beam — independent of roofEnabled (a beam can exist
+         on either story regardless of the roof system). */
+      if (wallsEnabled) {
+        for (const group of midWallBondBeamFabricationGroups) {
+          const kindLabel = group.kind === "box-beam" ? "Box Beam" : "Big Header (Mid-Wall Beam)";
+          pages.push({
+            id: `shop-fab-${group.uniqueKey}`,
+            label: `Panel Fabrication: ${kindLabel} ${group.lengthIn.toFixed(1)}in (${group.instances.length} walls)`,
+          });
+        }
+        /* 7. The cross-tilted row, which stands above the wall on the roof
+           plane. ⚠ Registered here for the reason every family below is:
+           the sheets render, and without a line in this list nobody can
+           reach them — measured on a 46'8" x 14'2" shed, where the Project
+           Summary counted 25 tilted gable panels and the section picker
+           offered a sheet for none of them. */
+        for (const group of crossTiltFabricationGroups) {
+          pages.push({
+            id: `shop-fab-${group.key}`,
+            label: `Panel Fabrication: Tilted Gable Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
+          });
+        }
+        /* 8. Roof panels LAST, which is when they go on. Registered under the
+           walls gate rather than the roof one because they are panels: a
+           building has them whether or not a truss roof system is selected. */
+        for (const group of floorRoofPanelFabricationGroups) {
+          if (group.kind !== "roof") continue;
+          pages.push({
+            id: `shop-fab-${group.key}`,
+            label: `Panel Fabrication: Roof Panel ${group.widthIn.toFixed(2)}in (${group.instances.length})`,
           });
         }
       }
@@ -13574,6 +13604,150 @@ export default function LayoutEditor() {
             </div>
   );
 
+  /**
+   * ⚠ **ONE deck sheet, rendered from TWO places — B26, 2026-11-04.**
+   *
+   * > *"Shop plans should have Floor panels before walls in install order and
+   * > [roof] panels after walls."*
+   *
+   * Floor and roof panels come off one takeoff and one group array, and used
+   * to print as one block at the very END of the packet — so a shop read the
+   * walls before the deck they stand on, and the roof panels in the middle of
+   * the floor ones. The packet is in install order now: the floor sheets are
+   * called first, up at the top, and the roof sheets last. This function is
+   * the sheet itself, lifted out of that single `.map` so the two call sites
+   * cannot drift into two different sheets.
+   */
+  const renderDeckPanelSheet = (group: (typeof floorRoofPanelFabricationGroups)[number]) => {
+    const kindLabel = group.kind === "floor" ? "Floor" : "Roof";
+    const roleLabel =
+      group.role === "edge"
+        ? "Edge"
+        : group.role === "field"
+          ? "Field"
+          : group.role === "closer"
+            ? "8ft Closer"
+            : "Remainder";
+    const noteId = `shop-fab-${group.key}`;
+    const impossible = group.plan.impossiblePanels.some((i) =>
+      group.instances.some((g) => g.name === i.name),
+    );
+    return (
+      <StickyNote
+        key={group.key}
+        id={noteId}
+        label={`Panel Fabrication: ${kindLabel} Panel ${formatLengthIn(group.widthIn, unitSystem)} (${group.instances.length})`}
+        isOpen={openNoteIds.has(noteId)}
+        isFullscreen={fullscreenNoteId === noteId}
+        cascadeIndex={noteOpenOrder.indexOf(noteId)}
+        onClose={() => handleToggleNote(noteId)}
+        onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
+        onPrint={() => handlePrintNote(noteId)}
+      >
+        <p className={`${styles.note} print-hidden-chrome`}>
+          Fabricator/detailer document — one sheet per unique {group.kind}{" "}panel, with the same to-scale
+          lettered view and cut list every other panel gets. Draft: these panels are built from the
+          fabrication spec Tommy gave verbally and are not placed in the wall layout system, so they carry
+          a run position rather than a wall slot. The panels themselves are the ones the 3D view builds —
+          same widths, same span, same members, from one takeoff — so this sheet and the model cannot
+          describe different panels.
+        </p>
+        <PanelFabricationPage
+          title={`Panel Fabrication — ${kindLabel} Panel (${roleLabel})`}
+          panelDescription={
+            <>
+              A standard panel on its side, with 2x6 joists in place of 2x4 studs — each joist a{" "}
+              <strong>pair</strong> of 2x6s, top and bottom, so every seam between two installed panels
+              carries four of them. Straw goes in loose and is compressed in the table, one joist laid in
+              each side. Both lids are structural: a plywood skin faced with 2x4s laid edge to edge across
+              the whole lid, the last ripped to fit. {group.kind === "floor"
+                ? `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries a PAIR of structural girts at each end, where a wall lands on it — one under the wall's exterior toe-up board and one set in flush with its interior face, so the whole toe-up bears on framing.`
+                : `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries no structural girt — a roof panel bears on both wythes of the inclined wall panel below it.`}{" "}
+              It is panel {group.instances.map((i) => i.name).join(", ")} of{" "}
+              {group.plan.instances.length} across a {formatLengthIn(group.runIn, unitSystem)}{" "}
+              {group.kind === "roof" ? "eave" : "run"}
+              {group.runs.length > 1
+                ? `, on each of this roof's ${group.runs.length} planes (${group.runs
+                    .map((r) => r.facing)
+                    .join(", ")})`
+                : group.kind === "roof" && group.run.facing !== undefined
+                  ? `, on the ${group.run.facing}-facing plane`
+                  : ""}
+              .{" "}
+              {group.capMembers.length > 0 && (
+                <>
+                  The eave cap is included in the cut list below, and it is a <strong>real L</strong> now:
+                  a plywood seat bearing the whole {thicknessIn}in of the truss plate, a plumb leg standing
+                  on it flush with the wall&apos;s exterior face, and 2x4 stiffeners edge to edge behind
+                  that leg. It fills the{" "}
+                  {formatLengthIn(
+                    group.options.depthIn * ((group.options.pitchIn12 ?? 0) / 12),
+                    unitSystem,
+                  )}{" "}
+                  of space between the truss plate and this panel&apos;s own level seat — the gap that used
+                  to run the whole length of the wall, because the part that fills it was built and never
+                  placed.{" "}
+                </>
+              )}
+              {group.plan.lastTrueSheetSeamIn !== null && (
+                <>
+                  Sheathing above: cut the first sheet to{" "}
+                  <strong>{formatLengthIn(group.plan.firstSheetWidthIn ?? 0, unitSystem)}</strong> and every
+                  full sheet after it lands on a panel seam as far as{" "}
+                  <strong>{formatLengthIn(group.plan.lastTrueSheetSeamIn, unitSystem)}</strong> along the run
+                  ({group.plan.sheetCount} sheets). Past that the panels were re-divided to keep every one of
+                  them at or above the {FLOOR_ROOF_MIN_PANEL_WIDTH_IN}in minimum, so the last sheet or so
+                  gets cut the same way the first one does.
+                </>
+              )}
+            </>
+          }
+          widthIn={group.widthIn}
+          heightIn={group.spanIn}
+          members={group.members}
+          instances={group.instances.map((i) => ({
+            name: i.name,
+            /* A floor panel has no compass direction, so it gets the
+               simplest line that still finds it. A roof panel is on
+               a named plane, and that IS its location. */
+            note:
+              i.facing === undefined
+                ? `${formatLengthIn(i.atIn, unitSystem)} from the start of the run`
+                : `${formatLengthIn(i.atIn, unitSystem)} along the ${i.facing}-facing eave`,
+          }))}
+          weightBreakdown={group.weightBreakdown}
+          loadBearingCapacity={{
+            status: "pending-BI-confirmation",
+            note: `No load-bearing figure exists for a ${group.kind} panel. Nothing has been engineered for this panel type — it is modeled from a verbal fabrication spec, and a span table is exactly the kind of number that cannot be guessed at.`,
+          }}
+          shearValue={{
+            status: "pending-BI-confirmation",
+            note: "No shear figure either. A floor or roof panel's diaphragm value would come from its plywood lids and their nailing, and no nailing schedule has been given.",
+          }}
+          role={role}
+        />
+        {impossible && (
+          <p className={styles.disclaimer}>
+            ⚠ {group.plan.impossibleWarning}
+          </p>
+        )}
+        <p className={styles.note}>
+          Draft — floor and roof panels are modeled from Tommy&apos;s verbal fabrication spec and have
+          not been confirmed back to him or to Building Integrity. Open items on this sheet: no fastener
+          schedule exists for these panels, so the weight checker shows fasteners as not modeled rather
+          than zero; and the eave cap&apos;s MAKE-UP is still this app&apos;s reading — 1/2in structural
+          ply for the seat and web with 2x4 stiffeners edge to edge, from &quot;structural small vertical
+          2x4s&quot;. Its bearing width is no longer a reading: &quot;The plate width is now basically the
+          entire truss plate width = 15.5&quot; usually... The excess height of the roof panels goes up
+          the vertical plumb flush with the face of the wall&quot; (2026-11-01), which is what let the cap
+          be placed instead of stacked. Panel widths are settled too: a {FLOOR_ROOF_MIN_PANEL_WIDTH_IN}in
+          minimum, redistributed into the neighbouring panels when a run would otherwise close with a
+          sliver.
+        </p>
+      </StickyNote>
+    );
+  };
+
   return (
     <DocumentMetaProvider value={{ projectName, siteLabel: documentSiteLabel, date: documentDate }}>
     {/* Stage 4B: wraps the whole editor, so the two OBJ buttons — on the
@@ -16115,6 +16289,11 @@ export default function LayoutEditor() {
 
         {role !== "public" && (
           <>
+            {/* ⚠ FLOOR PANELS FIRST — his install order, 2026-11-04: the deck
+                is built before the walls that bear on it, so the packet opens
+                with it. The roof half of this same array is rendered at the
+                very end of this section. */}
+            {floorRoofPanelFabricationGroups.filter((g) => g.kind === "floor").map(renderDeckPanelSheet)}
             {shopDrawings
               .filter(({ panelType }) => panelType.id === "jack-stud")
               .map(({ panelType, instances }) => (
@@ -16467,135 +16646,10 @@ export default function LayoutEditor() {
               );
             })}
 
-            {floorRoofPanelFabricationGroups.map((group) => {
-              const kindLabel = group.kind === "floor" ? "Floor" : "Roof";
-              const roleLabel =
-                group.role === "edge"
-                  ? "Edge"
-                  : group.role === "field"
-                    ? "Field"
-                    : group.role === "closer"
-                      ? "8ft Closer"
-                      : "Remainder";
-              const noteId = `shop-fab-${group.key}`;
-              const impossible = group.plan.impossiblePanels.some((i) =>
-                group.instances.some((g) => g.name === i.name),
-              );
-              return (
-                <StickyNote
-                  key={group.key}
-                  id={noteId}
-                  label={`Panel Fabrication: ${kindLabel} Panel ${formatLengthIn(group.widthIn, unitSystem)} (${group.instances.length})`}
-                  isOpen={openNoteIds.has(noteId)}
-                  isFullscreen={fullscreenNoteId === noteId}
-                  cascadeIndex={noteOpenOrder.indexOf(noteId)}
-                  onClose={() => handleToggleNote(noteId)}
-                  onToggleFullscreen={() => handleToggleNoteFullscreen(noteId)}
-                  onPrint={() => handlePrintNote(noteId)}
-                >
-                  <p className={`${styles.note} print-hidden-chrome`}>
-                    Fabricator/detailer document — one sheet per unique {group.kind}{" "}panel, with the same to-scale
-                    lettered view and cut list every other panel gets. Draft: these panels are built from the
-                    fabrication spec Tommy gave verbally and are not placed in the wall layout system, so they carry
-                    a run position rather than a wall slot. The panels themselves are the ones the 3D view builds —
-                    same widths, same span, same members, from one takeoff — so this sheet and the model cannot
-                    describe different panels.
-                  </p>
-                  <PanelFabricationPage
-                    title={`Panel Fabrication — ${kindLabel} Panel (${roleLabel})`}
-                    panelDescription={
-                      <>
-                        A standard panel on its side, with 2x6 joists in place of 2x4 studs — each joist a{" "}
-                        <strong>pair</strong> of 2x6s, top and bottom, so every seam between two installed panels
-                        carries four of them. Straw goes in loose and is compressed in the table, one joist laid in
-                        each side. Both lids are structural: a plywood skin faced with 2x4s laid edge to edge across
-                        the whole lid, the last ripped to fit. {group.kind === "floor"
-                          ? `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries a PAIR of structural girts at each end, where a wall lands on it — one under the wall's exterior toe-up board and one set in flush with its interior face, so the whole toe-up bears on framing.`
-                          : `This one spans ${formatLengthIn(group.spanIn, unitSystem)} and carries no structural girt — a roof panel bears on both wythes of the inclined wall panel below it.`}{" "}
-                        It is panel {group.instances.map((i) => i.name).join(", ")} of{" "}
-                        {group.plan.instances.length} across a {formatLengthIn(group.runIn, unitSystem)}{" "}
-                        {group.kind === "roof" ? "eave" : "run"}
-                        {group.runs.length > 1
-                          ? `, on each of this roof's ${group.runs.length} planes (${group.runs
-                              .map((r) => r.facing)
-                              .join(", ")})`
-                          : group.kind === "roof" && group.run.facing !== undefined
-                            ? `, on the ${group.run.facing}-facing plane`
-                            : ""}
-                        .{" "}
-                        {group.capMembers.length > 0 && (
-                          <>
-                            The eave cap is included in the cut list below, and it is a <strong>real L</strong> now:
-                            a plywood seat bearing the whole {thicknessIn}in of the truss plate, a plumb leg standing
-                            on it flush with the wall&apos;s exterior face, and 2x4 stiffeners edge to edge behind
-                            that leg. It fills the{" "}
-                            {formatLengthIn(
-                              group.options.depthIn * ((group.options.pitchIn12 ?? 0) / 12),
-                              unitSystem,
-                            )}{" "}
-                            of space between the truss plate and this panel&apos;s own level seat — the gap that used
-                            to run the whole length of the wall, because the part that fills it was built and never
-                            placed.{" "}
-                          </>
-                        )}
-                        {group.plan.lastTrueSheetSeamIn !== null && (
-                          <>
-                            Sheathing above: cut the first sheet to{" "}
-                            <strong>{formatLengthIn(group.plan.firstSheetWidthIn ?? 0, unitSystem)}</strong> and every
-                            full sheet after it lands on a panel seam as far as{" "}
-                            <strong>{formatLengthIn(group.plan.lastTrueSheetSeamIn, unitSystem)}</strong> along the run
-                            ({group.plan.sheetCount} sheets). Past that the panels were re-divided to keep every one of
-                            them at or above the {FLOOR_ROOF_MIN_PANEL_WIDTH_IN}in minimum, so the last sheet or so
-                            gets cut the same way the first one does.
-                          </>
-                        )}
-                      </>
-                    }
-                    widthIn={group.widthIn}
-                    heightIn={group.spanIn}
-                    members={group.members}
-                    instances={group.instances.map((i) => ({
-                      name: i.name,
-                      /* A floor panel has no compass direction, so it gets the
-                         simplest line that still finds it. A roof panel is on
-                         a named plane, and that IS its location. */
-                      note:
-                        i.facing === undefined
-                          ? `${formatLengthIn(i.atIn, unitSystem)} from the start of the run`
-                          : `${formatLengthIn(i.atIn, unitSystem)} along the ${i.facing}-facing eave`,
-                    }))}
-                    weightBreakdown={group.weightBreakdown}
-                    loadBearingCapacity={{
-                      status: "pending-BI-confirmation",
-                      note: `No load-bearing figure exists for a ${group.kind} panel. Nothing has been engineered for this panel type — it is modeled from a verbal fabrication spec, and a span table is exactly the kind of number that cannot be guessed at.`,
-                    }}
-                    shearValue={{
-                      status: "pending-BI-confirmation",
-                      note: "No shear figure either. A floor or roof panel's diaphragm value would come from its plywood lids and their nailing, and no nailing schedule has been given.",
-                    }}
-                    role={role}
-                  />
-                  {impossible && (
-                    <p className={styles.disclaimer}>
-                      ⚠ {group.plan.impossibleWarning}
-                    </p>
-                  )}
-                  <p className={styles.note}>
-                    Draft — floor and roof panels are modeled from Tommy&apos;s verbal fabrication spec and have
-                    not been confirmed back to him or to Building Integrity. Open items on this sheet: no fastener
-                    schedule exists for these panels, so the weight checker shows fasteners as not modeled rather
-                    than zero; and the eave cap&apos;s MAKE-UP is still this app&apos;s reading — 1/2in structural
-                    ply for the seat and web with 2x4 stiffeners edge to edge, from &quot;structural small vertical
-                    2x4s&quot;. Its bearing width is no longer a reading: &quot;The plate width is now basically the
-                    entire truss plate width = 15.5&quot; usually... The excess height of the roof panels goes up
-                    the vertical plumb flush with the face of the wall&quot; (2026-11-01), which is what let the cap
-                    be placed instead of stacked. Panel widths are settled too: a {FLOOR_ROOF_MIN_PANEL_WIDTH_IN}in
-                    minimum, redistributed into the neighbouring panels when a run would otherwise close with a
-                    sliver.
-                  </p>
-                </StickyNote>
-              );
-            })}
+            {/* ⚠ Roof panels LAST, which is when they go on — see
+                `renderDeckPanelSheet`. The floor half of this same array is
+                rendered at the top of this section, ahead of the walls. */}
+            {floorRoofPanelFabricationGroups.filter((g) => g.kind === "roof").map(renderDeckPanelSheet)}
           </>
         )}
 
